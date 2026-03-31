@@ -4,9 +4,6 @@ resource_class: small
 steps:
   - setup-mise
   - run:
-      name: Create test results directory
-      command: mkdir -p test-results
-  - run:
       name: Check
       command: bun run check
   - store_test_results:
