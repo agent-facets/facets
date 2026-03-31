@@ -30,9 +30,6 @@ jobs:
         steps:
             - setup-mise
             - run:
-                command: mkdir -p test-results
-                name: Create test results directory
-            - run:
                 command: bun run check
                 name: Check
             - store_test_results:
