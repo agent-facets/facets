@@ -13,12 +13,15 @@ Full documentation is available at [agentfacets.io](https://agentfacets.io).
 npm install -g agent-facets
 ```
 
+Now you can install facets from https://facet.cafe!
+
 ## Packages
 
-| Package                                   | NPM                        | Description                              |
-|-------------------------------------------|----------------------------|------------------------------------------|
-| [Facet CLI](packages/cli/README.md)       | `agent-facets`        | CLI tool for managing facets             |
-| [Facet Core](packages/core/README.md)     | `@agent-facets/core`       | Schemas, loaders, and shared types       |
+| Package                           | NPM                   | Description                        |
+|-----------------------------------|-----------------------|------------------------------------|
+| [CLI](packages/cli/README.md)     | `agent-facets`        | CLI tool for managing facets       |
+| [Core](packages/core/README.md)   | `@agent-facets/core`  | Schemas, loaders, and validators   |
+| [Brand](packages/brand/README.md) | `@agent-facets/brand` | Agent Facets branding and styles   |
 
 ## Development
 
