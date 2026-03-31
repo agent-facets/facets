@@ -31,20 +31,24 @@
     "groups": [
       {
         "group": "Agent Facets",
-        "pages": ["index", "cli", "learn/index"]
-      },
-      {
-        "group": "Learn",
-        "pages": ["learn/skills", "learn/commands", "learn/agents", "learn/servers"]
+        "icon": "/assets/icon.svg",
+        "pages": ["index", "cli", "learn", "specification"]
       },
       {
         "group": "CLI",
-        "pages": ["cli/add", "cli/build", "cli/info", "cli/install", "cli/publish", "cli/remove", "cli/upgrade"]
+        "tag": "facet",
+        "icon": "terminal",
+        "pages": ["cli/add", "cli/install", "cli/remove", "cli/upgrade", "cli/info", "cli/build", "cli/publish"]
+      },
+      {
+        "group": "Asset Types",
+        "icon": "book",
+        "pages": ["learn/skills", "learn/commands", "learn/agents", "learn/servers"]
       },
       {
         "group": "Specification",
+        "icon": "section",
         "pages": [
-          "specification/index",
           "specification/terminology",
           "specification/architecture",
           "specification/manifest",
@@ -57,22 +61,21 @@
     ]
   },
   "navbar": {
+    "primary": {
+      "type": "button",
+      "label": "Search Facets",
+      "href": "https://facet.cafe/"
+    },
     "links": [
       {
-        "type": "button",
-        "icon": "layers",
-        "label": "Search Facets",
-        "href": "https://facet.cafe/"
+        "type": "github",
+        "href": "https://github.com/agent-facets/facets"
       },
       {
         "type": "button",
         "icon": "download",
-        "label": "Install",
+        "label": "Download CLI",
         "href": "https://facet.cafe/install"
-      },
-      {
-        "type": "github",
-        "href": "https://github.com/agent-facets/facets"
       }
     ]
   },
