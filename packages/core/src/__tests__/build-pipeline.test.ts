@@ -206,7 +206,7 @@ describe('validatePlatformConfigs', () => {
 describe('runBuildPipeline', () => {
   test('successful build with valid facet', async () => {
     const dir = await createFixtureDir('valid-build')
-    await Bun.write(join(dir, 'skills/example.md'), '# Example skill')
+    await Bun.write(join(dir, 'skills/example/SKILL.md'), '# Example skill')
     await Bun.write(
       join(dir, 'facet.json'),
       JSON.stringify({
@@ -230,8 +230,8 @@ describe('runBuildPipeline', () => {
       expect(result.archiveFilename).toBe('test-facet-1.0.0.facet')
       expect(result.archiveBytes.length).toBeGreaterThan(0)
       expect(Object.keys(result.assetHashes)).toContain('facet.json')
-      expect(Object.keys(result.assetHashes)).toContain('skills/example.md')
-      expect(result.assetHashes['skills/example.md']).toMatchInlineSnapshot(
+      expect(Object.keys(result.assetHashes)).toContain('skills/example/SKILL.md')
+      expect(result.assetHashes['skills/example/SKILL.md']).toMatchInlineSnapshot(
         `"sha256:ded8057927e03783371d0d929e4a6e92da66eb9dd164377ad6845a5a1c0cb5ba"`,
       )
       expect(result.integrity).toMatch(/^sha256:[a-f0-9]{64}$/)
@@ -263,13 +263,13 @@ describe('runBuildPipeline', () => {
     expect(result.ok).toBe(false)
     if (!result.ok) {
       expect(result.errors[0]?.path).toBe('skills.example')
-      expect(result.errors[0]?.message).toContain('skills/example.md')
+      expect(result.errors[0]?.message).toContain('skills/example/SKILL.md')
     }
   })
 
   test('build succeeds with cross-type name sharing', async () => {
     const dir = await createFixtureDir('cross-type')
-    await Bun.write(join(dir, 'skills/review.md'), '# Review skill')
+    await Bun.write(join(dir, 'skills/review/SKILL.md'), '# Review skill')
     await Bun.write(join(dir, 'commands/review.md'), '# Review command')
     await Bun.write(
       join(dir, 'facet.json'),
@@ -291,8 +291,8 @@ describe('runBuildPipeline', () => {
 
   test('build with all asset types includes all hashes', async () => {
     const dir = await createFixtureDir('all-types')
-    await Bun.write(join(dir, 'skills/alpha.md'), '# Alpha skill')
-    await Bun.write(join(dir, 'skills/beta.md'), '# Beta skill')
+    await Bun.write(join(dir, 'skills/alpha/SKILL.md'), '# Alpha skill')
+    await Bun.write(join(dir, 'skills/beta/SKILL.md'), '# Beta skill')
     await Bun.write(join(dir, 'agents/helper.md'), '# Helper agent')
     await Bun.write(join(dir, 'commands/deploy.md'), '# Deploy command')
     await Bun.write(
@@ -322,15 +322,15 @@ describe('runBuildPipeline', () => {
         'agents/helper.md',
         'commands/deploy.md',
         'facet.json',
-        'skills/alpha.md',
-        'skills/beta.md',
+        'skills/alpha/SKILL.md',
+        'skills/beta/SKILL.md',
       ])
     }
   })
 
   test('build fails on malformed compact facets entry', async () => {
     const dir = await createFixtureDir('bad-facets')
-    await Bun.write(join(dir, 'skills/x.md'), '# Skill')
+    await Bun.write(join(dir, 'skills/x/SKILL.md'), '# Skill')
     await Bun.write(
       join(dir, 'facet.json'),
       JSON.stringify({
@@ -356,7 +356,7 @@ describe('runBuildPipeline', () => {
 describe('writeBuildOutput', () => {
   test('writes archive and build manifest to dist/', async () => {
     const dir = await createFixtureDir('write-output')
-    await Bun.write(join(dir, 'skills/example.md'), '# Resolved content')
+    await Bun.write(join(dir, 'skills/example/SKILL.md'), '# Resolved content')
     await Bun.write(
       join(dir, 'facet.json'),
       JSON.stringify({
@@ -385,7 +385,7 @@ describe('writeBuildOutput', () => {
     expect(manifest.archive).toBe('test-facet-1.0.0.facet')
     expect(manifest.integrity).toMatch(/^sha256:[a-f0-9]{64}$/)
     expect(manifest.assets['facet.json']).toMatch(/^sha256:[a-f0-9]{64}$/)
-    expect(manifest.assets['skills/example.md']).toMatch(/^sha256:[a-f0-9]{64}$/)
+    expect(manifest.assets['skills/example/SKILL.md']).toMatch(/^sha256:[a-f0-9]{64}$/)
 
     // No loose files
     const looseManifest = await Bun.file(join(dir, 'dist/facet.json')).exists()
@@ -394,7 +394,7 @@ describe('writeBuildOutput', () => {
 
   test('cleans previous dist/ before writing', async () => {
     const dir = await createFixtureDir('clean-dist')
-    await Bun.write(join(dir, 'skills/x.md'), '# Skill')
+    await Bun.write(join(dir, 'skills/x/SKILL.md'), '# Skill')
     await Bun.write(
       join(dir, 'facet.json'),
       JSON.stringify({

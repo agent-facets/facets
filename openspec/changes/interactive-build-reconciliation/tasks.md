@@ -2,18 +2,18 @@
 
 ## 1. Skill Convention Migration — Research
 
-- [ ] 1.1 Explore: Review current skill file path resolution in the build pipeline — how `skills/<name>.md` is resolved, where the convention is hardcoded, and what tests cover it
-- [ ] 1.2 Explore: Review the create wizard's skill scaffolding — how skill starter files are generated and where the flat file path is constructed
-- [ ] 1.3 Explore: Review existing tests that assert skill file paths (`skills/<name>.md`) — enumerate all tests that will need updating for the directory convention
-- [ ] 1.4 Propose: Approach for migrating skill resolution from `skills/<name>.md` to `skills/<name>/SKILL.md` across the build pipeline, create wizard, and tests
+- [x] 1.1 Explore: Review current skill file path resolution in the build pipeline — how `skills/<name>.md` is resolved, where the convention is hardcoded, and what tests cover it
+- [x] 1.2 Explore: Review the create wizard's skill scaffolding — how skill starter files are generated and where the flat file path is constructed
+- [x] 1.3 Explore: Review existing tests that assert skill file paths (`skills/<name>.md`) — enumerate all tests that will need updating for the directory convention
+- [x] 1.4 Propose: Approach for migrating skill resolution from `skills/<name>.md` to `skills/<name>/SKILL.md` across the build pipeline, create wizard, and tests
 
 ## 2. Skill Convention Migration — Implementation
 
-- [ ] 2.1 Implement: Update prompt content resolution to resolve skills from `skills/<name>/SKILL.md` instead of `skills/<name>.md`
-- [ ] 2.2 Implement: Update the create wizard's skill scaffolding to create `skills/<name>/SKILL.md` inside a directory instead of a flat file
-- [ ] 2.3 Implement: Update all existing tests that assert skill file paths to use the new directory convention
-- [ ] 2.4 Implement: Update ADR-001 with a modification note for the skill path convention change
-- [ ] 2.5 Verify: Run `bun check` — all tests pass, types check, lint clean
+- [x] 2.1 Implement: Update prompt content resolution to resolve skills from `skills/<name>/SKILL.md` instead of `skills/<name>.md`
+- [x] 2.2 Implement: Update the create wizard's skill scaffolding to create `skills/<name>/SKILL.md` inside a directory instead of a flat file
+- [x] 2.3 Implement: Update all existing tests that assert skill file paths to use the new directory convention
+- [x] 2.4 Implement: Update ADR-001 with a modification note for the skill path convention change
+- [x] 2.5 Verify: Run `bun check` — all tests pass, types check, lint clean
 
 ## 3. Create Wizard Relaxation — Research
 

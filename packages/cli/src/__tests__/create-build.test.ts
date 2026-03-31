@@ -61,8 +61,8 @@ describe('writeScaffold', () => {
     )
 
     expect(files).toContain('facet.json')
-    expect(files).toContain('skills/code-review.md')
-    expect(files).toContain('skills/testing-guide.md')
+    expect(files).toContain('skills/code-review/SKILL.md')
+    expect(files).toContain('skills/testing-guide/SKILL.md')
     expect(files).toContain('agents/reviewer.md')
     expect(files).toContain('commands/deploy.md')
 
@@ -81,10 +81,10 @@ describe('writeScaffold', () => {
     expect(manifest.commands.deploy).toBeDefined()
 
     // Verify starter files exist and have named template content
-    const skill = await Bun.file(join(dir, 'skills/code-review.md')).text()
+    const skill = await Bun.file(join(dir, 'skills/code-review/SKILL.md')).text()
     expect(skill).toContain('# Code Review')
 
-    const skill2 = await Bun.file(join(dir, 'skills/testing-guide.md')).text()
+    const skill2 = await Bun.file(join(dir, 'skills/testing-guide/SKILL.md')).text()
     expect(skill2).toContain('# Testing Guide')
 
     const agent = await Bun.file(join(dir, 'agents/reviewer.md')).text()
@@ -109,7 +109,7 @@ describe('writeScaffold', () => {
     )
 
     expect(files).toContain('facet.json')
-    expect(files).toContain('skills/minimal.md')
+    expect(files).toContain('skills/minimal/SKILL.md')
     expect(files).not.toContain('agents/')
     expect(files).not.toContain('commands/')
 
@@ -157,7 +157,7 @@ describe('writeScaffold', () => {
 describe('facet build', () => {
   test('build succeeds on valid project', async () => {
     const dir = await createFixtureDir('build-valid')
-    await Bun.write(join(dir, 'skills/review.md'), '# Review skill content')
+    await Bun.write(join(dir, 'skills/review/SKILL.md'), '# Review skill content')
     await Bun.write(
       join(dir, 'facet.json'),
       JSON.stringify({

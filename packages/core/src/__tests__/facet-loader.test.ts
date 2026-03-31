@@ -174,7 +174,7 @@ describe('loadManifest', () => {
 describe('resolvePrompts', () => {
   test('prompt content is resolved from conventional file paths', async () => {
     const dir = await createFixtureDir('resolve-convention')
-    await writeFixture(dir, 'skills/review.md', '# Code Review\nReview all code.')
+    await writeFixture(dir, 'skills/review/SKILL.md', '# Code Review\nReview all code.')
     await writeFixture(dir, 'agents/reviewer.md', '# Reviewer\nReview this code.')
     await writeFixture(dir, 'commands/deploy.md', '# Deploy\nDeploy the code.')
 
@@ -242,7 +242,7 @@ describe('resolvePrompts', () => {
 
   test('manifest without agents or commands resolves successfully', async () => {
     const dir = await createFixtureDir('resolve-skills-only')
-    await writeFixture(dir, 'skills/x.md', '# Skill X\nDo x.')
+    await writeFixture(dir, 'skills/x/SKILL.md', '# Skill X\nDo x.')
 
     const manifest = {
       name: 'test',

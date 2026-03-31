@@ -134,7 +134,7 @@ export function generateManifest(opts: CreateOptions): string {
 export function previewFiles(opts: CreateOptions): string[] {
   const files: string[] = [FACET_MANIFEST_FILE]
   for (const skill of opts.skills) {
-    files.push(`skills/${skill}.md`)
+    files.push(`skills/${skill}/SKILL.md`)
   }
   for (const agent of opts.agents) {
     files.push(`agents/${agent}.md`)
@@ -155,11 +155,11 @@ export async function writeScaffold(opts: CreateOptions, targetDir: string): Pro
   await Bun.write(manifestPath, generateManifest(opts))
   files.push(FACET_MANIFEST_FILE)
 
-  // Write skill files
+  // Write skill files (Agent Skills directory convention: skills/<name>/SKILL.md)
   for (const skill of opts.skills) {
-    await mkdir(join(targetDir, 'skills'), { recursive: true })
-    await Bun.write(join(targetDir, `skills/${skill}.md`), skillTemplate(skill))
-    files.push(`skills/${skill}.md`)
+    await mkdir(join(targetDir, 'skills', skill), { recursive: true })
+    await Bun.write(join(targetDir, `skills/${skill}/SKILL.md`), skillTemplate(skill))
+    files.push(`skills/${skill}/SKILL.md`)
   }
 
   // Write agent files

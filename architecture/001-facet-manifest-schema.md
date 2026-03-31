@@ -15,6 +15,7 @@ decision-makers: julian
 | modified by change: local-authoring                | 2026-03-27 | julian          |        |
 | modified by ADR-006: manifest serialization format | 2026-03-28 | julian          |        |
 | modified by change: json-manifest-migration        | 2026-03-29 | julian          |        |
+| modified by change: interactive-build-reconciliation | 2026-03-31 | julian          |        |
 
 ## Context and Problem Statement
 
@@ -199,7 +200,9 @@ The CLI validates platform config against known platform schemas at build and pu
 | `description` | Yes      | Human-readable description of the skill.                               |
 | `platforms`   | No       | Map of platform name → platform-specific skill config.                 |
 
-The skill's prompt content lives in a file at the conventional path `skills/<name>.md`. All three descriptor types require a description — consumers need to know what an asset does to decide whether to use it. Prompt content is resolved from conventional file paths (`<type>/<name>.md`) rather than declared in the manifest.
+The skill's prompt content lives in a file at the conventional path `skills/<name>/SKILL.md`, following the [Agent Skills](https://agentskills.io/specification) directory convention. Agents and commands use the flat file convention: `agents/<name>.md` and `commands/<name>.md`. All three descriptor types require a description — consumers need to know what an asset does to decide whether to use it. Prompt content is resolved from these conventional file paths rather than declared in the manifest.
+
+> **Modification note (interactive-build-reconciliation, 2026-03-31):** Skills changed from the flat file convention `skills/<name>.md` to the Agent Skills directory convention `skills/<name>/SKILL.md`. This aligns with the cross-platform Agent Skills ecosystem. Agents and commands retain the flat file convention.
 
 **Command descriptor:**
 
