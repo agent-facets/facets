@@ -1,7 +1,6 @@
 ---
 title: Key Concepts
 description: Asset types, the manifest, text composition, MCP servers, and the facet lifecycle
-icon: lightbulb
 ---
 
 This page introduces the core concepts behind Facets. For normative requirements, see the [Specification](/specification).
