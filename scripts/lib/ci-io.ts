@@ -13,8 +13,8 @@ export const io = {
   mintGitHubToken: () => mintGitHubAppToken(),
 
   // Changesets
-  changesetVersion: () => $`bunx changeset version`,
-  changesetPublish: () => $`bunx changeset publish`,
+  changesetVersion: () => $`bun changeset version`,
+  changesetPublish: () => $`bun changeset publish`,
 
   // Git
   gitDiff: () => $`git diff --quiet`.nothrow(),
