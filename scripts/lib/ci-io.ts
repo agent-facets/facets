@@ -6,6 +6,7 @@
  */
 
 import { $ } from 'bun'
+import type { WorkspacePackage } from './changesets'
 import { mintGitHubAppToken } from './github-app'
 
 export const io = {
@@ -35,6 +36,15 @@ export const io = {
   // CircleCI OIDC
   mintOidcToken: () => $`circleci run oidc get --claims '{"aud": "npm:registry.npmjs.org"}'`.text(),
 
+  // npm registry
+  npmViewVersion: async (pkg: string): Promise<string | null> => {
+    const result = await $`npm view ${pkg} version`.nothrow().quiet()
+    return result.exitCode === 0 ? result.text().trim() : null
+  },
+
+  // Turbo
+  turboBuild: () => $`bun turbo build`,
+
   // Dependencies
   bunInstall: () => $`bun install`,
 
@@ -45,9 +55,29 @@ export const io = {
   // Filesystem
   scanDir: async (dir: string): Promise<string[]> => {
     const entries: string[] = []
+
     for await (const entry of new Bun.Glob('*.md').scan(dir)) {
       entries.push(entry)
     }
+
     return entries
+  },
+
+  loadWorkspacePackages: async (): Promise<WorkspacePackage[]> => {
+    const root = await Bun.file('package.json').json()
+    const patterns: string[] = root.workspaces?.packages ?? root.workspaces ?? []
+    const results: WorkspacePackage[] = []
+
+    for (const pattern of patterns) {
+      for await (const dir of new Bun.Glob(pattern).scan({ onlyFiles: false })) {
+        const file = Bun.file(`${dir}/package.json`)
+        if (await file.exists()) {
+          const pkg = await file.json()
+          results.push({ name: pkg.name, version: pkg.version, private: pkg.private })
+        }
+      }
+    }
+
+    return results
   },
 }

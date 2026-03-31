@@ -1,15 +1,16 @@
 /**
  * CI release script — replicates changesets/action@v1 behavior.
  *
- * Two paths:
+ * Three paths:
  * 1. Pending changesets → run `changeset version`, create/update a "Version Packages" PR
- * 2. No pending changesets → mint OIDC token, run `changeset publish`, push tags
+ * 2. No pending changesets, all versions published → nothing to do, exit 0
+ * 3. No pending changesets, unpublished versions → build, mint OIDC token, publish, push tags
  *
  * Uses the IO adapter (lib/ci-io.ts) for all side effects so the
  * orchestration logic is fully testable.
  */
 
-import { filterPendingChangesets, shouldPublish } from './lib/changesets'
+import { filterPendingChangesets, hasUnpublishedVersions, shouldPublish } from './lib/changesets'
 import { io } from './lib/ci-io'
 
 const RELEASE_BRANCH = 'changeset-release/main'
@@ -57,7 +58,9 @@ export async function versionAndCreatePR(): Promise<number> {
 }
 
 export async function publish(): Promise<number> {
-  io.log('No pending changesets. Publishing...')
+  io.log('Unpublished versions found. Building and publishing...')
+
+  await io.turboBuild()
 
   // Mint OIDC token for npm trusted publishing
   const oidcToken = (await io.mintOidcToken()).trim()
@@ -74,12 +77,23 @@ export async function main(): Promise<number> {
   const files = await io.scanDir('.changeset')
   const pending = filterPendingChangesets(files)
 
-  if (shouldPublish(pending)) {
-    return publish()
+  // Path 1: Pending changesets → version + PR
+  if (!shouldPublish(pending)) {
+    io.log(`Found ${pending.length} pending changeset(s).`)
+    return versionAndCreatePR()
   }
 
-  io.log(`Found ${pending.length} pending changeset(s).`)
-  return versionAndCreatePR()
+  // Path 2 or 3: Check npm for unpublished versions
+  const packages = await io.loadWorkspacePackages()
+  const unpublished = await hasUnpublishedVersions(packages, io.npmViewVersion)
+
+  if (!unpublished) {
+    io.log('All package versions already published. Nothing to do.')
+    return 0
+  }
+
+  // Path 3: Unpublished versions → build + publish
+  return publish()
 }
 
 if (import.meta.main) {

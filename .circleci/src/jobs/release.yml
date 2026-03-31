@@ -1,11 +1,10 @@
 docker:
   - image: cimg/base:current
 resource_class: small
+environment:
+  LEFTHOOK: "0"
 steps:
   - setup-mise
-  - run:
-      name: Build
-      command: bun turbo build
   - run:
       name: Install gh CLI
       command: |
@@ -17,4 +16,3 @@ steps:
   - run:
       name: Release
       command: bun scripts/ci-release.ts
-

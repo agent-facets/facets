@@ -1,8 +1,9 @@
 jobs:
-  - check
+  - check:
+      filters:
+        branches:
+          ignore: main
   - release:
-      requires:
-        - check
       context: release
       filters:
         branches:
