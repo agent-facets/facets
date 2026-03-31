@@ -1,10 +1,4 @@
 commands:
-    save-turbo-cache:
-        steps:
-            - save_cache:
-                key: v1-turbo-{{ checksum "bun.lock" }}-{{ .Branch }}-{{ .Revision }}
-                paths:
-                    - .turbo/cache
     setup-mise:
         steps:
             - checkout
@@ -28,11 +22,6 @@ commands:
                 paths:
                     - node_modules
                     - ~/.bun/install/cache
-            - restore_cache:
-                keys:
-                    - v1-turbo-{{ checksum "bun.lock" }}-{{ .Branch }}
-                    - v1-turbo-{{ checksum "bun.lock" }}
-                    - v1-turbo-
 jobs:
     check:
         docker:
@@ -48,7 +37,6 @@ jobs:
                 name: Check
             - store_test_results:
                 path: test-results
-            - save-turbo-cache
     release:
         docker:
             - image: cimg/base:current
@@ -69,7 +57,6 @@ jobs:
             - run:
                 command: bun scripts/ci-release.ts
                 name: Release
-            - save-turbo-cache
 version: 2.1
 workflows:
     ci:
