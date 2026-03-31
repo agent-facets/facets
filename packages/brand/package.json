@@ -2,7 +2,7 @@
   "name": "@agent-facets/brand",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ex-machina-co/facets",
+    "url": "https://github.com/agent-facets/facets",
     "directory": "packages/brand"
   },
   "version": "0.1.0",

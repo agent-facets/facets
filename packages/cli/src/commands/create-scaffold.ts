@@ -1,6 +1,6 @@
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { FACET_MANIFEST_FILE } from '@ex-machina/facet-core'
+import { FACET_MANIFEST_FILE } from '@agent-facets/core'
 
 // --- Types ---
 

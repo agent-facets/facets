@@ -1,8 +1,8 @@
 {
-  "name": "@ex-machina/facet-core",
+  "name": "@agent-facets/core",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ex-machina-co/facets",
+    "url": "https://github.com/agent-facets/facets",
     "directory": "packages/core"
   },
   "version": "0.1.1",

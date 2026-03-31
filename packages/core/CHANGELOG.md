@@ -1,4 +1,4 @@
-# @ex-machina/facet-core
+# @agent-facets/core
 
 ## 0.1.1
 

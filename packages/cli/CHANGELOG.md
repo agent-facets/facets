@@ -1,4 +1,4 @@
-# @ex-machina/facet
+# agent-facets
 
 ## 0.1.1
 
@@ -6,7 +6,7 @@
 
 - 5813b90: Small test for change set management in CI
 - Updated dependencies [5813b90]
-  - @ex-machina/facet-core@0.1.1
+  - @agent-facets/core@0.1.1
 
 ## 0.1.0
 
@@ -17,7 +17,7 @@
 ### Patch Changes
 
 - Updated dependencies [2243bbf]
-  - @ex-machina/facet-core@0.1.0
+  - @agent-facets/core@0.1.0
 
 ## 0.0.1
 
@@ -27,4 +27,4 @@
 - 74e3d25: Initial publishing
 - Updated dependencies [74e3d25]
 - Updated dependencies [74e3d25]
-  - @ex-machina/facet-core@0.0.1
+  - @agent-facets/core@0.0.1

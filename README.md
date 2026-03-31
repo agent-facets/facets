@@ -6,12 +6,19 @@ A package manager and toolkit for facets — modular skills, agents, commands, a
 
 Full documentation is available at [agentfacets.io](https://agentfacets.io).
 
+## Quickstart
+
+```shell
+# Install the CLI
+npm install -g agent-facets
+```
+
 ## Packages
 
 | Package                                   | NPM                        | Description                              |
 |-------------------------------------------|----------------------------|------------------------------------------|
-| [Facet CLI](packages/cli/README.md)       | `@ex-machina/facet`        | CLI tool for managing facets             |
-| [Facet Core](packages/core/README.md)     | `@ex-machina/facet-core`   | Schemas, loaders, and shared types       |
+| [Facet CLI](packages/cli/README.md)       | `agent-facets`        | CLI tool for managing facets             |
+| [Facet Core](packages/core/README.md)     | `@agent-facets/core`       | Schemas, loaders, and shared types       |
 
 ## Development
 

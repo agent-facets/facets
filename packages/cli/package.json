@@ -1,8 +1,8 @@
 {
-  "name": "@ex-machina/facet",
+  "name": "agent-facets",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ex-machina-co/facets",
+    "url": "https://github.com/agent-facets/facets",
     "directory": "packages/cli"
   },
   "version": "0.1.1",
@@ -18,7 +18,7 @@
   "dependencies": {
     "@agent-facets/brand": "workspace:*",
     "@bomb.sh/args": "0.3.1",
-    "@ex-machina/facet-core": "workspace:*",
+    "@agent-facets/core": "workspace:*",
     "@types/react": "19.2.14",
     "ink": "6.8.0",
     "ink-gradient": "4.0.0",
