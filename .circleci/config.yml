@@ -37,12 +37,11 @@ jobs:
     release:
         docker:
             - image: cimg/base:current
+        environment:
+            LEFTHOOK: "0"
         resource_class: small
         steps:
             - setup-mise
-            - run:
-                command: bun turbo build
-                name: Build
             - run:
                 command: |
                     curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
@@ -58,12 +57,13 @@ version: 2.1
 workflows:
     ci:
         jobs:
-            - check
+            - check:
+                filters:
+                    branches:
+                        ignore: main
             - release:
                 context: release
                 filters:
                     branches:
                         only: main
-                requires:
-                    - check
 
