@@ -72,7 +72,7 @@
       },
       {
         "type": "github",
-        "href": "https://github.com/ex-machina-co/facets"
+        "href": "https://github.com/agent-facets/facets"
       }
     ]
   },
@@ -81,7 +81,7 @@
   },
   "footer": {
     "socials": {
-      "github": "https://github.com/ex-machina-co/facets"
+      "github": "https://github.com/agent-facets/facets"
     }
   }
 }

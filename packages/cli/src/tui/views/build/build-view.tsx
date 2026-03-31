@@ -1,4 +1,4 @@
-import { type BuildProgress, runBuildPipeline, writeBuildOutput } from '@ex-machina/facet-core'
+import { type BuildProgress, runBuildPipeline, writeBuildOutput } from '@agent-facets/core'
 import { Box, Text, useApp } from 'ink'
 import { useCallback, useEffect, useState } from 'react'
 import type { Stage } from '../../components/stage-row.tsx'

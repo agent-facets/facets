@@ -6,7 +6,7 @@
 | -------------- | --------------------------------------------- |
 | Project Name   | facets                                        |
 | Project Slug   | `TODO: fill in after CircleCI project setup`  |
-| Git Remote URL | `git@github.com:ex-machina-co/facets.git`     |
+| Git Remote URL | `git@github.com:agent-facets/facets.git`       |
 | Default Branch | `main`                                        |
 
 </CircleCI>
@@ -15,7 +15,7 @@
 
 Turborepo monorepo with Bun workspaces. Two packages under `packages/`.
 
-### `packages/core` — `@ex-machina/facet-core`
+### `packages/core` — `@agent-facets/core`
 
 Facet manifest parsing, validation, and build pipeline. Entry point: `src/index.ts`
 
@@ -29,7 +29,7 @@ src/
 └── __tests__/      # Unit tests
 ```
 
-### `packages/cli` — `@ex-machina/facet`
+### `packages/cli` — `agent-facets`
 
 CLI binary (`facet`). Entry point: `src/cli.ts`
 
