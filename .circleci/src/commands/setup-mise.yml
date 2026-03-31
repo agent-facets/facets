@@ -20,8 +20,4 @@ steps:
       paths:
         - node_modules
         - ~/.bun/install/cache
-  - restore_cache:
-      keys:
-        - v1-turbo-{{ checksum "bun.lock" }}-{{ .Branch }}
-        - v1-turbo-{{ checksum "bun.lock" }}
-        - v1-turbo-
+
