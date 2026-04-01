@@ -13,6 +13,10 @@ export interface CreateOptions {
   commands: string[]
 }
 
+// --- Defaults ---
+
+export const DEFAULT_VERSION = '0.0.0'
+
 // --- Validation ---
 
 export const KEBAB_CASE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/

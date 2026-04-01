@@ -17,18 +17,18 @@
 
 ## 3. Create Wizard Relaxation — Research
 
-- [ ] 3.1 Explore: Review the create wizard's validation logic — what fields are currently required, how `canCreate` is gated, and where the "at least one asset" requirement is enforced
-- [ ] 3.2 Explore: Review the version field default value and where `0.1.0` is currently set — identify all places the default needs to change to `0.0.0`
-- [ ] 3.3 Propose: Approach for relaxing create requirements (name + description only, version defaults `0.0.0`, assets optional) while keeping the form unchanged
+- [x] 3.1 Explore: Review the create wizard's validation logic — what fields are currently required, how `canCreate` is gated, and where the "at least one asset" requirement is enforced
+- [x] 3.2 Explore: Review the version field default value and where `0.1.0` is currently set — identify all places the default needs to change to `0.0.0`
+- [x] 3.3 Propose: Approach for relaxing create requirements (name + description only, version defaults `0.0.0`, assets optional) while keeping the form unchanged
 
 ## 4. Create Wizard Relaxation — Implementation
 
-- [ ] 4.1 Implement: Change the create wizard so only name and description are required to complete — remove the "at least one asset" gate
-- [ ] 4.2 Implement: Change the version default from `0.1.0` to `0.0.0` in both the create wizard and any test fixtures
-- [ ] 4.3 Implement: Ensure scaffolded starter files contain no YAML front matter (verify current behavior, fix if needed)
-- [ ] 4.4 Implement: Add test for scaffolding a minimal project with only name and description (no assets)
-- [ ] 4.5 Implement: Add test for version defaulting to `0.0.0`
-- [ ] 4.6 Verify: Run `bun check` — all tests pass, types check, lint clean
+- [x] 4.1 Implement: Change the create wizard so only name and description are required to complete — remove the "at least one asset" gate
+- [x] 4.2 Implement: Change the version default from `0.1.0` to `0.0.0` in both the create wizard and any test fixtures
+- [x] 4.3 Implement: Ensure scaffolded starter files contain no YAML front matter (verify current behavior, fix if needed)
+- [x] 4.4 Implement: Add test for scaffolding a minimal project with only name and description (no assets)
+- [x] 4.5 Implement: Add test for version defaulting to `0.0.0`
+- [x] 4.6 Verify: Run `bun check` — all tests pass, types check, lint clean
 
 ## 5. Build Command Hardening — Research
 

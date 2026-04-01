@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { writeScaffold } from '../commands/create/index.ts'
+import { DEFAULT_VERSION } from '../commands/create-scaffold.ts'
 
 let testDir: string
 
@@ -51,7 +52,7 @@ describe('writeScaffold', () => {
     const files = await writeScaffold(
       {
         name: 'my-facet',
-        version: '0.1.0',
+        version: DEFAULT_VERSION,
         description: 'A test facet',
         skills: ['code-review', 'testing-guide'],
         agents: ['reviewer'],
@@ -70,7 +71,7 @@ describe('writeScaffold', () => {
     const manifestText = await Bun.file(join(dir, 'facet.json')).text()
     const manifest = JSON.parse(manifestText)
     expect(manifest.name).toBe('my-facet')
-    expect(manifest.version).toBe('0.1.0')
+    expect(manifest.version).toBe(DEFAULT_VERSION)
     expect(manifest.description).toBe('A test facet')
     expect(manifest.skills).toBeDefined()
     expect(manifest.skills['code-review']).toBeDefined()
@@ -99,7 +100,7 @@ describe('writeScaffold', () => {
     const files = await writeScaffold(
       {
         name: 'minimal',
-        version: '0.1.0',
+        version: DEFAULT_VERSION,
         description: '',
         skills: ['minimal'],
         agents: [],
@@ -120,12 +121,58 @@ describe('writeScaffold', () => {
     expect(manifest.commands).toBeUndefined()
   })
 
+  test('scaffolds minimal project with only name and description (no assets)', async () => {
+    const dir = await createFixtureDir('scaffold-minimal')
+    const files = await writeScaffold(
+      {
+        name: 'bare-bones',
+        version: DEFAULT_VERSION,
+        description: 'A minimal facet',
+        skills: [],
+        agents: [],
+        commands: [],
+      },
+      dir,
+    )
+
+    expect(files).toContain('facet.json')
+    expect(files).toHaveLength(1)
+
+    const manifestText = await Bun.file(join(dir, 'facet.json')).text()
+    const manifest = JSON.parse(manifestText)
+    expect(manifest.name).toBe('bare-bones')
+    expect(manifest.version).toBe(DEFAULT_VERSION)
+    expect(manifest.description).toBe('A minimal facet')
+    expect(manifest.skills).toBeUndefined()
+    expect(manifest.agents).toBeUndefined()
+    expect(manifest.commands).toBeUndefined()
+  })
+
+  test('version defaults to DEFAULT_VERSION (0.0.0)', async () => {
+    const dir = await createFixtureDir('scaffold-default-version')
+    await writeScaffold(
+      {
+        name: 'default-ver',
+        version: DEFAULT_VERSION,
+        description: 'Testing default version',
+        skills: ['example'],
+        agents: [],
+        commands: [],
+      },
+      dir,
+    )
+
+    const manifestText = await Bun.file(join(dir, 'facet.json')).text()
+    const manifest = JSON.parse(manifestText)
+    expect(manifest.version).toBe('0.0.0')
+  })
+
   test('scaffolded project passes build', async () => {
     const dir = await createFixtureDir('scaffold-buildable')
     await writeScaffold(
       {
         name: 'buildable',
-        version: '0.1.0',
+        version: DEFAULT_VERSION,
         description: 'A buildable facet',
         skills: ['helper'],
         agents: ['assistant'],
@@ -140,7 +187,7 @@ describe('writeScaffold', () => {
     expect(result.stdout).toContain('Built buildable')
 
     // Verify dist/ output exists — archive + build manifest
-    const distArchive = await Bun.file(join(dir, 'dist/buildable-0.1.0.facet')).exists()
+    const distArchive = await Bun.file(join(dir, `dist/buildable-${DEFAULT_VERSION}.facet`)).exists()
     expect(distArchive).toBe(true)
 
     const distManifest = await Bun.file(join(dir, 'dist/build-manifest.json')).exists()
