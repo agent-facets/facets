@@ -32,18 +32,18 @@
 
 ## 5. Build Command Hardening — Research
 
-- [ ] 5.1 Explore: Review the current build pipeline validation steps — what checks exist today, where new checks for front matter detection and empty file validation would be inserted
-- [ ] 5.2 Explore: Review the build command's error output and TUI — how errors are currently displayed, where the "suggest facet edit" message would be added
-- [ ] 5.3 Propose: Approach for adding front matter detection, empty file validation, and "suggest edit" messaging to the build pipeline
+- [x] 5.1 Explore: Review the current build pipeline validation steps — what checks exist today, where new checks for front matter detection and empty file validation would be inserted
+- [x] 5.2 Explore: Review the build command's error output and TUI — how errors are currently displayed, where the "suggest facet edit" message would be added
+- [x] 5.3 Propose: Approach for adding front matter detection, empty file validation, and "suggest edit" messaging to the build pipeline
 
 ## 6. Build Command Hardening — Implementation
 
-- [ ] 6.1 Implement: Add front matter detection to the build pipeline — fail with an error identifying the file if any content file contains YAML front matter
-- [ ] 6.2 Implement: Add empty file validation to the build pipeline — fail with an error if any content file is empty (zero bytes or whitespace only)
-- [ ] 6.3 Implement: Add "run `facet edit` to fix" suggestion to all build failure messages
-- [ ] 6.4 Implement: Add tests for build failing on files with front matter
-- [ ] 6.5 Implement: Add tests for build failing on empty content files
-- [ ] 6.6 Verify: Run `bun check` — all tests pass, types check, lint clean
+- [x] 6.1 Implement: Add front matter detection to the build pipeline — fail with an error identifying the file if any content file contains YAML front matter
+- [x] 6.2 Implement: Add empty file validation to the build pipeline — fail with an error if any content file is empty (zero bytes or whitespace only)
+- [x] 6.3 Implement: Add "run `facet edit` to fix" suggestion to all build failure messages
+- [x] 6.4 Implement: Add tests for build failing on files with front matter
+- [x] 6.5 Implement: Add tests for build failing on empty content files
+- [x] 6.6 Verify: Run `bun check` — all tests pass, types check, lint clean
 
 ## 7. Core Edit Logic — Research
 

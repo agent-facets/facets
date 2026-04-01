@@ -9,11 +9,12 @@ import {
   computeContentHash,
 } from './content-hash.ts'
 import { detectNamingCollisions } from './detect-collisions.ts'
+import { validateContentFiles } from './validate-content.ts'
 import { validateCompactFacets } from './validate-facets.ts'
 import { validatePlatformConfigs } from './validate-platforms.ts'
 
 export interface BuildProgress {
-  stage: string
+  stage: BuildStage
   status: 'running' | 'done' | 'failed'
 }
 
@@ -33,19 +34,33 @@ export interface BuildFailure {
   warnings: string[]
 }
 
+/** Stage names emitted by the build pipeline via the onProgress callback. */
+export const BUILD_STAGES = [
+  'Parsing manifest',
+  'Resolving prompts',
+  'Validating assets',
+  'Checking collisions',
+  'Validating platforms',
+  'Assembling archive',
+  'Writing output',
+] as const
+
+export type BuildStage = (typeof BUILD_STAGES)[number]
+
 /**
  * Runs the full build pipeline:
- * 1. Load manifest — read the facet manifest, parse JSON, validate schema, check constraints
- * 2. Resolve prompts — read prompt files at conventional paths for skills, agents, commands (also verifies files exist)
- * 3. Validate compact facets format — check name@version pattern
- * 4. Detect naming collisions — fail if same name used within an asset type
- * 5. Validate platform config — check known platform schemas, warn on unknown
- * 6. Assemble archive — collect entries, compute per-asset hashes, build deterministic tar, compute integrity hash, compress for delivery
+ * 1. Parse manifest — read facet.json, parse JSON, validate schema, check constraints
+ * 2. Resolve prompts — read prompt files at conventional paths (also verifies files exist)
+ * 3. Validate content — no front matter, no empty files
+ * 4. Check collisions — fail if same name used within an asset type
+ * 5. Validate platforms — check known platform schemas, warn on unknown
+ * 6. Assemble archive — collect entries, compute hashes, build tar, compress
  *
  * Returns the resolved manifest and archive data on success, or collected errors on failure.
  * Warnings are returned in both cases.
  *
  * An optional `onProgress` callback receives stage updates for UI display.
+ * The 'Writing output' stage is emitted by name but handled by the caller (BuildView).
  */
 export async function runBuildPipeline(
   rootDir: string,
@@ -53,46 +68,64 @@ export async function runBuildPipeline(
 ): Promise<BuildResult | BuildFailure> {
   const warnings: string[] = []
 
-  // Stage 1: Load manifest
-  onProgress?.({ stage: 'Validating manifest', status: 'running' })
+  // Stage 1: Parse manifest
+  onProgress?.({ stage: 'Parsing manifest', status: 'running' })
 
   const loadResult = await loadManifest(rootDir)
   if (!loadResult.ok) {
-    onProgress?.({ stage: 'Validating manifest', status: 'failed' })
+    onProgress?.({ stage: 'Parsing manifest', status: 'failed' })
     return { ok: false, errors: loadResult.errors, warnings }
   }
   const manifest = loadResult.data
 
+  onProgress?.({ stage: 'Parsing manifest', status: 'done' })
+
   // Stage 2: Resolve prompts (also serves as file existence verification)
+  onProgress?.({ stage: 'Resolving prompts', status: 'running' })
+
   const resolveResult = await resolvePrompts(manifest, rootDir)
   if (!resolveResult.ok) {
-    onProgress?.({ stage: 'Validating manifest', status: 'failed' })
+    onProgress?.({ stage: 'Resolving prompts', status: 'failed' })
     return { ok: false, errors: resolveResult.errors, warnings }
   }
 
-  // Stage 3: Validate compact facets format
-  const facetsErrors = validateCompactFacets(manifest)
-  if (facetsErrors.length > 0) {
-    onProgress?.({ stage: 'Validating manifest', status: 'failed' })
-    return { ok: false, errors: facetsErrors, warnings }
+  onProgress?.({ stage: 'Resolving prompts', status: 'done' })
+
+  // Stage 3: Validate assets (no front matter, no empty files)
+  onProgress?.({ stage: 'Validating assets', status: 'running' })
+
+  const contentErrors = validateContentFiles(resolveResult.data)
+  if (contentErrors.length > 0) {
+    onProgress?.({ stage: 'Validating assets', status: 'failed' })
+    return { ok: false, errors: contentErrors, warnings }
   }
 
-  // Stage 4: Detect naming collisions
+  onProgress?.({ stage: 'Validating assets', status: 'done' })
+
+  // Stage 4: Check naming collisions
+  onProgress?.({ stage: 'Checking collisions', status: 'running' })
+
   const collisionErrors = detectNamingCollisions(manifest)
-  if (collisionErrors.length > 0) {
-    onProgress?.({ stage: 'Validating manifest', status: 'failed' })
-    return { ok: false, errors: collisionErrors, warnings }
+  const facetsErrors = validateCompactFacets(manifest)
+  const checkErrors = [...collisionErrors, ...facetsErrors]
+  if (checkErrors.length > 0) {
+    onProgress?.({ stage: 'Checking collisions', status: 'failed' })
+    return { ok: false, errors: checkErrors, warnings }
   }
+
+  onProgress?.({ stage: 'Checking collisions', status: 'done' })
 
   // Stage 5: Validate platform config
+  onProgress?.({ stage: 'Validating platforms', status: 'running' })
+
   const platformResult = validatePlatformConfigs(manifest)
   if (platformResult.errors.length > 0) {
-    onProgress?.({ stage: 'Validating manifest', status: 'failed' })
+    onProgress?.({ stage: 'Validating platforms', status: 'failed' })
     return { ok: false, errors: platformResult.errors, warnings: [...warnings, ...platformResult.warnings] }
   }
   warnings.push(...platformResult.warnings)
 
-  onProgress?.({ stage: 'Validating manifest', status: 'done' })
+  onProgress?.({ stage: 'Validating platforms', status: 'done' })
 
   // Stage 6: Assemble archive, compute content hashes, and compress for delivery
   onProgress?.({ stage: 'Assembling archive', status: 'running' })

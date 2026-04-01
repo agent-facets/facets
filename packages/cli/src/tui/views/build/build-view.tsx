@@ -1,6 +1,12 @@
-import { type BuildProgress, runBuildPipeline, writeBuildOutput } from '@agent-facets/core'
+import {
+  BUILD_STAGES,
+  type BuildProgress,
+  type BuildStage,
+  runBuildPipeline,
+  writeBuildOutput,
+} from '@agent-facets/core'
 import { Box, Text, useApp } from 'ink'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Stage } from '../../components/stage-row.tsx'
 import { StageRow } from '../../components/stage-row.tsx'
 import { THEME } from '../../theme.ts'
@@ -24,54 +30,61 @@ export function BuildView({
   onFailure?: (errorCount: number) => void
 }) {
   const { exit } = useApp()
-  const [stages, setStages] = useState<Stage[]>([
-    { label: 'Validating manifest', status: 'pending' },
-    { label: 'Assembling archive', status: 'pending' },
-    { label: 'Writing output', status: 'pending' },
-  ])
+  const [stages, setStages] = useState<Stage[]>(BUILD_STAGES.map((label) => ({ label, status: 'pending' as const })))
   const [result, setResult] = useState<BuildViewResult | null>(null)
-  const [errors, setErrors] = useState<string[]>([])
   const [warnings, setWarnings] = useState<string[]>([])
 
-  const updateStage = useCallback((index: number, update: Partial<Stage>) => {
-    setStages((prev) => prev.map((s, i) => (i === index ? { ...s, ...update } : s)))
-  }, [])
+  // Deferred exit: set this to an Error to exit after the next render cycle,
+  // ensuring error/stage state updates are painted before Ink unmounts.
+  const [pendingExit, setPendingExit] = useState<Error | null>(null)
+
+  useEffect(() => {
+    if (pendingExit) {
+      exit(pendingExit)
+    }
+  }, [pendingExit, exit])
+
+  // Build a stable lookup from stage label to index
+  const stageIndexMap = useMemo(() => Object.fromEntries(BUILD_STAGES.map((label, i) => [label, i])), [])
+
+  const updateStage = useCallback(
+    (label: BuildStage, update: Partial<Stage>) => {
+      const index = stageIndexMap[label]
+      if (index !== undefined) {
+        setStages((prev) => prev.map((s, i) => (i === index ? { ...s, ...update } : s)))
+      }
+    },
+    [stageIndexMap],
+  )
 
   useEffect(() => {
     async function run() {
-      // Stages 1 & 2: Validate and assemble archive (pipeline handles both, emits progress)
-      const stageIndexMap: Record<string, number> = {
-        'Validating manifest': 0,
-        'Assembling archive': 1,
-      }
-
       const pipelineResult = await runBuildPipeline(rootDir, (progress: BuildProgress) => {
-        const index = stageIndexMap[progress.stage]
-        if (index !== undefined) {
-          updateStage(index, {
-            status: progress.status === 'running' ? 'running' : progress.status === 'done' ? 'done' : 'failed',
-          })
-        }
+        updateStage(progress.stage, {
+          status: progress.status === 'running' ? 'running' : progress.status === 'done' ? 'done' : 'failed',
+        })
       })
 
       setWarnings(pipelineResult.warnings)
 
       if (!pipelineResult.ok) {
-        setErrors(pipelineResult.errors.map((e) => `${e.path ? `${e.path}: ` : ''}${e.message}`))
+        const formatted = pipelineResult.errors.map((e) => e.message)
+        // Find the stage that failed and attach errors to it
+        setStages((prev) => prev.map((s) => (s.status === 'failed' ? { ...s, errors: formatted } : s)))
         onFailure?.(pipelineResult.errors.length)
-        exit(new Error('Build failed'))
+        // Defer exit so React renders the errors and failed stage status first
+        setPendingExit(new Error('Build failed'))
         return
       }
 
-      // Stage 3: Write output
-      updateStage(2, { status: 'running' })
+      // Writing output stage — handled here, not by the pipeline
+      updateStage('Writing output', { status: 'running' })
       try {
         await writeBuildOutput(pipelineResult, rootDir)
 
-        // Derive file list from asset hashes (these are the files inside the archive)
         const files = Object.keys(pipelineResult.assetHashes).sort()
 
-        updateStage(2, { status: 'done' })
+        updateStage('Writing output', { status: 'done' })
         setResult({
           name: pipelineResult.data.name,
           version: pipelineResult.data.version,
@@ -83,8 +96,8 @@ export function BuildView({
         onSuccess?.(pipelineResult.data.name, pipelineResult.data.version, files.length, pipelineResult.integrity)
         exit()
       } catch (err) {
-        updateStage(2, { status: 'failed', detail: String(err) })
-        exit(err instanceof Error ? err : new Error(String(err)))
+        updateStage('Writing output', { status: 'failed', detail: String(err) })
+        setPendingExit(err instanceof Error ? err : new Error(String(err)))
       }
     }
 
@@ -109,20 +122,6 @@ export function BuildView({
             <Text key={w} color={THEME.warning}>
               {' '}
               ⚠ {w}
-            </Text>
-          ))}
-        </Box>
-      )}
-
-      {errors.length > 0 && (
-        <Box flexDirection="column">
-          <Text bold color={THEME.warning}>
-            Errors:
-          </Text>
-          {errors.map((e) => (
-            <Text key={e} color={THEME.warning}>
-              {' '}
-              {e}
             </Text>
           ))}
         </Box>
