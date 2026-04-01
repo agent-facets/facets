@@ -8,9 +8,11 @@ import type { ValidationError } from '../types.ts'
 export function mapArkErrors(errors: InstanceType<typeof type.errors>): ValidationError[] {
   return errors.map((err) => ({
     path: err.path.join('.'),
-    message: err.message,
+    // For predicate errors (.narrow()), err.message includes the full data object.
+    // Use err.expected directly — it's our clean sentence from ctx.mustBe().
+    message: err.code === 'predicate' ? (err.expected ?? err.message) : err.message,
     expected: err.expected ?? 'unknown',
-    actual: err.actual ?? 'unknown',
+    actual: err.code === 'predicate' ? 'constraint not met' : (err.actual ?? 'unknown'),
   }))
 }
 

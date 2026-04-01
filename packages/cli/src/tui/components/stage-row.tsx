@@ -9,6 +9,7 @@ export interface Stage {
   label: string
   status: StageStatus
   detail?: string
+  errors?: string[]
 }
 
 const ICONS: Record<StageStatus, ReactNode> = {
@@ -24,10 +25,21 @@ const ICONS: Record<StageStatus, ReactNode> = {
 
 export function StageRow({ stage }: { stage: Stage }) {
   return (
-    <Box gap={1}>
-      {ICONS[stage.status]}
-      <Text dimColor={stage.status === 'pending'}>{stage.label}</Text>
-      {stage.detail && <Text color={THEME.hint}> — {stage.detail}</Text>}
+    <Box flexDirection="column">
+      <Box gap={1}>
+        {ICONS[stage.status]}
+        <Text dimColor={stage.status === 'pending'}>{stage.label}</Text>
+        {stage.detail && <Text color={THEME.hint}> — {stage.detail}</Text>}
+      </Box>
+      {stage.errors && stage.errors.length > 0 && (
+        <Box flexDirection="column" marginLeft={3}>
+          {stage.errors.map((e) => (
+            <Text key={e} color={THEME.warning}>
+              {e}
+            </Text>
+          ))}
+        </Box>
+      )}
     </Box>
   )
 }

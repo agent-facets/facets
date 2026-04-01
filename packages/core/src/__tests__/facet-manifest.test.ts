@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { type } from 'arktype'
-import { checkFacetManifestConstraints, type FacetManifest, FacetManifestSchema } from '../schemas/facet-manifest.ts'
+import { type FacetManifest, FacetManifestSchema } from '../schemas/facet-manifest.ts'
 
 // --- Valid manifests ---
 
@@ -88,9 +88,6 @@ describe('FacetManifestSchema — valid manifests', () => {
     }
     const result = FacetManifestSchema(input)
     expect(result).not.toBeInstanceOf(type.errors)
-    const data = result as FacetManifest
-    const errors = checkFacetManifestConstraints(data)
-    expect(errors).toHaveLength(0)
   })
 })
 
@@ -137,38 +134,29 @@ describe('FacetManifestSchema — invalid manifests', () => {
     const errors = result as InstanceType<typeof type.errors>
     expect(errors.some((e) => e.path.includes('bad'))).toBe(true)
   })
-})
 
-// --- Business-rule constraints ---
-
-describe('checkFacetManifestConstraints', () => {
-  test('no text assets → error', () => {
+  test('no text assets → schema error', () => {
     const input = {
       name: 'empty',
       version: '1.0.0',
       servers: { jira: '1.0.0' },
     }
     const result = FacetManifestSchema(input)
-    expect(result).not.toBeInstanceOf(type.errors)
-    const errors = checkFacetManifestConstraints(result as FacetManifest)
-    expect(errors).toHaveLength(1)
-    const firstError = errors[0]
-    expect(firstError).toBeDefined()
-    expect(firstError?.message).toContain('at least one text asset')
+    expect(result).toBeInstanceOf(type.errors)
+    const errors = result as InstanceType<typeof type.errors>
+    expect(errors.some((e) => e.message.includes('at least one text asset'))).toBe(true)
   })
 
-  test('selective facets entry with no asset selection → error', () => {
+  test('selective facets entry with no asset selection → schema error', () => {
     const input = {
       name: 'bad-selective',
       version: '1.0.0',
       facets: [{ name: 'other', version: '1.0.0' }],
     }
     const result = FacetManifestSchema(input)
-    expect(result).not.toBeInstanceOf(type.errors)
-    const errors = checkFacetManifestConstraints(result as FacetManifest)
-    const selectiveError = errors.find((e) => e.message.includes('at least one asset type'))
-    expect(selectiveError).toBeDefined()
-    expect(selectiveError?.path).toBe('facets[0]')
+    expect(result).toBeInstanceOf(type.errors)
+    const errors = result as InstanceType<typeof type.errors>
+    expect(errors.some((e) => e.message.includes('at least one asset type'))).toBe(true)
   })
 })
 
