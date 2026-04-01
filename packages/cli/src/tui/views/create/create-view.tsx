@@ -1,7 +1,7 @@
 import { Box, Text } from 'ink'
 import { useCallback, useEffect } from 'react'
 import { ASSET_LABELS, ASSET_TYPES } from '../../../commands/create/types.ts'
-import { isValidKebabCase } from '../../../commands/create-scaffold.ts'
+import { DEFAULT_VERSION, isValidKebabCase } from '../../../commands/create-scaffold.ts'
 import { AssetSection } from '../../components/asset-section.tsx'
 import { Button } from '../../components/button.tsx'
 import { EditableField } from '../../components/editable-field.tsx'
@@ -9,7 +9,7 @@ import { useFocusOrder } from '../../context/focus-order-context.ts'
 import { useFormState } from '../../context/form-state-context.ts'
 import { WizardLayout } from '../../layouts/wizard-layout.tsx'
 
-function computeFocusIds(form: ReturnType<typeof useFormState>['form'], hasAnyAsset: boolean): string[] {
+function computeFocusIds(form: ReturnType<typeof useFormState>['form']): string[] {
   const ids: string[] = ['field-name', 'field-description', 'field-version']
 
   for (const type of ASSET_TYPES) {
@@ -22,9 +22,7 @@ function computeFocusIds(form: ReturnType<typeof useFormState>['form'], hasAnyAs
     ids.push(`add-${type}`)
   }
 
-  if (hasAnyAsset) {
-    ids.push('create-btn')
-  }
+  ids.push('create-btn')
 
   return ids
 }
@@ -53,19 +51,17 @@ export function CreateView({ onSubmit }: { onSubmit: () => void }) {
   const versionReady = nameSettled && descriptionSettled
   const assetsReady = nameSettled && descriptionSettled && versionSettled
 
-  const totalAssets = form.assets.skill.items.length + form.assets.command.items.length + form.assets.agent.items.length
-  const hasAnyAsset = totalAssets > 0
-  const canCreate = assetsReady && hasAnyAsset
+  const canCreate = assetsReady
 
   // Recompute focus order
   useEffect(() => {
-    const ids = computeFocusIds(form, hasAnyAsset)
+    const ids = computeFocusIds(form)
     setFocusIds(ids)
 
     if (focusedId && !ids.includes(focusedId)) {
       focus(ids[0] ?? '')
     }
-  }, [form, hasAnyAsset, setFocusIds, focus, focusedId])
+  }, [form, setFocusIds, focus, focusedId])
 
   // Auto-focus name field on mount
   useEffect(() => {
@@ -97,9 +93,9 @@ export function CreateView({ onSubmit }: { onSubmit: () => void }) {
         field="version"
         label="Version"
         hint="SemVer N.N.N"
-        defaultValue="0.1.0"
+        defaultValue={DEFAULT_VERSION}
         dimmed={!versionReady}
-        validate={(v) => (/^\d+\.\d+\.\d+$/.test(v) ? undefined : 'Must be SemVer (e.g., 0.1.0)')}
+        validate={(v) => (/^\d+\.\d+\.\d+$/.test(v) ? undefined : `Must be SemVer (e.g., ${DEFAULT_VERSION})`)}
         onConfirm={() => focus(`add-${ASSET_TYPES[0]}`)}
       />
 
@@ -139,9 +135,7 @@ export function CreateView({ onSubmit }: { onSubmit: () => void }) {
               ? 'Enter a name to continue'
               : !descriptionConfirmed
                 ? 'Enter a description to continue'
-                : !versionConfirmed
-                  ? 'Enter a version to continue'
-                  : 'Add at least one skill, command, or agent'}
+                : 'Enter a version to continue'}
           </Text>
         </Box>
       )}
