@@ -351,6 +351,83 @@ describe('runBuildPipeline', () => {
   })
 })
 
+// --- Content validation ---
+
+describe('content validation', () => {
+  test('build fails on file with YAML front matter', async () => {
+    const dir = await createFixtureDir('front-matter')
+    await Bun.write(
+      join(dir, 'skills/review/SKILL.md'),
+      '---\nname: Review\ndescription: A review skill\n---\n# Review\nReview all code.',
+    )
+    await Bun.write(
+      join(dir, 'facet.json'),
+      JSON.stringify({
+        name: 'test-facet',
+        version: '1.0.0',
+        skills: {
+          review: { description: 'A review skill' },
+        },
+      }),
+    )
+
+    const result = await runBuildPipeline(dir)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.errors).toHaveLength(1)
+      expect(result.errors[0]?.path).toBe('skills.review')
+      expect(result.errors[0]?.message).toContain('front matter')
+      expect(result.errors[0]?.message).toContain('skills/review/SKILL.md')
+    }
+  })
+
+  test('build fails on empty content file', async () => {
+    const dir = await createFixtureDir('empty-file')
+    await Bun.write(join(dir, 'skills/empty/SKILL.md'), '')
+    await Bun.write(
+      join(dir, 'facet.json'),
+      JSON.stringify({
+        name: 'test-facet',
+        version: '1.0.0',
+        skills: {
+          empty: { description: 'An empty skill' },
+        },
+      }),
+    )
+
+    const result = await runBuildPipeline(dir)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.errors).toHaveLength(1)
+      expect(result.errors[0]?.path).toBe('skills.empty')
+      expect(result.errors[0]?.message).toContain('empty')
+    }
+  })
+
+  test('build fails on whitespace-only content file', async () => {
+    const dir = await createFixtureDir('whitespace-file')
+    await Bun.write(join(dir, 'agents/blank.md'), '   \n\n  \n')
+    await Bun.write(
+      join(dir, 'facet.json'),
+      JSON.stringify({
+        name: 'test-facet',
+        version: '1.0.0',
+        agents: {
+          blank: { description: 'A blank agent' },
+        },
+      }),
+    )
+
+    const result = await runBuildPipeline(dir)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.errors).toHaveLength(1)
+      expect(result.errors[0]?.path).toBe('agents.blank')
+      expect(result.errors[0]?.message).toContain('empty')
+    }
+  })
+})
+
 // --- Build output generation ---
 
 describe('writeBuildOutput', () => {

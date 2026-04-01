@@ -38,7 +38,9 @@ export const buildCommand: Command = {
       process.stdout.write(`✓ Built ${buildName} v${buildVersion} → dist/ (${artifactCount} assets, ${shortHash})\n`)
       return 0
     } catch {
-      process.stdout.write(`✗ Build failed — ${errorCount} error${errorCount !== 1 ? 's' : ''}\n`)
+      process.stdout.write(
+        `✗ Build failed — ${errorCount} error${errorCount !== 1 ? 's' : ''}. Run \`facet edit\` to fix.\n`,
+      )
       return 1
     }
   },
