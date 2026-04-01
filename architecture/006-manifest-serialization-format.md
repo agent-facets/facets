@@ -17,12 +17,12 @@ decision-makers: julian
 
 The facets system has several manifest types: the facet manifest (ADR-001), the server manifest (ADR-005), the build manifest (ADR-004), and the lockfile (ADR-003). All are machine-managed — the CLI creates and mutates them, authors edit `.md` content files rather than manifests directly. This ADR decides the serialization format for all project manifests.
 
-The format choice should optimize for machine reliability over human authoring ergonomics. The integrity model (ADR-004) introduces content hashing of build artifacts. Deterministic serialization simplifies hash computation and verification.
+The format choice should optimize for machine reliability over human authoring ergonomics.
 
 ## Decision Drivers
 
 * **Machine authoring is the primary path.** The CLI scaffolds and manages all manifests. Authors edit `.md` content files, not manifests directly. Format ergonomics for hand-editing are secondary to machine reliability.
-* **Deterministic serialization.** Content hashing requires that the same logical manifest produces the same bytes. `JSON.stringify` with sorted keys is trivially deterministic. YAML serializers do not guarantee stable output — key ordering, quoting style, and whitespace vary across serializers and versions.
+* **Serialization simplicity.** `JSON.stringify` is built-in and produces readable output. YAML serializers are complex, vary across implementations, and produce inconsistent output (quoting styles, whitespace). Note: neither JSON nor YAML guarantees stable key ordering after a parse-serialize roundtrip — runtime object key ordering is non-deterministic. Deterministic content hashing is a property of the build pipeline (ADR-004), not of the manifest file on disk.
 * **Parsing reliability.** The manifest is a contract — ambiguous parsing is unacceptable. YAML has implicit type coercion (`1.0.0` → number `1`, `no` → boolean `false`, `on` → boolean `true`) that creates subtle bugs. JSON has zero parsing ambiguity.
 * **Dependency minimization.** Fewer runtime dependencies reduce supply chain risk and build complexity. `JSON.parse` is built into every JavaScript runtime. YAML requires a third-party parser package.
 
@@ -36,7 +36,7 @@ The format choice should optimize for machine reliability over human authoring e
 
 ## Decision Outcome
 
-Chosen option: **JSON**, because it is the only format that scores well on all four decision drivers: zero parsing ambiguity, trivially deterministic serialization, zero runtime dependencies, and universal tooling support.
+Chosen option: **JSON**, because it is the only format that scores well on all four decision drivers: zero parsing ambiguity, serialization simplicity, zero runtime dependencies, and universal tooling support.
 
 All project manifests use JSON:
 
@@ -53,9 +53,7 @@ The manifest schemas defined in their respective ADRs are format-agnostic — th
 
 * Good, because zero parsing ambiguity — what you write is what you get
 * Good, because `JSON.parse()` is built into every JavaScript runtime — no parser dependency needed
-* Good, because `JSON.stringify(data, null, 2)` produces deterministic, human-readable output trivially
-* Good, because perfect roundtrip fidelity — parse then serialize produces identical bytes
-* Good, because the scaffold generator can use `JSON.stringify` to produce clean, readable output
+* Good, because `JSON.stringify(data, null, 2)` produces clean, readable output
 * Neutral, because JSON requires quoting all keys and string values — irrelevant since the CLI manages the manifest, not humans
 * Neutral, because JSON has no comment syntax — irrelevant since the manifest is machine-managed and the schema is documented in ADR-001
 
@@ -89,8 +87,7 @@ Standard data interchange format. Built into every JavaScript runtime.
 
 * Good, because zero parsing ambiguity
 * Good, because zero runtime dependencies
-* Good, because trivially deterministic serialization
-* Good, because perfect roundtrip fidelity
+* Good, because `JSON.stringify` produces clean, readable output
 * Good, because universal tooling support (every editor, every language, every API)
 * Neutral, because mandatory quoting of all keys and strings — not a concern when the CLI writes the file
 * Bad, because no comment syntax — not a concern when the manifest is machine-managed
