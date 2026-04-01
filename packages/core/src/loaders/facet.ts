@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { type } from 'arktype'
-import { checkFacetManifestConstraints, type FacetManifest, FacetManifestSchema } from '../schemas/facet-manifest.ts'
+import { type FacetManifest, FacetManifestSchema } from '../schemas/facet-manifest.ts'
 import type { Result, ValidationError } from '../types.ts'
 import { mapArkErrors, parseJson, readFile } from './validate.ts'
 
@@ -32,12 +32,6 @@ export async function loadManifest(dir: string): Promise<Result<FacetManifest>> 
   const validated = FacetManifestSchema(jsonResult.data)
   if (validated instanceof type.errors) {
     return { ok: false, errors: mapArkErrors(validated) }
-  }
-
-  // Phase 3: Business-rule constraints
-  const constraintErrors = checkFacetManifestConstraints(validated)
-  if (constraintErrors.length > 0) {
-    return { ok: false, errors: constraintErrors }
   }
 
   return { ok: true, data: validated }

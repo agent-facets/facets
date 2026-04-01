@@ -37,9 +37,11 @@ const ServerReference = type('string').or({ image: 'string' })
 // --- Main schema ---
 
 /**
- * The structural schema for the facet manifest — validates shape only.
- * Custom constraints (at least one text asset, selective entry must select at least one type)
- * are checked post-validation by checkFacetManifestConstraints().
+ * The facet manifest schema — validates structure and business constraints.
+ *
+ * Structural validation covers field types and shapes. Narrow constraints enforce:
+ * 1. At least one text asset (skills, agents, commands, or facets) must be present
+ * 2. Selective facets entries must include at least one asset type selection
  */
 export const FacetManifestSchema = type({
   name: 'string',
@@ -51,63 +53,35 @@ export const FacetManifestSchema = type({
   'commands?': type.Record('string', CommandDescriptor),
   'facets?': FacetsEntry.array(),
   'servers?': type.Record('string', ServerReference),
-})
-
-/** Inferred TypeScript type for a validated facet manifest */
-export type FacetManifest = typeof FacetManifestSchema.infer
-
-// --- Custom validation ---
-
-export interface FacetManifestError {
-  path: string
-  message: string
-  expected: string
-  actual: string
-}
-
-/**
- * Checks business-rule constraints that ArkType's structural validation cannot express:
- * 1. At least one text asset must be present (skills, agents, commands, or facets)
- * 2. Selective facets entries must include at least one asset type
- */
-export function checkFacetManifestConstraints(manifest: FacetManifest): FacetManifestError[] {
-  const errors: FacetManifestError[] = []
-
+}).narrow((data, ctx) => {
   // Constraint 1: at least one text asset
-  const hasSkills = manifest.skills && Object.keys(manifest.skills).length > 0
-  const hasAgents = manifest.agents && Object.keys(manifest.agents).length > 0
-  const hasCommands = manifest.commands && Object.keys(manifest.commands).length > 0
-  const hasFacets = manifest.facets && manifest.facets.length > 0
+  const hasSkills = data.skills && Object.keys(data.skills).length > 0
+  const hasAgents = data.agents && Object.keys(data.agents).length > 0
+  const hasCommands = data.commands && Object.keys(data.commands).length > 0
+  const hasFacets = data.facets && data.facets.length > 0
 
   if (!hasSkills && !hasAgents && !hasCommands && !hasFacets) {
-    errors.push({
-      path: '',
-      message: 'Manifest must include at least one text asset (skills, agents, commands, or facets)',
-      expected: 'at least one of: skills, agents, commands, facets',
-      actual: 'none present',
-    })
+    ctx.mustBe('Manifest must include at least one text asset (skills, agents, commands, or facets)')
   }
 
   // Constraint 2: selective facets entries must select at least one asset type
-  if (manifest.facets) {
-    for (let i = 0; i < manifest.facets.length; i++) {
-      const entry = manifest.facets[i]
+  if (data.facets) {
+    for (let i = 0; i < data.facets.length; i++) {
+      const entry = data.facets[i]
       if (typeof entry === 'object') {
         const hasSelectedSkills = entry.skills && entry.skills.length > 0
         const hasSelectedAgents = entry.agents && entry.agents.length > 0
         const hasSelectedCommands = entry.commands && entry.commands.length > 0
 
         if (!hasSelectedSkills && !hasSelectedAgents && !hasSelectedCommands) {
-          errors.push({
-            path: `facets[${i}]`,
-            message: 'Selective facets entry must include at least one asset type (skills, agents, or commands)',
-            expected: 'at least one of: skills, agents, commands',
-            actual: 'none selected',
-          })
+          ctx.mustBe('Selective facets entry must include at least one asset type (skills, agents, or commands)')
         }
       }
     }
   }
 
-  return errors
-}
+  return true
+})
+
+/** Inferred TypeScript type for a validated facet manifest */
+export type FacetManifest = typeof FacetManifestSchema.infer
