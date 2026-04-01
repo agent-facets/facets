@@ -2,7 +2,7 @@ import { type } from 'arktype'
 
 // --- Sub-schemas ---
 
-/** Skill descriptor — description is required, prompt resolved from skills/<name>.md */
+/** Skill descriptor — description is required, prompt resolved from skills/<name>/SKILL.md */
 const SkillDescriptor = type({
   description: 'string',
   'platforms?': type.Record('string', 'unknown'),

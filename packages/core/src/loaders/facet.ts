@@ -45,7 +45,8 @@ export async function loadManifest(dir: string): Promise<Result<FacetManifest>> 
 
 /**
  * A manifest with all prompts resolved to their string content.
- * File paths are derived from convention: `<type>/<name>.md`.
+ * File paths are derived from convention: skills use `skills/<name>/SKILL.md`,
+ * agents use `agents/<name>.md`, commands use `commands/<name>.md`.
  */
 export interface ResolvedFacetManifest {
   name: string
@@ -83,8 +84,9 @@ export interface ResolvedFacetManifest {
  * Resolves prompt content for all skills, agents, and commands by reading
  * files at conventional paths relative to the facet root directory.
  *
- * The convention is `<type>/<name>.md` — for example, a skill named
- * "code-review" resolves to `skills/code-review.md`.
+ * Skills use the Agent Skills directory convention: a skill named "code-review"
+ * resolves to `skills/code-review/SKILL.md`. Agents and commands use the flat
+ * file convention: `agents/<name>.md` and `commands/<name>.md`.
  *
  * This also serves as file existence verification for all three asset types —
  * if an expected file doesn't exist, resolution fails with an error identifying
@@ -96,7 +98,7 @@ export interface ResolvedFacetManifest {
 export async function resolvePrompts(manifest: FacetManifest, rootDir: string): Promise<Result<ResolvedFacetManifest>> {
   const errors: ValidationError[] = []
 
-  // Resolve skill prompts from skills/<name>.md
+  // Resolve skill prompts from skills/<name>/SKILL.md
   let resolvedSkills: ResolvedFacetManifest['skills'] | undefined
   if (manifest.skills) {
     resolvedSkills = {}
@@ -158,11 +160,13 @@ export async function resolvePrompts(manifest: FacetManifest, rootDir: string): 
 }
 
 /**
- * Resolves prompt content for a single asset by reading <type>/<name>.md.
+ * Resolves prompt content for a single asset by reading the file at its
+ * conventional path. Skills use `skills/<name>/SKILL.md` (Agent Skills
+ * directory convention). Agents and commands use `<type>/<name>.md`.
  * Returns the file content as a string, or a ValidationError if the file doesn't exist.
  */
 async function resolveAssetPrompt(assetType: string, name: string, rootDir: string): Promise<string | ValidationError> {
-  const relativePath = `${assetType}/${name}.md`
+  const relativePath = assetType === 'skills' ? `${assetType}/${name}/SKILL.md` : `${assetType}/${name}.md`
   const filePath = join(rootDir, relativePath)
   const file = Bun.file(filePath)
   const exists = await file.exists()

@@ -27,7 +27,7 @@ export function collectArchiveEntries(resolved: ResolvedFacetManifest, manifestC
 
   if (resolved.skills) {
     for (const [name, skill] of Object.entries(resolved.skills)) {
-      entries.push({ path: `skills/${name}.md`, content: skill.prompt })
+      entries.push({ path: `skills/${name}/SKILL.md`, content: skill.prompt })
     }
   }
 
