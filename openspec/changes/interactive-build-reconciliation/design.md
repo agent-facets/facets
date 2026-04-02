@@ -126,6 +126,64 @@ The following docs files need updating:
 - **TERMINOLOGY.md:** No conflict. `edit` fits within the existing "Authoring" lifecycle stage. No new terms needed.
 - **No other ADRs are affected.**
 
+## Implementation Notes (from prototyping and design iteration)
+
+These notes capture decisions made during implementation that refine or extend the original design. The delta specs should be updated to reflect these after implementation is complete.
+
+### Edit command UX model
+
+- **Two sequential phases**: reconciliation (if drift detected) → editing. Not a single mixed form. Reconciliation is a gate — you clear it, then you edit. If nothing to reconcile, skip straight to editing.
+- **Hard error on invalid manifest**: If the manifest fails schema parsing, show errors (same pattern as build) and exit. No attempt to fix — the user must repair `facet.json` manually or delete and re-create.
+- **Three edit states**: (1) manifest broken → hard error/exit, (2) manifest valid + drift → reconciliation then edit, (3) manifest valid + no drift → edit directly.
+
+### Reconciliation view
+
+- **All items shown at once** (not one-at-a-time wizard), grouped by category: new files on disk, missing from disk, front matter detected.
+- **Inline actions per item**: each item has two options to its right. Navigation: up/down between items, left/right between options, Enter to lock in.
+- **Visual states**: unfocused = normal text; focused = animated gradient on highlighted option; resolved = checkbox + static gradient on selected, dim on unselected. Can re-focus resolved items to change selection.
+- **Resolution options**: new files → "Add to manifest" / "Ignore for now"; missing → "Scaffold template" / "Remove from manifest"; front matter → "Strip front matter" / "Remove from manifest".
+- **All items must be resolved** before "Continue to edit" is enabled.
+
+### Asset interaction model (applies to both create and edit)
+
+- **Two-level navigation**: level 1 = up/down between assets; level 2 = field picker (name/description).
+- **Level 1**: focused asset shows `Enter edit · Del remove`. Pressing Enter enters level 2.
+- **Level 2**: `AssetFieldPicker` component renders the arrow to the left of either the name row or description row. `↑↓ select · Enter edit · Esc back`. Enter on name = inline text edit. Enter on description = opens `$EDITOR`.
+- **Descriptions always visible** below each asset name, truncated to ~50 chars, first line only with ellipsis if multiline.
+
+### Editor integration (description editing)
+
+- **Ink unmount → `$EDITOR` via `openInEditorSync` (spawnSync) → remount** pattern validated on create command.
+- **`WizardSnapshot`** is the single state object for surviving the unmount/remount cycle. Contains form state, focused ID, and optionally which asset/field was being edited.
+- After editor closes, user lands back on the asset at level 1 (not inside field picker).
+- `$VISUAL` → `$EDITOR` → `vi` fallback chain.
+
+### Build command improvements (implemented)
+
+- **Granular pipeline stages** shown in TUI: Parsing manifest, Resolving prompts, Validating assets, Checking collisions, Validating platforms, Assembling archive, Writing output. Each gets its own `StageRow`.
+- **Errors render inline under the failed stage** (not in a separate section). Deferred exit via `pendingExit` state ensures React paints errors before Ink unmounts.
+- **Predicate errors** (from Arktype `.narrow()`) formatted via `err.expected` for clean standalone sentences.
+- **`BUILD_STAGES` constant** and `BuildStage` type exported from core for type-safe stage references.
+
+### Schema/validation improvements (implemented)
+
+- **Manifest constraints moved into Arktype `.narrow()`**: "at least one text asset" and "selective entry must select at least one type" are now schema-level checks. `checkFacetManifestConstraints` eliminated.
+- **Front matter detection and empty file validation** added as build pipeline stage using DIY `hasFrontMatter()` with `yaml` package (not `gray-matter` or `front-matter` — both unmaintained with CVEs).
+
+### Confirmation page
+
+- Shows a **pretty manifest preview** — identity fields (name, description truncated, version) + asset sections (bullet list with name + truncated description). Not raw JSON, not categorized diffs, not file operation lists.
+- "Apply" / "Go back" buttons.
+
+## Spec Updates Needed (post-implementation)
+
+The following delta specs should be revisited after implementation to reflect design refinements:
+
+1. **`specs/authoring__facets/spec.md`**: Update reconciliation requirements to reflect the all-at-once UI model, inline actions, resolution options, and the two-phase (reconciliation → editing) flow. Add requirement for description editing via `$EDITOR`. Update confirmation summary requirement to reflect manifest preview design.
+2. **`specs/cli/spec.md`**: Add edit command registration details including the loading screen stages and hard error behavior on invalid manifests.
+3. **Build command spec requirements**: Update to reflect granular pipeline stages, inline error display, and the `BUILD_STAGES` constant.
+4. **ADR-006**: Already updated during implementation to remove false claims about deterministic serialization and key ordering.
+
 ## Open Questions
 
-_None remaining — all questions resolved during design._
+_None remaining — all questions resolved during design and implementation._

@@ -2,7 +2,7 @@
 
 ### Requirement: Authors can edit a facet project interactively
 
-The system SHALL provide an interactive editing command that serves as the full authoring workbench for facet manifests. The editing command SHALL combine all capabilities of the scaffolding wizard (identity editing, asset creation, asset removal) with automatic reconciliation of disk contents against the manifest. The editing command SHALL scan `skills/*/SKILL.md` for skills and `agents/*.md` / `commands/*.md` for agents and commands to detect discrepancies.
+The system SHALL provide an interactive editing command that serves as the full authoring workbench for facet manifests. The editing command SHALL combine all capabilities of the scaffolding wizard (identity editing, asset creation, asset removal) with automatic reconciliation of disk contents against the manifest. The editing command SHALL scan conventional **asset** directories to detect discrepancies between disk contents and the manifest. If the manifest is invalid, the editing command SHALL display errors and exit. If drift is detected, the editing command SHALL present a reconciliation phase before proceeding to editing.
 
 #### Scenario: Author edits facet identity fields
 
@@ -43,7 +43,7 @@ The system SHALL provide an interactive editing command that serves as the full 
 
 ### Requirement: Edit detects new files on disk and offers to add them
 
-The system SHALL scan conventional directories during edit and detect `.md` files (or `SKILL.md` for skills) that are not declared in the manifest. Undeclared files SHALL be presented as a batch selection list. For each file the author selects, a description SHALL be required before the addition is accepted. Files the author does not select SHALL remain on disk but SHALL NOT be added to the manifest.
+The system SHALL scan conventional **asset** directories during edit and detect content files that are not declared in the manifest. Undeclared files SHALL be presented in an all-at-once list with inline action options per item. All items SHALL be resolved before proceeding to editing. For each file the author selects, a description SHALL be required before the addition is accepted. Files the author does not select SHALL remain on disk but SHALL NOT be added to the manifest.
 
 #### Scenario: New skill directory discovered
 
@@ -181,7 +181,7 @@ The system SHALL parse YAML front matter from any file encountered during edit �
 
 ### Requirement: Edit is transactional with confirmation
 
-All changes during an edit session SHALL be queued — nothing SHALL be written to disk or manifest until the author explicitly confirms. Before confirmation, the system SHALL display a summary page showing all deltas: identity field changes, files to be added, removed, renamed, stripped of front matter, scaffolded, and manifest entries changed. The author SHALL be able to exit at any point before confirmation with no changes applied.
+All changes during an edit session SHALL be queued — nothing SHALL be written to disk or manifest until the author explicitly confirms. Before confirmation, the system SHALL display a manifest preview showing identity fields (name, description, version) and **asset** sections (name and truncated description per **asset**). The author SHALL be able to confirm ("Apply") or go back to editing. The author SHALL be able to exit at any point before confirmation with no changes applied.
 
 #### Scenario: Author confirms changes
 
@@ -284,7 +284,7 @@ The wizard SHALL also allow the author to manage assets (skills, commands, and a
 - Assets of different types MAY share the same name
 - The first asset added to each type SHOULD default its name to the facet name as a suggestion
 
-The wizard SHALL allow the author to complete with only a name and description — assets are optional.
+The wizard SHALL require the author to add at least one **asset** before completing. Name, description, and at least one **asset** are all required.
 
 All fields SHALL remain editable throughout the wizard — the author SHALL be able to go back and change any previously entered value.
 
@@ -294,7 +294,7 @@ The wizard SHALL provide an exit confirmation mechanism that prevents accidental
 
 Upon confirmation, the system SHALL create a project directory containing a valid manifest and named starter files for each asset the author specified, with each starter file containing template content that guides authors on what belongs in each section. Skill starter files SHALL be created at `skills/<name>/SKILL.md`. Agent and command starter files SHALL be created at `agents/<name>.md` and `commands/<name>.md` respectively. All starter files SHALL contain no YAML front matter.
 
-If assets are provided, the scaffolded project SHALL be immediately buildable — running the build command on a freshly scaffolded project SHALL succeed with no errors. If no assets are provided, the manifest SHALL contain only identity fields.
+The scaffolded project SHALL be immediately buildable — running the build command on a freshly scaffolded project SHALL succeed with no errors.
 
 #### Scenario: Author scaffolds a project with named skills
 
@@ -302,12 +302,6 @@ If assets are provided, the scaffolded project SHALL be immediately buildable �
 - **THEN** the system SHALL create a project directory containing a manifest with the provided identity fields and skill descriptors
 - **AND** starter files SHALL be created at `skills/viper-planning/SKILL.md` and `skills/viper-execution-rules/SKILL.md`
 - **AND** the manifest SHALL reference all starter files correctly
-
-#### Scenario: Author scaffolds a minimal project with only name and description
-
-- **WHEN** the author runs the create wizard, provides a name "code-review" and a description, and adds no assets
-- **THEN** the system SHALL create a project directory containing a manifest with name, description, and version `0.0.0`
-- **AND** no asset directories or files SHALL be created
 
 #### Scenario: Author scaffolds a minimal project accepting the default skill name
 

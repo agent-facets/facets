@@ -8,6 +8,7 @@ export const buildCommand: Command = {
   description: 'Build a facet from the current directory',
   run: async (args: string[]): Promise<number> => {
     const rootDir = args[0] || process.cwd()
+    const displayDir = args[0] || '.'
 
     // Track result for stdout summary after Ink exits
     let buildName = ''
@@ -35,11 +36,13 @@ export const buildCommand: Command = {
       await instance.waitUntilExit()
       // Ink has unmounted — print stdout summary for scroll-back
       const shortHash = integrity.length > 20 ? `${integrity.slice(0, 20)}...` : integrity
-      process.stdout.write(`✓ Built ${buildName} v${buildVersion} → dist/ (${artifactCount} assets, ${shortHash})\n`)
+      process.stdout.write(
+        `✓ Built ${buildName} v${buildVersion} → ${displayDir}/dist/ (${artifactCount} assets, ${shortHash})\n`,
+      )
       return 0
     } catch {
       process.stdout.write(
-        `✗ Build failed — ${errorCount} error${errorCount !== 1 ? 's' : ''}. Run \`facet edit\` to fix.\n`,
+        `✗ Build failed — ${errorCount} error${errorCount !== 1 ? 's' : ''}. Run \`facet edit${args[0] ? ` ${displayDir}` : ''}\` to fix.\n`,
       )
       return 1
     }

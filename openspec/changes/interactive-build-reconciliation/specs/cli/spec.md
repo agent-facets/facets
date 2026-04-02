@@ -18,3 +18,15 @@ The system SHALL register an `edit` command that launches the interactive editin
 
 - **WHEN** a user runs the CLI with `edit ./my-facet`
 - **THEN** the system SHALL execute the editing command against the `./my-facet` directory
+
+#### Scenario: Edit command exits on invalid manifest
+
+- **WHEN** a user runs the CLI with `edit` in a directory with an invalid manifest
+- **THEN** the system SHALL display the validation errors
+- **AND** the system SHALL exit without launching the interactive interface
+
+#### Scenario: Edit command skips reconciliation when no drift
+
+- **WHEN** a user runs the CLI with `edit` in a directory where the manifest matches disk contents
+- **THEN** the system SHALL skip the reconciliation phase
+- **AND** the system SHALL proceed directly to the editing phase

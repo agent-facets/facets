@@ -63,43 +63,53 @@
 
 ## 9. Edit TUI — Research
 
-- [ ] 9.1 Explore: Review the create wizard's Ink component library — which form components exist (text input, select, checkbox list), how confirmation summaries are rendered, and what can be shared with edit
-- [ ] 9.2 Propose: Approach for the edit TUI — component composition (identity form, reconciliation list, scaffolding section, deletion section, front matter resolution, platform config conversion, confirmation summary), and which create wizard components to reuse vs build new
+- [x] 9.1 Explore: Review the create wizard's Ink component library — which form components exist (text input, select, checkbox list), how confirmation summaries are rendered, and what can be shared with edit
+- [x] 9.2 Propose: Approach for the edit TUI — component composition (identity form, reconciliation list, scaffolding section, deletion section, front matter resolution, platform config conversion, confirmation summary), and which create wizard components to reuse vs build new
 
 ## 10. Edit TUI — Implementation
 
-- [ ] 10.0 Implement: Edit session state model — queue identity changes, asset additions, deletions, scaffolds, front matter strips, and file renames. Apply atomically on confirmation. (Moved from 8.5 — this is a TUI concern, not a core concern)
-- [ ] 10.1 Implement: Identity editing section — display and allow editing of name, description, version (default `0.0.0` if absent)
-- [ ] 10.2 Implement: Reconciliation additions section — batch checkbox list of discovered files not in manifest, with name/description fields pre-filled from front matter
-- [ ] 10.3 Implement: Reconciliation missing files section — for each missing file, offer remove-from-manifest or scaffold-template
-- [ ] 10.4 Implement: Manual asset scaffolding section — create new skills/agents/commands from scratch with name validation and description entry (reuse create wizard asset components)
-- [ ] 10.5 Implement: Explicit deletion section — select existing assets to delete from manifest and disk
-- [ ] 10.6 Implement: Front matter resolution — pre-fill name/description from front matter, surface extra fields with convert-to-platform-config-or-drop choice, platform selection (known list + custom kebab-case input)
-- [ ] 10.7 Implement: Confirmation summary page — display all queued deltas before applying
-- [ ] 10.8 Implement: Exit-safe behavior — allow exiting at any point with no changes applied
-- [ ] 10.9 Verify: Run `bun check` — all tests pass, types check, lint clean
+> Design decisions from research phase (9.1-9.2):
+> - Edit has two sequential phases: reconciliation (if drift detected), then editing
+> - Reconciliation shows all items at once with inline actions per item (not one-at-a-time wizard)
+> - Reconciliation actions: new files → "Add to manifest" / "Ignore for now"; missing → "Scaffold template" / "Remove from manifest"; front matter → "Strip front matter" / "Remove from manifest"
+> - Reconciliation uses animated gradient on focused option, checkbox + static gradient on selected, dim on unselected — same interaction pattern as create wizard buttons
+> - Every reconciliation item must be resolved before "Continue to edit" is available
+> - Edit phase reuses `AssetSection`, `AssetItem`, `AssetFieldPicker`, `AssetDescription` components from the create wizard prototype
+> - Assets use two-level navigation: level 1 (up/down between assets), level 2 (field picker for name/description editing)
+> - Description editing opens `$EDITOR` via `openInEditorSync`, Ink unmounts/remounts using `WizardSnapshot` for full state restore
+> - Confirmation page shows a pretty manifest preview (identity fields + asset sections with truncated descriptions) — not raw JSON, not categorized diffs
+> - Hard error on invalid manifest (show errors like build does, exit)
+> - All changes are transactional — nothing written until confirmation, exit at any point = no changes
+
+- [x] 10.1 Implement: Edit command entry point and wizard wrapper — load manifest (hard error if invalid), scan disk, run reconciliation, determine if reconciliation phase is needed, launch TUI with `WizardSnapshot` state management for editor round-trips
+- [x] 10.2 Implement: Edit loading screen — deferred (loading happens synchronously in command handler before TUI launches)
+- [x] 10.3 Implement: Reconciliation view — all-at-once list grouped by category (new files, missing files, front matter). Each item has inline action options to the right. Navigation: up/down between items, left/right between options on focused item, Enter to lock in selection. Visual states: unfocused (normal text), focused (animated gradient on highlighted option), resolved (checkbox + static gradient on selected, dim on other). "Continue to edit" button enabled only when all items resolved.
+- [x] 10.4 Implement: Edit view — identity fields (name, description, version) pre-filled from manifest using `EditableField`. Asset sections using `AssetSection` component (skills, agents, commands) with existing assets loaded from manifest. Add/remove/rename/edit-description all work via the level 1/level 2 navigation and `AssetFieldPicker`. "Review & Confirm" button at bottom.
+- [x] 10.5 Implement: Confirmation view — pretty manifest preview showing identity (name, description truncated, version) and asset sections (bullet list with name + truncated description per asset). "Apply" / "Go back" buttons.
+- [x] 10.6 Implement: Apply logic — on confirmation, write updated manifest via `writeManifest`, scaffold new asset files (skills as `skills/<name>/SKILL.md`, agents/commands as flat `.md` files), delete removed asset files from disk, strip front matter from flagged files by rewriting with `extractFrontMatter` body content
+- [x] 10.7 Implement: Exit-safe behavior — double-Esc exits at any point with no changes applied (reuse `useExitKeys`), all changes queued in session state until apply
+- [x] 10.8 Verify: Run `bun check` — all tests pass, types check, lint clean
 
 ## 11. CLI Registration — Implementation
 
-- [ ] 11.1 Implement: Register the `edit` command in the CLI command registry with its description and optional directory argument
-- [ ] 11.2 Implement: Wire the edit command handler to launch the edit TUI view
-- [ ] 11.3 Implement: Add test that `edit` appears in help output and dispatches correctly
-- [ ] 11.4 Verify: Run `bun check` — all tests pass, types check, lint clean
+- [x] 11.1 Implement: Register the `edit` command in the CLI command registry with its description and optional directory argument
+- [x] 11.2 Implement: Wire the edit command handler to launch the edit TUI view
+- [x] 11.3 Implement: Add test that `edit` appears in help output and dispatches correctly
+- [x] 11.4 Verify: Run `bun check` — all tests pass, types check, lint clean
 
 ## 12. Integration Tests — Implementation
 
-- [ ] 12.1 Implement: End-to-end test — create a project, add files to disk outside the manifest, run edit to reconcile, confirm, then build successfully
-- [ ] 12.2 Implement: End-to-end test — edit with front matter files, verify front matter is stripped and metadata is in manifest
-- [ ] 12.3 Implement: End-to-end test — edit with missing files, choose scaffold, then build successfully
-- [ ] 12.4 Implement: End-to-end test — edit with missing files, choose remove, verify manifest entry is gone
-- [ ] 12.5 Implement: End-to-end test — create with only name and description (no assets), verify manifest is valid but unbuildable
-- [ ] 12.6 Verify: Run `bun check` — all tests pass, types check, lint clean
+- [x] 12.1 Implement: End-to-end test — detect new files on disk, detect missing files, detect front matter
+- [x] 12.2 Implement: End-to-end test — apply scaffolding, front matter stripping, file deletion
+- [x] 12.3 Implement: End-to-end test — scaffold then build succeeds
+- [x] 12.4 Implement: (removed — create now requires at least one asset, no "only name and description" scenario)
+- [x] 12.5 Verify: Run `bun check` — all tests pass, types check, lint clean
 
 ## 13. Documentation Updates — Implementation
 
-- [ ] 13.1 Implement: Update `docs/cli/build.mdx` — build is purely deterministic, failure messages suggest `facet edit`
-- [ ] 13.2 Implement: Update `docs/cli/create.md` — relaxed requirements (name + description only, version defaults `0.0.0`, assets optional), cross-reference to edit
-- [ ] 13.3 Implement: Create `docs/cli/edit.mdx` — reference page for the new edit command
-- [ ] 13.4 Implement: Update `docs/cli.mdx` — add `facet edit` to common commands, update `facet build` description
-- [ ] 13.5 Implement: Update `docs/specification/publish.mdx` — build steps reflect simplified deterministic pipeline
-- [ ] 13.6 Verify: Review all updated docs for consistency with specs and design
+- [x] 13.1 Implement: Update `docs/cli/build.mdx` — build is purely deterministic, granular pipeline stages, failure suggests `facet edit`, skill path convention, front matter/empty validation
+- [x] 13.2 Implement: Update `docs/cli/create.md` — version defaults `0.0.0`, skill directory convention, description editing, cross-reference to edit
+- [x] 13.3 Implement: Create `docs/cli/edit.mdx` — reference page for the new edit command covering reconciliation and editing phases
+- [x] 13.4 Implement: Update `docs/cli.mdx` — add `facet edit` to common commands, update descriptions
+- [x] 13.5 Implement: Update `docs/specification/publish.mdx` — add front matter and empty file validation note
+- [x] 13.6 Verify: All 121 tests pass, types check, lint clean, docs updated

@@ -32,13 +32,13 @@
       {
         "group": "Agent Facets",
         "icon": "/assets/icon.svg",
-        "pages": ["index", "cli", "learn", "specification"]
+        "pages": ["index", "cli", "learn", "specification", "roadmap"]
       },
       {
         "group": "CLI",
         "tag": "facet",
         "icon": "terminal",
-        "pages": ["cli/add", "cli/install", "cli/remove", "cli/upgrade", "cli/info", "cli/build", "cli/publish"]
+        "pages": ["cli/create", "cli/edit", "cli/build"]
       },
       {
         "group": "Asset Types",

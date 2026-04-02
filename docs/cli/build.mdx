@@ -11,37 +11,25 @@ tag: facet build
 facet build [directory]
 ```
 
-Validates and builds the facet in the specified directory (defaults to the current directory).
+Validates and builds the facet in the specified directory (defaults to the current directory). The build command is purely deterministic — it never modifies the manifest and behaves identically in all environments.
 
 ## What it does
 
 The build command runs a validation pipeline, assembles an archive, and computes content hashes:
 
-1. **Load manifest** — reads `facet.json`, parses JSON, validates against the schema, checks business-rule constraints (at least one text asset, etc.)
-2. **Resolve prompts** — reads prompt files at conventional paths (`<type>/<name>.md`) for skills, agents, and commands. If an expected file doesn't exist, the build fails with an error identifying the asset and the missing file path.
-3. **Validate compact facets** — checks that compact entries in the `facets` section match the `name@version` format.
-4. **Detect naming collisions** — fails if the same name is used more than once within the same asset type (e.g., two skills both named "review"). Assets of different types may share a name.
-5. **Validate platform config** — validates platform configuration for known platforms (e.g., `opencode`, `claude-code`). Unknown platforms produce a warning but do not fail the build.
-6. **Assemble archive** — collects the manifest and all resolved text assets into a deterministic tar archive, computes the integrity hash from the uncompressed tar bytes, then compresses it with gzip for the `.facet` file. Also computes SHA-256 content hashes for each individual asset.
+1. **Parse manifest** — reads `facet.json`, parses JSON, validates against the schema including business-rule constraints (at least one text asset, etc.)
+2. **Resolve prompts** — reads prompt files at conventional paths. Skills use `skills/<name>/SKILL.md` (Agent Skills directory convention). Agents use `agents/<name>.md`. Commands use `commands/<name>.md`. If an expected file doesn't exist, the build fails.
+3. **Validate assets** — checks that all content files are non-empty and contain no YAML front matter. The manifest is the single source of truth for metadata — content files must be pure markdown.
+4. **Check collisions** — validates compact facets entries match the `name@version` format. Fails if the same name is used more than once within the same asset type.
+5. **Validate platforms** — validates platform configuration for known platforms (e.g., `opencode`, `claude-code`). Unknown platforms produce a warning but do not fail the build.
+6. **Assemble archive** — collects the manifest and all resolved text assets into a tar archive, computes the integrity hash, then compresses it with gzip for the `.facet` file.
 
 On success, the build writes output to `dist/`:
 
-- `dist/<name>-<version>.facet` — a gzip-compressed tar archive containing the manifest and all resolved text assets
-- `dist/build-manifest.json` — records the facet format version, archive filename, integrity hash (`sha256:<hex>`), and per-asset content hashes
+- `dist/<name>-<version>.facet` — a gzip-compressed tar archive
+- `dist/build-manifest.json` — records the archive filename, integrity hash, and per-asset content hashes
 
-The build manifest format:
-
-```json
-{
-  "facetVersion": 1,
-  "archive": "<name>-<version>.facet",
-  "integrity": "sha256:<hex>",
-  "assets": {
-    "facet.json": "sha256:<hex>",
-    "skills/<name>.md": "sha256:<hex>"
-  }
-}
-```
+If the build fails, errors are displayed inline under the failed pipeline stage, with a suggestion to run `facet edit` to fix the issues.
 
 ## Exit codes
 

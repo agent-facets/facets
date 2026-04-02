@@ -14,13 +14,30 @@
       "dependsOn": []
     },
     "check": {
-      "dependsOn": ["//#lint", "types", "test", "//#types"]
+      "dependsOn": [
+        "//#lint",
+        "types",
+        "test",
+        "//#types",
+        "//#test:scripts",
+        "//#docs:validate",
+        "//#docs:broken-links"
+      ]
+    },
+    "//#test:scripts": {
+      "inputs": ["scripts/**"]
     },
     "//#types": {
       "inputs": ["$TURBO_DEFAULT$", "!$TURBO_ROOT$/.changeset/**"]
     },
     "//#lint": {
       "inputs": ["$TURBO_DEFAULT$", "!$TURBO_ROOT$/.changeset/**"]
+    },
+    "//#docs:validate": {
+      "inputs": ["docs/**"]
+    },
+    "//#docs:broken-links": {
+      "inputs": ["docs/**"]
     }
   },
   "ui": "tui"

@@ -18,8 +18,6 @@ export function AssetSection({
   dimmed,
   validate,
   onEditDescription,
-  resumeEditItem,
-  resumeEditField,
 }: {
   section: AssetSectionKey
   label: string
@@ -27,8 +25,6 @@ export function AssetSection({
   dimmed?: boolean
   validate?: (value: string) => string | undefined
   onEditDescription?: (section: AssetSectionKey, name: string) => void
-  resumeEditItem?: string
-  resumeEditField?: 'name' | 'description'
 }) {
   const { form, addAsset, removeAsset, renameAsset, setAssetAdding, setAssetEditing } = useFormState()
   const { items, descriptions, editing, adding } = form.assets[section]
@@ -36,10 +32,7 @@ export function AssetSection({
   const { focusedId, focus } = useFocusOrder()
   const [inputValue, setInputValue] = useState('')
   const [error, setError] = useState('')
-
-  // Which asset is in level-2 field picker mode (null = none)
-  // Initialize from resumeEdit if we're coming back from an editor session
-  const [selectedItem, setSelectedItem] = useState<string | null>(resumeEditItem ?? null)
+  const [selectedItem, setSelectedItem] = useState<string | null>(null)
 
   const startAdding = () => {
     setAssetAdding(section, true)
@@ -55,13 +48,24 @@ export function AssetSection({
     setMode('field-revision')
   }
 
-  const closeInput = () => {
+  const closeInput = (focusTarget?: string | false) => {
     setAssetAdding(section, false)
     setAssetEditing(section, undefined)
     setInputValue('')
     setError('')
-    setMode('form-navigation')
-    focus(`add-${section}`)
+    if (focusTarget !== false) {
+      setMode('form-navigation')
+      focus(focusTarget ?? `add-${section}`)
+    }
+  }
+
+  const handleFieldChoice = (name: string, field: AssetField) => {
+    setSelectedItem(null)
+    if (field === 'name') {
+      startEditing(name)
+    } else {
+      onEditDescription?.(section, name)
+    }
   }
 
   const handleRemove = (name: string) => {
@@ -74,15 +78,6 @@ export function AssetSection({
       focus(`item-${section}-${index - 1}`)
     } else {
       focus(`add-${section}`)
-    }
-  }
-
-  const handleFieldChoice = (name: string, field: AssetField) => {
-    setSelectedItem(null)
-    if (field === 'name') {
-      startEditing(name)
-    } else {
-      onEditDescription?.(section, name)
     }
   }
 
@@ -100,16 +95,20 @@ export function AssetSection({
         const isFocusedItem = focusedId === itemId
         const description = descriptions[item] ?? `A ${item} ${section}`
 
-        // Level 2: field picker for this item (renders name + description inline)
+        // Field picker (entered via ↓ during name editing)
         if (selectedItem === item) {
           return (
             <AssetFieldPicker
               key={itemId}
               name={item}
               description={truncateDescription(description)}
-              initialField={resumeEditItem === item ? resumeEditField : undefined}
+              initialField="description"
               onChoose={(field) => handleFieldChoice(item, field)}
-              onCancel={() => setSelectedItem(null)}
+              onCancel={() => {
+                setSelectedItem(null)
+                setMode('form-navigation')
+                focus(itemId)
+              }}
             />
           )
         }
@@ -129,9 +128,13 @@ export function AssetSection({
                 onError={setError}
                 onSubmit={(newName) => {
                   renameAsset(section, item, newName)
-                  closeInput()
+                  closeInput(itemId)
                 }}
-                onCancel={closeInput}
+                onCancel={() => closeInput(itemId)}
+                onDownArrow={() => {
+                  closeInput(false)
+                  setSelectedItem(item)
+                }}
               />
               <AssetDescription description={description} />
             </Box>
@@ -145,7 +148,7 @@ export function AssetSection({
               id={itemId}
               name={item}
               isFocused={isFocusedItem}
-              onSelect={() => setSelectedItem(item)}
+              onEdit={() => startEditing(item)}
               onRemove={() => handleRemove(item)}
             />
             <AssetDescription description={description} />
