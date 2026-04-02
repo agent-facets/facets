@@ -4,19 +4,19 @@ import { THEME } from '../theme.ts'
 export function AssetItem({
   name,
   isFocused,
-  onEdit,
+  onSelect,
   onRemove,
 }: {
   id: string
   name: string
   isFocused: boolean
-  onEdit: () => void
+  onSelect: () => void
   onRemove: () => void
 }) {
   useInput(
     (_input, key) => {
       if (key.return) {
-        onEdit()
+        onSelect()
       }
       if (key.delete || key.backspace) {
         onRemove()
@@ -34,7 +34,7 @@ export function AssetItem({
           </Text>
           <Text color={THEME.primary}>{name}</Text>
           <Text color={THEME.hint}>
-            <Text color={THEME.keyword}>Enter</Text> to edit · <Text color={THEME.keyword}>Delete</Text> to remove
+            <Text color={THEME.keyword}>Enter</Text> edit · <Text color={THEME.keyword}>Del</Text> remove
           </Text>
         </>
       ) : (
