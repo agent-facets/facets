@@ -1,5 +1,11 @@
 # agent-facets
 
+## 0.1.3
+
+### Patch Changes
+
+- 66b179f: Wire up the facet edit command
+
 ## 0.1.2
 
 ### Patch Changes
