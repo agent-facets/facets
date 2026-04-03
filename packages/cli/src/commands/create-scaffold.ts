@@ -1,6 +1,6 @@
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { FACET_MANIFEST_FILE } from '@agent-facets/core'
+import { FACET_MANIFEST_FILE, KEBAB_CASE } from '@agent-facets/core'
 
 // --- Types ---
 
@@ -19,7 +19,7 @@ export const DEFAULT_VERSION = '0.0.0'
 
 // --- Validation ---
 
-export const KEBAB_CASE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/
+export { KEBAB_CASE }
 export const SEMVER = /^\d+\.\d+\.\d+$/
 
 export function isValidKebabCase(value: string): boolean {

@@ -15,6 +15,12 @@ export { validateCompactFacets } from './build/validate-facets.ts'
 export type { PlatformValidationResult } from './build/validate-platforms.ts'
 export { validatePlatformConfigs } from './build/validate-platforms.ts'
 export { writeBuildOutput } from './build/write-output.ts'
+export { writeManifest } from './edit/manifest-writer.ts'
+export type { MatchedAsset, MissingAsset, ReconciliationResult } from './edit/reconcile.ts'
+export { reconcile } from './edit/reconcile.ts'
+// edit
+export type { AssetType, DiscoveredAsset } from './edit/scanner.ts'
+export { KEBAB_CASE, scanAssets } from './edit/scanner.ts'
 // front matter
 export type { FrontMatterResult } from './front-matter.ts'
 export { extractFrontMatter, hasFrontMatter } from './front-matter.ts'

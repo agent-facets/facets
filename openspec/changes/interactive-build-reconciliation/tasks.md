@@ -47,20 +47,19 @@
 
 ## 7. Core Edit Logic — Research
 
-- [ ] 7.1 Explore: Review the existing create wizard TUI architecture — component structure, state management, how user input flows to the scaffold function, and what can be reused for the edit command
-- [ ] 7.2 Explore: Review YAML front matter parsing libraries available in the Bun ecosystem — identify a well-tested parser that handles the edge cases (malformed front matter treated as absent)
-- [ ] 7.3 Explore: Review how the manifest is currently loaded and written — the loader in `packages/core/src/loaders/`, the serialization format from ADR-006, and whether a write-back utility already exists
-- [ ] 7.4 Propose: Approach for the edit command's core logic — session state model (queued changes), reconciliation algorithm (scan → diff → present), manifest write-back, and TUI component reuse from create
+- [x] 7.1 Explore: Review the existing create wizard TUI architecture — component structure, state management, how user input flows to the scaffold function, and what can be reused for the edit command
+- [x] 7.2 Explore: Review YAML front matter parsing libraries available in the Bun ecosystem — identify a well-tested parser that handles the edge cases (malformed front matter treated as absent) (completed: DIY with `yaml` package)
+- [x] 7.3 Explore: Review how the manifest is currently loaded and written — the loader in `packages/core/src/loaders/`, the serialization format from ADR-006, and whether a write-back utility already exists
+- [x] 7.4 Propose: Approach for the edit command's core logic — session state model (queued changes), reconciliation algorithm (scan → diff → present), manifest write-back, and TUI component reuse from create
 
 ## 8. Core Edit Logic — Implementation
 
-- [ ] 8.1 Implement: Directory scanner — scan `skills/*/SKILL.md`, `agents/*.md`, `commands/*.md` and return discovered assets with their paths
-- [ ] 8.2 Implement: Reconciliation diff — compare discovered assets against manifest entries, produce lists of additions (on disk, not in manifest) and missing files (in manifest, not on disk)
-- [ ] 8.3 Implement: YAML front matter parser — extract `name`, `description`, and extra fields from file content, return clean markdown body. Treat parse failures as "no front matter"
-- [ ] 8.4 Implement: Manifest write-back utility — `JSON.stringify(data, null, 2)` to `facet.json`, per ADR-006
-- [ ] 8.5 Implement: Edit session state model — queue identity changes, asset additions, deletions, scaffolds, front matter strips, and file renames. Apply atomically on confirmation.
-- [ ] 8.6 Implement: Add unit tests for scanner, reconciliation diff, front matter parser, and manifest write-back
-- [ ] 8.7 Verify: Run `bun check` — all tests pass, types check, lint clean
+- [x] 8.1 Implement: Directory scanner — scan `skills/*/SKILL.md`, `agents/*.md`, `commands/*.md` and return discovered assets with their paths
+- [x] 8.2 Implement: Reconciliation diff — compare discovered assets against manifest entries, produce lists of additions (on disk, not in manifest) and missing files (in manifest, not on disk)
+- [x] 8.3 Implement: YAML front matter parser — extract `name`, `description`, and extra fields from file content, return clean markdown body. Treat parse failures as "no front matter" (completed as `packages/core/src/front-matter.ts` using DIY + `yaml` package)
+- [x] 8.4 Implement: Manifest write-back utility — `JSON.stringify(data, null, 2)` to `facet.json`, per ADR-006
+- [x] 8.5 Implement: Add unit tests for scanner, reconciliation diff, front matter parser, and manifest write-back
+- [x] 8.7 Verify: Run `bun check` — all tests pass, types check, lint clean
 
 ## 9. Edit TUI — Research
 
@@ -69,6 +68,7 @@
 
 ## 10. Edit TUI — Implementation
 
+- [ ] 10.0 Implement: Edit session state model — queue identity changes, asset additions, deletions, scaffolds, front matter strips, and file renames. Apply atomically on confirmation. (Moved from 8.5 — this is a TUI concern, not a core concern)
 - [ ] 10.1 Implement: Identity editing section — display and allow editing of name, description, version (default `0.0.0` if absent)
 - [ ] 10.2 Implement: Reconciliation additions section — batch checkbox list of discovered files not in manifest, with name/description fields pre-filled from front matter
 - [ ] 10.3 Implement: Reconciliation missing files section — for each missing file, offer remove-from-manifest or scaffold-template
