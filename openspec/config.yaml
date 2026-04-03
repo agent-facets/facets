@@ -104,9 +104,9 @@ rules:
     - Each requirement MUST be atomic and focused on a single aspect of functionality or design
     - All spec requirements and scenarios MUST comply with @openspec/specs/spec-governance/spec.md — read the spec before writing or reviewing any specification
   proposal:
-    - A proposal SHOULD be between 300 and 1000 words, and it MUST be under 1000 words
+    - A proposal SHOULD be between 300 and 1000 words, and it MUST be under 1500 words
     - The proposal SHOULD be distilled down to the smallest thing we can do to deliver customer-focused value
-    - Large refactors SHOULD be simple, small, OR incredibly well-justified
+    - Refactors SHOULD be simple, small, OR incredibly well-justified
     - MUST include a "Non-goals" section
     - Each capability in the Capabilities section MUST correspond to a product domain, not a feature within a domain. Use domain names (e.g., `execution`, `planning`) not domain-feature compounds (e.g., NOT `execution-loop`, `auth-login`, `user-auth`, `data-export`). Check `openspec/specs/` for existing domain names before inventing new ones.
     - MUST reference which ADRs in `architecture/` informed the proposal. If no relevant ADRs exist, state so explicitly.
