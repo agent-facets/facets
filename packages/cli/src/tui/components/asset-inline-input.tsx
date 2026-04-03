@@ -12,6 +12,7 @@ export function AssetInlineInput({
   onError,
   onSubmit,
   onCancel,
+  onDownArrow,
 }: {
   id: string
   value: string
@@ -23,6 +24,7 @@ export function AssetInlineInput({
   onError: (error: string) => void
   onSubmit: (name: string) => void
   onCancel: () => void
+  onDownArrow?: () => void
 }) {
   useInput(
     (_input, key) => {
@@ -47,6 +49,10 @@ export function AssetInlineInput({
         onCancel()
         return
       }
+      if (key.downArrow && onDownArrow) {
+        onDownArrow()
+        return
+      }
       if (key.tab && !value && placeholder) {
         onChange(placeholder)
         return
@@ -63,7 +69,13 @@ export function AssetInlineInput({
         <Text color={THEME.warning}>· {error}</Text>
       ) : value ? (
         <Text color={THEME.hint}>
-          · <Text color={THEME.keyword}>Enter</Text> to save · <Text color={THEME.keyword}>Escape</Text> to revert
+          · <Text color={THEME.keyword}>Enter</Text> save ·{' '}
+          {onDownArrow && (
+            <>
+              <Text color={THEME.keyword}>↓</Text> description ·{' '}
+            </>
+          )}
+          <Text color={THEME.keyword}>Esc</Text> revert
         </Text>
       ) : placeholder ? (
         <Text color={THEME.hint}>

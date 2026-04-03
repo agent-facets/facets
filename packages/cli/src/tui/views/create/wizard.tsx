@@ -75,7 +75,6 @@ function CreateWizardInner({ onComplete, onCancel, snapshot, onSnapshot, onReque
 
   return (
     <CreateView
-      snapshot={snapshot}
       onSubmit={() => {
         setConfirming(true)
         setMode('form-confirmation')

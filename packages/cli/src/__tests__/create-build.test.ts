@@ -121,33 +121,6 @@ describe('writeScaffold', () => {
     expect(manifest.commands).toBeUndefined()
   })
 
-  test('scaffolds minimal project with only name and description (no assets)', async () => {
-    const dir = await createFixtureDir('scaffold-minimal')
-    const files = await writeScaffold(
-      {
-        name: 'bare-bones',
-        version: DEFAULT_VERSION,
-        description: 'A minimal facet',
-        skills: [],
-        agents: [],
-        commands: [],
-      },
-      dir,
-    )
-
-    expect(files).toContain('facet.json')
-    expect(files).toHaveLength(1)
-
-    const manifestText = await Bun.file(join(dir, 'facet.json')).text()
-    const manifest = JSON.parse(manifestText)
-    expect(manifest.name).toBe('bare-bones')
-    expect(manifest.version).toBe(DEFAULT_VERSION)
-    expect(manifest.description).toBe('A minimal facet')
-    expect(manifest.skills).toBeUndefined()
-    expect(manifest.agents).toBeUndefined()
-    expect(manifest.commands).toBeUndefined()
-  })
-
   test('version defaults to DEFAULT_VERSION (0.0.0)', async () => {
     const dir = await createFixtureDir('scaffold-default-version')
     await writeScaffold(

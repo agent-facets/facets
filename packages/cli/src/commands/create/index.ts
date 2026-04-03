@@ -17,13 +17,14 @@ export const createCommand: Command = {
       return 1
     }
 
+    const displayDir = args[0] || '.'
     const files = await writeScaffold(opts, targetDir)
 
-    console.log(`\nFacet created: ${opts.name}`)
+    console.log(`\nFacet created: ${opts.name} → ${displayDir}`)
     for (const file of files) {
-      console.log(`  ${file}`)
+      console.log(`  ${displayDir}/${file}`)
     }
-    console.log('\nRun "facet build" to validate your facet.')
+    console.log(`\nRun "facet build${args[0] ? ` ${displayDir}` : ''}" to validate your facet.`)
 
     return 0
   },

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { resolve } from 'node:path'
 
 const CLI_PATH = resolve(import.meta.dir, '../../dist/facet')
-const COMMAND_NAMES = ['add', 'build', 'create', 'info', 'install', 'list', 'publish', 'remove', 'upgrade']
+const COMMAND_NAMES = ['add', 'build', 'create', 'edit', 'info', 'install', 'list', 'publish', 'remove', 'upgrade']
 const STUB_COMMAND_NAMES = ['add', 'info', 'install', 'list', 'publish', 'remove', 'upgrade']
 
 type ExecResult = {
@@ -76,6 +76,16 @@ describe('CLI — stub commands', () => {
     expect(result.stdout).toContain(cmd)
     expect(result.stdout).toContain('not yet implemented')
     expect(result.stderr).toBe('')
+  })
+})
+
+// --- Edit command dispatch ---
+
+describe('CLI — edit command', () => {
+  test('edit with no manifest prints error and exits 1', async () => {
+    const result = await runCli('edit', import.meta.dir)
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('Manifest is invalid')
   })
 })
 

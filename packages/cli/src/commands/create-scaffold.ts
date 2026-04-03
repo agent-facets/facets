@@ -39,7 +39,7 @@ function toTitleCase(kebab: string): string {
     .join(' ')
 }
 
-function skillTemplate(name: string): string {
+export function skillTemplate(name: string): string {
   return `# ${toTitleCase(name)}
 
 <!-- This is a starter skill template. Replace this content with your skill's instructions. -->
@@ -58,7 +58,7 @@ Describe what this skill teaches or what guidelines it provides.
 `
 }
 
-function agentTemplate(name: string): string {
+export function agentTemplate(name: string): string {
   return `# ${toTitleCase(name)}
 
 <!-- This is a starter agent template. Replace this content with your agent's prompt. -->
@@ -76,7 +76,7 @@ Describe this agent's role and responsibilities.
 `
 }
 
-function commandTemplate(name: string): string {
+export function commandTemplate(name: string): string {
   return `# ${toTitleCase(name)}
 
 <!-- This is a starter command template. Replace this content with your command's prompt. -->

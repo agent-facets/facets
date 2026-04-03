@@ -15,23 +15,24 @@ Creates a new facet project in the specified directory (defaults to the current 
 
 ## Wizard flow
 
-1. **Existing manifest check** — if `facet.json` already exists, prompts for confirmation before overwriting.
-2. **Name** — the facet name, in kebab-case (e.g., `my-facet`).
-3. **Version** — defaults to `0.1.0`.
-4. **Description** — optional.
-5. **Asset types** — select which asset types to include: skills, agents, commands. At least one is required.
-6. **Confirmation** — review the summary and confirm.
+1. **Name** — the facet name, in kebab-case (e.g., `my-facet`).
+2. **Description** — a brief description of the facet.
+3. **Version** — defaults to `0.0.0`.
+4. **Assets** — add skills, agents, and commands by name. At least one asset is required. Each asset shows its description below the name — press Enter to edit the name, or press ↓ during name editing to edit the description in your terminal editor.
+5. **Confirmation** — review the summary and confirm.
 
 ## Generated files
 
 On confirmation, the wizard writes:
 
 - `facet.json` — the manifest with named asset descriptors
-- `skills/<name>.md` — starter skill template for each named skill
-- `agents/<name>.md` — starter agent template for each named agent
-- `commands/<name>.md` — starter command template for each named command
+- `skills/<name>/SKILL.md` — starter skill template (Agent Skills directory convention)
+- `agents/<name>.md` — starter agent template
+- `commands/<name>.md` — starter command template
 
-After creating the project, run `facet build` to validate it.
+Content files contain pure markdown with no YAML front matter. The manifest is the single source of truth for metadata.
+
+After creating the project, use `facet edit` to iterate on your facet, or `facet build` to validate and package it.
 
 ## Exit codes
 

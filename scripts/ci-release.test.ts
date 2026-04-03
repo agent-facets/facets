@@ -104,9 +104,18 @@ describe('ci-release', () => {
   })
 
   describe('publish', () => {
-    test('mints OIDC token and publishes', async () => {
-      // Mock: no pending changesets
+    /** Common mocks to reach the publish path: no pending changesets + unpublished versions */
+    function setupPublishPath() {
       spyOn(io, 'scanDir').mockResolvedValue(['README.md'])
+      spyOn(io, 'loadWorkspacePackages').mockResolvedValue([
+        { name: '@agent-facets/core', version: '1.1.0', private: false },
+      ])
+      spyOn(io, 'npmViewVersion').mockResolvedValue('1.0.0')
+      spyOn(io, 'turboBuild').mockResolvedValue(shellResult())
+    }
+
+    test('mints OIDC token and publishes', async () => {
+      setupPublishPath()
 
       // Mock: OIDC + publish
       const mintSpy = spyOn(io, 'mintOidcToken').mockResolvedValue('fake-oidc-token\n')
@@ -123,7 +132,8 @@ describe('ci-release', () => {
     })
 
     test('pushes tags after publishing', async () => {
-      spyOn(io, 'scanDir').mockResolvedValue([])
+      setupPublishPath()
+
       spyOn(io, 'mintOidcToken').mockResolvedValue('token\n')
       spyOn(io, 'changesetPublish').mockResolvedValue(shellResult())
       const pushTagsSpy = spyOn(io, 'gitPushTags').mockResolvedValue(shellResult())
@@ -150,6 +160,11 @@ describe('ci-release', () => {
 
     test('returns 1 when OIDC token minting fails', async () => {
       spyOn(io, 'scanDir').mockResolvedValue([])
+      spyOn(io, 'loadWorkspacePackages').mockResolvedValue([
+        { name: '@agent-facets/core', version: '1.1.0', private: false },
+      ])
+      spyOn(io, 'npmViewVersion').mockResolvedValue('1.0.0')
+      spyOn(io, 'turboBuild').mockResolvedValue(shellResult())
       spyOn(io, 'mintOidcToken').mockRejectedValue(new Error('OIDC unavailable'))
 
       const { main } = await import('./ci-release')
