@@ -8,10 +8,12 @@ tag: facet create
 ## Usage
 
 ```sh
-facet create [directory]
+facet create [directory] [--force]
 ```
 
 Creates a new facet project in the specified directory (defaults to the current directory). Walks through an interactive wizard to configure the facet.
+
+If a `facet.json` already exists in the target directory, the command prompts for confirmation before overwriting. Use `--force` to skip the prompt.
 
 ## Wizard flow
 
@@ -34,9 +36,16 @@ Content files contain pure markdown with no YAML front matter. The manifest is t
 
 After creating the project, use `facet edit` to iterate on your facet, or `facet build` to validate and package it.
 
+## Options
+
+| Flag      | Description                    |
+| --------- | ------------------------------ |
+| `--force` | Overwrite existing facet.json  |
+| `--help`  | Show help                      |
+
 ## Exit codes
 
 | Code | Meaning |
 | ---- | ------- |
 | `0`  | Facet created successfully |
-| `1`  | Cancelled or invalid input |
+| `1`  | Cancelled, declined overwrite, or invalid input |

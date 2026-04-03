@@ -11,6 +11,7 @@ import {
 import type { Command } from '../../commands.ts'
 import type { EditContext, EditOperation, EditResult, ReconciliationItem } from '../../tui/views/edit/edit-types.ts'
 import { agentTemplate, commandTemplate, skillTemplate } from '../create-scaffold.ts'
+import { resolveTargetDir } from '../resolve-dir.ts'
 import { runEditWizardInk } from './wizard.tsx'
 
 export async function buildEditContext(
@@ -112,9 +113,16 @@ export async function applyOperations(
 export const editCommand: Command = {
   name: 'edit',
   description: 'Edit a facet project interactively',
-  run: async (args: string[]): Promise<number> => {
-    const rootDir = args[0] || process.cwd()
-    const displayDir = args[0] || '.'
+  usage: '[directory]',
+  run: async (args: string[], _flags: Record<string, unknown>): Promise<number> => {
+    const resolved = await resolveTargetDir(args[0], { mustExist: true, facetMustExist: true })
+    if (!resolved.ok) {
+      console.error(resolved.message)
+      return 1
+    }
+
+    const rootDir = resolved.dir
+    const displayDir = resolved.display
 
     const loaded = await buildEditContext(rootDir)
     if (!loaded.ok) return loaded.exitCode

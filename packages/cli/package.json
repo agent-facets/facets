@@ -17,9 +17,10 @@
   },
   "dependencies": {
     "@agent-facets/brand": "workspace:*",
-    "@bomb.sh/args": "0.3.1",
     "@agent-facets/core": "workspace:*",
+    "@bomb.sh/args": "0.3.1",
     "@types/react": "19.2.14",
+    "arktype": "2.1.29",
     "ink": "6.8.0",
     "ink-gradient": "4.0.0",
     "ink-spinner": "5.0.0",

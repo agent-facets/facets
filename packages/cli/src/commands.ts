@@ -2,17 +2,24 @@ import { buildCommand } from './commands/build.ts'
 import { createCommand } from './commands/create/index.ts'
 import { editCommand } from './commands/edit/index.ts'
 
+export type FlagDef = {
+  type: 'boolean' | 'string'
+  description: string
+}
+
 export type Command = {
   name: string
   description: string
-  run: (args: string[]) => Promise<number>
+  usage?: string
+  flags?: Record<string, FlagDef>
+  run: (args: string[], flags: Record<string, unknown>) => Promise<number>
 }
 
 function stubCommand(name: string, description: string): Command {
   return {
     name,
     description,
-    run: async () => {
+    run: async (_args, _flags) => {
       console.log(`"${name}" is not yet implemented.`)
       return 0
     },

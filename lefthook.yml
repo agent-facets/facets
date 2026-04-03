@@ -1,11 +1,20 @@
 pre-commit:
+  piped: true
   commands:
     check-bun-version:
+      priority: 1
       run: bun scripts/check-bun-version.ts
-    biome:
+    biome-format:
+      priority: 2
       glob: "*.{ts,js,json}"
-      run: bun biome check {staged_files}
+      run: bun biome check --write --unsafe {staged_files}
+      stage_fixed: true
+    biome-lint:
+      priority: 3
+      glob: "*.{ts,js,json}"
+      run: bun biome check --error-on-warnings {staged_files}
     circleci-pack:
+      priority: 4
       glob: ".circleci/src/**/*.yml"
       run: bun run ci:pack && git add .circleci/config.yml
 

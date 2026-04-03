@@ -202,7 +202,7 @@ describe('facet build', () => {
 
     const result = await runCli('build', dir)
     expect(result.exitCode).toBe(1)
-    expect(result.stdout).toContain('Build failed')
+    expect(result.stderr).toContain('facet.json')
   })
 
   test('build fails on missing asset file', async () => {

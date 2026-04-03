@@ -24,7 +24,7 @@ The system SHALL display a list of all registered commands with their descriptio
 #### Scenario: Per-command help
 
 - **WHEN** a user runs the CLI with `<command> --help`
-- **THEN** the system SHALL print usage information specific to that command
+- **THEN** the system SHALL print usage information specific to that command, including usage syntax and declared flags
 - **AND** the output SHALL be written to stdout
 - **AND** the process SHALL exit with code 0
 
@@ -41,12 +41,13 @@ The system SHALL display the current version when the user requests it. The vers
 
 ### Requirement: Known commands are dispatched
 
-The system SHALL route known command names to their registered handlers. Each command receives the remaining arguments after the command name.
+The system SHALL route known command names to their registered handlers. Each command receives the remaining positional arguments after the command name, along with parsed flag values based on the command's declared flags.
 
 #### Scenario: Registered command is invoked
 
 - **WHEN** a user runs the CLI with a registered command name (e.g., `build`)
-- **THEN** the system SHALL execute that command's handler
+- **THEN** the system SHALL parse any declared flags for that command
+- **AND** the system SHALL execute that command's handler with positional arguments and parsed flags
 - **AND** the process SHALL exit with the code returned by the handler
 
 #### Scenario: Stubbed command reports its status
@@ -151,3 +152,98 @@ The system SHALL register an `edit` command that launches the interactive editin
 - **WHEN** a user runs the CLI with `edit` in a directory where the manifest matches disk contents
 - **THEN** the system SHALL skip the reconciliation phase
 - **AND** the system SHALL proceed directly to the editing phase
+
+### Requirement: Commands validate directory arguments before execution
+
+The system SHALL validate directory arguments provided to commands before executing any command logic. Invalid directory arguments SHALL produce clear, immediate error messages and exit with code 1.
+
+#### Scenario: No directory argument defaults to current directory
+
+- **WHEN** a user runs a command without a directory argument
+- **THEN** the system SHALL use the current working directory
+
+#### Scenario: Argument points to facet.json directly
+
+- **WHEN** a user provides a path ending with `facet.json` as the directory argument
+- **THEN** the system SHALL silently use the parent directory
+
+#### Scenario: Argument is a non-directory file
+
+- **WHEN** a user provides a path to a file that is not `facet.json`
+- **THEN** the system SHALL print an error indicating a directory was expected
+- **AND** the process SHALL exit with code 1
+
+#### Scenario: Directory does not exist for commands requiring it
+
+- **WHEN** a user provides a path to a non-existent directory for `build` or `edit`
+- **THEN** the system SHALL print an error indicating the directory does not exist
+- **AND** the process SHALL exit with code 1
+
+#### Scenario: Directory is auto-created for create command
+
+- **WHEN** a user provides a path to a non-existent directory for `create`
+- **THEN** the system SHALL create the directory automatically
+
+#### Scenario: Build and edit require facet.json to exist
+
+- **WHEN** a user runs `build` or `edit` in a directory without `facet.json`
+- **THEN** the system SHALL print an error indicating no facet manifest was found
+- **AND** the process SHALL exit with code 1
+
+### Requirement: Commands declare per-command flags
+
+The system SHALL support per-command flag declarations on command definitions. The router SHALL parse per-command flags via the argument parser and pass the parsed values to command handlers alongside positional arguments.
+
+#### Scenario: Command with declared boolean flag
+
+- **WHEN** a command declares a boolean flag (e.g., `--force`)
+- **AND** a user provides that flag on the command line
+- **THEN** the command handler SHALL receive the flag value as `true`
+
+#### Scenario: Command with declared string flag
+
+- **WHEN** a command declares a string flag (e.g., `--registry`)
+- **AND** a user provides that flag with a value on the command line
+- **THEN** the command handler SHALL receive the flag value as the provided string
+
+#### Scenario: Undeclared flags are ignored
+
+- **WHEN** a user provides a flag that is not declared by the command
+- **THEN** the command handler SHALL NOT receive that flag
+
+### Requirement: Per-command help displays usage and flags
+
+The system SHALL render per-command help text from command metadata including usage syntax and flag descriptions. Authors SHALL NOT need to maintain help text manually.
+
+#### Scenario: Per-command help shows usage line
+
+- **WHEN** a user runs `<command> --help` for a command that declares a `usage` field
+- **THEN** the help output SHALL display the usage syntax (e.g., `Usage: facet create [directory] [options]`)
+
+#### Scenario: Per-command help lists declared flags
+
+- **WHEN** a user runs `<command> --help` for a command that declares flags
+- **THEN** the help output SHALL list each declared flag with its description under an Options section
+- **AND** the `--help` flag SHALL also appear in the Options section
+
+### Requirement: Create command protects against accidental overwrite
+
+The `create` command SHALL detect when a `facet.json` already exists in the target directory and prompt the user before overwriting. A `--force` flag SHALL bypass the prompt.
+
+#### Scenario: Create in directory with existing facet.json
+
+- **WHEN** a user runs `create` in a directory that already contains `facet.json`
+- **AND** the `--force` flag is NOT set
+- **THEN** the system SHALL prompt the user with a confirmation question
+- **AND** if the user declines, the system SHALL exit with code 1 without making changes
+- **AND** if the user accepts, the system SHALL proceed with the create wizard
+
+#### Scenario: Create with --force flag
+
+- **WHEN** a user runs `create --force` in a directory that already contains `facet.json`
+- **THEN** the system SHALL proceed with the create wizard without prompting
+
+#### Scenario: Create in empty directory
+
+- **WHEN** a user runs `create` in a directory that does not contain `facet.json`
+- **THEN** the system SHALL proceed with the create wizard without prompting
