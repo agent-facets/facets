@@ -27,7 +27,15 @@ function computeFocusIds(form: ReturnType<typeof useFormState>['form']): string[
   return ids
 }
 
-export function CreateView({ onSubmit }: { onSubmit: () => void }) {
+export function CreateView({
+  onSubmit,
+  onEditDescription,
+  snapshot,
+}: {
+  onSubmit: () => void
+  onEditDescription?: (section: import('../../context/form-state-context.ts').AssetSectionKey, name: string) => void
+  snapshot?: import('../../views/create/wizard.tsx').WizardSnapshot
+}) {
   const { form } = useFormState()
   const { setFocusIds, focus, focusedId } = useFocusOrder()
 
@@ -106,6 +114,9 @@ export function CreateView({ onSubmit }: { onSubmit: () => void }) {
             label={ASSET_LABELS[type]}
             defaultName={form.assets[type].items.length === 0 ? form.fields.name.value : undefined}
             dimmed={!assetsReady}
+            onEditDescription={onEditDescription}
+            resumeEditItem={snapshot?.selectedItem?.section === type ? snapshot.selectedItem.name : undefined}
+            resumeEditField={snapshot?.selectedItem?.section === type ? snapshot.selectedItem.field : undefined}
             validate={(v) => {
               if (!isValidKebabCase(v)) return 'Must be kebab-case'
               const editing = form.assets[type].editing

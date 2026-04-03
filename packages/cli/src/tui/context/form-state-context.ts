@@ -16,6 +16,7 @@ export interface FieldState {
 
 export interface AssetSectionState {
   items: string[]
+  descriptions: Record<string, string>
   editing?: string
   adding: boolean
 }
@@ -46,6 +47,7 @@ interface FormStateContextValue {
   addAsset: (section: AssetSectionKey, name: string) => void
   removeAsset: (section: AssetSectionKey, name: string) => void
   renameAsset: (section: AssetSectionKey, oldName: string, newName: string) => void
+  setAssetDescription: (section: AssetSectionKey, name: string, description: string) => void
   setAssetAdding: (section: AssetSectionKey, adding: boolean) => void
   setAssetEditing: (section: AssetSectionKey, name?: string) => void
 
@@ -57,6 +59,7 @@ interface FormStateContextValue {
 
 const defaultAssetSection: AssetSectionState = {
   items: [],
+  descriptions: {},
   editing: undefined,
   adding: false,
 }
@@ -81,6 +84,7 @@ const FormStateContext = createContext<FormStateContextValue>({
   addAsset: () => {},
   removeAsset: () => {},
   renameAsset: () => {},
+  setAssetDescription: () => {},
   setAssetAdding: () => {},
   setAssetEditing: () => {},
   toCreateOptions: () => ({ name: '', version: '', description: '', skills: [], commands: [], agents: [] }),
@@ -88,8 +92,8 @@ const FormStateContext = createContext<FormStateContextValue>({
 
 // --- Provider ---
 
-export function FormStateProvider({ children }: { children: ReactNode }) {
-  const [form, setForm] = useState<FormState>(defaultForm)
+export function FormStateProvider({ children, initialState }: { children: ReactNode; initialState?: FormState }) {
+  const [form, setForm] = useState<FormState>(initialState ?? defaultForm)
 
   const setFieldValue = useCallback((field: RequiredFieldKey, value: string) => {
     setForm((prev) => ({
@@ -116,11 +120,16 @@ export function FormStateProvider({ children }: { children: ReactNode }) {
     setForm((prev) => {
       const current = prev.assets[section]
       if (current.items.includes(name)) return prev
+      const defaultDesc = `The ${name} ${section} description`
       return {
         ...prev,
         assets: {
           ...prev.assets,
-          [section]: { ...current, items: [...current.items, name] },
+          [section]: {
+            ...current,
+            items: [...current.items, name],
+            descriptions: { ...current.descriptions, [name]: defaultDesc },
+          },
         },
       }
     })
@@ -129,6 +138,7 @@ export function FormStateProvider({ children }: { children: ReactNode }) {
   const removeAsset = useCallback((section: AssetSectionKey, name: string) => {
     setForm((prev) => {
       const current = prev.assets[section]
+      const { [name]: _, ...remainingDescs } = current.descriptions
       return {
         ...prev,
         assets: {
@@ -136,6 +146,7 @@ export function FormStateProvider({ children }: { children: ReactNode }) {
           [section]: {
             ...current,
             items: current.items.filter((item) => item !== name),
+            descriptions: remainingDescs,
             editing: current.editing === name ? undefined : current.editing,
           },
         },
@@ -148,6 +159,7 @@ export function FormStateProvider({ children }: { children: ReactNode }) {
     setForm((prev) => {
       const current = prev.assets[section]
       if (current.items.includes(newName)) return prev
+      const { [oldName]: desc, ...restDescs } = current.descriptions
       return {
         ...prev,
         assets: {
@@ -155,7 +167,24 @@ export function FormStateProvider({ children }: { children: ReactNode }) {
           [section]: {
             ...current,
             items: current.items.map((item) => (item === oldName ? newName : item)),
+            descriptions: { ...restDescs, [newName]: desc ?? `A ${newName} ${section}` },
             editing: current.editing === oldName ? newName : current.editing,
+          },
+        },
+      }
+    })
+  }, [])
+
+  const setAssetDescription = useCallback((section: AssetSectionKey, name: string, description: string) => {
+    setForm((prev) => {
+      const current = prev.assets[section]
+      return {
+        ...prev,
+        assets: {
+          ...prev.assets,
+          [section]: {
+            ...current,
+            descriptions: { ...current.descriptions, [name]: description },
           },
         },
       }
@@ -202,6 +231,7 @@ export function FormStateProvider({ children }: { children: ReactNode }) {
       addAsset,
       removeAsset,
       renameAsset,
+      setAssetDescription,
       setAssetAdding,
       setAssetEditing,
       toCreateOptions,
@@ -213,6 +243,7 @@ export function FormStateProvider({ children }: { children: ReactNode }) {
       addAsset,
       removeAsset,
       renameAsset,
+      setAssetDescription,
       setAssetAdding,
       setAssetEditing,
       toCreateOptions,

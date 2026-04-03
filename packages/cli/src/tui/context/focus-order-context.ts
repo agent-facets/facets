@@ -21,9 +21,15 @@ const FocusOrderContext = createContext<FocusOrderState>({
   focus: () => {},
 })
 
-export function FocusOrderProvider({ children }: { children: ReactNode }) {
+export function FocusOrderProvider({
+  children,
+  initialFocusId,
+}: {
+  children: ReactNode
+  initialFocusId?: string | null
+}) {
   const [focusIds, setFocusIds] = useState<string[]>([])
-  const [focusedId, setFocusedId] = useState<string | null>(null)
+  const [focusedId, setFocusedId] = useState<string | null>(initialFocusId ?? null)
 
   const focusNext = useCallback(() => {
     setFocusedId((current) => {

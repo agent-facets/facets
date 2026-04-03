@@ -4,6 +4,9 @@ import { useFocusMode } from '../context/focus-mode-context.ts'
 import { useFocusOrder } from '../context/focus-order-context.ts'
 import type { AssetSectionKey } from '../context/form-state-context.ts'
 import { useFormState } from '../context/form-state-context.ts'
+import { AssetDescription, truncateDescription } from './asset-description.tsx'
+import type { AssetField } from './asset-field-picker.tsx'
+import { AssetFieldPicker } from './asset-field-picker.tsx'
 import { AssetInlineInput } from './asset-inline-input.tsx'
 import { AssetItem } from './asset-item.tsx'
 import { Button } from './button.tsx'
@@ -14,19 +17,29 @@ export function AssetSection({
   defaultName,
   dimmed,
   validate,
+  onEditDescription,
+  resumeEditItem,
+  resumeEditField,
 }: {
   section: AssetSectionKey
   label: string
   defaultName?: string
   dimmed?: boolean
   validate?: (value: string) => string | undefined
+  onEditDescription?: (section: AssetSectionKey, name: string) => void
+  resumeEditItem?: string
+  resumeEditField?: 'name' | 'description'
 }) {
   const { form, addAsset, removeAsset, renameAsset, setAssetAdding, setAssetEditing } = useFormState()
-  const { items, editing, adding } = form.assets[section]
+  const { items, descriptions, editing, adding } = form.assets[section]
   const { setMode } = useFocusMode()
   const { focusedId, focus } = useFocusOrder()
   const [inputValue, setInputValue] = useState('')
   const [error, setError] = useState('')
+
+  // Which asset is in level-2 field picker mode (null = none)
+  // Initialize from resumeEdit if we're coming back from an editor session
+  const [selectedItem, setSelectedItem] = useState<string | null>(resumeEditItem ?? null)
 
   const startAdding = () => {
     setAssetAdding(section, true)
@@ -64,6 +77,15 @@ export function AssetSection({
     }
   }
 
+  const handleFieldChoice = (name: string, field: AssetField) => {
+    setSelectedItem(null)
+    if (field === 'name') {
+      startEditing(name)
+    } else {
+      onEditDescription?.(section, name)
+    }
+  }
+
   return (
     <Box flexDirection="column" gap={0}>
       <Box gap={1}>
@@ -76,37 +98,58 @@ export function AssetSection({
       {items.map((item, i) => {
         const itemId = `item-${section}-${i}`
         const isFocusedItem = focusedId === itemId
+        const description = descriptions[item] ?? `A ${item} ${section}`
 
-        if (editing === item) {
+        // Level 2: field picker for this item (renders name + description inline)
+        if (selectedItem === item) {
           return (
-            <AssetInlineInput
+            <AssetFieldPicker
               key={itemId}
-              id={itemId}
-              value={inputValue}
-              placeholder={item}
-              error={error}
-              isFocused={isFocusedItem}
-              onChange={setInputValue}
-              validate={validate}
-              onError={setError}
-              onSubmit={(newName) => {
-                renameAsset(section, item, newName)
-                closeInput()
-              }}
-              onCancel={closeInput}
+              name={item}
+              description={truncateDescription(description)}
+              initialField={resumeEditItem === item ? resumeEditField : undefined}
+              onChoose={(field) => handleFieldChoice(item, field)}
+              onCancel={() => setSelectedItem(null)}
             />
           )
         }
 
+        // Inline name editing
+        if (editing === item) {
+          return (
+            <Box key={itemId} flexDirection="column">
+              <AssetInlineInput
+                id={itemId}
+                value={inputValue}
+                placeholder={item}
+                error={error}
+                isFocused={isFocusedItem}
+                onChange={setInputValue}
+                validate={validate}
+                onError={setError}
+                onSubmit={(newName) => {
+                  renameAsset(section, item, newName)
+                  closeInput()
+                }}
+                onCancel={closeInput}
+              />
+              <AssetDescription description={description} />
+            </Box>
+          )
+        }
+
+        // Normal display (level 1)
         return (
-          <AssetItem
-            key={itemId}
-            id={itemId}
-            name={item}
-            isFocused={isFocusedItem}
-            onEdit={() => startEditing(item)}
-            onRemove={() => handleRemove(item)}
-          />
+          <Box key={itemId} flexDirection="column">
+            <AssetItem
+              id={itemId}
+              name={item}
+              isFocused={isFocusedItem}
+              onSelect={() => setSelectedItem(item)}
+              onRemove={() => handleRemove(item)}
+            />
+            <AssetDescription description={description} />
+          </Box>
         )
       })}
 
