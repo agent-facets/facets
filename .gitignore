@@ -10,6 +10,9 @@ docs/.mintlify/
 node_modules/
 
 
+# prepack/postpack backup (safety net if postpack is interrupted)
+.package.json.bak
+
 # used for testing and whatnot
 tmp/
 
