@@ -22,7 +22,7 @@
         "@types/bun": "1.3.10",
       },
       "peerDependencies": {
-        "typescript": "^5",
+        "typescript": "^5 || ^6",
       },
     },
     "packages/cli": {
@@ -32,8 +32,6 @@
         "facet": "./dist/facet",
       },
       "dependencies": {
-        "@agent-facets/brand": "workspace:*",
-        "@agent-facets/core": "workspace:*",
         "@bomb.sh/args": "0.3.1",
         "@types/react": "19.2.14",
         "arktype": "2.1.29",
@@ -45,11 +43,13 @@
         "react-devtools-core": "7.0.1",
       },
       "devDependencies": {
+        "@agent-facets/brand": "workspace:*",
+        "@agent-facets/core": "workspace:*",
         "@types/bun": "1.3.10",
         "ink-testing-library": "4.0.0",
       },
       "peerDependencies": {
-        "typescript": "^5",
+        "typescript": "^5 || ^6",
       },
     },
     "packages/core": {
@@ -65,7 +65,7 @@
         "@types/bun": "1.3.10",
       },
       "peerDependencies": {
-        "typescript": "^5",
+        "typescript": "^5 || ^6",
       },
     },
   },
