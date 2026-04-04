@@ -30,4 +30,4 @@ bun install    # installs deps + sets up git hooks
 
 - Keep PRs focused on a single change
 - Run `bun check` before submitting — CI runs the same command
-- Add a changeset with `bun changeset` for any user-facing changes
+- Add a changeset with `bun change` for any user-facing changes — see the [changeset README](.changeset/README.md) for details
