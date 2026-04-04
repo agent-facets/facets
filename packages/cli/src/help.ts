@@ -1,8 +1,7 @@
 import type { Command } from './commands.ts'
-import { commands } from './commands.ts'
 import { version } from './version.ts'
 
-export function printGlobalHelp(): void {
+export function printGlobalHelp(commands: Record<string, Command>): void {
   const entries = Object.values(commands)
   const maxNameLength = Math.max(...entries.map((c) => c.name.length))
 
@@ -23,14 +22,22 @@ export function printGlobalHelp(): void {
 }
 
 export function printCommandHelp(command: Command): void {
-  const lines = [
-    `Usage: facet ${command.name} [options]`,
-    '',
-    `  ${command.description}`,
-    '',
-    'Options:',
-    '  --help    Show help',
-  ]
+  const usage = command.usage ? ` ${command.usage}` : ''
+
+  const lines = [`Usage: facet ${command.name}${usage} [options]`, '', `  ${command.description}`, '', 'Options:']
+
+  if (command.flags) {
+    const flagEntries = Object.entries(command.flags)
+    const maxFlagLength = Math.max(...flagEntries.map(([name]) => `--${name}`.length), '--help'.length)
+
+    for (const [name, def] of flagEntries) {
+      lines.push(`  ${`--${name}`.padEnd(maxFlagLength + 4)}${def.description}`)
+    }
+
+    lines.push(`  ${'--help'.padEnd(maxFlagLength + 4)}Show help`)
+  } else {
+    lines.push('  --help    Show help')
+  }
 
   console.log(lines.join('\n'))
 }

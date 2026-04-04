@@ -2,13 +2,21 @@ import { render } from 'ink'
 import { createElement } from 'react'
 import type { Command } from '../commands.ts'
 import { BuildView } from '../tui/views/build/build-view.tsx'
+import { resolveTargetDir } from './resolve-dir.ts'
 
 export const buildCommand: Command = {
   name: 'build',
   description: 'Build a facet from the current directory',
-  run: async (args: string[]): Promise<number> => {
-    const rootDir = args[0] || process.cwd()
-    const displayDir = args[0] || '.'
+  usage: '[directory]',
+  run: async (args: string[], _flags: Record<string, unknown>): Promise<number> => {
+    const resolved = await resolveTargetDir(args[0], { mustExist: true, facetMustExist: true })
+    if (!resolved.ok) {
+      console.error(resolved.message)
+      return 1
+    }
+
+    const rootDir = resolved.dir
+    const displayDir = resolved.display
 
     // Track result for stdout summary after Ink exits
     let buildName = ''

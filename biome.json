@@ -20,7 +20,11 @@
         "noExplicitAny": "error"
       },
       "style": {
-        "noNonNullAssertion": "error"
+        "noNonNullAssertion": "error",
+        "useTemplate": {
+          "level": "warn",
+          "fix": "safe"
+        }
       }
     }
   },

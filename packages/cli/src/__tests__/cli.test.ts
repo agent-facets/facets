@@ -85,7 +85,7 @@ describe('CLI — edit command', () => {
   test('edit with no manifest prints error and exits 1', async () => {
     const result = await runCli('edit', import.meta.dir)
     expect(result.exitCode).toBe(1)
-    expect(result.stderr).toContain('Manifest is invalid')
+    expect(result.stderr).toContain('facet.json')
   })
 })
 
@@ -131,32 +131,65 @@ describe('CLI — per-command help', () => {
 // --- Unexpected error ---
 
 describe('CLI — unexpected error', () => {
-  test('unexpected error exits with code 2', async () => {
-    // This test runs against source (not compiled binary) because it needs to
-    // monkey-patch the command registry to inject a crashing command.
-    const script = `
-      import { commands } from '${resolve(import.meta.dir, '../commands.ts')}'
-      import { run } from '${resolve(import.meta.dir, '../run.ts')}'
-      commands['crash'] = {
+  test('unexpected error is thrown by run', async () => {
+    const { run } = await import('../run.ts')
+
+    const crashRegistry = {
+      crash: {
         name: 'crash',
         description: 'Throws an error',
-        run: async () => { throw new Error('boom') },
-      }
-      try {
-        const code = await run(['crash'])
-        process.exit(code)
-      } catch (error) {
-        console.error(error instanceof Error ? error.message : 'An unexpected error occurred.')
-        process.exit(2)
-      }
-    `
-    const proc = Bun.spawn(['bun', '--eval', script], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-    const stderr = await new Response(proc.stderr).text()
-    const exitCode = await proc.exited
-    expect(exitCode).toBe(2)
-    expect(stderr.trim()).toContain('boom')
+        run: async (_args: string[], _flags: Record<string, unknown>) => {
+          throw new Error('boom')
+        },
+      },
+    }
+
+    await expect(run(['crash'], crashRegistry)).rejects.toThrow('boom')
+  })
+})
+
+// --- Per-command flags ---
+
+describe('CLI — per-command flags', () => {
+  test('create --help shows --force flag and usage', async () => {
+    const result = await runCli('create', '--help')
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('[directory]')
+    expect(result.stdout).toContain('--force')
+    expect(result.stdout).toContain('Overwrite existing facet.json')
+  })
+
+  test('build --help shows directory usage', async () => {
+    const result = await runCli('build', '--help')
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('[directory]')
+  })
+
+  test('edit --help shows directory usage', async () => {
+    const result = await runCli('edit', '--help')
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('[directory]')
+  })
+})
+
+// --- Directory validation ---
+
+describe('CLI — directory validation', () => {
+  test('build with non-existent directory errors', async () => {
+    const result = await runCli('build', `/tmp/does-not-exist-${Date.now()}`)
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('does not exist')
+  })
+
+  test('edit with non-existent directory errors', async () => {
+    const result = await runCli('edit', `/tmp/does-not-exist-${Date.now()}`)
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('does not exist')
+  })
+
+  test('build with file instead of directory errors', async () => {
+    const result = await runCli('build', import.meta.path)
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('Expected a directory')
   })
 })

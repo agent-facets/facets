@@ -1,10 +1,10 @@
 import { parse } from '@bomb.sh/args'
-import { commands } from './commands.ts'
+import type { Command } from './commands.ts'
 import { printCommandHelp, printGlobalHelp } from './help.ts'
 import { findClosestCommand } from './suggest.ts'
 import { version } from './version.ts'
 
-export async function run(argv: string[]): Promise<number> {
+export async function run(argv: string[], commands: Record<string, Command>): Promise<number> {
   const args = parse(argv, {
     boolean: ['help', 'version'],
   })
@@ -18,7 +18,7 @@ export async function run(argv: string[]): Promise<number> {
 
   // No command given — show global help
   if (!commandName) {
-    printGlobalHelp()
+    printGlobalHelp(commands)
     return 0
   }
 
@@ -29,7 +29,7 @@ export async function run(argv: string[]): Promise<number> {
     if (subCommand) {
       printCommandHelp(subCommand)
     } else {
-      printGlobalHelp()
+      printGlobalHelp(commands)
     }
     return 0
   }
@@ -51,5 +51,32 @@ export async function run(argv: string[]): Promise<number> {
     return 0
   }
 
-  return command.run(argv.slice(1))
+  // Build per-command flag parsing config
+  const booleanFlags: string[] = []
+  const stringFlags: string[] = []
+
+  if (command.flags) {
+    for (const [name, def] of Object.entries(command.flags)) {
+      if (def.type === 'boolean') booleanFlags.push(name)
+      else if (def.type === 'string') stringFlags.push(name)
+    }
+  }
+
+  // Parse with per-command config
+  const parsed = parse(argv.slice(1), {
+    boolean: booleanFlags,
+    string: stringFlags,
+  })
+
+  // Build positional args and flags
+  const positionalArgs = parsed._.map(String)
+  const flags: Record<string, unknown> = {}
+
+  for (const name of [...booleanFlags, ...stringFlags]) {
+    if (parsed[name] !== undefined) {
+      flags[name] = parsed[name]
+    }
+  }
+
+  return command.run(positionalArgs, flags)
 }
