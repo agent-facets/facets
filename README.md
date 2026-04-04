@@ -42,6 +42,16 @@ bun install
 bun check
 ```
 
+### Publishing
+
+This project uses [changesets](https://github.com/changesets/changesets) for versioning and publishing. See the [changeset README](.changeset/README.md) for more details.
+
+```bash
+bun change          # create a changeset describing your changes
+```
+
+When changesets are merged to `main`, CI will automatically open a release PR. Merging that PR publishes to npm.
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) for more details.
 
 ## License
