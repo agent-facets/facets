@@ -11,7 +11,9 @@ jobs:
         - slack-secrets
       filters:
         branches:
-          only: main
+          only:
+            - main
+            - release
       post-steps:
         - notify-failure
         - notify-success

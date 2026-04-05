@@ -1,10 +1,15 @@
 /**
- * CI release script — replicates changesets/action@v1 behavior.
+ * CI release script — branch-aware release pipeline.
  *
- * Three paths:
- * 1. Pending changesets → run `changeset version`, create/update a "Version Packages" PR
- * 2. No pending changesets, all versions published → nothing to do, exit 0
- * 3. No pending changesets, unpublished versions → build, mint OIDC token, publish, push tags
+ * On `main` branch:
+ *   Pending changesets → run `changeset version`, create/update a "Version Packages" PR targeting `release`
+ *   No pending changesets → nothing to do, exit 0
+ *
+ * On `release` branch:
+ *   Unpublished versions → build, mint OIDC token, publish, push tags, sync back to main
+ *   All versions published → nothing to do, exit 0
+ *
+ * On any other branch: exit 0 (no-op)
  *
  * Uses the IO adapter (lib/ci-io.ts) for all side effects so the
  * orchestration logic is fully testable.
@@ -24,6 +29,7 @@ import { io } from './lib/ci-io'
 
 const RELEASE_BRANCH = 'changeset-release/main'
 const PR_TITLE = 'Version Packages'
+const SLACK_CHANNELS = 'C0AQVA6UB38,C0AQFU5S4PR'
 
 export async function versionAndCreatePR(): Promise<number> {
   io.log('Pending changesets found. Creating version PR...')
@@ -77,7 +83,7 @@ export async function versionAndCreatePR(): Promise<number> {
     await io.ghPrUpdate(prNumber, PR_TITLE, prBody)
     io.log(`Updated existing PR #${prNumber}`)
   } else {
-    await io.ghPrCreate('main', RELEASE_BRANCH, PR_TITLE, prBody)
+    await io.ghPrCreate('release', RELEASE_BRANCH, PR_TITLE, prBody)
     io.log('Created new Version Packages PR.')
   }
 
@@ -100,7 +106,7 @@ export async function publish(): Promise<number> {
 
   // Publish to npm and capture stdout for parsing released packages
   const publishOutput = await io.changesetPublish()
-  await io.gitPushTags('origin', 'main')
+  await io.gitPushTags('origin', 'release')
 
   // Create GitHub Releases for each published package
   const packages = await io.loadWorkspacePackages()
@@ -126,31 +132,72 @@ export async function publish(): Promise<number> {
     }
   }
 
+  // Sync release branch back to main
+  io.log('Syncing release branch back to main...')
+  try {
+    await io.gitFetch('origin', 'main')
+    await io.gitCheckout('main')
+    await io.gitMerge('release')
+    await io.gitPush('origin', 'main', false)
+    io.log('Successfully synced release to main.')
+  } catch {
+    io.log('Merge to main failed. Creating fallback PR...')
+    try {
+      const existingPr = (await io.ghPrListWithBase('release', 'main')).trim()
+      if (!existingPr) {
+        await io.ghPrCreate(
+          'main',
+          'release',
+          'Sync Release to Main',
+          'Automatic sync-back from release branch after publishing. Please resolve any conflicts and merge.',
+        )
+      }
+      const prUrl = (await io.ghPrUrl('release', 'main')).trim()
+      await io.slackNotify(
+        SLACK_CHANNELS,
+        `⚠️ Release published successfully, but sync-back to main failed. PR created: ${prUrl}`,
+      )
+    } catch (notifyErr) {
+      io.error(`Failed to create fallback PR or notify Slack: ${(notifyErr as Error).message}`)
+    }
+  }
+
   io.log('Published successfully.')
   return 0
 }
 
 export async function main(): Promise<number> {
-  const files = await io.scanDir('.changeset')
-  const pending = filterPendingChangesets(files)
+  const currentBranch = process.env.CIRCLE_BRANCH ?? ''
 
-  // Path 1: Pending changesets → version + PR
-  if (!shouldPublish(pending)) {
-    io.log(`Found ${pending.length} pending changeset(s).`)
-    return versionAndCreatePR()
-  }
+  // On main: only handle versioning (create PR targeting release)
+  if (currentBranch === 'main') {
+    const files = await io.scanDir('.changeset')
+    const pending = filterPendingChangesets(files)
 
-  // Path 2 or 3: Check npm for unpublished versions
-  const packages = await io.loadWorkspacePackages()
-  const unpublished = await hasUnpublishedVersions(packages, io.npmViewVersion)
+    if (!shouldPublish(pending)) {
+      io.log(`Found ${pending.length} pending changeset(s).`)
+      return versionAndCreatePR()
+    }
 
-  if (!unpublished) {
-    io.log('All package versions already published. Nothing to do.')
+    io.log('No pending changesets on main. Nothing to do.')
     return 0
   }
 
-  // Path 3: Unpublished versions → build + publish
-  return publish()
+  // On release: only handle publishing
+  if (currentBranch === 'release') {
+    const packages = await io.loadWorkspacePackages()
+    const unpublished = await hasUnpublishedVersions(packages, io.npmViewVersion)
+
+    if (!unpublished) {
+      io.log('All package versions already published. Nothing to do.')
+      return 0
+    }
+
+    return publish()
+  }
+
+  io.log(`Branch "${currentBranch}" is not main or release. Nothing to do.`)
+  return 0
 }
 
 if (import.meta.main) {
