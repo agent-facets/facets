@@ -247,3 +247,18 @@ The `create` command SHALL detect when a `facet.json` already exists in the targ
 
 - **WHEN** a user runs `create` in a directory that does not contain `facet.json`
 - **THEN** the system SHALL proceed with the create wizard without prompting
+
+### Requirement: CLI entry point delegates to a platform-specific binary
+
+The system SHALL use a launcher script as its npm `bin` entry point. The launcher script SHALL delegate execution to a platform-specific compiled binary. All existing CLI behavior (commands, flags, help, version, exit codes) SHALL be preserved regardless of which binary is executed.
+
+#### Scenario: Launcher delegates to compiled binary
+
+- **WHEN** a user invokes the CLI via the npm `bin` entry point (e.g., `npx facet build`)
+- **THEN** the launcher SHALL resolve and execute the platform-appropriate compiled binary
+- **AND** the CLI SHALL behave identically to a directly-invoked compiled binary
+
+#### Scenario: All commands work through the launcher
+
+- **WHEN** a user runs any registered command through the launcher
+- **THEN** the command SHALL produce the same output, exit code, and behavior as direct execution
