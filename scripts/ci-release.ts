@@ -1,117 +1,51 @@
 /**
- * CI release script — branch-aware release pipeline.
+ * CI release script — build, publish, and announce releases.
  *
- * On `main` branch:
- *   Pending changesets → run `changeset version`, create/update a "Version Packages" PR targeting `release`
- *   No pending changesets → nothing to do, exit 0
+ * Checks for unpublished package versions. If found, builds all packages,
+ * mints an OIDC token for npm trusted publishing, publishes to npm,
+ * creates GitHub Releases, notifies Slack, and syncs the release branch
+ * back to main.
  *
- * On `release` branch:
- *   Unpublished versions → build, mint OIDC token, publish, push tags, sync back to main
- *   All versions published → nothing to do, exit 0
- *
- * On any other branch: exit 0 (no-op)
- *
- * Uses the IO adapter (lib/ci-io.ts) for all side effects so the
- * orchestration logic is fully testable.
+ * Invoked by the `release` CircleCI job on the `release` branch.
  */
 
 import { getChangelogEntry } from '@changesets/release-utils'
 import {
-  buildVersionPrBody,
-  filterPendingChangesets,
+  comparePackageOrder,
   hasUnpublishedVersions,
   parsePublishedPackages,
-  replaceChangelogEntry,
-  shouldPublish,
   transformChangelogContent,
 } from './lib/changesets'
 import { io } from './lib/ci-io'
+import { ALL_SLACK_CHANNELS, SYNC_PR_BODY, SYNC_PR_TITLE } from './lib/constants'
 
-const RELEASE_BRANCH = 'changeset-release/main'
-const PR_TITLE = 'Version Packages'
-const SLACK_CHANNELS = 'C0AQVA6UB38,C0AQFU5S4PR'
+export async function release(): Promise<number> {
+  const packages = await io.loadWorkspacePackages()
+  const unpublished = await hasUnpublishedVersions(packages, io.npmViewVersion)
 
-export async function versionAndCreatePR(): Promise<number> {
-  io.log('Pending changesets found. Creating version PR...')
-
-  // Mint a GitHub App token for gh CLI (PR creation) and git push
-  const ghToken = await io.mintGitHubToken()
-  process.env.GH_TOKEN = ghToken
-  process.env.GITHUB_TOKEN = ghToken
-
-  // Snapshot package versions before changeset version
-  const packagesBefore = await io.loadWorkspacePackages()
-  const versionsBefore = new Map(packagesBefore.map((p) => [p.name, p.version]))
-
-  await io.changesetVersion()
-  await io.bunInstall()
-
-  // Check for actual changes after versioning
-  const diff = await io.gitDiff()
-  const diffCached = await io.gitDiffCached()
-  if (diff.exitCode === 0 && diffCached.exitCode === 0) {
-    io.log('No changes after versioning, nothing to do.')
+  if (!unpublished) {
+    io.log('All package versions already published. Nothing to do.')
     return 0
   }
 
-  // Detect which packages changed and build rich PR body
-  const packagesAfter = await io.loadWorkspacePackages()
-  const changedPackages = packagesAfter.filter((p) => versionsBefore.get(p.name) !== p.version)
-  const { body: prBody, entries } = await buildVersionPrBody(changedPackages, io.readFile)
-
-  // Rewrite CHANGELOG.md files with transformed content
-  for (const entry of entries) {
-    const changelogPath = `${entry.dir}/CHANGELOG.md`
-    const original = await io.readFile(changelogPath)
-    const rewritten = replaceChangelogEntry(original, entry.version, entry.content)
-    await io.writeFile(changelogPath, rewritten)
-  }
-
-  // Configure git identity
-  await io.gitConfig('user.name', 'circleci[bot]')
-  await io.gitConfig('user.email', 'circleci[bot]@users.noreply.github.com')
-
-  // Create/update branch and push
-  await io.gitCheckout(RELEASE_BRANCH)
-  await io.gitAdd()
-  await io.gitCommit('ci(release): version packages')
-  await io.gitPush('origin', RELEASE_BRANCH, true)
-
-  // Create or update PR with rich body
-  const prNumber = (await io.ghPrList(RELEASE_BRANCH)).trim()
-  if (prNumber) {
-    await io.ghPrUpdate(prNumber, PR_TITLE, prBody)
-    io.log(`Updated existing PR #${prNumber}`)
-  } else {
-    await io.ghPrCreate('release', RELEASE_BRANCH, PR_TITLE, prBody)
-    io.log('Created new Version Packages PR.')
-  }
-
-  return 0
-}
-
-export async function publish(): Promise<number> {
   io.log('Unpublished versions found. Building and publishing...')
 
-  // Mint GitHub App token for creating releases
   const ghToken = await io.mintGitHubToken()
   process.env.GH_TOKEN = ghToken
   process.env.GITHUB_TOKEN = ghToken
 
   await io.turboBuild()
 
-  // Mint OIDC token for npm trusted publishing
   const oidcToken = (await io.mintOidcToken()).trim()
   process.env.NPM_ID_TOKEN = oidcToken
 
-  // Publish to npm and capture stdout for parsing released packages
   const publishOutput = await io.changesetPublish()
   await io.gitPushTags('origin', 'release')
 
-  // Create GitHub Releases for each published package
-  const packages = await io.loadWorkspacePackages()
-  const packagesByName = new Map(packages.map((p) => [p.name, p]))
+  const allPackages = await io.loadWorkspacePackages()
+  const packagesByName = new Map(allPackages.map((p) => [p.name, p]))
   const published = parsePublishedPackages(publishOutput)
+  const releasedUrls: { tag: string; url: string }[] = []
 
   for (const pkg of published) {
     const tag = `${pkg.name}@${pkg.version}`
@@ -125,14 +59,29 @@ export async function publish(): Promise<number> {
 
       const changelog = await io.readFile(`${workspacePkg.dir}/CHANGELOG.md`)
       const entry = getChangelogEntry(changelog, pkg.version)
-      await io.ghReleaseCreate(tag, tag, transformChangelogContent(entry.content))
+      const url = (await io.ghReleaseCreate(tag, tag, transformChangelogContent(entry.content))).trim()
       io.log(`Created GitHub Release: ${tag}`)
+      releasedUrls.push({ tag, url })
     } catch (err) {
       io.error(`Failed to create release for ${tag}: ${(err as Error).message}`)
     }
   }
 
-  // Sync release branch back to main
+  if (releasedUrls.length > 0) {
+    releasedUrls.sort((a, b) => {
+      const nameA = a.tag.replace(/@[^@]+$/, '')
+      const nameB = b.tag.replace(/@[^@]+$/, '')
+      return comparePackageOrder(nameA, nameB)
+    })
+    const lines = releasedUrls.map((r) => `• <${r.url}|${r.tag}>`)
+    const message = `🚀 Published ${releasedUrls.length} release(s):\n${lines.join('\n')}`
+    try {
+      await io.slackNotify(ALL_SLACK_CHANNELS, message)
+    } catch (err) {
+      io.error(`Failed to send Slack release notification: ${(err as Error).message}`)
+    }
+  }
+
   io.log('Syncing release branch back to main...')
   try {
     await io.gitFetch('origin', 'main')
@@ -145,16 +94,11 @@ export async function publish(): Promise<number> {
     try {
       const existingPr = (await io.ghPrListWithBase('release', 'main')).trim()
       if (!existingPr) {
-        await io.ghPrCreate(
-          'main',
-          'release',
-          'Sync Release to Main',
-          'Automatic sync-back from release branch after publishing. Please resolve any conflicts and merge.',
-        )
+        await io.ghPrCreate('main', 'release', SYNC_PR_TITLE, SYNC_PR_BODY)
       }
       const prUrl = (await io.ghPrUrl('release', 'main')).trim()
       await io.slackNotify(
-        SLACK_CHANNELS,
+        ALL_SLACK_CHANNELS,
         `⚠️ Release published successfully, but sync-back to main failed. PR created: ${prUrl}`,
       )
     } catch (notifyErr) {
@@ -166,42 +110,8 @@ export async function publish(): Promise<number> {
   return 0
 }
 
-export async function main(): Promise<number> {
-  const currentBranch = process.env.CIRCLE_BRANCH ?? ''
-
-  // On main: only handle versioning (create PR targeting release)
-  if (currentBranch === 'main') {
-    const files = await io.scanDir('.changeset')
-    const pending = filterPendingChangesets(files)
-
-    if (!shouldPublish(pending)) {
-      io.log(`Found ${pending.length} pending changeset(s).`)
-      return versionAndCreatePR()
-    }
-
-    io.log('No pending changesets on main. Nothing to do.')
-    return 0
-  }
-
-  // On release: only handle publishing
-  if (currentBranch === 'release') {
-    const packages = await io.loadWorkspacePackages()
-    const unpublished = await hasUnpublishedVersions(packages, io.npmViewVersion)
-
-    if (!unpublished) {
-      io.log('All package versions already published. Nothing to do.')
-      return 0
-    }
-
-    return publish()
-  }
-
-  io.log(`Branch "${currentBranch}" is not main or release. Nothing to do.`)
-  return 0
-}
-
 if (import.meta.main) {
-  const code = await main().catch((err) => {
+  const code = await release().catch((err) => {
     io.error(err.message)
     return 1
   })

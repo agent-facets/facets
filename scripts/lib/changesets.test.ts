@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import dedent from 'dedent'
 import {
   buildVersionPrBody,
+  comparePackageOrder,
   filterPendingChangesets,
   hasUnpublishedVersions,
   parsePublishedPackages,
@@ -903,5 +904,46 @@ New tag:  @agent-facets/core@0.2.0
 `
     const result = parsePublishedPackages(stdout)
     expect(result).toEqual([{ name: '@agent-facets/core', version: '0.2.0' }])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// comparePackageOrder
+// ---------------------------------------------------------------------------
+
+describe('comparePackageOrder', () => {
+  test('sorts known packages into their defined order', () => {
+    const scrambled = ['@agent-facets/brand', '@agent-facets/core', 'agent-facets']
+    const sorted = [...scrambled].sort(comparePackageOrder)
+    expect(sorted).toEqual(['agent-facets', '@agent-facets/core', '@agent-facets/brand'])
+  })
+
+  test('unknown packages sort after known ones', () => {
+    const packages = ['unknown-pkg', '@agent-facets/core', 'agent-facets', 'another-unknown']
+    const sorted = [...packages].sort(comparePackageOrder)
+    expect(sorted[0]).toBe('agent-facets')
+    expect(sorted[1]).toBe('@agent-facets/core')
+    // Unknown packages are equal to each other, so they end up after the known ones
+    // but their relative order is unspecified
+    expect(sorted.slice(2).sort()).toEqual(['another-unknown', 'unknown-pkg'])
+  })
+
+  test('all unknown packages preserve stable order', () => {
+    const packages = ['zebra', 'alpha', 'middle']
+    const sorted = [...packages].sort(comparePackageOrder)
+    // All have MAX_SAFE_INTEGER order, so comparator returns 0 — stable sort preserves input order
+    expect(sorted).toEqual(['zebra', 'alpha', 'middle'])
+  })
+
+  test('single package is unchanged', () => {
+    const packages = ['@agent-facets/core']
+    const sorted = [...packages].sort(comparePackageOrder)
+    expect(sorted).toEqual(['@agent-facets/core'])
+  })
+
+  test('already-sorted input stays sorted', () => {
+    const packages = ['agent-facets', '@agent-facets/core', '@agent-facets/brand']
+    const sorted = [...packages].sort(comparePackageOrder)
+    expect(sorted).toEqual(packages)
   })
 })

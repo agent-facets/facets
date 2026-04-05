@@ -1,4 +1,14 @@
 commands:
+    install-gh:
+        steps:
+            - run:
+                command: |
+                    curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+                      | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+                    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+                      | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+                    sudo apt-get update && sudo apt-get install gh -y
+                name: Install gh CLI
     notify-failure:
         steps:
             - slack/notify:
@@ -36,6 +46,18 @@ commands:
                     - node_modules
                     - ~/.bun/install/cache
 jobs:
+    changesets:
+        docker:
+            - image: cimg/base:current
+        environment:
+            LEFTHOOK: "0"
+        resource_class: small
+        steps:
+            - setup-mise
+            - install-gh
+            - run:
+                command: bun scripts/ci-changesets.ts
+                name: Changesets
     check:
         docker:
             - image: cimg/base:current
@@ -55,14 +77,7 @@ jobs:
         resource_class: small
         steps:
             - setup-mise
-            - run:
-                command: |
-                    curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-                      | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-                    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
-                      | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-                    sudo apt-get update && sudo apt-get install gh -y
-                name: Install gh CLI
+            - install-gh
             - run:
                 command: bun scripts/ci-release.ts
                 name: Release
@@ -76,7 +91,7 @@ workflows:
                 context: slack-secrets
                 post-steps:
                     - notify-failure
-            - release:
+            - changesets:
                 context:
                     - release
                     - slack-secrets
@@ -84,6 +99,17 @@ workflows:
                     branches:
                         only:
                             - main
+                post-steps:
+                    - notify-failure
+                requires:
+                    - check
+            - release:
+                context:
+                    - release
+                    - slack-secrets
+                filters:
+                    branches:
+                        only:
                             - release
                 post-steps:
                     - notify-failure
