@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import dedent from 'dedent'
 import { detectNamingCollisions } from '../build/detect-collisions.ts'
 import { runBuildPipeline } from '../build/pipeline.ts'
 import { validateCompactFacets } from '../build/validate-facets.ts'
@@ -358,7 +359,14 @@ describe('content validation', () => {
     const dir = await createFixtureDir('front-matter')
     await Bun.write(
       join(dir, 'skills/review/SKILL.md'),
-      '---\nname: Review\ndescription: A review skill\n---\n# Review\nReview all code.',
+      dedent`
+        ---
+        name: Review
+        description: A review skill
+        ---
+        # Review
+        Review all code.
+      `,
     )
     await Bun.write(
       join(dir, 'facet.json'),
