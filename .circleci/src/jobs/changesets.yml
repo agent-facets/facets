@@ -5,7 +5,6 @@ environment:
   LEFTHOOK: "0"
 steps:
   - setup-mise
-  - install-gh
   - run:
       name: Changesets
       command: bun scripts/ci-changesets.ts

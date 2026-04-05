@@ -19,6 +19,7 @@
     "version-packages": "changeset version",
     "release": "bun run check && changeset publish",
     "ci:pack": "circleci config pack .circleci/src > .circleci/config.yml",
+    "ci:check-pack": "diff <(circleci config pack .circleci/src) .circleci/config.yml || (echo 'CircleCI config.yml is out of date. Run: bun run ci:pack' && exit 1)",
     "link": "bun link --cwd packages/cli",
     "unlink": "bun unlink --cwd packages/cli",
     "docs": "bun --cwd docs mint dev",
