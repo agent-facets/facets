@@ -45,7 +45,7 @@ export const io = {
   ghPrUpdate: (prNumber: string, title: string, body: string) =>
     $`gh pr edit ${prNumber} --title ${title} --body ${body}`,
   ghReleaseCreate: (tag: string, title: string, notes: string) =>
-    $`gh release create ${tag} --title ${title} --notes ${notes}`,
+    $`gh release create ${tag} --title ${title} --notes ${notes}`.text(),
 
   // CircleCI OIDC
   mintOidcToken: () => $`circleci run oidc get --claims '{"aud": "npm:registry.npmjs.org"}'`.text(),

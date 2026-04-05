@@ -58,6 +58,13 @@ const PACKAGE_ORDER: Record<string, number> = {
   '@agent-facets/brand': 2,
 }
 
+/** Compare two package names by their defined display order. */
+export function comparePackageOrder(nameA: string, nameB: string): number {
+  const orderA = PACKAGE_ORDER[nameA] ?? Number.MAX_SAFE_INTEGER
+  const orderB = PACKAGE_ORDER[nameB] ?? Number.MAX_SAFE_INTEGER
+  return orderA - orderB
+}
+
 /** A per-package transformed entry for CHANGELOG rewrite */
 export interface TransformedEntry {
   dir: string
@@ -103,9 +110,8 @@ export async function buildVersionPrBody(
   )
 
   const sorted = packageInfos.sort((a, b) => {
-    const orderA = PACKAGE_ORDER[a.name] ?? Number.MAX_SAFE_INTEGER
-    const orderB = PACKAGE_ORDER[b.name] ?? Number.MAX_SAFE_INTEGER
-    if (orderA !== orderB) return orderA - orderB
+    const order = comparePackageOrder(a.name, b.name)
+    if (order !== 0) return order
     // Fall back to bump level (higher = more important = first)
     return b.highestLevel - a.highestLevel
   })

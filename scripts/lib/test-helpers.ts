@@ -1,0 +1,32 @@
+import { spyOn } from 'bun:test'
+import dedent from 'dedent'
+import { io } from './ci-io'
+
+/** Fake a successful Bun.$ shell result for test mocks. */
+// biome-ignore lint/suspicious/noExplicitAny: mocking Bun.$ ShellOutput for tests
+export function shellResult(stdout = '', exitCode = 0): any {
+  return { stdout: Buffer.from(stdout), exitCode }
+}
+
+/** Silence io.log and io.error for test output. */
+export function silenceIO() {
+  spyOn(io, 'log').mockImplementation(() => {})
+  spyOn(io, 'error').mockImplementation(() => {})
+}
+
+/** Sample CHANGELOG.md content for release pipeline tests. */
+export const SAMPLE_CHANGELOG = dedent`
+  # @agent-facets/core
+
+  ## 1.1.0
+
+  ### Minor Changes
+
+  - Added a cool new feature
+
+  ## 1.0.0
+
+  ### Minor Changes
+
+  - Initial release
+`

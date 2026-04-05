@@ -7,5 +7,5 @@ steps:
   - setup-mise
   - install-gh
   - run:
-      name: Release
-      command: bun scripts/ci-release.ts
+      name: Changesets
+      command: bun scripts/ci-changesets.ts
