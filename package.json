@@ -9,7 +9,7 @@
     ]
   },
   "scripts": {
-    "dev": "bun turbo build && bun run link",
+    "dev": "bun --cwd packages/cli src/index.ts",
     "types": "tsc --noEmit",
     "check": "bun turbo check",
     "test:scripts": "bun test scripts/",
@@ -20,13 +20,11 @@
     "release": "bun run check && changeset publish",
     "ci:pack": "circleci config pack .circleci/src > .circleci/config.yml && circleci config pack .circleci/release-src > .circleci/release.yml",
     "ci:check-pack": "diff <(circleci config pack .circleci/src) .circleci/config.yml && diff <(circleci config pack .circleci/release-src) .circleci/release.yml || (echo 'CircleCI configs are out of date. Run: bun run ci:pack' && exit 1)",
-    "link": "bun link --cwd packages/cli",
-    "unlink": "bun unlink --cwd packages/cli",
     "docs": "bun --cwd docs mint dev",
     "docs:validate": "bun --cwd docs mint validate",
     "docs:broken-links": "bun --cwd docs mint broken-links",
     "postinstall": "mise exec -- lefthook install",
-    "clean": "rm -rf .turbo node_modules packages/*/node_modules packages/*/.turbo packages/*/dist test-results/*.xml tmp docs/.mintlify"
+    "clean": "rm -rf .turbo node_modules packages/*/node_modules packages/*/.turbo packages/*/dist packages/cli/bin/.facet test-results/*.xml tmp docs/.mintlify"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.10",

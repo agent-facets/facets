@@ -38,6 +38,10 @@ mise install
 # Install dependencies + set up git hooks
 bun install
 
+# Run the CLI locally (runs source directly, no compilation needed)
+bun dev --version
+bun dev build ./my-facet
+
 # Run lint, typecheck, build, and tests
 bun check
 ```

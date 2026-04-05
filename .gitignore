@@ -9,6 +9,9 @@ dist/
 docs/.mintlify/
 node_modules/
 
+# postinstall cached binary (hard-link created by packages/cli/scripts/postinstall.mjs)
+packages/cli/bin/.facet
+
 
 # prepack/postpack backup (safety net if postpack is interrupted)
 .package.json.bak
