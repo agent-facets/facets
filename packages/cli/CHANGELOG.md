@@ -1,5 +1,16 @@
 # agent-facets
 
+## 0.2.0
+
+### Minor Changes
+
+- [#35](https://github.com/agent-facets/facets/pull/35) [`6350718`](https://github.com/agent-facets/facets/commit/63507188f1bb3a7276cd4812f69f7d16d1778fd6) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Ensure proper release isolation
+
+### Patch Changes
+
+- [#37](https://github.com/agent-facets/facets/pull/37) [`1c48260`](https://github.com/agent-facets/facets/commit/1c48260ab77fd27e64be6c5884aa6c447e3639e0) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Better dev & ci dependency management via mise
+- [#33](https://github.com/agent-facets/facets/pull/33) [`540e126`](https://github.com/agent-facets/facets/commit/540e126e677de98a9b3d4e39542df37de8756b73) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Ensure CI runs tests before release and notify Slack when failures occur.
+
 ## 0.1.4
 
 ### Patch Changes
