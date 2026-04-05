@@ -105,7 +105,7 @@ function isMusl() {
 // ---------------------------------------------------------------------------
 
 function buildCandidates(platform, arch, opts = {}) {
-  const base = `agent-facets-${platform}-${arch}`
+  const base = `@agent-facets/cli-${platform}-${arch}`
   const avx2 = opts.avx2 !== undefined ? opts.avx2 : arch === 'x64' ? supportsAvx2(platform) : false
   const baseline = arch === 'x64' && !avx2
 

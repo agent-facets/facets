@@ -1,5 +1,6 @@
 {
   "name": "agent-facets",
+  "private": true,
   "repository": {
     "type": "git",
     "url": "https://github.com/agent-facets/facets",
@@ -38,8 +39,18 @@
   "peerDependencies": {
     "typescript": "^5 || ^6"
   },
-  "publishConfig": {
-    "access": "public",
-    "provenance": false
+  "optionalDependencies": {
+    "@agent-facets/cli-darwin-arm64": "0.2.2",
+    "@agent-facets/cli-darwin-x64": "0.2.2",
+    "@agent-facets/cli-darwin-x64-baseline": "0.2.2",
+    "@agent-facets/cli-linux-arm64": "0.2.2",
+    "@agent-facets/cli-linux-arm64-musl": "0.2.2",
+    "@agent-facets/cli-linux-x64": "0.2.2",
+    "@agent-facets/cli-linux-x64-baseline": "0.2.2",
+    "@agent-facets/cli-linux-x64-baseline-musl": "0.2.2",
+    "@agent-facets/cli-linux-x64-musl": "0.2.2",
+    "@agent-facets/cli-windows-arm64": "0.2.2",
+    "@agent-facets/cli-windows-x64": "0.2.2",
+    "@agent-facets/cli-windows-x64-baseline": "0.2.2"
   }
 }

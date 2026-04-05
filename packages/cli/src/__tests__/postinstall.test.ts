@@ -31,26 +31,26 @@ describe('buildCandidates', () => {
   test('linux x64 avx2 glibc', () => {
     const result = buildCandidates('linux', 'x64', { avx2: true, musl: false })
     expect(result).toEqual([
-      'agent-facets-linux-x64',
-      'agent-facets-linux-x64-baseline',
-      'agent-facets-linux-x64-musl',
-      'agent-facets-linux-x64-baseline-musl',
+      '@agent-facets/cli-linux-x64',
+      '@agent-facets/cli-linux-x64-baseline',
+      '@agent-facets/cli-linux-x64-musl',
+      '@agent-facets/cli-linux-x64-baseline-musl',
     ])
   })
 
   test('linux x64 no-avx2 glibc', () => {
     const result = buildCandidates('linux', 'x64', { avx2: false, musl: false })
     expect(result).toEqual([
-      'agent-facets-linux-x64-baseline',
-      'agent-facets-linux-x64',
-      'agent-facets-linux-x64-baseline-musl',
-      'agent-facets-linux-x64-musl',
+      '@agent-facets/cli-linux-x64-baseline',
+      '@agent-facets/cli-linux-x64',
+      '@agent-facets/cli-linux-x64-baseline-musl',
+      '@agent-facets/cli-linux-x64-musl',
     ])
   })
 
   test('linux arm64 glibc', () => {
     const result = buildCandidates('linux', 'arm64', { avx2: false, musl: false })
-    expect(result).toEqual(['agent-facets-linux-arm64', 'agent-facets-linux-arm64-musl'])
+    expect(result).toEqual(['@agent-facets/cli-linux-arm64', '@agent-facets/cli-linux-arm64-musl'])
   })
 
   // ---------------------------------------------------------------------------
@@ -60,26 +60,26 @@ describe('buildCandidates', () => {
   test('linux x64 avx2 musl', () => {
     const result = buildCandidates('linux', 'x64', { avx2: true, musl: true })
     expect(result).toEqual([
-      'agent-facets-linux-x64-musl',
-      'agent-facets-linux-x64-baseline-musl',
-      'agent-facets-linux-x64',
-      'agent-facets-linux-x64-baseline',
+      '@agent-facets/cli-linux-x64-musl',
+      '@agent-facets/cli-linux-x64-baseline-musl',
+      '@agent-facets/cli-linux-x64',
+      '@agent-facets/cli-linux-x64-baseline',
     ])
   })
 
   test('linux x64 no-avx2 musl', () => {
     const result = buildCandidates('linux', 'x64', { avx2: false, musl: true })
     expect(result).toEqual([
-      'agent-facets-linux-x64-baseline-musl',
-      'agent-facets-linux-x64-musl',
-      'agent-facets-linux-x64-baseline',
-      'agent-facets-linux-x64',
+      '@agent-facets/cli-linux-x64-baseline-musl',
+      '@agent-facets/cli-linux-x64-musl',
+      '@agent-facets/cli-linux-x64-baseline',
+      '@agent-facets/cli-linux-x64',
     ])
   })
 
   test('linux arm64 musl', () => {
     const result = buildCandidates('linux', 'arm64', { avx2: false, musl: true })
-    expect(result).toEqual(['agent-facets-linux-arm64-musl', 'agent-facets-linux-arm64'])
+    expect(result).toEqual(['@agent-facets/cli-linux-arm64-musl', '@agent-facets/cli-linux-arm64'])
   })
 
   // ---------------------------------------------------------------------------
@@ -88,27 +88,27 @@ describe('buildCandidates', () => {
 
   test('darwin arm64', () => {
     const result = buildCandidates('darwin', 'arm64', { avx2: false })
-    expect(result).toEqual(['agent-facets-darwin-arm64'])
+    expect(result).toEqual(['@agent-facets/cli-darwin-arm64'])
   })
 
   test('darwin x64 avx2', () => {
     const result = buildCandidates('darwin', 'x64', { avx2: true })
-    expect(result).toEqual(['agent-facets-darwin-x64', 'agent-facets-darwin-x64-baseline'])
+    expect(result).toEqual(['@agent-facets/cli-darwin-x64', '@agent-facets/cli-darwin-x64-baseline'])
   })
 
   test('darwin x64 no-avx2', () => {
     const result = buildCandidates('darwin', 'x64', { avx2: false })
-    expect(result).toEqual(['agent-facets-darwin-x64-baseline', 'agent-facets-darwin-x64'])
+    expect(result).toEqual(['@agent-facets/cli-darwin-x64-baseline', '@agent-facets/cli-darwin-x64'])
   })
 
   test('windows x64 avx2', () => {
     const result = buildCandidates('windows', 'x64', { avx2: true })
-    expect(result).toEqual(['agent-facets-windows-x64', 'agent-facets-windows-x64-baseline'])
+    expect(result).toEqual(['@agent-facets/cli-windows-x64', '@agent-facets/cli-windows-x64-baseline'])
   })
 
   test('windows arm64', () => {
     const result = buildCandidates('windows', 'arm64', { avx2: false })
-    expect(result).toEqual(['agent-facets-windows-arm64'])
+    expect(result).toEqual(['@agent-facets/cli-windows-arm64'])
   })
 })
 
@@ -123,7 +123,7 @@ describe('consistency — launcher and postinstall candidate lists match', () =>
    * so the test catches any drift between the two implementations.
    */
   function launcherCandidates(platform: string, arch: string, opts: { avx2: boolean; musl?: boolean }): string[] {
-    const base = `agent-facets-${platform}-${arch}`
+    const base = `@agent-facets/cli-${platform}-${arch}`
     const baseline = arch === 'x64' && !opts.avx2
 
     if (platform === 'linux') {

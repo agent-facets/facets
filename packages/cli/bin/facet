@@ -52,7 +52,7 @@ let arch = archMap[os.arch()]
 if (!arch) {
   arch = os.arch()
 }
-const base = "agent-facets-" + platform + "-" + arch
+const base = "@agent-facets/cli-" + platform + "-" + arch
 const binary = platform === "windows" ? "facet.exe" : "facet"
 
 function supportsAvx2() {
