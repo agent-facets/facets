@@ -55,6 +55,7 @@ describe('ci-release', () => {
       expect(code).toBe(0)
       expect(ghTokenSpy).toHaveBeenCalledTimes(1)
       expect(process.env.GH_TOKEN).toBe('fake-gh-token')
+      expect(process.env.GITHUB_TOKEN).toBe('fake-gh-token')
       expect(versionSpy).toHaveBeenCalledTimes(1)
       expect(prCreateSpy).toHaveBeenCalledTimes(1)
     })

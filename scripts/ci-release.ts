@@ -23,6 +23,7 @@ export async function versionAndCreatePR(): Promise<number> {
   // Mint a GitHub App token for gh CLI (PR creation) and git push
   const ghToken = await io.mintGitHubToken()
   process.env.GH_TOKEN = ghToken
+  process.env.GITHUB_TOKEN = ghToken
 
   await io.changesetVersion()
   await io.bunInstall()
