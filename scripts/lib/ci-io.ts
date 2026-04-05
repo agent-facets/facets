@@ -31,9 +31,15 @@ export const io = {
   gitPush: (remote: string, ref: string, force = false) =>
     force ? $`git push ${remote} ${ref} --force` : $`git push ${remote} ${ref}`,
   gitPushTags: (remote: string, ref: string) => $`git push --follow-tags ${remote} ${ref}`,
+  gitFetch: (remote: string, branch: string) => $`git fetch ${remote} ${branch}`,
+  gitMerge: (branch: string) => $`git merge ${branch} --no-edit`,
 
   // GitHub CLI
   ghPrList: (head: string) => $`gh pr list --head ${head} --state open --json number --jq .[0].number`.text(),
+  ghPrListWithBase: (head: string, base: string) =>
+    $`gh pr list --head ${head} --base ${base} --state open --json number --jq .[0].number`.text(),
+  ghPrUrl: (head: string, base: string) =>
+    $`gh pr list --head ${head} --base ${base} --state open --json url --jq .[0].url`.text(),
   ghPrCreate: (base: string, head: string, title: string, body: string) =>
     $`gh pr create --base ${base} --head ${head} --title ${title} --body ${body}`,
   ghPrUpdate: (prNumber: string, title: string, body: string) =>
@@ -55,6 +61,22 @@ export const io = {
 
   // Dependencies
   bunInstall: () => $`bun install`,
+
+  // Slack
+  slackNotify: async (channels: string, text: string): Promise<void> => {
+    const token = process.env.SLACK_ACCESS_TOKEN ?? process.env.SLACK_BOT_TOKEN ?? ''
+    if (!token) {
+      console.error('No Slack token found (SLACK_ACCESS_TOKEN or SLACK_BOT_TOKEN). Skipping notification.')
+      return
+    }
+    for (const channel of channels.split(',').map((c) => c.trim())) {
+      await fetch('https://slack.com/api/chat.postMessage', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channel, text }),
+      })
+    }
+  },
 
   // Console
   log: (...args: unknown[]) => console.log(...args),
