@@ -13,6 +13,21 @@ function setup() {
   spyOn(io, 'error').mockImplementation(() => {})
 }
 
+const SAMPLE_CHANGELOG = `# @agent-facets/core
+
+## 0.2.0
+
+### Minor Changes
+
+- Added a cool new feature
+
+## 0.1.0
+
+### Minor Changes
+
+- Initial release
+`
+
 describe('ci-release', () => {
   beforeEach(() => {
     setup()
@@ -23,45 +38,8 @@ describe('ci-release', () => {
   })
 
   describe('versionAndCreatePR', () => {
-    test('creates a new PR when changesets are pending', async () => {
-      // Mock: pending changesets exist
-      spyOn(io, 'scanDir').mockResolvedValue(['funny-turtle.md', 'README.md'])
-
-      // Mock: GitHub App token
-      const ghTokenSpy = spyOn(io, 'mintGitHubToken').mockResolvedValue('fake-gh-token')
-
-      // Mock: changeset version + install
-      const versionSpy = spyOn(io, 'changesetVersion').mockResolvedValue(shellResult())
-      spyOn(io, 'bunInstall').mockResolvedValue(shellResult())
-
-      // Mock: git diff shows changes
-      spyOn(io, 'gitDiff').mockResolvedValue(shellResult('', 1))
-      spyOn(io, 'gitDiffCached').mockResolvedValue(shellResult('', 0))
-
-      // Mock: git operations
-      spyOn(io, 'gitConfig').mockResolvedValue(shellResult())
-      spyOn(io, 'gitCheckout').mockResolvedValue(shellResult())
-      spyOn(io, 'gitAdd').mockResolvedValue(shellResult())
-      spyOn(io, 'gitCommit').mockResolvedValue(shellResult())
-      spyOn(io, 'gitPush').mockResolvedValue(shellResult())
-
-      // Mock: no existing PR
-      spyOn(io, 'ghPrList').mockResolvedValue('')
-      const prCreateSpy = spyOn(io, 'ghPrCreate').mockResolvedValue(shellResult())
-
-      const { main } = await import('./ci-release')
-      const code = await main()
-
-      expect(code).toBe(0)
-      expect(ghTokenSpy).toHaveBeenCalledTimes(1)
-      expect(process.env.GH_TOKEN).toBe('fake-gh-token')
-      expect(process.env.GITHUB_TOKEN).toBe('fake-gh-token')
-      expect(versionSpy).toHaveBeenCalledTimes(1)
-      expect(prCreateSpy).toHaveBeenCalledTimes(1)
-    })
-
-    test('updates existing PR instead of creating a new one', async () => {
-      spyOn(io, 'scanDir').mockResolvedValue(['funny-turtle.md'])
+    /** Common mocks for the version+PR path */
+    function setupVersionPath() {
       spyOn(io, 'mintGitHubToken').mockResolvedValue('fake-gh-token')
       spyOn(io, 'changesetVersion').mockResolvedValue(shellResult())
       spyOn(io, 'bunInstall').mockResolvedValue(shellResult())
@@ -72,21 +50,66 @@ describe('ci-release', () => {
       spyOn(io, 'gitAdd').mockResolvedValue(shellResult())
       spyOn(io, 'gitCommit').mockResolvedValue(shellResult())
       spyOn(io, 'gitPush').mockResolvedValue(shellResult())
+      spyOn(io, 'readFile').mockResolvedValue(SAMPLE_CHANGELOG)
+    }
 
-      // Mock: existing PR found
-      spyOn(io, 'ghPrList').mockResolvedValue('42\n')
+    test('creates a new PR with rich body when changesets are pending', async () => {
+      spyOn(io, 'scanDir').mockResolvedValue(['funny-turtle.md', 'README.md'])
+      setupVersionPath()
+
+      // Before versioning: v0.1.0, after versioning: v0.2.0
+      const loadSpy = spyOn(io, 'loadWorkspacePackages')
+        .mockResolvedValueOnce([{ name: '@agent-facets/core', version: '0.1.0', dir: 'packages/core' }])
+        .mockResolvedValueOnce([{ name: '@agent-facets/core', version: '0.2.0', dir: 'packages/core' }])
+
+      spyOn(io, 'ghPrList').mockResolvedValue('')
       const prCreateSpy = spyOn(io, 'ghPrCreate').mockResolvedValue(shellResult())
 
       const { main } = await import('./ci-release')
       const code = await main()
 
       expect(code).toBe(0)
+      expect(loadSpy).toHaveBeenCalledTimes(2)
+      expect(prCreateSpy).toHaveBeenCalledTimes(1)
+
+      // Verify the PR body contains release info
+      const body = prCreateSpy.mock.calls[0]?.[3] as string
+      expect(body).toContain('# Releases')
+      expect(body).toContain('## @agent-facets/core@0.2.0')
+      expect(body).toContain('Added a cool new feature')
+    })
+
+    test('updates existing PR body instead of creating a new one', async () => {
+      spyOn(io, 'scanDir').mockResolvedValue(['funny-turtle.md'])
+      setupVersionPath()
+
+      spyOn(io, 'loadWorkspacePackages')
+        .mockResolvedValueOnce([{ name: '@agent-facets/core', version: '0.1.0', dir: 'packages/core' }])
+        .mockResolvedValueOnce([{ name: '@agent-facets/core', version: '0.2.0', dir: 'packages/core' }])
+
+      spyOn(io, 'ghPrList').mockResolvedValue('42\n')
+      const prCreateSpy = spyOn(io, 'ghPrCreate').mockResolvedValue(shellResult())
+      const prUpdateSpy = spyOn(io, 'ghPrUpdate').mockResolvedValue(shellResult())
+
+      const { main } = await import('./ci-release')
+      const code = await main()
+
+      expect(code).toBe(0)
       expect(prCreateSpy).not.toHaveBeenCalled()
+      expect(prUpdateSpy).toHaveBeenCalledTimes(1)
+
+      // Verify updated body contains release info
+      const body = prUpdateSpy.mock.calls[0]?.[2] as string
+      expect(body).toContain('# Releases')
+      expect(body).toContain('## @agent-facets/core@0.2.0')
     })
 
     test('exits early when changeset version produces no diff', async () => {
       spyOn(io, 'scanDir').mockResolvedValue(['funny-turtle.md'])
       spyOn(io, 'mintGitHubToken').mockResolvedValue('fake-gh-token')
+      spyOn(io, 'loadWorkspacePackages').mockResolvedValue([
+        { name: '@agent-facets/core', version: '0.1.0', dir: 'packages/core' },
+      ])
       spyOn(io, 'changesetVersion').mockResolvedValue(shellResult())
       spyOn(io, 'bunInstall').mockResolvedValue(shellResult())
 
@@ -102,6 +125,24 @@ describe('ci-release', () => {
       expect(code).toBe(0)
       expect(gitCheckoutSpy).not.toHaveBeenCalled()
     })
+
+    test('sets both GH_TOKEN and GITHUB_TOKEN', async () => {
+      spyOn(io, 'scanDir').mockResolvedValue(['funny-turtle.md'])
+      setupVersionPath()
+
+      spyOn(io, 'loadWorkspacePackages')
+        .mockResolvedValueOnce([{ name: '@agent-facets/core', version: '0.1.0', dir: 'packages/core' }])
+        .mockResolvedValueOnce([{ name: '@agent-facets/core', version: '0.2.0', dir: 'packages/core' }])
+
+      spyOn(io, 'ghPrList').mockResolvedValue('')
+      spyOn(io, 'ghPrCreate').mockResolvedValue(shellResult())
+
+      const { main } = await import('./ci-release')
+      await main()
+
+      expect(process.env.GH_TOKEN).toBe('fake-gh-token')
+      expect(process.env.GITHUB_TOKEN).toBe('fake-gh-token')
+    })
   })
 
   describe('publish', () => {
@@ -109,18 +150,18 @@ describe('ci-release', () => {
     function setupPublishPath() {
       spyOn(io, 'scanDir').mockResolvedValue(['README.md'])
       spyOn(io, 'loadWorkspacePackages').mockResolvedValue([
-        { name: '@agent-facets/core', version: '1.1.0', private: false },
+        { name: '@agent-facets/core', version: '1.1.0', dir: 'packages/core', private: false },
       ])
       spyOn(io, 'npmViewVersion').mockResolvedValue('1.0.0')
+      spyOn(io, 'mintGitHubToken').mockResolvedValue('fake-gh-token')
       spyOn(io, 'turboBuild').mockResolvedValue(shellResult())
     }
 
     test('mints OIDC token and publishes', async () => {
       setupPublishPath()
 
-      // Mock: OIDC + publish
       const mintSpy = spyOn(io, 'mintOidcToken').mockResolvedValue('fake-oidc-token\n')
-      const publishSpy = spyOn(io, 'changesetPublish').mockResolvedValue(shellResult())
+      const publishSpy = spyOn(io, 'changesetPublish').mockResolvedValue('')
       spyOn(io, 'gitPushTags').mockResolvedValue(shellResult())
 
       const { main } = await import('./ci-release')
@@ -136,7 +177,7 @@ describe('ci-release', () => {
       setupPublishPath()
 
       spyOn(io, 'mintOidcToken').mockResolvedValue('token\n')
-      spyOn(io, 'changesetPublish').mockResolvedValue(shellResult())
+      spyOn(io, 'changesetPublish').mockResolvedValue('')
       const pushTagsSpy = spyOn(io, 'gitPushTags').mockResolvedValue(shellResult())
 
       const { main } = await import('./ci-release')
@@ -145,12 +186,68 @@ describe('ci-release', () => {
       expect(code).toBe(0)
       expect(pushTagsSpy).toHaveBeenCalledWith('origin', 'main')
     })
+
+    test('creates GitHub Releases for published packages', async () => {
+      setupPublishPath()
+
+      spyOn(io, 'mintOidcToken').mockResolvedValue('token\n')
+      spyOn(io, 'changesetPublish').mockResolvedValue('New tag:  @agent-facets/core@1.1.0\n')
+      spyOn(io, 'gitPushTags').mockResolvedValue(shellResult())
+      spyOn(io, 'readFile').mockResolvedValue(SAMPLE_CHANGELOG.replace('0.2.0', '1.1.0'))
+      const releaseSpy = spyOn(io, 'ghReleaseCreate').mockResolvedValue(shellResult())
+
+      const { main } = await import('./ci-release')
+      const code = await main()
+
+      expect(code).toBe(0)
+      expect(releaseSpy).toHaveBeenCalledTimes(1)
+
+      // Verify tag and title
+      const [tag, title] = releaseSpy.mock.calls[0] ?? []
+      expect(tag).toBe('@agent-facets/core@1.1.0')
+      expect(title).toBe('@agent-facets/core@1.1.0')
+    })
+
+    test('mints GitHub token in publish path for releases', async () => {
+      setupPublishPath()
+
+      const ghTokenSpy = spyOn(io, 'mintGitHubToken').mockResolvedValue('release-token')
+      spyOn(io, 'mintOidcToken').mockResolvedValue('token\n')
+      spyOn(io, 'changesetPublish').mockResolvedValue('')
+      spyOn(io, 'gitPushTags').mockResolvedValue(shellResult())
+
+      const { main } = await import('./ci-release')
+      await main()
+
+      expect(ghTokenSpy).toHaveBeenCalledTimes(1)
+      expect(process.env.GH_TOKEN).toBe('release-token')
+      expect(process.env.GITHUB_TOKEN).toBe('release-token')
+    })
+
+    test('continues publishing even if release creation fails', async () => {
+      setupPublishPath()
+
+      spyOn(io, 'mintOidcToken').mockResolvedValue('token\n')
+      spyOn(io, 'changesetPublish').mockResolvedValue('New tag:  @agent-facets/core@1.1.0\n')
+      spyOn(io, 'gitPushTags').mockResolvedValue(shellResult())
+      spyOn(io, 'readFile').mockRejectedValue(new Error('CHANGELOG.md not found'))
+      spyOn(io, 'ghReleaseCreate').mockResolvedValue(shellResult())
+
+      const { main } = await import('./ci-release')
+      const code = await main()
+
+      // Should still succeed — release creation failure is non-fatal
+      expect(code).toBe(0)
+    })
   })
 
   describe('error handling', () => {
     test('returns 1 when changeset version fails', async () => {
       spyOn(io, 'scanDir').mockResolvedValue(['funny-turtle.md'])
       spyOn(io, 'mintGitHubToken').mockResolvedValue('fake-gh-token')
+      spyOn(io, 'loadWorkspacePackages').mockResolvedValue([
+        { name: '@agent-facets/core', version: '0.1.0', dir: 'packages/core' },
+      ])
       spyOn(io, 'changesetVersion').mockRejectedValue(new Error('changeset version failed'))
 
       const { main } = await import('./ci-release')
@@ -162,9 +259,10 @@ describe('ci-release', () => {
     test('returns 1 when OIDC token minting fails', async () => {
       spyOn(io, 'scanDir').mockResolvedValue([])
       spyOn(io, 'loadWorkspacePackages').mockResolvedValue([
-        { name: '@agent-facets/core', version: '1.1.0', private: false },
+        { name: '@agent-facets/core', version: '1.1.0', dir: 'packages/core', private: false },
       ])
       spyOn(io, 'npmViewVersion').mockResolvedValue('1.0.0')
+      spyOn(io, 'mintGitHubToken').mockResolvedValue('fake-gh-token')
       spyOn(io, 'turboBuild').mockResolvedValue(shellResult())
       spyOn(io, 'mintOidcToken').mockRejectedValue(new Error('OIDC unavailable'))
 

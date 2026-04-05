@@ -15,7 +15,11 @@ export const io = {
 
   // Changesets
   changesetVersion: () => $`bun changeset version`,
-  changesetPublish: () => $`bun changeset publish`,
+  changesetPublish: async (): Promise<string> => {
+    const result = await $`bun changeset publish`.quiet()
+    process.stdout.write(result.stdout)
+    return result.stdout.toString()
+  },
 
   // Git
   gitDiff: () => $`git diff --quiet`.nothrow(),
@@ -32,6 +36,10 @@ export const io = {
   ghPrList: (head: string) => $`gh pr list --head ${head} --state open --json number --jq .[0].number`.text(),
   ghPrCreate: (base: string, head: string, title: string, body: string) =>
     $`gh pr create --base ${base} --head ${head} --title ${title} --body ${body}`,
+  ghPrUpdate: (prNumber: string, title: string, body: string) =>
+    $`gh pr edit ${prNumber} --title ${title} --body ${body}`,
+  ghReleaseCreate: (tag: string, title: string, notes: string) =>
+    $`gh release create ${tag} --title ${title} --notes ${notes}`,
 
   // CircleCI OIDC
   mintOidcToken: () => $`circleci run oidc get --claims '{"aud": "npm:registry.npmjs.org"}'`.text(),
@@ -53,6 +61,8 @@ export const io = {
   error: (...args: unknown[]) => console.error(...args),
 
   // Filesystem
+  readFile: (path: string) => Bun.file(path).text(),
+
   scanDir: async (dir: string): Promise<string[]> => {
     const entries: string[] = []
 
@@ -73,7 +83,7 @@ export const io = {
         const file = Bun.file(`${dir}/package.json`)
         if (await file.exists()) {
           const pkg = await file.json()
-          results.push({ name: pkg.name, version: pkg.version, private: pkg.private })
+          results.push({ name: pkg.name, version: pkg.version, dir, private: pkg.private })
         }
       }
     }
