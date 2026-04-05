@@ -36,17 +36,6 @@ commands:
                     - node_modules
                     - ~/.bun/install/cache
 jobs:
-    changesets:
-        docker:
-            - image: cimg/base:current
-        environment:
-            LEFTHOOK: "0"
-        resource_class: small
-        steps:
-            - setup-mise
-            - run:
-                command: bun scripts/ci-changesets.ts
-                name: Changesets
     check:
         docker:
             - image: cimg/base:current
@@ -74,22 +63,27 @@ orbs:
     slack: circleci/slack@6
 version: 2.1
 workflows:
-    ci:
+    release:
         jobs:
             - check:
                 context: slack-secrets
+                filters:
+                    branches:
+                        only:
+                            - release
                 post-steps:
                     - notify-failure
-            - changesets:
+            - release:
                 context:
                     - release
                     - slack-secrets
                 filters:
                     branches:
                         only:
-                            - main
+                            - release
                 post-steps:
                     - notify-failure
+                    - notify-success
                 requires:
                     - check
 
