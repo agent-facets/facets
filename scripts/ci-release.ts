@@ -111,9 +111,5 @@ export async function release(): Promise<number> {
 }
 
 if (import.meta.main) {
-  const code = await release().catch((err) => {
-    io.error(err.message)
-    return 1
-  })
-  process.exit(code)
+  await release()
 }
