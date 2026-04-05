@@ -1,5 +1,12 @@
 # agent-facets
 
+## 0.2.2
+
+### Patch Changes
+
+- [#39](https://github.com/agent-facets/facets/pull/39) [`f380b7b`](https://github.com/agent-facets/facets/commit/f380b7bc5115acec1f974ef1401eba199a2f90fb) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Ensure release CI works in isolation
+- [#46](https://github.com/agent-facets/facets/pull/46) [`a5cbb89`](https://github.com/agent-facets/facets/commit/a5cbb89a46e14e2f79749ea7eafb5aebbd3504b7) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Ensure all CI runs and provenance is managed correctly across packages
+
 ## 0.2.1
 
 ### Patch Changes
