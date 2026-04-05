@@ -1,5 +1,11 @@
 # agent-facets
 
+## 0.2.2
+
+### Patch Changes
+
+- [#39](https://github.com/agent-facets/facets/pull/39) [`f380b7b`](https://github.com/agent-facets/facets/commit/f380b7bc5115acec1f974ef1401eba199a2f90fb) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Ensure release CI works in isolation
+
 ## 0.2.1
 
 ### Patch Changes
