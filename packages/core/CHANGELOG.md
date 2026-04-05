@@ -1,5 +1,11 @@
 # @agent-facets/core
 
+## 0.2.1
+
+### Patch Changes
+
+- [#46](https://github.com/agent-facets/facets/pull/46) [`a5cbb89`](https://github.com/agent-facets/facets/commit/a5cbb89a46e14e2f79749ea7eafb5aebbd3504b7) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Ensure all CI runs and provenance is managed correctly across packages
+
 ## 0.2.0
 
 ### Minor Changes
