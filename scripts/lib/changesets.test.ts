@@ -172,6 +172,36 @@ describe('buildVersionPrBody', () => {
     expect(body).toContain('## @agent-facets/core@0.2.0')
     expect(body).toContain('## agent-facets@0.3.0')
     expect(body).toContain('New CLI command')
+
+    // agent-facets should appear before @agent-facets/core (explicit ordering)
+    const cliIndex = body.indexOf('## agent-facets@0.3.0')
+    const coreIndex = body.indexOf('## @agent-facets/core@0.2.0')
+    expect(cliIndex).toBeLessThan(coreIndex)
+  })
+
+  test('orders packages: agent-facets > core > brand', async () => {
+    const makeChangelog = (name: string, version: string) =>
+      `# ${name}\n\n## ${version}\n\n### Patch Changes\n\n- Updated ${name}\n`
+
+    const body = await buildVersionPrBody(
+      [
+        { name: '@agent-facets/brand', version: '0.2.0', dir: 'packages/brand' },
+        { name: '@agent-facets/core', version: '0.3.0', dir: 'packages/core' },
+        { name: 'agent-facets', version: '0.4.0', dir: 'packages/cli' },
+      ],
+      mockReadFile({
+        'packages/brand/CHANGELOG.md': makeChangelog('@agent-facets/brand', '0.2.0'),
+        'packages/core/CHANGELOG.md': makeChangelog('@agent-facets/core', '0.3.0'),
+        'packages/cli/CHANGELOG.md': makeChangelog('agent-facets', '0.4.0'),
+      }),
+    )
+
+    const cliIdx = body.indexOf('## agent-facets@0.4.0')
+    const coreIdx = body.indexOf('## @agent-facets/core@0.3.0')
+    const brandIdx = body.indexOf('## @agent-facets/brand@0.2.0')
+
+    expect(cliIdx).toBeLessThan(coreIdx)
+    expect(coreIdx).toBeLessThan(brandIdx)
   })
 
   test('truncates when body exceeds 60K characters', async () => {
