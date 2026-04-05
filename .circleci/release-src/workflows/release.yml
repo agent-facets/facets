@@ -1,9 +1,13 @@
 jobs:
   - check:
       context: slack-secrets
+      filters:
+        branches:
+          only:
+            - release
       post-steps:
         - notify-failure
-  - changesets:
+  - release:
       requires:
         - check
       context:
@@ -12,7 +16,7 @@ jobs:
       filters:
         branches:
           only:
-            - main
+            - release
       post-steps:
         - notify-failure
-
+        - notify-success

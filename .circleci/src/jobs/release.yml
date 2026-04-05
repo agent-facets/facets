@@ -3,6 +3,7 @@ docker:
 resource_class: small
 environment:
   LEFTHOOK: "0"
+  MISE_ENV: release
 steps:
   - setup-mise
   - run:
