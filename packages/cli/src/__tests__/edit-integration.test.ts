@@ -3,6 +3,7 @@ import { mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runBuildPipeline } from '@agent-facets/core'
+import dedent from 'dedent'
 import { applyOperations, buildEditContext } from '../commands/edit/index.ts'
 import type { EditOperation } from '../tui/views/edit/edit-types.ts'
 
@@ -70,7 +71,15 @@ describe('edit integration', () => {
       skills: { review: { description: 'Review' } },
     })
     await mkdir(join(dir, 'skills/review'), { recursive: true })
-    await Bun.write(join(dir, 'skills/review/SKILL.md'), '---\nname: Review\n---\n# Review skill')
+    await Bun.write(
+      join(dir, 'skills/review/SKILL.md'),
+      dedent`
+        ---
+        name: Review
+        ---
+        # Review skill
+      `,
+    )
 
     const result = await buildEditContext(dir)
     expect(result.ok).toBe(true)
@@ -104,7 +113,14 @@ describe('edit integration', () => {
     await mkdir(join(dir, 'skills/review'), { recursive: true })
     await Bun.write(
       join(dir, 'skills/review/SKILL.md'),
-      '---\nname: Review\ndescription: A review skill\n---\n# Review\nReview all code.',
+      dedent`
+        ---
+        name: Review
+        description: A review skill
+        ---
+        # Review
+        Review all code.
+      `,
     )
 
     const manifest = {

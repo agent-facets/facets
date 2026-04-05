@@ -16,7 +16,9 @@ import {
   filterPendingChangesets,
   hasUnpublishedVersions,
   parsePublishedPackages,
+  replaceChangelogEntry,
   shouldPublish,
+  transformChangelogContent,
 } from './lib/changesets'
 import { io } from './lib/ci-io'
 
@@ -49,7 +51,15 @@ export async function versionAndCreatePR(): Promise<number> {
   // Detect which packages changed and build rich PR body
   const packagesAfter = await io.loadWorkspacePackages()
   const changedPackages = packagesAfter.filter((p) => versionsBefore.get(p.name) !== p.version)
-  const prBody = await buildVersionPrBody(changedPackages, io.readFile)
+  const { body: prBody, entries } = await buildVersionPrBody(changedPackages, io.readFile)
+
+  // Rewrite CHANGELOG.md files with transformed content
+  for (const entry of entries) {
+    const changelogPath = `${entry.dir}/CHANGELOG.md`
+    const original = await io.readFile(changelogPath)
+    const rewritten = replaceChangelogEntry(original, entry.version, entry.content)
+    await io.writeFile(changelogPath, rewritten)
+  }
 
   // Configure git identity
   await io.gitConfig('user.name', 'circleci[bot]')
@@ -109,7 +119,7 @@ export async function publish(): Promise<number> {
 
       const changelog = await io.readFile(`${workspacePkg.dir}/CHANGELOG.md`)
       const entry = getChangelogEntry(changelog, pkg.version)
-      await io.ghReleaseCreate(tag, tag, entry.content)
+      await io.ghReleaseCreate(tag, tag, transformChangelogContent(entry.content))
       io.log(`Created GitHub Release: ${tag}`)
     } catch (err) {
       io.error(`Failed to create release for ${tag}: ${(err as Error).message}`)

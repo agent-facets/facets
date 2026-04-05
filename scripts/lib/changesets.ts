@@ -58,25 +58,45 @@ const PACKAGE_ORDER: Record<string, number> = {
   '@agent-facets/brand': 2,
 }
 
+/** A per-package transformed entry for CHANGELOG rewrite */
+export interface TransformedEntry {
+  dir: string
+  version: string
+  content: string
+}
+
+/** Return value of buildVersionPrBody — PR body + per-package entries for CHANGELOG rewrite */
+export interface VersionPrResult {
+  body: string
+  entries: TransformedEntry[]
+}
+
 /**
  * Build a rich PR body for the Version Packages PR.
  *
  * Reads each changed package's CHANGELOG.md, extracts the entry for its
- * new version using the changesets library parser, and composes a body
+ * new version using the changesets library parser, transforms the content
+ * (groups changes by contributor, cleans spacing), and composes a body
  * with a `# Releases` section and per-package subsections.
+ *
+ * Also returns per-package transformed entries so callers can rewrite
+ * CHANGELOG.md files on disk with the same clean format.
  */
 export async function buildVersionPrBody(
   changedPackages: { name: string; version: string; dir: string }[],
   readFile: (path: string) => Promise<string>,
-): Promise<string> {
+): Promise<VersionPrResult> {
   const packageInfos = await Promise.all(
     changedPackages.map(async (pkg) => {
       const changelog = await readFile(`${pkg.dir}/CHANGELOG.md`)
       const entry = getChangelogEntry(changelog, pkg.version)
+      const transformed = transformChangelogContent(entry.content)
       return {
         name: pkg.name,
+        dir: pkg.dir,
+        version: pkg.version,
         header: `## ${pkg.name}@${pkg.version}`,
-        content: entry.content,
+        content: transformed,
         highestLevel: entry.highestLevel,
       }
     }),
@@ -117,7 +137,294 @@ export async function buildVersionPrBody(
     ].join('\n')
   }
 
-  return body
+  const entries = sorted.map((info) => ({ dir: info.dir, version: info.version, content: info.content }))
+
+  return { body, entries }
+}
+
+// ---------------------------------------------------------------------------
+// Changelog content transformation
+// ---------------------------------------------------------------------------
+/** Matches a changelog line with GitHub attribution from @changesets/changelog-github */
+const ATTRIBUTED_LINE_RE = /^-\s+\[`([a-f0-9]+)`\]\(([^)]+)\)\s+Thanks\s+\[@([^\]]+)\]\(([^)]+)\)\s*!\s*-\s*(.+)$/
+
+/** Matches "Updated dependencies [hash]" lines */
+const UPDATED_DEPS_RE = /^-\s+Updated dependencies/
+
+interface AttributedChange {
+  hash: string
+  username: string
+  userUrl: string
+  description: string
+}
+
+interface UserGroup {
+  username: string
+  userUrl: string
+  changes: AttributedChange[]
+  firstSeen: number
+}
+
+/**
+ * Transform a changelog entry's content: group changes by contributor,
+ * sort by volume, clean up spacing, and separate dependency updates.
+ *
+ * Input is the raw content from `getChangelogEntry().content` which has been
+ * through remarkStringify (extra indentation, loose list spacing).
+ */
+export function transformChangelogContent(content: string): string {
+  // Split into sections by ### headings (e.g., ### Patch Changes, ### Minor Changes)
+  const sections = splitSections(content)
+  const transformed = sections.map(transformSection)
+  return transformed.join('\n')
+}
+
+interface Section {
+  heading: string
+  lines: string[]
+}
+
+function splitSections(content: string): Section[] {
+  const sections: Section[] = []
+  let currentHeading = ''
+  let currentLines: string[] = []
+
+  for (const line of content.split('\n')) {
+    if (line.startsWith('### ')) {
+      if (currentHeading || currentLines.length > 0) {
+        sections.push({ heading: currentHeading, lines: currentLines })
+      }
+      currentHeading = line
+      currentLines = []
+    } else {
+      currentLines.push(line)
+    }
+  }
+
+  if (currentHeading || currentLines.length > 0) {
+    sections.push({ heading: currentHeading, lines: currentLines })
+  }
+
+  return sections
+}
+
+function transformSection(section: Section): string {
+  // Parse list items from the section lines.
+  // Items can be multi-line (continuation lines are indented).
+  const items = parseListItems(section.lines)
+
+  const attributed: AttributedChange[] = []
+  const singleLineUnattributed: string[] = []
+  const depItems: string[] = []
+
+  for (const item of items) {
+    // Normalize remark's `-   ` (3 spaces) back to `- ` (1 space)
+    const normalized = item.replace(/^-\s{2,}/, '- ')
+
+    const match = normalized.match(ATTRIBUTED_LINE_RE)
+    if (match?.[1] && match[3] && match[4] && match[5]) {
+      attributed.push({
+        hash: match[1],
+        username: match[3],
+        userUrl: match[4],
+        description: match[5],
+      })
+    } else if (UPDATED_DEPS_RE.test(normalized)) {
+      depItems.push(normalized)
+    } else if (normalized.trim()) {
+      singleLineUnattributed.push(normalized)
+    }
+  }
+
+  // Group attributed changes by user
+  const groupMap = new Map<string, UserGroup>()
+  for (const [i, change] of attributed.entries()) {
+    const existing = groupMap.get(change.username)
+    if (existing) {
+      existing.changes.push(change)
+    } else {
+      groupMap.set(change.username, {
+        username: change.username,
+        userUrl: change.userUrl,
+        changes: [change],
+        firstSeen: i,
+      })
+    }
+  }
+
+  const groups = [...groupMap.values()]
+  // Sort: most changes first, ties preserve first-seen order
+  groups.sort((a, b) => b.changes.length - a.changes.length || a.firstSeen - b.firstSeen)
+
+  // Separate multi-change groups from single-change users
+  const multiGroups = groups.filter((g) => g.changes.length > 1)
+  const singleGroups = groups.filter((g) => g.changes.length === 1)
+
+  const output: string[] = []
+
+  // Add section heading
+  if (section.heading) {
+    output.push(section.heading)
+    output.push('')
+  }
+
+  // Multi-change groups
+  for (const group of multiGroups) {
+    output.push(`**@${group.username}** — Thanks! (${group.changes.length} changes)`)
+    for (const change of group.changes) {
+      output.push(`- ${change.hash} ${change.description}`)
+    }
+    output.push('')
+  }
+
+  // Individual contributions (single-change users + unattributed)
+  const hasMultiGroups = multiGroups.length > 0
+  const individualItems = [
+    ...singleGroups.map((g) => {
+      const c = g.changes[0] as AttributedChange
+      return `- ${c.hash} Thanks @${c.username}! - ${c.description}`
+    }),
+    ...singleLineUnattributed,
+  ]
+
+  if (individualItems.length > 0 && hasMultiGroups) {
+    output.push('#### Individual Contributions')
+    for (const item of individualItems) {
+      output.push(item)
+    }
+    output.push('')
+  } else if (individualItems.length > 0) {
+    // No multi-groups, just list them directly
+    for (const item of individualItems) {
+      output.push(item)
+    }
+    output.push('')
+  }
+
+  // Updated dependencies
+  if (depItems.length > 0) {
+    output.push('#### Updated Dependencies')
+    // Collect dep items — collapse "Updated dependencies [hash]" lines
+    // and extract the actual dependency bumps from continuation lines
+    const depBumps = extractDependencyBumps(depItems)
+    for (const bump of depBumps) {
+      output.push(bump)
+    }
+    output.push('')
+  }
+
+  // Remove trailing blank lines
+  while (output.length > 0 && output[output.length - 1] === '') {
+    output.pop()
+  }
+
+  return `${output.join('\n')}\n`
+}
+
+/**
+ * Parse raw section lines into individual list items.
+ * A list item starts with `-` at column 0; continuation lines are indented.
+ */
+function parseListItems(lines: string[]): string[] {
+  const items: string[] = []
+  let current = ''
+
+  for (const line of lines) {
+    const trimmed = line.trimStart()
+    if (trimmed.startsWith('- ') && !line.startsWith(' ') && !line.startsWith('\t')) {
+      if (current) items.push(current)
+      current = trimmed
+    } else if (current && trimmed) {
+      // Continuation line — append but for our purposes we flatten
+      // Multi-line items like "Updated dependencies" have indented sub-items
+      current += `\n${line}`
+    } else if (!trimmed && current) {
+      // Blank line between loose list items — don't break the item,
+      // just skip (we'll handle spacing in output)
+    }
+  }
+
+  if (current) items.push(current)
+  return items
+}
+
+/**
+ * Extract dependency bump lines from "Updated dependencies" items.
+ * Input items look like:
+ *   "- Updated dependencies [hash]\n  - @pkg@version"
+ * or sometimes multiple "Updated dependencies" lines followed by indented deps.
+ * We extract just the `- @pkg@version` lines with the hash prefixed.
+ */
+function extractDependencyBumps(items: string[]): string[] {
+  const bumps: string[] = []
+
+  for (const item of items) {
+    const lines = item.split('\n')
+    // First line: "- Updated dependencies [hash]"
+    const firstLine = lines[0] ?? ''
+    const headerMatch = firstLine.match(/Updated dependencies\s*\[([a-f0-9]+)\]/)
+    const hash = headerMatch?.[1]
+
+    // Sub-lines: indented dependency entries like "  - @agent-facets/core@0.1.2"
+    for (let i = 1; i < lines.length; i++) {
+      const depLine = lines[i] ?? ''
+      const depMatch = depLine.match(/^\s+-\s+(.+)/)
+      if (depMatch?.[1]) {
+        bumps.push(hash ? `- ${hash} ${depMatch[1]}` : `- ${depMatch[1]}`)
+      }
+    }
+
+    // If no sub-lines, the deps might be in the next item
+    // (loose list from remark splits them). Just record the header hash.
+    if (lines.length === 1 && hash) {
+      // Will be paired with a subsequent dep item — skip for now
+    }
+  }
+
+  return bumps
+}
+
+// ---------------------------------------------------------------------------
+// CHANGELOG rewrite
+// ---------------------------------------------------------------------------
+
+/**
+ * Replace a specific version's entry in a full CHANGELOG.md string
+ * with new transformed content.
+ *
+ * Finds `## <version>` and replaces everything up to the next `## ` heading
+ * (or end of file) with the new content.
+ */
+export function replaceChangelogEntry(changelog: string, version: string, newContent: string): string {
+  const lines = changelog.split('\n')
+  const versionHeading = `## ${version}`
+
+  let startIdx = -1
+  let endIdx = lines.length
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? ''
+    if (startIdx === -1) {
+      // Look for the version heading
+      if (line.trim() === versionHeading) {
+        startIdx = i
+      }
+    } else {
+      // Found the start — look for the next ## heading
+      if (line.startsWith('## ') && i > startIdx) {
+        endIdx = i
+        break
+      }
+    }
+  }
+
+  if (startIdx === -1) return changelog // version not found, return unchanged
+
+  const before = lines.slice(0, startIdx + 1) // includes the ## version line
+  const after = lines.slice(endIdx)
+  const trimmedContent = newContent.replace(/\n+$/, '')
+
+  return [...before, '', trimmedContent, '', ...after].join('\n')
 }
 
 // ---------------------------------------------------------------------------

@@ -62,6 +62,7 @@ export const io = {
 
   // Filesystem
   readFile: (path: string) => Bun.file(path).text(),
+  writeFile: (path: string, content: string) => Bun.write(path, content),
 
   scanDir: async (dir: string): Promise<string[]> => {
     const entries: string[] = []

@@ -51,6 +51,7 @@ describe('ci-release', () => {
       spyOn(io, 'gitCommit').mockResolvedValue(shellResult())
       spyOn(io, 'gitPush').mockResolvedValue(shellResult())
       spyOn(io, 'readFile').mockResolvedValue(SAMPLE_CHANGELOG)
+      spyOn(io, 'writeFile').mockResolvedValue(0)
     }
 
     test('creates a new PR with rich body when changesets are pending', async () => {

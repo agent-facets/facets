@@ -1,10 +1,13 @@
 import { describe, expect, test } from 'bun:test'
+import dedent from 'dedent'
 import {
   buildVersionPrBody,
   filterPendingChangesets,
   hasUnpublishedVersions,
   parsePublishedPackages,
+  replaceChangelogEntry,
   shouldPublish,
+  transformChangelogContent,
   type WorkspacePackage,
 } from './changesets'
 
@@ -97,6 +100,589 @@ describe('hasUnpublishedVersions', () => {
   })
 })
 
+// ---------------------------------------------------------------------------
+// transformChangelogContent
+// ---------------------------------------------------------------------------
+
+describe('transformChangelogContent', () => {
+  /** Builds a remark-style attributed line (3-space indent, loose list) as @changesets/changelog-github generates */
+  const remark = (hash: string, user: string, desc: string) =>
+    `-   [\`${hash}\`](https://github.com/agent-facets/facets/commit/${hash}) Thanks [@${user}](https://github.com/${user})! - ${desc}`
+
+  describe('attribution regex', () => {
+    test('7-character commit hash', () => {
+      expect(
+        transformChangelogContent(dedent`
+          ### Patch Changes
+
+          ${remark('098fd08', 'eXamadeus', 'Fix a bug')}
+        `),
+      ).toBe(
+        `${dedent`
+        ### Patch Changes
+
+        - 098fd08 Thanks @eXamadeus! - Fix a bug
+      `}\n`,
+      )
+    })
+
+    test('8-character commit hash', () => {
+      expect(
+        transformChangelogContent(dedent`
+          ### Patch Changes
+
+          ${remark('abcdef01', 'user', 'Longer hash')}
+        `),
+      ).toBe(
+        `${dedent`
+        ### Patch Changes
+
+        - abcdef01 Thanks @user! - Longer hash
+      `}\n`,
+      )
+    })
+
+    test('full 40-character commit hash', () => {
+      expect(
+        transformChangelogContent(dedent`
+          ### Patch Changes
+
+          ${remark('a'.repeat(40), 'user', 'Full hash')}
+        `),
+      ).toBe(
+        `${dedent`
+        ### Patch Changes
+
+        - aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa Thanks @user! - Full hash
+      `}\n`,
+      )
+    })
+
+    test('username with mixed case, numbers, and hyphens', () => {
+      expect(
+        transformChangelogContent(dedent`
+          ### Patch Changes
+
+          ${remark('abc1234', 'eXamadeus', 'Mixed case')}
+
+          ${remark('def5678', 'my-user-name', 'Hyphenated')}
+        `),
+      ).toBe(
+        `${dedent`
+        ### Patch Changes
+
+        - abc1234 Thanks @eXamadeus! - Mixed case
+        - def5678 Thanks @my-user-name! - Hyphenated
+      `}\n`,
+      )
+    })
+
+    test('description with special characters', () => {
+      expect(
+        transformChangelogContent(dedent`
+          ### Patch Changes
+
+          ${remark('abc1234', 'user', 'Fix `foo()` in @scope/bar')}
+        `),
+      ).toBe(
+        `${dedent`
+        ### Patch Changes
+
+        - abc1234 Thanks @user! - Fix \`foo()\` in @scope/bar
+      `}\n`,
+      )
+    })
+
+    test('bare commit hash entry (no Thanks attribution)', () => {
+      expect(
+        transformChangelogContent(dedent`
+          ### Patch Changes
+
+          -   bb87748: Just a bare commit hash entry
+        `),
+      ).toBe(
+        `${dedent`
+        ### Patch Changes
+
+        - bb87748: Just a bare commit hash entry
+      `}\n`,
+      )
+    })
+
+    test('Updated dependencies line', () => {
+      expect(
+        transformChangelogContent(dedent`
+          ### Patch Changes
+
+          -   Updated dependencies [abc1234]
+              -   @agent-facets/core@0.2.0
+        `),
+      ).toBe(
+        `${dedent`
+        ### Patch Changes
+
+        #### Updated Dependencies
+        - abc1234 @agent-facets/core@0.2.0
+      `}\n`,
+      )
+    })
+  })
+
+  describe('spacing normalization', () => {
+    test('removes blank lines between loose list items', () => {
+      expect(
+        transformChangelogContent(dedent`
+          ### Patch Changes
+
+          ${remark('aaa1111', 'alice', 'Change A')}
+
+          ${remark('bbb2222', 'bob', 'Change B')}
+        `),
+      ).toBe(
+        `${dedent`
+        ### Patch Changes
+
+        - aaa1111 Thanks @alice! - Change A
+        - bbb2222 Thanks @bob! - Change B
+      `}\n`,
+      )
+    })
+
+    test('normalizes remark 3-space indent back to 1 space', () => {
+      expect(
+        transformChangelogContent(dedent`
+          ### Patch Changes
+
+          -   bb87748: Bare entry
+        `),
+      ).toBe(
+        `${dedent`
+        ### Patch Changes
+
+        - bb87748: Bare entry
+      `}\n`,
+      )
+    })
+  })
+
+  describe('user grouping', () => {
+    test('groups multiple changes from the same user under a heading', () => {
+      expect(
+        transformChangelogContent(dedent`
+          ### Patch Changes
+
+          ${remark('aaa1111', 'eXamadeus', 'Change A')}
+
+          ${remark('bbb2222', 'eXamadeus', 'Change B')}
+
+          ${remark('ccc3333', 'eXamadeus', 'Change C')}
+        `),
+      ).toBe(
+        `${dedent`
+        ### Patch Changes
+
+        **@eXamadeus** — Thanks! (3 changes)
+        - aaa1111 Change A
+        - bbb2222 Change B
+        - ccc3333 Change C
+      `}\n`,
+      )
+    })
+
+    test('sorts groups by volume descending', () => {
+      expect(
+        transformChangelogContent(dedent`
+          ### Patch Changes
+
+          ${remark('aaa1111', 'alice', 'A1')}
+
+          ${remark('bbb2222', 'bob', 'B1')}
+
+          ${remark('ccc3333', 'bob', 'B2')}
+
+          ${remark('ddd4444', 'bob', 'B3')}
+
+          ${remark('eee5555', 'alice', 'A2')}
+        `),
+      ).toBe(
+        `${dedent`
+        ### Patch Changes
+
+        **@bob** — Thanks! (3 changes)
+        - bbb2222 B1
+        - ccc3333 B2
+        - ddd4444 B3
+
+        **@alice** — Thanks! (2 changes)
+        - aaa1111 A1
+        - eee5555 A2
+      `}\n`,
+      )
+    })
+
+    test('preserves first-seen order for ties', () => {
+      expect(
+        transformChangelogContent(dedent`
+          ### Patch Changes
+
+          ${remark('aaa1111', 'alice', 'A1')}
+
+          ${remark('bbb2222', 'alice', 'A2')}
+
+          ${remark('ccc3333', 'bob', 'B1')}
+
+          ${remark('ddd4444', 'bob', 'B2')}
+        `),
+      ).toBe(
+        `${dedent`
+        ### Patch Changes
+
+        **@alice** — Thanks! (2 changes)
+        - aaa1111 A1
+        - bbb2222 A2
+
+        **@bob** — Thanks! (2 changes)
+        - ccc3333 B1
+        - ddd4444 B2
+      `}\n`,
+      )
+    })
+
+    test('single-change users keep original format (no grouping)', () => {
+      expect(
+        transformChangelogContent(dedent`
+          ### Patch Changes
+
+          ${remark('aaa1111', 'alice', 'Solo change')}
+        `),
+      ).toBe(
+        `${dedent`
+          ### Patch Changes
+  
+          - aaa1111 Thanks @alice! - Solo change
+        `}\n`,
+      )
+    })
+
+    test('groups + singles shows Individual Contributions heading', () => {
+      expect(
+        transformChangelogContent(dedent`
+          ### Patch Changes
+
+          ${remark('aaa1111', 'eXamadeus', 'Change A')}
+
+          ${remark('bbb2222', 'eXamadeus', 'Change B')}
+
+          ${remark('ccc3333', 'contributor', 'Solo fix')}
+        `),
+      ).toBe(
+        `${dedent`
+        ### Patch Changes
+
+        **@eXamadeus** — Thanks! (2 changes)
+        - aaa1111 Change A
+        - bbb2222 Change B
+
+        #### Individual Contributions
+        - ccc3333 Thanks @contributor! - Solo fix
+      `}\n`,
+      )
+    })
+
+    test('all multi-change users: no Individual Contributions heading', () => {
+      expect(
+        transformChangelogContent(dedent`
+          ### Patch Changes
+
+          ${remark('aaa1111', 'alice', 'A1')}
+
+          ${remark('bbb2222', 'alice', 'A2')}
+
+          ${remark('ccc3333', 'bob', 'B1')}
+
+          ${remark('ddd4444', 'bob', 'B2')}
+        `),
+      ).toBe(
+        `${dedent`
+        ### Patch Changes
+
+        **@alice** — Thanks! (2 changes)
+        - aaa1111 A1
+        - bbb2222 A2
+
+        **@bob** — Thanks! (2 changes)
+        - ccc3333 B1
+        - ddd4444 B2
+      `}\n`,
+      )
+    })
+
+    test('all single-change users: no heading, no grouping', () => {
+      expect(
+        transformChangelogContent(dedent`
+          ### Patch Changes
+
+          ${remark('aaa1111', 'alice', 'Solo A')}
+
+          ${remark('bbb2222', 'bob', 'Solo B')}
+
+          ${remark('ccc3333', 'charlie', 'Solo C')}
+        `),
+      ).toBe(
+        `${dedent`
+        ### Patch Changes
+
+        - aaa1111 Thanks @alice! - Solo A
+        - bbb2222 Thanks @bob! - Solo B
+        - ccc3333 Thanks @charlie! - Solo C
+      `}\n`,
+      )
+    })
+  })
+
+  describe('Updated Dependencies', () => {
+    test('multiple deps with commit hashes', () => {
+      expect(
+        transformChangelogContent(dedent`
+          ### Patch Changes
+
+          -   Updated dependencies [bb87748]
+          -   Updated dependencies [95e2f38]
+              -   @agent-facets/brand@0.1.1
+              -   @agent-facets/core@0.1.2
+        `),
+      ).toBe(
+        `${dedent`
+        ### Patch Changes
+
+        #### Updated Dependencies
+        - 95e2f38 @agent-facets/brand@0.1.1
+        - 95e2f38 @agent-facets/core@0.1.2
+      `}\n`,
+      )
+    })
+
+    test('deps after attributed changes', () => {
+      expect(
+        transformChangelogContent(dedent`
+          ### Patch Changes
+
+          ${remark('aaa1111', 'alice', 'Fix thing')}
+
+          -   Updated dependencies [bb87748]
+              -   @agent-facets/core@0.1.2
+        `),
+      ).toBe(
+        `${dedent`
+        ### Patch Changes
+
+        - aaa1111 Thanks @alice! - Fix thing
+
+        #### Updated Dependencies
+        - bb87748 @agent-facets/core@0.1.2
+      `}\n`,
+      )
+    })
+  })
+
+  describe('mixed content', () => {
+    test('attributed + unattributed + dependencies', () => {
+      expect(
+        transformChangelogContent(dedent`
+          ### Patch Changes
+
+          ${remark('aaa1111', 'eXamadeus', 'Change A')}
+
+          ${remark('bbb2222', 'eXamadeus', 'Change B')}
+
+          -   cc87748: Bare commit entry
+
+          ${remark('ddd4444', 'contributor', 'Solo fix')}
+
+          -   Updated dependencies [ee12345]
+              -   @agent-facets/core@0.2.0
+        `),
+      ).toBe(
+        `${dedent`
+        ### Patch Changes
+
+        **@eXamadeus** — Thanks! (2 changes)
+        - aaa1111 Change A
+        - bbb2222 Change B
+
+        #### Individual Contributions
+        - ddd4444 Thanks @contributor! - Solo fix
+        - cc87748: Bare commit entry
+
+        #### Updated Dependencies
+        - ee12345 @agent-facets/core@0.2.0
+      `}\n`,
+      )
+    })
+
+    test('multiple ### sections (Minor + Patch)', () => {
+      expect(
+        transformChangelogContent(dedent`
+          ### Minor Changes
+
+          ${remark('aaa1111', 'alice', 'New feature')}
+
+          ### Patch Changes
+
+          ${remark('bbb2222', 'bob', 'Bug fix')}
+        `),
+      ).toBe(
+        `${dedent`
+        ### Minor Changes
+
+        - aaa1111 Thanks @alice! - New feature
+
+        ### Patch Changes
+
+        - bbb2222 Thanks @bob! - Bug fix
+      `}\n`,
+      )
+    })
+
+    test('empty content', () => {
+      expect(transformChangelogContent('')).toBe('\n')
+    })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// replaceChangelogEntry
+// ---------------------------------------------------------------------------
+
+describe('replaceChangelogEntry', () => {
+  test('replaces the latest version entry', () => {
+    expect(
+      replaceChangelogEntry(
+        dedent`
+          # @agent-facets/core
+
+          ## 0.2.0
+
+          ### Patch Changes
+
+          - Old content here
+
+          ## 0.1.0
+
+          ### Minor Changes
+
+          - Initial release
+        `,
+        '0.2.0',
+        `${dedent`
+          ### Patch Changes
+
+          - New clean content
+        `}\n`,
+      ),
+    ).toBe(dedent`
+      # @agent-facets/core
+
+      ## 0.2.0
+
+      ### Patch Changes
+
+      - New clean content
+
+      ## 0.1.0
+
+      ### Minor Changes
+
+      - Initial release
+    `)
+  })
+
+  test('entry at end of file (no subsequent version)', () => {
+    expect(
+      replaceChangelogEntry(
+        dedent`
+          # pkg
+
+          ## 1.0.0
+
+          ### Patch Changes
+
+          - Old stuff
+        `,
+        '1.0.0',
+        `${dedent`
+          ### Patch Changes
+
+          - New stuff
+        `}\n`,
+      ),
+    ).toBe(
+      `${dedent`
+      # pkg
+
+      ## 1.0.0
+
+      ### Patch Changes
+
+      - New stuff
+    `}\n`,
+    )
+  })
+
+  test('returns unchanged when version not found', () => {
+    const changelog = dedent`
+      # pkg
+
+      ## 1.0.0
+
+      - stuff
+    `
+    expect(replaceChangelogEntry(changelog, '9.9.9', 'new content')).toBe(changelog)
+  })
+
+  test('preserves surrounding versions', () => {
+    expect(
+      replaceChangelogEntry(
+        dedent`
+          # my-package
+
+          ## 0.3.0
+
+          - v0.3 stuff
+
+          ## 0.2.0
+
+          - v0.2 stuff
+
+          ## 0.1.0
+
+          - v0.1 stuff
+        `,
+        '0.2.0',
+        '- replaced v0.2\n',
+      ),
+    ).toBe(dedent`
+      # my-package
+
+      ## 0.3.0
+
+      - v0.3 stuff
+
+      ## 0.2.0
+
+      - replaced v0.2
+
+      ## 0.1.0
+
+      - v0.1 stuff
+    `)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// buildVersionPrBody
+// ---------------------------------------------------------------------------
+
 describe('buildVersionPrBody', () => {
   const sampleChangelog = `# @agent-facets/core
 
@@ -126,7 +712,7 @@ describe('buildVersionPrBody', () => {
   }
 
   test('generates PR body with release sections', async () => {
-    const body = await buildVersionPrBody(
+    const { body } = await buildVersionPrBody(
       [{ name: '@agent-facets/core', version: '0.2.0', dir: 'packages/core' }],
       mockReadFile({ 'packages/core/CHANGELOG.md': sampleChangelog }),
     )
@@ -140,7 +726,7 @@ describe('buildVersionPrBody', () => {
   })
 
   test('includes header message', async () => {
-    const body = await buildVersionPrBody(
+    const { body } = await buildVersionPrBody(
       [{ name: '@agent-facets/core', version: '0.2.0', dir: 'packages/core' }],
       mockReadFile({ 'packages/core/CHANGELOG.md': sampleChangelog }),
     )
@@ -158,7 +744,7 @@ describe('buildVersionPrBody', () => {
 
 - New CLI command
 `
-    const body = await buildVersionPrBody(
+    const { body } = await buildVersionPrBody(
       [
         { name: '@agent-facets/core', version: '0.2.0', dir: 'packages/core' },
         { name: 'agent-facets', version: '0.3.0', dir: 'packages/cli' },
@@ -181,9 +767,17 @@ describe('buildVersionPrBody', () => {
 
   test('orders packages: agent-facets > core > brand', async () => {
     const makeChangelog = (name: string, version: string) =>
-      `# ${name}\n\n## ${version}\n\n### Patch Changes\n\n- Updated ${name}\n`
+      `${dedent`
+        # ${name}
 
-    const body = await buildVersionPrBody(
+        ## ${version}
+
+        ### Patch Changes
+
+        - Updated ${name}
+      `}\n`
+
+    const { body } = await buildVersionPrBody(
       [
         { name: '@agent-facets/brand', version: '0.2.0', dir: 'packages/brand' },
         { name: '@agent-facets/core', version: '0.3.0', dir: 'packages/core' },
@@ -206,9 +800,17 @@ describe('buildVersionPrBody', () => {
 
   test('truncates when body exceeds 60K characters', async () => {
     const longContent = 'x'.repeat(70_000)
-    const hugeChangelog = `# pkg\n\n## 1.0.0\n\n### Patch Changes\n\n- ${longContent}\n`
+    const hugeChangelog = `${dedent`
+        # pkg
 
-    const body = await buildVersionPrBody(
+        ## 1.0.0
+
+        ### Patch Changes
+
+        - ${longContent}
+      `}\n`
+
+    const { body } = await buildVersionPrBody(
       [{ name: 'huge-pkg', version: '1.0.0', dir: 'packages/huge' }],
       mockReadFile({ 'packages/huge/CHANGELOG.md': hugeChangelog }),
     )
@@ -216,7 +818,48 @@ describe('buildVersionPrBody', () => {
     expect(body.length).toBeLessThanOrEqual(60_000)
     expect(body).toContain('omitted from this message')
   })
+
+  test('returns per-package entries for CHANGELOG rewrite', async () => {
+    const { entries } = await buildVersionPrBody(
+      [{ name: '@agent-facets/core', version: '0.2.0', dir: 'packages/core' }],
+      mockReadFile({ 'packages/core/CHANGELOG.md': sampleChangelog }),
+    )
+
+    expect(entries).toHaveLength(1)
+    expect(entries[0]).toEqual(
+      expect.objectContaining({
+        dir: 'packages/core',
+        version: '0.2.0',
+      }),
+    )
+    expect(entries[0]?.content).toContain('Added a cool new feature')
+  })
+
+  test('applies transform to entry content (removes remark spacing)', async () => {
+    // Changelog with remark-style loose list items
+    const remarkChangelog = `# pkg
+
+## 1.0.0
+
+### Patch Changes
+
+-   First change
+
+-   Second change
+`
+    const { body } = await buildVersionPrBody(
+      [{ name: 'test-pkg', version: '1.0.0', dir: 'packages/test' }],
+      mockReadFile({ 'packages/test/CHANGELOG.md': remarkChangelog }),
+    )
+
+    // Should have tight spacing, not loose
+    expect(body).toContain('- First change\n- Second change')
+  })
 })
+
+// ---------------------------------------------------------------------------
+// parsePublishedPackages
+// ---------------------------------------------------------------------------
 
 describe('parsePublishedPackages', () => {
   test('parses scoped package tags', () => {

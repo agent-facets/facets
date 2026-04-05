@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import dedent from 'dedent'
 import { loadManifest, resolvePrompts } from '../loaders/facet.ts'
 
 let testDir: string
@@ -174,9 +175,30 @@ describe('loadManifest', () => {
 describe('resolvePrompts', () => {
   test('prompt content is resolved from conventional file paths', async () => {
     const dir = await createFixtureDir('resolve-convention')
-    await writeFixture(dir, 'skills/review/SKILL.md', '# Code Review\nReview all code.')
-    await writeFixture(dir, 'agents/reviewer.md', '# Reviewer\nReview this code.')
-    await writeFixture(dir, 'commands/deploy.md', '# Deploy\nDeploy the code.')
+    await writeFixture(
+      dir,
+      'skills/review/SKILL.md',
+      dedent`
+        # Code Review
+        Review all code.
+      `,
+    )
+    await writeFixture(
+      dir,
+      'agents/reviewer.md',
+      dedent`
+        # Reviewer
+        Review this code.
+      `,
+    )
+    await writeFixture(
+      dir,
+      'commands/deploy.md',
+      dedent`
+        # Deploy
+        Deploy the code.
+      `,
+    )
 
     const manifest = {
       name: 'test',
@@ -195,15 +217,31 @@ describe('resolvePrompts', () => {
     const result = await resolvePrompts(manifest, dir)
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.data.skills?.review?.prompt).toBe('# Code Review\nReview all code.')
-      expect(result.data.agents?.reviewer?.prompt).toBe('# Reviewer\nReview this code.')
-      expect(result.data.commands?.deploy?.prompt).toBe('# Deploy\nDeploy the code.')
+      expect(result.data.skills?.review?.prompt).toBe(dedent`
+        # Code Review
+        Review all code.
+      `)
+      expect(result.data.agents?.reviewer?.prompt).toBe(dedent`
+        # Reviewer
+        Review this code.
+      `)
+      expect(result.data.commands?.deploy?.prompt).toBe(dedent`
+        # Deploy
+        Deploy the code.
+      `)
     }
   })
 
   test('file-based prompt is resolved from agents/<name>.md', async () => {
     const dir = await createFixtureDir('resolve-file')
-    await writeFixture(dir, 'agents/reviewer.md', '# Review\nCheck all code.')
+    await writeFixture(
+      dir,
+      'agents/reviewer.md',
+      dedent`
+        # Review
+        Check all code.
+      `,
+    )
 
     const manifest = {
       name: 'test',
@@ -216,7 +254,10 @@ describe('resolvePrompts', () => {
     const result = await resolvePrompts(manifest, dir)
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.data.agents?.reviewer?.prompt).toBe('# Review\nCheck all code.')
+      expect(result.data.agents?.reviewer?.prompt).toBe(dedent`
+        # Review
+        Check all code.
+      `)
     }
   })
 
@@ -242,7 +283,14 @@ describe('resolvePrompts', () => {
 
   test('manifest without agents or commands resolves successfully', async () => {
     const dir = await createFixtureDir('resolve-skills-only')
-    await writeFixture(dir, 'skills/x/SKILL.md', '# Skill X\nDo x.')
+    await writeFixture(
+      dir,
+      'skills/x/SKILL.md',
+      dedent`
+        # Skill X
+        Do x.
+      `,
+    )
 
     const manifest = {
       name: 'test',
@@ -258,7 +306,10 @@ describe('resolvePrompts', () => {
     expect(result.ok).toBe(true)
     if (result.ok) {
       expect(result.data.name).toBe('test')
-      expect(result.data.skills?.x?.prompt).toBe('# Skill X\nDo x.')
+      expect(result.data.skills?.x?.prompt).toBe(dedent`
+        # Skill X
+        Do x.
+      `)
     }
   })
 })

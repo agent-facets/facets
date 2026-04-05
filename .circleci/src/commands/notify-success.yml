@@ -1,0 +1,5 @@
+steps:
+  - slack/notify:
+      event: pass
+      template: basic_success_1
+      channel: C0AQVA6UB38
