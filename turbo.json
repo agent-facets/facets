@@ -21,8 +21,12 @@
         "//#types",
         "//#test:scripts",
         "//#docs:validate",
-        "//#docs:broken-links"
+        "//#docs:broken-links",
+        "//#ci:check-pack"
       ]
+    },
+    "//#ci:check-pack": {
+      "inputs": [".circleci/src/**", ".circleci/config.yml"]
     },
     "//#test:scripts": {
       "inputs": ["scripts/**"]
