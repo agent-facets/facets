@@ -5,6 +5,7 @@ import { shellResult, silenceIO } from './lib/test-helpers'
 describe('ci-tag-release', () => {
   beforeEach(() => {
     silenceIO()
+    spyOn(io, 'mintGitHubToken').mockResolvedValue('fake-gh-token')
   })
 
   afterEach(() => {
@@ -73,7 +74,6 @@ describe('ci-tag-release', () => {
         { number: 52, headRefName: 'changeset-release/main', headRefOid: 'original-sha' },
       ])
       spyOn(io, 'gitFetchSha').mockResolvedValue(shellResult())
-      spyOn(io, 'mintGitHubToken').mockResolvedValue('gh-token')
       spyOn(io, 'gitConfig').mockResolvedValue(shellResult())
       spyOn(io, 'loadWorkspacePackages').mockResolvedValue([
         { name: '@agent-facets/core', version: '1.1.0', dir: 'packages/core' },
@@ -122,7 +122,6 @@ describe('ci-tag-release', () => {
         { number: 52, headRefName: 'changeset-release/main', headRefOid: 'original-sha' },
       ])
       spyOn(io, 'gitFetchSha').mockResolvedValue(shellResult())
-      spyOn(io, 'mintGitHubToken').mockResolvedValue('gh-token')
       spyOn(io, 'loadWorkspacePackages').mockResolvedValue([
         { name: '@agent-facets/core', version: '1.1.0', dir: 'packages/core' },
       ])

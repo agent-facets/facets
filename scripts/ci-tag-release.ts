@@ -21,6 +21,10 @@ export async function tagRelease(): Promise<number> {
     return 1
   }
 
+  const ghToken = await io.mintGitHubToken()
+  process.env.GH_TOKEN = ghToken
+  process.env.GITHUB_TOKEN = ghToken
+
   const prs = await io.ghGetPrForCommit(sha)
   const versionPr = prs.find((p) => p.headRefName === CHANGESET_RELEASE_BRANCH)
 
@@ -41,10 +45,6 @@ export async function tagRelease(): Promise<number> {
     io.log('All package versions already published. No tags needed.')
     return 0
   }
-
-  const ghToken = await io.mintGitHubToken()
-  process.env.GH_TOKEN = ghToken
-  process.env.GITHUB_TOKEN = ghToken
 
   await io.gitConfig('user.name', GIT_BOT.name)
   await io.gitConfig('user.email', GIT_BOT.email)
