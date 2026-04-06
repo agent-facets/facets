@@ -3,4 +3,4 @@ steps:
       event: fail
       template: basic_fail_1
       channel: C0AQVA6UB38, C0AQFU5S4PR
-      branch_pattern: main,release
+      branch_pattern: main

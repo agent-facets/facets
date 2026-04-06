@@ -12,9 +12,6 @@ export const SLACK_CHANNELS = {
   on_call: 'C0AQFU5S4PR',
 } as const
 
-/** All notification channels as a comma-separated string. */
-export const ALL_SLACK_CHANNELS = Object.values(SLACK_CHANNELS).join(',')
-
 /** Git identity used by CI commits (the-faceter GitHub App). */
 export const GIT_BOT = {
   name: 'the-faceter[bot]',
@@ -29,10 +26,3 @@ export const CHANGESET_PR_TITLE = 'ci(release): version packages'
 
 /** Commit message used when versioning packages. */
 export const CHANGESET_COMMIT_MESSAGE = 'ci(release): version packages'
-
-/** Title for the fallback sync-back PR (release → main). */
-export const SYNC_PR_TITLE = 'ci(release): sync back to main'
-
-/** Body for the fallback sync-back PR. */
-export const SYNC_PR_BODY =
-  'Automatic sync-back from release branch after publishing. Please resolve any conflicts and merge.'

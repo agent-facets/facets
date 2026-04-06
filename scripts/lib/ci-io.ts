@@ -15,11 +15,6 @@ export const io = {
 
   // Changesets
   changesetVersion: () => $`bun changeset version`,
-  changesetPublish: async (): Promise<string> => {
-    const result = await $`bun changeset publish`.quiet()
-    process.stdout.write(result.stdout)
-    return result.stdout.toString()
-  },
 
   // Git
   gitDiff: () => $`git diff --quiet`.nothrow(),
@@ -32,18 +27,24 @@ export const io = {
     force ? $`git push ${remote} ${ref} --force` : $`git push ${remote} ${ref}`,
   gitPushTags: (remote: string, ref: string) => $`git push --follow-tags ${remote} ${ref}`,
   gitFetch: (remote: string, branch: string) => $`git fetch ${remote} ${branch}`,
-  gitMerge: (branch: string) => $`git merge ${branch} --no-edit`,
+  gitFetchSha: (remote: string, sha: string) => $`git fetch ${remote} ${sha}`,
+
+  gitTagAt: (tag: string, sha: string) => $`git tag ${tag} -m ${tag} ${sha}`,
+  gitPushAllTags: (remote: string) => $`git push ${remote} --tags`,
 
   // GitHub CLI
   ghPrList: (head: string) => $`gh pr list --head ${head} --state open --json number --jq .[0].number`.text(),
-  ghPrListWithBase: (head: string, base: string) =>
-    $`gh pr list --head ${head} --base ${base} --state open --json number --jq .[0].number`.text(),
-  ghPrUrl: (head: string, base: string) =>
-    $`gh pr list --head ${head} --base ${base} --state open --json url --jq .[0].url`.text(),
   ghPrCreate: (base: string, head: string, title: string, body: string) =>
     $`gh pr create --base ${base} --head ${head} --title ${title} --body ${body}`,
   ghPrUpdate: (prNumber: string, title: string, body: string) =>
     $`gh pr edit ${prNumber} --title ${title} --body ${body}`,
+  ghGetPrForCommit: async (
+    sha: string,
+  ): Promise<Array<{ number: number; headRefName: string; headRefOid: string }>> => {
+    const result =
+      await $`gh api repos/agent-facets/facets/commits/${sha}/pulls --jq '[.[] | {number, headRefName: .head.ref, headRefOid: .head.sha}]'`.text()
+    return JSON.parse(result.trim() || '[]')
+  },
   ghReleaseCreate: (tag: string, title: string, notes: string) =>
     $`gh release create ${tag} --title ${title} --notes ${notes}`.text(),
 
@@ -55,6 +56,7 @@ export const io = {
     const result = await $`npm view ${pkg} version`.nothrow().quiet()
     return result.exitCode === 0 ? result.text().trim() : null
   },
+  npmPublish: (dir: string) => $`npm publish --access public`.cwd(dir),
 
   // Turbo
   turboBuild: () => $`bun turbo build`,

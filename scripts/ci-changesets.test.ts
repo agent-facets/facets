@@ -134,7 +134,7 @@ describe('ci-changesets', () => {
       expect(process.env.GITHUB_TOKEN).toBe('fake-gh-token')
     })
 
-    test('creates PR targeting release branch, not main', async () => {
+    test('creates PR targeting main branch', async () => {
       spyOn(io, 'scanDir').mockResolvedValue(['funny-turtle.md'])
       setupVersionPath()
 
@@ -148,7 +148,7 @@ describe('ci-changesets', () => {
       const { buildChangesets } = await import('./ci-changesets')
       await buildChangesets()
 
-      expect(prCreateSpy.mock.calls[0]?.[0]).toBe('release')
+      expect(prCreateSpy.mock.calls[0]?.[0]).toBe('main')
     })
   })
 

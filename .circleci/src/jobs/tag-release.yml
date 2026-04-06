@@ -1,0 +1,10 @@
+docker:
+  - image: cimg/base:current
+resource_class: small
+environment:
+  LEFTHOOK: "0"
+steps:
+  - setup-mise
+  - run:
+      name: Tag Release
+      command: bun scripts/ci-tag-release.ts

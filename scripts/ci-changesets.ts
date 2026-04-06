@@ -3,7 +3,7 @@
  *
  * Scans .changeset/ for pending changesets. If found, runs `changeset version`,
  * builds a rich PR body, and creates/updates a "Version Packages" PR targeting
- * the `release` branch.
+ * the `main` branch.
  *
  * Invoked by the `changesets` CircleCI job on the `main` branch.
  */
@@ -63,7 +63,7 @@ export async function buildChangesets(): Promise<number> {
     await io.ghPrUpdate(prNumber, CHANGESET_PR_TITLE, prBody)
     io.log(`Updated existing PR #${prNumber}`)
   } else {
-    await io.ghPrCreate('release', CHANGESET_RELEASE_BRANCH, CHANGESET_PR_TITLE, prBody)
+    await io.ghPrCreate('main', CHANGESET_RELEASE_BRANCH, CHANGESET_PR_TITLE, prBody)
     io.log('Created new Version Packages PR.')
   }
 

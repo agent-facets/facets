@@ -26,8 +26,9 @@ Not every PR needs a changeset — changes to docs, CI, or other non-published f
 When changesets are merged to `main`, the CI release pipeline automatically:
 
 1. Runs `changeset version` to consume all pending changesets, bump versions, and update changelogs
-2. Opens a release PR with the result
-3. When that PR is merged, runs `changeset publish` to publish to npm
+2. Opens a version PR targeting `main` with the result
+3. When that PR is merged, CI creates version tags on the original PR branch commit
+4. Tag pushes trigger per-package publishing to npm via `npm publish`
 
 ### Adding changesets on behalf of contributors
 
