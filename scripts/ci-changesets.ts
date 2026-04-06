@@ -26,6 +26,7 @@ export async function buildChangesets(): Promise<number> {
   const ghToken = await io.mintGitHubToken()
   process.env.GH_TOKEN = ghToken
   process.env.GITHUB_TOKEN = ghToken
+  await io.ghAuthSetupGit()
 
   const packagesBefore = await io.loadWorkspacePackages()
   const versionsBefore = new Map(packagesBefore.map((p) => [p.name, p.version]))

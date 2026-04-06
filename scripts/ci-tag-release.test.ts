@@ -6,6 +6,7 @@ describe('ci-tag-release', () => {
   beforeEach(() => {
     silenceIO()
     spyOn(io, 'mintGitHubToken').mockResolvedValue('fake-gh-token')
+    spyOn(io, 'ghAuthSetupGit').mockResolvedValue(shellResult())
   })
 
   afterEach(() => {
