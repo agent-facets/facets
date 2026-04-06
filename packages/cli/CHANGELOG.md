@@ -1,5 +1,17 @@
 # agent-facets
 
+## 0.3.0
+
+### Minor Changes
+
+- [#55](https://github.com/agent-facets/facets/pull/55) [`01d8ad8`](https://github.com/agent-facets/facets/commit/01d8ad8856d14546a691d45a4326276811c9ce4f) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Use tag-based release strategy
+- [#53](https://github.com/agent-facets/facets/pull/53) [`48bce8d`](https://github.com/agent-facets/facets/commit/48bce8da30ffefd961868ccd53ca364e9027ceec) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Platform specific package seeding
+- [#51](https://github.com/agent-facets/facets/pull/51) [`8280bba`](https://github.com/agent-facets/facets/commit/8280bba66d5ab6a132e1b6792bcccce03037a6de) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Support 12 platform binaries (linux, windows, mac and common variants)
+
+### Patch Changes
+
+- [#51](https://github.com/agent-facets/facets/pull/51) [`8280bba`](https://github.com/agent-facets/facets/commit/8280bba66d5ab6a132e1b6792bcccce03037a6de) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Support dev platform "dev" mode via `bun dev` removing the complex build -> link flow
+
 ## 0.2.2
 
 ### Patch Changes

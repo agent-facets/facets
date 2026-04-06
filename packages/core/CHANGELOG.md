@@ -1,5 +1,11 @@
 # @agent-facets/core
 
+## 0.3.0
+
+### Minor Changes
+
+- [#55](https://github.com/agent-facets/facets/pull/55) [`01d8ad8`](https://github.com/agent-facets/facets/commit/01d8ad8856d14546a691d45a4326276811c9ce4f) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Use tag-based release strategy
+
 ## 0.2.1
 
 ### Patch Changes
