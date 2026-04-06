@@ -1,13 +1,15 @@
 {
   "$schema": "https://turborepo.com/schema.json",
-  "globalDependencies": ["bun.lock", "bunfig.toml", "package.json"],
+  "globalDependencies": ["bun.lock"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/bunfig.toml"],
       "outputs": ["dist/**"]
     },
     "test": {
       "dependsOn": ["build"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/bunfig.toml"],
       "outputs": ["$TURBO_ROOT$/test-results/**"]
     },
     "types": {
@@ -32,10 +34,18 @@
       "inputs": ["scripts/**"]
     },
     "//#types": {
-      "inputs": ["$TURBO_DEFAULT$", "!$TURBO_ROOT$/.changeset/**"]
+      "inputs": ["scripts/**", "tsconfig.json"]
     },
     "//#lint": {
-      "inputs": ["$TURBO_DEFAULT$", "!$TURBO_ROOT$/.changeset/**"]
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!$TURBO_ROOT$/architecture/**",
+        "!$TURBO_ROOT$/openspec/**",
+        "!$TURBO_ROOT$/.circleci/**",
+        "!$TURBO_ROOT$/.changeset/**",
+        "!$TURBO_ROOT$/.opencode/**",
+        "!$TURBO_ROOT$/.claude/**"
+      ]
     },
     "//#docs:validate": {
       "inputs": ["docs/**"]

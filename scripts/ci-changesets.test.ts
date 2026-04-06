@@ -15,6 +15,7 @@ describe('ci-changesets', () => {
   describe('buildChangesets', () => {
     function setupVersionPath() {
       spyOn(io, 'mintGitHubToken').mockResolvedValue('fake-gh-token')
+      spyOn(io, 'ghAuthSetupGit').mockResolvedValue(shellResult())
       spyOn(io, 'changesetVersion').mockResolvedValue(shellResult())
       spyOn(io, 'bunInstall').mockResolvedValue(shellResult())
       spyOn(io, 'gitDiff').mockResolvedValue(shellResult('', 1))

@@ -24,6 +24,7 @@ export async function tagRelease(): Promise<number> {
   const ghToken = await io.mintGitHubToken()
   process.env.GH_TOKEN = ghToken
   process.env.GITHUB_TOKEN = ghToken
+  await io.ghAuthSetupGit()
 
   const prs = await io.ghGetPrForCommit(sha)
   const versionPr = prs.find((p) => p.headRefName === CHANGESET_RELEASE_BRANCH)

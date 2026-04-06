@@ -18,6 +18,9 @@ export const GIT_BOT = {
   email: '272408671+the-faceter[bot]@users.noreply.github.com',
 } as const
 
+/** GitHub repository slug (owner/repo). */
+export const GITHUB_REPO = 'agent-facets/facets'
+
 /** Branch that changeset version PRs are pushed to. */
 export const CHANGESET_RELEASE_BRANCH = 'changeset-release/main'
 
