@@ -20,28 +20,12 @@ commands:
                     curl https://mise.run | sh
                     echo 'eval "$(~/.local/bin/mise activate bash)"' >> "$BASH_ENV"
                 name: Install mise
-            - restore_cache:
-                keys:
-                    - v1-mise-{{ checksum "mise.toml" }}
             - run:
                 command: mise install --yes
                 name: Install tools
-            - save_cache:
-                key: v1-mise-{{ checksum "mise.toml" }}
-                paths:
-                    - ~/.local/share/mise
-            - restore_cache:
-                keys:
-                    - v1-deps-{{ checksum "bun.lock" }}
-                    - v1-deps-
             - run:
                 command: bun install --frozen-lockfile
                 name: Install dependencies
-            - save_cache:
-                key: v1-deps-{{ checksum "bun.lock" }}
-                paths:
-                    - node_modules
-                    - ~/.bun/install/cache
 jobs:
     changesets:
         docker:
