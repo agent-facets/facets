@@ -20,7 +20,7 @@
     },
     "packages/brand": {
       "name": "@agent-facets/brand",
-      "version": "0.2.1",
+      "version": "0.3.0",
       "devDependencies": {
         "@types/bun": "1.3.10",
       },
@@ -30,7 +30,7 @@
     },
     "packages/cli": {
       "name": "agent-facets",
-      "version": "0.2.2",
+      "version": "0.3.0",
       "bin": {
         "facet": "./bin/facet",
       },
@@ -51,13 +51,27 @@
         "@types/bun": "1.3.10",
         "ink-testing-library": "4.0.0",
       },
+      "optionalDependencies": {
+        "@agent-facets/cli-darwin-arm64": "0.2.2",
+        "@agent-facets/cli-darwin-x64": "0.2.2",
+        "@agent-facets/cli-darwin-x64-baseline": "0.2.2",
+        "@agent-facets/cli-linux-arm64": "0.2.2",
+        "@agent-facets/cli-linux-arm64-musl": "0.2.2",
+        "@agent-facets/cli-linux-x64": "0.2.2",
+        "@agent-facets/cli-linux-x64-baseline": "0.2.2",
+        "@agent-facets/cli-linux-x64-baseline-musl": "0.2.2",
+        "@agent-facets/cli-linux-x64-musl": "0.2.2",
+        "@agent-facets/cli-windows-arm64": "0.2.2",
+        "@agent-facets/cli-windows-x64": "0.2.2",
+        "@agent-facets/cli-windows-x64-baseline": "0.2.2",
+      },
       "peerDependencies": {
         "typescript": "^5 || ^6",
       },
     },
     "packages/core": {
       "name": "@agent-facets/core",
-      "version": "0.2.1",
+      "version": "0.3.0",
       "dependencies": {
         "arktype": "2.1.29",
         "comment-json": "^4.2.5",
