@@ -2,7 +2,7 @@ commands:
     notify-failure:
         steps:
             - slack/notify:
-                branch_pattern: main,release
+                branch_pattern: main
                 channel: C0AQVA6UB38, C0AQFU5S4PR
                 event: fail
                 template: basic_fail_1
@@ -36,17 +36,6 @@ commands:
                     - node_modules
                     - ~/.bun/install/cache
 jobs:
-    check:
-        docker:
-            - image: cimg/base:current
-        resource_class: small
-        steps:
-            - setup-mise
-            - run:
-                command: bun run check
-                name: Check
-            - store_test_results:
-                path: test-results
     release:
         docker:
             - image: cimg/base:current
@@ -65,25 +54,19 @@ version: 2.1
 workflows:
     release:
         jobs:
-            - check:
-                context: slack-secrets
-                filters:
-                    branches:
-                        only:
-                            - release
-                post-steps:
-                    - notify-failure
             - release:
                 context:
                     - release
                     - slack-secrets
                 filters:
                     branches:
+                        ignore:
+                            - /.*/
+                    tags:
                         only:
-                            - release
+                            - /^@agent-facets\/.+@\d+\..+/
+                            - /^agent-facets@\d+\..+/
                 post-steps:
                     - notify-failure
                     - notify-success
-                requires:
-                    - check
 

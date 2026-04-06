@@ -1,11 +1,23 @@
 jobs:
   - check:
       context: slack-secrets
+      filters:
+        branches:
+          ignore:
+            - main
       post-steps:
         - notify-failure
   - changesets:
-      requires:
-        - check
+      context:
+        - release
+        - slack-secrets
+      filters:
+        branches:
+          only:
+            - main
+      post-steps:
+        - notify-failure
+  - tag-release:
       context:
         - release
         - slack-secrets

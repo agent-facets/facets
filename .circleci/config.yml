@@ -2,7 +2,7 @@ commands:
     notify-failure:
         steps:
             - slack/notify:
-                branch_pattern: main,release
+                branch_pattern: main
                 channel: C0AQVA6UB38, C0AQFU5S4PR
                 event: fail
                 template: basic_fail_1
@@ -70,6 +70,17 @@ jobs:
             - run:
                 command: bun scripts/ci-release.ts
                 name: Release
+    tag-release:
+        docker:
+            - image: cimg/base:current
+        environment:
+            LEFTHOOK: "0"
+        resource_class: small
+        steps:
+            - setup-mise
+            - run:
+                command: bun scripts/ci-tag-release.ts
+                name: Tag Release
 orbs:
     slack: circleci/slack@6
 version: 2.1
@@ -78,6 +89,10 @@ workflows:
         jobs:
             - check:
                 context: slack-secrets
+                filters:
+                    branches:
+                        ignore:
+                            - main
                 post-steps:
                     - notify-failure
             - changesets:
@@ -90,6 +105,14 @@ workflows:
                             - main
                 post-steps:
                     - notify-failure
-                requires:
-                    - check
+            - tag-release:
+                context:
+                    - release
+                    - slack-secrets
+                filters:
+                    branches:
+                        only:
+                            - main
+                post-steps:
+                    - notify-failure
 

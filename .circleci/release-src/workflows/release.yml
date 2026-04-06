@@ -1,22 +1,16 @@
 jobs:
-  - check:
-      context: slack-secrets
-      filters:
-        branches:
-          only:
-            - release
-      post-steps:
-        - notify-failure
   - release:
-      requires:
-        - check
       context:
         - release
         - slack-secrets
       filters:
-        branches:
+        tags:
           only:
-            - release
+            - /^@agent-facets\/.+@\d+\..+/
+            - /^agent-facets@\d+\..+/
+        branches:
+          ignore:
+            - /.*/
       post-steps:
         - notify-failure
         - notify-success

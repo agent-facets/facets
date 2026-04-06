@@ -54,7 +54,7 @@ This project uses [changesets](https://github.com/changesets/changesets) for ver
 bun change          # create a changeset describing your changes
 ```
 
-When changesets are merged to `main`, CI will automatically open a release PR. Merging that PR publishes to npm.
+When changesets are merged to `main`, CI will automatically open a version PR. Merging that PR creates version tags, which trigger per-package publishing to npm.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for more details.
 
