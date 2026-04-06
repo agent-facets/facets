@@ -19,6 +19,7 @@ bun install    # installs deps + sets up git hooks
 
 | Command          | Description                                                       |
 | ---------------- | ----------------------------------------------------------------- |
+| `bun dev`        | Run the CLI from source (e.g. `bun dev build ./my-facet`)         |
 | `bun check`      | Lint + typecheck + build + test (run this before submitting a PR) |
 | `bun run lint`   | Biome lint only                                                   |
 | `bun run format` | Biome auto-fix and format                                         |
