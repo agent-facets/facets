@@ -54,8 +54,7 @@ export const allTargets: Target[] = [
 // ---------------------------------------------------------------------------
 
 export function packageName(item: Target): string {
-  return [
-    'agent-facets',
+  const suffix = [
     item.os === 'win32' ? 'windows' : item.os,
     item.arch,
     item.avx2 === false ? 'baseline' : undefined,
@@ -63,10 +62,11 @@ export function packageName(item: Target): string {
   ]
     .filter(Boolean)
     .join('-')
+  return `@agent-facets/cli-${suffix}`
 }
 
 export function bunTarget(name: string): string {
-  return name.replace('agent-facets', 'bun')
+  return name.replace('@agent-facets/cli', 'bun')
 }
 
 export function filterTargets(targets: Target[], opts: FilterOptions): Target[] {

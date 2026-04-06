@@ -26,6 +26,11 @@ bun install    # installs deps + sets up git hooks
 | `bun run test`   | Run tests                                                         |
 | `bun run types`  | Typecheck only                                                    |
 | `bun run build`  | Build only                                                        |
+| `bun seed`       | Seed platform package names on npm (one-time setup)               |
+
+## Platform Packages
+
+The CLI is distributed as per-platform npm packages under `@agent-facets/cli-*`. When adding new platform targets, run `bun seed` to claim package names on npm, then follow the [OIDC setup guide](OIDC-SETUP.md) to configure trusted publishing for CircleCI.
 
 ## Pull Requests
 

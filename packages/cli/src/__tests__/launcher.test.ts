@@ -100,7 +100,7 @@ describe('launcher — no binary found', () => {
     const exitCode = await proc.exited
 
     expect(exitCode).toBe(1)
-    expect(stderr).toContain('agent-facets-')
+    expect(stderr).toContain('@agent-facets/cli-')
     expect(stderr).toContain('package manager failed')
   })
 })

@@ -13,18 +13,18 @@ import {
 
 describe('packageName', () => {
   test.each<[Target, string]>([
-    [{ os: 'linux', arch: 'arm64' }, 'agent-facets-linux-arm64'],
-    [{ os: 'linux', arch: 'x64' }, 'agent-facets-linux-x64'],
-    [{ os: 'linux', arch: 'x64', avx2: false }, 'agent-facets-linux-x64-baseline'],
-    [{ os: 'linux', arch: 'arm64', abi: 'musl' }, 'agent-facets-linux-arm64-musl'],
-    [{ os: 'linux', arch: 'x64', abi: 'musl' }, 'agent-facets-linux-x64-musl'],
-    [{ os: 'linux', arch: 'x64', avx2: false, abi: 'musl' }, 'agent-facets-linux-x64-baseline-musl'],
-    [{ os: 'darwin', arch: 'arm64' }, 'agent-facets-darwin-arm64'],
-    [{ os: 'darwin', arch: 'x64' }, 'agent-facets-darwin-x64'],
-    [{ os: 'darwin', arch: 'x64', avx2: false }, 'agent-facets-darwin-x64-baseline'],
-    [{ os: 'win32', arch: 'arm64' }, 'agent-facets-windows-arm64'],
-    [{ os: 'win32', arch: 'x64' }, 'agent-facets-windows-x64'],
-    [{ os: 'win32', arch: 'x64', avx2: false }, 'agent-facets-windows-x64-baseline'],
+    [{ os: 'linux', arch: 'arm64' }, '@agent-facets/cli-linux-arm64'],
+    [{ os: 'linux', arch: 'x64' }, '@agent-facets/cli-linux-x64'],
+    [{ os: 'linux', arch: 'x64', avx2: false }, '@agent-facets/cli-linux-x64-baseline'],
+    [{ os: 'linux', arch: 'arm64', abi: 'musl' }, '@agent-facets/cli-linux-arm64-musl'],
+    [{ os: 'linux', arch: 'x64', abi: 'musl' }, '@agent-facets/cli-linux-x64-musl'],
+    [{ os: 'linux', arch: 'x64', avx2: false, abi: 'musl' }, '@agent-facets/cli-linux-x64-baseline-musl'],
+    [{ os: 'darwin', arch: 'arm64' }, '@agent-facets/cli-darwin-arm64'],
+    [{ os: 'darwin', arch: 'x64' }, '@agent-facets/cli-darwin-x64'],
+    [{ os: 'darwin', arch: 'x64', avx2: false }, '@agent-facets/cli-darwin-x64-baseline'],
+    [{ os: 'win32', arch: 'arm64' }, '@agent-facets/cli-windows-arm64'],
+    [{ os: 'win32', arch: 'x64' }, '@agent-facets/cli-windows-x64'],
+    [{ os: 'win32', arch: 'x64', avx2: false }, '@agent-facets/cli-windows-x64-baseline'],
   ])('%j → %s', (target, expected) => {
     expect(packageName(target)).toBe(expected)
   })
@@ -32,10 +32,10 @@ describe('packageName', () => {
 
 describe('bunTarget', () => {
   test.each([
-    ['agent-facets-darwin-arm64', 'bun-darwin-arm64'],
-    ['agent-facets-linux-x64-baseline-musl', 'bun-linux-x64-baseline-musl'],
-    ['agent-facets-windows-x64', 'bun-windows-x64'],
-    ['agent-facets-linux-arm64-musl', 'bun-linux-arm64-musl'],
+    ['@agent-facets/cli-darwin-arm64', 'bun-darwin-arm64'],
+    ['@agent-facets/cli-linux-x64-baseline-musl', 'bun-linux-x64-baseline-musl'],
+    ['@agent-facets/cli-windows-x64', 'bun-windows-x64'],
+    ['@agent-facets/cli-linux-arm64-musl', 'bun-linux-arm64-musl'],
   ])('%s → %s', (name, expected) => {
     expect(bunTarget(name)).toBe(expected)
   })
@@ -46,9 +46,9 @@ describe('allTargets', () => {
     expect(allTargets).toHaveLength(12)
   })
 
-  test('every target produces a valid package name starting with agent-facets-', () => {
+  test('every target produces a valid package name starting with @agent-facets/cli-', () => {
     for (const target of allTargets) {
-      expect(packageName(target)).toStartWith('agent-facets-')
+      expect(packageName(target)).toStartWith('@agent-facets/cli-')
     }
   })
 
@@ -73,31 +73,31 @@ describe('filterTargets', () => {
   test('single darwin arm64 returns exactly 1', () => {
     const result = filterTargets(allTargets, { single: true, platform: 'darwin', arch: 'arm64' })
     expect(result).toHaveLength(1)
-    expect(result.map(packageName)).toEqual(['agent-facets-darwin-arm64'])
+    expect(result.map(packageName)).toEqual(['@agent-facets/cli-darwin-arm64'])
   })
 
   test('single linux x64 returns exactly 1 (no baseline, no musl)', () => {
     const result = filterTargets(allTargets, { single: true, platform: 'linux', arch: 'x64' })
     expect(result).toHaveLength(1)
-    expect(result.map(packageName)).toEqual(['agent-facets-linux-x64'])
+    expect(result.map(packageName)).toEqual(['@agent-facets/cli-linux-x64'])
   })
 
   test('single+baseline linux x64 returns exactly 1 (baseline only)', () => {
     const result = filterTargets(allTargets, { single: true, baseline: true, platform: 'linux', arch: 'x64' })
     expect(result).toHaveLength(1)
-    expect(result.map(packageName)).toEqual(['agent-facets-linux-x64-baseline'])
+    expect(result.map(packageName)).toEqual(['@agent-facets/cli-linux-x64-baseline'])
   })
 
   test('single linux arm64 returns exactly 1 (skips musl)', () => {
     const result = filterTargets(allTargets, { single: true, platform: 'linux', arch: 'arm64' })
     expect(result).toHaveLength(1)
-    expect(result.map(packageName)).toEqual(['agent-facets-linux-arm64'])
+    expect(result.map(packageName)).toEqual(['@agent-facets/cli-linux-arm64'])
   })
 
   test('single win32 x64 returns exactly 1', () => {
     const result = filterTargets(allTargets, { single: true, platform: 'win32', arch: 'x64' })
     expect(result).toHaveLength(1)
-    expect(result.map(packageName)).toEqual(['agent-facets-windows-x64'])
+    expect(result.map(packageName)).toEqual(['@agent-facets/cli-windows-x64'])
   })
 
   test('single with unknown platform returns empty', () => {
@@ -109,9 +109,9 @@ describe('filterTargets', () => {
 describe('buildPackageJson', () => {
   test('produces correct os and cpu fields for linux x64', () => {
     const target: Target = { os: 'linux', arch: 'x64' }
-    const result = buildPackageJson('agent-facets-linux-x64', '1.0.0', target)
+    const result = buildPackageJson('@agent-facets/cli-linux-x64', '1.0.0', target)
     expect(result).toEqual({
-      name: 'agent-facets-linux-x64',
+      name: '@agent-facets/cli-linux-x64',
       version: '1.0.0',
       os: ['linux'],
       cpu: ['x64'],
@@ -120,14 +120,14 @@ describe('buildPackageJson', () => {
 
   test('uses raw os value (win32) not the display name (windows)', () => {
     const target: Target = { os: 'win32', arch: 'x64' }
-    const result = buildPackageJson('agent-facets-windows-x64', '2.0.0', target)
+    const result = buildPackageJson('@agent-facets/cli-windows-x64', '2.0.0', target)
     expect(result.os).toEqual(['win32'])
     expect(result.cpu).toEqual(['x64'])
   })
 
   test('uses the provided version', () => {
     const target: Target = { os: 'darwin', arch: 'arm64' }
-    const result = buildPackageJson('agent-facets-darwin-arm64', '3.5.7', target)
+    const result = buildPackageJson('@agent-facets/cli-darwin-arm64', '3.5.7', target)
     expect(result.version).toBe('3.5.7')
   })
 })
@@ -156,14 +156,14 @@ describe('shouldSmokeTest', () => {
 
 describe('outfilePath', () => {
   test('produces correct path structure', () => {
-    const result = outfilePath('/opt/cli', 'agent-facets-darwin-arm64')
-    expect(result).toBe('/opt/cli/dist/agent-facets-darwin-arm64/bin/facet')
+    const result = outfilePath('/opt/cli', '@agent-facets/cli-darwin-arm64')
+    expect(result).toBe('/opt/cli/dist/@agent-facets/cli-darwin-arm64/bin/facet')
   })
 })
 
 describe('packageJsonPath', () => {
   test('produces correct path structure', () => {
-    const result = packageJsonPath('/opt/cli', 'agent-facets-darwin-arm64')
-    expect(result).toBe('/opt/cli/dist/agent-facets-darwin-arm64/package.json')
+    const result = packageJsonPath('/opt/cli', '@agent-facets/cli-darwin-arm64')
+    expect(result).toBe('/opt/cli/dist/@agent-facets/cli-darwin-arm64/package.json')
   })
 })
