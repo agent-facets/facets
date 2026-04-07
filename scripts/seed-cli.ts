@@ -21,7 +21,7 @@ const CIRCLECI = {
   organizationId: 'd6dfd694-6b06-4d51-a5bd-a15b3efe977b',
   projectId: 'c7b3dd0a-e9b0-4e95-8345-fc984443e02b',
   pipelineDefinitionId: 'd404b478-dd19-4c68-891f-4cf97396b1a7',
-  contextIds: 'e6caacea-c6b2-4e4f-b7e3-5cef922ab8a0',
+  contextIds: '84962527-275c-495e-83c3-31c79cf1e181',
   vcsOrigin: 'github.com/agent-facets/facets',
 }
 const OIDC_SETUP_GUIDE = 'OIDC-SETUP.md'
