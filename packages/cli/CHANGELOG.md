@@ -1,5 +1,11 @@
 # agent-facets
 
+## 0.3.2
+
+### Patch Changes
+
+- [#70](https://github.com/agent-facets/facets/pull/70) [`319889c`](https://github.com/agent-facets/facets/commit/319889c1c8dfbb492be4a89ee520563ef8da1a39) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Force CI tag cycle
+
 ## 0.3.1
 
 ### Patch Changes
