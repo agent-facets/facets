@@ -1,8 +1,0 @@
-docker:
-  - image: cimg/base:current
-resource_class: small
-steps:
-  - setup-mise
-  - run:
-      name: Build all platform binaries
-      command: bun scripts/build-cli.ts

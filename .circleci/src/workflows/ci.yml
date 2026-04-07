@@ -3,24 +3,11 @@ jobs:
       context:
         - turbo-cache
         - slack-secrets
-      filters:
-        branches:
-          ignore:
-            - main
-      post-steps:
-        - notify-failure
-  - build-binaries:
-      requires:
-        - check
-      context:
-        - turbo-cache
-      filters:
-        branches:
-          ignore:
-            - main
       post-steps:
         - notify-failure
   - changesets:
+      requires:
+        - check
       context:
         - release
         - slack-secrets
@@ -31,6 +18,8 @@ jobs:
       post-steps:
         - notify-failure
   - tag-release:
+      requires:
+        - check
       context:
         - release
         - slack-secrets
@@ -40,4 +29,3 @@ jobs:
             - main
       post-steps:
         - notify-failure
-
