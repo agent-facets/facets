@@ -1,8 +1,15 @@
+parameters:
+  target:
+    type: string
 docker:
   - image: cimg/base:current
 resource_class: small
 steps:
   - setup-mise
   - run:
-      name: Build all platform binaries
-      command: bun scripts/build-cli.ts
+      name: Build << parameters.target >>
+      command: bun scripts/build-cli.ts --target << parameters.target >>
+  - persist_to_workspace:
+      root: packages/cli/dist
+      paths:
+        - "@agent-facets/cli-<< parameters.target >>"

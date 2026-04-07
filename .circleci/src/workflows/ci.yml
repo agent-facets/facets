@@ -20,6 +20,28 @@ jobs:
             - main
       post-steps:
         - notify-failure
+      matrix:
+        parameters:
+          target:
+            - linux-arm64
+            - linux-x64
+            - linux-x64-baseline
+            - linux-arm64-musl
+            - linux-x64-musl
+            - linux-x64-baseline-musl
+            - darwin-arm64
+            - darwin-x64
+            - darwin-x64-baseline
+            - windows-arm64
+            - windows-x64
+            - windows-x64-baseline
+  - collect-binaries:
+      requires:
+        - build-binaries
+      filters:
+        branches:
+          ignore:
+            - main
   - changesets:
       context:
         - release

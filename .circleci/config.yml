@@ -39,12 +39,19 @@ jobs:
     build-binaries:
         docker:
             - image: cimg/base:current
+        parameters:
+            target:
+                type: string
         resource_class: small
         steps:
             - setup-mise
             - run:
-                command: bun scripts/build-cli.ts
-                name: Build all platform binaries
+                command: bun scripts/build-cli.ts --target << parameters.target >>
+                name: Build << parameters.target >>
+            - persist_to_workspace:
+                paths:
+                    - '@agent-facets/cli-<< parameters.target >>'
+                root: packages/cli/dist
     changesets:
         docker:
             - image: cimg/base:current
@@ -67,6 +74,16 @@ jobs:
                 name: Check
             - store_test_results:
                 path: test-results
+    collect-binaries:
+        docker:
+            - image: cimg/base:current
+        resource_class: small
+        steps:
+            - attach_workspace:
+                at: packages/cli/dist
+            - run:
+                command: ls -la packages/cli/dist/@agent-facets/ || echo "No binaries found"
+                name: List collected binaries
     release:
         docker:
             - image: cimg/base:current
@@ -113,10 +130,32 @@ workflows:
                     branches:
                         ignore:
                             - main
+                matrix:
+                    parameters:
+                        target:
+                            - linux-arm64
+                            - linux-x64
+                            - linux-x64-baseline
+                            - linux-arm64-musl
+                            - linux-x64-musl
+                            - linux-x64-baseline-musl
+                            - darwin-arm64
+                            - darwin-x64
+                            - darwin-x64-baseline
+                            - windows-arm64
+                            - windows-x64
+                            - windows-x64-baseline
                 post-steps:
                     - notify-failure
                 requires:
                     - check
+            - collect-binaries:
+                filters:
+                    branches:
+                        ignore:
+                            - main
+                requires:
+                    - build-binaries
             - changesets:
                 context:
                     - release

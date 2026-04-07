@@ -1,0 +1,9 @@
+docker:
+  - image: cimg/base:current
+resource_class: small
+steps:
+  - attach_workspace:
+      at: packages/cli/dist
+  - run:
+      name: List collected binaries
+      command: ls -la packages/cli/dist/@agent-facets/ || echo "No binaries found"
