@@ -28,7 +28,7 @@ When changesets are merged to `main`, the CI release pipeline automatically:
 1. Runs `changeset version` to consume all pending changesets, bump versions, and update changelogs
 2. Opens a version PR targeting `main` with the result
 3. When that PR is merged, CI creates version tags on the original PR branch commit
-4. Tag pushes trigger per-package publishing to npm via `npm publish`
+4. Tag pushes trigger per-package publishing to npm (the CLI wrapper builds platform binaries and publishes via staged dist-tags; library packages publish directly)
 
 ### Adding changesets on behalf of contributors
 

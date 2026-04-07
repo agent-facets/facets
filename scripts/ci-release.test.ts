@@ -191,21 +191,121 @@ describe('ci-release', () => {
     })
   })
 
-  describe('private packages', () => {
-    test('skips npm publish for private packages', async () => {
-      process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
+  describe('CLI wrapper (agent-facets)', () => {
+    function setupCliReleasePath() {
       spyOn(io, 'loadWorkspacePackages').mockResolvedValue([
-        { name: 'agent-facets', version: '0.4.0', dir: 'packages/cli', private: true },
+        { name: 'agent-facets', version: '0.4.0', dir: 'packages/cli' },
       ])
-      const publishSpy = spyOn(io, 'npmPublish').mockResolvedValue(shellResult())
-      const releaseSpy = spyOn(io, 'ghReleaseCreate').mockResolvedValue('')
+      spyOn(io, 'mintGitHubToken').mockResolvedValue('fake-gh-token')
+      spyOn(io, 'buildCli').mockResolvedValue(shellResult())
+      spyOn(io, 'mintOidcToken').mockResolvedValue('fake-oidc-token\n')
+      spyOn(io, 'publishCli').mockResolvedValue(shellResult())
+      spyOn(io, 'verifyCli').mockResolvedValue(shellResult())
+      spyOn(io, 'promoteCli').mockResolvedValue(shellResult())
+      spyOn(io, 'readFile').mockResolvedValue(SAMPLE_CHANGELOG)
+      spyOn(io, 'ghReleaseCreate').mockResolvedValue(
+        'https://github.com/agent-facets/facets/releases/tag/agent-facets%400.4.0\n',
+      )
+      spyOn(io, 'slackNotify').mockResolvedValue(undefined)
+    }
+
+    test('runs the full build → publish → verify → promote pipeline', async () => {
+      process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
+      setupCliReleasePath()
+
+      const buildSpy = spyOn(io, 'buildCli').mockResolvedValue(shellResult())
+      const publishSpy = spyOn(io, 'publishCli').mockResolvedValue(shellResult())
+      const verifySpy = spyOn(io, 'verifyCli').mockResolvedValue(shellResult())
+      const promoteSpy = spyOn(io, 'promoteCli').mockResolvedValue(shellResult())
 
       const { release } = await import('./ci-release')
       const code = await release()
 
       expect(code).toBe(0)
-      expect(publishSpy).not.toHaveBeenCalled()
-      expect(releaseSpy).not.toHaveBeenCalled()
+      expect(buildSpy).toHaveBeenCalledTimes(1)
+      expect(publishSpy).toHaveBeenCalledTimes(1)
+      expect(verifySpy).toHaveBeenCalledTimes(1)
+      expect(promoteSpy).toHaveBeenCalledTimes(1)
+    })
+
+    test('does not call npmPublish (uses publishCli instead)', async () => {
+      process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
+      setupCliReleasePath()
+
+      const npmPublishSpy = spyOn(io, 'npmPublish').mockResolvedValue(shellResult())
+
+      const { release } = await import('./ci-release')
+      await release()
+
+      expect(npmPublishSpy).not.toHaveBeenCalled()
+    })
+
+    test('mints OIDC token before publish', async () => {
+      process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
+      setupCliReleasePath()
+
+      const mintSpy = spyOn(io, 'mintOidcToken').mockResolvedValue('oidc-token\n')
+
+      const { release } = await import('./ci-release')
+      await release()
+
+      expect(mintSpy).toHaveBeenCalledTimes(1)
+      expect(process.env.NPM_ID_TOKEN).toBe('oidc-token')
+    })
+
+    test('creates GitHub Release after promote', async () => {
+      process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
+      setupCliReleasePath()
+
+      const releaseSpy = spyOn(io, 'ghReleaseCreate').mockResolvedValue(
+        'https://github.com/agent-facets/facets/releases/tag/agent-facets%400.4.0\n',
+      )
+
+      const { release } = await import('./ci-release')
+      const code = await release()
+
+      expect(code).toBe(0)
+      expect(releaseSpy).toHaveBeenCalledTimes(1)
+      const [releaseTag, title] = releaseSpy.mock.calls[0] ?? []
+      expect(releaseTag).toBe('agent-facets@0.4.0')
+      expect(title).toBe('agent-facets@0.4.0')
+    })
+
+    test('sends Slack notification after release', async () => {
+      process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
+      setupCliReleasePath()
+
+      const slackSpy = spyOn(io, 'slackNotify').mockResolvedValue(undefined)
+
+      const { release } = await import('./ci-release')
+      const code = await release()
+
+      expect(code).toBe(0)
+      expect(slackSpy).toHaveBeenCalledTimes(1)
+      const [channel] = slackSpy.mock.calls[0] ?? []
+      expect(channel).toBe(SLACK_CHANNELS.auto_cli_deploys)
+    })
+
+    test('continues even if GitHub Release creation fails', async () => {
+      process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
+      setupCliReleasePath()
+      spyOn(io, 'readFile').mockRejectedValue(new Error('CHANGELOG.md not found'))
+
+      const { release } = await import('./ci-release')
+      const code = await release()
+
+      expect(code).toBe(0)
+    })
+
+    test('continues even if Slack notification fails', async () => {
+      process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
+      setupCliReleasePath()
+      spyOn(io, 'slackNotify').mockRejectedValue(new Error('Slack unavailable'))
+
+      const { release } = await import('./ci-release')
+      const code = await release()
+
+      expect(code).toBe(0)
     })
   })
 })

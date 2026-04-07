@@ -31,6 +31,9 @@ export interface TargetPackageJson {
   cpu: string[]
 }
 
+/** The npm package name for the CLI wrapper that users install directly. */
+export const CLI_WRAPPER_NAME = 'agent-facets'
+
 // ---------------------------------------------------------------------------
 // Target matrix
 // ---------------------------------------------------------------------------
