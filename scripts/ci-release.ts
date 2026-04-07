@@ -14,7 +14,9 @@
  */
 
 import { announceRelease } from './lib/announce'
-import { io, mintCiTokens } from './lib/ci-io'
+import { loadWorkspacePackages, mintGithubTokens } from './lib/ci'
+import { io } from './lib/io'
+import { mintNpmToken } from './lib/npm'
 
 /**
  * Parse a version tag into package name and version.
@@ -45,7 +47,7 @@ export async function release(): Promise<number> {
 
   io.log(`Release triggered for ${parsed.name}@${parsed.version} (tag: ${tag})`)
 
-  const packages = await io.loadWorkspacePackages()
+  const packages = await loadWorkspacePackages()
   const pkg = packages.find((p) => p.name === parsed.name)
   if (!pkg) {
     io.error(`Package "${parsed.name}" not found in workspace`)
@@ -58,7 +60,8 @@ export async function release(): Promise<number> {
   }
 
   // Shared setup — GitHub token and OIDC token for npm trusted publishing
-  await mintCiTokens({ npm: true })
+  await mintGithubTokens()
+  await mintNpmToken()
 
   // Library packages — build and publish directly
   await io.turboBuild()

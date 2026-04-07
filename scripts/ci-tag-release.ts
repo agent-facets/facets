@@ -11,8 +11,9 @@
  */
 
 import { hasUnpublishedVersions } from './lib/changesets'
-import { io, mintCiTokens } from './lib/ci-io'
+import { loadWorkspacePackages, mintGithubTokens } from './lib/ci'
 import { CHANGESET_RELEASE_BRANCH, GIT_BOT } from './lib/constants'
+import { io } from './lib/io'
 
 export async function tagRelease(): Promise<number> {
   const sha = process.env.CIRCLE_SHA1
@@ -21,7 +22,7 @@ export async function tagRelease(): Promise<number> {
     return 1
   }
 
-  await mintCiTokens()
+  await mintGithubTokens()
   await io.ghAuthSetupGit()
 
   const prs = await io.ghGetPrForCommit(sha)
@@ -37,7 +38,7 @@ export async function tagRelease(): Promise<number> {
 
   await io.gitFetchSha('origin', headSha)
 
-  const packages = await io.loadWorkspacePackages()
+  const packages = await loadWorkspacePackages()
   const unpublished = await hasUnpublishedVersions(packages, io.npmViewVersion)
 
   if (!unpublished) {

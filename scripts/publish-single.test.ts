@@ -10,6 +10,7 @@ describe('publish-single', () => {
   beforeEach(() => {
     spyOn(console, 'log').mockImplementation(() => {})
     spyOn(console, 'error').mockImplementation(() => {})
+    spyOn(io, 'mintCircleOidcToken').mockResolvedValue('fake-oidc-token\n')
   })
 
   afterEach(() => {

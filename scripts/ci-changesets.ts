@@ -9,8 +9,9 @@
  */
 
 import { buildVersionPrBody, filterPendingChangesets, replaceChangelogEntry, shouldPublish } from './lib/changesets'
-import { io, mintCiTokens } from './lib/ci-io'
+import { loadWorkspacePackages, mintGithubTokens } from './lib/ci'
 import { CHANGESET_COMMIT_MESSAGE, CHANGESET_PR_TITLE, CHANGESET_RELEASE_BRANCH, GIT_BOT } from './lib/constants'
+import { io } from './lib/io'
 
 export async function buildChangesets(): Promise<number> {
   const files = await io.scanDir('.changeset')
@@ -23,10 +24,10 @@ export async function buildChangesets(): Promise<number> {
 
   io.log(`Found ${pending.length} pending changeset(s). Creating version PR...`)
 
-  await mintCiTokens()
+  await mintGithubTokens()
   await io.ghAuthSetupGit()
 
-  const packagesBefore = await io.loadWorkspacePackages()
+  const packagesBefore = await loadWorkspacePackages()
   const versionsBefore = new Map(packagesBefore.map((p) => [p.name, p.version]))
 
   await io.changesetVersion()
@@ -39,7 +40,7 @@ export async function buildChangesets(): Promise<number> {
     return 0
   }
 
-  const packagesAfter = await io.loadWorkspacePackages()
+  const packagesAfter = await loadWorkspacePackages()
   const changedPackages = packagesAfter.filter((p) => versionsBefore.get(p.name) !== p.version)
   const { body: prBody, entries } = await buildVersionPrBody(changedPackages, io.readFile)
 

@@ -8,7 +8,7 @@ steps:
   - setup-mise
   - run:
       name: Build CLI binaries
-      command: bun scripts/build-cli.ts
+      command: bun scripts/build-facet-cli.ts
   - persist_to_workspace:
       root: .
       paths:

@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { finalize } from './ci-release-finalize'
-import { io } from './lib/ci-io'
+import * as announce from './lib/announce'
+import * as ci from './lib/ci'
 import { SLACK_CHANNELS } from './lib/constants'
+import { io } from './lib/io'
 import { SAMPLE_CHANGELOG, shellResult, silenceIO } from './lib/test-helpers'
 
 describe('ci-release-finalize', () => {
@@ -18,19 +20,19 @@ describe('ci-release-finalize', () => {
   })
 
   function setupFinalizePath() {
-    spyOn(io, 'mintGitHubToken').mockResolvedValue('fake-gh-token')
-    spyOn(io, 'mintOidcToken').mockResolvedValue('fake-oidc-token\n')
+    spyOn(io, 'mintGitHubAppToken').mockResolvedValue('fake-gh-token')
+    spyOn(io, 'mintCircleOidcToken').mockResolvedValue('fake-oidc-token\n')
     spyOn(io, 'publishMainPackage').mockResolvedValue(shellResult())
     spyOn(io, 'verifyCli').mockResolvedValue(shellResult())
     spyOn(io, 'promoteCli').mockResolvedValue(shellResult())
-    spyOn(io, 'loadWorkspacePackages').mockResolvedValue([
+    spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
       { name: 'agent-facets', version: '0.4.0', dir: 'packages/cli' },
     ])
     spyOn(io, 'readFile').mockResolvedValue(SAMPLE_CHANGELOG)
     spyOn(io, 'ghReleaseCreate').mockResolvedValue(
       'https://github.com/agent-facets/facets/releases/tag/agent-facets%400.4.0\n',
     )
-    spyOn(io, 'slackNotify').mockResolvedValue(undefined)
+    spyOn(announce, 'slackNotify').mockResolvedValue(undefined)
   }
 
   test('returns 1 when CIRCLE_TAG is not set', async () => {
@@ -65,8 +67,8 @@ describe('ci-release-finalize', () => {
     process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
     setupFinalizePath()
 
-    const ghSpy = spyOn(io, 'mintGitHubToken').mockResolvedValue('gh-token')
-    const oidcSpy = spyOn(io, 'mintOidcToken').mockResolvedValue('oidc-token\n')
+    const ghSpy = spyOn(io, 'mintGitHubAppToken').mockResolvedValue('gh-token')
+    const oidcSpy = spyOn(io, 'mintCircleOidcToken').mockResolvedValue('oidc-token\n')
 
     await finalize()
 
@@ -111,7 +113,7 @@ describe('ci-release-finalize', () => {
     process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
     setupFinalizePath()
 
-    const slackSpy = spyOn(io, 'slackNotify').mockResolvedValue(undefined)
+    const slackSpy = spyOn(announce, 'slackNotify').mockResolvedValue(undefined)
 
     const code = await finalize()
 
@@ -134,7 +136,7 @@ describe('ci-release-finalize', () => {
   test('continues even if notification fails', async () => {
     process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
     setupFinalizePath()
-    spyOn(io, 'slackNotify').mockRejectedValue(new Error('Slack unavailable'))
+    spyOn(announce, 'slackNotify').mockRejectedValue(new Error('Slack unavailable'))
 
     const code = await finalize()
 

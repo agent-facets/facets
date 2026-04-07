@@ -1,6 +1,6 @@
 import { spyOn } from 'bun:test'
 import dedent from 'dedent'
-import { io } from './ci-io'
+import { io } from './io'
 
 /** Fake a successful Bun.$ shell result for test mocks. */
 // biome-ignore lint/suspicious/noExplicitAny: mocking Bun.$ ShellOutput for tests

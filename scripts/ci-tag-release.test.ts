@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
-import { io } from './lib/ci-io'
+import * as ci from './lib/ci'
+import { io } from './lib/io'
 import { shellResult, silenceIO } from './lib/test-helpers'
 
 describe('ci-tag-release', () => {
   beforeEach(() => {
     silenceIO()
-    spyOn(io, 'mintGitHubToken').mockResolvedValue('fake-gh-token')
+    spyOn(io, 'mintGitHubAppToken').mockResolvedValue('fake-gh-token')
     spyOn(io, 'ghAuthSetupGit').mockResolvedValue(shellResult())
   })
 
@@ -56,7 +57,7 @@ describe('ci-tag-release', () => {
         { number: 52, headRefName: 'changeset-release/main', headRefOid: 'original-sha' },
       ])
       spyOn(io, 'gitFetchSha').mockResolvedValue(shellResult())
-      spyOn(io, 'loadWorkspacePackages').mockResolvedValue([
+      spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
         { name: '@agent-facets/core', version: '1.0.0', dir: 'packages/core' },
       ])
       spyOn(io, 'npmViewVersion').mockResolvedValue('1.0.0')
@@ -76,7 +77,7 @@ describe('ci-tag-release', () => {
       ])
       spyOn(io, 'gitFetchSha').mockResolvedValue(shellResult())
       spyOn(io, 'gitConfig').mockResolvedValue(shellResult())
-      spyOn(io, 'loadWorkspacePackages').mockResolvedValue([
+      spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
         { name: '@agent-facets/core', version: '1.1.0', dir: 'packages/core' },
         { name: '@agent-facets/brand', version: '0.2.0', dir: 'packages/brand' },
         { name: 'agent-facets', version: '0.4.0', dir: 'packages/cli', private: true },
@@ -107,7 +108,7 @@ describe('ci-tag-release', () => {
       ])
       spyOn(io, 'gitFetchSha').mockResolvedValue(shellResult())
       spyOn(io, 'gitConfig').mockResolvedValue(shellResult())
-      spyOn(io, 'loadWorkspacePackages').mockResolvedValue([
+      spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
         { name: '@agent-facets/core', version: '1.0.0', dir: 'packages/core' },
         { name: 'agent-facets', version: '0.4.0', dir: 'packages/cli', private: true },
       ])
@@ -134,7 +135,7 @@ describe('ci-tag-release', () => {
         { number: 52, headRefName: 'changeset-release/main', headRefOid: 'the-real-sha' },
       ])
       const fetchSpy = spyOn(io, 'gitFetchSha').mockResolvedValue(shellResult())
-      spyOn(io, 'loadWorkspacePackages').mockResolvedValue([
+      spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
         { name: '@agent-facets/core', version: '1.0.0', dir: 'packages/core' },
       ])
       spyOn(io, 'npmViewVersion').mockResolvedValue('1.0.0')
@@ -151,7 +152,7 @@ describe('ci-tag-release', () => {
         { number: 52, headRefName: 'changeset-release/main', headRefOid: 'original-sha' },
       ])
       spyOn(io, 'gitFetchSha').mockResolvedValue(shellResult())
-      spyOn(io, 'loadWorkspacePackages').mockResolvedValue([
+      spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
         { name: '@agent-facets/core', version: '1.1.0', dir: 'packages/core' },
       ])
       spyOn(io, 'npmViewVersion').mockResolvedValue('1.0.0')

@@ -35,6 +35,9 @@ export const CHANGESET_COMMIT_MESSAGE = 'ci(release): version packages'
 /** npm registry base URL. */
 export const NPM_REGISTRY = 'https://registry.npmjs.org'
 
+/** The npm package name for the main package that users install directly. */
+export const MAIN_PACKAGE_NAME = 'agent-facets'
+
 /** Root directory of the CLI package. */
 export const CLI_DIR = path.resolve(import.meta.dir, '..', '..', 'packages', 'cli')
 

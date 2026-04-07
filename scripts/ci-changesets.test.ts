@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import dedent from 'dedent'
-import { io } from './lib/ci-io'
+import * as ci from './lib/ci'
+import { io } from './lib/io'
 import { SAMPLE_CHANGELOG, shellResult, silenceIO } from './lib/test-helpers'
 
 describe('ci-changesets', () => {
@@ -14,7 +15,7 @@ describe('ci-changesets', () => {
 
   describe('buildChangesets', () => {
     function setupVersionPath() {
-      spyOn(io, 'mintGitHubToken').mockResolvedValue('fake-gh-token')
+      spyOn(io, 'mintGitHubAppToken').mockResolvedValue('fake-gh-token')
       spyOn(io, 'ghAuthSetupGit').mockResolvedValue(shellResult())
       spyOn(io, 'changesetVersion').mockResolvedValue(shellResult())
       spyOn(io, 'bunInstall').mockResolvedValue(shellResult())
@@ -33,7 +34,7 @@ describe('ci-changesets', () => {
       spyOn(io, 'scanDir').mockResolvedValue(['funny-turtle.md', 'README.md'])
       setupVersionPath()
 
-      const loadSpy = spyOn(io, 'loadWorkspacePackages')
+      const loadSpy = spyOn(ci, 'loadWorkspacePackages')
         .mockResolvedValueOnce([{ name: '@agent-facets/core', version: '1.0.0', dir: 'packages/core' }])
         .mockResolvedValueOnce([{ name: '@agent-facets/core', version: '1.1.0', dir: 'packages/core' }])
 
@@ -66,7 +67,7 @@ describe('ci-changesets', () => {
       spyOn(io, 'scanDir').mockResolvedValue(['funny-turtle.md'])
       setupVersionPath()
 
-      spyOn(io, 'loadWorkspacePackages')
+      spyOn(ci, 'loadWorkspacePackages')
         .mockResolvedValueOnce([{ name: '@agent-facets/core', version: '1.0.0', dir: 'packages/core' }])
         .mockResolvedValueOnce([{ name: '@agent-facets/core', version: '1.1.0', dir: 'packages/core' }])
 
@@ -98,8 +99,8 @@ describe('ci-changesets', () => {
 
     test('exits early when changeset version produces no diff', async () => {
       spyOn(io, 'scanDir').mockResolvedValue(['funny-turtle.md'])
-      spyOn(io, 'mintGitHubToken').mockResolvedValue('fake-gh-token')
-      spyOn(io, 'loadWorkspacePackages').mockResolvedValue([
+      spyOn(io, 'mintGitHubAppToken').mockResolvedValue('fake-gh-token')
+      spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
         { name: '@agent-facets/core', version: '1.0.0', dir: 'packages/core' },
       ])
       spyOn(io, 'changesetVersion').mockResolvedValue(shellResult())
@@ -121,7 +122,7 @@ describe('ci-changesets', () => {
       spyOn(io, 'scanDir').mockResolvedValue(['funny-turtle.md'])
       setupVersionPath()
 
-      spyOn(io, 'loadWorkspacePackages')
+      spyOn(ci, 'loadWorkspacePackages')
         .mockResolvedValueOnce([{ name: '@agent-facets/core', version: '1.0.0', dir: 'packages/core' }])
         .mockResolvedValueOnce([{ name: '@agent-facets/core', version: '1.1.0', dir: 'packages/core' }])
 
@@ -139,7 +140,7 @@ describe('ci-changesets', () => {
       spyOn(io, 'scanDir').mockResolvedValue(['funny-turtle.md'])
       setupVersionPath()
 
-      spyOn(io, 'loadWorkspacePackages')
+      spyOn(ci, 'loadWorkspacePackages')
         .mockResolvedValueOnce([{ name: '@agent-facets/core', version: '1.0.0', dir: 'packages/core' }])
         .mockResolvedValueOnce([{ name: '@agent-facets/core', version: '1.1.0', dir: 'packages/core' }])
 
@@ -167,8 +168,8 @@ describe('ci-changesets', () => {
   describe('error handling', () => {
     test('returns 1 when changeset version fails', async () => {
       spyOn(io, 'scanDir').mockResolvedValue(['funny-turtle.md'])
-      spyOn(io, 'mintGitHubToken').mockResolvedValue('fake-gh-token')
-      spyOn(io, 'loadWorkspacePackages').mockResolvedValue([
+      spyOn(io, 'mintGitHubAppToken').mockResolvedValue('fake-gh-token')
+      spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
         { name: '@agent-facets/core', version: '1.0.0', dir: 'packages/core' },
       ])
       spyOn(io, 'changesetVersion').mockRejectedValue(new Error('changeset version failed'))
