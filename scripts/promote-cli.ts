@@ -12,8 +12,8 @@
  * Usage: bun scripts/promote-cli.ts <version>
  */
 
-import { allPackageNames } from './lib/build-cli'
 import { addDistTagViaApi, exchangeOidcToken, latestVersion } from './lib/npm'
+import { allPackageNames } from './lib/target'
 
 export async function promote(version: string): Promise<number> {
   const oidcJwt = process.env.NPM_ID_TOKEN

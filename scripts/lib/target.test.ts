@@ -1,18 +1,19 @@
 import { describe, expect, test } from 'bun:test'
 import {
   allTargets,
-  buildPackageJson,
+  buildTargetPackageJson,
   bunTarget,
   filterTargets,
   outfilePath,
+  type PackageName,
   packageJsonPath,
   packageName,
   shouldSmokeTest,
   type Target,
-} from './build-cli.ts'
+} from './target'
 
 describe('packageName', () => {
-  test.each<[Target, string]>([
+  test.each([
     [{ os: 'linux', arch: 'arm64' }, '@agent-facets/cli-linux-arm64'],
     [{ os: 'linux', arch: 'x64' }, '@agent-facets/cli-linux-x64'],
     [{ os: 'linux', arch: 'x64', avx2: false }, '@agent-facets/cli-linux-x64-baseline'],
@@ -25,7 +26,7 @@ describe('packageName', () => {
     [{ os: 'win32', arch: 'arm64' }, '@agent-facets/cli-windows-arm64'],
     [{ os: 'win32', arch: 'x64' }, '@agent-facets/cli-windows-x64'],
     [{ os: 'win32', arch: 'x64', avx2: false }, '@agent-facets/cli-windows-x64-baseline'],
-  ])('%j → %s', (target, expected) => {
+  ] as const satisfies [Target, string][])('%j → %s', (target, expected) => {
     expect(packageName(target)).toBe(expected)
   })
 })
@@ -36,7 +37,7 @@ describe('bunTarget', () => {
     ['@agent-facets/cli-linux-x64-baseline-musl', 'bun-linux-x64-baseline-musl'],
     ['@agent-facets/cli-windows-x64', 'bun-windows-x64'],
     ['@agent-facets/cli-linux-arm64-musl', 'bun-linux-arm64-musl'],
-  ])('%s → %s', (name, expected) => {
+  ] as const satisfies [PackageName, string][])('%s → %s', (name, expected) => {
     expect(bunTarget(name)).toBe(expected)
   })
 })
@@ -137,7 +138,7 @@ describe('filterTargets', () => {
 describe('buildPackageJson', () => {
   test('produces correct os and cpu fields for linux x64', () => {
     const target: Target = { os: 'linux', arch: 'x64' }
-    const result = buildPackageJson('@agent-facets/cli-linux-x64', '1.0.0', target)
+    const result = buildTargetPackageJson('@agent-facets/cli-linux-x64', '1.0.0', target)
     expect(result).toEqual({
       name: '@agent-facets/cli-linux-x64',
       version: '1.0.0',
@@ -148,14 +149,14 @@ describe('buildPackageJson', () => {
 
   test('uses raw os value (win32) not the display name (windows)', () => {
     const target: Target = { os: 'win32', arch: 'x64' }
-    const result = buildPackageJson('@agent-facets/cli-windows-x64', '2.0.0', target)
+    const result = buildTargetPackageJson('@agent-facets/cli-windows-x64', '2.0.0', target)
     expect(result.os).toEqual(['win32'])
     expect(result.cpu).toEqual(['x64'])
   })
 
   test('uses the provided version', () => {
     const target: Target = { os: 'darwin', arch: 'arm64' }
-    const result = buildPackageJson('@agent-facets/cli-darwin-arm64', '3.5.7', target)
+    const result = buildTargetPackageJson('@agent-facets/cli-darwin-arm64', '3.5.7', target)
     expect(result.version).toBe('3.5.7')
   })
 })

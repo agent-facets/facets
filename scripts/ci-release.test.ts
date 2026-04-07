@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { parseTag } from './ci-release'
-import { io } from './lib/ci-io'
+import * as announce from './lib/announce'
+import * as ci from './lib/ci'
 import { SLACK_CHANNELS } from './lib/constants'
+import { io } from './lib/io'
 import { SAMPLE_CHANGELOG, shellResult, silenceIO } from './lib/test-helpers'
 
 describe('ci-release', () => {
@@ -41,14 +43,14 @@ describe('ci-release', () => {
 
   describe('release', () => {
     function setupPublishPath() {
-      spyOn(io, 'loadWorkspacePackages').mockResolvedValue([
+      spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
         { name: '@agent-facets/core', version: '1.1.0', dir: 'packages/core', private: false },
       ])
-      spyOn(io, 'mintGitHubToken').mockResolvedValue('fake-gh-token')
+      spyOn(io, 'mintGitHubAppToken').mockResolvedValue('fake-gh-token')
       spyOn(io, 'turboBuild').mockResolvedValue(shellResult())
-      spyOn(io, 'mintOidcToken').mockResolvedValue('fake-oidc-token\n')
+      spyOn(io, 'mintCircleOidcToken').mockResolvedValue('fake-oidc-token\n')
       spyOn(io, 'npmPublish').mockResolvedValue(shellResult())
-      spyOn(io, 'slackNotify').mockResolvedValue(undefined)
+      spyOn(announce, 'slackNotify').mockResolvedValue(undefined)
       spyOn(io, 'readFile').mockResolvedValue(SAMPLE_CHANGELOG)
       spyOn(io, 'ghReleaseCreate').mockResolvedValue(
         'https://github.com/agent-facets/facets/releases/tag/%40agent-facets%2Fcore%401.1.0\n',
@@ -75,7 +77,7 @@ describe('ci-release', () => {
 
     test('returns 1 when package not found in workspace', async () => {
       process.env.CIRCLE_TAG = '@agent-facets/nonexistent@1.0.0'
-      spyOn(io, 'loadWorkspacePackages').mockResolvedValue([
+      spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
         { name: '@agent-facets/core', version: '1.0.0', dir: 'packages/core' },
       ])
 
@@ -87,7 +89,7 @@ describe('ci-release', () => {
 
     test('returns 1 when version mismatches', async () => {
       process.env.CIRCLE_TAG = '@agent-facets/core@9.9.9'
-      spyOn(io, 'loadWorkspacePackages').mockResolvedValue([
+      spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
         { name: '@agent-facets/core', version: '1.0.0', dir: 'packages/core' },
       ])
 
@@ -114,7 +116,7 @@ describe('ci-release', () => {
       process.env.CIRCLE_TAG = '@agent-facets/core@1.1.0'
       setupPublishPath()
 
-      const mintSpy = spyOn(io, 'mintOidcToken').mockResolvedValue('oidc-token\n')
+      const mintSpy = spyOn(io, 'mintCircleOidcToken').mockResolvedValue('oidc-token\n')
 
       const { release } = await import('./ci-release')
       await release()
@@ -145,7 +147,7 @@ describe('ci-release', () => {
       process.env.CIRCLE_TAG = '@agent-facets/core@1.1.0'
       setupPublishPath()
 
-      const slackSpy = spyOn(io, 'slackNotify').mockResolvedValue(undefined)
+      const slackSpy = spyOn(announce, 'slackNotify').mockResolvedValue(undefined)
 
       const { release } = await import('./ci-release')
       const code = await release()
@@ -159,7 +161,7 @@ describe('ci-release', () => {
     test('sets both GH_TOKEN and GITHUB_TOKEN', async () => {
       process.env.CIRCLE_TAG = '@agent-facets/core@1.1.0'
       setupPublishPath()
-      spyOn(io, 'mintGitHubToken').mockResolvedValue('release-token')
+      spyOn(io, 'mintGitHubAppToken').mockResolvedValue('release-token')
 
       const { release } = await import('./ci-release')
       await release()
@@ -182,7 +184,7 @@ describe('ci-release', () => {
     test('continues even if Slack notification fails', async () => {
       process.env.CIRCLE_TAG = '@agent-facets/core@1.1.0'
       setupPublishPath()
-      spyOn(io, 'slackNotify').mockRejectedValue(new Error('Slack unavailable'))
+      spyOn(announce, 'slackNotify').mockRejectedValue(new Error('Slack unavailable'))
 
       const { release } = await import('./ci-release')
       const code = await release()

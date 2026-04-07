@@ -135,3 +135,8 @@ export async function addDistTagViaApi(
     throw new Error(`Failed to add dist-tag ${tag} to ${packageName}@${version}: ${res.status} — ${body}`)
   }
 }
+
+/** Mint a CircleCI OIDC token for npm trusted publishing and set NPM_ID_TOKEN. */
+export async function mintNpmToken(): Promise<void> {
+  process.env.NPM_ID_TOKEN = (await io.mintCircleOidcToken()).trim()
+}

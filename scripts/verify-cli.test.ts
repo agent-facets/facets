@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
-import { allPackageNames } from './lib/build-cli'
 import * as npm from './lib/npm'
+import { allPackageNames } from './lib/target'
 import { verify } from './verify-cli'
 
 const VERSION = '1.0.0'

@@ -16,9 +16,12 @@
 import path from 'node:path'
 import { DIST_DIR, STAGING_TAG } from './lib/constants'
 import { io } from './lib/io'
-import { versionExists } from './lib/npm'
+import { mintNpmToken, versionExists } from './lib/npm'
 
 export async function publishSingle(target: string): Promise<number> {
+  // Mint OIDC token for npm trusted publishing (each matrix job needs its own)
+  await mintNpmToken()
+
   const pkgDir = path.join(DIST_DIR, '@agent-facets', target)
   const pkgJsonPath = path.join(pkgDir, 'package.json')
 

@@ -1,16 +1,17 @@
 /**
- * Shared types and pure functions for the CLI cross-compilation build script.
- * Extracted for testability — the runner script (scripts/build-cli.ts) imports from here.
+ * Platform target definitions and package helpers for CLI cross-compilation.
+ * Extracted for testability — the runner script (scripts/build-facet-cli.ts) imports from here.
  */
 
 import { resolve } from 'node:path'
+import { MAIN_PACKAGE_NAME } from './constants'
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 export interface Target {
-  os: string
+  os: 'darwin' | 'linux' | 'win32'
   arch: 'arm64' | 'x64'
   abi?: 'musl'
   avx2?: false
@@ -30,9 +31,6 @@ export interface TargetPackageJson {
   os: string[]
   cpu: string[]
 }
-
-/** The npm package name for the main package that users install directly. */
-export const MAIN_PACKAGE_NAME = 'agent-facets'
 
 /** All 13 npm package names: 12 platform binaries + the main package. */
 export function allPackageNames(): string[] {
@@ -62,20 +60,22 @@ export const allTargets: Target[] = [
 // Pure helpers
 // ---------------------------------------------------------------------------
 
-export function packageName(item: Target): string {
-  const suffix = [
-    item.os === 'win32' ? 'windows' : item.os,
-    item.arch,
-    item.avx2 === false ? 'baseline' : undefined,
-    item.abi,
-  ]
-    .filter(Boolean)
-    .join('-')
-  return `@agent-facets/cli-${suffix}`
+export type PackageName = ReturnType<typeof packageName>
+
+export function packageName(item: Target) {
+  const os = item.os === 'win32' ? 'windows' : (`${item.os}` as const)
+  const arch = `-${item.arch}` as const
+  const avx2 = item.avx2 === false ? '-baseline' : ''
+  const abi = item.abi ? (`-${item.abi}` as const) : ('' as const)
+
+  const os_arch = `${os}${arch}` as const
+  const suffix = `${os_arch}${avx2}${abi}` as const
+
+  return `@agent-facets/cli-${suffix}` as const
 }
 
-export function bunTarget(name: string): string {
-  return name.replace('@agent-facets/cli', 'bun')
+export function bunTarget(name: PackageName): Bun.Build.CompileTarget {
+  return name.replace('@agent-facets/cli', 'bun') as Bun.Build.CompileTarget
 }
 
 export function filterTargets(targets: Target[], opts: FilterOptions): Target[] {
@@ -97,7 +97,7 @@ export function filterTargets(targets: Target[], opts: FilterOptions): Target[] 
   })
 }
 
-export function buildPackageJson(name: string, version: string, item: Target): TargetPackageJson {
+export function buildTargetPackageJson(name: string, version: string, item: Target): TargetPackageJson {
   return {
     name,
     version,

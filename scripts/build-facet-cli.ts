@@ -4,24 +4,24 @@
  * Produces standalone Bun-compiled binaries for 12 platform/arch/ABI targets.
  *
  * Usage:
- *   bun scripts/build-cli.ts                      # Build all 12 targets
- *   bun scripts/build-cli.ts --single             # Build for the current platform only
- *   bun scripts/build-cli.ts --single --baseline  # Build baseline variant for the current platform
- *   bun scripts/build-cli.ts --target darwin-arm64 # Build a specific target by name
+ *   bun scripts/build-facet-cli.ts                      # Build all 12 targets
+ *   bun scripts/build-facet-cli.ts --single             # Build for the current platform only
+ *   bun scripts/build-facet-cli.ts --single --baseline  # Build baseline variant for the current platform
+ *   bun scripts/build-facet-cli.ts --target darwin-arm64 # Build a specific target by name
  */
 
 import { resolve } from 'node:path'
 import { $ } from 'bun'
 import {
   allTargets,
-  buildPackageJson,
+  buildTargetPackageJson,
   bunTarget,
   filterTargets,
   outfilePath,
   packageJsonPath,
   packageName,
   shouldSmokeTest,
-} from './lib/build-cli.ts'
+} from './lib/target'
 
 const cliDir = resolve(import.meta.dir, '..', 'packages', 'cli')
 const pkg = await Bun.file(resolve(cliDir, 'package.json')).json()
@@ -55,17 +55,17 @@ if (targets.length === 0) {
 
 console.log(`Building ${targets.length} target(s) — version ${version}\n`)
 
-for (const item of targets) {
-  const name = packageName(item)
-  const target = bunTarget(name)
+for (const target of targets) {
+  const name = packageName(target)
+  const targetName = bunTarget(name)
   const outfile = outfilePath(cliDir, name)
 
-  console.log(`  Building ${name} (${target})...`)
+  console.log(`  Building ${name} (${targetName})...`)
 
   const result = await Bun.build({
     entrypoints: [resolve(cliDir, 'src', 'index.ts')],
     compile: {
-      target: target as Bun.Build.CompileTarget,
+      target: targetName,
       outfile,
       autoloadBunfig: false,
       autoloadDotenv: false,
@@ -82,12 +82,12 @@ for (const item of targets) {
     process.exit(1)
   }
 
-  const pkgJson = buildPackageJson(name, version, item)
+  const pkgJson = buildTargetPackageJson(name, version, target)
   await Bun.file(packageJsonPath(cliDir, name)).write(`${JSON.stringify(pkgJson, null, 2)}\n`)
 
   console.log(`  ✓ ${name}`)
 
-  if (shouldSmokeTest(item, process.platform, process.arch)) {
+  if (shouldSmokeTest(target, process.platform, process.arch)) {
     console.log(`  Running smoke test: ${outfile} --version`)
     try {
       const versionOutput = await $`${outfile} --version`.text()

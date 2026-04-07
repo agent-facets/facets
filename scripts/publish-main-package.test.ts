@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
-import { MAIN_PACKAGE_NAME } from './lib/build-cli'
+import { MAIN_PACKAGE_NAME } from './lib/constants'
 import { io } from './lib/io'
 import * as npm from './lib/npm'
 import { shellResult } from './lib/test-helpers'
@@ -9,6 +9,7 @@ describe('publish-main-package', () => {
   beforeEach(() => {
     spyOn(console, 'log').mockImplementation(() => {})
     spyOn(console, 'error').mockImplementation(() => {})
+    spyOn(io, 'mintCircleOidcToken').mockResolvedValue('fake-oidc-token\n')
   })
 
   afterEach(() => {

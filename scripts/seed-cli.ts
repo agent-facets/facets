@@ -10,8 +10,8 @@
  * Usage: bun seed (or bun scripts/seed-cli.ts)
  */
 
-import { allTargets, packageName } from './lib/build-cli'
 import { packageExists, publishPlaceholder, whoami } from './lib/npm'
+import { allTargets, packageName } from './lib/target'
 
 // ---------------------------------------------------------------------------
 // CircleCI OIDC configuration for npm trusted publishing

@@ -39,7 +39,7 @@ jobs:
         steps:
             - setup-mise
             - run:
-                command: bun scripts/build-cli.ts
+                command: bun scripts/build-facet-cli.ts
                 name: Build CLI binaries
             - persist_to_workspace:
                 paths:

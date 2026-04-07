@@ -10,8 +10,8 @@
  * Usage: bun scripts/verify-cli.ts <version>
  */
 
-import { allPackageNames } from './lib/build-cli'
 import { versionExists } from './lib/npm'
+import { allPackageNames } from './lib/target'
 
 const MAX_RETRIES = 5
 const INITIAL_DELAY_MS = 1_000

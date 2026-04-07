@@ -8,7 +8,7 @@
  * to construct a contextual failure message with a link to the build.
  */
 
-import { io } from './lib/ci-io'
+import { slackNotify } from './lib/announce'
 import { SLACK_CHANNELS } from './lib/constants'
 
 const buildUrl = process.env.CIRCLE_BUILD_URL ?? ''
@@ -20,7 +20,7 @@ const channels = `${SLACK_CHANNELS.auto_cli_deploys},${SLACK_CHANNELS.on_call}`
 const message = tag ? `❌ Release failed: <${buildUrl}|${tag}>` : `❌ CI failed on main: <${buildUrl}|${job}>`
 
 try {
-  await io.slackNotify(channels, message)
+  await slackNotify(channels, message)
 } catch (err) {
   // Best-effort — don't fail the build further if notification fails
   console.error(`Failed to send failure notification: ${(err as Error).message}`)

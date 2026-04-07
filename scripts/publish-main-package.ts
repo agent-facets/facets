@@ -14,10 +14,9 @@
 
 import path from 'node:path'
 import { $ } from 'bun'
-import { MAIN_PACKAGE_NAME } from './lib/build-cli'
-import { CLI_DIR, DIST_DIR, STAGING_TAG } from './lib/constants'
+import { CLI_DIR, DIST_DIR, MAIN_PACKAGE_NAME, STAGING_TAG } from './lib/constants'
 import { io } from './lib/io'
-import { versionExists } from './lib/npm'
+import { mintNpmToken, versionExists } from './lib/npm'
 
 /** Discover platform packages from build output. */
 async function discoverPlatformPackages(): Promise<Record<string, string>> {
@@ -30,6 +29,9 @@ async function discoverPlatformPackages(): Promise<Record<string, string>> {
 }
 
 export async function publishMainPackage(): Promise<number> {
+  // Mint OIDC token for npm trusted publishing
+  await mintNpmToken()
+
   const binaries = await discoverPlatformPackages()
   if (Object.keys(binaries).length === 0) {
     console.error('No platform packages found in dist/. Did the build job run?')
