@@ -1,5 +1,5 @@
 steps:
-  - slack/notify:
-      event: fail
-      template: basic_fail_1
-      channel: C0AQVA6UB38, C0AQFU5S4PR
+  - run:
+      name: Notify failure
+      command: bun scripts/ci-notify-failure.ts
+      when: on_fail

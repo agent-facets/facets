@@ -2,7 +2,9 @@
   <dictionary name="project">
     <words>
       <w>arktype</w>
+      <w>lefthook</w>
       <w>lerp</w>
+      <w>postinstall</w>
     </words>
   </dictionary>
 </component>

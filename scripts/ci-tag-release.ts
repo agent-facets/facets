@@ -11,7 +11,7 @@
  */
 
 import { hasUnpublishedVersions } from './lib/changesets'
-import { io } from './lib/ci-io'
+import { io, mintCiTokens } from './lib/ci-io'
 import { CHANGESET_RELEASE_BRANCH, GIT_BOT } from './lib/constants'
 
 export async function tagRelease(): Promise<number> {
@@ -21,9 +21,7 @@ export async function tagRelease(): Promise<number> {
     return 1
   }
 
-  const ghToken = await io.mintGitHubToken()
-  process.env.GH_TOKEN = ghToken
-  process.env.GITHUB_TOKEN = ghToken
+  await mintCiTokens()
   await io.ghAuthSetupGit()
 
   const prs = await io.ghGetPrForCommit(sha)

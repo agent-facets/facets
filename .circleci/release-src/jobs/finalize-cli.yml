@@ -6,7 +6,9 @@ environment:
   MISE_ENV: release
 steps:
   - setup-mise
+  - attach_workspace:
+      at: .
   - run:
-      name: Release
-      command: bun scripts/ci-release.ts
+      name: Finalize release
+      command: bun scripts/ci-release-finalize.ts
   - notify-failure

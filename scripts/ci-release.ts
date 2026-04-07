@@ -1,25 +1,20 @@
 /**
- * CI release script — publish a single package from a version tag.
+ * CI release script — publish a library package from a version tag.
  *
- * Triggered by a tag push matching a version tag pattern (e.g.,
- * `@agent-facets/core@0.3.0` or `agent-facets@1.0.0`). Parses the
- * package name and version from the tag, finds the package in the
- * workspace, and runs the appropriate release pipeline:
+ * Triggered by a tag push matching a scoped version tag pattern
+ * (e.g., `@agent-facets/core@0.3.0`). Parses the package name and
+ * version from the tag, finds the package in the workspace, builds
+ * via turbo, publishes to npm, creates a GitHub Release, and sends
+ * a notification.
  *
- * - **CLI wrapper (`agent-facets`)**: cross-compile 12 platform binaries,
- *   publish all packages to staging, verify registry propagation, promote
- *   to latest, create GitHub Release, and notify Slack.
- * - **Library packages**: build, publish to npm, create GitHub Release,
- *   and notify Slack.
+ * CLI releases (`agent-facets@*`) are handled by the separate
+ * release-cli workflow (build-cli → matrix publish → finalize-cli).
  *
- * Invoked by the `release` CircleCI workflow on tag push.
+ * Invoked by the `release-library` CircleCI workflow on tag push.
  */
 
-import { getChangelogEntry } from '@changesets/release-utils'
-import { CLI_WRAPPER_NAME } from './lib/build-cli'
-import { transformChangelogContent } from './lib/changesets'
-import { io } from './lib/ci-io'
-import { SLACK_CHANNELS } from './lib/constants'
+import { announceRelease } from './lib/announce'
+import { io, mintCiTokens } from './lib/ci-io'
 
 /**
  * Parse a version tag into package name and version.
@@ -33,24 +28,6 @@ export function parseTag(tag: string): { name: string; version: string } | null 
   if (unscoped?.[1] && unscoped[2]) return { name: unscoped[1], version: unscoped[2] }
 
   return null
-}
-
-/** Create a GitHub Release and send a Slack notification. Non-fatal — failures are logged but don't fail the release. */
-async function announceRelease(tag: string, dir: string, version: string): Promise<void> {
-  try {
-    const changelog = await io.readFile(`${dir}/CHANGELOG.md`)
-    const entry = getChangelogEntry(changelog, version)
-    const url = (await io.ghReleaseCreate(tag, tag, transformChangelogContent(entry.content))).trim()
-    io.log(`Created GitHub Release: ${url}`)
-
-    try {
-      await io.slackNotify(SLACK_CHANNELS.auto_cli_deploys, `🚀 Published: <${url}|${tag}>`)
-    } catch (err) {
-      io.error(`Failed to send Slack notification: ${(err as Error).message}`)
-    }
-  } catch (err) {
-    io.error(`Failed to create GitHub Release for ${tag}: ${(err as Error).message}`)
-  }
 }
 
 export async function release(): Promise<number> {
@@ -81,34 +58,12 @@ export async function release(): Promise<number> {
   }
 
   // Shared setup — GitHub token and OIDC token for npm trusted publishing
-  const ghToken = await io.mintGitHubToken()
-  process.env.GH_TOKEN = ghToken
-  process.env.GITHUB_TOKEN = ghToken
+  await mintCiTokens({ npm: true })
 
-  const oidcToken = (await io.mintOidcToken()).trim()
-  process.env.NPM_ID_TOKEN = oidcToken
-
-  // CLI wrapper — cross-compile platform binaries and publish via staged pipeline
-  if (parsed.name === CLI_WRAPPER_NAME) {
-    io.log('Building CLI platform binaries...')
-    await io.buildCli()
-
-    io.log('Publishing CLI packages to staging...')
-    await io.publishCli()
-
-    io.log('Verifying CLI packages in registry...')
-    await io.verifyCli(parsed.version)
-
-    io.log('Promoting CLI packages to latest...')
-    await io.promoteCli(parsed.version)
-
-    io.log(`Published ${parsed.name}@${parsed.version} (all platform packages)`)
-  } else {
-    // Library packages — build and publish directly
-    await io.turboBuild()
-    await io.npmPublish(pkg.dir)
-    io.log(`Published ${parsed.name}@${parsed.version} to npm`)
-  }
+  // Library packages — build and publish directly
+  await io.turboBuild()
+  await io.npmPublish(pkg.dir)
+  io.log(`Published ${parsed.name}@${parsed.version} to npm`)
 
   await announceRelease(tag, pkg.dir, parsed.version)
 

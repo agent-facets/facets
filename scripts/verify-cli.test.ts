@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
-import { allTargets, CLI_WRAPPER_NAME, packageName } from './lib/build-cli'
+import { allPackageNames } from './lib/build-cli'
 import * as npm from './lib/npm'
 import { verify } from './verify-cli'
 
 const VERSION = '1.0.0'
-const ALL_PACKAGES = [...allTargets.map(packageName), CLI_WRAPPER_NAME]
+const ALL_PACKAGES = allPackageNames()
 
 describe('verify-cli', () => {
   beforeEach(() => {
@@ -24,7 +24,7 @@ describe('verify-cli', () => {
     expect(code).toBe(0)
   })
 
-  test('verifies all 13 packages (12 platform + wrapper)', async () => {
+  test('verifies all 13 packages (12 platform + main)', async () => {
     const veSpy = spyOn(npm, 'versionExists').mockResolvedValue(true)
 
     await verify(VERSION, 0)

@@ -2,9 +2,11 @@
  * CI pipeline configuration constants.
  *
  * Single source of truth for branch names, PR templates,
- * bot identity, and notification channels used across
- * the changeset and release scripts.
+ * bot identity, notification channels, and CLI paths used
+ * across the changeset and release scripts.
  */
+
+import path from 'node:path'
 
 /** Slack channel directory — keyed by channel name. */
 export const SLACK_CHANNELS = {
@@ -29,3 +31,15 @@ export const CHANGESET_PR_TITLE = 'ci(release): version packages'
 
 /** Commit message used when versioning packages. */
 export const CHANGESET_COMMIT_MESSAGE = 'ci(release): version packages'
+
+/** npm registry base URL. */
+export const NPM_REGISTRY = 'https://registry.npmjs.org'
+
+/** Root directory of the CLI package. */
+export const CLI_DIR = path.resolve(import.meta.dir, '..', '..', 'packages', 'cli')
+
+/** Build output directory for CLI binaries. */
+export const DIST_DIR = path.join(CLI_DIR, 'dist')
+
+/** Dist-tag used for staged publishing before promotion to latest. */
+export const STAGING_TAG = 'staging'

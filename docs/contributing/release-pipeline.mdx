@@ -20,13 +20,13 @@ Releases are fully automated. Merging a PR with changesets triggers a pipeline t
     A maintainer reviews and merges the version PR. CI detects the merge, compares each package version against what is published on npm, and creates a git tag for each package that has an unpublished version (e.g. `@agent-facets/core@0.3.0` or `agent-facets@1.0.0`).
   </Step>
   <Step title="Tag push triggers release">
-    Each tag push triggers the `release` CircleCI workflow. The release script parses the tag to determine the package name and version, then runs the appropriate publish pipeline.
+    Each tag push triggers a release workflow. Scoped tags (`@agent-facets/*@*`) trigger the `release` workflow for library packages. Unscoped tags (`agent-facets@*`) trigger the `release-cli` workflow for the CLI.
   </Step>
   <Step title="Publish to npm">
     The publish path depends on the package type:
 
-    - **Library packages** (`@agent-facets/core`, `@agent-facets/brand`): build, then publish directly to npm.
-    - **`agent-facets`** (main package): cross-compile 12 platform binaries, publish all packages to a `staging` dist-tag, verify registry propagation, then promote to `latest`.
+    - **Library packages** (`@agent-facets/core`, `@agent-facets/brand`): build via turbo, then publish directly to npm.
+    - **CLI** (`agent-facets`): uses a matrix workflow — build all 12 platform binaries in one job, then publish each in parallel across 12 separate executors (avoiding OOM), then finalize by publishing the main package, verifying all 13, and promoting to `latest`.
   </Step>
   <Step title="Announce">
     After publishing, CI creates a GitHub Release with the changelog entry and sends a notification.
@@ -35,20 +35,20 @@ Releases are fully automated. Merging a PR with changesets triggers a pipeline t
 
 ## Staged Publishing
 
-We use a staged publishing strategy to ensure all 12 platform packages plus the main package are available before any user can install them:
+The CLI uses a staged publishing strategy to ensure all 12 platform packages plus the main package are available before any user can install them:
 
 <Steps>
   <Step title="Build">
     Cross-compile binaries for all platform targets using `bun build --compile --target`.
   </Step>
   <Step title="Publish to staging">
-    Publish each platform package and the main package with `--tag staging`.
+    Publish each platform package and the main package with `--tag staging`. Each platform package publishes in its own CI executor via a matrix job.
   </Step>
   <Step title="Verify">
     Poll the npm registry until all 13 packages (12 platform + 1 main) are visible at the new version. Retries with exponential backoff.
   </Step>
   <Step title="Promote">
-    Move all 13 packages from `staging` to `latest` using `npm dist-tag add`.
+    Move all 13 packages from `staging` to `latest` via the npm registry HTTP API using short-lived OIDC tokens. See [Publishing](/contributing/publishing#dist-tag-promotion-oidc-token-exchange) for details on the token exchange mechanism.
   </Step>
 </Steps>
 
