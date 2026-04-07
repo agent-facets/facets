@@ -7,6 +7,7 @@
  *   bun scripts/build-cli.ts                      # Build all 12 targets
  *   bun scripts/build-cli.ts --single             # Build for the current platform only
  *   bun scripts/build-cli.ts --single --baseline  # Build baseline variant for the current platform
+ *   bun scripts/build-cli.ts --target darwin-arm64 # Build a specific target by name
  */
 
 import { resolve } from 'node:path'
@@ -32,10 +33,13 @@ const version: string = pkg.version
 
 const singleFlag = process.argv.includes('--single')
 const baselineFlag = process.argv.includes('--baseline')
+const targetIndex = process.argv.indexOf('--target')
+const targetFlag = targetIndex !== -1 ? process.argv[targetIndex + 1] : undefined
 
 const targets = filterTargets(allTargets, {
   single: singleFlag,
   baseline: baselineFlag,
+  target: targetFlag,
   platform: process.platform,
   arch: process.arch,
 })

@@ -36,6 +36,15 @@ commands:
                     - node_modules
                     - ~/.bun/install/cache
 jobs:
+    build-binaries:
+        docker:
+            - image: cimg/base:current
+        resource_class: small
+        steps:
+            - setup-mise
+            - run:
+                command: bun scripts/build-cli.ts
+                name: Build all platform binaries
     changesets:
         docker:
             - image: cimg/base:current
@@ -97,6 +106,17 @@ workflows:
                             - main
                 post-steps:
                     - notify-failure
+            - build-binaries:
+                context:
+                    - turbo-cache
+                filters:
+                    branches:
+                        ignore:
+                            - main
+                post-steps:
+                    - notify-failure
+                requires:
+                    - check
             - changesets:
                 context:
                     - release
