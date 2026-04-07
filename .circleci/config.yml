@@ -1,16 +1,10 @@
 commands:
     notify-failure:
         steps:
-            - slack/notify:
-                channel: C0AQVA6UB38, C0AQFU5S4PR
-                event: fail
-                template: basic_fail_1
-    notify-success:
-        steps:
-            - slack/notify:
-                channel: C0AQVA6UB38
-                event: pass
-                template: basic_success_1
+            - run:
+                command: bun scripts/ci-notify-failure.ts
+                name: Notify failure
+                when: on_fail
     setup-mise:
         steps:
             - checkout
@@ -65,6 +59,7 @@ jobs:
             - run:
                 command: bun scripts/ci-tag-release.ts
                 name: Tag Release
+            - notify-failure
     release:
         docker:
             - image: cimg/base:current
@@ -77,8 +72,7 @@ jobs:
             - run:
                 command: bun scripts/ci-release.ts
                 name: Release
-orbs:
-    slack: circleci/slack@6
+            - notify-failure
 version: 2.1
 workflows:
     ci:
@@ -99,6 +93,4 @@ workflows:
                     branches:
                         only:
                             - main
-                post-steps:
-                    - notify-failure
 

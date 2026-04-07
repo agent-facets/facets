@@ -16,3 +16,4 @@ steps:
   - run:
       name: Tag Release
       command: bun scripts/ci-tag-release.ts
+  - notify-failure

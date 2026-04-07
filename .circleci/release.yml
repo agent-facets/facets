@@ -1,16 +1,10 @@
 commands:
     notify-failure:
         steps:
-            - slack/notify:
-                channel: C0AQVA6UB38, C0AQFU5S4PR
-                event: fail
-                template: basic_fail_1
-    notify-success:
-        steps:
-            - slack/notify:
-                channel: C0AQVA6UB38
-                event: pass
-                template: basic_success_1
+            - run:
+                command: bun scripts/ci-notify-failure.ts
+                name: Notify failure
+                when: on_fail
     setup-mise:
         steps:
             - checkout
@@ -35,6 +29,56 @@ commands:
                     - node_modules
                     - ~/.bun/install/cache
 jobs:
+    build-cli:
+        docker:
+            - image: cimg/base:current
+        environment:
+            LEFTHOOK: "0"
+            MISE_ENV: release
+        resource_class: small
+        steps:
+            - setup-mise
+            - run:
+                command: bun scripts/build-cli.ts
+                name: Build CLI binaries
+            - persist_to_workspace:
+                paths:
+                    - packages/cli/dist
+                root: .
+            - notify-failure
+    finalize-cli:
+        docker:
+            - image: cimg/base:current
+        environment:
+            LEFTHOOK: "0"
+            MISE_ENV: release
+        resource_class: small
+        steps:
+            - setup-mise
+            - attach_workspace:
+                at: .
+            - run:
+                command: bun scripts/ci-release-finalize.ts
+                name: Finalize release
+            - notify-failure
+    publish-platform:
+        docker:
+            - image: cimg/base:current
+        environment:
+            LEFTHOOK: "0"
+            MISE_ENV: release
+        parameters:
+            target:
+                type: string
+        resource_class: small
+        steps:
+            - setup-mise
+            - attach_workspace:
+                at: .
+            - run:
+                command: bun scripts/publish-single.ts << parameters.target >>
+                name: Publish << parameters.target >> to staging
+            - notify-failure
     release:
         docker:
             - image: cimg/base:current
@@ -47,8 +91,7 @@ jobs:
             - run:
                 command: bun scripts/ci-release.ts
                 name: Release
-orbs:
-    slack: circleci/slack@6
+            - notify-failure
 version: 2.1
 workflows:
     release:
@@ -65,8 +108,61 @@ workflows:
                     tags:
                         only:
                             - /^@agent-facets\/.+@\d+\..+/
+    release-cli:
+        jobs:
+            - build-cli:
+                context:
+                    - turbo-cache
+                    - bot-context
+                    - slack-secrets
+                filters:
+                    branches:
+                        ignore:
+                            - /.*/
+                    tags:
+                        only:
                             - /^agent-facets@\d+\..+/
-                post-steps:
-                    - notify-failure
-                    - notify-success
+            - publish-platform:
+                context:
+                    - turbo-cache
+                    - bot-context
+                    - slack-secrets
+                filters:
+                    branches:
+                        ignore:
+                            - /.*/
+                    tags:
+                        only:
+                            - /^agent-facets@\d+\..+/
+                matrix:
+                    parameters:
+                        target:
+                            - cli-darwin-arm64
+                            - cli-darwin-x64
+                            - cli-darwin-x64-baseline
+                            - cli-linux-arm64
+                            - cli-linux-arm64-musl
+                            - cli-linux-x64
+                            - cli-linux-x64-baseline
+                            - cli-linux-x64-baseline-musl
+                            - cli-linux-x64-musl
+                            - cli-windows-arm64
+                            - cli-windows-x64
+                            - cli-windows-x64-baseline
+                requires:
+                    - build-cli
+            - finalize-cli:
+                context:
+                    - turbo-cache
+                    - bot-context
+                    - slack-secrets
+                filters:
+                    branches:
+                        ignore:
+                            - /.*/
+                    tags:
+                        only:
+                            - /^agent-facets@\d+\..+/
+                requires:
+                    - publish-platform
 

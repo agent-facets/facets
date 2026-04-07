@@ -62,7 +62,7 @@ export const io = {
 
   // CLI binary pipeline
   buildCli: () => $`bun scripts/build-cli.ts`,
-  publishCli: () => $`bun scripts/publish-cli.ts`,
+  publishMainPackage: () => $`bun scripts/publish-main-package.ts`,
   verifyCli: (version: string) => $`bun scripts/verify-cli.ts ${version}`,
   promoteCli: (version: string) => $`bun scripts/promote-cli.ts ${version}`,
 
@@ -80,11 +80,15 @@ export const io = {
       return
     }
     for (const channel of channels.split(',').map((c) => c.trim())) {
-      await fetch('https://slack.com/api/chat.postMessage', {
+      const res = await fetch('https://slack.com/api/chat.postMessage', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ channel, text }),
       })
+      const body = (await res.json()) as { ok: boolean; error?: string }
+      if (!body.ok) {
+        console.error(`Slack API error for channel ${channel}: ${body.error}`)
+      }
     }
   },
 
@@ -123,4 +127,21 @@ export const io = {
 
     return results
   },
+}
+
+/**
+ * Mint CI tokens and set them as environment variables.
+ *
+ * Always mints a GitHub App token (GH_TOKEN + GITHUB_TOKEN).
+ * Optionally mints an OIDC token for npm trusted publishing (NPM_ID_TOKEN).
+ */
+export async function mintCiTokens(opts: { npm?: boolean } = {}): Promise<void> {
+  const ghToken = await io.mintGitHubToken()
+  process.env.GH_TOKEN = ghToken
+  process.env.GITHUB_TOKEN = ghToken
+
+  if (opts.npm) {
+    const oidcToken = (await io.mintOidcToken()).trim()
+    process.env.NPM_ID_TOKEN = oidcToken
+  }
 }

@@ -9,7 +9,7 @@
  */
 
 import { buildVersionPrBody, filterPendingChangesets, replaceChangelogEntry, shouldPublish } from './lib/changesets'
-import { io } from './lib/ci-io'
+import { io, mintCiTokens } from './lib/ci-io'
 import { CHANGESET_COMMIT_MESSAGE, CHANGESET_PR_TITLE, CHANGESET_RELEASE_BRANCH, GIT_BOT } from './lib/constants'
 
 export async function buildChangesets(): Promise<number> {
@@ -23,9 +23,7 @@ export async function buildChangesets(): Promise<number> {
 
   io.log(`Found ${pending.length} pending changeset(s). Creating version PR...`)
 
-  const ghToken = await io.mintGitHubToken()
-  process.env.GH_TOKEN = ghToken
-  process.env.GITHUB_TOKEN = ghToken
+  await mintCiTokens()
   await io.ghAuthSetupGit()
 
   const packagesBefore = await io.loadWorkspacePackages()

@@ -8,10 +8,6 @@ jobs:
         tags:
           only:
             - /^@agent-facets\/.+@\d+\..+/
-            - /^agent-facets@\d+\..+/
         branches:
           ignore:
             - /.*/
-      post-steps:
-        - notify-failure
-        - notify-success

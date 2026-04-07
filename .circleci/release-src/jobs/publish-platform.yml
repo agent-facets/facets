@@ -1,0 +1,17 @@
+parameters:
+  target:
+    type: string
+docker:
+  - image: cimg/base:current
+resource_class: small
+environment:
+  LEFTHOOK: "0"
+  MISE_ENV: release
+steps:
+  - setup-mise
+  - attach_workspace:
+      at: .
+  - run:
+      name: Publish << parameters.target >> to staging
+      command: bun scripts/publish-single.ts << parameters.target >>
+  - notify-failure

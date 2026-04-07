@@ -29,7 +29,6 @@ export const io = {
     })
   },
   viewDistTag: (pkg: string, tag: string) => $`npm view ${pkg}@${tag} version`.quiet(),
-  distTagAdd: (pkg: string, ver: string, tag: string) => $`npm dist-tag add ${pkg}@${ver} ${tag}`,
 
   // shell
   pack: (cwd: string) => $`bun pm pack`.cwd(cwd),
@@ -39,5 +38,6 @@ export const io = {
 
   // fs
   readFile: (path: string) => Bun.file(path).text(),
+  readJson: (path: string) => Bun.file(path).json(),
   writeFile: (path: string, content: string) => Bun.write(path, content),
 }

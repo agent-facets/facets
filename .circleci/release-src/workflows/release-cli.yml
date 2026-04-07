@@ -1,0 +1,56 @@
+jobs:
+  - build-cli:
+      context:
+        - turbo-cache
+        - bot-context
+        - slack-secrets
+      filters:
+        tags:
+          only:
+            - /^agent-facets@\d+\..+/
+        branches:
+          ignore:
+            - /.*/
+  - publish-platform:
+      matrix:
+        parameters:
+          target:
+            - cli-darwin-arm64
+            - cli-darwin-x64
+            - cli-darwin-x64-baseline
+            - cli-linux-arm64
+            - cli-linux-arm64-musl
+            - cli-linux-x64
+            - cli-linux-x64-baseline
+            - cli-linux-x64-baseline-musl
+            - cli-linux-x64-musl
+            - cli-windows-arm64
+            - cli-windows-x64
+            - cli-windows-x64-baseline
+      context:
+        - turbo-cache
+        - bot-context
+        - slack-secrets
+      requires:
+        - build-cli
+      filters:
+        tags:
+          only:
+            - /^agent-facets@\d+\..+/
+        branches:
+          ignore:
+            - /.*/
+  - finalize-cli:
+      context:
+        - turbo-cache
+        - bot-context
+        - slack-secrets
+      requires:
+        - publish-platform
+      filters:
+        tags:
+          only:
+            - /^agent-facets@\d+\..+/
+        branches:
+          ignore:
+            - /.*/

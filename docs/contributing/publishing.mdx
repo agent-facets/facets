@@ -66,7 +66,7 @@ The main package (`agent-facets`) and existing platform packages already have OI
 | Organization ID | CircleCI org settings |
 | Project ID | CircleCI project settings |
 | Pipeline Definition ID | CircleCI project pipeline settings |
-| Context IDs | CircleCI context settings (`release` context) |
+| Context IDs | CircleCI context settings (`bot-context` context) |
 | VCS Origin | GitHub repository URL (without `https://`) |
 
 ## Platform packages
@@ -90,8 +90,20 @@ The 12 platform packages that need OIDC configuration:
 
 ## How it works
 
-1. The `release` CircleCI workflow runs in the `release` context, which makes `$CIRCLE_OIDC_TOKEN_V2` available.
+### Publishing (`npm publish`)
+
+1. The release CircleCI workflow runs in the `bot-context` context, which makes `$CIRCLE_OIDC_TOKEN_V2` available.
 2. The release script calls `scripts/lib/ci-io.ts:mintOidcToken()` to fetch a fresh OIDC token.
 3. The token is set as `NPM_ID_TOKEN` in the environment.
 4. When `npm publish` runs, npm sends the token to the registry. The registry validates the token's claims against the package's trusted publisher configuration.
 5. If the claims match, the publish succeeds. No long-lived npm tokens are involved.
+
+### Dist-tag promotion (OIDC token exchange)
+
+The `npm dist-tag add` CLI command does **not** support OIDC trusted publishing ([npm/cli#8547](https://github.com/npm/cli/issues/8547)). To promote packages from `staging` to `latest` without long-lived tokens, we use a token exchange pattern:
+
+1. The finalize script mints an OIDC JWT via `circleci run oidc get`.
+2. For each package, `exchangeOidcToken()` exchanges the JWT for a short-lived npm registry token scoped to that package, via the `/-/npm/v1/oidc/token/exchange/package/` endpoint.
+3. `addDistTagViaApi()` calls the npm registry HTTP API directly (`PUT /-/package/<name>/dist-tags/<tag>`) with the exchanged token to set the dist-tag.
+
+This pattern was adapted from [Nuxt's release script](https://github.com/nuxt/nuxt/blob/main/scripts/release.ts). See `scripts/lib/npm.ts` for the implementation.

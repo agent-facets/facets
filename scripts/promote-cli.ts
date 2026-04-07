@@ -4,20 +4,24 @@
  * Promote CLI platform packages from staging to latest.
  *
  * Flips the `latest` dist-tag for all 12 platform packages and the
- * wrapper package. Idempotent — skips packages where `latest` already
- * points to the target version.
+ * main package using keyless OIDC token exchange. Idempotent — skips
+ * packages where `latest` already points to the target version.
+ *
+ * Requires NPM_ID_TOKEN env var (set by ci-release.ts from CircleCI OIDC).
  *
  * Usage: bun scripts/promote-cli.ts <version>
  */
 
-import { allTargets, CLI_WRAPPER_NAME, packageName } from './lib/build-cli'
-import { distTagAdd, latestVersion } from './lib/npm'
-
-function allPackageNames(): string[] {
-  return [...allTargets.map(packageName), CLI_WRAPPER_NAME]
-}
+import { allPackageNames } from './lib/build-cli'
+import { addDistTagViaApi, exchangeOidcToken, latestVersion } from './lib/npm'
 
 export async function promote(version: string): Promise<number> {
+  const oidcJwt = process.env.NPM_ID_TOKEN
+  if (!oidcJwt) {
+    console.error('NPM_ID_TOKEN not set — cannot promote without OIDC credentials.')
+    return 1
+  }
+
   const packages = allPackageNames()
   let promoted = 0
   let skipped = 0
@@ -36,7 +40,8 @@ export async function promote(version: string): Promise<number> {
     }
 
     try {
-      await distTagAdd(pkg, version, 'latest')
+      const npmToken = await exchangeOidcToken(pkg, oidcJwt)
+      await addDistTagViaApi(pkg, version, 'latest', npmToken)
       console.log(`   ✓ ${pkg}@${version} → latest`)
       promoted++
     } catch (err) {

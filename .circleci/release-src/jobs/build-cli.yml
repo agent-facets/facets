@@ -7,6 +7,10 @@ environment:
 steps:
   - setup-mise
   - run:
-      name: Release
-      command: bun scripts/ci-release.ts
+      name: Build CLI binaries
+      command: bun scripts/build-cli.ts
+  - persist_to_workspace:
+      root: .
+      paths:
+        - packages/cli/dist
   - notify-failure
