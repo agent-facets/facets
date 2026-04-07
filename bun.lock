@@ -21,7 +21,7 @@
     },
     "packages/brand": {
       "name": "@agent-facets/brand",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "devDependencies": {
         "@types/bun": "1.3.10",
       },
@@ -31,7 +31,7 @@
     },
     "packages/cli": {
       "name": "agent-facets",
-      "version": "0.3.4",
+      "version": "0.3.5",
       "bin": {
         "facet": "./bin/facet",
       },
@@ -72,7 +72,7 @@
     },
     "packages/core": {
       "name": "@agent-facets/core",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "dependencies": {
         "arktype": "2.1.29",
         "comment-json": "^4.2.5",

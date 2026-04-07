@@ -1,13 +1,19 @@
 # agent-facets
 
+## 0.3.5
+
+### Patch Changes
+
+- [#78](https://github.com/agent-facets/facets/pull/78) [`b4753d1`](https://github.com/agent-facets/facets/commit/b4753d1a0d7439491ad77d9aaf968cd89c3b7da9) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Fix OIDC publishing and refactor publish scripts
+
 ## 0.3.4
 
 ### Patch Changes
 
 - [#76](https://github.com/agent-facets/facets/pull/76) [`a151e60`](https://github.com/agent-facets/facets/commit/a151e600a6b795a0bfdbb21b3b342ba2e92aed9e) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Fix release pipeline:
-    -   support keyless promotion inspired by Nuxt's OIDC JWT exchange
-    -   use a matrix release workflow (because the key exchange is per-package and the builds are resource intense)
-    -   use custom notifications for failures to the dev team's Slack
+  - support keyless promotion inspired by Nuxt's OIDC JWT exchange
+  - use a matrix release workflow (because the key exchange is per-package and the builds are resource intense)
+  - use custom notifications for failures to the dev team's Slack
 
 ## 0.3.3
 
