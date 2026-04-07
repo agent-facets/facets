@@ -2,7 +2,6 @@ commands:
     notify-failure:
         steps:
             - slack/notify:
-                branch_pattern: main
                 channel: C0AQVA6UB38, C0AQFU5S4PR
                 event: fail
                 template: basic_fail_1
@@ -57,7 +56,7 @@ workflows:
             - release:
                 context:
                     - turbo-cache
-                    - release
+                    - bot-context
                     - slack-secrets
                 filters:
                     branches:

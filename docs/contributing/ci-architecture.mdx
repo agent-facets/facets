@@ -1,0 +1,82 @@
+---
+title: CI Architecture
+description: CircleCI workflow structure, job definitions, and configuration management.
+---
+
+## Workflows
+
+CI runs on [CircleCI](https://circleci.com) with two separate config files, each defining one workflow:
+
+| Config file | Workflow | Trigger | Purpose |
+|---|---|---|---|
+| `.circleci/config.yml` | `ci` | Every push | Lint, typecheck, test (PRs); plus changesets and tag-release (main) |
+| `.circleci/release.yml` | `release` | Tag push | Per-package publish to npm |
+
+## CI workflow
+
+The `ci` workflow has two jobs that run on different branches:
+
+### `check` (PR branches)
+
+Runs on every push to branches **except** `main`. Executes `bun run check` (lint + typecheck + build + test). No notifications — PR failures are visible in GitHub.
+
+### `main-pipeline` (main only)
+
+Runs on pushes to `main` only. Executes three steps sequentially in a single job:
+
+1. **Check** — `bun run check` (same as PR)
+2. **Changesets** — `bun scripts/ci-changesets.ts` (consume changesets, open/update version PR)
+3. **Tag Release** — `bun scripts/ci-tag-release.ts` (create version tags for unpublished packages)
+
+Sends a notification on failure.
+
+## Release workflow
+
+Triggered by tag pushes matching `@agent-facets/*@<version>` or `agent-facets@<version>`. Runs `bun scripts/ci-release.ts`, which parses the tag and runs the appropriate publish pipeline. See [Release Pipeline](/contributing/release-pipeline) for details.
+
+Sends notifications on both failure and success.
+
+## Contexts
+
+CircleCI contexts provide environment variables to jobs:
+
+| Context | Variables | Used by |
+|---|---|---|
+| `turbo-cache` | Turborepo remote cache credentials | `check`, `main-pipeline`, `release` |
+| `release` | npm OIDC config, GitHub app credentials | `main-pipeline`, `release` |
+| `slack-secrets` | Notification webhook credentials | `main-pipeline`, `release` |
+
+## Config source structure
+
+CircleCI configs are authored as modular YAML files under source directories, then packed into single files for CircleCI to consume:
+
+```
+.circleci/
+  src/                    # CI workflow source
+    commands/             # Reusable command definitions
+    jobs/                 # Job definitions
+    workflows/            # Workflow definitions
+    @config.yml           # Base config (version, orbs)
+  release-src/            # Release workflow source (same structure)
+  config.yml              # Packed CI config (generated)
+  release.yml             # Packed release config (generated)
+```
+
+Commands in `release-src/commands/` are symlinks to `src/commands/` to avoid duplication.
+
+## Modifying CI
+
+<Steps>
+  <Step title="Edit source files">
+    Edit files under `.circleci/src/` or `.circleci/release-src/`.
+  </Step>
+  <Step title="Regenerate packed configs">
+    ```sh
+    bun run ci:pack
+    ```
+    This runs `circleci config pack` on both source directories.
+  </Step>
+  <Step title="Verify">
+    `bun check` includes a `ci:check-pack` task that diffs the packed output against the committed files. If they diverge, CI fails with a message to run `bun run ci:pack`.
+  </Step>
+</Steps>

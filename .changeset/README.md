@@ -21,15 +21,4 @@ Not every PR needs a changeset — changes to docs, CI, or other non-published f
 
 ## For maintainers
 
-### Releases
-
-When changesets are merged to `main`, the CI release pipeline automatically:
-
-1. Runs `changeset version` to consume all pending changesets, bump versions, and update changelogs
-2. Opens a version PR targeting `main` with the result
-3. When that PR is merged, CI creates version tags on the original PR branch commit
-4. Tag pushes trigger per-package publishing to npm (the CLI wrapper builds platform binaries and publishes via staged dist-tags; library packages publish directly)
-
-### Adding changesets on behalf of contributors
-
-We use the [changeset bot](https://github.com/apps/changeset-bot), which comments on every PR indicating whether a changeset is present. If a contributor doesn't add one, the bot's comment includes a direct link to create a changeset file in the browser — pre-filled with the correct filename. Just write the summary, select the bump type, and commit it directly to the PR branch. No local checkout needed.
+See the [Release Pipeline](https://agentfacets.io/contributing/release-pipeline) docs for the full end-to-end release flow.

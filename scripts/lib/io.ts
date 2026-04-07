@@ -12,7 +12,7 @@ export const io = {
   whoami: () => $`npm whoami`.quiet(),
   viewName: (pkg: string) => $`npm view ${pkg} name`.quiet(),
   viewVersion: (pkg: string, ver: string) => $`npm view ${pkg}@${ver} version`.quiet(),
-  publish: (cwd: string, tag: string) => $`npm publish *.tgz --provenance --access public --tag ${tag}`.cwd(cwd),
+  publish: (cwd: string, tag: string) => $`npm publish *.tgz --access public --tag ${tag}`.cwd(cwd),
   publishPlain: (cwd: string) => {
     const proc = Bun.spawn(['npm', 'publish', '--access', 'public'], {
       cwd,

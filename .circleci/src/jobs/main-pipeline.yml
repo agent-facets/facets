@@ -6,5 +6,13 @@ environment:
 steps:
   - setup-mise
   - run:
+      name: Check
+      command: bun run check
+  - store_test_results:
+      path: test-results
+  - run:
       name: Changesets
       command: bun scripts/ci-changesets.ts
+  - run:
+      name: Tag Release
+      command: bun scripts/ci-tag-release.ts

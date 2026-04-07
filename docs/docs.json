@@ -57,6 +57,16 @@
           "specification/integrity",
           "specification/servers"
         ]
+      },
+      {
+        "group": "Contributing",
+        "icon": "handshake",
+        "pages": [
+          "contributing/getting-started",
+          "contributing/release-pipeline",
+          "contributing/ci-architecture",
+          "contributing/publishing"
+        ]
       }
     ]
   },

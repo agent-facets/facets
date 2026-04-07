@@ -2,26 +2,14 @@ jobs:
   - check:
       context:
         - turbo-cache
-        - slack-secrets
-      post-steps:
-        - notify-failure
-  - changesets:
-      requires:
-        - check
-      context:
-        - release
-        - slack-secrets
       filters:
         branches:
-          only:
+          ignore:
             - main
-      post-steps:
-        - notify-failure
-  - tag-release:
-      requires:
-        - check
+  - main-pipeline:
       context:
-        - release
+        - turbo-cache
+        - bot-context
         - slack-secrets
       filters:
         branches:
