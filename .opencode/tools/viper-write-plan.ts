@@ -1,6 +1,6 @@
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
-import { tool } from '@ex-machina/opencode-plugin'
+import { tool } from '@opencode-ai/plugin'
 
 const SAFE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/
 
