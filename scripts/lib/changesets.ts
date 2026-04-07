@@ -24,16 +24,14 @@ export function shouldPublish(pendingChangesets: string[]): boolean {
 }
 
 /**
- * Check whether any non-private workspace package has a local version
+ * Check whether any workspace package has a local version
  * that doesn't yet exist on the npm registry.
  */
 export async function hasUnpublishedVersions(
   packages: WorkspacePackage[],
   npmViewFn: (pkg: string) => Promise<string | null>,
 ): Promise<boolean> {
-  const publishable = packages.filter((p) => !p.private)
-
-  for (const pkg of publishable) {
+  for (const pkg of packages) {
     const npmVersion = await npmViewFn(pkg.name)
     if (npmVersion !== pkg.version) return true
   }

@@ -100,6 +100,34 @@ describe('ci-tag-release', () => {
       expect(pushSpy).toHaveBeenCalledWith('origin')
     })
 
+    test('creates tag when only the private CLI package has a version bump', async () => {
+      process.env.CIRCLE_SHA1 = 'abc123'
+      spyOn(io, 'ghGetPrForCommit').mockResolvedValue([
+        { number: 52, headRefName: 'changeset-release/main', headRefOid: 'original-sha' },
+      ])
+      spyOn(io, 'gitFetchSha').mockResolvedValue(shellResult())
+      spyOn(io, 'gitConfig').mockResolvedValue(shellResult())
+      spyOn(io, 'loadWorkspacePackages').mockResolvedValue([
+        { name: '@agent-facets/core', version: '1.0.0', dir: 'packages/core' },
+        { name: 'agent-facets', version: '0.4.0', dir: 'packages/cli', private: true },
+      ])
+      spyOn(io, 'npmViewVersion').mockImplementation(async (pkg: string) => {
+        if (pkg === '@agent-facets/core') return '1.0.0' // unchanged
+        if (pkg === 'agent-facets') return '0.3.0' // bumped
+        return null
+      })
+      const tagSpy = spyOn(io, 'gitTagAt').mockResolvedValue(shellResult())
+      const pushSpy = spyOn(io, 'gitPushAllTags').mockResolvedValue(shellResult())
+
+      const { tagRelease } = await import('./ci-tag-release')
+      const code = await tagRelease()
+
+      expect(code).toBe(0)
+      expect(tagSpy).toHaveBeenCalledWith('agent-facets@0.4.0', 'original-sha')
+      expect(tagSpy).not.toHaveBeenCalledWith('@agent-facets/core@1.0.0', 'original-sha')
+      expect(pushSpy).toHaveBeenCalledWith('origin')
+    })
+
     test('fetches the original branch commit SHA', async () => {
       process.env.CIRCLE_SHA1 = 'abc123'
       spyOn(io, 'ghGetPrForCommit').mockResolvedValue([

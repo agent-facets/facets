@@ -86,13 +86,13 @@ describe('hasUnpublishedVersions', () => {
     expect(result).toBe(true)
   })
 
-  test('skips private packages', async () => {
+  test('includes private packages in version check', async () => {
     const packages: WorkspacePackage[] = [
       { name: 'private-pkg', version: '1.0.0', dir: 'packages/private', private: true },
       { name: '@agent-facets/core', version: '0.1.1', dir: 'packages/core' },
     ]
     const result = await hasUnpublishedVersions(packages, mockNpm({ '@agent-facets/core': '0.1.1' }))
-    expect(result).toBe(false)
+    expect(result).toBe(true)
   })
 
   test('returns false for empty package list', async () => {
