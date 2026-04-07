@@ -1,5 +1,11 @@
 # @agent-facets/brand
 
+## 0.3.1
+
+### Patch Changes
+
+- [#78](https://github.com/agent-facets/facets/pull/78) [`b4753d1`](https://github.com/agent-facets/facets/commit/b4753d1a0d7439491ad77d9aaf968cd89c3b7da9) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Fix OIDC publishing and refactor publish scripts
+
 ## 0.3.0
 
 ### Minor Changes
