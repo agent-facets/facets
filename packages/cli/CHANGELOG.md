@@ -1,5 +1,11 @@
 # agent-facets
 
+## 0.3.1
+
+### Patch Changes
+
+- [#65](https://github.com/agent-facets/facets/pull/65) [`4cc6051`](https://github.com/agent-facets/facets/commit/4cc605110dee69741718be53c6c008599888eb8a) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Ensure all binary packages are built and published safely and simultaneously
+
 ## 0.3.0
 
 ### Minor Changes
