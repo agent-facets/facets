@@ -1,5 +1,11 @@
 # agent-facets
 
+## 0.3.3
+
+### Patch Changes
+
+- [#73](https://github.com/agent-facets/facets/pull/73) [`c31b057`](https://github.com/agent-facets/facets/commit/c31b057c98e5f8d70c3b1ace3e176b09a0060763) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Added contributing docs and fixed publishing pipeline
+
 ## 0.3.2
 
 ### Patch Changes

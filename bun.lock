@@ -31,7 +31,7 @@
     },
     "packages/cli": {
       "name": "agent-facets",
-      "version": "0.3.2",
+      "version": "0.3.3",
       "bin": {
         "facet": "./bin/facet",
       },
