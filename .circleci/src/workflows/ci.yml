@@ -1,6 +1,8 @@
 jobs:
   - check:
-      context: slack-secrets
+      context:
+        - turbo-cache
+        - slack-secrets
       filters:
         branches:
           ignore:
