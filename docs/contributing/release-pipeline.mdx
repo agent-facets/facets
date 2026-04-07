@@ -1,0 +1,59 @@
+---
+title: Release Pipeline
+description: End-to-end flow from PR merge to npm publish, GitHub Release, and notifications.
+---
+
+## Overview
+
+Releases are fully automated. Merging a PR with changesets triggers a pipeline that bumps versions, publishes packages to npm, creates GitHub Releases, and sends notifications. No manual steps are required.
+
+## Flow
+
+<Steps>
+  <Step title="Changesets consumed">
+    When a PR with pending changesets merges to `main`, the `main-pipeline` CI job runs `changeset version`. This consumes all pending changesets, bumps package versions in `package.json`, and updates `CHANGELOG.md` files.
+  </Step>
+  <Step title="Version PR opened">
+    CI opens (or updates) a version PR titled **"ci(release): version packages"** targeting `main`. The PR body lists each package being bumped with its changelog entry. If a version PR already exists, it is updated in place.
+  </Step>
+  <Step title="Version PR merged">
+    A maintainer reviews and merges the version PR. CI detects the merge, compares each package version against what is published on npm, and creates a git tag for each package that has an unpublished version (e.g. `@agent-facets/core@0.3.0` or `agent-facets@1.0.0`).
+  </Step>
+  <Step title="Tag push triggers release">
+    Each tag push triggers the `release` CircleCI workflow. The release script parses the tag to determine the package name and version, then runs the appropriate publish pipeline.
+  </Step>
+  <Step title="Publish to npm">
+    The publish path depends on the package type:
+
+    - **Library packages** (`@agent-facets/core`, `@agent-facets/brand`): build, then publish directly to npm.
+    - **`agent-facets`** (main package): cross-compile 12 platform binaries, publish all packages to a `staging` dist-tag, verify registry propagation, then promote to `latest`.
+  </Step>
+  <Step title="Announce">
+    After publishing, CI creates a GitHub Release with the changelog entry and sends a notification.
+  </Step>
+</Steps>
+
+## Staged Publishing
+
+We use a staged publishing strategy to ensure all 12 platform packages plus the main package are available before any user can install them:
+
+<Steps>
+  <Step title="Build">
+    Cross-compile binaries for all platform targets using `bun build --compile --target`.
+  </Step>
+  <Step title="Publish to staging">
+    Publish each platform package and the main package with `--tag staging`.
+  </Step>
+  <Step title="Verify">
+    Poll the npm registry until all 13 packages (12 platform + 1 main) are visible at the new version. Retries with exponential backoff.
+  </Step>
+  <Step title="Promote">
+    Move all 13 packages from `staging` to `latest` using `npm dist-tag add`.
+  </Step>
+</Steps>
+
+This prevents a window where `npm install agent-facets` could succeed but the platform binary package for the user's OS/arch is not yet available.
+
+## Adding changesets on behalf of contributors
+
+The [changeset bot](https://github.com/apps/changeset-bot) comments on every PR indicating whether a changeset is present. If a contributor doesn't add one, the bot's comment includes a link to create one in the browser — pre-filled with the correct filename. Write the summary, select the bump type, and commit directly to the PR branch.

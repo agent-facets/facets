@@ -9,8 +9,8 @@
  * - **CLI wrapper (`agent-facets`)**: cross-compile 12 platform binaries,
  *   publish all packages to staging, verify registry propagation, promote
  *   to latest, create GitHub Release, and notify Slack.
- * - **Library packages**: build, publish to npm with provenance, create
- *   GitHub Release, and notify Slack.
+ * - **Library packages**: build, publish to npm, create GitHub Release,
+ *   and notify Slack.
  *
  * Invoked by the `release` CircleCI workflow on tag push.
  */
@@ -80,7 +80,7 @@ export async function release(): Promise<number> {
     return 1
   }
 
-  // Shared setup — GitHub token and OIDC token for npm provenance
+  // Shared setup — GitHub token and OIDC token for npm trusted publishing
   const ghToken = await io.mintGitHubToken()
   process.env.GH_TOKEN = ghToken
   process.env.GITHUB_TOKEN = ghToken

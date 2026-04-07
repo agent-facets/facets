@@ -2,7 +2,7 @@ jobs:
   - release:
       context:
         - turbo-cache
-        - release
+        - bot-context
         - slack-secrets
       filters:
         tags:
