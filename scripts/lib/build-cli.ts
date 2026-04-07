@@ -19,6 +19,7 @@ export interface Target {
 export interface FilterOptions {
   single: boolean
   baseline?: boolean
+  target?: string
   platform: string
   arch: string
 }
@@ -29,6 +30,9 @@ export interface TargetPackageJson {
   os: string[]
   cpu: string[]
 }
+
+/** The npm package name for the CLI wrapper that users install directly. */
+export const CLI_WRAPPER_NAME = 'agent-facets'
 
 // ---------------------------------------------------------------------------
 // Target matrix
@@ -70,6 +74,11 @@ export function bunTarget(name: string): string {
 }
 
 export function filterTargets(targets: Target[], opts: FilterOptions): Target[] {
+  if (opts.target) {
+    const fullName = `@agent-facets/cli-${opts.target}`
+    return targets.filter((item) => packageName(item) === fullName)
+  }
+
   if (!opts.single) return targets
 
   return targets.filter((item) => {

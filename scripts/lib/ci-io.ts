@@ -60,6 +60,12 @@ export const io = {
   },
   npmPublish: (dir: string) => $`npm publish --access public`.cwd(dir),
 
+  // CLI binary pipeline
+  buildCli: () => $`bun scripts/build-cli.ts`,
+  publishCli: () => $`bun scripts/publish-cli.ts`,
+  verifyCli: (version: string) => $`bun scripts/verify-cli.ts ${version}`,
+  promoteCli: (version: string) => $`bun scripts/promote-cli.ts ${version}`,
+
   // Turbo
   turboBuild: () => $`bun turbo build`,
 

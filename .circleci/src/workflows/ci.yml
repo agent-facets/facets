@@ -9,6 +9,17 @@ jobs:
             - main
       post-steps:
         - notify-failure
+  - build-binaries:
+      requires:
+        - check
+      context:
+        - turbo-cache
+      filters:
+        branches:
+          ignore:
+            - main
+      post-steps:
+        - notify-failure
   - changesets:
       context:
         - release

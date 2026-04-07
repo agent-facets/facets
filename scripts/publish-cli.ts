@@ -12,12 +12,12 @@
 
 import path from 'node:path'
 import { $ } from 'bun'
+import { CLI_WRAPPER_NAME } from './lib/build-cli'
 import { io } from './lib/io'
 import { versionExists } from './lib/npm'
 
 const CLI_DIR = path.resolve(import.meta.dir, '..', 'packages', 'cli')
 const DIST_DIR = path.join(CLI_DIR, 'dist')
-const WRAPPER_NAME = 'agent-facets'
 const TAG = 'staging'
 
 function log(msg: string) {
@@ -83,12 +83,12 @@ async function publishPlatformPackages(binaries: Record<string, string>): Promis
 // ---------------------------------------------------------------------------
 
 async function publishWrapper(binaries: Record<string, string>, version: string): Promise<void> {
-  const wrapperDir = path.join(DIST_DIR, WRAPPER_NAME)
+  const wrapperDir = path.join(DIST_DIR, CLI_WRAPPER_NAME)
 
-  log(`\n   Synthesizing wrapper package ${WRAPPER_NAME}@${version}...`)
+  log(`\n   Synthesizing wrapper package ${CLI_WRAPPER_NAME}@${version}...`)
 
-  if (await versionExists(WRAPPER_NAME, version)) {
-    log(`   ~ ${WRAPPER_NAME}@${version} (already published, skipping)`)
+  if (await versionExists(CLI_WRAPPER_NAME, version)) {
+    log(`   ~ ${CLI_WRAPPER_NAME}@${version} (already published, skipping)`)
     return
   }
 
@@ -103,7 +103,7 @@ async function publishWrapper(binaries: Record<string, string>, version: string)
     path.join(wrapperDir, 'package.json'),
     JSON.stringify(
       {
-        name: WRAPPER_NAME,
+        name: CLI_WRAPPER_NAME,
         version,
         bin: {
           facet: './bin/facet',
@@ -121,7 +121,7 @@ async function publishWrapper(binaries: Record<string, string>, version: string)
   // Pack and publish
   await io.pack(wrapperDir)
   await io.publish(wrapperDir, TAG)
-  log(`   + ${WRAPPER_NAME}@${version} published (staging)`)
+  log(`   + ${CLI_WRAPPER_NAME}@${version} published (staging)`)
 }
 
 // ---------------------------------------------------------------------------
@@ -144,7 +144,7 @@ async function main() {
 
   log('\n=== All packages published to staging ===')
   log(`\n   To promote to latest (after verification):`)
-  log(`   npm dist-tag add ${WRAPPER_NAME}@${version} latest`)
+  log(`   npm dist-tag add ${CLI_WRAPPER_NAME}@${version} latest`)
   log(`   (and for each platform package)`)
 }
 

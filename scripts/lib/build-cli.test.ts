@@ -104,6 +104,34 @@ describe('filterTargets', () => {
     const result = filterTargets(allTargets, { single: true, platform: 'freebsd', arch: 'x64' })
     expect(result).toHaveLength(0)
   })
+
+  test('target: "darwin-arm64" returns exactly 1', () => {
+    const result = filterTargets(allTargets, { single: false, target: 'darwin-arm64', platform: 'linux', arch: 'x64' })
+    expect(result).toHaveLength(1)
+    expect(result.map(packageName)).toEqual(['@agent-facets/cli-darwin-arm64'])
+  })
+
+  test('target: "linux-x64-baseline-musl" returns exactly 1', () => {
+    const result = filterTargets(allTargets, {
+      single: false,
+      target: 'linux-x64-baseline-musl',
+      platform: 'linux',
+      arch: 'x64',
+    })
+    expect(result).toHaveLength(1)
+    expect(result.map(packageName)).toEqual(['@agent-facets/cli-linux-x64-baseline-musl'])
+  })
+
+  test('target: "nonexistent" returns empty', () => {
+    const result = filterTargets(allTargets, { single: false, target: 'nonexistent', platform: 'linux', arch: 'x64' })
+    expect(result).toHaveLength(0)
+  })
+
+  test('target takes precedence over single', () => {
+    const result = filterTargets(allTargets, { single: true, target: 'darwin-arm64', platform: 'linux', arch: 'x64' })
+    expect(result).toHaveLength(1)
+    expect(result.map(packageName)).toEqual(['@agent-facets/cli-darwin-arm64'])
+  })
 })
 
 describe('buildPackageJson', () => {

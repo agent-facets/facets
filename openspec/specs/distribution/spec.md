@@ -211,3 +211,73 @@ The system SHALL provide a developer-facing guide in the repository that documen
 
 - **WHEN** a developer runs the seed script
 - **THEN** the seed script output SHALL reference the OIDC setup guide's location in the repository
+
+### Requirement: CLI releases are automated on version tag push
+
+The system SHALL automatically build, publish, verify, and promote CLI binaries when a version tag is pushed for the CLI package. A developer who merges a version PR SHALL NOT need to manually run any build, publish, or promotion steps — the release pipeline SHALL handle the full lifecycle.
+
+#### Scenario: Tag push triggers the full release pipeline
+
+- **WHEN** a version tag matching the CLI package (e.g., `agent-facets@1.0.0`) is pushed
+- **THEN** the system SHALL build all 12 platform binaries
+- **AND** the system SHALL publish all platform packages and the wrapper package to the `staging` dist-tag
+- **AND** the system SHALL verify that all published packages are available in the npm registry
+- **AND** the system SHALL promote all packages from `staging` to `latest`
+
+#### Scenario: Tag push for a non-CLI package does not trigger CLI builds
+
+- **WHEN** a version tag for a non-CLI package (e.g., `@agent-facets/core@1.0.0`) is pushed
+- **THEN** the system SHALL NOT run the CLI binary build or publish pipeline
+- **AND** the system SHALL publish the non-CLI package using the standard release flow
+
+### Requirement: Published packages are verified before promotion to latest
+
+The system SHALL verify that every platform package and the wrapper package exist at the expected version in the npm registry before promoting any package to `latest`. This ensures users never see a partially published release.
+
+#### Scenario: All packages verified successfully
+
+- **WHEN** the publish step completes and all 13 packages (12 platform + wrapper) are available at the expected version in the npm registry
+- **THEN** the system SHALL proceed to promote all packages from `staging` to `latest`
+
+#### Scenario: Verification retries on registry propagation delay
+
+- **WHEN** a published package is not yet visible in the npm registry immediately after publishing
+- **THEN** the system SHALL retry verification with exponential backoff
+- **AND** the system SHALL allow sufficient time for npm registry propagation before failing
+
+#### Scenario: Verification fails after maximum retries
+
+- **WHEN** one or more packages are still not visible after the maximum number of retry attempts
+- **THEN** the system SHALL fail the release pipeline with a non-zero exit code
+- **AND** the system SHALL report which packages could not be verified
+
+### Requirement: Package promotion from staging to latest is idempotent
+
+The system SHALL promote packages from `staging` to `latest` by updating the `latest` dist-tag for each package. The promotion step SHALL be safe to re-run if a previous attempt was interrupted.
+
+#### Scenario: Successful promotion of all packages
+
+- **WHEN** all packages have been verified in the npm registry
+- **THEN** the system SHALL update the `latest` dist-tag to point to the new version for all 13 packages
+
+#### Scenario: Re-running promotion after partial failure
+
+- **WHEN** a previous promotion attempt was interrupted after promoting some but not all packages
+- **AND** the promotion step is re-run
+- **THEN** the system SHALL skip packages where `latest` already points to the target version
+- **AND** the system SHALL promote the remaining packages
+
+### Requirement: CLI releases produce a GitHub Release and notification
+
+The system SHALL create a GitHub Release and send a notification when a CLI version is successfully published. This ensures CLI releases have the same visibility as other package releases.
+
+#### Scenario: GitHub Release created after successful publish
+
+- **WHEN** the CLI release pipeline completes successfully (build, publish, verify, promote)
+- **THEN** the system SHALL create a GitHub Release tagged with the version
+- **AND** the release notes SHALL include the changelog entry for that version
+
+#### Scenario: Notification sent after successful publish
+
+- **WHEN** the CLI release pipeline completes successfully
+- **THEN** the system SHALL send a notification to the configured notification channel
