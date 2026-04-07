@@ -1,6 +1,6 @@
 import { readdir } from 'node:fs/promises'
 import path from 'node:path'
-import { tool } from '@ex-machina/opencode-plugin'
+import { tool } from '@opencode-ai/plugin'
 
 export default tool({
   description: 'List VIPER plans and their artifacts',
