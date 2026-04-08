@@ -56,7 +56,7 @@ describe('publish-single', () => {
     expect(publishSpy).toHaveBeenCalledTimes(1)
   })
 
-  test('publishes to the staging dist-tag', async () => {
+  test('publishes to the latest dist-tag', async () => {
     spyOn(io, 'readJson').mockResolvedValue({
       name: '@agent-facets/cli-windows-x64',
       version: '3.0.0',
@@ -68,7 +68,7 @@ describe('publish-single', () => {
 
     await publishSingle('cli-windows-x64')
 
-    expect(publishSpy.mock.calls[0]?.[1]).toBe('staging')
+    expect(publishSpy.mock.calls[0]?.[1]).toBe('latest')
   })
 
   test('passes the correct package directory to pack and publish', async () => {

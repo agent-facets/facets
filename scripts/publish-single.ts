@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 /**
- * Publish a single platform package to npm with --tag staging.
+ * Publish a single platform package to npm with --tag latest.
  *
  * Used by the matrix publish job in the release-cli workflow.
  * Each matrix instance publishes one platform package in its own
@@ -14,7 +14,7 @@
  */
 
 import path from 'node:path'
-import { DIST_DIR, STAGING_TAG } from './lib/constants'
+import { DIST_DIR, PUBLISH_TAG } from './lib/constants'
 import { io } from './lib/io'
 import { mintNpmToken, versionExists } from './lib/npm'
 
@@ -35,7 +35,7 @@ export async function publishSingle(target: string): Promise<number> {
 
   const { name, version } = pkgJson
 
-  console.log(`Publishing ${name}@${version} to staging...`)
+  console.log(`Publishing ${name}@${version}...`)
 
   if (await versionExists(name, version)) {
     console.log(`~ ${name}@${version} already published, skipping`)
@@ -46,9 +46,9 @@ export async function publishSingle(target: string): Promise<number> {
     await io.chmod(pkgDir)
   }
   await io.pack(pkgDir)
-  await io.publish(pkgDir, STAGING_TAG)
+  await io.publish(pkgDir, PUBLISH_TAG)
 
-  console.log(`+ ${name}@${version} published (staging)`)
+  console.log(`+ ${name}@${version} published (latest)`)
   return 0
 }
 

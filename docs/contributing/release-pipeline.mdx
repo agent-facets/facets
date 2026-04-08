@@ -25,34 +25,37 @@ Releases are fully automated. Merging a PR with changesets triggers a pipeline t
   <Step title="Publish to npm">
     The publish path depends on the package type:
 
-    - **Library packages** (`@agent-facets/core`, `@agent-facets/brand`): build via turbo, then publish directly to npm.
-    - **CLI** (`agent-facets`): uses a matrix workflow — build all 12 platform binaries in one job, then publish each in parallel across 12 separate executors (avoiding OOM), then finalize by publishing the main package, verifying all 13, and promoting to `latest`.
+    - **Library packages** (`@agent-facets/core`, `@agent-facets/brand`): build via turbo, then publish directly to `latest`.
+    - **CLI** (`agent-facets`): uses a three-stage matrix workflow — see below.
   </Step>
   <Step title="Announce">
     After publishing, CI creates a GitHub Release with the changelog entry and sends a notification.
   </Step>
 </Steps>
 
-## Staged Publishing
+## CLI Publishing
 
-The CLI uses a staged publishing strategy to ensure all 12 platform packages plus the main package are available before any user can install them:
+The CLI publishes 13 packages (12 platform binaries + 1 main package) directly to `latest` using ordering as the safety mechanism:
 
 <Steps>
   <Step title="Build">
-    Cross-compile binaries for all platform targets using `bun build --compile --target`.
+    Cross-compile binaries for all 12 platform targets using `bun build --compile --target`. Build output is persisted to workspace.
   </Step>
-  <Step title="Publish to staging">
-    Publish each platform package and the main package with `--tag staging`. Each platform package publishes in its own CI executor via a matrix job.
+  <Step title="Publish platform binaries">
+    Each of the 12 platform packages publishes to `latest` in its own CI executor via a matrix job. This avoids OOM from concurrent publishes. Each job mints its own OIDC token.
   </Step>
-  <Step title="Verify">
-    Poll the npm registry until all 13 packages (12 platform + 1 main) are visible at the new version. Retries with exponential backoff.
+  <Step title="Verify platform binaries">
+    Poll the npm registry until all 12 platform packages are visible at the new version. Retries with exponential backoff.
   </Step>
-  <Step title="Promote">
-    Move all 13 packages from `staging` to `latest` via the npm registry HTTP API using short-lived OIDC tokens. See [Publishing](/contributing/publishing#dist-tag-promotion-oidc-token-exchange) for details on the token exchange mechanism.
+  <Step title="Publish main package">
+    Synthesize the `agent-facets` package (with `optionalDependencies` pointing to all 12 platform packages) and publish to `latest`. This is the package users install — it only appears on `latest` after all its dependencies are confirmed available.
+  </Step>
+  <Step title="Verify all 13 packages">
+    Confirm all 13 packages (12 platform + main) are visible at the new version.
   </Step>
 </Steps>
 
-This prevents a window where `npm install agent-facets` could succeed but the platform binary package for the user's OS/arch is not yet available.
+The main package is always last. Users cannot install the new version until this step succeeds, because `npm install agent-facets` resolves the main package first, which then pulls platform binaries via `optionalDependencies`. If any platform binary failed to publish, the main package never publishes, so users on the previous version are unaffected.
 
 ## Adding changesets on behalf of contributors
 

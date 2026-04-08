@@ -100,7 +100,6 @@ export const io = {
   bunInstall: () => $`bun install`,
   publishMainPackage: () => $`bun scripts/publish-main-package.ts`,
   verifyCli: (version: string) => $`bun scripts/verify-cli.ts ${version}`,
-  promoteCli: (version: string) => $`bun scripts/promote-cli.ts ${version}`,
 
   // ---------------------------------------------------------------------------
   // Filesystem

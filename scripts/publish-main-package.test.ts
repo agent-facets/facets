@@ -75,7 +75,7 @@ describe('publish-main-package', () => {
     expect(written.bin).toEqual({ facet: './bin/facet' })
   })
 
-  test('calls pack and publish with staging tag', async () => {
+  test('calls pack and publish with latest tag', async () => {
     spyOn(Bun.Glob.prototype, 'scanSync').mockImplementation(function* () {
       yield '@agent-facets/cli-darwin-arm64/package.json'
     })
@@ -93,6 +93,6 @@ describe('publish-main-package', () => {
     expect(code).toBe(0)
     expect(packSpy).toHaveBeenCalledTimes(1)
     expect(publishSpy).toHaveBeenCalledTimes(1)
-    expect(publishSpy.mock.calls[0]?.[1]).toBe('staging')
+    expect(publishSpy.mock.calls[0]?.[1]).toBe('latest')
   })
 })
