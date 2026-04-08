@@ -1,11 +1,11 @@
 #!/usr/bin/env bun
 
 /**
- * Synthesize and publish the main package (agent-facets) to npm staging.
+ * Synthesize and publish the main package (agent-facets) to npm.
  *
  * Discovers platform packages from build output, generates the main
  * package.json with optionalDependencies pointing to all 12 platform
- * packages, then packs and publishes with --tag staging.
+ * packages, then packs and publishes with --tag latest.
  *
  * Idempotent — skips if the version is already published.
  *
@@ -14,7 +14,7 @@
 
 import path from 'node:path'
 import { $ } from 'bun'
-import { CLI_DIR, DIST_DIR, MAIN_PACKAGE_NAME, STAGING_TAG } from './lib/constants'
+import { CLI_DIR, DIST_DIR, MAIN_PACKAGE_NAME, PUBLISH_TAG } from './lib/constants'
 import { io } from './lib/io'
 import { mintNpmToken, versionExists } from './lib/npm'
 
@@ -74,9 +74,9 @@ export async function publishMainPackage(): Promise<number> {
   )
 
   await io.pack(mainPkgDir)
-  await io.publish(mainPkgDir, STAGING_TAG)
+  await io.publish(mainPkgDir, PUBLISH_TAG)
 
-  console.log(`+ ${MAIN_PACKAGE_NAME}@${version} published (staging)`)
+  console.log(`+ ${MAIN_PACKAGE_NAME}@${version} published (latest)`)
   return 0
 }
 

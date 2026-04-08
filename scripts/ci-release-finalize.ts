@@ -1,16 +1,19 @@
 #!/usr/bin/env bun
 
 /**
- * Finalize a CLI release — publish main package, verify, promote, announce.
+ * Finalize a CLI release — publish main package, verify, announce.
  *
- * Runs after all 12 platform packages have been published to staging
+ * Runs after all 12 platform packages have been published to latest
  * by the matrix publish jobs. This script:
  *
- * 1. Mints GitHub App + OIDC tokens
- * 2. Publishes the main package (agent-facets) to staging
+ * 1. Mints a GitHub App token (for GitHub Release creation)
+ * 2. Publishes the main package (agent-facets) directly to latest
  * 3. Verifies all 13 packages are visible on npm
- * 4. Promotes all 13 packages from staging to latest
- * 5. Creates a GitHub Release and sends a notification
+ * 4. Creates a GitHub Release and sends a notification
+ *
+ * Safety: the main package is always the last package published. Users
+ * cannot install the new version until this script succeeds, because
+ * the main package's optionalDependencies drive platform binary resolution.
  *
  * Invoked by the `finalize-cli` job in the release-cli CircleCI workflow.
  */
@@ -19,7 +22,6 @@ import { parseTag } from './ci-release'
 import { announceRelease } from './lib/announce'
 import { loadWorkspacePackages, mintGithubTokens } from './lib/ci'
 import { io } from './lib/io'
-import { mintNpmToken } from './lib/npm'
 
 export async function finalize(): Promise<number> {
   const tag = process.env.CIRCLE_TAG
@@ -36,21 +38,16 @@ export async function finalize(): Promise<number> {
 
   io.log(`Finalizing release for ${parsed.name}@${parsed.version}`)
 
-  // Mint tokens
+  // Mint GitHub token (for Release creation; npm OIDC is handled by the publish script)
   await mintGithubTokens()
-  await mintNpmToken()
 
-  // Publish main package to staging (synthesizes from build output)
-  io.log('Publishing main package to staging...')
+  // Publish main package to latest (synthesizes from build output, mints its own OIDC token)
+  io.log('Publishing main package...')
   await io.publishMainPackage()
 
   // Verify all packages are visible on npm
   io.log('Verifying packages in registry...')
   await io.verifyCli(parsed.version)
-
-  // Promote all packages from staging to latest
-  io.log('Promoting packages to latest...')
-  await io.promoteCli(parsed.version)
 
   io.log(`Published ${parsed.name}@${parsed.version} (all platform packages)`)
 

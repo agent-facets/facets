@@ -32,9 +32,6 @@ export const CHANGESET_PR_TITLE = 'ci(release): version packages'
 /** Commit message used when versioning packages. */
 export const CHANGESET_COMMIT_MESSAGE = 'ci(release): version packages'
 
-/** npm registry base URL. */
-export const NPM_REGISTRY = 'https://registry.npmjs.org'
-
 /** The npm package name for the main package that users install directly. */
 export const MAIN_PACKAGE_NAME = 'agent-facets'
 
@@ -44,5 +41,5 @@ export const CLI_DIR = path.resolve(import.meta.dir, '..', '..', 'packages', 'cl
 /** Build output directory for CLI binaries. */
 export const DIST_DIR = path.join(CLI_DIR, 'dist')
 
-/** Dist-tag used for staged publishing before promotion to latest. */
-export const STAGING_TAG = 'staging'
+/** Dist-tag used when publishing CLI packages to npm. */
+export const PUBLISH_TAG = 'latest'

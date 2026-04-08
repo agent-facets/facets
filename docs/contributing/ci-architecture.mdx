@@ -75,13 +75,12 @@ Triggered by unscoped tags matching `agent-facets@<version>`. Uses a three-stage
     Cross-compiles all 12 platform binaries, persists build output to workspace
   </Step>
   <Step title={<span>Publish Platform Packages <Badge color="purple" size="sm" icon="badge-info">12 total</Badge></span>}>
-    Each matrix instance publishes one platform binary to the `staging` dist-tag in its own executor
+    Each matrix instance publishes one platform binary directly to `latest` in its own executor
   </Step>
   <Step title="Finalize CLI">
     <Steps>
-      <Step>Publishes the main package (staging)</Step>
+      <Step>Publishes the main package to `latest`</Step>
       <Step>Verifies all 13 packages are visible on npm</Step>
-      <Step>Promotes all 13 from `staging` to `latest`</Step>
       <Step>Creates a GitHub Release</Step>
       <Step>Sends maintainer notification</Step>
     </Steps>

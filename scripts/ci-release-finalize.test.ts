@@ -16,15 +16,12 @@ describe('ci-release-finalize', () => {
     delete process.env.CIRCLE_TAG
     delete process.env.GH_TOKEN
     delete process.env.GITHUB_TOKEN
-    delete process.env.NPM_ID_TOKEN
   })
 
   function setupFinalizePath() {
     spyOn(io, 'mintGitHubAppToken').mockResolvedValue('fake-gh-token')
-    spyOn(io, 'mintCircleOidcToken').mockResolvedValue('fake-oidc-token\n')
     spyOn(io, 'publishMainPackage').mockResolvedValue(shellResult())
     spyOn(io, 'verifyCli').mockResolvedValue(shellResult())
-    spyOn(io, 'promoteCli').mockResolvedValue(shellResult())
     spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
       { name: 'agent-facets', version: '0.4.0', dir: 'packages/cli' },
     ])
@@ -47,52 +44,45 @@ describe('ci-release-finalize', () => {
     expect(code).toBe(1)
   })
 
-  test('runs the full publish → verify → promote pipeline', async () => {
+  test('runs the full publish → verify pipeline', async () => {
     process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
     setupFinalizePath()
 
     const mainPkgSpy = spyOn(io, 'publishMainPackage').mockResolvedValue(shellResult())
     const verifySpy = spyOn(io, 'verifyCli').mockResolvedValue(shellResult())
-    const promoteSpy = spyOn(io, 'promoteCli').mockResolvedValue(shellResult())
 
     const code = await finalize()
 
     expect(code).toBe(0)
     expect(mainPkgSpy).toHaveBeenCalledTimes(1)
     expect(verifySpy).toHaveBeenCalledTimes(1)
-    expect(promoteSpy).toHaveBeenCalledTimes(1)
   })
 
-  test('mints both GitHub and OIDC tokens', async () => {
+  test('mints GitHub token for release creation', async () => {
     process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
     setupFinalizePath()
 
     const ghSpy = spyOn(io, 'mintGitHubAppToken').mockResolvedValue('gh-token')
-    const oidcSpy = spyOn(io, 'mintCircleOidcToken').mockResolvedValue('oidc-token\n')
 
     await finalize()
 
     expect(ghSpy).toHaveBeenCalledTimes(1)
-    expect(oidcSpy).toHaveBeenCalledTimes(1)
     expect(process.env.GH_TOKEN).toBe('gh-token')
     expect(process.env.GITHUB_TOKEN).toBe('gh-token')
-    expect(process.env.NPM_ID_TOKEN).toBe('oidc-token')
   })
 
-  test('passes version to verify and promote', async () => {
+  test('passes version to verify', async () => {
     process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
     setupFinalizePath()
 
     const verifySpy = spyOn(io, 'verifyCli').mockResolvedValue(shellResult())
-    const promoteSpy = spyOn(io, 'promoteCli').mockResolvedValue(shellResult())
 
     await finalize()
 
     expect(verifySpy).toHaveBeenCalledWith('0.4.0')
-    expect(promoteSpy).toHaveBeenCalledWith('0.4.0')
   })
 
-  test('creates GitHub Release after promote', async () => {
+  test('creates GitHub Release after verify', async () => {
     process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
     setupFinalizePath()
 
