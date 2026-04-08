@@ -1,5 +1,11 @@
 # @agent-facets/brand
 
+## 0.3.2
+
+### Patch Changes
+
+- [#80](https://github.com/agent-facets/facets/pull/80) [`868cc3b`](https://github.com/agent-facets/facets/commit/868cc3b7ea36445f3b59e0a652ac0ba93a89eb78) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Revert staging dist-tag operation, since NPM doesn't support it without NPM_TOKENs
+
 ## 0.3.1
 
 ### Patch Changes
