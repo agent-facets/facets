@@ -2,11 +2,7 @@ version: 2
 enable-beta-ecosystems: true
 updates:
   - package-ecosystem: "bun"
-    directories:
-      - "/"
-      - "/packages/brand"
-      - "/packages/cli"
-      - "/packages/core"
+    directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
