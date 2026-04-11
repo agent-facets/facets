@@ -1,2 +1,2 @@
-- The release-src/commands directory contains single-file symlinks to the src/commands/* files
-- When creating new commands, write them to the src/commands directory, then make a symlink in release-src/commands
+- The release/commands directory contains single-file symlinks to the development/commands/* files
+- When creating new commands, write them to the development/commands directory, then make a symlink in release/commands

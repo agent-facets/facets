@@ -57,7 +57,7 @@ After adding a new `@agent-facets/cli-*` platform target. Each new package needs
   </Step>
 </Steps>
 
-The main package (`agent-facets`) and existing platform packages already have OIDC configured.
+The CLI package (`agent-facets`) and existing platform packages already have OIDC configured.
 
 ## Where to find these values
 
@@ -94,7 +94,7 @@ The 12 platform packages that need OIDC configuration:
 2. When `npm publish` runs, npm exchanges the token with the registry. The registry validates the token's claims against the package's trusted publisher configuration.
 3. If the claims match, the publish succeeds. No long-lived npm tokens are involved.
 
-All CLI packages publish directly to the `latest` dist-tag. Platform binaries are published first via a matrix workflow (one per executor), verified on the registry, then the main package publishes last. This ordering ensures users never see a partial release — the main package (`agent-facets`) is the entry point, and it only appears on `latest` after all its platform dependencies are confirmed available.
+All CLI packages publish directly to the `latest` dist-tag. Platform binaries are published first via a matrix workflow (one per executor), verified on the registry, then the CLI package publishes last. This ordering ensures users never see a partial release — the CLI package (`agent-facets`) is the entry point, and it only appears on `latest` after all its platform dependencies are confirmed available.
 
 <Note>
   npm's OIDC trusted publishing only supports `npm publish`. Other operations like `npm dist-tag add` cannot

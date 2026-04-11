@@ -1,0 +1,14 @@
+docker:
+  - image: cimg/base:current
+resource_class: small
+environment:
+  LEFTHOOK: "0"
+  MISE_ENV: release
+steps:
+  - setup-mise
+  - attach_workspace:
+      at: .
+  - run:
+      name: Finalize CLI Release
+      command: bun scripts/release-cli/finalize.ts
+  - notify-failure

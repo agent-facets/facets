@@ -15,8 +15,8 @@ pre-commit:
       run: bun biome check --error-on-warnings {staged_files}
     circleci-pack:
       priority: 4
-      glob: ".circleci/{src,release-src}/**/*.yml"
-      run: bun run ci:pack && git add .circleci/config.yml .circleci/release.yml
+      glob: ".circleci/{development,release}/**/*.yml"
+      run: bun run ci:pack && git add .circleci/development.yml .circleci/release.yml
 
 pre-push:
   commands:

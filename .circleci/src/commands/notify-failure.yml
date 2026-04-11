@@ -1,5 +1,0 @@
-steps:
-  - run:
-      name: Notify failure
-      command: bun scripts/ci-notify-failure.ts
-      when: on_fail

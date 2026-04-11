@@ -1,0 +1,12 @@
+docker:
+  - image: cimg/base:current
+resource_class: small
+environment:
+  LEFTHOOK: "0"
+  MISE_ENV: release
+steps:
+  - setup-mise
+  - run:
+      name: Publish
+      command: bun scripts/release/publish.ts
+  - notify-failure

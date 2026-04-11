@@ -1,11 +1,15 @@
 import { spyOn } from 'bun:test'
+import type { $ } from 'bun'
 import dedent from 'dedent'
 import { io } from './io'
 
-/** Fake a successful Bun.$ shell result for test mocks. */
-// biome-ignore lint/suspicious/noExplicitAny: mocking Bun.$ ShellOutput for tests
-export function shellResult(stdout = '', exitCode = 0): any {
-  return { stdout: Buffer.from(stdout), exitCode }
+/** Fake a successful Bun.$ result for test mocks. */
+export function shellResult(stdout = '', exitCode = 0): $.ShellOutput {
+  return { stdout: Buffer.from(stdout), exitCode } as $.ShellOutput
+}
+
+export function shellPromise(stdout = '', exitCode = 0) {
+  return Promise.resolve({ stdout: Buffer.from(stdout), exitCode }) as $.ShellPromise
 }
 
 /** Silence io.log and io.error for test output. */

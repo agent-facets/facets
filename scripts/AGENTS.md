@@ -1,0 +1,4 @@
+- ensure README docs are kept up to date when making changes in this directory
+- developers should easily be able to understand what the release pipeline looks like
+- scripts should be kept small and targeted
+- avoid duplication of logic across scripts
