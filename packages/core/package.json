@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "arktype": "2.2.0",
-    "comment-json": "^4.2.5",
+    "comment-json": "^4.6.2",
     "nanotar": "0.3.0",
     "yaml": "2.8.3"
   },
