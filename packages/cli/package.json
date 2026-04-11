@@ -43,7 +43,7 @@
     "@agent-facets/cli-darwin-arm64": "0.2.2",
     "@agent-facets/cli-darwin-x64": "0.2.2",
     "@agent-facets/cli-darwin-x64-baseline": "0.2.2",
-    "@agent-facets/cli-linux-arm64": "0.2.2",
+    "@agent-facets/cli-linux-arm64": "0.3.6",
     "@agent-facets/cli-linux-arm64-musl": "0.2.2",
     "@agent-facets/cli-linux-x64": "0.2.2",
     "@agent-facets/cli-linux-x64-baseline": "0.2.2",
