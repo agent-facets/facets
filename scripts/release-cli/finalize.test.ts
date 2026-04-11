@@ -3,7 +3,7 @@ import * as announce from '../lib/announce'
 import * as ci from '../lib/ci'
 import { SLACK_CHANNELS } from '../lib/constants'
 import { io } from '../lib/io'
-import { SAMPLE_CHANGELOG, shellResult, silenceIO } from '../lib/test-helpers'
+import { SAMPLE_CHANGELOG, shellPromise, shellResult, silenceIO } from '../lib/test-helpers'
 import { finalize } from './finalize'
 
 describe('finalize.ts', () => {
@@ -44,18 +44,37 @@ describe('finalize.ts', () => {
     expect(code).toBe(1)
   })
 
-  test('runs the full publish → verify pipeline', async () => {
+  test('runs the full verify → publish pipeline', async () => {
     process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
     setupFinalizePath()
 
-    const mainPkgSpy = spyOn(io, 'publishCliPackage').mockResolvedValue(shellResult())
+    const publishSpy = spyOn(io, 'publishCliPackage').mockResolvedValue(shellResult())
     const verifySpy = spyOn(io, 'verifyCli').mockResolvedValue(shellResult())
 
     const code = await finalize()
 
     expect(code).toBe(0)
-    expect(mainPkgSpy).toHaveBeenCalledTimes(1)
+    expect(publishSpy).toHaveBeenCalledTimes(1)
     expect(verifySpy).toHaveBeenCalledTimes(1)
+  })
+
+  test('verifies platform packages before publishing CLI package', async () => {
+    process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
+    setupFinalizePath()
+
+    const callOrder: string[] = []
+    spyOn(io, 'verifyCli').mockImplementation(() => {
+      callOrder.push('verify')
+      return shellPromise()
+    })
+    spyOn(io, 'publishCliPackage').mockImplementation(() => {
+      callOrder.push('publish')
+      return shellPromise()
+    })
+
+    await finalize()
+
+    expect(callOrder).toEqual(['verify', 'publish'])
   })
 
   test('mints GitHub token for release creation', async () => {

@@ -8,18 +8,18 @@ Publishes `@agent-facets/core`, `@agent-facets/brand`, and any future public lib
 Tag push: @agent-facets/core@X.Y.Z
   │
   ▼
-┌───────────────────────────────────────────┐
-│  release/publish.ts                       │
-│                                           │
-│  1. Parse package name + version from tag │
-│  2. Find package in workspace             │
-│  3. Skip if private (guard)               │
-│  4. Mint OIDC token (npm provenance)      │
-│  5. Build via turbo                       │
-│  6. npm publish --access public           │
-│  7. Create GitHub Release                 │
-│  8. Send Slack notification               │
-└───────────────────────────────────────────┘
+┌──────────────────────────────────────────────┐
+│  release/publish.ts                          │
+│                                              │
+│  1. Parse package name + version from tag    │
+│  2. Find package in workspace                │
+│  3. Skip if private (guard)                  │
+│  4. Mint OIDC token (npm trusted publishing) │
+│  5. Build via turbo                          │
+│  6. npm publish --access public              │
+│  7. Create GitHub Release                    │
+│  8. Send Slack notification                  │
+└──────────────────────────────────────────────┘
 ```
 
 ## Scripts

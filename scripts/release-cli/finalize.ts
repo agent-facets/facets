@@ -41,13 +41,14 @@ export async function finalize(): Promise<number> {
   // Mint GitHub token (for Release creation; npm OIDC is handled by the publish script)
   await mintGithubTokens()
 
+  // Verify platform packages are visible on npm before publishing the CLI package.
+  // The CLI package's optionalDependencies must be resolvable when users install it.
+  io.log('Verifying platform packages in registry...')
+  await io.verifyCli(parsed.version)
+
   // Publish CLI package to latest (synthesizes from build output, mints its own OIDC token)
   io.log('Publishing CLI package...')
   await io.publishCliPackage()
-
-  // Verify all packages are visible on npm
-  io.log('Verifying packages in registry...')
-  await io.verifyCli(parsed.version)
 
   io.log(`Published ${parsed.name}@${parsed.version} (all platform packages)`)
 

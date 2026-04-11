@@ -71,5 +71,6 @@ export async function buildChangesets(): Promise<number> {
 }
 
 if (import.meta.main) {
-  await buildChangesets()
+  const code = await buildChangesets()
+  process.exit(code)
 }

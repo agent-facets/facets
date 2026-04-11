@@ -64,5 +64,6 @@ export async function tagRelease(): Promise<number> {
 }
 
 if (import.meta.main) {
-  await tagRelease()
+  const code = await tagRelease()
+  process.exit(code)
 }

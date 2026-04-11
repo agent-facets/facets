@@ -75,5 +75,6 @@ export async function release(): Promise<number> {
 }
 
 if (import.meta.main) {
-  await release()
+  const code = await release()
+  process.exit(code)
 }

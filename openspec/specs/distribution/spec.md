@@ -170,10 +170,11 @@ The system SHALL publish platform packages and the CLI package directly to the `
 - **THEN** the system SHALL skip that package
 - **AND** the system SHALL continue publishing remaining packages
 
-#### Scenario: Publishing uses provenance attestation
+#### Scenario: Publishing uses OIDC trusted publishing
 
 - **WHEN** the publish step runs in a CI environment with OIDC configured
-- **THEN** the system SHALL publish with `--provenance` for supply chain attestation
+- **THEN** the system SHALL authenticate with the npm registry using an OIDC token
+- **AND** the system SHALL NOT require a stored npm access token
 
 ### Requirement: The CLI package publishes last to prevent partial releases
 
