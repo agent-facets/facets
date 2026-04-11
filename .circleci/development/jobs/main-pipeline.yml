@@ -11,7 +11,7 @@ steps:
   - store_test_results:
       path: test-results
   - run:
-      name: Changesets
+      name: Version Changesets
       command: bun scripts/release/version.ts
   - run:
       name: Tag Release

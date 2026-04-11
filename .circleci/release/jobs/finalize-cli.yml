@@ -9,6 +9,6 @@ steps:
   - attach_workspace:
       at: .
   - run:
-      name: Finalize release
+      name: Finalize CLI Release
       command: bun scripts/release-cli/finalize.ts
   - notify-failure

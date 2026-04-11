@@ -55,7 +55,7 @@ jobs:
                 path: test-results
             - run:
                 command: bun scripts/release/version.ts
-                name: Changesets
+                name: Version Changesets
             - run:
                 command: bun scripts/release/tag.ts
                 name: Tag Release
@@ -71,7 +71,7 @@ jobs:
             - setup-mise
             - run:
                 command: bun scripts/release/publish.ts
-                name: Release
+                name: Publish
             - notify-failure
 version: 2.1
 workflows:

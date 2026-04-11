@@ -29,7 +29,12 @@
       ]
     },
     "//#ci:check-pack": {
-      "inputs": [".circleci/src/**", ".circleci/release-src/**", ".circleci/development.yml", ".circleci/release.yml"]
+      "inputs": [
+        ".circleci/development/**",
+        ".circleci/release/**",
+        ".circleci/development.yml",
+        ".circleci/release.yml"
+      ]
     },
     "//#test:scripts": {
       "inputs": ["scripts/**"]

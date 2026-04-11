@@ -7,6 +7,6 @@ environment:
 steps:
   - setup-mise
   - run:
-      name: Release
+      name: Publish
       command: bun scripts/release/publish.ts
   - notify-failure

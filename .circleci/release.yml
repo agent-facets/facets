@@ -59,7 +59,7 @@ jobs:
                 at: .
             - run:
                 command: bun scripts/release-cli/finalize.ts
-                name: Finalize release
+                name: Finalize CLI Release
             - notify-failure
     publish-platform:
         docker:
@@ -90,7 +90,7 @@ jobs:
             - setup-mise
             - run:
                 command: bun scripts/release/publish.ts
-                name: Release
+                name: Publish
             - notify-failure
 version: 2.1
 workflows:
