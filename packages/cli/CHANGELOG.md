@@ -1,5 +1,17 @@
 # agent-facets
 
+## 0.4.0
+
+### Minor Changes
+
+- [#94](https://github.com/agent-facets/facets/pull/94) [`24a2e99`](https://github.com/agent-facets/facets/commit/24a2e999a483edfcf478946263e42b28a7da2f4f) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Build should result in a single-file facet archive that contains the manifest and integrity-checked assets.
+- [#94](https://github.com/agent-facets/facets/pull/94) [`24a2e99`](https://github.com/agent-facets/facets/commit/24a2e999a483edfcf478946263e42b28a7da2f4f) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Reset facetVersion in manifest to `0.1` since `1` was premature and should be used for general availability
+
+### Patch Changes
+
+- [#85](https://github.com/agent-facets/facets/pull/85) [`aacc6cd`](https://github.com/agent-facets/facets/commit/aacc6cda49e2611de8bde1ac42144dda97e5b6cc) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump arktype from 2.1.29 to 2.2.0
+- [#96](https://github.com/agent-facets/facets/pull/96) [`e136a5b`](https://github.com/agent-facets/facets/commit/e136a5b6937a03817931ee0f0a43f1895ba51674) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Fix bun dev script: broken relative paths and no TTY passthrough
+
 ## 0.3.6
 
 ### Patch Changes

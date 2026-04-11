@@ -1,5 +1,12 @@
 # @agent-facets/core
 
+## 0.3.3
+
+### Patch Changes
+
+- [#85](https://github.com/agent-facets/facets/pull/85) [`aacc6cd`](https://github.com/agent-facets/facets/commit/aacc6cda49e2611de8bde1ac42144dda97e5b6cc) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump arktype from 2.1.29 to 2.2.0
+- [#118](https://github.com/agent-facets/facets/pull/118) [`40b5b91`](https://github.com/agent-facets/facets/commit/40b5b912dc36c276987c0c48f016564771bb3b1d) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump comment-json from 4.5.1 to 4.6.2
+
 ## 0.3.2
 
 ### Patch Changes
