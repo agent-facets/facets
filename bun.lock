@@ -38,7 +38,7 @@
       "dependencies": {
         "@bomb.sh/args": "0.3.1",
         "@types/react": "19.2.14",
-        "arktype": "2.1.29",
+        "arktype": "2.2.0",
         "ink": "6.8.0",
         "ink-gradient": "4.0.0",
         "ink-spinner": "5.0.0",
@@ -74,7 +74,7 @@
       "name": "@agent-facets/core",
       "version": "0.3.2",
       "dependencies": {
-        "arktype": "2.1.29",
+        "arktype": "2.2.0",
         "comment-json": "^4.2.5",
         "nanotar": "0.3.0",
         "yaml": "2.8.3",
@@ -544,7 +544,7 @@
 
     "arkregex": ["arkregex@0.0.5", "", { "dependencies": { "@ark/util": "0.56.0" } }, "sha512-ncYjBdLlh5/QnVsAA8De16Tc9EqmYM7y/WU9j+236KcyYNUXogpz3sC4ATIZYzzLxwI+0sEOaQLEmLmRleaEXw=="],
 
-    "arktype": ["arktype@2.1.29", "", { "dependencies": { "@ark/schema": "0.56.0", "@ark/util": "0.56.0", "arkregex": "0.0.5" } }, "sha512-jyfKk4xIOzvYNayqnD8ZJQqOwcrTOUbIU4293yrzAjA3O1dWh61j71ArMQ6tS/u4pD7vabSPe7nG3RCyoXW6RQ=="],
+    "arktype": ["arktype@2.2.0", "", { "dependencies": { "@ark/schema": "0.56.0", "@ark/util": "0.56.0", "arkregex": "0.0.5" } }, "sha512-t54MZ7ti5BhOEvzEkgKnWvqj+UbDfWig+DHr5I34xatymPusKLS0lQpNJd8M6DzmIto2QGszHfNKoFIT8tMCZQ=="],
 
     "array-buffer-byte-length": ["array-buffer-byte-length@1.0.2", "", { "dependencies": { "call-bound": "^1.0.3", "is-array-buffer": "^3.0.5" } }, "sha512-LHE+8BuR7RYGDKvnrmcuSq3tDcKv9OFEXQt/HpbZhY7V6h0zlUXutnAD82GiFx9rdieCMjkvtcsPqBwgUl1Iiw=="],
 

@@ -17,7 +17,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "arktype": "2.1.29",
+    "arktype": "2.2.0",
     "comment-json": "^4.2.5",
     "nanotar": "0.3.0",
     "yaml": "2.8.3"
