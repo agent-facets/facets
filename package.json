@@ -9,7 +9,7 @@
     ]
   },
   "scripts": {
-    "dev": "bun --cwd packages/cli src/index.ts",
+    "dev": "exec bun packages/cli/src/index.ts",
     "types": "tsc --noEmit",
     "check": "bun turbo check",
     "test:scripts": "bun test scripts/",
