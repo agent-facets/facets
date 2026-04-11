@@ -5,11 +5,10 @@
     "build": {
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/bunfig.toml"],
-      "outputs": ["dist/**"],
-      "cache": false
+      "outputs": ["dist/**"]
     },
     "test": {
-      "dependsOn": ["build"],
+      "dependsOn": [],
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/bunfig.toml"],
       "outputs": ["$TURBO_ROOT$/test-results/**"]
     },

@@ -1,6 +1,6 @@
 import { Box, Text } from 'ink'
 import { useCallback, useEffect } from 'react'
-import { ASSET_LABELS, ASSET_TYPES } from '../../../commands/create/types.ts'
+import type { AssetType } from '../../../commands/create/types'
 import { DEFAULT_VERSION, isValidKebabCase } from '../../../commands/create-scaffold.ts'
 import { AssetSection } from '../../components/asset-section.tsx'
 import { Button } from '../../components/button.tsx'
@@ -8,6 +8,14 @@ import { EditableField } from '../../components/editable-field.tsx'
 import { useFocusOrder } from '../../context/focus-order-context.ts'
 import { useFormState } from '../../context/form-state-context.ts'
 import { WizardLayout } from '../../layouts/wizard-layout.tsx'
+
+const ASSET_TYPES: AssetType[] = ['skill', 'command', 'agent']
+
+const ASSET_LABELS: Record<AssetType, string> = {
+  skill: 'Skills',
+  agent: 'Agents',
+  command: 'Commands',
+}
 
 function computeFocusIds(form: ReturnType<typeof useFormState>['form']): string[] {
   const ids: string[] = ['field-name', 'field-description', 'field-version']

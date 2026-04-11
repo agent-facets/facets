@@ -13,7 +13,7 @@
 
 ## Source Code Map
 
-Turborepo monorepo with Bun workspaces. Two packages under `packages/`.
+Turborepo monorepo with Bun workspaces. Five packages under `packages/`.
 
 ### `packages/core` — `@agent-facets/core`
 
@@ -40,6 +40,25 @@ src/
 ├── cli.ts          # CLI entry point
 └── __tests__/      # Unit tests
 ```
+
+### `packages/harness` — `@agent-facets/harness`
+
+Harness SDK for defining abstractions over AI coding tools. Entry point: `src/index.ts`
+
+```
+src/
+├── define-harness.ts  # Factory function: defineHarness()
+├── types.ts           # Harness, HarnessDefinition, HarnessMetadata types
+└── index.ts           # Public API entry point
+```
+
+### `packages/brand` — `@agent-facets/brand`
+
+Brand colors and visual identity constants.
+
+### `packages/common` — `@agent-facets/common`
+
+Shared types used across packages. Private — not published to npm.
 
 ### Other directories
 
@@ -89,6 +108,28 @@ test("hello world", () => {
   expect(1).toBe(1);
 });
 ```
+
+## Turbo Caching
+
+The `check` pipeline (`bun check`) orchestrates `test`, `types`, `lint`, and other tasks via Turborepo. Caching rules:
+
+- **`build`** is cached by default. The CLI package (`packages/cli`) overrides this with `cache: false` in its package-level `turbo.json` because the compiled binary is too large for remote cache.
+- **`test`** and **`types`** are cached. By default, `test` has no dependency on `build`. The CLI package overrides this to add `test.dependsOn: ["build"]` since its integration tests need the compiled binary.
+- Package-level overrides live in `packages/<name>/turbo.json`.
+
+### CLI build caching
+
+The CLI compiled binary is too large for remote cache (causes upload failures in CI). To handle this:
+
+- **Locally**: `packages/cli/turbo.json` has caching enabled — the CLI build caches normally.
+- **In CI**: The pipeline copies `packages/cli/turbo.ci.json` over `turbo.json` before running checks, which sets `cache: false` on the build task. After checks pass, it restores the original via `git checkout`.
+- **Keep in sync**: When modifying `packages/cli/turbo.json`, also update `turbo.ci.json`. The only difference between them should be `"cache": false` on the build task in the CI variant.
+
+### When adding a new package
+
+1. Add `"test": "bun test"` and `"types": "tsc --noEmit"` scripts to its `package.json` so turbo picks them up for the `check` pipeline.
+2. If the package's tests depend on build output, create a `turbo.json` in the package directory with `"test": { "dependsOn": ["build"] }`.
+3. If the package's build output is too large for remote cache, add `"build": { "cache": false }` to the package-level `turbo.json`.
 
 ## Frontend
 

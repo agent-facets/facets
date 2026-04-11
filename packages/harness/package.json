@@ -1,0 +1,33 @@
+{
+  "name": "@agent-facets/harness",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agent-facets/facets",
+    "directory": "packages/harness"
+  },
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "test": "bun test",
+    "types": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@agent-facets/common": "workspace:*",
+    "tsdown": "^0.21.8",
+    "typescript": "^6.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": false,
+    "exports": {
+      ".": {
+        "import": "./dist/index.mjs",
+        "types": "./dist/index.d.mts"
+      }
+    }
+  }
+}
