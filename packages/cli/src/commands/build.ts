@@ -8,7 +8,13 @@ export const buildCommand: Command = {
   name: 'build',
   description: 'Build a facet from the current directory',
   usage: '[directory]',
-  run: async (args: string[], _flags: Record<string, unknown>): Promise<number> => {
+  flags: {
+    'emit-manifest': {
+      type: 'boolean',
+      description: 'Write a loose build-manifest.json to dist/ alongside the .facet file',
+    },
+  },
+  run: async (args: string[], flags: Record<string, unknown>): Promise<number> => {
     const resolved = await resolveTargetDir(args[0], { mustExist: true, facetMustExist: true })
     if (!resolved.ok) {
       console.error(resolved.message)
@@ -17,6 +23,7 @@ export const buildCommand: Command = {
 
     const rootDir = resolved.dir
     const displayDir = resolved.display
+    const emitManifest = flags['emit-manifest'] === true
 
     // Track result for stdout summary after Ink exits
     let buildName = ''
@@ -28,6 +35,7 @@ export const buildCommand: Command = {
     const instance = render(
       createElement(BuildView, {
         rootDir,
+        emitManifest,
         onSuccess: (name: string, version: string, fileCount: number, hash: string) => {
           buildName = name
           buildVersion = version

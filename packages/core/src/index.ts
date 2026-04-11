@@ -1,11 +1,14 @@
 // types
 export type { ArchiveEntry } from './build/content-hash.ts'
 export {
+  assembleOuterTar,
   assembleTar,
+  BUILD_MANIFEST_NAME,
   collectArchiveEntries,
   compressArchive,
   computeAssetHashes,
   computeContentHash,
+  INNER_ARCHIVE_NAME,
 } from './build/content-hash.ts'
 export { detectNamingCollisions } from './build/detect-collisions.ts'
 export type { BuildFailure, BuildProgress, BuildResult, BuildStage } from './build/pipeline.ts'
@@ -14,6 +17,7 @@ export { BUILD_STAGES, runBuildPipeline } from './build/pipeline.ts'
 export { validateCompactFacets } from './build/validate-facets.ts'
 export type { PlatformValidationResult } from './build/validate-platforms.ts'
 export { validatePlatformConfigs } from './build/validate-platforms.ts'
+export type { WriteBuildOutputOptions } from './build/write-output.ts'
 export { writeBuildOutput } from './build/write-output.ts'
 export { writeManifest } from './edit/manifest-writer.ts'
 export type { MatchedAsset, MissingAsset, ReconciliationResult } from './edit/reconcile.ts'

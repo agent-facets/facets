@@ -22,14 +22,21 @@ The build command runs a validation pipeline, assembles an archive, and computes
 3. **Validate assets** — checks that all content files are non-empty and contain no YAML front matter. The manifest is the single source of truth for metadata — content files must be pure markdown.
 4. **Check collisions** — validates compact facets entries match the `name@version` format. Fails if the same name is used more than once within the same asset type.
 5. **Validate platforms** — validates platform configuration for known platforms (e.g., `opencode`, `claude-code`). Unknown platforms produce a warning but do not fail the build.
-6. **Assemble archive** — collects the manifest and all resolved text assets into a tar archive, computes the integrity hash, then compresses it with gzip for the `.facet` file.
+6. **Assemble archive** — collects the manifest and all resolved text assets into a deterministic tar archive, computes the integrity hash, compresses it with gzip, then wraps the compressed archive and a build manifest into the self-contained `.facet` file.
 
 On success, the build writes output to `dist/`:
 
-- `dist/<name>-<version>.facet` — a gzip-compressed tar archive
-- `dist/build-manifest.json` — records the archive filename, integrity hash, and per-asset content hashes
+- `dist/<name>-<version>.facet` — a self-contained archive (uncompressed tar containing `build-manifest.json` and `archive.tar.gz`)
+
+The `.facet` file is the single distributable artifact. The build manifest is embedded inside it. Use `--emit-manifest` to also write a loose copy of `build-manifest.json` to `dist/` for debugging or tooling integration.
 
 If the build fails, errors are displayed inline under the failed pipeline stage, with a suggestion to run `facet edit` to fix the issues.
+
+## Flags
+
+| Flag | Description |
+| ---- | ----------- |
+| `--emit-manifest` | Write a loose `build-manifest.json` to `dist/` alongside the `.facet` file |
 
 ## Exit codes
 

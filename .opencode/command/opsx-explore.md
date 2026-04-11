@@ -56,10 +56,10 @@ Depending on what the user brings, you might:
 │     Use ASCII diagrams liberally        │
 ├─────────────────────────────────────────┤
 │                                         │
-│   ┌────────┐         ┌────────┐        │
-│   │ State  │────────▶│ State  │        │
-│   │   A    │         │   B    │        │
-│   └────────┘         └────────┘        │
+│   ┌────────┐         ┌────────┐         │
+│   │ State  │────────▶│ State  │         │
+│   │   A    │         │   B    │         │
+│   └────────┘         └────────┘         │
 │                                         │
 │   System diagrams, state machines,      │
 │   data flows, architecture sketches,    │

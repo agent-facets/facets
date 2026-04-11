@@ -50,7 +50,7 @@ export function collectArchiveEntries(resolved: ResolvedFacetManifest, manifestC
 
 /**
  * Computes SHA-256 content hashes for each archive entry.
- * Returns a map of relative path to `sha256:<hex>`.
+ * Returns a map of a relative path to `sha256:<hex>`.
  */
 export function computeAssetHashes(entries: ArchiveEntry[]): Record<string, string> {
   const hashes: Record<string, string> = {}
@@ -59,6 +59,15 @@ export function computeAssetHashes(entries: ArchiveEntry[]): Record<string, stri
   }
   return hashes
 }
+
+const DETERMINISTIC_ATTRS = {
+  mtime: 0,
+  uid: 0,
+  gid: 0,
+  mode: '644',
+  user: '',
+  group: '',
+} as const
 
 /**
  * Assembles a deterministic uncompressed tar archive from archive entries.
@@ -76,20 +85,11 @@ export function assembleTar(entries: ArchiveEntry[]): Uint8Array {
     data: entry.content,
   }))
 
-  return createTar(files, {
-    attrs: {
-      mtime: 0,
-      uid: 0,
-      gid: 0,
-      mode: '644',
-      user: '',
-      group: '',
-    },
-  })
+  return createTar(files, { attrs: DETERMINISTIC_ATTRS })
 }
 
 /**
- * Compresses tar bytes with gzip for the `.facet` delivery format.
+ * Compresses tar bytes with gzip for the inner archive.
  *
  * Compression is a delivery concern — the integrity hash covers the
  * uncompressed tar bytes, not the compressed output. This allows
@@ -99,4 +99,32 @@ export function compressArchive(tarBytes: Uint8Array): Uint8Array {
   const buffer = new ArrayBuffer(tarBytes.byteLength)
   new Uint8Array(buffer).set(tarBytes)
   return Bun.gzipSync(buffer)
+}
+
+/** Fixed name for the inner archive within the outer `.facet` tar. */
+export const INNER_ARCHIVE_NAME = 'archive.tar.gz'
+
+/** Fixed name for the build manifest within the outer `.facet` tar. */
+export const BUILD_MANIFEST_NAME = 'build-manifest.json'
+
+/**
+ * Assembles the outer uncompressed tar that forms the `.facet` file.
+ *
+ * The outer tar contains exactly two entries:
+ * - `build-manifest.json` — the build manifest as a JSON string
+ * - `archive.tar.gz` — the gzip-compressed inner tar of assets
+ *
+ * The outer tar is uncompressed so that the manifest can be read
+ * without decompressing the inner archive.
+ *
+ * Deterministic metadata is applied for consistency, though the
+ * integrity hash covers only the inner tar bytes.
+ */
+export function assembleOuterTar(manifestJson: string, innerArchiveBytes: Uint8Array): Uint8Array {
+  const files: TarFileInput[] = [
+    { name: BUILD_MANIFEST_NAME, data: manifestJson },
+    { name: INNER_ARCHIVE_NAME, data: innerArchiveBytes },
+  ]
+
+  return createTar(files, { attrs: DETERMINISTIC_ATTRS })
 }

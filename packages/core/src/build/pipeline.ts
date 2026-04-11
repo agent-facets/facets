@@ -2,11 +2,13 @@ import { join } from 'node:path'
 import { FACET_MANIFEST_FILE, loadManifest, type ResolvedFacetManifest, resolvePrompts } from '../loaders/facet.ts'
 import type { ValidationError } from '../types.ts'
 import {
+  assembleOuterTar,
   assembleTar,
   collectArchiveEntries,
   compressArchive,
   computeAssetHashes,
   computeContentHash,
+  INNER_ARCHIVE_NAME,
 } from './content-hash.ts'
 import { detectNamingCollisions } from './detect-collisions.ts'
 import { validateContentFiles } from './validate-content.ts'
@@ -22,10 +24,13 @@ export interface BuildResult {
   ok: true
   data: ResolvedFacetManifest
   warnings: string[]
+  /** The complete .facet file bytes (outer uncompressed tar containing manifest + inner archive) */
   archiveBytes: Uint8Array
   integrity: string
   archiveFilename: string
   assetHashes: Record<string, string>
+  /** Serialized build-manifest.json content (for --emit-manifest and test verification) */
+  manifestJson: string
 }
 
 export interface BuildFailure {
@@ -127,7 +132,7 @@ export async function runBuildPipeline(
 
   onProgress?.({ stage: 'Validating platforms', status: 'done' })
 
-  // Stage 6: Assemble archive, compute content hashes, and compress for delivery
+  // Stage 6: Assemble archive, compute content hashes, and wrap into self-contained .facet
   onProgress?.({ stage: 'Assembling archive', status: 'running' })
 
   const resolved = resolveResult.data
@@ -136,8 +141,18 @@ export async function runBuildPipeline(
   const assetHashes = computeAssetHashes(entries)
   const tarBytes = assembleTar(entries)
   const integrity = computeContentHash(tarBytes)
-  const archiveBytes = compressArchive(tarBytes)
+  const innerArchiveBytes = compressArchive(tarBytes)
   const archiveFilename = `${resolved.name}-${resolved.version}.facet`
+
+  // Build the build manifest and wrap into the outer tar
+  const buildManifest = {
+    facetVersion: 0.1,
+    archive: INNER_ARCHIVE_NAME,
+    integrity,
+    assets: assetHashes,
+  }
+  const manifestJson = JSON.stringify(buildManifest, null, 2)
+  const archiveBytes = assembleOuterTar(manifestJson, innerArchiveBytes)
 
   onProgress?.({ stage: 'Assembling archive', status: 'done' })
 
@@ -149,5 +164,6 @@ export async function runBuildPipeline(
     integrity,
     archiveFilename,
     assetHashes,
+    manifestJson,
   }
 }
