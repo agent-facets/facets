@@ -150,7 +150,7 @@ export async function buildVersionPrBody(
 // Changelog content transformation
 // ---------------------------------------------------------------------------
 /** Matches a changelog line with GitHub attribution from @changesets/changelog-github */
-const ATTRIBUTED_LINE_RE = /^-\s+\[`([a-f0-9]+)`\]\(([^)]+)\)\s+Thanks\s+\[@([^\]]+)\]\(([^)]+)\)\s*!\s*-\s*(.+)$/
+const ATTRIBUTED_LINE_RE = /^-\s+\[`([a-f0-9]+)`]\(([^)]+)\)\s+Thanks\s+\[@([^\]]+)]\(([^)]+)\)\s*!\s*-\s*(.+)$/
 
 /** Matches "Updated dependencies [hash]" lines */
 const UPDATED_DEPS_RE = /^-\s+Updated dependencies/
@@ -429,36 +429,4 @@ export function replaceChangelogEntry(changelog: string, version: string, newCon
   const trimmedContent = newContent.replace(/\n+$/, '')
 
   return [...before, '', trimmedContent, '', ...after].join('\n')
-}
-
-// ---------------------------------------------------------------------------
-// Publish output parsing
-// ---------------------------------------------------------------------------
-
-export interface PublishedPackage {
-  name: string
-  version: string
-}
-
-/**
- * Parse `changeset publish` stdout for `New tag:` lines.
- *
- * In a monorepo, each published package produces a line like:
- *   `New tag:  @scope/name@version`
- *
- * For a single-package repo:
- *   `New tag:  v<version>`
- */
-export function parsePublishedPackages(stdout: string): PublishedPackage[] {
-  const packages: PublishedPackage[] = []
-  const regex = /New tag:\s+(@[^/]+\/[^@]+|[^/]+)@([^\s]+)/
-
-  for (const line of stdout.split('\n')) {
-    const match = line.match(regex)
-    if (match?.[1] && match[2]) {
-      packages.push({ name: match[1], version: match[2] })
-    }
-  }
-
-  return packages
 }

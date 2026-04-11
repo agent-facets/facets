@@ -5,7 +5,6 @@ import {
   comparePackageOrder,
   filterPendingChangesets,
   hasUnpublishedVersions,
-  parsePublishedPackages,
   replaceChangelogEntry,
   shouldPublish,
   transformChangelogContent,
@@ -855,55 +854,6 @@ describe('buildVersionPrBody', () => {
 
     // Should have tight spacing, not loose
     expect(body).toContain('- First change\n- Second change')
-  })
-})
-
-// ---------------------------------------------------------------------------
-// parsePublishedPackages
-// ---------------------------------------------------------------------------
-
-describe('parsePublishedPackages', () => {
-  test('parses scoped package tags', () => {
-    const stdout = `
-info npm info @agent-facets/core
-New tag:  @agent-facets/core@0.1.3
-New tag:  agent-facets@0.1.4
-info All packages published
-`
-    const result = parsePublishedPackages(stdout)
-    expect(result).toEqual([
-      { name: '@agent-facets/core', version: '0.1.3' },
-      { name: 'agent-facets', version: '0.1.4' },
-    ])
-  })
-
-  test('returns empty array when no tags found', () => {
-    const stdout = 'Some random output\nNo packages to publish'
-    expect(parsePublishedPackages(stdout)).toEqual([])
-  })
-
-  test('returns empty array for empty string', () => {
-    expect(parsePublishedPackages('')).toEqual([])
-  })
-
-  test('handles single-package repo format', () => {
-    const stdout = 'New tag:  v1.2.3'
-    // The regex expects name@version, v1.2.3 doesn't match that pattern
-    // In a single-package repo, the tag format is different
-    expect(parsePublishedPackages(stdout)).toEqual([])
-  })
-
-  test('handles mixed output with noise', () => {
-    const stdout = `
-Running: npm publish --access public
-@agent-facets/core@0.2.0
-packages published successfully:
-@agent-facets/core@0.2.0
-Creating git tags...
-New tag:  @agent-facets/core@0.2.0
-`
-    const result = parsePublishedPackages(stdout)
-    expect(result).toEqual([{ name: '@agent-facets/core', version: '0.2.0' }])
   })
 })
 

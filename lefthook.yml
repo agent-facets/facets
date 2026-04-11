@@ -16,7 +16,7 @@ pre-commit:
     circleci-pack:
       priority: 4
       glob: ".circleci/{src,release-src}/**/*.yml"
-      run: bun run ci:pack && git add .circleci/config.yml .circleci/release.yml
+      run: bun run ci:pack && git add .circleci/development.yml .circleci/release.yml
 
 pre-push:
   commands:

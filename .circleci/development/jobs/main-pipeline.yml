@@ -1,0 +1,19 @@
+docker:
+  - image: cimg/base:current
+resource_class: small
+environment:
+  LEFTHOOK: "0"
+steps:
+  - setup-mise
+  - run:
+      name: Check
+      command: bun run check
+  - store_test_results:
+      path: test-results
+  - run:
+      name: Changesets
+      command: bun scripts/release/version.ts
+  - run:
+      name: Tag Release
+      command: bun scripts/release/tag.ts
+  - notify-failure

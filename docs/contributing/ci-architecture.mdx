@@ -7,16 +7,16 @@ description: CircleCI workflow structure, job definitions, and configuration man
 
 CI runs on [CircleCI](https://circleci.com) with three workflows across two separate config files.
 
-| Config                  | Trigger | Workflows                 |
-|-------------------------|---------|---------------------------|
-| `.circleci/config.yml`  | Pushes  | `ci`                      |
-| `.circleci/release.yml` | Tags    | `release` + `release-cli` |
+| Config                      | Trigger | Workflows                 |
+|-----------------------------|---------|---------------------------|
+| `.circleci/development.yml` | Pushes  | `ci`                      |
+| `.circleci/release.yml`     | Tags    | `release` + `release-cli` |
 
-| Workflow      | Trigger Filter            | Purpose                                                             |
-|---------------|---------------------------|---------------------------------------------------------------------|
-| `ci`          | Any branch but `main`     | Lint, typecheck, test (PRs); plus changesets and tag-release (main) |
-| `release`     | Tags: `@agent-facets/*@*` | Library package publish to npm                                      |
-| `release-cli` | Tags: `agent-facets@*`    | CLI matrix publish to npm                                           |
+| Workflow      | Trigger Filter              | Purpose                                                             |
+|---------------|-----------------------------|---------------------------------------------------------------------|
+| `ci`          | Any branch including `main` | Lint, typecheck, test (PRs); plus changesets and tag-release (main) |
+| `release`     | Tags: `@agent-facets/*@*`   | Library package publish to npm                                      |
+| `release-cli` | Tags: `agent-facets@*`      | CLI matrix publish to npm                                           |
 
 ## CI workflow
 
@@ -41,10 +41,10 @@ Runs on pushes to `main` only. Executes three steps sequentially in a single job
     Run `bun check` with caching (same as PR branches)
   </Step>
   <Step title="Changesets">
-    `bun scripts/ci-changesets.ts` (consume changesets, open/update version PR)
+    `bun scripts/release/version.ts` (consume changesets, open/update version PR)
   </Step>
   <Step title="Tag Release">
-    `bun scripts/ci-tag-release.ts` (create version tags for unpublished packages)
+    `bun scripts/release/tag.ts` (create version tags for unpublished packages)
   </Step>
   <Step>Sends maintainer notification on failure</Step>
 </Steps>
@@ -55,12 +55,13 @@ Triggered by tag pushes. The tag pattern determines which workflow runs.
 
 ### `release` (library packages)
 
-Triggered by scoped tags matching `@agent-facets/*@<version>`. Publishes all library packages.
+Triggered by scoped tags matching `@agent-facets/*@<version>`. Each tag publishes one library package.
 
 <Steps>
-  <Step>Parses the tag</Step>
-  <Step>Builds the library packages</Step>
-  <Step>Publishes all packages to npm</Step>
+  <Step>Parses the package name and version from the tag</Step>
+  <Step>Skips private packages</Step>
+  <Step>Builds via turbo</Step>
+  <Step>Publishes the package to npm</Step>
   <Step>Creates a GitHub Release</Step>
   <Step>Sends maintainer notification</Step>
 </Steps>
@@ -79,7 +80,7 @@ Triggered by unscoped tags matching `agent-facets@<version>`. Uses a three-stage
   </Step>
   <Step title="Finalize CLI">
     <Steps>
-      <Step>Publishes the main package to `latest`</Step>
+      <Step>Publishes the CLI package to `latest`</Step>
       <Step>Verifies all 13 packages are visible on npm</Step>
       <Step>Creates a GitHub Release</Step>
       <Step>Sends maintainer notification</Step>
@@ -110,25 +111,25 @@ CircleCI configs are authored as modular YAML files under source directories. Ru
 
 <Tree>
   <Tree.Folder name=".circleci" defaultOpen>
-    <Tree.Folder name={<>src <Badge color='purple' size='xs'>CI</Badge></>} defaultOpen>
+    <Tree.Folder name={<>development <Badge color='purple' size='xs'>CI</Badge></>} defaultOpen>
       <Tree.Folder name="commands" />
       <Tree.Folder name="jobs" />
       <Tree.Folder name="workflows" />
       <Tree.File name='@config.yml' />
     </Tree.Folder>
-    <Tree.Folder name={<>release-src <Badge color='purple' size='xs'>CD</Badge></>} defaultOpen>
-      <Tree.Folder name={<>commands <Badge color='purple' size='xs'>contents are symlinks to ../src/commands/*</Badge></>} />
+    <Tree.Folder name={<>release <Badge color='purple' size='xs'>CD</Badge></>} defaultOpen>
+      <Tree.Folder name={<>commands <Badge color='purple' size='xs'>contents are symlinks to ../development/commands/*</Badge></>} />
       <Tree.Folder name="jobs" />
       <Tree.Folder name="workflows" />
       <Tree.File name='@config.yml' />
     </Tree.Folder>
-    <Tree.File name={<>config.yml <Badge color='purple' size='xs'>packed CI config (generated)</Badge></>} />
+    <Tree.File name={<>development.yml <Badge color='purple' size='xs'>packed CI config (generated)</Badge></>} />
     <Tree.File name={<>release.yml <Badge color='purple' size='xs'>packed CD config (generated)</Badge></>} />
   </Tree.Folder>
 </Tree>
 
 <Note>
-  **Commands in `release-src/commands/` are symlinks to `src/commands/`**
+  **Commands in `release/commands/` are symlinks to `development/commands/`**
 
   This is because the CircleCI config pack tool does not support imports or other forms of code sharing.
 </Note>
@@ -137,7 +138,7 @@ CircleCI configs are authored as modular YAML files under source directories. Ru
 
 <Steps>
   <Step title="Edit source files">
-    Edit files under `.circleci/src/` or `.circleci/release-src/`.
+    Edit files under `.circleci/development/` or `.circleci/release/`.
   </Step>
   <Step title="Regenerate packed configs">
     ```sh

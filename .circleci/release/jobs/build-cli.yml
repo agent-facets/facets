@@ -1,0 +1,16 @@
+docker:
+  - image: cimg/base:current
+resource_class: small
+environment:
+  LEFTHOOK: "0"
+  MISE_ENV: release
+steps:
+  - setup-mise
+  - run:
+      name: Build CLI binaries
+      command: bun scripts/release-cli/build.ts
+  - persist_to_workspace:
+      root: .
+      paths:
+        - packages/cli/dist
+  - notify-failure

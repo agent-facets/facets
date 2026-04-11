@@ -32,8 +32,8 @@ export const CHANGESET_PR_TITLE = 'ci(release): version packages'
 /** Commit message used when versioning packages. */
 export const CHANGESET_COMMIT_MESSAGE = 'ci(release): version packages'
 
-/** The npm package name for the main package that users install directly. */
-export const MAIN_PACKAGE_NAME = 'agent-facets'
+/** The npm package name for the CLI package that users install directly. */
+export const CLI_PACKAGE_NAME = 'agent-facets'
 
 /** Root directory of the CLI package. */
 export const CLI_DIR = path.resolve(import.meta.dir, '..', '..', 'packages', 'cli')

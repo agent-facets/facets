@@ -35,7 +35,7 @@ Releases are fully automated. Merging a PR with changesets triggers a pipeline t
 
 ## CLI Publishing
 
-The CLI publishes 13 packages (12 platform binaries + 1 main package) directly to `latest` using ordering as the safety mechanism:
+The CLI publishes 13 packages (12 platform binaries + 1 CLI package) directly to `latest` using ordering as the safety mechanism:
 
 <Steps>
   <Step title="Build">
@@ -47,15 +47,15 @@ The CLI publishes 13 packages (12 platform binaries + 1 main package) directly t
   <Step title="Verify platform binaries">
     Poll the npm registry until all 12 platform packages are visible at the new version. Retries with exponential backoff.
   </Step>
-  <Step title="Publish main package">
+  <Step title="Publish CLI package">
     Synthesize the `agent-facets` package (with `optionalDependencies` pointing to all 12 platform packages) and publish to `latest`. This is the package users install — it only appears on `latest` after all its dependencies are confirmed available.
   </Step>
   <Step title="Verify all 13 packages">
-    Confirm all 13 packages (12 platform + main) are visible at the new version.
+    Confirm all 13 packages (12 platform + CLI) are visible at the new version.
   </Step>
 </Steps>
 
-The main package is always last. Users cannot install the new version until this step succeeds, because `npm install agent-facets` resolves the main package first, which then pulls platform binaries via `optionalDependencies`. If any platform binary failed to publish, the main package never publishes, so users on the previous version are unaffected.
+The CLI package is always last. Users cannot install the new version until this step succeeds, because `npm install agent-facets` resolves the CLI package first, which then pulls platform binaries via `optionalDependencies`. If any platform binary failed to publish, the CLI package never publishes, so users on the previous version are unaffected.
 
 ## Adding changesets on behalf of contributors
 

@@ -149,32 +149,47 @@ The system SHALL provide a seed script that publishes placeholder packages to cl
 - **THEN** the system SHALL print an error message instructing the developer to run `npm login`
 - **AND** the process SHALL exit with a non-zero code without publishing anything
 
-### Requirement: The publish script packages and publishes binaries to staging
+### Requirement: The publish scripts package and publish binaries directly to latest
 
-The system SHALL provide a publish script that synthesizes platform packages and the wrapper package from build output, then publishes them to npm with the `staging` dist-tag. Packages SHALL NOT be published directly to the `latest` dist-tag.
+The system SHALL publish platform packages and the CLI package directly to the `latest` dist-tag. The system SHALL NOT use a staging dist-tag with a separate promotion step, because npm's OIDC trusted publishing does not support `npm dist-tag add` operations.
 
-#### Scenario: Publishing synthesizes platform packages from build output
+#### Scenario: Publishing platform packages directly to latest
 
-- **WHEN** the publish script runs after a successful build
-- **THEN** the system SHALL read the compiled binaries and their metadata from the build output directory
-- **AND** the system SHALL pack and publish each platform package with `--tag staging`
+- **WHEN** the release pipeline publishes a platform package after a successful build
+- **THEN** the system SHALL pack and publish the platform package with `--tag latest`
 
-#### Scenario: Publishing synthesizes the wrapper package
+#### Scenario: Publishing the CLI package directly to latest
 
-- **WHEN** the publish script runs after publishing all platform packages
-- **THEN** the system SHALL synthesize the wrapper package containing the launcher script, the postinstall script, and a generated `package.json` with `optionalDependencies`
-- **AND** the system SHALL publish the wrapper package with `--tag staging`
+- **WHEN** the release pipeline publishes the CLI package after all platform packages are verified
+- **THEN** the system SHALL synthesize the CLI package containing the launcher script, the postinstall script, and a generated `package.json` with `optionalDependencies`
+- **AND** the system SHALL publish the CLI package with `--tag latest`
 
 #### Scenario: Publishing is idempotent
 
-- **WHEN** the publish script runs and a platform package at the target version already exists on npm
+- **WHEN** a publish step runs and a package at the target version already exists on npm
 - **THEN** the system SHALL skip that package
 - **AND** the system SHALL continue publishing remaining packages
 
 #### Scenario: Publishing uses provenance attestation
 
-- **WHEN** the publish script runs in a CI environment with OIDC configured
+- **WHEN** the publish step runs in a CI environment with OIDC configured
 - **THEN** the system SHALL publish with `--provenance` for supply chain attestation
+
+### Requirement: The CLI package publishes last to prevent partial releases
+
+The CLI package (`agent-facets`) SHALL always be the last package published in a release. Users install via the CLI package, which resolves platform binaries through `optionalDependencies`. Publishing the CLI package last ensures users never see a version where the CLI package exists but its platform dependencies do not.
+
+#### Scenario: Platform binaries publish before the CLI package
+
+- **WHEN** a CLI release is triggered
+- **THEN** the system SHALL publish all 12 platform packages before publishing the CLI package
+- **AND** the system SHALL verify all platform packages are available in the npm registry before publishing the CLI package
+
+#### Scenario: Partial platform publish prevents CLI package publish
+
+- **WHEN** one or more platform packages fail to publish or verify
+- **THEN** the system SHALL NOT publish the CLI package
+- **AND** users on the previous version SHALL be unaffected
 
 ### Requirement: The CLI package is versioned but not published by changesets
 
@@ -214,15 +229,15 @@ The system SHALL provide a developer-facing guide in the repository that documen
 
 ### Requirement: CLI releases are automated on version tag push
 
-The system SHALL automatically build, publish, verify, and promote CLI binaries when a version tag is pushed for the CLI package. A developer who merges a version PR SHALL NOT need to manually run any build, publish, or promotion steps — the release pipeline SHALL handle the full lifecycle.
+The system SHALL automatically build, publish, and verify CLI binaries when a version tag is pushed for the CLI package. A developer who merges a version PR SHALL NOT need to manually run any build, publish, or verification steps — the release pipeline SHALL handle the full lifecycle.
 
 #### Scenario: Tag push triggers the full release pipeline
 
 - **WHEN** a version tag matching the CLI package (e.g., `agent-facets@1.0.0`) is pushed
 - **THEN** the system SHALL build all 12 platform binaries
-- **AND** the system SHALL publish all platform packages and the wrapper package to the `staging` dist-tag
-- **AND** the system SHALL verify that all published packages are available in the npm registry
-- **AND** the system SHALL promote all packages from `staging` to `latest`
+- **AND** the system SHALL publish all platform packages directly to `latest`
+- **AND** the system SHALL verify that all platform packages are available in the npm registry
+- **AND** the system SHALL publish the CLI package directly to `latest`
 
 #### Scenario: Tag push for a non-CLI package does not trigger CLI builds
 
@@ -230,42 +245,26 @@ The system SHALL automatically build, publish, verify, and promote CLI binaries 
 - **THEN** the system SHALL NOT run the CLI binary build or publish pipeline
 - **AND** the system SHALL publish the non-CLI package using the standard release flow
 
-### Requirement: Published packages are verified before promotion to latest
+### Requirement: Platform packages are verified before the CLI package publishes
 
-The system SHALL verify that every platform package and the wrapper package exist at the expected version in the npm registry before promoting any package to `latest`. This ensures users never see a partially published release.
+The system SHALL verify that every platform package exists at the expected version in the npm registry before publishing the CLI package. This ensures the CLI package's `optionalDependencies` are resolvable when users install it.
 
-#### Scenario: All packages verified successfully
+#### Scenario: All platform packages verified successfully
 
-- **WHEN** the publish step completes and all 13 packages (12 platform + wrapper) are available at the expected version in the npm registry
-- **THEN** the system SHALL proceed to promote all packages from `staging` to `latest`
+- **WHEN** all 12 platform packages are available at the expected version in the npm registry
+- **THEN** the system SHALL proceed to publish the CLI package
 
 #### Scenario: Verification retries on registry propagation delay
 
-- **WHEN** a published package is not yet visible in the npm registry immediately after publishing
+- **WHEN** a published platform package is not yet visible in the npm registry immediately after publishing
 - **THEN** the system SHALL retry verification with exponential backoff
 - **AND** the system SHALL allow sufficient time for npm registry propagation before failing
 
 #### Scenario: Verification fails after maximum retries
 
-- **WHEN** one or more packages are still not visible after the maximum number of retry attempts
+- **WHEN** one or more platform packages are still not visible after the maximum number of retry attempts
 - **THEN** the system SHALL fail the release pipeline with a non-zero exit code
 - **AND** the system SHALL report which packages could not be verified
-
-### Requirement: Package promotion from staging to latest is idempotent
-
-The system SHALL promote packages from `staging` to `latest` by updating the `latest` dist-tag for each package. The promotion step SHALL be safe to re-run if a previous attempt was interrupted.
-
-#### Scenario: Successful promotion of all packages
-
-- **WHEN** all packages have been verified in the npm registry
-- **THEN** the system SHALL update the `latest` dist-tag to point to the new version for all 13 packages
-
-#### Scenario: Re-running promotion after partial failure
-
-- **WHEN** a previous promotion attempt was interrupted after promoting some but not all packages
-- **AND** the promotion step is re-run
-- **THEN** the system SHALL skip packages where `latest` already points to the target version
-- **AND** the system SHALL promote the remaining packages
 
 ### Requirement: CLI releases produce a GitHub Release and notification
 
@@ -273,7 +272,7 @@ The system SHALL create a GitHub Release and send a notification when a CLI vers
 
 #### Scenario: GitHub Release created after successful publish
 
-- **WHEN** the CLI release pipeline completes successfully (build, publish, verify, promote)
+- **WHEN** the CLI release pipeline completes successfully (build, publish, verify)
 - **THEN** the system SHALL create a GitHub Release tagged with the version
 - **AND** the release notes SHALL include the changelog entry for that version
 

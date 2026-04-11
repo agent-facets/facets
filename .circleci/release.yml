@@ -2,7 +2,7 @@ commands:
     notify-failure:
         steps:
             - run:
-                command: bun scripts/ci-notify-failure.ts
+                command: bun scripts/lib/notify-failure.ts
                 name: Notify failure
                 when: on_fail
     setup-mise:
@@ -39,7 +39,7 @@ jobs:
         steps:
             - setup-mise
             - run:
-                command: bun scripts/build-facet-cli.ts
+                command: bun scripts/release-cli/build.ts
                 name: Build CLI binaries
             - persist_to_workspace:
                 paths:
@@ -58,7 +58,7 @@ jobs:
             - attach_workspace:
                 at: .
             - run:
-                command: bun scripts/ci-release-finalize.ts
+                command: bun scripts/release-cli/finalize.ts
                 name: Finalize release
             - notify-failure
     publish-platform:
@@ -76,8 +76,8 @@ jobs:
             - attach_workspace:
                 at: .
             - run:
-                command: bun scripts/publish-single.ts << parameters.target >>
-                name: Publish << parameters.target >> to staging
+                command: bun scripts/release-cli/publish-platform.ts << parameters.target >>
+                name: Publish << parameters.target >>
             - notify-failure
     release:
         docker:
@@ -89,7 +89,7 @@ jobs:
         steps:
             - setup-mise
             - run:
-                command: bun scripts/ci-release.ts
+                command: bun scripts/release/publish.ts
                 name: Release
             - notify-failure
 version: 2.1
