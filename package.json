@@ -36,7 +36,7 @@
     "@types/node": "24",
     "dedent": "1.7.2",
     "mint": "4.2.392",
-    "turbo": "2.8.17",
+    "turbo": "2.9.6",
     "typescript": "6.0.2"
   }
 }
