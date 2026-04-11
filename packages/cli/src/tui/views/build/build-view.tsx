@@ -22,10 +22,12 @@ interface BuildViewResult {
 
 export function BuildView({
   rootDir,
+  emitManifest = false,
   onSuccess,
   onFailure,
 }: {
   rootDir: string
+  emitManifest?: boolean
   onSuccess?: (name: string, version: string, fileCount: number, integrity: string) => void
   onFailure?: (errorCount: number) => void
 }) {
@@ -37,12 +39,6 @@ export function BuildView({
   // Deferred exit: set this to an Error to exit after the next render cycle,
   // ensuring error/stage state updates are painted before Ink unmounts.
   const [pendingExit, setPendingExit] = useState<Error | null>(null)
-
-  useEffect(() => {
-    if (pendingExit) {
-      exit(pendingExit)
-    }
-  }, [pendingExit, exit])
 
   // Build a stable lookup from stage label to index
   const stageIndexMap = useMemo(() => Object.fromEntries(BUILD_STAGES.map((label, i) => [label, i])), [])
@@ -57,52 +53,64 @@ export function BuildView({
     [stageIndexMap],
   )
 
-  useEffect(() => {
-    async function run() {
-      const pipelineResult = await runBuildPipeline(rootDir, (progress: BuildProgress) => {
-        updateStage(progress.stage, {
-          status: progress.status === 'running' ? 'running' : progress.status === 'done' ? 'done' : 'failed',
-        })
+  const run = useCallback(async () => {
+    const pipelineResult = await runBuildPipeline(rootDir, (progress: BuildProgress) => {
+      updateStage(progress.stage, {
+        status: progress.status === 'running' ? 'running' : progress.status === 'done' ? 'done' : 'failed',
       })
+    })
 
-      setWarnings(pipelineResult.warnings)
+    setWarnings(pipelineResult.warnings)
 
-      if (!pipelineResult.ok) {
-        const formatted = pipelineResult.errors.map((e) => e.message)
-        // Find the stage that failed and attach errors to it
-        setStages((prev) => prev.map((s) => (s.status === 'failed' ? { ...s, errors: formatted } : s)))
-        onFailure?.(pipelineResult.errors.length)
-        // Defer exit so React renders the errors and failed stage status first
-        setPendingExit(new Error('Build failed'))
-        return
-      }
+    if (!pipelineResult.ok) {
+      const formatted = pipelineResult.errors.map((e) => e.message)
+      // Find the stage that failed and attach errors to it
+      setStages((prev) => prev.map((s) => (s.status === 'failed' ? { ...s, errors: formatted } : s)))
+      onFailure?.(pipelineResult.errors.length)
+      // Defer exit so React renders the errors and failed stage status first
+      setPendingExit(new Error('Build failed'))
+      return
+    }
 
-      // Writing output stage — handled here, not by the pipeline
-      updateStage('Writing output', { status: 'running' })
-      try {
-        await writeBuildOutput(pipelineResult, rootDir)
+    // Writing output stage — handled here, not by the pipeline
+    updateStage('Writing output', { status: 'running' })
+    try {
+      await writeBuildOutput(pipelineResult, rootDir, { emitManifest })
 
-        const files = Object.keys(pipelineResult.assetHashes).sort()
+      const files = Object.keys(pipelineResult.assetHashes).sort()
 
-        updateStage('Writing output', { status: 'done' })
-        setResult({
-          name: pipelineResult.data.name,
-          version: pipelineResult.data.version,
-          files,
-          archiveFilename: pipelineResult.archiveFilename,
-          integrity: pipelineResult.integrity,
-          warnings: pipelineResult.warnings,
-        })
-        onSuccess?.(pipelineResult.data.name, pipelineResult.data.version, files.length, pipelineResult.integrity)
-        exit()
-      } catch (err) {
-        updateStage('Writing output', { status: 'failed', detail: String(err) })
-        setPendingExit(err instanceof Error ? err : new Error(String(err)))
-      }
+      updateStage('Writing output', { status: 'done' })
+      setResult({
+        name: pipelineResult.data.name,
+        version: pipelineResult.data.version,
+        files,
+        archiveFilename: pipelineResult.archiveFilename,
+        integrity: pipelineResult.integrity,
+        warnings: pipelineResult.warnings,
+      })
+      onSuccess?.(pipelineResult.data.name, pipelineResult.data.version, files.length, pipelineResult.integrity)
+      exit()
+    } catch (err) {
+      updateStage('Writing output', { status: 'failed', detail: String(err) })
+      setPendingExit(err instanceof Error ? err : new Error(String(err)))
+    }
+  }, [
+    emitManifest,
+    exit,
+    onFailure,
+    onSuccess,
+    rootDir, // Writing output stage — handled here, not by the pipeline
+    updateStage,
+  ])
+
+  useEffect(() => {
+    if (pendingExit) {
+      exit(pendingExit)
+      return
     }
 
     run()
-  }, [rootDir, exit, onSuccess, onFailure, updateStage])
+  }, [pendingExit, exit, run])
 
   return (
     <Box flexDirection="column" padding={1} gap={1}>

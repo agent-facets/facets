@@ -159,14 +159,15 @@ describe('writeScaffold', () => {
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Built buildable')
 
-    // Verify dist/ output exists — archive + build manifest
+    // Verify dist/ output exists — self-contained .facet archive only
     const distArchive = await Bun.file(join(dir, `dist/buildable-${DEFAULT_VERSION}.facet`)).exists()
     expect(distArchive).toBe(true)
 
+    // No loose manifest by default (requires --emit-manifest)
     const distManifest = await Bun.file(join(dir, 'dist/build-manifest.json')).exists()
-    expect(distManifest).toBe(true)
+    expect(distManifest).toBe(false)
 
-    // No loose files
+    // No loose asset files
     const looseManifest = await Bun.file(join(dir, 'dist/facet.json')).exists()
     expect(looseManifest).toBe(false)
   })

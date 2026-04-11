@@ -1,8 +1,10 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import dedent from 'dedent'
+import { parseTar, parseTarGzip } from 'nanotar'
+import { computeContentHash } from '../build/content-hash.ts'
 import { detectNamingCollisions } from '../build/detect-collisions.ts'
 import { runBuildPipeline } from '../build/pipeline.ts'
 import { validateCompactFacets } from '../build/validate-facets.ts'
@@ -439,7 +441,7 @@ describe('content validation', () => {
 // --- Build output generation ---
 
 describe('writeBuildOutput', () => {
-  test('writes archive and build manifest to dist/', async () => {
+  test('writes self-contained .facet archive with embedded manifest', async () => {
     const dir = await createFixtureDir('write-output')
     await Bun.write(join(dir, 'skills/example/SKILL.md'), '# Resolved content')
     await Bun.write(
@@ -459,22 +461,111 @@ describe('writeBuildOutput', () => {
 
     await writeBuildOutput(result, dir)
 
-    // Archive exists
-    const archiveExists = await Bun.file(join(dir, 'dist/test-facet-1.0.0.facet')).exists()
+    // .facet file exists
+    const archivePath = join(dir, 'dist/test-facet-1.0.0.facet')
+    const archiveExists = await Bun.file(archivePath).exists()
     expect(archiveExists).toBe(true)
 
-    // Build manifest exists and has correct structure
-    const manifestText = await Bun.file(join(dir, 'dist/build-manifest.json')).text()
-    const manifest = JSON.parse(manifestText)
-    expect(manifest.facetVersion).toBe(1)
-    expect(manifest.archive).toBe('test-facet-1.0.0.facet')
+    // dist/ contains exactly one file (no loose manifest)
+    const distFiles = await readdir(join(dir, 'dist'))
+    expect(distFiles).toEqual(['test-facet-1.0.0.facet'])
+
+    // Outer tar contains exactly two entries: build-manifest.json and archive.tar.gz
+    const outerBytes = await Bun.file(archivePath).arrayBuffer()
+    const outerEntries = parseTar(outerBytes)
+    const outerNames = outerEntries.map((e) => e.name).sort()
+    expect(outerNames).toEqual(['archive.tar.gz', 'build-manifest.json'])
+
+    // Embedded manifest has correct structure
+    const manifestEntry = outerEntries.find((e) => e.name === 'build-manifest.json')
+    if (!manifestEntry) throw new Error('build-manifest.json not found in outer tar')
+    const manifest = JSON.parse(manifestEntry.text)
+    expect(manifest.facetVersion).toBe(0.1)
+    expect(manifest.archive).toBe('archive.tar.gz')
     expect(manifest.integrity).toMatch(/^sha256:[a-f0-9]{64}$/)
     expect(manifest.assets['facet.json']).toMatch(/^sha256:[a-f0-9]{64}$/)
     expect(manifest.assets['skills/example/SKILL.md']).toMatch(/^sha256:[a-f0-9]{64}$/)
 
-    // No loose files
+    // Inner archive contains expected assets
+    const innerEntry = outerEntries.find((e) => e.name === 'archive.tar.gz')
+    if (!innerEntry?.data) throw new Error('archive.tar.gz not found in outer tar')
+    const innerFiles = await parseTarGzip(innerEntry.data)
+    const innerNames = innerFiles.map((f) => f.name).sort()
+    expect(innerNames).toEqual(['facet.json', 'skills/example/SKILL.md'])
+
+    // No loose files in dist/
     const looseManifest = await Bun.file(join(dir, 'dist/facet.json')).exists()
     expect(looseManifest).toBe(false)
+  })
+
+  test('integrity hash matches inner archive bytes', async () => {
+    const dir = await createFixtureDir('integrity-check')
+    await Bun.write(join(dir, 'skills/example/SKILL.md'), '# Skill content')
+    await Bun.write(
+      join(dir, 'facet.json'),
+      JSON.stringify({
+        name: 'hash-test',
+        version: '1.0.0',
+        skills: {
+          example: { description: 'A skill' },
+        },
+      }),
+    )
+
+    const result = await runBuildPipeline(dir)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    await writeBuildOutput(result, dir)
+
+    // Extract manifest and inner archive from outer tar
+    const outerBytes = await Bun.file(join(dir, 'dist/hash-test-1.0.0.facet')).arrayBuffer()
+    const outerEntries = parseTar(outerBytes)
+    const manifestEntry = outerEntries.find((e) => e.name === 'build-manifest.json')
+    if (!manifestEntry) throw new Error('build-manifest.json not found in outer tar')
+    const manifest = JSON.parse(manifestEntry.text)
+    const innerEntry = outerEntries.find((e) => e.name === 'archive.tar.gz')
+    if (!innerEntry?.data) throw new Error('archive.tar.gz not found in outer tar')
+
+    // Decompress inner archive and hash the raw tar bytes
+    const innerGzBuffer = new Uint8Array(innerEntry.data).buffer
+    const innerTarBytes = Bun.gunzipSync(innerGzBuffer)
+    const computedHash = computeContentHash(innerTarBytes)
+
+    expect(computedHash).toBe(manifest.integrity)
+  })
+
+  test('--emit-manifest writes loose build-manifest.json', async () => {
+    const dir = await createFixtureDir('emit-manifest')
+    await Bun.write(join(dir, 'skills/example/SKILL.md'), '# Skill')
+    await Bun.write(
+      join(dir, 'facet.json'),
+      JSON.stringify({
+        name: 'emit-test',
+        version: '1.0.0',
+        skills: {
+          example: { description: 'A skill' },
+        },
+      }),
+    )
+
+    const result = await runBuildPipeline(dir)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    await writeBuildOutput(result, dir, { emitManifest: true })
+
+    // dist/ contains both files
+    const distFiles = (await readdir(join(dir, 'dist'))).sort()
+    expect(distFiles).toEqual(['build-manifest.json', 'emit-test-1.0.0.facet'])
+
+    // Loose manifest matches embedded manifest
+    const looseText = await Bun.file(join(dir, 'dist/build-manifest.json')).text()
+    const outerBytes = await Bun.file(join(dir, 'dist/emit-test-1.0.0.facet')).arrayBuffer()
+    const outerEntries = parseTar(outerBytes)
+    const embeddedEntry = outerEntries.find((e) => e.name === 'build-manifest.json')
+    if (!embeddedEntry) throw new Error('build-manifest.json not found in outer tar')
+    expect(looseText).toBe(embeddedEntry.text)
   })
 
   test('cleans previous dist/ before writing', async () => {
@@ -503,10 +594,8 @@ describe('writeBuildOutput', () => {
     const staleExists = await Bun.file(join(dir, 'dist/stale.txt')).exists()
     expect(staleExists).toBe(false)
 
-    // Archive and manifest should exist
-    const archiveExists = await Bun.file(join(dir, 'dist/test-1.0.0.facet')).exists()
-    expect(archiveExists).toBe(true)
-    const manifestExists = await Bun.file(join(dir, 'dist/build-manifest.json')).exists()
-    expect(manifestExists).toBe(true)
+    // Only the .facet archive should exist (no loose manifest by default)
+    const distFiles = await readdir(join(dir, 'dist'))
+    expect(distFiles).toEqual(['test-1.0.0.facet'])
   })
 })
