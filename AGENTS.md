@@ -45,7 +45,6 @@ src/
 
 | Directory       | Purpose                                              |
 | --------------- | ---------------------------------------------------- |
-| `architecture/` | Architecture Decision Records (ADRs)                 |
 | `docs/`         | Mintlify documentation site                          |
 | `scripts/`      | Repo-level utility scripts                           |
 | `openspec/`     | OpenSpec change management (specs, schemas, changes) |

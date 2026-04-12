@@ -6,7 +6,7 @@ Content hashing provides integrity guarantees for facet artifacts. At build time
 
 ### Requirement: Content hashes are computed for individual text assets
 
-The system SHALL compute a SHA-256 content hash for each resolved text asset (skills, agents, commands) and for the facet manifest. Each hash SHALL be computed from the file's resolved string content encoded as UTF-8. The hash format SHALL be `sha256:<hex-encoded hash>` (per ADR-004).
+The system SHALL compute a SHA-256 content hash for each resolved text asset (skills, agents, commands) and for the facet manifest. Each hash SHALL be computed from the file's resolved string content encoded as UTF-8. The hash format SHALL be `sha256:<hex-encoded hash>` (per [ADR-4](https://www.notion.so/exmachina-co/ADR-4)).
 
 #### Scenario: Per-asset hashes computed during build
 
@@ -74,7 +74,7 @@ The system SHALL produce identical archive bytes from identical inputs. Archive 
 
 ### Requirement: An integrity hash is computed for the uncompressed tar archive
 
-The system SHALL compute a SHA-256 content hash of the uncompressed tar archive bytes. The hash SHALL be computed from the deterministic tar before compression is applied. The hash format SHALL be `sha256:<hex-encoded hash>` (per ADR-004). This integrity hash is the primary integrity value for the artifact. Compression is a delivery concern — hashing the uncompressed tar ensures integrity verification is independent of the compression algorithm.
+The system SHALL compute a SHA-256 content hash of the uncompressed tar archive bytes. The hash SHALL be computed from the deterministic tar before compression is applied. The hash format SHALL be `sha256:<hex-encoded hash>` (per [ADR-4](https://www.notion.so/exmachina-co/ADR-4)). This integrity hash is the primary integrity value for the artifact. Compression is a delivery concern — hashing the uncompressed tar ensures integrity verification is independent of the compression algorithm.
 
 #### Scenario: Integrity hash is computed from uncompressed tar bytes
 
