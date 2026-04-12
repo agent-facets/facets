@@ -36,6 +36,7 @@
         "facet": "./bin/facet",
       },
       "dependencies": {
+        "@agent-facets/harness": "workspace:*",
         "@bomb.sh/args": "0.3.1",
         "@types/react": "19.2.14",
         "arktype": "2.2.0",
@@ -72,11 +73,26 @@
         "typescript": "^5 || ^6",
       },
     },
+    "packages/harness": {
+      "name": "@agent-facets/harness",
+      "version": "0.0.1",
+    },
+    "packages/harnesses/opencode": {
+      "name": "@agent-facets/harness-opencode",
+      "version": "0.0.1",
+      "dependencies": {
+        "@agent-facets/harness": "workspace:*",
+      },
+    },
   },
   "packages": {
     "@agent-facets/brand": ["@agent-facets/brand@workspace:packages/brand"],
 
     "@agent-facets/core": ["@agent-facets/core@workspace:packages/core"],
+
+    "@agent-facets/harness": ["@agent-facets/harness@workspace:packages/harness"],
+
+    "@agent-facets/harness-opencode": ["@agent-facets/harness-opencode@workspace:packages/harnesses/opencode"],
 
     "@alcalzone/ansi-tokenize": ["@alcalzone/ansi-tokenize@0.2.5", "", { "dependencies": { "ansi-styles": "^6.2.1", "is-fullwidth-code-point": "^5.0.0" } }, "sha512-3NX/MpTdroi0aKz134A6RC2Gb2iXVECN4QaAXnvCIxxIm3C3AVB1mkUe8NaaiyvOpDfsrqWhYtj+Q6a62RrTsw=="],
 

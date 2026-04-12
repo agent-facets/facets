@@ -1,6 +1,7 @@
 import { buildCommand } from './commands/build.ts'
 import { createCommand } from './commands/create/index.ts'
 import { editCommand } from './commands/edit/index.ts'
+import { spikeAdapterCommand } from './commands/spike-adapter.ts'
 
 export type FlagDef = {
   type: 'boolean' | 'string'
@@ -36,5 +37,6 @@ export const commands: Record<string, Command> = {
   list: stubCommand('list', 'List installed facets'),
   publish: stubCommand('publish', 'Publish a facet to the registry'),
   remove: stubCommand('remove', 'Remove a facet from the project'),
+  'spike-adapter': spikeAdapterCommand,
   upgrade: stubCommand('upgrade', 'Upgrade installed facets'),
 }

@@ -4,7 +4,7 @@ import type { FacetManifest } from '../schemas/facet-manifest.ts'
 
 /**
  * Writes a facet manifest to disk as `facet.json`.
- * Uses `JSON.stringify(data, null, 2)` per ADR-006.
+ * Uses `JSON.stringify(data, null, 2)` per [ADR-6](https://www.notion.so/exmachina-co/ADR-6).
  */
 export async function writeManifest(manifest: FacetManifest, rootDir: string): Promise<void> {
   const path = join(rootDir, FACET_MANIFEST_FILE)

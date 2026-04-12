@@ -8,7 +8,7 @@ export interface ArchiveEntry {
 
 /**
  * Computes a SHA-256 content hash of the given content.
- * Returns the hash in ADR-004 format: `sha256:<hex>`.
+ * Returns the hash in [ADR-4](https://www.notion.so/exmachina-co/ADR-4) format: `sha256:<hex>`.
  */
 export function computeContentHash(content: string | Uint8Array): string {
   const hex = Bun.CryptoHasher.hash('sha256', content, 'hex')

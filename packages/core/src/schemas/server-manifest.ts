@@ -2,7 +2,7 @@ import { type } from 'arktype'
 
 /**
  * Schema for the server manifest (server.json).
- * Matches the shape defined in ADR-005.
+ * Matches the shape defined in [ADR-5](https://www.notion.so/exmachina-co/ADR-5).
  */
 export const ServerManifestSchema = type({
   name: 'string',

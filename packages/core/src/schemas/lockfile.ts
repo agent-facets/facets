@@ -26,7 +26,7 @@ const ServerEntry = SourceModeServerEntry.or(RefModeServerEntry)
 
 /**
  * Schema for facets.lock — the lockfile recording resolved installation state.
- * Matches the shape defined in ADR-003.
+ * Matches the shape defined in [ADR-3](https://www.notion.so/exmachina-co/ADR-3).
  */
 export const LockfileSchema = type({
   facet: LockfileFacet,
