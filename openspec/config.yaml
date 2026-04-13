@@ -43,9 +43,9 @@ context: |
   ## Article III: ADR Authority
 
   ### Statement
-  Architectural Decision Records (ADRs) in `architecture/` are the authoritative source of truth for system design —
-  including command names, API shapes, data formats, and terminology. Documentation in `docs/` describes these decisions
-  for users but MUST NOT contradict them.
+  Architectural Decision Records (ADRs) in [Notion](https://www.notion.so/exmachina-co/ADR-1) are the authoritative
+  source of truth for system design — including command names, API shapes, data formats, and terminology. Documentation
+  in `docs/` describes these decisions for users but MUST NOT contradict them.
 
   When ADRs and documentation conflict, the ADR is correct and documentation MUST be updated to match.
   Implementations MUST NOT silently drift from accepted ADRs.
@@ -109,12 +109,12 @@ rules:
     - Refactors SHOULD be simple, small, OR incredibly well-justified
     - MUST include a "Non-goals" section
     - Each capability in the Capabilities section MUST correspond to a product domain, not a feature within a domain. Use domain names (e.g., `execution`, `planning`) not domain-feature compounds (e.g., NOT `execution-loop`, `auth-login`, `user-auth`, `data-export`). Check `openspec/specs/` for existing domain names before inventing new ones.
-    - MUST reference which ADRs in `architecture/` informed the proposal. If no relevant ADRs exist, state so explicitly.
+    - MUST reference which ADRs in Notion informed the proposal. If no relevant ADRs exist, state so explicitly.
     - If the proposed work corresponds to a roadmap phase in `../strategy/<namespace>/roadmap/`, the proposal MUST reference the phase file and note its current status. If the phase is `planned`, the proposal MUST note that the phase needs to be transitioned to `active` before implementation begins.
   design:
     - MUST identify any user-facing documentation in `docs/` and root `README.md` that would need updating based on the proposed changes
     - If the design changes observable behavior, CLI commands, APIs, or concepts covered in `docs/`, the design MUST note which doc files need updating
-    - MUST check whether the design conflicts with or diverges from any existing ADR in `architecture/` (including `TERMINOLOGY.md`). If ADR drift is detected, this is a HARD STOP — the change MUST NOT proceed until the ADR situation is resolved outside of OpenSpec (either revise the ADR, write a new one, or determine the ADR was wrong). Implementation MUST NOT silently drift from ADRs.
+    - MUST check whether the design conflicts with or diverges from any existing ADR in Notion. If ADR drift is detected, this is a HARD STOP — the change MUST NOT proceed until the ADR situation is resolved outside of OpenSpec (either revise the ADR, write a new one, or determine the ADR was wrong). Implementation MUST NOT silently drift from ADRs.
   tasks:
     - |
       Every tasks.md MUST begin with a preamble block before any task headings.

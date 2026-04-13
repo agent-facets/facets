@@ -1,0 +1,138 @@
+{
+  "databases": {
+    "sdrs": {
+      "name": "Strategic Decision Records (SDRs)",
+      "database_id": "3369ab16-3073-8095-bb62-c2f50df6a2bd",
+      "data_source_id": "3369ab16-3073-808b-8faf-000bb4dc082e",
+      "templates": {
+        "new_sdr": "3389ab16-3073-8028-90ea-f11ba2af208e"
+      },
+      "views": {
+        "active": "3369ab16-3073-80ef-91e2-000c001146a8",
+        "superseded": "33c9ab16-3073-80d1-b2aa-000c47291856",
+        "rejected": "33c9ab16-3073-8016-b6ec-000c49163f2a"
+      }
+    },
+    "sdr_events": {
+      "name": "SDR Events",
+      "database_id": "3369ab16-3073-80ba-a714-cd15e4d539dc",
+      "data_source_id": "3369ab16-3073-805c-a063-000bc5b891ee",
+      "templates": {
+        "today": "3369ab16-3073-804e-b90b-e3a409d96ece"
+      },
+      "views": {
+        "events": "3369ab16-3073-800b-8729-000c29ce3645"
+      }
+    },
+    "adrs": {
+      "name": "Architecture Decision Records (ADRs)",
+      "database_id": "497c521b-96cc-4f26-a62d-470cf98c1857",
+      "data_source_id": "4e3ed638-86ad-4374-b0b5-4bec5e8cfb05",
+      "templates": {
+        "new_adr": "3409ab16-3073-8036-ada3-ccb06f5e694b"
+      },
+      "views": {
+        "active": "8a23b156-751e-46ab-989a-d5c57e5d98d1",
+        "superseded": "3409ab16-3073-81f8-afb2-000cf72269ed",
+        "rejected": "3409ab16-3073-8050-a947-000c5e8ff39f"
+      }
+    },
+    "adr_events": {
+      "name": "ADR Events",
+      "database_id": "fe318069-fdea-43e5-a351-35f0421483a5",
+      "data_source_id": "7ee92d30-1654-475b-8b9b-1ce7d1a22914",
+      "templates": {},
+      "views": {
+        "events": "3409ab16-3073-81b1-b18e-000c784c077c"
+      }
+    },
+    "sdr_relationships": {
+      "name": "SDR Relationships",
+      "database_id": "f6ca4a70-f88d-43d1-80c0-8f8b6d7ff9d1",
+      "data_source_id": "2f1eca4b-4abd-4ad1-9911-721a63b6b478",
+      "templates": {},
+      "views": {
+        "all": "09b14f25-8d91-48b9-a802-c20b95cf544c"
+      }
+    },
+    "tasks": {
+      "name": "Tasks",
+      "database_id": "1ef8e031-b293-4b0f-9fe2-ea16feec7469",
+      "data_source_id": "7589832e-d4c1-44a5-85f8-1704b3cb92fa",
+      "templates": {
+        "new_task": "e6dd6c00-aeda-4ce7-b55d-bcbba367d661"
+      },
+      "views": {
+        "mine": "3359ab16-3073-80c4-b82e-000c276fe0bc",
+        "by_project": "298e9b13-32da-4f17-b3d4-4a5e99560ca7",
+        "needs_triage": "3409ab16-3073-8074-aff7-000c379b9319",
+        "completed": "3359ab16-3073-802a-9741-000c471bd0a4"
+      }
+    },
+    "projects": {
+      "name": "Projects",
+      "database_id": "634b4aeb-2cc4-4194-b0ee-efda1f204ddc",
+      "data_source_id": "14421c5d-5bd8-4a7c-b9f2-95749749db40",
+      "templates": {
+        "new_project": "b5703d89-a0ef-46ec-be09-3708e5537822"
+      },
+      "views": {
+        "active": "2ff8d017-c2b8-4bd4-93be-ebeb0c495cc1",
+        "timeline": "2bf5ee91-5f4c-49f9-a144-119b3d635e90",
+        "board": "d615b9cd-a365-47e7-b26b-b74dfa11a4db",
+        "all": "8c14f616-e3fd-4ed3-8fe7-4fa3a6f5c980"
+      }
+    },
+    "knowledge_base": {
+      "name": "Knowledge Base",
+      "database_id": "1eb832cc-ba9e-4d1d-9ef0-48f4d5a5f7dd",
+      "data_source_id": "6abcbbb5-9677-4d9c-adb2-c7589ec46d43",
+      "templates": {
+        "new_product_spec": "cd56fa96-b8dc-483c-bea8-60c65db86171",
+        "new_brainstorm": "cf5f071e-bce6-410c-acb3-d13f743ae6fc",
+        "new_technical_spec": "69d40cf7-7382-4db1-9d6d-25d19f73ed34"
+      },
+      "views": {
+        "by_type": "e1a56e58-261b-4a1b-bc15-f6342fe50806"
+      }
+    },
+    "meetings": {
+      "name": "Meetings",
+      "database_id": "7d9b775a-e621-4199-9aad-6e9538ce9f46",
+      "data_source_id": "cbab6136-5215-41f7-9981-4a3e128d5d71",
+      "templates": {
+        "new_meeting": "1809ab16-3073-807f-ae03-fd80f9f8630c",
+        "new_standup": "e47694b6-a9bb-4430-ac66-60a5a4a4bcbf",
+        "new_weekly": "502ac6e6-3ecf-4eb6-8632-a7d3d1098830"
+      },
+      "views": {
+        "meetings": "4c00d17f-1e4e-4df8-83fa-55fd281630cb",
+        "calendar": "c478cdcc-fa6d-406c-b092-dd1116ecd49f",
+        "list_by_type": "951795e8-bc65-4214-a29c-eb233e369e5e",
+        "mine": "47730a36-2ca7-43d5-a22b-4e03d5d04ff2",
+        "all": "cdc39899-e560-45a1-a624-170917e35fff"
+      }
+    },
+    "weekly_briefings": {
+      "name": "Weekly Briefings",
+      "database_id": "8759ab16-3073-8339-899c-0181ef55c3c7",
+      "data_source_id": "1549ab16-3073-834c-a460-87a4b07d959e",
+      "templates": {
+        "new_page": "33e9ab16-3073-80f9-b2b0-ea100ffa7029"
+      },
+      "views": {
+        "default": "a289ab16-3073-83a5-bb27-086a5658b24a"
+      }
+    },
+    "landing": {
+      "name": "Landing",
+      "database_id": "0ffddc1e-91ea-445c-b0ef-19872870ef71",
+      "data_source_id": "9970353d-3e21-40d5-9f39-7768fb484845",
+      "templates": {},
+      "views": {
+        "all_pages": "14dcfcb9-8ad4-4173-8026-a9457650e426",
+        "pages_i_own": "dc283fca-612b-46be-931b-79cb489284c4"
+      }
+    }
+  }
+}

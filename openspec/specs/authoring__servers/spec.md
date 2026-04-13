@@ -6,7 +6,7 @@ A server author writes a server manifest to declare their MCP server's identity,
 
 ### Requirement: Valid server manifests are accepted
 
-The system SHALL accept a server manifest that conforms to the server manifest schema defined in ADR-005. A valid server manifest has a name, version, runtime, and entry point.
+The system SHALL accept a server manifest that conforms to the server manifest schema defined in [ADR-5](https://www.notion.so/exmachina-co/ADR-5). A valid server manifest has a name, version, runtime, and entry point.
 
 #### Scenario: Minimal valid server manifest
 

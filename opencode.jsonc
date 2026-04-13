@@ -1,0 +1,24 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "notion": {
+      "type": "remote",
+      "url": "https://mcp.notion.com/sse"
+    }
+  },
+  // Disable Notion tools globally (re-enabled per-agent below for context isolation)
+  "tools": {
+    "notion": false
+  },
+  "agent": {
+    "notion": {
+      "tools": {
+        "notion": true,
+        "edit": false
+      },
+      "permission": {
+        "notion*": "allow"
+      }
+    }
+  }
+}

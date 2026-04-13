@@ -45,7 +45,6 @@
     "//#lint": {
       "inputs": [
         "$TURBO_DEFAULT$",
-        "!$TURBO_ROOT$/architecture/**",
         "!$TURBO_ROOT$/openspec/**",
         "!$TURBO_ROOT$/.circleci/**",
         "!$TURBO_ROOT$/.changeset/**",
