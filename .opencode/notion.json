@@ -52,7 +52,7 @@
       "data_source_id": "2f1eca4b-4abd-4ad1-9911-721a63b6b478",
       "templates": {},
       "views": {
-        "all": "09b14f25-8d91-48b9-a802-c20b95cf544c"
+        "all_relationships": "09b14f25-8d91-48b9-a802-c20b95cf544c"
       }
     },
     "tasks": {
