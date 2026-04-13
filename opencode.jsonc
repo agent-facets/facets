@@ -8,7 +8,7 @@
   },
   // Disable Notion tools globally (re-enabled per-agent below for context isolation)
   "tools": {
-    "notion*": false
+    "notion": false
   },
   "agent": {
     "notion": {
