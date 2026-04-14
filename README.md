@@ -13,7 +13,13 @@ Full documentation is available at [agentfacets.io](https://agentfacets.io).
 npm install -g agent-facets
 ```
 
-Now you can install facets from https://facet.cafe!
+Install any facet you'd like:
+
+```shell
+facet add viper-plans
+```
+
+Please see https://agentfacets.io for detailed guidance and documentation for the `facet` CLI tool.
 
 ## Packages
 
