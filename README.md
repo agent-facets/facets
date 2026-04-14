@@ -1,6 +1,6 @@
-# Facets
+# Agent Facets
 
-A package manager and toolkit for facets — modular skills, agents, commands, and tools that extend AI coding assistants.
+`facet` is a CLI package manager and toolkit for facets — modular skills, agents, commands, and tools that extend AI coding assistants.
 
 ## Documentation
 
