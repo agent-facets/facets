@@ -40,7 +40,7 @@ describe('FacetManifestSchema — valid manifests', () => {
       agents: {
         reviewer: {
           description: 'Org code reviewer',
-          harnesses: {
+          adapters: {
             opencode: { tools: { grep: true, bash: true } },
           },
         },
@@ -111,7 +111,7 @@ describe('FacetManifestSchema — invalid manifests', () => {
       name: 'my-facet',
       version: '1.0.0',
       agents: {
-        reviewer: { harnesses: { opencode: {} } },
+        reviewer: { adapters: { opencode: {} } },
       },
     }
     const result = FacetManifestSchema(input)

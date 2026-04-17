@@ -1,7 +1,7 @@
+import { adapterCommand } from './commands/adapter/index.ts'
 import { buildCommand } from './commands/build.ts'
 import { createCommand } from './commands/create/index.ts'
 import { editCommand } from './commands/edit/index.ts'
-import { harnessCommand } from './commands/harness/index.ts'
 
 export type FlagDef = {
   type: 'boolean' | 'string'
@@ -28,11 +28,11 @@ function stubCommand(name: string, description: string): Command {
 }
 
 export const commands: Record<string, Command> = {
+  adapter: adapterCommand,
   add: stubCommand('add', 'Add a facet to the project'),
   build: buildCommand,
   create: createCommand,
   edit: editCommand,
-  harness: harnessCommand,
   info: stubCommand('info', 'Show information about a facet'),
   install: stubCommand('install', 'Install all facets from the lockfile'),
   list: stubCommand('list', 'List installed facets'),
