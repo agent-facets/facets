@@ -67,7 +67,7 @@ A facet name (or name@version) to install.
        api_surface: "sha256:567ghi..."
    ```
 
-7. **Configure servers for the active platform.** For each resolved server, generate the platform-specific configuration needed to start the server (e.g., MCP server config entries for the active AI assistant). Platform configuration details are handled by the CLI's platform adapters.
+7. **Configure servers for the active harness.** For each resolved server, generate the harness-specific configuration needed to start the server (e.g., MCP server config entries for the active AI assistant). Configuration details are handled by the installed harnesses.
 
 ## Lockfile-First Installs
 
@@ -103,7 +103,7 @@ The lockfile SHOULD be version-controlled so that all team members and CI enviro
 
 5. **Apply selected updates.**
    - If the facet version changed: download the new archive, verify integrity, extract text assets according to the consumer's decisions from the change resolution flow. Re-resolve any server references that have new floor constraints.
-   - If server versions changed: download new server artifacts, verify integrity, update platform configuration.
+   - If server versions changed: download new server artifacts, verify integrity, update harness configuration.
 
 6. **Write the updated lockfile.** Record the new versions, content hashes, and API surface hashes for all updated artifacts.
 
@@ -140,4 +140,4 @@ The lockfile (`facets.lock`) pins the exact state of an installation:
 
 - **Text asset resolution** — text is already in the archive. No install-time fetching of composed facets.
 - **Transitive server resolution** — servers are terminal. No multi-level dependency resolution.
-- **Local disk layout specifics** — where files are placed on disk is determined by the active provider's platform adapter. Directory mapping is a CLI concern, not a specification-level decision.
+- **Local disk layout specifics** — where files are placed on disk is determined by the installed harnesses. Directory mapping is a CLI concern, not a specification-level decision.

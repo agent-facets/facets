@@ -1,7 +1,7 @@
 import { join } from 'node:path'
+import type { Validated } from '@agent-facets/common'
 import { type } from 'arktype'
 import { type ServerManifest, ServerManifestSchema } from '../schemas/server-manifest.ts'
-import type { Result } from '../types.ts'
 import { mapArkErrors, parseJson, readFile } from './validate.ts'
 
 const SERVER_MANIFEST_FILE = 'server.json'
@@ -12,7 +12,7 @@ const SERVER_MANIFEST_FILE = 'server.json'
  * Reads the server manifest, parses JSON, validates against the schema, and returns
  * a discriminated result — either the validated manifest or structured errors.
  */
-export async function loadServerManifest(dir: string): Promise<Result<ServerManifest>> {
+export async function loadServerManifest(dir: string): Promise<Validated<ServerManifest>> {
   const filePath = join(dir, SERVER_MANIFEST_FILE)
 
   // Phase 0: Read the file

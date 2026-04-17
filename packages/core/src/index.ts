@@ -1,3 +1,5 @@
+// common types (re-exported for convenience)
+export type { AssetType, Scope, Validated, ValidationError } from '@agent-facets/common'
 // types
 export type { ArchiveEntry } from './build/content-hash.ts'
 export {
@@ -15,15 +17,15 @@ export type { BuildFailure, BuildProgress, BuildResult, BuildStage } from './bui
 // build pipeline
 export { BUILD_STAGES, runBuildPipeline } from './build/pipeline.ts'
 export { validateCompactFacets } from './build/validate-facets.ts'
-export type { PlatformValidationResult } from './build/validate-platforms.ts'
-export { validatePlatformConfigs } from './build/validate-platforms.ts'
+export type { HarnessValidationResult } from './build/validate-harnesses.ts'
+export { validateHarnessMetadata } from './build/validate-harnesses.ts'
 export type { WriteBuildOutputOptions } from './build/write-output.ts'
 export { writeBuildOutput } from './build/write-output.ts'
 export { writeManifest } from './edit/manifest-writer.ts'
 export type { MatchedAsset, MissingAsset, ReconciliationResult } from './edit/reconcile.ts'
 export { reconcile } from './edit/reconcile.ts'
 // edit
-export type { AssetType, DiscoveredAsset } from './edit/scanner.ts'
+export type { AssetManifestKey, DiscoveredAsset } from './edit/scanner.ts'
 export { KEBAB_CASE, scanAssets } from './edit/scanner.ts'
 // front matter
 export type { FrontMatterResult } from './front-matter.ts'
@@ -41,4 +43,3 @@ export type { Lockfile } from './schemas/lockfile.ts'
 export { LockfileSchema } from './schemas/lockfile.ts'
 export type { ServerManifest } from './schemas/server-manifest.ts'
 export { ServerManifestSchema } from './schemas/server-manifest.ts'
-export type { Result, ValidationError } from './types.ts'

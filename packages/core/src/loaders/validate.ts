@@ -1,5 +1,5 @@
+import type { ValidationError } from '@agent-facets/common'
 import type { type } from 'arktype'
-import type { ValidationError } from '../types.ts'
 
 /**
  * Maps ArkType errors to our public ValidationError type.

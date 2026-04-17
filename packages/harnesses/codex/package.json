@@ -1,0 +1,19 @@
+{
+  "name": "@agent-facets/harness-codex",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "types": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@agent-facets/harness": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.10"
+  }
+}

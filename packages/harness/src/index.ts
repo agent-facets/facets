@@ -2,9 +2,8 @@ export { defineHarness } from './define-harness.ts'
 export type {
   AssetType,
   Harness,
-  HarnessDefinition,
   HarnessMetadata,
-  Location,
+  Scope,
   Validated,
   ValidationError,
 } from './types.ts'

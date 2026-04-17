@@ -1,15 +1,15 @@
 import type { FacetManifest } from '../schemas/facet-manifest.ts'
-import type { AssetType, DiscoveredAsset } from './scanner.ts'
+import type { AssetManifestKey, DiscoveredAsset } from './scanner.ts'
 
 export interface MissingAsset {
-  type: AssetType
+  type: AssetManifestKey
   name: string
   /** The path where the file was expected (e.g., 'skills/review/SKILL.md') */
   expectedPath: string
 }
 
 export interface MatchedAsset {
-  type: AssetType
+  type: AssetManifestKey
   name: string
   /** Relative path from the facet root */
   path: string
@@ -41,7 +41,7 @@ export function reconcile(manifest: FacetManifest, discovered: DiscoveredAsset[]
   }
 
   // Check manifest entries against discovered assets
-  const assetSections: Array<{ type: AssetType; entries: Record<string, unknown> | undefined }> = [
+  const assetSections: Array<{ type: AssetManifestKey; entries: Record<string, unknown> | undefined }> = [
     { type: 'skills', entries: manifest.skills },
     { type: 'agents', entries: manifest.agents },
     { type: 'commands', entries: manifest.commands },

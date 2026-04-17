@@ -5,6 +5,7 @@ import {
   runBuildPipeline,
   writeBuildOutput,
 } from '@agent-facets/core'
+import type { Harness } from '@agent-facets/harness'
 import { Box, Text, useApp } from 'ink'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Stage } from '../../components/stage-row.tsx'
@@ -23,11 +24,13 @@ interface BuildViewResult {
 export function BuildView({
   rootDir,
   emitManifest = false,
+  harnesses,
   onSuccess,
   onFailure,
 }: {
   rootDir: string
   emitManifest?: boolean
+  harnesses: Harness[]
   onSuccess?: (name: string, version: string, fileCount: number, integrity: string) => void
   onFailure?: (errorCount: number) => void
 }) {
@@ -54,7 +57,7 @@ export function BuildView({
   )
 
   const run = useCallback(async () => {
-    const pipelineResult = await runBuildPipeline(rootDir, (progress: BuildProgress) => {
+    const pipelineResult = await runBuildPipeline(rootDir, harnesses, (progress: BuildProgress) => {
       updateStage(progress.stage, {
         status: progress.status === 'running' ? 'running' : progress.status === 'done' ? 'done' : 'failed',
       })
@@ -97,6 +100,7 @@ export function BuildView({
   }, [
     emitManifest,
     exit,
+    harnesses,
     onFailure,
     onSuccess,
     rootDir, // Writing output stage — handled here, not by the pipeline

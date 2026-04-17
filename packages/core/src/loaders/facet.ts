@@ -1,7 +1,7 @@
 import { join } from 'node:path'
+import type { Validated, ValidationError } from '@agent-facets/common'
 import { type } from 'arktype'
 import { type FacetManifest, FacetManifestSchema } from '../schemas/facet-manifest.ts'
-import type { Result, ValidationError } from '../types.ts'
 import { mapArkErrors, parseJson, readFile } from './validate.ts'
 
 export const FACET_MANIFEST_FILE = 'facet.json'
@@ -13,7 +13,7 @@ export const FACET_MANIFEST_FILE = 'facet.json'
  * business-rule constraints. Returns a discriminated result — either the
  * validated manifest or structured errors.
  */
-export async function loadManifest(dir: string): Promise<Result<FacetManifest>> {
+export async function loadManifest(dir: string): Promise<Validated<FacetManifest>> {
   const filePath = join(dir, FACET_MANIFEST_FILE)
 
   // Phase 0: Read the file
@@ -52,7 +52,7 @@ export interface ResolvedFacetManifest {
     {
       description: string
       prompt: string
-      platforms?: Record<string, unknown>
+      harnesses?: Record<string, unknown>
     }
   >
   agents?: Record<
@@ -60,7 +60,7 @@ export interface ResolvedFacetManifest {
     {
       description: string
       prompt: string
-      platforms?: Record<string, unknown>
+      harnesses?: Record<string, unknown>
     }
   >
   commands?: Record<
@@ -89,7 +89,10 @@ export interface ResolvedFacetManifest {
  * Returns a new manifest with all prompts resolved to strings, or an error
  * result identifying which prompt failed and why.
  */
-export async function resolvePrompts(manifest: FacetManifest, rootDir: string): Promise<Result<ResolvedFacetManifest>> {
+export async function resolvePrompts(
+  manifest: FacetManifest,
+  rootDir: string,
+): Promise<Validated<ResolvedFacetManifest>> {
   const errors: ValidationError[] = []
 
   // Resolve skill prompts from skills/<name>/SKILL.md

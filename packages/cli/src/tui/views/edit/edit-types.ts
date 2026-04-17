@@ -1,10 +1,10 @@
-import type { AssetType, FacetManifest } from '@agent-facets/core'
+import type { AssetManifestKey, FacetManifest } from '@agent-facets/core'
 
 /** A reconciliation item that needs a resolution before editing can proceed. */
 export type ReconciliationItem =
-  | { kind: 'addition'; type: AssetType; name: string; path: string }
-  | { kind: 'missing'; type: AssetType; name: string; expectedPath: string }
-  | { kind: 'front-matter'; type: AssetType; name: string; path: string }
+  | { kind: 'addition'; type: AssetManifestKey; name: string; path: string }
+  | { kind: 'missing'; type: AssetManifestKey; name: string; expectedPath: string }
+  | { kind: 'front-matter'; type: AssetManifestKey; name: string; path: string }
 
 /** The resolution chosen for a reconciliation item. */
 export type ReconciliationResolution =
@@ -29,6 +29,6 @@ export type EditResult =
 /** A file operation to perform on confirmation. */
 export type EditOperation =
   | { op: 'write-manifest' }
-  | { op: 'scaffold'; type: AssetType; name: string }
-  | { op: 'delete-file'; type: AssetType; name: string }
-  | { op: 'strip-front-matter'; type: AssetType; name: string; path: string }
+  | { op: 'scaffold'; type: AssetManifestKey; name: string }
+  | { op: 'delete-file'; type: AssetManifestKey; name: string }
+  | { op: 'strip-front-matter'; type: AssetManifestKey; name: string; path: string }
