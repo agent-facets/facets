@@ -2,6 +2,7 @@ import { render } from 'ink'
 import { createElement } from 'react'
 import type { Command } from '../commands.ts'
 import { BuildView } from '../tui/views/build/build-view.tsx'
+import { loadInstalledHarnesses } from './harness/loader.ts'
 import { resolveTargetDir } from './resolve-dir.ts'
 
 export const buildCommand: Command = {
@@ -25,6 +26,9 @@ export const buildCommand: Command = {
     const displayDir = resolved.display
     const emitManifest = flags['emit-manifest'] === true
 
+    // Load installed harnesses so their metadata schemas can validate the manifest
+    const harnesses = await loadInstalledHarnesses()
+
     // Track result for stdout summary after Ink exits
     let buildName = ''
     let buildVersion = ''
@@ -36,6 +40,7 @@ export const buildCommand: Command = {
       createElement(BuildView, {
         rootDir,
         emitManifest,
+        harnesses,
         onSuccess: (name: string, version: string, fileCount: number, hash: string) => {
           buildName = name
           buildVersion = version

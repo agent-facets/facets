@@ -1,5 +1,4 @@
 ---
-bundle: facet-design
 name: facet-design
 description: Design guide for OpenCode capability facets - required for designing agents, skills, commands, and tools
 ---

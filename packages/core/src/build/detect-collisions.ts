@@ -1,7 +1,5 @@
+import type { AssetType, ValidationError } from '@agent-facets/common'
 import type { FacetManifest } from '../schemas/facet-manifest.ts'
-import type { ValidationError } from '../types.ts'
-
-type AssetType = 'skill' | 'agent' | 'command'
 
 /**
  * Detects naming collisions within each asset type.

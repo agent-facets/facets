@@ -1,6 +1,6 @@
+import type { ValidationError } from '@agent-facets/common'
 import { hasFrontMatter } from '../front-matter.ts'
 import type { ResolvedFacetManifest } from '../loaders/facet.ts'
-import type { ValidationError } from '../types.ts'
 
 /**
  * Validates resolved prompt content for all assets:

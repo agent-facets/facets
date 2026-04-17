@@ -40,18 +40,6 @@ export type Validated<T> = { ok: true; data: T } | { ok: false; errors: Validati
 export type AssetType = 'skill' | 'agent' | 'command'
 
 /**
- * A scoped filesystem location used by harnesses to declare
- * where assets or config files live.
- *
- * - `path`: relative for project scope, absolute for user/system scope
- * - `scope`: classifies the location's ownership level
- * - `type`: discriminates between directories (asset containers) and files (config targets)
+ * Classifies the scope for harness interactions
  */
-export interface Location {
-  /** Filesystem path — relative for project scope, absolute for user/system scope */
-  path: string
-  /** Ownership level of this location */
-  scope: 'system' | 'user' | 'project'
-  /** Whether this location is a directory (container) or a file (target) */
-  type: 'directory' | 'file'
-}
+export type Scope = 'system' | 'user' | 'project'

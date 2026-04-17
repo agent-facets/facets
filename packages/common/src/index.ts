@@ -1,1 +1,1 @@
-export type { AssetType, Location, Validated, ValidationError } from './types.ts'
+export type { AssetType, Scope, Validated, ValidationError } from './types.ts'

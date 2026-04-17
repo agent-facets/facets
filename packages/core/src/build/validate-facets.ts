@@ -1,5 +1,5 @@
+import type { ValidationError } from '@agent-facets/common'
 import type { FacetManifest } from '../schemas/facet-manifest.ts'
-import type { ValidationError } from '../types.ts'
 
 /**
  * Pattern for compact facets entries: "name@version" or "@scope/name@version".

@@ -1,6 +1,6 @@
 {
   "$schema": "https://turborepo.com/schema.json",
-  "globalDependencies": ["bun.lock"],
+  "globalDependencies": ["bun.lock", "mise.toml"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
