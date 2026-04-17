@@ -4,8 +4,14 @@ resource_class: small
 steps:
   - setup-mise
   - run:
+      name: Disable CLI build cache
+      command: cp packages/cli/turbo.ci.json packages/cli/turbo.json
+  - run:
       name: Check
       command: bun run check
+  - run:
+      name: Restore CLI turbo config
+      command: git checkout packages/cli/turbo.json
   - store_test_results:
       path: test-results
 

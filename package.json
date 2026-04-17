@@ -5,7 +5,8 @@
   "packageManager": "bun@1.3.11",
   "workspaces": {
     "packages": [
-      "packages/*"
+      "packages/*",
+      "packages/harnesses/*"
     ]
   },
   "scripts": {
@@ -23,7 +24,7 @@
     "docs:validate": "bun --cwd docs mint validate",
     "docs:broken-links": "bun --cwd docs mint broken-links",
     "postinstall": "mise exec -- lefthook install",
-    "clean": "rm -rf .turbo node_modules packages/*/node_modules packages/*/.turbo packages/*/dist packages/cli/bin/.facet test-results/*.xml tmp docs/.mintlify"
+    "clean": "rm -rf .turbo node_modules packages/**/node_modules packages/**/.turbo packages/**/dist packages/cli/bin/.facet test-results/*.xml tmp docs/.mintlify"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.11",

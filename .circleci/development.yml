@@ -36,8 +36,14 @@ jobs:
         steps:
             - setup-mise
             - run:
+                command: cp packages/cli/turbo.ci.json packages/cli/turbo.json
+                name: Disable CLI build cache
+            - run:
                 command: bun run check
                 name: Check
+            - run:
+                command: git checkout packages/cli/turbo.json
+                name: Restore CLI turbo config
             - store_test_results:
                 path: test-results
     main-pipeline:
