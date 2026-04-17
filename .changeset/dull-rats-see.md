@@ -9,4 +9,4 @@
 "agent-facets": patch
 ---
 
-Publish the things!
+Publish all packages touched
