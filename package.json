@@ -6,7 +6,7 @@
   "workspaces": {
     "packages": [
       "packages/*",
-      "packages/harnesses/*"
+      "packages/adapters/*"
     ]
   },
   "scripts": {
@@ -16,7 +16,8 @@
     "test:scripts": "bun test scripts/",
     "lint": "biome check .",
     "format": "biome check --write --unsafe .",
-    "seed": "bun scripts/release-cli/seed.ts",
+    "seed:cli": "bun scripts/release-cli/seed.ts",
+    "seed:adapters": "bun scripts/release/seed-adapters.ts",
     "change": "changeset",
     "ci:pack": "circleci config pack .circleci/development > .circleci/development.yml && circleci config pack .circleci/release > .circleci/release.yml",
     "ci:check-pack": "diff <(circleci config pack .circleci/development) .circleci/development.yml && diff <(circleci config pack .circleci/release) .circleci/release.yml || (echo 'CircleCI configs are out of date. Run: bun run ci:pack' && exit 1)",

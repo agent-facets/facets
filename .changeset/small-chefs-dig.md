@@ -1,8 +1,8 @@
 ---
-"@agent-facets/harness-claude-code": minor
-"@agent-facets/harness-opencode": minor
-"@agent-facets/harness-codex": minor
-"@agent-facets/harness": minor
+"@agent-facets/adapter-claude-code": minor
+"@agent-facets/adapter-opencode": minor
+"@agent-facets/adapter-codex": minor
+"@agent-facets/adapter": minor
 "@agent-facets/common": minor
 "@agent-facets/core": minor
 "agent-facets": minor

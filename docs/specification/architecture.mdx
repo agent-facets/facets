@@ -74,7 +74,7 @@ The installed facet is loaded by the AI assistant. Text assets are in the assist
 
 2. **Server-side composition.** Text composition MUST be performed by the registry from its own trusted storage. This prevents supply chain attacks where an author replaces composed content with malicious prompts while the manifest still attributes the content to trusted sources.
 
-3. **Harness-agnostic format.** The facet manifest format is harness-agnostic by default. Harness-specific configuration (tool access, permissions, model preferences) lives in designated extension points within the manifest. Each installed harness defines its own metadata schema — the CLI delegates validation to the harness.
+3. **Adapter-agnostic format.** The facet manifest format is adapter-agnostic by default. Adapter-specific configuration (tool access, permissions, model preferences) lives in designated extension points within the manifest. Each installed adapter defines its own metadata schema — the CLI delegates validation to the adapter.
 
 4. **Terminal server dependencies.** MCP servers MUST NOT declare dependencies on other MCP servers. Resolution is always one level deep — no transitive dependency chains, no conflict resolution.
 

@@ -52,7 +52,7 @@ export interface ResolvedFacetManifest {
     {
       description: string
       prompt: string
-      harnesses?: Record<string, unknown>
+      adapters?: Record<string, unknown>
     }
   >
   agents?: Record<
@@ -60,7 +60,7 @@ export interface ResolvedFacetManifest {
     {
       description: string
       prompt: string
-      harnesses?: Record<string, unknown>
+      adapters?: Record<string, unknown>
     }
   >
   commands?: Record<

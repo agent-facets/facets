@@ -5,13 +5,13 @@ import { type } from 'arktype'
 /** Skill descriptor — description is required, prompt resolved from skills/<name>/SKILL.md */
 const SkillDescriptor = type({
   description: 'string',
-  'harnesses?': type.Record('string', 'unknown'),
+  'adapters?': type.Record('string', 'unknown'),
 })
 
 /** Agent descriptor — description is required, prompt resolved from agents/<name>.md */
 const AgentDescriptor = type({
   description: 'string',
-  'harnesses?': type.Record('string', 'unknown'),
+  'adapters?': type.Record('string', 'unknown'),
 })
 
 /** Command descriptor — description is required, prompt resolved from commands/<name>.md */

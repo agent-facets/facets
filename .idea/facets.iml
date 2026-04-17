@@ -9,10 +9,12 @@
       <excludeFolder url="file://$MODULE_DIR$/packages/brand/.turbo" />
       <excludeFolder url="file://$MODULE_DIR$/packages/cli/.turbo" />
       <excludeFolder url="file://$MODULE_DIR$/packages/core/.turbo" />
-      <excludeFolder url="file://$MODULE_DIR$/packages/harness/.turbo" />
-      <excludeFolder url="file://$MODULE_DIR$/packages/harnesses/claude-code/.turbo" />
-      <excludeFolder url="file://$MODULE_DIR$/packages/harnesses/codex/.turbo" />
-      <excludeFolder url="file://$MODULE_DIR$/packages/harnesses/opencode/.turbo" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/adapter/.turbo" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/adapters/claude-code/.turbo" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/adapters/codex/.turbo" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/adapters/opencode/.turbo" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/core/test-results" />
+      <excludeFolder url="file://$MODULE_DIR$/test-results" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />

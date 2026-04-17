@@ -1,6 +1,6 @@
 import { join } from 'node:path'
+import type { Adapter } from '@agent-facets/adapter'
 import type { ValidationError } from '@agent-facets/common'
-import type { Harness } from '@agent-facets/harness'
 import { FACET_MANIFEST_FILE, loadManifest, type ResolvedFacetManifest, resolvePrompts } from '../loaders/facet.ts'
 import {
   assembleOuterTar,
@@ -12,9 +12,9 @@ import {
   INNER_ARCHIVE_NAME,
 } from './content-hash.ts'
 import { detectNamingCollisions } from './detect-collisions.ts'
+import { validateAdapterMetadata } from './validate-adapters.ts'
 import { validateContentFiles } from './validate-content.ts'
 import { validateCompactFacets } from './validate-facets.ts'
-import { validateHarnessMetadata } from './validate-harnesses.ts'
 
 export interface BuildProgress {
   stage: BuildStage
@@ -46,7 +46,7 @@ export const BUILD_STAGES = [
   'Resolving prompts',
   'Validating assets',
   'Checking collisions',
-  'Validating harnesses',
+  'Validating adapters',
   'Assembling archive',
   'Writing output',
 ] as const
@@ -59,7 +59,7 @@ export type BuildStage = (typeof BUILD_STAGES)[number]
  * 2. Resolve prompts — read prompt files at conventional paths (also verifies files exist)
  * 3. Validate content — no front matter, no empty files
  * 4. Check collisions — fail if same name used within an asset type
- * 5. Validate harnesses — delegate metadata building to each harness, warn on unknown
+ * 5. Validate adapters — delegate metadata building to each adapter, warn on unknown
  * 6. Assemble archive — collect entries, compute hashes, build tar, compress
  *
  * Returns the resolved manifest and archive data on success, or collected errors on failure.
@@ -70,7 +70,7 @@ export type BuildStage = (typeof BUILD_STAGES)[number]
  */
 export async function runBuildPipeline(
   rootDir: string,
-  harnesses: Harness[] = [],
+  adapters: Adapter[] = [],
   onProgress?: (progress: BuildProgress) => void,
 ): Promise<BuildResult | BuildFailure> {
   const warnings: string[] = []
@@ -122,17 +122,17 @@ export async function runBuildPipeline(
 
   onProgress?.({ stage: 'Checking collisions', status: 'done' })
 
-  // Stage 5: Validate harness metadata
-  onProgress?.({ stage: 'Validating harnesses', status: 'running' })
+  // Stage 5: Validate adapter metadata
+  onProgress?.({ stage: 'Validating adapters', status: 'running' })
 
-  const harnessResult = validateHarnessMetadata(manifest, harnesses)
-  if (harnessResult.errors.length > 0) {
-    onProgress?.({ stage: 'Validating harnesses', status: 'failed' })
-    return { ok: false, errors: harnessResult.errors, warnings: [...warnings, ...harnessResult.warnings] }
+  const adapterResult = validateAdapterMetadata(manifest, adapters)
+  if (adapterResult.errors.length > 0) {
+    onProgress?.({ stage: 'Validating adapters', status: 'failed' })
+    return { ok: false, errors: adapterResult.errors, warnings: [...warnings, ...adapterResult.warnings] }
   }
-  warnings.push(...harnessResult.warnings)
+  warnings.push(...adapterResult.warnings)
 
-  onProgress?.({ stage: 'Validating harnesses', status: 'done' })
+  onProgress?.({ stage: 'Validating adapters', status: 'done' })
 
   // Stage 6: Assemble archive, compute content hashes, and wrap into self-contained .facet
   onProgress?.({ stage: 'Assembling archive', status: 'running' })

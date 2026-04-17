@@ -9,7 +9,8 @@ scripts/
 ├── release/                    # Library package release pipeline
 │   ├── version.ts              # Create/update Version Packages PR
 │   ├── tag.ts                  # Create git tags after version PR merge
-│   └── publish.ts              # Publish a library package from a tag
+│   ├── publish.ts              # Publish a library package from a tag
+│   └── seed-adapters.ts        # Seed adapter/library package names on npm
 │
 ├── release-cli/                # CLI binary release pipeline
 │   ├── build.ts                # Cross-compile 12 platform binaries
@@ -30,6 +31,7 @@ scripts/
 │   │   └── console.ts          # log and error
 │   ├── ci.ts                   # Workspace package loading, token minting
 │   ├── npm.ts                  # npm registry helpers (whoami, exists, etc.)
+│   ├── seed-oidc.ts            # Shared OIDC trusted-publishing instructions
 │   ├── changesets.ts           # Changeset parsing, PR body building
 │   ├── announce.ts             # GitHub Release + Slack notification
 │   ├── constants.ts            # Repo name, Slack channels, paths
