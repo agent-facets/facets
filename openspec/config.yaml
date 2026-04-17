@@ -64,39 +64,6 @@ context: |
   If an ADR is believed to be incorrect, file a new ADR to supersede it. Do not implement against the current ADR
   while the revision is pending.
 
-  ---
-
-  ## Article IV: Roadmap Phase Lifecycle
-
-  ### Statement
-  The strategy repository (`../strategy`) contains a roadmap of sequenced execution phases for each namespace
-  (e.g., `facets/roadmap/`). Each phase has a lifecycle status: `planned`, `active`, `completed`, or `deferred`.
-
-  Before starting work that corresponds to a roadmap phase, the phase's current status MUST be checked. If the
-  phase is `planned`, it MUST be transitioned to `active` (by updating its frontmatter in the strategy repo)
-  before implementation begins.
-
-  A phase MUST only be transitioned to `completed` when ALL success criteria defined in the phase document are
-  met. Completing a single OpenSpec change set does not necessarily complete a roadmap phase — phases are often
-  long-lived and may span multiple change sets. The phase MUST be archived (frontmatter updated to `completed`,
-  file moved to `<namespace>/roadmap/archive/`) only when every success criterion is satisfied, per the process
-  defined in `../strategy/processes/roadmap/README.md`.
-
-  ### Rationale
-  Roadmap phases are the bridge between strategy and implementation. Without explicit lifecycle tracking, phases
-  drift into ambiguous states — work begins without marking a phase active, or a phase is declared complete
-  before all acceptance criteria are met. Explicit status transitions ensure the roadmap accurately reflects
-  what is in progress and what is done.
-
-  ### Enforcement
-  - Proposals for work that corresponds to a roadmap phase MUST reference the phase and its current status
-  - Implementation MUST NOT begin on a `planned` phase without first transitioning it to `active`
-  - A phase MUST NOT be marked `completed` until every success criterion in the phase document is verified
-  - Archival follows the process in `../strategy/processes/roadmap/README.md`
-
-  ### Override Process
-  Not applicable — roadmap lifecycle is a governance constraint and cannot be overridden.
-
 # Add custom rules for specific artifacts.
 rules:
   specs:

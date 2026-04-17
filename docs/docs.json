@@ -38,7 +38,7 @@
         "group": "CLI",
         "tag": "facet",
         "icon": "terminal",
-        "pages": ["cli/create", "cli/edit", "cli/build"]
+        "pages": ["cli/create", "cli/edit", "cli/build", "cli/harness"]
       },
       {
         "group": "Asset Types",

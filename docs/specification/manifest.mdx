@@ -20,7 +20,7 @@ agents:
   reviewer:
     description: "Org code reviewer"
     prompt: { file: agents/reviewer.md }
-    platforms:
+    harnesses:
       opencode:
         tools: { grep: true, bash: true }
 
@@ -63,7 +63,7 @@ Text assets are the locally authored content included in the facet.
 | Field      | Required | Type                              | Description                                                                  |
 | ---------- | -------- | --------------------------------- | ---------------------------------------------------------------------------- |
 | `skills`   | No       | array of strings                  | Skill names. Each corresponds to a file in the facet.                        |
-| `agents`   | No       | map of string → agent descriptor  | Agent name → agent descriptor (description, prompt, platform config).        |
+| `agents`   | No       | map of string → agent descriptor  | Agent name → agent descriptor (description, prompt, harness config).         |
 | `commands` | No       | map of string → command descriptor| Command name → command descriptor (description, prompt).                     |
 
 A facet MUST have at least one text asset — either locally authored or composed from other facets via the `facets` section. A manifest with no text assets MUST be rejected.
@@ -74,13 +74,13 @@ A facet MUST have at least one text asset — either locally authored or compose
 | ------------- | -------- | ----------------------------- | ---------------------------------------------------------------------- |
 | `description` | No       | string                        | Human-readable description of the agent.                               |
 | `prompt`      | Yes      | string or `{file: path}`       | The agent's prompt content or a reference to it.              |
-| `platforms`   | No       | map of string → platform config| Platform name → platform-specific agent configuration.                |
+| `harnesses`   | No       | map of string → harness config | Harness name → harness-specific agent configuration.                 |
 
 The `prompt` field MUST be present. It MAY be:
 - A string containing the prompt text directly
 - An object with a `file` key containing a path relative to the facet root
 
-The `platforms` section is OPTIONAL. It contains platform-specific configuration (tool access, permissions, model preferences) keyed by platform name. The CLI validates platform config against known platform schemas at build and publish time. Unknown platforms produce a warning. Invalid config for a known platform is a build error.
+The `harnesses` section is OPTIONAL. It contains harness-specific configuration (tool access, permissions, model preferences) keyed by harness name. Each installed harness validates its own metadata schema at build time. Unknown harnesses produce a warning. Invalid metadata for an installed harness is a build error.
 
 ### Command Descriptor
 

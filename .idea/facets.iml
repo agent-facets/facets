@@ -10,6 +10,9 @@
       <excludeFolder url="file://$MODULE_DIR$/packages/cli/.turbo" />
       <excludeFolder url="file://$MODULE_DIR$/packages/core/.turbo" />
       <excludeFolder url="file://$MODULE_DIR$/packages/harness/.turbo" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/harnesses/claude-code/.turbo" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/harnesses/codex/.turbo" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/harnesses/opencode/.turbo" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />

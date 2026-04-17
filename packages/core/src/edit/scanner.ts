@@ -3,10 +3,16 @@ import { Glob } from 'bun'
 /** Kebab-case pattern for valid asset names. */
 export const KEBAB_CASE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/
 
-export type AssetType = 'skills' | 'agents' | 'commands'
+import type { AssetType } from '@agent-facets/common'
+
+/**
+ * Plural manifest key derived from the canonical singular AssetType.
+ * Used as the key in manifest sections and discovered asset types.
+ */
+export type AssetManifestKey = `${AssetType}s`
 
 export interface DiscoveredAsset {
-  type: AssetType
+  type: AssetManifestKey
   name: string
   /** Relative path from the facet root (e.g., 'skills/review/SKILL.md') */
   path: string

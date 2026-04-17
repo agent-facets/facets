@@ -48,7 +48,7 @@ Harness SDK for defining abstractions over AI coding tools. Entry point: `src/in
 ```
 src/
 ├── define-harness.ts  # Factory function: defineHarness()
-├── types.ts           # Harness, HarnessDefinition, HarnessMetadata types
+├── types.ts           # Harness types
 └── index.ts           # Public API entry point
 ```
 

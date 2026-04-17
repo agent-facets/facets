@@ -2,13 +2,14 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { defineHarness } from '@agent-facets/harness'
 import dedent from 'dedent'
 import { parseTar, parseTarGzip } from 'nanotar'
 import { computeContentHash } from '../build/content-hash.ts'
 import { detectNamingCollisions } from '../build/detect-collisions.ts'
 import { runBuildPipeline } from '../build/pipeline.ts'
 import { validateCompactFacets } from '../build/validate-facets.ts'
-import { validatePlatformConfigs } from '../build/validate-platforms.ts'
+import { validateHarnessMetadata } from '../build/validate-harnesses.ts'
 import { writeBuildOutput } from '../build/write-output.ts'
 import type { FacetManifest } from '../schemas/facet-manifest.ts'
 
@@ -134,71 +135,96 @@ describe('detectNamingCollisions', () => {
   })
 })
 
-// --- Platform config validation ---
+// --- Harness metadata validation ---
 
-describe('validatePlatformConfigs', () => {
-  test('valid opencode config passes', () => {
+/** A mock harness that accepts any data as valid metadata */
+const mockHarness = defineHarness({
+  name: 'mock-harness',
+  buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
+  async installAsset() {},
+  async readAsset() {
+    return { content: 'Your asset sir...' }
+  },
+  async deleteAsset() {},
+})
+
+/** A mock harness that rejects all metadata */
+const rejectingHarness = defineHarness({
+  name: 'rejecting-harness',
+  buildAssetMetadata: () => ({
+    ok: false,
+    errors: [{ path: 'tools', message: 'Invalid tools config', expected: 'Record<string, boolean>', actual: 'string' }],
+  }),
+  async installAsset() {},
+  async readAsset() {
+    return { content: 'Your asset sir...' }
+  },
+  async deleteAsset() {},
+})
+
+describe('validateHarnessMetadata', () => {
+  test('valid harness metadata passes', () => {
     const manifest = {
       name: 'test',
       version: '1.0.0',
       agents: {
         reviewer: {
           description: 'Reviewer agent',
-          platforms: {
-            opencode: { tools: { grep: true, bash: true } },
+          harnesses: {
+            'mock-harness': { tools: { grep: true, bash: true } },
           },
         },
       },
     } as FacetManifest
-    const result = validatePlatformConfigs(manifest)
+    const result = validateHarnessMetadata(manifest, [mockHarness])
     expect(result.errors).toHaveLength(0)
     expect(result.warnings).toHaveLength(0)
   })
 
-  test('unknown platform produces warning', () => {
+  test('unknown harness produces warning', () => {
     const manifest = {
       name: 'test',
       version: '1.0.0',
       skills: {
         review: {
           description: 'Review skill',
-          platforms: {
-            'unknown-platform': { foo: 'bar' },
+          harnesses: {
+            'unknown-harness': { foo: 'bar' },
           },
         },
       },
     } as FacetManifest
-    const result = validatePlatformConfigs(manifest)
+    const result = validateHarnessMetadata(manifest, [])
     expect(result.errors).toHaveLength(0)
     expect(result.warnings).toHaveLength(1)
-    expect(result.warnings[0]).toContain('unknown-platform')
+    expect(result.warnings[0]).toContain('unknown-harness')
   })
 
-  test('invalid opencode config fails', () => {
+  test('invalid harness metadata fails', () => {
     const manifest = {
       name: 'test',
       version: '1.0.0',
       agents: {
         reviewer: {
           description: 'Reviewer agent',
-          platforms: {
-            opencode: { tools: 'not-a-record' },
+          harnesses: {
+            'rejecting-harness': { tools: 'not-a-record' },
           },
         },
       },
     } as FacetManifest
-    const result = validatePlatformConfigs(manifest)
+    const result = validateHarnessMetadata(manifest, [rejectingHarness])
     expect(result.errors.length).toBeGreaterThan(0)
-    expect(result.errors[0]?.message).toContain('opencode')
+    expect(result.errors[0]?.message).toContain('rejecting-harness')
   })
 
-  test('no platforms on any asset passes', () => {
+  test('no harnesses on any asset passes', () => {
     const manifest = {
       name: 'test',
       version: '1.0.0',
       skills: { x: { description: 'A skill' } },
     } as FacetManifest
-    const result = validatePlatformConfigs(manifest)
+    const result = validateHarnessMetadata(manifest, [mockHarness])
     expect(result.errors).toHaveLength(0)
     expect(result.warnings).toHaveLength(0)
   })
@@ -351,6 +377,157 @@ describe('runBuildPipeline', () => {
     if (!result.ok) {
       expect(result.errors[0]?.message).toContain('name@version')
     }
+  })
+
+  // --- Harness integration ---
+
+  test('build with valid harness metadata passes', async () => {
+    const dir = await createFixtureDir('pipeline-valid-harness')
+    await Bun.write(join(dir, 'skills/example/SKILL.md'), '# Example skill')
+    await Bun.write(
+      join(dir, 'facet.json'),
+      JSON.stringify({
+        name: 'test-facet',
+        version: '1.0.0',
+        skills: {
+          example: {
+            description: 'An example skill',
+            harnesses: {
+              'mock-harness': { tools: { grep: true } },
+            },
+          },
+        },
+      }),
+    )
+
+    const mockHarness = defineHarness({
+      name: 'mock-harness',
+      buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
+      async installAsset(_scope, _assetType, _name, _content, _metadata) {},
+      async readAsset(_scope, _assetType, _name) {
+        return { content: 'Your asset sir...' }
+      },
+      async deleteAsset(_scope, _assetType, _name) {},
+    })
+
+    const result = await runBuildPipeline(dir, [mockHarness])
+    expect(result.ok).toBe(true)
+    expect(result.warnings).toHaveLength(0)
+  })
+
+  test('build with invalid harness metadata fails', async () => {
+    const dir = await createFixtureDir('pipeline-invalid-harness')
+    await Bun.write(join(dir, 'skills/example/SKILL.md'), '# Example skill')
+    await Bun.write(
+      join(dir, 'facet.json'),
+      JSON.stringify({
+        name: 'test-facet',
+        version: '1.0.0',
+        skills: {
+          example: {
+            description: 'An example skill',
+            harnesses: {
+              'rejecting-harness': { tools: 'not-a-record' },
+            },
+          },
+        },
+      }),
+    )
+
+    const rejectingHarness = defineHarness({
+      name: 'rejecting-harness',
+      buildAssetMetadata: () => ({
+        ok: false,
+        errors: [
+          {
+            path: 'tools',
+            message: 'Invalid tools config',
+            expected: 'Record<string, boolean>',
+            actual: 'string',
+          },
+        ],
+      }),
+      async installAsset(_scope, _assetType, _name, _content, _metadata) {},
+      async readAsset(_scope, _assetType, _name) {
+        return { content: 'Your asset sir...' }
+      },
+      async deleteAsset(_scope, _assetType, _name) {},
+    })
+
+    const result = await runBuildPipeline(dir, [rejectingHarness])
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.errors.length).toBeGreaterThan(0)
+      expect(result.errors.some((e) => e.message.includes('rejecting-harness'))).toBe(true)
+    }
+  })
+
+  test('build with unknown harness produces warning', async () => {
+    const dir = await createFixtureDir('pipeline-unknown-harness')
+    await Bun.write(join(dir, 'skills/example/SKILL.md'), '# Example skill')
+    await Bun.write(
+      join(dir, 'facet.json'),
+      JSON.stringify({
+        name: 'test-facet',
+        version: '1.0.0',
+        skills: {
+          example: {
+            description: 'An example skill',
+            harnesses: {
+              'unknown-harness': { foo: 'bar' },
+            },
+          },
+        },
+      }),
+    )
+
+    // No harnesses provided — unknown-harness should produce a warning but not fail the build
+    const result = await runBuildPipeline(dir, [])
+    expect(result.ok).toBe(true)
+    expect(result.warnings.some((w) => w.includes('unknown-harness'))).toBe(true)
+  })
+
+  test('harness with default values enriches metadata through the pipeline', async () => {
+    const dir = await createFixtureDir('pipeline-defaulting-harness')
+    await Bun.write(join(dir, 'skills/example/SKILL.md'), '# Example skill')
+    await Bun.write(
+      join(dir, 'facet.json'),
+      JSON.stringify({
+        name: 'test-facet',
+        version: '1.0.0',
+        skills: {
+          example: {
+            description: 'An example skill',
+            // Input omits the "model" field — harness should inject default
+            harnesses: {
+              'defaulting-harness': {},
+            },
+          },
+        },
+      }),
+    )
+
+    let enrichedData: Record<string, unknown> | undefined
+
+    const defaultingHarness = defineHarness({
+      name: 'defaulting-harness',
+      buildAssetMetadata: (data) => {
+        const input = (data ?? {}) as { model?: string }
+        // Harness enriches metadata by injecting a default "model" field
+        enrichedData = { model: input.model ?? 'auto' }
+        return { ok: true, data: enrichedData }
+      },
+      async installAsset() {},
+      async readAsset() {
+        return { content: 'Your asset sir...' }
+      },
+      async deleteAsset() {},
+    })
+
+    const result = await runBuildPipeline(dir, [defaultingHarness])
+    expect(result.ok).toBe(true)
+    // Verify the harness's buildAssetMetadata was called and produced enriched output
+    expect(enrichedData).toEqual({ model: 'auto' })
   })
 })
 

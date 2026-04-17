@@ -1,4 +1,4 @@
-import type { AssetType, Location, Validated, ValidationError } from '@agent-facets/common'
+import type { AssetType, Scope, Validated, ValidationError } from '@agent-facets/common'
 
 /**
  * Opaque record type for harness-specific asset metadata.
@@ -17,12 +17,6 @@ export interface Harness {
   /** Unique harness name (e.g., "opencode", "claude-code", "codex") */
   readonly name: string
 
-  /** Ordered array of asset storage locations (highest precedence first) */
-  readonly assetLocations: readonly Location[]
-
-  /** Ordered array of config file locations (highest precedence first) */
-  readonly configLocations: readonly Location[]
-
   /**
    * Validate and enrich per-asset harness metadata from a facet manifest.
    * Takes raw metadata, validates it against the harness's schema,
@@ -30,63 +24,15 @@ export interface Harness {
    */
   buildAssetMetadata(data: unknown): Validated<HarnessMetadata>
 
-  /** Create an asset at the given location */
-  createAsset(location: Location, assetType: AssetType, name: string, content: string, metadata: unknown): Promise<void>
+  /** Install an asset at the given scope */
+  installAsset(scope: Scope, assetType: AssetType, name: string, content: string, metadata: unknown): Promise<void>
 
-  /** Read an asset's content from the given location */
-  readAsset(location: Location, assetType: AssetType, name: string): Promise<string>
+  /** Read an asset's content from the given scope */
+  readAsset(scope: Scope, assetType: AssetType, name: string): Promise<{ content: string; metadata?: HarnessMetadata }>
 
-  /** Update an existing asset at the given location */
-  updateAsset(location: Location, assetType: AssetType, name: string, content: string, metadata: unknown): Promise<void>
-
-  /** Delete an asset from the given location */
-  deleteAsset(location: Location, assetType: AssetType, name: string): Promise<void>
-}
-
-/**
- * Input to `defineHarness()`. Authors provide this definition object.
- * Optional methods receive stub defaults from the factory.
- */
-export interface HarnessDefinition {
-  /** Unique harness name */
-  name: string
-
-  /** Ordered array of asset storage locations (highest precedence first) */
-  assetLocations: Location[]
-
-  /** Ordered array of config file locations (highest precedence first) */
-  configLocations: Location[]
-
-  /**
-   * Validate and enrich per-asset harness metadata.
-   * This is required — every harness must define its metadata schema.
-   */
-  buildAssetMetadata(data: unknown): Validated<HarnessMetadata>
-
-  /** Create an asset at the given location (optional — stub provided by default) */
-  createAsset?(
-    location: Location,
-    assetType: AssetType,
-    name: string,
-    content: string,
-    metadata: unknown,
-  ): Promise<void>
-
-  /** Read an asset's content (optional — stub provided by default) */
-  readAsset?(location: Location, assetType: AssetType, name: string): Promise<string>
-
-  /** Update an existing asset (optional — stub provided by default) */
-  updateAsset?(
-    location: Location,
-    assetType: AssetType,
-    name: string,
-    content: string,
-    metadata: unknown,
-  ): Promise<void>
-
-  /** Delete an asset (optional — stub provided by default) */
-  deleteAsset?(location: Location, assetType: AssetType, name: string): Promise<void>
+  /** Delete an asset from the given scope */
+  deleteAsset(scope: Scope, assetType: AssetType, name: string): Promise<void>
 }
 
 // Re-export common types for convenience — SDK consumers don't need to install common
-export type { AssetType, Location, Validated, ValidationError }
+export type { AssetType, Scope, Validated, ValidationError }
