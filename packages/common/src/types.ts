@@ -40,6 +40,6 @@ export type Validated<T> = { ok: true; data: T } | { ok: false; errors: Validati
 export type AssetType = 'skill' | 'agent' | 'command'
 
 /**
- * Classifies the scope for harness interactions
+ * Classifies the scope for adapter interactions
  */
 export type Scope = 'system' | 'user' | 'project'

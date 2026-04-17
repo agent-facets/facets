@@ -11,20 +11,8 @@
  */
 
 import { packageExists, publishPlaceholder, whoami } from '../lib/npm'
+import { printOidcInstructions } from '../lib/seed-oidc'
 import { allTargets, packageName } from './targets'
-
-// ---------------------------------------------------------------------------
-// CircleCI OIDC configuration for npm trusted publishing
-// ---------------------------------------------------------------------------
-
-const CIRCLECI = {
-  organizationId: 'd6dfd694-6b06-4d51-a5bd-a15b3efe977b',
-  projectId: 'c7b3dd0a-e9b0-4e95-8345-fc984443e02b',
-  pipelineDefinitionId: 'd404b478-dd19-4c68-891f-4cf97396b1a7',
-  contextIds: '84962527-275c-495e-83c3-31c79cf1e181',
-  vcsOrigin: 'github.com/agent-facets/facets',
-}
-const OIDC_SETUP_GUIDE = 'OIDC-SETUP.md'
 
 // ---------------------------------------------------------------------------
 // Main
@@ -32,23 +20,6 @@ const OIDC_SETUP_GUIDE = 'OIDC-SETUP.md'
 
 function log(msg: string) {
   console.log(msg)
-}
-
-function printOidcInstructions(packages: string[]) {
-  log('\n   Configure OIDC trusted publishing for each new package.')
-  log("   Go to each package's npm access page and add CircleCI as a trusted publisher:")
-  log('')
-  log(`     Organization ID:          ${CIRCLECI.organizationId}`)
-  log(`     Project ID:               ${CIRCLECI.projectId}`)
-  log(`     Pipeline Definition ID:   ${CIRCLECI.pipelineDefinitionId}`)
-  log(`     Context IDs:              ${CIRCLECI.contextIds}`)
-  log(`     VCS Origin:               ${CIRCLECI.vcsOrigin}`)
-  log('')
-  log('   Package access pages:')
-  for (const pkg of packages) {
-    log(`     → https://www.npmjs.com/package/${pkg}/access`)
-  }
-  log(`\n   Full setup guide: ${OIDC_SETUP_GUIDE}`)
 }
 
 async function main() {

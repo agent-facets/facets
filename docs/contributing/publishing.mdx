@@ -17,7 +17,12 @@ OIDC trusted publishing lets CircleCI publish packages to npm without storing np
 
 ## When to configure
 
-After adding a new `@agent-facets/cli-*` platform target. Each new package needs its own trusted publisher entry on npm before CI can publish it.
+Whenever a new public `@agent-facets/*` package is added to the monorepo. Each new package needs its own trusted publisher entry on npm before CI can publish it. There are two seed scripts depending on the kind of package:
+
+| Seed script         | Scope                                                          |
+|---------------------|----------------------------------------------------------------|
+| `bun seed:cli`      | The 12 CLI platform packages (`@agent-facets/cli-*`)           |
+| `bun seed:adapters` | Library/adapter packages (`@agent-facets/adapter`, `adapter-*`) |
 
 ## Setup steps
 
@@ -25,7 +30,8 @@ After adding a new `@agent-facets/cli-*` platform target. Each new package needs
   <Step title="Seed the package on npm">
     ```sh
     npm login # one-time, uses your personal npm account
-    bun seed # publishes v0.0.1 placeholders, prints package URLs
+    bun seed:cli       # for new @agent-facets/cli-* platform targets
+    bun seed:adapters  # for new @agent-facets/adapter* or other library packages
     ```
 
     The seed script will print out a list of packages that need to be configured.
@@ -33,7 +39,7 @@ After adding a new `@agent-facets/cli-*` platform target. Each new package needs
   <Step title="Configure trusted publishing on npm for each package that was listed">
     <Steps>
       <Step>
-        Open the package's npm settings page (URLs are printed by `bun seed`)
+        Open the package's npm settings page (URLs are printed by the seed script)
       </Step>
       <Step>
         Under **Publishing access**, add a new trusted publisher
@@ -43,21 +49,21 @@ After adding a new `@agent-facets/cli-*` platform target. Each new package needs
 
         | Field                      | Value                                  |
         |----------------------------|----------------------------------------|
-        | **Organization ID**        | `d6dfd694-6b06-4d51-a5bd-a15b3efe977b` |
-        | **Project ID**             | `c7b3dd0a-e9b0-4e95-8345-fc984443e02b` |
-        | **Pipeline Definition ID** | `d404b478-dd19-4c68-891f-4cf97396b1a7` |
-        | **Context IDs**            | `84962527-275c-495e-83c3-31c79cf1e181` |
+        | **Organization ID**        | `bfa561da-d33e-4a2a-a46d-48e096a828e0` |
+        | **Project ID**             | `46274a40-97ed-41fd-a745-9702a7131ccc` |
+        | **Pipeline Definition ID** | `15756499-9950-43b5-b2d3-ac4086d9aa48` |
+        | **Context IDs**            | `691cddb9-b839-41e8-bc5c-ebb4484a2a1f` |
         | **VCS Origin**             | `github.com/agent-facets/facets`       |
       </Step>
     </Steps>
   </Step>
   <Step title="Verify">
-    Re-run `bun seed` to confirm all packages exist on npm. The script reports "All packages already exist on npm" if
-    seeding was successful.
+    Re-run the seed script to confirm all packages exist on npm. The script reports "All packages already exist on npm"
+    if seeding was successful.
   </Step>
 </Steps>
 
-The CLI package (`agent-facets`) and existing platform packages already have OIDC configured.
+The CLI package (`agent-facets`), existing platform packages, and the library packages that are already on npm all have OIDC configured.
 
 ## Where to find these values
 

@@ -41,14 +41,14 @@ src/
 └── __tests__/      # Unit tests
 ```
 
-### `packages/harness` — `@agent-facets/harness`
+### `packages/adapter` — `@agent-facets/adapter`
 
-Harness SDK for defining abstractions over AI coding tools. Entry point: `src/index.ts`
+Adapter SDK for defining abstractions over AI coding tools. Entry point: `src/index.ts`
 
 ```
 src/
-├── define-harness.ts  # Factory function: defineHarness()
-├── types.ts           # Harness types
+├── define-adapter.ts  # Factory function: defineAdapter()
+├── types.ts           # Adapter types
 └── index.ts           # Public API entry point
 ```
 

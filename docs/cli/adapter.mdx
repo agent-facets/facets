@@ -1,0 +1,56 @@
+---
+title: facet adapter
+sidebarTitle: ' '
+description: Manage adapter installations
+tag: facet adapter
+---
+
+## Usage
+
+```sh
+facet adapter <install|list|remove> [args]
+```
+
+Manages adapter installations. An adapter is an AI coding tool (OpenCode, Claude Code, Codex, etc.) that wraps around an LLM. Adapters define where assets and configuration live on disk.
+
+## Subcommands
+
+### `facet adapter install`
+
+```sh
+facet adapter install <specifier>
+```
+
+Installs an adapter from the given specifier. The install flow downloads the source, bundles it into a self-contained `adapter.js`, verifies it exports a valid adapter, and places it in `~/.facets/adapters/<name>/`.
+
+**Specifier formats:**
+
+| Format | Example | Description |
+|--------|---------|-------------|
+| Built-in name | `opencode` | Resolves to the first-party npm package |
+| npm package | `@acme/adapter-custom` | Downloads from the npm registry |
+| Git URL | `git+https://github.com/user/repo.git` | Clones the repository |
+| Git URL with ref | `git+https://github.com/user/repo.git#v1.0.0` | Clones at a specific tag/branch |
+| Local path | `./path/to/adapter` | Uses a local directory |
+
+**Built-in names:**
+
+- `opencode` — OpenCode adapter (`@agent-facets/adapter-opencode`)
+- `claude-code` — Claude Code adapter (`@agent-facets/adapter-claude-code`)
+- `codex` — Codex adapter (`@agent-facets/adapter-codex`)
+
+### `facet adapter list`
+
+```sh
+facet adapter list
+```
+
+Lists all installed adapters by scanning `~/.facets/adapters/`.
+
+### `facet adapter remove`
+
+```sh
+facet adapter remove <name>
+```
+
+Removes an installed adapter by deleting its directory from `~/.facets/adapters/`.

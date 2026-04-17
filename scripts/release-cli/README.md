@@ -43,8 +43,10 @@ Tag push: agent-facets@X.Y.Z
 | `publish-cli-package.ts`  | (called by finalize)        | Synthesize and publish the `agent-facets` wrapper           |
 | `finalize.ts`             | `finalize-cli`              | Orchestrate: publish wrapper → verify → announce            |
 | `verify.ts`               | (called by finalize)        | Verify all 13 packages exist on npm (with retry)            |
-| `seed.ts`                 | (manual)                    | Seed platform package names on npm with v0.0.1 placeholders |
+| `seed.ts`                 | (manual, `bun seed:cli`)    | Seed platform package names on npm with v0.0.1 placeholders |
 | `targets.ts`              | (imported)                  | Platform target matrix and pure helper functions            |
+
+OIDC trusted-publishing instructions are printed from the shared helper at `scripts/lib/seed-oidc.ts`, which is reused by the library/adapter seed script (`scripts/release/seed-adapters.ts`).
 
 ## Platform Targets (12)
 
