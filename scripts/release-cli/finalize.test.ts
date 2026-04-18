@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import * as announce from '../lib/announce'
 import * as ci from '../lib/ci'
-import { SLACK_CHANNELS } from '../lib/constants'
+import { CLI_PACKAGE_NAME, SLACK_CHANNELS } from '../lib/constants'
 import { io } from '../lib/io'
 import { SAMPLE_CHANGELOG, shellPromise, shellResult, silenceIO } from '../lib/test-helpers'
 import { finalize } from './finalize'
+import { platformPackageNames } from './targets'
 
 describe('finalize.ts', () => {
   beforeEach(() => {
@@ -21,7 +22,7 @@ describe('finalize.ts', () => {
   function setupFinalizePath() {
     spyOn(io, 'mintGitHubAppToken').mockResolvedValue('fake-gh-token')
     spyOn(io, 'publishCliPackage').mockResolvedValue(shellResult())
-    spyOn(io, 'verifyCli').mockResolvedValue(shellResult())
+    spyOn(io, 'verifyPackages').mockResolvedValue(shellResult())
     spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
       { name: 'agent-facets', version: '0.4.0', dir: 'packages/cli' },
     ])
@@ -44,37 +45,47 @@ describe('finalize.ts', () => {
     expect(code).toBe(1)
   })
 
-  test('runs the full verify → publish pipeline', async () => {
+  test('runs the full verify → publish → verify pipeline', async () => {
     process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
     setupFinalizePath()
 
     const publishSpy = spyOn(io, 'publishCliPackage').mockResolvedValue(shellResult())
-    const verifySpy = spyOn(io, 'verifyCli').mockResolvedValue(shellResult())
+    const verifySpy = spyOn(io, 'verifyPackages').mockResolvedValue(shellResult())
 
     const code = await finalize()
 
     expect(code).toBe(0)
     expect(publishSpy).toHaveBeenCalledTimes(1)
-    expect(verifySpy).toHaveBeenCalledTimes(1)
+    expect(verifySpy).toHaveBeenCalledTimes(2)
   })
 
-  test('verifies platform packages before publishing CLI package', async () => {
+  test('verifies platforms, publishes CLI, then verifies CLI wrapper', async () => {
     process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
     setupFinalizePath()
 
-    const callOrder: string[] = []
-    spyOn(io, 'verifyCli').mockImplementation(() => {
-      callOrder.push('verify')
+    const callOrder: Array<{ phase: string; args?: unknown[] }> = []
+    spyOn(io, 'verifyPackages').mockImplementation((packages: string[], version: string) => {
+      callOrder.push({ phase: 'verify', args: [packages, version] })
       return shellPromise()
     })
     spyOn(io, 'publishCliPackage').mockImplementation(() => {
-      callOrder.push('publish')
+      callOrder.push({ phase: 'publish' })
       return shellPromise()
     })
 
     await finalize()
 
-    expect(callOrder).toEqual(['verify', 'publish'])
+    expect(callOrder.map((c) => c.phase)).toEqual(['verify', 'publish', 'verify'])
+
+    // First verify call: the 12 platform packages
+    const firstVerifyArgs = callOrder[0]?.args
+    expect(firstVerifyArgs?.[0]).toEqual(platformPackageNames())
+    expect(firstVerifyArgs?.[1]).toBe('0.4.0')
+
+    // Second verify call: just the CLI wrapper
+    const secondVerifyArgs = callOrder[2]?.args
+    expect(secondVerifyArgs?.[0]).toEqual([CLI_PACKAGE_NAME])
+    expect(secondVerifyArgs?.[1]).toBe('0.4.0')
   })
 
   test('mints GitHub token for release creation', async () => {
@@ -90,15 +101,17 @@ describe('finalize.ts', () => {
     expect(process.env.GITHUB_TOKEN).toBe('gh-token')
   })
 
-  test('passes version to verify', async () => {
+  test('passes version and correct package list to both verify calls', async () => {
     process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
     setupFinalizePath()
 
-    const verifySpy = spyOn(io, 'verifyCli').mockResolvedValue(shellResult())
+    const verifySpy = spyOn(io, 'verifyPackages').mockResolvedValue(shellResult())
 
     await finalize()
 
-    expect(verifySpy).toHaveBeenCalledWith('0.4.0')
+    expect(verifySpy).toHaveBeenCalledTimes(2)
+    expect(verifySpy).toHaveBeenNthCalledWith(1, platformPackageNames(), '0.4.0')
+    expect(verifySpy).toHaveBeenNthCalledWith(2, [CLI_PACKAGE_NAME], '0.4.0')
   })
 
   test('creates GitHub Release after verify', async () => {

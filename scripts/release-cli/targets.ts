@@ -32,9 +32,14 @@ export interface TargetPackageJson {
   cpu: string[]
 }
 
+/** The 12 platform binary package names (excludes the CLI wrapper). */
+export function platformPackageNames(): string[] {
+  return allTargets.map(packageName)
+}
+
 /** All 13 npm package names: 12 platform binaries + the CLI package. */
 export function allPackageNames(): string[] {
-  return [...allTargets.map(packageName), CLI_PACKAGE_NAME]
+  return [...platformPackageNames(), CLI_PACKAGE_NAME]
 }
 
 // ---------------------------------------------------------------------------

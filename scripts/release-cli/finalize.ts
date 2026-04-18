@@ -20,8 +20,10 @@
 
 import { announceRelease } from '../lib/announce'
 import { loadWorkspacePackages, mintGithubTokens } from '../lib/ci'
+import { CLI_PACKAGE_NAME } from '../lib/constants'
 import { io } from '../lib/io'
 import { parseTag } from '../lib/tags'
+import { platformPackageNames } from './targets'
 
 export async function finalize(): Promise<number> {
   const tag = process.env.CIRCLE_TAG
@@ -41,14 +43,20 @@ export async function finalize(): Promise<number> {
   // Mint GitHub token (for Release creation; npm OIDC is handled by the publish script)
   await mintGithubTokens()
 
-  // Verify platform packages are visible on npm before publishing the CLI package.
+  // Verify the 12 platform packages are visible on npm before publishing the CLI wrapper.
   // The CLI package's optionalDependencies must be resolvable when users install it.
   io.log('Verifying platform packages in registry...')
-  await io.verifyCli(parsed.version)
+  await io.verifyPackages(platformPackageNames(), parsed.version)
 
-  // Publish CLI package to latest (synthesizes from build output, mints its own OIDC token)
+  // Publish CLI package to latest (synthesizes from build output, mints its own OIDC token).
+  // The wrapper is always the LAST package published — users cannot install the new version
+  // until this completes successfully.
   io.log('Publishing CLI package...')
   await io.publishCliPackage()
+
+  // Verify the CLI wrapper itself propagated to npm before announcing.
+  io.log('Verifying CLI package in registry...')
+  await io.verifyPackages([CLI_PACKAGE_NAME], parsed.version)
 
   io.log(`Published ${parsed.name}@${parsed.version} (all platform packages)`)
 

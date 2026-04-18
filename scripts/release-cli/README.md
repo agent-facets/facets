@@ -27,10 +27,12 @@ Tag push: agent-facets@X.Y.Z
 ┌───────────────────────────────────────────────────────────────┐
 │  finalize.ts                                                  │
 │                                                               │
-│  1. publish-cli-package.ts — synthesize agent-facets wrapper  │
-│     with optionalDependencies → all 12 platform packages      │
-│  2. verify.ts — check all 13 packages exist on npm            │
-│  3. Create GitHub Release + Slack notification                │
+│  1. verify.ts — confirm 12 platform packages on npm           │
+│  2. publish-cli-package.ts — synthesize + publish             │
+│     agent-facets wrapper with optionalDependencies →          │
+│     all 12 platform packages                                  │
+│  3. verify.ts — confirm wrapper on npm                        │
+│  4. Create GitHub Release + Slack notification                │
 └───────────────────────────────────────────────────────────────┘
 ```
 
@@ -41,8 +43,8 @@ Tag push: agent-facets@X.Y.Z
 | `build.ts`                | `build-cli`                 | Cross-compile 12 standalone binaries                        |
 | `publish-platform.ts`     | `publish-platform` (matrix) | Publish one `@agent-facets/cli-*` package                   |
 | `publish-cli-package.ts`  | (called by finalize)        | Synthesize and publish the `agent-facets` wrapper           |
-| `finalize.ts`             | `finalize-cli`              | Orchestrate: publish wrapper → verify → announce            |
-| `verify.ts`               | (called by finalize)        | Verify all 13 packages exist on npm (with retry)            |
+| `finalize.ts`             | `finalize-cli`              | Orchestrate: verify platforms → publish wrapper → verify wrapper → announce |
+| `verify.ts`               | (called by finalize)        | Verify a given list of packages exists on npm (with retry)  |
 | `seed.ts`                 | (manual, `bun seed:cli`)    | Seed platform package names on npm with v0.0.1 placeholders |
 | `targets.ts`              | (imported)                  | Platform target matrix and pure helper functions            |
 
@@ -64,6 +66,8 @@ Users install via `npm install agent-facets`. npm resolves the correct platform 
 1. Cross-compiling 12 binaries (can't use `npm publish` on source)
 2. Publishing 12 platform packages first (each in its own CI job to avoid OOM)
 3. Publishing the wrapper package last (it references all 12 via optionalDependencies)
-4. Verifying all 13 packages before announcing (npm registry propagation delay)
+4. Split verification to handle npm registry propagation delay: pre-publish verifies
+   the 12 platforms (so the wrapper's `optionalDependencies` will resolve when users
+   install), and post-publish verifies the wrapper itself before announcing
 
 None of this fits `changeset publish`'s model, so the CLI has its own pipeline.
