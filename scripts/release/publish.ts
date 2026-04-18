@@ -20,7 +20,7 @@
 import { announceRelease } from '../lib/announce'
 import { loadWorkspacePackages, mintGithubTokens } from '../lib/ci'
 import { io } from '../lib/io'
-import { mintNpmToken } from '../lib/npm'
+import { mintNpmToken, versionExists } from '../lib/npm'
 import { parseTag } from '../lib/tags'
 
 export async function release(): Promise<number> {
@@ -59,14 +59,28 @@ export async function release(): Promise<number> {
     return 0
   }
 
+  // Idempotency: skip npm publish if this version is already on the registry.
+  // This lets us safely re-push a tag to re-trigger the pipeline (e.g., to
+  // recover from a transient post-publish failure like a broken GitHub Release)
+  // without npm rejecting the second publish with 409. The GitHub Release and
+  // Slack notification steps below are already tolerant of re-runs —
+  // announceRelease's `gh release create` is a no-op on existing releases and
+  // slackNotify is best-effort.
+  const alreadyPublished = await versionExists(parsed.name, parsed.version)
+  if (alreadyPublished) {
+    io.log(`~ ${parsed.name}@${parsed.version} already on npm, skipping publish`)
+  }
+
   // Shared setup — GitHub token and OIDC token for npm trusted publishing
   await mintGithubTokens()
-  await mintNpmToken()
 
   // Library packages — build and publish directly
-  await io.turboBuild()
-  await io.npmPublish(pkg.dir)
-  io.log(`Published ${parsed.name}@${parsed.version} to npm`)
+  if (!alreadyPublished) {
+    await mintNpmToken()
+    await io.turboBuild()
+    await io.npmPublish(pkg.dir)
+    io.log(`Published ${parsed.name}@${parsed.version} to npm`)
+  }
 
   await announceRelease(tag, pkg.dir, parsed.version)
 
