@@ -23,7 +23,7 @@
   "devDependencies": {
     "@agent-facets/common": "workspace:*",
     "tsdown": "^0.21.8",
-    "typescript": "^6.0.0"
+    "typescript": "^6.0.3"
   },
   "publishConfig": {
     "access": "public",
