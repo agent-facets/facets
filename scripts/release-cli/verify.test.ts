@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
+import { CLI_PACKAGE_NAME } from '../lib/constants'
 import * as npm from '../lib/npm'
-import { allPackageNames } from './targets'
+import { allPackageNames, platformPackageNames } from './targets'
 import { verify } from './verify'
 
 const VERSION = '1.0.0'
 const ALL_PACKAGES = allPackageNames()
+const PLATFORM_PACKAGES = platformPackageNames()
 
 describe('verify.ts', () => {
   beforeEach(() => {
@@ -19,21 +21,45 @@ describe('verify.ts', () => {
   test('returns 0 when all packages are found on first attempt', async () => {
     spyOn(npm, 'versionExists').mockResolvedValue(true)
 
-    const code = await verify(VERSION, 0)
+    const code = await verify(ALL_PACKAGES, VERSION, 0)
 
     expect(code).toBe(0)
   })
 
-  test('verifies all 13 packages (12 platform + main)', async () => {
+  test('verifies all 13 packages (12 platform + main) when given the full list', async () => {
     const veSpy = spyOn(npm, 'versionExists').mockResolvedValue(true)
 
-    await verify(VERSION, 0)
+    await verify(ALL_PACKAGES, VERSION, 0)
 
     const checkedPackages = new Set(veSpy.mock.calls.map(([pkg]) => pkg))
     for (const pkg of ALL_PACKAGES) {
       expect(checkedPackages.has(pkg)).toBe(true)
     }
     expect(checkedPackages.size).toBe(13)
+  })
+
+  test('verifies only the packages provided in the list (platform-only path)', async () => {
+    const veSpy = spyOn(npm, 'versionExists').mockResolvedValue(true)
+
+    await verify(PLATFORM_PACKAGES, VERSION, 0)
+
+    const checkedPackages = new Set(veSpy.mock.calls.map(([pkg]) => pkg))
+    expect(checkedPackages.size).toBe(12)
+    for (const pkg of PLATFORM_PACKAGES) {
+      expect(checkedPackages.has(pkg)).toBe(true)
+    }
+    // CLI wrapper must not be checked when only platforms are passed
+    expect(checkedPackages.has(CLI_PACKAGE_NAME)).toBe(false)
+  })
+
+  test('verifies a single package (CLI wrapper path)', async () => {
+    const veSpy = spyOn(npm, 'versionExists').mockResolvedValue(true)
+
+    await verify([CLI_PACKAGE_NAME], VERSION, 0)
+
+    const checkedPackages = new Set(veSpy.mock.calls.map(([pkg]) => pkg))
+    expect(checkedPackages.size).toBe(1)
+    expect(checkedPackages.has(CLI_PACKAGE_NAME)).toBe(true)
   })
 
   test('retries when some packages are missing, succeeds when they appear', async () => {
@@ -48,7 +74,7 @@ describe('verify.ts', () => {
       return true
     })
 
-    const code = await verify(VERSION, 0)
+    const code = await verify(ALL_PACKAGES, VERSION, 0)
 
     expect(code).toBe(0)
   })
@@ -58,7 +84,7 @@ describe('verify.ts', () => {
 
     spyOn(npm, 'versionExists').mockImplementation(async (pkg: string) => !missing.has(pkg))
 
-    const code = await verify(VERSION, 0)
+    const code = await verify(ALL_PACKAGES, VERSION, 0)
 
     expect(code).toBe(1)
   })
@@ -72,7 +98,7 @@ describe('verify.ts', () => {
       return pkg !== missingPkg
     })
 
-    await verify(VERSION, 0)
+    await verify(ALL_PACKAGES, VERSION, 0)
 
     // Non-missing packages should only be checked once
     for (const pkg of ALL_PACKAGES) {

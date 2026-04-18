@@ -21,7 +21,8 @@ export const shellIo = {
   turboBuild: () => $`bun turbo build`,
   bunInstall: () => $`bun install`,
   publishCliPackage: () => $`bun scripts/release-cli/publish-cli-package.ts`,
-  verifyCli: (version: string) => $`bun scripts/release-cli/verify.ts ${version}`,
+  verifyPackages: (packages: string[], version: string) =>
+    $`bun scripts/release-cli/verify.ts ${version} ${packages.join(',')}`,
 
   // Filesystem
   readFile: (path: string) => Bun.file(path).text(),

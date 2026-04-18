@@ -1,13 +1,17 @@
 #!/usr/bin/env bun
 
 /**
- * Verify CLI platform packages exist in the npm registry.
+ * Verify packages exist in the npm registry.
  *
- * Checks that all 12 platform packages and the CLI package exist
- * at the expected version. Retries with exponential backoff to handle
- * npm registry propagation delay.
+ * Checks that the given packages exist at the expected version. Retries with
+ * exponential backoff to handle npm registry propagation delay.
  *
- * Usage: bun scripts/release-cli/verify.ts <version>
+ * Usage:
+ *   bun scripts/release-cli/verify.ts <version>
+ *   bun scripts/release-cli/verify.ts <version> <pkg1,pkg2,...>
+ *
+ * If no package list is provided, defaults to all 13 CLI packages
+ * (12 platform binaries + the CLI wrapper) for standalone auditing.
  */
 
 import { versionExists } from '../lib/npm'
@@ -20,12 +24,11 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-export async function verify(version: string, initialDelayMs = INITIAL_DELAY_MS): Promise<number> {
-  const packages = allPackageNames()
+export async function verify(packages: string[], version: string, initialDelayMs = INITIAL_DELAY_MS): Promise<number> {
   let pending = new Set(packages)
 
-  console.log(`\n=== Verify CLI Packages ===`)
-  console.log(`\n   Checking ${packages.length} packages at version ${version}...\n`)
+  console.log(`\n=== Verify Packages ===`)
+  console.log(`\n   Checking ${packages.length} package(s) at version ${version}...\n`)
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (attempt > 0) {
@@ -47,7 +50,7 @@ export async function verify(version: string, initialDelayMs = INITIAL_DELAY_MS)
     pending = stillPending
 
     if (pending.size === 0) {
-      console.log(`\n=== All ${packages.length} packages verified ===`)
+      console.log(`\n=== All ${packages.length} package(s) verified ===`)
       return 0
     }
 
@@ -67,9 +70,11 @@ export async function verify(version: string, initialDelayMs = INITIAL_DELAY_MS)
 if (import.meta.main) {
   const version = process.argv[2]
   if (!version) {
-    console.error('Usage: bun scripts/release-cli/verify.ts <version>')
+    console.error('Usage: bun scripts/release-cli/verify.ts <version> [pkg1,pkg2,...]')
     process.exit(1)
   }
-  const code = await verify(version)
+  const packagesArg = process.argv[3]
+  const packages = packagesArg ? packagesArg.split(',').filter(Boolean) : allPackageNames()
+  const code = await verify(packages, version)
   process.exit(code)
 }
