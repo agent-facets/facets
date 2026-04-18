@@ -11,6 +11,7 @@ export const shellIo = {
   chmod: (cwd: string) => $`chmod -R 755 .`.cwd(cwd).nothrow(),
   rm: (path: string) => $`rm -rf ${path}`.nothrow(),
   mkdir: (path: string) => $`mkdir -p ${path}`,
+  sleep: (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms)),
 
   // CI tokens
   mintGitHubAppToken: () => mintGitHubAppTokenImpl(),

@@ -28,6 +28,23 @@ import {
 } from '../lib/constants'
 import { io } from '../lib/io'
 
+/**
+ * Poll parameters for GitHub's commit→PR index catching up after a squash merge.
+ *
+ * GitHub's `repos/{owner}/{repo}/commits/{sha}/pulls` endpoint is backed by a
+ * search index that lags behind the merge event by ~60 seconds in observed
+ * cases. If tag.ts runs before the index catches up, `getPrForCommit` returns
+ * an empty array and we'd silently skip tagging — which broke the 0.5.3
+ * release (pipeline 196).
+ *
+ * We poll at a fixed 10-second interval for up to 5 minutes. If the endpoint
+ * still returns empty after the full window, we fall through to the existing
+ * "nothing to do" exit path — a legitimate non-version-PR merge with no
+ * associated PRs in the API.
+ */
+const PR_POLL_INTERVAL_MS = 10_000
+const PR_POLL_MAX_ATTEMPTS = 30
+
 export async function tagRelease(): Promise<number> {
   const sha = process.env.CIRCLE_SHA1
   if (!sha) {
@@ -38,7 +55,15 @@ export async function tagRelease(): Promise<number> {
   await mintGithubTokens()
   await io.gh.authSetupGit()
 
-  const prs = await io.gh.getPrForCommit(sha)
+  let prs = await io.gh.getPrForCommit(sha)
+  for (let attempt = 1; attempt < PR_POLL_MAX_ATTEMPTS && prs.length === 0; attempt++) {
+    io.console.log(
+      `PR not yet indexed for ${sha}, retrying in ${PR_POLL_INTERVAL_MS / 1000}s (attempt ${attempt + 1}/${PR_POLL_MAX_ATTEMPTS})...`,
+    )
+    await io.shell.sleep(PR_POLL_INTERVAL_MS)
+    prs = await io.gh.getPrForCommit(sha)
+  }
+
   const versionPr = prs.find((p) => p.headRefName === CHANGESET_RELEASE_BRANCH)
 
   if (!versionPr) {

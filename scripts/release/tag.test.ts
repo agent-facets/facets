@@ -8,6 +8,7 @@ describe('tag.ts', () => {
   beforeEach(() => {
     silenceIO()
     spyOn(io.shell, 'mintGitHubAppToken').mockResolvedValue('fake-gh-token')
+    spyOn(io.shell, 'sleep').mockResolvedValue(undefined)
     spyOn(io.gh, 'authSetupGit').mockResolvedValue(shellResult())
   })
 
@@ -27,15 +28,44 @@ describe('tag.ts', () => {
       expect(code).toBe(1)
     })
 
-    test('exits early when commit has no associated PRs', async () => {
+    test('polls and exits when commit has no associated PRs after full window', async () => {
       process.env.CIRCLE_SHA1 = 'abc123'
-      spyOn(io.gh, 'getPrForCommit').mockResolvedValue([])
+      // GitHub's commit→PR index never catches up — endpoint keeps returning [].
+      const prSpy = spyOn(io.gh, 'getPrForCommit').mockResolvedValue([])
       const fetchSpy = spyOn(io.git, 'fetchSha').mockResolvedValue(shellResult())
 
       const code = await tagRelease()
 
       expect(code).toBe(0)
+      // Polled the full window (30 attempts) before giving up.
+      expect(prSpy).toHaveBeenCalledTimes(30)
       expect(fetchSpy).not.toHaveBeenCalled()
+    })
+
+    test('polls getPrForCommit until the PR appears, then proceeds with tagging', async () => {
+      process.env.CIRCLE_SHA1 = 'abc123'
+      // Simulate GitHub's commit→PR index catching up on the 4th poll.
+      const prSpy = spyOn(io.gh, 'getPrForCommit')
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([])
+        .mockResolvedValue([{ number: 52, headRefName: 'changeset-release/main', headRefOid: 'original-sha' }])
+      spyOn(io.git, 'fetchSha').mockResolvedValue(shellResult())
+      spyOn(io.git, 'config').mockResolvedValue(shellResult())
+      spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
+        { name: '@agent-facets/core', version: '1.1.0', dir: 'packages/core' },
+      ])
+      spyOn(io.npm, 'viewVersion').mockResolvedValue('1.0.0')
+      const tagSpy = spyOn(io.git, 'tagAt').mockResolvedValue(shellResult())
+      spyOn(io.git, 'pushAllTags').mockResolvedValue(shellResult())
+      spyOn(io.circleci, 'triggerPipelineForTag').mockResolvedValue({ id: 'p1', number: 1 })
+
+      const code = await tagRelease()
+
+      expect(code).toBe(0)
+      expect(prSpy).toHaveBeenCalledTimes(4)
+      // Proceeded with tagging — did not bail out on the empty responses.
+      expect(tagSpy).toHaveBeenCalledWith('@agent-facets/core@1.1.0', 'original-sha')
     })
 
     test('exits early when commit is not a version PR merge', async () => {
