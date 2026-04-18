@@ -1,5 +1,11 @@
 # @agent-facets/common
 
+## 0.1.1
+
+### Patch Changes
+
+- [#144](https://github.com/agent-facets/facets/pull/144) [`5c235e0`](https://github.com/agent-facets/facets/commit/5c235e08126e7dd6640c921625189f6fca1b4d5d) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Bump em all. Test release pipeline
+
 ## 0.1.0
 
 ### Minor Changes
