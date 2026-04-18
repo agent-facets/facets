@@ -37,7 +37,7 @@
     "@types/bun": "1.3.11",
     "@types/node": "25",
     "dedent": "1.7.2",
-    "mint": "4.2.507",
+    "mint": "4.2.521",
     "turbo": "2.9.6",
     "typescript": "6.0.2"
   }
