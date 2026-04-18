@@ -25,7 +25,8 @@
     "docs:validate": "bun --cwd docs mint validate",
     "docs:broken-links": "bun --cwd docs mint broken-links",
     "postinstall": "mise exec -- lefthook install",
-    "clean": "rm -rf .turbo node_modules packages/**/node_modules packages/**/.turbo packages/**/dist packages/cli/bin/.facet test-results/*.xml tmp docs/.mintlify"
+    "clean": "rm -rf .turbo node_modules packages/**/node_modules packages/**/.turbo packages/**/dist packages/cli/bin/.facet test-results/*.xml tmp docs/.mintlify",
+    "nuke": "bun run clean && bun install && bun check"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.12",
