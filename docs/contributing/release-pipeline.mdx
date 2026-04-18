@@ -60,3 +60,66 @@ The CLI package is always last. Users cannot install the new version until this 
 ## Adding changesets on behalf of contributors
 
 The [changeset bot](https://github.com/apps/changeset-bot) comments on every PR indicating whether a changeset is present. If a contributor doesn't add one, the bot's comment includes a link to create one in the browser — pre-filled with the correct filename. Write the summary, select the bump type, and commit directly to the PR branch.
+
+## Troubleshooting
+
+### Tags pushed but no release pipeline runs
+
+**Symptom**: A version PR merges, tags appear on GitHub, but no `release` or `release-cli` pipeline shows up in CircleCI.
+
+**Likely cause**: The pipeline definition in CircleCI was recreated or its GitHub App integration was reinstalled, and the tag trigger on that pipeline is missing or stale.
+
+**Fix**:
+
+1. Open CircleCI → facets project → Project Settings → Pipelines.
+2. Confirm there is a `release` pipeline definition pointing at `.circleci/release.yml`.
+3. Confirm it has a GitHub trigger configured for **tag pushes**.
+4. If the trigger is missing, add it. If the whole pipeline definition is missing, recreate it and also reinstall the bot GitHub App on the org (see next section — the installation ID will change).
+
+Once routing is fixed, **re-push each stuck tag** to regenerate the webhook event. Thanks to the idempotency check in `scripts/release/publish.ts`, re-pushing a tag whose version is already on npm will skip the publish and only re-run the GitHub Release + notification steps:
+
+```bash
+for tag in \
+  '@agent-facets/core@0.4.0' \
+  'agent-facets@0.5.0' \
+  ; do
+  git push origin ":refs/tags/$tag"
+  git push origin "$tag"
+done
+```
+
+### `finalize-cli` fails with `Not Found - /app/installations/*/access_tokens`
+
+**Symptom**: Platform packages publish successfully, but `finalize-cli` (or any job that calls `mintGithubTokens`) fails with an Octokit `HttpError: Not Found` pointing at `https://api.github.com/app/installations/*/access_tokens`.
+
+**Cause**: `APP_INSTALLATION_ID` in the `bot-context` CircleCI context is stale. GitHub assigns a **new installation ID every time the bot GitHub App is reinstalled on an org**. The old ID in the context now returns 404.
+
+**Fix**:
+
+1. Find the current installation ID:
+
+   ```bash
+   gh api /orgs/agent-facets/installation --jq '.id'
+   ```
+
+   Or via UI: github.com/organizations/agent-facets/settings/installations → Configure on the bot app → the URL contains `.../installations/{ID}/...`.
+
+2. Update `APP_INSTALLATION_ID` in CircleCI → Organization Settings → Contexts → `bot-context`.
+
+3. Re-push any stuck tags as shown above.
+
+The `mintGitHubAppToken` helper (`scripts/lib/github-app.ts`) detects 404s and surfaces this exact runbook in its error message, so this diagnosis should appear in future job logs without needing to consult these docs.
+
+### `finalize-cli` fails with `Unauthorized - /app/installations/*/access_tokens`
+
+**Symptom**: As above but with HTTP 401 instead of 404.
+
+**Cause**: `APP_ID` or `APP_PRIVATE_KEY_BASE64` in `bot-context` does not match the installed GitHub App. This usually happens when the bot app was rotated or replaced.
+
+**Fix**: Update both values from the GitHub App's settings page (App ID on the page itself, Private Key downloaded and base64-encoded into the env var).
+
+### Release pipeline ran but only some packages published
+
+**Symptom**: Mixed state — some packages at the new version on npm, others still at the old version. Usually happens when `finalize-cli` fails partway through.
+
+**Fix**: Re-push the tag. The idempotency checks in `publish-platform.ts`, `publish-cli-package.ts`, and `publish.ts` all guard against double-publishing — each will skip packages already at the target version and only publish what's missing.
