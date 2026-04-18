@@ -25,13 +25,13 @@ Installs an adapter from the given specifier. The install flow downloads the sou
 
 **Specifier formats:**
 
-| Format | Example | Description |
-|--------|---------|-------------|
-| Built-in name | `opencode` | Resolves to the first-party npm package |
-| npm package | `@acme/adapter-custom` | Downloads from the npm registry |
-| Git URL | `git+https://github.com/user/repo.git` | Clones the repository |
-| Git URL with ref | `git+https://github.com/user/repo.git#v1.0.0` | Clones at a specific tag/branch |
-| Local path | `./path/to/adapter` | Uses a local directory |
+| Format           | Example                                       | Description                             |
+|------------------|-----------------------------------------------|-----------------------------------------|
+| Built-in name    | `opencode`                                    | Resolves to the first-party npm package |
+| npm package      | `@acme/adapter-custom`                        | Downloads from the npm registry         |
+| Git URL          | `git+https://github.com/user/repo.git`        | Clones the repository                   |
+| Git URL with ref | `git+https://github.com/user/repo.git#v1.0.0` | Clones at a specific tag/branch         |
+| Local path       | `./path/to/adapter`                           | Uses a local directory                  |
 
 **Built-in names:**
 
@@ -54,3 +54,19 @@ facet adapter remove <name>
 ```
 
 Removes an installed adapter by deleting its directory from `~/.facets/adapters/`.
+
+## Environment variables
+
+### `FACETS_ADAPTERS_DIR`
+
+Overrides the base directory used for installed adapters. When set, `install`, `list`, `remove`, and `build` all read from and write to this directory instead of the default `~/.facets/adapters/`.
+
+```sh
+export FACETS_ADAPTERS_DIR=/path/to/adapters
+facet adapter install opencode
+# adapter lands in /path/to/adapters/opencode/adapter.js
+```
+
+The directory is created automatically if it does not exist. Set the variable in your shell profile to make the override persist across sessions.
+
+This is currently the only supported way to change the adapter install location. A per-install `--target-dir` flag is not supported because it would require persistent configuration so that later invocations (such as `facet build`) could locate adapters placed in non-default locations.

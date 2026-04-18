@@ -35,6 +35,7 @@
     "@agent-facets/brand": "workspace:*",
     "@agent-facets/core": "workspace:*",
     "@agent-facets/adapter": "workspace:*",
+    "@agent-facets/adapter-opencode": "workspace:*",
     "@types/bun": "1.3.10",
     "ink-testing-library": "4.0.0"
   },

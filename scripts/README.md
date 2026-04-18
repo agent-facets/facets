@@ -40,7 +40,7 @@ scripts/
 │   ├── notify-failure.ts       # Slack failure notification (on_fail step)
 │   └── test-helpers.ts         # Test utilities (mock helpers, fixtures)
 │
-├── prepack.ts                  # Rewrite workspace:* deps before npm publish
+├── prepack.ts                  # Rewrite workspace:* deps + hoist publishConfig overrides before npm publish
 ├── postpack.ts                 # Restore package.json after pack
 └── check-bun-version.ts        # Verify Bun version matches mise.toml
 ```

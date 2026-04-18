@@ -1,13 +1,24 @@
 /**
  * Prepack utilities — rewrites workspace:* dependencies to concrete version
- * specifiers so that `npm publish` produces a valid tarball.
+ * specifiers and applies `publishConfig` field overrides so that
+ * `npm publish` produces a valid tarball.
  *
- * The core logic is a pure function (`rewriteWorkspaceDeps`) that accepts a
- * resolver callback, making it fully testable without touching the filesystem.
+ * The core logic is pure functions (`rewriteWorkspaceDeps`, `applyPublishConfig`)
+ * that are fully testable without touching the filesystem.
  */
 
 /** Dependency field names that may contain workspace: specifiers. */
 const DEP_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'] as const
+
+/**
+ * Keys within `publishConfig` that should be hoisted to the top-level package
+ * manifest at publish time. Mirrors pnpm's documented behavior.
+ *
+ * Other `publishConfig` keys (e.g. `access`, `registry`, `tag`, `provenance`)
+ * are npm CLI configuration and remain under `publishConfig` so that
+ * `npm publish` still consumes them.
+ */
+const PUBLISH_CONFIG_OVERRIDE_KEYS = ['exports', 'main', 'types', 'module', 'bin'] as const
 
 /**
  * A version resolver — given a package name, returns its resolved version
@@ -63,6 +74,42 @@ export async function rewriteWorkspaceDeps(
       }
 
       ;(deps as Record<string, string>)[name] = rewritten
+      modified = true
+    }
+  }
+
+  return { pkg: result, modified }
+}
+
+/**
+ * Hoist whitelisted keys from `pkg.publishConfig` to the top-level package
+ * manifest. Mirrors pnpm's `publishConfig` behavior, which npm does not
+ * implement natively.
+ *
+ * Only keys listed in `PUBLISH_CONFIG_OVERRIDE_KEYS` are hoisted. Other keys
+ * (npm CLI config such as `access`, `registry`, `tag`, `provenance`) are
+ * left under `publishConfig` so `npm publish` still consumes them. The
+ * `publishConfig` object itself is preserved on the output.
+ *
+ * Returns `{ pkg, modified }` where `modified` is true if any hoist happened.
+ */
+export function applyPublishConfig(pkg: Record<string, unknown>): { pkg: Record<string, unknown>; modified: boolean } {
+  const publishConfig = pkg.publishConfig
+  if (!publishConfig || typeof publishConfig !== 'object') {
+    return { pkg, modified: false }
+  }
+
+  // Deep-clone so we don't mutate the caller's object
+  const result = JSON.parse(JSON.stringify(pkg)) as Record<string, unknown>
+  // Read overrides from the CLONED publishConfig, not the original — otherwise
+  // object-valued overrides like `exports` would end up sharing references
+  // between input and output, partially defeating the deep clone.
+  const clonedOverrides = result.publishConfig as Record<string, unknown>
+  let modified = false
+
+  for (const key of PUBLISH_CONFIG_OVERRIDE_KEYS) {
+    if (key in clonedOverrides) {
+      result[key] = clonedOverrides[key]
       modified = true
     }
   }

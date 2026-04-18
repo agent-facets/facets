@@ -20,7 +20,7 @@ export default tool({
       return JSON.stringify({ success: false, reason: 'invalid_name', name: args.plan })
     }
 
-    const artifact = args.artifact ?? 'plan'
+    const artifact = (args.artifact ?? 'plan').replace(/\.md$/, '')
     if (!SAFE_NAME.test(artifact)) {
       return JSON.stringify({ success: false, reason: 'invalid_artifact', artifact })
     }

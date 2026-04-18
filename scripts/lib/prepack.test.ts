@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { rewriteWorkspaceDeps, type VersionResolver } from './prepack'
+import { applyPublishConfig, rewriteWorkspaceDeps, type VersionResolver } from './prepack'
 
 /** Helper: creates a resolver from a name→version map. */
 function mockResolver(versions: Record<string, string>): VersionResolver {
@@ -97,7 +97,7 @@ describe('rewriteWorkspaceDeps', () => {
       },
     }
 
-    expect(rewriteWorkspaceDeps(pkg, mockResolver({}))).rejects.toThrow(
+    await expect(rewriteWorkspaceDeps(pkg, mockResolver({}))).rejects.toThrow(
       'prepack: could not resolve workspace package "@my/nonexistent"',
     )
   })
@@ -197,5 +197,189 @@ describe('rewriteWorkspaceDeps', () => {
 
     expect(modified).toBe(true)
     expect((result.devDependencies as Record<string, string>)['@my/core']).toBe('1.0.0')
+  })
+})
+
+describe('applyPublishConfig', () => {
+  test('returns unmodified when no publishConfig is present', () => {
+    const pkg = { name: 'plain-pkg', version: '1.0.0' }
+    const { pkg: result, modified } = applyPublishConfig(pkg)
+    expect(modified).toBe(false)
+    expect(result).toEqual(pkg)
+  })
+
+  test('returns unmodified when publishConfig has no override keys', () => {
+    const pkg = {
+      name: 'npm-only-config',
+      publishConfig: { access: 'public', registry: 'https://registry.npmjs.org' },
+    }
+    const { pkg: result, modified } = applyPublishConfig(pkg)
+    expect(modified).toBe(false)
+    expect(result).toEqual(pkg)
+  })
+
+  test('hoists publishConfig.exports object form to top-level exports', () => {
+    const pkg = {
+      name: 'adapter-opencode',
+      exports: { '.': './src/index.ts' },
+      publishConfig: {
+        access: 'public',
+        exports: {
+          '.': { import: './dist/index.mjs', types: './dist/index.d.mts' },
+        },
+      },
+    }
+    const { pkg: result, modified } = applyPublishConfig(pkg)
+    expect(modified).toBe(true)
+    expect(result.exports).toEqual({
+      '.': { import: './dist/index.mjs', types: './dist/index.d.mts' },
+    })
+    // publishConfig itself is preserved so npm still reads access/registry
+    expect((result.publishConfig as Record<string, unknown>).access).toBe('public')
+    expect((result.publishConfig as Record<string, unknown>).exports).toEqual({
+      '.': { import: './dist/index.mjs', types: './dist/index.d.mts' },
+    })
+  })
+
+  test('hoists publishConfig.main to top-level main', () => {
+    const pkg = {
+      name: 'cjs-pkg',
+      publishConfig: { main: './dist/index.cjs' },
+    }
+    const { pkg: result, modified } = applyPublishConfig(pkg)
+    expect(modified).toBe(true)
+    expect(result.main).toBe('./dist/index.cjs')
+  })
+
+  test('hoists publishConfig.types to top-level types', () => {
+    const pkg = {
+      name: 'typed-pkg',
+      publishConfig: { types: './dist/index.d.ts' },
+    }
+    const { pkg: result, modified } = applyPublishConfig(pkg)
+    expect(modified).toBe(true)
+    expect(result.types).toBe('./dist/index.d.ts')
+  })
+
+  test('hoists publishConfig.module to top-level module', () => {
+    const pkg = {
+      name: 'esm-pkg',
+      publishConfig: { module: './dist/index.mjs' },
+    }
+    const { pkg: result, modified } = applyPublishConfig(pkg)
+    expect(modified).toBe(true)
+    expect(result.module).toBe('./dist/index.mjs')
+  })
+
+  test('hoists publishConfig.bin to top-level bin', () => {
+    const pkg = {
+      name: 'cli-pkg',
+      publishConfig: { bin: { mycli: './dist/cli.mjs' } },
+    }
+    const { pkg: result, modified } = applyPublishConfig(pkg)
+    expect(modified).toBe(true)
+    expect(result.bin).toEqual({ mycli: './dist/cli.mjs' })
+  })
+
+  test('does not hoist npm CLI config keys (access, registry, tag, provenance)', () => {
+    const pkg = {
+      name: 'mixed',
+      publishConfig: {
+        access: 'public',
+        registry: 'https://registry.npmjs.org',
+        tag: 'next',
+        provenance: true,
+      },
+    }
+    const { pkg: result, modified } = applyPublishConfig(pkg)
+    expect(modified).toBe(false)
+    // None of these should be hoisted — they stay under publishConfig
+    expect((result as Record<string, unknown>).access).toBeUndefined()
+    expect((result as Record<string, unknown>).registry).toBeUndefined()
+    expect((result as Record<string, unknown>).tag).toBeUndefined()
+    expect((result as Record<string, unknown>).provenance).toBeUndefined()
+  })
+
+  test('hoists override keys but leaves other publishConfig keys untouched', () => {
+    const pkg = {
+      name: 'mixed',
+      publishConfig: {
+        access: 'public',
+        exports: { '.': { import: './dist/index.mjs' } },
+        tag: 'next',
+      },
+    }
+    const { pkg: result, modified } = applyPublishConfig(pkg)
+    expect(modified).toBe(true)
+    expect(result.exports).toEqual({ '.': { import: './dist/index.mjs' } })
+    const pc = result.publishConfig as Record<string, unknown>
+    expect(pc.access).toBe('public')
+    expect(pc.tag).toBe('next')
+  })
+
+  test('does not mutate the input package object', () => {
+    const pkg = {
+      name: 'immutable-input',
+      exports: { '.': './src/index.ts' },
+      publishConfig: { exports: { '.': { import: './dist/index.mjs' } } },
+    }
+    const original = JSON.parse(JSON.stringify(pkg))
+    applyPublishConfig(pkg)
+    expect(pkg).toEqual(original)
+  })
+
+  test('returned object-valued overrides do not share references with the input', () => {
+    // Regression test for the deep-clone-defeated bug spotted by Cursor
+    // in PR #142. Previously the loop pulled overrides from the ORIGINAL
+    // `pkg.publishConfig`, so for object-valued keys like `exports` the
+    // returned `result.exports` shared a reference with the input. That
+    // meant mutating `result.exports` would propagate back to the input.
+    const pkg = {
+      name: 'shared-ref-check',
+      publishConfig: {
+        exports: { '.': { import: './dist/index.mjs', types: './dist/index.d.mts' } },
+        bin: { 'my-cli': './dist/cli.mjs' },
+      },
+    }
+    const { pkg: result } = applyPublishConfig(pkg)
+    const resultExports = result.exports as { '.': { import: string; types: string } }
+    const resultBin = result.bin as { 'my-cli': string }
+
+    // Mutate the result's hoisted overrides
+    resultExports['.'].import = 'mutated-import.mjs'
+    resultBin['my-cli'] = 'mutated-cli.mjs'
+
+    // The original input MUST remain untouched
+    expect(pkg.publishConfig.exports['.'].import).toBe('./dist/index.mjs')
+    expect(pkg.publishConfig.bin['my-cli']).toBe('./dist/cli.mjs')
+
+    // And the references must actually be distinct objects
+    expect(resultExports).not.toBe(pkg.publishConfig.exports)
+    expect(resultExports['.']).not.toBe(pkg.publishConfig.exports['.'])
+    expect(resultBin).not.toBe(pkg.publishConfig.bin)
+  })
+
+  test('composes with rewriteWorkspaceDeps on the same input', async () => {
+    // Simulates the prepack.ts flow: rewrite deps, then apply publishConfig
+    const input = {
+      name: 'adapter-opencode',
+      dependencies: { '@agent-facets/adapter': 'workspace:*' },
+      exports: { '.': './src/index.ts' },
+      publishConfig: {
+        access: 'public',
+        exports: { '.': { import: './dist/index.mjs' } },
+      },
+    }
+
+    const { pkg: afterDeps, modified: depsModified } = await rewriteWorkspaceDeps(
+      input,
+      mockResolver({ '@agent-facets/adapter': '0.3.0' }),
+    )
+    const { pkg: afterPublishConfig, modified: publishConfigModified } = applyPublishConfig(afterDeps)
+
+    expect(depsModified).toBe(true)
+    expect(publishConfigModified).toBe(true)
+    expect((afterPublishConfig.dependencies as Record<string, string>)['@agent-facets/adapter']).toBe('0.3.0')
+    expect(afterPublishConfig.exports).toEqual({ '.': { import: './dist/index.mjs' } })
   })
 })
