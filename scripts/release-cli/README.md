@@ -43,7 +43,7 @@ Tag push: agent-facets@X.Y.Z
 | `build.ts`                | `build-cli`                 | Cross-compile 12 standalone binaries                        |
 | `publish-platform.ts`     | `publish-platform` (matrix) | Publish one `@agent-facets/cli-*` package                   |
 | `publish-cli-package.ts`  | (called by finalize)        | Synthesize and publish the `agent-facets` wrapper           |
-| `finalize.ts`             | `finalize-cli`              | Orchestrate: publish wrapper → verify → announce            |
+| `finalize.ts`             | `finalize-cli`              | Orchestrate: verify platforms → publish wrapper → verify wrapper → announce |
 | `verify.ts`               | (called by finalize)        | Verify a given list of packages exists on npm (with retry)  |
 | `seed.ts`                 | (manual, `bun seed:cli`)    | Seed platform package names on npm with v0.0.1 placeholders |
 | `targets.ts`              | (imported)                  | Platform target matrix and pure helper functions            |
