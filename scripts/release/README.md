@@ -5,31 +5,52 @@ Publishes `@agent-facets/core`, `@agent-facets/brand`, `@agent-facets/adapter`, 
 ## Flow
 
 ```
-Tag push: @agent-facets/core@X.Y.Z
+Version PR merged to main
   │
   ▼
+┌────────────────────────────────────────────────────────────────────┐
+│  release/tag.ts (main-pipeline)                                    │
+│                                                                    │
+│  1. Detect version PR merge                                        │
+│  2. Create git tags for each unpublished package version           │
+│  3. git push --tags origin                                         │
+│  4. For each tag: POST to CircleCI API v2 /pipeline/run            │
+│     with {definition_id, config: {tag}, checkout: {tag}}           │
+│                                                                    │
+│  Why explicit API trigger? GitHub-to-CircleCI tag-push webhooks    │
+│  are unreliable when the bot GitHub App pushes tags — the CircleCI │
+│  App installation drops events from other bot actors. See          │
+│  docs/contributing/release-pipeline.mdx.                           │
+└────────────────────────────────────────────────────────────────────┘
+  │
+  ▼ (one release pipeline per tag)
 ┌──────────────────────────────────────────────┐
 │  release/publish.ts                          │
 │                                              │
 │  1. Parse package name + version from tag    │
 │  2. Find package in workspace                │
 │  3. Skip if private (guard)                  │
-│  4. Mint OIDC token (npm trusted publishing) │
-│  5. Build via turbo                          │
-│  6. npm publish --access public              │
-│  7. Create GitHub Release                    │
-│  8. Send Slack notification                  │
+│  4. Skip if version already on npm (guard)   │
+│  5. Mint OIDC token (npm trusted publishing) │
+│  6. Build via turbo                          │
+│  7. npm publish --access public              │
+│  8. Create GitHub Release                    │
+│  9. Send Slack notification                  │
 └──────────────────────────────────────────────┘
 ```
 
 ## Scripts
 
-| Script              | CircleCI Job    | Trigger                        | Purpose                                                       |
-|---------------------|-----------------|--------------------------------|---------------------------------------------------------------|
-| `version.ts`        | `main-pipeline` | Push to `main`                 | Run `changeset version`, create/update Version Packages PR    |
-| `tag.ts`            | `main-pipeline` | Push to `main`                 | Detect merged version PR, create git tags for bumped packages |
-| `publish.ts`        | `release`       | Tag push (`@agent-facets/*@*`) | Build and publish one library package to npm                  |
-| `seed-adapters.ts`  | (manual)        | One-time bootstrap             | Seed adapter/library package names on npm with v0.0.1         |
+| Script              | CircleCI Job    | Trigger                        | Purpose                                                                   |
+|---------------------|-----------------|--------------------------------|---------------------------------------------------------------------------|
+| `version.ts`        | `main-pipeline` | Push to `main`                 | Run `changeset version`, create/update Version Packages PR                |
+| `tag.ts`            | `main-pipeline` | Push to `main`                 | Detect merged version PR, create git tags, trigger release pipelines      |
+| `publish.ts`        | `release`       | API trigger (`@agent-facets/*@*`) | Build and publish one library package to npm                           |
+| `seed-adapters.ts`  | (manual)        | One-time bootstrap             | Seed adapter/library package names on npm with v0.0.1                     |
+
+## Required secrets
+
+`tag.ts` requires `CIRCLECI_API_TOKEN` in the `bot-context` CircleCI context. It's a personal API token with write access to the project, used to POST to `/api/v2/project/<slug>/pipeline/run`. See [CI Architecture docs](../../docs/contributing/ci-architecture.mdx) for context rotation steps.
 
 ## Private Package Guard
 

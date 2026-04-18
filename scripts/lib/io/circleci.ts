@@ -9,6 +9,8 @@
  * docs/contributing/release-pipeline.mdx for the full story.
  */
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export const circleciIo = {
   /**
    * Trigger a pipeline run for a specific tag via CircleCI API v2.
@@ -32,6 +34,17 @@ export const circleciIo = {
       throw new Error(
         'CIRCLECI_API_TOKEN not set. Expected from the `bot-context` CircleCI context. ' +
           'See docs/contributing/release-pipeline.mdx for setup instructions.',
+      )
+    }
+
+    // Fail fast on a malformed UUID rather than getting a cryptic 400 from
+    // CircleCI ("Field 'definition_id' must be a valid uuid"). See the
+    // constants.test.ts guardrail which also validates the real constant
+    // at build time.
+    if (!UUID_REGEX.test(definitionId)) {
+      throw new Error(
+        `Invalid pipeline definition ID: "${definitionId}" is not a valid UUID (expected 8-4-4-4-12 format). ` +
+          'Check scripts/lib/constants.ts. Fetch the correct ID from CircleCI UI → Project Settings → Pipelines.',
       )
     }
 
