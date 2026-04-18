@@ -22,11 +22,12 @@ scripts/
 │   └── targets.ts              # Platform target matrix definitions
 │
 ├── lib/                        # Shared utilities
-│   ├── io/                     # IO adapter (split by domain)
-│   │   ├── index.ts            # Composed io object (re-exports all domains)
+│   ├── io/                     # IO adapter (split by domain, nested namespaces)
+│   │   ├── index.ts            # Composes io = { npm, git, gh, circleci, shell, console }
 │   │   ├── npm.ts              # npm CLI commands
 │   │   ├── git.ts              # git CLI commands
 │   │   ├── github.ts           # GitHub CLI commands
+│   │   ├── circleci.ts         # CircleCI API v2 calls
 │   │   ├── shell.ts            # Shell, filesystem, build, CI tokens, network
 │   │   └── console.ts          # log and error
 │   ├── ci.ts                   # Workspace package loading, token minting
@@ -93,10 +94,19 @@ The CLI package (`agent-facets`) is marked `"private": true` in its `package.jso
 
 ## IO Adapter
 
-All external side effects (shell commands, file operations, network calls) go through the `io` object exported from `lib/io/`. Tests mock individual methods via `spyOn(io, 'method')`.
+All external side effects (shell commands, file operations, network calls) go through the `io` object exported from `lib/io/`. The adapter is split into domain files and exposed as **nested namespaces** — one per domain.
 
-The IO adapter is split into domain files for readability but presents a single flat interface. Import it as:
+Import it as:
 
 ```ts
 import { io } from '../lib/io'
+
+await io.npm.publish(pkgDir)
+await io.git.pushAllTags('origin')
+await io.gh.prCreate('main', head, title, body)
+await io.circleci.triggerPipelineForTag(slug, defId, tag)
+await io.shell.readFile(path)
+io.console.log('hello')
 ```
+
+Tests mock individual methods via the domain: `spyOn(io.npm, 'publish')`, `spyOn(io.git, 'tagAt')`, etc.

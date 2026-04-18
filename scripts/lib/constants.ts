@@ -48,4 +48,4 @@ export const PUBLISH_TAG = 'latest'
 export const CIRCLECI_PROJECT_SLUG = 'gh/agent-facets/facets'
 
 /** CircleCI pipeline definition ID for the release pipeline (.circleci/release.yml). */
-export const CIRCLECI_RELEASE_PIPELINE_DEFINITION_ID = '229d2f5823-f2c9-4cba-918a-e7d0dc2f658a'
+export const CIRCLECI_RELEASE_PIPELINE_DEFINITION_ID = '9d2f5823-f2c9-4cba-918a-e7d0dc2f658a'
