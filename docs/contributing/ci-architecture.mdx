@@ -51,7 +51,7 @@ Runs on pushes to `main` only. Executes three steps sequentially in a single job
 
 ## Release workflows
 
-Triggered by tag pushes. The tag pattern determines which workflow runs.
+Triggered explicitly via CircleCI API v2 by `scripts/release/tag.ts` after pushing tags (see [Release Pipeline](./release-pipeline#flow) for why we don't rely on tag-push webhooks). The tag pattern determines which workflow within the release pipeline runs.
 
 ### `release` (library packages)
 
@@ -99,11 +99,13 @@ Both workflows send failure notifications via the `notify-failure` reusable comm
 
 CircleCI contexts provide environment variables to jobs.
 
-| Context         | Variables                               | Used by                                    |
-|-----------------|-----------------------------------------|--------------------------------------------|
-| `turbo-cache`   | Turborepo remote cache credentials      | `check`, `main-pipeline`, all release jobs |
-| `bot-context`   | npm OIDC config, GitHub app credentials | `main-pipeline`, all release jobs          |
-| `slack-secrets` | Notification webhook credentials        | `main-pipeline`, all release jobs          |
+| Context         | Variables                                                             | Used by                                    |
+|-----------------|-----------------------------------------------------------------------|--------------------------------------------|
+| `turbo-cache`   | Turborepo remote cache credentials                                    | `check`, `main-pipeline`, all release jobs |
+| `bot-context`   | npm OIDC config, GitHub app credentials, CircleCI API token           | `main-pipeline`, all release jobs          |
+| `slack-secrets` | Notification webhook credentials                                      | `main-pipeline`, all release jobs          |
+
+`bot-context` includes `CIRCLECI_API_TOKEN` (a personal API token with write access to the project), which `scripts/release/tag.ts` uses to explicitly trigger release pipelines via the [CircleCI v2 API](https://circleci.com/docs/api/v2/index.html#operation/triggerPipelineRun). See [Release Pipeline troubleshooting](./release-pipeline#circleci-trigger-api-returns-401-or-404) for rotation steps.
 
 ## Config source structure
 

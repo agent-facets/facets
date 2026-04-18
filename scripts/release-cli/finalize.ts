@@ -28,37 +28,37 @@ import { platformPackageNames } from './targets'
 export async function finalize(): Promise<number> {
   const tag = process.env.CIRCLE_TAG
   if (!tag) {
-    io.error('CIRCLE_TAG not set.')
+    io.console.error('CIRCLE_TAG not set.')
     return 1
   }
 
   const parsed = parseTag(tag)
   if (!parsed) {
-    io.error(`Could not parse tag: ${tag}`)
+    io.console.error(`Could not parse tag: ${tag}`)
     return 1
   }
 
-  io.log(`Finalizing release for ${parsed.name}@${parsed.version}`)
+  io.console.log(`Finalizing release for ${parsed.name}@${parsed.version}`)
 
   // Mint GitHub token (for Release creation; npm OIDC is handled by the publish script)
   await mintGithubTokens()
 
   // Verify the 12 platform packages are visible on npm before publishing the CLI wrapper.
   // The CLI package's optionalDependencies must be resolvable when users install it.
-  io.log('Verifying platform packages in registry...')
-  await io.verifyPackages(platformPackageNames(), parsed.version)
+  io.console.log('Verifying platform packages in registry...')
+  await io.shell.verifyPackages(platformPackageNames(), parsed.version)
 
   // Publish CLI package to latest (synthesizes from build output, mints its own OIDC token).
   // The wrapper is always the LAST package published — users cannot install the new version
   // until this completes successfully.
-  io.log('Publishing CLI package...')
-  await io.publishCliPackage()
+  io.console.log('Publishing CLI package...')
+  await io.shell.publishCliPackage()
 
   // Verify the CLI wrapper itself propagated to npm before announcing.
-  io.log('Verifying CLI package in registry...')
-  await io.verifyPackages([CLI_PACKAGE_NAME], parsed.version)
+  io.console.log('Verifying CLI package in registry...')
+  await io.shell.verifyPackages([CLI_PACKAGE_NAME], parsed.version)
 
-  io.log(`Published ${parsed.name}@${parsed.version} (all platform packages)`)
+  io.console.log(`Published ${parsed.name}@${parsed.version} (all platform packages)`)
 
   // Announce
   const packages = await loadWorkspacePackages()
@@ -67,7 +67,7 @@ export async function finalize(): Promise<number> {
     await announceRelease(tag, pkg.dir, parsed.version)
   }
 
-  io.log('Done.')
+  io.console.log('Done.')
   return 0
 }
 

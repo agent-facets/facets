@@ -23,7 +23,7 @@ export async function slackNotify(channels: string, text: string): Promise<void>
     return
   }
   for (const channel of channels.split(',').map((c) => c.trim())) {
-    const body = (await io.httpPost(
+    const body = (await io.shell.httpPost(
       'https://slack.com/api/chat.postMessage',
       { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       { channel, text },
@@ -37,17 +37,17 @@ export async function slackNotify(channels: string, text: string): Promise<void>
 /** Create a GitHub Release and send a notification. Non-fatal — failures are logged but don't fail the release. */
 export async function announceRelease(tag: string, dir: string, version: string): Promise<void> {
   try {
-    const changelog = await io.readFile(`${dir}/CHANGELOG.md`)
+    const changelog = await io.shell.readFile(`${dir}/CHANGELOG.md`)
     const entry = getChangelogEntry(changelog, version)
-    const url = (await io.ghReleaseCreate(tag, tag, transformChangelogContent(entry.content))).trim()
-    io.log(`Created GitHub Release: ${url}`)
+    const url = (await io.gh.releaseCreate(tag, tag, transformChangelogContent(entry.content))).trim()
+    io.console.log(`Created GitHub Release: ${url}`)
 
     try {
       await slackNotify(SLACK_CHANNELS.auto_cli_deploys, `🚀 Published: <${url}|${tag}>`)
     } catch (err) {
-      io.error(`Failed to send Slack notification: ${(err as Error).message}`)
+      io.console.error(`Failed to send Slack notification: ${(err as Error).message}`)
     }
   } catch (err) {
-    io.error(`Failed to create GitHub Release for ${tag}: ${(err as Error).message}`)
+    io.console.error(`Failed to create GitHub Release for ${tag}: ${(err as Error).message}`)
   }
 }

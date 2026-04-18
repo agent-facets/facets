@@ -12,10 +12,10 @@ export function shellPromise(stdout = '', exitCode = 0) {
   return Promise.resolve({ stdout: Buffer.from(stdout), exitCode }) as $.ShellPromise
 }
 
-/** Silence io.log and io.error for test output. */
+/** Silence io.console.log and io.console.error for test output. */
 export function silenceIO() {
-  spyOn(io, 'log').mockImplementation(() => {})
-  spyOn(io, 'error').mockImplementation(() => {})
+  spyOn(io.console, 'log').mockImplementation(() => {})
+  spyOn(io.console, 'error').mockImplementation(() => {})
 }
 
 /** Sample CHANGELOG.md content for release pipeline tests. */

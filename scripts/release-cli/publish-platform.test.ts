@@ -10,7 +10,7 @@ describe('publish-platform.ts', () => {
   beforeEach(() => {
     spyOn(console, 'log').mockImplementation(() => {})
     spyOn(console, 'error').mockImplementation(() => {})
-    spyOn(io, 'mintCircleOidcToken').mockResolvedValue('fake-oidc-token\n')
+    spyOn(io.shell, 'mintCircleOidcToken').mockResolvedValue('fake-oidc-token\n')
   })
 
   afterEach(() => {
@@ -18,19 +18,19 @@ describe('publish-platform.ts', () => {
   })
 
   test('returns 1 when package.json cannot be read', async () => {
-    spyOn(io, 'readJson').mockRejectedValue(new Error('ENOENT'))
+    spyOn(io.shell, 'readJson').mockRejectedValue(new Error('ENOENT'))
 
     const code = await publishSingle('nonexistent-target')
     expect(code).toBe(1)
   })
 
   test('skips publish when version already exists on npm', async () => {
-    spyOn(io, 'readJson').mockResolvedValue({
+    spyOn(io.shell, 'readJson').mockResolvedValue({
       name: '@agent-facets/cli-darwin-arm64',
       version: '1.0.0',
     })
     spyOn(npm, 'versionExists').mockResolvedValue(true)
-    const publishSpy = spyOn(io, 'publish').mockResolvedValue(shellResult())
+    const publishSpy = spyOn(io.npm, 'publishTarball').mockResolvedValue(shellResult())
 
     const code = await publishSingle('cli-darwin-arm64')
 
@@ -39,14 +39,14 @@ describe('publish-platform.ts', () => {
   })
 
   test('runs chmod, pack, publish when version is not yet on npm', async () => {
-    spyOn(io, 'readJson').mockResolvedValue({
+    spyOn(io.shell, 'readJson').mockResolvedValue({
       name: '@agent-facets/cli-linux-x64',
       version: '2.0.0',
     })
     spyOn(npm, 'versionExists').mockResolvedValue(false)
-    const chmodSpy = spyOn(io, 'chmod').mockResolvedValue(shellResult())
-    const packSpy = spyOn(io, 'pack').mockResolvedValue(shellResult())
-    const publishSpy = spyOn(io, 'publish').mockResolvedValue(shellResult())
+    const chmodSpy = spyOn(io.shell, 'chmod').mockResolvedValue(shellResult())
+    const packSpy = spyOn(io.shell, 'pack').mockResolvedValue(shellResult())
+    const publishSpy = spyOn(io.npm, 'publishTarball').mockResolvedValue(shellResult())
 
     const code = await publishSingle('cli-linux-x64')
 
@@ -57,14 +57,14 @@ describe('publish-platform.ts', () => {
   })
 
   test('publishes to the latest dist-tag', async () => {
-    spyOn(io, 'readJson').mockResolvedValue({
+    spyOn(io.shell, 'readJson').mockResolvedValue({
       name: '@agent-facets/cli-windows-x64',
       version: '3.0.0',
     })
     spyOn(npm, 'versionExists').mockResolvedValue(false)
-    spyOn(io, 'chmod').mockResolvedValue(shellResult())
-    spyOn(io, 'pack').mockResolvedValue(shellResult())
-    const publishSpy = spyOn(io, 'publish').mockResolvedValue(shellResult())
+    spyOn(io.shell, 'chmod').mockResolvedValue(shellResult())
+    spyOn(io.shell, 'pack').mockResolvedValue(shellResult())
+    const publishSpy = spyOn(io.npm, 'publishTarball').mockResolvedValue(shellResult())
 
     await publishSingle('cli-windows-x64')
 
@@ -72,14 +72,14 @@ describe('publish-platform.ts', () => {
   })
 
   test('passes the correct package directory to pack and publish', async () => {
-    spyOn(io, 'readJson').mockResolvedValue({
+    spyOn(io.shell, 'readJson').mockResolvedValue({
       name: '@agent-facets/cli-darwin-x64',
       version: '4.0.0',
     })
     spyOn(npm, 'versionExists').mockResolvedValue(false)
-    spyOn(io, 'chmod').mockResolvedValue(shellResult())
-    const packSpy = spyOn(io, 'pack').mockResolvedValue(shellResult())
-    const publishSpy = spyOn(io, 'publish').mockResolvedValue(shellResult())
+    spyOn(io.shell, 'chmod').mockResolvedValue(shellResult())
+    const packSpy = spyOn(io.shell, 'pack').mockResolvedValue(shellResult())
+    const publishSpy = spyOn(io.npm, 'publishTarball').mockResolvedValue(shellResult())
 
     await publishSingle('cli-darwin-x64')
 
@@ -89,20 +89,20 @@ describe('publish-platform.ts', () => {
   })
 
   test('propagates error when publish throws', async () => {
-    spyOn(io, 'readJson').mockResolvedValue({
+    spyOn(io.shell, 'readJson').mockResolvedValue({
       name: '@agent-facets/cli-linux-arm64',
       version: '6.0.0',
     })
     spyOn(npm, 'versionExists').mockResolvedValue(false)
-    spyOn(io, 'chmod').mockResolvedValue(shellResult())
-    spyOn(io, 'pack').mockResolvedValue(shellResult())
-    spyOn(io, 'publish').mockRejectedValue(new Error('npm publish failed'))
+    spyOn(io.shell, 'chmod').mockResolvedValue(shellResult())
+    spyOn(io.shell, 'pack').mockResolvedValue(shellResult())
+    spyOn(io.npm, 'publishTarball').mockRejectedValue(new Error('npm publish failed'))
 
     await expect(publishSingle('cli-linux-arm64')).rejects.toThrow('npm publish failed')
   })
 
   test('checks versionExists with name and version from package.json', async () => {
-    spyOn(io, 'readJson').mockResolvedValue({
+    spyOn(io.shell, 'readJson').mockResolvedValue({
       name: '@agent-facets/cli-linux-arm64',
       version: '5.0.0',
     })

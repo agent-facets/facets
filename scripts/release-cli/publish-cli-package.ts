@@ -22,7 +22,7 @@ import { mintNpmToken, versionExists } from '../lib/npm'
 async function discoverPlatformPackages(): Promise<Record<string, string>> {
   const binaries: Record<string, string> = {}
   for await (const filepath of new Bun.Glob('@*/*/package.json').scanSync({ cwd: DIST_DIR })) {
-    const pkg = await io.readJson(path.join(DIST_DIR, filepath))
+    const pkg = await io.shell.readJson(path.join(DIST_DIR, filepath))
     binaries[pkg.name] = pkg.version
   }
   return binaries
@@ -58,7 +58,7 @@ export async function publishCliPackage(): Promise<number> {
   await $`cp ${path.join(CLI_DIR, 'bin', 'package.json')} ${cliPkgDir}/bin/package.json`
   await $`cp ${path.join(CLI_DIR, 'scripts', 'postinstall.mjs')} ${cliPkgDir}/postinstall.mjs`
 
-  await io.writeFile(
+  await io.shell.writeFile(
     path.join(cliPkgDir, 'package.json'),
     JSON.stringify(
       {
@@ -73,8 +73,8 @@ export async function publishCliPackage(): Promise<number> {
     ),
   )
 
-  await io.pack(cliPkgDir)
-  await io.publish(cliPkgDir, PUBLISH_TAG)
+  await io.shell.pack(cliPkgDir)
+  await io.npm.publishTarball(cliPkgDir, PUBLISH_TAG)
 
   console.log(`+ ${CLI_PACKAGE_NAME}@${version} published (latest)`)
   return 0

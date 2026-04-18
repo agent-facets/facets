@@ -10,7 +10,7 @@ import { io } from './io'
 /** Check if the current user is logged in to npm. Returns the username or null. */
 export async function whoami(): Promise<string | null> {
   try {
-    const result = await io.whoami()
+    const result = await io.npm.whoami()
     return result.stdout.toString().trim() || null
   } catch {
     return null
@@ -20,7 +20,7 @@ export async function whoami(): Promise<string | null> {
 /** Check if a package name exists in the npm registry (any version). */
 export async function packageExists(pkg: string): Promise<boolean> {
   try {
-    await io.viewName(pkg)
+    await io.npm.viewName(pkg)
     return true
   } catch {
     return false
@@ -30,7 +30,7 @@ export async function packageExists(pkg: string): Promise<boolean> {
 /** Check if a specific version of a package exists in the npm registry. */
 export async function versionExists(pkg: string, version: string): Promise<boolean> {
   try {
-    const result = await io.viewVersion(pkg, version)
+    const result = await io.npm.checkVersion(pkg, version)
     return result.stdout.toString().trim() === version
   } catch {
     return false
@@ -43,10 +43,10 @@ export async function versionExists(pkg: string, version: string): Promise<boole
  */
 export async function publishPlaceholder(pkg: string): Promise<void> {
   const tmp = path.join(import.meta.dir, '..', '..', '.tmp-bootstrap')
-  await io.rm(tmp)
-  await io.mkdir(tmp)
+  await io.shell.rm(tmp)
+  await io.shell.mkdir(tmp)
 
-  await io.writeFile(
+  await io.shell.writeFile(
     path.join(tmp, 'package.json'),
     JSON.stringify(
       {
@@ -60,13 +60,13 @@ export async function publishPlaceholder(pkg: string): Promise<void> {
   )
 
   try {
-    await io.publishPlain(tmp)
+    await io.npm.publishPlain(tmp)
   } finally {
-    await io.rm(tmp)
+    await io.shell.rm(tmp)
   }
 }
 
 /** Mint a CircleCI OIDC token for npm trusted publishing and set NPM_ID_TOKEN. */
 export async function mintNpmToken(): Promise<void> {
-  process.env.NPM_ID_TOKEN = (await io.mintCircleOidcToken()).trim()
+  process.env.NPM_ID_TOKEN = (await io.shell.mintCircleOidcToken()).trim()
 }

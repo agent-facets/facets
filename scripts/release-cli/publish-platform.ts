@@ -27,7 +27,7 @@ export async function publishSingle(target: string): Promise<number> {
 
   let pkgJson: { name: string; version: string }
   try {
-    pkgJson = await io.readJson(pkgJsonPath)
+    pkgJson = await io.shell.readJson(pkgJsonPath)
   } catch {
     console.error(`Could not read ${pkgJsonPath}. Did the build job produce this target?`)
     return 1
@@ -43,10 +43,10 @@ export async function publishSingle(target: string): Promise<number> {
   }
 
   if (process.platform !== 'win32') {
-    await io.chmod(pkgDir)
+    await io.shell.chmod(pkgDir)
   }
-  await io.pack(pkgDir)
-  await io.publish(pkgDir, PUBLISH_TAG)
+  await io.shell.pack(pkgDir)
+  await io.npm.publishTarball(pkgDir, PUBLISH_TAG)
 
   console.log(`+ ${name}@${version} published (latest)`)
   return 0

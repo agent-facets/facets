@@ -20,14 +20,14 @@ describe('finalize.ts', () => {
   })
 
   function setupFinalizePath() {
-    spyOn(io, 'mintGitHubAppToken').mockResolvedValue('fake-gh-token')
-    spyOn(io, 'publishCliPackage').mockResolvedValue(shellResult())
-    spyOn(io, 'verifyPackages').mockResolvedValue(shellResult())
+    spyOn(io.shell, 'mintGitHubAppToken').mockResolvedValue('fake-gh-token')
+    spyOn(io.shell, 'publishCliPackage').mockResolvedValue(shellResult())
+    spyOn(io.shell, 'verifyPackages').mockResolvedValue(shellResult())
     spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
       { name: 'agent-facets', version: '0.4.0', dir: 'packages/cli' },
     ])
-    spyOn(io, 'readFile').mockResolvedValue(SAMPLE_CHANGELOG)
-    spyOn(io, 'ghReleaseCreate').mockResolvedValue(
+    spyOn(io.shell, 'readFile').mockResolvedValue(SAMPLE_CHANGELOG)
+    spyOn(io.gh, 'releaseCreate').mockResolvedValue(
       'https://github.com/agent-facets/facets/releases/tag/agent-facets%400.4.0\n',
     )
     spyOn(announce, 'slackNotify').mockResolvedValue(undefined)
@@ -49,8 +49,8 @@ describe('finalize.ts', () => {
     process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
     setupFinalizePath()
 
-    const publishSpy = spyOn(io, 'publishCliPackage').mockResolvedValue(shellResult())
-    const verifySpy = spyOn(io, 'verifyPackages').mockResolvedValue(shellResult())
+    const publishSpy = spyOn(io.shell, 'publishCliPackage').mockResolvedValue(shellResult())
+    const verifySpy = spyOn(io.shell, 'verifyPackages').mockResolvedValue(shellResult())
 
     const code = await finalize()
 
@@ -64,11 +64,11 @@ describe('finalize.ts', () => {
     setupFinalizePath()
 
     const callOrder: Array<{ phase: string; args?: unknown[] }> = []
-    spyOn(io, 'verifyPackages').mockImplementation((packages: string[], version: string) => {
+    spyOn(io.shell, 'verifyPackages').mockImplementation((packages: string[], version: string) => {
       callOrder.push({ phase: 'verify', args: [packages, version] })
       return shellPromise()
     })
-    spyOn(io, 'publishCliPackage').mockImplementation(() => {
+    spyOn(io.shell, 'publishCliPackage').mockImplementation(() => {
       callOrder.push({ phase: 'publish' })
       return shellPromise()
     })
@@ -92,7 +92,7 @@ describe('finalize.ts', () => {
     process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
     setupFinalizePath()
 
-    const ghSpy = spyOn(io, 'mintGitHubAppToken').mockResolvedValue('gh-token')
+    const ghSpy = spyOn(io.shell, 'mintGitHubAppToken').mockResolvedValue('gh-token')
 
     await finalize()
 
@@ -105,7 +105,7 @@ describe('finalize.ts', () => {
     process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
     setupFinalizePath()
 
-    const verifySpy = spyOn(io, 'verifyPackages').mockResolvedValue(shellResult())
+    const verifySpy = spyOn(io.shell, 'verifyPackages').mockResolvedValue(shellResult())
 
     await finalize()
 
@@ -118,7 +118,7 @@ describe('finalize.ts', () => {
     process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
     setupFinalizePath()
 
-    const releaseSpy = spyOn(io, 'ghReleaseCreate').mockResolvedValue(
+    const releaseSpy = spyOn(io.gh, 'releaseCreate').mockResolvedValue(
       'https://github.com/agent-facets/facets/releases/tag/agent-facets%400.4.0\n',
     )
 
@@ -148,7 +148,7 @@ describe('finalize.ts', () => {
   test('continues even if GitHub Release creation fails', async () => {
     process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
     setupFinalizePath()
-    spyOn(io, 'readFile').mockRejectedValue(new Error('CHANGELOG.md not found'))
+    spyOn(io.shell, 'readFile').mockRejectedValue(new Error('CHANGELOG.md not found'))
 
     const code = await finalize()
 
