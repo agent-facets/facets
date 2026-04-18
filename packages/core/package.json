@@ -30,7 +30,7 @@
   "devDependencies": {
     "@agent-facets/common": "workspace:*",
     "@agent-facets/adapter": "workspace:*",
-    "@types/bun": "1.3.10"
+    "@types/bun": "1.3.12"
   },
   "peerDependencies": {
     "typescript": "^5 || ^6"
