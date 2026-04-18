@@ -1,5 +1,11 @@
 # agent-facets
 
+## 0.5.2
+
+### Patch Changes
+
+- [#145](https://github.com/agent-facets/facets/pull/145) [`a09846b`](https://github.com/agent-facets/facets/commit/a09846bce2b449287261ed4511ff0c3ad1599d6e) Thanks [@eXamadeus](https://github.com/eXamadeus)! - CircleCI
+
 ## 0.5.1
 
 ### Patch Changes
