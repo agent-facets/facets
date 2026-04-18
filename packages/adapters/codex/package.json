@@ -20,10 +20,8 @@
     "types": "tsc --noEmit",
     "test": "bun test"
   },
-  "dependencies": {
-    "@agent-facets/adapter": "workspace:*"
-  },
   "devDependencies": {
+    "@agent-facets/adapter": "workspace:*",
     "@types/bun": "1.3.11",
     "tsdown": "^0.21.9",
     "typescript": "^6.0.3"

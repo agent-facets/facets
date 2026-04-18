@@ -2,8 +2,14 @@
  * Prepack entry point — run via `bun <relative-path>/scripts/prepack.ts`
  * from a package directory during `npm publish` or `changeset publish`.
  *
- * Rewrites workspace:* dependencies to concrete versions and saves a
- * backup so that postpack.ts can restore the original.
+ * Does two things before the tarball is packed:
+ *   1. Rewrites workspace:* dependencies to concrete versions.
+ *   2. Hoists whitelisted fields from `publishConfig` (exports, main,
+ *      types, module, bin) to the top-level manifest — mirrors pnpm's
+ *      publishConfig behavior, which npm does not implement natively.
+ *
+ * A backup of the original `package.json` is saved so postpack.ts can
+ * restore it after packing.
  *
  * The monorepo root is discovered by walking upward from the package
  * directory until a `package.json` with a `workspaces` field is found.
@@ -12,7 +18,7 @@
  */
 
 import { dirname, resolve } from 'node:path'
-import { createDiskResolver, rewriteWorkspaceDeps } from './lib/prepack'
+import { applyPublishConfig, createDiskResolver, rewriteWorkspaceDeps } from './lib/prepack'
 
 const cwd = process.cwd()
 const pkgPath = resolve(cwd, 'package.json')
@@ -49,14 +55,21 @@ async function findMonorepoRoot(start: string): Promise<string> {
 const rootDir = await findMonorepoRoot(cwd)
 const resolver = createDiskResolver(rootDir)
 
-const { pkg: rewritten, modified } = await rewriteWorkspaceDeps(pkg, resolver)
+const { pkg: afterDepRewrite, modified: depsModified } = await rewriteWorkspaceDeps(pkg, resolver)
+const { pkg: rewritten, modified: publishConfigModified } = applyPublishConfig(afterDepRewrite)
+
+const modified = depsModified || publishConfigModified
 
 if (modified) {
   // Save backup of the original for postpack restore
   await Bun.file(bakPath).write(original)
   // Write the rewritten package.json
   await Bun.file(pkgPath).write(`${JSON.stringify(rewritten, null, 2)}\n`)
-  console.log('prepack: rewrote workspace:* dependencies to concrete versions')
+
+  const changes: string[] = []
+  if (depsModified) changes.push('rewrote workspace:* dependencies to concrete versions')
+  if (publishConfigModified) changes.push('hoisted publishConfig fields to top-level')
+  console.log(`prepack: ${changes.join('; ')}`)
 } else {
-  console.log('prepack: no workspace:* dependencies found, nothing to rewrite')
+  console.log('prepack: no workspace:* deps and no publishConfig overrides, nothing to rewrite')
 }
