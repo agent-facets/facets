@@ -1,5 +1,11 @@
 # @agent-facets/core
 
+## 0.4.3
+
+### Patch Changes
+
+- f673986 Thanks @eXamadeus! - Correct CircleCI deployment keys
+
 ## 0.4.2
 
 ### Patch Changes
