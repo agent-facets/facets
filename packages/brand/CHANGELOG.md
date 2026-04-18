@@ -1,5 +1,11 @@
 # @agent-facets/brand
 
+## 0.3.3
+
+### Patch Changes
+
+- [#129](https://github.com/agent-facets/facets/pull/129) [`f8a5a7b`](https://github.com/agent-facets/facets/commit/f8a5a7b78f96d8269042a05caf360ee95ed76cb4) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Publish all packages touched
+
 ## 0.3.2
 
 ### Patch Changes
