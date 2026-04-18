@@ -19,8 +19,8 @@ Releases are fully automated. Merging a PR with changesets triggers a pipeline t
   <Step title="Version PR merged">
     A maintainer reviews and merges the version PR. CI detects the merge, compares each package version against what is published on npm, and creates a git tag for each package that has an unpublished version (e.g. `@agent-facets/core@0.3.0` or `agent-facets@1.0.0`).
   </Step>
-  <Step title="Tag push triggers release">
-    Each tag push triggers a release workflow. Scoped tags (`@agent-facets/*@*`) trigger the `release` workflow for library packages. Unscoped tags (`agent-facets@*`) trigger the `release-cli` workflow for the CLI.
+  <Step title="Release pipeline triggered per tag">
+    After pushing tags, the `tag.ts` script also calls CircleCI's API v2 `pipeline/run` endpoint once per tag to explicitly trigger the release pipeline. We do not rely on GitHub-to-CircleCI tag-push webhooks because they are unreliable when the bot GitHub App pushes tags — CircleCI appears to filter events from other bot actors. The pipeline's workflow filters (tag regex in `.circleci/release.yml`) still apply, so scoped tags (`@agent-facets/*@*`) run the `release` workflow and unscoped tags (`agent-facets@*`) run `release-cli`.
   </Step>
   <Step title="Publish to npm">
     The publish path depends on the package type:
@@ -67,26 +67,44 @@ The [changeset bot](https://github.com/apps/changeset-bot) comments on every PR 
 
 **Symptom**: A version PR merges, tags appear on GitHub, but no `release` or `release-cli` pipeline shows up in CircleCI.
 
-**Likely cause**: The pipeline definition in CircleCI was recreated or its GitHub App integration was reinstalled, and the tag trigger on that pipeline is missing or stale.
+**Background**: The release pipeline is triggered via CircleCI's API v2 `pipeline/run` endpoint, not via GitHub webhooks. `scripts/release/tag.ts` calls the API explicitly after pushing tags. If the API call fails, `tag.ts` throws and the `main-pipeline` job fails with a Slack notification — so a silent "no pipeline ran" failure usually means the trigger call never executed (tag push failed, or the job was cancelled before reaching the trigger step).
 
 **Fix**:
 
-1. Open CircleCI → facets project → Project Settings → Pipelines.
-2. Confirm there is a `release` pipeline definition pointing at `.circleci/release.yml`.
-3. Confirm it has a GitHub trigger configured for **tag pushes**.
-4. If the trigger is missing, add it. If the whole pipeline definition is missing, recreate it and also reinstall the bot GitHub App on the org (see next section — the installation ID will change).
+1. Check the `main-pipeline` job log for the most recent version PR merge. Look for `Triggering CircleCI release pipeline for <tag>` lines and their `→ pipeline #N` responses.
+2. If those log lines are missing, the job died before tagging completed. Fix the underlying failure and re-run the job from main.
+3. If those log lines show errors (401/404 from the CircleCI API), see the CIRCLECI_API_TOKEN section below.
 
-Once routing is fixed, **re-push each stuck tag** to regenerate the webhook event. Thanks to the idempotency check in `scripts/release/publish.ts`, re-pushing a tag whose version is already on npm will skip the publish and only re-run the GitHub Release + notification steps:
+To manually trigger a release pipeline for a tag that's already pushed, POST to the API directly:
 
 ```bash
 for tag in \
   '@agent-facets/core@0.4.0' \
   'agent-facets@0.5.0' \
   ; do
-  git push origin ":refs/tags/$tag"
-  git push origin "$tag"
+  curl -X POST \
+    "https://circleci.com/api/v2/project/gh/agent-facets/facets/pipeline/run" \
+    -H "Circle-Token: $CIRCLECI_API_TOKEN" \
+    -H "content-type: application/json" \
+    --data "{\"definition_id\":\"229d2f5823-f2c9-4cba-918a-e7d0dc2f658a\",\"config\":{\"tag\":\"$tag\"},\"checkout\":{\"tag\":\"$tag\"}}"
 done
 ```
+
+The idempotency checks in `scripts/release/publish.ts`, `publish-platform.ts`, and `publish-cli-package.ts` mean re-triggering for an already-published version will skip the npm publish and only re-run the GitHub Release + notification steps.
+
+### CircleCI trigger API returns 401 or 404
+
+**Symptom**: `tag.ts` fails with `CircleCI pipeline trigger failed for tag <tag>: 401` or `404`.
+
+**Cause**:
+
+- **401** — `CIRCLECI_API_TOKEN` is missing, revoked, or belongs to a user without write access to the project.
+- **404** — `CIRCLECI_RELEASE_PIPELINE_DEFINITION_ID` is stale. If the release pipeline definition was recreated in the CircleCI UI, the UUID in `scripts/lib/constants.ts` needs updating.
+
+**Fix**:
+
+- For 401: rotate the `CIRCLECI_API_TOKEN` in the `bot-context` CircleCI context. Mint a new token at CircleCI → User Settings → Personal API Tokens.
+- For 404: grab the current definition ID from CircleCI → Project Settings → Pipelines → copy Definition ID for the release pipeline, then update `CIRCLECI_RELEASE_PIPELINE_DEFINITION_ID` in `scripts/lib/constants.ts`.
 
 ### `finalize-cli` fails with `Not Found - /app/installations/*/access_tokens`
 
@@ -106,7 +124,7 @@ done
 
 2. Update `APP_INSTALLATION_ID` in CircleCI → Organization Settings → Contexts → `bot-context`.
 
-3. Re-push any stuck tags as shown above.
+3. Manually trigger any stuck release pipelines using the curl snippet in the "Tags pushed but no release pipeline runs" section above.
 
 The `mintGitHubAppToken` helper (`scripts/lib/github-app.ts`) detects 404s and surfaces this exact runbook in its error message, so this diagnosis should appear in future job logs without needing to consult these docs.
 

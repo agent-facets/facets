@@ -14,57 +14,57 @@ import { CHANGESET_COMMIT_MESSAGE, CHANGESET_PR_TITLE, CHANGESET_RELEASE_BRANCH,
 import { io } from '../lib/io'
 
 export async function buildChangesets(): Promise<number> {
-  const files = await io.scanDir('.changeset')
+  const files = await io.shell.scanDir('.changeset')
   const pending = filterPendingChangesets(files)
 
   if (shouldPublish(pending)) {
-    io.log('No pending changesets. Nothing to do.')
+    io.console.log('No pending changesets. Nothing to do.')
     return 0
   }
 
-  io.log(`Found ${pending.length} pending changeset(s). Creating version PR...`)
+  io.console.log(`Found ${pending.length} pending changeset(s). Creating version PR...`)
 
   await mintGithubTokens()
-  await io.ghAuthSetupGit()
+  await io.gh.authSetupGit()
 
   const packagesBefore = await loadWorkspacePackages()
   const versionsBefore = new Map(packagesBefore.map((p) => [p.name, p.version]))
 
-  await io.changesetVersion()
-  await io.bunInstall()
+  await io.shell.changesetVersion()
+  await io.shell.bunInstall()
 
-  const diff = await io.gitDiff()
-  const diffCached = await io.gitDiffCached()
+  const diff = await io.git.diff()
+  const diffCached = await io.git.diffCached()
   if (diff.exitCode === 0 && diffCached.exitCode === 0) {
-    io.log('No changes after versioning, nothing to do.')
+    io.console.log('No changes after versioning, nothing to do.')
     return 0
   }
 
   const packagesAfter = await loadWorkspacePackages()
   const changedPackages = packagesAfter.filter((p) => versionsBefore.get(p.name) !== p.version)
-  const { body: prBody, entries } = await buildVersionPrBody(changedPackages, io.readFile)
+  const { body: prBody, entries } = await buildVersionPrBody(changedPackages, io.shell.readFile)
 
   for (const entry of entries) {
     const changelogPath = `${entry.dir}/CHANGELOG.md`
-    const original = await io.readFile(changelogPath)
+    const original = await io.shell.readFile(changelogPath)
     const rewritten = replaceChangelogEntry(original, entry.version, entry.content)
-    await io.writeFile(changelogPath, rewritten)
+    await io.shell.writeFile(changelogPath, rewritten)
   }
 
-  await io.gitConfig('user.name', GIT_BOT.name)
-  await io.gitConfig('user.email', GIT_BOT.email)
-  await io.gitCheckout(CHANGESET_RELEASE_BRANCH)
-  await io.gitAdd()
-  await io.gitCommit(CHANGESET_COMMIT_MESSAGE)
-  await io.gitPush('origin', CHANGESET_RELEASE_BRANCH, true)
+  await io.git.config('user.name', GIT_BOT.name)
+  await io.git.config('user.email', GIT_BOT.email)
+  await io.git.checkout(CHANGESET_RELEASE_BRANCH)
+  await io.git.add()
+  await io.git.commit(CHANGESET_COMMIT_MESSAGE)
+  await io.git.push('origin', CHANGESET_RELEASE_BRANCH, true)
 
-  const prNumber = (await io.ghPrList(CHANGESET_RELEASE_BRANCH)).trim()
+  const prNumber = (await io.gh.prList(CHANGESET_RELEASE_BRANCH)).trim()
   if (prNumber) {
-    await io.ghPrUpdate(prNumber, CHANGESET_PR_TITLE, prBody)
-    io.log(`Updated existing PR #${prNumber}`)
+    await io.gh.prUpdate(prNumber, CHANGESET_PR_TITLE, prBody)
+    io.console.log(`Updated existing PR #${prNumber}`)
   } else {
-    await io.ghPrCreate('main', CHANGESET_RELEASE_BRANCH, CHANGESET_PR_TITLE, prBody)
-    io.log('Created new Version Packages PR.')
+    await io.gh.prCreate('main', CHANGESET_RELEASE_BRANCH, CHANGESET_PR_TITLE, prBody)
+    io.console.log('Created new Version Packages PR.')
   }
 
   return 0

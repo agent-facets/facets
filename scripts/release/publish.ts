@@ -26,27 +26,27 @@ import { parseTag } from '../lib/tags'
 export async function release(): Promise<number> {
   const tag = process.env.CIRCLE_TAG
   if (!tag) {
-    io.error('CIRCLE_TAG not set. Not running on a tag push?')
+    io.console.error('CIRCLE_TAG not set. Not running on a tag push?')
     return 1
   }
 
   const parsed = parseTag(tag)
   if (!parsed) {
-    io.error(`Could not parse package name and version from tag: ${tag}`)
+    io.console.error(`Could not parse package name and version from tag: ${tag}`)
     return 1
   }
 
-  io.log(`Release triggered for ${parsed.name}@${parsed.version} (tag: ${tag})`)
+  io.console.log(`Release triggered for ${parsed.name}@${parsed.version} (tag: ${tag})`)
 
   const packages = await loadWorkspacePackages()
   const pkg = packages.find((p) => p.name === parsed.name)
   if (!pkg) {
-    io.error(`Package "${parsed.name}" not found in workspace`)
+    io.console.error(`Package "${parsed.name}" not found in workspace`)
     return 1
   }
 
   if (pkg.version !== parsed.version) {
-    io.error(`Version mismatch: tag says ${parsed.version}, package.json says ${pkg.version}`)
+    io.console.error(`Version mismatch: tag says ${parsed.version}, package.json says ${pkg.version}`)
     return 1
   }
 
@@ -55,7 +55,7 @@ export async function release(): Promise<number> {
   // the binary release pipeline, or internal adapter packages that participate
   // in changeset versioning). This guard prevents accidental npm publish attempts.
   if (pkg.private) {
-    io.log(`Skipping release for private package ${parsed.name}@${parsed.version}`)
+    io.console.log(`Skipping release for private package ${parsed.name}@${parsed.version}`)
     return 0
   }
 
@@ -68,7 +68,7 @@ export async function release(): Promise<number> {
   // slackNotify is best-effort.
   const alreadyPublished = await versionExists(parsed.name, parsed.version)
   if (alreadyPublished) {
-    io.log(`~ ${parsed.name}@${parsed.version} already on npm, skipping publish`)
+    io.console.log(`~ ${parsed.name}@${parsed.version} already on npm, skipping publish`)
   }
 
   // Shared setup — GitHub token and OIDC token for npm trusted publishing
@@ -77,14 +77,14 @@ export async function release(): Promise<number> {
   // Library packages — build and publish directly
   if (!alreadyPublished) {
     await mintNpmToken()
-    await io.turboBuild()
-    await io.npmPublish(pkg.dir)
-    io.log(`Published ${parsed.name}@${parsed.version} to npm`)
+    await io.shell.turboBuild()
+    await io.npm.publish(pkg.dir)
+    io.console.log(`Published ${parsed.name}@${parsed.version} to npm`)
   }
 
   await announceRelease(tag, pkg.dir, parsed.version)
 
-  io.log('Done.')
+  io.console.log('Done.')
   return 0
 }
 

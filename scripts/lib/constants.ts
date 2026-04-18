@@ -43,3 +43,9 @@ export const DIST_DIR = path.join(CLI_DIR, 'dist')
 
 /** Dist-tag used when publishing CLI packages to npm. */
 export const PUBLISH_TAG = 'latest'
+
+/** CircleCI project slug for triggering pipelines via API v2. */
+export const CIRCLECI_PROJECT_SLUG = 'gh/agent-facets/facets'
+
+/** CircleCI pipeline definition ID for the release pipeline (.circleci/release.yml). */
+export const CIRCLECI_RELEASE_PIPELINE_DEFINITION_ID = '229d2f5823-f2c9-4cba-918a-e7d0dc2f658a'

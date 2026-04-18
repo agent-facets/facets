@@ -15,31 +15,31 @@ describe('version.ts', () => {
 
   describe('buildChangesets', () => {
     function setupVersionPath() {
-      spyOn(io, 'mintGitHubAppToken').mockResolvedValue('fake-gh-token')
-      spyOn(io, 'ghAuthSetupGit').mockResolvedValue(shellResult())
-      spyOn(io, 'changesetVersion').mockResolvedValue(shellResult())
-      spyOn(io, 'bunInstall').mockResolvedValue(shellResult())
-      spyOn(io, 'gitDiff').mockResolvedValue(shellResult('', 1))
-      spyOn(io, 'gitDiffCached').mockResolvedValue(shellResult('', 0))
-      spyOn(io, 'gitConfig').mockResolvedValue(shellResult())
-      spyOn(io, 'gitCheckout').mockResolvedValue(shellResult())
-      spyOn(io, 'gitAdd').mockResolvedValue(shellResult())
-      spyOn(io, 'gitCommit').mockResolvedValue(shellResult())
-      spyOn(io, 'gitPush').mockResolvedValue(shellResult())
-      spyOn(io, 'readFile').mockResolvedValue(SAMPLE_CHANGELOG)
-      spyOn(io, 'writeFile').mockResolvedValue(0)
+      spyOn(io.shell, 'mintGitHubAppToken').mockResolvedValue('fake-gh-token')
+      spyOn(io.gh, 'authSetupGit').mockResolvedValue(shellResult())
+      spyOn(io.shell, 'changesetVersion').mockResolvedValue(shellResult())
+      spyOn(io.shell, 'bunInstall').mockResolvedValue(shellResult())
+      spyOn(io.git, 'diff').mockResolvedValue(shellResult('', 1))
+      spyOn(io.git, 'diffCached').mockResolvedValue(shellResult('', 0))
+      spyOn(io.git, 'config').mockResolvedValue(shellResult())
+      spyOn(io.git, 'checkout').mockResolvedValue(shellResult())
+      spyOn(io.git, 'add').mockResolvedValue(shellResult())
+      spyOn(io.git, 'commit').mockResolvedValue(shellResult())
+      spyOn(io.git, 'push').mockResolvedValue(shellResult())
+      spyOn(io.shell, 'readFile').mockResolvedValue(SAMPLE_CHANGELOG)
+      spyOn(io.shell, 'writeFile').mockResolvedValue(0)
     }
 
     test('creates a new PR with rich body when changesets are pending', async () => {
-      spyOn(io, 'scanDir').mockResolvedValue(['funny-turtle.md', 'README.md'])
+      spyOn(io.shell, 'scanDir').mockResolvedValue(['funny-turtle.md', 'README.md'])
       setupVersionPath()
 
       const loadSpy = spyOn(ci, 'loadWorkspacePackages')
         .mockResolvedValueOnce([{ name: '@agent-facets/core', version: '1.0.0', dir: 'packages/core' }])
         .mockResolvedValueOnce([{ name: '@agent-facets/core', version: '1.1.0', dir: 'packages/core' }])
 
-      spyOn(io, 'ghPrList').mockResolvedValue('')
-      const prCreateSpy = spyOn(io, 'ghPrCreate').mockResolvedValue(shellResult())
+      spyOn(io.gh, 'prList').mockResolvedValue('')
+      const prCreateSpy = spyOn(io.gh, 'prCreate').mockResolvedValue(shellResult())
 
       const { buildChangesets } = await import('./version')
       const code = await buildChangesets()
@@ -64,16 +64,16 @@ describe('version.ts', () => {
     })
 
     test('updates existing PR body instead of creating a new one', async () => {
-      spyOn(io, 'scanDir').mockResolvedValue(['funny-turtle.md'])
+      spyOn(io.shell, 'scanDir').mockResolvedValue(['funny-turtle.md'])
       setupVersionPath()
 
       spyOn(ci, 'loadWorkspacePackages')
         .mockResolvedValueOnce([{ name: '@agent-facets/core', version: '1.0.0', dir: 'packages/core' }])
         .mockResolvedValueOnce([{ name: '@agent-facets/core', version: '1.1.0', dir: 'packages/core' }])
 
-      spyOn(io, 'ghPrList').mockResolvedValue('42\n')
-      const prCreateSpy = spyOn(io, 'ghPrCreate').mockResolvedValue(shellResult())
-      const prUpdateSpy = spyOn(io, 'ghPrUpdate').mockResolvedValue(shellResult())
+      spyOn(io.gh, 'prList').mockResolvedValue('42\n')
+      const prCreateSpy = spyOn(io.gh, 'prCreate').mockResolvedValue(shellResult())
+      const prUpdateSpy = spyOn(io.gh, 'prUpdate').mockResolvedValue(shellResult())
 
       const { buildChangesets } = await import('./version')
       const code = await buildChangesets()
@@ -98,18 +98,18 @@ describe('version.ts', () => {
     })
 
     test('exits early when changeset version produces no diff', async () => {
-      spyOn(io, 'scanDir').mockResolvedValue(['funny-turtle.md'])
-      spyOn(io, 'mintGitHubAppToken').mockResolvedValue('fake-gh-token')
+      spyOn(io.shell, 'scanDir').mockResolvedValue(['funny-turtle.md'])
+      spyOn(io.shell, 'mintGitHubAppToken').mockResolvedValue('fake-gh-token')
       spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
         { name: '@agent-facets/core', version: '1.0.0', dir: 'packages/core' },
       ])
-      spyOn(io, 'changesetVersion').mockResolvedValue(shellResult())
-      spyOn(io, 'bunInstall').mockResolvedValue(shellResult())
+      spyOn(io.shell, 'changesetVersion').mockResolvedValue(shellResult())
+      spyOn(io.shell, 'bunInstall').mockResolvedValue(shellResult())
 
-      spyOn(io, 'gitDiff').mockResolvedValue(shellResult('', 0))
-      spyOn(io, 'gitDiffCached').mockResolvedValue(shellResult('', 0))
+      spyOn(io.git, 'diff').mockResolvedValue(shellResult('', 0))
+      spyOn(io.git, 'diffCached').mockResolvedValue(shellResult('', 0))
 
-      const gitCheckoutSpy = spyOn(io, 'gitCheckout').mockResolvedValue(shellResult())
+      const gitCheckoutSpy = spyOn(io.git, 'checkout').mockResolvedValue(shellResult())
 
       const { buildChangesets } = await import('./version')
       const code = await buildChangesets()
@@ -119,15 +119,15 @@ describe('version.ts', () => {
     })
 
     test('sets both GH_TOKEN and GITHUB_TOKEN', async () => {
-      spyOn(io, 'scanDir').mockResolvedValue(['funny-turtle.md'])
+      spyOn(io.shell, 'scanDir').mockResolvedValue(['funny-turtle.md'])
       setupVersionPath()
 
       spyOn(ci, 'loadWorkspacePackages')
         .mockResolvedValueOnce([{ name: '@agent-facets/core', version: '1.0.0', dir: 'packages/core' }])
         .mockResolvedValueOnce([{ name: '@agent-facets/core', version: '1.1.0', dir: 'packages/core' }])
 
-      spyOn(io, 'ghPrList').mockResolvedValue('')
-      spyOn(io, 'ghPrCreate').mockResolvedValue(shellResult())
+      spyOn(io.gh, 'prList').mockResolvedValue('')
+      spyOn(io.gh, 'prCreate').mockResolvedValue(shellResult())
 
       const { buildChangesets } = await import('./version')
       await buildChangesets()
@@ -137,15 +137,15 @@ describe('version.ts', () => {
     })
 
     test('creates PR targeting main branch', async () => {
-      spyOn(io, 'scanDir').mockResolvedValue(['funny-turtle.md'])
+      spyOn(io.shell, 'scanDir').mockResolvedValue(['funny-turtle.md'])
       setupVersionPath()
 
       spyOn(ci, 'loadWorkspacePackages')
         .mockResolvedValueOnce([{ name: '@agent-facets/core', version: '1.0.0', dir: 'packages/core' }])
         .mockResolvedValueOnce([{ name: '@agent-facets/core', version: '1.1.0', dir: 'packages/core' }])
 
-      spyOn(io, 'ghPrList').mockResolvedValue('')
-      const prCreateSpy = spyOn(io, 'ghPrCreate').mockResolvedValue(shellResult())
+      spyOn(io.gh, 'prList').mockResolvedValue('')
+      const prCreateSpy = spyOn(io.gh, 'prCreate').mockResolvedValue(shellResult())
 
       const { buildChangesets } = await import('./version')
       await buildChangesets()
@@ -156,7 +156,7 @@ describe('version.ts', () => {
 
   describe('no pending changesets', () => {
     test('exits 0 when no changesets are pending', async () => {
-      spyOn(io, 'scanDir').mockResolvedValue(['README.md'])
+      spyOn(io.shell, 'scanDir').mockResolvedValue(['README.md'])
 
       const { buildChangesets } = await import('./version')
       const code = await buildChangesets()
@@ -167,12 +167,12 @@ describe('version.ts', () => {
 
   describe('error handling', () => {
     test('returns 1 when changeset version fails', async () => {
-      spyOn(io, 'scanDir').mockResolvedValue(['funny-turtle.md'])
-      spyOn(io, 'mintGitHubAppToken').mockResolvedValue('fake-gh-token')
+      spyOn(io.shell, 'scanDir').mockResolvedValue(['funny-turtle.md'])
+      spyOn(io.shell, 'mintGitHubAppToken').mockResolvedValue('fake-gh-token')
       spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
         { name: '@agent-facets/core', version: '1.0.0', dir: 'packages/core' },
       ])
-      spyOn(io, 'changesetVersion').mockRejectedValue(new Error('changeset version failed'))
+      spyOn(io.shell, 'changesetVersion').mockRejectedValue(new Error('changeset version failed'))
 
       const { buildChangesets } = await import('./version')
       const code = await buildChangesets().catch(() => 1)

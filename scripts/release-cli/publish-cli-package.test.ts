@@ -9,7 +9,7 @@ describe('publish-cli-package.ts', () => {
   beforeEach(() => {
     spyOn(console, 'log').mockImplementation(() => {})
     spyOn(console, 'error').mockImplementation(() => {})
-    spyOn(io, 'mintCircleOidcToken').mockResolvedValue('fake-oidc-token\n')
+    spyOn(io.shell, 'mintCircleOidcToken').mockResolvedValue('fake-oidc-token\n')
   })
 
   afterEach(() => {
@@ -31,12 +31,12 @@ describe('publish-cli-package.ts', () => {
     spyOn(Bun.Glob.prototype, 'scanSync').mockImplementation(function* () {
       yield '@agent-facets/cli-darwin-arm64/package.json'
     })
-    spyOn(io, 'readJson').mockResolvedValue({
+    spyOn(io.shell, 'readJson').mockResolvedValue({
       name: '@agent-facets/cli-darwin-arm64',
       version: '1.0.0',
     })
     spyOn(npm, 'versionExists').mockResolvedValue(true)
-    const packSpy = spyOn(io, 'pack').mockResolvedValue(shellResult())
+    const packSpy = spyOn(io.shell, 'pack').mockResolvedValue(shellResult())
 
     const code = await publishCliPackage()
 
@@ -50,15 +50,15 @@ describe('publish-cli-package.ts', () => {
       yield '@agent-facets/cli-linux-x64/package.json'
     })
     let callIndex = 0
-    spyOn(io, 'readJson').mockImplementation(async () => {
+    spyOn(io.shell, 'readJson').mockImplementation(async () => {
       callIndex++
       if (callIndex === 1) return { name: '@agent-facets/cli-darwin-arm64', version: '2.0.0' }
       return { name: '@agent-facets/cli-linux-x64', version: '2.0.0' }
     })
     spyOn(npm, 'versionExists').mockResolvedValue(false)
-    const writeSpy = spyOn(io, 'writeFile').mockResolvedValue(0)
-    spyOn(io, 'pack').mockResolvedValue(shellResult())
-    spyOn(io, 'publish').mockResolvedValue(shellResult())
+    const writeSpy = spyOn(io.shell, 'writeFile').mockResolvedValue(0)
+    spyOn(io.shell, 'pack').mockResolvedValue(shellResult())
+    spyOn(io.npm, 'publishTarball').mockResolvedValue(shellResult())
 
     await publishCliPackage()
 
@@ -77,14 +77,14 @@ describe('publish-cli-package.ts', () => {
     spyOn(Bun.Glob.prototype, 'scanSync').mockImplementation(function* () {
       yield '@agent-facets/cli-darwin-arm64/package.json'
     })
-    spyOn(io, 'readJson').mockResolvedValue({
+    spyOn(io.shell, 'readJson').mockResolvedValue({
       name: '@agent-facets/cli-darwin-arm64',
       version: '3.0.0',
     })
     spyOn(npm, 'versionExists').mockResolvedValue(false)
-    spyOn(io, 'writeFile').mockResolvedValue(0)
-    const packSpy = spyOn(io, 'pack').mockResolvedValue(shellResult())
-    const publishSpy = spyOn(io, 'publish').mockResolvedValue(shellResult())
+    spyOn(io.shell, 'writeFile').mockResolvedValue(0)
+    const packSpy = spyOn(io.shell, 'pack').mockResolvedValue(shellResult())
+    const publishSpy = spyOn(io.npm, 'publishTarball').mockResolvedValue(shellResult())
 
     const code = await publishCliPackage()
 

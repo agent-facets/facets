@@ -47,13 +47,13 @@ describe('publish.ts', () => {
       spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
         { name: '@agent-facets/core', version: '1.1.0', dir: 'packages/core', private: false },
       ])
-      spyOn(io, 'mintGitHubAppToken').mockResolvedValue('fake-gh-token')
-      spyOn(io, 'turboBuild').mockResolvedValue(shellResult())
-      spyOn(io, 'mintCircleOidcToken').mockResolvedValue('fake-oidc-token\n')
-      spyOn(io, 'npmPublish').mockResolvedValue(shellResult())
+      spyOn(io.shell, 'mintGitHubAppToken').mockResolvedValue('fake-gh-token')
+      spyOn(io.shell, 'turboBuild').mockResolvedValue(shellResult())
+      spyOn(io.shell, 'mintCircleOidcToken').mockResolvedValue('fake-oidc-token\n')
+      spyOn(io.npm, 'publish').mockResolvedValue(shellResult())
       spyOn(announce, 'slackNotify').mockResolvedValue(undefined)
-      spyOn(io, 'readFile').mockResolvedValue(SAMPLE_CHANGELOG)
-      spyOn(io, 'ghReleaseCreate').mockResolvedValue(
+      spyOn(io.shell, 'readFile').mockResolvedValue(SAMPLE_CHANGELOG)
+      spyOn(io.gh, 'releaseCreate').mockResolvedValue(
         'https://github.com/agent-facets/facets/releases/tag/%40agent-facets%2Fcore%401.1.0\n',
       )
       // Default to "version is new on npm" so existing tests keep their
@@ -107,7 +107,7 @@ describe('publish.ts', () => {
       process.env.CIRCLE_TAG = '@agent-facets/core@1.1.0'
       setupPublishPath()
 
-      const publishSpy = spyOn(io, 'npmPublish').mockResolvedValue(shellResult())
+      const publishSpy = spyOn(io.npm, 'publish').mockResolvedValue(shellResult())
 
       const { release } = await import('./publish')
       const code = await release()
@@ -121,7 +121,7 @@ describe('publish.ts', () => {
       spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
         { name: '@agent-facets/platform-opencode', version: '0.1.0', dir: 'packages/platform-opencode', private: true },
       ])
-      const publishSpy = spyOn(io, 'npmPublish').mockResolvedValue(shellResult())
+      const publishSpy = spyOn(io.npm, 'publish').mockResolvedValue(shellResult())
 
       const { release } = await import('./publish')
       const code = await release()
@@ -134,7 +134,7 @@ describe('publish.ts', () => {
       process.env.CIRCLE_TAG = '@agent-facets/core@1.1.0'
       setupPublishPath()
 
-      const mintSpy = spyOn(io, 'mintCircleOidcToken').mockResolvedValue('oidc-token\n')
+      const mintSpy = spyOn(io.shell, 'mintCircleOidcToken').mockResolvedValue('oidc-token\n')
 
       const { release } = await import('./publish')
       await release()
@@ -147,7 +147,7 @@ describe('publish.ts', () => {
       process.env.CIRCLE_TAG = '@agent-facets/core@1.1.0'
       setupPublishPath()
 
-      const releaseSpy = spyOn(io, 'ghReleaseCreate').mockResolvedValue(
+      const releaseSpy = spyOn(io.gh, 'releaseCreate').mockResolvedValue(
         'https://github.com/agent-facets/facets/releases/tag/core\n',
       )
 
@@ -179,7 +179,7 @@ describe('publish.ts', () => {
     test('sets both GH_TOKEN and GITHUB_TOKEN', async () => {
       process.env.CIRCLE_TAG = '@agent-facets/core@1.1.0'
       setupPublishPath()
-      spyOn(io, 'mintGitHubAppToken').mockResolvedValue('release-token')
+      spyOn(io.shell, 'mintGitHubAppToken').mockResolvedValue('release-token')
 
       const { release } = await import('./publish')
       await release()
@@ -191,7 +191,7 @@ describe('publish.ts', () => {
     test('continues even if GitHub Release creation fails', async () => {
       process.env.CIRCLE_TAG = '@agent-facets/core@1.1.0'
       setupPublishPath()
-      spyOn(io, 'readFile').mockRejectedValue(new Error('CHANGELOG.md not found'))
+      spyOn(io.shell, 'readFile').mockRejectedValue(new Error('CHANGELOG.md not found'))
 
       const { release } = await import('./publish')
       const code = await release()
@@ -217,9 +217,9 @@ describe('publish.ts', () => {
       // a tag is re-pushed to recover from a post-publish failure.
       spyOn(npm, 'versionExists').mockResolvedValue(true)
 
-      const publishSpy = spyOn(io, 'npmPublish').mockResolvedValue(shellResult())
-      const buildSpy = spyOn(io, 'turboBuild').mockResolvedValue(shellResult())
-      const oidcSpy = spyOn(io, 'mintCircleOidcToken').mockResolvedValue('oidc\n')
+      const publishSpy = spyOn(io.npm, 'publish').mockResolvedValue(shellResult())
+      const buildSpy = spyOn(io.shell, 'turboBuild').mockResolvedValue(shellResult())
+      const oidcSpy = spyOn(io.shell, 'mintCircleOidcToken').mockResolvedValue('oidc\n')
 
       const { release } = await import('./publish')
       const code = await release()
@@ -236,7 +236,7 @@ describe('publish.ts', () => {
       setupPublishPath()
       spyOn(npm, 'versionExists').mockResolvedValue(true)
 
-      const releaseSpy = spyOn(io, 'ghReleaseCreate').mockResolvedValue(
+      const releaseSpy = spyOn(io.gh, 'releaseCreate').mockResolvedValue(
         'https://github.com/agent-facets/facets/releases/tag/core\n',
       )
       const slackSpy = spyOn(announce, 'slackNotify').mockResolvedValue(undefined)
