@@ -20,6 +20,9 @@
     "test": "bun test",
     "types": "tsc --noEmit"
   },
+  "dependencies": {
+    "yaml": "2.8.3"
+  },
   "devDependencies": {
     "@agent-facets/common": "workspace:*",
     "tsdown": "^0.21.9",

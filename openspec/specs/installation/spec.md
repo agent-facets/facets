@@ -1,58 +1,69 @@
 ## Purpose
 
-The lockfile (`facets.lock`) records the exact resolved state of an installed facet so that installations are reproducible across machines and environments. This spec defines what a valid lockfile contains. Install and upgrade flows are future work.
+The lockfile (`facets.lock`) records the exact resolved state of installed facets so that installations are reproducible across machines and environments. This spec defines what a valid lockfile contains.
+
+The closed-alpha lockfile shape is **adapter-agnostic**: it records what each facet contributes (scope/type/name tuples) and leaves materialization to the installer. The installer applies the same asset set to every selected adapter, so the lockfile never embeds per-adapter state.
 
 ## Requirements
 
-### Requirement: Lockfile captures the installed facet's identity and integrity
+### Requirement: Lockfile declares a version
 
-The lockfile SHALL record the installed facet's name, version, and content integrity hash. A lockfile missing any of these SHALL be rejected.
+The lockfile SHALL include a top-level `lockfileVersion` integer. The CLI SHALL bump this on breaking shape changes and refuse to load lockfiles with a version it does not understand.
 
-#### Scenario: Valid facet section
+#### Scenario: Missing lockfile version
 
-- **WHEN** a lockfile contains a facet name, version, and integrity hash
-- **THEN** the system SHALL accept the lockfile
+- **WHEN** a lockfile omits `lockfileVersion`
+- **THEN** the system SHALL reject the lockfile
+
+### Requirement: Each facet entry records source provenance
+
+For every facet in `facets`, the lockfile SHALL record the original source specifier and (for git sources) the symbolic ref and resolved commit SHA. Local sources SHALL omit `ref` and `commit`.
+
+#### Scenario: Valid git-source entry
+
+- **WHEN** a lockfile facet entry includes `source`, `ref`, `commit`, `version`, `integrity`, and `assets`
+- **THEN** the system SHALL accept the entry
+
+#### Scenario: Valid local-source entry
+
+- **WHEN** a lockfile facet entry includes `source: "file:./..."`, `version`, `integrity`, and `assets`, and omits `ref` / `commit`
+- **THEN** the system SHALL accept the entry
+
+### Requirement: Each facet entry captures identity and integrity
+
+Every facet entry SHALL include `version` (from the facet's `facet.json`) and `integrity` (the sha256 of the built `.facet` archive). Missing either field SHALL cause the lockfile to be rejected.
 
 #### Scenario: Missing integrity hash
 
-- **WHEN** a lockfile's facet section omits the integrity hash
+- **WHEN** a facet entry omits `integrity`
 - **THEN** the system SHALL reject the lockfile
 
-### Requirement: Lockfile captures source-mode server resolution
+### Requirement: Each facet entry lists its assets, adapter-agnostically
 
-For each source-mode server, the lockfile SHALL record the resolved version, content integrity hash, and API surface hash. All three are necessary — the version identifies what was installed, the integrity hash verifies it hasn't been tampered with, and the API surface hash enables breaking-change detection during upgrades.
+Every facet entry SHALL include an `assets` array whose members are `{scope, type, name}` tuples. `scope` SHALL be one of `system | user | project`. `type` SHALL be one of `skill | agent | command`. No per-adapter fields live here — the installer applies the asset set to every selected adapter ("same thing per adapter").
 
-#### Scenario: Valid source-mode server entry
+#### Scenario: Valid asset tuple
 
-- **WHEN** a lockfile server entry has a resolved version, integrity hash, and API surface hash
+- **WHEN** an asset entry has `scope: "user"`, `type: "skill"`, and `name: "planning"`
 - **THEN** the system SHALL accept the entry
 
-#### Scenario: Incomplete source-mode server entry
+#### Scenario: Unknown asset scope
 
-- **WHEN** a lockfile server entry has a version but is missing its integrity or API surface hash
+- **WHEN** an asset entry has `scope: "global"`
 - **THEN** the system SHALL reject the lockfile
 
-### Requirement: Lockfile captures ref-mode server resolution
+#### Scenario: Unknown asset type
 
-For each ref-mode server, the lockfile SHALL record the original OCI image reference, the resolved OCI digest, and the API surface hash. Both the image reference and digest are necessary because OCI tags are mutable — the digest pins the exact image for reproducibility while the image reference preserves the original tag for upgrade resolution.
-
-#### Scenario: Valid ref-mode server entry
-
-- **WHEN** a lockfile server entry has an image reference, resolved digest, and API surface hash
-- **THEN** the system SHALL accept the entry
-
-#### Scenario: Missing digest
-
-- **WHEN** a lockfile server entry has an image reference but no resolved digest
+- **WHEN** an asset entry has `type: "hook"`
 - **THEN** the system SHALL reject the lockfile
 
-### Requirement: Lockfile without servers is valid
+### Requirement: A lockfile without facets is valid
 
-A facet that references no servers SHALL produce a valid lockfile with only the facet identity section. The servers section SHALL be optional.
+A project that declares no facets in `facets.json` SHALL produce a valid lockfile with an empty `facets` object.
 
-#### Scenario: Facet with no servers
+#### Scenario: Empty facets map
 
-- **WHEN** a lockfile contains a valid facet section and no servers section
+- **WHEN** a lockfile contains `lockfileVersion` and `facets: {}`
 - **THEN** the system SHALL accept the lockfile
 
 ### Requirement: Unrecognized fields are tolerated
@@ -61,6 +72,14 @@ The system SHALL accept lockfiles containing fields not defined in the current s
 
 #### Scenario: Unknown field in lockfile
 
-- **WHEN** a lockfile contains a field not defined in the schema (e.g., `generatedAt: "2026-03-08"`)
+- **WHEN** a lockfile contains a field not defined in the schema (e.g., `generatedAt: "2026-04-18"`)
 - **THEN** the system SHALL accept the lockfile
 - **AND** the field SHALL be present in the loaded result
+
+## Future requirements (open-beta)
+
+These requirements apply to the open-beta install pipeline (registry resolution, MCP server references, composition). They are **not** part of closed-alpha scope and are deferred until the registry lands.
+
+- Per-facet MCP server entries (source-mode + ref-mode) with API surface hashes for breaking-change detection.
+- Composed facets (`facets`/`servers` inside a facet manifest) with sub-lockfile state.
+- Registry-pinned integrity alongside source-pinned integrity (provenance chain).

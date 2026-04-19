@@ -80,6 +80,32 @@ export const FacetManifestSchema = type({
     }
   }
 
+  // Constraint 3: asset names must not contain `.` or `..` path segments.
+  // Forward slashes are permitted (facet-namespacing), so segment-wise check.
+  // Empty segments (leading/trailing/double slash) are rejected too.
+  // Install writes to join(baseDir, relativePathFor(type, name)) — an unchecked
+  // `..` segment escapes the adapter base directory. Rejecting here stops the
+  // manifest before any filesystem work begins.
+  const assetNameGroups: [string, Record<string, unknown> | undefined][] = [
+    ['skills', data.skills],
+    ['agents', data.agents],
+    ['commands', data.commands],
+  ]
+  for (const [group, record] of assetNameGroups) {
+    if (!record) continue
+    for (const key of Object.keys(record)) {
+      const segments = key.split('/')
+      for (const seg of segments) {
+        if (seg === '' || seg === '.' || seg === '..') {
+          ctx.mustBe(
+            `${group} name "${key}" must not contain empty, "." or ".." path segments (asset names are used as filesystem paths)`,
+          )
+          break
+        }
+      }
+    }
+  }
+
   return true
 })
 

@@ -2,7 +2,10 @@ import type { Command } from './commands.ts'
 import { version } from './version.ts'
 
 export function printGlobalHelp(commands: Record<string, Command>): void {
-  const entries = Object.values(commands)
+  // Hide stub commands from the global listing — they're still invocable (so
+  // typos keep getting "did you mean…" suggestions), but surfacing them here
+  // would promise capabilities we haven't shipped yet (Adjustment K).
+  const entries = Object.values(commands).filter((c) => c.implemented !== false)
   const maxNameLength = Math.max(...entries.map((c) => c.name.length))
 
   const lines = [

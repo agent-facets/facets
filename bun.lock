@@ -22,6 +22,9 @@
     "packages/adapter": {
       "name": "@agent-facets/adapter",
       "version": "0.2.3",
+      "dependencies": {
+        "yaml": "2.8.3",
+      },
       "devDependencies": {
         "@agent-facets/common": "workspace:*",
         "tsdown": "^0.21.9",

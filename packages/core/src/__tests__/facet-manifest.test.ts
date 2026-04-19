@@ -158,6 +158,37 @@ describe('FacetManifestSchema — invalid manifests', () => {
     const errors = result as InstanceType<typeof type.errors>
     expect(errors.some((e) => e.message.includes('at least one asset type'))).toBe(true)
   })
+
+  // Path-traversal gate (F1): asset-name keys are used as filesystem paths in
+  // the install pipeline. Any `..` segment would escape the adapter base dir.
+  test.each([
+    ['..', 'skills'],
+    ['../escape', 'skills'],
+    ['namespace/../escape', 'skills'],
+    ['namespace/..', 'agents'],
+    ['./dotdir', 'commands'],
+    ['namespace//double-slash', 'skills'],
+  ])('asset name %p in %s is rejected', (name, group) => {
+    const input: Record<string, unknown> = { name: 'pwn', version: '1.0.0' }
+    input[group] = { [name]: { description: 'evil' } }
+    const result = FacetManifestSchema(input)
+    expect(result).toBeInstanceOf(type.errors)
+    const errors = result as InstanceType<typeof type.errors>
+    expect(errors.some((e) => e.message.includes('path segments'))).toBe(true)
+  })
+
+  test('deep-nested namespaced asset names (no traversal) stay valid', () => {
+    const input = {
+      name: 'ok',
+      version: '1.0.0',
+      skills: {
+        'viper-plans/planning': { description: 'plan things' },
+        'viper-plans/review/deep': { description: 'deeper' },
+      },
+    }
+    const result = FacetManifestSchema(input)
+    expect(result).not.toBeInstanceOf(type.errors)
+  })
 })
 
 // --- Unknown field pass-through ---

@@ -9,6 +9,7 @@ export const buildCommand: Command = {
   name: 'build',
   description: 'Build a facet from the current directory',
   usage: '[directory]',
+  implemented: true,
   flags: {
     'emit-manifest': {
       type: 'boolean',

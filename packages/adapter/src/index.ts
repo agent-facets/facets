@@ -1,3 +1,11 @@
+export type { AssetPath } from './asset-fs.ts'
+export {
+  assembleAssetContent,
+  deleteAssetFile,
+  installAssetFile,
+  readAssetFile,
+  splitAssetContent,
+} from './asset-fs.ts'
 export { defineAdapter } from './define-adapter.ts'
 export type {
   Adapter,

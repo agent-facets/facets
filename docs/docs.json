@@ -1,6 +1,6 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "almond",
+  "theme": "mint",
   "name": "Agent Facets",
   "description": "A package manager for AI assistant extensions — skills, agents, commands, and MCP servers.",
   "logo": {
@@ -12,7 +12,10 @@
   },
   "styling": {
     "codeblocks": {
-      "theme": "dracula"
+      "theme": {
+        "dark": "github-dark",
+        "light": "github-light"
+      }
     }
   },
   "fonts": {
@@ -28,45 +31,85 @@
   },
   "favicon": "/assets/favicon.ico",
   "navigation": {
-    "groups": [
+    "tabs": [
       {
-        "group": "Agent Facets",
-        "icon": "/assets/icon.svg",
-        "pages": ["index", "cli", "learn", "specification", "roadmap"]
-      },
-      {
-        "group": "CLI",
-        "tag": "facet",
-        "icon": "terminal",
-        "pages": ["cli/create", "cli/edit", "cli/build", "cli/adapter"]
-      },
-      {
-        "group": "Asset Types",
+        "tab": "Docs",
         "icon": "book",
-        "pages": ["learn/skills", "learn/commands", "learn/agents", "learn/servers"]
+        "groups": [
+          {
+            "group": "Agent Facets",
+            "icon": "/assets/icon.svg",
+            "pages": ["index", "docs/learn/index"]
+          },
+          {
+            "group": "Asset Types",
+            "icon": "book",
+            "pages": ["docs/learn/skills", "docs/learn/commands", "docs/learn/agents", "docs/learn/servers"]
+          },
+          {
+            "group": "Contributing",
+            "icon": "handshake",
+            "pages": [
+              "docs/contributing/getting-started",
+              "docs/contributing/release-pipeline",
+              "docs/contributing/ci-architecture",
+              "docs/contributing/publishing"
+            ]
+          }
+        ]
       },
       {
-        "group": "Specification",
+        "tab": "CLI Reference",
+        "icon": "square-terminal",
+        "groups": [
+          {
+            "group": "General",
+            "pages": ["cli/index", "cli/env"]
+          },
+          {
+            "group": "Facet Management",
+            "icon": "box",
+            "pages": ["cli/install", "cli/add", "cli/remove", "cli/update"]
+          },
+          {
+            "group": "Adapters",
+            "icon": "wrench",
+            "pages": ["cli/adapters/install", "cli/adapters/list", "cli/adapters/remove"]
+          },
+          {
+            "group": "Authoring",
+            "icon": "pencil",
+            "pages": ["cli/authoring/create", "cli/authoring/edit", "cli/authoring/build"]
+          }
+        ]
+      },
+      {
+        "tab": "Specification",
         "icon": "section",
-        "pages": [
-          "specification/terminology",
-          "specification/architecture",
-          "specification/manifest",
-          "specification/publish",
-          "specification/install",
-          "specification/integrity",
-          "specification/servers"
+        "groups": [
+          {
+            "group": "Specification",
+            "pages": ["specification/index"]
+          },
+          {
+            "group": "Sections",
+            "icon": "section",
+            "pages": [
+              "specification/terminology",
+              "specification/architecture",
+              "specification/manifest",
+              "specification/publish",
+              "specification/install",
+              "specification/integrity",
+              "specification/servers"
+            ]
+          }
         ]
       },
       {
-        "group": "Contributing",
-        "icon": "handshake",
-        "pages": [
-          "contributing/getting-started",
-          "contributing/release-pipeline",
-          "contributing/ci-architecture",
-          "contributing/publishing"
-        ]
+        "tab": "Roadmap",
+        "icon": "map",
+        "pages": ["roadmap/index", "roadmap/alpha", "roadmap/beta", "roadmap/stable"]
       }
     ]
   },
@@ -77,10 +120,6 @@
       "href": "https://facet.cafe/"
     },
     "links": [
-      {
-        "type": "github",
-        "href": "https://github.com/agent-facets/facets"
-      },
       {
         "type": "button",
         "icon": "download",
@@ -94,7 +133,9 @@
   },
   "footer": {
     "socials": {
-      "github": "https://github.com/agent-facets/facets"
+      "github": "https://github.com/agent-facets/facets",
+      "x": "https://x.com/FacetCafe",
+      "discord": "https://discord.gg/qXQYaYna5w"
     }
   }
 }

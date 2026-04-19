@@ -34,6 +34,15 @@ export type { ResolvedFacetManifest } from './loaders/facet.ts'
 // loaders
 export { FACET_MANIFEST_FILE, loadManifest, resolvePrompts } from './loaders/facet.ts'
 export { loadServerManifest } from './loaders/server.ts'
+// manifest mutations
+export {
+  emptyFacetsJson,
+  FACETS_JSON_FILE,
+  parseFacetsJson,
+  removeFacetFromManifest,
+  serializeFacetsJson,
+  upsertFacetInManifest,
+} from './manifest/mutations.ts'
 export type { BuildManifest } from './schemas/build-manifest.ts'
 export { BuildManifestSchema } from './schemas/build-manifest.ts'
 export type { FacetManifest } from './schemas/facet-manifest.ts'

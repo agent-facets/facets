@@ -11,13 +11,15 @@ Full documentation is available at [agentfacets.io](https://agentfacets.io).
 ```shell
 # Install the CLI
 npm install -g agent-facets
+
+# For closed-alpha partners: see docs/alpha/partner-onboarding.md
+# Short version:
+git clone <facet-repo>
+cd <facet-repo>
+facet install
 ```
 
-Install any facet you'd like:
-
-```shell
-facet add viper-plans
-```
+Registry-based `facet add <name>` is roadmap (open-beta) — see [agentfacets.io/roadmap](https://agentfacets.io/roadmap).
 
 Please see https://agentfacets.io for detailed guidance and documentation for the `facet` CLI tool.
 

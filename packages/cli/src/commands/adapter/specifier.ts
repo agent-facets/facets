@@ -20,9 +20,17 @@ export type ResolvedSpecifier =
   | { type: 'git'; url: string; commitish?: string }
   | { type: 'local'; path: string }
 
+// F15 — same scheme allowlist as the facet-side parseSource. Anything not in
+// this set (notably leading `-` or nonsense schemes) is rejected before the
+// URL reaches `git clone`.
+const GIT_URL_SCHEME_RE = /^(https?|ssh|git|file):\/\//
+
 /**
  * Parse an adapter install specifier into a resolved source description.
  * Does NOT perform I/O — just classifies and normalizes the input string.
+ *
+ * Throws on malformed git URLs (disallowed scheme) so callers don't have to
+ * guard separately.
  */
 export function parseSpecifier(specifier: string): ResolvedSpecifier {
   // Check built-in aliases first
@@ -35,14 +43,12 @@ export function parseSpecifier(specifier: string): ResolvedSpecifier {
   if (specifier.startsWith('git+')) {
     const raw = specifier.slice(4) // strip "git+" prefix
     const hashIndex = raw.indexOf('#')
-    if (hashIndex !== -1) {
-      return {
-        type: 'git',
-        url: raw.slice(0, hashIndex),
-        commitish: raw.slice(hashIndex + 1),
-      }
+    const url = hashIndex === -1 ? raw : raw.slice(0, hashIndex)
+    const commitish = hashIndex === -1 ? undefined : raw.slice(hashIndex + 1)
+    if (!GIT_URL_SCHEME_RE.test(url)) {
+      throw new Error(`git URL must start with https://, http://, ssh://, or git:// — got "${url}"`)
     }
-    return { type: 'git', url: raw }
+    return commitish !== undefined ? { type: 'git', url, commitish } : { type: 'git', url }
   }
 
   // Local paths: ./, ../, /absolute
