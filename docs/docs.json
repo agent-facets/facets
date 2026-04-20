@@ -107,6 +107,11 @@
         ]
       },
       {
+        "tab": "Changelog",
+        "icon": "clock",
+        "pages": ["changelog/index"]
+      },
+      {
         "tab": "Roadmap",
         "icon": "map",
         "pages": ["roadmap/index", "roadmap/alpha", "roadmap/beta", "roadmap/stable"]
