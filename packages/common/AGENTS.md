@@ -43,3 +43,15 @@ here so there's one definition, not two.
 Before adding a file here, ask: "Would the adapter SDK want to call this
 at runtime?" If no, it probably belongs in `core`. If yes, and it has no
 heavy dependencies, `common` is the right home.
+
+## Release marker
+
+This package carries `"agentFacets": { "release": "skip" }` in its
+`package.json`. That tells `scripts/release/tag.ts` (and
+`scripts/lib/changesets.ts#hasUnpublishedVersions`) to never create a git
+tag for this package. `common` is workspace-only — it's bundled into the
+adapter SDK at build time and imported directly by `core` and `cli`, so
+there's no npm release path for it and no companion pipeline to trigger.
+
+See `scripts/README.md` ("Opting a workspace package out of releases")
+for the full rationale.

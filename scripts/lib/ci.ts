@@ -26,7 +26,13 @@ export async function loadWorkspacePackages(): Promise<WorkspacePackage[]> {
     for (const dir of dirs) {
       if (await io.shell.fileExists(`${dir}/package.json`)) {
         const pkg = await io.shell.readJson(`${dir}/package.json`)
-        results.push({ name: pkg.name, version: pkg.version, dir, private: pkg.private })
+        results.push({
+          name: pkg.name,
+          version: pkg.version,
+          dir,
+          private: pkg.private,
+          releaseMode: pkg.agentFacets?.release === 'skip' ? 'skip' : undefined,
+        })
       }
     }
   }
