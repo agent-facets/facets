@@ -1,5 +1,11 @@
 # @agent-facets/adapter-opencode
 
+## 0.4.0
+
+### Minor Changes
+
+- [#168](https://github.com/agent-facets/facets/pull/168) [`8a697b5`](https://github.com/agent-facets/facets/commit/8a697b597842bcb4d3207ca73d429f4dff2be7b4) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Clean up publish failures
+
 ## 0.3.0
 
 ### Minor Changes
