@@ -1,5 +1,6 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { normalizeLineEndings, validateAssetName } from '@agent-facets/common'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 
 /**
@@ -115,16 +116,36 @@ export function assembleAssetContent(body: string, metadata?: Record<string, unk
  * or an equivalent well-tested parser is the right fix.
  */
 export function splitAssetContent(raw: string): { content: string; metadata?: Record<string, unknown> } {
-  const match = raw.match(FRONT_MATTER_RE)
-  if (!match) return { content: raw }
+  // Normalize BOM + CRLF so Windows checkouts (or cross-platform git with
+  // core.autocrlf=true) match the same \n-anchored regex as Unix checkouts.
+  // Mirrors the behavior in `@agent-facets/core`'s front-matter parser.
+  const normalized = normalizeLineEndings(raw)
+  const match = normalized.match(FRONT_MATTER_RE)
+  if (!match) return { content: normalized }
   try {
     const yamlSource = match[1] ?? ''
     const parsed = parseYaml(yamlSource) as unknown
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       return { content: match[2] ?? '', metadata: parsed as Record<string, unknown> }
     }
-    return { content: raw }
+    return { content: normalized }
   } catch {
-    return { content: raw }
+    return { content: normalized }
+  }
+}
+
+/**
+ * Assert that an asset name is safe to join onto a filesystem path. Throws
+ * a clear error if not. Exposed so adapter implementations can call this
+ * defensively before using `name` in `path.join` — even though the CLI
+ * already guards both manifest-time and lockfile-time inputs via
+ * `@agent-facets/common#validateAssetName`, defense-in-depth at the I/O
+ * boundary means a malicious direct caller of `installAsset` can't bypass
+ * validation.
+ */
+export function assertSafeAssetName(name: string): void {
+  const check = validateAssetName(name)
+  if (!check.ok) {
+    throw new Error(`asset name "${name}" ${check.reason}`)
   }
 }

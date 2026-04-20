@@ -68,6 +68,7 @@ export interface ResolvedFacetManifest {
     {
       description: string
       prompt: string
+      adapters?: Record<string, unknown>
     }
   >
   facets?: FacetManifest['facets']

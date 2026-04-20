@@ -11,12 +11,20 @@ import { hexToRgb, THEME } from '@agent-facets/brand'
  * `error:` and `fix:` labels render in THEME.warning when the stream is a
  * TTY and NO_COLOR is unset. All other text is plain so partners can copy
  * terminal output verbatim for bug reports.
+ *
+ * The block is always three lines. If `detail` is omitted or empty the
+ * middle line renders as `  (no detail)` rather than collapsing — this keeps
+ * error output grep-friendly and visually uniform in partner bug reports.
  */
 
 export interface CliError {
   /** One-line description of what failed. */
   what: string
-  /** One-line why / specific detail. Use empty string to omit. */
+  /**
+   * Optional one-line why / specific detail. Omit (or pass an empty string)
+   * to render the middle line as `(no detail)` — the block stays three
+   * lines either way.
+   */
   detail?: string
   /** One-line action the user should take to unblock themselves. */
   fix: string

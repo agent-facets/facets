@@ -168,7 +168,7 @@ function adapterExtrasFor(
       ? manifest.skills?.[asset.name]?.adapters
       : asset.type === 'agent'
         ? manifest.agents?.[asset.name]?.adapters
-        : undefined
+        : manifest.commands?.[asset.name]?.adapters
   if (!adapters) return undefined
   const entry = adapters[adapterName]
   if (entry && typeof entry === 'object') return entry as Record<string, unknown>

@@ -177,6 +177,26 @@ describe('LockfileSchema — invalid lockfiles', () => {
     const result = LockfileSchema(input)
     expect(result).toBeInstanceOf(type.errors)
   })
+
+  // Path-traversal gate symmetric with FacetManifestSchema: a crafted
+  // facets.lock must not be able to smuggle `..`, empty segments, or
+  // backslashes into the asset name — those feed adapter I/O paths during
+  // install-time deletion.
+  test.each(['../escape', 'a/../b', './dotdir', 'a//b', '..\\escape', 'a\\b'])('asset name %p is rejected', (name) => {
+    const input = {
+      lockfileVersion: LOCKFILE_VERSION,
+      facets: {
+        pwn: {
+          source: 'github:a/b',
+          version: '0.1.0',
+          integrity: 'sha256:x',
+          assets: [{ scope: 'user', type: 'skill', name }],
+        },
+      },
+    }
+    const result = LockfileSchema(input)
+    expect(result).toBeInstanceOf(type.errors)
+  })
 })
 
 // --- Unknown field pass-through ---

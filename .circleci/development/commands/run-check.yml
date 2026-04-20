@@ -1,0 +1,9 @@
+steps:
+  - run:
+      name: Check
+      # Runs on a `medium` resource class (4 GB, 2 vCPU). Previously on `small`
+      # (2 GB) the parallel adapter DTS builds (arktype inlined via tsdown's
+      # `deps.alwaysBundle`, heavy `rolldown-plugin-dts:generate` pass) OOM'd
+      # even with `--concurrency=1`, so the box was bumped. Concurrency is left
+      # at turbo's default so medium's extra vCPU actually parallelizes.
+      command: bun turbo check

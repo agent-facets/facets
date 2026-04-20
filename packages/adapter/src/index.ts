@@ -1,6 +1,7 @@
 export type { AssetPath } from './asset-fs.ts'
 export {
   assembleAssetContent,
+  assertSafeAssetName,
   deleteAssetFile,
   installAssetFile,
   readAssetFile,

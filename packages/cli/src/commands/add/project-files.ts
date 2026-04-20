@@ -1,5 +1,6 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { atomicWriteFileSync } from '@agent-facets/common'
 import {
   emptyFacetsJson,
   FACETS_JSON_FILE,
@@ -52,7 +53,5 @@ export function loadFacetsJson(projectRoot: string): LoadFacetsJsonResult {
  */
 export function writeFacetsJson(projectRoot: string, json: FacetsJson): void {
   const path = join(projectRoot, FACETS_JSON_FILE)
-  const tmp = `${path}.tmp`
-  writeFileSync(tmp, serializeFacetsJson(json), 'utf8')
-  renameSync(tmp, path)
+  atomicWriteFileSync(path, serializeFacetsJson(json))
 }

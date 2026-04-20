@@ -1,4 +1,4 @@
-import { mkdtemp } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -49,44 +49,55 @@ function runGit(
 export async function cloneGitSource(url: string, commitish?: string): Promise<ResolveGitResult> {
   const dir = await mkdtemp(join(tmpdir(), 'facet-add-git-'))
 
-  // F15 — always end `git clone` option parsing with `--` before the URL.
-  // Combined with parse-source.ts's scheme allowlist, this ensures no URL can
-  // be reinterpreted as a flag even if validation is ever bypassed.
-  if (commitish && SHA_RE.test(commitish)) {
-    // SHA workflow: full clone so any short-or-full SHA resolves via `git checkout`.
-    // --depth=1 fetch-by-SHA requires 40-char SHAs and allowReachableSHA1InWant on the server,
-    // so the simpler full-clone path is more reliable and facet repos are small enough.
-    const clone = runGit(['clone', '--', url, dir])
-    if (!clone.ok) {
-      throw gitError(url, clone.stderr)
+  // The temp dir is created up-front by `mkdtemp`. If anything below throws,
+  // the caller's finally-block cleanup can't run (it only has the returned
+  // `dir` on success). Wrap the clone/checkout so we rm -rf the dir before
+  // rethrowing, preventing leaked temp dirs from accumulating on repeated
+  // failures (dead clones, auth errors, bad SHAs, etc.).
+  try {
+    // F15 — always end `git clone` option parsing with `--` before the URL.
+    // Combined with parse-source.ts's scheme allowlist, this ensures no URL
+    // can be reinterpreted as a flag even if validation is ever bypassed.
+    if (commitish && SHA_RE.test(commitish)) {
+      // SHA workflow: full clone so any short-or-full SHA resolves via
+      // `git checkout`. --depth=1 fetch-by-SHA requires 40-char SHAs and
+      // allowReachableSHA1InWant on the server, so the simpler full-clone
+      // path is more reliable and facet repos are small enough.
+      const clone = runGit(['clone', '--', url, dir])
+      if (!clone.ok) {
+        throw gitError(url, clone.stderr)
+      }
+      // `git checkout <ref>` — no `--` here because `git checkout -- <arg>`
+      // forces pathspec mode and breaks ref/SHA resolution. The URL guard
+      // lives on the clone step; this runs in an already-cloned repo with
+      // no URL surface.
+      const checkout = runGit(['checkout', commitish], { cwd: dir })
+      if (!checkout.ok) {
+        throw new Error(`failed to checkout commit ${commitish} in ${url}: ${checkout.stderr.trim()}`)
+      }
+    } else if (commitish) {
+      // Branch/tag workflow: single clone with --branch.
+      const clone = runGit(['clone', '--depth=1', '--branch', commitish, '--', url, dir])
+      if (!clone.ok) {
+        throw gitError(url, clone.stderr)
+      }
+    } else {
+      // Default branch.
+      const clone = runGit(['clone', '--depth=1', '--', url, dir])
+      if (!clone.ok) {
+        throw gitError(url, clone.stderr)
+      }
     }
-    // `git checkout <ref>` — no `--` here because `git checkout -- <arg>`
-    // forces pathspec mode and breaks ref/SHA resolution. The URL guard
-    // lives on the clone step; this runs in an already-cloned repo with
-    // no URL surface.
-    const checkout = runGit(['checkout', commitish], { cwd: dir })
-    if (!checkout.ok) {
-      throw new Error(`failed to checkout commit ${commitish} in ${url}: ${checkout.stderr.trim()}`)
-    }
-  } else if (commitish) {
-    // Branch/tag workflow: single clone with --branch.
-    const clone = runGit(['clone', '--depth=1', '--branch', commitish, '--', url, dir])
-    if (!clone.ok) {
-      throw gitError(url, clone.stderr)
-    }
-  } else {
-    // Default branch.
-    const clone = runGit(['clone', '--depth=1', '--', url, dir])
-    if (!clone.ok) {
-      throw gitError(url, clone.stderr)
-    }
+
+    // Resolve the current HEAD so the caller can pin it in the lockfile.
+    const revParse = runGit(['rev-parse', 'HEAD'], { cwd: dir })
+    const commit = revParse.ok ? revParse.stdout.trim() : undefined
+
+    return { dir, commit }
+  } catch (err) {
+    await rm(dir, { recursive: true, force: true }).catch(() => {})
+    throw err
   }
-
-  // Resolve the current HEAD so the caller can pin it in the lockfile.
-  const revParse = runGit(['rev-parse', 'HEAD'], { cwd: dir })
-  const commit = revParse.ok ? revParse.stdout.trim() : undefined
-
-  return { dir, commit }
 }
 
 /**

@@ -15,7 +15,7 @@ curl -fsSL https://install.agentfacets.io | bash
 # Or via npm (all platforms, including Windows)
 npm install -g agent-facets
 
-# For closed-alpha partners: see docs/alpha/partner-onboarding.md
+# For closed-alpha partners: see docs/alpha/onboarding.md
 # Short version:
 git clone <facet-repo>
 cd <facet-repo>
