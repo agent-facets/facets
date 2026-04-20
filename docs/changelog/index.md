@@ -3,6 +3,24 @@ title: Changelog
 description: What's new in Agent Facets
 ---
 
+<Update label="2026-04-20" description="New install URL and cross-platform support" tags={["Update"]}>
+  ## New install URL
+
+  The CLI installer has moved to a new home at `install.agentfacets.io`. If you previously bookmarked the install URL, update it to:
+
+  ```sh
+  curl -fsSL https://install.agentfacets.io | bash
+  ```
+
+  This method works on macOS and Linux. For Windows or any platform with Node.js, you can install via npm:
+
+  ```sh
+  npm install -g agent-facets
+  ```
+
+  The [download link](/index) on the docs site has been updated automatically.
+</Update>
+
 <Update label="2026-04-20" description="Alpha install pipeline" tags={["Feature"]}>
   ## facet add and facet install
 
