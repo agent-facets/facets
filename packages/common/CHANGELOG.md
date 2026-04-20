@@ -1,5 +1,12 @@
 # @agent-facets/common
 
+## 0.1.4
+
+### Patch Changes
+
+- [#167](https://github.com/agent-facets/facets/pull/167) [`9169bcc`](https://github.com/agent-facets/facets/commit/9169bccc23bcf98ebe2f17a55849f47cb59f953f) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Ignore common for tags and CI
+- [#161](https://github.com/agent-facets/facets/pull/161) [`c120f86`](https://github.com/agent-facets/facets/commit/c120f86d13b1df72e4d04356c27552df9fe0e085) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Post-alpha follow-ups from PR [#150](https://github.com/agent-facets/facets/issues/150) agent feedback.
+
 ## 0.1.3
 
 ### Patch Changes

@@ -5,7 +5,7 @@
     "url": "https://github.com/agent-facets/facets",
     "directory": "packages/core"
   },
-  "version": "0.5.0",
+  "version": "0.5.1",
   "type": "module",
   "files": [
     "dist"
