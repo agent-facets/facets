@@ -89,6 +89,13 @@ export async function tagRelease(): Promise<number> {
 
   const pushedTags: string[] = []
   for (const pkg of packages) {
+    // Packages marked `agentFacets.release: "skip"` in their package.json
+    // are workspace-only (e.g., @agent-facets/common) and must not be tagged.
+    // Without this guard, io.npm.viewVersion returns null for these (never
+    // published), so `npmVersion !== pkg.version` is always true and every
+    // release cycle re-attempts the same tag — which fails with "tag already
+    // exists" once the first attempt has pushed.
+    if (pkg.releaseMode === 'skip') continue
     const npmVersion = await io.npm.viewVersion(pkg.name)
     if (npmVersion !== pkg.version) {
       const tag = `${pkg.name}@${pkg.version}`

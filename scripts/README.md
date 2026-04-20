@@ -92,6 +92,24 @@ The CLI package (`agent-facets`) is marked `"private": true` in its `package.jso
 4. This custom flow cannot use `changeset publish` or standard `npm publish` from the source directory
 5. Marking it `private` prevents `changeset publish` from attempting to publish the raw source package — the custom `release-cli/` pipeline handles it instead
 
+## Opting a workspace package out of releases
+
+Some workspace packages — like `@agent-facets/common` — are private helpers that are never published and have no companion release pipeline. `"private": true` alone isn't enough to skip them: the CLI package is also private but MUST be tagged (its tag triggers the binary release pipeline).
+
+To mark a package as "workspace-only, never release", add this to its `package.json`:
+
+```jsonc
+{
+  "name": "@agent-facets/something-internal",
+  "private": true,
+  "agentFacets": {
+    "release": "skip"
+  }
+}
+```
+
+`release/tag.ts` and `lib/changesets.ts#hasUnpublishedVersions` both honor this marker. Without it, `io.npm.viewVersion` returns `null` for unpublished private packages, so `tag.ts` would perpetually try to re-tag them each release cycle — and fail the second time with "tag already exists".
+
 ## IO Adapter
 
 All external side effects (shell commands, file operations, network calls) go through the `io` object exported from `lib/io/`. The adapter is split into domain files and exposed as **nested namespaces** — one per domain.
