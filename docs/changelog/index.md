@@ -47,12 +47,6 @@ description: What's new in Agent Facets
   See the [adapter CLI reference](/cli/adapters/install) for more.
 </Update>
 
-<Update label="2026-04-13" description="Project rename" tags={["Update"]}>
-  ## Renamed to Agent Facets
-
-  The project has been renamed to **Agent Facets**. The CLI command remains `facet`. All documentation and packages have been updated to reflect the new name.
-</Update>
-
 <Update label="2026-04-10" description="Self-contained archives" tags={["Update"]}>
   ## Self-contained .facet archives
 
