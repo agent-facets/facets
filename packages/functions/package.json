@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@agent-facets/functions",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "types": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@tsconfig/node24": "24.0.4",
+    "@types/aws-lambda": "^8.10.161",
+    "@types/node": "24.12.2"
+  }
+}

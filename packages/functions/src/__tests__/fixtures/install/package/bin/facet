@@ -1,0 +1,5 @@
+#!/bin/sh
+# Fake facet binary used by the end-to-end install test.
+# Intentionally portable across macOS and Linux — the install script
+# does not introspect this file beyond chmod + move.
+echo "fake-facet 99.0.0"

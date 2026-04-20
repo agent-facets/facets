@@ -15,7 +15,7 @@ references that extend AI coding assistants.
 <CodeGroup>
 
 ```shell curl
-curl -fsSL https://install.agentfacets.io | bash
+curl -fsSL https://agentfacets.io/install | bash
 ```
 
 ```shell npm
