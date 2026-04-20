@@ -5,6 +5,11 @@ commands:
                 command: bun scripts/lib/notify-failure.ts
                 name: Notify failure
                 when: on_fail
+    run-check:
+        steps:
+            - run:
+                command: bun turbo check
+                name: Check
     setup-mise:
         steps:
             - checkout
@@ -32,15 +37,13 @@ jobs:
     check:
         docker:
             - image: cimg/base:current
-        resource_class: small
+        resource_class: medium
         steps:
             - setup-mise
             - run:
                 command: cp packages/cli/turbo.ci.json packages/cli/turbo.json
                 name: Disable CLI build cache
-            - run:
-                command: bun run check
-                name: Check
+            - run-check
             - run:
                 command: git checkout packages/cli/turbo.json
                 name: Restore CLI turbo config
@@ -51,12 +54,10 @@ jobs:
             - image: cimg/base:current
         environment:
             LEFTHOOK: "0"
-        resource_class: small
+        resource_class: medium
         steps:
             - setup-mise
-            - run:
-                command: bun run check
-                name: Check
+            - run-check
             - store_test_results:
                 path: test-results
             - run:

@@ -1,13 +1,11 @@
 docker:
   - image: cimg/base:current
-resource_class: small
+resource_class: medium
 environment:
   LEFTHOOK: "0"
 steps:
   - setup-mise
-  - run:
-      name: Check
-      command: bun run check
+  - run-check
   - store_test_results:
       path: test-results
   - run:

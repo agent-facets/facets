@@ -1,5 +1,6 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { atomicWriteFileSync } from '@agent-facets/common'
 import { LOCKFILE_VERSION, type Lockfile, LockfileSchema } from '@agent-facets/core'
 import { type } from 'arktype'
 
@@ -61,9 +62,7 @@ export function loadLockfile(projectRoot: string): LoadLockfileResult {
 
 export function writeLockfile(projectRoot: string, lockfile: Lockfile): void {
   const path = join(projectRoot, FACETS_LOCK_FILE)
-  const tmp = `${path}.tmp`
-  writeFileSync(tmp, `${JSON.stringify(lockfile, null, 2)}\n`, 'utf8')
-  renameSync(tmp, path)
+  atomicWriteFileSync(path, `${JSON.stringify(lockfile, null, 2)}\n`)
 }
 
 export function emptyLockfile(): Lockfile {

@@ -189,6 +189,47 @@ describe('FacetManifestSchema — invalid manifests', () => {
     const result = FacetManifestSchema(input)
     expect(result).not.toBeInstanceOf(type.errors)
   })
+
+  // Windows-style path-traversal gate: a backslash slips through the
+  // segment-wise `/` split, so we reject it up front. Mirrors the
+  // `validateAssetName` rule enforced for lockfile asset names too.
+  test.each([
+    ['..\\escape', 'skills'],
+    ['a\\b', 'agents'],
+    ['deep\\..\\esc', 'commands'],
+  ])('asset name %p in %s is rejected (backslash)', (name, group) => {
+    const input: Record<string, unknown> = { name: 'pwn', version: '1.0.0' }
+    input[group] = { [name]: { description: 'evil' } }
+    const result = FacetManifestSchema(input)
+    expect(result).toBeInstanceOf(type.errors)
+    const errors = result as InstanceType<typeof type.errors>
+    expect(errors.some((e) => e.message.includes('backslash'))).toBe(true)
+  })
+})
+
+// --- Command descriptor parity with skills/agents ---
+
+describe('FacetManifestSchema — command descriptor extras', () => {
+  test('command accepts an optional adapters block', () => {
+    const input = {
+      name: 'my-facet',
+      version: '1.0.0',
+      commands: {
+        review: {
+          description: 'Run a code review',
+          adapters: {
+            'claude-code': { 'allowed-tools': ['Read', 'Edit'] },
+          },
+        },
+      },
+    }
+    const result = FacetManifestSchema(input)
+    expect(result).not.toBeInstanceOf(type.errors)
+    const data = result as FacetManifest
+    const review = data.commands?.review as Record<string, unknown> | undefined
+    const adapters = review?.adapters as Record<string, unknown> | undefined
+    expect(adapters?.['claude-code']).toBeDefined()
+  })
 })
 
 // --- Unknown field pass-through ---

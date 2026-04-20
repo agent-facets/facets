@@ -1,14 +1,12 @@
 docker:
   - image: cimg/base:current
-resource_class: small
+resource_class: medium
 steps:
   - setup-mise
   - run:
       name: Disable CLI build cache
       command: cp packages/cli/turbo.ci.json packages/cli/turbo.json
-  - run:
-      name: Check
-      command: bun run check
+  - run-check
   - run:
       name: Restore CLI turbo config
       command: git checkout packages/cli/turbo.json

@@ -155,6 +155,24 @@ export const installCommand: Command = {
         totalAssets += entry.assets.length * adapters.length
       }
 
+      // Drift fix — facets present in the prior lockfile but absent from
+      // facets.json must have their assets deleted from every selected
+      // adapter. Without this pass, removing a facet from facets.json would
+      // orphan its materialized files forever (the lockfile entry gets
+      // dropped below, so future installs have no record to clean up).
+      let removedAssets = 0
+      for (const [facetName, prevEntry] of Object.entries(lockfile.facets)) {
+        if (facetName in facetsJson.data.facets) continue
+        onLog(`[verbose] remove ${facetName} (no longer in facets.json)`)
+        await removeFacet({
+          adapters,
+          previous: prevEntry,
+          journal,
+          onLog,
+        })
+        removedAssets += prevEntry.assets.length * adapters.length
+      }
+
       if (interrupted) {
         throw new Error('install interrupted by user')
       }
@@ -173,17 +191,25 @@ export const installCommand: Command = {
           ? `  Restart ${adapters[0]?.name ?? 'your tooling'} to see your new assets.\n`
           : '  Restart your tooling to see your new assets.\n'
 
-      if (facetCount === 1) {
-        const [only] = Object.entries(newFacetEntries)
+      if (facetCount === 0 && removedAssets > 0) {
         process.stdout.write(
-          `✓ Installed ${only?.[0]}@${only?.[1].version} for ${adapterNames}. ${totalAssets} asset${totalAssets !== 1 ? 's' : ''} written.\n`,
+          `✓ Removed ${removedAssets} asset${removedAssets !== 1 ? 's' : ''} from ${adapterNames}. facets.json is empty.\n`,
+        )
+      } else if (facetCount === 1) {
+        const [only] = Object.entries(newFacetEntries)
+        const removedSuffix =
+          removedAssets > 0 ? ` ${removedAssets} asset${removedAssets !== 1 ? 's' : ''} removed.` : ''
+        process.stdout.write(
+          `✓ Installed ${only?.[0]}@${only?.[1].version} for ${adapterNames}. ${totalAssets} asset${totalAssets !== 1 ? 's' : ''} written.${removedSuffix}\n`,
         )
       } else {
         const names = Object.entries(newFacetEntries)
           .map(([n, e]) => `${n}@${e.version}`)
           .join(', ')
+        const removedSuffix =
+          removedAssets > 0 ? ` ${removedAssets} asset${removedAssets !== 1 ? 's' : ''} removed.` : ''
         process.stdout.write(
-          `✓ Installed ${facetCount} facets (${names}) for ${adapterNames}. ${totalAssets} assets written.\n`,
+          `✓ Installed ${facetCount} facets (${names}) for ${adapterNames}. ${totalAssets} assets written.${removedSuffix}\n`,
         )
       }
       process.stdout.write(restart)
@@ -259,6 +285,21 @@ async function runDryRun(args: DryRunArgs): Promise<number> {
     }
   }
 
+  // Mirror the install-time stale-facet cleanup pass in the dry-run output so
+  // partners can preview removals before committing.
+  for (const [facetName, prevEntry] of Object.entries(lockfile.facets)) {
+    if (facetName in facetsJson.facets) continue
+    anyChanges = true
+    sections.push(`Would remove ${facetName} (no longer in facets.json):`)
+    for (const adapter of adapters) {
+      const listing = prevEntry.assets.map((a) => `${a.type}:${a.name}`).join(', ')
+      const assetCount = prevEntry.assets.length
+      sections.push(
+        `  - ${adapter.name}: ${assetCount} asset${assetCount !== 1 ? 's' : ''}${listing ? ` (${listing})` : ''}`,
+      )
+    }
+  }
+
   if (!anyChanges) {
     process.stdout.write('No changes. facets.lock is in sync with facets.json.\n')
     return 0
@@ -307,6 +348,33 @@ async function installFacet(args: InstallFacetArgs): Promise<LockfileFacet> {
       onLog: args.onLog,
     })
     return plan.entry
+  })
+}
+
+interface RemoveFacetArgs {
+  adapters: Adapter[]
+  previous: LockfileFacet
+  journal: InstallJournal
+  onLog: (line: string) => void
+}
+
+/**
+ * Remove all assets a facet previously contributed, across every selected
+ * adapter. Used when a facet has been dropped from facets.json since the
+ * last install — the materialize helper handles the per-asset journal
+ * bookkeeping so rollback works the same way as a failed install.
+ */
+async function removeFacet(args: RemoveFacetArgs): Promise<void> {
+  // materialize() treats newAssets=[] as "delete everything in oldAssets
+  // from each adapter" via diffAssetsForDeletion. Passing an empty manifest
+  // stand-in is safe because the delete branch only reads asset identity.
+  await materialize({
+    manifest: { name: '__removed__', version: '0.0.0', skills: {}, agents: {}, commands: {} },
+    adapters: args.adapters,
+    oldAssets: args.previous.assets,
+    newAssets: [],
+    journal: args.journal,
+    onLog: args.onLog,
   })
 }
 

@@ -1,1 +1,4 @@
+export { type AssetNameValidation, validateAssetName } from './asset-name.ts'
+export { atomicWriteFileSync } from './atomic-write.ts'
+export { normalizeLineEndings } from './text.ts'
 export type { AssetType, Scope, Validated, ValidationError } from './types.ts'

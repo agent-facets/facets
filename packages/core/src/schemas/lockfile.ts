@@ -1,3 +1,4 @@
+import { validateAssetName } from '@agent-facets/common'
 import { type } from 'arktype'
 
 /**
@@ -13,11 +14,23 @@ export const LOCKFILE_VERSION = 1
  * selected adapters ("same thing per adapter" invariant). No per-adapter
  * fields live here — any future adapter-specific metadata goes in a
  * sibling field on the facet entry, never on the asset.
+ *
+ * `name` is narrowed with the shared asset-name guard so a crafted
+ * facets.lock can't smuggle `..` or backslash segments into adapter I/O
+ * paths. Manifest-side names are already guarded in FacetManifestSchema;
+ * this closes the symmetric hole for lockfile-side names (which feed
+ * `readAsset` / `deleteAsset` when computing drift-proof deletions).
  */
 const LockfileAsset = type({
   scope: "'system' | 'user' | 'project'",
   type: "'skill' | 'agent' | 'command'",
   name: 'string',
+}).narrow((data, ctx) => {
+  const check = validateAssetName(data.name)
+  if (!check.ok) {
+    return ctx.mustBe(`asset name "${data.name}" ${check.reason}`)
+  }
+  return true
 })
 
 /**

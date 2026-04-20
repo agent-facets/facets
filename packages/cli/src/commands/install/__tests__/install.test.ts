@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { captureStderr, captureStdout } from '../../../__tests__/helpers/capture-std.ts'
 import { installCommand } from '../index.ts'
 
 let projectRoot: string
@@ -205,22 +206,10 @@ describe('facet install — --dry-run', () => {
         JSON.stringify({ facets: { 'viper-plans': `git+file://${fixture}#main` } }),
       )
 
-      const chunks: string[] = []
-      const orig = process.stdout.write.bind(process.stdout)
-      process.stdout.write = ((c: unknown) => {
-        chunks.push(String(c))
-        return true
-      }) as typeof process.stdout.write
-      let code: number
-      try {
-        code = await installCommand.run([], { 'dry-run': true })
-      } finally {
-        process.stdout.write = orig
-      }
+      const { result: code, stdout } = await captureStdout(() => installCommand.run([], { 'dry-run': true }))
       expect(code).toBe(0)
-      const out = chunks.join('')
-      expect(out).toContain('Would install viper-plans@0.1.0')
-      expect(out).toContain('Dry run — no changes written.')
+      expect(stdout).toContain('Would install viper-plans@0.1.0')
+      expect(stdout).toContain('Dry run — no changes written.')
       // No side effects on disk
       expect(existsSync(join(projectRoot, '.test-adapter/skills/planning.md'))).toBe(false)
       expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)
@@ -241,18 +230,8 @@ describe('facet install — --dry-run', () => {
       await installCommand.run([], {})
 
       // Now: dry-run should detect no changes.
-      const chunks: string[] = []
-      const orig = process.stdout.write.bind(process.stdout)
-      process.stdout.write = ((c: unknown) => {
-        chunks.push(String(c))
-        return true
-      }) as typeof process.stdout.write
-      try {
-        await installCommand.run([], { 'dry-run': true })
-      } finally {
-        process.stdout.write = orig
-      }
-      expect(chunks.join('')).toContain('No changes. facets.lock is in sync with facets.json.')
+      const { stdout } = await captureStdout(() => installCommand.run([], { 'dry-run': true }))
+      expect(stdout).toContain('No changes. facets.lock is in sync with facets.json.')
     } finally {
       rmSync(fixture, { recursive: true, force: true })
     }
@@ -305,8 +284,9 @@ export default {
         JSON.stringify({ facets: { 'viper-plans': `git+file://${fixture}#main` } }),
       )
 
-      const code = await installCommand.run([], {})
+      const { result: code, stderr } = await captureStderr(() => installCommand.run([], {}))
       expect(code).toBe(1)
+      expect(stderr).toContain('install failed')
 
       // Both assets rolled back — neither should be on disk. (The first
       // install succeeded, but its inverse delete ran during rollback.)
@@ -350,8 +330,9 @@ export default {
         JSON.stringify({ facets: { 'viper-plans': `git+file://${fixture}#main` } }),
       )
 
-      const code = await installCommand.run([], {})
+      const { result: code, stderr } = await captureStderr(() => installCommand.run([], {}))
       expect(code).toBe(1)
+      expect(stderr).toContain('install failed')
 
       // adapter-a's write must have been rolled back — file should NOT exist.
       expect(existsSync(join(projectRoot, '.adapter-a/skills/planning.md'))).toBe(false)
@@ -365,14 +346,16 @@ export default {
 
 describe('facet install — error paths', () => {
   test('exits 1 with error when facets.json is missing', async () => {
-    const code = await installCommand.run([], {})
+    const { result: code, stderr } = await captureStderr(() => installCommand.run([], {}))
     expect(code).toBe(1)
+    expect(stderr).toContain('no facets.json in')
   })
 
   test('exits 1 with error when no adapters are installed', async () => {
     writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify({ facets: {} }))
-    const code = await installCommand.run([], {})
+    const { result: code, stderr } = await captureStderr(() => installCommand.run([], {}))
     expect(code).toBe(1)
+    expect(stderr).toContain('no adapters installed')
   })
 
   test('exits 1 when facets.json key mismatches the source facet.json name', async () => {
@@ -383,8 +366,9 @@ describe('facet install — error paths', () => {
         join(projectRoot, 'facets.json'),
         JSON.stringify({ facets: { 'wrong-key': `git+file://${fixture}#main` } }),
       )
-      const code = await installCommand.run([], {})
+      const { result: code, stderr } = await captureStderr(() => installCommand.run([], {}))
       expect(code).toBe(1)
+      expect(stderr).toContain('install failed')
     } finally {
       rmSync(fixture, { recursive: true, force: true })
     }
@@ -416,8 +400,9 @@ describe('facet install — error paths', () => {
         JSON.stringify({ facets: { composed: `git+file://${fixture}#main` } }),
       )
 
-      const code = await installCommand.run([], {})
+      const { result: code, stderr } = await captureStderr(() => installCommand.run([], {}))
       expect(code).toBe(1)
+      expect(stderr).toContain('install failed')
     } finally {
       rmSync(fixture, { recursive: true, force: true })
     }
@@ -450,8 +435,9 @@ describe('facet install — error paths', () => {
         JSON.stringify({ facets: { 'with-servers': `git+file://${fixture}#main` } }),
       )
 
-      const code = await installCommand.run([], {})
+      const { result: code, stderr } = await captureStderr(() => installCommand.run([], {}))
       expect(code).toBe(1)
+      expect(stderr).toContain('install failed')
     } finally {
       rmSync(fixture, { recursive: true, force: true })
     }
@@ -526,8 +512,9 @@ describe('facet install — SIGINT handling', () => {
         JSON.stringify({ facets: { 'viper-plans': `git+file://${fixture}#main` } }),
       )
 
-      const code = await installCommand.run([], {})
+      const { result: code, stderr } = await captureStderr(() => installCommand.run([], {}))
       expect(code).toBe(1)
+      expect(stderr).toContain('install failed')
       // Asset that was written during installAsset must have been rolled back.
       expect(existsSync(join(projectRoot, '.sigint-adapter/skills/planning.md'))).toBe(false)
       // Lockfile never written.
@@ -548,8 +535,9 @@ describe('facet install — F14 rollback safety', () => {
         JSON.stringify({ facets: { 'viper-plans': `git+file://${fixture}#main` } }),
       )
 
-      const code = await installCommand.run([], {})
+      const { result: code, stderr } = await captureStderr(() => installCommand.run([], {}))
       expect(code).toBe(1)
+      expect(stderr).toContain('install failed')
 
       // Lockfile must NOT have been written; no asset should exist on disk.
       expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)

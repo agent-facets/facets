@@ -1,5 +1,5 @@
 import { rm } from 'node:fs/promises'
-import { loadManifest } from '@agent-facets/core'
+import { loadManifest, upsertFacetInManifest } from '@agent-facets/core'
 import type { Command } from '../../commands.ts'
 import { writeCliError } from '../../util/errors.ts'
 import { parseSource } from './parse-source.ts'
@@ -97,7 +97,13 @@ export const addCommand: Command = {
         return 1
       }
 
-      loaded.data.facets[manifest.data.name] = specifier
+      // Go through core's mutation helper rather than assigning to the
+      // parsed shape directly. Keeps the CLI on the "presentation + OS I/O
+      // only" side of the line stated in core/src/manifest/mutations.ts —
+      // comment-json metadata survives upsert the same as direct assignment,
+      // so if the helper ever grows validation or ordering logic, `facet
+      // add` picks it up automatically.
+      upsertFacetInManifest(loaded.data, manifest.data.name, specifier)
       writeFacetsJson(projectRoot, loaded.data)
 
       process.stdout.write(

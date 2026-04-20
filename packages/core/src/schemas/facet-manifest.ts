@@ -1,3 +1,4 @@
+import { validateAssetName } from '@agent-facets/common'
 import { type } from 'arktype'
 
 // --- Sub-schemas ---
@@ -14,9 +15,17 @@ const AgentDescriptor = type({
   'adapters?': type.Record('string', 'unknown'),
 })
 
-/** Command descriptor — description is required, prompt resolved from commands/<name>.md */
+/**
+ * Command descriptor — description is required, prompt resolved from commands/<name>.md.
+ *
+ * `adapters` is permitted here (symmetrically with skills/agents) so a facet
+ * can attach adapter-specific front-matter (e.g. Claude's per-command
+ * permissions block) to commands. Materialize passes the block through as
+ * extra front-matter keys — see `materialize.ts#adapterExtrasFor`.
+ */
 const CommandDescriptor = type({
   description: 'string',
+  'adapters?': type.Record('string', 'unknown'),
 })
 
 /** Selective facets entry — cherry-pick specific assets from another facet */
@@ -80,12 +89,12 @@ export const FacetManifestSchema = type({
     }
   }
 
-  // Constraint 3: asset names must not contain `.` or `..` path segments.
-  // Forward slashes are permitted (facet-namespacing), so segment-wise check.
-  // Empty segments (leading/trailing/double slash) are rejected too.
-  // Install writes to join(baseDir, relativePathFor(type, name)) — an unchecked
-  // `..` segment escapes the adapter base directory. Rejecting here stops the
-  // manifest before any filesystem work begins.
+  // Constraint 3: asset names must be filesystem-safe. Install writes to
+  // join(baseDir, relativePathFor(type, name)) — an unchecked `..` segment or
+  // Windows backslash escapes the adapter base directory. Rejecting here
+  // stops the manifest before any filesystem work begins. The check is
+  // shared with LockfileSchema via `@agent-facets/common` so manifest-time
+  // and lockfile-time inputs get identical treatment.
   const assetNameGroups: [string, Record<string, unknown> | undefined][] = [
     ['skills', data.skills],
     ['agents', data.agents],
@@ -94,14 +103,9 @@ export const FacetManifestSchema = type({
   for (const [group, record] of assetNameGroups) {
     if (!record) continue
     for (const key of Object.keys(record)) {
-      const segments = key.split('/')
-      for (const seg of segments) {
-        if (seg === '' || seg === '.' || seg === '..') {
-          ctx.mustBe(
-            `${group} name "${key}" must not contain empty, "." or ".." path segments (asset names are used as filesystem paths)`,
-          )
-          break
-        }
+      const check = validateAssetName(key)
+      if (!check.ok) {
+        ctx.mustBe(`${group} name "${key}" ${check.reason}`)
       }
     }
   }

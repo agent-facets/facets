@@ -58,7 +58,14 @@ Brand colors and visual identity constants.
 
 ### `packages/common` — `@agent-facets/common`
 
-Shared types used across packages. Private — not published to npm.
+Shared primitives that cross the core / adapter SDK / CLI boundary: cross-cutting types
+(`AssetType`, `Scope`, `Validated`) and pure helpers with no heavy dependencies
+(asset-name validation, text normalization, atomic file writes). Private — not
+published to npm. `@agent-facets/adapter` bundles `common` into its build via
+tsdown's `alwaysBundle` so the published SDK has no runtime dependency on
+`common`; `core` and `cli` import it normally as a workspace dependency.
+
+See `packages/common/AGENTS.md` for the rule on what does and doesn't belong here.
 
 ### Other directories
 

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { captureStderr, captureStdout } from '../../../__tests__/helpers/capture-std.ts'
 import { addCommand } from '../index.ts'
 
 let projectRoot: string
@@ -68,20 +69,9 @@ describe('facet add — git source', () => {
   })
 
   test('prints the success line with facet name + version', async () => {
-    const chunks: string[] = []
-    const orig = process.stdout.write.bind(process.stdout)
-    process.stdout.write = ((c: unknown) => {
-      chunks.push(String(c))
-      return true
-    }) as typeof process.stdout.write
-    try {
-      await addCommand.run([`git+file://${fixtureGitRepo}#main`], {})
-    } finally {
-      process.stdout.write = orig
-    }
-    const out = chunks.join('')
-    expect(out).toContain('✓ Added viper-plans@0.1.0')
-    expect(out).toContain("Run 'facet install' to materialize.")
+    const { stdout } = await captureStdout(() => addCommand.run([`git+file://${fixtureGitRepo}#main`], {}))
+    expect(stdout).toContain('✓ Added viper-plans@0.1.0')
+    expect(stdout).toContain("Run 'facet install' to materialize.")
   })
 })
 
@@ -107,24 +97,28 @@ describe('facet add — local source', () => {
   })
 
   test('rejects a local path outside the project tree', async () => {
-    const code = await addCommand.run([`file:/tmp/not-in-tree-${Date.now()}`], {})
-    expect(code).toBe(1)
+    const { result, stderr } = await captureStderr(() => addCommand.run([`file:/tmp/not-in-tree-${Date.now()}`], {}))
+    expect(result).toBe(1)
+    expect(stderr).toContain('could not resolve local source')
   })
 })
 
 describe('facet add — error paths', () => {
   test('missing source prints usage error', async () => {
-    const code = await addCommand.run([], {})
-    expect(code).toBe(1)
+    const { result, stderr } = await captureStderr(() => addCommand.run([], {}))
+    expect(result).toBe(1)
+    expect(stderr).toContain('missing source specifier')
   })
 
   test('bare registry names are rejected in closed alpha', async () => {
-    const code = await addCommand.run(['viper-plans'], {})
-    expect(code).toBe(1)
+    const { result, stderr } = await captureStderr(() => addCommand.run(['viper-plans'], {}))
+    expect(result).toBe(1)
+    expect(stderr).toContain('could not parse source')
   })
 
   test('unparseable specifier returns 1', async () => {
-    const code = await addCommand.run(['ftp://no.good'], {})
-    expect(code).toBe(1)
+    const { result, stderr } = await captureStderr(() => addCommand.run(['ftp://no.good'], {}))
+    expect(result).toBe(1)
+    expect(stderr).toContain('could not parse source')
   })
 })
