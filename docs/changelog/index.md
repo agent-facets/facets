@@ -37,12 +37,24 @@ description: What's new in Agent Facets
   See the [environment variables](/cli/env) reference for configuring the adapter install location with `FACETS_ADAPTERS_DIR`.
 </Update>
 
+<Update label="2026-04-17" description="Codex adapter" tags={["Update"]}>
+  ## Codex adapter (early access)
+
+  A third first-party adapter for [Codex](https://openai.com/index/introducing-codex/) is now available. You can install it with:
+
+  ```sh
+  facet adapter install codex
+  ```
+
+  Full install support (`facet install` asset materialization) is coming soon — Codex appears in the adapter picker but is not yet selectable for facet installation. See the [adapter install reference](/cli/adapters/install) for all built-in adapter names.
+</Update>
+
 <Update label="2026-04-17" description="Adapter system" tags={["Feature"]}>
   ## Adapter SDK and first-party adapters
 
   Adapters are the bridge between facets and your AI coding tool. Each adapter knows where and how to write assets for a specific tool.
 
-  The first supported adapters are **Claude Code** and **OpenCode**. When you run `facet install`, the CLI materializes your facet assets into the correct locations for each adapter you've installed.
+  The first supported adapters are **Claude Code**, **OpenCode**, and **Codex**. When you run `facet install`, the CLI materializes your facet assets into the correct locations for each adapter you've installed.
 
   You can manage adapters with:
 
