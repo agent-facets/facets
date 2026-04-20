@@ -115,6 +115,11 @@
         "tab": "Roadmap",
         "icon": "map",
         "pages": ["roadmap/index", "roadmap/alpha", "roadmap/beta", "roadmap/stable"]
+      },
+      {
+        "tab": "Changelog",
+        "icon": "clock",
+        "pages": ["changelog/2026-04-20"]
       }
     ]
   },
