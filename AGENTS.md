@@ -77,9 +77,7 @@ See `packages/common/AGENTS.md` for the rule on what does and doesn't belong her
 
 ## Strategy
 
-Company-wide strategy decision records are located at `../strategy` (the sibling `strategy/` repository). This includes Strategic Decision Records (SDRs), initiatives, and roadmap phases organized by namespace.
-
-The `facets/` namespace within that repo (`../strategy/facets/`) contains strategy decisions specific to this project — including SDRs, initiatives, and roadmap entries. Consult these when you need strategic context for decisions affecting this project.
+Strategic Decision Records (SDRs) and Architectural Decision Records (ADRs) live in Notion. The authoritative databases and views are configured in `.opencode/notion.json` (keys: `sdrs`, `sdr_events`, `sdr_relationships`, `adrs`, `adr_events`). Consult these when you need strategic or architectural context for decisions affecting this project. See also Article III of `openspec/config.yaml` for ADR authority.
 
 ## Bun
 

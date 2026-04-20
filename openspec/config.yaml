@@ -77,7 +77,6 @@ rules:
     - MUST include a "Non-goals" section
     - Each capability in the Capabilities section MUST correspond to a product domain, not a feature within a domain. Use domain names (e.g., `execution`, `planning`) not domain-feature compounds (e.g., NOT `execution-loop`, `auth-login`, `user-auth`, `data-export`). Check `openspec/specs/` for existing domain names before inventing new ones.
     - MUST reference which ADRs in Notion informed the proposal. If no relevant ADRs exist, state so explicitly.
-    - If the proposed work corresponds to a roadmap phase in `../strategy/<namespace>/roadmap/`, the proposal MUST reference the phase file and note its current status. If the phase is `planned`, the proposal MUST note that the phase needs to be transitioned to `active` before implementation begins.
   design:
     - MUST identify any user-facing documentation in `docs/` and root `README.md` that would need updating based on the proposed changes
     - If the design changes observable behavior, CLI commands, APIs, or concepts covered in `docs/`, the design MUST note which doc files need updating
@@ -125,4 +124,3 @@ rules:
       - [ ] 4.4 Verify: <run checks for this block>
       ```
     - MUST check `docs/` and root `README.md` for content that references changed behavior, and SHOULD include documentation update tasks when affected docs are found
-    - If the work corresponds to a roadmap phase, the tasks MUST include a final step to check whether the phase's success criteria are fully met. If all criteria are satisfied, the step SHOULD transition the phase to `completed` and archive it. If criteria remain unmet, the step MUST note explicitly what remains.
