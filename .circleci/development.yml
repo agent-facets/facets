@@ -43,10 +43,19 @@ jobs:
             - run:
                 command: cp packages/cli/turbo.ci.json packages/cli/turbo.json
                 name: Disable CLI build cache
+            - run:
+                command: cp packages/adapters/opencode/turbo.ci.json packages/adapters/opencode/turbo.json
+                name: Disable OpenCode adapter build cache
+            - run:
+                command: cp packages/adapters/claude-code/turbo.ci.json packages/adapters/claude-code/turbo.json
+                name: Disable Claude Code adapter build cache
+            - run:
+                command: cp packages/adapters/codex/turbo.ci.json packages/adapters/codex/turbo.json
+                name: Disable Codex adapter build cache
             - run-check
             - run:
-                command: git checkout packages/cli/turbo.json
-                name: Restore CLI turbo config
+                command: git checkout packages
+                name: Restore Turbo configs
             - store_test_results:
                 path: test-results
     main-pipeline:
