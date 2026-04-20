@@ -3,6 +3,28 @@ title: Changelog
 description: What's new in Agent Facets
 ---
 
+<Update label="2026-04-20" description="Faster adapter installs" tags={["Update"]}>
+  ## Prebuilt adapter fast path
+
+  Adapter installs are now significantly faster. When a prebuilt bundle is available, the CLI uses it directly — no bundling step required. If the prebuilt bundle can't be loaded, the CLI falls back to rebuilding from source automatically.
+
+  Build artifacts from the fallback path are now written to a temporary directory instead of your source tree, so local installs stay clean.
+
+  You can also customize where adapters are stored by setting the [`FACETS_ADAPTERS_DIR`](/cli/env) environment variable. This overrides the default `~/.facets/adapters/` location for all adapter commands.
+</Update>
+
+<Update label="2026-04-17" description="Codex adapter" tags={["Update"]}>
+  ## Codex adapter (early access)
+
+  A third first-party adapter for [Codex](https://openai.com/index/introducing-codex/) is now available. You can install it with:
+
+  ```sh
+  facet adapter install codex
+  ```
+
+  Full install support (`facet install` asset materialization) is coming soon — Codex appears in the adapter picker but is not yet selectable for facet installation. See the [adapter install reference](/cli/adapters/install) for all built-in adapter names.
+</Update>
+
 <Update label="2026-04-20" description="Alpha install pipeline" tags={["Feature"]}>
   ## facet add and facet install
 
