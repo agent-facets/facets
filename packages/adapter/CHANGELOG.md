@@ -1,5 +1,11 @@
 # @agent-facets/adapter
 
+## 0.3.1
+
+### Patch Changes
+
+- [#161](https://github.com/agent-facets/facets/pull/161) [`c120f86`](https://github.com/agent-facets/facets/commit/c120f86d13b1df72e4d04356c27552df9fe0e085) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Post-alpha follow-ups from PR [#150](https://github.com/agent-facets/facets/issues/150) agent feedback.
+
 ## 0.3.0
 
 ### Minor Changes
