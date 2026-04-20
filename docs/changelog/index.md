@@ -27,6 +27,16 @@ description: What's new in Agent Facets
   See the [facet add](/cli/add) and [facet install](/cli/install) CLI reference for details.
 </Update>
 
+<Update label="2026-04-18" description="Faster adapter installs" tags={["Update"]}>
+  ## Faster adapter installs with prebuilt bundles
+
+  First-party adapters now ship as self-contained, prebuilt bundles. When you run `facet adapter install`, the CLI uses the prebuilt bundle directly — no compilation step required. If the prebuilt bundle can't be loaded, the CLI automatically falls back to building from source.
+
+  This also means adapter packages no longer depend on external runtime dependencies. Each adapter is a single file that works out of the box.
+
+  You can customize where adapters are stored using the [`FACETS_ADAPTERS_DIR`](/cli/env) environment variable.
+</Update>
+
 <Update label="2026-04-17" description="Adapter system" tags={["Feature"]}>
   ## Adapter SDK and first-party adapters
 
