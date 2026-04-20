@@ -2,8 +2,11 @@ import { describe, expect, test } from 'bun:test'
 import { resolve } from 'node:path'
 
 const CLI_PATH = resolve(import.meta.dir, '../../dist/facet')
-const COMMAND_NAMES = ['add', 'build', 'create', 'edit', 'info', 'install', 'list', 'publish', 'remove', 'upgrade']
-const STUB_COMMAND_NAMES = ['add', 'info', 'install', 'list', 'publish', 'remove', 'upgrade']
+// Commands wired to real implementations — these appear in `facet --help`.
+const IMPLEMENTED_COMMAND_NAMES = ['adapter', 'add', 'build', 'create', 'edit', 'install']
+// Stubs — invocable (to surface "did you mean…" suggestions) but hidden from
+// the global help listing (Adjustment K).
+const STUB_COMMAND_NAMES = ['info', 'list', 'publish', 'remove', 'upgrade']
 
 type ExecResult = {
   stdout: string
@@ -24,12 +27,18 @@ async function runCli(...args: string[]): Promise<ExecResult> {
 // --- Help ---
 
 describe('CLI — help', () => {
-  test('--help prints command list to stdout and exits 0', async () => {
+  test('--help lists implemented commands and hides stubs', async () => {
     const result = await runCli('--help')
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Usage: facet <command>')
-    for (const cmd of COMMAND_NAMES) {
-      expect(result.stdout).toContain(cmd)
+    // Match command names as whole-word rows (e.g., "  install  ...") so
+    // substrings inside descriptions ("adapter installations") don't false-
+    // positive the contains check.
+    for (const cmd of IMPLEMENTED_COMMAND_NAMES) {
+      expect(result.stdout).toMatch(new RegExp(`^\\s+${cmd}\\s`, 'm'))
+    }
+    for (const cmd of STUB_COMMAND_NAMES) {
+      expect(result.stdout).not.toMatch(new RegExp(`^\\s+${cmd}\\s`, 'm'))
     }
     expect(result.stderr).toBe('')
   })

@@ -50,7 +50,7 @@ Version PR merged to main
 
 ## Required secrets
 
-`tag.ts` requires `CIRCLECI_API_TOKEN` in the `bot-context` CircleCI context. It's a personal API token with write access to the project, used to POST to `/api/v2/project/<slug>/pipeline/run`. See [CI Architecture docs](../../docs/contributing/ci-architecture.mdx) for context rotation steps.
+`tag.ts` requires `CIRCLECI_API_TOKEN` in the `bot-context` CircleCI context. It's a personal API token with write access to the project, used to POST to `/api/v2/project/<slug>/pipeline/run`. See [CI Architecture docs](../../docs/docs/contributing/ci-architecture.mdx) for context rotation steps.
 
 ## Private Package Guard
 

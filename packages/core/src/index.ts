@@ -34,12 +34,23 @@ export type { ResolvedFacetManifest } from './loaders/facet.ts'
 // loaders
 export { FACET_MANIFEST_FILE, loadManifest, resolvePrompts } from './loaders/facet.ts'
 export { loadServerManifest } from './loaders/server.ts'
+// manifest mutations
+export {
+  emptyFacetsJson,
+  FACETS_JSON_FILE,
+  parseFacetsJson,
+  removeFacetFromManifest,
+  serializeFacetsJson,
+  upsertFacetInManifest,
+} from './manifest/mutations.ts'
 export type { BuildManifest } from './schemas/build-manifest.ts'
 export { BuildManifestSchema } from './schemas/build-manifest.ts'
 export type { FacetManifest } from './schemas/facet-manifest.ts'
 // schemas
 export { FacetManifestSchema } from './schemas/facet-manifest.ts'
-export type { Lockfile } from './schemas/lockfile.ts'
-export { LockfileSchema } from './schemas/lockfile.ts'
+export type { Lockfile, LockfileAssetEntry, LockfileFacet } from './schemas/lockfile.ts'
+export { LOCKFILE_VERSION, LockfileSchema } from './schemas/lockfile.ts'
+export type { FacetsJson } from './schemas/project-manifest.ts'
+export { FacetsJsonSchema } from './schemas/project-manifest.ts'
 export type { ServerManifest } from './schemas/server-manifest.ts'
 export { ServerManifestSchema } from './schemas/server-manifest.ts'

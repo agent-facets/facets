@@ -27,6 +27,7 @@ export const createCommand: Command = {
   name: 'create',
   description: 'Create a new facet project interactively',
   usage: '[directory]',
+  implemented: true,
   flags: {
     force: { type: 'boolean', description: 'Overwrite existing facet.json' },
   },

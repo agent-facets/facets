@@ -18,6 +18,15 @@ export interface Adapter {
   readonly name: string
 
   /**
+   * When true, this adapter exposes real filesystem I/O (installAsset,
+   * readAsset, deleteAsset) and is selectable in the install picker.
+   * Absent or false: adapter is hidden from picker (users cannot
+   * materialize facets via this adapter). Set to true only when all
+   * three I/O methods are implemented and tested.
+   */
+  readonly supportsInstall?: boolean
+
+  /**
    * Validate and enrich per-asset adapter metadata from a facet manifest.
    * Takes raw metadata, validates it against the adapter's schema,
    * applies adapter-specific defaults, and returns the enriched object.

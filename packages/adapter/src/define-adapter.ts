@@ -31,6 +31,8 @@ export function defineAdapter(definition: Adapter): Adapter {
   const adapter: Adapter = {
     name: definition.name,
 
+    supportsInstall: definition.supportsInstall,
+
     buildAssetMetadata: definition.buildAssetMetadata.bind(definition),
 
     // CRUD stubs — full implementations deferred to install pipeline

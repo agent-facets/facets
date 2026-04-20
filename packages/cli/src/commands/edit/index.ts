@@ -114,6 +114,7 @@ export const editCommand: Command = {
   name: 'edit',
   description: 'Edit a facet project interactively',
   usage: '[directory]',
+  implemented: true,
   run: async (args: string[], _flags: Record<string, unknown>): Promise<number> => {
     const resolved = await resolveTargetDir(args[0], { mustExist: true, facetMustExist: true })
     if (!resolved.ok) {
