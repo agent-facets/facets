@@ -1,5 +1,11 @@
 # @agent-facets/adapter-opencode
 
+## 0.3.0
+
+### Minor Changes
+
+- [#150](https://github.com/agent-facets/facets/pull/150) [`70ec72b`](https://github.com/agent-facets/facets/commit/70ec72b00cb9f679faa516dc973297d3d99b769b) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Adapter SDK + first-party adapters gain real install support.
+
 ## 0.2.3
 
 ### Patch Changes
