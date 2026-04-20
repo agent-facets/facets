@@ -9,7 +9,10 @@ Full documentation is available at [agentfacets.io](https://agentfacets.io).
 ## Quickstart
 
 ```shell
-# Install the CLI
+# Install the CLI (macOS/Linux)
+curl -fsSL https://install.agentfacets.io | bash
+
+# Or via npm (all platforms, including Windows)
 npm install -g agent-facets
 
 # For closed-alpha partners: see docs/alpha/partner-onboarding.md
