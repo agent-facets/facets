@@ -9,6 +9,8 @@ commands:
         steps:
             - run:
                 command: bun turbo check
+                environment:
+                    TURBO_CONCURRENCY: "1"
                 name: Check
     setup-mise:
         steps:

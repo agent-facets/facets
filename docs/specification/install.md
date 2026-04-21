@@ -3,15 +3,6 @@ title: "Install & Resolve"
 description: "How facets are installed, server references resolved, and everything pinned in a lockfile."
 ---
 
-<Info>
-  **Closed alpha (current):** `facet install` resolves each facet source fresh from
-  git (no registry), builds it locally from the source tree, verifies integrity,
-  and materializes assets through the currently-installed adapters. Lockfile is
-  adapter-agnostic and drift-proof (assets not in the new version are removed).
-  See [alpha onboarding](/alpha/onboarding) for the user-facing flow.
-  Everything below describes the **open-beta** target; it is not shipped yet.
-</Info>
-
 ## Closed alpha (current behavior)
 
 1. **Resolve source.** `facets.json` maps facet names → source specifiers
