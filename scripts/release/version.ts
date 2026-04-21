@@ -41,7 +41,14 @@ export async function buildChangesets(): Promise<number> {
   }
 
   const packagesAfter = await loadWorkspacePackages()
-  const changedPackages = packagesAfter.filter((p) => versionsBefore.get(p.name) !== p.version)
+  // Filter to versioned packages whose version changed. Versionless packages
+  // (workspace-only helpers like @agent-facets/common, listed in
+  // `.changeset/config.json` `ignore`) never bump, so they're naturally
+  // excluded; the explicit `p.version` check also narrows the type for
+  // buildVersionPrBody, which requires `version: string`.
+  const changedPackages = packagesAfter
+    .filter((p): p is typeof p & { version: string } => Boolean(p.version))
+    .filter((p) => versionsBefore.get(p.name) !== p.version)
   const { body: prBody, entries } = await buildVersionPrBody(changedPackages, io.shell.readFile)
 
   for (const entry of entries) {

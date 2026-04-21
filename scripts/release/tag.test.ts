@@ -160,72 +160,6 @@ describe('tag.ts', () => {
       expect(pushSpy).toHaveBeenCalledWith('origin')
     })
 
-    test('skips packages with releaseMode:"skip" when tagging', async () => {
-      // @agent-facets/common is workspace-only — marked agentFacets.release:"skip"
-      // in its package.json. It must not be tagged even when it has a version
-      // bump, because no release pipeline would do anything useful with the tag
-      // and the tag would collide on subsequent release cycles.
-      process.env.CIRCLE_SHA1 = 'abc123'
-      spyOn(io.gh, 'getPrForCommit').mockResolvedValue([
-        { number: 52, headRefName: 'changeset-release/main', headRefOid: 'original-sha' },
-      ])
-      spyOn(io.git, 'fetchSha').mockResolvedValue(shellResult())
-      spyOn(io.git, 'config').mockResolvedValue(shellResult())
-      spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
-        { name: '@agent-facets/core', version: '1.1.0', dir: 'packages/core' },
-        { name: 'agent-facets', version: '0.4.0', dir: 'packages/cli', private: true },
-        { name: '@agent-facets/common', version: '0.1.4', dir: 'packages/common', private: true, releaseMode: 'skip' },
-      ])
-      spyOn(io.npm, 'viewVersion').mockImplementation(async (pkg: string) => {
-        if (pkg === '@agent-facets/core') return '1.0.0' // bumped
-        if (pkg === 'agent-facets') return '0.3.0' // bumped
-        return null // common is never published
-      })
-      const tagSpy = spyOn(io.git, 'tagAt').mockResolvedValue(shellResult())
-      spyOn(io.git, 'pushAllTags').mockResolvedValue(shellResult())
-      const triggerSpy = spyOn(io.circleci, 'triggerPipelineForTag').mockResolvedValue({ id: 'p1', number: 1 })
-
-      const code = await tagRelease()
-
-      expect(code).toBe(0)
-      expect(tagSpy).toHaveBeenCalledWith('@agent-facets/core@1.1.0', 'original-sha')
-      expect(tagSpy).toHaveBeenCalledWith('agent-facets@0.4.0', 'original-sha')
-      expect(tagSpy).not.toHaveBeenCalledWith('@agent-facets/common@0.1.4', 'original-sha')
-      // Only the two non-skipped packages should trigger pipelines.
-      expect(triggerSpy).toHaveBeenCalledTimes(2)
-    })
-
-    test('returns early when only releaseMode:"skip" packages have bumps', async () => {
-      // If every bumped package is release-skipped, there's nothing to tag.
-      // Without this handling, hasUnpublishedVersions would return true
-      // forever (npm view always returns null for skipped packages) and
-      // tag.ts would attempt tagging on every main-pipeline run.
-      process.env.CIRCLE_SHA1 = 'abc123'
-      spyOn(io.gh, 'getPrForCommit').mockResolvedValue([
-        { number: 52, headRefName: 'changeset-release/main', headRefOid: 'original-sha' },
-      ])
-      spyOn(io.git, 'fetchSha').mockResolvedValue(shellResult())
-      spyOn(io.git, 'config').mockResolvedValue(shellResult())
-      spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
-        { name: '@agent-facets/core', version: '1.0.0', dir: 'packages/core' },
-        { name: '@agent-facets/common', version: '0.1.4', dir: 'packages/common', private: true, releaseMode: 'skip' },
-      ])
-      spyOn(io.npm, 'viewVersion').mockImplementation(async (pkg: string) => {
-        if (pkg === '@agent-facets/core') return '1.0.0' // unchanged
-        return null // common is never published
-      })
-      const tagSpy = spyOn(io.git, 'tagAt').mockResolvedValue(shellResult())
-      const pushSpy = spyOn(io.git, 'pushAllTags').mockResolvedValue(shellResult())
-      const triggerSpy = spyOn(io.circleci, 'triggerPipelineForTag').mockResolvedValue({ id: 'p1', number: 1 })
-
-      const code = await tagRelease()
-
-      expect(code).toBe(0)
-      expect(tagSpy).not.toHaveBeenCalled()
-      expect(pushSpy).not.toHaveBeenCalled()
-      expect(triggerSpy).not.toHaveBeenCalled()
-    })
-
     test('fetches the original branch commit SHA', async () => {
       process.env.CIRCLE_SHA1 = 'abc123'
       spyOn(io.gh, 'getPrForCommit').mockResolvedValue([
@@ -263,7 +197,12 @@ describe('tag.ts', () => {
       expect(configSpy).toHaveBeenCalledWith('user.email', '272408671+the-faceter[bot]@users.noreply.github.com')
     })
 
-    test('triggers CircleCI pipeline for each pushed tag', async () => {
+    test('triggers CircleCI pipeline for each pushed tag, forwarding package name for scoped tags', async () => {
+      // The `release` workflow queues per-package via `serial-group`. To make
+      // that work, scoped-package tags must trigger the pipeline with the
+      // parsed package name as the `package` parameter. The CLI tag
+      // (`agent-facets@x.y.z`) routes to `release-cli`, which ignores the
+      // parameter — so we pass undefined for that one.
       process.env.CIRCLE_SHA1 = 'abc123'
       spyOn(io.gh, 'getPrForCommit').mockResolvedValue([
         { number: 52, headRefName: 'changeset-release/main', headRefOid: 'original-sha' },
@@ -291,11 +230,13 @@ describe('tag.ts', () => {
         CIRCLECI_PROJECT_SLUG,
         CIRCLECI_RELEASE_PIPELINE_DEFINITION_ID,
         '@agent-facets/core@1.1.0',
+        'core',
       )
       expect(triggerSpy).toHaveBeenCalledWith(
         CIRCLECI_PROJECT_SLUG,
         CIRCLECI_RELEASE_PIPELINE_DEFINITION_ID,
         'agent-facets@0.4.0',
+        undefined,
       )
     })
 

@@ -7,6 +7,7 @@ jobs:
           ignore:
             - main
   - main-pipeline:
+      serial-group: << pipeline.project.slug >>/main-pipeline
       context:
         - turbo-cache
         - bot-context

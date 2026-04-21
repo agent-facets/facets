@@ -48,7 +48,7 @@ describe('io.circleci.triggerPipelineForTag', () => {
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
-  test('posts to CircleCI API with expected body when inputs are valid', async () => {
+  test('posts to CircleCI API with expected body when inputs are valid (no package param)', async () => {
     process.env.CIRCLECI_API_TOKEN = 'fake-token'
     const fetchSpy = mock((_url: string, _init?: RequestInit) =>
       Promise.resolve(new Response(JSON.stringify({ id: 'abc', number: 42 }), { status: 200 })),
@@ -58,7 +58,7 @@ describe('io.circleci.triggerPipelineForTag', () => {
     const result = await io.circleci.triggerPipelineForTag(
       'gh/agent-facets/facets',
       '9d2f5823-f2c9-4cba-918a-e7d0dc2f658a',
-      '@agent-facets/core@1.0.0',
+      'agent-facets@1.0.0',
     )
 
     expect(result).toEqual({ id: 'abc', number: 42 })
@@ -71,10 +71,40 @@ describe('io.circleci.triggerPipelineForTag', () => {
     expect(headers['Content-Type']).toBe('application/json')
 
     const body = JSON.parse((init as RequestInit).body as string)
+    // When no package name is supplied (release-cli trigger path), the
+    // `parameters` key is omitted so the release-cli workflow doesn't
+    // receive a stray parameter it doesn't declare.
+    expect(body).toEqual({
+      definition_id: '9d2f5823-f2c9-4cba-918a-e7d0dc2f658a',
+      config: { tag: 'agent-facets@1.0.0' },
+      checkout: { tag: 'agent-facets@1.0.0' },
+    })
+  })
+
+  test('forwards packageName as `parameters.package` when provided', async () => {
+    // Per-package `serial-group` keying on the `release` workflow depends on
+    // this parameter being present in the API body. Without it, all scoped
+    // package releases would serialize through the same queue.
+    process.env.CIRCLECI_API_TOKEN = 'fake-token'
+    const fetchSpy = mock((_url: string, _init?: RequestInit) =>
+      Promise.resolve(new Response(JSON.stringify({ id: 'abc', number: 42 }), { status: 200 })),
+    )
+    globalThis.fetch = fetchSpy as unknown as typeof fetch
+
+    await io.circleci.triggerPipelineForTag(
+      'gh/agent-facets/facets',
+      '9d2f5823-f2c9-4cba-918a-e7d0dc2f658a',
+      '@agent-facets/core@1.0.0',
+      'core',
+    )
+
+    const [, init] = fetchSpy.mock.calls[0] ?? []
+    const body = JSON.parse((init as RequestInit).body as string)
     expect(body).toEqual({
       definition_id: '9d2f5823-f2c9-4cba-918a-e7d0dc2f658a',
       config: { tag: '@agent-facets/core@1.0.0' },
       checkout: { tag: '@agent-facets/core@1.0.0' },
+      parameters: { package: 'core' },
     })
   })
 

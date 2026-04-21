@@ -1,5 +1,6 @@
 jobs:
   - build-cli:
+      serial-group: << pipeline.project.slug >>/release-cli-build
       context:
         - turbo-cache
         - bot-context
@@ -41,6 +42,7 @@ jobs:
           ignore:
             - /.*/
   - finalize-cli:
+      serial-group: << pipeline.project.slug >>/release-cli-finalize
       context:
         - turbo-cache
         - bot-context

@@ -4,7 +4,7 @@
   "commit": false,
   "fixed": [],
   "linked": [],
-  "ignore": ["@agent-facets/landing"],
+  "ignore": ["@agent-facets/common", "@agent-facets/functions", "@agent-facets/landing"],
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",

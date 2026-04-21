@@ -21,6 +21,8 @@ Releases are fully automated. Merging a PR with changesets triggers a pipeline t
   </Step>
   <Step title="Release pipeline triggered per tag">
     After pushing tags, the `tag.ts` script also calls CircleCI's API v2 `pipeline/run` endpoint once per tag to explicitly trigger the release pipeline. We do not rely on GitHub-to-CircleCI tag-push webhooks because they are unreliable when the bot GitHub App pushes tags — CircleCI appears to filter events from other bot actors. The pipeline's workflow filters (tag regex in `.circleci/release.yml`) still apply, so scoped tags (`@agent-facets/*@*`) run the `release` workflow and unscoped tags (`agent-facets@*`) run `release-cli`.
+
+    For scoped tags, `tag.ts` also parses the package name (`@agent-facets/core@1.0.0` → `core`) and forwards it as the `package` pipeline parameter. The `release` workflow uses that parameter in its `serial-group` key, which queues releases per-package — so two different packages can release in parallel while repeat releases of the same package serialize. The CLI tag path does not use the parameter.
   </Step>
   <Step title="Publish to npm">
     The publish path depends on the package type:
@@ -78,16 +80,20 @@ The [changeset bot](https://github.com/apps/changeset-bot) comments on every PR 
 To manually trigger a release pipeline for a tag that's already pushed, POST to the API directly:
 
 ```bash
-for tag in \
-  '@agent-facets/core@0.4.0' \
-  'agent-facets@0.5.0' \
-  ; do
-  curl -X POST \
-    "https://circleci.com/api/v2/project/gh/agent-facets/facets/pipeline/run" \
-    -H "Circle-Token: $CIRCLECI_API_TOKEN" \
-    -H "content-type: application/json" \
-    --data "{\"definition_id\":\"9d2f5823-f2c9-4cba-918a-e7d0dc2f658a\",\"config\":{\"tag\":\"$tag\"},\"checkout\":{\"tag\":\"$tag\"}}"
-done
+# Scoped tag — forward the parsed package name so the `release` workflow's
+# per-package serial-group queues correctly.
+curl -X POST \
+  "https://circleci.com/api/v2/project/gh/agent-facets/facets/pipeline/run" \
+  -H "Circle-Token: $CIRCLECI_API_TOKEN" \
+  -H "content-type: application/json" \
+  --data '{"definition_id":"9d2f5823-f2c9-4cba-918a-e7d0dc2f658a","config":{"tag":"@agent-facets/core@0.4.0"},"checkout":{"tag":"@agent-facets/core@0.4.0"},"parameters":{"package":"core"}}'
+
+# CLI tag — no `package` parameter needed; release-cli doesn't use it.
+curl -X POST \
+  "https://circleci.com/api/v2/project/gh/agent-facets/facets/pipeline/run" \
+  -H "Circle-Token: $CIRCLECI_API_TOKEN" \
+  -H "content-type: application/json" \
+  --data '{"definition_id":"9d2f5823-f2c9-4cba-918a-e7d0dc2f658a","config":{"tag":"agent-facets@0.5.0"},"checkout":{"tag":"agent-facets@0.5.0"}}'
 ```
 
 The idempotency checks in `scripts/release/publish.ts`, `publish-platform.ts`, and `publish-cli-package.ts` mean re-triggering for an already-published version will skip the npm publish and only re-run the GitHub Release + notification steps.

@@ -21,6 +21,13 @@ export const circleciIo = {
    * `@agent-facets/core@1.0.0` fires only the `release` workflow. The
    * caller does not need to select which one.
    *
+   * When `packageName` is provided, it is forwarded as the `package`
+   * pipeline parameter. This is used by the `release` workflow's
+   * `serial-group` key to queue package publishes per-package — so
+   * releases of `@agent-facets/core` and `@agent-facets/adapter` can
+   * run in parallel while repeat releases of the same package still
+   * serialize. `release-cli` does not read this parameter.
+   *
    * Requires the CIRCLECI_API_TOKEN env var (provisioned via the
    * `bot-context` CircleCI context).
    */
@@ -28,6 +35,7 @@ export const circleciIo = {
     projectSlug: string,
     definitionId: string,
     tag: string,
+    packageName?: string,
   ): Promise<{ id: string; number: number }> => {
     const token = process.env.CIRCLECI_API_TOKEN
     if (!token) {
@@ -48,22 +56,32 @@ export const circleciIo = {
       )
     }
 
+    const body: {
+      definition_id: string
+      config: { tag: string }
+      checkout: { tag: string }
+      parameters?: { package: string }
+    } = {
+      definition_id: definitionId,
+      config: { tag },
+      checkout: { tag },
+    }
+    if (packageName) {
+      body.parameters = { package: packageName }
+    }
+
     const resp = await fetch(`https://circleci.com/api/v2/project/${projectSlug}/pipeline/run`, {
       method: 'POST',
       headers: {
         'Circle-Token': token,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        definition_id: definitionId,
-        config: { tag },
-        checkout: { tag },
-      }),
+      body: JSON.stringify(body),
     })
 
     if (!resp.ok) {
-      const body = await resp.text()
-      throw new Error(`CircleCI pipeline trigger failed for tag ${tag}: ${resp.status} ${body}`)
+      const errBody = await resp.text()
+      throw new Error(`CircleCI pipeline trigger failed for tag ${tag}: ${resp.status} ${errBody}`)
     }
 
     return (await resp.json()) as { id: string; number: number }
