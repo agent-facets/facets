@@ -43,11 +43,25 @@ const landing = new sst.aws.StaticSite('AgentFacetsLanding', {
     url: 'http://localhost:5173',
   },
   assets: {
+    // SST iterates `fileOptions` in reverse and uploads each matched file
+    // with the first rule that claims it (see
+    // .sst/platform/src/components/aws/static-site.ts, the
+    // `uploadAssets` -> `for (const fileOption of fileOptions.reverse())`
+    // loop). Files matching NO rule are silently dropped, so this list
+    // must be exhaustive — prefer a catch-all + specific overrides over
+    // an allowlist of extensions.
     fileOptions: [
+      // Listed first, runs LAST after SST's internal .reverse(). Sweeps
+      // every file the HTML rule didn't claim: JS, CSS, fonts, images,
+      // favicons, static data. Safe because Vite emits content-hashed
+      // filenames for everything under /assets/.
       {
-        files: ['**/*.css', '**/*.js', '**/*.webp', '**/*.svg', '**/*.ico', '**/*.json'],
+        files: '**',
         cacheControl: 'max-age=31536000,public,immutable',
       },
+      // Listed last, runs FIRST after .reverse() so the catch-all doesn't
+      // claim index.html with the wrong cache header. HTML is the single
+      // mutable URL whose content changes deploy-to-deploy.
       {
         files: '**/*.html',
         cacheControl: 'max-age=3600,public',
