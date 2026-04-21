@@ -10,8 +10,14 @@ import { brandTokensPlugin } from './vite/brand-tokens-plugin'
 const cliPkgUrl = new URL('../cli/package.json', import.meta.url)
 const cliPkg = JSON.parse(readFileSync(fileURLToPath(cliPkgUrl), 'utf8')) as { version: string }
 
+// Absolute path where the brand-tokens plugin emits its on-disk copy of
+// the generated CSS (for IDE consumption). The runtime path is the
+// virtual module `virtual:brand-tokens.css`; the on-disk file exists so
+// editors can resolve `var(--foo)` references.
+const tokensEmitPath = fileURLToPath(new URL('./src/styles/tokens.generated.css', import.meta.url))
+
 export default defineConfig({
-  plugins: [react(), brandTokensPlugin()],
+  plugins: [react(), brandTokensPlugin({ emitPath: tokensEmitPath })],
   define: {
     __APP_VERSION__: JSON.stringify(cliPkg.version),
   },
