@@ -1,0 +1,23 @@
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  /* adjust if needed to keep from seeing layout shift */
+  min-width: 82px;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--ink-dim);
+  background: var(--ink);
+  color: var(--bg);
+  font-family: var(--mono), serif;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+.toggle:hover {
+  filter: brightness(0.9);
+  border: 1px solid var(--ink-faint);
+}
