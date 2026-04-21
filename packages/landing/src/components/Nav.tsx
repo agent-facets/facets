@@ -13,11 +13,9 @@ export function Nav() {
         </a>
         <div className={styles.links}>
           <a href="#top">Home</a>
-          <a href="#what">What</a>
+          <a href="#what">Facets</a>
           <a href="#demo">CLI</a>
-          <a href="https://docs.agentfacets.io" target="_blank" rel="noreferrer noopener">
-            Docs <span className={styles.extArrow}>↗</span>
-          </a>
+          <a href="https://docs.agentfacets.io">Docs</a>
           <a href="https://facet.cafe/" target="_blank" rel="noreferrer noopener">
             Registry <span className={styles.extArrow}>↗</span>
           </a>

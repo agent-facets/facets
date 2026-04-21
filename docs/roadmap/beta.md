@@ -3,6 +3,8 @@ title: Open Beta
 sidebarTitle: Beta
 ---
 
+The beta will be available when all the planned features are implemented.
+
 ## Available Now
 
 These commands are implemented and ready to use:

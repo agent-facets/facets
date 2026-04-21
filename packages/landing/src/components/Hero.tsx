@@ -12,7 +12,7 @@ export function Hero() {
       <OrbitFloaters />
 
       <div className={styles.eyebrowRow}>
-        <Eyebrow>v{__APP_VERSION__} · public beta</Eyebrow>
+        <Eyebrow>v{__APP_VERSION__} · pre-release alpha</Eyebrow>
       </div>
 
       <h1 className={styles.title}>

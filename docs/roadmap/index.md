@@ -23,7 +23,7 @@ icon: "map"
   arrow="true"
   cta="See the goals for the beta"
 >
-  A public beta release. The alpha will run until we feel confident for a public beta release.
+  A public beta release. The beta will run until we are ready to release a stable version for general use.
 </Card>
 </Columns>
 
