@@ -155,7 +155,11 @@ export function FacetStage() {
               )
             })}
             <div className={`${styles.sceneLabel}${step === 4 ? ` ${styles.active}` : ''}`} aria-hidden="true">
-              one facet · four primitives · zero setup
+              facet · &nbsp;one
+              <br />
+              primitives · four
+              <br />
+              setup · zero
             </div>
           </div>
         </div>
