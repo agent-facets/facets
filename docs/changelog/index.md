@@ -9,11 +9,6 @@ description: What's new in Agent Facets
   The Agent Facets website now has a proper landing page at [agentfacets.io](https://agentfacets.io). It walks you through what facets are, shows a live CLI demo, and makes it easy to get started with a single install command.
 </Update>
 
-<Update label="2026-04-21" description="Out of closed alpha" tags={["Update"]}>
-  ## Agent Facets is now open
-
-  The project has moved out of closed alpha. You no longer need an invite or partner access to use Agent Facets — just [install the CLI](/cli) and start adding facets to your projects.
-</Update>
 
 <Update label="2026-04-21" description="Docs moved to docs.agentfacets.io" tags={["Update"]}>
   ## New docs URL
