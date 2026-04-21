@@ -1,5 +1,6 @@
 jobs:
   - release:
+      serial-group: << pipeline.project.slug >>/release/<< pipeline.parameters.package >>
       context:
         - turbo-cache
         - bot-context

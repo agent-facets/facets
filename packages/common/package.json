@@ -1,11 +1,7 @@
 {
   "name": "@agent-facets/common",
   "private": true,
-  "version": "0.2.0",
   "type": "module",
-  "agentFacets": {
-    "release": "skip"
-  },
   "exports": {
     ".": "./src/index.ts"
   },

@@ -98,6 +98,10 @@ jobs:
             - notify-failure
 orbs:
     aws-cli: circleci/aws-cli@5.4.1
+parameters:
+    package:
+        default: ""
+        type: string
 version: 2.1
 workflows:
     ci:
@@ -118,4 +122,5 @@ workflows:
                     branches:
                         only:
                             - main
+                serial-group: << pipeline.project.slug >>/main-pipeline
 

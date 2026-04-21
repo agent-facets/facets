@@ -45,6 +45,20 @@ import { io } from '../lib/io'
 const PR_POLL_INTERVAL_MS = 10_000
 const PR_POLL_MAX_ATTEMPTS = 30
 
+/**
+ * Match scoped package tags — `@agent-facets/<pkg>@<version>` — and capture
+ * `<pkg>`. Unscoped tags (`agent-facets@<version>`, the CLI) do not match,
+ * so the triggering code skips the `package` parameter for them. The
+ * package name is forwarded as a pipeline parameter so the `release`
+ * workflow's `serial-group` can queue per-package.
+ */
+const SCOPED_TAG_PACKAGE_REGEX = /^@agent-facets\/([a-z0-9-]+)@/
+
+function extractPackageName(tag: string): string | undefined {
+  const match = SCOPED_TAG_PACKAGE_REGEX.exec(tag)
+  return match?.[1]
+}
+
 export async function tagRelease(): Promise<number> {
   const sha = process.env.CIRCLE_SHA1
   if (!sha) {
@@ -89,13 +103,12 @@ export async function tagRelease(): Promise<number> {
 
   const pushedTags: string[] = []
   for (const pkg of packages) {
-    // Packages marked `agentFacets.release: "skip"` in their package.json
-    // are workspace-only (e.g., @agent-facets/common) and must not be tagged.
-    // Without this guard, io.npm.viewVersion returns null for these (never
-    // published), so `npmVersion !== pkg.version` is always true and every
-    // release cycle re-attempts the same tag — which fails with "tag already
-    // exists" once the first attempt has pushed.
-    if (pkg.releaseMode === 'skip') continue
+    // Workspace-only packages (e.g. @agent-facets/common) have no `version`
+    // field in their package.json — they're bundled into consumers at build
+    // time and never published to npm. Upstream, `.changeset/config.json`
+    // `ignore` keeps them out of version-bump PRs entirely. This guard is
+    // the defensive fallback: without it we'd try to tag `@pkg@undefined`.
+    if (!pkg.version) continue
     const npmVersion = await io.npm.viewVersion(pkg.name)
     if (npmVersion !== pkg.version) {
       const tag = `${pkg.name}@${pkg.version}`
@@ -110,12 +123,19 @@ export async function tagRelease(): Promise<number> {
 
   // Explicitly trigger the release pipeline for each tag. See module docblock
   // for why we don't rely on GitHub-to-CircleCI webhooks for this.
+  //
+  // For scoped package tags (`@agent-facets/<pkg>@<version>`), we forward
+  // the package name as a pipeline parameter so the `release` workflow's
+  // `serial-group` queues per-package. The CLI tag (`agent-facets@<version>`)
+  // goes through `release-cli`, which doesn't use the parameter.
   for (const tag of pushedTags) {
+    const packageName = extractPackageName(tag)
     io.console.log(`Triggering CircleCI release pipeline for ${tag}`)
     const result = await io.circleci.triggerPipelineForTag(
       CIRCLECI_PROJECT_SLUG,
       CIRCLECI_RELEASE_PIPELINE_DEFINITION_ID,
       tag,
+      packageName,
     )
     io.console.log(`  → pipeline #${result.number} (${result.id})`)
   }

@@ -1,5 +1,6 @@
 jobs:
   - deploy-site:
+      serial-group: << pipeline.project.slug >>/deploy-site
       context:
         - bot-context
         - slack-secrets

@@ -31,7 +31,6 @@ export async function loadWorkspacePackages(): Promise<WorkspacePackage[]> {
           version: pkg.version,
           dir,
           private: pkg.private,
-          releaseMode: pkg.agentFacets?.release === 'skip' ? 'skip' : undefined,
         })
       }
     }

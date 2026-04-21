@@ -114,6 +114,10 @@ jobs:
             - notify-failure
 orbs:
     aws-cli: circleci/aws-cli@5.4.1
+parameters:
+    package:
+        default: ""
+        type: string
 version: 2.1
 workflows:
     deploy:
@@ -127,6 +131,7 @@ workflows:
                     branches:
                         only:
                             - main
+                serial-group: << pipeline.project.slug >>/deploy-site
     release:
         jobs:
             - release:
@@ -141,6 +146,7 @@ workflows:
                     tags:
                         only:
                             - /^@agent-facets\/.+@\d+\..+/
+                serial-group: << pipeline.project.slug >>/release/<< pipeline.parameters.package >>
     release-cli:
         jobs:
             - build-cli:
@@ -155,6 +161,7 @@ workflows:
                     tags:
                         only:
                             - /^agent-facets@\d+\..+/
+                serial-group: << pipeline.project.slug >>/release-cli-build
             - publish-platform:
                 context:
                     - turbo-cache
@@ -198,4 +205,5 @@ workflows:
                             - /^agent-facets@\d+\..+/
                 requires:
                     - publish-platform
+                serial-group: << pipeline.project.slug >>/release-cli-finalize
 

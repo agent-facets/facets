@@ -2,17 +2,9 @@ import { getChangelogEntry } from '@changesets/release-utils'
 
 export interface WorkspacePackage {
   name: string
-  version: string
+  version?: string
   dir: string
   private?: boolean
-  /**
-   * Internal release marker, read from `agentFacets.release` in package.json.
-   * `"skip"` means the package is workspace-only — never tagged, never
-   * published. Used by `tag.ts` and `hasUnpublishedVersions` to exclude
-   * packages that have no publish path (unlike the private CLI package,
-   * which IS tagged because the tag triggers its binary release pipeline).
-   */
-  releaseMode?: 'skip'
 }
 
 /**
@@ -35,18 +27,20 @@ export function shouldPublish(pendingChangesets: string[]): boolean {
  * Check whether any workspace package has a local version
  * that doesn't yet exist on the npm registry.
  *
- * Packages marked `agentFacets.release: "skip"` are excluded — they're
- * workspace-only and have no npm registry to compare against. Without
- * this skip, `npmViewFn` would return `null` for them and they'd
- * perpetually report as "unpublished", causing tag.ts to keep firing
- * even when only skipped packages have bumps.
+ * Packages without a `version` field in `package.json` are excluded —
+ * they are workspace-only helpers (e.g. `@agent-facets/common`) whose
+ * release is suppressed upstream by the changesets `ignore` list in
+ * `.changeset/config.json`. This defensive filter prevents `npmViewFn`
+ * from being called with a versionless package (which would return
+ * `null`, mismatch `undefined`, and perpetually report as "unpublished",
+ * causing tag.ts to keep firing every main-pipeline run).
  */
 export async function hasUnpublishedVersions(
   packages: WorkspacePackage[],
   npmViewFn: (pkg: string) => Promise<string | null>,
 ): Promise<boolean> {
   for (const pkg of packages) {
-    if (pkg.releaseMode === 'skip') continue
+    if (!pkg.version) continue
     const npmVersion = await npmViewFn(pkg.name)
     if (npmVersion !== pkg.version) return true
   }

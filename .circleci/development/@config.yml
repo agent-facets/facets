@@ -1,3 +1,13 @@
 version: 2.1
 orbs:
   aws-cli: circleci/aws-cli@5.4.1
+parameters:
+  # Package name parsed from the release tag (`@agent-facets/<pkg>@<version>`) by
+  # scripts/release/tag.ts, forwarded via the CircleCI API v2 trigger. Consumed
+  # only by the `release` workflow's `serial-group` to key the queue per-package
+  # (so `@agent-facets/core@x` and `@agent-facets/adapter@y` releases can run
+  # concurrently). The `release-cli` workflow does not set or reference it; the
+  # empty default keeps the parameter satisfied for that trigger path.
+  package:
+    type: string
+    default: ""
