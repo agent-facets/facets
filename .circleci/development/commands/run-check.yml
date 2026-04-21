@@ -1,9 +1,13 @@
 steps:
   - run:
       name: Check
-      # Runs on a `medium` resource class (4 GB, 2 vCPU). Previously on `small`
-      # (2 GB) the parallel adapter DTS builds (arktype inlined via tsdown's
-      # `deps.alwaysBundle`, heavy `rolldown-plugin-dts:generate` pass) OOM'd
-      # even with `--concurrency=1`, so the box was bumped. Concurrency is left
-      # at turbo's default so medium's extra vCPU actually parallelizes.
+      # Runs on a `medium` resource class (4 GB, 2 vCPU). Even on `medium`,
+      # parallel adapter DTS builds (arktype inlined via tsdown's
+      # `deps.alwaysBundle`, heavy `rolldown-plugin-dts:generate` pass) peak
+      # over 4 GB when core + three adapter builds fan out simultaneously and
+      # intermittently get SIGKILL'd by the OOM killer (exit 137). Forcing
+      # `TURBO_CONCURRENCY=1` serializes all tasks at the cost of ~30–45s of
+      # wall-time, which is well under the cost of a flaky CI.
+      environment:
+        TURBO_CONCURRENCY: "1"
       command: bun turbo check

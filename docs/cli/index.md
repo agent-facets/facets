@@ -12,8 +12,6 @@ Good development ecosystems allow you to install the exact version of what you n
 verify, and publish **facets**. It is extremely configurable and solves a variety of use cases. Most importantly, it
 allows you to install the exact versions you want of **facets** and their dependencies.
 
-<Info>Closed-alpha: see [partner onboarding](/alpha/onboarding) for the current install flow. Registry-based workflows ([Facet.cafe](https://facet.cafe/)) are roadmap — see [the roadmap](/roadmap).</Info>
-
 ## Common Commands
 
 The following are the most common `facet` commands. See the [roadmap](/roadmap) for planned commands.

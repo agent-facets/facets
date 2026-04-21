@@ -16,6 +16,7 @@
       <excludeFolder url="file://$MODULE_DIR$/packages/adapters/opencode/.turbo" />
       <excludeFolder url="file://$MODULE_DIR$/packages/core/test-results" />
       <excludeFolder url="file://$MODULE_DIR$/test-results" />
+      <excludeFolder url="file://$MODULE_DIR$/.sst" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />

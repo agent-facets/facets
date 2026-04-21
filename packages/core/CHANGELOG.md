@@ -26,8 +26,6 @@
   - **Atomic parallel-install lock** — `.facets/.install.lock` via `O_CREAT|O_EXCL` with stale-pid recovery.
   - **Stub commands** (`info`, `list`, `publish`, `remove`, `upgrade`) are hidden from `facet --help` but stay invocable so typos still get "did you mean…" suggestions.
   - **Core**: new adapter-agnostic `LockfileSchema`, `FacetsJsonSchema`, and pure manifest mutations (`parseFacetsJson`, `serializeFacetsJson`, `upsertFacetInManifest`, `removeFacetFromManifest`). Comments in hand-edited `facets.json` survive round-trips.
-  - **Public docs** rewritten for closed-alpha scope: `README.md` quickstart points partners at `docs/alpha/partner-onboarding.md`; `docs/cli.mdx` callout supersedes the old registry claim; install spec + openspec spec lead with closed-alpha behavior, with open-beta extensions appended.
-    This is Changeset [#2](https://github.com/agent-facets/facets/issues/2) of the two-changeset install-pipeline ship — release and publish this set _after_ the adapter set so partners never pull a (new CLI × old adapter) combination. Then run the pre-ship smoke test per `docs/alpha/partner-onboarding.md`.
 
 ## 0.4.3
 

@@ -274,7 +274,7 @@ Decompose tasks into smaller, distinct sub-questions before delegating. Each sub
 
 An Explore agent is spawned with the following context:
 
-> In the codebase at /Users/julian/dev/facets, investigate how sessions are stored, pruned, or deleted. I need very thorough findings on:
+> In the codebase at <projectDir>, investigate how sessions are stored, pruned, or deleted. I need very thorough findings on:
 > 1. Where sessions are stored (filesystem, database, memory?) - find the storage layer
 > 2. Any code that deletes, prunes, or cleans up sessions (search for delete/remove/cleanup/prune related to sessions)
 > 3. Any startup/initialization code that might clean up old sessions on boot
@@ -289,8 +289,8 @@ Spawn one subagent with the full context verbatim.
 
 Spawn 5 Explore subagents, one per question:
 
-- Subagent 1: "In the codebase at /Users/julian/dev/facets, where are sessions stored? Find the storage layer — filesystem, database, memory, etc. Return exact file paths and line numbers."
-- Subagent 2: "In the codebase at /Users/julian/dev/facets, find any code that deletes, prunes, or cleans up sessions. Search for delete/remove/cleanup/prune related to sessions. Return exact file paths and line numbers."
-- Subagent 3: "In the codebase at /Users/julian/dev/facets, find any startup or initialization code that cleans up old sessions on boot. Return exact file paths and line numbers."
-- Subagent 4: "In the codebase at /Users/julian/dev/facets, how does the `prune` config option work? Does it only prune tool outputs from the context window, or does it delete actual session records from storage? Return exact file paths and line numbers."
-- Subagent 5: "In the codebase at /Users/julian/dev/facets, is there any connection between the `OPENCODE_DISABLE_PRUNE` env var and session lifecycle? Return exact file paths and line numbers."
+- Subagent 1: "In the codebase at <projectDir>, where are sessions stored? Find the storage layer — filesystem, database, memory, etc. Return exact file paths and line numbers."
+- Subagent 2: "In the codebase at <projectDir>, find any code that deletes, prunes, or cleans up sessions. Search for delete/remove/cleanup/prune related to sessions. Return exact file paths and line numbers."
+- Subagent 3: "In the codebase at <projectDir>, find any startup or initialization code that cleans up old sessions on boot. Return exact file paths and line numbers."
+- Subagent 4: "In the codebase at <projectDir>, how does the `prune` config option work? Does it only prune tool outputs from the context window, or does it delete actual session records from storage? Return exact file paths and line numbers."
+- Subagent 5: "In the codebase at <projectDir>, is there any connection between the `OPENCODE_DISABLE_PRUNE` env var and session lifecycle? Return exact file paths and line numbers."
