@@ -1,5 +1,12 @@
 # @agent-facets/brand
 
+## 0.4.1
+
+### Patch Changes
+
+- [#175](https://github.com/agent-facets/facets/pull/175) [`96ad141`](https://github.com/agent-facets/facets/commit/96ad141dd0e5453b2987630eb90bda4700ef4a0a) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Use brand themeing for landing and docs site
+- [#174](https://github.com/agent-facets/facets/pull/174) [`9834cb7`](https://github.com/agent-facets/facets/commit/9834cb772384e3bde37fb44cfdbec5b3ab7f3bc7) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Updated branding and launched a new landing website
+
 ## 0.4.0
 
 ### Minor Changes
