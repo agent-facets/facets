@@ -1,0 +1,148 @@
+.install {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  gap: 0;
+  background: var(--bg-elev);
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  padding: 0;
+  font-family: var(--mono);
+  font-size: 15px;
+  box-shadow: 0 20px 60px -20px color-mix(in oklab, var(--accent-a) 50%, transparent);
+  margin: 0;
+  max-width: 92vw;
+  overflow: hidden;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  appearance: none;
+  text-align: left;
+  color: inherit;
+  transition:
+    filter 0.2s ease,
+    transform 0.1s ease;
+}
+
+.install:hover {
+  filter: brightness(1.04);
+}
+
+.install:active {
+  transform: translateY(1px);
+}
+
+.prompt {
+  color: var(--accent-c);
+  padding: 18px 0 18px 22px;
+  display: flex;
+  align-items: center;
+}
+
+.cmd {
+  padding: 18px 14px 18px 10px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  font-variant-ligatures: none;
+}
+
+.pipe {
+  color: var(--ink-faint);
+}
+
+.flag {
+  color: var(--accent-d);
+}
+
+.copy {
+  appearance: none;
+  border: none;
+  padding: 18px 22px;
+  background: linear-gradient(135deg, var(--accent-a), var(--accent-b));
+  color: white;
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  border-left: 1px solid var(--line-strong);
+  transition: filter 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.install.copied .copy {
+  background: #16a34a;
+}
+
+.copyInner {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 16px;
+}
+
+.copyState {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition:
+    opacity 0.22s ease,
+    transform 0.22s cubic-bezier(0.2, 0.9, 0.2, 1);
+  white-space: nowrap;
+}
+
+.copyState svg {
+  flex-shrink: 0;
+}
+
+.copyIdle {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.copyDone {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.install.copied .copyIdle {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+.install.copied .copyDone {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.install.copied .copyDone svg path {
+  stroke-dasharray: 20;
+  stroke-dashoffset: 20;
+  animation: checkDraw 0.35s ease-out 0.05s forwards;
+}
+
+@keyframes checkDraw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .install,
+  .copyState,
+  .install.copied .copyDone svg path {
+    transition: none;
+    animation: none;
+  }
+}

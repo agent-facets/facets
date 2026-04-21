@@ -11,9 +11,8 @@
   },
   "scripts": {
     "dev": "exec bun packages/cli/src/index.ts",
-    "sst:dev": "sst dev --stage \"${SST_STAGE}-dev\"",
-    "landing:dev": "bun run --cwd packages/landing dev",
-    "landing:build": "bun run --cwd packages/landing build",
+    "ui": "bun run --cwd packages/landing dev",
+    "ui:build": "bun run --cwd packages/landing build",
     "types": "tsc --noEmit",
     "check": "bun turbo check",
     "test:scripts": "bun test scripts/",

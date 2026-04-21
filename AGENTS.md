@@ -37,7 +37,7 @@ account is shared with the sibling `facet-cafe` repo.
 
 | Command                          | What it does                          |
 |----------------------------------|---------------------------------------|
-| `bun sst:dev`                    | SST dev mode for current `$SST_STAGE` |
+| `bun sst dev`                    | SST dev mode for current `$SST_STAGE` |
 | `bun sst deploy --stage <stage>` | Deploy to a named stage               |
 | `bun sst remove --stage <stage>` | Tear down a non-main stage            |
 
