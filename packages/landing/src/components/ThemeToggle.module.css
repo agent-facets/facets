@@ -9,7 +9,7 @@
   border: 1px solid var(--ink-dim);
   background: var(--ink);
   color: var(--bg);
-  font-family: var(--mono), serif;
+  font-family: var(--mono), monospace;
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
