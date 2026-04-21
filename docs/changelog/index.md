@@ -3,6 +3,19 @@ title: Changelog
 description: What's new in Agent Facets
 ---
 
+<Update label="2026-04-21" description="New landing page" tags={["Feature"]}>
+  ## agentfacets.io landing page
+
+  The Agent Facets website now has a proper landing page at [agentfacets.io](https://agentfacets.io). It walks you through what facets are, shows a live CLI demo, and makes it easy to get started with a single install command.
+</Update>
+
+
+<Update label="2026-04-21" description="Docs moved to docs.agentfacets.io" tags={["Update"]}>
+  ## New docs URL
+
+  Documentation now lives at [docs.agentfacets.io](https://docs.agentfacets.io). The main domain at `agentfacets.io` serves the landing page, and the CLI installer is available at `agentfacets.io/install`. Update any bookmarks accordingly.
+</Update>
+
 <Update label="2026-04-20" description="New install URL and cross-platform support" tags={["Update"]}>
   ## New install URL
 
