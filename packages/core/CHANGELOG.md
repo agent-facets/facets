@@ -1,5 +1,11 @@
 # @agent-facets/core
 
+## 0.6.1
+
+### Patch Changes
+
+- [#183](https://github.com/agent-facets/facets/pull/183) [`c9a1a4d`](https://github.com/agent-facets/facets/commit/c9a1a4dfe7e28437d6b523c6fa83ff17ac9b9f94) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Serial deploys via CI to ensure tag and release ordering
+
 ## 0.6.0
 
 ### Minor Changes
