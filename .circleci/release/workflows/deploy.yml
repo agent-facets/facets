@@ -1,0 +1,10 @@
+jobs:
+  - deploy-site:
+      context:
+        - bot-context
+        - slack-secrets
+        - sst
+      filters:
+        branches:
+          only:
+            - main

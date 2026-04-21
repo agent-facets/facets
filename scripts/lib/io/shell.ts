@@ -25,6 +25,10 @@ export const shellIo = {
   verifyPackages: (packages: string[], version: string) =>
     $`bun scripts/release-cli/verify.ts ${version} ${packages.join(',')}`,
 
+  // SST deploy
+  sstInstall: () => $`bun sst install`,
+  sstDeployMain: () => $`bun sst deploy --stage main`,
+
   // Filesystem
   readFile: (path: string) => Bun.file(path).text(),
   readJson: (path: string) => Bun.file(path).json(),

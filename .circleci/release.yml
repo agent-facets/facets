@@ -1,4 +1,9 @@
 commands:
+    aws-oidc-setup:
+        steps:
+            - aws-cli/setup:
+                region: us-east-1
+                role_arn: ${AWS_ROLE_ARN}
     notify-failure:
         steps:
             - run:
@@ -46,6 +51,21 @@ jobs:
                     - packages/cli/dist
                 root: .
             - notify-failure
+    deploy-site:
+        docker:
+            - image: cimg/base:current
+        environment:
+            LEFTHOOK: "0"
+            MISE_ENV: release
+        resource_class: small
+        steps:
+            - setup-mise
+            - aws-oidc-setup
+            - run:
+                command: bun scripts/deploy/site.ts
+                name: Deploy SST main stage
+                no_output_timeout: 30m
+            - notify-failure
     finalize-cli:
         docker:
             - image: cimg/base:current
@@ -92,8 +112,21 @@ jobs:
                 command: bun scripts/release/publish.ts
                 name: Publish
             - notify-failure
+orbs:
+    aws-cli: circleci/aws-cli@5.4.1
 version: 2.1
 workflows:
+    deploy:
+        jobs:
+            - deploy-site:
+                context:
+                    - bot-context
+                    - slack-secrets
+                    - sst
+                filters:
+                    branches:
+                        only:
+                            - main
     release:
         jobs:
             - release:

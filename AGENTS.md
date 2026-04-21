@@ -41,7 +41,17 @@ account is shared with the sibling `facet-cafe` repo.
 | `bun sst deploy --stage <stage>` | Deploy to a named stage               |
 | `bun sst remove --stage <stage>` | Tear down a non-main stage            |
 
-Manual deploys only for now. CircleCI wiring is a deferred follow-up.
+### Continuous deployment
+
+Every push to `main` runs `sst deploy --stage main` via the `deploy` workflow
+in `.circleci/release/workflows/deploy.yml`. Requires the `sst` CircleCI
+context with `AWS_ROLE_ARN`. See `scripts/deploy/README.md` for the pipeline
+flow and [CircleCI's AWS OIDC docs][oidc-aws] for the one-time IAM setup.
+
+[oidc-aws]: https://circleci.com/docs/guides/permissions-authentication/openid-connect-tokens/#set-up-aws
+
+Manual deploys are still supported for ad-hoc stages via the `bun sst deploy
+--stage <stage>` command.
 
 ### Layout
 

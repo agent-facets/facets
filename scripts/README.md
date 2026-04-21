@@ -21,6 +21,9 @@ scripts/
 │   ├── seed.ts                 # Seed platform package names on npm
 │   └── targets.ts              # Platform target matrix definitions
 │
+├── deploy/                     # SST main-stage CD pipeline
+│   └── site.ts                 # `sst install` + `sst deploy --stage main`
+│
 ├── lib/                        # Shared utilities
 │   ├── io/                     # IO adapter (split by domain, nested namespaces)
 │   │   ├── index.ts            # Composes io = { npm, git, gh, circleci, shell, console }
@@ -46,9 +49,10 @@ scripts/
 └── check-bun-version.ts        # Verify Bun version matches mise.toml
 ```
 
-## Two Pipelines
+## Three Pipelines
 
-There are two independent release pipelines, triggered by different git tag patterns:
+There are three independent release-pipeline workflows — two triggered by git tag
+patterns, one triggered by pushes to `main`:
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -71,15 +75,18 @@ There are two independent release pipelines, triggered by different git tag patt
 │    @agent-facets/brand@X.Y.Z  ─── library tag                    │
 │    agent-facets@X.Y.Z         ─── CLI tag                        │
 └──────────────────────────────────────────────────────────────────┘
-            │                                       │
-            ▼                                       ▼
-   ┌─────────────────┐                  ┌──────────────────────┐
-   │ Library Release │                  │ CLI Release          │
-   │ (release/ dir)  │                  │ (release-cli/ dir)   │
-   │                 │                  │                      │
-   │ See release/    │                  │ See release-cli/     │
-   │ README.md       │                  │ README.md            │
-   └─────────────────┘                  └──────────────────────┘
+             │                                       │
+             ▼                                       ▼
+    ┌─────────────────┐                  ┌──────────────────────┐
+    │ Library Release │                  │ CLI Release          │
+    │ (release/ dir)  │                  │ (release-cli/ dir)   │
+    │                 │                  │                      │
+    │ See release/    │                  │ See release-cli/     │
+    │ README.md       │                  │ README.md            │
+    └─────────────────┘                  └──────────────────────┘
+
+Independently, every push to `main` triggers the `deploy` workflow which
+runs `sst deploy --stage main` via `deploy/site.ts`. See `deploy/README.md`.
 ```
 
 ## Why is the CLI package private?
