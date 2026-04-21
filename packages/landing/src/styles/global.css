@@ -27,7 +27,6 @@ body {
   font-family: var(--sans), sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  line-height: 1.5;
 }
 
 body {

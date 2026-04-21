@@ -52,7 +52,7 @@
 }
 
 .stepIdx {
-  font-family: var(--mono);
+  font-family: var(--mono), monospace;
   font-size: 12px;
   color: var(--accent-b);
   letter-spacing: 0.15em;
@@ -61,7 +61,7 @@
 }
 
 .step h3 {
-  font-family: var(--sans);
+  font-family: var(--sans), sans-serif;
   font-size: clamp(28px, 3.6vw, 44px);
   font-weight: 700;
   letter-spacing: -0.025em;
@@ -70,7 +70,7 @@
 }
 
 .step h3 em {
-  font-family: var(--serif);
+  font-family: var(--serif), serif;
   font-style: italic;
   font-weight: 400;
   color: var(--accent-a);
@@ -84,7 +84,7 @@
 }
 
 .step p code {
-  font-family: var(--mono);
+  font-family: var(--mono), monospace;
   color: var(--accent-b);
 }
 
@@ -96,7 +96,7 @@
 }
 
 .chip {
-  font-family: var(--mono);
+  font-family: var(--mono), monospace;
   font-size: 11px;
   padding: 6px 10px;
   border: 1px solid var(--line-strong);
@@ -126,7 +126,7 @@
   align-items: center;
   gap: 14px;
   padding: 0 18px;
-  font-family: var(--mono);
+  font-family: var(--mono), monospace;
   font-size: 13px;
   transition:
     transform 0.9s cubic-bezier(0.2, 0.9, 0.2, 1),
@@ -234,7 +234,7 @@
   left: 50%;
   bottom: 10%;
   transform: translateX(-50%);
-  font-family: var(--mono);
+  font-family: var(--mono), monospace;
   font-size: 11px;
   letter-spacing: 0.25em;
   text-transform: uppercase;
