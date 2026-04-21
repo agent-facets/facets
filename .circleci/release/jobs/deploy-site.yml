@@ -1,0 +1,14 @@
+docker:
+  - image: cimg/base:current
+resource_class: small
+environment:
+  LEFTHOOK: "0"
+  MISE_ENV: release
+steps:
+  - setup-mise
+  - aws-oidc-setup
+  - run:
+      name: Deploy SST main stage
+      command: bun scripts/deploy/site.ts
+      no_output_timeout: 30m
+  - notify-failure
