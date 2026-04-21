@@ -1,4 +1,5 @@
 .turbo/
+.sst/
 lefthook-local.yml
 mise.local.toml
 

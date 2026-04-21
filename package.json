@@ -11,6 +11,9 @@
   },
   "scripts": {
     "dev": "exec bun packages/cli/src/index.ts",
+    "sst:dev": "sst dev --stage \"${SST_STAGE}-dev\"",
+    "landing:dev": "bun run --cwd packages/landing dev",
+    "landing:build": "bun run --cwd packages/landing build",
     "types": "tsc --noEmit",
     "check": "bun turbo check",
     "test:scripts": "bun test scripts/",
@@ -24,8 +27,8 @@
     "docs": "bun --cwd docs mint dev",
     "docs:validate": "bun --cwd docs mint validate",
     "docs:broken-links": "bun --cwd docs mint broken-links",
-    "postinstall": "mise exec -- lefthook install",
-    "clean": "rm -rf .turbo node_modules packages/**/node_modules packages/**/.turbo packages/**/dist packages/cli/bin/.facet test-results/*.xml tmp docs/.mintlify",
+    "postinstall": "mise exec -- lefthook install && { [ -n \"$CI\" ] || sst install; }",
+    "clean": "rm -rf .turbo .sst node_modules packages/**/node_modules packages/**/.turbo packages/**/dist packages/cli/bin/.facet test-results/*.xml tmp docs/.mintlify",
     "nuke": "bun run clean && bun install && bun check"
   },
   "devDependencies": {
@@ -36,10 +39,15 @@
     "@fission-ai/openspec": "1.3.0",
     "@octokit/auth-app": "8.2.0",
     "@types/bun": "1.3.11",
-    "@types/node": "25",
+    "@types/node": "24.12.2",
     "dedent": "1.7.2",
     "mint": "4.2.521",
     "turbo": "2.9.6",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "@types/aws-lambda": "^8.10.161",
+    "type-fest": "^5.3.0"
+  },
+  "dependencies": {
+    "sst": "4.5.12"
   }
 }

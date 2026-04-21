@@ -11,6 +11,55 @@
 
 </CircleCI>
 
+<SST>
+
+## SST
+
+This repo hosts `agentfacets.io` via SST. The SST app name is `agent-facets`. The AWS
+account is shared with the sibling `facet-cafe` repo.
+
+| Key            | Value                                              |
+|----------------|----------------------------------------------------|
+| App name       | `agent-facets`                                     |
+| AWS profile    | `facet-cafe` (shared account)                      |
+| Node runtime   | `nodejs24.x` (matches `mise.toml` — single source) |
+| Main stage     | `main` → `agentfacets.io` (apex) + WAF             |
+| Preview stage  | `${stage}` → `${stage}.agentfacets.io`, no WAF     |
+| Personal stage | `${user}` → `${user}.agentfacets.io`, no WAF       |
+
+### Prerequisites
+
+- **mise** must be active. `mise.development.toml` sets `AWS_PROFILE=facet-cafe` for
+  local development. There is no `.env.local`.
+- `bun install` runs `sst install` automatically (skipped in CI).
+
+### Commands
+
+| Command                          | What it does                          |
+|----------------------------------|---------------------------------------|
+| `bun sst:dev`                    | SST dev mode for current `$SST_STAGE` |
+| `bun sst deploy --stage <stage>` | Deploy to a named stage               |
+| `bun sst remove --stage <stage>` | Tear down a non-main stage            |
+
+Manual deploys only for now. CircleCI wiring is a deferred follow-up.
+
+### Layout
+
+- `sst.config.ts` at repo root.
+- `infra/` contains infra modules auto-imported by `sst.config.ts`.
+- `infra/tsconfig.json` scopes TypeScript for infra code (extends SST's platform config).
+- `packages/landing/` is the Vite + React landing site served from apex.
+- `packages/functions/` hosts Lambda handlers (currently `src/install.handler`).
+
+### DNS
+
+- `agentfacets.io` A → SST-managed CloudFront (apex).
+- `www.agentfacets.io` → 301 to apex via SST `domain.redirects`.
+- `docs.agentfacets.io` CNAME → Mintlify custom-domain target (managed by SST in
+  `infra/dns.ts`).
+
+</SST>
+
 ## Source Code Map
 
 Turborepo monorepo with Bun workspaces. Five packages under `packages/`.

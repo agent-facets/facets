@@ -1,2 +1,5 @@
 [tools]
 circleci = "0.1.34950"
+
+[env]
+AWS_PROFILE = "facet-cafe"

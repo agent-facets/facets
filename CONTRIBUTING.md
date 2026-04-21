@@ -2,7 +2,7 @@
 
 Thanks for your interest in contributing to Facets!
 
-Full contributing documentation is available at [agentfacets.io/contributing/getting-started](https://agentfacets.io/contributing/getting-started).
+Full contributing documentation is available at [docs.agentfacets.io/contributing/getting-started](https://docs.agentfacets.io/contributing/getting-started).
 
 ## Quick start
 

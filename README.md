@@ -4,13 +4,13 @@
 
 ## Documentation
 
-Full documentation is available at [agentfacets.io](https://agentfacets.io).
+Full documentation is available at [docs.agentfacets.io](https://docs.agentfacets.io).
 
 ## Quickstart
 
 ```shell
 # Install the CLI (macOS/Linux)
-curl -fsSL https://install.agentfacets.io | bash
+curl -fsSL https://agentfacets.io/install | bash
 
 # Or via npm (all platforms, including Windows)
 npm install -g agent-facets
@@ -22,9 +22,9 @@ cd <facet-repo>
 facet install
 ```
 
-Registry-based `facet add <name>` is roadmap (open-beta) — see [agentfacets.io/roadmap](https://agentfacets.io/roadmap).
+Registry-based `facet add <name>` is roadmap (open-beta) — see [docs.agentfacets.io/roadmap](https://docs.agentfacets.io/roadmap).
 
-Please see https://agentfacets.io for detailed guidance and documentation for the `facet` CLI tool.
+Please see https://docs.agentfacets.io for detailed guidance and documentation for the `facet` CLI tool.
 
 ## Packages
 

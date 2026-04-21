@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@agent-facets/landing",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && tsc --noEmit",
+    "types": "tsc --noEmit",
+    "test": "echo \"No tests specified\""
+  },
+  "dependencies": {
+    "react": "19.2.5",
+    "react-dom": "19.2.5"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "vite": "^7.0.0"
+  }
+}

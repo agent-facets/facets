@@ -5,7 +5,8 @@
   "description": "A package manager for AI assistant extensions — skills, agents, commands, and MCP servers.",
   "logo": {
     "dark": "/assets/logo.svg",
-    "light": "/assets/logo-light.svg"
+    "light": "/assets/logo-light.svg",
+    "href": "https://agentfacets.io/"
   },
   "appearance": {
     "default": "system"
@@ -134,7 +135,7 @@
         "type": "button",
         "icon": "download",
         "label": "Download CLI",
-        "href": "https://install.agentfacets.io"
+        "href": "https://agentfacets.io/install"
       }
     ]
   },

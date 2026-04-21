@@ -21,4 +21,4 @@ Not every PR needs a changeset — changes to docs, CI, or other non-published f
 
 ## For maintainers
 
-See the [Release Pipeline](https://agentfacets.io/contributing/release-pipeline) docs for the full end-to-end release flow.
+See the [Release Pipeline](https://docs.agentfacets.io/contributing/release-pipeline) docs for the full end-to-end release flow.
