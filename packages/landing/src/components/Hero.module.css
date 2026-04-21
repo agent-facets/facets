@@ -69,7 +69,7 @@
 }
 
 .accent {
-  font-family: var(--serif), serif;
+  font-family: var(--serif, serif);
   font-style: italic;
   font-weight: 400;
   background: linear-gradient(100deg, var(--accent-a) 0%, var(--accent-b) 45%, var(--accent-d) 100%);
