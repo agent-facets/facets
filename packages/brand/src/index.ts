@@ -12,6 +12,7 @@ export {
   SURFACE_DARK,
   SURFACE_LIGHT,
 } from './colors.ts'
+export { buildTokensCss } from './css.ts'
 export { FONT_STACKS, FONTS } from './fonts.ts'
 export { GRADIENT_STOPS, getAnimatedGradient } from './gradient.ts'
 export { THEME } from './theme.ts'
