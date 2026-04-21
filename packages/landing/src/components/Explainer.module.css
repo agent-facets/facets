@@ -34,7 +34,7 @@
 }
 
 .title em {
-  font-family: var(--serif), serif;
+  font-family: var(--serif, serif);
   font-style: italic;
   font-weight: 400;
 }

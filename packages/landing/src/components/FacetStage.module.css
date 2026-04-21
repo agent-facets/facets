@@ -70,7 +70,7 @@
 }
 
 .step h3 em {
-  font-family: var(--serif), serif;
+  font-family: var(--serif, serif);
   font-style: italic;
   font-weight: 400;
   color: var(--accent-a);
