@@ -1,5 +1,15 @@
 # @agent-facets/brand
 
+## 0.5.0
+
+### Minor Changes
+
+- [#179](https://github.com/agent-facets/facets/pull/179) [`cd6e1c5`](https://github.com/agent-facets/facets/commit/cd6e1c52cdac7a31d657158df1c4af13d26b10b3) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Brand now controls fonts and theming
+
+### Patch Changes
+
+- [#177](https://github.com/agent-facets/facets/pull/177) [`a99bddd`](https://github.com/agent-facets/facets/commit/a99bddd9ff7a12ccce755d3c76fac150a9ccf18e) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Fixed font issues (loads Geist now)
+
 ## 0.4.1
 
 ### Patch Changes
