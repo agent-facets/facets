@@ -5,7 +5,6 @@
 "@agent-facets/adapter-opencode": patch
 "@agent-facets/brand": patch
 "agent-facets": patch
-"@agent-facets/common": patch
 "@agent-facets/core": patch
 
 ---
