@@ -232,7 +232,8 @@
 .sceneLabel {
   position: absolute;
   left: 50%;
-  bottom: 10%;
+  bottom: 24%;
+  text-align: right;
   transform: translateX(-50%);
   font-family: var(--mono), monospace;
   font-size: 11px;
