@@ -1,5 +1,11 @@
 # @agent-facets/adapter
 
+## 0.4.2
+
+### Patch Changes
+
+- [#190](https://github.com/agent-facets/facets/pull/190) [`7bda63d`](https://github.com/agent-facets/facets/commit/7bda63d759955c1da0a9fa821f0cd4e2a6ba4532) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Fix release pipeline: `prepack` no longer attempts to rewrite `workspace:*` references in `devDependencies`. Unblocks publishing when a devDep points at a workspace-only versionless package like `@agent-facets/common`. `npm pack` strips devDependencies from the tarball anyway, so there was nothing to rewrite in the first place.
+
 ## 0.4.1
 
 ### Patch Changes
