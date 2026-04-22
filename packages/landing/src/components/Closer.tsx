@@ -1,11 +1,9 @@
-import { useIsMobile } from '../hooks/useIsMobile'
 import styles from './Closer.module.css'
 import { Footer } from './Footer'
 import { InstallBlock } from './InstallBlock'
 import { RegistryCta } from './RegistryCta'
 
 export function Closer() {
-  const isMobile = useIsMobile()
   return (
     <section className={styles.closer}>
       <div className={styles.glow} />
@@ -20,7 +18,7 @@ export function Closer() {
         <div className={styles.installWrap}>
           <InstallBlock />
         </div>
-        {isMobile && <RegistryCta className={styles.mobileCta} />}
+        <RegistryCta className={styles.mobileCta} />
       </div>
       <Footer />
     </section>
