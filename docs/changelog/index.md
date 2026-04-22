@@ -4,6 +4,24 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-04-22" description="Mobile-responsive landing page" tags={["Improvement"]} rss={{
+  title: "Mobile-responsive landing page",
+  description: "The Agent Facets landing page at agentfacets.io is now fully responsive on phones and tablets. Navigation collapses into a slide-down mobile menu, the CLI demo adapts for smaller screens, and all sections stack cleanly on narrow viewports."
+}}>
+  ## Mobile-responsive landing page
+
+  The [agentfacets.io](https://agentfacets.io) landing page is now fully responsive. If you previously visited on a phone or tablet, the experience was broken — the scroll-linked demo, navigation, and layout all assumed a desktop viewport. That's fixed.
+
+  Here's what changed:
+
+  - **Mobile navigation** — the nav bar collapses into a slide-down menu on screens ≤ 1024 px wide, with all links accessible from a single tap.
+  - **Adapted CLI demo** — the interactive terminal demo skips the widest step on small screens so it fits without horizontal scrolling.
+  - **Stacked sections** — the explainer, hero, and footer all reflow into a clean single-column layout on narrow viewports.
+  - **Registry CTA** — on mobile, the install command is replaced with a link to [facet.cafe](https://facet.cafe) so you can browse facets without needing a terminal.
+
+  The desktop layout is unchanged.
+</Update>
+
 <Update label="2026-04-21" description="Landing page and new docs URL" tags={["Improvement"]} rss={{
   title: "Landing page and new docs URL",
   description: "Agent Facets has a new landing page at https://agentfacets.io with a live CLI demo. Install the CLI with: curl -fsSL https://agentfacets.io/install | bash. Documentation has moved to https://docs.agentfacets.io — update any bookmarks."
