@@ -43,8 +43,10 @@
   }
 }
 
-@media (max-width: 900px) {
-  .box {
+/* bp-mobile — hide floaters entirely on small viewports; they add
+   visual noise in a narrow hero and collide with the CTA + title. */
+@media (max-width: 1024px) {
+  .orbits {
     display: none;
   }
 }

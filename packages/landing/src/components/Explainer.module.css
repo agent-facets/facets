@@ -1,11 +1,17 @@
 .explainer {
   position: relative;
-  padding: 120px 0 0;
+  padding: 80px 0 0;
 }
 
 .intro {
   max-width: 900px;
-  margin: 0 auto 60px;
+  /*
+   * Intro sits visually close to the top of the first FacetStage
+   * step. The stage's sticky inner is aligned to the top (see
+   * FacetStage.module.css .sticky) so there's no viewport-height
+   * void between "The Idea" and "Skills".
+   */
+  margin: 0 auto 0;
   padding: 0 32px;
   text-align: center;
 }
@@ -45,4 +51,60 @@
   color: var(--ink-dim);
   max-width: 620px;
   margin: 0 auto;
+}
+
+.learnCard {
+  margin-top: 32px;
+}
+
+.desktopStage {
+  display: block;
+}
+
+.mobileStack {
+  display: none;
+}
+
+/* bp-mobile — swap desktop scroll-stage for the static stack. */
+@media (max-width: 1024px) {
+  .explainer {
+    padding: 64px 0 20px;
+  }
+
+  .intro {
+    padding: 0 22px;
+    margin-bottom: 32px;
+  }
+
+  .label {
+    font-size: 10.5px;
+    margin-bottom: 14px;
+  }
+
+  .title {
+    font-size: 36px;
+    letter-spacing: -0.028em;
+    line-height: 1;
+    margin-bottom: 14px;
+    text-wrap: balance;
+  }
+
+  .sub {
+    font-size: 15px;
+    line-height: 1.55;
+    max-width: 340px;
+    text-wrap: pretty;
+  }
+
+  .learnCard {
+    margin-top: 24px;
+  }
+
+  .desktopStage {
+    display: none;
+  }
+
+  .mobileStack {
+    display: block;
+  }
 }

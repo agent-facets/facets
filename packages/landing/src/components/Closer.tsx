@@ -1,6 +1,7 @@
 import styles from './Closer.module.css'
 import { Footer } from './Footer'
 import { InstallBlock } from './InstallBlock'
+import { RegistryCta } from './RegistryCta'
 
 export function Closer() {
   return (
@@ -16,6 +17,9 @@ export function Closer() {
         </p>
         <div className={styles.installWrap}>
           <InstallBlock />
+        </div>
+        <div className={styles.mobileCta}>
+          <RegistryCta />
         </div>
       </div>
       <Footer />

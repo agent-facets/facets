@@ -8,6 +8,7 @@
 *::before,
 *::after {
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
 }
 
 html {
@@ -16,6 +17,17 @@ html {
    * browser-chosen and can't be tuned from CSS.
    */
   scroll-behavior: smooth;
+}
+
+/*
+ * Mobile nav height. Derived from `.nav` mobile padding (14px × 2) +
+ * BrandMark SVG (26px) + bottom border (1px) = 55px. Referenced by
+ * `MobileMenu.module.css` so the slide-down panel starts flush below
+ * the nav rather than overlapping it. If you change the mobile nav
+ * padding or brand-mark size, update this value.
+ */
+:root {
+  --nav-mobile-height: 55px;
 }
 
 html,
@@ -34,14 +46,26 @@ body {
 }
 
 /*
- * Offset the top of each anchored section so the fixed nav (~68px tall)
- * doesn't overlap the section heading when the browser scrolls the anchor
- * into view.
+ * Offset the top of each anchored section so the fixed nav (~68px tall
+ * on desktop, ~52px on mobile) doesn't overlap the section heading when
+ * the browser scrolls the anchor into view.
+ *
+ * Mobile breakpoint: see /* bp-mobile *​/ convention. The hook counterpart
+ * lives in `src/hooks/useIsMobile.ts`.
  */
 :target,
 [id="what"],
 [id="demo"] {
   scroll-margin-top: 88px;
+}
+
+/* bp-mobile */
+@media (max-width: 1024px) {
+  :target,
+  [id="what"],
+  [id="demo"] {
+    scroll-margin-top: 60px;
+  }
 }
 
 a {
