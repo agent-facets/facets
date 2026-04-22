@@ -18,7 +18,9 @@ export function Closer() {
         <div className={styles.installWrap}>
           <InstallBlock />
         </div>
-        <RegistryCta className={styles.mobileCta} />
+        <div className={styles.mobileCta}>
+          <RegistryCta />
+        </div>
       </div>
       <Footer />
     </section>
