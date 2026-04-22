@@ -7,8 +7,25 @@
  * that are fully testable without touching the filesystem.
  */
 
-/** Dependency field names that may contain workspace: specifiers. */
-const DEP_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'] as const
+/**
+ * Dependency field names that may contain workspace: specifiers AND must be
+ * rewritten at publish time.
+ *
+ * `devDependencies` is intentionally excluded. Two reasons:
+ *
+ * 1. `npm pack` strips `devDependencies` from the published tarball's
+ *    `package.json`, so rewriting them has no publish-time effect.
+ * 2. Rewriting them actively breaks when a devDep references a workspace-only
+ *    versionless package (e.g. `@agent-facets/common`, whose `version` field
+ *    was intentionally removed in PR #183 as the opt-out marker for packages
+ *    that never publish). `createDiskResolver` cannot produce a concrete
+ *    version for such a package, so `rewriteWorkspaceDeps` would throw.
+ *
+ * Reference: CircleCI job 517 failed publishing `@agent-facets/core@0.6.1`
+ * and `@agent-facets/adapter@0.4.1` for exactly this reason — both packages
+ * have `"@agent-facets/common": "workspace:*"` in their devDependencies.
+ */
+const DEP_FIELDS = ['dependencies', 'peerDependencies', 'optionalDependencies'] as const
 
 /**
  * Keys within `publishConfig` that should be hoisted to the top-level package
