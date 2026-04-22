@@ -103,12 +103,13 @@ The CLI package (`agent-facets`) is marked `"private": true` in its `package.jso
 
 Some workspace packages — `@agent-facets/common`, `@agent-facets/landing`, `@agent-facets/functions` — are private helpers that are never published and have no companion release pipeline. `"private": true` alone isn't enough to skip them: the CLI package is also private but MUST be tagged (its tag triggers the binary release pipeline).
 
-The contract for marking a package as "workspace-only, never release" has two parts, both required:
+The contract for marking a package as "workspace-only, never release" has three parts:
 
 1. **Listed in `.changeset/config.json` `ignore`** — changesets never bumps the package's version or includes it in the Version Packages PR. This is the authoritative mechanism.
 2. **No `version` field in `package.json`** — `release/tag.ts` and `lib/changesets.ts#hasUnpublishedVersions` defensively skip any package without a version. Without this fallback, an accidental removal from the `ignore` list would cause `tag.ts` to try creating `@pkg@undefined` tags, and `hasUnpublishedVersions` would perpetually report the package as "unpublished" (since `null !== undefined`).
+3. **`DEP_FIELDS` in `scripts/lib/prepack.ts` excludes `devDependencies`** — lets published packages keep `workspace:*` devDep references to versionless workspace-only packages (e.g. `@agent-facets/common` in `core` / `adapter` / `cli` devDeps) without `prepack` trying — and failing — to resolve them to a concrete version. `npm pack` strips devDeps from the tarball anyway, so there's nothing to rewrite.
 
-Together these keep workspace-only packages out of the release pipeline entirely — no tags, no npm publishes, no lingering "unpublished" state.
+Together these keep workspace-only packages out of the release pipeline entirely — no tags, no npm publishes, no lingering "unpublished" state, and no prepack failures.
 
 ## Per-package release queueing
 

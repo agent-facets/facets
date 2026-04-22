@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { applyPublishConfig, rewriteWorkspaceDeps, type VersionResolver } from './prepack'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { applyPublishConfig, createDiskResolver, rewriteWorkspaceDeps, type VersionResolver } from './prepack'
 
 /** Helper: creates a resolver from a name→version map. */
 function mockResolver(versions: Record<string, string>): VersionResolver {
@@ -185,7 +188,11 @@ describe('rewriteWorkspaceDeps', () => {
     expect(pkg).toEqual(original)
   })
 
-  test('rewrites workspace:* in devDependencies', async () => {
+  test('leaves workspace:* in devDependencies untouched', async () => {
+    // devDependencies are intentionally excluded from DEP_FIELDS because
+    // `npm pack` strips them from the published tarball. Rewriting them
+    // would also break when a devDep references a workspace-only versionless
+    // package like @agent-facets/common. See prepack.ts DEP_FIELDS docblock.
     const pkg = {
       name: 'my-cli',
       devDependencies: {
@@ -195,8 +202,42 @@ describe('rewriteWorkspaceDeps', () => {
 
     const { pkg: result, modified } = await rewriteWorkspaceDeps(pkg, mockResolver({ '@my/core': '1.0.0' }))
 
+    expect(modified).toBe(false)
+    expect((result.devDependencies as Record<string, string>)['@my/core']).toBe('workspace:*')
+  })
+
+  test('rewrites dependencies but skips devDependencies, even when devDep is unresolvable', async () => {
+    // Regression test for CircleCI job 517: `@agent-facets/core@0.6.1`
+    // prepack failed because `@agent-facets/common` was referenced in
+    // devDependencies as `workspace:*` but `common` has no `version` field
+    // (it's a workspace-only package, opted out of releases via PR #183).
+    //
+    // The fix: devDependencies are never rewritten, so an unresolvable
+    // workspace-only devDep must NOT cause prepack to throw. Regular
+    // dependencies in the same package must still be rewritten normally.
+    const pkg = {
+      name: '@my/publishable',
+      dependencies: {
+        '@my/runtime-sibling': 'workspace:*',
+      },
+      devDependencies: {
+        '@my/versionless-sibling': 'workspace:*',
+      },
+    }
+
+    // Resolver knows about the runtime sibling but returns null for the
+    // versionless one — mirroring the `common` situation on disk.
+    const resolver: VersionResolver = async (name: string) => {
+      if (name === '@my/runtime-sibling') return '2.5.0'
+      return null
+    }
+
+    const { pkg: result, modified } = await rewriteWorkspaceDeps(pkg, resolver)
+
     expect(modified).toBe(true)
-    expect((result.devDependencies as Record<string, string>)['@my/core']).toBe('1.0.0')
+    expect((result.dependencies as Record<string, string>)['@my/runtime-sibling']).toBe('2.5.0')
+    // devDep is untouched — resolver was never called for it
+    expect((result.devDependencies as Record<string, string>)['@my/versionless-sibling']).toBe('workspace:*')
   })
 })
 
@@ -381,5 +422,58 @@ describe('applyPublishConfig', () => {
     expect(publishConfigModified).toBe(true)
     expect((afterPublishConfig.dependencies as Record<string, string>)['@agent-facets/adapter']).toBe('0.3.0')
     expect(afterPublishConfig.exports).toEqual({ '.': { import: './dist/index.mjs' } })
+  })
+})
+
+describe('createDiskResolver', () => {
+  /**
+   * Scaffold a minimal fake monorepo in a tmpdir, invoke the callback with
+   * the root path, and clean up afterwards regardless of outcome.
+   */
+  async function withFakeWorkspace(fn: (rootDir: string) => Promise<void>): Promise<void> {
+    const rootDir = await mkdtemp(join(tmpdir(), 'prepack-resolver-test-'))
+    try {
+      await Bun.write(
+        join(rootDir, 'package.json'),
+        JSON.stringify({ name: 'fake-root', private: true, workspaces: ['packages/*'] }),
+      )
+      await Bun.write(
+        join(rootDir, 'packages/versioned/package.json'),
+        JSON.stringify({ name: '@fake/versioned', version: '1.2.3' }),
+      )
+      await Bun.write(join(rootDir, 'packages/versionless/package.json'), JSON.stringify({ name: '@fake/versionless' }))
+      await fn(rootDir)
+    } finally {
+      await rm(rootDir, { recursive: true, force: true })
+    }
+  }
+
+  test('returns concrete version for a versioned workspace package', async () => {
+    await withFakeWorkspace(async (rootDir) => {
+      const resolver = createDiskResolver(rootDir)
+      expect(await resolver('@fake/versioned')).toBe('1.2.3')
+    })
+  })
+
+  test('returns undefined for a versionless workspace package', async () => {
+    // Documents the resolver's contract: it's permissive — it returns
+    // `candidate.version` as-is, which means `undefined` for workspace-only
+    // packages like @agent-facets/common that have no `version` field.
+    // The caller (`rewriteWorkspaceDeps`) is responsible for treating
+    // nullish values as "unresolved" and throwing. Because devDependencies
+    // are now excluded from DEP_FIELDS, this unresolved state is only
+    // reachable for runtime/peer/optional deps — which should never
+    // reference a versionless workspace package in the first place.
+    await withFakeWorkspace(async (rootDir) => {
+      const resolver = createDiskResolver(rootDir)
+      expect(await resolver('@fake/versionless')).toBeUndefined()
+    })
+  })
+
+  test('returns null for a name that matches no workspace package', async () => {
+    await withFakeWorkspace(async (rootDir) => {
+      const resolver = createDiskResolver(rootDir)
+      expect(await resolver('@fake/nonexistent')).toBeNull()
+    })
   })
 })
