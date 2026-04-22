@@ -3,7 +3,13 @@
   top: 0;
   left: 0;
   right: 0;
-  z-index: 50;
+  /*
+   * Sits above the MobileMenu overlay (z-index: 60) so the brand mark
+   * and theme toggle remain visible and interactive while the menu
+   * sheet is open. The menu's .panel starts at top: var(--nav-mobile-height)
+   * to avoid visual overlap.
+   */
+  z-index: 70;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -27,10 +33,23 @@
   text-decoration: none;
   cursor: pointer;
   transition: opacity 0.15s ease;
+
+  /* Button-as-brand on mobile — strip default button chrome. */
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
 }
 
 .brand:hover {
   opacity: 0.8;
+}
+
+.brand:focus-visible {
+  outline: 2px solid var(--accent-c);
+  outline-offset: 4px;
+  border-radius: 6px;
 }
 
 .links {
@@ -92,8 +111,25 @@
   border-color: var(--ink-dim);
 }
 
-@media (max-width: 900px) {
-  .links {
+/* bp-mobile — mobile nav: brand + theme toggle only. Links + GitHub
+   button live inside the MobileMenu sheet instead. */
+@media (max-width: 1024px) {
+  .nav {
+    padding: 14px 18px;
+  }
+
+  .brand {
+    min-width: 0;
+    gap: 9px;
+    font-size: 15px;
+  }
+
+  .links,
+  .ghbtn {
     display: none;
+  }
+
+  .right {
+    min-width: 0;
   }
 }

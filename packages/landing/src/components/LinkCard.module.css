@@ -1,0 +1,100 @@
+.card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin: 0 auto;
+  max-width: 360px;
+  text-align: left;
+  box-shadow: 0 14px 40px -14px color-mix(in oklab, var(--accent-a) 55%, transparent);
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.1s ease;
+}
+
+.card:active {
+  transform: translateY(1px);
+}
+
+/*
+ * Decorative gradient wash. The content sits on top via position:relative
+ * + z-index on the children below.
+ */
+.card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    color-mix(in oklab, var(--accent-a) 22%, transparent),
+    color-mix(in oklab, var(--accent-b) 22%, transparent)
+  );
+  opacity: 0.9;
+  z-index: 0;
+}
+
+.icon,
+.text,
+.arrow {
+  position: relative;
+  z-index: 1;
+}
+
+.icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  background: var(--bg-elev);
+  border: 1px solid var(--line-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-b);
+}
+
+.text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.label {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+  opacity: 0.85;
+  margin-bottom: 2px;
+  font-weight: 600;
+}
+
+.value {
+  font-family: var(--mono), monospace;
+  font-size: 14px;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.arrow {
+  color: var(--ink);
+  opacity: 0.75;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.card:active .arrow {
+  transform: translateX(3px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .arrow {
+    transition: none;
+  }
+}

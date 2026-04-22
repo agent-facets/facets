@@ -1,25 +1,71 @@
+import { useCallback, useRef, useState } from 'react'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { BrandMark } from './BrandMark'
+import { MobileMenu } from './MobileMenu'
 import styles from './Nav.module.css'
 import { ThemeToggle } from './ThemeToggle'
 
+/**
+ * Top nav bar. On desktop the brand mark links back to top (href="#top"),
+ * matching the existing behavior. On mobile the brand mark becomes a
+ * hamburger trigger — tapping it opens the `MobileMenu` slide-down sheet.
+ * The dual role is rendered conditionally via `useIsMobile()` so there's
+ * only ever one landmark in the DOM at a time.
+ */
 export function Nav() {
+  const isMobile = useIsMobile()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+
+  const closeMenu = useCallback(() => {
+    setMenuOpen(false)
+    // Return focus to the brand-mark trigger on close.
+    triggerRef.current?.focus()
+  }, [])
+
+  const toggleMenu = useCallback(() => {
+    setMenuOpen((v) => !v)
+  }, [])
+
   return (
     <>
       <div id="top" />
       <nav className={styles.nav}>
-        <a className={styles.brand} href="#top" aria-label="Agent Facets — back to top">
-          <BrandMark />
-          Agent Facets
-        </a>
+        {isMobile ? (
+          <button
+            ref={triggerRef}
+            type="button"
+            className={styles.brand}
+            onClick={toggleMenu}
+            aria-expanded={menuOpen}
+            aria-controls="mobile-menu"
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+          >
+            <BrandMark />
+            Agent Facets
+          </button>
+        ) : (
+          <a className={styles.brand} href="#top" aria-label="Agent Facets — back to top">
+            <BrandMark />
+            Agent Facets
+          </a>
+        )}
+
         <div className={styles.links}>
           <a href="#top">Home</a>
-          <a href="#what">Facets</a>
+          <a href="#what">Learn</a>
           <a href="#demo">CLI</a>
-          <a href="https://docs.agentfacets.io">Docs</a>
+          <a href="https://docs.agentfacets.io" target="_self">
+            Docs
+          </a>
+          <a href="https://docs.agentfacets.io/cli" target="_self">
+            Reference
+          </a>
           <a href="https://facet.cafe/" target="_blank" rel="noreferrer noopener">
             Registry <span className={styles.extArrow}>↗</span>
           </a>
         </div>
+
         <div className={styles.right}>
           <ThemeToggle />
           <a
@@ -35,6 +81,7 @@ export function Nav() {
           </a>
         </div>
       </nav>
+      {isMobile ? <MobileMenu open={menuOpen} onClose={closeMenu} /> : null}
     </>
   )
 }

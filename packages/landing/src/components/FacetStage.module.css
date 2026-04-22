@@ -3,6 +3,16 @@
   height: 400vh;
 }
 
+/* bp-mobile — belt-and-braces: the Explainer wrapper already toggles
+   the whole stage off on mobile, but if that wrapper is ever
+   bypassed (e.g. the component is used in isolation), don't render
+   the 400vh scroll stage on small viewports. */
+@media (max-width: 1024px) {
+  .stage {
+    display: none;
+  }
+}
+
 .sticky {
   position: sticky;
   top: 0;
@@ -11,7 +21,13 @@
   grid-template-columns: 1fr 1fr;
   gap: 40px;
   align-items: center;
-  padding: 0 64px;
+  /*
+   * Top padding pushes the scene/copy toward the upper half of the
+   * sticky viewport so the first primitive feels bolted right under
+   * the intro rather than floating in the middle of a 100vh void.
+   * Bottom padding is less — the step copy + scene sit high.
+   */
+  padding: 60px 64px 160px;
   overflow: hidden;
 }
 
@@ -27,7 +43,12 @@
   position: relative;
   max-width: 440px;
   width: 100%;
-  min-height: 70vh;
+  /*
+   * Enough height to absolute-position all 5 steps on top of each
+   * other without the tallest clipping, but not so much that empty
+   * space pushes the sticky content away from the intro above.
+   */
+  min-height: 440px;
 }
 
 .step {
@@ -35,7 +56,7 @@
   left: 0;
   right: 0;
   top: 50%;
-  transform: translateY(-50%) translateY(30px);
+  transform: translateY(-50%);
   display: flex;
   flex-direction: column;
   opacity: 0;

@@ -1,5 +1,5 @@
 .closer {
-  padding: 120px 32px 60px;
+  padding: 120px 32px 0;
   text-align: center;
   position: relative;
   overflow: hidden;
@@ -62,4 +62,42 @@
   justify-content: center;
   margin-top: 30px;
   position: relative;
+}
+
+.mobileCta {
+  /* Hidden on desktop; shown below bp-mobile. */
+  display: none;
+  margin: 30px auto 0;
+}
+
+/* bp-mobile — swap InstallBlock for RegistryCta, shrink type + spacing. */
+@media (max-width: 1024px) {
+  .closer {
+    padding: 70px 22px 30px;
+  }
+
+  .title {
+    font-size: 42px;
+    letter-spacing: -0.03em;
+    line-height: 0.95;
+    margin-bottom: 16px;
+    text-wrap: balance;
+  }
+
+  .sub {
+    font-size: 14.5px;
+    line-height: 1.55;
+    max-width: 340px;
+    text-wrap: pretty;
+    padding-bottom: 2em;
+  }
+
+  .installWrap {
+    display: none;
+  }
+
+  .mobileCta {
+    display: flex;
+    margin-top: 22px;
+  }
 }

@@ -10,14 +10,14 @@ type Floater = {
 
 const FLOATERS: readonly Floater[] = [
   { label: 'skills/', accent: 'var(--accent-a)', style: { top: '22%', left: '10%' }, delay: '0s' },
-  { label: 'agents/', accent: 'var(--accent-b)', style: { top: '35%', right: '12%' }, delay: '1.5s' },
+  { label: 'agents/', accent: 'var(--accent-b)', style: { top: '15%', right: '12%' }, delay: '1.5s' },
   {
     label: 'commands/',
     accent: 'var(--accent-c)',
-    style: { bottom: '30%', left: '19%' },
+    style: { bottom: '30%', left: '3%' },
     delay: '3s',
   },
-  { label: 'mcp/', accent: 'var(--accent-d)', style: { bottom: '38%', right: '20%' }, delay: '4.5s' },
+  { label: 'mcp/', accent: 'var(--accent-d)', style: { bottom: '38%', right: '10%' }, delay: '4.5s' },
 ]
 
 /**

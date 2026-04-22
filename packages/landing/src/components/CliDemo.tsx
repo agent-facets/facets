@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
+import { useIsMobile } from '../hooks/useIsMobile'
 import styles from './CliDemo.module.css'
 
 type PromptEntry = { kind: 'prompt'; text: string; cursor?: boolean }
@@ -6,41 +7,75 @@ type OutEntry = { kind: 'out'; delay?: number; html: string }
 type Entry = PromptEntry | OutEntry
 
 /**
- * The CLI demo script. Content is copied verbatim from the mockup — the
- * HTML inside `out` entries is static source we control (no user input),
- * so `dangerouslySetInnerHTML` is safe here.
+ * The full CLI demo script shown on desktop. Starts with a registry
+ * search, adds `viper-plans`, then lists installed facets. Structure
+ * reflects reality: facets install INTO adapters (claude-code, opencode)
+ * rather than into a standalone ~/.facets/... directory.
+ *
+ * The HTML inside `out` entries is static source we control (no user
+ * input), so `dangerouslySetInnerHTML` via `innerHTML` is safe here.
  */
-const CLI_SCRIPT: readonly Entry[] = [
+const FULL_CLI_SCRIPT: readonly Entry[] = [
   { kind: 'prompt', text: 'facet search viper' },
   {
     kind: 'out',
     delay: 300,
-    html: '<span class="dim">Searching registry… found 3 matches.</span>\n<span class="violet">viper-plans</span>        <span class="dim">v1.4.0 · by @acme · 12.4k installs · 4 skills, 2 agents, 3 cmds, 1 mcp</span>\n<span class="violet">viper-reviews</span>      <span class="dim">v0.8.1 · by @acme · 3.1k installs  · 3 skills, 1 agent, 2 cmds</span>\n<span class="violet">viper-shipit</span>       <span class="dim">v2.0.0 · by @acme · 9.7k installs  · 5 skills, 1 agent, 4 cmds, 2 mcp</span>\n',
+    html:
+      '<span class="dim">Searching registry… found 3 matches.</span>\n' +
+      '<span class="violet">viper-plans</span>    <span class="dim">v1.4.0 · by @acme · 12.4k installs · 2 skills, 2 agents, 2 cmds, 2 mcps</span>\n' +
+      '<span class="violet">viper-reviews</span>  <span class="dim">v0.8.1 · by @acme · 3.1k installs  · 3 skills, 1 agent, 2 cmds</span>\n' +
+      '<span class="violet">viper-shipit</span>   <span class="dim">v2.0.0 · by @acme · 9.7k installs  · 5 skills, 1 agent, 4 cmds, 2 mcp</span>\n',
   },
   { kind: 'prompt', text: 'facet add viper-plans' },
   {
     kind: 'out',
     delay: 400,
-    html: '<span class="dim">Resolving viper-plans@latest…</span>\n<span class="ok">✓</span> viper-plans@1.4.0 <span class="dim">(42 KB)</span>\n<span class="dim">Bundle contains:</span>\n  <span class="violet">skills/</span>     4 files   <span class="dim">plan-writer, risk-scan, scope-trim, delta-log</span>\n  <span class="pink">agents/</span>     2 files   <span class="dim">planner, skeptic</span>\n  <span class="ok">commands/</span>   3 files   <span class="dim">/plan /risk /ship</span>\n  <span class="warn">mcp/</span>        1 server  <span class="dim">linear (oauth required)</span>\n',
+    html:
+      '<span class="dim">Resolving viper-plans@latest…</span>\n' +
+      '<span class="ok">✓</span> viper-plans@1.4.0 <span class="dim">(42 KB)</span>\n' +
+      '<span class="dim">Bundle contains:</span>\n' +
+      '  <span class="violet">skills/</span>    2 files    <span class="dim">viper-plans, viper-runs</span>\n' +
+      '  <span class="pink">agents/</span>    2 files    <span class="dim">planner, executor</span>\n' +
+      '  <span class="ok">commands/</span>  2 files    <span class="dim">/viper-plan, /viper-run</span>\n' +
+      '  <span class="warn">mcp/</span>       2 servers  <span class="dim">viper-plan-manager, linear (oauth required)</span>\n',
   },
   {
     kind: 'out',
     delay: 200,
-    html: '<span class="dim">Installing to ~/.facets/viper-plans …</span>  <span class="bar"><i style="width:100%"></i></span> <span class="ok">done</span>\n<span class="dim">Authenticating linear MCP…</span>  <span class="ok">✓</span>\n<span class="dim">Registering slash commands with 3 editors…</span>  <span class="ok">✓</span>\n',
+    html:
+      '<span class="dim">Installing to adapters:</span>\n' +
+      '  <span class="violet">claude-code</span>    <span class="dim">v2.1.0</span>  <span class="ok">✓</span>\n' +
+      '  <span class="violet">opencode</span>       <span class="dim">v1.8.3</span>  <span class="ok">✓</span>\n' +
+      '<span class="bar"><i style="width:100%"></i></span> <span class="ok">done</span>\n' +
+      '<span class="dim">Authenticating Linear MCP…</span>  <span class="ok">✓</span>\n' +
+      '<span class="dim">Registered facet with 2 adapters</span>  <span class="ok">✓</span>\n',
   },
   {
     kind: 'out',
     delay: 300,
-    html: '<span class="ok">✓ viper-plans installed.</span>  <span class="dim">Try </span><span class="violet">/viper-plan "Q2 migration"</span><span class="dim"> in your editor.</span>\n\n',
+    html:
+      '<span class="ok">✓ viper-plans installed.</span>\n' +
+      '<span class="dim">Now </span><span class="violet">/viper-plan</span><span class="dim"> is available to your agents.</span>\n\n',
   },
   { kind: 'prompt', text: 'facet list' },
   {
     kind: 'out',
     delay: 200,
-    html: '<span class="violet">viper-plans</span>       <span class="dim">1.4.0</span>\n<span class="violet">ship-it</span>           <span class="dim">2.0.0</span>\n<span class="violet">designer-kit</span>      <span class="dim">0.9.3</span>  <span class="warn">(update: 1.0.0)</span>\n',
+    html:
+      '<span class="violet">viper-plans</span>     <span class="dim">1.4.0</span>\n' +
+      '<span class="violet">typescript-pro</span>  <span class="dim">2.0.0</span>\n' +
+      '<span class="violet">designer-kit</span>    <span class="dim">0.9.3</span>  <span class="warn">(update: 1.0.0)</span>\n',
   },
   { kind: 'prompt', text: '', cursor: true },
 ]
+
+/**
+ * The mobile variant skips the initial `facet search viper` step (the
+ * search listing is too wide for a phone screen) and jumps straight
+ * to the install flow. Everything from `facet add` onward is shared
+ * with the desktop script.
+ */
+const MOBILE_CLI_SCRIPT: readonly Entry[] = FULL_CLI_SCRIPT.slice(2)
 
 /**
  * Cancellable sleep — resolves after `ms` ms or when the consumer sets the
@@ -61,6 +96,19 @@ function sleep(ms: number, isAborted: () => boolean): Promise<void> {
 }
 
 export function CliDemo() {
+  const isMobile = useIsMobile()
+  /*
+   * Viewport-change behavior: whichever script was chosen when the
+   * section first entered the viewport is the one that plays. We
+   * deliberately do NOT re-run the demo on resize — re-playing would
+   * surprise users in the middle of a read. Replay/skip buttons use
+   * the current viewport value, so manual control always reflects the
+   * latest viewport.
+   */
+  const script = isMobile ? MOBILE_CLI_SCRIPT : FULL_CLI_SCRIPT
+  const scriptRef = useRef(script)
+  scriptRef.current = script
+
   const bodyRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef(false)
   const hasRunRef = useRef(false)
@@ -69,7 +117,7 @@ export function CliDemo() {
     const body = bodyRef.current
     if (!body) return
     body.innerHTML = ''
-    for (const entry of CLI_SCRIPT) {
+    for (const entry of scriptRef.current) {
       if (entry.kind === 'prompt') {
         const line = document.createElement('div')
         const cursorHtml = entry.cursor ? `<span class="${styles.blink}"></span>` : ''
@@ -97,7 +145,7 @@ export function CliDemo() {
       }
     }
 
-    for (const entry of CLI_SCRIPT) {
+    for (const entry of scriptRef.current) {
       if (abortRef.current) return
       if (entry.kind === 'prompt') {
         const line = document.createElement('div')
@@ -174,9 +222,9 @@ export function CliDemo() {
   )
 
   return (
-    <section id="demo" className={styles.section}>
+    <section className={styles.section}>
       <div className={styles.wrap}>
-        <div className={styles.head}>
+        <div id="demo" className={styles.head}>
           <div className={styles.label}>Like npm, but for agents</div>
           <h2 className={styles.title}>
             Install a facet in <em>six seconds.</em>

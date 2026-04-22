@@ -1,5 +1,6 @@
-import { type ReactNode, useRef } from 'react'
+import { useRef } from 'react'
 import { useScrollProgress } from '../hooks/useScrollProgress'
+import { STEPS } from './explainer-content'
 import styles from './FacetStage.module.css'
 
 type BoxDef = {
@@ -57,71 +58,6 @@ const STACK_LAYOUTS: readonly (readonly string[])[] = [
     'translate(-50%,-50%) translateY(12px) scale(0.6) rotateX(0)',
     'translate(-50%,-50%) translateY(36px) scale(0.6) rotateX(0)',
   ],
-]
-
-type StepCopy = {
-  idx: string
-  title: ReactNode
-  body: ReactNode
-  tags: readonly string[]
-}
-
-const STEPS: readonly StepCopy[] = [
-  {
-    idx: '01 / Skills',
-    title: (
-      <>
-        Procedural <em>know-how.</em>
-      </>
-    ),
-    body: 'Structured recipes your agent can follow — from "write a PR description" to "run a TPM standup." Curated, tested, versioned.',
-    tags: ['markdown', 'deterministic', 'composable'],
-  },
-  {
-    idx: '02 / Agents',
-    title: (
-      <>
-        Specialists on <em>call.</em>
-      </>
-    ),
-    body: 'Sub-agents with their own system prompts, tool budgets, and personalities. Spawn them when you need a second opinion, a reviewer, or a planner.',
-    tags: ['sub-agent', 'scoped tools', 'memory'],
-  },
-  {
-    idx: '03 / Commands',
-    title: (
-      <>
-        Slash <em>shortcuts.</em>
-      </>
-    ),
-    body: '/review-pr, /triage, /changelog. Commands get pinned to your workspace the moment you install — no config file surgery.',
-    tags: ['/slash', 'one-key', 'hotkeys'],
-  },
-  {
-    idx: '04 / MCP Servers',
-    title: (
-      <>
-        Real <em>tools,</em> real APIs.
-      </>
-    ),
-    body: 'MCP servers bring the outside world in: Linear, Postgres, internal dashboards, your Figma library. Bundled, auth-handled, ready.',
-    tags: ['MCP', 'OAuth', 'sandboxed'],
-  },
-  {
-    idx: '05 / The Facet',
-    title: (
-      <>
-        All four, <em>packed</em> into one.
-      </>
-    ),
-    body: (
-      <>
-        A facet is the bundle. Publish one, <code>facet add viper-plans</code>, and every primitive lands at once — no
-        glue, no drift.
-      </>
-    ),
-    tags: ['one install', 'semver', 'reproducible'],
-  },
 ]
 
 /**
