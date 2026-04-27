@@ -4,24 +4,24 @@
 /* deno-fmt-ignore-file */
 /* biome-ignore-all lint: auto-generated */
 
-declare module 'sst' {
+declare module "sst" {
   export interface Resource {
-    AgentFacetsLanding: {
-      type: 'sst.aws.StaticSite'
-      url: string
+    "AgentFacetsLanding": {
+      "type": "sst.aws.StaticSite"
+      "url": string
     }
-    AgentFacetsSite: {
-      type: 'sst.aws.Router'
-      url: string
+    "AgentFacetsSite": {
+      "type": "sst.aws.Router"
+      "url": string
     }
-    InstallScript: {
-      name: string
-      type: 'sst.aws.Function'
-      url: string
+    "InstallScript": {
+      "name": string
+      "type": "sst.aws.Function"
+      "url": string
     }
   }
 }
 /// <reference path="sst-env.d.ts" />
 
-import 'sst'
+import "sst"
 export {}
