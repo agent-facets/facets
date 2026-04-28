@@ -7,8 +7,18 @@ environment:
 steps:
   - setup-mise
   - aws-oidc-setup
+  - restore_cache:
+      keys:
+        - v1-sst-platform-{{ checksum "bun.lock" }}-{{ checksum "sst.config.ts" }}
+        - v1-sst-platform-{{ checksum "bun.lock" }}-
+        - v1-sst-platform-
   - run:
       name: Deploy SST main stage
       command: bun scripts/deploy/site.ts
       no_output_timeout: 30m
+  - save_cache:
+      key: v1-sst-platform-{{ checksum "bun.lock" }}-{{ checksum "sst.config.ts" }}
+      paths:
+        - .sst/platform
+      when: always
   - notify-failure
