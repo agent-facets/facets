@@ -5,6 +5,7 @@ jobs:
         - turbo-cache
         - bot-context
         - slack-secrets
+        - github
       filters:
         tags:
           only:
@@ -32,6 +33,7 @@ jobs:
         - turbo-cache
         - bot-context
         - slack-secrets
+        - github
       requires:
         - build-cli
       filters:
@@ -47,6 +49,7 @@ jobs:
         - turbo-cache
         - bot-context
         - slack-secrets
+        - github
       requires:
         - publish-platform
       filters:

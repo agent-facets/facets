@@ -5,6 +5,7 @@ jobs:
         - bot-context
         - slack-secrets
         - sst
+        - github
       filters:
         branches:
           only:
