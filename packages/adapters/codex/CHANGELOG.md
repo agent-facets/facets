@@ -1,5 +1,11 @@
 # @agent-facets/adapter-codex
 
+## 0.3.2
+
+### Patch Changes
+
+- [#206](https://github.com/agent-facets/facets/pull/206) [`d42ef55`](https://github.com/agent-facets/facets/commit/d42ef55cf5ab31f34fcdbac5ce4548b918a1bde4) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Use pack-then-publish mechanism to ensure no drift between packument and published tarballs
+
 ## 0.3.1
 
 ### Patch Changes
