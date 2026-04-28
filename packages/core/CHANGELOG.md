@@ -1,5 +1,14 @@
 # @agent-facets/core
 
+## 0.6.4
+
+### Patch Changes
+
+- [#206](https://github.com/agent-facets/facets/pull/206) [`d42ef55`](https://github.com/agent-facets/facets/commit/d42ef55cf5ab31f34fcdbac5ce4548b918a1bde4) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Use pack-then-publish mechanism to ensure no drift between packument and published tarballs
+
+#### Updated Dependencies
+- @agent-facets/adapter@0.4.4
+
 ## 0.6.3
 
 ### Patch Changes
@@ -8,6 +17,7 @@
 - [#204](https://github.com/agent-facets/facets/pull/204) [`bb49308`](https://github.com/agent-facets/facets/commit/bb493088ebffa2819a46b00c565b9b06c435ca32) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Get @agent-facets/common out of all deps, it's always bundled
 
 #### Updated Dependencies
+
 - @agent-facets/adapter@0.4.3
 
 ## 0.6.2
