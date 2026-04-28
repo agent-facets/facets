@@ -5,7 +5,8 @@
     "build": {
       "cache": false
     },
-    "test": {
+    "test": {},
+    "test:e2e": {
       "dependsOn": ["build", "^build"]
     }
   }

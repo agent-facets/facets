@@ -178,8 +178,16 @@ test("hello world", () => {
 The `check` pipeline (`bun check`) orchestrates `test`, `types`, `lint`, and other tasks via Turborepo. Caching rules:
 
 - **`build`** is cached by default. The CLI package (`packages/cli`) overrides this with `cache: false` in its package-level `turbo.json` because the compiled binary is too large for remote cache.
-- **`test`** and **`types`** are cached. By default, `test` has no dependency on `build`. The CLI package overrides this to add `test.dependsOn: ["build"]` since its integration tests need the compiled binary.
+- **`test`** and **`types`** are cached and never depend on `build`. End-to-end tests that need a compiled binary live in a separate **`test:e2e`** task — see "Test conventions" below.
 - Package-level overrides live in `packages/<name>/turbo.json`.
+
+### Test conventions
+
+- `*.test.ts` files are unit tests. They import from source (`../index.ts`, not `dist/`) and never depend on `build`.
+- `*.e2e.test.ts` files are end-to-end tests. They may spawn compiled binaries or read from `dist/`. They run via `test:e2e`, which `dependsOn: ["build", "^build"]`.
+- `bun check` is the canonical entry point — it runs lint, types, unit tests, e2e tests, and the root-level `scripts/` tests via Turbo.
+- `bun test` at the repo root tests files in `scripts/` only (configured via root `bunfig.toml` `[test] root`). For per-package work use `bun test --cwd packages/<pkg>` (unit only) or `bun run --cwd packages/<pkg> test:e2e`.
+- The `test` script in each package excludes e2e files via `bun test --path-ignore-patterns '**/*.e2e.test.ts'` (set per-package in `package.json`).
 
 ### CLI build caching
 
@@ -192,7 +200,7 @@ The CLI compiled binary is too large for remote cache (causes upload failures in
 ### When adding a new package
 
 1. Add `"test": "bun test"` and `"types": "tsc --noEmit"` scripts to its `package.json` so turbo picks them up for the `check` pipeline.
-2. If the package's tests depend on build output, create a `turbo.json` in the package directory with `"test": { "dependsOn": ["build"] }`.
+2. If the package has end-to-end tests that depend on build output, name them `*.e2e.test.ts`, add a `test:e2e` script, and create a `turbo.json` with `"test:e2e": { "dependsOn": ["build", "^build"] }`. See `packages/cli/` for an example.
 3. If the package's build output is too large for remote cache, add `"build": { "cache": false }` to the package-level `turbo.json`.
 
 ## Frontend

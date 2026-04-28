@@ -1,7 +1,18 @@
 import { describe, expect, test } from 'bun:test'
+import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const CLI_PATH = resolve(import.meta.dir, '../../dist/facet')
+
+if (!existsSync(CLI_PATH)) {
+  throw new Error(
+    `[e2e] dist/facet not found at ${CLI_PATH}.\n` +
+      `Build the CLI first:\n` +
+      `  bun run --cwd packages/cli build\n` +
+      `Or run the full check pipeline:\n` +
+      `  bun check`,
+  )
+}
 // Commands wired to real implementations — these appear in `facet --help`.
 const IMPLEMENTED_COMMAND_NAMES = ['adapter', 'add', 'build', 'create', 'edit', 'install']
 // Stubs — invocable (to surface "did you mean…" suggestions) but hidden from
