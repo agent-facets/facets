@@ -7,13 +7,13 @@ The Facets system distributes AI assistant extensions through a registry-based m
 
 ## Actors
 
-| Actor              | Role                                                                                                              |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| **Author**         | Creates facets and/or MCP servers. Publishes to the registry.                                                     |
-| **Registry**       | Stores facet archives and source-mode server artifacts. Assembles archives with server-side composition. Computes and stores integrity hashes. |
-| **CLI**            | The consumer-facing tool. Installs facets, resolves server references, manages the lockfile, runs MCP servers.    |
-| **AI assistant**   | The host application that loads installed text assets and connects to running MCP servers.                         |
-| **OCI registry**   | External container registry (GHCR, Docker Hub, ECR, etc.) that hosts ref-mode server images.                      |
+| Actor            | Role                                                                                                                                           |
+|------------------|------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Author**       | Creates facets and/or MCP servers. Publishes to the registry.                                                                                  |
+| **Registry**     | Stores facet archives and source-mode server artifacts. Assembles archives with server-side composition. Computes and stores integrity hashes. |
+| **CLI**          | The consumer-facing tool. Installs facets, resolves server references, manages the lockfile, runs MCP servers.                                 |
+| **AI assistant** | The host application that loads installed text assets and connects to running MCP servers.                                                     |
+| **OCI registry** | External container registry (GHCR, Docker Hub, ECR, etc.) that hosts ref-mode server images.                                                   |
 
 ## Artifact Types
 
