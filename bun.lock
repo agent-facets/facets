@@ -109,14 +109,14 @@
       "name": "@agent-facets/core",
       "version": "0.6.2",
       "dependencies": {
+        "@agent-facets/adapter": "workspace:*",
+        "@agent-facets/common": "workspace:*",
         "arktype": "2.2.0",
         "comment-json": "^5.0.0",
         "nanotar": "0.3.0",
         "yaml": "2.8.3",
       },
       "devDependencies": {
-        "@agent-facets/adapter": "workspace:*",
-        "@agent-facets/common": "workspace:*",
         "tsdown": "^0.21.10",
         "typescript": "^6.0.3",
       },
