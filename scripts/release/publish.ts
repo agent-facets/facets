@@ -20,7 +20,7 @@
 import { announceRelease } from '../lib/announce'
 import { loadWorkspacePackages, mintGithubTokens } from '../lib/ci'
 import { io } from '../lib/io'
-import { mintNpmToken, versionExists } from '../lib/npm'
+import { mintNpmToken, packAndPublish, versionExists } from '../lib/npm'
 import { parseTag } from '../lib/tags'
 
 export async function release(): Promise<number> {
@@ -78,7 +78,7 @@ export async function release(): Promise<number> {
   if (!alreadyPublished) {
     await mintNpmToken()
     await io.shell.turboBuild()
-    await io.npm.publish(pkg.dir)
+    await packAndPublish(pkg.dir)
     io.console.log(`Published ${parsed.name}@${parsed.version} to npm`)
   }
 

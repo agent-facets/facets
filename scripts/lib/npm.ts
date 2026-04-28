@@ -70,3 +70,22 @@ export async function publishPlaceholder(pkg: string): Promise<void> {
 export async function mintNpmToken(): Promise<void> {
   process.env.NPM_ID_TOKEN = (await io.shell.mintCircleOidcToken()).trim()
 }
+
+/**
+ * Pack a package and publish the resulting tarball.
+ *
+ * Pack-then-upload (two commands) avoids a lifecycle race for npm: when given
+ * a pre-built tarball, npm builds the registry packument from the
+ * `package.json` *inside* the tarball, so the packument and tarball match by
+ * construction. Captures the exact filename from `bun pm pack --quiet` so we
+ * never publish a glob — `npm publish` accepts a single <package-spec> and
+ * fails with EUSAGE on multiple matches.
+ *
+ * @param dir Path to the package directory containing `package.json`.
+ * @param tag Optional npm dist-tag (e.g., `latest`, `next`). When omitted,
+ *            npm uses `publishConfig.tag` from `package.json` if present.
+ */
+export async function packAndPublish(dir: string, tag?: string): Promise<void> {
+  const filename = (await io.npm.pack(dir)).trim()
+  await io.npm.publishTarball(dir, filename, tag)
+}

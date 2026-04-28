@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:
 import { CLI_PACKAGE_NAME } from '../lib/constants'
 import { io } from '../lib/io'
 import * as npm from '../lib/npm'
-import { shellResult } from '../lib/test-helpers'
 import { publishCliPackage } from './publish-cli-package'
 
 describe('publish-cli-package.ts', () => {
@@ -36,12 +35,12 @@ describe('publish-cli-package.ts', () => {
       version: '1.0.0',
     })
     spyOn(npm, 'versionExists').mockResolvedValue(true)
-    const packSpy = spyOn(io.shell, 'pack').mockResolvedValue(shellResult())
+    const publishSpy = spyOn(npm, 'packAndPublish').mockResolvedValue(undefined)
 
     const code = await publishCliPackage()
 
     expect(code).toBe(0)
-    expect(packSpy).not.toHaveBeenCalled()
+    expect(publishSpy).not.toHaveBeenCalled()
   })
 
   test('synthesizes package.json with correct optionalDependencies', async () => {
@@ -57,8 +56,7 @@ describe('publish-cli-package.ts', () => {
     })
     spyOn(npm, 'versionExists').mockResolvedValue(false)
     const writeSpy = spyOn(io.shell, 'writeFile').mockResolvedValue(0)
-    spyOn(io.shell, 'pack').mockResolvedValue(shellResult())
-    spyOn(io.npm, 'publishTarball').mockResolvedValue(shellResult())
+    spyOn(npm, 'packAndPublish').mockResolvedValue(undefined)
 
     await publishCliPackage()
 
@@ -73,7 +71,7 @@ describe('publish-cli-package.ts', () => {
     expect(written.bin).toEqual({ facet: './bin/facet' })
   })
 
-  test('calls pack and publish with latest tag', async () => {
+  test('calls packAndPublish with latest tag', async () => {
     spyOn(Bun.Glob.prototype, 'scanSync').mockImplementation(function* () {
       yield '@agent-facets/cli-darwin-arm64/package.json'
     })
@@ -83,13 +81,11 @@ describe('publish-cli-package.ts', () => {
     })
     spyOn(npm, 'versionExists').mockResolvedValue(false)
     spyOn(io.shell, 'writeFile').mockResolvedValue(0)
-    const packSpy = spyOn(io.shell, 'pack').mockResolvedValue(shellResult())
-    const publishSpy = spyOn(io.npm, 'publishTarball').mockResolvedValue(shellResult())
+    const publishSpy = spyOn(npm, 'packAndPublish').mockResolvedValue(undefined)
 
     const code = await publishCliPackage()
 
     expect(code).toBe(0)
-    expect(packSpy).toHaveBeenCalledTimes(1)
     expect(publishSpy).toHaveBeenCalledTimes(1)
     expect(publishSpy.mock.calls[0]?.[1]).toBe('latest')
   })

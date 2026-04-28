@@ -50,7 +50,7 @@ describe('publish.ts', () => {
       spyOn(io.shell, 'mintGitHubAppToken').mockResolvedValue('fake-gh-token')
       spyOn(io.shell, 'turboBuild').mockResolvedValue(shellResult())
       spyOn(io.shell, 'mintCircleOidcToken').mockResolvedValue('fake-oidc-token\n')
-      spyOn(io.npm, 'publish').mockResolvedValue(shellResult())
+      spyOn(npm, 'packAndPublish').mockResolvedValue(undefined)
       spyOn(announce, 'slackNotify').mockResolvedValue(undefined)
       spyOn(io.shell, 'readFile').mockResolvedValue(SAMPLE_CHANGELOG)
       spyOn(io.gh, 'releaseCreate').mockResolvedValue(
@@ -107,7 +107,7 @@ describe('publish.ts', () => {
       process.env.CIRCLE_TAG = '@agent-facets/core@1.1.0'
       setupPublishPath()
 
-      const publishSpy = spyOn(io.npm, 'publish').mockResolvedValue(shellResult())
+      const publishSpy = spyOn(npm, 'packAndPublish').mockResolvedValue(undefined)
 
       const { release } = await import('./publish')
       const code = await release()
@@ -121,7 +121,7 @@ describe('publish.ts', () => {
       spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
         { name: '@agent-facets/platform-opencode', version: '0.1.0', dir: 'packages/platform-opencode', private: true },
       ])
-      const publishSpy = spyOn(io.npm, 'publish').mockResolvedValue(shellResult())
+      const publishSpy = spyOn(npm, 'packAndPublish').mockResolvedValue(undefined)
 
       const { release } = await import('./publish')
       const code = await release()
@@ -217,7 +217,7 @@ describe('publish.ts', () => {
       // a tag is re-pushed to recover from a post-publish failure.
       spyOn(npm, 'versionExists').mockResolvedValue(true)
 
-      const publishSpy = spyOn(io.npm, 'publish').mockResolvedValue(shellResult())
+      const publishSpy = spyOn(npm, 'packAndPublish').mockResolvedValue(undefined)
       const buildSpy = spyOn(io.shell, 'turboBuild').mockResolvedValue(shellResult())
       const oidcSpy = spyOn(io.shell, 'mintCircleOidcToken').mockResolvedValue('oidc\n')
 

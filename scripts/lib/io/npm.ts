@@ -10,8 +10,19 @@ export const npmIo = {
   /** Check that a specific version of a package exists — returns the shell result. */
   checkVersion: (pkg: string, ver: string) => $`npm view ${pkg}@${ver} version`.quiet(),
   viewDistTag: (pkg: string, tag: string) => $`npm view ${pkg}@${tag} version`.quiet(),
-  /** Publish a pre-packed .tgz with an explicit dist-tag. */
-  publishTarball: (cwd: string, tag: string) => $`npm publish *.tgz --access public --tag ${tag}`.cwd(cwd),
+  /** Pack the workspace at `dir` into a tarball. Returns `bun pm pack --quiet` stdout, which is the filename. */
+  pack: (dir: string) => $`bun pm pack --quiet`.cwd(dir).text(),
+  /**
+   * Publish a pre-packed tarball by filename, optionally with a dist-tag.
+   *
+   * `npm publish` accepts a single `<package-spec>`. Pass the exact filename
+   * captured from `pack()` — never a glob — so a stale `*.tgz` left over from
+   * a prior local pack can't expand to multiple args and trip EUSAGE.
+   */
+  publishTarball: (dir: string, filename: string, tag?: string) =>
+    tag
+      ? $`npm publish ${filename} --access public --tag ${tag}`.cwd(dir)
+      : $`npm publish ${filename} --access public`.cwd(dir),
   /** Publish interactively with inherited stdio — used for OIDC bootstrap flows. */
   publishPlain: async (cwd: string) => {
     const proc = Bun.spawn(['npm', 'publish', '--access', 'public'], {
@@ -27,8 +38,6 @@ export const npmIo = {
       throw new Error(stderr || `Failed with exit code ${code}`)
     }
   },
-  /** Publish the package in `dir` using its own package.json dist-tag. */
-  publish: (dir: string) => $`npm publish --access public`.cwd(dir),
   /** Get the currently-published latest version of a package, or null if never published. */
   viewVersion: async (pkg: string): Promise<string | null> => {
     const result = await $`npm view ${pkg} version`.nothrow().quiet()

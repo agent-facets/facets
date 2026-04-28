@@ -16,7 +16,7 @@
 import path from 'node:path'
 import { DIST_DIR, PUBLISH_TAG } from '../lib/constants'
 import { io } from '../lib/io'
-import { mintNpmToken, versionExists } from '../lib/npm'
+import { mintNpmToken, packAndPublish, versionExists } from '../lib/npm'
 
 export async function publishSingle(target: string): Promise<number> {
   // Mint OIDC token for npm trusted publishing (each matrix job needs its own)
@@ -45,8 +45,7 @@ export async function publishSingle(target: string): Promise<number> {
   if (process.platform !== 'win32') {
     await io.shell.chmod(pkgDir)
   }
-  await io.shell.pack(pkgDir)
-  await io.npm.publishTarball(pkgDir, PUBLISH_TAG)
+  await packAndPublish(pkgDir, PUBLISH_TAG)
 
   console.log(`+ ${name}@${version} published (latest)`)
   return 0
