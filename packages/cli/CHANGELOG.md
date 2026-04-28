@@ -1,5 +1,11 @@
 # agent-facets
 
+## 0.7.2
+
+### Patch Changes
+
+- [#204](https://github.com/agent-facets/facets/pull/204) [`bb49308`](https://github.com/agent-facets/facets/commit/bb493088ebffa2819a46b00c565b9b06c435ca32) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Get @agent-facets/common out of all deps, it's always bundled
+
 ## 0.7.1
 
 ### Patch Changes
