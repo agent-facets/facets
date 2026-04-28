@@ -11,19 +11,25 @@
  * Dependency field names that may contain workspace: specifiers AND must be
  * rewritten at publish time.
  *
- * `devDependencies` is intentionally excluded. Two reasons:
+ * `devDependencies` is intentionally excluded — but skipping isn't the
+ * primary defense. The prepack pipeline now deletes `devDependencies`
+ * outright via `stripDevDependencies` before any pack tool reads the
+ * manifest. That removal is the load-bearing mechanism; excluding the
+ * field here is belt-and-suspenders so this helper stays pure and safe
+ * to call on any input shape.
  *
- * 1. `npm pack` strips `devDependencies` from the published tarball's
- *    `package.json`, so rewriting them has no publish-time effect.
- * 2. Rewriting them actively breaks when a devDep references a workspace-only
- *    versionless package (e.g. `@agent-facets/common`, whose `version` field
- *    was intentionally removed in PR #183 as the opt-out marker for packages
- *    that never publish). `createDiskResolver` cannot produce a concrete
- *    version for such a package, so `rewriteWorkspaceDeps` would throw.
+ * Why the deletion matters: `bun pm pack` validates every `workspace:*`
+ * specifier — including those in `devDependencies` — and refuses to
+ * pack when one is unresolvable. A devDep on a workspace-only versionless
+ * package (e.g. `@agent-facets/common`, whose `version` field was
+ * intentionally removed in PR #183 as the opt-out marker for packages
+ * that never publish) can't be resolved to a concrete version, so the
+ * pack would fail. `npm publish` strips devDeps from the tarball anyway,
+ * so deleting them at pack time has no effect on the published artifact.
  *
- * Reference: CircleCI job 517 failed publishing `@agent-facets/core@0.6.1`
- * and `@agent-facets/adapter@0.4.1` for exactly this reason — both packages
- * have `"@agent-facets/common": "workspace:*"` in their devDependencies.
+ * Reference: CircleCI job 748 failed publishing `@agent-facets/adapter@0.4.4`
+ * for exactly this reason after PR #206 swapped `npm publish` for
+ * `bun pm pack` + `npm publish <filename>`.
  */
 const DEP_FIELDS = ['dependencies', 'peerDependencies', 'optionalDependencies'] as const
 
@@ -132,6 +138,40 @@ export function applyPublishConfig(pkg: Record<string, unknown>): { pkg: Record<
   }
 
   return { pkg: result, modified }
+}
+
+/**
+ * Delete the `devDependencies` field from a package manifest, if present.
+ *
+ * Why this exists:
+ *
+ * 1. `npm publish` strips `devDependencies` from the published tarball's
+ *    `package.json` regardless, so removing them at pack time has zero
+ *    effect on the published artifact.
+ * 2. `bun pm pack` (used by the publish pipeline since PR #206) validates
+ *    every `workspace:*` specifier — including those in `devDependencies`
+ *    — and refuses to pack when one is unresolvable. A devDep on a
+ *    workspace-only versionless package like `@agent-facets/common`
+ *    (which deliberately has no `version` field) trips this check.
+ *    Deleting the entire field before pack avoids the failure.
+ * 3. `postpack` restores the original `package.json` from the backup, so
+ *    the working tree is unaffected after the pack completes.
+ *
+ * Returns `{ pkg, modified }` where `modified` is true only if a
+ * `devDependencies` field was actually present and removed.
+ */
+export function stripDevDependencies(pkg: Record<string, unknown>): {
+  pkg: Record<string, unknown>
+  modified: boolean
+} {
+  if (!('devDependencies' in pkg)) {
+    return { pkg, modified: false }
+  }
+
+  // Deep-clone so we don't mutate the caller's object
+  const result = JSON.parse(JSON.stringify(pkg)) as Record<string, unknown>
+  delete result.devDependencies
+  return { pkg: result, modified: true }
 }
 
 /**

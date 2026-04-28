@@ -2,7 +2,13 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { applyPublishConfig, createDiskResolver, rewriteWorkspaceDeps, type VersionResolver } from './prepack'
+import {
+  applyPublishConfig,
+  createDiskResolver,
+  rewriteWorkspaceDeps,
+  stripDevDependencies,
+  type VersionResolver,
+} from './prepack'
 
 /** Helper: creates a resolver from a name→version map. */
 function mockResolver(versions: Record<string, string>): VersionResolver {
@@ -189,10 +195,11 @@ describe('rewriteWorkspaceDeps', () => {
   })
 
   test('leaves workspace:* in devDependencies untouched', async () => {
-    // devDependencies are intentionally excluded from DEP_FIELDS because
-    // `npm pack` strips them from the published tarball. Rewriting them
-    // would also break when a devDep references a workspace-only versionless
-    // package like @agent-facets/common. See prepack.ts DEP_FIELDS docblock.
+    // devDependencies are intentionally excluded from DEP_FIELDS. The
+    // load-bearing mechanism is `stripDevDependencies`, which deletes the
+    // entire field before any pack tool reads the manifest — `rewriteWorkspaceDeps`
+    // skipping the field is belt-and-suspenders so this helper stays
+    // safe to call on any input shape. See prepack.ts DEP_FIELDS docblock.
     const pkg = {
       name: 'my-cli',
       devDependencies: {
@@ -212,9 +219,13 @@ describe('rewriteWorkspaceDeps', () => {
     // devDependencies as `workspace:*` but `common` has no `version` field
     // (it's a workspace-only package, opted out of releases via PR #183).
     //
-    // The fix: devDependencies are never rewritten, so an unresolvable
-    // workspace-only devDep must NOT cause prepack to throw. Regular
-    // dependencies in the same package must still be rewritten normally.
+    // PR #190 made devDependencies skipped here so an unresolvable
+    // workspace-only devDep doesn't throw. PR for CI job 748 (this plan)
+    // added `stripDevDependencies` so the field is deleted entirely before
+    // pack — which is the load-bearing protection now that `bun pm pack`
+    // is the pack tool. Skipping in `rewriteWorkspaceDeps` remains as
+    // belt-and-suspenders so the helper stays safe on any input.
+    // Regular dependencies in the same package must still be rewritten normally.
     const pkg = {
       name: '@my/publishable',
       dependencies: {
@@ -238,6 +249,106 @@ describe('rewriteWorkspaceDeps', () => {
     expect((result.dependencies as Record<string, string>)['@my/runtime-sibling']).toBe('2.5.0')
     // devDep is untouched — resolver was never called for it
     expect((result.devDependencies as Record<string, string>)['@my/versionless-sibling']).toBe('workspace:*')
+  })
+})
+
+describe('stripDevDependencies', () => {
+  test('deletes devDependencies when present and reports modified: true', () => {
+    const pkg = {
+      name: 'my-cli',
+      version: '1.0.0',
+      dependencies: { lodash: '4.17.21' },
+      devDependencies: { '@my/sibling': 'workspace:*', vitest: '1.0.0' },
+    }
+
+    const { pkg: result, modified } = stripDevDependencies(pkg)
+
+    expect(modified).toBe(true)
+    expect('devDependencies' in result).toBe(false)
+  })
+
+  test('returns modified: false when no devDependencies field exists', () => {
+    const pkg = {
+      name: 'my-cli',
+      version: '1.0.0',
+      dependencies: { lodash: '4.17.21' },
+    }
+
+    const { pkg: result, modified } = stripDevDependencies(pkg)
+
+    expect(modified).toBe(false)
+    expect(result).toEqual(pkg)
+  })
+
+  test('leaves dependencies, peerDependencies, optionalDependencies, and other fields untouched', () => {
+    const pkg = {
+      name: 'my-cli',
+      version: '1.0.0',
+      description: 'a cli',
+      dependencies: { '@my/runtime': 'workspace:*', lodash: '4.17.21' },
+      peerDependencies: { '@my/peer': '^1.0.0' },
+      optionalDependencies: { '@my/optional': '^2.0.0' },
+      devDependencies: { '@my/dev': 'workspace:*' },
+      exports: { '.': './src/index.ts' },
+    }
+
+    const { pkg: result } = stripDevDependencies(pkg)
+
+    expect(result.name).toBe('my-cli')
+    expect(result.version).toBe('1.0.0')
+    expect(result.description).toBe('a cli')
+    expect(result.dependencies).toEqual({ '@my/runtime': 'workspace:*', lodash: '4.17.21' })
+    expect(result.peerDependencies).toEqual({ '@my/peer': '^1.0.0' })
+    expect(result.optionalDependencies).toEqual({ '@my/optional': '^2.0.0' })
+    expect(result.exports).toEqual({ '.': './src/index.ts' })
+    expect('devDependencies' in result).toBe(false)
+  })
+
+  test('does not mutate the input package object', () => {
+    const pkg = {
+      name: 'immutable-input',
+      devDependencies: { '@my/dev': 'workspace:*' },
+    }
+
+    const original = JSON.parse(JSON.stringify(pkg))
+    stripDevDependencies(pkg)
+
+    expect(pkg).toEqual(original)
+  })
+
+  test('regression: composes with rewriteWorkspaceDeps + applyPublishConfig on the CircleCI 748 shape', async () => {
+    // Reproduces the exact shape from `@agent-facets/adapter@0.4.4` that
+    // failed `bun pm pack` in CircleCI job 748. After the full prepack
+    // pipeline runs, the rewritten manifest must:
+    //   - have its `dependencies` resolved to a concrete version
+    //   - have `publishConfig.exports` hoisted to top-level `exports`
+    //   - have NO `devDependencies` field at all (so `bun pm pack` never
+    //     tries to resolve the workspace:* devDep on versionless common)
+    const input = {
+      name: '@agent-facets/adapter',
+      version: '0.4.4',
+      dependencies: { yaml: '2.8.3' },
+      devDependencies: {
+        '@agent-facets/common': 'workspace:*',
+        tsdown: '^0.21.10',
+      },
+      exports: { '.': './src/index.ts' },
+      publishConfig: {
+        access: 'public',
+        exports: { '.': { import: './dist/index.mjs', types: './dist/index.d.mts' } },
+      },
+    }
+
+    const resolver: VersionResolver = async () => null // versionless common — would throw if reached
+
+    const { pkg: afterDeps } = await rewriteWorkspaceDeps(input, resolver)
+    const { pkg: afterPublishConfig } = applyPublishConfig(afterDeps)
+    const { pkg: final, modified } = stripDevDependencies(afterPublishConfig)
+
+    expect(modified).toBe(true)
+    expect('devDependencies' in final).toBe(false)
+    expect((final.dependencies as Record<string, string>).yaml).toBe('2.8.3')
+    expect(final.exports).toEqual({ '.': { import: './dist/index.mjs', types: './dist/index.d.mts' } })
   })
 })
 
