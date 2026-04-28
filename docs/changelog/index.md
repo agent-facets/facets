@@ -4,6 +4,33 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-04-28" description="Publish pipeline fixed across all packages" tags={["CLI", "Fix"]} rss={{
+  title: "Publish pipeline fixed across all packages",
+  description: "Releases of agent-facets, @agent-facets/core, @agent-facets/adapter, and the first-party adapters (Claude Code, OpenCode, Codex) had been failing intermittently. The publish pipeline is now fixed and all packages have been republished. Reinstall with: npm install -g agent-facets, or curl -fsSL https://agentfacets.io/install | bash."
+}}>
+  ## Publish pipeline fixed across all packages
+
+  Recent releases of `agent-facets` and the supporting packages had been failing or shipping inconsistently due to issues in the publish pipeline. All affected packages have been republished from a known-good state:
+
+  - `agent-facets` — the CLI
+  - `@agent-facets/core` and `@agent-facets/adapter` — authoring and adapter SDKs
+  - `@agent-facets/adapter-claude-code`, `@agent-facets/adapter-opencode`, and `@agent-facets/adapter-codex` — first-party adapters
+
+  If you installed or upgraded the CLI in the last week and ran into install or runtime errors, reinstall:
+
+  ```sh
+  curl -fsSL https://agentfacets.io/install | bash
+  ```
+
+  Or, on any platform with Node.js:
+
+  ```sh
+  npm install -g agent-facets
+  ```
+
+  No usage changes — `facet add`, `facet install`, and the [adapter commands](/cli/adapters/install) all behave the same as before.
+</Update>
+
 <Update label="2026-04-22" description="Mobile-responsive landing page" tags={["Improvement"]} rss={{
   title: "Mobile-responsive landing page",
   description: "The Agent Facets landing page at agentfacets.io is now fully responsive on phones and tablets. Navigation collapses into a slide-down mobile menu, the CLI demo adapts for smaller screens, and all sections stack cleanly on narrow viewports."
