@@ -2,6 +2,7 @@ jobs:
   - check:
       context:
         - turbo-cache
+        - github
       filters:
         branches:
           ignore:
@@ -12,6 +13,7 @@ jobs:
         - turbo-cache
         - bot-context
         - slack-secrets
+        - github
       filters:
         branches:
           only:

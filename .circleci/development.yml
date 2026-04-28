@@ -109,6 +109,7 @@ workflows:
             - check:
                 context:
                     - turbo-cache
+                    - github
                 filters:
                     branches:
                         ignore:
@@ -118,6 +119,7 @@ workflows:
                     - turbo-cache
                     - bot-context
                     - slack-secrets
+                    - github
                 filters:
                     branches:
                         only:

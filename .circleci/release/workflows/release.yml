@@ -5,6 +5,7 @@ jobs:
         - turbo-cache
         - bot-context
         - slack-secrets
+        - github
       filters:
         tags:
           only:
