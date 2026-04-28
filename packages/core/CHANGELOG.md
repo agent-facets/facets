@@ -1,5 +1,15 @@
 # @agent-facets/core
 
+## 0.6.3
+
+### Patch Changes
+
+- [#203](https://github.com/agent-facets/facets/pull/203) [`201260a`](https://github.com/agent-facets/facets/commit/201260a265aaecf7481a52b62b17da51ed29e1d3) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Properly mark @agent-facets/common as a bundled dep (via package.json)
+- [#204](https://github.com/agent-facets/facets/pull/204) [`bb49308`](https://github.com/agent-facets/facets/commit/bb493088ebffa2819a46b00c565b9b06c435ca32) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Get @agent-facets/common out of all deps, it's always bundled
+
+#### Updated Dependencies
+- @agent-facets/adapter@0.4.3
+
 ## 0.6.2
 
 ### Patch Changes
