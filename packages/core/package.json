@@ -22,7 +22,6 @@
   },
   "dependencies": {
     "@agent-facets/adapter": "workspace:*",
-    "@agent-facets/common": "workspace:*",
     "arktype": "2.2.0",
     "comment-json": "^5.0.0",
     "nanotar": "0.3.0",
@@ -32,9 +31,6 @@
     "tsdown": "^0.21.10",
     "typescript": "^6.0.3"
   },
-  "bundledDependencies": [
-    "@agent-facets/common"
-  ],
   "peerDependencies": {
     "typescript": "^5 || ^6"
   },

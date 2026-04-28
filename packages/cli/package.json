@@ -33,7 +33,6 @@
   },
   "devDependencies": {
     "@agent-facets/brand": "workspace:*",
-    "@agent-facets/common": "workspace:*",
     "@agent-facets/core": "workspace:*",
     "@agent-facets/adapter": "workspace:*",
     "@agent-facets/adapter-opencode": "workspace:*",
