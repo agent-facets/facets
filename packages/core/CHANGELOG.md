@@ -1,5 +1,14 @@
 # @agent-facets/core
 
+## 0.6.5
+
+### Patch Changes
+
+- [#211](https://github.com/agent-facets/facets/pull/211) [`66b2fa3`](https://github.com/agent-facets/facets/commit/66b2fa3f70b663ba28e64e4fbc16e0eb60f4498a) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Bump eveything to refresh publish pipelines
+
+#### Updated Dependencies
+- @agent-facets/adapter@0.4.5
+
 ## 0.6.4
 
 ### Patch Changes
@@ -7,6 +16,7 @@
 - [#206](https://github.com/agent-facets/facets/pull/206) [`d42ef55`](https://github.com/agent-facets/facets/commit/d42ef55cf5ab31f34fcdbac5ce4548b918a1bde4) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Use pack-then-publish mechanism to ensure no drift between packument and published tarballs
 
 #### Updated Dependencies
+
 - @agent-facets/adapter@0.4.4
 
 ## 0.6.3
