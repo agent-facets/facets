@@ -1,9 +1,6 @@
 {
   "compilerOptions": {
     "lib": ["ESNext"],
-    "paths": {
-      "@agent-facets/common": ["./packages/common/src/index.ts"]
-    },
     "target": "ESNext",
     "module": "Preserve",
     "moduleDetection": "force",

@@ -30,7 +30,7 @@ describe('publish-platform.ts', () => {
       version: '1.0.0',
     })
     spyOn(npm, 'versionExists').mockResolvedValue(true)
-    const publishSpy = spyOn(io.npm, 'publishTarball').mockResolvedValue(shellResult())
+    const publishSpy = spyOn(npm, 'packAndPublish').mockResolvedValue(undefined)
 
     const code = await publishSingle('cli-darwin-arm64')
 
@@ -38,21 +38,19 @@ describe('publish-platform.ts', () => {
     expect(publishSpy).not.toHaveBeenCalled()
   })
 
-  test('runs chmod, pack, publish when version is not yet on npm', async () => {
+  test('runs chmod and packAndPublish when version is not yet on npm', async () => {
     spyOn(io.shell, 'readJson').mockResolvedValue({
       name: '@agent-facets/cli-linux-x64',
       version: '2.0.0',
     })
     spyOn(npm, 'versionExists').mockResolvedValue(false)
     const chmodSpy = spyOn(io.shell, 'chmod').mockResolvedValue(shellResult())
-    const packSpy = spyOn(io.shell, 'pack').mockResolvedValue(shellResult())
-    const publishSpy = spyOn(io.npm, 'publishTarball').mockResolvedValue(shellResult())
+    const publishSpy = spyOn(npm, 'packAndPublish').mockResolvedValue(undefined)
 
     const code = await publishSingle('cli-linux-x64')
 
     expect(code).toBe(0)
     expect(chmodSpy).toHaveBeenCalledTimes(1)
-    expect(packSpy).toHaveBeenCalledTimes(1)
     expect(publishSpy).toHaveBeenCalledTimes(1)
   })
 
@@ -63,28 +61,25 @@ describe('publish-platform.ts', () => {
     })
     spyOn(npm, 'versionExists').mockResolvedValue(false)
     spyOn(io.shell, 'chmod').mockResolvedValue(shellResult())
-    spyOn(io.shell, 'pack').mockResolvedValue(shellResult())
-    const publishSpy = spyOn(io.npm, 'publishTarball').mockResolvedValue(shellResult())
+    const publishSpy = spyOn(npm, 'packAndPublish').mockResolvedValue(undefined)
 
     await publishSingle('cli-windows-x64')
 
     expect(publishSpy.mock.calls[0]?.[1]).toBe('latest')
   })
 
-  test('passes the correct package directory to pack and publish', async () => {
+  test('passes the correct package directory to packAndPublish', async () => {
     spyOn(io.shell, 'readJson').mockResolvedValue({
       name: '@agent-facets/cli-darwin-x64',
       version: '4.0.0',
     })
     spyOn(npm, 'versionExists').mockResolvedValue(false)
     spyOn(io.shell, 'chmod').mockResolvedValue(shellResult())
-    const packSpy = spyOn(io.shell, 'pack').mockResolvedValue(shellResult())
-    const publishSpy = spyOn(io.npm, 'publishTarball').mockResolvedValue(shellResult())
+    const publishSpy = spyOn(npm, 'packAndPublish').mockResolvedValue(undefined)
 
     await publishSingle('cli-darwin-x64')
 
     const expectedDir = path.join(DIST_DIR, '@agent-facets', 'cli-darwin-x64')
-    expect(packSpy.mock.calls[0]?.[0]).toBe(expectedDir)
     expect(publishSpy.mock.calls[0]?.[0]).toBe(expectedDir)
   })
 
@@ -95,8 +90,7 @@ describe('publish-platform.ts', () => {
     })
     spyOn(npm, 'versionExists').mockResolvedValue(false)
     spyOn(io.shell, 'chmod').mockResolvedValue(shellResult())
-    spyOn(io.shell, 'pack').mockResolvedValue(shellResult())
-    spyOn(io.npm, 'publishTarball').mockRejectedValue(new Error('npm publish failed'))
+    spyOn(npm, 'packAndPublish').mockRejectedValue(new Error('npm publish failed'))
 
     await expect(publishSingle('cli-linux-arm64')).rejects.toThrow('npm publish failed')
   })

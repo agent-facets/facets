@@ -7,7 +7,6 @@ import { mintGitHubAppToken as mintGitHubAppTokenImpl } from '../github-app'
 
 export const shellIo = {
   // Shell
-  pack: (cwd: string) => $`bun pm pack`.cwd(cwd),
   chmod: (cwd: string) => $`chmod -R 755 .`.cwd(cwd).nothrow(),
   rm: (path: string) => $`rm -rf ${path}`.nothrow(),
   mkdir: (path: string) => $`mkdir -p ${path}`,

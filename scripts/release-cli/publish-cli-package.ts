@@ -16,7 +16,7 @@ import path from 'node:path'
 import { $ } from 'bun'
 import { CLI_DIR, CLI_PACKAGE_NAME, DIST_DIR, PUBLISH_TAG } from '../lib/constants'
 import { io } from '../lib/io'
-import { mintNpmToken, versionExists } from '../lib/npm'
+import { mintNpmToken, packAndPublish, versionExists } from '../lib/npm'
 
 /** Discover platform packages from build output. */
 async function discoverPlatformPackages(): Promise<Record<string, string>> {
@@ -73,8 +73,7 @@ export async function publishCliPackage(): Promise<number> {
     ),
   )
 
-  await io.shell.pack(cliPkgDir)
-  await io.npm.publishTarball(cliPkgDir, PUBLISH_TAG)
+  await packAndPublish(cliPkgDir, PUBLISH_TAG)
 
   console.log(`+ ${CLI_PACKAGE_NAME}@${version} published (latest)`)
   return 0

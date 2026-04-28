@@ -27,7 +27,7 @@ scripts/
 ├── lib/                        # Shared utilities
 │   ├── io/                     # IO adapter (split by domain, nested namespaces)
 │   │   ├── index.ts            # Composes io = { npm, git, gh, circleci, shell, console }
-│   │   ├── npm.ts              # npm CLI commands
+│   │   ├── npm.ts              # npm CLI commands (pack, publishTarball, view, etc.)
 │   │   ├── git.ts              # git CLI commands
 │   │   ├── github.ts           # GitHub CLI commands
 │   │   ├── circleci.ts         # CircleCI API v2 calls
@@ -111,6 +111,13 @@ The contract for marking a package as "workspace-only, never release" has three 
 
 Together these keep workspace-only packages out of the release pipeline entirely — no tags, no npm publishes, no lingering "unpublished" state, and no prepack failures.
 
+## Why pack-then-upload?
+
+Both the library publish path and the CLI matrix path go through one helper —
+`packAndPublish` in `scripts/lib/npm.ts` — which does `bun pm pack --quiet` followed by `npm publish <filename>`. This avoids an npm lifecycle race: when `npm publish` builds its own tarball, the registry **packument** (the JSON metadata served by `npm view`) is derived from a different `package.json` snapshot than the **tarball contents**. Our `prepack`/`postpack` rewrite/restore dance leaves the packument with the original (un-rewritten) manifest, so installs fail with `ENOLOCAL` errors trying to resolve `workspace:*` deps the registry shouldn't have advertised.
+
+Pre-building the tarball with `bun pm pack` and uploading it with `npm publish <filename>` makes npm derive the packument from the `package.json` *inside* the tarball — tarball and packument match by construction. The exact filename is captured from `bun pm pack --quiet`'s stdout (which is just the filename) and passed to `npm publish` as a single arg, never a `*.tgz` glob — `npm publish` accepts exactly one `<package-spec>`, so a leftover tarball from a prior local pack would otherwise fail with EUSAGE.
+
 ## Per-package release queueing
 
 `release/tag.ts` parses the package name out of scoped tags
@@ -132,7 +139,7 @@ Import it as:
 ```ts
 import { io } from '../lib/io'
 
-await io.npm.publish(pkgDir)
+await io.npm.publishTarball(pkgDir, filename)
 await io.git.pushAllTags('origin')
 await io.gh.prCreate('main', head, title, body)
 await io.circleci.triggerPipelineForTag(slug, defId, tag, packageName)
