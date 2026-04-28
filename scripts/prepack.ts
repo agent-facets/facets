@@ -75,7 +75,9 @@ if (modified) {
   if (depsModified) changes.push('rewrote workspace:* dependencies to concrete versions')
   if (publishConfigModified) changes.push('hoisted publishConfig fields to top-level')
   if (devDepsStripped) changes.push('stripped devDependencies')
-  console.log(`prepack: ${changes.join('; ')}`)
+  // Diagnostic output goes to stderr so `bun pm pack --quiet` stdout stays
+  // parseable by `packAndPublish` (see scripts/lib/npm.ts#extractPackFilename).
+  console.error(`prepack: ${changes.join('; ')}`)
 } else {
-  console.log('prepack: no workspace:* deps, no publishConfig overrides, and no devDependencies — nothing to rewrite')
+  console.error('prepack: no workspace:* deps, no publishConfig overrides, and no devDependencies — nothing to rewrite')
 }

@@ -17,7 +17,9 @@ const bakFile = Bun.file(bakPath)
 if (await bakFile.exists()) {
   await Bun.file(pkgPath).write(await bakFile.text())
   await bakFile.unlink()
-  console.log('postpack: restored original package.json')
+  // Diagnostic output goes to stderr so `bun pm pack --quiet` stdout stays
+  // parseable by `packAndPublish` (see scripts/lib/npm.ts#extractPackFilename).
+  console.error('postpack: restored original package.json')
 } else {
-  console.log('postpack: no backup found, nothing to restore')
+  console.error('postpack: no backup found, nothing to restore')
 }
