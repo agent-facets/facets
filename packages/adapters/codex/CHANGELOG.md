@@ -1,5 +1,11 @@
 # @agent-facets/adapter-codex
 
+## 0.3.3
+
+### Patch Changes
+
+- [#211](https://github.com/agent-facets/facets/pull/211) [`66b2fa3`](https://github.com/agent-facets/facets/commit/66b2fa3f70b663ba28e64e4fbc16e0eb60f4498a) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Bump eveything to refresh publish pipelines
+
 ## 0.3.2
 
 ### Patch Changes
