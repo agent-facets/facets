@@ -11,7 +11,7 @@ A **facet** is a versioned collection of [assets](#assets) defined by a facet ma
 
 ## Assets
 
-A discrete unit of content within a facet. Consisting of any combination of skills, agents, commands, and MCPservers.
+A discrete unit of content within a facet. Consisting of any combination of skills, agents, commands, and MCP servers.
 
 <Columns col={2}>
   <Card title='Skills' href='/docs/learn/skills'>
@@ -26,5 +26,4 @@ A discrete unit of content within a facet. Consisting of any combination of skil
   <Card title='Servers' href='/docs/learn/servers'>
     A reference to an MCP server that is compliant with the [Model Context Protocol](https://modelcontextprotocol.io/specification/latest)
   </Card>
-
 </Columns>
