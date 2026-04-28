@@ -17,6 +17,9 @@
       <excludeFolder url="file://$MODULE_DIR$/packages/core/test-results" />
       <excludeFolder url="file://$MODULE_DIR$/test-results" />
       <excludeFolder url="file://$MODULE_DIR$/.sst" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/common/.turbo" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/functions/.turbo" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/landing/.turbo" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
