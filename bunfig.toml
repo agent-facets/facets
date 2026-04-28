@@ -1,2 +1,8 @@
 [install]
 exact = true
+
+[test]
+root = "./scripts"
+
+[test.reporter]
+junit = "test-results/scripts-junit.xml"

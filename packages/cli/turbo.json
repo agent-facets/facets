@@ -3,7 +3,8 @@
   "extends": ["//"],
   "tasks": {
     "build": {},
-    "test": {
+    "test": {},
+    "test:e2e": {
       "dependsOn": ["build", "^build"]
     }
   }

@@ -4,9 +4,6 @@
   "tasks": {
     "build": {
       "cache": false
-    },
-    "test": {
-      "dependsOn": ["build", "^build"]
     }
   }
 }

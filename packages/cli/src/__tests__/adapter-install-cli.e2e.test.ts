@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
+import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -21,6 +22,16 @@ import { join, resolve } from 'node:path'
 
 const CLI_PATH = resolve(import.meta.dir, '../../dist/facet')
 const REPO_ROOT = resolve(import.meta.dir, '../../../..')
+
+if (!existsSync(CLI_PATH)) {
+  throw new Error(
+    `[e2e] dist/facet not found at ${CLI_PATH}.\n` +
+      `Build the CLI first:\n` +
+      `  bun run --cwd packages/cli build\n` +
+      `Or run the full check pipeline:\n` +
+      `  bun check`,
+  )
+}
 
 type ExecResult = {
   stdout: string

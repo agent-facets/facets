@@ -12,6 +12,11 @@
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/bunfig.toml"],
       "outputs": ["$TURBO_ROOT$/test-results/**"]
     },
+    "test:e2e": {
+      "dependsOn": ["build", "^build"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/bunfig.toml"],
+      "outputs": ["$TURBO_ROOT$/test-results/**"]
+    },
     "types": {
       "dependsOn": []
     },
@@ -20,6 +25,7 @@
         "//#lint",
         "types",
         "test",
+        "test:e2e",
         "//#types",
         "//#test:scripts",
         "//#docs:validate",
@@ -36,7 +42,8 @@
       ]
     },
     "//#test:scripts": {
-      "inputs": ["scripts/**"]
+      "inputs": ["scripts/**"],
+      "outputs": ["$TURBO_ROOT$/test-results/scripts-junit.xml"]
     },
     "//#types": {
       "inputs": ["scripts/**", "tsconfig.json"]
