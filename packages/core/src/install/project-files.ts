@@ -1,18 +1,13 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { atomicWriteFileSync } from '@agent-facets/common'
-import {
-  emptyFacetsJson,
-  FACETS_JSON_FILE,
-  type FacetsJson,
-  parseFacetsJson,
-  serializeFacetsJson,
-} from '@agent-facets/core'
+import { emptyFacetsJson, FACETS_JSON_FILE, parseFacetsJson, serializeFacetsJson } from '../manifest/mutations.ts'
+import type { FacetsJson } from '../schemas/project-manifest.ts'
 
 /**
- * CLI bridge between OS file I/O and core's pure JSON mutation helpers
- * (Adjustment M). CLI code reads bytes, hands them to core, then writes
- * bytes back — never mutating parsed JSON directly.
+ * Bridge between OS file I/O and the pure JSON mutation helpers in
+ * `manifest/mutations.ts`. Reads bytes, hands them to the parsers,
+ * then writes bytes back — never mutating parsed JSON directly.
  */
 
 export type LoadFacetsJsonResult = { ok: true; data: FacetsJson; existed: boolean } | { ok: false; error: string }

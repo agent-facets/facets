@@ -122,11 +122,54 @@ describe('deleteAssetFile', () => {
 })
 
 describe('assembleAssetContent / splitAssetContent — round-trip', () => {
-  test('assemble + split recovers the metadata and body', () => {
-    const assembled = assembleAssetContent('# body', { name: 'planning', description: 'plan' })
-    const split = splitAssetContent(assembled)
-    expect(split.metadata).toEqual({ name: 'planning', description: 'plan' })
-    expect(split.content.trim()).toBe('# body')
+  // Inverse-property contract: split(assemble(body, metadata)) === { content: body, metadata }.
+  // If this ever drifts, every consumer that compares a write-then-read-
+  // back asset (e.g. `materialize`'s skip-if-identical check) will report
+  // false drift on every install — see the runaway "repaired" loop.
+
+  test('inverse: simple body recovers byte-for-byte', () => {
+    const body = '# body'
+    const metadata = { name: 'planning', description: 'plan' }
+    const split = splitAssetContent(assembleAssetContent(body, metadata))
+    expect(split.metadata).toEqual(metadata)
+    expect(split.content).toBe(body)
+  })
+
+  test('inverse: body with trailing newline recovers byte-for-byte', () => {
+    const body = '# heading\n\nparagraph\n'
+    const metadata = { name: 'planning', description: 'plan' }
+    const split = splitAssetContent(assembleAssetContent(body, metadata))
+    expect(split.content).toBe(body)
+    expect(split.metadata).toEqual(metadata)
+  })
+
+  test('inverse: body that already starts with a newline recovers byte-for-byte', () => {
+    const body = '\n# heading\n'
+    const metadata = { name: 'planning' }
+    const split = splitAssetContent(assembleAssetContent(body, metadata))
+    expect(split.content).toBe(body)
+    expect(split.metadata).toEqual(metadata)
+  })
+
+  test('inverse: empty body recovers as empty', () => {
+    const body = ''
+    const metadata = { name: 'planning' }
+    const split = splitAssetContent(assembleAssetContent(body, metadata))
+    expect(split.content).toBe(body)
+    expect(split.metadata).toEqual(metadata)
+  })
+
+  test('inverse: extras-rich metadata recovers byte-for-byte', () => {
+    const body = '# planning content\n'
+    const metadata = {
+      customField: 'hello',
+      enabled: true,
+      name: 'planning',
+      description: 'planning skill',
+    }
+    const split = splitAssetContent(assembleAssetContent(body, metadata))
+    expect(split.content).toBe(body)
+    expect(split.metadata).toEqual(metadata)
   })
 
   test('split returns {content: raw} when there is no front-matter', () => {

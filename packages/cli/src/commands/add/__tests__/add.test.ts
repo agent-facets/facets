@@ -1,124 +1,232 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { captureStderr, captureStdout } from '../../../__tests__/helpers/capture-std.ts'
+import { captureStderr } from '../../../__tests__/helpers/capture-std.ts'
 import { addCommand } from '../index.ts'
 
 let projectRoot: string
 let originalCwd: string
-let fixtureGitRepo: string
+let fakeHome: string
+let originalHome: string | undefined
+let adaptersDir: string
+let originalAdaptersDir: string | undefined
 
-function git(args: string[], cwd?: string) {
-  return Bun.spawnSync(['git', ...args], {
-    cwd,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } as Record<string, string>,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+function buildLocalFixture(name: string, version = '0.1.0'): string {
+  const repo = realpathSync(mkdtempSync(join(projectRoot, 'fixture-')))
+  writeFileSync(
+    join(repo, 'facet.json'),
+    JSON.stringify({
+      name,
+      version,
+      skills: { planning: { description: 'planning skill' } },
+    }),
+  )
+  mkdirSync(join(repo, 'skills/planning'), { recursive: true })
+  writeFileSync(join(repo, 'skills/planning/SKILL.md'), `# planning ${version}\n`)
+  return repo
+}
+
+function installFakeAdapter(baseDir: string, name: string): void {
+  const dir = join(baseDir, name)
+  mkdirSync(dir, { recursive: true })
+  const assetFsImport = require.resolve('@agent-facets/adapter')
+  writeFileSync(
+    join(dir, 'adapter.js'),
+    `
+import { installAssetFile, readAssetFile, deleteAssetFile } from '${assetFsImport}'
+import { join } from 'node:path'
+
+function path(type, name) {
+  return join(process.cwd(), '.${name}', type + 's', name + '.md')
+}
+
+export default {
+  name: '${name}',
+  supportsInstall: true,
+  buildAssetMetadata(data) { return { ok: true, data: data || {} } },
+  async installAsset(scope, type, name, content, metadata) {
+    await installAssetFile({ file: path(type, name) }, content, metadata)
+  },
+  async readAsset(scope, type, name) {
+    return readAssetFile({ file: path(type, name) })
+  },
+  async deleteAsset(scope, type, name) {
+    await deleteAssetFile({ file: path(type, name) })
+  },
+}
+`,
+  )
 }
 
 beforeEach(() => {
   originalCwd = process.cwd()
-  projectRoot = realpathSync(mkdtempSync(join(tmpdir(), 'facet-add-root-')))
+  originalHome = process.env.HOME
+  originalAdaptersDir = process.env.FACETS_ADAPTERS_DIR
+  projectRoot = realpathSync(mkdtempSync(join(tmpdir(), 'facet-add-cli-')))
+  fakeHome = realpathSync(mkdtempSync(join(tmpdir(), 'facet-home-')))
+  adaptersDir = join(fakeHome, '.facets', 'adapters')
+  mkdirSync(adaptersDir, { recursive: true })
+  process.env.HOME = fakeHome
+  process.env.FACETS_ADAPTERS_DIR = adaptersDir
   process.chdir(projectRoot)
-
-  // Build a fixture git repo that ships a minimal facet.
-  fixtureGitRepo = realpathSync(mkdtempSync(join(tmpdir(), 'facet-add-fixture-')))
-  writeFileSync(
-    join(fixtureGitRepo, 'facet.json'),
-    JSON.stringify({
-      name: 'viper-plans',
-      version: '0.1.0',
-      skills: { planning: { description: 'plan things' } },
-    }),
-  )
-  mkdirSync(join(fixtureGitRepo, 'skills/planning'), { recursive: true })
-  writeFileSync(join(fixtureGitRepo, 'skills/planning/SKILL.md'), '# planning')
-
-  git(['init', '-q', '-b', 'main'], fixtureGitRepo)
-  git(['config', 'user.email', 'test@example.com'], fixtureGitRepo)
-  git(['config', 'user.name', 'Test'], fixtureGitRepo)
-  git(['add', '.'], fixtureGitRepo)
-  git(['commit', '-q', '-m', 'initial'], fixtureGitRepo)
 })
 
 afterEach(() => {
   process.chdir(originalCwd)
+  if (originalHome === undefined) delete process.env.HOME
+  else process.env.HOME = originalHome
+  if (originalAdaptersDir === undefined) delete process.env.FACETS_ADAPTERS_DIR
+  else process.env.FACETS_ADAPTERS_DIR = originalAdaptersDir
   rmSync(projectRoot, { recursive: true, force: true })
-  rmSync(fixtureGitRepo, { recursive: true, force: true })
+  rmSync(fakeHome, { recursive: true, force: true })
 })
 
-describe('facet add — git source', () => {
-  test('clones, reads facet.json, and writes facets.json', async () => {
-    const code = await addCommand.run([`git+file://${fixtureGitRepo}#main`], {})
+describe('facet add — happy path', () => {
+  test('adds a local facet, writes facets.json + lockfile, materializes assets', async () => {
+    installFakeAdapter(adaptersDir, 'test-adapter')
+    const fixture = buildLocalFixture('viper-plans')
+    const relPath = `./${fixture.split('/').pop()}`
+
+    const code = await addCommand.run([relPath], {})
     expect(code).toBe(0)
 
-    const raw = readFileSync(join(projectRoot, 'facets.json'), 'utf8')
-    const json = JSON.parse(raw)
-    expect(json.facets['viper-plans']).toBe(`git+file://${fixtureGitRepo}#main`)
+    // facets.json now contains the entry, keyed by manifest name.
+    const facetsJsonPath = join(projectRoot, 'facets.json')
+    expect(existsSync(facetsJsonPath)).toBe(true)
+    const facetsJson = JSON.parse(readFileSync(facetsJsonPath, 'utf8'))
+    expect(facetsJson.facets['viper-plans']).toBe(relPath)
+
+    // Lockfile written by runInstall.
+    const lockPath = join(projectRoot, 'facets.lock')
+    expect(existsSync(lockPath)).toBe(true)
+    const lockfile = JSON.parse(readFileSync(lockPath, 'utf8'))
+    expect(lockfile.facets['viper-plans']).toMatchObject({
+      version: '0.1.0',
+      assets: [{ scope: 'project', type: 'skill', name: 'planning' }],
+    })
+
+    // Asset materialized into the fake adapter's project-scope dir.
+    expect(existsSync(join(projectRoot, '.test-adapter/skills/planning.md'))).toBe(true)
   })
 
-  test('updates an existing facets.json by upserting', async () => {
-    writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify({ facets: { 'other-facet': 'github:x/y#main' } }))
-    const code = await addCommand.run([`git+file://${fixtureGitRepo}#main`], {})
+  test('multi-source: two facets are added in one command', async () => {
+    installFakeAdapter(adaptersDir, 'test-adapter')
+    const a = buildLocalFixture('alpha')
+    const b = buildLocalFixture('beta')
+    const relA = `./${a.split('/').pop()}`
+    const relB = `./${b.split('/').pop()}`
+
+    const code = await addCommand.run([relA, relB], {})
     expect(code).toBe(0)
-    const json = JSON.parse(readFileSync(join(projectRoot, 'facets.json'), 'utf8'))
-    expect(json.facets['other-facet']).toBe('github:x/y#main')
-    expect(json.facets['viper-plans']).toBe(`git+file://${fixtureGitRepo}#main`)
+
+    const facetsJson = JSON.parse(readFileSync(join(projectRoot, 'facets.json'), 'utf8'))
+    expect(facetsJson.facets.alpha).toBe(relA)
+    expect(facetsJson.facets.beta).toBe(relB)
+
+    const lockfile = JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8'))
+    expect(lockfile.facets.alpha?.version).toBe('0.1.0')
+    expect(lockfile.facets.beta?.version).toBe('0.1.0')
   })
 
-  test('prints the success line with facet name + version', async () => {
-    const { stdout } = await captureStdout(() => addCommand.run([`git+file://${fixtureGitRepo}#main`], {}))
-    expect(stdout).toContain('✓ Added viper-plans@0.1.0')
-    expect(stdout).toContain("Run 'facet install' to materialize.")
-  })
-})
+  test('upserts an existing entry when re-adding the same facet', async () => {
+    installFakeAdapter(adaptersDir, 'test-adapter')
+    const fixture = buildLocalFixture('viper-plans')
+    const rel = `./${fixture.split('/').pop()}`
 
-describe('facet add — local source', () => {
-  test('resolves a local directory inside the project and writes facets.json', async () => {
-    const localDir = join(projectRoot, 'facets/viper-plans')
-    mkdirSync(localDir, { recursive: true })
-    writeFileSync(
-      join(localDir, 'facet.json'),
-      JSON.stringify({
-        name: 'viper-plans',
-        version: '0.2.0',
-        commands: { plan: { description: 'plan' } },
-      }),
-    )
-    mkdirSync(join(localDir, 'commands'), { recursive: true })
-    writeFileSync(join(localDir, 'commands/plan.md'), '# plan')
+    expect(await addCommand.run([rel], {})).toBe(0)
+    expect(await addCommand.run([rel], {})).toBe(0)
 
-    const code = await addCommand.run(['file:./facets/viper-plans'], {})
-    expect(code).toBe(0)
-    const json = JSON.parse(readFileSync(join(projectRoot, 'facets.json'), 'utf8'))
-    expect(json.facets['viper-plans']).toBe('file:./facets/viper-plans')
-  })
-
-  test('rejects a local path outside the project tree', async () => {
-    const { result, stderr } = await captureStderr(() => addCommand.run([`file:/tmp/not-in-tree-${Date.now()}`], {}))
-    expect(result).toBe(1)
-    expect(stderr).toContain('could not resolve local source')
+    const facetsJson = JSON.parse(readFileSync(join(projectRoot, 'facets.json'), 'utf8'))
+    // Single entry only.
+    expect(Object.keys(facetsJson.facets)).toEqual(['viper-plans'])
   })
 })
 
 describe('facet add — error paths', () => {
-  test('missing source prints usage error', async () => {
-    const { result, stderr } = await captureStderr(() => addCommand.run([], {}))
-    expect(result).toBe(1)
+  test('exits 1 with usage error when no source is given', async () => {
+    installFakeAdapter(adaptersDir, 'test-adapter')
+    const { result: code, stderr } = await captureStderr(() => addCommand.run([], {}))
+    expect(code).toBe(1)
     expect(stderr).toContain('missing source specifier')
   })
 
-  test('bare registry names are rejected in closed alpha', async () => {
-    const { result, stderr } = await captureStderr(() => addCommand.run(['viper-plans'], {}))
-    expect(result).toBe(1)
+  test('exits 1 on git+ prefix (the new grammar hard-rejects it)', async () => {
+    installFakeAdapter(adaptersDir, 'test-adapter')
+    const { result: code, stderr } = await captureStderr(() => addCommand.run(['git+https://example.com/repo.git'], {}))
+    expect(code).toBe(1)
     expect(stderr).toContain('could not parse source')
+    expect(stderr).toContain('git+ prefix')
   })
 
-  test('unparseable specifier returns 1', async () => {
-    const { result, stderr } = await captureStderr(() => addCommand.run(['ftp://no.good'], {}))
-    expect(result).toBe(1)
+  test('exits 1 on caret range (only asterisk wildcards are supported)', async () => {
+    installFakeAdapter(adaptersDir, 'test-adapter')
+    const { result: code, stderr } = await captureStderr(() => addCommand.run(['viper-plans@^1.0.0'], {}))
+    expect(code).toBe(1)
     expect(stderr).toContain('could not parse source')
+    expect(stderr).toContain('caret')
+  })
+
+  test('rejects a local path outside the project tree', async () => {
+    installFakeAdapter(adaptersDir, 'test-adapter')
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), 'outside-')))
+    try {
+      const { result: code, stderr } = await captureStderr(() => addCommand.run([outside], {}))
+      expect(code).toBe(1)
+      expect(stderr).toContain('could not resolve local source')
+    } finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  test('exits 1 when no adapters are installed and stdin is non-TTY', async () => {
+    // No installFakeAdapter call → adaptersDir is empty. Test runs in
+    // a non-TTY environment (bun test inherits the parent stdin).
+    const fixture = buildLocalFixture('viper-plans')
+    const rel = `./${fixture.split('/').pop()}`
+    const { result: code, stderr } = await captureStderr(() => addCommand.run([rel], {}))
+    expect(code).toBe(1)
+    expect(stderr).toContain('no adapters installed')
+  })
+})
+
+describe('facet add — manifest snapshot rollback', () => {
+  test('parse error before any state mutation: facets.json untouched', async () => {
+    installFakeAdapter(adaptersDir, 'test-adapter')
+    const before = JSON.stringify({ facets: { 'pre-existing': './fake' } })
+    writeFileSync(join(projectRoot, 'facets.json'), before)
+
+    const { result: code } = await captureStderr(() => addCommand.run(['git+https://example.com/repo.git'], {}))
+    expect(code).toBe(1)
+
+    // facets.json bytes are exactly what we wrote.
+    const after = readFileSync(join(projectRoot, 'facets.json'), 'utf8')
+    expect(after).toBe(before)
+  })
+
+  test('composition rejection before any state mutation: facets.json untouched', async () => {
+    installFakeAdapter(adaptersDir, 'test-adapter')
+    const before = JSON.stringify({ facets: { 'pre-existing': './fake' } })
+    writeFileSync(join(projectRoot, 'facets.json'), before)
+
+    // Build a fixture that declares facets[].
+    const composing = realpathSync(mkdtempSync(join(projectRoot, 'composing-')))
+    writeFileSync(
+      join(composing, 'facet.json'),
+      JSON.stringify({
+        name: 'composing',
+        version: '0.1.0',
+        facets: ['inner-dep@1.0.0'],
+      }),
+    )
+    const rel = `./${composing.split('/').pop()}`
+
+    const { result: code, stderr } = await captureStderr(() => addCommand.run([rel], {}))
+    expect(code).toBe(1)
+    expect(stderr).toContain('composition is not supported')
+
+    // facets.json bytes unchanged.
+    const after = readFileSync(join(projectRoot, 'facets.json'), 'utf8')
+    expect(after).toBe(before)
   })
 })

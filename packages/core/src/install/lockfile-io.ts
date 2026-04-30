@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { atomicWriteFileSync } from '@agent-facets/common'
-import { LOCKFILE_VERSION, type Lockfile, LockfileSchema } from '@agent-facets/core'
 import { type } from 'arktype'
+import { LOCKFILE_VERSION, type Lockfile, LockfileSchema } from '../schemas/lockfile.ts'
 
 /**
  * Bytes-level I/O for facets.lock. Keeps JSON parse/serialize in one place

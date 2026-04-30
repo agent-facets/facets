@@ -1,8 +1,10 @@
 import { join } from 'node:path'
-import { createInterface } from 'node:readline'
 import { FACET_MANIFEST_FILE } from '@agent-facets/core'
 import { type } from 'arktype'
+import { render } from 'ink'
+import { createElement } from 'react'
 import type { Command } from '../../commands.ts'
+import { ConfirmPrompt } from '../../tui/components/confirm-prompt.tsx'
 import { writeScaffold } from '../create-scaffold.ts'
 import { resolveTargetDir } from '../resolve-dir.ts'
 import { runCreateWizardInk } from './wizard.tsx'
@@ -12,15 +14,24 @@ export { writeScaffold } from '../create-scaffold.ts'
 
 const CreateFlags = type({ 'force?': 'boolean' })
 
+/**
+ * Inline Ink-based confirm. Returns the user's answer once they press
+ * y/n/Enter/Esc. Single stdin owner — earlier `node:readline` version
+ * left stdin in a state Ink couldn't reattach to on the next mount.
+ */
 async function confirmOverwrite(display: string): Promise<boolean> {
-  const rl = createInterface({ input: process.stdin, output: process.stdout })
-
-  return new Promise((resolve) => {
-    rl.question(`A facet already exists in ${display}. Overwrite? (y/N) `, (answer) => {
-      rl.close()
-      resolve(answer.toLowerCase() === 'y')
-    })
-  })
+  let answer = false
+  const instance = render(
+    createElement(ConfirmPrompt, {
+      question: `A facet already exists in ${display}. Overwrite?`,
+      defaultAnswer: false,
+      onAnswer: (a) => {
+        answer = a
+      },
+    }),
+  )
+  await instance.waitUntilExit()
+  return answer
 }
 
 export const createCommand: Command = {

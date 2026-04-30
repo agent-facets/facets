@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { acquireInstallLock } from '../lockfile-guard.ts'
+import { acquireInstallLock } from '../install/lockfile-guard.ts'
 
 let projectRoot: string
 

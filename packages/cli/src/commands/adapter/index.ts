@@ -1,8 +1,8 @@
 import type { Command } from '../../commands.ts'
 import { writeCliError } from '../../util/errors.ts'
-import type { FirstPartyAdapter } from './first-party.ts'
 import { installAdapter } from './install-service.ts'
-import { getAdapterBaseDir, listInstalledAdapters, removeAdapter } from './placement.ts'
+import { pickAndInstallAdapters } from './pick-and-install.ts'
+import { listInstalledAdapters, removeAdapter } from './placement.ts'
 
 /**
  * `facet adapter` command — manages adapter installations.
@@ -83,9 +83,9 @@ async function handleInstall(args: string[]): Promise<number> {
 }
 
 async function handleInstallPicker(): Promise<number> {
-  if (!process.stdout.isTTY) {
-    // Adjustment D — non-TTY guard. No picker possible; point at the
-    // explicit-arg path instead.
+  const result = await pickAndInstallAdapters()
+  if (result.ok) return 0
+  if (result.reason === 'non-tty') {
     writeCliError({
       what: 'no adapters installed',
       detail: 'this is a non-interactive environment; the picker cannot run here',
@@ -93,83 +93,12 @@ async function handleInstallPicker(): Promise<number> {
     })
     return 1
   }
-
-  // Discover which adapters are already installed so the picker can show
-  // "(installed — select to update)" rows in green instead of mislabeling
-  // them as uninstalled. Falls back to an empty list if the adapter dir
-  // doesn't exist (first-run case).
-  const installedNames = await listInstalledAdapters(getAdapterBaseDir())
-
-  // Wrap the result in an object so TS doesn't narrow `picked` to `null`
-  // inside the `if (!picked)` check below — the assignment happens inside
-  // an async Ink callback that TS can't see through statically.
-  const state: { picked: FirstPartyAdapter[] | null } = { picked: null }
-  const { render } = await import('ink')
-  const { createElement } = await import('react')
-  const { InstallPicker } = await import('./install-picker.tsx')
-
-  const instance = render(
-    createElement(InstallPicker, {
-      installedNames,
-      onConfirm: (selection) => {
-        state.picked = selection
-      },
-      onAbort: () => {
-        state.picked = null
-      },
-    }),
-  )
-  await runInstallPickerWait(instance)
-
-  const picked = state.picked
-  if (!picked || picked.length === 0) {
+  if (result.reason === 'aborted') {
     process.stderr.write('Aborted: no adapters installed.\n')
     return 1
   }
-
-  // Install each selected adapter sequentially so the terminal log stays
-  // readable. Stop at the first failure.
-  let installed = 0
-  for (const option of picked) {
-    try {
-      const { adapter } = await installAdapter(option.npmPackage, {
-        onProgress: (stage, detail) => {
-          if (stage === 'resolving') console.log(`Resolving "${detail}"...`)
-          else if (stage === 'downloading') console.log(`Downloading ${detail}...`)
-          else if (stage === 'placing') console.log(`Installing adapter "${detail}"...`)
-        },
-        onLog: (line) => console.log(line),
-      })
-      console.log(`Adapter "${adapter.name}" installed successfully.`)
-      installed++
-    } catch (err) {
-      writeCliError({
-        what: `failed to install adapter "${option.name}"`,
-        detail: err instanceof Error ? err.message : String(err),
-        fix: 'see the stderr output above and retry; filesystem and network errors are usually transient',
-      })
-      return 1
-    }
-  }
-
-  return installed > 0 ? 0 : 1
-}
-
-/**
- * Wait for an Ink instance rendering the picker to exit. The picker's
- * useInput handler calls the Ink `exit()` helper on confirm or abort,
- * which resolves `waitUntilExit()`. Abstracted out so both install and
- * (future) materialize paths can reuse the same wait pattern.
- */
-async function runInstallPickerWait(instance: {
-  waitUntilExit: () => Promise<unknown>
-  unmount: () => void
-}): Promise<void> {
-  try {
-    await instance.waitUntilExit()
-  } finally {
-    instance.unmount()
-  }
+  // 'install-failed': pickAndInstallAdapters already wrote the CLI error.
+  return 1
 }
 
 async function handleList(): Promise<number> {

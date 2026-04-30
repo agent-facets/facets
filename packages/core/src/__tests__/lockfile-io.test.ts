@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { FACETS_LOCK_FILE, loadLockfile, writeLockfile } from '../lockfile-io.ts'
+import { FACETS_LOCK_FILE, loadLockfile, writeLockfile } from '../install/lockfile-io.ts'
 
 let projectRoot: string
 
