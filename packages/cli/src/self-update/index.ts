@@ -40,9 +40,10 @@ export async function runSelfUpdate(opts: RunSelfUpdateOptions): Promise<number>
   // subprocess, no exceptions for "already up to date" — just status.
   if (opts.dryRun) {
     const upToDate = currentVersion === target
+    const targetLabel = opts.targetVersion ? 'Target' : 'Latest'
     process.stdout.write(
       `Current: ${currentVersion}\n` +
-        `Latest:  ${target}\n` +
+        `${targetLabel}:  ${target}\n` +
         `Update available: ${upToDate ? 'no' : 'yes'}\n` +
         `\n` +
         `Detected install method: ${handler.displayName}\n` +
