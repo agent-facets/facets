@@ -49,7 +49,7 @@ export function cacheSlot(identity: CacheIdentity): string {
     case 'registry':
       return `${identity.name}@${identity.version}`
     case 'git':
-      return `${identity.name}@${identity.commit}`
+      return `${identity.name}@${identity.version}`
     case 'local':
       return `${identity.name}@local-${hashLocalPath(identity.absolutePath)}`
   }

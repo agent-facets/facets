@@ -1,6 +1,8 @@
 export type {
+  AssetIntegrityFailure,
+  FacetIntegrityCheck,
+  FacetIntegrityFailure,
   GitIntegrityInput,
-  IntegrityCheck,
   IntegrityFailure,
   IntegrityResult,
   RegistryIntegrityInput,

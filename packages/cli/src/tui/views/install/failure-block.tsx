@@ -87,7 +87,11 @@ export function FailureBlock({ failure }: { failure: RunInstallFailure }) {
             ✕ integrity check failed
           </Text>
           <Text> facet: {failure.failure.facet}</Text>
-          <Text> check: {failure.failure.check}</Text>
+          {failure.failure.kind === 'facet' ? (
+            <Text> check: {failure.failure.check}</Text>
+          ) : (
+            <Text> asset: {failure.failure.path}</Text>
+          )}
           <Text> expected: {failure.failure.expected}</Text>
           <Text> observed: {failure.failure.observed}</Text>
           <Text color={THEME.hint}> No assets were written. Project state is unchanged.</Text>

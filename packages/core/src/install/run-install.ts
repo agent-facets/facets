@@ -2,8 +2,11 @@ import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
 import { runBuildPipeline } from '../build/pipeline.ts'
+import { type CacheIdentity, cacheGet, cachePutVerified, readCachedIntegrity } from '../cache/index.ts'
+import { verifyGitOneCheck } from '../integrity/index.ts'
 import { loadManifest, type ResolvedFacetManifest, resolvePrompts } from '../loaders/facet.ts'
 import { loadFacetsJson } from '../manifest/project-files.ts'
+import type { BuildManifest } from '../schemas/build-manifest.ts'
 import type { Lockfile, LockfileFacet } from '../schemas/lockfile.ts'
 import type { FacetsJson } from '../schemas/project-manifest.ts'
 import { parseFacetSource } from '../sources/facet/parse-source.ts'
@@ -307,12 +310,7 @@ interface PlanFacetSuccess {
 type PlanFacetResult = { ok: true; value: PlanFacetSuccess } | { ok: false; failure: RunInstallFailure }
 
 async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
-  // `previousLockfile` will become load-bearing once the registry
-  // resolver wires version pinning here (locked entries get fetched at
-  // their pinned version, manifest entries with no lockfile entry get
-  // resolved fresh). For now, the registry branch is stubbed and the
-  // field stays unread.
-  const { facetName, specifier, projectRoot, onStage, onLog } = args
+  const { facetName, specifier, projectRoot, previousLockfile, onStage, onLog } = args
 
   // Parse the source specifier.
   onStage({ kind: 'facet-stage', facet: facetName, stage: 'parse' })
@@ -324,32 +322,87 @@ async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
     }
   }
 
-  let sourceDir: string
+  let sourceDir: string | undefined
   let cleanup: (() => Promise<void>) | undefined
-  let ref: string | undefined
-  let commit: string | undefined
+  // Captured by the clone path; consumed when constructing a fresh-add
+  // lockfile entry. Locked entries inherit ref/commit from `locked`.
+  let clonedRef: string | undefined
+  let clonedCommit: string | undefined
+  // `locked` is the committed lockfile entry for this facet, if any.
+  // When defined, it's the security contract: the install MUST reproduce
+  // exactly these bytes (or fail loudly). Cache hits short-circuit when
+  // the sidecar matches `locked.integrity`.
+  const locked = previousLockfile.facets[facetName]
+  // Set when a cache hit's sidecar matches the locked integrity. The
+  // sidecar IS the post-write trust certificate; we don't rebuild to
+  // re-derive what the cache already proved at write time.
+  let trustedCacheHit = false
 
   // Resolve to a sourceDir.
   onStage({ kind: 'facet-stage', facet: facetName, stage: 'resolve' })
   if (parsed.value.kind === 'git') {
-    const cloneRef = parsed.value.ref ?? undefined
-    try {
-      const cloned = await cloneFacetGitSource(parsed.value.url, cloneRef)
-      sourceDir = cloned.dir
-      cleanup = async () => {
-        await rm(cloned.dir, { recursive: true, force: true }).catch(() => {})
+    // Cache-first when we have a locked entry: name + version are both
+    // known from `locked`, so we can look up the cache slot without any
+    // clone or network round-trip.
+    if (locked !== undefined) {
+      const cacheId: CacheIdentity = {
+        kind: 'git',
+        name: facetName,
+        version: locked.version,
       }
-      ref = cloneRef
-      commit = cloned.commit
-      onLog(`[verbose]   cloned ${parsed.value.url} → ${sourceDir} (sha: ${commit ?? '?'})`)
-    } catch (error) {
-      return {
-        ok: false,
-        failure: {
-          code: 'GIT_CLONE_FAILED',
-          facet: facetName,
-          cause: error instanceof Error ? error.message : String(error),
-        },
+      const lookup = cacheGet(cacheId)
+      if (lookup.hit) {
+        const cached = readCachedIntegrity(lookup.path)
+        if (cached === null) {
+          // Sidecar missing/invalid — incomplete cache slot. Treat as
+          // soft miss and fall through to clone.
+          onLog(`[verbose]   cache slot ${lookup.path} has no valid integrity sidecar; refetching`)
+        } else if (cached.integrity !== locked.integrity) {
+          // Cache disagrees with lockfile. Lockfile is the source of
+          // truth; surface as hard error rather than silently refetching.
+          return {
+            ok: false,
+            failure: {
+              code: 'CACHE_INTEGRITY_MISMATCH',
+              facet: facetName,
+              slotPath: lookup.path,
+              cachedIntegrity: cached.integrity,
+              lockedIntegrity: locked.integrity,
+            },
+          }
+        } else {
+          // Cache hit + sidecar matches lockfile. The sidecar is the
+          // post-write trust certificate; we trust it without rebuilding.
+          // No clone, no build pipeline, no rehashing.
+          sourceDir = lookup.path
+          trustedCacheHit = true
+          // No cleanup — cache entries are durable.
+          onLog(`[verbose]   cache hit ${lookup.path}`)
+        }
+      }
+    }
+
+    // Cache miss (or no locked entry, or sidecar invalid). Clone.
+    if (sourceDir === undefined) {
+      const cloneRef = parsed.value.ref ?? undefined
+      try {
+        const cloned = await cloneFacetGitSource(parsed.value.url, cloneRef)
+        sourceDir = cloned.dir
+        cleanup = async () => {
+          await rm(cloned.dir, { recursive: true, force: true }).catch(() => {})
+        }
+        clonedRef = cloneRef
+        clonedCommit = cloned.commit
+        onLog(`[verbose]   cloned ${parsed.value.url} → ${sourceDir} (sha: ${cloned.commit ?? '?'})`)
+      } catch (error) {
+        return {
+          ok: false,
+          failure: {
+            code: 'GIT_CLONE_FAILED',
+            facet: facetName,
+            cause: error instanceof Error ? error.message : String(error),
+          },
+        }
       }
     }
   } else if (parsed.value.kind === 'local') {
@@ -404,17 +457,10 @@ async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
 
     const serversDeclared = rawManifest.data.servers ? Object.keys(rawManifest.data.servers) : []
 
-    // Build.
-    onStage({ kind: 'facet-stage', facet: facetName, stage: 'build' })
-    const buildResult = await runBuildPipeline(sourceDir, [...args.adapters])
-    if (!buildResult.ok) {
-      return {
-        ok: false,
-        failure: { code: 'BUILD_FAILED', facet: facetName, errors: buildResult.errors },
-      }
-    }
-
-    // Resolve prompts (loads actual prompt content from disk).
+    // Resolve prompts (loads actual prompt content from disk). Always
+    // runs — `materialize` reads prompt bodies from the resolved
+    // manifest, so this is needed on both the trusted-cache-hit path
+    // and the build path.
     const resolved = await resolvePrompts(rawManifest.data, sourceDir)
     if (!resolved.ok) {
       return {
@@ -423,15 +469,111 @@ async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
       }
     }
 
-    const newAssets = computeAssetList(resolved.data)
+    let entry: LockfileFacet
+    if (trustedCacheHit && locked !== undefined) {
+      // Trusted cache hit: sidecar already certified `locked.integrity`
+      // at write time. Skip the build pipeline entirely (no canonical
+      // tar assembly, no rehashing) and inherit the locked entry verbatim.
+      // The lockfile is sticky; we never rewrite locked fields.
+      entry = {
+        source: specifier,
+        ...(locked.ref !== undefined ? { ref: locked.ref } : {}),
+        ...(locked.commit !== undefined ? { commit: locked.commit } : {}),
+        version: locked.version,
+        integrity: locked.integrity,
+        assets: locked.assets,
+      }
+    } else {
+      // Build path: cache miss, soft miss, or local source.
+      onStage({ kind: 'facet-stage', facet: facetName, stage: 'build' })
+      const buildResult = await runBuildPipeline(sourceDir, [...args.adapters])
+      if (!buildResult.ok) {
+        return {
+          ok: false,
+          failure: { code: 'BUILD_FAILED', facet: facetName, errors: buildResult.errors },
+        }
+      }
 
-    const entry: LockfileFacet = {
-      source: specifier,
-      ...(ref !== undefined ? { ref } : {}),
-      ...(commit !== undefined ? { commit } : {}),
-      version: buildResult.data.version,
-      integrity: buildResult.integrity,
-      assets: newAssets,
+      // Tag-move guard: if this is a LOCKED GIT source, the just-built
+      // integrity MUST match the locked integrity. The lockfile is the
+      // security contract; the network-served artifact has been modified
+      // since we locked it if these disagree. Refuse the install — do
+      // NOT cache, do NOT write the lockfile, do NOT materialize.
+      //
+      // Local sources are intentionally exempt: filesystem-backed
+      // sources are mutable by definition (the user edits them), so
+      // an integrity drift is expected, not an attack. The lockfile
+      // entry's integrity gets overwritten by the new build for local
+      // sources. See `verifyGitOneCheck` docstring for the rationale.
+      if (locked !== undefined && parsed.value.kind === 'git') {
+        const guard = verifyGitOneCheck({
+          facet: facetName,
+          computedIntegrity: buildResult.integrity,
+          lockfileIntegrity: locked.integrity,
+        })
+        if (!guard.ok) {
+          return { ok: false, failure: { code: 'INTEGRITY_FAILURE', failure: guard.failure } }
+        }
+      }
+
+      // Fresh git clone → audit-then-write to cache. Cache hits already
+      // have content in the slot; local sources skip the cache entirely.
+      if (cleanup !== undefined && parsed.value.kind === 'git') {
+        const buildManifest = JSON.parse(buildResult.manifestJson) as BuildManifest
+        const cacheId: CacheIdentity = {
+          kind: 'git',
+          name: facetName,
+          version: buildResult.data.version,
+        }
+        const putResult = cachePutVerified(cacheId, sourceDir, buildManifest, buildResult.integrity, facetName)
+        if (!putResult.ok) {
+          if ('corruption' in putResult) {
+            return {
+              ok: false,
+              failure: {
+                code: 'CACHE_INTEGRITY_MISMATCH',
+                facet: facetName,
+                slotPath: putResult.corruption.slotPath,
+                cachedIntegrity: '<corrupt>',
+                lockedIntegrity: buildResult.integrity,
+              },
+            }
+          }
+          return { ok: false, failure: { code: 'INTEGRITY_FAILURE', failure: putResult.integrity } }
+        }
+        sourceDir = putResult.path
+        cleanup = undefined
+      }
+
+      // Construct the entry.
+      //
+      //   - Locked GIT entries inherit locked.* verbatim (we just
+      //     verified buildResult matches, so values are equal — but the
+      //     lockfile is the source of truth and we never rewrite it).
+      //   - Local sources (locked or fresh) derive from the build.
+      //     Local is mutable by design; the user owns the version and
+      //     content, and the lockfile follows what's on disk.
+      //   - Fresh git adds derive from the build + the clone's commit.
+      if (locked !== undefined && parsed.value.kind === 'git') {
+        entry = {
+          source: specifier,
+          ...(locked.ref !== undefined ? { ref: locked.ref } : {}),
+          ...(locked.commit !== undefined ? { commit: locked.commit } : {}),
+          version: locked.version,
+          integrity: locked.integrity,
+          assets: locked.assets,
+        }
+      } else {
+        const newAssets = computeAssetList(resolved.data)
+        entry = {
+          source: specifier,
+          ...(clonedRef !== undefined ? { ref: clonedRef } : {}),
+          ...(clonedCommit !== undefined ? { commit: clonedCommit } : {}),
+          version: buildResult.data.version,
+          integrity: buildResult.integrity,
+          assets: newAssets,
+        }
+      }
     }
 
     return { ok: true, value: { entry, resolved: resolved.data, serversDeclared } }

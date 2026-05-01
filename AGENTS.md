@@ -195,6 +195,104 @@ Default to using Bun instead of Node.js.
 - Prefer `Bun.file` over `node:fs`'s readFile/writeFile
 - Bun.$`ls` instead of execa.
 
+## Errors are values, not control flow
+
+**Do not throw errors to model expected outcomes.** Return discriminated
+union results instead. Throwing is for genuinely unexpected, unrecoverable
+conditions (programmer bugs, environment-level failures the function has
+no contract for). Anything a caller can reasonably handle — validation
+failures, missing files, cache misses, integrity mismatches, parse
+errors, lock contention — is part of the function's *contract* and
+belongs in its return type.
+
+This is not a stylistic preference. Thrown errors are invisible to the
+type system: TypeScript cannot tell you which functions throw, what they
+throw, or whether you handled it. Result types make every failure mode
+a static obligation — the compiler refuses to let you forget a case.
+
+### The pattern
+
+```ts
+// Bad — failure is invisible to the type system; caller may forget
+// to handle it; the throw is a side channel that bypasses the return
+// type entirely.
+export function loadConfig(path: string): Config {
+  if (!existsSync(path)) {
+    throw new ConfigNotFoundError(path)
+  }
+  // ...
+}
+
+// Good — failure is part of the contract. The compiler forces the
+// caller to discriminate before reaching the success data.
+export type LoadConfigResult =
+  | { ok: true; config: Config }
+  | { ok: false; reason: 'not-found'; path: string }
+  | { ok: false; reason: 'invalid'; errors: ValidationError[] }
+
+export function loadConfig(path: string): LoadConfigResult {
+  if (!existsSync(path)) {
+    return { ok: false, reason: 'not-found', path }
+  }
+  // ...
+}
+```
+
+Failure data is **pure data**: a struct describing what went wrong, with
+the fields a caller (or a UI layer) needs to render or branch on. No
+`Error` instance, no stack trace, no message string the caller has to
+parse.
+
+### Canonical examples in this repo
+
+Match these shapes. Do not invent new patterns.
+
+- `packages/core/src/integrity/types.ts` — `IntegrityResult`,
+  `IntegrityFailure`. Pure-data failure shape; no thrown errors.
+- `packages/core/src/install/lockfile-io.ts` — `LoadLockfileResult` as
+  `{ ok: true; data; existed } | { ok: false; error }`.
+- `packages/core/src/install/run-install.ts` — `PlanFacetResult` and the
+  larger `RunInstallResult` discriminated union. Failures are typed by
+  `code` discriminator with structured fields per code.
+- `@agent-facets/common`'s `Validated<T>` type — the project-wide alias
+  for "validated payload or list of errors."
+
+### When throwing is correct
+
+- **Programmer bugs and invariant violations**: an `assertNever` exhaustiveness
+  check in a `switch` over a tagged union. Reaching that arm is a bug;
+  the throw is a debug aid, not a control-flow mechanism.
+- **Environment failures the function never claimed to handle**: out of
+  memory, the JS engine crashing, a syscall returning something the
+  TypeScript types swore couldn't happen. These are the throws library
+  authors *catch and convert into result types* at the boundary.
+- **Inside try/catch wrappers that immediately convert to result types**:
+  e.g., `try { JSON.parse(s) } catch { return { ok: false, ... } }`. The
+  throw is internal; it never escapes the function. The function's
+  *contract* is still result-shaped.
+
+### Anti-patterns to refuse
+
+- **"I'll just throw a typed error class"**: still invisible to the type
+  system, still a side channel. A `class FooError extends Error` does
+  not solve the problem; it just makes the throw feel structured. Use a
+  discriminated union member instead.
+- **"The caller can wrap it in try/catch"**: pushing failure handling
+  into runtime checks the compiler can't verify. The whole point of
+  TypeScript is to make this kind of obligation static.
+- **"It's only for *exceptional* cases"**: every codebase that has ever
+  said this has, three years later, contained dozens of `try { ... } catch (e) { /* swallow */ }` blocks. If the failure mode is part of the
+  function's contract, it goes in the return type. "Exceptional" is in
+  the eye of the caller.
+- **Mixed contract — sometimes returns, sometimes throws**: pick one. If
+  any failure mode in a function returns a result, all of them should.
+
+### When you spot a throw in a code review
+
+If a function throws something a caller might reasonably want to handle:
+flag it. Convert it to a result type. The diff is mechanical; the type
+system improvement is permanent.
+
 ## Testing
 
 Use `bun check` to run tests, linting, and typeschecking.
@@ -242,6 +340,75 @@ await expect(loadConfig()).resolves.toEqual({ ok: true })
 // Wrong — silently passes if loadConfig rejects or returns the wrong value
 expect(loadConfig()).resolves.toEqual({ ok: true })
 ```
+
+### Narrow with `expect.unreachable()`, not silent returns
+
+When narrowing a discriminated union in a test (the most common case:
+proving `result.ok === false` so you can access `result.failure`), use
+`expect.unreachable()` to fail the test if the narrowing precondition
+doesn't hold. Do **not** use `if (...) return` or `if (...) throw`.
+
+A silent `return` in a test body looks like a passing test — Bun's
+runner sees no failed assertion and reports green. A failing test
+that prints "pass" is worse than no test at all.
+
+`throw new Error('unreachable')` works (it does fail the test) but is
+verbose and hides intent behind a generic Error. `expect.unreachable()`
+is the dedicated primitive for this exact case: it fails the test,
+counts as an assertion, and reads as "I'm asserting this code path is
+impossible."
+
+**Wrong** — silent return; failing precondition reports as passing test:
+
+```ts
+test('failure carries the right shape', () => {
+  const result = doThing()
+  expect(result.ok).toBe(false)
+  if (result.ok) return                  // ← silently swallows a real bug
+  expect(result.failure.code).toBe('FOO')
+})
+```
+
+**Wrong** — verbose throw; works but reads like a comment:
+
+```ts
+test('failure carries the right shape', () => {
+  const result = doThing()
+  if (result.ok) throw new Error('unreachable')
+  expect(result.failure.code).toBe('FOO')
+})
+```
+
+**Correct** — `expect.unreachable()` is purpose-built for this:
+
+```ts
+test('failure carries the right shape', () => {
+  const result = doThing()
+  if (result.ok) expect.unreachable()
+  expect(result.failure.code).toBe('FOO')
+})
+```
+
+The same applies to nested narrowing on tagged unions:
+
+```ts
+test('failure has facet kind', () => {
+  const result = doThing()
+  if (result.ok) expect.unreachable()
+  if (result.failure.kind !== 'facet') expect.unreachable()
+  expect(result.failure.check).toBe('A')
+})
+```
+
+`expect.unreachable()` doesn't need a message argument in most cases —
+the line number and surrounding test name already tell the reader
+which precondition failed. Add a string only if the failure mode
+needs explanation a glance at the line wouldn't give.
+
+When a preceding `expect(...).toBe(...)` would assert the same
+condition, drop it: the `expect.unreachable()` arm fails the test
+just as loudly and avoids the redundant assertion. The narrowing
+itself is the assertion.
 
 ## Turbo Caching
 

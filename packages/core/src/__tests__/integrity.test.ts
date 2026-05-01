@@ -14,9 +14,9 @@ describe('verifyHash', () => {
 
   test('returns structured failure on mismatch', () => {
     const result = verifyHash('viper-plans', 'A', HASH_A, HASH_B)
-    expect(result.ok).toBe(false)
-    if (result.ok) return
+    if (result.ok) expect.unreachable()
     expect(result.failure).toEqual({
+      kind: 'facet',
       facet: 'viper-plans',
       check: 'A',
       expected: HASH_A,
@@ -26,8 +26,8 @@ describe('verifyHash', () => {
 
   test('failure carries the check label verbatim', () => {
     const result = verifyHash('p', 'lockfile', HASH_A, HASH_B)
-    expect(result.ok).toBe(false)
-    if (result.ok) return
+    if (result.ok) expect.unreachable()
+    if (result.failure.kind !== 'facet') expect.unreachable()
     expect(result.failure.check).toBe('lockfile')
   })
 })
@@ -88,9 +88,9 @@ describe('verifyRegistryThreeCheck — lockfile failure (highest priority)', () 
       cachedIntegrity: HASH_B, // even cache agrees with registry
       lockfileIntegrity: HASH_A, // but the lockfile pinned A
     })
-    expect(result.ok).toBe(false)
-    if (result.ok) return
+    if (result.ok) expect.unreachable()
     expect(result.failure).toEqual({
+      kind: 'facet',
       facet: 'p',
       check: 'lockfile',
       expected: HASH_A,
@@ -108,8 +108,8 @@ describe('verifyRegistryThreeCheck — Check A (cache vs metadata)', () => {
       computedIntegrity: HASH_D, // never consulted
       cachedIntegrity: HASH_A, // cache has A
     })
-    expect(result.ok).toBe(false)
-    if (result.ok) return
+    if (result.ok) expect.unreachable()
+    if (result.failure.kind !== 'facet') expect.unreachable()
     expect(result.failure.check).toBe('A')
     expect(result.failure.expected).toBe(HASH_B)
     expect(result.failure.observed).toBe(HASH_A)
@@ -124,8 +124,8 @@ describe('verifyRegistryThreeCheck — Check A (cache vs metadata)', () => {
       computedIntegrity: HASH_D, // would fail C against archive
       cachedIntegrity: HASH_B, // fails A against expected
     })
-    expect(result.ok).toBe(false)
-    if (result.ok) return
+    if (result.ok) expect.unreachable()
+    if (result.failure.kind !== 'facet') expect.unreachable()
     expect(result.failure.check).toBe('A')
   })
 
@@ -149,8 +149,8 @@ describe('verifyRegistryThreeCheck — Check B (archive manifest vs metadata)', 
       archiveIntegrity: HASH_B, // mismatches expected → B fails
       computedIntegrity: HASH_C, // would also fail C, but we never get there
     })
-    expect(result.ok).toBe(false)
-    if (result.ok) return
+    if (result.ok) expect.unreachable()
+    if (result.failure.kind !== 'facet') expect.unreachable()
     expect(result.failure.check).toBe('B')
     expect(result.failure.expected).toBe(HASH_A)
     expect(result.failure.observed).toBe(HASH_B)
@@ -165,8 +165,8 @@ describe('verifyRegistryThreeCheck — Check C (computed vs archive manifest)', 
       archiveIntegrity: HASH_A, // B passes
       computedIntegrity: HASH_B, // C fails against archive
     })
-    expect(result.ok).toBe(false)
-    if (result.ok) return
+    if (result.ok) expect.unreachable()
+    if (result.failure.kind !== 'facet') expect.unreachable()
     expect(result.failure.check).toBe('C')
     expect(result.failure.expected).toBe(HASH_A)
     expect(result.failure.observed).toBe(HASH_B)
@@ -180,8 +180,8 @@ describe('verifyRegistryThreeCheck — Check C (computed vs archive manifest)', 
       computedIntegrity: HASH_C,
       lockfileIntegrity: HASH_A,
     })
-    expect(result.ok).toBe(false)
-    if (result.ok) return
+    if (result.ok) expect.unreachable()
+    if (result.failure.kind !== 'facet') expect.unreachable()
     expect(result.failure.check).toBe('C')
   })
 })
@@ -202,9 +202,9 @@ describe('verifyGitOneCheck', () => {
       computedIntegrity: HASH_B,
       lockfileIntegrity: HASH_A,
     })
-    expect(result.ok).toBe(false)
-    if (result.ok) return
+    if (result.ok) expect.unreachable()
     expect(result.failure).toEqual({
+      kind: 'facet',
       facet: 'p',
       check: 'git',
       expected: HASH_A,
