@@ -45,7 +45,7 @@ context: |
   ### Statement
   Documentation in `docs/` describes the system and SHOULD mirror the specs we generate. When producing OpenSpec
   artifacts, existing documentation MUST always be considered and updates to keep the documentation and system aligned
-  should be considered scoped work.
+  SHOULD be considered scoped work.
 
   Implementations MUST NOT silently drift from documentation. Any drift MUST be considered and appropriate documentation
   updates/changes SHOULD be detailed in the design and task artifacts.
