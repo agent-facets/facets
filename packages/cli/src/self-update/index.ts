@@ -29,7 +29,7 @@ export async function runSelfUpdate(opts: RunSelfUpdateOptions): Promise<number>
   // network needlessly, and the "already up to date" branch below would
   // hide the refusal message a developer expects to see.
   if (method === 'local-dev') {
-    return handler.update({ targetVersion: opts.targetVersion ?? '', dryRun: opts.dryRun })
+    return handler.update({ targetVersion: opts.targetVersion ?? currentVersion, dryRun: opts.dryRun })
   }
 
   // Resolve the version we'd update TO. A pinned version skips the network
