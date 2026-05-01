@@ -5,7 +5,7 @@ environment:
   LEFTHOOK: "0"
   MISE_ENV: release
 steps:
-  - setup-mise
+  - setup-env
   - attach_workspace:
       at: .
   - run:

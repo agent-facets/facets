@@ -11,7 +11,7 @@ Push to main
 ┌────────────────────────────────────────────────────────────────────┐
 │  deploy-site CircleCI job (deploy workflow, release pipeline)      │
 │                                                                    │
-│  1. setup-mise       — install Bun, node, deps                     │
+│  1. setup-env        — install mise, facet CLI, Bun, node, deps    │
 │  2. aws-oidc-setup   — assume AWS_ROLE_ARN via OIDC (aws-cli orb)  │
 │  3. bun scripts/deploy/site.ts                                     │
 │       a. Pre-flight: AWS_ACCESS_KEY_ID must be set                 │

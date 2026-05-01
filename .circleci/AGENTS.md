@@ -4,9 +4,9 @@
 
 ## Required contexts
 
-### `github` — required for every job that uses `setup-mise`
+### `github` — required for every job that uses `setup-env`
 
-Every job that runs the `setup-mise` command MUST attach the `github` org-level context. The
+Every job that runs the `setup-env` command MUST attach the `github` org-level context. The
 context provides a single env var, `MISE_GITHUB_TOKEN`, which mise auto-discovers (priority 1
 in mise's [token resolution chain][mise-tokens]) and uses to authenticate against the GitHub
 REST API when resolving and downloading tool releases. Without it, mise falls back to
@@ -25,7 +25,7 @@ unauthenticated rate limit. With it, the limit is 5,000 req/hour per token.
 | `release-cli` | `finalize-cli`     | yes                        |
 | `deploy`      | `deploy-site`      | yes                        |
 
-If a future job adds `setup-mise` without attaching the `github` context, it will fail loudly
+If a future job adds `setup-env` without attaching the `github` context, it will fail loudly
 on the `Install tools` step with `mise WARN GitHub rate limit exceeded` once CircleCI's IP
 pool exhausts the unauthenticated budget. That failure is the documented detection mechanism
 — add `- github` to the job's `context:` list to fix.

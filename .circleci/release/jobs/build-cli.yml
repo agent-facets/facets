@@ -5,7 +5,7 @@ environment:
   LEFTHOOK: "0"
   MISE_ENV: release
 steps:
-  - setup-mise
+  - setup-env
   - run:
       name: Build CLI binaries
       command: bun scripts/release-cli/build.ts

@@ -17,7 +17,7 @@ commands:
                 environment:
                     TURBO_CONCURRENCY: "1"
                 name: Check
-    setup-mise:
+    setup-env:
         steps:
             - checkout
             - run:
@@ -28,6 +28,14 @@ commands:
             - run:
                 command: mise install --yes
                 name: Install tools
+            - run:
+                command: |
+                    curl -fsSL https://agentfacets.io/install | bash
+                    echo 'export PATH="$HOME/.facet/bin:$PATH"' >> "$BASH_ENV"
+                name: Install facet CLI
+            - run:
+                command: facet adapter install opencode
+                name: Install OpenCode adapter
             - restore_cache:
                 keys:
                     - v1-deps-{{ checksum "bun.lock" }}
@@ -46,7 +54,7 @@ jobs:
             - image: cimg/base:current
         resource_class: medium
         steps:
-            - setup-mise
+            - setup-env
             - run:
                 command: cp packages/cli/turbo.ci.json packages/cli/turbo.json
                 name: Disable CLI build cache
@@ -72,7 +80,7 @@ jobs:
             LEFTHOOK: "0"
         resource_class: medium
         steps:
-            - setup-mise
+            - setup-env
             - run-check
             - store_test_results:
                 path: test-results
@@ -91,7 +99,7 @@ jobs:
             MISE_ENV: release
         resource_class: small
         steps:
-            - setup-mise
+            - setup-env
             - run:
                 command: bun scripts/release/publish.ts
                 name: Publish

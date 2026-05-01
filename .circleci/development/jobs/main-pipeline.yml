@@ -4,7 +4,7 @@ resource_class: medium
 environment:
   LEFTHOOK: "0"
 steps:
-  - setup-mise
+  - setup-env
   - run-check
   - store_test_results:
       path: test-results

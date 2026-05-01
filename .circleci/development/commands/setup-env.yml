@@ -8,6 +8,14 @@ steps:
   - run:
       name: Install tools
       command: mise install --yes
+  - run:
+      name: Install facet CLI
+      command: |
+        curl -fsSL https://agentfacets.io/install | bash
+        echo 'export PATH="$HOME/.facet/bin:$PATH"' >> "$BASH_ENV"
+  - run:
+      name: Install OpenCode adapter
+      command: facet adapter install opencode
   - restore_cache:
       keys:
         - v1-deps-{{ checksum "bun.lock" }}

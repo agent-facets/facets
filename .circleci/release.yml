@@ -10,7 +10,7 @@ commands:
                 command: bun scripts/lib/notify-failure.ts
                 name: Notify failure
                 when: on_fail
-    setup-mise:
+    setup-env:
         steps:
             - checkout
             - run:
@@ -21,6 +21,14 @@ commands:
             - run:
                 command: mise install --yes
                 name: Install tools
+            - run:
+                command: |
+                    curl -fsSL https://agentfacets.io/install | bash
+                    echo 'export PATH="$HOME/.facet/bin:$PATH"' >> "$BASH_ENV"
+                name: Install facet CLI
+            - run:
+                command: facet adapter install opencode
+                name: Install OpenCode adapter
             - restore_cache:
                 keys:
                     - v1-deps-{{ checksum "bun.lock" }}
@@ -42,7 +50,7 @@ jobs:
             MISE_ENV: release
         resource_class: small
         steps:
-            - setup-mise
+            - setup-env
             - run:
                 command: bun scripts/release-cli/build.ts
                 name: Build CLI binaries
@@ -59,7 +67,7 @@ jobs:
             MISE_ENV: release
         resource_class: small
         steps:
-            - setup-mise
+            - setup-env
             - aws-oidc-setup
             - restore_cache:
                 keys:
@@ -84,7 +92,7 @@ jobs:
             MISE_ENV: release
         resource_class: small
         steps:
-            - setup-mise
+            - setup-env
             - attach_workspace:
                 at: .
             - run:
@@ -102,7 +110,7 @@ jobs:
                 type: string
         resource_class: small
         steps:
-            - setup-mise
+            - setup-env
             - attach_workspace:
                 at: .
             - run:
@@ -117,7 +125,7 @@ jobs:
             MISE_ENV: release
         resource_class: small
         steps:
-            - setup-mise
+            - setup-env
             - run:
                 command: bun scripts/release/publish.ts
                 name: Publish
