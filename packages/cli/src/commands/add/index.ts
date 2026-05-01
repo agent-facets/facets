@@ -163,10 +163,20 @@ export const addCommand: Command = {
     // Step 6: on failure, restore the manifest snapshot.
     if (!captured?.ok) {
       restoreSnapshot(facetsJsonPath, snapshot)
+      // Branch the user-facing guidance on whether `runInstall` succeeded
+      // in undoing its asset writes. When `rollback.ok === false`, the
+      // journal couldn't reverse some materialize operations and adapter
+      // files may remain on disk — the user needs to know that rather
+      // than be told "project state unchanged" and assume a clean retry.
+      const rollbackFailed = captured !== undefined && !captured.rollback.ok
+      const partialFailureCount =
+        captured !== undefined && !captured.rollback.ok ? captured.rollback.partialFailures : 0
       writeCliError({
         what: 'add failed',
         detail: captured ? `code=${captured.failure.code}` : 'no result from install pipeline',
-        fix: "rollback complete; project state unchanged. Fix the underlying issue and re-run 'facet add'.",
+        fix: rollbackFailed
+          ? `partial rollback: ${partialFailureCount} undo step(s) failed; some adapter files may remain. Inspect and clean manually before re-running 'facet add'.`
+          : "rollback complete; project state unchanged. Fix the underlying issue and re-run 'facet add'.",
       })
       return 1
     }
@@ -247,7 +257,7 @@ async function peekFacetName(source: Source, specifier: string): Promise<string 
   if (source.kind === 'git') {
     const { cloneFacetGitSource } = await import('@agent-facets/core')
     try {
-      const cloned = await cloneFacetGitSource(source.url, source.ref ?? undefined)
+      const cloned = await cloneFacetGitSource(source.url, source.ref)
       sourceDir = cloned.dir
       const { rm } = await import('node:fs/promises')
       cleanup = async () => {

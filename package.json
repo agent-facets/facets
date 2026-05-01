@@ -26,7 +26,7 @@
     "docs": "bun --cwd docs mint dev",
     "docs:validate": "bun --cwd docs mint validate",
     "docs:broken-links": "bun --cwd docs mint broken-links",
-    "postinstall": "mise exec -- lefthook install && { [ -n \"$CI\" ] || sst install; }",
+    "postinstall": "bun scripts/postinstall.ts",
     "clean": "rm -rf .turbo .sst node_modules packages/**/node_modules packages/**/.turbo packages/**/dist packages/cli/bin/.facet test-results/*.xml tmp docs/.mintlify",
     "nuke": "bun run clean && bun install && bun check"
   },

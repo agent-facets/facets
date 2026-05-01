@@ -1,7 +1,7 @@
 /**
- * Identifies which check failed when an integrity verification rejects.
- *
- * Per the three-check protocol:
+ * Identifies which facet-level check failed when an integrity
+ * verification rejects. A facet-level check operates on the canonical
+ * archive (the canonical tar of all assets, hashed as one blob).
  *
  *   - `'lockfile'`: the registry's current `expectedIntegrity` for a
  *     given (name, version) does not match the integrity recorded in
@@ -16,25 +16,53 @@
  *     metadata-API integrity. Detects metadata-vs-tarball split-brain.
  *   - `'C'`: computed content vs. archive manifest. Triggered when the
  *     archive's content hashes to a value other than what its own
- *     manifest claims. Detects tampered tarballs.
+ *     manifest claims. Detects tampered tarballs. Also reused by
+ *     `cachePutVerified` when the caller's `computedIntegrity`
+ *     disagrees with the build manifest's recorded `integrity`.
  *   - `'git'`: built artifact vs. lockfile integrity for a git source.
  *     Detects tag-move attacks (the symbolic ref now resolves to a
  *     different commit whose build hashes differently).
  */
-export type IntegrityCheck = 'lockfile' | 'A' | 'B' | 'C' | 'git'
+export type FacetIntegrityCheck = 'lockfile' | 'A' | 'B' | 'C' | 'git'
 
 /**
- * A specific integrity failure.
+ * A facet-level integrity failure. The expected/observed values are
+ * hashes over the canonical archive — the facet as a whole.
  *
  * Pure data: no `Error` instance, no stack trace, no thrown exception.
- * Callers render this through their normal display path.
  */
-export interface IntegrityFailure {
+export interface FacetIntegrityFailure {
+  kind: 'facet'
   facet: string
-  check: IntegrityCheck
+  check: FacetIntegrityCheck
   expected: string
   observed: string
 }
+
+/**
+ * An asset-level integrity failure. A specific file within the facet's
+ * per-asset hash table did not match the build manifest's recorded
+ * hash. Detected at cache-write time by `cachePutVerified`.
+ *
+ * The `path` field identifies which asset failed (e.g. `'facet.json'`,
+ * `'skills/foo/SKILL.md'`). When the asset file is missing or
+ * unreadable, `observed` is the sentinel string `'<missing>'`.
+ *
+ * Pure data: no `Error` instance, no stack trace, no thrown exception.
+ */
+export interface AssetIntegrityFailure {
+  kind: 'asset'
+  facet: string
+  path: string
+  expected: string
+  observed: string
+}
+
+/**
+ * Discriminated union of all integrity failure shapes. Pattern match
+ * on `kind` to handle each.
+ */
+export type IntegrityFailure = FacetIntegrityFailure | AssetIntegrityFailure
 
 /**
  * Result of an integrity verification. Discriminated by `ok`.

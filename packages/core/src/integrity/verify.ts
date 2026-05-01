@@ -1,4 +1,4 @@
-import type { GitIntegrityInput, IntegrityCheck, IntegrityResult, RegistryIntegrityInput } from './types.ts'
+import type { FacetIntegrityCheck, GitIntegrityInput, IntegrityResult, RegistryIntegrityInput } from './types.ts'
 
 /**
  * Verify a single hash equality.
@@ -10,13 +10,18 @@ import type { GitIntegrityInput, IntegrityCheck, IntegrityResult, RegistryIntegr
  * network surface accepts attacker-supplied hashes for verification,
  * this primitive is the place to introduce constant-time comparison.
  */
-export function verifyHash(facet: string, check: IntegrityCheck, expected: string, observed: string): IntegrityResult {
+export function verifyHash(
+  facet: string,
+  check: FacetIntegrityCheck,
+  expected: string,
+  observed: string,
+): IntegrityResult {
   if (expected === observed) {
     return { ok: true }
   }
   return {
     ok: false,
-    failure: { facet, check, expected, observed },
+    failure: { kind: 'facet', facet, check, expected, observed },
   }
 }
 

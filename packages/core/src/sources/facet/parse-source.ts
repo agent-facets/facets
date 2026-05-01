@@ -91,8 +91,12 @@ export function parseFacetSource(input: string): ParseResult<Source> {
   if (githubMatch && githubMatch[1] !== undefined && githubMatch[2] !== undefined) {
     const owner = githubMatch[1]
     const repo = githubMatch[2]
-    const ref = githubMatch[3] ?? null
-    return ok({ kind: 'git', url: `https://github.com/${owner}/${repo}.git`, ref })
+    const ref = githubMatch[3]
+    return ok({
+      kind: 'git',
+      url: `https://github.com/${owner}/${repo}.git`,
+      ...(ref !== undefined ? { ref } : {}),
+    })
   }
 
   // Local path.
@@ -104,11 +108,11 @@ export function parseFacetSource(input: string): ParseResult<Source> {
   if (SCP_RE.test(input)) {
     const hashIndex = input.indexOf('#')
     if (hashIndex === -1) {
-      return ok({ kind: 'git', url: input, ref: null })
+      return ok({ kind: 'git', url: input })
     }
     const url = input.slice(0, hashIndex)
     const ref = input.slice(hashIndex + 1)
-    return ok({ kind: 'git', url, ref: ref.length === 0 ? null : ref })
+    return ok({ kind: 'git', url, ...(ref.length > 0 ? { ref } : {}) })
   }
 
   // URL with scheme.
@@ -124,7 +128,7 @@ export function parseFacetSource(input: string): ParseResult<Source> {
     }
     const hashIndex = input.indexOf('#')
     const url = hashIndex === -1 ? input : input.slice(0, hashIndex)
-    const ref = hashIndex === -1 ? null : input.slice(hashIndex + 1) || null
+    const ref = hashIndex === -1 ? '' : input.slice(hashIndex + 1)
     // Require the path to look like a git repo (ends in .git, ignoring ref).
     if (!url.endsWith('.git')) {
       return err(
@@ -133,7 +137,7 @@ export function parseFacetSource(input: string): ParseResult<Source> {
         'append .git to the URL, or use github:owner/repo shorthand',
       )
     }
-    return ok({ kind: 'git', url, ref })
+    return ok({ kind: 'git', url, ...(ref.length > 0 ? { ref } : {}) })
   }
 
   // Registry name (with optional version tail).

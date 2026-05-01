@@ -19,7 +19,7 @@
  */
 export type Source =
   | { kind: 'registry'; name: string; version: VersionSpec }
-  | { kind: 'git'; url: string; ref: string | null }
+  | { kind: 'git'; url: string; ref?: string }
   | { kind: 'local'; path: string }
 
 /**

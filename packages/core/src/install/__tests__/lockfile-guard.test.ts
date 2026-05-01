@@ -60,4 +60,30 @@ describe('acquireInstallLock', () => {
       expect(JSON.parse(raw).pid).toBe(process.pid)
     }
   })
+
+  // EPERM regression: `process.kill(pid, 0)` returns EPERM (not ESRCH)
+  // when the target process exists but the caller cannot signal it
+  // (e.g., owned by a different UID). The previous implementation
+  // collapsed all errors to "dead" and would steal a live lock.
+  //
+  // We use pid 1 (init/launchd on macOS, init/systemd on Linux). A
+  // non-root user attempting to signal it gets EPERM. Root would get
+  // success, so this test must be skipped when running as root.
+  // Windows has different signal semantics — skip there too.
+  const skipEperm = process.platform === 'win32' || process.getuid?.() === 0
+  test.skipIf(skipEperm)('lock with EPERM-mapped pid is treated as alive (not stolen)', () => {
+    // pid 1 is alive on POSIX systems; non-root sees EPERM on probe.
+    const epermPid = 1
+    mkdirSync(join(projectRoot, '.facets'), { recursive: true })
+    const lockPath = join(projectRoot, '.facets/.install.lock')
+    writeFileSync(lockPath, JSON.stringify({ pid: epermPid, acquiredAt: new Date().toISOString() }), 'utf8')
+
+    const result = acquireInstallLock(projectRoot)
+    expect(result.ok).toBe(false)
+    if (result.ok) expect.unreachable()
+    expect(result.heldByPid).toBe(epermPid)
+    // The lock file must NOT have been overwritten with our pid.
+    const raw = readFileSync(lockPath, 'utf8')
+    expect(JSON.parse(raw).pid).toBe(epermPid)
+  })
 })

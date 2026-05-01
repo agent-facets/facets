@@ -265,6 +265,7 @@ describe('InstallView — empty / no-op', () => {
 describe('InstallView — integrity failure', () => {
   test('renders the integrity failure block with check label and hashes', async () => {
     const integrityFailure: IntegrityFailure = {
+      kind: 'facet',
       facet: 'viper-plans',
       check: 'B',
       expected: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',

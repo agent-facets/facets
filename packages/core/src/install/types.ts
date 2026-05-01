@@ -74,10 +74,18 @@ export type RunInstallFailure =
   | { code: 'FACETS_JSON_NOT_FOUND'; path: string }
   | { code: 'FACETS_JSON_INVALID'; path: string; error: string }
   | { code: 'LOCKFILE_INVALID'; path: string; error: string }
+  | { code: 'LOCKFILE_WRITE_FAILED'; path: string; cause: string }
   | { code: 'LOCK_HELD'; path: string; heldByPid: number }
   | { code: 'PARSE_ERROR'; facet: string; specifier: string; error: ParseError }
   | { code: 'REGISTRY_ERROR'; facet: string; error: RegistryError }
   | { code: 'INTEGRITY_FAILURE'; failure: IntegrityFailure }
+  | {
+      code: 'CACHE_INTEGRITY_MISMATCH'
+      facet: string
+      slotPath: string
+      cachedIntegrity: string
+      lockedIntegrity: string
+    }
   | { code: 'COMPOSITION_REJECTED'; facet: string }
   | { code: 'GIT_CLONE_FAILED'; facet: string; cause: string }
   | { code: 'LOCAL_RESOLVE_FAILED'; facet: string; cause: string }

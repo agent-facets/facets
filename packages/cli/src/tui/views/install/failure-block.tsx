@@ -1,13 +1,19 @@
 import type { RunInstallFailure } from '@agent-facets/core'
 import { Box, Text } from 'ink'
+import type React from 'react'
 import { THEME } from '../../theme.ts'
 
 /**
  * Renders the structured failure detail at the bottom of the install
  * view. Each failure variant gets its own format so callers can see
  * exactly what went wrong without parsing message strings.
+ *
+ * The explicit return type + `assertNever` default arm makes any new
+ * `RunInstallFailure` variant a type error here at compile time, so we
+ * can't ship a failure code with no rendering (which previously left
+ * users staring at a blank failure block).
  */
-export function FailureBlock({ failure }: { failure: RunInstallFailure }) {
+export function FailureBlock({ failure }: { failure: RunInstallFailure }): React.JSX.Element {
   switch (failure.code) {
     case 'FACETS_JSON_NOT_FOUND':
       return (
@@ -36,6 +42,17 @@ export function FailureBlock({ failure }: { failure: RunInstallFailure }) {
           </Text>
           <Text color={THEME.hint}> {failure.path}</Text>
           <Text> {failure.error}</Text>
+        </Box>
+      )
+    case 'LOCKFILE_WRITE_FAILED':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ could not write facets.lock
+          </Text>
+          <Text color={THEME.hint}> {failure.path}</Text>
+          <Text> {failure.cause}</Text>
+          <Text color={THEME.hint}> Assets were rolled back. Fix the underlying I/O issue and retry.</Text>
         </Box>
       )
     case 'LOCK_HELD':
@@ -87,10 +104,26 @@ export function FailureBlock({ failure }: { failure: RunInstallFailure }) {
             ✕ integrity check failed
           </Text>
           <Text> facet: {failure.failure.facet}</Text>
-          <Text> check: {failure.failure.check}</Text>
+          {failure.failure.kind === 'facet' ? (
+            <Text> check: {failure.failure.check}</Text>
+          ) : (
+            <Text> asset: {failure.failure.path}</Text>
+          )}
           <Text> expected: {failure.failure.expected}</Text>
           <Text> observed: {failure.failure.observed}</Text>
           <Text color={THEME.hint}> No assets were written. Project state is unchanged.</Text>
+        </Box>
+      )
+    case 'CACHE_INTEGRITY_MISMATCH':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ cache integrity mismatch for {failure.facet}
+          </Text>
+          <Text color={THEME.hint}> slot: {failure.slotPath}</Text>
+          <Text> cached: {failure.cachedIntegrity}</Text>
+          <Text> locked: {failure.lockedIntegrity}</Text>
+          <Text color={THEME.hint}> Fix: rm -rf "{failure.slotPath}" and re-run install</Text>
         </Box>
       )
     case 'COMPOSITION_REJECTED':
@@ -174,5 +207,12 @@ export function FailureBlock({ failure }: { failure: RunInstallFailure }) {
           <Text color={THEME.hint}> Rolled back to pre-install state.</Text>
         </Box>
       )
+    default: {
+      // Exhaustiveness guard: any new `RunInstallFailure` variant must
+      // get a `case` arm above. Without this, an un-rendered failure
+      // code silently produced a blank failure block.
+      const _exhaustive: never = failure
+      return _exhaustive
+    }
   }
 }

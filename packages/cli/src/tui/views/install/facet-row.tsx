@@ -132,7 +132,9 @@ function oneLineFailureSummary(failure: RunInstallFailure): string {
     case 'REGISTRY_ERROR':
       return `registry: ${failure.error.code.toLowerCase().replace(/_/g, ' ')}`
     case 'INTEGRITY_FAILURE':
-      return `integrity check ${failure.failure.check} failed`
+      return failure.failure.kind === 'facet'
+        ? `integrity check ${failure.failure.check} failed`
+        : `asset integrity failed: ${failure.failure.path}`
     case 'COMPOSITION_REJECTED':
       return 'facet composition is not supported'
     case 'GIT_CLONE_FAILED':

@@ -104,7 +104,6 @@ describe('parseSource — git forms', () => {
       expect(result.value).toEqual({
         kind: 'git',
         url: 'https://github.com/owner/repo.git',
-        ref: null,
       })
     }
   })
@@ -134,7 +133,6 @@ describe('parseSource — git forms', () => {
       expect(result.value).toEqual({
         kind: 'git',
         url: 'https://github.com/owner/repo.git',
-        ref: null,
       })
     }
   })
@@ -164,7 +162,6 @@ describe('parseSource — git forms', () => {
       expect(result.value).toEqual({
         kind: 'git',
         url: 'git@github.com:owner/repo.git',
-        ref: null,
       })
     }
   })

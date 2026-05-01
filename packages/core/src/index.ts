@@ -38,14 +38,25 @@ export { validateCompactFacets } from './build/validate-facets.ts'
 export type { WriteBuildOutputOptions } from './build/write-output.ts'
 export { writeBuildOutput } from './build/write-output.ts'
 // cache
-export type { CacheIdentity, CacheLookup } from './cache/index.ts'
+export type {
+  CacheIdentity,
+  CacheIntegrity,
+  CacheLookup,
+  CachePutResult,
+  CachePutVerifiedResult,
+  CacheSlotCorruption,
+} from './cache/index.ts'
 export {
+  CACHE_INTEGRITY_FILE,
+  CacheIntegritySchema,
   cacheGet,
   cachePath,
   cachePut,
+  cachePutVerified,
   cacheSlot,
   cacheSlotIsDir,
   cacheStagingDir,
+  readCachedIntegrity,
   resolveCacheRoot,
 } from './cache/index.ts'
 // edit
@@ -87,7 +98,13 @@ export type {
   StageEvent,
 } from './install/types.ts'
 // integrity
-export type { IntegrityCheck, IntegrityFailure, IntegrityResult } from './integrity/index.ts'
+export type {
+  AssetIntegrityFailure,
+  FacetIntegrityCheck,
+  FacetIntegrityFailure,
+  IntegrityFailure,
+  IntegrityResult,
+} from './integrity/index.ts'
 export { verifyGitOneCheck, verifyHash, verifyRegistryThreeCheck } from './integrity/index.ts'
 // loaders
 export type { ResolvedFacetManifest } from './loaders/facet.ts'

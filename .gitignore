@@ -23,9 +23,4 @@ packages/cli/bin/.facet
 # used for testing and whatnot
 tmp/
 
-# Local dogfooding state — consumers generate these via `facet add` / `facet install`,
-# they are not artifacts of this repo.
-facets.json
-facets.lock
-
 .gstack/

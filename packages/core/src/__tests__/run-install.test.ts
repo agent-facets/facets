@@ -4,8 +4,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
 import { deleteAssetFile, installAssetFile, readAssetFile } from '@agent-facets/adapter'
+import { computeContentHash } from '../build/content-hash.ts'
+import { type CacheIdentity, cachePath, cachePutVerified } from '../cache/index.ts'
 import { runInstall } from '../install/run-install.ts'
 import type { StageEvent } from '../install/types.ts'
+import type { BuildManifest } from '../schemas/build-manifest.ts'
+import type { Lockfile } from '../schemas/lockfile.ts'
 
 let projectRoot: string
 
@@ -124,12 +128,24 @@ function buildLocalFixtureWithSkills(name: string, skills: string[], version = '
   return repo
 }
 
+let cacheDir: string
+let originalCacheEnv: string | undefined
+
 beforeEach(() => {
   projectRoot = realpathSync(mkdtempSync(join(tmpdir(), 'run-install-test-')))
+  cacheDir = realpathSync(mkdtempSync(join(tmpdir(), 'run-install-cache-')))
+  originalCacheEnv = process.env.FACETS_CACHE_DIR
+  process.env.FACETS_CACHE_DIR = cacheDir
 })
 
 afterEach(() => {
+  if (originalCacheEnv === undefined) {
+    delete process.env.FACETS_CACHE_DIR
+  } else {
+    process.env.FACETS_CACHE_DIR = originalCacheEnv
+  }
   rmSync(projectRoot, { recursive: true, force: true })
+  rmSync(cacheDir, { recursive: true, force: true })
 })
 
 describe('runInstall — facets.json discovery', () => {
@@ -516,6 +532,40 @@ describe('runInstall — rollback on adapter throw', () => {
   })
 })
 
+describe('runInstall — lockfile write failure rolls back', () => {
+  test('writeLockfile failure rolls back assets and returns LOCKFILE_WRITE_FAILED', async () => {
+    const fixture = buildLocalFixture('viper-plans')
+    const relPath = `./${fixture.split('/').pop()}`
+    writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify({ facets: { 'viper-plans': relPath } }))
+
+    // Sabotage the lockfile write by pre-creating `facets.lock.tmp` as
+    // a *directory*. The atomic write path is `writeFileSync(tmp)`
+    // then `renameSync(tmp, path)`; opening a directory for write
+    // fails with EISDIR. We can't sabotage `facets.lock` directly
+    // because `loadLockfile` reads it first and would surface a
+    // different error before we ever reach the write.
+    mkdirSync(join(projectRoot, 'facets.lock.tmp'), { recursive: true })
+
+    const adapter = buildFakeAdapter('test')
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+    })
+
+    expect(result.ok).toBe(false)
+    if (result.ok) expect.unreachable()
+    expect(result.failure.code).toBe('LOCKFILE_WRITE_FAILED')
+    if (result.failure.code !== 'LOCKFILE_WRITE_FAILED') expect.unreachable()
+    expect(result.failure.path).toBe(join(projectRoot, 'facets.lock'))
+    expect(result.failure.cause.length).toBeGreaterThan(0)
+
+    // Rollback succeeded: the asset that was materialized before the
+    // lockfile write should be undone.
+    expect(result.rollback.ok).toBe(true)
+    expect(existsSync(join(projectRoot, '.test/skills/planning.md'))).toBe(false)
+  })
+})
+
 describe('runInstall — F14: non-ENOENT read error aborts before any journal record', () => {
   test('readAsset throwing EACCES aborts install with no journal entries to roll back', async () => {
     const fixture = buildLocalFixture('viper-plans')
@@ -535,5 +585,130 @@ describe('runInstall — F14: non-ENOENT read error aborts before any journal re
     expect(result.rollback.ok).toBe(true)
     // No lockfile.
     expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)
+  })
+})
+
+/**
+ * Build a fixture facet IN the cache slot directly. Returns the
+ * matching lockfile entry that points at it. Bypasses cloning + build
+ * pipeline; the resulting cache slot is what `runInstall` would see
+ * after a successful prior install of a git source.
+ */
+function seedCacheSlotForGit(
+  facetName: string,
+  version: string,
+): { entry: Lockfile['facets'][string]; slotPath: string } {
+  const id: CacheIdentity = { kind: 'git', name: facetName, version }
+  const slotPath = cachePath(id)
+
+  // Build a real source tree in a staging dir, then cachePutVerified
+  // moves it into the slot with a real sidecar.
+  const staging = realpathSync(mkdtempSync(join(cacheDir, '.staging-seed-')))
+  const facetJson = JSON.stringify({
+    name: facetName,
+    version,
+    skills: { planning: { description: 'planning skill' } },
+  })
+  const skillBody = `# planning ${version}\n`
+  writeFileSync(join(staging, 'facet.json'), facetJson)
+  mkdirSync(join(staging, 'skills/planning'), { recursive: true })
+  writeFileSync(join(staging, 'skills/planning/SKILL.md'), skillBody)
+
+  // Hand-construct a build manifest matching the source. The integrity
+  // value is opaque from cachePutVerified's perspective — caller passes
+  // it as `computedIntegrity`, which the function compares to
+  // manifest.integrity. We use the same value for both, so the audit
+  // passes.
+  const integrity = computeContentHash(`fake-archive-${facetName}-${version}`)
+  const manifest: BuildManifest = {
+    facetVersion: 0.1,
+    archive: 'archive.tar.gz',
+    integrity,
+    assets: {
+      'facet.json': computeContentHash(facetJson),
+      'skills/planning/SKILL.md': computeContentHash(skillBody),
+    },
+  }
+  const result = cachePutVerified(id, staging, manifest, integrity, facetName)
+  if (!result.ok) expect.unreachable()
+
+  return {
+    entry: {
+      source: `https://github.com/example/${facetName}.git`,
+      ref: 'main',
+      commit: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      version,
+      integrity,
+      assets: [{ scope: 'project', type: 'skill', name: 'planning' }],
+    },
+    slotPath,
+  }
+}
+
+describe('runInstall — git cache hit short-circuits clone', () => {
+  test('locked entry with a populated cache slot installs without cloning', async () => {
+    const facetName = 'viper-plans'
+    const version = '0.1.0'
+    const { entry } = seedCacheSlotForGit(facetName, version)
+
+    // Use an UNREACHABLE git URL — if anything tries to clone, the test
+    // will hang/fail. The cache hit must short-circuit before cloning.
+    const lockfile: Lockfile = {
+      lockfileVersion: 1,
+      facets: { [facetName]: entry },
+    }
+    writeFileSync(
+      join(projectRoot, 'facets.json'),
+      JSON.stringify({ facets: { [facetName]: 'https://invalid.invalid/never-clone.git' } }),
+    )
+    writeFileSync(join(projectRoot, 'facets.lock'), JSON.stringify(lockfile))
+
+    const result = await runInstall({
+      projectRoot,
+      adapters: [buildFakeAdapter('test')],
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) expect.unreachable()
+    // Lockfile is sticky on locked entries: the trusted-cache-hit path
+    // skips the build pipeline and inherits locked.* verbatim. Output
+    // integrity must equal input integrity exactly.
+    expect(result.lockfile.facets[facetName]?.version).toBe(version)
+    expect(result.lockfile.facets[facetName]?.integrity).toBe(entry.integrity)
+    expect(result.lockfile.facets[facetName]?.ref).toBe(entry.ref)
+    expect(result.lockfile.facets[facetName]?.commit).toBe(entry.commit)
+  })
+
+  test('returns CACHE_INTEGRITY_MISMATCH when sidecar disagrees with lockfile', async () => {
+    const facetName = 'viper-plans'
+    const version = '0.1.0'
+    const { entry, slotPath } = seedCacheSlotForGit(facetName, version)
+
+    // Forge a lockfile entry with a different integrity than what the
+    // cache sidecar recorded. Cache says X, lockfile demands Y.
+    const wrongIntegrity = 'sha256:0000000000000000000000000000000000000000000000000000000000000000'
+    const lockfile: Lockfile = {
+      lockfileVersion: 1,
+      facets: { [facetName]: { ...entry, integrity: wrongIntegrity } },
+    }
+    writeFileSync(
+      join(projectRoot, 'facets.json'),
+      JSON.stringify({ facets: { [facetName]: 'https://invalid.invalid/never-clone.git' } }),
+    )
+    writeFileSync(join(projectRoot, 'facets.lock'), JSON.stringify(lockfile))
+
+    const result = await runInstall({
+      projectRoot,
+      adapters: [buildFakeAdapter('test')],
+    })
+
+    expect(result.ok).toBe(false)
+    if (result.ok) expect.unreachable()
+    expect(result.failure.code).toBe('CACHE_INTEGRITY_MISMATCH')
+    if (result.failure.code !== 'CACHE_INTEGRITY_MISMATCH') expect.unreachable()
+    expect(result.failure.facet).toBe(facetName)
+    expect(result.failure.slotPath).toBe(slotPath)
+    expect(result.failure.cachedIntegrity).toBe(entry.integrity)
+    expect(result.failure.lockedIntegrity).toBe(wrongIntegrity)
   })
 })
