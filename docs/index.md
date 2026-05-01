@@ -31,3 +31,15 @@ pnpm install -g agent-facets
 ```
 
 </CodeGroup>
+
+## Updating
+
+Once `facet` is installed, update it in place with:
+
+```shell
+facet self-update
+```
+
+It detects how the binary was installed and dispatches to the matching
+update mechanism. See [`facet self-update`](/cli/self-update) for flags
+and behavior.

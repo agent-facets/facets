@@ -65,7 +65,7 @@
         "groups": [
           {
             "group": "General",
-            "pages": ["cli/index", "cli/env"]
+            "pages": ["cli/index", "cli/env", "cli/self-update"]
           },
           {
             "group": "Facet Management",

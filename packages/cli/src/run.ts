@@ -1,5 +1,5 @@
 import { parse } from '@bomb.sh/args'
-import type { Command } from './commands.ts'
+import { allCommandNames, type Command, resolveCommand } from './commands.ts'
 import { printCommandHelp, printGlobalHelp } from './help.ts'
 import { findClosestCommand } from './suggest.ts'
 import { version } from './version.ts'
@@ -25,7 +25,7 @@ export async function run(argv: string[], commands: Record<string, Command>): Pr
   // Explicit `help` command: `facets help` or `facets help build`
   if (commandName === 'help') {
     const subCommandName = String(args._[1] ?? '')
-    const subCommand = subCommandName ? commands[subCommandName] : undefined
+    const subCommand = subCommandName ? resolveCommand(commands, subCommandName) : undefined
     if (subCommand) {
       printCommandHelp(subCommand)
     } else {
@@ -34,10 +34,10 @@ export async function run(argv: string[], commands: Record<string, Command>): Pr
     return 0
   }
 
-  const command = commands[commandName]
+  const command = resolveCommand(commands, commandName)
 
   if (!command) {
-    const suggestion = findClosestCommand(commandName, Object.keys(commands))
+    const suggestion = findClosestCommand(commandName, allCommandNames(commands))
     const message = suggestion
       ? `Unknown command "${commandName}". Did you mean "${suggestion}"?`
       : `Unknown command "${commandName}".`

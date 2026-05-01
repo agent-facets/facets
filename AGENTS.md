@@ -173,6 +173,42 @@ test("hello world", () => {
 });
 ```
 
+### Awaiting async expectations
+
+Bun's `expect(...).rejects.<matcher>` and `expect(...).resolves.<matcher>` return promises. You **MUST** `await` the entire expression (or `return` it from the test). Without the outer `await`, Bun's test runner sees a synchronous return, the assertion promise never settles in scope, and a failing assertion silently passes — the test appears green but provides no guarantee.
+
+The same rule applies to any promise-returning matcher.
+
+**Correct** — the outer `await` makes the assertion actually run:
+
+```ts
+test("should handle async errors", async () => {
+  await expect(async () => {
+    await fetchUser("invalid-id");
+  }).rejects.toThrow("User not found");
+});
+```
+
+**Wrong** — no outer `await`. This test passes even when `fetchUser` doesn't throw:
+
+```ts
+test("should handle async errors", async () => {
+  expect(async () => {
+    await fetchUser("invalid-id");
+  }).rejects.toThrow("User not found");
+});
+```
+
+The same rule applies to `.resolves.*`:
+
+```ts
+// Correct
+await expect(loadConfig()).resolves.toEqual({ ok: true })
+
+// Wrong — silently passes if loadConfig rejects or returns the wrong value
+expect(loadConfig()).resolves.toEqual({ ok: true })
+```
+
 ## Turbo Caching
 
 The `check` pipeline (`bun check`) orchestrates `test`, `types`, `lint`, and other tasks via Turborepo. Caching rules:
