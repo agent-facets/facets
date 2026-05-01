@@ -1,7 +1,7 @@
 ---
 title: facet update
 sidebarTitle: ' '
-description: Updates facets in `facet.json`
+description: Updates facets in `facets.json`
 tag: facet update
 ---
 

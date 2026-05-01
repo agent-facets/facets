@@ -4,6 +4,81 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-05-01" description="facet add now installs in one step; new source grammar; lockfile-driven install" tags={["CLI", "New Feature", "Breaking"]} rss={{
+  title: "facet add now installs in one step; new source grammar; lockfile-driven install",
+  description: "facet add now resolves, fetches, verifies, and installs a facet in a single command — no separate facet install step needed. New source grammar accepts registry names, github:owner/repo shorthand, plain https://...git URLs, SCP-style git@host:owner/repo, and local paths. Breaking: git+https:// and git+ssh:// prefixes are rejected (drop the git+); caret/tilde/comparator version ranges are rejected (use 1.* or 1.2.3); facet install no longer accepts --dry-run or positional arguments. Adds: lockfile bootstrap on first install, lockfile-driven reproducibility, three-check integrity protocol for registry sources, ~/.facets/cache/ with FACETS_CACHE_DIR override, repaired outcome when adapter files have drifted, server warnings, and adapter picker auto-launch when a project has no adapters."
+}}>
+  ## facet add and facet install converge
+
+  `facet add` now does everything end-to-end. Resolve, fetch, verify integrity, materialize into adapters, write the lockfile — all in a single command. There is no separate `facet install` step after `facet add`.
+
+  ```sh
+  # The old two-step flow:
+  facet add github:owner/repo
+  facet install            # <-- no longer needed
+
+  # The new one-step flow:
+  facet add github:owner/repo
+  ```
+
+  `facet install` is still there, and it's the right command after a fresh `git clone` or after pulling teammate changes that updated `facets.json`. It honors any pinned versions in `facets.lock` verbatim and only resolves entries that don't have a lockfile entry yet — making installs reproducible across machines without a separate `facet update` command.
+
+  If a project has no adapters installed, both `facet add` and `facet install` now auto-launch the adapter picker on a TTY, so first-run experience is a single command from a cold start.
+
+  ## New source grammar
+
+  `facet add` accepts a richer set of sources, aligned with what npm and bun users already expect:
+
+  ```sh
+  facet add viper-plans              # registry name (resolved version pinned)
+  facet add viper-plans@1.2.3        # exact version
+  facet add viper-plans@1.*          # major-pinned wildcard
+  facet add viper-plans@latest       # alias for the bare-name form
+  facet add github:owner/repo#main   # GitHub shorthand with a ref
+  facet add https://example.com/repo.git#v1.0.0
+  facet add git@github.com:owner/repo.git#main
+  facet add ./local-facets/my-plans  # local path inside the project
+  facet add a b c                    # multi-source: install several at once
+  ```
+
+  Bare names default to the resolved exact version when written back to `facets.json` — so `facet add viper-plans` produces `viper-plans@1.2.3` in the manifest, the same way `npm install` and `bun add` pin lockable defaults.
+
+  ## Lockfile-driven, with bootstrap
+
+  `facets.lock` is now the single source of truth for what gets installed:
+
+  - When a lockfile entry exists, that exact version is fetched. The manifest's range is not re-resolved.
+  - When a lockfile entry doesn't exist (first run, or a freshly-added manifest entry), the manifest specifier is resolved fresh.
+  - When `facets.lock` doesn't exist yet, `facet install` bootstraps it — the same way `bun install` creates `bun.lock`.
+
+  ## Three-check integrity protocol
+
+  Every fetched facet is verified before any asset is written:
+
+  - **Registry sources** run three independent checks: cache vs. registry metadata, archive manifest vs. registry metadata, computed content vs. archive manifest. Each defends against a distinct adversary.
+  - **Git sources** run a single check: computed content vs. lockfile integrity. Defends against tag-move attacks.
+  - **Local sources** are trust-by-path.
+
+  Any mismatch is a hard security error. The install aborts before any asset is written; the project is exactly as it was before.
+
+  ## Cache
+
+  Resolved facet content is cached at `~/.facets/cache/<name>@<version>/`. Subsequent installs of the same identity hit the cache instead of the network. Override with the `FACETS_CACHE_DIR` environment variable.
+
+  ## Repaired outcome
+
+  If you delete a materialized asset by hand and re-run `facet install`, the affected facet now reports as `repaired` in the summary — the adapter file is restored without bumping the version. This makes self-heal explicit instead of silent.
+
+  ## Breaking changes
+
+  - **`git+` prefix is removed.** Use plain `https://...git` or `git@host:owner/repo` instead. The new grammar accepts everything `git+` did, just without the prefix.
+  - **Caret, tilde, and comparator version ranges are rejected.** Use `1.*` for major-pinned, `1.2.*` for minor-pinned, `*` or `latest` for unpinned, or `1.2.3` for exact. The `@latest` alias and bare-name form both produce the same result as `*`.
+  - **`facet install --dry-run` is gone.** No replacement; `facet install` always commits.
+  - **`facet install` rejects positional arguments.** To add a new facet to the project, use `facet add`.
+
+  See the [facet add](/cli/add) and [facet install](/cli/install) CLI reference for full details.
+</Update>
+
 <Update label="2026-04-28" description="Publish pipeline fixed across all packages" tags={["CLI", "Fix"]} rss={{
   title: "Publish pipeline fixed across all packages",
   description: "Releases of agent-facets, @agent-facets/core, @agent-facets/adapter, and the first-party adapters (Claude Code, OpenCode, Codex) had been failing intermittently. The publish pipeline is now fixed and all packages have been republished. Reinstall with: npm install -g agent-facets, or curl -fsSL https://agentfacets.io/install | bash."
@@ -68,7 +143,7 @@ rss: true
 
 <Update label="2026-04-20" description="Install pipeline and new install URL" tags={["CLI", "New Feature"]} rss={{
   title: "Install pipeline and new install URL",
-  description: "facet add and facet install are now available. Use 'facet add github:owner/repo' (or git+https:// or file: specifiers) to register a facet in facets.json, then 'facet install' to materialize assets into every connected adapter. Supports lockfile diffing, rollback on failure, atomic concurrent-install locking, --dry-run, and --verbose. The CLI installer has moved to https://agentfacets.io/install — install on macOS and Linux with 'curl -fsSL https://agentfacets.io/install | bash', or on any platform with Node.js via 'npm install -g agent-facets'."
+  description: "facet add and facet install are now available. Use 'facet add github:owner/repo' (or an https:// git URL, or a local path) to register a facet in facets.json, then 'facet install' to materialize assets into every connected adapter. Supports lockfile diffing, rollback on failure, atomic concurrent-install locking, and --verbose. The CLI installer has moved to https://agentfacets.io/install — install on macOS and Linux with 'curl -fsSL https://agentfacets.io/install | bash', or on any platform with Node.js via 'npm install -g agent-facets'."
 }}>
   ## facet add and facet install
 
@@ -78,8 +153,8 @@ rss: true
 
   ```sh
   facet add github:owner/repo
-  facet add git+https://github.com/owner/repo.git
-  facet add file:../local-facet
+  facet add https://github.com/owner/repo.git
+  facet add ./local-facet
   ```
 
   **`facet install`** reads `facets.json`, builds each facet, and materializes its assets into every adapter you've connected. The pipeline is built for iteration:
@@ -87,7 +162,6 @@ rss: true
   - **Lockfile diffing** — only changed assets are written on each run.
   - **Rollback on failure** — if something goes wrong mid-install, changes are reversed automatically.
   - **Concurrent safety** — an atomic install lock prevents two `facet install` runs from interfering with each other.
-  - **`--dry-run`** — preview the install plan without touching disk.
   - **`--verbose`** — full pipeline trace for debugging.
 
   See the [facet add](/cli/add) and [facet install](/cli/install) CLI reference for details.

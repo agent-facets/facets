@@ -8,25 +8,22 @@ Welcome. You are invited to help dogfood Agent Facets before open beta. In about
 - A git clone of the alpha dogfood repo (`viper-plans`).
 - Your AI tooling (Claude Code, OpenCode, or both) seeing a new skill + command contributed by the facet.
 
-## 6 steps
+## 5 steps
 
 1. **Install the CLI.**
    ```shell
    npm install -g agent-facets
    ```
 
-2. **Clone the dogfood repo.**
+2. **In any project, add the dogfood facet.**
    ```shell
-   git clone <viper-plans-url>
-   cd <viper-plans-directory>
+   facet add github:agent-facets/viper-plans
    ```
+   This single command resolves the source, fetches it, verifies integrity, and installs the assets into every connected adapter. There's no separate `facet install` step.
 
-3. **Run the installer.**
-   ```shell
-   facet install
-   ```
+   (You can also run it against a local clone: `facet add ./path/to/viper-plans`.)
 
-4. **Pick your adapter.** If you have no adapters installed yet, a picker shows up:
+3. **Pick your adapter.** If you have no adapters installed yet, a picker shows up before the install runs:
    ```
    No AI tools are connected yet. Pick which adapter to install.
 
@@ -36,15 +33,21 @@ Welcome. You are invited to help dogfood Agent Facets before open beta. In about
 
    ↑↓ move · Space toggle · Enter confirm · Esc cancel
    ```
-   Select the adapter(s) you use with **Space**, then press **Enter**.
+   Select the adapter(s) you use with **Space**, then press **Enter**. The install resumes automatically.
 
-5. **Wait for the success line.** Expect something like:
+4. **Wait for the summary.** Expect something like:
    ```
-   ✓ Installed viper-plans@0.1.0 for claude-code. 2 assets written.
-     Restart Claude Code to see your new assets.
+   Adding facets...
+
+     + viper-plans@0.1.0
+
+     Done.
+     1 installed · 1 asset written
    ```
 
-6. **Restart your AI tool.** Claude Code, OpenCode, or whatever you picked. The new skill and command appear in that tool's listing.
+5. **Restart your AI tool.** Claude Code, OpenCode, or whatever you picked. The new skill and command appear in that tool's listing.
+
+If you're returning to an existing facet project (e.g., a fresh `git clone`), use `facet install` instead — it reads the existing `facets.json` and `facets.lock` and reapplies everything without touching the manifest.
 
 ## Verification
 
@@ -58,7 +61,7 @@ Re-run `facet install --verbose` and post the full terminal output to the `#clos
 
 Worth knowing before you file a bug:
 
-- **`facets.lock` is an audit log, not a tamper check.** Each entry carries an `integrity` hash of the built artifact, but `facet install` does not re-verify that hash on subsequent runs. A moving ref (`#main`, retagged release, force-push) will pull new bytes. Treat the lockfile as a record of what you installed, not a guarantee that re-running installs the same bytes. Integrity enforcement is a post-alpha fast-follow.
+- **Integrity verification is per-source-kind.** Registry sources run a three-check protocol (cache vs. metadata, archive manifest vs. metadata, computed content vs. archive manifest) — the registry itself is stubbed in alpha, so this path errors out today, but the seam is there. Git sources run a single check: computed content vs. lockfile integrity, defending against tag-move attacks. Local sources are trust-by-path with no hash check. The lockfile is now a real integrity contract for git and registry sources, not just an audit log — re-installing from a moving ref that's been retagged or force-pushed will fail with a security error rather than silently pulling new bytes.
 - **Removing a facet from `facets.json` leaves its assets on disk.** There is no orphan sweep yet — delete the corresponding files in `.claude/skills/<name>` / `.opencode/skills/<name>` manually, or clear the adapter tree and re-install.
 - **Two facets that ship the same asset name will collide** (e.g., two facets with `skill:planning`). Second install wins; uninstalling either side deletes the other's asset. Cross-facet collision detection is also a post-alpha fast-follow.
 

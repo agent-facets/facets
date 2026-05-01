@@ -15,13 +15,17 @@ curl -fsSL https://agentfacets.io/install | bash
 # Or via npm (all platforms, including Windows)
 npm install -g agent-facets
 
-# Short version:
-git clone <facet-repo>
-cd <facet-repo>
+# Add a facet to any project — this resolves, fetches, verifies, and
+# installs in one step. If the project has no AI adapters connected
+# yet, the picker launches automatically.
+facet add github:agent-facets/viper-plans
+
+# Reapply an existing project's facets after a fresh clone or after
+# pulling teammate changes:
 facet install
 ```
 
-Registry-based `facet add <name>` is roadmap (open-beta) — see [docs.agentfacets.io/roadmap](https://docs.agentfacets.io/roadmap).
+The public registry index (used by `facet add <name>` without a source) is open-beta — see [docs.agentfacets.io/roadmap](https://docs.agentfacets.io/roadmap). Today, bare-name resolution errors out against the stub; use `github:owner/repo`, an `https://...git` URL, an SCP-style git URL, or a local path.
 
 Please see https://docs.agentfacets.io for detailed guidance and documentation for the `facet` CLI tool.
 

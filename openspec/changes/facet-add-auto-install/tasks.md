@@ -137,16 +137,16 @@
 
 ## 17. Documentation sync — Research
 
-- [ ] 17.1 Explore: scan `docs/` and the root `README.md` for every reference to `facet add`, `facet install`, source grammar, `git+` examples, install behavior, and lockfile semantics so the doc updates are exhaustive.
-- [ ] 17.2 Propose: per-file change list — `docs/cli/add.md` (combined flow, source grammar, default-to-pinned, `@latest` equivalence, examples), `docs/cli/install.md` (lockfile-driven behavior, no positional args, no re-resolve, deferred `facet update`), `README.md` quick-start (drop separate `facet install` step), `CHANGELOG.md` entry.
+- [x] 17.1 Explore: scan `docs/` and the root `README.md` for every reference to `facet add`, `facet install`, source grammar, `git+` examples, install behavior, and lockfile semantics so the doc updates are exhaustive.
+- [x] 17.2 Propose: per-file change list — `docs/cli/add.md` (combined flow, source grammar, default-to-pinned, `@latest` equivalence, examples), `docs/cli/install.md` (lockfile-driven behavior, no positional args, no re-resolve, deferred `facet update`), `README.md` quick-start (drop separate `facet install` step), `CHANGELOG.md` entry.
 
 ## 18. Documentation sync — Implementation
 
-- [ ] 18.1 Implement: rewrite `docs/cli/add.md` per the proposed change list.
-- [ ] 18.2 Implement: rewrite `docs/cli/install.md` per the proposed change list.
-- [ ] 18.3 Implement: update `README.md` quick-start to drop the standalone `facet install` step.
-- [ ] 18.4 Implement: add `CHANGELOG.md` entry summarizing the combined-flow change, the new source grammar, the `@latest` alias, the lockfile-driven install model, and the cache+integrity protocol.
-- [ ] 18.5 Verify: `bun check` passes; doc links resolve; quick-start example actually works against the new commands.
+- [x] 18.1 Implement: rewrite `docs/cli/add.md` per the proposed change list.
+- [x] 18.2 Implement: rewrite `docs/cli/install.md` per the proposed change list.
+- [x] 18.3 Implement: update `README.md` quick-start to drop the standalone `facet install` step.
+- [x] 18.4 Implement: add `CHANGELOG.md` entry summarizing the combined-flow change, the new source grammar, the `@latest` alias, the lockfile-driven install model, and the cache+integrity protocol.
+- [x] 18.5 Verify: `bun check` passes; doc links resolve; quick-start example actually works against the new commands.
 
 ## 19. Final integration — Implementation
 
