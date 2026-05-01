@@ -1,5 +1,22 @@
 # agent-facets
 
+## 0.8.0
+
+### Minor Changes
+
+- [#223](https://github.com/agent-facets/facets/pull/223) [`3126e57`](https://github.com/agent-facets/facets/commit/3126e57dc18c0d80c047b0277600281282494fe3) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Add `facet self-update` (alias `facet self-upgrade`) to update the CLI in-band.
+    The command detects how the running binary was installed — curl installer,
+    `npm` / `yarn` / `pnpm` / `bun` global, dev mode, or unclassified — and
+    dispatches to a matching update mechanism. Reuses the existing curl
+    installer at `agentfacets.io/install` and the user's package manager
+    rather than duplicating download/integrity logic. Honors
+    `FACET_CLI_REGISTRY` for version metadata.
+    Two flags: `--version <x.y.z>` to pin a release and `--dry-run` to print
+    the plan without executing it. Refuses gracefully in dev mode (when
+    `FACET_BIN_PATH` is set) with a clear stderr message.
+    Also adds a generic `aliases` field to the `Command` type so future
+    commands can declare alternate names without duplicating registrations.
+
 ## 0.7.3
 
 ### Patch Changes
