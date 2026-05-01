@@ -6,7 +6,7 @@
     "url": "https://github.com/agent-facets/facets",
     "directory": "packages/cli"
   },
-  "version": "0.8.0",
+  "version": "0.9.0",
   "type": "module",
   "bin": {
     "facet": "./bin/facet"
