@@ -401,3 +401,90 @@ The `add` and `install` commands SHALL accept a `--verbose` flag that emits addi
 - **WHEN** a user runs `add` or `install` with `--verbose`
 - **THEN** the rendered view SHALL appear on stdout as usual
 - **AND** additional diagnostic output SHALL appear on stderr
+
+### Requirement: Users can update the CLI to a newer version in-band
+
+The system SHALL provide a `self-update` command that updates the running CLI binary to a newer version. The system SHALL also accept `self-upgrade` as an alias of the same command, so users with muscle memory for either verb succeed. Both names SHALL invoke identical behavior.
+
+#### Scenario: self-update command is listed in help
+
+- **WHEN** a user runs the CLI with `--help`
+- **THEN** the help output SHALL list `self-update` with its description
+- **AND** the help output SHALL list `self-upgrade` as an alias of the same command
+
+#### Scenario: self-update is invoked
+
+- **WHEN** a user runs `facet self-update`
+- **THEN** the system SHALL attempt to update the running binary to the latest published version
+- **AND** the process SHALL exit with code 0 on a successful update
+- **AND** the process SHALL exit with code 0 if no update is available
+
+#### Scenario: self-upgrade alias produces identical behavior
+
+- **WHEN** a user runs `facet self-upgrade` with the same arguments and flags as a corresponding `facet self-update` invocation
+- **THEN** the system SHALL produce the same output, side effects, and exit code as `facet self-update`
+
+#### Scenario: Per-command help shows usage and flags for self-update
+
+- **WHEN** a user runs `facet self-update --help`
+- **THEN** the help output SHALL show the usage syntax
+- **AND** the help output SHALL list the `--version` and `--dry-run` flags with descriptions
+- **AND** the process SHALL exit with code 0
+
+### Requirement: The `self-` prefix is reserved for CLI-binary operations
+
+The system SHALL reserve commands prefixed with `self-` for operations that act on the CLI binary itself. Commands without the `self-` prefix that share a verb (e.g., `update`, `upgrade`) SHALL NOT act on the CLI binary; they SHALL remain reserved for operations on facet packages and their dependencies.
+
+#### Scenario: self-update acts on the CLI binary
+
+- **WHEN** a user runs `facet self-update`
+- **THEN** the system SHALL update the CLI binary
+- **AND** the system SHALL NOT modify any facet package or facet manifest
+
+#### Scenario: bare update or upgrade does not act on the CLI binary
+
+- **WHEN** a user runs `facet update` or `facet upgrade`
+- **THEN** the system SHALL NOT update the CLI binary
+- **AND** the system SHALL treat the invocation as a facet-package operation (which MAY be a stub indicating the feature is not yet implemented)
+
+### Requirement: Users can pin a specific version when self-updating
+
+The `self-update` command SHALL accept a `--version <x.y.z>` flag that pins the update target to a specific published version. When the flag is provided, the system SHALL update to exactly that version regardless of which version is currently published as latest.
+
+#### Scenario: self-update with a specific version
+
+- **WHEN** a user runs `facet self-update --version 0.7.0`
+- **THEN** the system SHALL update the running binary to version 0.7.0
+- **AND** the system SHALL NOT update to any other version even if a newer version is published
+
+#### Scenario: self-update without --version uses latest
+
+- **WHEN** a user runs `facet self-update` without a `--version` flag
+- **THEN** the system SHALL update the running binary to the latest published version
+
+### Requirement: Users can preview a self-update without executing it
+
+The `self-update` command SHALL accept a `--dry-run` flag. When the flag is set, the system SHALL print the current installed version, the target version, whether an update is available, the detected install method, and the exact command that would run — and SHALL NOT modify any files. The process SHALL exit with code 0 in every `--dry-run` outcome short of a real error.
+
+#### Scenario: Dry run when an update is available
+
+- **WHEN** a user runs `facet self-update --dry-run`
+- **AND** a newer version is available
+- **THEN** the output SHALL include the current version, the target version, the detected install method, and the exact command that would run
+- **AND** the system SHALL NOT modify any files
+- **AND** the process SHALL exit with code 0
+
+#### Scenario: Dry run when already up to date
+
+- **WHEN** a user runs `facet self-update --dry-run`
+- **AND** the current version equals the target version
+- **THEN** the output SHALL indicate that no update is needed
+- **AND** the system SHALL NOT modify any files
+- **AND** the process SHALL exit with code 0
+
+#### Scenario: Dry run with a pinned version
+
+- **WHEN** a user runs `facet self-update --version 0.6.0 --dry-run`
+- **THEN** the target version in the output SHALL be 0.6.0
+- **AND** the printed command SHALL reference version 0.6.0
+- **AND** the system SHALL NOT modify any files

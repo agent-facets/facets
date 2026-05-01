@@ -1,12 +1,15 @@
 import type { Adapter } from '@agent-facets/adapter'
+import {
+  type FirstPartyAdapter,
+  getAdapterBaseDir,
+  installAdapter,
+  listInstalledAdapters,
+  loadInstalledAdapters,
+} from '@agent-facets/core'
 import { render } from 'ink'
 import { createElement } from 'react'
 import { writeCliError } from '../../util/errors.ts'
-import type { FirstPartyAdapter } from './first-party.ts'
 import { InstallPicker } from './install-picker.tsx'
-import { installAdapter } from './install-service.ts'
-import { loadInstalledAdapters } from './loader.ts'
-import { getAdapterBaseDir, listInstalledAdapters } from './placement.ts'
 
 /**
  * Result of `pickAndInstallAdapters`. Discriminated by `ok`:

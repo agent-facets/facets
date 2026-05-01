@@ -1,7 +1,12 @@
-import type { FacetManifest } from '@agent-facets/core'
+import type {
+  EditContext,
+  EditOperation,
+  EditResult,
+  FacetManifest,
+  ReconciliationResolution,
+} from '@agent-facets/core'
 import { useCallback, useState } from 'react'
 import type { AssetSectionKey, FormState } from '../../context/form-state-context.ts'
-import type { EditContext, EditOperation, EditResult, ReconciliationResolution } from './edit-types.ts'
 
 /** Maps form section keys to manifest asset keys. */
 const FORM_TO_MANIFEST: Record<AssetSectionKey, 'skills' | 'agents' | 'commands'> = {

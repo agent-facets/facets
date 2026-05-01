@@ -1,4 +1,4 @@
-import type { VersionSpec } from '../sources/index.ts'
+import type { VersionSpec } from '../sources/facet/types.ts'
 
 /**
  * Render a `VersionSpec` as the surface form a user would type. Used

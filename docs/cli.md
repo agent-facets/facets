@@ -33,4 +33,7 @@ The following are the most common `facet` commands. See the [roadmap](/roadmap) 
   <Card title={<Badge>facet publish</Badge>} href="/roadmap">
     Publish a built **facet** to the registry
   </Card>
+  <Card title={<Badge>facet self-update</Badge>} href="/cli/self-update">
+    Update the `facet` CLI to the latest version (alias: `facet self-upgrade`)
+  </Card>
 </Columns>

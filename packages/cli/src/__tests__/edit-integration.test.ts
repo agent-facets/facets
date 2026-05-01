@@ -2,10 +2,9 @@ import { describe, expect, test } from 'bun:test'
 import { mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { runBuildPipeline } from '@agent-facets/core'
+import type { EditOperation } from '@agent-facets/core'
+import { applyEditOperations as applyOperations, buildEditContext, runBuildPipeline } from '@agent-facets/core'
 import dedent from 'dedent'
-import { applyOperations, buildEditContext } from '../commands/edit/index.ts'
-import type { EditOperation } from '../tui/views/edit/edit-types.ts'
 
 async function createFixtureDir(name: string): Promise<string> {
   const dir = join(tmpdir(), `facets-edit-integ-${name}-${Date.now()}`)

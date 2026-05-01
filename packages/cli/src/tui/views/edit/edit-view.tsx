@@ -1,6 +1,6 @@
+import { DEFAULT_VERSION, isValidKebabCase } from '@agent-facets/core'
 import { Box, Text } from 'ink'
 import { useCallback, useEffect } from 'react'
-import { DEFAULT_VERSION, isValidKebabCase } from '../../../commands/create-scaffold.ts'
 import { AssetSection } from '../../components/asset-section.tsx'
 import { Button } from '../../components/button.tsx'
 import { EditableField } from '../../components/editable-field.tsx'

@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { captureStderr } from '../../../__tests__/helpers/capture-std.ts'
+import { withTTY } from '../../../__tests__/helpers/with-tty.ts'
 import { installCommand } from '../index.ts'
 
 let projectRoot: string
@@ -124,11 +125,31 @@ describe('facet install — CLI error paths', () => {
     expect(stderr).toContain('install failed')
   })
 
-  test('exits 1 with "no adapters installed" when no adapters present', async () => {
+  test('no adapters + non-TTY → exits 1 with picker-cant-run hint', async () => {
     writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify({ facets: {} }))
-    const { result: code, stderr } = await captureStderr(() => installCommand.run([], {}))
+    const { result: code, stderr } = await withTTY(false, () => captureStderr(() => installCommand.run([], {})))
     expect(code).toBe(1)
     expect(stderr).toContain('no adapters installed')
+    expect(stderr).toContain('non-interactive environment')
+    expect(stderr).toContain('facet adapter install <name>')
+  })
+
+  test('no adapters + TTY → exits 1 with picker-prompt hint', async () => {
+    writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify({ facets: {} }))
+    const { result: code, stderr } = await withTTY(true, () => captureStderr(() => installCommand.run([], {})))
+    expect(code).toBe(1)
+    expect(stderr).toContain('no adapters installed')
+    expect(stderr).toContain('at least one installed adapter')
+    expect(stderr).toContain('facet adapter install')
+  })
+
+  test('no adapters + TTY → exits 1 with picker-prompt hint', async () => {
+    writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify({ facets: {} }))
+    const { result: code, stderr } = await withTTY(true, () => captureStderr(() => installCommand.run([], {})))
+    expect(code).toBe(1)
+    expect(stderr).toContain('no adapters installed')
+    expect(stderr).toContain('at least one installed adapter')
+    expect(stderr).toContain('facet adapter install')
   })
 
   test('exits 1 with usage error on positional argument', async () => {

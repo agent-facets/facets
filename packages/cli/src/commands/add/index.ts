@@ -4,8 +4,9 @@ import type { Adapter } from '@agent-facets/adapter'
 import {
   emptyFacetsJson,
   loadFacetsJson,
+  loadInstalledAdapters,
   type ParseError,
-  parseSource,
+  parseFacetSource,
   type RunInstallResult,
   runInstall,
   type Source,
@@ -17,7 +18,6 @@ import { createElement } from 'react'
 import type { Command } from '../../commands.ts'
 import { InstallView } from '../../tui/views/install/install-view.tsx'
 import { writeCliError } from '../../util/errors.ts'
-import { loadInstalledAdapters } from '../adapter/loader.ts'
 import { pickAndInstallAdapters } from '../adapter/pick-and-install.ts'
 
 /**
@@ -60,7 +60,7 @@ export const addCommand: Command = {
     // Step 1: parse every source up front. No I/O happens here.
     const parsed: Array<{ specifier: string; source: Source }> = []
     for (const specifier of args) {
-      const result = parseSource(specifier)
+      const result = parseFacetSource(specifier)
       if (!result.ok) {
         writeParseError(specifier, result.error)
         return 1
@@ -245,9 +245,9 @@ async function peekFacetName(source: Source, specifier: string): Promise<string 
   let sourceDir: string
   let cleanup: (() => Promise<void>) | undefined
   if (source.kind === 'git') {
-    const { cloneGitSource } = await import('@agent-facets/core')
+    const { cloneFacetGitSource } = await import('@agent-facets/core')
     try {
-      const cloned = await cloneGitSource(source.url, source.ref ?? undefined)
+      const cloned = await cloneFacetGitSource(source.url, source.ref ?? undefined)
       sourceDir = cloned.dir
       const { rm } = await import('node:fs/promises')
       cleanup = async () => {
@@ -262,8 +262,8 @@ async function peekFacetName(source: Source, specifier: string): Promise<string 
       return null
     }
   } else {
-    const { resolveLocalSource } = await import('@agent-facets/core')
-    const resolved = await resolveLocalSource(source.path, process.cwd())
+    const { resolveLocalFacetSource } = await import('@agent-facets/core')
+    const resolved = await resolveLocalFacetSource(source.path, process.cwd())
     if (!resolved.ok) {
       writeCliError({
         what: `could not resolve local source "${specifier}"`,

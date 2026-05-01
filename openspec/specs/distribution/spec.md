@@ -281,3 +281,167 @@ The system SHALL create a GitHub Release and send a notification when a CLI vers
 
 - **WHEN** the CLI release pipeline completes successfully
 - **THEN** the system SHALL send a notification to the configured notification channel
+
+### Requirement: The system classifies how the running binary was installed
+
+The system SHALL classify the running CLI binary into exactly one install-method kind from the set: `curl`, `npm`, `yarn`, `pnpm`, `bun`, `local-dev`, or `unknown`. Classification SHALL determine which update mechanism is dispatched, so that each install path is updated through the same channel that delivered it.
+
+#### Scenario: Dev-mode environment is classified as local-dev
+
+- **WHEN** the `FACET_BIN_PATH` environment variable is set
+- **THEN** the system SHALL classify the install method as `local-dev`
+- **AND** the system SHALL NOT probe any package managers
+
+#### Scenario: Curl installer location is classified as curl
+
+- **WHEN** the resolved real path of the running binary is under the curl installer's binary directory (`${FACET_INSTALL_DIR:-$HOME/.facet}/bin/`)
+- **AND** `FACET_BIN_PATH` is not set
+- **THEN** the system SHALL classify the install method as `curl`
+
+#### Scenario: A JS package manager reports the package is globally installed
+
+- **WHEN** the running binary is not classified as `local-dev` or `curl`
+- **AND** at least one of `npm`, `yarn`, `pnpm`, or `bun` reports `agent-facets` as a globally installed package
+- **THEN** the system SHALL classify the install method as the package manager that reported the package
+- **AND** when multiple package managers report the package, the system SHALL prefer the one whose name appears in the resolved binary path
+
+#### Scenario: No classification matches
+
+- **WHEN** none of the dev-mode, curl-location, or package-manager probes match
+- **THEN** the system SHALL classify the install method as `unknown`
+
+### Requirement: Self-update is refused in dev mode
+
+The system SHALL refuse to perform a self-update when the install method is `local-dev`. The refusal SHALL produce a clear stderr message and exit with a non-zero code, so that a developer who triggers `self-update` from a workspace shell sees an unmistakable failure rather than a silent no-op.
+
+#### Scenario: Dev-mode refusal
+
+- **WHEN** a user runs `facet self-update`
+- **AND** the install method is `local-dev`
+- **THEN** the system SHALL print a message to stderr indicating that self-update is disabled in dev mode
+- **AND** the system SHALL NOT modify any files
+- **AND** the process SHALL exit with code 1
+
+#### Scenario: Dev-mode refusal also applies to dry-run
+
+- **WHEN** a user runs `facet self-update --dry-run`
+- **AND** the install method is `local-dev`
+- **THEN** the system SHALL print a message to stderr indicating that self-update is disabled in dev mode
+- **AND** the process SHALL exit with code 1
+
+### Requirement: The curl install path is updated by re-running the official installer
+
+The system SHALL update a curl-installed binary by invoking the official installer script served at the project's install URL. The CLI SHALL NOT replicate the installer's download, integrity-verification, or PATH-injection logic. When the existing installation is already a curl install, the invocation SHALL suppress the installer's PATH-modification behavior so that no spurious "restart your shell" message is printed.
+
+#### Scenario: Curl-installed binary is updated via the installer script
+
+- **WHEN** a user runs `facet self-update`
+- **AND** the install method is `curl`
+- **THEN** the system SHALL invoke the official installer script
+- **AND** the system SHALL pass the target version to the installer
+- **AND** the installer SHALL be invoked in a mode that does NOT modify shell rc files
+
+#### Scenario: Installer output is shown to the user
+
+- **WHEN** the installer script runs as part of `self-update`
+- **THEN** the installer's stdout and stderr SHALL be visible to the user in real time
+
+### Requirement: JS-package-manager installs are updated by the same package manager
+
+The system SHALL update a binary installed via `npm`, `yarn`, `pnpm`, or `bun` by invoking that package manager's global-install command for the `agent-facets` package at the target version. The system SHALL surface the package manager's exit code and stderr verbatim, so that a user denied write access (e.g., a permissions error suggesting `sudo`) sees the package manager's own diagnostics.
+
+#### Scenario: npm install is updated via npm
+
+- **WHEN** a user runs `facet self-update`
+- **AND** the install method is `npm`
+- **THEN** the system SHALL invoke `npm` to globally install `agent-facets` at the target version
+- **AND** the package manager's stdout and stderr SHALL be visible to the user
+- **AND** the process SHALL exit with the package manager's exit code
+
+#### Scenario: yarn, pnpm, or bun install is updated via the same tool
+
+- **WHEN** a user runs `facet self-update`
+- **AND** the install method is `yarn`, `pnpm`, or `bun`
+- **THEN** the system SHALL invoke the corresponding package manager's global-install command for `agent-facets` at the target version
+- **AND** the process SHALL exit with that package manager's exit code
+
+#### Scenario: Package manager reports a permission error
+
+- **WHEN** the package manager invocation fails because the user lacks write access to the global install location
+- **THEN** the package manager's error output SHALL be shown to the user verbatim
+- **AND** the system SHALL NOT attempt privilege elevation
+
+### Requirement: Unknown install methods fall back to the curl installer with PATH diagnostics
+
+When the install method cannot be classified, the system SHALL fall back to the official installer script (the same trust root as the curl path), invoked WITHOUT suppressing PATH modification — so that a new install location can become reachable. After the fallback completes, the system SHALL detect when the newly-installed binary is shadowed by, or shadows, another `facet` on `$PATH` and SHALL print a diagnostic that names both paths so the user can reconcile the situation.
+
+#### Scenario: Unknown method falls back to the installer
+
+- **WHEN** a user runs `facet self-update`
+- **AND** the install method is `unknown`
+- **THEN** the system SHALL print the resolved real path of the running binary so the user knows which install was unclassified
+- **AND** the system SHALL invoke the official installer script
+- **AND** the installer SHALL be invoked in a mode that MAY modify shell rc files to ensure the new install location is on `$PATH`
+
+#### Scenario: Unknown-method update creates a PATH conflict
+
+- **WHEN** an unknown-method update completes
+- **AND** the binary on `$PATH` after the update is not the binary the installer just placed
+- **THEN** the system SHALL print a warning that names both binary paths
+- **AND** the warning SHALL describe how to reconcile the conflict (remove the older binary or reorder `$PATH`)
+- **AND** the system SHALL NOT remove or modify the original binary
+
+### Requirement: Latest-version metadata is read from the wrapper package on the npm registry
+
+The system SHALL determine the latest available CLI version by reading the wrapper package (`agent-facets`) from the configured npm registry. The system SHALL NOT determine the latest version from any per-platform binary package, because the wrapper package is the last to publish in a release and therefore the only reliable signal that a release is fully available to users.
+
+#### Scenario: Latest version is read from the wrapper package
+
+- **WHEN** the system needs to determine the latest available version
+- **THEN** the system SHALL request the latest published version of `agent-facets` from the npm registry
+- **AND** the system SHALL NOT request version metadata from any `@agent-facets/cli-<target>` package
+
+#### Scenario: FACET_CLI_REGISTRY overrides the registry endpoint
+
+- **WHEN** the `FACET_CLI_REGISTRY` environment variable is set
+- **THEN** the system SHALL query that registry endpoint for version metadata
+- **AND** the system SHALL apply the same registry override used by the official installer script
+
+#### Scenario: Registry is unreachable or returns malformed data
+
+- **WHEN** the registry request fails or returns a response without a usable `version` field
+- **THEN** the system SHALL print an error to stderr identifying the registry URL and the failure reason
+- **AND** the system SHALL NOT attempt to update any files
+- **AND** the process SHALL exit with a non-zero code
+
+### Requirement: Self-update outcomes use distinct, meaningful exit codes
+
+The system SHALL use exit codes that distinguish self-update outcomes so that scripts and CI pipelines can branch on the result. Successful updates, no-op updates (already at target version), and dry-runs SHALL all exit with code 0. Refusals (dev mode), version-resolution failures, and child-process failures SHALL exit with non-zero codes that surface the underlying cause.
+
+#### Scenario: Successful update exits 0
+
+- **WHEN** a self-update completes successfully
+- **THEN** the process SHALL exit with code 0
+
+#### Scenario: Already at target version exits 0
+
+- **WHEN** a user runs `facet self-update`
+- **AND** the current version equals the target version
+- **THEN** the system SHALL print a message indicating no update is needed
+- **AND** the process SHALL exit with code 0
+
+#### Scenario: Child-process failure passes through the child's exit code
+
+- **WHEN** the dispatched update mechanism (the installer script or a package manager) exits with a non-zero code
+- **THEN** the system SHALL exit with that same non-zero code
+- **AND** the system SHALL NOT mask or rewrite the child's exit code
+
+### Requirement: New install methods can be added without changing existing ones
+
+The system SHALL support new install methods (e.g., Homebrew, Chocolatey, scoop) being added through the same dispatch contract as existing methods. Adding a new method SHALL NOT require changes to any existing method's classification, dispatch, or update behavior.
+
+#### Scenario: Adding a new method does not change existing behavior
+
+- **WHEN** a developer adds support for a new install method
+- **THEN** classification, dispatch, and update behavior for the existing methods (`curl`, `npm`, `yarn`, `pnpm`, `bun`, `local-dev`, `unknown`) SHALL remain unchanged
+- **AND** the new method SHALL participate in classification and dispatch through the same contract used by existing methods

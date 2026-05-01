@@ -1,6 +1,6 @@
+import type { ScaffoldOptions as CreateOptions } from '@agent-facets/core'
 import { useApp } from 'ink'
 import { useCallback, useEffect, useState } from 'react'
-import type { CreateOptions } from '../../../commands/create-scaffold.ts'
 import { FocusModeProvider, useFocusMode } from '../../context/focus-mode-context.ts'
 import { FocusOrderProvider, useFocusOrder } from '../../context/focus-order-context.ts'
 import type { AssetSectionKey, FormState } from '../../context/form-state-context.ts'

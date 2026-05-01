@@ -23,6 +23,9 @@ facet add github:agent-facets/viper-plans
 # Reapply an existing project's facets after a fresh clone or after
 # pulling teammate changes:
 facet install
+
+# Update the CLI later
+facet self-update
 ```
 
 The public registry index (used by `facet add <name>` without a source) is open-beta — see [docs.agentfacets.io/roadmap](https://docs.agentfacets.io/roadmap). Today, bare-name resolution errors out against the stub; use `github:owner/repo`, an `https://...git` URL, an SCP-style git URL, or a local path.

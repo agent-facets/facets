@@ -1,8 +1,8 @@
+import { loadInstalledAdapters } from '@agent-facets/core'
 import { render } from 'ink'
 import { createElement } from 'react'
 import type { Command } from '../commands.ts'
 import { BuildView } from '../tui/views/build/build-view.tsx'
-import { loadInstalledAdapters } from './adapter/loader.ts'
 import { resolveTargetDir } from './resolve-dir.ts'
 
 export const buildCommand: Command = {
@@ -28,7 +28,9 @@ export const buildCommand: Command = {
     const emitManifest = flags['emit-manifest'] === true
 
     // Load installed adapters so their metadata schemas can validate the manifest
-    const adapters = await loadInstalledAdapters()
+    const adapters = await loadInstalledAdapters(undefined, {
+      onWarn: (line) => console.error(line),
+    })
 
     // Track result for stdout summary after Ink exits
     let buildName = ''

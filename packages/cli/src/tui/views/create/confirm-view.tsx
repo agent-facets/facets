@@ -1,7 +1,6 @@
+import { type ScaffoldOptions as CreateOptions, previewScaffoldFiles } from '@agent-facets/core'
 import { Box, Text } from 'ink'
 import { useEffect } from 'react'
-import type { CreateOptions } from '../../../commands/create-scaffold.ts'
-import { previewFiles } from '../../../commands/create-scaffold.ts'
 import { Button } from '../../components/button.tsx'
 import { useFocusOrder } from '../../context/focus-order-context.ts'
 import { WizardLayout } from '../../layouts/wizard-layout.tsx'
@@ -26,7 +25,7 @@ export function ConfirmView({
   onConfirm: () => void
   onBack: () => void
 }) {
-  const files = previewFiles(opts)
+  const files = previewScaffoldFiles(opts)
   const { setFocusIds, focus, focusedId } = useFocusOrder()
 
   useEffect(() => {

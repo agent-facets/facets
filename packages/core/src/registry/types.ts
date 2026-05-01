@@ -1,4 +1,4 @@
-import type { VersionSpec } from '../sources/index.ts'
+import type { VersionSpec } from '../sources/facet/types.ts'
 
 /**
  * Metadata returned by the registry for a single resolved facet.

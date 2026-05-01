@@ -1,11 +1,9 @@
-import type { RunInstallFailure, RunInstallResult } from '@agent-facets/core'
-import { runInstall } from '@agent-facets/core'
+import { loadInstalledAdapters, type RunInstallFailure, type RunInstallResult, runInstall } from '@agent-facets/core'
 import { render } from 'ink'
 import { createElement } from 'react'
 import type { Command } from '../../commands.ts'
 import { InstallView } from '../../tui/views/install/install-view.tsx'
 import { writeCliError } from '../../util/errors.ts'
-import { loadInstalledAdapters } from '../adapter/loader.ts'
 
 /**
  * `facet install` — bring the project on disk into agreement with

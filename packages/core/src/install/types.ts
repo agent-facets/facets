@@ -3,7 +3,7 @@ import type { ValidationError } from '@agent-facets/common'
 import type { IntegrityFailure } from '../integrity/index.ts'
 import type { RegistryError } from '../registry/index.ts'
 import type { Lockfile, LockfileAssetEntry } from '../schemas/lockfile.ts'
-import type { ParseError } from '../sources/index.ts'
+import type { ParseError } from '../sources/facet/types.ts'
 
 /**
  * Per-facet outcome reported in the result. View layers render one

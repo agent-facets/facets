@@ -1,7 +1,7 @@
+import { FIRST_PARTY_ADAPTERS, type FirstPartyAdapter } from '@agent-facets/core'
 import { Box, Text, useApp, useInput } from 'ink'
 import { useMemo, useState } from 'react'
 import { THEME } from '../../tui/theme.ts'
-import { FIRST_PARTY_ADAPTERS, type FirstPartyAdapter } from './first-party.ts'
 
 /**
  * Shared zero-adapter install picker (Adjustment A + §11.5).

@@ -76,28 +76,62 @@ Turborepo monorepo with Bun workspaces. Five packages under `packages/`.
 
 ### `packages/core` — `@agent-facets/core`
 
-Facet manifest parsing, validation, and build pipeline. Entry point: `src/index.ts`
+The logic layer. Facet manifest parsing, validation, build pipeline, source
+resolution, install machinery, scaffold generation, self-update logic, edit
+context. The CLI is presentation on top of this; in principle this layer
+could one day be rewritten in Rust/Go with the CLI TUI on top.
+
+Entry point: `src/index.ts`. Single public surface — everything funnels
+through `index.ts` re-exports.
 
 ```
 src/
-├── schemas/        # Arktype schemas (facet manifest, lockfile, server manifest)
+├── schemas/        # Arktype schemas (facet manifest, lockfile, server manifest, project manifest, build manifest)
 ├── loaders/        # Load and validate facet manifest / server manifests from disk
 ├── build/          # Build pipeline: collision detection, validation, output writing
-├── types.ts        # Shared type definitions
+├── manifest/       # Pure JSON mutations + project-files I/O bridge for facets.json
+├── sources/        # Source resolvers: parse + clone/fetch
+│   ├── facet/      #   Facet sources (github:/git+/file:/local/registry) for `facet add`/`install`
+│   └── adapter/    #   Adapter sources (npm/git+/local) for `facet adapter install`
+├── adapters/       # Adapter machinery: bundler, placement, verify, loader, install-service, first-party list
+├── install/        # Install machinery: journal, lockfile-guard, lockfile-io, materialize, run-install orchestrator
+├── cache/          # Content-addressed cache for fetched facet payloads
+├── integrity/      # Integrity verification (hashes, registry-three-check, git-one-check)
+├── registry/       # Registry client: metadata resolution, download/extract, version-spec rendering
+├── scaffold/       # Scaffold generator: manifest + asset templates for `facet create`
+├── self-update/    # Self-update: detect, version-check, registry, methods/, runSelfUpdate
+├── edit/           # Edit context: reconcile, scanner, manifest-writer, context, operations, types
+├── front-matter.ts # YAML front-matter extract/strip
 ├── index.ts        # Public API entry point
-└── __tests__/      # Unit tests
+└── __tests__/      # Cross-cutting integration tests
 ```
+
+A note on duplication: `sources/facet/` and `sources/adapter/` each have
+their own parser and git-clone helper today. They started life on the CLI
+side and were lifted to core as-is. Consolidating them into one
+parameterized resolver is a deliberate follow-up — the rules differ today
+(facet sources enforce project-tree containment; adapter sources don't),
+and a unified API would need to make that variation explicit.
 
 ### `packages/cli` — `agent-facets`
 
-CLI binary (`facet`). Entry point: `src/cli.ts`
+CLI binary (`facet`). Thin orchestration layer over `@agent-facets/core`:
+command bindings, Ink-based TUI views, error formatting for the terminal.
+Entry point: `src/index.ts`
 
 ```
 src/
-├── commands/       # Command implementations (build, create)
-├── cli/            # CLI framework: arg parsing, help, version, suggestions
-├── cli.ts          # CLI entry point
-└── __tests__/      # Unit tests
+├── commands/       # Command bindings: add, adapter, build, create, edit, install, self-update
+├── tui/            # Ink components, hooks, layouts, views, theme, gradient, editor
+├── util/           # CLI presentation helpers (errors.ts → 3-line stderr format)
+├── cli.ts          # CLI entry point used by the run loop
+├── run.ts          # Top-level argv → command dispatch
+├── help.ts         # Help rendering
+├── commands.ts     # Command registry + alias resolution
+├── version.ts      # Build-time version constant
+├── suggest.ts      # "did you mean?" suggestions
+├── index.ts        # Process-level entry (handles unhandled errors, exit codes)
+└── __tests__/      # End-to-end tests + a few cross-cutting unit tests
 ```
 
 ### `packages/adapter` — `@agent-facets/adapter`
@@ -171,6 +205,42 @@ import { test, expect } from "bun:test";
 test("hello world", () => {
   expect(1).toBe(1);
 });
+```
+
+### Awaiting async expectations
+
+Bun's `expect(...).rejects.<matcher>` and `expect(...).resolves.<matcher>` return promises. You **MUST** `await` the entire expression (or `return` it from the test). Without the outer `await`, Bun's test runner sees a synchronous return, the assertion promise never settles in scope, and a failing assertion silently passes — the test appears green but provides no guarantee.
+
+The same rule applies to any promise-returning matcher.
+
+**Correct** — the outer `await` makes the assertion actually run:
+
+```ts
+test("should handle async errors", async () => {
+  await expect(async () => {
+    await fetchUser("invalid-id");
+  }).rejects.toThrow("User not found");
+});
+```
+
+**Wrong** — no outer `await`. This test passes even when `fetchUser` doesn't throw:
+
+```ts
+test("should handle async errors", async () => {
+  expect(async () => {
+    await fetchUser("invalid-id");
+  }).rejects.toThrow("User not found");
+});
+```
+
+The same rule applies to `.resolves.*`:
+
+```ts
+// Correct
+await expect(loadConfig()).resolves.toEqual({ ok: true })
+
+// Wrong — silently passes if loadConfig rejects or returns the wrong value
+expect(loadConfig()).resolves.toEqual({ ok: true })
 ```
 
 ## Turbo Caching

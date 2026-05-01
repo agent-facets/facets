@@ -3,16 +3,16 @@ import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
 import { runBuildPipeline } from '../build/pipeline.ts'
 import { loadManifest, type ResolvedFacetManifest, resolvePrompts } from '../loaders/facet.ts'
+import { loadFacetsJson } from '../manifest/project-files.ts'
 import type { Lockfile, LockfileFacet } from '../schemas/lockfile.ts'
 import type { FacetsJson } from '../schemas/project-manifest.ts'
-import { parseSource } from '../sources/index.ts'
+import { parseFacetSource } from '../sources/facet/parse-source.ts'
+import { cloneFacetGitSource } from '../sources/facet/resolve-git.ts'
+import { resolveLocalFacetSource } from '../sources/facet/resolve-local.ts'
 import { InstallJournal } from './journal.ts'
 import { acquireInstallLock } from './lockfile-guard.ts'
 import { emptyLockfile, FACETS_LOCK_FILE, loadLockfile, writeLockfile } from './lockfile-io.ts'
 import { computeAssetList, materialize } from './materialize.ts'
-import { loadFacetsJson } from './project-files.ts'
-import { cloneGitSource } from './resolve-git.ts'
-import { resolveLocalSource } from './resolve-local.ts'
 import type {
   FacetOutcome,
   InstallSummary,
@@ -316,7 +316,7 @@ async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
 
   // Parse the source specifier.
   onStage({ kind: 'facet-stage', facet: facetName, stage: 'parse' })
-  const parsed = parseSource(specifier)
+  const parsed = parseFacetSource(specifier)
   if (!parsed.ok) {
     return {
       ok: false,
@@ -334,7 +334,7 @@ async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
   if (parsed.value.kind === 'git') {
     const cloneRef = parsed.value.ref ?? undefined
     try {
-      const cloned = await cloneGitSource(parsed.value.url, cloneRef)
+      const cloned = await cloneFacetGitSource(parsed.value.url, cloneRef)
       sourceDir = cloned.dir
       cleanup = async () => {
         await rm(cloned.dir, { recursive: true, force: true }).catch(() => {})
@@ -353,7 +353,7 @@ async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
       }
     }
   } else if (parsed.value.kind === 'local') {
-    const local = await resolveLocalSource(parsed.value.path, projectRoot)
+    const local = await resolveLocalFacetSource(parsed.value.path, projectRoot)
     if (!local.ok) {
       return {
         ok: false,
