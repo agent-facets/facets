@@ -17,7 +17,7 @@ export {
   removeAdapter,
 } from './adapters/placement.ts'
 export { verifyAdapter } from './adapters/verify.ts'
-// types
+// build pipeline
 export type { ArchiveEntry } from './build/content-hash.ts'
 export {
   assembleOuterTar,
@@ -31,19 +31,40 @@ export {
 } from './build/content-hash.ts'
 export { detectNamingCollisions } from './build/detect-collisions.ts'
 export type { BuildFailure, BuildProgress, BuildResult, BuildStage } from './build/pipeline.ts'
-// build pipeline
 export { BUILD_STAGES, runBuildPipeline } from './build/pipeline.ts'
 export type { AdapterValidationResult } from './build/validate-adapters.ts'
 export { validateAdapterMetadata } from './build/validate-adapters.ts'
 export { validateCompactFacets } from './build/validate-facets.ts'
 export type { WriteBuildOutputOptions } from './build/write-output.ts'
 export { writeBuildOutput } from './build/write-output.ts'
+// cache
+export type {
+  CacheIdentity,
+  CacheIntegrity,
+  CacheLookup,
+  CachePutResult,
+  CachePutVerifiedResult,
+  CacheSlotCorruption,
+} from './cache/index.ts'
+export {
+  CACHE_INTEGRITY_FILE,
+  CacheIntegritySchema,
+  cacheGet,
+  cachePath,
+  cachePut,
+  cachePutVerified,
+  cacheSlot,
+  cacheSlotIsDir,
+  cacheStagingDir,
+  readCachedIntegrity,
+  resolveCacheRoot,
+} from './cache/index.ts'
+// edit
 export { buildEditContext } from './edit/context.ts'
 export { writeManifest } from './edit/manifest-writer.ts'
 export { applyEditOperations } from './edit/operations.ts'
 export type { MatchedAsset, MissingAsset, ReconciliationResult } from './edit/reconcile.ts'
 export { reconcile } from './edit/reconcile.ts'
-// edit
 export type { AssetManifestKey, DiscoveredAsset } from './edit/scanner.ts'
 export { KEBAB_CASE, scanAssets } from './edit/scanner.ts'
 export type {
@@ -63,10 +84,30 @@ export type { AcquireLockError, AcquireLockResult, InstallLock } from './install
 export { acquireInstallLock } from './install/lockfile-guard.ts'
 export type { LoadLockfileResult } from './install/lockfile-io.ts'
 export { emptyLockfile, FACETS_LOCK_FILE, loadLockfile, writeLockfile } from './install/lockfile-io.ts'
-export type { MaterializeOptions } from './install/materialize.ts'
+export type { MaterializeOptions, MaterializeResult } from './install/materialize.ts'
 export { computeAssetList, diffAssetsForDeletion, materialize } from './install/materialize.ts'
-export type { ResolvedFacetManifest } from './loaders/facet.ts'
+// install orchestrator
+export { runInstall } from './install/run-install.ts'
+export type {
+  FacetOutcome,
+  FacetStage,
+  InstallSummary,
+  RunInstallFailure,
+  RunInstallOptions,
+  RunInstallResult,
+  StageEvent,
+} from './install/types.ts'
+// integrity
+export type {
+  AssetIntegrityFailure,
+  FacetIntegrityCheck,
+  FacetIntegrityFailure,
+  IntegrityFailure,
+  IntegrityResult,
+} from './integrity/index.ts'
+export { verifyGitOneCheck, verifyHash, verifyRegistryThreeCheck } from './integrity/index.ts'
 // loaders
+export type { ResolvedFacetManifest } from './loaders/facet.ts'
 export { FACET_MANIFEST_FILE, loadManifest, resolvePrompts } from './loaders/facet.ts'
 export { loadServerManifest } from './loaders/server.ts'
 // manifest mutations
@@ -78,9 +119,21 @@ export {
   serializeFacetsJson,
   upsertFacetInManifest,
 } from './manifest/mutations.ts'
-// project files
+// manifest project files (I/O bridge)
 export type { LoadFacetsJsonResult } from './manifest/project-files.ts'
 export { loadFacetsJson, writeFacetsJson } from './manifest/project-files.ts'
+// registry
+export type {
+  RegistryError,
+  RegistryMetadata,
+  RegistryResult,
+  RegistrySpec,
+} from './registry/index.ts'
+export {
+  describeVersionSpec,
+  downloadAndExtractFacet,
+  resolveRegistryMetadataBatch,
+} from './registry/index.ts'
 // scaffold
 export type { ScaffoldOptions } from './scaffold/index.ts'
 export {
@@ -95,10 +148,10 @@ export {
   skillTemplate,
   writeScaffold,
 } from './scaffold/index.ts'
+// schemas
 export type { BuildManifest } from './schemas/build-manifest.ts'
 export { BuildManifestSchema } from './schemas/build-manifest.ts'
 export type { FacetManifest } from './schemas/facet-manifest.ts'
-// schemas
 export { FacetManifestSchema } from './schemas/facet-manifest.ts'
 export type { Lockfile, LockfileAssetEntry, LockfileFacet } from './schemas/lockfile.ts'
 export { LOCKFILE_VERSION, LockfileSchema } from './schemas/lockfile.ts'
@@ -123,9 +176,11 @@ export { assertInsideTempDir, downloadNpmPackage, verifyTarballIntegrity } from 
 export type { ResolvedAdapterSpecifier } from './sources/adapter/specifier.ts'
 export { getBuiltinAdapterNames, parseAdapterSpecifier } from './sources/adapter/specifier.ts'
 // facet sources
-export type { ParsedFacetSource, ParseFacetSourceResult } from './sources/facet/parse-source.ts'
 export { parseFacetSource } from './sources/facet/parse-source.ts'
+export { parseVersionSpec } from './sources/facet/parse-version.ts'
 export type { ResolveFacetGitResult } from './sources/facet/resolve-git.ts'
 export { cloneFacetGitSource } from './sources/facet/resolve-git.ts'
 export type { ResolveLocalFacetResult } from './sources/facet/resolve-local.ts'
 export { resolveLocalFacetSource } from './sources/facet/resolve-local.ts'
+export type { ParseError, ParseErrorCode, ParseResult, Source, VersionSpec } from './sources/facet/types.ts'
+export { resolvesToLatest } from './sources/facet/types.ts'

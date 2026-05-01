@@ -5,9 +5,9 @@ import type { FacetsJson } from '../schemas/project-manifest.ts'
 import { emptyFacetsJson, FACETS_JSON_FILE, parseFacetsJson, serializeFacetsJson } from './mutations.ts'
 
 /**
- * Bridge between OS file I/O and core's pure JSON mutation helpers
- * (Adjustment M). Callers read bytes, hand them to core, then write
- * bytes back — never mutating parsed JSON directly.
+ * Bridge between OS file I/O and the pure JSON mutation helpers in
+ * `manifest/mutations.ts`. Reads bytes, hands them to the parsers,
+ * then writes bytes back — never mutating parsed JSON directly.
  */
 
 export type LoadFacetsJsonResult = { ok: true; data: FacetsJson; existed: boolean } | { ok: false; error: string }

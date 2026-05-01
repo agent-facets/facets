@@ -5,30 +5,80 @@ description: "How facets are installed, server references resolved, and everythi
 
 ## Closed alpha (current behavior)
 
-1. **Resolve source.** `facets.json` maps facet names → source specifiers
-   (`github:`, `git+https://`, `git+ssh://`, `file:./`). For git specifiers
-   the CLI runs `git clone` with `GIT_TERMINAL_PROMPT=0` so auth failures
-   surface immediately. SHAs, branches, and tags are all valid commitish
-   forms.
-2. **Reject composition.** A source-tree `facet.json` with `facets` or
-   `servers` sections is rejected in alpha — composition is open-beta scope.
-3. **Build locally.** Run the core build pipeline against the source tree.
-   The resulting integrity hash and version become authoritative (not
-   trusted from any advertised value).
-4. **Compute diff.** Compare the new asset set (from the build) against the
-   prior lockfile entry. Assets present in OLD but not in NEW are deleted
-   from every selected adapter (drift-proof convergence).
-5. **Materialize.** Apply each asset to every selected adapter. The installer
-   enforces the `supportsInstall` capability flag at runtime; adapters
-   without it cause the run to fail loud rather than silently no-op.
-6. **Write lockfile.** `facets.lock` records `{source, ref, commit, version,
-   integrity, assets: [{scope, type, name}]}` per facet. Adapter-agnostic
-   by design — the same asset set is applied to every selected adapter.
+`facet add` and `facet install` share a single install pipeline. `facet add`
+is the entry point for declaring a new facet; `facet install` reapplies the
+existing manifest. Both run the same flow internally.
+
+1. **Parse source.** `facets.json` maps facet names → source specifiers.
+   Accepted forms: registry names (`name`, `name@1.2.3`, `name@1.*`,
+   `name@latest`), `github:owner/repo[#ref]`, plain `https://...git[#ref]`,
+   SCP-style `git@host:owner/repo[#ref]`, and local paths (with optional
+   `file:` prefix). The legacy `git+` prefix is hard-rejected. Version
+   specs are restricted to `*`, `MAJOR.*`, `MAJOR.MINOR.*`,
+   `MAJOR.MINOR.PATCH`, and `latest`; caret/tilde/comparator/OR/x-style
+   ranges are rejected.
+
+2. **Honor the lockfile.** If `facets.lock` already pins a facet, that
+   exact version is fetched without re-resolving the manifest range. If
+   no lockfile exists, one is bootstrapped on first run (bun-style).
+   Manifest entries without a lockfile entry resolve fresh.
+
+3. **Reject composition; warn on servers.** A source `facet.json` with a
+   non-empty `facets: [...]` is hard-rejected. A `servers:` declaration
+   produces a warning naming each declared server but otherwise lets the
+   install proceed — server materialization is open-beta scope.
+
+4. **Cache lookup.** Resolved content is keyed by `<name>@<version>` (or
+   `<name>@<commit>` for git, `<name>@local-<hash>` for local) under
+   `~/.facets/cache/`. The cache root can be overridden with the
+   `FACETS_CACHE_DIR` environment variable. Cached content is treated as
+   trusted — never re-hashed on read.
+
+5. **Verify integrity.** Before any asset is written:
+   - **Registry sources** run a three-check protocol: cache vs. registry
+     metadata, archive manifest vs. registry metadata, computed content
+     vs. archive manifest. Each check defends against a distinct
+     adversary (split-brain registry, retroactive metadata mutation,
+     tampered archive).
+   - **Git sources** run a single check: computed content vs. lockfile
+     integrity, defending against tag-move attacks.
+   - **Local sources** are trust-by-path; no hash check.
+   Any mismatch is a hard security error: the install aborts before any
+   asset is written, the project state is unchanged.
+
+6. **Compute diff.** Compare the new asset set (from the build) against
+   the prior lockfile entry. Assets present in OLD but not in NEW are
+   deleted from every selected adapter (drift-proof convergence).
+
+7. **Materialize, with skip-if-identical.** For each asset, the
+   installer reads the on-disk content and metadata. If they already
+   match what we would write, the asset is skipped (no journal entry
+   recorded). Otherwise the adapter's `installAsset` is called and the
+   inverse op is journaled. The installer enforces the `supportsInstall`
+   capability flag at runtime; adapters without it cause the run to
+   fail loud rather than silently no-op.
+
+8. **Classify outcomes.** Each facet is reported as one of:
+   `installed` (new entry), `updated` (different version),
+   `repaired` (same version, but at least one on-disk asset had drifted
+   and was restored), `unchanged` (no writes), or `removed` (dropped
+   from `facets.json`).
+
+9. **Write the lockfile.** `facets.lock` records
+   `{source, ref, commit, version, integrity, assets: [{scope, type, name}]}`
+   per facet. Adapter-agnostic by design — the same asset set is
+   applied to every selected adapter.
+
+`facet install` rejects positional arguments — to add a new facet, use
+`facet add`. There is no `--dry-run` flag; both commands always commit.
 
 If any adapter errors mid-install, the installer triggers best-effort
-rollback of the journal (inverse ops in LIFO order). SIGINT also triggers
-rollback. A failure during rollback is reported and the run exits non-zero;
-re-running `facet install` reconverges from whatever partial state remains.
+rollback of the journal (inverse ops in LIFO order). SIGINT triggers
+the same path via an internal AbortController. A failure during
+rollback is reported and the run exits non-zero; re-running
+`facet install` reconverges from whatever partial state remains. When
+`facet add` is the caller, `facets.json` is also restored byte-for-byte
+on any failure so the project is exactly as it was before the command.
 
 ## Open-beta target (future)
 

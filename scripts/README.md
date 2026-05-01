@@ -46,6 +46,7 @@ scripts/
 │
 ├── prepack.ts                  # Rewrite workspace:* deps + hoist publishConfig overrides before npm publish
 ├── postpack.ts                 # Restore package.json after pack
+├── postinstall.ts              # Quiet `bun install` postinstall (lefthook + facets + adapter + sst)
 └── check-bun-version.ts        # Verify Bun version matches mise.toml
 ```
 

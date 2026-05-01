@@ -92,8 +92,18 @@ function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0)
     return true
-  } catch {
-    return false
+  } catch (err) {
+    // `process.kill(pid, 0)` is a probe — it doesn't deliver a signal,
+    // it asks the kernel whether the call would have been accepted.
+    // The errno tells us *why* it wasn't:
+    //   - ESRCH: no process with that pid → safe to treat as dead.
+    //   - EPERM: the process exists, we just can't signal it (different
+    //     UID, sandboxed, etc.) → assume alive; do NOT steal the lock.
+    //   - anything else: unknown failure mode → assume alive (fail safe).
+    // The previous `catch {}` collapsed all errors to "dead", which let
+    // a second installer in a shared workspace unlink a live lock.
+    const code = (err as NodeJS.ErrnoException | undefined)?.code
+    return code !== 'ESRCH'
   }
 }
 

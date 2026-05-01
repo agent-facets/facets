@@ -60,14 +60,40 @@ export interface MaterializeOptions {
 }
 
 /**
+ * Outcome counts for one `materialize` call. Returned so the caller can
+ * distinguish between "fully unchanged" (no writes) and "repaired"
+ * (some assets needed to be re-written even though the facet's lockfile
+ * entry didn't change — e.g., a user manually deleted the on-disk file).
+ */
+export interface MaterializeResult {
+  /** Assets actually written to an adapter. Excludes skipped no-ops. */
+  written: number
+  /** Assets skipped because content + metadata matched on disk. */
+  skipped: number
+  /** Assets deleted (drift removal within this facet). */
+  deleted: number
+}
+
+/**
  * Apply the install + delete operations across all selected adapters and
  * record inverse operations on the journal so a rollback can replay them.
  *
- * Throws on the first adapter error; the caller is responsible for driving
- * rollback via `journal.rollback()` and emitting the §11.5 error.
+ * Per-asset, before writing, the adapter's current on-disk content is
+ * compared to what we would write (content + metadata as JSON). If
+ * identical, the write is skipped and no journal entry is recorded —
+ * the asset was already in its desired state, and there's nothing to
+ * undo. The skip count is reported in the returned `MaterializeResult`
+ * so the caller can label outcomes accurately ("repaired" vs.
+ * "unchanged") in summaries.
+ *
+ * Throws on the first adapter error; the caller is responsible for
+ * driving rollback via `journal.rollback()` and emitting the failure.
  */
-export async function materialize(opts: MaterializeOptions): Promise<void> {
+export async function materialize(opts: MaterializeOptions): Promise<MaterializeResult> {
   const toDelete = diffAssetsForDeletion(opts.oldAssets, opts.newAssets)
+  let written = 0
+  let skipped = 0
+  let deleted = 0
 
   for (const adapter of opts.adapters) {
     // Adjustment S — runtime supportsInstall check (defense-in-depth beyond
@@ -96,8 +122,22 @@ export async function materialize(opts: MaterializeOptions): Promise<void> {
         previous = null
       }
 
+      // Skip-if-identical: when the on-disk content + metadata already
+      // matches what we would write, no work is needed and no journal
+      // entry is recorded (there's nothing to undo).
+      if (
+        previous &&
+        previous.content === content &&
+        JSON.stringify(previous.metadata ?? {}) === JSON.stringify(metadata)
+      ) {
+        opts.onLog?.(`[verbose]   =${asset.type}:${asset.name} → ${adapter.name} (skipped)`)
+        skipped++
+        continue
+      }
+
       opts.onLog?.(`[verbose]   +${asset.type}:${asset.name} → ${adapter.name}`)
       await adapter.installAsset(asset.scope, asset.type, asset.name, content, metadata)
+      written++
 
       opts.journal.record({
         label: `install ${adapter.name}:${asset.type}:${asset.name}`,
@@ -123,6 +163,7 @@ export async function materialize(opts: MaterializeOptions): Promise<void> {
 
       opts.onLog?.(`[verbose]   -${asset.type}:${asset.name} → ${adapter.name}`)
       await adapter.deleteAsset(asset.scope, asset.type, asset.name)
+      deleted++
 
       if (previous) {
         opts.journal.record({
@@ -134,6 +175,8 @@ export async function materialize(opts: MaterializeOptions): Promise<void> {
       }
     }
   }
+
+  return { written, skipped, deleted }
 }
 
 /**

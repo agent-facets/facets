@@ -91,6 +91,17 @@ const FRONT_MATTER_RE = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/
  * Assemble a full file string from optional front-matter metadata + body.
  * When `body` already contains a front-matter block, the two are merged
  * (`metadata` wins on key collision) so external keys on the body survive.
+ *
+ * The output is exactly `---\n<yaml>\n---\n<body>` — no separator newline
+ * between the closing fence and the body. This is the inverse of
+ * `splitAssetContent`'s regex (which consumes one `\n` after `---`), so
+ * `assemble → write → read → split` is byte-stable.
+ *
+ * Earlier versions inserted a cosmetic blank line between the fence and
+ * the body; that asymmetry caused materialize's skip-if-identical check
+ * to see phantom drift on every re-install (`# body` going in, `\n# body`
+ * coming out). Tests in this file's "round-trip" describe block enforce
+ * the inverse contract explicitly.
  */
 export function assembleAssetContent(body: string, metadata?: Record<string, unknown>): string {
   const existing = splitAssetContent(body)
@@ -98,8 +109,7 @@ export function assembleAssetContent(body: string, metadata?: Record<string, unk
   const bodyOnly = existing.content
   if (Object.keys(merged).length === 0) return bodyOnly
   const yaml = stringifyYaml(merged).trimEnd()
-  const separator = bodyOnly.length === 0 || bodyOnly.startsWith('\n') ? '' : '\n'
-  return `---\n${yaml}\n---\n${separator}${bodyOnly}`
+  return `---\n${yaml}\n---\n${bodyOnly}`
 }
 
 /**

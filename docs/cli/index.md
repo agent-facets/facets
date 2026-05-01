@@ -26,8 +26,8 @@ The following are the most common `facet` commands. See the [roadmap](/roadmap) 
   <Card title={<Badge>facet build</Badge>}>
     Validates and packages your **facet** into a distributable archive with integrity hashes
   </Card>
-  <Card title={<Badge>facet add</Badge>} href="/roadmap">
-    Add a **facet** to the project — resolve from registry, download, and install
+  <Card title={<Badge>facet add</Badge>} href="/cli/add">
+    Add a **facet** to the project — resolve from a source, download, and install in one step
   </Card>
   <Card title={<Badge>facet publish</Badge>} href="/roadmap">
     Publish a built **facet** to the registry

@@ -43,6 +43,16 @@ servers:
     image: "ghcr.io/acme/slack-bot:v2"
 ```
 
+<Note>
+**Closed-alpha note.** The `facets:` and `servers:` sections are spec'd here for the open-beta target, but the current installer treats them differently:
+
+- A non-empty `facets:` (composition) is **hard-rejected** during install. Composition support is open-beta scope.
+- A `servers:` declaration is **warned** during install — the server names are surfaced to the user but not materialized. Server materialization is also open-beta scope.
+
+Authoring a facet with either section today produces a manifest the installer will refuse (composition) or partially handle (servers). Plan accordingly.
+</Note>
+
+
 ## Identity
 
 | Field         | Required | Type   | Description                   |
