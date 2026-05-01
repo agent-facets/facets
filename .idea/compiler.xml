@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<project version="4">
-  <component name="TypeScriptCompiler">
-    <option name="memoryAutoIncrease" value="true" />
-    <option name="nodeInterpreterTextField" value="$USER_HOME$/.local/share/mise/installs/bun/1.3.11/bin/bun" />
-    <option name="useServicePoweredTypesEnabledManually" value="true" />
-  </component>
-</project>
