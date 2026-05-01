@@ -48,7 +48,7 @@ export async function runCurlInstaller(targetVersion: string, opts: { modifyPath
 
   try {
     const proc = Bun.spawn(args, {
-      stdin: installer,
+      stdin: installer.body,
       stdout: 'inherit',
       stderr: 'inherit',
     })
