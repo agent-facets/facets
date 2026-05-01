@@ -3,8 +3,7 @@ import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { writeScaffold } from '../commands/create/index.ts'
-import { DEFAULT_VERSION } from '../commands/create-scaffold.ts'
+import { DEFAULT_VERSION, writeScaffold } from '@agent-facets/core'
 
 let testDir: string
 

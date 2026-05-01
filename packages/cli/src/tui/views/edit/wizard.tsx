@@ -1,3 +1,4 @@
+import type { EditContext, EditResult, ReconciliationResolution } from '@agent-facets/core'
 import { useApp } from 'ink'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { FocusModeProvider, useFocusMode } from '../../context/focus-mode-context.ts'
@@ -7,7 +8,6 @@ import { FormStateProvider, useFormState } from '../../context/form-state-contex
 import { useExitKeys } from '../../hooks/use-exit-keys.ts'
 import { useNavigationKeys } from '../../hooks/use-navigation-keys.ts'
 import { EditConfirmView } from './edit-confirm-view.tsx'
-import type { EditContext, EditResult, ReconciliationResolution } from './edit-types.ts'
 import { EditView } from './edit-view.tsx'
 import { manifestToFormState } from './manifest-to-form.ts'
 import { ReconciliationView } from './reconciliation-view.tsx'

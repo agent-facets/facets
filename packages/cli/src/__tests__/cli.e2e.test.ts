@@ -14,7 +14,10 @@ if (!existsSync(CLI_PATH)) {
   )
 }
 // Commands wired to real implementations — these appear in `facet --help`.
-const IMPLEMENTED_COMMAND_NAMES = ['adapter', 'add', 'build', 'create', 'edit', 'install']
+// `self-update` shows in help with `self-upgrade` as a comma-joined alias on
+// the same line; we assert the canonical name only here, and the alias
+// rendering separately in self-update.e2e.test.ts.
+const IMPLEMENTED_COMMAND_NAMES = ['adapter', 'add', 'build', 'create', 'edit', 'install', 'self-update']
 // Stubs — invocable (to surface "did you mean…" suggestions) but hidden from
 // the global help listing (Adjustment K).
 const STUB_COMMAND_NAMES = ['info', 'list', 'publish', 'remove', 'upgrade']
@@ -42,14 +45,15 @@ describe('CLI — help', () => {
     const result = await runCli('--help')
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Usage: facet <command>')
-    // Match command names as whole-word rows (e.g., "  install  ...") so
+    // Match command names as whole-word rows (e.g., "  install  …") so
     // substrings inside descriptions ("adapter installations") don't false-
-    // positive the contains check.
+    // positive the contains check. The trailing boundary tolerates a comma
+    // (when aliases follow, e.g., "  self-update, self-upgrade  …").
     for (const cmd of IMPLEMENTED_COMMAND_NAMES) {
-      expect(result.stdout).toMatch(new RegExp(`^\\s+${cmd}\\s`, 'm'))
+      expect(result.stdout).toMatch(new RegExp(`^\\s+${cmd}[,\\s]`, 'm'))
     }
     for (const cmd of STUB_COMMAND_NAMES) {
-      expect(result.stdout).not.toMatch(new RegExp(`^\\s+${cmd}\\s`, 'm'))
+      expect(result.stdout).not.toMatch(new RegExp(`^\\s+${cmd}[,\\s]`, 'm'))
     }
     expect(result.stderr).toBe('')
   })

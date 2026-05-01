@@ -4,6 +4,7 @@ import { buildCommand } from './commands/build.ts'
 import { createCommand } from './commands/create/index.ts'
 import { editCommand } from './commands/edit/index.ts'
 import { installCommand } from './commands/install/index.ts'
+import { selfUpdateCommand } from './commands/self-update.ts'
 
 export type FlagDef = {
   type: 'boolean' | 'string'
@@ -15,6 +16,13 @@ export type Command = {
   description: string
   usage?: string
   flags?: Record<string, FlagDef>
+  /**
+   * Alternate names that resolve to this same command. Aliases inherit
+   * everything (description, flags, behavior) — including the canonical
+   * `name` shown in per-command help. Useful for synonyms (`self-update`
+   * ↔ `self-upgrade`) and shorthands.
+   */
+  aliases?: string[]
   /**
    * True when the command is wired to a real implementation. Absent or
    * false marks a stub — stubs are hidden from `facet --help` but still
@@ -47,5 +55,41 @@ export const commands: Record<string, Command> = {
   list: stubCommand('list', 'List installed facets'),
   publish: stubCommand('publish', 'Publish a facet to the registry'),
   remove: stubCommand('remove', 'Remove a facet from the project'),
+  'self-update': selfUpdateCommand,
   upgrade: stubCommand('upgrade', 'Upgrade installed facets'),
+}
+
+/**
+ * Resolve a command name (canonical or alias) to its `Command`.
+ *
+ * Direct map lookup is checked first so canonical names cost O(1). Alias
+ * resolution scans the registered commands; with a small command surface
+ * (~12 entries) this is fast enough that caching would be premature
+ * optimization.
+ *
+ * Operates on a passed-in registry rather than the module-level `commands`
+ * map so callers (like the test harness) can resolve against custom
+ * registries.
+ */
+export function resolveCommand(registry: Record<string, Command>, name: string): Command | undefined {
+  const direct = registry[name]
+  if (direct !== undefined) return direct
+  for (const cmd of Object.values(registry)) {
+    if (cmd.aliases?.includes(name) === true) return cmd
+  }
+  return undefined
+}
+
+/**
+ * All names a user could type to invoke any registered command — canonical
+ * names plus every alias. Used by typo suggestions so that `self-upgrad`
+ * suggests `self-upgrade` (not just `self-update`).
+ */
+export function allCommandNames(registry: Record<string, Command>): string[] {
+  const names: string[] = []
+  for (const [key, cmd] of Object.entries(registry)) {
+    names.push(key)
+    if (cmd.aliases !== undefined) names.push(...cmd.aliases)
+  }
+  return names
 }

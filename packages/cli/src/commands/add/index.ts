@@ -1,11 +1,15 @@
 import { rm } from 'node:fs/promises'
-import { loadManifest, upsertFacetInManifest } from '@agent-facets/core'
+import {
+  cloneFacetGitSource,
+  loadFacetsJson,
+  loadManifest,
+  parseFacetSource,
+  resolveLocalFacetSource,
+  upsertFacetInManifest,
+  writeFacetsJson,
+} from '@agent-facets/core'
 import type { Command } from '../../commands.ts'
 import { writeCliError } from '../../util/errors.ts'
-import { parseSource } from './parse-source.ts'
-import { loadFacetsJson, writeFacetsJson } from './project-files.ts'
-import { cloneGitSource } from './resolve-git.ts'
-import { resolveLocalSource } from './resolve-local.ts'
 
 /**
  * `facet add <source>` — register a facet in facets.json.
@@ -39,7 +43,7 @@ export const addCommand: Command = {
       return 1
     }
 
-    const parsed = parseSource(specifier)
+    const parsed = parseFacetSource(specifier)
     if (!parsed.ok) {
       writeCliError({
         what: `could not parse source "${specifier}"`,
@@ -57,14 +61,14 @@ export const addCommand: Command = {
       if (verbose) process.stderr.write(`[verbose] resolve ${specifier}\n`)
 
       if (parsed.data.type === 'git') {
-        const cloned = await cloneGitSource(parsed.data.url, parsed.data.commitish)
+        const cloned = await cloneFacetGitSource(parsed.data.url, parsed.data.commitish)
         sourceDir = cloned.dir
         cleanupGitDir = true
         if (verbose) {
           process.stderr.write(`[verbose]   cloned ${parsed.data.url} → ${sourceDir} (sha: ${cloned.commit ?? '?'})\n`)
         }
       } else {
-        const resolved = await resolveLocalSource(parsed.data.path, projectRoot)
+        const resolved = await resolveLocalFacetSource(parsed.data.path, projectRoot)
         if (!resolved.ok) {
           writeCliError({
             what: `could not resolve local source "${specifier}"`,
