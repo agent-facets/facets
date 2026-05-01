@@ -40,29 +40,23 @@ context: |
 
   ---
 
-  ## Article III: ADR Authority
+  ## Article III: Documentation
 
   ### Statement
-  Architectural Decision Records (ADRs) in [Notion](https://www.notion.so/exmachina-co/ADR-1) are the authoritative
-  source of truth for system design — including command names, API shapes, data formats, and terminology. Documentation
-  in `docs/` describes these decisions for users but MUST NOT contradict them.
+  Documentation in `docs/` describes the system and SHOULD mirror the specs we generate. When producing OpenSpec
+  artifacts, existing documentation MUST always be considered and updates to keep the documentation and system aligned
+  SHOULD be considered scoped work.
 
-  When ADRs and documentation conflict, the ADR is correct and documentation MUST be updated to match.
-  Implementations MUST NOT silently drift from accepted ADRs.
+  Implementations MUST NOT silently drift from documentation. Any drift MUST be considered and appropriate documentation
+  updates/changes SHOULD be detailed in the design and task artifacts.
 
   ### Rationale
-  ADRs capture the reasoning behind design decisions. Documentation is a downstream artifact that describes those
-  decisions for consumption. If docs diverge from ADRs, the system has two conflicting sources of truth — leading to
-  implementations that match one but not the other.
+  Documentation captures the state of our system. If docs diverge from our system specification, the system has two
+  conflicting sources of truth — leading to implementations that match one but not the other.
 
   ### Enforcement
-  - Proposals referencing behavior covered by an existing ADR MUST cite the ADR
-  - Implementations that contradict an accepted ADR SHALL be rejected
-  - If an ADR is wrong, it MUST be revised or superseded through the ADR process before implementation diverges
-
-  ### Override Process
-  If an ADR is believed to be incorrect, file a new ADR to supersede it. Do not implement against the current ADR
-  while the revision is pending.
+  - Proposals referencing behavior covered by existing documentation MUST cite the documentation and any required updates
+  - Implementations that contradict documentation SHOULD thoroughly describe how to update the documentation and correct any misalignment
 
 # Add custom rules for specific artifacts.
 rules:
@@ -76,11 +70,11 @@ rules:
     - Refactors SHOULD be simple, small, OR incredibly well-justified
     - MUST include a "Non-goals" section
     - Each capability in the Capabilities section MUST correspond to a product domain, not a feature within a domain. Use domain names (e.g., `execution`, `planning`) not domain-feature compounds (e.g., NOT `execution-loop`, `auth-login`, `user-auth`, `data-export`). Check `openspec/specs/` for existing domain names before inventing new ones.
-    - MUST reference which ADRs in Notion informed the proposal. If no relevant ADRs exist, state so explicitly.
+    - MUST reference which documentation in `docs/` or root `README.md` informed the proposal. If no relevant documentation exists, state so explicitly.
   design:
     - MUST identify any user-facing documentation in `docs/` and root `README.md` that would need updating based on the proposed changes
     - If the design changes observable behavior, CLI commands, APIs, or concepts covered in `docs/`, the design MUST note which doc files need updating
-    - MUST check whether the design conflicts with or diverges from any existing ADR in Notion. If ADR drift is detected, this is a HARD STOP — the change MUST NOT proceed until the ADR situation is resolved outside of OpenSpec (either revise the ADR, write a new one, or determine the ADR was wrong). Implementation MUST NOT silently drift from ADRs.
+    - MUST check whether the design conflicts with or diverges from user-facing documentation in `docs/` or root `README.md`, and MUST detail any documentation updates needed to keep the system aligned.
   tasks:
     - |
       Every tasks.md MUST begin with a preamble block before any task headings.
