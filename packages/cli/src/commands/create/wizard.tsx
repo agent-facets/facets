@@ -1,9 +1,9 @@
+import type { ScaffoldOptions as CreateOptions } from '@agent-facets/core'
 import { render } from 'ink'
 import type { AssetSectionKey } from '../../tui/context/form-state-context.ts'
 import { openInEditorSync } from '../../tui/editor.ts'
 import type { WizardSnapshot } from '../../tui/views/create/wizard.tsx'
 import { CreateWizard } from '../../tui/views/create/wizard.tsx'
-import type { CreateOptions } from '../create-scaffold.ts'
 
 interface EditorRequest {
   section: AssetSectionKey

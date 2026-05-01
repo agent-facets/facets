@@ -1,8 +1,12 @@
+import {
+  type FirstPartyAdapter,
+  getAdapterBaseDir,
+  installAdapter,
+  listInstalledAdapters,
+  removeAdapter,
+} from '@agent-facets/core'
 import type { Command } from '../../commands.ts'
 import { writeCliError } from '../../util/errors.ts'
-import type { FirstPartyAdapter } from './first-party.ts'
-import { installAdapter } from './install-service.ts'
-import { getAdapterBaseDir, listInstalledAdapters, removeAdapter } from './placement.ts'
 
 /**
  * `facet adapter` command — manages adapter installations.

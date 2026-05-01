@@ -1,14 +1,13 @@
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
-import { FACET_MANIFEST_FILE } from '@agent-facets/core'
+import { FACET_MANIFEST_FILE, type ScaffoldOptions, writeScaffold } from '@agent-facets/core'
 import { type } from 'arktype'
 import type { Command } from '../../commands.ts'
-import { writeScaffold } from '../create-scaffold.ts'
 import { resolveTargetDir } from '../resolve-dir.ts'
 import { runCreateWizardInk } from './wizard.tsx'
 
-export type { CreateOptions } from '../create-scaffold.ts'
-export { writeScaffold } from '../create-scaffold.ts'
+export type { ScaffoldOptions as CreateOptions }
+export { writeScaffold }
 
 const CreateFlags = type({ 'force?': 'boolean' })
 

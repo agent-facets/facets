@@ -1,26 +1,30 @@
 import { rm } from 'node:fs/promises'
 import type { Adapter } from '@agent-facets/adapter'
 import {
+  acquireInstallLock,
+  cloneFacetGitSource,
+  computeAssetList,
+  diffAssetsForDeletion,
+  emptyLockfile,
   type FacetsJson,
+  InstallJournal,
   type Lockfile,
   type LockfileAssetEntry,
   type LockfileFacet,
+  loadFacetsJson,
+  loadInstalledAdapters,
+  loadLockfile,
   loadManifest,
+  materialize,
+  parseFacetSource,
   type ResolvedFacetManifest,
+  resolveLocalFacetSource,
   resolvePrompts,
   runBuildPipeline,
+  writeLockfile,
 } from '@agent-facets/core'
 import type { Command } from '../../commands.ts'
 import { writeCliError } from '../../util/errors.ts'
-import { loadInstalledAdapters } from '../adapter/loader.ts'
-import { parseSource } from '../add/parse-source.ts'
-import { loadFacetsJson } from '../add/project-files.ts'
-import { cloneGitSource } from '../add/resolve-git.ts'
-import { resolveLocalSource } from '../add/resolve-local.ts'
-import { InstallJournal } from './journal.ts'
-import { acquireInstallLock } from './lockfile-guard.ts'
-import { emptyLockfile, loadLockfile, writeLockfile } from './lockfile-io.ts'
-import { computeAssetList, diffAssetsForDeletion, materialize } from './materialize.ts'
 
 /**
  * `facet install` — materialize all facets listed in facets.json into
@@ -64,7 +68,9 @@ export const installCommand: Command = {
     }
 
     // ── Load adapters and enforce supportsInstall ─────────────────────
-    const allAdapters = await loadInstalledAdapters()
+    const allAdapters = await loadInstalledAdapters(undefined, {
+      onWarn: (line) => console.error(line),
+    })
     const adapters = allAdapters.filter((a) => a.supportsInstall === true)
     if (adapters.length === 0) {
       if (allAdapters.length > 0) {
@@ -403,7 +409,7 @@ async function withFacetPlan<T>(
   const { facetName, specifier, projectRoot, adapters, onLog } = args
 
   onLog(`[verbose] resolve ${facetName}@${specifier}`)
-  const parsed = parseSource(specifier)
+  const parsed = parseFacetSource(specifier)
   if (!parsed.ok) {
     throw new Error(`could not parse source "${specifier}": ${parsed.error}`)
   }
@@ -414,7 +420,7 @@ async function withFacetPlan<T>(
   let commit: string | undefined
 
   if (parsed.data.type === 'git') {
-    const cloned = await cloneGitSource(parsed.data.url, parsed.data.commitish)
+    const cloned = await cloneFacetGitSource(parsed.data.url, parsed.data.commitish)
     sourceDir = cloned.dir
     cleanup = async () => {
       await rm(cloned.dir, { recursive: true, force: true }).catch(() => {})
@@ -423,7 +429,7 @@ async function withFacetPlan<T>(
     commit = cloned.commit
     onLog(`[verbose]   cloned ${parsed.data.url} → ${sourceDir} (sha: ${commit ?? '?'})`)
   } else {
-    const local = await resolveLocalSource(parsed.data.path, projectRoot)
+    const local = await resolveLocalFacetSource(parsed.data.path, projectRoot)
     if (!local.ok) throw new Error(local.error)
     sourceDir = local.dir
   }

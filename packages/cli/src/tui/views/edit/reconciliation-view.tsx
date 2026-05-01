@@ -1,10 +1,10 @@
+import type { ReconciliationItem, ReconciliationResolution } from '@agent-facets/core'
 import { Box, Text } from 'ink'
 import { useCallback, useEffect, useMemo } from 'react'
 import { Button } from '../../components/button.tsx'
 import { ReconciliationItemRow } from '../../components/reconciliation-item.tsx'
 import { useFocusOrder } from '../../context/focus-order-context.ts'
 import { THEME } from '../../theme.ts'
-import type { ReconciliationItem, ReconciliationResolution } from './edit-types.ts'
 
 /** Maps a reconciliation item to a unique key. */
 function itemKey(item: ReconciliationItem): string {

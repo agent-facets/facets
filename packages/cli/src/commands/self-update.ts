@@ -1,5 +1,6 @@
+import { runSelfUpdate } from '@agent-facets/core'
 import type { Command } from '../commands.ts'
-import { runSelfUpdate } from '../self-update/index.ts'
+import { version as currentVersion } from '../version.ts'
 
 /**
  * `facet self-update` (alias: `facet self-upgrade`).
@@ -7,7 +8,8 @@ import { runSelfUpdate } from '../self-update/index.ts'
  * Updates the running CLI binary by detecting the install method
  * (curl / npm / yarn / pnpm / bun / dev / unknown) and dispatching to the
  * matching install-method handler. The orchestration lives in
- * `../self-update/index.ts`; this file is just the CLI surface.
+ * `@agent-facets/core`; this file is just the CLI surface that supplies
+ * the running binary's version and routes output to the user's terminal.
  */
 export const selfUpdateCommand: Command = {
   name: 'self-update',
@@ -28,6 +30,12 @@ export const selfUpdateCommand: Command = {
   run: async (_args, flags) => {
     const targetVersion = typeof flags.version === 'string' && flags.version !== '' ? flags.version : undefined
     const dryRun = flags['dry-run'] === true
-    return runSelfUpdate({ targetVersion, dryRun })
+    return runSelfUpdate({
+      currentVersion,
+      targetVersion,
+      dryRun,
+      onOutput: (line) => process.stdout.write(line),
+      onError: (line) => process.stderr.write(line),
+    })
   },
 }

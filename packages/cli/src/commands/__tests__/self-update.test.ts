@@ -1,14 +1,14 @@
 import { afterAll, afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from 'bun:test'
+import * as coreModule from '@agent-facets/core'
 import { allCommandNames, commands, resolveCommand } from '../../commands.ts'
 import { printCommandHelp, printGlobalHelp } from '../../help.ts'
-import * as selfUpdateModule from '../../self-update/index.ts'
 import { findClosestCommand } from '../../suggest.ts'
 import { selfUpdateCommand } from '../self-update.ts'
 
 // Spy on the orchestrator so the command's run() can be tested without
 // hitting detection / network / spawn.
-type RunSelfUpdate = typeof selfUpdateModule.runSelfUpdate
-const runSelfUpdateSpy = spyOn(selfUpdateModule, 'runSelfUpdate') as unknown as Mock<RunSelfUpdate>
+type RunSelfUpdate = typeof coreModule.runSelfUpdate
+const runSelfUpdateSpy = spyOn(coreModule, 'runSelfUpdate') as unknown as Mock<RunSelfUpdate>
 
 beforeEach(() => {
   runSelfUpdateSpy.mockClear()
@@ -69,36 +69,56 @@ describe('self-update command registration', () => {
 // ─── Flag forwarding ─────────────────────────────────────────────────────
 
 describe('selfUpdateCommand.run flag forwarding', () => {
+  /** The orchestrator now takes currentVersion + callbacks too — extract
+   * only the bits we care about here so each test stays focused on flags. */
+  function lastCall(): { targetVersion: string | undefined; dryRun: boolean; currentVersion: string } {
+    const calls = runSelfUpdateSpy.mock.calls
+    const last = calls[calls.length - 1]?.[0] as
+      | { targetVersion?: string; dryRun: boolean; currentVersion: string }
+      | undefined
+    if (!last) throw new Error('runSelfUpdate was not called')
+    return { targetVersion: last.targetVersion, dryRun: last.dryRun, currentVersion: last.currentVersion }
+  }
+
   test('no flags → targetVersion undefined, dryRun false', async () => {
     await selfUpdateCommand.run([], {})
-    expect(runSelfUpdateSpy).toHaveBeenCalledWith({ targetVersion: undefined, dryRun: false })
+    expect(lastCall()).toEqual({ targetVersion: undefined, dryRun: false, currentVersion: expect.any(String) })
   })
 
   test('--version <v> forwards as targetVersion', async () => {
     await selfUpdateCommand.run([], { version: '0.6.0' })
-    expect(runSelfUpdateSpy).toHaveBeenCalledWith({ targetVersion: '0.6.0', dryRun: false })
+    expect(lastCall().targetVersion).toBe('0.6.0')
+    expect(lastCall().dryRun).toBe(false)
   })
 
   test('--dry-run forwards as dryRun: true', async () => {
     await selfUpdateCommand.run([], { 'dry-run': true })
-    expect(runSelfUpdateSpy).toHaveBeenCalledWith({ targetVersion: undefined, dryRun: true })
+    expect(lastCall().targetVersion).toBeUndefined()
+    expect(lastCall().dryRun).toBe(true)
   })
 
   test('--version + --dry-run forward together', async () => {
     await selfUpdateCommand.run([], { version: '0.5.3', 'dry-run': true })
-    expect(runSelfUpdateSpy).toHaveBeenCalledWith({ targetVersion: '0.5.3', dryRun: true })
+    expect(lastCall().targetVersion).toBe('0.5.3')
+    expect(lastCall().dryRun).toBe(true)
   })
 
   test('empty --version is treated as omitted', async () => {
     await selfUpdateCommand.run([], { version: '' })
-    expect(runSelfUpdateSpy).toHaveBeenCalledWith({ targetVersion: undefined, dryRun: false })
+    expect(lastCall().targetVersion).toBeUndefined()
   })
 
   test('non-string version flag is ignored', async () => {
     // Runtime defense — should not happen with the parser we use, but the
     // type narrowing in run() should swallow it.
     await selfUpdateCommand.run([], { version: 42 })
-    expect(runSelfUpdateSpy).toHaveBeenCalledWith({ targetVersion: undefined, dryRun: false })
+    expect(lastCall().targetVersion).toBeUndefined()
+  })
+
+  test('forwards the running CLI version as currentVersion', async () => {
+    await selfUpdateCommand.run([], {})
+    expect(lastCall().currentVersion).toBeTruthy()
+    expect(typeof lastCall().currentVersion).toBe('string')
   })
 
   test('returns the orchestrator exit code', async () => {

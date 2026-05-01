@@ -1,7 +1,7 @@
+import type { EditContext, EditResult } from '@agent-facets/core'
 import { render } from 'ink'
 import type { AssetSectionKey } from '../../tui/context/form-state-context.ts'
 import { openInEditorSync } from '../../tui/editor.ts'
-import type { EditContext, EditResult } from '../../tui/views/edit/edit-types.ts'
 import type { EditWizardSnapshot } from '../../tui/views/edit/wizard.tsx'
 import { EditWizard } from '../../tui/views/edit/wizard.tsx'
 
