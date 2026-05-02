@@ -103,6 +103,9 @@
     },
     "packages/common": {
       "name": "@agent-facets/common",
+      "dependencies": {
+        "yaml": "2.8.3",
+      },
     },
     "packages/core": {
       "name": "@agent-facets/core",

@@ -32,7 +32,7 @@ On confirmation, the wizard writes:
 - `agents/<name>.md` — starter agent template
 - `commands/<name>.md` — starter command template
 
-Content files contain pure markdown with no YAML front matter. The manifest is the single source of truth for metadata.
+Content files are markdown. Optional YAML front matter is preserved verbatim through the build; at install time the manifest's `name`, `description`, and any per-adapter extras are merged on top of whatever the author wrote.
 
 After creating the project, use `facet edit` to iterate on your facet, or `facet build` to validate and package it.
 

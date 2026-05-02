@@ -57,22 +57,12 @@ function buildOperations(
   // Operations from reconciliation resolutions
   for (const [key, resolution] of resolutions) {
     const parts = key.split(':')
-    const kind = parts[0]
     const assetType = parts[1] as 'skills' | 'agents' | 'commands'
     const name = parts[2]
-    if (!kind || !assetType || !name) continue
+    if (!assetType || !name) continue
 
     if (resolution.action === 'scaffold-template') {
       operations.push({ op: 'scaffold', type: assetType, name })
-    } else if (resolution.action === 'remove-from-manifest' && kind === 'front-matter') {
-      operations.push({ op: 'delete-file', type: assetType, name })
-    } else if (resolution.action === 'strip-front-matter') {
-      const item = context.reconciliationItems.find(
-        (i) => i.kind === 'front-matter' && i.type === assetType && i.name === name,
-      )
-      if (item && 'path' in item) {
-        operations.push({ op: 'strip-front-matter', type: assetType, name, path: item.path })
-      }
     }
   }
 

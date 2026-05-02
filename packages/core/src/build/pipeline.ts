@@ -57,7 +57,7 @@ export type BuildStage = (typeof BUILD_STAGES)[number]
  * Runs the full build pipeline:
  * 1. Parse manifest — read facet.json, parse JSON, validate schema, check constraints
  * 2. Resolve prompts — read prompt files at conventional paths (also verifies files exist)
- * 3. Validate content — no front matter, no empty files
+ * 3. Validate content — no empty files (author front matter is permitted)
  * 4. Check collisions — fail if same name used within an asset type
  * 5. Validate adapters — delegate metadata building to each adapter, warn on unknown
  * 6. Assemble archive — collect entries, compute hashes, build tar, compress
@@ -98,7 +98,7 @@ export async function runBuildPipeline(
 
   onProgress?.({ stage: 'Resolving prompts', status: 'done' })
 
-  // Stage 3: Validate assets (no front matter, no empty files)
+  // Stage 3: Validate assets (no empty files; author front matter is OK)
   onProgress?.({ stage: 'Validating assets', status: 'running' })
 
   const contentErrors = validateContentFiles(resolveResult.data)

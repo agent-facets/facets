@@ -1,11 +1,16 @@
 import type { ValidationError } from '@agent-facets/common'
-import { hasFrontMatter } from '../front-matter.ts'
 import type { ResolvedFacetManifest } from '../loaders/facet.ts'
 
 /**
  * Validates resolved prompt content for all assets:
- * - No YAML front matter (manifest is the single source of truth for metadata)
  * - No empty files (zero bytes or whitespace only)
+ *
+ * Author-supplied YAML front matter is permitted and is preserved verbatim
+ * in the archive. Front matter is reconciled with the manifest only at
+ * install time: `materialize` merges the manifest's `name`, `description`,
+ * and any per-adapter extras on top of whatever the author wrote, and the
+ * adapter SDK writes the merged result to disk. See
+ * `packages/adapter/src/asset-fs.ts#assembleAssetContent`.
  *
  * Returns an array of validation errors, one per offending file.
  */
@@ -30,17 +35,6 @@ export function validateContentFiles(resolved: ResolvedFacetManifest): Validatio
           message: `File is empty: ${relativePath}. Content files must contain prompt content.`,
           expected: 'non-empty content',
           actual: 'empty or whitespace only',
-        })
-        continue // Skip front matter check on empty files
-      }
-
-      // Check for YAML front matter
-      if (hasFrontMatter(asset.prompt)) {
-        errors.push({
-          path: `${type}.${name}`,
-          message: `File contains YAML front matter: ${relativePath}. The manifest is the source of truth for metadata — use \`facet edit\` to reconcile.`,
-          expected: 'no front matter',
-          actual: 'front matter detected',
         })
       }
     }

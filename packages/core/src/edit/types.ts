@@ -5,7 +5,6 @@ import type { AssetManifestKey } from './scanner.ts'
 export type ReconciliationItem =
   | { kind: 'addition'; type: AssetManifestKey; name: string; path: string }
   | { kind: 'missing'; type: AssetManifestKey; name: string; expectedPath: string }
-  | { kind: 'front-matter'; type: AssetManifestKey; name: string; path: string }
 
 /** The resolution chosen for a reconciliation item. */
 export type ReconciliationResolution =
@@ -13,7 +12,6 @@ export type ReconciliationResolution =
   | { action: 'ignore' }
   | { action: 'scaffold-template' }
   | { action: 'remove-from-manifest' }
-  | { action: 'strip-front-matter' }
 
 /** All data needed to run the edit TUI. */
 export interface EditContext {
@@ -32,4 +30,3 @@ export type EditOperation =
   | { op: 'write-manifest' }
   | { op: 'scaffold'; type: AssetManifestKey; name: string }
   | { op: 'delete-file'; type: AssetManifestKey; name: string }
-  | { op: 'strip-front-matter'; type: AssetManifestKey; name: string; path: string }

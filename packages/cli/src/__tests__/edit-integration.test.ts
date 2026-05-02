@@ -62,8 +62,12 @@ describe('edit integration', () => {
     expect(missing[0]?.name).toBe('gone')
   })
 
-  test('buildEditContext detects front matter in matched files', async () => {
-    const dir = await createFixtureDir('detect-frontmatter')
+  test('buildEditContext does NOT flag matched files that contain front matter', async () => {
+    // Author-supplied front matter is permitted. It is preserved verbatim
+    // through the build and reconciled with the manifest only at install
+    // time (see materialize + the adapter SDK's assembleAssetContent).
+    // `facet edit` should never surface it as a reconciliation item.
+    const dir = await createFixtureDir('frontmatter-allowed')
     await writeManifest(dir, {
       name: 'test',
       version: '1.0.0',
@@ -75,6 +79,7 @@ describe('edit integration', () => {
       dedent`
         ---
         name: Review
+        agent: cowsay
         ---
         # Review skill
       `,
@@ -82,11 +87,9 @@ describe('edit integration', () => {
 
     const result = await buildEditContext(dir)
     expect(result.ok).toBe(true)
-    if (!result.ok) return
+    if (!result.ok) expect.unreachable()
 
-    const fm = result.context.reconciliationItems.filter((i) => i.kind === 'front-matter')
-    expect(fm).toHaveLength(1)
-    expect(fm[0]?.name).toBe('review')
+    expect(result.context.reconciliationItems).toHaveLength(0)
   })
 
   test('applyOperations scaffolds new skill files', async () => {
@@ -105,38 +108,6 @@ describe('edit integration', () => {
 
     const skillExists = await Bun.file(join(dir, 'skills/helper/SKILL.md')).exists()
     expect(skillExists).toBe(true)
-  })
-
-  test('applyOperations strips front matter from files', async () => {
-    const dir = await createFixtureDir('strip-fm')
-    await mkdir(join(dir, 'skills/review'), { recursive: true })
-    await Bun.write(
-      join(dir, 'skills/review/SKILL.md'),
-      dedent`
-        ---
-        name: Review
-        description: A review skill
-        ---
-        # Review
-        Review all code.
-      `,
-    )
-
-    const manifest = {
-      name: 'test',
-      version: '1.0.0',
-      skills: { review: { description: 'A review skill' } },
-    }
-    const operations: EditOperation[] = [
-      { op: 'write-manifest' },
-      { op: 'strip-front-matter', type: 'skills', name: 'review', path: 'skills/review/SKILL.md' },
-    ]
-
-    await applyOperations(manifest, operations, dir)
-
-    const content = await Bun.file(join(dir, 'skills/review/SKILL.md')).text()
-    expect(content).not.toContain('---')
-    expect(content).toContain('# Review')
   })
 
   test('applyOperations deletes removed asset files', async () => {
