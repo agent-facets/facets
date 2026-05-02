@@ -132,6 +132,9 @@ export type {
 export {
   describeVersionSpec,
   downloadAndExtractFacet,
+  encodeFacetName,
+  getRegistryBaseUrl,
+  packFacetSource,
   resolveRegistryMetadataBatch,
 } from './registry/index.ts'
 // scaffold

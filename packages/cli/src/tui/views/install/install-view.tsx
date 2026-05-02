@@ -203,15 +203,15 @@ function SuccessSummary({ result, mode }: { result: RunInstallResult & { ok: tru
       </Box>
     )
   }
-  // Bundle viz: count what landed across all facets, by asset type. Per
-  // the marketing-site aesthetic we surface the breakdown so users see
-  // exactly which kind of capability they just gained.
+  // Bundle viz + landing line: only surface what landed THIS run. The
+  // lockfile carries every facet in the project; `perFacet` carries the
+  // outcomes from this invocation. The marketing aesthetic is "exactly
+  // which capability you just gained", so iterating the lockfile would
+  // advertise pre-existing facets every time the user adds one more.
   const counts = countAssetsByType(result)
   const bundleViz = formatBundleViz(counts)
-  // Landing line: pick a representative command asset name to render
-  // `Now /<cmd> is available to your agents.` This is the magical-moment
-  // delivery vehicle for the demo. Skip on `install` (existing facets,
-  // not a new capability) and when no command asset shipped.
+  // Skip the landing line on `install` (no new capability — just a sync)
+  // and when nothing this run shipped a command asset.
   const landingCommand = mode === 'add' ? firstCommandAsset(result) : undefined
   return (
     <Box flexDirection="column">
@@ -237,12 +237,29 @@ interface AssetCounts {
 
 function countAssetsByType(result: RunInstallResult & { ok: true }): AssetCounts {
   const counts: AssetCounts = { skill: 0, agent: 0, command: 0 }
-  for (const facet of Object.values(result.lockfile.facets)) {
+  for (const name of touchedFacetNames(result)) {
+    const facet = result.lockfile.facets[name]
+    if (facet === undefined) continue
     for (const asset of facet.assets) {
       counts[asset.type]++
     }
   }
   return counts
+}
+
+/**
+ * Names of facets actually written to disk in this run — installed,
+ * updated, or repaired. `unchanged` contributes no new assets and
+ * `removed` is rendered separately.
+ */
+function touchedFacetNames(result: RunInstallResult & { ok: true }): ReadonlyArray<string> {
+  const names: string[] = []
+  for (const outcome of result.perFacet) {
+    if (outcome.kind === 'installed' || outcome.kind === 'updated' || outcome.kind === 'repaired') {
+      names.push(outcome.name)
+    }
+  }
+  return names
 }
 
 function formatBundleViz(counts: AssetCounts): string | null {
@@ -255,12 +272,15 @@ function formatBundleViz(counts: AssetCounts): string | null {
 }
 
 /**
- * Pick the first command asset across all installed facets — the landing
- * line uses it as the suggested invocation. Returns undefined when no
- * facet shipped a command (e.g., skill-only or agent-only bundle).
+ * Pick the first command asset across the facets THIS RUN installed/updated
+ * — the landing line uses it as the suggested invocation. Returns undefined
+ * when no facet from this run shipped a command (e.g., skill-only or
+ * agent-only bundle, or only `unchanged` outcomes).
  */
 function firstCommandAsset(result: RunInstallResult & { ok: true }): string | undefined {
-  for (const facet of Object.values(result.lockfile.facets)) {
+  for (const name of touchedFacetNames(result)) {
+    const facet = result.lockfile.facets[name]
+    if (facet === undefined) continue
     for (const asset of facet.assets) {
       if (asset.type === 'command') return asset.name
     }

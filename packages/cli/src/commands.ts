@@ -5,6 +5,7 @@ import { createCommand } from './commands/create/index.ts'
 import { editCommand } from './commands/edit/index.ts'
 import { installCommand } from './commands/install/index.ts'
 import { listCommand } from './commands/list/index.ts'
+import { publishCommand } from './commands/publish/index.ts'
 import { searchCommand } from './commands/search/index.ts'
 import { selfUpdateCommand } from './commands/self-update.ts'
 
@@ -55,7 +56,7 @@ export const commands: Record<string, Command> = {
   info: stubCommand('info', 'Show information about a facet'),
   install: installCommand,
   list: listCommand,
-  publish: stubCommand('publish', 'Publish a facet to the registry'),
+  publish: publishCommand,
   remove: stubCommand('remove', 'Remove a facet from the project'),
   search: searchCommand,
   'self-update': selfUpdateCommand,

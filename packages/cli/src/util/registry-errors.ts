@@ -88,7 +88,7 @@ function fixForCode(code: string): string {
     case 'E_API_KEY_MISSING':
       return 'set FACET_REGISTRY_API_KEY in your environment'
     case 'VERSION_EXISTS':
-      return "bump the version in facet.json or use 'facet publish' which auto-bumps"
+      return 'bump `version` in facet.json and try again'
     default:
       return 'check the docs URL for details'
   }

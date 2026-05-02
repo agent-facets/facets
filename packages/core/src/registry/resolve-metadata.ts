@@ -31,11 +31,14 @@ interface WireMetadataResponse {
  *
  * Empty input returns `{ ok: true, value: [] }`.
  *
- * Wildcards / `latest` collapse to the literal `latest` string when sent
- * to the server — V0 doesn't support range resolution server-side, so
- * `1.*` and `*` are treated identically to `latest`. The server returns
- * the actual resolved version in the response, which is what we record
- * on the metadata.
+ * Version specs are sent verbatim in the form the user wrote (`1.2.3`,
+ * `1.*`, `1.2.*`, `*`, `latest`). The server is the authority on which
+ * forms it can resolve; the client must not silently widen a constrained
+ * spec. V0 currently only resolves exact versions and `latest` — every
+ * other form returns NOT_FOUND, which we surface unchanged. (Once the
+ * server gains range-resolution support, this code does not need to
+ * change.) The semantic correctness of the contract belongs on the
+ * client; the limits of what's resolvable belong on the server.
  */
 export async function resolveRegistryMetadataBatch(
   specs: ReadonlyArray<RegistrySpec>,
@@ -58,7 +61,9 @@ export async function resolveRegistryMetadataBatch(
 }
 
 async function fetchOne(base: string, spec: RegistrySpec): Promise<RegistryResult<RegistryMetadata>> {
-  const versionForUrl = serverVersionString(spec)
+  // Surface form ('1.2.3', '1.*', '*', 'latest', etc.) is sent verbatim.
+  // The server is responsible for accepting/rejecting; we don't widen.
+  const versionForUrl = describeVersionSpec(spec.version)
   const encodedName = encodeFacetName(spec.name)
   const url = `${base}/packages/${encodedName}/${encodeURIComponent(versionForUrl)}`
   let response: Response
@@ -121,16 +126,4 @@ async function fetchOne(base: string, spec: RegistrySpec): Promise<RegistryResul
       tarballUrl,
     },
   }
-}
-
-/**
- * Translate a parsed VersionSpec into the version string the V0 server
- * understands. Exact versions pass through; everything else collapses to
- * `latest` (server-side range resolution is post-V0).
- */
-function serverVersionString(spec: RegistrySpec): string {
-  if (spec.version.kind === 'exact') {
-    return `${spec.version.major}.${spec.version.minor}.${spec.version.patch}`
-  }
-  return 'latest'
 }

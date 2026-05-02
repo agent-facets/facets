@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { dirname, join, normalize, relative } from 'node:path'
+import { dirname, isAbsolute, join, normalize, relative } from 'node:path'
 import { parseTarGzip } from 'nanotar'
 import type { RegistryMetadata, RegistryResult } from './types.ts'
 
@@ -99,9 +99,18 @@ export async function downloadAndExtractFacet(meta: RegistryMetadata, dest: stri
     }
   }
 
-  // Make sure dest exists; mkdir -p is idempotent.
-  await mkdir(dest, { recursive: true })
-
+  // Two-pass extraction to honor the all-or-nothing contract:
+  //   Pass 1 — validate every entry's path. No filesystem writes. If any
+  //            entry is unsafe, return immediately; `dest` is untouched.
+  //   Pass 2 — only after every entry has cleared sanitization, mkdir
+  //            `dest` and write the files.
+  // Without the split, a malicious tar with a safe entry followed by an
+  // unsafe one would land the safe entry on disk before we noticed.
+  interface PreparedEntry {
+    target: string
+    data: Uint8Array
+  }
+  const prepared: PreparedEntry[] = []
   for (const entry of entries) {
     if (entry.data === undefined) continue // directory entry; recreated as we write files
     const safeName = sanitizeEntryName(entry.name)
@@ -128,8 +137,14 @@ export async function downloadAndExtractFacet(meta: RegistryMetadata, dest: stri
         },
       }
     }
+    prepared.push({ target, data: entry.data })
+  }
+
+  // All entries cleared sanitization — now it's safe to touch the filesystem.
+  await mkdir(dest, { recursive: true })
+  for (const { target, data } of prepared) {
     await mkdir(dirname(target), { recursive: true })
-    await writeFile(target, entry.data)
+    await writeFile(target, data)
   }
 
   return { ok: true, value: undefined }
@@ -139,17 +154,30 @@ export async function downloadAndExtractFacet(meta: RegistryMetadata, dest: stri
  * Reject tar entry names that would escape the extraction directory.
  * Returns the safe relative form, or null if the entry should be refused.
  *
- *   - Strip a leading `./`.
- *   - Reject leading `/` (absolute path).
- *   - Reject any segment equal to `..` (parent traversal).
  *   - Reject empty names.
+ *   - Strip a leading `./`; if nothing remains, reject (no useful target).
+ *   - Reject any platform-absolute path (`/foo`, `C:\foo`, `\\?\foo`,
+ *     `\\server\share`). On POSIX `isAbsolute('C:\\...')` is false, so
+ *     we also explicitly reject Windows-style drive letters and UNC
+ *     prefixes — defense in depth in case a malicious tar is unpacked
+ *     on a Windows host.
+ *   - Reject any segment equal to `..` (parent traversal).
+ *   - Reject `.` after normalization (entry would target `dest` itself,
+ *     which `writeFile` cannot do because `dest` is a directory).
  */
 function sanitizeEntryName(name: string): string | null {
   if (name.length === 0) return null
   let cleaned = name
   if (cleaned.startsWith('./')) cleaned = cleaned.slice(2)
+  if (cleaned.length === 0) return null
+  if (isAbsolute(cleaned)) return null
+  // Windows drive letters and UNC, even on POSIX hosts where `isAbsolute`
+  // returns false for them. (`C:\path`, `C:/path`, `\\server\share`.)
+  if (/^[A-Za-z]:[\\/]/.test(cleaned)) return null
+  if (cleaned.startsWith('\\\\')) return null
   if (cleaned.startsWith('/')) return null
   const normalized = normalize(cleaned)
+  if (normalized === '.' || normalized === '..') return null
   const segments = normalized.split('/')
   if (segments.some((s) => s === '..')) return null
   return normalized

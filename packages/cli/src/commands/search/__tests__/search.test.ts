@@ -36,22 +36,24 @@ describe('searchCommand', () => {
     expect(stdout).toContain('No facets in the registry yet')
   })
 
-  test('single match: renders headline + both copy-paste next-commands', async () => {
+  test('single match: renders headline + facet add suggestion', async () => {
     mockPackages([{ name: 'cowsay', latestVersion: '0.1.0' }])
     const { result, stdout } = await captureStdout(() => searchCommand.run(['cow'], {}))
     expect(result).toBe(0)
     expect(stdout).toContain('cowsay   v0.1.0')
     expect(stdout).toContain('→ facet add cowsay')
-    expect(stdout).toContain('→ opencode run --command cowsay')
+    // We deliberately do not suggest an `opencode run --command ...` line
+    // because the V0 list endpoint doesn't return asset metadata; we'd
+    // be guessing the wrong command name for many facets.
+    expect(stdout).not.toContain('opencode run')
   })
 
-  test('namespaced name: opencode command line uses last segment, facet add uses full canonical', async () => {
+  test('namespaced name: facet add uses full canonical name', async () => {
     mockPackages([{ name: 'acme/cowsay', latestVersion: '0.1.0' }])
     const { result, stdout } = await captureStdout(() => searchCommand.run(['cow'], {}))
     expect(result).toBe(0)
     expect(stdout).toContain('→ facet add acme/cowsay')
-    expect(stdout).toContain('→ opencode run --command cowsay')
-    expect(stdout).not.toContain('--command acme/cowsay')
+    expect(stdout).not.toContain('opencode run')
   })
 
   test('multiple matches: blank line between blocks', async () => {

@@ -22,7 +22,7 @@ describe('translateRegistryError', () => {
     ['E_TARBALL_CORRUPTED', 'try again; if persistent, check your network'],
     ['E_TARBALL_TOO_LARGE', 'reduce the facet contents below 5 MB or split into multiple facets'],
     ['E_API_KEY_MISSING', 'set FACET_REGISTRY_API_KEY in your environment'],
-    ['VERSION_EXISTS', "bump the version in facet.json or use 'facet publish' which auto-bumps"],
+    ['VERSION_EXISTS', 'bump `version` in facet.json and try again'],
   ]
 
   test.each(canonicalCodes)('%s maps to its canonical fix', (code, expectedFix) => {

@@ -7,16 +7,17 @@ import { registryFetch } from '../../util/registry-client.ts'
  * `term` (substring, case-insensitive). With no term, lists every facet
  * the registry returns (capped server-side at LIMIT 200 in V0).
  *
- * Each result includes the **two copy-paste next-commands** that take a
- * conference engineer from "I see this in the list" → "I have this
- * working in 30 seconds":
+ * Each result shows the canonical name, latest version, and the single
+ * copy-paste next step:
  *
  *   - `facet add <name>` — install it
- *   - `opencode run --command <last-segment>` — invoke a command asset
  *
- * The two-line block is the magical-moment delivery vehicle for the demo
- * arc; do NOT collapse it into a single line. Conference engineer at T+24h
- * doesn't remember the exact name; this shows them what to type.
+ * We deliberately do NOT suggest a downstream invocation (e.g.,
+ * `opencode run --command ...`) because the V0 list endpoint doesn't
+ * carry asset metadata: many facets ship arbitrary command names,
+ * multiple commands, or no commands at all (skill-only or agent-only).
+ * Once the registry returns asset names, we can add a runtime-correct
+ * suggestion line back.
  *
  * V0 registry returns `{name, latestVersion, publishedAt}` per result —
  * author/install-count/asset-counts are alpha+. Render gracefully without
@@ -25,7 +26,7 @@ import { registryFetch } from '../../util/registry-client.ts'
 export const searchCommand: Command = {
   name: 'search',
   description: 'Search the registry for facets',
-  usage: 'facet search [term]',
+  usage: '[term]',
   implemented: true,
   run: async (args, _flags) => {
     if (args.length > 1) {
@@ -108,14 +109,5 @@ function isPackagesResponse(value: unknown): value is PackagesResponse {
 
 function renderResult(f: RegistryFacetSummary): string {
   const headline = `${f.name}   v${f.latestVersion}`
-  // For namespaced canonical names (`acme/cowsay`), the invokable command
-  // name in adapters is the last segment only. Adapter command names don't
-  // carry namespaces — the namespace is a registry-level disambiguator.
-  const commandName = lastSegment(f.name)
-  return [headline, `  → facet add ${f.name}`, `  → opencode run --command ${commandName}`].join('\n')
-}
-
-function lastSegment(canonical: string): string {
-  const idx = canonical.lastIndexOf('/')
-  return idx === -1 ? canonical : canonical.slice(idx + 1)
+  return [headline, `  → facet add ${f.name}`].join('\n')
 }

@@ -1,9 +1,8 @@
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
 import { runBuildPipeline } from '../build/pipeline.ts'
-import { type CacheIdentity, cacheGet, cachePutVerified, readCachedIntegrity } from '../cache/index.ts'
+import { type CacheIdentity, cacheGet, cachePutVerified, cacheStagingDir, readCachedIntegrity } from '../cache/index.ts'
 import { verifyGitOneCheck } from '../integrity/index.ts'
 import { loadManifest, type ResolvedFacetManifest, resolvePrompts } from '../loaders/facet.ts'
 import { loadFacetsJson } from '../manifest/project-files.ts'
@@ -47,6 +46,42 @@ export function resolveCloneRef(
   manifestRef: string | undefined,
 ): string | undefined {
   return locked?.commit ?? manifestRef
+}
+
+/**
+ * Parse a `LockfileFacet.version` string into an exact `VersionSpec` for
+ * the registry resolver. Lockfile versions are always concrete `M.N.P`
+ * by contract (the lockfile records the resolved version, never a
+ * range), so this is a straightforward split. A malformed value is a
+ * lockfile corruption — not a user-facing failure mode — so we throw.
+ *
+ * Used on the registry-source cache-miss path to pin the metadata
+ * fetch at `locked.version` instead of re-resolving the manifest spec
+ * (which may be `@latest` or a wildcard). See the call site for the
+ * reproducibility rationale.
+ */
+function parseLockedVersion(version: string): {
+  kind: 'exact'
+  major: number
+  minor: number
+  patch: number
+} {
+  const parts = version.split('.')
+  if (parts.length !== 3) {
+    throw new Error(`lockfile corruption: version "${version}" is not M.N.P`)
+  }
+  const [major, minor, patch] = parts.map((p) => Number.parseInt(p, 10))
+  if (
+    major === undefined ||
+    minor === undefined ||
+    patch === undefined ||
+    !Number.isInteger(major) ||
+    !Number.isInteger(minor) ||
+    !Number.isInteger(patch)
+  ) {
+    throw new Error(`lockfile corruption: version "${version}" has non-integer parts`)
+  }
+  return { kind: 'exact', major, minor, patch }
 }
 
 /**
@@ -495,9 +530,15 @@ async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
 
     if (sourceDir === undefined) {
       onStage({ kind: 'facet-stage', facet: facetName, stage: 'fetch' })
-      const metaResult = await resolveRegistryMetadataBatch([
-        { name: parsed.value.name, version: parsed.value.version },
-      ])
+      // Reproducibility: when the lockfile pins a version, resolve metadata
+      // for THAT exact version on a cache miss — never re-resolve from the
+      // manifest specifier (which may be `@latest` or a wildcard). Without
+      // this, a cold-cache reinstall of a project locked to `1.2.3` against
+      // a manifest of `@latest` would silently fetch `1.3.0` and trip the
+      // integrity check. Mirrors `resolveCloneRef` for the git path.
+      const versionForFetch: typeof parsed.value.version =
+        locked !== undefined ? parseLockedVersion(locked.version) : parsed.value.version
+      const metaResult = await resolveRegistryMetadataBatch([{ name: parsed.value.name, version: versionForFetch }])
       if (!metaResult.ok) {
         return { ok: false, failure: { code: 'REGISTRY_ERROR', facet: facetName, error: metaResult.error } }
       }
@@ -513,7 +554,12 @@ async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
         }
       }
 
-      const tempDir = await mkdtemp(join(tmpdir(), 'facet-registry-'))
+      // Stage under the cache root (not the OS tmp dir). cachePutVerified's
+      // final rename into the cache slot must be atomic, which requires the
+      // staging dir and the slot to share a filesystem. If FACETS_CACHE_DIR
+      // points at a volume different from /tmp, mkdtemp under tmpdir() would
+      // make the rename throw EXDEV.
+      const tempDir = cacheStagingDir()
       onStage({ kind: 'facet-stage', facet: facetName, stage: 'verify' })
       const downloadResult = await downloadAndExtractFacet(meta, tempDir)
       if (!downloadResult.ok) {

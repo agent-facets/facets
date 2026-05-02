@@ -1,12 +1,11 @@
+import { getRegistryBaseUrl } from '@agent-facets/core'
 import type { CliError } from './errors.ts'
 import { isRegistryErrorResponse, translateRegistryError } from './registry-errors.ts'
 
-/**
- * Default registry base URL. Overridable via `FACET_REGISTRY_URL` env so
- * V0 can point the conference build at the `dev` stage without rebuilding.
- * Once `main` ships this constant becomes the prod URL.
- */
-const DEFAULT_REGISTRY_URL = 'https://api.dev.facet.cafe/v0'
+// Re-exported from core so commands can import URL helpers from a single
+// place. Core owns the env-var lookup and encoding rules so the install
+// pipeline (in core) and the standalone CLI commands can never disagree.
+export { encodeFacetName, getRegistryBaseUrl } from '@agent-facets/core'
 
 /** Hard wall-clock per HTTP attempt. Conservative on a conference network. */
 const REQUEST_TIMEOUT_MS = 5000
@@ -16,27 +15,6 @@ const NETWORK_RETRIES = 2
 
 /** Backoff between retries. Constant — V0 doesn't need exponential. */
 const RETRY_BACKOFF_MS = 500
-
-/**
- * Resolve the registry base URL from env, stripping any trailing slash so
- * callers can append paths without double-slashing.
- */
-export function getRegistryBaseUrl(): string {
-  const fromEnv = process.env.FACET_REGISTRY_URL
-  const raw = fromEnv && fromEnv.length > 0 ? fromEnv : DEFAULT_REGISTRY_URL
-  return raw.replace(/\/+$/, '')
-}
-
-/**
- * Encode a canonical facet name for use in a URL path. Namespaced names
- * like `acme/cowsay` become `acme%2Fcowsay`; bare names pass through.
- *
- * Centralized so every call site encodes identically — silent mismatches
- * between client and server URL forms are notoriously hard to debug.
- */
-export function encodeFacetName(name: string): string {
-  return encodeURIComponent(name)
-}
 
 /**
  * Outcome of a `registryFetch` call. Discriminated by `ok` so callers can
