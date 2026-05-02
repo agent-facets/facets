@@ -1,7 +1,6 @@
 ---
 "@agent-facets/adapter": patch
 "agent-facets": patch
-"@agent-facets/common": patch
 "@agent-facets/core": patch
 ---
 
