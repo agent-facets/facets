@@ -40,9 +40,12 @@ const GIT_SCHEMES = new Set(['https', 'http', 'ssh', 'git'])
 
 /**
  * Registry name regex. Lowercase letters, digits, hyphens; must start
- * with a letter. Optional `@<version-spec>` tail.
+ * with a letter. A name segment may optionally be followed by `/<segment>`
+ * to form a namespaced name (`<namespace>/<name>`), where the second
+ * segment matches the same character class. Group 1 captures the canonical
+ * full name (with the slash if present). Optional `@<version-spec>` tail.
  */
-const REGISTRY_RE = /^([a-z][a-z0-9-]*)(?:@(.+))?$/
+const REGISTRY_RE = /^([a-z][a-z0-9-]*(?:\/[a-z][a-z0-9-]*)?)(?:@(.+))?$/
 
 /**
  * Parse a facet source string into a `Source`.

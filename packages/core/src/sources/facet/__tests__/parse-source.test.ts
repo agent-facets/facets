@@ -1,85 +1,52 @@
 import { describe, expect, test } from 'bun:test'
 import { parseFacetSource as parseSource } from '../parse-source.ts'
+import type { Source } from '../types.ts'
 
 describe('parseSource — registry forms', () => {
-  test('bare name resolves to latest', () => {
-    const result = parseSource('viper-plans')
-    expect(result.ok).toBe(true)
-    if (result.ok) {
-      expect(result.value).toEqual({
-        kind: 'registry',
-        name: 'viper-plans',
-        version: { kind: 'latest' },
-      })
-    }
-  })
-
-  test('name@latest resolves to latest', () => {
-    const result = parseSource('viper-plans@latest')
-    expect(result.ok).toBe(true)
-    if (result.ok) {
-      expect(result.value).toEqual({
-        kind: 'registry',
-        name: 'viper-plans',
-        version: { kind: 'latest' },
-      })
-    }
-  })
-
-  test('name@* resolves to wildcard', () => {
-    const result = parseSource('viper-plans@*')
-    expect(result.ok).toBe(true)
-    if (result.ok) {
-      expect(result.value).toEqual({
-        kind: 'registry',
-        name: 'viper-plans',
-        version: { kind: 'wildcard' },
-      })
-    }
-  })
-
-  test('name@exact pins to exact version', () => {
-    const result = parseSource('viper-plans@1.2.3')
-    expect(result.ok).toBe(true)
-    if (result.ok) {
-      expect(result.value).toEqual({
-        kind: 'registry',
-        name: 'viper-plans',
-        version: { kind: 'exact', major: 1, minor: 2, patch: 3 },
-      })
-    }
-  })
-
-  test('name@major.* pins to major', () => {
-    const result = parseSource('viper-plans@1.*')
-    expect(result.ok).toBe(true)
-    if (result.ok) {
-      expect(result.value).toEqual({
-        kind: 'registry',
-        name: 'viper-plans',
-        version: { kind: 'majorWildcard', major: 1 },
-      })
-    }
-  })
-
-  test('name@major.minor.* pins to minor', () => {
-    const result = parseSource('viper-plans@1.2.*')
-    expect(result.ok).toBe(true)
-    if (result.ok) {
-      expect(result.value).toEqual({
-        kind: 'registry',
-        name: 'viper-plans',
-        version: { kind: 'minorWildcard', major: 1, minor: 2 },
-      })
-    }
+  const cases: ReadonlyArray<readonly [string, string, Source]> = [
+    ['bare name', 'viper-plans', { kind: 'registry', name: 'viper-plans', version: { kind: 'latest' } }],
+    ['name@latest', 'viper-plans@latest', { kind: 'registry', name: 'viper-plans', version: { kind: 'latest' } }],
+    ['name@*', 'viper-plans@*', { kind: 'registry', name: 'viper-plans', version: { kind: 'wildcard' } }],
+    [
+      'name@exact',
+      'viper-plans@1.2.3',
+      { kind: 'registry', name: 'viper-plans', version: { kind: 'exact', major: 1, minor: 2, patch: 3 } },
+    ],
+    [
+      'name@major.*',
+      'viper-plans@1.*',
+      { kind: 'registry', name: 'viper-plans', version: { kind: 'majorWildcard', major: 1 } },
+    ],
+    [
+      'name@major.minor.*',
+      'viper-plans@1.2.*',
+      { kind: 'registry', name: 'viper-plans', version: { kind: 'minorWildcard', major: 1, minor: 2 } },
+    ],
+    ['namespaced bare name', 'acme/cowsay', { kind: 'registry', name: 'acme/cowsay', version: { kind: 'latest' } }],
+    [
+      'namespaced name@exact',
+      'acme/cowsay@1.2.3',
+      { kind: 'registry', name: 'acme/cowsay', version: { kind: 'exact', major: 1, minor: 2, patch: 3 } },
+    ],
+    [
+      'namespaced name@latest',
+      'acme/cowsay@latest',
+      { kind: 'registry', name: 'acme/cowsay', version: { kind: 'latest' } },
+    ],
+  ]
+  test.each(cases)('parses %s as registry source', (_label, input, expected) => {
+    const result = parseSource(input)
+    if (!result.ok) expect.unreachable()
+    expect(result.value).toEqual(expected)
   })
 
   test('latest equivalence: bare, @latest, and @* are semantically identical', () => {
     const bareResult = parseSource('viper-plans')
     const latestResult = parseSource('viper-plans@latest')
     const wildcardResult = parseSource('viper-plans@*')
-    expect(bareResult.ok && latestResult.ok && wildcardResult.ok).toBe(true)
-    if (!bareResult.ok || !latestResult.ok || !wildcardResult.ok) return
+    if (!bareResult.ok) expect.unreachable()
+    if (!latestResult.ok) expect.unreachable()
+    if (!wildcardResult.ok) expect.unreachable()
     // All three are registry sources for the same name. The version surface
     // form is preserved (bare and latest both produce kind:'latest', * produces
     // kind:'wildcard') but resolvesToLatest collapses all three to the same
@@ -227,6 +194,15 @@ describe('parseSource — local forms', () => {
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.value).toEqual({ kind: 'local', path: '.' })
   })
+
+  // PATH_RE intercepts anything starting with `/` before REGISTRY_RE runs,
+  // so a leading slash is always a local path — even when it looks like
+  // a malformed namespaced name.
+  test('leading-slash name is a local path, not a registry error', () => {
+    const result = parseSource('/cowsay')
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.value).toEqual({ kind: 'local', path: '/cowsay' })
+  })
 })
 
 describe('parseSource — rejected forms', () => {
@@ -278,6 +254,18 @@ describe('parseSource — rejected forms', () => {
 
   test('completely unrecognized specifier', () => {
     const result = parseSource('!!@@##')
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.code).toBe('INVALID_REGISTRY_NAME')
+  })
+
+  test('multi-slash registry name is rejected', () => {
+    const result = parseSource('acme/foo/bar')
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.code).toBe('INVALID_REGISTRY_NAME')
+  })
+
+  test('trailing-slash registry name is rejected', () => {
+    const result = parseSource('cowsay/')
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error.code).toBe('INVALID_REGISTRY_NAME')
   })
