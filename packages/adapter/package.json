@@ -5,7 +5,7 @@
     "url": "https://github.com/agent-facets/facets",
     "directory": "packages/adapter"
   },
-  "version": "0.4.6",
+  "version": "0.9.1",
   "type": "module",
   "files": [
     "dist"
