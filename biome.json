@@ -36,6 +36,7 @@
       "enabled": true
     },
     "formatter": {
+      "lineWidth": 120,
       "quoteStyle": "single",
       "semicolons": "asNeeded"
     }

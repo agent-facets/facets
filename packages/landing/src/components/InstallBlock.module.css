@@ -9,7 +9,7 @@
   padding: 0;
   font-family: var(--mono);
   font-size: 15px;
-  box-shadow: 0 20px 60px -20px color-mix(in oklab, var(--accent-a) 50%, transparent);
+  box-shadow: 0 20px 60px -20px color-mix(in oklab, var(--accent-b) 50%, transparent);
   margin: 0;
   max-width: 92vw;
   overflow: hidden;
@@ -33,7 +33,7 @@
 }
 
 .prompt {
-  color: var(--accent-c);
+  color: var(--accent-b);
   padding: 18px 0 18px 22px;
   display: flex;
   align-items: center;

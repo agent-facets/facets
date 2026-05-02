@@ -64,6 +64,17 @@
   position: relative;
 }
 
+.buttons {
+  display: flex;
+  flex-flow: column;
+  row-gap: 2rem;
+  align-items: center;
+}
+
+.buttons * {
+  flex: 0 auto;
+}
+
 .mobileCta {
   /* Hidden on desktop; shown below bp-mobile. */
   display: none;

@@ -2,32 +2,60 @@
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  /* 16px = 10px ring spread + ~6px clearance, mirroring the gap
+     between the fully-expanded ring and the pill border on the left. */
+  gap: 16px;
   padding: 8px 16px;
   border: 1px solid var(--line-strong);
   border-radius: 999px;
   background: var(--card);
-  font-family: var(--mono);
+  font-family: var(--mono), monospace;
   font-size: 12px;
   color: var(--ink-dim);
 }
 
+/* Link variant — only applied when the Eyebrow is rendered as <a>. */
+.eyebrowLink {
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.eyebrowLink:hover {
+  color: var(--ink);
+  border-color: var(--ink-dim);
+  background: color-mix(in oklab, var(--card) 60%, var(--ink) 4%);
+}
+
+.eyebrowLink:focus-visible {
+  outline: 2px solid var(--accent-c);
+  outline-offset: 2px;
+}
+
+/* Radar-blip dot. The dot stays solid; an outward ring radiates from
+   it (via box-shadow spread) and fades. Don't replace this with an
+   opacity animation — the expanding ring is the whole point. */
 .dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: var(--accent-c);
-  box-shadow: 0 0 10px var(--accent-c);
-  animation: pulse 2s ease-in-out infinite;
+  box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent-c) 60%, transparent);
+  animation: eyebrow-pulse 1.8s ease-out infinite;
 }
 
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 1;
+@keyframes eyebrow-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent-c) 60%, transparent);
   }
-  50% {
-    opacity: 0.4;
+  70% {
+    box-shadow: 0 0 0 10px color-mix(in oklab, var(--accent-c) 0%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent-c) 0%, transparent);
   }
 }
 
