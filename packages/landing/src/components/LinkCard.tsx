@@ -44,7 +44,7 @@ type LinkCardProps = {
 export function LinkCard({ href, label, value, icon, iconColor, external = true, className }: LinkCardProps) {
   const externalProps = external ? { target: '_blank', rel: 'noreferrer noopener' as const } : {}
   return (
-    <a className={`${styles.card}${className ? ` ${className}` : ''}`} href={href} {...externalProps}>
+    <a className={`${styles.card} ${className ? `${className}` : ''}`} href={href} {...externalProps}>
       <span className={styles.icon} style={iconColor ? { color: iconColor } : undefined} aria-hidden="true">
         {icon}
       </span>

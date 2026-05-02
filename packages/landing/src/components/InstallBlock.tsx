@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { copyToClipboard } from '../lib/copy'
 import styles from './InstallBlock.module.css'
 
 /**
@@ -8,35 +9,6 @@ import styles from './InstallBlock.module.css'
 export const INSTALL_CMD = 'curl -fsSL https://agentfacets.io/install | bash'
 
 const COPIED_RESET_MS = 1800
-
-function fallbackCopy(text: string): boolean {
-  try {
-    const ta = document.createElement('textarea')
-    ta.value = text
-    ta.setAttribute('readonly', '')
-    ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;'
-    document.body.appendChild(ta)
-    ta.select()
-    ta.setSelectionRange(0, text.length)
-    const ok = document.execCommand('copy')
-    document.body.removeChild(ta)
-    return ok
-  } catch {
-    return false
-  }
-}
-
-async function copyToClipboard(text: string): Promise<boolean> {
-  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText && window.isSecureContext !== false) {
-    try {
-      await navigator.clipboard.writeText(text)
-      return true
-    } catch {
-      return fallbackCopy(text)
-    }
-  }
-  return fallbackCopy(text)
-}
 
 /**
  * Full-width click-to-copy install command. The entire pill is one button —

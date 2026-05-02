@@ -54,7 +54,7 @@ export function Nav() {
         <div className={styles.links}>
           <a href="#top">Home</a>
           <a href="#what">Learn</a>
-          <a href="#demo">CLI</a>
+          <a href="#demo">Demo</a>
           <a href="https://docs.agentfacets.io" target="_self">
             Docs
           </a>

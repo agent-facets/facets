@@ -1,3 +1,4 @@
+import { AgentPromptButton } from './AgentPromptButton'
 import styles from './Closer.module.css'
 import { Footer } from './Footer'
 import { InstallBlock } from './InstallBlock'
@@ -16,7 +17,10 @@ export function Closer() {
           request. Just like npm — but for agents.
         </p>
         <div className={styles.installWrap}>
-          <InstallBlock />
+          <div className={styles.buttons}>
+            <InstallBlock />
+            <AgentPromptButton />
+          </div>
         </div>
         <div className={styles.mobileCta}>
           <RegistryCta />

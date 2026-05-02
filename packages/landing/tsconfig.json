@@ -11,7 +11,7 @@
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "types": ["vite/client"]
+    "types": ["vite/client", "bun", "node"]
   },
   "include": ["src", "vite", "vite.config.ts"]
 }
