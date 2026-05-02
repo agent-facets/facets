@@ -3,6 +3,7 @@
 .idea/
 lefthook-local.yml
 mise.local.toml
+.DS_Store
 
 *.bun-build
 bun.lockb
