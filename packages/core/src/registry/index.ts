@@ -1,4 +1,6 @@
 export { describeVersionSpec } from './describe.ts'
 export { downloadAndExtractFacet } from './download.ts'
+export { encodeFacetName, getRegistryBaseUrl } from './http.ts'
+export { packFacetSource } from './pack.ts'
 export { resolveRegistryMetadataBatch } from './resolve-metadata.ts'
 export type { RegistryError, RegistryMetadata, RegistryResult, RegistrySpec } from './types.ts'

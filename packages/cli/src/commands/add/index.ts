@@ -244,11 +244,10 @@ async function ensureAdapters(): Promise<ReadonlyArray<Adapter> | null> {
  */
 async function peekFacetName(source: Source, specifier: string): Promise<string | null> {
   if (source.kind === 'registry') {
-    // Registry sources peek would require resolving against the
-    // registry, which is currently stubbed. Fall back to using the
-    // declared name (which matches the package name) so the manifest
-    // write succeeds; runInstall will surface the registry error when
-    // it tries to actually fetch.
+    // Registry source: the canonical name on the parsed source IS the
+    // facet name (the registry keys by canonical name), so we can write
+    // the manifest entry without a network round-trip. runInstall will
+    // verify the manifest's declared name matches when it downloads.
     return source.name
   }
   const { loadManifest } = await import('@agent-facets/core')

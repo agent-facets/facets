@@ -1,43 +1,184 @@
+import { createHash } from 'node:crypto'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { dirname, isAbsolute, join, normalize, relative } from 'node:path'
+import { parseTarGzip } from 'nanotar'
 import type { RegistryMetadata, RegistryResult } from './types.ts'
 
 /**
- * Download a `.facet` tarball from the registry and extract its
- * contents into `dest`.
+ * Download a `.tar.gz` archive from the registry and extract its contents
+ * into `dest`.
  *
- * Today this function is a stub: it returns `REGISTRY_NOT_AVAILABLE`
- * for every call and delegates the user toward git/local sources
- * until the real registry ships.
+ * The V0 archive endpoint returns a 302 redirect to a presigned S3 URL;
+ * `fetch` follows redirects by default so the call site doesn't need to
+ * special-case it. The downloaded bytes are a gzipped tarball with
+ * `facet.json` at the root (the same shape `facet build` would produce
+ * before any `.facet` outer-tar wrapping — V0 publishes the source
+ * distribution directly).
  *
- * Tomorrow's implementation will:
+ * Verification: the registry's `expectedIntegrity` (sha256 of the
+ * tarball-as-uploaded) is checked against the bytes we just downloaded.
+ * Mismatch is a hard error — the tarball was tampered with in transit
+ * or the registry's record is corrupt; either way, refuse to extract.
  *
- *   1. Fetch the tarball bytes from `meta.tarballUrl`.
- *   2. Run the dual-extraction:
- *        - outer tar (uncompressed): contains `build-manifest.json`
- *          and `archive.tar.gz`.
- *        - inner tar (gzipped): the actual facet content.
- *   3. Verify the inner archive's self-declared integrity matches the
- *      outer manifest's claim, then matches `meta.expectedIntegrity`
- *      (Checks B and C of the three-check protocol).
- *   4. Write the extracted content into `dest`.
- *
- * The integrity verification belongs to the caller (it's the bridge
- * between this function's bytes and the lockfile's recorded hash);
- * `downloadAndExtractFacet` produces the bytes and returns.
+ * Path safety: tar entry names that would escape `dest` (absolute paths,
+ * `../` segments, leading slashes) are rejected. A single bad entry
+ * fails the entire extraction so we never end up with a half-written
+ * directory containing some malicious files.
  *
  * Always returns; never throws.
  */
-export async function downloadAndExtractFacet(
-  meta: RegistryMetadata,
-  // biome-ignore lint/correctness/noUnusedFunctionParameters: stub; will be used by the real implementation
-  dest: string,
-): Promise<RegistryResult<void>> {
-  // TODO(registry): replace with real .facet tarball fetch + extraction.
-  return {
-    ok: false,
-    error: {
-      code: 'REGISTRY_NOT_AVAILABLE',
-      what: `registry tarball download is not yet available (would fetch ${meta.tarballUrl} for ${meta.name}@${meta.version})`,
-      fix: 'use a github: shortcut, https URL, ssh URL, or local path until the registry ships',
-    },
+export async function downloadAndExtractFacet(meta: RegistryMetadata, dest: string): Promise<RegistryResult<void>> {
+  let response: Response
+  try {
+    response = await fetch(meta.tarballUrl, { redirect: 'follow' })
+  } catch (err) {
+    return {
+      ok: false,
+      error: {
+        code: 'NETWORK_ERROR',
+        cause: `archive download failed: ${err instanceof Error ? err.message : String(err)}`,
+      },
+    }
   }
+  if (response.status === 404) {
+    // The archive endpoint and the metadata endpoint should agree on
+    // existence, but if metadata succeeded and archive 404s the most
+    // useful framing is still "not found" — the row exists but the
+    // S3 object is missing (orphaned write).
+    return {
+      ok: false,
+      error: { code: 'NOT_FOUND', name: meta.name, spec: meta.version },
+    }
+  }
+  if (!response.ok) {
+    return {
+      ok: false,
+      error: {
+        code: 'NETWORK_ERROR',
+        cause: `archive download returned HTTP ${response.status} ${response.statusText}`,
+      },
+    }
+  }
+
+  let bytes: Uint8Array
+  try {
+    bytes = new Uint8Array(await response.arrayBuffer())
+  } catch (err) {
+    return {
+      ok: false,
+      error: {
+        code: 'NETWORK_ERROR',
+        cause: `archive read failed: ${err instanceof Error ? err.message : String(err)}`,
+      },
+    }
+  }
+
+  // Integrity check before any extraction. If the bytes are not what the
+  // registry told us they would be, do NOT touch the filesystem.
+  const actualIntegrity = `sha256:${createHash('sha256').update(bytes).digest('hex')}`
+  if (actualIntegrity !== meta.expectedIntegrity) {
+    return {
+      ok: false,
+      error: {
+        code: 'NETWORK_ERROR',
+        cause: `archive sha256 mismatch: expected ${meta.expectedIntegrity}, got ${actualIntegrity}`,
+      },
+    }
+  }
+
+  let entries: ReadonlyArray<{ name: string; data?: Uint8Array }>
+  try {
+    entries = await parseTarGzip(bytes)
+  } catch (err) {
+    return {
+      ok: false,
+      error: {
+        code: 'NETWORK_ERROR',
+        cause: `archive is not a valid gzipped tar: ${err instanceof Error ? err.message : String(err)}`,
+      },
+    }
+  }
+
+  // Two-pass extraction to honor the all-or-nothing contract:
+  //   Pass 1 — validate every entry's path. No filesystem writes. If any
+  //            entry is unsafe, return immediately; `dest` is untouched.
+  //   Pass 2 — only after every entry has cleared sanitization, mkdir
+  //            `dest` and write the files.
+  // Without the split, a malicious tar with a safe entry followed by an
+  // unsafe one would land the safe entry on disk before we noticed.
+  interface PreparedEntry {
+    target: string
+    data: Uint8Array
+  }
+  const prepared: PreparedEntry[] = []
+  for (const entry of entries) {
+    if (entry.data === undefined) continue // directory entry; recreated as we write files
+    const safeName = sanitizeEntryName(entry.name)
+    if (safeName === null) {
+      return {
+        ok: false,
+        error: {
+          code: 'NETWORK_ERROR',
+          cause: `archive contains an unsafe path: "${entry.name}"`,
+        },
+      }
+    }
+    const target = join(dest, safeName)
+    // Defense-in-depth: ensure the resolved path is still under dest after
+    // join+normalize. `sanitizeEntryName` should have caught this, but
+    // a second check costs nothing.
+    const rel = relative(dest, target)
+    if (rel.startsWith('..') || rel.startsWith('/')) {
+      return {
+        ok: false,
+        error: {
+          code: 'NETWORK_ERROR',
+          cause: `archive entry "${entry.name}" resolves outside the extraction directory`,
+        },
+      }
+    }
+    prepared.push({ target, data: entry.data })
+  }
+
+  // All entries cleared sanitization — now it's safe to touch the filesystem.
+  await mkdir(dest, { recursive: true })
+  for (const { target, data } of prepared) {
+    await mkdir(dirname(target), { recursive: true })
+    await writeFile(target, data)
+  }
+
+  return { ok: true, value: undefined }
+}
+
+/**
+ * Reject tar entry names that would escape the extraction directory.
+ * Returns the safe relative form, or null if the entry should be refused.
+ *
+ *   - Reject empty names.
+ *   - Strip a leading `./`; if nothing remains, reject (no useful target).
+ *   - Reject any platform-absolute path (`/foo`, `C:\foo`, `\\?\foo`,
+ *     `\\server\share`). On POSIX `isAbsolute('C:\\...')` is false, so
+ *     we also explicitly reject Windows-style drive letters and UNC
+ *     prefixes — defense in depth in case a malicious tar is unpacked
+ *     on a Windows host.
+ *   - Reject any segment equal to `..` (parent traversal).
+ *   - Reject `.` after normalization (entry would target `dest` itself,
+ *     which `writeFile` cannot do because `dest` is a directory).
+ */
+function sanitizeEntryName(name: string): string | null {
+  if (name.length === 0) return null
+  let cleaned = name
+  if (cleaned.startsWith('./')) cleaned = cleaned.slice(2)
+  if (cleaned.length === 0) return null
+  if (isAbsolute(cleaned)) return null
+  // Windows drive letters and UNC, even on POSIX hosts where `isAbsolute`
+  // returns false for them. (`C:\path`, `C:/path`, `\\server\share`.)
+  if (/^[A-Za-z]:[\\/]/.test(cleaned)) return null
+  if (cleaned.startsWith('\\\\')) return null
+  if (cleaned.startsWith('/')) return null
+  const normalized = normalize(cleaned)
+  if (normalized === '.' || normalized === '..') return null
+  const segments = normalized.split('/')
+  if (segments.some((s) => s === '..')) return null
+  return normalized
 }

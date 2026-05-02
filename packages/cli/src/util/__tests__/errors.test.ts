@@ -48,6 +48,28 @@ describe('formatCliError', () => {
   test('substitutes (no detail) when detail is the empty string', () => {
     expect(formatCliError({ what: 'x', detail: '', fix: 'y' })).toContain('(no detail)')
   })
+
+  test('appends a docs: line when docsUrl is provided', () => {
+    const err: CliError = {
+      what: 'facet not found in registry',
+      detail: 'no facet "viper-plans" published',
+      fix: "try 'facet search <term>' to find available facets",
+      docsUrl: 'https://agentfacets.io/errors/E_FACET_NOT_FOUND',
+    }
+    expect(formatCliError(err)).toBe(
+      [
+        'error: facet not found in registry',
+        '  no facet "viper-plans" published',
+        "  fix: try 'facet search <term>' to find available facets",
+        '  docs: https://agentfacets.io/errors/E_FACET_NOT_FOUND',
+      ].join('\n'),
+    )
+  })
+
+  test('omits the docs line when docsUrl is the empty string', () => {
+    const out = formatCliError({ what: 'x', fix: 'y', docsUrl: '' })
+    expect(out).not.toContain('docs:')
+  })
 })
 
 describe('writeCliError', () => {

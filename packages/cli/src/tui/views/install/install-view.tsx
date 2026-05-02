@@ -178,7 +178,7 @@ export function InstallView({ run, mode, onComplete }: InstallViewProps) {
         </Box>
       )}
 
-      {result?.ok && <SuccessSummary result={result} />}
+      {result?.ok && <SuccessSummary result={result} mode={mode} />}
       {result && !result.ok && <FailureBlock failure={result.failure} />}
       {result && !result.ok && !result.rollback.ok && (
         <Box flexDirection="column" marginTop={1}>
@@ -193,7 +193,7 @@ export function InstallView({ run, mode, onComplete }: InstallViewProps) {
   )
 }
 
-function SuccessSummary({ result }: { result: RunInstallResult & { ok: true } }) {
+function SuccessSummary({ result, mode }: { result: RunInstallResult & { ok: true }; mode: 'add' | 'install' }) {
   const { summary } = result
   const isNoOp = summary.installed === 0 && summary.updated === 0 && summary.repaired === 0 && summary.removed === 0
   if (isNoOp) {
@@ -203,14 +203,89 @@ function SuccessSummary({ result }: { result: RunInstallResult & { ok: true } })
       </Box>
     )
   }
+  // Bundle viz + landing line: only surface what landed THIS run. The
+  // lockfile carries every facet in the project; `perFacet` carries the
+  // outcomes from this invocation. The marketing aesthetic is "exactly
+  // which capability you just gained", so iterating the lockfile would
+  // advertise pre-existing facets every time the user adds one more.
+  const counts = countAssetsByType(result)
+  const bundleViz = formatBundleViz(counts)
+  // Skip the landing line on `install` (no new capability — just a sync)
+  // and when nothing this run shipped a command asset.
+  const landingCommand = mode === 'add' ? firstCommandAsset(result) : undefined
   return (
     <Box flexDirection="column">
       <Text color={THEME.success} bold>
         Done.
       </Text>
       <Text color={THEME.hint}>{summaryLine(summary)}</Text>
+      {bundleViz !== null && <Text color={THEME.hint}>{bundleViz}</Text>}
+      {landingCommand !== undefined && (
+        <Text color={THEME.brand} bold>
+          Now /{landingCommand} is available to your agents.
+        </Text>
+      )}
     </Box>
   )
+}
+
+interface AssetCounts {
+  skill: number
+  agent: number
+  command: number
+}
+
+function countAssetsByType(result: RunInstallResult & { ok: true }): AssetCounts {
+  const counts: AssetCounts = { skill: 0, agent: 0, command: 0 }
+  for (const name of touchedFacetNames(result)) {
+    const facet = result.lockfile.facets[name]
+    if (facet === undefined) continue
+    for (const asset of facet.assets) {
+      counts[asset.type]++
+    }
+  }
+  return counts
+}
+
+/**
+ * Names of facets actually written to disk in this run — installed,
+ * updated, or repaired. `unchanged` contributes no new assets and
+ * `removed` is rendered separately.
+ */
+function touchedFacetNames(result: RunInstallResult & { ok: true }): ReadonlyArray<string> {
+  const names: string[] = []
+  for (const outcome of result.perFacet) {
+    if (outcome.kind === 'installed' || outcome.kind === 'updated' || outcome.kind === 'repaired') {
+      names.push(outcome.name)
+    }
+  }
+  return names
+}
+
+function formatBundleViz(counts: AssetCounts): string | null {
+  const parts: string[] = []
+  if (counts.skill > 0) parts.push(`${counts.skill} skill${counts.skill === 1 ? '' : 's'}`)
+  if (counts.agent > 0) parts.push(`${counts.agent} agent${counts.agent === 1 ? '' : 's'}`)
+  if (counts.command > 0) parts.push(`${counts.command} command${counts.command === 1 ? '' : 's'}`)
+  if (parts.length === 0) return null
+  return `+ ${parts.join(' · ')}`
+}
+
+/**
+ * Pick the first command asset across the facets THIS RUN installed/updated
+ * — the landing line uses it as the suggested invocation. Returns undefined
+ * when no facet from this run shipped a command (e.g., skill-only or
+ * agent-only bundle, or only `unchanged` outcomes).
+ */
+function firstCommandAsset(result: RunInstallResult & { ok: true }): string | undefined {
+  for (const name of touchedFacetNames(result)) {
+    const facet = result.lockfile.facets[name]
+    if (facet === undefined) continue
+    for (const asset of facet.assets) {
+      if (asset.type === 'command') return asset.name
+    }
+  }
+  return undefined
 }
 
 function summaryLine(summary: {

@@ -17,10 +17,21 @@ if (!existsSync(CLI_PATH)) {
 // `self-update` shows in help with `self-upgrade` as a comma-joined alias on
 // the same line; we assert the canonical name only here, and the alias
 // rendering separately in self-update.e2e.test.ts.
-const IMPLEMENTED_COMMAND_NAMES = ['adapter', 'add', 'build', 'create', 'edit', 'install', 'self-update']
+const IMPLEMENTED_COMMAND_NAMES = [
+  'adapter',
+  'add',
+  'build',
+  'create',
+  'edit',
+  'install',
+  'list',
+  'publish',
+  'search',
+  'self-update',
+]
 // Stubs — invocable (to surface "did you mean…" suggestions) but hidden from
 // the global help listing (Adjustment K).
-const STUB_COMMAND_NAMES = ['info', 'list', 'publish', 'remove', 'upgrade']
+const STUB_COMMAND_NAMES = ['info', 'remove', 'upgrade']
 
 type ExecResult = {
   stdout: string
