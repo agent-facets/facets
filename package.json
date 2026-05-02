@@ -41,7 +41,7 @@
     "@types/node": "24.12.2",
     "dedent": "1.7.2",
     "mint": "4.2.534",
-    "turbo": "2.9.6",
+    "turbo": "2.9.7",
     "typescript": "6.0.3",
     "@types/aws-lambda": "8.10.161",
     "type-fest": "5.6.0"
