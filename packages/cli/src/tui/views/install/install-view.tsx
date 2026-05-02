@@ -178,7 +178,7 @@ export function InstallView({ run, mode, onComplete }: InstallViewProps) {
         </Box>
       )}
 
-      {result?.ok && <SuccessSummary result={result} />}
+      {result?.ok && <SuccessSummary result={result} mode={mode} />}
       {result && !result.ok && <FailureBlock failure={result.failure} />}
       {result && !result.ok && !result.rollback.ok && (
         <Box flexDirection="column" marginTop={1}>
@@ -193,7 +193,7 @@ export function InstallView({ run, mode, onComplete }: InstallViewProps) {
   )
 }
 
-function SuccessSummary({ result }: { result: RunInstallResult & { ok: true } }) {
+function SuccessSummary({ result, mode }: { result: RunInstallResult & { ok: true }; mode: 'add' | 'install' }) {
   const { summary } = result
   const isNoOp = summary.installed === 0 && summary.updated === 0 && summary.repaired === 0 && summary.removed === 0
   if (isNoOp) {
@@ -203,14 +203,69 @@ function SuccessSummary({ result }: { result: RunInstallResult & { ok: true } })
       </Box>
     )
   }
+  // Bundle viz: count what landed across all facets, by asset type. Per
+  // the marketing-site aesthetic we surface the breakdown so users see
+  // exactly which kind of capability they just gained.
+  const counts = countAssetsByType(result)
+  const bundleViz = formatBundleViz(counts)
+  // Landing line: pick a representative command asset name to render
+  // `Now /<cmd> is available to your agents.` This is the magical-moment
+  // delivery vehicle for the demo. Skip on `install` (existing facets,
+  // not a new capability) and when no command asset shipped.
+  const landingCommand = mode === 'add' ? firstCommandAsset(result) : undefined
   return (
     <Box flexDirection="column">
       <Text color={THEME.success} bold>
         Done.
       </Text>
       <Text color={THEME.hint}>{summaryLine(summary)}</Text>
+      {bundleViz !== null && <Text color={THEME.hint}>{bundleViz}</Text>}
+      {landingCommand !== undefined && (
+        <Text color={THEME.brand} bold>
+          Now /{landingCommand} is available to your agents.
+        </Text>
+      )}
     </Box>
   )
+}
+
+interface AssetCounts {
+  skill: number
+  agent: number
+  command: number
+}
+
+function countAssetsByType(result: RunInstallResult & { ok: true }): AssetCounts {
+  const counts: AssetCounts = { skill: 0, agent: 0, command: 0 }
+  for (const facet of Object.values(result.lockfile.facets)) {
+    for (const asset of facet.assets) {
+      counts[asset.type]++
+    }
+  }
+  return counts
+}
+
+function formatBundleViz(counts: AssetCounts): string | null {
+  const parts: string[] = []
+  if (counts.skill > 0) parts.push(`${counts.skill} skill${counts.skill === 1 ? '' : 's'}`)
+  if (counts.agent > 0) parts.push(`${counts.agent} agent${counts.agent === 1 ? '' : 's'}`)
+  if (counts.command > 0) parts.push(`${counts.command} command${counts.command === 1 ? '' : 's'}`)
+  if (parts.length === 0) return null
+  return `+ ${parts.join(' · ')}`
+}
+
+/**
+ * Pick the first command asset across all installed facets — the landing
+ * line uses it as the suggested invocation. Returns undefined when no
+ * facet shipped a command (e.g., skill-only or agent-only bundle).
+ */
+function firstCommandAsset(result: RunInstallResult & { ok: true }): string | undefined {
+  for (const facet of Object.values(result.lockfile.facets)) {
+    for (const asset of facet.assets) {
+      if (asset.type === 'command') return asset.name
+    }
+  }
+  return undefined
 }
 
 function summaryLine(summary: {

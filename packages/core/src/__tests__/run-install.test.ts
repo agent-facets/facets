@@ -211,20 +211,34 @@ describe('runInstall — local source success path', () => {
   })
 })
 
-describe('runInstall — registry source returns REGISTRY_ERROR (stub)', () => {
-  test('bare registry name fails with REGISTRY_NOT_AVAILABLE', async () => {
-    writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify({ facets: { 'viper-plans': 'viper-plans@1.0.0' } }))
+describe('runInstall — registry source surfaces REGISTRY_ERROR on resolution failure', () => {
+  test('unreachable registry: bare registry name fails with REGISTRY_ERROR / NETWORK_ERROR', async () => {
+    // Point at an unresolvable host so the resolver hits a real network
+    // failure (no mock) — exercises the failure-translation path end-to-end.
+    const originalEnv = process.env.FACET_REGISTRY_URL
+    process.env.FACET_REGISTRY_URL = 'http://127.0.0.1:1' // closed port
+    try {
+      writeFileSync(
+        join(projectRoot, 'facets.json'),
+        JSON.stringify({ facets: { 'viper-plans': 'viper-plans@1.0.0' } }),
+      )
 
-    const result = await runInstall({
-      projectRoot,
-      adapters: [buildFakeAdapter('test')],
-    })
-    expect(result.ok).toBe(false)
-    if (result.ok) return
-    expect(result.failure.code).toBe('REGISTRY_ERROR')
-    if (result.failure.code !== 'REGISTRY_ERROR') return
-    expect(result.failure.error.code).toBe('REGISTRY_NOT_AVAILABLE')
-    expect(result.failure.facet).toBe('viper-plans')
+      const result = await runInstall({
+        projectRoot,
+        adapters: [buildFakeAdapter('test')],
+      })
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.failure.code).toBe('REGISTRY_ERROR')
+      if (result.failure.code !== 'REGISTRY_ERROR') return
+      // Either NETWORK_ERROR (refused/dns) or NOT_FOUND if the unlikely
+      // event the host is reachable; both signal "registry didn't help".
+      expect(['NETWORK_ERROR', 'NOT_FOUND']).toContain(result.failure.error.code)
+      expect(result.failure.facet).toBe('viper-plans')
+    } finally {
+      if (originalEnv === undefined) delete process.env.FACET_REGISTRY_URL
+      else process.env.FACET_REGISTRY_URL = originalEnv
+    }
   })
 })
 

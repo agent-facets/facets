@@ -4,6 +4,8 @@ import { buildCommand } from './commands/build.ts'
 import { createCommand } from './commands/create/index.ts'
 import { editCommand } from './commands/edit/index.ts'
 import { installCommand } from './commands/install/index.ts'
+import { listCommand } from './commands/list/index.ts'
+import { searchCommand } from './commands/search/index.ts'
 import { selfUpdateCommand } from './commands/self-update.ts'
 
 export type FlagDef = {
@@ -52,9 +54,10 @@ export const commands: Record<string, Command> = {
   edit: editCommand,
   info: stubCommand('info', 'Show information about a facet'),
   install: installCommand,
-  list: stubCommand('list', 'List installed facets'),
+  list: listCommand,
   publish: stubCommand('publish', 'Publish a facet to the registry'),
   remove: stubCommand('remove', 'Remove a facet from the project'),
+  search: searchCommand,
   'self-update': selfUpdateCommand,
   upgrade: stubCommand('upgrade', 'Upgrade installed facets'),
 }

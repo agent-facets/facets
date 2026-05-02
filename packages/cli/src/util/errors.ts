@@ -28,18 +28,29 @@ export interface CliError {
   detail?: string
   /** One-line action the user should take to unblock themselves. */
   fix: string
+  /**
+   * Optional canonical docs URL for the error. When present, renders as a
+   * fourth line `  docs: <url>` so users can deep-link from terminal output
+   * to documentation. Used by registry error translations.
+   */
+  docsUrl?: string
 }
 
 /**
- * Format a CliError as the 3-line stderr block. Exposed for tests and for
- * callers that want to control writing (e.g., Ink cleanup paths that write
- * after unmount).
+ * Format a CliError as the canonical stderr block. Three lines normally;
+ * four when `docsUrl` is provided. Exposed for tests and for callers that
+ * want to control writing (e.g., Ink cleanup paths that write after unmount).
  */
 export function formatCliError(err: CliError): string {
   const detail = err.detail && err.detail.length > 0 ? err.detail : '(no detail)'
   const errorLabel = colorize('error:', THEME.warning)
   const fixLabel = colorize('fix:', THEME.warning)
-  return [`${errorLabel} ${err.what}`, `  ${detail}`, `  ${fixLabel} ${err.fix}`].join('\n')
+  const lines = [`${errorLabel} ${err.what}`, `  ${detail}`, `  ${fixLabel} ${err.fix}`]
+  if (err.docsUrl !== undefined && err.docsUrl.length > 0) {
+    const docsLabel = colorize('docs:', THEME.warning)
+    lines.push(`  ${docsLabel} ${err.docsUrl}`)
+  }
+  return lines.join('\n')
 }
 
 /**

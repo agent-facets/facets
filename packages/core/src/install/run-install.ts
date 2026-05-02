@@ -1,4 +1,5 @@
-import { rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
 import { runBuildPipeline } from '../build/pipeline.ts'
@@ -6,6 +7,8 @@ import { type CacheIdentity, cacheGet, cachePutVerified, readCachedIntegrity } f
 import { verifyGitOneCheck } from '../integrity/index.ts'
 import { loadManifest, type ResolvedFacetManifest, resolvePrompts } from '../loaders/facet.ts'
 import { loadFacetsJson } from '../manifest/project-files.ts'
+import { downloadAndExtractFacet } from '../registry/download.ts'
+import { resolveRegistryMetadataBatch } from '../registry/resolve-metadata.ts'
 import type { BuildManifest } from '../schemas/build-manifest.ts'
 import type { Lockfile, LockfileFacet } from '../schemas/lockfile.ts'
 import type { FacetsJson } from '../schemas/project-manifest.ts'
@@ -457,19 +460,71 @@ async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
     }
     sourceDir = local.dir
   } else {
-    // Registry source — currently stubbed; future blocks wire registry
-    // resolution + cache + integrity verification here.
-    return {
-      ok: false,
-      failure: {
-        code: 'REGISTRY_ERROR',
-        facet: facetName,
-        error: {
-          code: 'REGISTRY_NOT_AVAILABLE',
-          what: `registry is not yet available (would query facets.cafe for "${parsed.value.name}")`,
-          fix: 'use a github: shortcut, https URL, ssh URL, or local path until the registry ships',
-        },
-      },
+    // Registry source. Cache-first when locked; otherwise resolve metadata
+    // → download archive → extract to temp dir → let the build pipeline
+    // re-derive integrity (the cache write below moves temp → cache slot).
+    if (locked !== undefined) {
+      const cacheId: CacheIdentity = {
+        kind: 'registry',
+        name: facetName,
+        version: locked.version,
+      }
+      const lookup = cacheGet(cacheId)
+      if (lookup.hit) {
+        const cached = readCachedIntegrity(lookup.path)
+        if (cached === null) {
+          onLog(`[verbose]   cache slot ${lookup.path} has no valid integrity sidecar; refetching`)
+        } else if (cached.integrity !== locked.integrity) {
+          return {
+            ok: false,
+            failure: {
+              code: 'CACHE_INTEGRITY_MISMATCH',
+              facet: facetName,
+              slotPath: lookup.path,
+              cachedIntegrity: cached.integrity,
+              lockedIntegrity: locked.integrity,
+            },
+          }
+        } else {
+          sourceDir = lookup.path
+          trustedCacheHit = true
+          onLog(`[verbose]   cache hit ${lookup.path}`)
+        }
+      }
+    }
+
+    if (sourceDir === undefined) {
+      onStage({ kind: 'facet-stage', facet: facetName, stage: 'fetch' })
+      const metaResult = await resolveRegistryMetadataBatch([
+        { name: parsed.value.name, version: parsed.value.version },
+      ])
+      if (!metaResult.ok) {
+        return { ok: false, failure: { code: 'REGISTRY_ERROR', facet: facetName, error: metaResult.error } }
+      }
+      const meta = metaResult.value[0]
+      if (meta === undefined) {
+        return {
+          ok: false,
+          failure: {
+            code: 'REGISTRY_ERROR',
+            facet: facetName,
+            error: { code: 'NETWORK_ERROR', cause: 'registry returned no metadata for the requested facet' },
+          },
+        }
+      }
+
+      const tempDir = await mkdtemp(join(tmpdir(), 'facet-registry-'))
+      onStage({ kind: 'facet-stage', facet: facetName, stage: 'verify' })
+      const downloadResult = await downloadAndExtractFacet(meta, tempDir)
+      if (!downloadResult.ok) {
+        await rm(tempDir, { recursive: true, force: true }).catch(() => {})
+        return { ok: false, failure: { code: 'REGISTRY_ERROR', facet: facetName, error: downloadResult.error } }
+      }
+      sourceDir = tempDir
+      cleanup = async () => {
+        await rm(tempDir, { recursive: true, force: true }).catch(() => {})
+      }
+      onLog(`[verbose]   downloaded ${meta.name}@${meta.version} → ${sourceDir}`)
     }
   }
 
@@ -547,7 +602,9 @@ async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
       // an integrity drift is expected, not an attack. The lockfile
       // entry's integrity gets overwritten by the new build for local
       // sources. See `verifyGitOneCheck` docstring for the rationale.
-      if (locked !== undefined && parsed.value.kind === 'git') {
+      // Same integrity guard as git: locked registry entry MUST reproduce
+      // its locked integrity. The lockfile is the security contract.
+      if (locked !== undefined && (parsed.value.kind === 'git' || parsed.value.kind === 'registry')) {
         const guard = verifyGitOneCheck({
           facet: facetName,
           computedIntegrity: buildResult.integrity,
@@ -558,15 +615,15 @@ async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
         }
       }
 
-      // Fresh git clone → audit-then-write to cache. Cache hits already
-      // have content in the slot; local sources skip the cache entirely.
-      if (cleanup !== undefined && parsed.value.kind === 'git') {
+      // Fresh git clone or fresh registry download → audit-then-write to
+      // cache. Cache hits already have content in the slot; local sources
+      // skip the cache entirely.
+      if (cleanup !== undefined && (parsed.value.kind === 'git' || parsed.value.kind === 'registry')) {
         const buildManifest = JSON.parse(buildResult.manifestJson) as BuildManifest
-        const cacheId: CacheIdentity = {
-          kind: 'git',
-          name: facetName,
-          version: buildResult.data.version,
-        }
+        const cacheId: CacheIdentity =
+          parsed.value.kind === 'git'
+            ? { kind: 'git', name: facetName, version: buildResult.data.version }
+            : { kind: 'registry', name: facetName, version: buildResult.data.version }
         const putResult = cachePutVerified(cacheId, sourceDir, buildManifest, buildResult.integrity, facetName)
         if (!putResult.ok) {
           if ('corruption' in putResult) {
@@ -589,14 +646,15 @@ async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
 
       // Construct the entry.
       //
-      //   - Locked GIT entries inherit locked.* verbatim (we just
+      //   - Locked GIT/REGISTRY entries inherit locked.* verbatim (we just
       //     verified buildResult matches, so values are equal — but the
       //     lockfile is the source of truth and we never rewrite it).
       //   - Local sources (locked or fresh) derive from the build.
       //     Local is mutable by design; the user owns the version and
       //     content, and the lockfile follows what's on disk.
       //   - Fresh git adds derive from the build + the clone's commit.
-      if (locked !== undefined && parsed.value.kind === 'git') {
+      //   - Fresh registry adds derive from the build (no ref/commit).
+      if (locked !== undefined && (parsed.value.kind === 'git' || parsed.value.kind === 'registry')) {
         entry = {
           source: specifier,
           ...(locked.ref !== undefined ? { ref: locked.ref } : {}),

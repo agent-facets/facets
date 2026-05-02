@@ -243,6 +243,157 @@ describe('InstallView — drift removal', () => {
   })
 })
 
+describe('InstallView — marketing aesthetic on `add`', () => {
+  test('renders bundle viz line and "Now /<cmd> is available" landing line', async () => {
+    const events: StageEvent[] = [
+      { kind: 'install-start', totalFacets: 1 },
+      { kind: 'facet-start', facet: 'cowsay', specifier: 'cowsay@latest' },
+      {
+        kind: 'facet-success',
+        facet: 'cowsay',
+        outcome: { kind: 'installed', name: 'cowsay', version: '0.1.0' },
+      },
+      { kind: 'install-complete', outcome: 'success' },
+    ]
+    const result: RunInstallResult = {
+      ok: true,
+      lockfile: {
+        lockfileVersion: 1,
+        facets: {
+          cowsay: {
+            source: 'cowsay@latest',
+            version: '0.1.0',
+            integrity: 'sha256:x',
+            assets: [
+              { scope: 'project', type: 'command', name: 'cowsay' },
+              { scope: 'project', type: 'skill', name: 'ascii-art' },
+            ],
+          },
+        },
+      },
+      summary: {
+        installed: 1,
+        updated: 0,
+        repaired: 0,
+        unchanged: 0,
+        removed: 0,
+        totalAssets: 2,
+        removedAssets: 0,
+      },
+      perFacet: [{ kind: 'installed', name: 'cowsay', version: '0.1.0' }],
+      serverWarnings: [],
+    }
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'add',
+        run: makeFakeRun(events, result),
+      }),
+    )
+    await settle()
+    const frame = findContentFrame(instance.frames)
+    expect(frame).toContain('+ 1 skill · 1 command')
+    expect(frame).toContain('Now /cowsay is available to your agents.')
+    instance.unmount()
+  })
+
+  test('omits the landing line when no command asset shipped', async () => {
+    const events: StageEvent[] = [
+      { kind: 'install-start', totalFacets: 1 },
+      { kind: 'facet-start', facet: 'pure-skills', specifier: 'pure-skills@1.0.0' },
+      {
+        kind: 'facet-success',
+        facet: 'pure-skills',
+        outcome: { kind: 'installed', name: 'pure-skills', version: '1.0.0' },
+      },
+      { kind: 'install-complete', outcome: 'success' },
+    ]
+    const result: RunInstallResult = {
+      ok: true,
+      lockfile: {
+        lockfileVersion: 1,
+        facets: {
+          'pure-skills': {
+            source: 'pure-skills@1.0.0',
+            version: '1.0.0',
+            integrity: 'sha256:x',
+            assets: [{ scope: 'project', type: 'skill', name: 'planning' }],
+          },
+        },
+      },
+      summary: {
+        installed: 1,
+        updated: 0,
+        repaired: 0,
+        unchanged: 0,
+        removed: 0,
+        totalAssets: 1,
+        removedAssets: 0,
+      },
+      perFacet: [{ kind: 'installed', name: 'pure-skills', version: '1.0.0' }],
+      serverWarnings: [],
+    }
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'add',
+        run: makeFakeRun(events, result),
+      }),
+    )
+    await settle()
+    const frame = findContentFrame(instance.frames)
+    expect(frame).toContain('+ 1 skill')
+    expect(frame).not.toContain('is available to your agents')
+    instance.unmount()
+  })
+
+  test('skips the landing line on `mode: install` even when commands shipped', async () => {
+    const events: StageEvent[] = [
+      { kind: 'install-start', totalFacets: 1 },
+      { kind: 'facet-start', facet: 'cowsay', specifier: 'cowsay@latest' },
+      {
+        kind: 'facet-success',
+        facet: 'cowsay',
+        outcome: { kind: 'installed', name: 'cowsay', version: '0.1.0' },
+      },
+    ]
+    const result: RunInstallResult = {
+      ok: true,
+      lockfile: {
+        lockfileVersion: 1,
+        facets: {
+          cowsay: {
+            source: 'cowsay@latest',
+            version: '0.1.0',
+            integrity: 'sha256:x',
+            assets: [{ scope: 'project', type: 'command', name: 'cowsay' }],
+          },
+        },
+      },
+      summary: {
+        installed: 1,
+        updated: 0,
+        repaired: 0,
+        unchanged: 0,
+        removed: 0,
+        totalAssets: 1,
+        removedAssets: 0,
+      },
+      perFacet: [{ kind: 'installed', name: 'cowsay', version: '0.1.0' }],
+      serverWarnings: [],
+    }
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'install',
+        run: makeFakeRun(events, result),
+      }),
+    )
+    await settle()
+    const frame = findContentFrame(instance.frames)
+    expect(frame).toContain('+ 1 command')
+    expect(frame).not.toContain('is available to your agents')
+    instance.unmount()
+  })
+})
+
 describe('InstallView — empty / no-op', () => {
   test('renders the no-op message when nothing changes', async () => {
     const events: StageEvent[] = [
