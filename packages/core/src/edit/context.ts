@@ -1,5 +1,3 @@
-import { join } from 'node:path'
-import { hasFrontMatter } from '../front-matter.ts'
 import { loadManifest } from '../loaders/facet.ts'
 import { reconcile } from './reconcile.ts'
 import { scanAssets } from './scanner.ts'
@@ -45,14 +43,9 @@ export async function buildEditContext(
     items.push({ kind: 'missing', type: missing.type, name: missing.name, expectedPath: missing.expectedPath })
   }
 
-  // Check matched assets for front matter
-  for (const matched of recon.matched) {
-    const filePath = join(rootDir, matched.path)
-    const content = await Bun.file(filePath).text()
-    if (hasFrontMatter(content)) {
-      items.push({ kind: 'front-matter', type: matched.type, name: matched.name, path: matched.path })
-    }
-  }
+  // Matched assets are not inspected. Author-supplied front matter in
+  // matched files is permitted and reconciled at install time, not at
+  // edit time — see `materialize` and the SDK's `assembleAssetContent`.
 
   return { ok: true, context: { rootDir, manifest, reconciliationItems: items } }
 }

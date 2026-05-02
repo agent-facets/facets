@@ -28,6 +28,33 @@
           "name": "viper-run"
         }
       ]
+    },
+    "cowsay": {
+      "source": "./fixtures/cowsay",
+      "version": "0.1.1",
+      "integrity": "sha256:b9382c785593c404ea61b8aae43b63ffc7fec426e0d4419233de71c0080a3fe1",
+      "assets": [
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "cowsay-rules"
+        },
+        {
+          "scope": "project",
+          "type": "agent",
+          "name": "cowsay"
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "cowchat"
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "cowsay"
+        }
+      ]
     }
   }
 }

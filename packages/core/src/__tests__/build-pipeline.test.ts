@@ -534,19 +534,18 @@ describe('runBuildPipeline', () => {
 // --- Content validation ---
 
 describe('content validation', () => {
-  test('build fails on file with YAML front matter', async () => {
+  test('build succeeds when content files contain YAML front matter; archive preserves the body verbatim', async () => {
     const dir = await createFixtureDir('front-matter')
-    await Bun.write(
-      join(dir, 'skills/review/SKILL.md'),
-      dedent`
-        ---
-        name: Review
-        description: A review skill
-        ---
-        # Review
-        Review all code.
-      `,
-    )
+    const authoredBody = dedent`
+      ---
+      name: Review
+      description: A review skill
+      agent: cowsay
+      ---
+      # Review
+      Review all code.
+    `
+    await Bun.write(join(dir, 'skills/review/SKILL.md'), authoredBody)
     await Bun.write(
       join(dir, 'facet.json'),
       JSON.stringify({
@@ -559,13 +558,15 @@ describe('content validation', () => {
     )
 
     const result = await runBuildPipeline(dir)
-    expect(result.ok).toBe(false)
-    if (!result.ok) {
-      expect(result.errors).toHaveLength(1)
-      expect(result.errors[0]?.path).toBe('skills.review')
-      expect(result.errors[0]?.message).toContain('front matter')
-      expect(result.errors[0]?.message).toContain('skills/review/SKILL.md')
-    }
+    expect(result.ok).toBe(true)
+    if (!result.ok) expect.unreachable()
+
+    // Build resolved the prompt verbatim — front matter survives untouched.
+    expect(result.data.skills?.review?.prompt).toBe(authoredBody)
+
+    // The asset hash is computed over the verbatim file contents, so the
+    // entry exists in the archive's per-asset hash map.
+    expect(result.assetHashes['skills/review/SKILL.md']).toMatch(/^sha256:/)
   })
 
   test('build fails on empty content file', async () => {

@@ -23,7 +23,8 @@ If the edit command detects drift between the manifest and the files on disk, it
 
 - **New files on disk** not tracked in the manifest — choose "Add to manifest" or "Ignore for now"
 - **Missing files** declared in the manifest but absent from disk — choose "Scaffold template" or "Remove from manifest"
-- **Front matter detected** in content files — choose "Strip front matter" or "Remove from manifest"
+
+YAML front matter in content files is not flagged here — it is permitted and preserved verbatim through the build, then merged with the manifest's `name`, `description`, and any per-adapter extras at install time.
 
 All reconciliation items must be resolved before proceeding to editing.
 
@@ -44,7 +45,6 @@ Before applying, a summary shows the final state of your facet — identity fiel
 On apply, the edit command:
 - Writes the updated `facet.json`
 - Scaffolds template files for new assets
-- Strips front matter from flagged files
 - Deletes files for removed assets
 
 ## Exit codes

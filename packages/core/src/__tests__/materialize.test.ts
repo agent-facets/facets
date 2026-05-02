@@ -148,6 +148,58 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
     expect(second.skipped).toBe(1)
   })
 
+  test('author front matter in the prompt body survives, manifest wins on conflict, and re-install skips', async () => {
+    // The user-shipped scenario: an author writes a `commands/foo.md` with
+    // their own YAML front matter (e.g., `agent: cowsay`), maybe also
+    // including their own `name`/`description` that conflict with what
+    // the manifest says. The build pipeline preserves the file verbatim;
+    // materialize merges the manifest's canonical name + description on
+    // top, the adapter SDK serializes the merged metadata to the file's
+    // front matter, and the body is preserved. A second install must
+    // skip — proving that the skip-if-identical comparison handles the
+    // body-vs-merged-content asymmetry correctly.
+    const promptBody = '---\nagent: cowsay\nname: bogus\n---\n# foo body\n'
+    const manifest: ResolvedFacetManifest = {
+      name: 'viper-plans',
+      version: '0.1.0',
+      commands: { foo: { description: 'real desc', prompt: promptBody } },
+    }
+    const fixture = buildSdkAdapter('sdk-author-fm')
+    const newAssets = computeAssetList(manifest)
+
+    const first = await materialize({
+      manifest,
+      adapters: [fixture.adapter],
+      oldAssets: [],
+      newAssets,
+      journal: new InstallJournal(),
+    })
+    expect(first.written).toBe(1)
+    expect(first.skipped).toBe(0)
+
+    // Inspect on-disk file directly: manifest wins on name/description,
+    // author's other front-matter keys survive, body is preserved.
+    const file = join(projectRoot, '.sdk-author-fm', 'commands', 'foo.md')
+    const onDisk = readFileSync(file, 'utf8')
+    expect(onDisk).toContain('name: foo')
+    expect(onDisk).toContain('description: real desc')
+    expect(onDisk).toContain('agent: cowsay')
+    expect(onDisk).not.toContain('name: bogus')
+    expect(onDisk).toContain('# foo body')
+
+    // Second materialize against the same disk state must skip — this
+    // exercises the skip-if-identical fix in materialize.ts.
+    const second = await materialize({
+      manifest,
+      adapters: [fixture.adapter],
+      oldAssets: newAssets,
+      newAssets,
+      journal: new InstallJournal(),
+    })
+    expect(second.written).toBe(0)
+    expect(second.skipped).toBe(1)
+  })
+
   test('SDK round-trip with adapter extras reports skipped:1 on re-install', async () => {
     // The case that production hit: a facet declares an `adapters.<name>`
     // block. materialize merges those extras into the metadata bag. The

@@ -21,7 +21,7 @@ The following are the most common `facet` commands. See the [roadmap](/roadmap) 
     Scaffolds a new **facet** project with an interactive wizard — name, description, version, and initial assets
   </Card>
   <Card title={<Badge>facet edit</Badge>}>
-    Full authoring workbench — edit identity, manage assets, reconcile disk vs manifest, strip front matter
+    Full authoring workbench — edit identity, manage assets, reconcile disk vs manifest
   </Card>
   <Card title={<Badge>facet build</Badge>}>
     Validates and packages your **facet** into a distributable archive with integrity hashes

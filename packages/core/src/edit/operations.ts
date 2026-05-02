@@ -1,6 +1,5 @@
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { extractFrontMatter } from '../front-matter.ts'
 import { agentTemplate, commandTemplate, skillTemplate } from '../scaffold/index.ts'
 import type { FacetManifest } from '../schemas/facet-manifest.ts'
 import { writeManifest } from './manifest-writer.ts'
@@ -8,8 +7,7 @@ import type { EditOperation } from './types.ts'
 
 /**
  * Apply a sequence of edit operations to disk: write the manifest, scaffold
- * new asset templates, delete files, and strip front matter from existing
- * asset files.
+ * new asset templates, and delete files.
  */
 export async function applyEditOperations(
   manifest: FacetManifest,
@@ -46,14 +44,6 @@ export async function applyEditOperations(
         } catch {
           // File already gone — that's fine
         }
-        break
-      }
-
-      case 'strip-front-matter': {
-        const filePath = join(rootDir, op.path)
-        const raw = await Bun.file(filePath).text()
-        const { content } = extractFrontMatter(raw)
-        await Bun.write(filePath, content)
         break
       }
     }

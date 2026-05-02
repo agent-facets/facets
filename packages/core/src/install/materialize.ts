@@ -1,4 +1,5 @@
 import type { Adapter } from '@agent-facets/adapter'
+import { splitFrontMatter } from '@agent-facets/common'
 import type { ResolvedFacetManifest } from '../loaders/facet.ts'
 import type { LockfileAssetEntry } from '../schemas/lockfile.ts'
 import type { InstallJournal } from './journal.ts'
@@ -125,10 +126,31 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
       // Skip-if-identical: when the on-disk content + metadata already
       // matches what we would write, no work is needed and no journal
       // entry is recorded (there's nothing to undo).
+      //
+      // The candidate (`content`, `metadata`) we hand to `installAsset`
+      // is NOT what lands on disk byte-for-byte. The adapter SDK's
+      // `assembleAssetContent` splits any author-supplied front matter
+      // out of `content` and merges it under the caller's `metadata`
+      // (caller wins on key collisions), then re-emits a `--- yaml ---
+      // body` file. To compare apples-to-apples with what `readAsset`
+      // returns, we replay that merge here:
+      //   - body is the post-split candidate body (via the same
+      //     `splitFrontMatter` primitive the adapter SDK uses)
+      //   - metadata is the same merge the SDK would do
+      // The on-disk `previous.content` and `previous.metadata` reflect
+      // that merged shape, so equality holds iff a no-op write is safe.
+      //
+      // We import `splitFrontMatter` from `common` rather than
+      // `splitAssetContent` from the adapter SDK to keep the adapter SDK
+      // a type-only dep of `core`: a value import from the SDK pulls
+      // `yaml` into core's runtime graph and collides with `Bun.build`
+      // when the CLI's adapter integration tests bundle the same source.
+      const candidateSplit = splitFrontMatter(content)
+      const mergedCandidateMetadata = { ...(candidateSplit.metadata ?? {}), ...metadata }
       if (
         previous &&
-        previous.content === content &&
-        JSON.stringify(previous.metadata ?? {}) === JSON.stringify(metadata)
+        previous.content === candidateSplit.content &&
+        JSON.stringify(previous.metadata ?? {}) === JSON.stringify(mergedCandidateMetadata)
       ) {
         opts.onLog?.(`[verbose]   =${asset.type}:${asset.name} → ${adapter.name} (skipped)`)
         skipped++

@@ -17,7 +17,7 @@ The publish flow addresses two concerns:
 
 ### Steps
 
-1. **Parse the manifest.** Read the facet manifest (`facet.json`) and validate against the manifest schema. The manifest MUST be valid. Invalid manifests MUST be rejected with a descriptive error. Content files MUST contain no YAML front matter and MUST not be empty.
+1. **Parse the manifest.** Read the facet manifest (`facet.json`) and validate against the manifest schema. The manifest MUST be valid. Invalid manifests MUST be rejected with a descriptive error. Content files MUST NOT be empty. YAML front matter in content files is permitted and MUST be preserved verbatim in the archive — the manifest's `name`, `description`, and any per-adapter extras are merged on top of the author's front matter at install time.
 
 2. **Resolve text composition.** For each entry in the `facets` section:
    - Fetch the referenced facet at the exact pinned version from the registry or local cache.

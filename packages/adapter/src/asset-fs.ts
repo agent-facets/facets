@@ -1,7 +1,7 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { normalizeLineEndings, validateAssetName } from '@agent-facets/common'
-import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
+import { splitFrontMatter, validateAssetName } from '@agent-facets/common'
+import { stringify as stringifyYaml } from 'yaml'
 
 /**
  * Shared filesystem helpers for adapter install/read/delete.
@@ -85,8 +85,6 @@ export async function deleteAssetFile(path: AssetPath): Promise<void> {
 
 // --- front-matter helpers (exported for adapter-level customization) ---
 
-const FRONT_MATTER_RE = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/
-
 /**
  * Assemble a full file string from optional front-matter metadata + body.
  * When `body` already contains a front-matter block, the two are merged
@@ -117,31 +115,14 @@ export function assembleAssetContent(body: string, metadata?: Record<string, unk
  * the raw string as `content` when no front-matter is detected. Malformed
  * YAML falls back to "no front-matter."
  *
- * Known limitation (tracked as a post-alpha TODO — see plan F10): the regex
- * below is non-greedy, so if a body legitimately contains a literal line of
- * exactly `---` followed by content and another `---` line, the first
- * terminator wins and the body will be split in the wrong place. Skills and
- * commands rarely include frontmatter-shaped content inside their bodies,
- * so in practice this is benign — but replacing the regex with `gray-matter`
- * or an equivalent well-tested parser is the right fix.
+ * Thin re-export over `@agent-facets/common`'s `splitFrontMatter` so the
+ * adapter SDK and `core` share one canonical implementation. Kept as a
+ * named export here because adapter authors may import it directly when
+ * they customize their read path; `common` is bundled into the published
+ * adapter SDK so this stays a leaf import for consumers.
  */
 export function splitAssetContent(raw: string): { content: string; metadata?: Record<string, unknown> } {
-  // Normalize BOM + CRLF so Windows checkouts (or cross-platform git with
-  // core.autocrlf=true) match the same \n-anchored regex as Unix checkouts.
-  // Mirrors the behavior in `@agent-facets/core`'s front-matter parser.
-  const normalized = normalizeLineEndings(raw)
-  const match = normalized.match(FRONT_MATTER_RE)
-  if (!match) return { content: normalized }
-  try {
-    const yamlSource = match[1] ?? ''
-    const parsed = parseYaml(yamlSource) as unknown
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return { content: match[2] ?? '', metadata: parsed as Record<string, unknown> }
-    }
-    return { content: normalized }
-  } catch {
-    return { content: normalized }
-  }
+  return splitFrontMatter(raw)
 }
 
 /**
