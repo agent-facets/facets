@@ -26,7 +26,7 @@
     },
     "packages/adapter": {
       "name": "@agent-facets/adapter",
-      "version": "0.4.6",
+      "version": "0.9.1",
       "dependencies": {
         "yaml": "2.8.3",
       },
@@ -74,7 +74,7 @@
     },
     "packages/cli": {
       "name": "agent-facets",
-      "version": "0.9.0",
+      "version": "0.9.1",
       "bin": {
         "facet": "./bin/facet",
       },
@@ -109,7 +109,7 @@
     },
     "packages/core": {
       "name": "@agent-facets/core",
-      "version": "0.7.0",
+      "version": "0.9.1",
       "dependencies": {
         "@agent-facets/adapter": "workspace:*",
         "arktype": "2.2.0",

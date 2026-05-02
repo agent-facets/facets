@@ -1,18 +1,31 @@
 # @agent-facets/core
 
+## 0.9.1
+
+### Patch Changes
+
+- [#235](https://github.com/agent-facets/facets/pull/235) [`acdb171`](https://github.com/agent-facets/facets/commit/acdb171d94b0fe8a22789021e4b0e9f4b2b1e039) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Wire CLI to live registry: add `facet search`, `facet list`, registry resolution in install pipeline, and InstallView marketing aesthetic
+- [#227](https://github.com/agent-facets/facets/pull/227) [`27a0ced`](https://github.com/agent-facets/facets/commit/27a0ced81b210b934345b7a3819246b0c80826f0) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Add namespaced registry name support to `parseSource`
+- [#227](https://github.com/agent-facets/facets/pull/227) [`27a0ced`](https://github.com/agent-facets/facets/commit/27a0ced81b210b934345b7a3819246b0c80826f0) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Linked core, adapter SDK, and CLI package versions
+- [#236](https://github.com/agent-facets/facets/pull/236) [`cc76d43`](https://github.com/agent-facets/facets/commit/cc76d43f4ce62d706154b00071ca62448b1c329e) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Allow YAML front matter in content files; merge with manifest at install time
+
+#### Updated Dependencies
+- @agent-facets/adapter@0.9.1
+
 ## 0.7.0
 
 ### Minor Changes
 
 - [#221](https://github.com/agent-facets/facets/pull/221) [`b2f92a4`](https://github.com/agent-facets/facets/commit/b2f92a45198ec5495e9f8dae414881bffa1cd8a7) Thanks [@eXamadeus](https://github.com/eXamadeus)! - `facet add <source>` now resolves, writes, and installs in one step instead of leaving the user to run `facet install` separately. Multiple sources per invocation are supported. `facets.json` rolls back byte-for-byte on failure.
-    The adapter picker auto-launches when `add` runs against a project with no connected adapters in a TTY. Non-TTY exits with a clear "no adapters installed" error.
-    Source grammar tightened for closed alpha: `git+` prefixes hard-rejected, `^` / `~` / `1.x` ranges hard-rejected with a fix pointing at the supported `*` wildcards (`1.*`, `1.2.*`), and bare registry names route to a registry stub that errors clearly until the real registry ships.
-    The install pipeline (sources, resolvers, lockfile I/O, materialization, integrity, cache, registry stub) moved from the CLI into `@agent-facets/core`. The CLI is now display-only on top.
-    `@agent-facets/adapter` fixes a blank-line asymmetry in `assembleAssetContent` that made `materialize`'s skip-if-identical check see phantom drift on every re-install. First-party adapter packages republish at the patch level so the bundled fix reaches existing installs.
+  The adapter picker auto-launches when `add` runs against a project with no connected adapters in a TTY. Non-TTY exits with a clear "no adapters installed" error.
+  Source grammar tightened for closed alpha: `git+` prefixes hard-rejected, `^` / `~` / `1.x` ranges hard-rejected with a fix pointing at the supported `*` wildcards (`1.*`, `1.2.*`), and bare registry names route to a registry stub that errors clearly until the real registry ships.
+  The install pipeline (sources, resolvers, lockfile I/O, materialization, integrity, cache, registry stub) moved from the CLI into `@agent-facets/core`. The CLI is now display-only on top.
+  `@agent-facets/adapter` fixes a blank-line asymmetry in `assembleAssetContent` that made `materialize`'s skip-if-identical check see phantom drift on every re-install. First-party adapter packages republish at the patch level so the bundled fix reaches existing installs.
 
 ### Patch Changes
 
 #### Updated Dependencies
+
 - @agent-facets/adapter@0.4.6
 
 ## 0.6.5
