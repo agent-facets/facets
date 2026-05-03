@@ -32,11 +32,12 @@
     "react-devtools-core": "7.0.1"
   },
   "devDependencies": {
-    "@agent-facets/brand": "workspace:*",
-    "@agent-facets/common": "workspace:*",
-    "@agent-facets/core": "workspace:*",
     "@agent-facets/adapter": "workspace:*",
     "@agent-facets/adapter-opencode": "workspace:*",
+    "@agent-facets/brand": "workspace:*",
+    "@agent-facets/common": "workspace:*",
+    "@agent-facets/engine": "workspace:*",
+    "@agent-facets/protocol": "workspace:*",
     "ink-testing-library": "4.0.0"
   },
   "peerDependencies": {

@@ -72,51 +72,72 @@ Manual deploys are still supported for ad-hoc stages via the `bun sst deploy
 
 ## Source Code Map
 
-Turborepo monorepo with Bun workspaces. Five packages under `packages/`.
+Turborepo monorepo with Bun workspaces. Six packages under `packages/`,
+organized as a three-layer architecture (protocol / engine / CLI).
 
-### `packages/core` — `@agent-facets/core`
+### `packages/protocol` — `@agent-facets/protocol` (Layer 1)
 
-The logic layer. Facet manifest parsing, validation, build pipeline, source
-resolution, install machinery, scaffold generation, self-update logic, edit
-context. The CLI is presentation on top of this; in principle this layer
-could one day be rewritten in Rust/Go with the CLI TUI on top.
+The TypeScript reference implementation of the **facet artifact specification**.
+Public, Node-native (Node 22+), the only thing in this monorepo that gets
+published to npm. Contains the schemas, bytes-validators, integrity
+verification, deterministic archive format, hash algorithm, version-spec
+grammar, front-matter encoding, and pure build validators.
 
-Entry point: `src/index.ts`. Single public surface — everything funnels
-through `index.ts` re-exports.
+If we rewrote engine in another language tomorrow, every line in protocol
+would survive untouched — that's the test for what belongs here. See
+`packages/protocol/AGENTS.md` for the full rules.
 
 ```
 src/
-├── schemas/        # Arktype schemas (facet manifest, lockfile, server manifest, project manifest, build manifest)
-├── loaders/        # Load and validate facet manifest / server manifests from disk
-├── build/          # Build pipeline: collision detection, validation, output writing
-├── manifest/       # Pure JSON mutations + project-files I/O bridge for facets.json
-├── sources/        # Source resolvers: parse + clone/fetch
-│   ├── facet/      #   Facet sources (github:/git+/file:/local/registry) for `facet add`/`install`
-│   └── adapter/    #   Adapter sources (npm/git+/local) for `facet adapter install`
-├── adapters/       # Adapter machinery: bundler, placement, verify, loader, install-service, first-party list
-├── install/        # Install machinery: journal, lockfile-guard, lockfile-io, materialize, run-install orchestrator
-├── cache/          # Content-addressed cache for fetched facet payloads
-├── integrity/      # Integrity verification (hashes, registry-three-check, git-one-check)
-├── registry/       # Registry client: metadata resolution, download/extract, version-spec rendering
-├── scaffold/       # Scaffold generator: manifest + asset templates for `facet create`
-├── self-update/    # Self-update: detect, version-check, registry, methods/, runSelfUpdate
-├── edit/           # Edit context: reconcile, scanner, manifest-writer, context, operations, types
+├── schemas/        # Arktype schemas (facet, project, lockfile, build, server)
+├── loaders/        # Pure bytes-validators: validateFacetManifest, validateServerManifest, resolvePromptsFromMap
+├── integrity/      # 3-check + 1-check verification, IntegrityResult types
+├── build/          # Pure: detect-collisions, validate-content, validate-facets, content-hash, parseFacetArchive
+├── sources/        # Just version-spec.ts (VersionSpec type + grammar + resolvesToLatest)
 ├── front-matter.ts # YAML front-matter extract/strip
-├── index.ts        # Public API entry point
-└── __tests__/      # Cross-cutting integration tests
+├── index.ts        # Curated public API
+└── __tests__/      # Tests run on bun:test (devDep), but src/ runs on Node
+```
+
+### `packages/engine` — `@agent-facets/engine` (Layer 2)
+
+The Bun-native CLI machinery. Private to this monorepo; never published.
+One concrete implementation of the spec on a developer's machine. Other
+implementations (a future Rust CLI, the cafe registry server) would have
+their own engine equivalent. Engine consumes `@agent-facets/protocol`
+for everything that's part of the spec.
+
+If you'd rewrite this code in Rust as part of porting the CLI, it
+belongs here.
+
+```
+src/
+├── adapters/       # Adapter machinery: bundler, placement, verify, loader, install-service, first-party list
+├── sources/        # Source resolvers: parse + clone/fetch (facet + adapter), Source type, ParseError
+├── install/        # Install machinery: journal, lockfile-guard, lockfile-io, materialize, run-install orchestrator
+├── cache/          # ~/.facets/cache/ — content-addressed cache for fetched facet payloads
+├── manifest/       # Pure JSON mutations + project-files I/O bridge for facets.json
+├── registry/       # Registry HTTP client: metadata resolution, download/extract, version-spec rendering
+├── scaffold/       # Scaffold generator: `facet create` machinery
+├── self-update/    # Detect install method, run the right updater
+├── edit/           # Edit context: reconcile, scanner, manifest-writer, context, operations
+├── build/          # Build pipeline orchestrator (pipeline.ts, write-output.ts) + compress.ts (gzip — delivery only)
+├── loaders/        # Path-based loader wrappers that read disk and call protocol's bytes-validators
+└── index.ts        # Curated engine-specific exports — do not re-export protocol
 ```
 
 A note on duplication: `sources/facet/` and `sources/adapter/` each have
 their own parser and git-clone helper today. They started life on the CLI
-side and were lifted to core as-is. Consolidating them into one
+side and were lifted to engine as-is. Consolidating them into one
 parameterized resolver is a deliberate follow-up — the rules differ today
 (facet sources enforce project-tree containment; adapter sources don't),
 and a unified API would need to make that variation explicit.
 
-### `packages/cli` — `agent-facets`
+### `packages/cli` — `agent-facets` (Layer 3)
 
-CLI binary (`facet`). Thin orchestration layer over `@agent-facets/core`:
-command bindings, Ink-based TUI views, error formatting for the terminal.
+CLI binary (`facet`). Thin orchestration layer over `@agent-facets/protocol`
+(data primitives) and `@agent-facets/engine` (CLI workflows): command
+bindings, Ink-based TUI views, error formatting for the terminal.
 Entry point: `src/index.ts`
 
 ```

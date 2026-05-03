@@ -5,7 +5,7 @@ import {
   installAdapter,
   listInstalledAdapters,
   loadInstalledAdapters,
-} from '@agent-facets/core'
+} from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
 import { writeCliError } from '../../util/errors.ts'

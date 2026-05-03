@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import type { IntegrityFailure, RunInstallFailure, RunInstallResult, StageEvent } from '@agent-facets/core'
+import type { RunInstallFailure, RunInstallResult, StageEvent } from '@agent-facets/engine'
+import type { IntegrityFailure } from '@agent-facets/protocol'
 import { render } from 'ink-testing-library'
 import { createElement } from 'react'
 import { InstallView } from '../tui/views/install/install-view.tsx'

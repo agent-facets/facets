@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { FACETS_LOCK_FILE, loadFacetsJson, loadLockfile } from '@agent-facets/core'
+import { FACETS_LOCK_FILE, loadFacetsJson, loadLockfile } from '@agent-facets/engine'
 import type { Command } from '../../commands.ts'
 import { writeCliError } from '../../util/errors.ts'
 

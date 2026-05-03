@@ -1,4 +1,4 @@
-import { runSelfUpdate } from '@agent-facets/core'
+import { runSelfUpdate } from '@agent-facets/engine'
 import type { Command } from '../commands.ts'
 import { version as currentVersion } from '../version.ts'
 

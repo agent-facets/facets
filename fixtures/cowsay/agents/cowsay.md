@@ -1,3 +1,7 @@
+---
+mode: subagent
+---
+
 # Cowsay
 
 ## Role

@@ -34,11 +34,13 @@ Please see https://docs.agentfacets.io for detailed guidance and documentation f
 
 ## Packages
 
-| Package                           | NPM                   | Description                        |
-|-----------------------------------|-----------------------|------------------------------------|
-| [CLI](packages/cli/README.md)     | `agent-facets`        | CLI tool for managing facets       |
-| [Core](packages/core/README.md)   | `@agent-facets/core`  | Schemas, loaders, and validators   |
-| [Brand](packages/brand/README.md) | `@agent-facets/brand` | Agent Facets branding and styles   |
+| Package                                   | NPM                       | Description                                                          |
+|-------------------------------------------|---------------------------|----------------------------------------------------------------------|
+| [CLI](packages/cli/README.md)             | `agent-facets`            | CLI tool for managing facets                                         |
+| [Protocol](packages/protocol/AGENTS.md)   | `@agent-facets/protocol`  | TypeScript reference implementation of the facet artifact spec — Node-native, public, consumed by registries and other third-party tools |
+| [Brand](packages/brand/README.md)         | `@agent-facets/brand`     | Agent Facets branding and styles                                     |
+
+> The legacy `@agent-facets/core` package was split into `@agent-facets/protocol` (the published spec implementation) and `@agent-facets/engine` (Bun-native CLI machinery, private to this monorepo). The `@agent-facets/core` package is no longer published; it is frozen at v0.9.1 on npm. New consumers MUST use `@agent-facets/protocol`. See `docs/docs/contributing/architecture.md` for the full layer description.
 
 ## Development
 

@@ -1,4 +1,4 @@
-import type { RunInstallFailure } from '@agent-facets/core'
+import type { RunInstallFailure } from '@agent-facets/engine'
 import { Box, Text } from 'ink'
 import type React from 'react'
 import { THEME } from '../../theme.ts'

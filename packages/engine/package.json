@@ -1,0 +1,35 @@
+{
+  "name": "@agent-facets/engine",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agent-facets/facets",
+    "directory": "packages/engine"
+  },
+  "version": "0.9.1",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "types": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@agent-facets/adapter": "workspace:*",
+    "@agent-facets/protocol": "workspace:*",
+    "arktype": "2.2.0",
+    "comment-json": "^5.0.0",
+    "nanotar": "0.3.0",
+    "yaml": "2.8.3"
+  },
+  "devDependencies": {
+    "@agent-facets/common": "workspace:*",
+    "tsdown": "^0.21.10",
+    "typescript": "^6.0.3"
+  },
+  "peerDependencies": {
+    "typescript": "^5 || ^6"
+  }
+}

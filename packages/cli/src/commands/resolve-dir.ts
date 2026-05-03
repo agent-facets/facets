@@ -1,6 +1,6 @@
 import { mkdir, stat } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
-import { FACET_MANIFEST_FILE } from '@agent-facets/core'
+import { FACET_MANIFEST_FILE } from '@agent-facets/protocol'
 
 export interface ResolvedDir {
   ok: true

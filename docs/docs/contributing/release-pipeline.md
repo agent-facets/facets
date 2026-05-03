@@ -17,17 +17,17 @@ Releases are fully automated. Merging a PR with changesets triggers a pipeline t
     CI opens (or updates) a version PR titled **"ci(release): version packages"** targeting `main`. The PR body lists each package being bumped with its changelog entry. If a version PR already exists, it is updated in place.
   </Step>
   <Step title="Version PR merged">
-    A maintainer reviews and merges the version PR. CI detects the merge, compares each package version against what is published on npm, and creates a git tag for each package that has an unpublished version (e.g. `@agent-facets/core@0.3.0` or `agent-facets@1.0.0`).
+    A maintainer reviews and merges the version PR. CI detects the merge, compares each package version against what is published on npm, and creates a git tag for each package that has an unpublished version (e.g. `@agent-facets/protocol@0.3.0` or `agent-facets@1.0.0`).
   </Step>
   <Step title="Release pipeline triggered per tag">
     After pushing tags, the `tag.ts` script also calls CircleCI's API v2 `pipeline/run` endpoint once per tag to explicitly trigger the release pipeline. We do not rely on GitHub-to-CircleCI tag-push webhooks because they are unreliable when the bot GitHub App pushes tags — CircleCI appears to filter events from other bot actors. The pipeline's workflow filters (tag regex in `.circleci/release.yml`) still apply, so scoped tags (`@agent-facets/*@*`) run the `release` workflow and unscoped tags (`agent-facets@*`) run `release-cli`.
 
-    For scoped tags, `tag.ts` also parses the package name (`@agent-facets/core@1.0.0` → `core`) and forwards it as the `package` pipeline parameter. The `release` workflow uses that parameter in its `serial-group` key, which queues releases per-package — so two different packages can release in parallel while repeat releases of the same package serialize. The CLI tag path does not use the parameter.
+    For scoped tags, `tag.ts` also parses the package name (`@agent-facets/protocol@1.0.0` → `protocol`) and forwards it as the `package` pipeline parameter. The `release` workflow uses that parameter in its `serial-group` key, which queues releases per-package — so two different packages can release in parallel while repeat releases of the same package serialize. The CLI tag path does not use the parameter.
   </Step>
   <Step title="Publish to npm">
     The publish path depends on the package type:
 
-    - **Library packages** (`@agent-facets/core`, `@agent-facets/brand`): build via turbo, then publish directly to `latest`.
+    - **Library packages** (`@agent-facets/protocol`, `@agent-facets/brand`, `@agent-facets/adapter`): build via turbo, then publish directly to `latest`.
     - **CLI** (`agent-facets`): uses a three-stage matrix workflow — see below.
   </Step>
   <Step title="Announce">
@@ -86,7 +86,7 @@ curl -X POST \
   "https://circleci.com/api/v2/project/gh/agent-facets/facets/pipeline/run" \
   -H "Circle-Token: $CIRCLECI_API_TOKEN" \
   -H "content-type: application/json" \
-  --data '{"definition_id":"9d2f5823-f2c9-4cba-918a-e7d0dc2f658a","config":{"tag":"@agent-facets/core@0.4.0"},"checkout":{"tag":"@agent-facets/core@0.4.0"},"parameters":{"package":"core"}}'
+  --data '{"definition_id":"9d2f5823-f2c9-4cba-918a-e7d0dc2f658a","config":{"tag":"@agent-facets/protocol@0.4.0"},"checkout":{"tag":"@agent-facets/protocol@0.4.0"},"parameters":{"package":"protocol"}}'
 
 # CLI tag — no `package` parameter needed; release-cli doesn't use it.
 curl -X POST \
