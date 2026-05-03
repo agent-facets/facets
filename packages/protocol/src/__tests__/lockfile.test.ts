@@ -197,6 +197,38 @@ describe('LockfileSchema — invalid lockfiles', () => {
     const result = LockfileSchema(input)
     expect(result).toBeInstanceOf(type.errors)
   })
+
+  // Lockfile-version narrowing: anything that is not exact `M.N.P` must
+  // fail validation up front so the install pipeline never sees a
+  // version string its `parseLockedVersion` can't handle. Prerelease
+  // strings are intentionally rejected — `VersionSpec` doesn't model
+  // prereleases yet; widening the parser would require widening this
+  // schema in lockstep.
+  test.each([
+    '',
+    'foo',
+    '1.2',
+    '1.2.3.4',
+    'a.b.c',
+    '1.2.3-beta.1',
+    'v1.2.3',
+    '1.2.3 ',
+    ' 1.2.3',
+  ])('version %p is rejected', (version) => {
+    const input = {
+      lockfileVersion: LOCKFILE_VERSION,
+      facets: {
+        'bad-version': {
+          source: 'github:a/b',
+          version,
+          integrity: 'sha256:x',
+          assets: [],
+        },
+      },
+    }
+    const result = LockfileSchema(input)
+    expect(result).toBeInstanceOf(type.errors)
+  })
 })
 
 // --- Unknown field pass-through ---

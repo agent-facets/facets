@@ -9,11 +9,12 @@ import {
 } from '@agent-facets/protocol'
 import { readFile } from './validate.ts'
 
-// Re-export protocol types so engine consumers can import them from
-// `@agent-facets/engine` without reaching into protocol directly.
-// The path-based loaders below are the engine's contribution; the
-// validators they delegate to live in protocol.
-export { FACET_MANIFEST_FILE, type ResolvedFacetManifest }
+// Note: `FACET_MANIFEST_FILE` and `ResolvedFacetManifest` come from
+// `@agent-facets/protocol` — the canonical home for those values.
+// We import them above for use in the path-based loaders below; we
+// do NOT re-export them, because the engine's public surface in
+// `index.ts` consciously avoids duplicating protocol's exports.
+// CLI consumers import these values directly from protocol.
 
 /**
  * Loads and validates a facet manifest from the specified directory.

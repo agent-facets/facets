@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import type { FacetManifest } from '@agent-facets/protocol'
-import { FACET_MANIFEST_FILE } from '../loaders/facet.ts'
+import { FACET_MANIFEST_FILE } from '@agent-facets/protocol'
 
 /**
  * Writes a facet manifest to disk as `facet.json`.

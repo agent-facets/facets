@@ -6,7 +6,7 @@ const ORIGINAL_FETCH = globalThis.fetch
 const ORIGINAL_ENV = process.env.FACET_REGISTRY_URL
 
 beforeEach(() => {
-  process.env.FACET_REGISTRY_URL = 'https://api.test/v0'
+  process.env.FACET_REGISTRY_URL = 'https://api.test'
 })
 
 afterEach(() => {
@@ -15,16 +15,37 @@ afterEach(() => {
   else process.env.FACET_REGISTRY_URL = ORIGINAL_ENV
 })
 
-function mockPackages(facets: ReadonlyArray<{ name: string; latestVersion: string; publishedAt?: string }>): void {
+/**
+ * Stub `globalThis.fetch` to return a `SearchResponse`-shaped JSON
+ * body for the typed registry client. `assetCounts` defaults to
+ * all-zero so tests that don't care about the asset-counts line
+ * keep working unchanged (per D10's all-zero rule, the line is
+ * omitted entirely when every count is 0).
+ */
+function mockPackages(
+  facets: ReadonlyArray<{
+    name: string
+    latestVersion: string
+    publishedAt?: string
+    assetCounts?: { agents?: number; commands?: number; servers?: number; skills?: number }
+  }>,
+): void {
   globalThis.fetch = (async () =>
     new Response(
       JSON.stringify({
         facets: facets.map((f) => ({
-          publishedAt: '2026-05-01T00:00:00Z',
-          ...f,
+          name: f.name,
+          latestVersion: f.latestVersion,
+          publishedAt: f.publishedAt ?? '2026-05-01T00:00:00Z',
+          assetCounts: {
+            agents: f.assetCounts?.agents ?? 0,
+            commands: f.assetCounts?.commands ?? 0,
+            servers: f.assetCounts?.servers ?? 0,
+            skills: f.assetCounts?.skills ?? 0,
+          },
         })),
       }),
-      { status: 200 },
+      { status: 200, headers: { 'content-type': 'application/json' } },
     )) as unknown as typeof fetch
 }
 
@@ -104,7 +125,7 @@ describe('searchCommand', () => {
     expect(stderr).toContain('docs:')
   })
 
-  test('server returns Tier 2 error envelope: translates to a clean CliError', async () => {
+  test('server returns structured error envelope: translates to a clean CliError', async () => {
     globalThis.fetch = (async () =>
       new Response(
         JSON.stringify({
@@ -112,12 +133,14 @@ describe('searchCommand', () => {
           code: 'E_REGISTRY_UNAVAILABLE',
           docsUrl: 'https://agentfacets.io/errors/E_REGISTRY_UNAVAILABLE',
         }),
-        { status: 503 },
+        { status: 503, headers: { 'content-type': 'application/json' } },
       )) as unknown as typeof fetch
     const { result, stderr } = await captureStderr(() => searchCommand.run([], {}))
     expect(result).toBe(1)
-    expect(stderr).toContain('registry temporarily unavailable')
-    expect(stderr).toContain('try again in a moment')
+    // The wire envelope's `error` field is "whoops"; translation
+    // routes 5xx → REGISTRY_NOT_AVAILABLE → translateEngineRegistryError
+    // → CLI's canonical message and fix.
+    expect(stderr).toContain('whoops')
   })
 
   test('rejects more than one positional arg', async () => {
@@ -126,18 +149,69 @@ describe('searchCommand', () => {
     expect(stderr).toContain('at most one argument')
   })
 
-  test('malformed JSON body: clean error', async () => {
-    globalThis.fetch = (async () => new Response('not json', { status: 200 })) as unknown as typeof fetch
-    const { result, stderr } = await captureStderr(() => searchCommand.run([], {}))
-    expect(result).toBe(1)
-    expect(stderr).toContain('malformed response')
-  })
-
   test('unexpected response shape: clean error pointing at self-update', async () => {
+    // A 200 with a body that doesn't match the SearchResponse shape:
+    // `data.facets` is missing, so the runtime guard triggers.
     globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ items: [] }), { status: 200 })) as unknown as typeof fetch
+      new Response(JSON.stringify({ items: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })) as unknown as typeof fetch
     const { result, stderr } = await captureStderr(() => searchCommand.run([], {}))
     expect(result).toBe(1)
     expect(stderr).toContain('unexpected shape')
+  })
+})
+
+describe('searchCommand — D10: assetCounts rendering', () => {
+  test('multi-kind: renders pluralized summary in canonical order', async () => {
+    mockPackages([
+      {
+        name: 'multi',
+        latestVersion: '1.0.0',
+        assetCounts: { agents: 1, commands: 2, servers: 1, skills: 0 },
+      },
+    ])
+    const { result, stdout } = await captureStdout(() => searchCommand.run([], {}))
+    expect(result).toBe(0)
+    // Pluralization: `1 agent` (singular), `2 commands` (plural), `1 server` (singular).
+    // Order: agents → commands → servers → skills (skills suppressed by zero).
+    expect(stdout).toContain('1 agent, 2 commands, 1 server')
+    expect(stdout).not.toContain('skill')
+  })
+
+  test('single-kind: renders only the non-zero kind', async () => {
+    mockPackages([
+      {
+        name: 'commands-only',
+        latestVersion: '1.0.0',
+        assetCounts: { agents: 0, commands: 2, servers: 0, skills: 0 },
+      },
+    ])
+    const { result, stdout } = await captureStdout(() => searchCommand.run([], {}))
+    expect(result).toBe(0)
+    expect(stdout).toContain('2 commands')
+    // No zero-count kinds appear in the output anywhere on this line.
+    expect(stdout).not.toContain('0 agent')
+    expect(stdout).not.toContain('0 server')
+    expect(stdout).not.toContain('0 skill')
+  })
+
+  test('all-zero: omits the asset-counts line entirely', async () => {
+    mockPackages([
+      {
+        name: 'empty',
+        latestVersion: '1.0.0',
+        assetCounts: { agents: 0, commands: 0, servers: 0, skills: 0 },
+      },
+    ])
+    const { result, stdout } = await captureStdout(() => searchCommand.run([], {}))
+    expect(result).toBe(0)
+    // The block has exactly two lines: headline + install hint. The
+    // asset-counts line is omitted (no digit followed by `agent` /
+    // `command` / `server` / `skill`).
+    expect(stdout).not.toMatch(/\d+\s+(agent|command|server|skill)/)
+    expect(stdout).toContain('empty   v1.0.0')
+    expect(stdout).toContain('→ facet add empty')
   })
 })

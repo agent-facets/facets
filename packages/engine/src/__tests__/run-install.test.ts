@@ -154,7 +154,7 @@ describe('runInstall — facets.json discovery', () => {
       adapters: [buildFakeAdapter('test')],
     })
     expect(result.ok).toBe(false)
-    if (result.ok) return
+    if (result.ok) expect.unreachable()
     expect(result.failure.code).toBe('FACETS_JSON_NOT_FOUND')
   })
 
@@ -165,7 +165,7 @@ describe('runInstall — facets.json discovery', () => {
       adapters: [buildFakeAdapter('test')],
     })
     expect(result.ok).toBe(false)
-    if (result.ok) return
+    if (result.ok) expect.unreachable()
     expect(result.failure.code).toBe('FACETS_JSON_INVALID')
   })
 })
@@ -184,7 +184,7 @@ describe('runInstall — local source success path with events', () => {
     })
 
     expect(result.ok).toBe(true)
-    if (!result.ok) return
+    if (!result.ok) expect.unreachable()
     expect(result.summary.installed).toBe(1)
     expect(result.lockfile.facets['viper-plans']?.version).toBe('0.1.0')
     expect(events.find((e) => e.kind === 'install-start')).toBeDefined()
@@ -204,7 +204,7 @@ describe('runInstall — local source success path', () => {
       adapters: [buildFakeAdapter('test')],
     })
     expect(result.ok).toBe(true)
-    if (!result.ok) return
+    if (!result.ok) expect.unreachable()
     expect(result.summary.installed).toBe(1)
     expect(result.lockfile.facets['viper-plans']?.version).toBe('0.1.0')
   })
@@ -227,9 +227,9 @@ describe('runInstall — registry source surfaces REGISTRY_ERROR on resolution f
         adapters: [buildFakeAdapter('test')],
       })
       expect(result.ok).toBe(false)
-      if (result.ok) return
+      if (result.ok) expect.unreachable()
       expect(result.failure.code).toBe('REGISTRY_ERROR')
-      if (result.failure.code !== 'REGISTRY_ERROR') return
+      if (result.failure.code !== 'REGISTRY_ERROR') expect.unreachable()
       // Either NETWORK_ERROR (refused/dns) or NOT_FOUND if the unlikely
       // event the host is reachable; both signal "registry didn't help".
       expect(['NETWORK_ERROR', 'NOT_FOUND']).toContain(result.failure.error.code)
@@ -263,7 +263,7 @@ describe('runInstall — composition is rejected', () => {
       adapters: [buildFakeAdapter('test')],
     })
     expect(result.ok).toBe(false)
-    if (result.ok) return
+    if (result.ok) expect.unreachable()
     expect(result.failure.code).toBe('COMPOSITION_REJECTED')
   })
 })
@@ -281,9 +281,9 @@ describe('runInstall — manifest name mismatch', () => {
       adapters: [buildFakeAdapter('test')],
     })
     expect(result.ok).toBe(false)
-    if (result.ok) return
+    if (result.ok) expect.unreachable()
     expect(result.failure.code).toBe('MANIFEST_NAME_MISMATCH')
-    if (result.failure.code !== 'MANIFEST_NAME_MISMATCH') return
+    if (result.failure.code !== 'MANIFEST_NAME_MISMATCH') expect.unreachable()
     expect(result.failure.manifestName).toBe('actually-named')
   })
 })
@@ -315,7 +315,7 @@ describe('runInstall — server warnings', () => {
       onStage: (e) => events.push(e),
     })
     expect(result.ok).toBe(true)
-    if (!result.ok) return
+    if (!result.ok) expect.unreachable()
     expect(result.serverWarnings).toHaveLength(1)
     expect(result.serverWarnings[0]).toEqual({
       facet: 'with-servers',
@@ -359,7 +359,7 @@ describe('runInstall — drift removal', () => {
       onStage: (e) => events.push(e),
     })
     expect(second.ok).toBe(true)
-    if (!second.ok) return
+    if (!second.ok) expect.unreachable()
     expect(second.summary.removed).toBe(1)
     expect(second.lockfile.facets.orphan).toBeUndefined()
     expect(second.lockfile.facets.keeper).toBeDefined()
@@ -379,7 +379,7 @@ describe('runInstall — lockfile bootstrap and reuse', () => {
       adapters: [buildFakeAdapter('test')],
     })
     expect(result.ok).toBe(true)
-    if (!result.ok) return
+    if (!result.ok) expect.unreachable()
     expect(result.lockfile.facets['viper-plans']?.version).toBe('0.1.0')
   })
 
@@ -401,7 +401,7 @@ describe('runInstall — lockfile bootstrap and reuse', () => {
       adapters: [buildFakeAdapter('test')],
     })
     expect(result.ok).toBe(true)
-    if (!result.ok) return
+    if (!result.ok) expect.unreachable()
     expect(result.lockfile.facets['viper-plans']?.version).toBe('0.1.0')
     // Same content + metadata on disk → skip-if-identical kicks in:
     // the facet reports as unchanged with zero new writes.
@@ -432,7 +432,7 @@ describe('runInstall — lockfile bootstrap and reuse', () => {
       adapters: [buildFakeAdapter('test')],
     })
     expect(result.ok).toBe(true)
-    if (!result.ok) return
+    if (!result.ok) expect.unreachable()
     expect(result.summary.repaired).toBe(1)
     expect(result.summary.unchanged).toBe(0)
     expect(result.summary.totalAssets).toBe(1)
@@ -457,7 +457,7 @@ describe('runInstall — abort signal', () => {
       signal: controller.signal,
     })
     expect(result.ok).toBe(false)
-    if (result.ok) return
+    if (result.ok) expect.unreachable()
     expect(result.failure.code).toBe('ABORTED')
   })
 })
@@ -510,7 +510,7 @@ describe('runInstall — rollback on adapter throw', () => {
       adapters: [buildBrokenAdapter('broken', 2)],
     })
     expect(result.ok).toBe(false)
-    if (result.ok) return
+    if (result.ok) expect.unreachable()
     expect(result.failure.code).toBe('ADAPTER_INSTALL_FAILED')
 
     // Both assets rolled back — neither should be on disk after rollback.
@@ -535,7 +535,7 @@ describe('runInstall — rollback on adapter throw', () => {
       adapters: [adapterA, adapterB],
     })
     expect(result.ok).toBe(false)
-    if (result.ok) return
+    if (result.ok) expect.unreachable()
     expect(result.failure.code).toBe('ADAPTER_INSTALL_FAILED')
 
     // adapter-a's write must be rolled back.
@@ -573,8 +573,12 @@ describe('runInstall — lockfile write failure rolls back', () => {
     expect(result.failure.cause.length).toBeGreaterThan(0)
 
     // Rollback succeeded: the asset that was materialized before the
-    // lockfile write should be undone.
-    expect(result.rollback.ok).toBe(true)
+    // lockfile write should be undone. `kind: 'succeeded'` distinguishes
+    // a real rollback from `not-needed`.
+    expect(result.rollback.kind).toBe('succeeded')
+    if (result.rollback.kind === 'succeeded') {
+      expect(result.rollback.entriesUndone).toBeGreaterThan(0)
+    }
     expect(existsSync(join(projectRoot, '.test/skills/planning.md'))).toBe(false)
   })
 })
@@ -592,10 +596,25 @@ describe('runInstall — F14: non-ENOENT read error aborts before any journal re
       adapters: [buildBadReadAdapter('bad-read')],
     })
     expect(result.ok).toBe(false)
-    if (result.ok) return
-    expect(result.failure.code).toBe('ADAPTER_INSTALL_FAILED')
-    // Rollback succeeded trivially because no writes had landed.
-    expect(result.rollback.ok).toBe(true)
+    if (result.ok) expect.unreachable()
+    // Post-#3-cluster-A: read failures get their own dedicated code so
+    // the CLI can render a different message ("we couldn't even read
+    // the existing file" vs. "the install write itself failed"). The
+    // adapter name is preserved end-to-end (no more `'unknown'` literal).
+    expect(result.failure.code).toBe('ADAPTER_READ_FAILED')
+    if (result.failure.code === 'ADAPTER_READ_FAILED') {
+      expect(result.failure.adapter).toBe('bad-read')
+      expect(result.failure.cause).toMatch(/EACCES|simulated/)
+    }
+    // The read failure happens inside `materialize`, which goes through
+    // `rollbackAndFail`. The journal recorded zero entries before the
+    // failure (the read error is the F14 guard preventing any write from
+    // being attempted), so rollback "succeeds" with `entriesUndone: 0`
+    // — a real rollback that had nothing to undo.
+    expect(result.rollback.kind).toBe('succeeded')
+    if (result.rollback.kind === 'succeeded') {
+      expect(result.rollback.entriesUndone).toBe(0)
+    }
     // No lockfile.
     expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)
   })

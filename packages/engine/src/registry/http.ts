@@ -1,9 +1,13 @@
 /**
- * Default registry base URL. Overridable via `FACET_REGISTRY_URL` env so
- * V0 can point the conference build at the `dev` stage without rebuilding.
- * Once `main` ships this constant becomes the prod URL.
+ * Default registry base URL. Overridable via `FACET_REGISTRY_URL`.
+ *
+ * Note: the URL is the *origin* — it does NOT include a `/v0` path
+ * prefix. The OpenAPI-generated paths (`/v0/health`, `/v0/packages`,
+ * etc.) carry the version segment themselves, and `openapi-fetch`
+ * concatenates `baseUrl + path` to produce the final URL. Including
+ * `/v0` in the base would double the prefix.
  */
-const DEFAULT_REGISTRY_URL = 'https://api.dev.facet.cafe/v0'
+const DEFAULT_REGISTRY_URL = 'https://api.facet.cafe'
 
 /**
  * Resolve the registry base URL from env, stripping any trailing slash so

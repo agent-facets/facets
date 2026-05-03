@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
 import { deleteAssetFile, installAssetFile, readAssetFile } from '@agent-facets/adapter'
+import type { ResolvedFacetManifest } from '@agent-facets/protocol'
 import { InstallJournal } from '../install/journal.ts'
 import { computeAssetList, materialize } from '../install/materialize.ts'
-import type { ResolvedFacetManifest } from '../loaders/facet.ts'
 
 let projectRoot: string
 
@@ -132,6 +132,7 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
       newAssets,
       journal: new InstallJournal(),
     })
+    if (!first.ok) expect.unreachable()
     expect(first.written).toBe(1)
     expect(first.skipped).toBe(0)
 
@@ -144,6 +145,7 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
       newAssets,
       journal: new InstallJournal(),
     })
+    if (!second.ok) expect.unreachable()
     expect(second.written).toBe(0)
     expect(second.skipped).toBe(1)
   })
@@ -174,6 +176,7 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
       newAssets,
       journal: new InstallJournal(),
     })
+    if (!first.ok) expect.unreachable()
     expect(first.written).toBe(1)
     expect(first.skipped).toBe(0)
 
@@ -196,6 +199,7 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
       newAssets,
       journal: new InstallJournal(),
     })
+    if (!second.ok) expect.unreachable()
     expect(second.written).toBe(0)
     expect(second.skipped).toBe(1)
   })
@@ -234,6 +238,7 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
       newAssets,
       journal: new InstallJournal(),
     })
+    if (!second.ok) expect.unreachable()
     expect(second.written).toBe(0)
     expect(second.skipped).toBe(1)
   })
@@ -257,6 +262,7 @@ describe('materialize — skip-if-identical', () => {
       newAssets,
       journal: new InstallJournal(),
     })
+    if (!first.ok) expect.unreachable()
     expect(first.written).toBe(1)
     expect(first.skipped).toBe(0)
     expect(calls).toHaveLength(1)
@@ -269,6 +275,7 @@ describe('materialize — skip-if-identical', () => {
       newAssets,
       journal: new InstallJournal(),
     })
+    if (!second.ok) expect.unreachable()
     expect(second.written).toBe(0)
     expect(second.skipped).toBe(1)
     // Still only 1 install call total — the second materialize didn't write.
@@ -305,6 +312,7 @@ describe('materialize — skip-if-identical', () => {
       newAssets,
       journal: new InstallJournal(),
     })
+    if (!second.ok) expect.unreachable()
     expect(second.written).toBe(1)
     expect(second.skipped).toBe(0)
     expect(calls).toHaveLength(2)
@@ -350,6 +358,7 @@ describe('materialize — skip-if-identical', () => {
       newAssets,
       journal: new InstallJournal(),
     })
+    if (!second.ok) expect.unreachable()
     expect(second.written).toBe(1)
     expect(second.skipped).toBe(0)
     expect(calls).toHaveLength(2)

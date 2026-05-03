@@ -4,7 +4,7 @@ import { curlMethod, runCurlInstaller } from '../methods/curl.ts'
 import { localDevMethod } from '../methods/local-dev.ts'
 import { npmMethod } from '../methods/npm.ts'
 import { pnpmMethod } from '../methods/pnpm.ts'
-import type { InstallMethod } from '../methods/types.ts'
+import type { InstallMethod, SelfUpdateErrorEvent } from '../methods/types.ts'
 import { unknownMethod } from '../methods/unknown.ts'
 import { yarnMethod } from '../methods/yarn.ts'
 
@@ -73,18 +73,25 @@ function mockFetchThrow(error: Error): void {
 /**
  * Build a pair of `onError` and `onOutput` callbacks that accumulate into
  * arrays — replaces the old captureStderr/captureStdout helpers.
+ *
+ * `onError` receives a tagged `SelfUpdateErrorEvent`. The methods covered
+ * by this test file only emit the `message` kind (engine reserves
+ * `latest-version-failure` for the orchestrator); we collect the raw
+ * events plus a flattened-string view of `message` lines, so individual
+ * tests can assert either way.
  */
 function makeCallbacks() {
-  const errors: string[] = []
+  const events: SelfUpdateErrorEvent[] = []
   const outputs: string[] = []
   return {
-    onError: (line: string) => {
-      errors.push(line)
+    onError: (event: SelfUpdateErrorEvent) => {
+      events.push(event)
     },
     onOutput: (line: string) => {
       outputs.push(line)
     },
-    stderr: () => errors.join(''),
+    events: () => events,
+    stderr: () => events.map((e) => (e.kind === 'message' ? e.line : '')).join(''),
     stdout: () => outputs.join(''),
   }
 }

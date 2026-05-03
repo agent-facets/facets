@@ -42,6 +42,58 @@ description: Set up the Facets development environment and learn the contributio
 | `bun run types`  | Typecheck only                                                    |
 | `bun run build`  | Build only                                                        |
 
+## Refreshing registry types
+
+The CLI's view of the registry's HTTP API is generated from the
+registry's published OpenAPI specification. The generated types live
+in `packages/engine/src/registry/generated/`, and the curated
+re-exports CLI code imports from live in
+`packages/engine/src/registry/wire.ts`.
+
+When to refresh:
+
+- The registry adds, renames, or restructures an endpoint.
+- The CI staleness check (`openapi-snapshot-freshness`) reports
+  `STALE`.
+- Before tagging a CLI release.
+
+How to refresh:
+
+```sh
+bun run --cwd packages/engine codegen:registry
+```
+
+The script fetches the live OpenAPI from
+`https://api.facet.cafe/v0/openapi.yaml` (or
+`FACET_REGISTRY_OPENAPI_URL`), regenerates the typed module, and
+updates the on-disk snapshot. Both files are committed; PRs review
+the diff just like any other change.
+
+To check freshness without re-fetching (offline; reads only the
+on-disk `Generated-At` header):
+
+```sh
+bun run --cwd packages/engine codegen:registry --check
+bun run --cwd packages/engine codegen:registry --check --strict
+```
+
+`--strict` exits non-zero on stale, which is what CircleCI runs for
+the `openapi-snapshot-freshness` job — produces a red X on the PR if
+your snapshot is older than 7 days. The check is advisory by default
+and does not block merge.
+
+Call sites use the typed client directly:
+
+```ts
+import { createRegistryClient } from '@agent-facets/engine'
+
+const client = createRegistryClient()
+const { data, error, response } = await client.GET(
+  '/v0/packages/{name}/{version}',
+  { params: { path: { name, version } } },
+)
+```
+
 ## Pull requests
 
 - Keep PRs focused on a single change.

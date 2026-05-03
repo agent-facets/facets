@@ -6,11 +6,22 @@ import {
   translateRegistryError,
 } from '../registry-errors.ts'
 
-const stubResponse = (code: string): RegistryErrorResponse => ({
-  error: `the server's human message about ${code}`,
-  code,
-  docsUrl: `https://agentfacets.io/errors/${code}`,
-})
+/**
+ * Test factory that returns a `RegistryErrorResponse`-shaped object
+ * with the given `code`. Accepts known codes directly and accepts an
+ * arbitrary string via the second overload — the latter exists so the
+ * unknown-code fallback test below can construct an `E_FUTURE_CODE`
+ * fixture without a wider cast at the call site.
+ */
+function stubResponse(code: RegistryErrorCode): RegistryErrorResponse
+function stubResponse(code: string): RegistryErrorResponse
+function stubResponse(code: string): RegistryErrorResponse {
+  return {
+    error: `the server's human message about ${code}`,
+    code: code as RegistryErrorCode,
+    docsUrl: `https://agentfacets.io/errors/${code}`,
+  }
+}
 
 describe('translateRegistryError', () => {
   // Each canonical code must map to a non-generic, non-empty fix line.

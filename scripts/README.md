@@ -72,7 +72,7 @@ patterns, one triggered by pushes to `main`:
 │  main-pipeline runs again:                                       │
 │    release/tag.ts detects the merge and creates git tags:        │
 │                                                                  │
-│    @agent-facets/core@X.Y.Z   ─── library tag                    │
+│    @agent-facets/protocol@X.Y.Z   ─── library tag                │
 │    @agent-facets/brand@X.Y.Z  ─── library tag                    │
 │    agent-facets@X.Y.Z         ─── CLI tag                        │
 └──────────────────────────────────────────────────────────────────┘

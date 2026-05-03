@@ -10,17 +10,37 @@ import { join } from 'node:path'
  * creds via credential helper, etc.).
  *
  * All git invocations set `GIT_TERMINAL_PROMPT=0` (Adjustment O) so failing
- * auth errors out immediately instead of hanging waiting for a password. The
- * caller should translate the "could not read Username" stderr pattern into
- * the closed-alpha auth failure message via the error helper.
+ * auth errors out immediately instead of hanging waiting for a password.
+ *
+ * Failure modes are part of the function's contract — it never throws.
+ * The caller pattern-matches on `result.reason` and routes each into the
+ * matching `RunInstallFailure` code (`GIT_BINARY_MISSING`,
+ * `GIT_AUTH_REQUIRED`, `GIT_CLONE_FAILED`, `GIT_CHECKOUT_FAILED`).
  */
 
-export type ResolveFacetGitResult = {
-  /** Absolute path to the cloned working tree (temp dir). */
-  dir: string
-  /** The resolved commit SHA at HEAD, or undefined if `git rev-parse` fails. */
-  commit?: string
-}
+/**
+ * Discriminated result for `cloneFacetGitSource`. The success arm carries
+ * the temp dir and resolved HEAD commit; each failure arm carries the
+ * fields the CLI needs to render a precise message without parsing
+ * stderr text:
+ *
+ *   - `git-binary-missing` — `git` is not on `$PATH`. The user needs
+ *     to install git before retrying.
+ *   - `auth-required` — the registry rejected our auth attempt. The
+ *     CLI's closed-alpha messaging mentions SSH-agent / public-repo
+ *     constraints.
+ *   - `clone-failed` — git ran but the clone itself failed for some
+ *     other reason (network, ref not found, permission). Carries
+ *     stderr verbatim for the CLI to surface.
+ *   - `checkout-failed` — the SHA workflow's post-clone `git checkout`
+ *     step failed (typically a typo in the requested commitish).
+ */
+export type CloneFacetGitResult =
+  | { ok: true; dir: string; commit?: string }
+  | { ok: false; reason: 'git-binary-missing' }
+  | { ok: false; reason: 'auth-required'; url: string }
+  | { ok: false; reason: 'clone-failed'; url: string; stderr: string }
+  | { ok: false; reason: 'checkout-failed'; url: string; commitish: string; stderr: string }
 
 const SHA_RE = /^[0-9a-f]{7,40}$/
 
@@ -28,10 +48,14 @@ function gitEnv(): Record<string, string> {
   return { ...process.env, GIT_TERMINAL_PROMPT: '0' } as Record<string, string>
 }
 
-function runGit(
-  args: string[],
-  opts?: { cwd?: string },
-): { ok: boolean; stdout: string; stderr: string; exitCode: number } {
+interface RunGitResult {
+  ok: boolean
+  stdout: string
+  stderr: string
+  exitCode: number
+}
+
+function runGit(args: string[], opts?: { cwd?: string }): RunGitResult {
   const result = Bun.spawnSync(['git', ...args], {
     cwd: opts?.cwd,
     env: gitEnv(),
@@ -46,76 +70,79 @@ function runGit(
   }
 }
 
-export async function cloneFacetGitSource(url: string, commitish?: string): Promise<ResolveFacetGitResult> {
-  const dir = await mkdtemp(join(tmpdir(), 'facet-add-git-'))
-
-  // The temp dir is created up-front by `mkdtemp`. If anything below throws,
-  // the caller's finally-block cleanup can't run (it only has the returned
-  // `dir` on success). Wrap the clone/checkout so we rm -rf the dir before
-  // rethrowing, preventing leaked temp dirs from accumulating on repeated
-  // failures (dead clones, auth errors, bad SHAs, etc.).
-  try {
-    // F15 — always end `git clone` option parsing with `--` before the URL.
-    // Combined with parse-source.ts's scheme allowlist, this ensures no URL
-    // can be reinterpreted as a flag even if validation is ever bypassed.
-    if (commitish && SHA_RE.test(commitish)) {
-      // SHA workflow: full clone so any short-or-full SHA resolves via
-      // `git checkout`. --depth=1 fetch-by-SHA requires 40-char SHAs and
-      // allowReachableSHA1InWant on the server, so the simpler full-clone
-      // path is more reliable and facet repos are small enough.
-      const clone = runGit(['clone', '--', url, dir])
-      if (!clone.ok) {
-        throw gitError(url, clone.stderr)
-      }
-      // `git checkout <ref>` — no `--` here because `git checkout -- <arg>`
-      // forces pathspec mode and breaks ref/SHA resolution. The URL guard
-      // lives on the clone step; this runs in an already-cloned repo with
-      // no URL surface.
-      const checkout = runGit(['checkout', commitish], { cwd: dir })
-      if (!checkout.ok) {
-        throw new Error(`failed to checkout commit ${commitish} in ${url}: ${checkout.stderr.trim()}`)
-      }
-    } else if (commitish) {
-      // Branch/tag workflow: single clone with --branch.
-      const clone = runGit(['clone', '--depth=1', '--branch', commitish, '--', url, dir])
-      if (!clone.ok) {
-        throw gitError(url, clone.stderr)
-      }
-    } else {
-      // Default branch.
-      const clone = runGit(['clone', '--depth=1', '--', url, dir])
-      if (!clone.ok) {
-        throw gitError(url, clone.stderr)
-      }
-    }
-
-    // Resolve the current HEAD so the caller can pin it in the lockfile.
-    const revParse = runGit(['rev-parse', 'HEAD'], { cwd: dir })
-    const commit = revParse.ok ? revParse.stdout.trim() : undefined
-
-    return { dir, commit }
-  } catch (err) {
-    await rm(dir, { recursive: true, force: true }).catch(() => {})
-    throw err
-  }
-}
-
 /**
- * Translate common git error signatures into actionable messages the caller
- * can surface via the 3-line error helper.
+ * Classify a failed `git clone` stderr blob into the discriminated
+ * failure shape. The three signatures (binary missing / auth required /
+ * generic clone failure) are stable across git versions; everything
+ * else falls through to the generic `clone-failed` arm with stderr
+ * preserved verbatim for the CLI to surface.
  */
-function gitError(url: string, stderr: string): Error {
+function classifyCloneFailure(url: string, stderr: string): Extract<CloneFacetGitResult, { ok: false }> {
   const text = stderr.trim()
 
   if (text.includes('not found') || text.includes('No such file')) {
-    return new Error('git binary not found. Install git to use git-based facet sources.')
+    return { ok: false, reason: 'git-binary-missing' }
   }
 
   if (text.includes('could not read Username') || text.includes('Authentication failed')) {
-    return new Error(
-      `git authentication required for ${url}. Closed alpha supports public repos and SSH (via agent) only.`,
-    )
+    return { ok: false, reason: 'auth-required', url }
   }
 
-  return new Error(`git clone failed for ${url}: ${text}`)
+  return { ok: false, reason: 'clone-failed', url, stderr: text }
+}
+
+export async function cloneFacetGitSource(url: string, commitish?: string): Promise<CloneFacetGitResult> {
+  const dir = await mkdtemp(join(tmpdir(), 'facet-add-git-'))
+
+  // F15 — always end `git clone` option parsing with `--` before the URL.
+  // Combined with parse-source.ts's scheme allowlist, this ensures no URL
+  // can be reinterpreted as a flag even if validation is ever bypassed.
+  let cloneResult: RunGitResult
+  let needsCheckout = false
+  if (commitish && SHA_RE.test(commitish)) {
+    // SHA workflow: full clone so any short-or-full SHA resolves via
+    // `git checkout`. --depth=1 fetch-by-SHA requires 40-char SHAs and
+    // allowReachableSHA1InWant on the server, so the simpler full-clone
+    // path is more reliable and facet repos are small enough.
+    cloneResult = runGit(['clone', '--', url, dir])
+    needsCheckout = true
+  } else if (commitish) {
+    // Branch/tag workflow: single clone with --branch.
+    cloneResult = runGit(['clone', '--depth=1', '--branch', commitish, '--', url, dir])
+  } else {
+    // Default branch.
+    cloneResult = runGit(['clone', '--depth=1', '--', url, dir])
+  }
+
+  if (!cloneResult.ok) {
+    // Temp dir is unusable; clean it up before returning. We swallow
+    // errors here because the failure we report is the clone failure,
+    // not a cleanup failure.
+    await rm(dir, { recursive: true, force: true }).catch(() => {})
+    return classifyCloneFailure(url, cloneResult.stderr)
+  }
+
+  if (needsCheckout && commitish !== undefined) {
+    // `git checkout <ref>` — no `--` here because `git checkout -- <arg>`
+    // forces pathspec mode and breaks ref/SHA resolution. The URL guard
+    // lives on the clone step; this runs in an already-cloned repo with
+    // no URL surface.
+    const checkout = runGit(['checkout', commitish], { cwd: dir })
+    if (!checkout.ok) {
+      await rm(dir, { recursive: true, force: true }).catch(() => {})
+      return {
+        ok: false,
+        reason: 'checkout-failed',
+        url,
+        commitish,
+        stderr: checkout.stderr.trim(),
+      }
+    }
+  }
+
+  // Resolve the current HEAD so the caller can pin it in the lockfile.
+  const revParse = runGit(['rev-parse', 'HEAD'], { cwd: dir })
+  const commit = revParse.ok ? revParse.stdout.trim() : undefined
+
+  return { ok: true, dir, commit }
 }

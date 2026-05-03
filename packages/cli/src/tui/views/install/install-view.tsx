@@ -180,11 +180,12 @@ export function InstallView({ run, mode, onComplete }: InstallViewProps) {
 
       {result?.ok && <SuccessSummary result={result} mode={mode} />}
       {result && !result.ok && <FailureBlock failure={result.failure} />}
-      {result && !result.ok && !result.rollback.ok && (
+      {result && !result.ok && result.rollback.kind === 'partial-failure' && (
         <Box flexDirection="column" marginTop={1}>
           <Text color={THEME.warning}>
-            ⚠ rollback completed with {result.rollback.partialFailures} partial failure
-            {result.rollback.partialFailures === 1 ? '' : 's'}
+            ⚠ rollback completed with {result.rollback.failures} partial failure
+            {result.rollback.failures === 1 ? '' : 's'} ({result.rollback.entriesUndone} entr
+            {result.rollback.entriesUndone === 1 ? 'y' : 'ies'} successfully undone)
           </Text>
           <Text color={THEME.hint}> Some adapter writes could not be undone. Inspect the project tree.</Text>
         </Box>

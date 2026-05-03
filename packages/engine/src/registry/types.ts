@@ -32,16 +32,25 @@ export interface RegistrySpec {
 /**
  * Discriminated registry-error type.
  *
- *   - `REGISTRY_NOT_AVAILABLE`: the registry client is currently a
- *     stub. Returned for every call until a real client ships.
+ *   - `REGISTRY_NOT_AVAILABLE`: the registry returned a 4xx/5xx with
+ *     a structured error envelope, OR the registry is otherwise
+ *     refusing service in a way the caller should surface to the user
+ *     verbatim. Carries the registry's own `what`/`fix` strings.
  *   - `NOT_FOUND`: the requested name/version did not match any
- *     published facet. (Reserved for the real client.)
- *   - `NETWORK_ERROR`: transport failed. (Reserved for the real client.)
+ *     published facet (HTTP 404).
+ *   - `NETWORK_ERROR`: transport failed (DNS, TCP, abort, timeout)
+ *     after exhausting the configured retry budget. `attempts`
+ *     records how many tries were made so the user-facing message
+ *     can include retry history (e.g., "after 3 attempts").
+ *   - `UNEXPECTED_ERROR`: a thrown error that wasn't a recognized
+ *     network failure shape. Surfaces honestly rather than being
+ *     silently relabeled as a network error (per design D11).
  */
 export type RegistryError =
   | { code: 'REGISTRY_NOT_AVAILABLE'; what: string; fix: string }
   | { code: 'NOT_FOUND'; name: string; spec: string }
-  | { code: 'NETWORK_ERROR'; cause: string }
+  | { code: 'NETWORK_ERROR'; cause: string; attempts: number }
+  | { code: 'UNEXPECTED_ERROR'; cause: string }
 
 /**
  * Result type for registry operations. Discriminated by `ok`.

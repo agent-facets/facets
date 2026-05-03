@@ -20,7 +20,7 @@ export function silenceIO() {
 
 /** Sample CHANGELOG.md content for release pipeline tests. */
 export const SAMPLE_CHANGELOG = dedent`
-  # @agent-facets/core
+  # @agent-facets/protocol
 
   ## 1.1.0
 

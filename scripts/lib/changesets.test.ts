@@ -57,24 +57,24 @@ describe('hasUnpublishedVersions', () => {
 
   test('returns false when all versions match npm', async () => {
     const packages: WorkspacePackage[] = [
-      { name: '@agent-facets/core', version: '0.1.1', dir: 'packages/core' },
+      { name: '@agent-facets/protocol', version: '0.1.1', dir: 'packages/core' },
       { name: 'agent-facets', version: '0.1.1', dir: 'packages/cli' },
     ]
     const result = await hasUnpublishedVersions(
       packages,
-      mockNpm({ '@agent-facets/core': '0.1.1', 'agent-facets': '0.1.1' }),
+      mockNpm({ '@agent-facets/protocol': '0.1.1', 'agent-facets': '0.1.1' }),
     )
     expect(result).toBe(false)
   })
 
   test('returns true when one version is ahead of npm', async () => {
     const packages: WorkspacePackage[] = [
-      { name: '@agent-facets/core', version: '0.2.0', dir: 'packages/core' },
+      { name: '@agent-facets/protocol', version: '0.2.0', dir: 'packages/core' },
       { name: 'agent-facets', version: '0.1.1', dir: 'packages/cli' },
     ]
     const result = await hasUnpublishedVersions(
       packages,
-      mockNpm({ '@agent-facets/core': '0.1.1', 'agent-facets': '0.1.1' }),
+      mockNpm({ '@agent-facets/protocol': '0.1.1', 'agent-facets': '0.1.1' }),
     )
     expect(result).toBe(true)
   })
@@ -88,9 +88,9 @@ describe('hasUnpublishedVersions', () => {
   test('includes private packages in version check', async () => {
     const packages: WorkspacePackage[] = [
       { name: 'private-pkg', version: '1.0.0', dir: 'packages/private', private: true },
-      { name: '@agent-facets/core', version: '0.1.1', dir: 'packages/core' },
+      { name: '@agent-facets/protocol', version: '0.1.1', dir: 'packages/core' },
     ]
-    const result = await hasUnpublishedVersions(packages, mockNpm({ '@agent-facets/core': '0.1.1' }))
+    const result = await hasUnpublishedVersions(packages, mockNpm({ '@agent-facets/protocol': '0.1.1' }))
     expect(result).toBe(true)
   })
 
@@ -215,14 +215,14 @@ describe('transformChangelogContent', () => {
           ### Patch Changes
 
           -   Updated dependencies [abc1234]
-              -   @agent-facets/core@0.2.0
+              -   @agent-facets/protocol@0.2.0
         `),
       ).toBe(
         `${dedent`
         ### Patch Changes
 
         #### Updated Dependencies
-        - abc1234 @agent-facets/core@0.2.0
+        - abc1234 @agent-facets/protocol@0.2.0
       `}\n`,
       )
     })
@@ -449,7 +449,7 @@ describe('transformChangelogContent', () => {
           -   Updated dependencies [bb87748]
           -   Updated dependencies [95e2f38]
               -   @agent-facets/brand@0.1.1
-              -   @agent-facets/core@0.1.2
+              -   @agent-facets/protocol@0.1.2
         `),
       ).toBe(
         `${dedent`
@@ -457,7 +457,7 @@ describe('transformChangelogContent', () => {
 
         #### Updated Dependencies
         - 95e2f38 @agent-facets/brand@0.1.1
-        - 95e2f38 @agent-facets/core@0.1.2
+        - 95e2f38 @agent-facets/protocol@0.1.2
       `}\n`,
       )
     })
@@ -470,7 +470,7 @@ describe('transformChangelogContent', () => {
           ${remark('aaa1111', 'alice', 'Fix thing')}
 
           -   Updated dependencies [bb87748]
-              -   @agent-facets/core@0.1.2
+              -   @agent-facets/protocol@0.1.2
         `),
       ).toBe(
         `${dedent`
@@ -479,7 +479,7 @@ describe('transformChangelogContent', () => {
         - aaa1111 Thanks @alice! - Fix thing
 
         #### Updated Dependencies
-        - bb87748 @agent-facets/core@0.1.2
+        - bb87748 @agent-facets/protocol@0.1.2
       `}\n`,
       )
     })
@@ -500,7 +500,7 @@ describe('transformChangelogContent', () => {
           ${remark('ddd4444', 'contributor', 'Solo fix')}
 
           -   Updated dependencies [ee12345]
-              -   @agent-facets/core@0.2.0
+              -   @agent-facets/protocol@0.2.0
         `),
       ).toBe(
         `${dedent`
@@ -515,7 +515,7 @@ describe('transformChangelogContent', () => {
         - cc87748: Bare commit entry
 
         #### Updated Dependencies
-        - ee12345 @agent-facets/core@0.2.0
+        - ee12345 @agent-facets/protocol@0.2.0
       `}\n`,
       )
     })
@@ -559,7 +559,7 @@ describe('replaceChangelogEntry', () => {
     expect(
       replaceChangelogEntry(
         dedent`
-          # @agent-facets/core
+          # @agent-facets/protocol
 
           ## 0.2.0
 
@@ -581,7 +581,7 @@ describe('replaceChangelogEntry', () => {
         `}\n`,
       ),
     ).toBe(dedent`
-      # @agent-facets/core
+      # @agent-facets/protocol
 
       ## 0.2.0
 
@@ -684,7 +684,7 @@ describe('replaceChangelogEntry', () => {
 // ---------------------------------------------------------------------------
 
 describe('buildVersionPrBody', () => {
-  const sampleChangelog = `# @agent-facets/core
+  const sampleChangelog = `# @agent-facets/protocol
 
 ## 0.2.0
 
@@ -713,12 +713,12 @@ describe('buildVersionPrBody', () => {
 
   test('generates PR body with release sections', async () => {
     const { body } = await buildVersionPrBody(
-      [{ name: '@agent-facets/core', version: '0.2.0', dir: 'packages/core' }],
+      [{ name: '@agent-facets/protocol', version: '0.2.0', dir: 'packages/core' }],
       mockReadFile({ 'packages/core/CHANGELOG.md': sampleChangelog }),
     )
 
     expect(body).toContain('# Releases')
-    expect(body).toContain('## @agent-facets/core@0.2.0')
+    expect(body).toContain('## @agent-facets/protocol@0.2.0')
     expect(body).toContain('Added a cool new feature')
     expect(body).toContain('Fixed a bug')
     // Should not include content from older versions
@@ -727,7 +727,7 @@ describe('buildVersionPrBody', () => {
 
   test('includes header message', async () => {
     const { body } = await buildVersionPrBody(
-      [{ name: '@agent-facets/core', version: '0.2.0', dir: 'packages/core' }],
+      [{ name: '@agent-facets/protocol', version: '0.2.0', dir: 'packages/core' }],
       mockReadFile({ 'packages/core/CHANGELOG.md': sampleChangelog }),
     )
 
@@ -746,7 +746,7 @@ describe('buildVersionPrBody', () => {
 `
     const { body } = await buildVersionPrBody(
       [
-        { name: '@agent-facets/core', version: '0.2.0', dir: 'packages/core' },
+        { name: '@agent-facets/protocol', version: '0.2.0', dir: 'packages/core' },
         { name: 'agent-facets', version: '0.3.0', dir: 'packages/cli' },
       ],
       mockReadFile({
@@ -755,13 +755,13 @@ describe('buildVersionPrBody', () => {
       }),
     )
 
-    expect(body).toContain('## @agent-facets/core@0.2.0')
+    expect(body).toContain('## @agent-facets/protocol@0.2.0')
     expect(body).toContain('## agent-facets@0.3.0')
     expect(body).toContain('New CLI command')
 
-    // agent-facets should appear before @agent-facets/core (explicit ordering)
+    // agent-facets should appear before @agent-facets/protocol (explicit ordering)
     const cliIndex = body.indexOf('## agent-facets@0.3.0')
-    const coreIndex = body.indexOf('## @agent-facets/core@0.2.0')
+    const coreIndex = body.indexOf('## @agent-facets/protocol@0.2.0')
     expect(cliIndex).toBeLessThan(coreIndex)
   })
 
@@ -821,7 +821,7 @@ describe('buildVersionPrBody', () => {
 
   test('returns per-package entries for CHANGELOG rewrite', async () => {
     const { entries } = await buildVersionPrBody(
-      [{ name: '@agent-facets/core', version: '0.2.0', dir: 'packages/core' }],
+      [{ name: '@agent-facets/protocol', version: '0.2.0', dir: 'packages/core' }],
       mockReadFile({ 'packages/core/CHANGELOG.md': sampleChangelog }),
     )
 

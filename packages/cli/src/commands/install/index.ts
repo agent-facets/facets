@@ -1,4 +1,10 @@
-import { loadInstalledAdapters, type RunInstallFailure, type RunInstallResult, runInstall } from '@agent-facets/engine'
+import {
+  loadInstalledAdapters,
+  type RollbackOutcome,
+  type RunInstallFailure,
+  type RunInstallResult,
+  runInstall,
+} from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
 import type { Command } from '../../commands.ts'
@@ -11,7 +17,7 @@ import { writeCliError } from '../../util/errors.ts'
  * resolves missing entries fresh; bootstraps the lockfile when none
  * exists yet (bun-style).
  *
- * The actual pipeline lives in `runInstall` from `@agent-facets/core`;
+ * The actual pipeline lives in `runInstall` from `@agent-facets/engine`;
  * this file is just the display + routing wrapper.
  */
 export const installCommand: Command = {
@@ -135,12 +141,9 @@ function failureDetail(failure: RunInstallFailure): string {
   return `code=${failure.code}`
 }
 
-function failureFix(
-  failure: RunInstallFailure,
-  rollback: { ok: true } | { ok: false; partialFailures: number },
-): string {
-  if (!rollback.ok) {
-    return `partial state on disk after ${rollback.partialFailures} rollback failure(s); re-run 'facet install' to attempt reconciliation`
+function failureFix(failure: RunInstallFailure, rollback: RollbackOutcome): string {
+  if (rollback.kind === 'partial-failure') {
+    return `partial state on disk after ${rollback.failures} rollback failure(s); re-run 'facet install' to attempt reconciliation`
   }
   if (failure.code === 'ABORTED') {
     return 'rollback complete; project state unchanged'

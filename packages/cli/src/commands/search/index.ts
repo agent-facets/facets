@@ -1,27 +1,35 @@
+import {
+  createRegistryClient,
+  translateThrownError,
+  translateWireError,
+  type WireAssetCounts,
+  type WirePackageListItem,
+} from '@agent-facets/engine'
 import type { Command } from '../../commands.ts'
 import { writeCliError } from '../../util/errors.ts'
-import { registryFetch } from '../../util/registry-client.ts'
+import { translateEngineRegistryError } from '../../util/registry-errors.ts'
 
 /**
- * `facet search [term]` — query the registry for facets whose name matches
- * `term` (substring, case-insensitive). With no term, lists every facet
- * the registry returns (capped server-side at LIMIT 200 in V0).
+ * `facet search [term]` — query the registry for facets whose name
+ * matches `term` (substring, case-insensitive). With no term, lists
+ * every facet the registry returns (capped server-side at LIMIT 200
+ * in V0).
  *
- * Each result shows the canonical name, latest version, and the single
- * copy-paste next step:
+ * Each result shows the canonical name, latest version, an
+ * asset-count summary (per design D10), and the single copy-paste
+ * next step:
  *
  *   - `facet add <name>` — install it
  *
  * We deliberately do NOT suggest a downstream invocation (e.g.,
- * `opencode run --command ...`) because the V0 list endpoint doesn't
- * carry asset metadata: many facets ship arbitrary command names,
- * multiple commands, or no commands at all (skill-only or agent-only).
- * Once the registry returns asset names, we can add a runtime-correct
- * suggestion line back.
+ * `opencode run --command ...`) because the registry returns asset
+ * counts (numeric) but not asset names. A runtime-correct invocation
+ * suggestion would require a different endpoint.
  *
- * V0 registry returns `{name, latestVersion, publishedAt}` per result —
- * author/install-count/asset-counts are alpha+. Render gracefully without
- * them; absent fields just don't appear.
+ * The wire-shaped types come from `@agent-facets/engine`'s curated
+ * re-exports of the registry's published OpenAPI specification —
+ * `WirePackageListItem` is the per-result shape, `WireAssetCounts`
+ * is the kind-by-kind count block.
  */
 export const searchCommand: Command = {
   name: 'search',
@@ -38,34 +46,45 @@ export const searchCommand: Command = {
     }
     const term = args[0]
 
-    const result = await registryFetch('/packages')
-    if (!result.ok) {
-      writeCliError(result.failure)
-      return 1
-    }
-
-    let body: unknown
+    const client = createRegistryClient()
+    let facets: ReadonlyArray<WirePackageListItem>
     try {
-      body = await result.response.json()
+      const { data, error, response } = await client.GET('/v0/packages', {})
+      // Runtime check on `error`: the OpenAPI for `GET /v0/packages`
+      // currently declares only a 200 response, which makes
+      // `result.error` typed as `never`. A non-2xx with a parseable
+      // envelope can still arrive at runtime (the spec is incomplete,
+      // not the contract), so we cast through `unknown` to query it
+      // without TS treating the comparison as always-false.
+      const runtimeError = error as unknown
+      if (runtimeError !== undefined) {
+        writeCliError(
+          translateEngineRegistryError(
+            translateWireError(runtimeError as Parameters<typeof translateWireError>[0], response.status),
+          ),
+        )
+        return 1
+      }
+      // Defensive runtime guard. `openapi-fetch` types `data` per the
+      // OpenAPI spec but does not validate the body at runtime — if
+      // the registry sends a body that doesn't match the schema, the
+      // typed `data.facets` could be `undefined` at runtime even
+      // though the type says it's an array.
+      if (data === undefined || !Array.isArray((data as { facets?: unknown }).facets)) {
+        writeCliError({
+          what: 'registry returned an unexpected shape',
+          detail: `expected { facets: [...] }`,
+          fix: "this likely means the CLI is talking to a newer registry — try 'facet self-update'",
+        })
+        return 1
+      }
+      facets = data.facets
     } catch (err) {
-      writeCliError({
-        what: 'registry returned a malformed response',
-        detail: err instanceof Error ? err.message : String(err),
-        fix: 'try again in a moment',
-      })
+      writeCliError(translateEngineRegistryError(translateThrownError(err)))
       return 1
     }
 
-    if (!isPackagesResponse(body)) {
-      writeCliError({
-        what: 'registry returned an unexpected shape',
-        detail: 'expected { facets: [{ name, latestVersion, publishedAt }, ...] }',
-        fix: "this likely means the CLI is talking to a newer registry — try 'facet self-update'",
-      })
-      return 1
-    }
-
-    const all = body.facets
+    const all = facets
     const filtered = term !== undefined ? all.filter((f) => f.name.toLowerCase().includes(term.toLowerCase())) : all
 
     if (all.length === 0) {
@@ -83,31 +102,52 @@ export const searchCommand: Command = {
   },
 }
 
-interface RegistryFacetSummary {
-  name: string
-  latestVersion: string
-  publishedAt: string
-}
-
-interface PackagesResponse {
-  facets: RegistryFacetSummary[]
-}
-
-function isPackagesResponse(value: unknown): value is PackagesResponse {
-  if (value === null || typeof value !== 'object') return false
-  const v = value as Record<string, unknown>
-  if (!Array.isArray(v.facets)) return false
-  return v.facets.every(
-    (f) =>
-      f !== null &&
-      typeof f === 'object' &&
-      typeof (f as Record<string, unknown>).name === 'string' &&
-      typeof (f as Record<string, unknown>).latestVersion === 'string' &&
-      typeof (f as Record<string, unknown>).publishedAt === 'string',
-  )
-}
-
-function renderResult(f: RegistryFacetSummary): string {
+/**
+ * Render a single search result as a multi-line block. Format:
+ *
+ *   <name>   v<latestVersion>
+ *     <asset-counts summary>      ← omitted entirely if all-zero
+ *     → facet add <name>
+ *
+ * The asset-counts line comes from `formatAssetCounts` and is omitted
+ * when every count is zero (per D10's all-zero rule), producing a
+ * 2-line block in that edge case.
+ */
+function renderResult(f: WirePackageListItem): string {
   const headline = `${f.name}   v${f.latestVersion}`
-  return [headline, `  → facet add ${f.name}`].join('\n')
+  const counts = formatAssetCounts(f.assetCounts)
+  const installLine = `  → facet add ${f.name}`
+  return counts === null ? [headline, installLine].join('\n') : [headline, `  ${counts}`, installLine].join('\n')
+}
+
+/**
+ * Render the `WireAssetCounts` object as a one-line summary like
+ * `"1 agent, 2 commands, 1 server"`. Returns null when every count
+ * is zero, signaling that the caller should omit the line entirely
+ * (per D10).
+ *
+ * Rules from the design:
+ *
+ *   - Pluralization: standard English plural (`1 agent` / `2 agents`).
+ *   - Zero-suppression: kinds with count 0 are omitted.
+ *   - Order: `agents`, `commands`, `servers`, `skills` — wire order.
+ *   - All-zero: return null so renderer omits the line.
+ */
+function formatAssetCounts(counts: WireAssetCounts): string | null {
+  // [wire-key, singular, plural] tuples in canonical render order.
+  // Hardcoded over generic pluralization because the four kinds are
+  // a closed set and a future fifth kind should be a deliberate add
+  // here, not a silent default.
+  const KINDS: ReadonlyArray<readonly [keyof WireAssetCounts, string, string]> = [
+    ['agents', 'agent', 'agents'],
+    ['commands', 'command', 'commands'],
+    ['servers', 'server', 'servers'],
+    ['skills', 'skill', 'skills'],
+  ]
+  const parts: string[] = []
+  for (const [key, singular, plural] of KINDS) {
+    const n = counts[key]
+    if (n > 0) parts.push(`${n} ${n === 1 ? singular : plural}`)
+  }
+  return parts.length === 0 ? null : parts.join(', ')
 }

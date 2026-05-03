@@ -50,6 +50,15 @@ Agent Facets is organized as three layers, each with distinct responsibilities a
 └───────────────────────┘
 ```
 
+> Three layers, each with distinct responsibilities and runtime
+> constraints. **`@agent-facets/protocol`** owns the artifact spec —
+> Node-native, public on npm, no services. **`@agent-facets/engine`**
+> is the Bun-native CLI machinery — private to this monorepo, never
+> published. **`agent-facets`** (the CLI) is the user-facing argv +
+> Ink TUI surface that calls into engine. The cafe registry consumes
+> protocol directly over its own OpenAPI surface; engine consumes
+> cafe's OpenAPI as an HTTP client.
+
 ## Layer 1 — `@agent-facets/protocol`
 
 The TypeScript reference implementation of the **facet artifact specification**. This is the only package in the monorepo that is published to npm. It's Node-native (Node 22+), depends on no Bun-specific APIs, and has no service or network surface.
@@ -104,7 +113,7 @@ A common question: if the CLI talks to a registry, shouldn't the wire format be 
 
 **No.** The protocol describes **data at rest** — what facets look like as artifacts. **Service interactions** (CLI ↔ registry over HTTP, for example) are owned by the service whose API surface they describe.
 
-The registry (`facet-cafe`) publishes its own OpenAPI specification. The CLI consumes that specification — eventually via build-time codegen against a date-versioned URL. This separation lets the registry HTTP API and the artifact format evolve on independent cadences. Adding a registry endpoint doesn't bump protocol semver; revising a manifest schema doesn't bump the registry's API version.
+The registry (`facet-cafe`) publishes its own OpenAPI specification. The CLI consumes that specification via build-time codegen — `bun run --cwd packages/engine codegen:registry` vendors a snapshot and regenerates the typed module. This separation lets the registry HTTP API and the artifact format evolve on independent cadences. Adding a registry endpoint doesn't bump protocol semver; revising a manifest schema doesn't bump the registry's API version.
 
 This is also why a future date-versioned API model is straightforward to adopt: the registry publishes `/openapi/v0?date=2026-04-22`, the CLI pins a date in its source, and clients with different pins continue to work against the same registry.
 

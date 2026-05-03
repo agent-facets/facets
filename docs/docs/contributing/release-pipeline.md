@@ -59,6 +59,17 @@ The CLI publishes 13 packages (12 platform binaries + 1 CLI package) directly to
 
 The CLI package is always last. Users cannot install the new version until this step succeeds, because `npm install agent-facets` resolves the CLI package first, which then pulls platform binaries via `optionalDependencies`. If any platform binary failed to publish, the CLI package never publishes, so users on the previous version are unaffected.
 
+## Release preparation
+
+Before merging a CLI-affecting PR (or a version PR that bumps the CLI):
+
+- Run `bun run --cwd packages/engine codegen:registry` and confirm
+  no diff. If the registry has changed since the last sync, commit
+  the regenerated snapshot and types as part of the release PR. A
+  CLI release that ships against a stale snapshot will surface
+  drift as a runtime "unexpected response" error to users rather
+  than as a typed compile-time check during CI.
+
 ## Adding changesets on behalf of contributors
 
 The [changeset bot](https://github.com/apps/changeset-bot) comments on every PR indicating whether a changeset is present. If a contributor doesn't add one, the bot's comment includes a link to create one in the browser — pre-filled with the correct filename. Write the summary, select the bump type, and commit directly to the PR branch.

@@ -2,6 +2,13 @@
 // facet specification. Public API: schemas, validators, integrity, content
 // hashing, front-matter, version-spec grammar.
 
+// front matter — the canonical implementation lives in
+// `@agent-facets/common`'s `splitFrontMatter`. We re-export from here so
+// that external consumers of `@agent-facets/protocol` (e.g. the cafe
+// registry) get the front-matter primitive through protocol's surface
+// without taking a separate runtime dep on `common`. `common` is bundled
+// into protocol's published tarball via tsdown's `alwaysBundle`.
+export { splitFrontMatter } from '@agent-facets/common'
 // content hashing + archive format (deterministic tar layout, hash format,
 // constants — all part of the integrity contract)
 export type { ArchiveEntry } from './build/content-hash.ts'
@@ -21,16 +28,15 @@ export {
 export { detectNamingCollisions } from './build/detect-collisions.ts'
 export { validateContentFiles } from './build/validate-content.ts'
 export { validateCompactFacets } from './build/validate-facets.ts'
-// front matter
-export type { FrontMatterResult } from './front-matter.ts'
-export { extractFrontMatter, hasFrontMatter } from './front-matter.ts'
 // integrity
 export type {
   AssetIntegrityFailure,
   FacetIntegrityCheck,
   FacetIntegrityFailure,
+  GitIntegrityInput,
   IntegrityFailure,
   IntegrityResult,
+  RegistryIntegrityInput,
 } from './integrity/index.ts'
 export { verifyGitOneCheck, verifyHash, verifyRegistryThreeCheck } from './integrity/index.ts'
 // loaders (pure bytes-validators — no I/O)

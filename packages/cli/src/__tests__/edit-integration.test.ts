@@ -32,8 +32,7 @@ describe('edit integration', () => {
 
     const result = await buildEditContext(dir)
     expect(result.ok).toBe(true)
-    if (!result.ok) return
-
+    if (!result.ok) expect.unreachable()
     const additions = result.context.reconciliationItems.filter((i) => i.kind === 'addition')
     expect(additions).toHaveLength(1)
     expect(additions[0]?.name).toBe('new-one')
@@ -55,8 +54,7 @@ describe('edit integration', () => {
 
     const result = await buildEditContext(dir)
     expect(result.ok).toBe(true)
-    if (!result.ok) return
-
+    if (!result.ok) expect.unreachable()
     const missing = result.context.reconciliationItems.filter((i) => i.kind === 'missing')
     expect(missing).toHaveLength(1)
     expect(missing[0]?.name).toBe('gone')

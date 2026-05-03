@@ -1,5 +1,11 @@
 # @agent-facets/engine
 
+> This package is workspace-only as of 2026-05-09; it is bundled into the
+> `agent-facets` CLI binary at build time and never published. Subsequent
+> changes appear in the CLI's CHANGELOG. Earlier versions on this page
+> are a historical record from before the rename from
+> `@agent-facets/core` and the conversion to workspace-only.
+
 ## 0.9.3
 
 ### Patch Changes

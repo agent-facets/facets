@@ -1,0 +1,17 @@
+docker:
+  - image: cimg/base:current
+resource_class: small
+steps:
+  - setup-mise
+  # Pure offline read of the on-disk OpenAPI snapshot's `Generated-At`
+  # header. Exits non-zero (via --strict) if the snapshot is older than
+  # STALENESS_THRESHOLD_DAYS (default 7).
+  #
+  # The non-zero exit produces a failed CircleCI job → failed GitHub
+  # status check → red X on the PR. Branch protection decides whether
+  # that red X blocks merge; the default is "advisory" (red X visible,
+  # merge unblocked) per design D4. To enforce blocking, add this job
+  # to GitHub's required-checks list in repo settings.
+  - run:
+      name: OpenAPI snapshot freshness
+      command: bun run --cwd packages/engine codegen:registry --check --strict

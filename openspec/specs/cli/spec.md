@@ -488,3 +488,142 @@ The `self-update` command SHALL accept a `--dry-run` flag. When the flag is set,
 - **THEN** the target version in the output SHALL be 0.6.0
 - **AND** the printed command SHALL reference version 0.6.0
 - **AND** the system SHALL NOT modify any files
+
+### Requirement: The CLI's view of the registry contract is anchored to the registry's published specification
+
+The CLI SHALL derive every registry-facing wire-shaped type — request shapes, response shapes, and error envelopes — from the registry's own published API specification rather than from CLI-side hand-authored types. A registry response field that is renamed, removed, or changes shape SHALL surface as a build-time error against typed code in a CLI pull request, not as a runtime "unexpected response" error to a user running a released CLI.
+
+Internal CLI contracts (the discriminated result envelope returned to commands, parsed input forms, display structures) MAY remain hand-authored, since they describe the CLI's contract with itself rather than the wire.
+
+#### Scenario: Registry adds a new field to a response
+
+- **WHEN** the registry publishes a new optional field on a response shape and a contributor refreshes the CLI's view of the registry
+- **THEN** the new field SHALL be available to CLI code as a typed field on that response
+- **AND** existing CLI call sites SHALL continue to compile without modification
+
+#### Scenario: Registry renames a field on a response
+
+- **WHEN** the registry renames a field on a response shape and a contributor refreshes the CLI's view of the registry
+- **THEN** every CLI call site that reads the renamed field SHALL fail to type-check
+- **AND** the failure SHALL surface in the contributor's editor and in CI before the change can be merged
+
+#### Scenario: Released CLI versions stay in lockstep with the registry
+
+- **WHEN** a CLI version is released
+- **THEN** that CLI version's compiled type contract SHALL match a specific, identifiable version of the registry's published specification
+- **AND** the matched specification version SHALL be reproducible from the released CLI's source tree without network access
+
+### Requirement: A single command refreshes the CLI's registry-contract view
+
+Contributors SHALL be able to update the CLI's view of the registry contract with a single, idempotent command. Running the command twice in succession with no upstream changes SHALL produce no diff. The command SHALL fail loudly and leave existing on-disk state unmodified if the registry is unreachable or returns an invalid specification.
+
+#### Scenario: Refresh against an unchanged registry produces no diff
+
+- **WHEN** a contributor runs the refresh command and the registry's published specification has not changed since the last refresh
+- **THEN** the command SHALL exit successfully
+- **AND** no files SHALL be modified on disk
+
+#### Scenario: Refresh against an updated registry produces a reviewable diff
+
+- **WHEN** a contributor runs the refresh command and the registry's published specification has changed since the last refresh
+- **THEN** the command SHALL update the CLI's on-disk view to match the new specification
+- **AND** the resulting changes SHALL be a reviewable diff in version control
+
+#### Scenario: Refresh fails cleanly when the registry is unreachable
+
+- **WHEN** a contributor runs the refresh command and the registry cannot be reached or returns an invalid specification
+- **THEN** the command SHALL exit with a non-zero status and a clear error message
+- **AND** the CLI's on-disk view SHALL remain unchanged from before the command was run
+
+### Requirement: Search results show asset counts
+
+When the CLI lists facets in response to a search, each result SHALL display a one-line summary of the facet's asset counts (e.g., "1 agent, 2 commands, 1 server"). Asset kinds with a zero count SHALL be omitted from the line. If every asset count is zero, the line SHALL be omitted entirely rather than rendered as an empty list. The summary SHALL be derived from the data returned by the registry — not from any client-side computation — so that what the user sees matches what the registry has published.
+
+#### Scenario: Search result lists a facet with multiple asset kinds
+
+- **WHEN** the registry returns a facet with one agent, two commands, and one server
+- **THEN** the search output for that facet SHALL include a line containing "1 agent, 2 commands, 1 server"
+- **AND** asset kinds with a zero count SHALL NOT appear on the line
+
+#### Scenario: Search result lists a facet with a single asset kind
+
+- **WHEN** the registry returns a facet with two commands and zero of every other kind
+- **THEN** the search output for that facet SHALL include a line containing "2 commands"
+- **AND** the line SHALL NOT contain any of the zero-count kinds
+
+#### Scenario: Search result lists a facet with no assets at all
+
+- **WHEN** the registry returns a facet whose every asset count is zero
+- **THEN** the search output for that facet SHALL omit the asset-counts line entirely
+- **AND** SHALL NOT render an empty list or a line of zeros
+
+### Requirement: Registry calls have a single per-call deadline that the caller can compose with their own abort signal
+
+When the CLI makes a request to the registry, the request SHALL be subject to a single bounded deadline that covers the entire call including any retries. The deadline SHALL NOT be reset between retries. If the caller supplies their own abort signal alongside the request, the call SHALL abort when either signal fires — whichever happens first. The caller's signal SHALL NOT be silently overridden by the per-call deadline.
+
+#### Scenario: Per-call deadline elapses across retries
+
+- **WHEN** the registry is unreachable and the per-call deadline elapses while retries are still pending
+- **THEN** the call SHALL abort and return a network failure
+- **AND** no further retry attempts SHALL be made after the deadline has elapsed
+
+#### Scenario: Caller signal aborts a retry in progress
+
+- **WHEN** the caller supplies an abort signal and aborts it during a retry's backoff
+- **THEN** the call SHALL surface the abort to the caller
+- **AND** the per-call deadline SHALL NOT prevent the caller's abort from taking effect
+
+### Requirement: Retry policy distinguishes idempotent and non-idempotent requests
+
+When a registry call fails for a transient reason (a network error such as connection refused, DNS failure, or socket timeout), the CLI SHALL retry the call **only when the request method is idempotent** (GET, HEAD, OPTIONS). Non-idempotent requests (POST, PUT, PATCH, DELETE) SHALL NOT be retried automatically because they may have already produced a side effect on the registry. HTTP error responses (4xx, 5xx) SHALL NOT trigger retry — the registry's structured error envelope SHALL be surfaced to the caller as-is.
+
+#### Scenario: Network failure on a GET retries
+
+- **WHEN** a `GET` request to the registry fails with a network error
+- **THEN** the CLI SHALL retry the request up to the configured retry count
+- **AND** the user SHALL see at most one user-facing error message describing the final outcome
+
+#### Scenario: Network failure on a POST does not retry
+
+- **WHEN** a `POST` request to the registry (e.g., publishing a facet) fails with a network error
+- **THEN** the CLI SHALL NOT retry the request
+- **AND** the user SHALL see a clear error message indicating the request did not complete
+
+#### Scenario: HTTP error response does not retry
+
+- **WHEN** the registry returns a non-2xx HTTP status (any 4xx or 5xx)
+- **THEN** the CLI SHALL NOT retry the request
+- **AND** the user SHALL see the structured error envelope translated to a clear CLI error
+
+### Requirement: Registry retries honor the server's `Retry-After` header
+
+When the registry sends a `Retry-After` header on a retryable response and the CLI is preparing to retry, the CLI SHALL honor the server's hint as the backoff duration, capped by a configured maximum to defend against runaway values. When the header is absent, the CLI SHALL use its configured default backoff.
+
+#### Scenario: Server requests a longer wait
+
+- **WHEN** the registry responds with a `Retry-After` header indicating a duration longer than the CLI's default backoff
+- **THEN** the CLI SHALL wait the server-requested duration before the next retry attempt
+- **AND** the wait SHALL be capped by the CLI's configured maximum backoff
+
+#### Scenario: Server omits the header
+
+- **WHEN** the registry responds without a `Retry-After` header
+- **THEN** the CLI SHALL use its configured default backoff before the next retry attempt
+
+### Requirement: The CLI's registry-contract view exposes its own freshness
+
+The CLI's stored view of the registry contract SHALL carry machine-readable provenance — at minimum, the time of last refresh and the source from which it was refreshed. Contributors SHALL be able to ask "is my view of the registry stale?" without making any network call.
+
+#### Scenario: Contributor checks freshness offline
+
+- **WHEN** a contributor asks the CLI's tooling for the freshness of its registry-contract view while disconnected from the network
+- **THEN** the tooling SHALL report the time of last refresh and the configured staleness threshold
+- **AND** the tooling SHALL indicate whether the view exceeds the threshold
+- **AND** no network call SHALL be required to produce this report
+
+#### Scenario: CI surfaces a stale view as a non-blocking warning
+
+- **WHEN** a pull request is opened against the CLI and the stored registry-contract view exceeds the configured staleness threshold
+- **THEN** CI SHALL emit a visible warning annotation on the pull request
+- **AND** CI SHALL NOT fail the pull request solely because of staleness
+- **AND** transient failures reaching the registry during the staleness check SHALL NOT fail the pull request

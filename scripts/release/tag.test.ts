@@ -53,7 +53,7 @@ describe('tag.ts', () => {
       spyOn(io.git, 'fetchSha').mockResolvedValue(shellResult())
       spyOn(io.git, 'config').mockResolvedValue(shellResult())
       spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
-        { name: '@agent-facets/core', version: '1.1.0', dir: 'packages/core' },
+        { name: '@agent-facets/protocol', version: '1.1.0', dir: 'packages/core' },
       ])
       spyOn(io.npm, 'viewVersion').mockResolvedValue('1.0.0')
       const tagSpy = spyOn(io.git, 'tagAt').mockResolvedValue(shellResult())
@@ -65,7 +65,7 @@ describe('tag.ts', () => {
       expect(code).toBe(0)
       expect(prSpy).toHaveBeenCalledTimes(4)
       // Proceeded with tagging — did not bail out on the empty responses.
-      expect(tagSpy).toHaveBeenCalledWith('@agent-facets/core@1.1.0', 'original-sha')
+      expect(tagSpy).toHaveBeenCalledWith('@agent-facets/protocol@1.1.0', 'original-sha')
     })
 
     test('exits early when commit is not a version PR merge', async () => {
@@ -88,7 +88,7 @@ describe('tag.ts', () => {
       ])
       spyOn(io.git, 'fetchSha').mockResolvedValue(shellResult())
       spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
-        { name: '@agent-facets/core', version: '1.0.0', dir: 'packages/core' },
+        { name: '@agent-facets/protocol', version: '1.0.0', dir: 'packages/core' },
       ])
       spyOn(io.npm, 'viewVersion').mockResolvedValue('1.0.0')
       const tagSpy = spyOn(io.git, 'tagAt').mockResolvedValue(shellResult())
@@ -109,12 +109,12 @@ describe('tag.ts', () => {
       spyOn(io.git, 'fetchSha').mockResolvedValue(shellResult())
       spyOn(io.git, 'config').mockResolvedValue(shellResult())
       spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
-        { name: '@agent-facets/core', version: '1.1.0', dir: 'packages/core' },
+        { name: '@agent-facets/protocol', version: '1.1.0', dir: 'packages/core' },
         { name: '@agent-facets/brand', version: '0.2.0', dir: 'packages/brand' },
         { name: 'agent-facets', version: '0.4.0', dir: 'packages/cli', private: true },
       ])
       spyOn(io.npm, 'viewVersion').mockImplementation(async (pkg: string) => {
-        if (pkg === '@agent-facets/core') return '1.0.0' // bumped
+        if (pkg === '@agent-facets/protocol') return '1.0.0' // bumped
         if (pkg === '@agent-facets/brand') return '0.2.0' // unchanged
         if (pkg === 'agent-facets') return null // private, never published
         return null
@@ -126,7 +126,7 @@ describe('tag.ts', () => {
       const code = await tagRelease()
 
       expect(code).toBe(0)
-      expect(tagSpy).toHaveBeenCalledWith('@agent-facets/core@1.1.0', 'original-sha')
+      expect(tagSpy).toHaveBeenCalledWith('@agent-facets/protocol@1.1.0', 'original-sha')
       expect(tagSpy).toHaveBeenCalledWith('agent-facets@0.4.0', 'original-sha')
       expect(tagSpy).not.toHaveBeenCalledWith('@agent-facets/brand@0.2.0', 'original-sha')
       expect(pushSpy).toHaveBeenCalledWith('origin')
@@ -140,11 +140,11 @@ describe('tag.ts', () => {
       spyOn(io.git, 'fetchSha').mockResolvedValue(shellResult())
       spyOn(io.git, 'config').mockResolvedValue(shellResult())
       spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
-        { name: '@agent-facets/core', version: '1.0.0', dir: 'packages/core' },
+        { name: '@agent-facets/protocol', version: '1.0.0', dir: 'packages/core' },
         { name: 'agent-facets', version: '0.4.0', dir: 'packages/cli', private: true },
       ])
       spyOn(io.npm, 'viewVersion').mockImplementation(async (pkg: string) => {
-        if (pkg === '@agent-facets/core') return '1.0.0' // unchanged
+        if (pkg === '@agent-facets/protocol') return '1.0.0' // unchanged
         if (pkg === 'agent-facets') return '0.3.0' // bumped
         return null
       })
@@ -156,7 +156,7 @@ describe('tag.ts', () => {
 
       expect(code).toBe(0)
       expect(tagSpy).toHaveBeenCalledWith('agent-facets@0.4.0', 'original-sha')
-      expect(tagSpy).not.toHaveBeenCalledWith('@agent-facets/core@1.0.0', 'original-sha')
+      expect(tagSpy).not.toHaveBeenCalledWith('@agent-facets/protocol@1.0.0', 'original-sha')
       expect(pushSpy).toHaveBeenCalledWith('origin')
     })
 
@@ -167,7 +167,7 @@ describe('tag.ts', () => {
       ])
       const fetchSpy = spyOn(io.git, 'fetchSha').mockResolvedValue(shellResult())
       spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
-        { name: '@agent-facets/core', version: '1.0.0', dir: 'packages/core' },
+        { name: '@agent-facets/protocol', version: '1.0.0', dir: 'packages/core' },
       ])
       spyOn(io.npm, 'viewVersion').mockResolvedValue('1.0.0')
 
@@ -183,7 +183,7 @@ describe('tag.ts', () => {
       ])
       spyOn(io.git, 'fetchSha').mockResolvedValue(shellResult())
       spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
-        { name: '@agent-facets/core', version: '1.1.0', dir: 'packages/core' },
+        { name: '@agent-facets/protocol', version: '1.1.0', dir: 'packages/core' },
       ])
       spyOn(io.npm, 'viewVersion').mockResolvedValue('1.0.0')
       spyOn(io.git, 'tagAt').mockResolvedValue(shellResult())
@@ -210,11 +210,11 @@ describe('tag.ts', () => {
       spyOn(io.git, 'fetchSha').mockResolvedValue(shellResult())
       spyOn(io.git, 'config').mockResolvedValue(shellResult())
       spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
-        { name: '@agent-facets/core', version: '1.1.0', dir: 'packages/core' },
+        { name: '@agent-facets/protocol', version: '1.1.0', dir: 'packages/core' },
         { name: 'agent-facets', version: '0.4.0', dir: 'packages/cli', private: true },
       ])
       spyOn(io.npm, 'viewVersion').mockImplementation(async (pkg: string) => {
-        if (pkg === '@agent-facets/core') return '1.0.0' // bumped
+        if (pkg === '@agent-facets/protocol') return '1.0.0' // bumped
         if (pkg === 'agent-facets') return '0.3.0' // bumped
         return null
       })
@@ -229,8 +229,8 @@ describe('tag.ts', () => {
       expect(triggerSpy).toHaveBeenCalledWith(
         CIRCLECI_PROJECT_SLUG,
         CIRCLECI_RELEASE_PIPELINE_DEFINITION_ID,
-        '@agent-facets/core@1.1.0',
-        'core',
+        '@agent-facets/protocol@1.1.0',
+        'protocol',
       )
       expect(triggerSpy).toHaveBeenCalledWith(
         CIRCLECI_PROJECT_SLUG,
@@ -248,13 +248,13 @@ describe('tag.ts', () => {
       spyOn(io.git, 'fetchSha').mockResolvedValue(shellResult())
       spyOn(io.git, 'config').mockResolvedValue(shellResult())
       spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
-        { name: '@agent-facets/core', version: '1.1.0', dir: 'packages/core' },
+        { name: '@agent-facets/protocol', version: '1.1.0', dir: 'packages/core' },
       ])
       spyOn(io.npm, 'viewVersion').mockResolvedValue('1.0.0')
       spyOn(io.git, 'tagAt').mockResolvedValue(shellResult())
       spyOn(io.git, 'pushAllTags').mockResolvedValue(shellResult())
       spyOn(io.circleci, 'triggerPipelineForTag').mockRejectedValue(
-        new Error('CircleCI pipeline trigger failed for tag @agent-facets/core@1.1.0: 401 Unauthorized'),
+        new Error('CircleCI pipeline trigger failed for tag @agent-facets/protocol@1.1.0: 401 Unauthorized'),
       )
 
       await expect(tagRelease()).rejects.toThrow('CircleCI pipeline trigger failed')

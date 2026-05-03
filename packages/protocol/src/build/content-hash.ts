@@ -137,6 +137,8 @@ export function assembleOuterTar(manifestJson: string, innerArchiveBytes: Uint8A
  *
  * Failure modes are part of the contract — the function never throws.
  * It returns `{ ok: false, errors }` when the input is malformed:
+ *   - the outer tar bytes are not parseable as a tar archive
+ *     (truncated, header size field out of range, etc.)
  *   - `build-manifest.json` entry is missing from the outer tar
  *   - `archive.tar.gz` entry is missing from the outer tar
  *   - the manifest entry is not valid JSON
@@ -144,8 +146,9 @@ export function assembleOuterTar(manifestJson: string, innerArchiveBytes: Uint8A
  *
  * Errors are reported as `ValidationError[]` rooted at
  * `'build-manifest.json'` (or `'archive.tar.gz'` for the structural
- * inner-archive failure), so callers can disambiguate the failure source
- * without parsing message strings.
+ * inner-archive failure, or `'<archive>'` for outer-tar parse failures),
+ * so callers can disambiguate the failure source without parsing
+ * message strings.
  *
  * To verify integrity on success, decompress the returned
  * `result.data.innerArchiveBytes` (e.g. via `node:zlib.gunzipSync`) and
@@ -157,7 +160,28 @@ export function parseFacetArchive(
 ):
   | { ok: true; data: { buildManifest: BuildManifest; innerArchiveBytes: Uint8Array } }
   | { ok: false; errors: ValidationError[] } {
-  const entries = parseTar(bytes)
+  let entries: TarFileItem[]
+  try {
+    entries = parseTar(bytes)
+  } catch (e) {
+    // `nanotar.parseTar` throws on malformed inputs (e.g. a truncated upload
+    // whose header `size` field points past the end of the buffer surfaces
+    // as `RangeError: Length out of range of buffer`). The contract above
+    // promises this function never throws — translate to the documented
+    // typed failure shape rooted at the synthetic `'<archive>'` path.
+    const message = e instanceof Error ? e.message : String(e)
+    return {
+      ok: false,
+      errors: [
+        {
+          path: '<archive>',
+          message: `Facet archive is not a valid tar file: ${message}`,
+          expected: 'parseable tar archive',
+          actual: 'malformed tar bytes',
+        },
+      ],
+    }
+  }
   let manifestEntry: TarFileItem | undefined
   let innerEntry: TarFileItem | undefined
   for (const entry of entries) {
@@ -221,7 +245,33 @@ export function parseFacetArchive(
  * The caller is responsible for decompression (gzip is a delivery concern;
  * different gzip implementations produce different bytes but gunzip to
  * identical tars). Pass the gunzipped bytes here to enumerate the assets.
+ *
+ * Failure modes are part of the contract — the function never throws.
+ * It returns `{ ok: false, errors }` when the input is malformed:
+ *   - the bytes are not parseable as a tar archive
+ *     (truncated, header size field out of range, etc.)
+ *
+ * Errors are reported as `ValidationError[]` rooted at the empty path
+ * (the inner archive is the unit being parsed; there is no nested
+ * subject to identify). Mirrors `parseFacetArchive`'s contract.
  */
-export function parseInnerArchive(innerTarBytes: Uint8Array): TarFileItem[] {
-  return parseTar(innerTarBytes)
+export function parseInnerArchive(
+  innerTarBytes: Uint8Array,
+): { ok: true; entries: TarFileItem[] } | { ok: false; errors: ValidationError[] } {
+  try {
+    return { ok: true, entries: parseTar(innerTarBytes) }
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e)
+    return {
+      ok: false,
+      errors: [
+        {
+          path: '',
+          message: `Inner archive is not a valid tar file: ${message}`,
+          expected: 'parseable tar archive',
+          actual: 'malformed tar bytes',
+        },
+      ],
+    }
+  }
 }

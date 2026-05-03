@@ -19,7 +19,7 @@ describe('publish.ts', () => {
 
   describe('parseTag', () => {
     test('parses scoped package tag', () => {
-      expect(parseTag('@agent-facets/core@1.2.3')).toEqual({ name: '@agent-facets/core', version: '1.2.3' })
+      expect(parseTag('@agent-facets/protocol@1.2.3')).toEqual({ name: '@agent-facets/protocol', version: '1.2.3' })
     })
 
     test('parses unscoped package tag', () => {
@@ -27,8 +27,8 @@ describe('publish.ts', () => {
     })
 
     test('parses pre-release version', () => {
-      expect(parseTag('@agent-facets/core@1.0.0-beta.1')).toEqual({
-        name: '@agent-facets/core',
+      expect(parseTag('@agent-facets/protocol@1.0.0-beta.1')).toEqual({
+        name: '@agent-facets/protocol',
         version: '1.0.0-beta.1',
       })
     })
@@ -45,7 +45,7 @@ describe('publish.ts', () => {
   describe('release', () => {
     function setupPublishPath() {
       spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
-        { name: '@agent-facets/core', version: '1.1.0', dir: 'packages/core', private: false },
+        { name: '@agent-facets/protocol', version: '1.1.0', dir: 'packages/core', private: false },
       ])
       spyOn(io.shell, 'mintGitHubAppToken').mockResolvedValue('fake-gh-token')
       spyOn(io.shell, 'turboBuild').mockResolvedValue(shellResult())
@@ -82,7 +82,7 @@ describe('publish.ts', () => {
     test('returns 1 when package not found in workspace', async () => {
       process.env.CIRCLE_TAG = '@agent-facets/nonexistent@1.0.0'
       spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
-        { name: '@agent-facets/core', version: '1.0.0', dir: 'packages/core' },
+        { name: '@agent-facets/protocol', version: '1.0.0', dir: 'packages/core' },
       ])
 
       const { release } = await import('./publish')
@@ -92,9 +92,9 @@ describe('publish.ts', () => {
     })
 
     test('returns 1 when version mismatches', async () => {
-      process.env.CIRCLE_TAG = '@agent-facets/core@9.9.9'
+      process.env.CIRCLE_TAG = '@agent-facets/protocol@9.9.9'
       spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
-        { name: '@agent-facets/core', version: '1.0.0', dir: 'packages/core' },
+        { name: '@agent-facets/protocol', version: '1.0.0', dir: 'packages/core' },
       ])
 
       const { release } = await import('./publish')
@@ -104,7 +104,7 @@ describe('publish.ts', () => {
     })
 
     test('publishes non-private package to npm', async () => {
-      process.env.CIRCLE_TAG = '@agent-facets/core@1.1.0'
+      process.env.CIRCLE_TAG = '@agent-facets/protocol@1.1.0'
       setupPublishPath()
 
       const publishSpy = spyOn(npm, 'packAndPublish').mockResolvedValue(undefined)
@@ -119,7 +119,7 @@ describe('publish.ts', () => {
     test('builds with scoped filter for the released package', async () => {
       // Releases scope the turbo build to the released package + its workspace
       // deps so we don't fan out to all 11 packages and OOM the executor.
-      process.env.CIRCLE_TAG = '@agent-facets/core@1.1.0'
+      process.env.CIRCLE_TAG = '@agent-facets/protocol@1.1.0'
       setupPublishPath()
 
       const buildSpy = spyOn(io.shell, 'turboBuild').mockResolvedValue(shellResult())
@@ -128,7 +128,7 @@ describe('publish.ts', () => {
       await release()
 
       expect(buildSpy).toHaveBeenCalledTimes(1)
-      expect(buildSpy).toHaveBeenCalledWith('@agent-facets/core...')
+      expect(buildSpy).toHaveBeenCalledWith('@agent-facets/protocol...')
     })
 
     test('skips private packages without publishing', async () => {
@@ -146,7 +146,7 @@ describe('publish.ts', () => {
     })
 
     test('mints OIDC token before npm publish', async () => {
-      process.env.CIRCLE_TAG = '@agent-facets/core@1.1.0'
+      process.env.CIRCLE_TAG = '@agent-facets/protocol@1.1.0'
       setupPublishPath()
 
       const mintSpy = spyOn(io.shell, 'mintCircleOidcToken').mockResolvedValue('oidc-token\n')
@@ -159,7 +159,7 @@ describe('publish.ts', () => {
     })
 
     test('creates GitHub Release after npm publish', async () => {
-      process.env.CIRCLE_TAG = '@agent-facets/core@1.1.0'
+      process.env.CIRCLE_TAG = '@agent-facets/protocol@1.1.0'
       setupPublishPath()
 
       const releaseSpy = spyOn(io.gh, 'releaseCreate').mockResolvedValue(
@@ -172,12 +172,12 @@ describe('publish.ts', () => {
       expect(code).toBe(0)
       expect(releaseSpy).toHaveBeenCalledTimes(1)
       const [tag, title] = releaseSpy.mock.calls[0] ?? []
-      expect(tag).toBe('@agent-facets/core@1.1.0')
-      expect(title).toBe('@agent-facets/core@1.1.0')
+      expect(tag).toBe('@agent-facets/protocol@1.1.0')
+      expect(title).toBe('@agent-facets/protocol@1.1.0')
     })
 
     test('sends Slack notification to deploy channel only', async () => {
-      process.env.CIRCLE_TAG = '@agent-facets/core@1.1.0'
+      process.env.CIRCLE_TAG = '@agent-facets/protocol@1.1.0'
       setupPublishPath()
 
       const slackSpy = spyOn(announce, 'slackNotify').mockResolvedValue(undefined)
@@ -192,7 +192,7 @@ describe('publish.ts', () => {
     })
 
     test('sets both GH_TOKEN and GITHUB_TOKEN', async () => {
-      process.env.CIRCLE_TAG = '@agent-facets/core@1.1.0'
+      process.env.CIRCLE_TAG = '@agent-facets/protocol@1.1.0'
       setupPublishPath()
       spyOn(io.shell, 'mintGitHubAppToken').mockResolvedValue('release-token')
 
@@ -204,7 +204,7 @@ describe('publish.ts', () => {
     })
 
     test('continues even if GitHub Release creation fails', async () => {
-      process.env.CIRCLE_TAG = '@agent-facets/core@1.1.0'
+      process.env.CIRCLE_TAG = '@agent-facets/protocol@1.1.0'
       setupPublishPath()
       spyOn(io.shell, 'readFile').mockRejectedValue(new Error('CHANGELOG.md not found'))
 
@@ -215,7 +215,7 @@ describe('publish.ts', () => {
     })
 
     test('continues even if Slack notification fails', async () => {
-      process.env.CIRCLE_TAG = '@agent-facets/core@1.1.0'
+      process.env.CIRCLE_TAG = '@agent-facets/protocol@1.1.0'
       setupPublishPath()
       spyOn(announce, 'slackNotify').mockRejectedValue(new Error('Slack unavailable'))
 
@@ -226,7 +226,7 @@ describe('publish.ts', () => {
     })
 
     test('skips npm publish when version is already on registry', async () => {
-      process.env.CIRCLE_TAG = '@agent-facets/core@1.1.0'
+      process.env.CIRCLE_TAG = '@agent-facets/protocol@1.1.0'
       setupPublishPath()
       // Override: pretend the version is already published. This happens when
       // a tag is re-pushed to recover from a post-publish failure.
@@ -247,7 +247,7 @@ describe('publish.ts', () => {
     })
 
     test('still runs GitHub Release + Slack even when npm publish is skipped', async () => {
-      process.env.CIRCLE_TAG = '@agent-facets/core@1.1.0'
+      process.env.CIRCLE_TAG = '@agent-facets/protocol@1.1.0'
       setupPublishPath()
       spyOn(npm, 'versionExists').mockResolvedValue(true)
 

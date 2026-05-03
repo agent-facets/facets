@@ -83,6 +83,15 @@ jobs:
                 command: bun scripts/release/tag.ts
                 name: Tag Release
             - notify-failure
+    openapi-freshness:
+        docker:
+            - image: cimg/base:current
+        resource_class: small
+        steps:
+            - setup-mise
+            - run:
+                command: bun run --cwd packages/engine codegen:registry --check --strict
+                name: OpenAPI snapshot freshness
     release:
         docker:
             - image: cimg/base:current
@@ -110,6 +119,13 @@ workflows:
             - check:
                 context:
                     - turbo-cache
+                    - github
+                filters:
+                    branches:
+                        ignore:
+                            - main
+            - openapi-freshness:
+                context:
                     - github
                 filters:
                     branches:

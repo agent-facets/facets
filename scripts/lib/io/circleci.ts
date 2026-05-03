@@ -18,13 +18,13 @@ export const circleciIo = {
    * The target pipeline's internal workflow filters (tag regex in
    * release.yml) still apply, so calling this with `agent-facets@1.0.0`
    * fires only the `release-cli` workflow; calling with
-   * `@agent-facets/core@1.0.0` fires only the `release` workflow. The
-   * caller does not need to select which one.
+   * `@agent-facets/protocol@1.0.0` fires only the `release` workflow.
+   * The caller does not need to select which one.
    *
    * When `packageName` is provided, it is forwarded as the `package`
    * pipeline parameter. This is used by the `release` workflow's
    * `serial-group` key to queue package publishes per-package — so
-   * releases of `@agent-facets/core` and `@agent-facets/adapter` can
+   * releases of `@agent-facets/protocol` and `@agent-facets/adapter` can
    * run in parallel while repeat releases of the same package still
    * serialize. `release-cli` does not read this parameter.
    *

@@ -81,7 +81,7 @@ engine is for one consumer (the CLI in this repo).
 
 If the export list starts feeling bloated, that is a signal the
 package boundary is wrong — the same failure mode that produced the
-overstuffed `@agent-facets/core` this rename split. A future change
+overstuffed `@agent-facets/core` before this split. A future change
 SHOULD subdivide engine before adding more exports.
 
 ## Boundary with `protocol`
@@ -102,6 +102,63 @@ Engine may import `@agent-facets/common` freely for cross-cutting
 primitives (`Validated<T>`, `ValidationError`, `AssetType`, etc.).
 `common` is shared with `protocol` and `adapter`; it carries types
 that are useful at every layer.
+
+## Registry client codegen
+
+The registry client's wire-format types come from a vendored snapshot
+of the registry's OpenAPI specification. The contract:
+
+- **Snapshot** at `src/registry/openapi.snapshot.yaml` — the YAML
+  fetched from the registry, with a 4-line header (Generated-by,
+  Source, Generated-At, do-not-edit). Committed; never hand-edited.
+- **Generated types** at `src/registry/generated/registry-api.ts` —
+  emitted by `openapi-typescript` from the snapshot. Committed;
+  never hand-edited; ignored by Biome and marked
+  `linguist-generated` for GitHub.
+- **Curated re-exports** at `src/registry/wire.ts` — the only
+  import surface that other engine code (and the CLI via engine's
+  public exports) should use. Provides stable names like
+  `WireMetadataResponse`, `WireErrorResponse`, `WireAssetCounts`
+  so generator-internals churn doesn't ripple across call sites.
+
+To refresh: run `bun run codegen:registry` from `packages/engine`.
+The script fetches the OpenAPI YAML (from `FACET_REGISTRY_OPENAPI_URL`
+env, defaulting to the production registry), validates it, atomically
+writes the snapshot, and runs `openapi-typescript`. Idempotent at
+the generated-module boundary — re-running against an unchanged
+registry produces a byte-identical generated file (the snapshot's
+`Generated-At` line updates by design).
+
+The script never runs at build time. Fresh clones must build
+offline; CI must build deterministically. Codegen is manual,
+committed, and reviewable in PRs.
+
+Contributors call the registry through `createRegistryClient()`,
+which returns a typed `openapi-fetch` client with retry, timeout,
+and abort middleware pre-applied:
+
+```ts
+import { createRegistryClient } from '@agent-facets/engine'
+const client = createRegistryClient()
+const { data, error, response } = await client.GET(
+  '/v0/packages/{name}/{version}',
+  { params: { path: { name, version } } },
+)
+```
+
+Wire errors become structured `RegistryError` values via
+`translateWireError(error, response.status)` and
+`translateThrownError(err)`. The discriminator surfaces four codes:
+`NOT_FOUND`, `NETWORK_ERROR` (with `attempts` count),
+`REGISTRY_NOT_AVAILABLE`, `UNEXPECTED_ERROR`.
+
+A CircleCI advisory job (`openapi-snapshot-freshness` in
+`.circleci/development/jobs/`) verifies the snapshot's
+`Generated-At` is no more than `STALENESS_THRESHOLD_DAYS` (default
+`7`) old. Stale snapshots produce a failed CircleCI status and a
+red X on the PR; the check is advisory and does not block merge by
+default. Add the job to GitHub branch protection if you want
+hard-block behavior.
 
 ## Bun runtime
 

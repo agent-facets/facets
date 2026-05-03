@@ -41,9 +41,10 @@ afterAll(() => {
   for (const d of workDirs) rmSync(d, { recursive: true, force: true })
 })
 
-describe('cloneFacetGitSource', () => {
+describe('cloneFacetGitSource — happy paths', () => {
   test('clones default branch when commitish omitted', async () => {
     const result = await cloneFacetGitSource(`file://${fixtureRepo}`)
+    if (!result.ok) expect.unreachable()
     workDirs.push(result.dir)
     expect(Bun.file(join(result.dir, 'facet.json')).size).toBeGreaterThan(0)
     expect(result.commit).toBe(initialCommit)
@@ -51,12 +52,14 @@ describe('cloneFacetGitSource', () => {
 
   test('clones a branch when commitish is a branch name', async () => {
     const result = await cloneFacetGitSource(`file://${fixtureRepo}`, 'main')
+    if (!result.ok) expect.unreachable()
     workDirs.push(result.dir)
     expect(result.commit).toBe(initialCommit)
   })
 
   test('checks out a SHA when commitish is a SHA', async () => {
     const result = await cloneFacetGitSource(`file://${fixtureRepo}`, initialCommit)
+    if (!result.ok) expect.unreachable()
     workDirs.push(result.dir)
     expect(result.commit).toBe(initialCommit)
   })
@@ -64,13 +67,20 @@ describe('cloneFacetGitSource', () => {
   test('accepts a short SHA (7+ chars)', async () => {
     const shortSha = initialCommit.slice(0, 10)
     const result = await cloneFacetGitSource(`file://${fixtureRepo}`, shortSha)
+    if (!result.ok) expect.unreachable()
     workDirs.push(result.dir)
     // After checkout of FETCH_HEAD, HEAD resolves to the full SHA
     expect(result.commit).toBe(initialCommit)
   })
+})
 
-  test('rejects with a friendly message when the url is bogus', async () => {
-    await expect(cloneFacetGitSource(`file:///tmp/definitely-not-a-repo-${Date.now()}`)).rejects.toThrow(/clone failed/)
+describe('cloneFacetGitSource — failure modes (returned, never thrown)', () => {
+  test('returns clone-failed with stderr when the url is bogus', async () => {
+    const result = await cloneFacetGitSource(`file:///tmp/definitely-not-a-repo-${Date.now()}`)
+    if (result.ok) expect.unreachable()
+    if (result.reason !== 'clone-failed') expect.unreachable()
+    expect(result.url).toMatch(/^file:\/\/\/tmp\/definitely-not-a-repo-/)
+    expect(result.stderr.length).toBeGreaterThan(0)
   })
 
   test('spawns git with GIT_TERMINAL_PROMPT=0 in env (Adj O)', async () => {
@@ -79,7 +89,8 @@ describe('cloneFacetGitSource', () => {
     // GIT_TERMINAL_PROMPT=0 is set; without it, git would block reading
     // from stdin. We assert fast-fail (< 10s) as a proxy.
     const start = Date.now()
-    await expect(cloneFacetGitSource('https://example.invalid/repo.git')).rejects.toThrow()
+    const result = await cloneFacetGitSource('https://example.invalid/repo.git')
+    if (result.ok) expect.unreachable()
     expect(Date.now() - start).toBeLessThan(10_000)
   })
 
@@ -94,6 +105,18 @@ describe('cloneFacetGitSource', () => {
     // separator. We expect git to exit with a "does not appear to be a
     // repository" or similar friendly path-like error, NOT an "unknown
     // option" message (which would mean the guard is missing).
-    await expect(cloneFacetGitSource('-upload-pack=./evil')).rejects.toThrow(/clone failed/)
+    const result = await cloneFacetGitSource('-upload-pack=./evil')
+    if (result.ok) expect.unreachable()
+    if (result.reason !== 'clone-failed') expect.unreachable()
+    expect(result.stderr).not.toMatch(/unknown option/i)
+  })
+
+  test('returns checkout-failed when commit SHA does not exist in repo', async () => {
+    const fakeSha = 'deadbeef1234567890'
+    const result = await cloneFacetGitSource(`file://${fixtureRepo}`, fakeSha)
+    if (result.ok) expect.unreachable()
+    if (result.reason !== 'checkout-failed') expect.unreachable()
+    expect(result.commitish).toBe(fakeSha)
+    expect(result.stderr.length).toBeGreaterThan(0)
   })
 })

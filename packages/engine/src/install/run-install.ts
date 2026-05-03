@@ -1,21 +1,22 @@
 import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
-import type { BuildManifest, FacetsJson, Lockfile, LockfileFacet } from '@agent-facets/protocol'
+import type { BuildManifest, FacetsJson, Lockfile, LockfileFacet, ResolvedFacetManifest } from '@agent-facets/protocol'
 import { verifyGitOneCheck } from '@agent-facets/protocol'
+import { regex } from 'arkregex'
 import { runBuildPipeline } from '../build/pipeline.ts'
 import { type CacheIdentity, cacheGet, cachePutVerified, cacheStagingDir, readCachedIntegrity } from '../cache/index.ts'
-import { loadManifest, type ResolvedFacetManifest, resolvePrompts } from '../loaders/facet.ts'
+import { loadManifest, resolvePrompts } from '../loaders/facet.ts'
 import { loadFacetsJson } from '../manifest/project-files.ts'
 import { downloadAndExtractFacet } from '../registry/download.ts'
 import { resolveRegistryMetadataBatch } from '../registry/resolve-metadata.ts'
 import { parseFacetSource } from '../sources/facet/parse-source.ts'
-import { cloneFacetGitSource } from '../sources/facet/resolve-git.ts'
+import { type CloneFacetGitResult, cloneFacetGitSource } from '../sources/facet/resolve-git.ts'
 import { resolveLocalFacetSource } from '../sources/facet/resolve-local.ts'
 import { InstallJournal } from './journal.ts'
 import { acquireInstallLock } from './lockfile-guard.ts'
 import { emptyLockfile, FACETS_LOCK_FILE, loadLockfile, writeLockfile } from './lockfile-io.ts'
-import { computeAssetList, materialize } from './materialize.ts'
+import { computeAssetList, type MaterializeFailure, materialize } from './materialize.ts'
 import type {
   FacetOutcome,
   InstallSummary,
@@ -47,11 +48,33 @@ export function resolveCloneRef(
 }
 
 /**
+ * Pre-compiled M.N.P matcher for `parseLockedVersion`. The pattern is
+ * the same shape narrowed by `LockfileSchema.version` — schema and
+ * parser stay aligned by deliberate convention; if you widen one, widen
+ * the other. `arkregex` types the captures so destructuring is
+ * cast-free; the runtime `RegExp` instance behaves identically to a
+ * native one.
+ *
+ * No prerelease support: `VersionSpec` (the type returned below) only
+ * models `M.N.P`. Adding prerelease support means widening this regex
+ * AND the lockfile schema's narrow check AND `VersionSpec` itself.
+ */
+const LOCKED_VERSION_RE = regex('^(\\d+)\\.(\\d+)\\.(\\d+)$')
+
+/**
  * Parse a `LockfileFacet.version` string into an exact `VersionSpec` for
  * the registry resolver. Lockfile versions are always concrete `M.N.P`
- * by contract (the lockfile records the resolved version, never a
- * range), so this is a straightforward split. A malformed value is a
- * lockfile corruption — not a user-facing failure mode — so we throw.
+ * by contract (the lockfile schema narrows the field to exactly that
+ * shape — see `LockfileSchema.version` in protocol). This function is
+ * the engine-side counterpart that turns the validated string into the
+ * structured form the registry resolver consumes.
+ *
+ * The schema gates malformed versions up front — by the time we get
+ * here, `version` has already passed the narrow regex. If the regex
+ * disagrees at runtime, that's a programmer bug (schema and parser
+ * regex got out of sync), not a user-facing failure mode — hence the
+ * `expect.unreachable`-style throw. Anti-pattern 4: this branch is
+ * genuinely unreachable on validated input.
  *
  * Used on the registry-source cache-miss path to pin the metadata
  * fetch at `locked.version` instead of re-resolving the manifest spec
@@ -64,22 +87,87 @@ function parseLockedVersion(version: string): {
   minor: number
   patch: number
 } {
-  const parts = version.split('.')
-  if (parts.length !== 3) {
-    throw new Error(`lockfile corruption: version "${version}" is not M.N.P`)
+  const match = LOCKED_VERSION_RE.exec(version)
+  if (match === null) {
+    // The schema narrow regex (`LockfileSchema.version`) has the same
+    // shape as `LOCKED_VERSION_RE`. A null here means schema and parser
+    // regex have drifted apart — programmer bug, not user input.
+    throw new Error(`internal: lockfile schema accepted "${version}" but parseLockedVersion regex rejected it`)
   }
-  const [major, minor, patch] = parts.map((p) => Number.parseInt(p, 10))
-  if (
-    major === undefined ||
-    minor === undefined ||
-    patch === undefined ||
-    !Number.isInteger(major) ||
-    !Number.isInteger(minor) ||
-    !Number.isInteger(patch)
-  ) {
-    throw new Error(`lockfile corruption: version "${version}" has non-integer parts`)
+  const [, major, minor, patch] = match
+  return {
+    kind: 'exact',
+    major: Number(major),
+    minor: Number(minor),
+    patch: Number(patch),
   }
-  return { kind: 'exact', major, minor, patch }
+}
+
+/**
+ * Translate a `MaterializeFailure` (engine-internal) into the matching
+ * `RunInstallFailure` code (engine-public). Each `MaterializeFailure.kind`
+ * maps to exactly one `RunInstallFailure.code`; the per-adapter context
+ * (adapter name, asset, cause) flows through unchanged. Centralizes the
+ * mapping so both materialize call sites in `runInstall` (the install
+ * branch and the drift-removal branch) route failures the same way.
+ */
+/**
+ * Translate a `cloneFacetGitSource` failure into the matching
+ * `RunInstallFailure` code. Each `reason` arm maps to exactly one
+ * code; structured fields (URL, stderr, commitish) flow through
+ * unchanged so the CLI doesn't have to reparse stderr text.
+ */
+function cloneFailureToRunInstall(
+  facet: string,
+  cloned: Extract<CloneFacetGitResult, { ok: false }>,
+): RunInstallFailure {
+  switch (cloned.reason) {
+    case 'git-binary-missing':
+      return { code: 'GIT_BINARY_MISSING', facet }
+    case 'auth-required':
+      return { code: 'GIT_AUTH_REQUIRED', facet, url: cloned.url }
+    case 'clone-failed':
+      return { code: 'GIT_CLONE_FAILED', facet, url: cloned.url, stderr: cloned.stderr }
+    case 'checkout-failed':
+      return {
+        code: 'GIT_CHECKOUT_FAILED',
+        facet,
+        url: cloned.url,
+        commitish: cloned.commitish,
+        stderr: cloned.stderr,
+      }
+  }
+}
+
+function materializeFailureToRunInstall(facet: string, failure: MaterializeFailure): RunInstallFailure {
+  switch (failure.kind) {
+    case 'unsupported-adapter':
+      return { code: 'ADAPTER_UNSUPPORTED', facet, adapter: failure.adapter }
+    case 'read-failed':
+      return {
+        code: 'ADAPTER_READ_FAILED',
+        facet,
+        adapter: failure.adapter,
+        asset: failure.asset,
+        cause: failure.cause,
+      }
+    case 'install-failed':
+      return {
+        code: 'ADAPTER_INSTALL_FAILED',
+        facet,
+        adapter: failure.adapter,
+        asset: failure.asset,
+        cause: failure.cause,
+      }
+    case 'delete-failed':
+      return {
+        code: 'ADAPTER_DELETE_FAILED',
+        facet,
+        adapter: failure.adapter,
+        asset: failure.asset,
+        cause: failure.cause,
+      }
+  }
 }
 
 /**
@@ -198,23 +286,16 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       const oldAssets = previousEntry?.assets ?? []
 
       onStage({ kind: 'facet-stage', facet: facetName, stage: 'materialize' })
-      let materializeResult: { written: number; skipped: number; deleted: number }
-      try {
-        materializeResult = await materialize({
-          manifest: resolved,
-          adapters: [...adapters],
-          oldAssets,
-          newAssets: entry.assets,
-          journal,
-          onLog,
-        })
-      } catch (error) {
-        const failure: RunInstallFailure = {
-          code: 'ADAPTER_INSTALL_FAILED',
-          facet: facetName,
-          adapter: 'unknown',
-          cause: error instanceof Error ? error.message : String(error),
-        }
+      const materializeResult = await materialize({
+        manifest: resolved,
+        adapters: [...adapters],
+        oldAssets,
+        newAssets: entry.assets,
+        journal,
+        onLog,
+      })
+      if (!materializeResult.ok) {
+        const failure = materializeFailureToRunInstall(facetName, materializeResult.failure)
         onStage({ kind: 'facet-failure', facet: facetName, failure })
         return await rollbackAndFail(journal, failure, onLog)
       }
@@ -243,22 +324,16 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       if (facetsJson.facets[facetName] !== undefined) continue
 
       onStage({ kind: 'drift-removal', facet: facetName, oldVersion: prevEntry.version })
-      try {
-        await materialize({
-          manifest: removalManifest(facetName),
-          adapters: [...adapters],
-          oldAssets: prevEntry.assets,
-          newAssets: [],
-          journal,
-          onLog,
-        })
-      } catch (error) {
-        const failure: RunInstallFailure = {
-          code: 'ADAPTER_INSTALL_FAILED',
-          facet: facetName,
-          adapter: 'unknown',
-          cause: error instanceof Error ? error.message : String(error),
-        }
+      const removalResult = await materialize({
+        manifest: removalManifest(facetName),
+        adapters: [...adapters],
+        oldAssets: prevEntry.assets,
+        newAssets: [],
+        journal,
+        onLog,
+      })
+      if (!removalResult.ok) {
+        const failure = materializeFailureToRunInstall(facetName, removalResult.failure)
         return await rollbackAndFail(journal, failure, onLog)
       }
       removedAssets += prevEntry.assets.length * adapters.length
@@ -332,7 +407,14 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
    */
   async function failureNoMutation(failure: RunInstallFailure): Promise<RunInstallResult> {
     onStage({ kind: 'install-complete', outcome: 'failure' })
-    return { ok: false, failure, rollback: { ok: true } }
+    return {
+      ok: false,
+      failure,
+      rollback: {
+        kind: 'not-needed',
+        reason: 'failed after lock acquired but before any disk mutations',
+      },
+    }
   }
 
   /**
@@ -342,7 +424,11 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
    */
   function failureWithoutRollback(failure: RunInstallFailure): RunInstallResult {
     onStage({ kind: 'install-complete', outcome: 'failure' })
-    return { ok: false, failure, rollback: { ok: true } }
+    return {
+      ok: false,
+      failure,
+      rollback: { kind: 'not-needed', reason: 'failed before install lock acquired' },
+    }
   }
 }
 
@@ -359,7 +445,9 @@ async function rollbackAndFail(
   return {
     ok: false,
     failure,
-    rollback: rollback.ok ? { ok: true } : { ok: false, partialFailures: rollback.failures },
+    rollback: rollback.ok
+      ? { kind: 'succeeded', entriesUndone: rollback.entriesUndone }
+      : { kind: 'partial-failure', entriesUndone: rollback.entriesUndone, failures: rollback.failures },
   }
 }
 
@@ -463,25 +551,20 @@ async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
     // Cache miss (or no locked entry, or sidecar invalid). Clone.
     if (sourceDir === undefined) {
       const cloneRef = resolveCloneRef(locked, parsed.value.ref)
-      try {
-        const cloned = await cloneFacetGitSource(parsed.value.url, cloneRef)
-        sourceDir = cloned.dir
-        cleanup = async () => {
-          await rm(cloned.dir, { recursive: true, force: true }).catch(() => {})
-        }
-        clonedRef = cloneRef
-        clonedCommit = cloned.commit
-        onLog(`[verbose]   cloned ${parsed.value.url} → ${sourceDir} (sha: ${cloned.commit ?? '?'})`)
-      } catch (error) {
+      const cloned = await cloneFacetGitSource(parsed.value.url, cloneRef)
+      if (!cloned.ok) {
         return {
           ok: false,
-          failure: {
-            code: 'GIT_CLONE_FAILED',
-            facet: facetName,
-            cause: error instanceof Error ? error.message : String(error),
-          },
+          failure: cloneFailureToRunInstall(facetName, cloned),
         }
       }
+      sourceDir = cloned.dir
+      cleanup = async () => {
+        await rm(cloned.dir, { recursive: true, force: true }).catch(() => {})
+      }
+      clonedRef = cloneRef
+      clonedCommit = cloned.commit
+      onLog(`[verbose]   cloned ${parsed.value.url} → ${sourceDir} (sha: ${cloned.commit ?? '?'})`)
     }
   } else if (parsed.value.kind === 'local') {
     const local = await resolveLocalFacetSource(parsed.value.path, projectRoot)
@@ -547,7 +630,11 @@ async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
           failure: {
             code: 'REGISTRY_ERROR',
             facet: facetName,
-            error: { code: 'NETWORK_ERROR', cause: 'registry returned no metadata for the requested facet' },
+            error: {
+              code: 'NETWORK_ERROR',
+              cause: 'registry returned no metadata for the requested facet',
+              attempts: 1,
+            },
           },
         }
       }

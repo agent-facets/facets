@@ -37,6 +37,7 @@ export async function downloadAndExtractFacet(meta: RegistryMetadata, dest: stri
       error: {
         code: 'NETWORK_ERROR',
         cause: `archive download failed: ${err instanceof Error ? err.message : String(err)}`,
+        attempts: 1,
       },
     }
   }
@@ -56,6 +57,7 @@ export async function downloadAndExtractFacet(meta: RegistryMetadata, dest: stri
       error: {
         code: 'NETWORK_ERROR',
         cause: `archive download returned HTTP ${response.status} ${response.statusText}`,
+        attempts: 1,
       },
     }
   }
@@ -69,6 +71,7 @@ export async function downloadAndExtractFacet(meta: RegistryMetadata, dest: stri
       error: {
         code: 'NETWORK_ERROR',
         cause: `archive read failed: ${err instanceof Error ? err.message : String(err)}`,
+        attempts: 1,
       },
     }
   }
@@ -82,6 +85,7 @@ export async function downloadAndExtractFacet(meta: RegistryMetadata, dest: stri
       error: {
         code: 'NETWORK_ERROR',
         cause: `archive sha256 mismatch: expected ${meta.expectedIntegrity}, got ${actualIntegrity}`,
+        attempts: 1,
       },
     }
   }
@@ -95,6 +99,7 @@ export async function downloadAndExtractFacet(meta: RegistryMetadata, dest: stri
       error: {
         code: 'NETWORK_ERROR',
         cause: `archive is not a valid gzipped tar: ${err instanceof Error ? err.message : String(err)}`,
+        attempts: 1,
       },
     }
   }
@@ -120,6 +125,7 @@ export async function downloadAndExtractFacet(meta: RegistryMetadata, dest: stri
         error: {
           code: 'NETWORK_ERROR',
           cause: `archive contains an unsafe path: "${entry.name}"`,
+          attempts: 1,
         },
       }
     }
@@ -134,6 +140,7 @@ export async function downloadAndExtractFacet(meta: RegistryMetadata, dest: stri
         error: {
           code: 'NETWORK_ERROR',
           cause: `archive entry "${entry.name}" resolves outside the extraction directory`,
+          attempts: 1,
         },
       }
     }

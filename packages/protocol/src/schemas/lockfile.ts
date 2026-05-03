@@ -34,6 +34,23 @@ const LockfileAsset = type({
 })
 
 /**
+ * A locked facet version. Always written by the install pipeline as
+ * exact `M.N.P`. Narrowed at the schema level so a hand-edited or
+ * merge-conflicted lockfile fails validation up front, instead of
+ * surfacing as a thrown error deep inside the install pipeline's
+ * `parseLockedVersion`.
+ *
+ * No prerelease support: `VersionSpec` (the type `parseLockedVersion`
+ * returns) only models `M.N.P`. Aligning the schema with the parser
+ * keeps both shapes in sync. Adding prerelease support means widening
+ * both — see the open question in the engine-side parser.
+ */
+const LOCKED_VERSION_RE = /^[0-9]+\.[0-9]+\.[0-9]+$/
+const LockedVersion = type('string').narrow(
+  (s, ctx) => LOCKED_VERSION_RE.test(s) || ctx.mustBe('an exact M.N.P version string'),
+)
+
+/**
  * A single resolved facet entry.
  *
  * `ref` and `commit` are git-source only. Local-path sources omit both.
@@ -44,7 +61,7 @@ const LockfileFacetEntry = type({
   source: 'string',
   'ref?': 'string',
   'commit?': 'string',
-  version: 'string',
+  version: LockedVersion,
   integrity: 'string',
   assets: LockfileAsset.array(),
 })
