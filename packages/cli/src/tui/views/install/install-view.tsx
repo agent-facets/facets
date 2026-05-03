@@ -1,4 +1,4 @@
-import type { RunInstallResult, StageEvent } from '@agent-facets/core'
+import type { RunInstallResult, StageEvent } from '@agent-facets/engine'
 import { Box, Text, useApp } from 'ink'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { THEME } from '../../theme.ts'

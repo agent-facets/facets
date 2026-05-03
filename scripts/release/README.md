@@ -1,6 +1,6 @@
 # Library Release Pipeline
 
-Publishes `@agent-facets/core`, `@agent-facets/brand`, `@agent-facets/adapter`, `@agent-facets/adapter-*`, and any future public library/adapter packages to npm.
+Publishes `@agent-facets/protocol`, `@agent-facets/brand`, `@agent-facets/adapter`, `@agent-facets/adapter-*`, and any future public library/adapter packages to npm. (`@agent-facets/engine` is private to the monorepo and never published.)
 
 ## Flow
 

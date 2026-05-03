@@ -1,10 +1,5 @@
-import type {
-  EditContext,
-  EditOperation,
-  EditResult,
-  FacetManifest,
-  ReconciliationResolution,
-} from '@agent-facets/core'
+import type { EditContext, EditOperation, EditResult, ReconciliationResolution } from '@agent-facets/engine'
+import type { FacetManifest } from '@agent-facets/protocol'
 import { useCallback, useState } from 'react'
 import type { AssetSectionKey, FormState } from '../../context/form-state-context.ts'
 

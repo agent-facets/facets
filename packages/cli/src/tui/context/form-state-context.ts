@@ -1,4 +1,4 @@
-import { type ScaffoldOptions as CreateOptions, isValidKebabCase } from '@agent-facets/core'
+import { type ScaffoldOptions as CreateOptions, isValidKebabCase } from '@agent-facets/engine'
 import type { ReactNode } from 'react'
 import { createContext, createElement, useCallback, useContext, useMemo, useState } from 'react'
 

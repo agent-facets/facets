@@ -94,7 +94,8 @@
         "@agent-facets/adapter-opencode": "workspace:*",
         "@agent-facets/brand": "workspace:*",
         "@agent-facets/common": "workspace:*",
-        "@agent-facets/core": "workspace:*",
+        "@agent-facets/engine": "workspace:*",
+        "@agent-facets/protocol": "workspace:*",
         "ink-testing-library": "4.0.0",
       },
       "peerDependencies": {
@@ -107,11 +108,12 @@
         "yaml": "2.8.3",
       },
     },
-    "packages/core": {
-      "name": "@agent-facets/core",
+    "packages/engine": {
+      "name": "@agent-facets/engine",
       "version": "0.9.1",
       "dependencies": {
         "@agent-facets/adapter": "workspace:*",
+        "@agent-facets/protocol": "workspace:*",
         "arktype": "2.2.0",
         "comment-json": "^5.0.0",
         "nanotar": "0.3.0",
@@ -151,6 +153,24 @@
         "vite": "^8.0.10",
       },
     },
+    "packages/protocol": {
+      "name": "@agent-facets/protocol",
+      "version": "0.1.0",
+      "dependencies": {
+        "arktype": "2.2.0",
+        "comment-json": "^5.0.0",
+        "nanotar": "0.3.0",
+        "yaml": "2.8.3",
+      },
+      "devDependencies": {
+        "@agent-facets/common": "workspace:*",
+        "tsdown": "^0.21.10",
+        "typescript": "^6.0.3",
+      },
+      "peerDependencies": {
+        "typescript": "^5 || ^6",
+      },
+    },
   },
   "packages": {
     "@agent-facets/adapter": ["@agent-facets/adapter@workspace:packages/adapter"],
@@ -165,11 +185,13 @@
 
     "@agent-facets/common": ["@agent-facets/common@workspace:packages/common"],
 
-    "@agent-facets/core": ["@agent-facets/core@workspace:packages/core"],
+    "@agent-facets/engine": ["@agent-facets/engine@workspace:packages/engine"],
 
     "@agent-facets/functions": ["@agent-facets/functions@workspace:packages/functions"],
 
     "@agent-facets/landing": ["@agent-facets/landing@workspace:packages/landing"],
+
+    "@agent-facets/protocol": ["@agent-facets/protocol@workspace:packages/protocol"],
 
     "@alcalzone/ansi-tokenize": ["@alcalzone/ansi-tokenize@0.3.0", "", { "dependencies": { "ansi-styles": "^6.2.1", "is-fullwidth-code-point": "^5.0.0" } }, "sha512-p+CMKJ93HFmLkjXKlXiVGlMQEuRb6H0MokBSwUsX+S6BRX8eV5naFZpQJFfJHjRZY0Hmnqy1/r6UWl3x+19zYA=="],
 

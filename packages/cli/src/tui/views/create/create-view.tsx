@@ -1,4 +1,4 @@
-import { DEFAULT_VERSION, isValidKebabCase } from '@agent-facets/core'
+import { DEFAULT_VERSION, isValidKebabCase } from '@agent-facets/engine'
 import { Box, Text } from 'ink'
 import { useCallback, useEffect } from 'react'
 import type { AssetType } from '../../../commands/create/types'

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { encodeFacetName, getRegistryBaseUrl, packFacetSource } from '@agent-facets/core'
+import { encodeFacetName, getRegistryBaseUrl, packFacetSource } from '@agent-facets/engine'
 import type { Command } from '../../commands.ts'
 import { writeCliError } from '../../util/errors.ts'
 import {

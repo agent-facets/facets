@@ -1,4 +1,4 @@
-import type { EditContext, EditResult, ReconciliationResolution } from '@agent-facets/core'
+import type { EditContext, EditResult, ReconciliationResolution } from '@agent-facets/engine'
 import { useApp } from 'ink'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { FocusModeProvider, useFocusMode } from '../../context/focus-mode-context.ts'

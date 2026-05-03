@@ -1,5 +1,6 @@
 import { join } from 'node:path'
-import { FACET_MANIFEST_FILE, type ScaffoldOptions, writeScaffold } from '@agent-facets/core'
+import { type ScaffoldOptions, writeScaffold } from '@agent-facets/engine'
+import { FACET_MANIFEST_FILE } from '@agent-facets/protocol'
 import { type } from 'arktype'
 import { render } from 'ink'
 import { createElement } from 'react'

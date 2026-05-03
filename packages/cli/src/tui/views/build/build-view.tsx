@@ -5,7 +5,7 @@ import {
   type BuildStage,
   runBuildPipeline,
   writeBuildOutput,
-} from '@agent-facets/core'
+} from '@agent-facets/engine'
 import { Box, Text, useApp } from 'ink'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Stage } from '../../components/stage-row.tsx'

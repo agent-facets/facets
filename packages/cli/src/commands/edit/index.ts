@@ -1,4 +1,4 @@
-import { applyEditOperations, buildEditContext, type EditResult } from '@agent-facets/core'
+import { applyEditOperations, buildEditContext, type EditResult } from '@agent-facets/engine'
 import type { Command } from '../../commands.ts'
 import { resolveTargetDir } from '../resolve-dir.ts'
 import { runEditWizardInk } from './wizard.tsx'

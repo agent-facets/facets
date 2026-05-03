@@ -12,7 +12,7 @@ import {
   type Source,
   upsertFacetInManifest,
   writeFacetsJson,
-} from '@agent-facets/core'
+} from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
 import type { Command } from '../../commands.ts'
@@ -250,11 +250,11 @@ async function peekFacetName(source: Source, specifier: string): Promise<string 
     // verify the manifest's declared name matches when it downloads.
     return source.name
   }
-  const { loadManifest } = await import('@agent-facets/core')
+  const { loadManifest } = await import('@agent-facets/engine')
   let sourceDir: string
   let cleanup: (() => Promise<void>) | undefined
   if (source.kind === 'git') {
-    const { cloneFacetGitSource } = await import('@agent-facets/core')
+    const { cloneFacetGitSource } = await import('@agent-facets/engine')
     try {
       const cloned = await cloneFacetGitSource(source.url, source.ref)
       sourceDir = cloned.dir
@@ -271,7 +271,7 @@ async function peekFacetName(source: Source, specifier: string): Promise<string 
       return null
     }
   } else {
-    const { resolveLocalFacetSource } = await import('@agent-facets/core')
+    const { resolveLocalFacetSource } = await import('@agent-facets/engine')
     const resolved = await resolveLocalFacetSource(source.path, process.cwd())
     if (!resolved.ok) {
       writeCliError({

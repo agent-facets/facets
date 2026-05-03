@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import { mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { EditOperation } from '@agent-facets/core'
-import { applyEditOperations as applyOperations, buildEditContext, runBuildPipeline } from '@agent-facets/core'
+import type { EditOperation } from '@agent-facets/engine'
+import { applyEditOperations as applyOperations, buildEditContext, runBuildPipeline } from '@agent-facets/engine'
 import dedent from 'dedent'
 
 async function createFixtureDir(name: string): Promise<string> {

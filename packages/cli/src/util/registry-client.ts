@@ -1,11 +1,11 @@
-import { getRegistryBaseUrl } from '@agent-facets/core'
+import { getRegistryBaseUrl } from '@agent-facets/engine'
 import type { CliError } from './errors.ts'
 import { isRegistryErrorResponse, translateRegistryError } from './registry-errors.ts'
 
-// Re-exported from core so commands can import URL helpers from a single
-// place. Core owns the env-var lookup and encoding rules so the install
-// pipeline (in core) and the standalone CLI commands can never disagree.
-export { encodeFacetName, getRegistryBaseUrl } from '@agent-facets/core'
+// Re-exported from engine so commands can import URL helpers from a single
+// place. Engine owns the env-var lookup and encoding rules so the install
+// pipeline and the standalone CLI commands can never disagree.
+export { encodeFacetName, getRegistryBaseUrl } from '@agent-facets/engine'
 
 /** Hard wall-clock per HTTP attempt. Conservative on a conference network. */
 const REQUEST_TIMEOUT_MS = 5000

@@ -4,7 +4,8 @@
 
 The display layer for the facet pipeline. Renders progress, prompts the
 user, parses command-line arguments, formats errors, picks exit codes,
-and otherwise wraps `@agent-facets/core` in a terminal-friendly skin.
+and otherwise wraps `@agent-facets/protocol` (data primitives) and
+`@agent-facets/engine` (CLI workflows) in a terminal-friendly skin.
 
 If you imagine a future where the facet pipeline ships as an Electron
 app, a TUI separate from the terminal, or a language-server-style
@@ -51,20 +52,31 @@ out and call it from here. If the code is intrinsically about how a
 terminal renders output, parses arguments, or shows interactive
 prompts, it belongs in `cli`.
 
-A useful sanity check: imagine the day `core` gets rewritten in Rust
+A useful sanity check: imagine the day `engine` gets rewritten in Rust
 behind a gRPC interface. What in this package would still make sense?
 Argument routing, Ink components, exit-code mapping, error formatting
 — everything in `cli` should survive that rewrite by talking to the
-new `core` over the wire instead of as a workspace dep.
+new engine over the wire instead of as a workspace dep.
 
-## Boundary with `core`
+## Boundary with `protocol` and `engine`
 
-`cli` depends on `@agent-facets/core` for everything substantive.
+`cli` depends on two packages for everything substantive:
+
+- **`@agent-facets/protocol`** — data primitives that are part of the
+  facet specification: schemas, integrity verifiers, content-hash
+  primitives, the deterministic tar layout, front-matter encoding,
+  the version-spec grammar, and the bytes-validators.
+- **`@agent-facets/engine`** — CLI workflows: orchestrators, the
+  install pipeline, the registry HTTP client, adapter machinery, the
+  cache, scaffold, edit, self-update, source resolvers, manifest
+  mutations, gzip compression, and path-based loaders that wrap
+  protocol's bytes-validators.
+
 Direct filesystem reads (other than CLI plumbing) and direct schema
-manipulation are smells — they mean we missed an API in `core`. When
-that happens, add the API to `core` first, then call it from here.
+manipulation are smells — they mean we missed an API in engine or
+protocol. When that happens, add the API to the right layer first,
+then call it from here.
 
 `cli` may also use `@agent-facets/common` directly for genuinely common
 primitives like `atomicWriteFileSync`. But if a primitive is only
-shared between `core` and `cli`, it belongs in `core` (and is
-re-exported if the CLI is the consumer that wants it).
+shared between engine and cli, it belongs in engine.

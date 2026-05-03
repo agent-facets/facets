@@ -1,4 +1,4 @@
-import { installAdapter, listInstalledAdapters, removeAdapter } from '@agent-facets/core'
+import { installAdapter, listInstalledAdapters, removeAdapter } from '@agent-facets/engine'
 import type { Command } from '../../commands.ts'
 import { writeCliError } from '../../util/errors.ts'
 import { pickAndInstallAdapters } from './pick-and-install.ts'

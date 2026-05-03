@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from 'bun:test'
-import * as coreModule from '@agent-facets/core'
+import * as coreModule from '@agent-facets/engine'
 import { allCommandNames, commands, resolveCommand } from '../../commands.ts'
 import { printCommandHelp, printGlobalHelp } from '../../help.ts'
 import { findClosestCommand } from '../../suggest.ts'

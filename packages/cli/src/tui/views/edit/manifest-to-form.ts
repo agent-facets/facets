@@ -1,4 +1,4 @@
-import type { FacetManifest } from '@agent-facets/core'
+import type { FacetManifest } from '@agent-facets/protocol'
 import type { AssetSectionKey, FormState } from '../../context/form-state-context.ts'
 
 /** Maps manifest asset keys to form section keys. */

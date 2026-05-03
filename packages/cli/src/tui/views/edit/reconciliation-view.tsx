@@ -1,4 +1,4 @@
-import type { ReconciliationItem, ReconciliationResolution } from '@agent-facets/core'
+import type { ReconciliationItem, ReconciliationResolution } from '@agent-facets/engine'
 import { Box, Text } from 'ink'
 import { useCallback, useEffect, useMemo } from 'react'
 import { Button } from '../../components/button.tsx'

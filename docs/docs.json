@@ -52,6 +52,7 @@
             "icon": "handshake",
             "pages": [
               "docs/contributing/getting-started",
+              "docs/contributing/architecture",
               "docs/contributing/release-pipeline",
               "docs/contributing/ci-architecture",
               "docs/contributing/publishing"
