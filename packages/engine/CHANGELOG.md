@@ -1,11 +1,12 @@
 # @agent-facets/engine
 
-> **Renamed from `@agent-facets/core`.** Engine is now Layer 2 of the three-layer
-> architecture (protocol / engine / CLI) and is private to the monorepo. The
-> portable artifact specification was extracted into the new public package
-> `@agent-facets/protocol`. See `packages/engine/AGENTS.md` for the boundary
-> rules and `openspec/changes/archive/.../split-core-into-protocol-and-engine/`
-> for the rationale.
+## 0.9.2
+
+### Patch Changes
+
+#### Updated Dependencies
+- @agent-facets/protocol@0.10.0
+- @agent-facets/adapter@0.10.0
 
 ## 0.9.1
 
@@ -17,6 +18,7 @@
 - [#236](https://github.com/agent-facets/facets/pull/236) [`cc76d43`](https://github.com/agent-facets/facets/commit/cc76d43f4ce62d706154b00071ca62448b1c329e) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Allow YAML front matter in content files; merge with manifest at install time
 
 #### Updated Dependencies
+
 - @agent-facets/adapter@0.9.1
 
 ## 0.7.0
