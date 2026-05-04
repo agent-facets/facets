@@ -1,4 +1,4 @@
-import { loadInstalledAdapters } from '@agent-facets/core'
+import { loadInstalledAdapters } from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
 import type { Command } from '../commands.ts'

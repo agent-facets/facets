@@ -1,4 +1,4 @@
-import type { FacetOutcome, FacetStage, RunInstallFailure } from '@agent-facets/core'
+import type { FacetOutcome, FacetStage, RunInstallFailure } from '@agent-facets/engine'
 import { Box, Text } from 'ink'
 import Spinner from 'ink-spinner'
 import { THEME } from '../../theme.ts'

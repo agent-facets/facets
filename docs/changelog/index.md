@@ -4,6 +4,27 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-05-03" description="@agent-facets/core split into protocol (public, Node-native) and engine (private, Bun-native)" tags={["CLI", "Breaking", "Improvement"]} rss={{
+  title: "Package split: @agent-facets/core → @agent-facets/protocol + @agent-facets/engine",
+  description: "@agent-facets/core has been split into two packages. @agent-facets/protocol is the new public, Node-native package containing the facet artifact specification: schemas, validators, integrity verification, deterministic archive format, hash algorithm, and version-spec grammar. @agent-facets/engine is the Bun-native CLI machinery, now private to the monorepo. The legacy @agent-facets/core package is no longer published; existing pins to v0.9.1 continue to resolve. CLI behavior is unchanged."
+}}>
+  ## Three layers, honestly named
+
+  `@agent-facets/core` was always two things: the **facet artifact specification** (schemas, integrity rules, deterministic archive format, hash algorithm) and the **Bun-native CLI implementation** of that specification (subprocess-driven adapter bundling, registry HTTP client, install pipeline, scaffold, edit, self-update). The first set is portable Node-runnable data + cryptography that any third party — a registry server, a future alternative CLI, an offline `.facet` linter — needs to honor. The second is intrinsically Bun-native and runs only on a developer's machine.
+
+  Splitting them produces three honest layers:
+
+  - **`@agent-facets/protocol`** (NEW, public, Node-native, Node 22+) — the TypeScript reference implementation of the facet artifact specification. Schemas, bytes-validators, integrity verification, content hashing, deterministic tar layout, version-spec grammar, front-matter encoding, build validators. Pure data + cryptography. No subprocesses, no network, no developer-machine state.
+  - **`@agent-facets/engine`** (RENAMED from `@agent-facets/core`, made private) — the Bun-native CLI machinery. Install pipeline, registry HTTP client, adapter machinery, source resolvers, manifest mutations, cache, scaffold, edit, self-update, build pipeline orchestrator, gzip compression, path-based loaders. Internal to the monorepo; never published.
+  - **`agent-facets`** (the CLI binary, unchanged) — argv parsing, Ink TUI, error formatting, exit codes.
+
+  See `docs/contributing/architecture` for the full layer description and the design rationale for keeping the registry HTTP API outside the protocol.
+
+  **Breaking:** `@agent-facets/core` is no longer published. The package is frozen at v0.9.1 on npm; existing pins continue to resolve, but there will be no further versions. New consumers (registry servers, third-party tooling) MUST use `@agent-facets/protocol`. There is no deprecation message on the legacy package — closed-alpha, no known external consumers.
+
+  **No CLI behavior change.** Every `@agent-facets/core` import in the CLI was redirected to either `@agent-facets/protocol` (data primitives) or `@agent-facets/engine` (orchestrators). User-visible commands, flags, and output are unchanged.
+</Update>
+
 <Update label="2026-05-01" description="facet add now installs in one step; new source grammar; lockfile-driven install" tags={["CLI", "New Feature", "Breaking"]} rss={{
   title: "facet add now installs in one step; new source grammar; lockfile-driven install",
   description: "facet add now resolves, fetches, verifies, and installs a facet in a single command — no separate facet install step needed. New source grammar accepts registry names, github:owner/repo shorthand, plain https://...git URLs, SCP-style git@host:owner/repo, and local paths. Breaking: git+https:// and git+ssh:// prefixes are rejected (drop the git+); caret/tilde/comparator version ranges are rejected (use 1.* or 1.2.3); facet install no longer accepts --dry-run or positional arguments. Adds: lockfile bootstrap on first install, lockfile-driven reproducibility, three-check integrity protocol for registry sources, ~/.facets/cache/ with FACETS_CACHE_DIR override, repaired outcome when adapter files have drifted, server warnings, and adapter picker auto-launch when a project has no adapters."

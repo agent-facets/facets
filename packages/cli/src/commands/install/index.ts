@@ -1,4 +1,4 @@
-import { loadInstalledAdapters, type RunInstallFailure, type RunInstallResult, runInstall } from '@agent-facets/core'
+import { loadInstalledAdapters, type RunInstallFailure, type RunInstallResult, runInstall } from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
 import type { Command } from '../../commands.ts'

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { getBuiltinAdapterNames, parseAdapterSpecifier } from '@agent-facets/core'
+import { getBuiltinAdapterNames, parseAdapterSpecifier } from '@agent-facets/engine'
 
 describe('parseAdapterSpecifier', () => {
   test('built-in name "opencode" resolves to npm package', () => {

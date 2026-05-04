@@ -1,4 +1,4 @@
-import type { ScaffoldOptions as CreateOptions } from '@agent-facets/core'
+import type { ScaffoldOptions as CreateOptions } from '@agent-facets/engine'
 import { useApp } from 'ink'
 import { useCallback, useEffect, useState } from 'react'
 import { FocusModeProvider, useFocusMode } from '../../context/focus-mode-context.ts'

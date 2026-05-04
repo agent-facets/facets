@@ -1,4 +1,4 @@
-import { FIRST_PARTY_ADAPTERS, type FirstPartyAdapter } from '@agent-facets/core'
+import { FIRST_PARTY_ADAPTERS, type FirstPartyAdapter } from '@agent-facets/engine'
 import { Box, Text, useApp, useInput } from 'ink'
 import { useMemo, useState } from 'react'
 import { THEME } from '../../tui/theme.ts'

@@ -1,4 +1,4 @@
-import type { EditContext, EditResult } from '@agent-facets/core'
+import type { EditContext, EditResult } from '@agent-facets/engine'
 import { render } from 'ink'
 import type { AssetSectionKey } from '../../tui/context/form-state-context.ts'
 import { openInEditorSync } from '../../tui/editor.ts'

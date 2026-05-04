@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { loadInstalledAdapters, placeAdapter, runBuildPipeline, verifyAdapter } from '@agent-facets/core'
+import { loadInstalledAdapters, placeAdapter, runBuildPipeline, verifyAdapter } from '@agent-facets/engine'
 
 /**
  * End-to-end integration test for the adapter install → load → build chain.

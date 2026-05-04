@@ -61,7 +61,7 @@ const MAX_CHARACTERS = 60_000
  */
 const PACKAGE_ORDER: Record<string, number> = {
   'agent-facets': 0,
-  '@agent-facets/core': 1,
+  '@agent-facets/protocol': 1,
   '@agent-facets/brand': 2,
 }
 

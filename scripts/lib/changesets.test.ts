@@ -765,7 +765,7 @@ describe('buildVersionPrBody', () => {
     expect(cliIndex).toBeLessThan(coreIndex)
   })
 
-  test('orders packages: agent-facets > core > brand', async () => {
+  test('orders packages: agent-facets > protocol > brand', async () => {
     const makeChangelog = (name: string, version: string) =>
       `${dedent`
         # ${name}
@@ -780,22 +780,22 @@ describe('buildVersionPrBody', () => {
     const { body } = await buildVersionPrBody(
       [
         { name: '@agent-facets/brand', version: '0.2.0', dir: 'packages/brand' },
-        { name: '@agent-facets/core', version: '0.3.0', dir: 'packages/core' },
+        { name: '@agent-facets/protocol', version: '0.3.0', dir: 'packages/protocol' },
         { name: 'agent-facets', version: '0.4.0', dir: 'packages/cli' },
       ],
       mockReadFile({
         'packages/brand/CHANGELOG.md': makeChangelog('@agent-facets/brand', '0.2.0'),
-        'packages/core/CHANGELOG.md': makeChangelog('@agent-facets/core', '0.3.0'),
+        'packages/protocol/CHANGELOG.md': makeChangelog('@agent-facets/protocol', '0.3.0'),
         'packages/cli/CHANGELOG.md': makeChangelog('agent-facets', '0.4.0'),
       }),
     )
 
     const cliIdx = body.indexOf('## agent-facets@0.4.0')
-    const coreIdx = body.indexOf('## @agent-facets/core@0.3.0')
+    const protocolIdx = body.indexOf('## @agent-facets/protocol@0.3.0')
     const brandIdx = body.indexOf('## @agent-facets/brand@0.2.0')
 
-    expect(cliIdx).toBeLessThan(coreIdx)
-    expect(coreIdx).toBeLessThan(brandIdx)
+    expect(cliIdx).toBeLessThan(protocolIdx)
+    expect(protocolIdx).toBeLessThan(brandIdx)
   })
 
   test('truncates when body exceeds 60K characters', async () => {
@@ -863,16 +863,16 @@ describe('buildVersionPrBody', () => {
 
 describe('comparePackageOrder', () => {
   test('sorts known packages into their defined order', () => {
-    const scrambled = ['@agent-facets/brand', '@agent-facets/core', 'agent-facets']
+    const scrambled = ['@agent-facets/brand', '@agent-facets/protocol', 'agent-facets']
     const sorted = [...scrambled].sort(comparePackageOrder)
-    expect(sorted).toEqual(['agent-facets', '@agent-facets/core', '@agent-facets/brand'])
+    expect(sorted).toEqual(['agent-facets', '@agent-facets/protocol', '@agent-facets/brand'])
   })
 
   test('unknown packages sort after known ones', () => {
-    const packages = ['unknown-pkg', '@agent-facets/core', 'agent-facets', 'another-unknown']
+    const packages = ['unknown-pkg', '@agent-facets/protocol', 'agent-facets', 'another-unknown']
     const sorted = [...packages].sort(comparePackageOrder)
     expect(sorted[0]).toBe('agent-facets')
-    expect(sorted[1]).toBe('@agent-facets/core')
+    expect(sorted[1]).toBe('@agent-facets/protocol')
     // Unknown packages are equal to each other, so they end up after the known ones
     // but their relative order is unspecified
     expect(sorted.slice(2).sort()).toEqual(['another-unknown', 'unknown-pkg'])
@@ -886,13 +886,13 @@ describe('comparePackageOrder', () => {
   })
 
   test('single package is unchanged', () => {
-    const packages = ['@agent-facets/core']
+    const packages = ['@agent-facets/protocol']
     const sorted = [...packages].sort(comparePackageOrder)
-    expect(sorted).toEqual(['@agent-facets/core'])
+    expect(sorted).toEqual(['@agent-facets/protocol'])
   })
 
   test('already-sorted input stays sorted', () => {
-    const packages = ['agent-facets', '@agent-facets/core', '@agent-facets/brand']
+    const packages = ['agent-facets', '@agent-facets/protocol', '@agent-facets/brand']
     const sorted = [...packages].sort(comparePackageOrder)
     expect(sorted).toEqual(packages)
   })
