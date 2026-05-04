@@ -116,6 +116,21 @@ describe('publish.ts', () => {
       expect(publishSpy).toHaveBeenCalledWith('packages/core')
     })
 
+    test('builds with scoped filter for the released package', async () => {
+      // Releases scope the turbo build to the released package + its workspace
+      // deps so we don't fan out to all 11 packages and OOM the executor.
+      process.env.CIRCLE_TAG = '@agent-facets/core@1.1.0'
+      setupPublishPath()
+
+      const buildSpy = spyOn(io.shell, 'turboBuild').mockResolvedValue(shellResult())
+
+      const { release } = await import('./publish')
+      await release()
+
+      expect(buildSpy).toHaveBeenCalledTimes(1)
+      expect(buildSpy).toHaveBeenCalledWith('@agent-facets/core...')
+    })
+
     test('skips private packages without publishing', async () => {
       process.env.CIRCLE_TAG = '@agent-facets/platform-opencode@0.1.0'
       spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([

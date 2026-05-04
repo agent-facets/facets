@@ -24,20 +24,22 @@ Version PR merged to main
 └────────────────────────────────────────────────────────────────────┘
   │
   ▼ (one release pipeline per tag)
-┌──────────────────────────────────────────────┐
-│  release/publish.ts                          │
-│                                              │
-│  1. Parse package name + version from tag    │
-│  2. Find package in workspace                │
-│  3. Skip if private (guard)                  │
-│  4. Skip if version already on npm (guard)   │
-│  5. Mint OIDC token (npm trusted publishing) │
-│  6. Build via turbo                          │
-│  7. npm publish --access public              │
-│  8. Create GitHub Release                    │
-│  9. Send Slack notification                  │
-└──────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│  release/publish.ts                              │
+│                                                  │
+│  1. Parse package name + version from tag        │
+│  2. Find package in workspace                    │
+│  3. Skip if private (guard)                      │
+│  4. Skip if version already on npm (guard)       │
+│  5. Mint OIDC token (npm trusted publishing)     │
+│  6. Build via `turbo build --filter=<pkg>...`    │
+│  7. npm publish --access public                  │
+│  8. Create GitHub Release                        │
+│  9. Send Slack notification                      │
+└──────────────────────────────────────────────────┘
 ```
+
+The `--filter=<pkg>...` scope is critical: an unfiltered `turbo build` fans out to all 11 workspace packages and OOM-killed the executor (exit 137) because four `tsdown` + `rolldown-plugin-dts` builds run in parallel. The release job runs on `resource_class: medium` with `TURBO_CONCURRENCY=1` for the same reason — see `.circleci/development/commands/run-check.yml` for the full memory analysis.
 
 ## Scripts
 
