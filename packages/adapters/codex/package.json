@@ -5,7 +5,7 @@
     "url": "https://github.com/agent-facets/facets",
     "directory": "packages/adapters/codex"
   },
-  "version": "0.3.4",
+  "version": "0.3.5",
   "type": "module",
   "files": [
     "dist"

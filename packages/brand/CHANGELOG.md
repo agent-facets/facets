@@ -1,5 +1,11 @@
 # @agent-facets/brand
 
+## 0.5.3
+
+### Patch Changes
+
+- [#242](https://github.com/agent-facets/facets/pull/242) [`03e9604`](https://github.com/agent-facets/facets/commit/03e9604df207627bf1d5fc5cd2f212bc909239c5) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Bump it all, upgraded CI config need to verify release machinery
+
 ## 0.5.2
 
 ### Patch Changes
