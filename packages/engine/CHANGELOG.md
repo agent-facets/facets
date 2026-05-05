@@ -1,10 +1,21 @@
 # @agent-facets/engine
 
+## 0.9.3
+
+### Patch Changes
+
+- [#242](https://github.com/agent-facets/facets/pull/242) [`03e9604`](https://github.com/agent-facets/facets/commit/03e9604df207627bf1d5fc5cd2f212bc909239c5) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Bump it all, upgraded CI config need to verify release machinery
+
+#### Updated Dependencies
+- @agent-facets/adapter@0.10.1
+- @agent-facets/protocol@0.10.1
+
 ## 0.9.2
 
 ### Patch Changes
 
 #### Updated Dependencies
+
 - @agent-facets/protocol@0.10.0
 - @agent-facets/adapter@0.10.0
 
