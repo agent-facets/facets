@@ -18,7 +18,7 @@ export const shellIo = {
 
   // Build pipeline
   changesetVersion: () => $`bun changeset version`,
-  turboBuild: () => $`bun turbo build`,
+  turboBuild: (filter?: string) => (filter ? $`bun turbo build --filter=${filter}` : $`bun turbo build`),
   bunInstall: () => $`bun install`,
   publishCliPackage: () => $`bun scripts/release-cli/publish-cli-package.ts`,
   verifyPackages: (packages: string[], version: string) =>

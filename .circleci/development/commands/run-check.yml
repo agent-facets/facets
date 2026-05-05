@@ -2,12 +2,13 @@ steps:
   - run:
       name: Check
       # Runs on a `medium` resource class (4 GB, 2 vCPU). Even on `medium`,
-      # parallel adapter DTS builds (arktype inlined via tsdown's
-      # `deps.alwaysBundle`, heavy `rolldown-plugin-dts:generate` pass) peak
-      # over 4 GB when core + three adapter builds fan out simultaneously and
+      # parallel DTS builds (arktype inlined via tsdown's `deps.alwaysBundle`,
+      # heavy `rolldown-plugin-dts:generate` pass) peak over 4 GB when
+      # protocol + engine + three adapter builds fan out simultaneously and
       # intermittently get SIGKILL'd by the OOM killer (exit 137). Forcing
       # `TURBO_CONCURRENCY=1` serializes all tasks at the cost of ~30–45s of
-      # wall-time, which is well under the cost of a flaky CI.
+      # wall-time, which is well under the cost of a flaky CI. The release
+      # job applies the same mitigations — see development/jobs/release.yml.
       environment:
         TURBO_CONCURRENCY: "1"
       command: bun turbo check

@@ -89,7 +89,8 @@ jobs:
         environment:
             LEFTHOOK: "0"
             MISE_ENV: release
-        resource_class: small
+            TURBO_CONCURRENCY: "1"
+        resource_class: medium
         steps:
             - setup-mise
             - run:

@@ -77,7 +77,12 @@ export async function release(): Promise<number> {
   // Library packages — build and publish directly
   if (!alreadyPublished) {
     await mintNpmToken()
-    await io.shell.turboBuild()
+    // Scope build to the released package + its workspace deps. The trailing
+    // `...` is Turbo's "include dependencies" filter, so e.g. `engine` still
+    // builds `protocol` first when an engine tag fires. Avoids the OOM that
+    // killed releases when all 11 packages built in parallel — see
+    // .circleci/development/commands/run-check.yml for the memory analysis.
+    await io.shell.turboBuild(`${pkg.name}...`)
     await packAndPublish(pkg.dir)
     io.console.log(`Published ${parsed.name}@${parsed.version} to npm`)
   }
