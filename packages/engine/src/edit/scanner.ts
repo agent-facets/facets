@@ -1,5 +1,3 @@
-import { Glob } from 'bun'
-
 /** Kebab-case pattern for valid asset names. */
 export const KEBAB_CASE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/
 
@@ -31,7 +29,7 @@ export async function scanAssets(rootDir: string): Promise<DiscoveredAsset[]> {
   const assets: DiscoveredAsset[] = []
 
   // Scan skills: skills/*/SKILL.md
-  const skillGlob = new Glob('skills/*/SKILL.md')
+  const skillGlob = new Bun.Glob('skills/*/SKILL.md')
   for await (const match of skillGlob.scan({ cwd: rootDir, onlyFiles: true })) {
     // match is e.g. 'skills/review/SKILL.md'
     const parts = match.split('/')
@@ -42,7 +40,7 @@ export async function scanAssets(rootDir: string): Promise<DiscoveredAsset[]> {
   }
 
   // Scan agents: agents/*.md
-  const agentGlob = new Glob('agents/*.md')
+  const agentGlob = new Bun.Glob('agents/*.md')
   for await (const match of agentGlob.scan({ cwd: rootDir, onlyFiles: true })) {
     const name = match.replace('agents/', '').replace('.md', '')
     if (KEBAB_CASE.test(name)) {
@@ -51,7 +49,7 @@ export async function scanAssets(rootDir: string): Promise<DiscoveredAsset[]> {
   }
 
   // Scan commands: commands/*.md
-  const commandGlob = new Glob('commands/*.md')
+  const commandGlob = new Bun.Glob('commands/*.md')
   for await (const match of commandGlob.scan({ cwd: rootDir, onlyFiles: true })) {
     const name = match.replace('commands/', '').replace('.md', '')
     if (KEBAB_CASE.test(name)) {
