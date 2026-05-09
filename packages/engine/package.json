@@ -22,7 +22,7 @@
     "arktype": "2.2.0",
     "comment-json": "^5.0.0",
     "nanotar": "0.3.0",
-    "yaml": "2.8.3"
+    "yaml": "2.8.4"
   },
   "devDependencies": {
     "@agent-facets/common": "workspace:*",
