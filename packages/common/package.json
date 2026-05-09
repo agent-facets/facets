@@ -10,6 +10,6 @@
     "test": "bun test"
   },
   "dependencies": {
-    "yaml": "2.8.3"
+    "yaml": "2.8.4"
   }
 }
