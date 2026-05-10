@@ -1,4 +1,4 @@
-import type { InstallMethod } from './types.ts'
+import type { InstallMethod, SelfUpdateErrorHandler } from './types.ts'
 
 /**
  * Default URL serving the canonical installer script. Lives in this repo
@@ -26,7 +26,7 @@ export function installerUrl(): string {
  */
 export async function runCurlInstaller(
   targetVersion: string,
-  opts: { modifyPath: boolean; onError?: (line: string) => void },
+  opts: { modifyPath: boolean; onError?: SelfUpdateErrorHandler },
 ): Promise<number> {
   const url = installerUrl()
 
@@ -35,12 +35,12 @@ export async function runCurlInstaller(
     installer = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)
-    opts.onError?.(`failed to fetch installer from ${url}: ${message}\n`)
+    opts.onError?.({ kind: 'message', line: `failed to fetch installer from ${url}: ${message}\n` })
     return 1
   }
 
   if (!installer.ok || installer.body === null) {
-    opts.onError?.(`installer fetch returned HTTP ${installer.status}\n`)
+    opts.onError?.({ kind: 'message', line: `installer fetch returned HTTP ${installer.status}\n` })
     return 1
   }
 
@@ -58,7 +58,7 @@ export async function runCurlInstaller(
     return await proc.exited
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)
-    opts.onError?.(`bash: ${message}\n`)
+    opts.onError?.({ kind: 'message', line: `bash: ${message}\n` })
     return 1
   }
 }

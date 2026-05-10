@@ -172,12 +172,13 @@ Brand colors and visual identity constants.
 
 ### `packages/common` — `@agent-facets/common`
 
-Shared primitives that cross the core / adapter SDK / CLI boundary: cross-cutting types
-(`AssetType`, `Scope`, `Validated`) and pure helpers with no heavy dependencies
-(asset-name validation, text normalization, atomic file writes). Private — not
-published to npm. `@agent-facets/adapter` bundles `common` into its build via
-tsdown's `alwaysBundle` so the published SDK has no runtime dependency on
-`common`; `core` and `cli` import it normally as a workspace dependency.
+Shared primitives that cross the protocol / engine / adapter SDK / CLI boundary:
+cross-cutting types (`AssetType`, `Scope`, `Validated`) and pure helpers with no
+heavy dependencies (asset-name validation, text normalization, atomic file writes).
+Private — not published to npm. `@agent-facets/adapter` and `@agent-facets/protocol`
+both bundle `common` into their builds via tsdown's `alwaysBundle` so external
+consumers see a single package surface; `engine` and `cli` import it normally as a
+workspace dependency.
 
 See `packages/common/AGENTS.md` for the rule on what does and doesn't belong here.
 
@@ -268,11 +269,11 @@ parse.
 
 Match these shapes. Do not invent new patterns.
 
-- `packages/core/src/integrity/types.ts` — `IntegrityResult`,
+- `packages/protocol/src/integrity/types.ts` — `IntegrityResult`,
   `IntegrityFailure`. Pure-data failure shape; no thrown errors.
-- `packages/core/src/install/lockfile-io.ts` — `LoadLockfileResult` as
+- `packages/engine/src/install/lockfile-io.ts` — `LoadLockfileResult` as
   `{ ok: true; data; existed } | { ok: false; error }`.
-- `packages/core/src/install/run-install.ts` — `PlanFacetResult` and the
+- `packages/engine/src/install/run-install.ts` — `PlanFacetResult` and the
   larger `RunInstallResult` discriminated union. Failures are typed by
   `code` discriminator with structured fields per code.
 - `@agent-facets/common`'s `Validated<T>` type — the project-wide alias

@@ -8,7 +8,36 @@
  * describes the command it would run (used by `--dry-run`) and runs it.
  */
 
+import type { LatestVersionResult } from '../version-check.ts'
+
 export type MethodKind = 'curl' | 'npm' | 'yarn' | 'pnpm' | 'bun' | 'local-dev' | 'unknown'
+
+/**
+ * Structured event payload for self-update error reporting.
+ *
+ * Engine emits these; the CLI exhaustively switches on `kind` to format
+ * each one into user-facing prose (the canonical 3-line `error:` block,
+ * a one-line stderr message, etc.). Adding a new variant forces the CLI
+ * to handle it (compile-time obligation), which is the whole reason for
+ * the discriminator instead of a free-form string channel.
+ *
+ *   - `message` — preformatted line for direct stderr write. Used by
+ *     spawn failures, dev-mode refusals, curl-installer fetch errors,
+ *     anywhere the engine already had a useful one-line message.
+ *   - `latest-version-failure` — `getLatestVersion` returned a non-ok
+ *     result. Carries the structured failure verbatim so the CLI can
+ *     render it via `formatLatestVersionFailure`.
+ */
+export type SelfUpdateErrorEvent =
+  | { kind: 'message'; line: string }
+  | { kind: 'latest-version-failure'; failure: Extract<LatestVersionResult, { ok: false }> }
+
+/**
+ * Callback shape for self-update error reporting. Engine emits a
+ * structured event; the CLI's handler renders it for the user. Tests
+ * pass a collector to assert on the event sequence.
+ */
+export type SelfUpdateErrorHandler = (event: SelfUpdateErrorEvent) => void
 
 /**
  * Inputs handed to a method's `describe()` and `update()`. The orchestrator
@@ -35,10 +64,11 @@ export interface UpdateOptions {
    */
   onOutput?: (line: string) => void
   /**
-   * Optional callback for error output (failed fetches, spawn failures,
-   * dev-mode refusals). The CLI passes a callback that writes to stderr.
+   * Optional callback for structured error events (failed fetches,
+   * spawn failures, dev-mode refusals). Engine emits a discriminated
+   * `SelfUpdateErrorEvent`; the CLI exhaustively renders each kind.
    */
-  onError?: (line: string) => void
+  onError?: SelfUpdateErrorHandler
 }
 
 /**

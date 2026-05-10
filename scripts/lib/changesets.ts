@@ -378,7 +378,7 @@ function extractDependencyBumps(items: string[]): string[] {
     const headerMatch = firstLine.match(/Updated dependencies\s*\[([a-f0-9]+)\]/)
     const hash = headerMatch?.[1]
 
-    // Sub-lines: indented dependency entries like "  - @agent-facets/core@0.1.2"
+    // Sub-lines: indented dependency entries like "  - @agent-facets/protocol@0.1.2"
     for (let i = 1; i < lines.length; i++) {
       const depLine = lines[i] ?? ''
       const depMatch = depLine.match(/^\s+-\s+(.+)/)

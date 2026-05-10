@@ -507,7 +507,7 @@ describe('InstallView — integrity failure', () => {
     const result: RunInstallResult = {
       ok: false,
       failure,
-      rollback: { ok: true },
+      rollback: { kind: 'not-needed', reason: 'test fixture' },
     }
     const instance = render(
       createElement(InstallView, {
@@ -546,7 +546,7 @@ describe('InstallView — parse error failure', () => {
     const result: RunInstallResult = {
       ok: false,
       failure,
-      rollback: { ok: true },
+      rollback: { kind: 'not-needed', reason: 'test fixture' },
     }
     const instance = render(
       createElement(InstallView, {
@@ -573,7 +573,7 @@ describe('InstallView — aborted', () => {
     const result: RunInstallResult = {
       ok: false,
       failure,
-      rollback: { ok: true },
+      rollback: { kind: 'not-needed', reason: 'test fixture' },
     }
     const instance = render(
       createElement(InstallView, {
@@ -594,7 +594,8 @@ describe('InstallView — partial rollback failure surfaces', () => {
     const failure: RunInstallFailure = {
       code: 'ADAPTER_INSTALL_FAILED',
       facet: 'viper-plans',
-      adapter: 'unknown',
+      adapter: 'opencode',
+      asset: { scope: 'project', type: 'skill', name: 'planning' },
       cause: 'disk full',
     }
     const events: StageEvent[] = [
@@ -605,7 +606,7 @@ describe('InstallView — partial rollback failure surfaces', () => {
     const result: RunInstallResult = {
       ok: false,
       failure,
-      rollback: { ok: false, partialFailures: 2 },
+      rollback: { kind: 'partial-failure', entriesUndone: 0, failures: 2 },
     }
     const instance = render(
       createElement(InstallView, {

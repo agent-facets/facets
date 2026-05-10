@@ -16,7 +16,7 @@ beforeEach(() => {
   projectRoot = mkdtempSync(join(tmpdir(), 'facet-publish-test-'))
   originalCwd = process.cwd()
   process.chdir(projectRoot)
-  process.env.FACET_REGISTRY_URL = 'https://api.test/v0'
+  process.env.FACET_REGISTRY_URL = 'https://api.test'
   process.env.FACET_REGISTRY_API_KEY = 'test-key'
 })
 
@@ -49,9 +49,13 @@ describe('publishCommand', () => {
     let calledUrl = ''
     let calledHeaders: Record<string, string> = {}
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
-      calledUrl = String(input)
-      calledHeaders = init?.headers as Record<string, string>
-      return new Response(JSON.stringify({}), { status: 201 })
+      const req =
+        input instanceof Request ? input : new Request(typeof input === 'string' ? input : input.toString(), init)
+      calledUrl = req.url
+      calledHeaders = Object.fromEntries(req.headers.entries())
+      return new Response(JSON.stringify({ contentHash: 'sha256:x', name: 'cowsay', version: '0.1.0' }), {
+        status: 201,
+      })
     }) as unknown as typeof fetch
 
     const { result, stdout } = await captureStdout(() => publishCommand.run([], {}))
@@ -69,8 +73,11 @@ describe('publishCommand', () => {
     writeFileSync(join(projectRoot, 'facet.json'), JSON.stringify({ name: 'acme/cowsay', version: '0.1.0' }))
     let calledUrl = ''
     globalThis.fetch = (async (input: string | URL | Request) => {
-      calledUrl = String(input)
-      return new Response('{}', { status: 201 })
+      const req = input instanceof Request ? input : new Request(typeof input === 'string' ? input : input.toString())
+      calledUrl = req.url
+      return new Response(JSON.stringify({ contentHash: 'sha256:x', name: 'acme/cowsay', version: '0.1.0' }), {
+        status: 201,
+      })
     }) as unknown as typeof fetch
 
     await captureStdout(() => publishCommand.run([], {}))

@@ -8,11 +8,13 @@ import {
   computeAssetHashes,
   computeContentHash,
   detectNamingCollisions,
+  FACET_MANIFEST_FILE,
   INNER_ARCHIVE_NAME,
+  type ResolvedFacetManifest,
   validateCompactFacets,
   validateContentFiles,
 } from '@agent-facets/protocol'
-import { FACET_MANIFEST_FILE, loadManifest, type ResolvedFacetManifest, resolvePrompts } from '../loaders/facet.ts'
+import { loadManifest, resolvePrompts } from '../loaders/facet.ts'
 import { compressArchive } from './compress.ts'
 import { validateAdapterMetadata } from './validate-adapters.ts'
 

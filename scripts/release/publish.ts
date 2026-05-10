@@ -2,7 +2,7 @@
  * CI release script — publish a library package from a version tag.
  *
  * Triggered by a tag push matching a scoped version tag pattern
- * (e.g., `@agent-facets/core@0.3.0`). Parses the package name and
+ * (e.g., `@agent-facets/protocol@0.3.0`). Parses the package name and
  * version from the tag, finds the package in the workspace, builds
  * via turbo, publishes to npm, creates a GitHub Release, and sends
  * a notification.

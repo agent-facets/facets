@@ -10,7 +10,7 @@ const ORIGINAL_FETCH = globalThis.fetch
 const ORIGINAL_ENV = process.env.FACET_REGISTRY_URL
 
 beforeEach(() => {
-  process.env.FACET_REGISTRY_URL = 'https://api.test/v0'
+  process.env.FACET_REGISTRY_URL = 'https://api.test'
 })
 
 afterEach(() => {
@@ -40,10 +40,20 @@ describe('resolveRegistryMetadataBatch', () => {
     if (result.ok) expect(result.value).toEqual([])
   })
 
+  /**
+   * `openapi-fetch` always passes a `Request` object to `globalThis.fetch`
+   * (not a URL string), so tests need to extract `.url` from the
+   * Request rather than `String(input)` which would yield
+   * `'[object Request]'`.
+   */
+  function captureUrl(input: string | URL | Request): string {
+    return input instanceof Request ? input.url : String(input)
+  }
+
   test('latest spec collapses to "latest" in the URL and uses the server-resolved version on the archive URL', async () => {
     const calledUrls: string[] = []
     globalThis.fetch = (async (input: string | URL | Request) => {
-      calledUrls.push(String(input))
+      calledUrls.push(captureUrl(input))
       return new Response(
         JSON.stringify({
           name: 'cowsay',
@@ -57,7 +67,7 @@ describe('resolveRegistryMetadataBatch', () => {
     }) as unknown as typeof fetch
     const result = await resolveRegistryMetadataBatch([{ name: 'cowsay', version: { kind: 'latest' } }])
     expect(result.ok).toBe(true)
-    if (!result.ok) return
+    if (!result.ok) expect.unreachable()
     expect(calledUrls[0]).toBe('https://api.test/v0/packages/cowsay/latest')
     const meta = result.value[0]
     if (meta === undefined) expect.unreachable()
@@ -69,7 +79,7 @@ describe('resolveRegistryMetadataBatch', () => {
   test('exact spec is sent verbatim', async () => {
     const calledUrls: string[] = []
     globalThis.fetch = (async (input: string | URL | Request) => {
-      calledUrls.push(String(input))
+      calledUrls.push(captureUrl(input))
       return new Response(
         JSON.stringify({
           name: 'cowsay',
@@ -88,7 +98,7 @@ describe('resolveRegistryMetadataBatch', () => {
   test('namespaced names are URL-encoded (%2F) on the URL path', async () => {
     const calledUrls: string[] = []
     globalThis.fetch = (async (input: string | URL | Request) => {
-      calledUrls.push(String(input))
+      calledUrls.push(captureUrl(input))
       return new Response(
         JSON.stringify({
           name: 'acme/cowsay',
@@ -113,19 +123,24 @@ describe('resolveRegistryMetadataBatch', () => {
       { name: 'missing', version: { kind: 'exact', major: 1, minor: 0, patch: 0 } },
     ])
     expect(result.ok).toBe(false)
-    if (result.ok) return
+    if (result.ok) expect.unreachable()
     expect(result.error.code).toBe('NOT_FOUND')
-    if (result.error.code !== 'NOT_FOUND') return
+    if (result.error.code !== 'NOT_FOUND') expect.unreachable()
     expect(result.error.name).toBe('missing')
     expect(result.error.spec).toBe('1.0.0')
   })
 
-  test('5xx maps to NETWORK_ERROR', async () => {
+  test('5xx with non-JSON body maps to REGISTRY_NOT_AVAILABLE', async () => {
+    // The typed client now distinguishes "registry refused service"
+    // (REGISTRY_NOT_AVAILABLE) from "transport itself failed"
+    // (NETWORK_ERROR). A 503 with a raw HTML body — common from
+    // CDN error pages — flows through the defensive branch in
+    // `translateWireError` and surfaces as REGISTRY_NOT_AVAILABLE.
     globalThis.fetch = (async () => new Response('boom', { status: 503 })) as unknown as typeof fetch
     const result = await resolveRegistryMetadataBatch([{ name: 'x', version: { kind: 'latest' } }])
     expect(result.ok).toBe(false)
-    if (result.ok) return
-    expect(result.error.code).toBe('NETWORK_ERROR')
+    if (result.ok) expect.unreachable()
+    expect(result.error.code).toBe('REGISTRY_NOT_AVAILABLE')
   })
 
   test('thrown fetch maps to NETWORK_ERROR', async () => {
@@ -134,9 +149,9 @@ describe('resolveRegistryMetadataBatch', () => {
     }) as unknown as typeof fetch
     const result = await resolveRegistryMetadataBatch([{ name: 'x', version: { kind: 'latest' } }])
     expect(result.ok).toBe(false)
-    if (result.ok) return
+    if (result.ok) expect.unreachable()
     expect(result.error.code).toBe('NETWORK_ERROR')
-    if (result.error.code !== 'NETWORK_ERROR') return
+    if (result.error.code !== 'NETWORK_ERROR') expect.unreachable()
     expect(result.error.cause).toContain('fetch failed')
   })
 
@@ -225,9 +240,9 @@ describe('downloadAndExtractFacet', () => {
       dest,
     )
     expect(result.ok).toBe(false)
-    if (result.ok) return
+    if (result.ok) expect.unreachable()
     expect(result.error.code).toBe('NETWORK_ERROR')
-    if (result.error.code !== 'NETWORK_ERROR') return
+    if (result.error.code !== 'NETWORK_ERROR') expect.unreachable()
     expect(result.error.cause).toContain('sha256 mismatch')
   })
 
@@ -243,7 +258,7 @@ describe('downloadAndExtractFacet', () => {
       dest,
     )
     expect(result.ok).toBe(false)
-    if (result.ok) return
+    if (result.ok) expect.unreachable()
     expect(result.error.code).toBe('NOT_FOUND')
   })
 
@@ -259,7 +274,7 @@ describe('downloadAndExtractFacet', () => {
       dest,
     )
     expect(result.ok).toBe(false)
-    if (result.ok) return
+    if (result.ok) expect.unreachable()
     expect(result.error.code).toBe('NETWORK_ERROR')
   })
 
@@ -282,7 +297,7 @@ describe('downloadAndExtractFacet', () => {
       dest,
     )
     expect(result.ok).toBe(false)
-    if (result.ok) return
+    if (result.ok) expect.unreachable()
     expect(result.error.code).toBe('NETWORK_ERROR')
   })
 })

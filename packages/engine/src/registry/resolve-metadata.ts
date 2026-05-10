@@ -1,23 +1,18 @@
+import { createRegistryClient, translateThrownError, translateWireError } from './client.ts'
 import { describeVersionSpec } from './describe.ts'
 import { encodeFacetName, getRegistryBaseUrl } from './http.ts'
 import type { RegistryMetadata, RegistryResult, RegistrySpec } from './types.ts'
 
-/**
- * Wire-format response from `GET /v0/packages/:name/:version`. Mirrors the
- * osaka backend at `packages/v0/api/src/routes/fetch.ts` lines 134-144.
- *
- * `contentHash` is the sha256 of the gzipped tarball as it was uploaded;
- * we use it as `expectedIntegrity` on the metadata to anchor the download
- * verification. (See `download.ts` for the bytes-level check.)
- */
-interface WireMetadataResponse {
-  name: string
-  version: string
-  contentHash: string
-  sizeBytes: number
-  publishedAt: string
-  manifestJson?: string
-}
+// Note on path-parameter encoding:
+//
+// `openapi-fetch` encodes path parameters automatically. Passing a
+// pre-encoded value (e.g., `acme%2Fcowsay`) results in double-encoding
+// (`acme%252Fcowsay`). So we pass the raw `spec.name` to
+// `params.path.name` and `client.GET` does the right thing.
+//
+// `encodeFacetName` is still used below for the *derived* archive URL
+// (which we build manually because the OpenAPI doesn't model the 302
+// redirect target), where its single-encoding is correct.
 
 /**
  * Resolve registry metadata for a batch of `(name, version)` pairs.
@@ -45,8 +40,9 @@ export async function resolveRegistryMetadataBatch(
 ): Promise<RegistryResult<ReadonlyArray<RegistryMetadata>>> {
   if (specs.length === 0) return { ok: true, value: [] }
 
+  const client = createRegistryClient()
   const base = getRegistryBaseUrl()
-  const results = await Promise.all(specs.map((spec) => fetchOne(base, spec)))
+  const results = await Promise.all(specs.map((spec) => fetchOne(client, base, spec)))
   for (const r of results) {
     if (!r.ok) return r
   }
@@ -60,70 +56,64 @@ export async function resolveRegistryMetadataBatch(
   }
 }
 
-async function fetchOne(base: string, spec: RegistrySpec): Promise<RegistryResult<RegistryMetadata>> {
+/**
+ * Resolve a single `(name, version)` pair via the typed registry
+ * client.
+ *
+ * The wire→internal mapping is intentional and load-bearing:
+ *
+ *   - `body.contentHash` becomes `expectedIntegrity` (renamed). It is
+ *     the sha256 of the gzipped tarball as uploaded; downstream
+ *     `download.ts` uses it for the bytes-level integrity check.
+ *   - `tarballUrl` is *derived* — not on the wire — and is built from
+ *     the **server-resolved** `body.version`, not the input spec. So
+ *     a `latest` request that resolves to `0.1.0` produces
+ *     `…/packages/<name>/0.1.0/archive`. This is critical: passing
+ *     `versionForUrl` (the input spec) here would break the archive
+ *     URL for any wildcard / `latest` request.
+ */
+async function fetchOne(
+  client: ReturnType<typeof createRegistryClient>,
+  base: string,
+  spec: RegistrySpec,
+): Promise<RegistryResult<RegistryMetadata>> {
   // Surface form ('1.2.3', '1.*', '*', 'latest', etc.) is sent verbatim.
   // The server is responsible for accepting/rejecting; we don't widen.
   const versionForUrl = describeVersionSpec(spec.version)
-  const encodedName = encodeFacetName(spec.name)
-  const url = `${base}/packages/${encodedName}/${encodeURIComponent(versionForUrl)}`
-  let response: Response
+
   try {
-    response = await fetch(url)
+    const { data, error, response } = await client.GET('/v0/packages/{name}/{version}', {
+      // Pass `spec.name` raw — openapi-fetch path-encodes it.
+      params: { path: { name: spec.name, version: versionForUrl } },
+    })
+
+    if (error !== undefined) {
+      return {
+        ok: false,
+        error: translateWireError(error, response.status, {
+          name: spec.name,
+          spec: describeVersionSpec(spec.version),
+        }),
+      }
+    }
+
+    // Compute the archive URL using the server-resolved version (in
+    // case the input was `latest` or a wildcard). The archive URL is
+    // built by hand (not by openapi-fetch) because the OpenAPI doesn't
+    // model the 302 redirect target. `encodeFacetName` produces the
+    // canonical npm-style %2F encoding for namespaced names.
+    const encodedName = encodeFacetName(spec.name)
+    const tarballUrl = `${base}/v0/packages/${encodedName}/${encodeURIComponent(data.version)}/archive`
+    return {
+      ok: true,
+      value: {
+        name: data.name,
+        version: data.version,
+        expectedIntegrity: data.contentHash,
+        tarballUrl,
+      },
+    }
   } catch (err) {
-    return {
-      ok: false,
-      error: {
-        code: 'NETWORK_ERROR',
-        cause: err instanceof Error ? err.message : String(err),
-      },
-    }
-  }
-  if (response.status === 404) {
-    return {
-      ok: false,
-      error: { code: 'NOT_FOUND', name: spec.name, spec: describeVersionSpec(spec.version) },
-    }
-  }
-  if (!response.ok) {
-    return {
-      ok: false,
-      error: {
-        code: 'NETWORK_ERROR',
-        cause: `registry returned HTTP ${response.status} ${response.statusText}`,
-      },
-    }
-  }
-  let body: WireMetadataResponse
-  try {
-    body = (await response.json()) as WireMetadataResponse
-  } catch (err) {
-    return {
-      ok: false,
-      error: {
-        code: 'NETWORK_ERROR',
-        cause: `registry returned non-JSON body: ${err instanceof Error ? err.message : String(err)}`,
-      },
-    }
-  }
-  if (typeof body.name !== 'string' || typeof body.version !== 'string' || typeof body.contentHash !== 'string') {
-    return {
-      ok: false,
-      error: {
-        code: 'NETWORK_ERROR',
-        cause: 'registry response is missing required fields (name, version, contentHash)',
-      },
-    }
-  }
-  // Compute the archive URL the same way the metadata URL was computed,
-  // but with the SERVER-RESOLVED version (in case the input was `latest`).
-  const tarballUrl = `${base}/packages/${encodedName}/${encodeURIComponent(body.version)}/archive`
-  return {
-    ok: true,
-    value: {
-      name: body.name,
-      version: body.version,
-      expectedIntegrity: body.contentHash,
-      tarballUrl,
-    },
+    return { ok: false, error: translateThrownError(err) }
   }
 }

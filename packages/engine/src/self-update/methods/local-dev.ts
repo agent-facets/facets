@@ -12,7 +12,10 @@ export const localDevMethod: InstallMethod = {
   displayName: 'dev mode (FACET_BIN_PATH set)',
   describe: () => '(refused — dev mode)',
   update: async ({ onError }) => {
-    onError?.('facet self-update is disabled in dev mode (FACET_BIN_PATH is set).\n')
+    onError?.({
+      kind: 'message',
+      line: 'facet self-update is disabled in dev mode (FACET_BIN_PATH is set).\n',
+    })
     return 1
   },
 }

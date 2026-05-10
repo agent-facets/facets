@@ -2,10 +2,10 @@ import { cp, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
-import { cloneAdapterGitRepository } from '../sources/adapter/git.ts'
-import { resolveLocalAdapterPath } from '../sources/adapter/local.ts'
-import { downloadNpmPackage } from '../sources/adapter/npm.ts'
-import { parseAdapterSpecifier } from '../sources/adapter/specifier.ts'
+import { type CloneAdapterGitResult, cloneAdapterGitRepository } from '../sources/adapter/git.ts'
+import { type ResolveLocalAdapterResult, resolveLocalAdapterPath } from '../sources/adapter/local.ts'
+import { type DownloadNpmResult, downloadNpmPackage } from '../sources/adapter/npm.ts'
+import { type ParseAdapterSpecifierResult, parseAdapterSpecifier } from '../sources/adapter/specifier.ts'
 import { rebundleAdapter, resolveEntryPoint } from './bundler.ts'
 import { placeAdapter } from './placement.ts'
 import { verifyAdapter } from './verify.ts'
@@ -14,7 +14,7 @@ import { verifyAdapter } from './verify.ts'
  * Picker-safe adapter install pipeline (Adjustment Q).
  *
  * Extracted from the historic `handleInstall()` so both the terminal-log
- * code path AND an Ink picker can drive adapter installs without collide
+ * code path AND an Ink picker can drive adapter installs without colliding
  * on stdout. The service writes nothing — it emits progress via an
  * optional `onProgress` callback. Callers decide how to render each stage
  * (plain console.log, Ink StageRow, etc).
@@ -33,15 +33,53 @@ export interface AdapterInstallOptions {
   onLog?: (line: string) => void
 }
 
-export interface AdapterInstallResult {
-  adapter: Adapter
-}
+/**
+ * Discriminated failure for `installAdapter`. Each `kind` corresponds
+ * to a stage of the install pipeline; structured fields preserve the
+ * source-level detail so the CLI can render a precise message.
+ *
+ *   - `specifier-invalid` — `parseAdapterSpecifier` rejected the
+ *     specifier (e.g. `git+ftp://…` with a disallowed scheme).
+ *   - `download-failed` — npm registry / git clone / local-path
+ *     resolution failed. The `source` discriminator carries the
+ *     resolver-specific reason.
+ *   - `bundle-failed` / `verify-failed` / `place-failed` — bundler
+ *     load, verification, or placement threw. These three still wrap
+ *     thrown errors today (their internals weren't part of the #3
+ *     scope); the fix here is to surface them as structured failures
+ *     to the caller instead of letting them escape the boundary.
+ */
+export type AdapterInstallFailure =
+  | { kind: 'specifier-invalid'; specifier: string; failure: Extract<ParseAdapterSpecifierResult, { ok: false }> }
+  | {
+      kind: 'download-failed'
+      specifier: string
+      source:
+        | { kind: 'npm'; failure: Extract<DownloadNpmResult, { ok: false }> }
+        | { kind: 'git'; failure: Extract<CloneAdapterGitResult, { ok: false }> }
+        | { kind: 'local'; failure: Extract<ResolveLocalAdapterResult, { ok: false }> }
+    }
+  | { kind: 'bundle-failed'; specifier: string; cause: string }
+  | { kind: 'verify-failed'; specifier: string; cause: string }
+  | { kind: 'place-failed'; specifier: string; adapter: string; cause: string }
+
+/**
+ * Result of `installAdapter`. Discriminated by `ok`. On success the
+ * caller gets the loaded `Adapter` instance; on failure, a structured
+ * `AdapterInstallFailure` for the CLI to render.
+ */
+export type AdapterInstallResult = { ok: true; adapter: Adapter } | { ok: false; failure: AdapterInstallFailure }
 
 export async function installAdapter(
   specifier: string,
   opts: AdapterInstallOptions = {},
 ): Promise<AdapterInstallResult> {
-  const resolved = parseAdapterSpecifier(specifier)
+  const parsed = parseAdapterSpecifier(specifier)
+  if (!parsed.ok) {
+    return { ok: false, failure: { kind: 'specifier-invalid', specifier, failure: parsed } }
+  }
+  const resolved = parsed.resolved
+
   let sourceDir: string | undefined
   let needsCleanup = true
   let bundleCleanup: (() => Promise<void>) | undefined
@@ -50,22 +88,57 @@ export async function installAdapter(
     opts.onProgress?.('resolving', specifier)
 
     switch (resolved.type) {
-      case 'npm':
+      case 'npm': {
         opts.onProgress?.('downloading', resolved.packageName)
-        sourceDir = await downloadNpmPackage(resolved.packageName)
+        const dl = await downloadNpmPackage(resolved.packageName)
+        if (!dl.ok) {
+          return {
+            ok: false,
+            failure: { kind: 'download-failed', specifier, source: { kind: 'npm', failure: dl } },
+          }
+        }
+        sourceDir = dl.path
         break
-      case 'git':
+      }
+      case 'git': {
         opts.onProgress?.('downloading', resolved.url)
-        sourceDir = await cloneAdapterGitRepository(resolved.url, resolved.commitish)
+        const clone = await cloneAdapterGitRepository(resolved.url, resolved.commitish)
+        if (!clone.ok) {
+          return {
+            ok: false,
+            failure: { kind: 'download-failed', specifier, source: { kind: 'git', failure: clone } },
+          }
+        }
+        sourceDir = clone.path
         break
-      case 'local':
-        sourceDir = await resolveLocalAdapterPath(resolved.path)
+      }
+      case 'local': {
+        const local = await resolveLocalAdapterPath(resolved.path)
+        if (!local.ok) {
+          return {
+            ok: false,
+            failure: { kind: 'download-failed', specifier, source: { kind: 'local', failure: local } },
+          }
+        }
+        sourceDir = local.path
         needsCleanup = false // Don't delete user's local directory
         break
+      }
     }
 
     opts.onProgress?.('bundling')
-    const located = await locateAndVerifyAdapter(sourceDir, { onLog: opts.onLog })
+    let located: { bundlePath: string; adapter: Adapter; cleanup: () => Promise<void> }
+    try {
+      located = await locateAndVerifyAdapter(sourceDir, { onLog: opts.onLog })
+    } catch (err) {
+      // bundler internals (`rebundleAdapter`, `verifyAdapter`,
+      // `resolveEntryPoint`) still throw today — converting them is
+      // out of scope for #3. Catch at this boundary so the
+      // `installAdapter` contract stays result-typed even though its
+      // dependencies haven't been converted yet.
+      const cause = err instanceof Error ? err.message : String(err)
+      return { ok: false, failure: { kind: 'bundle-failed', specifier, cause } }
+    }
     bundleCleanup = located.cleanup
 
     opts.onProgress?.('verifying', located.adapter.name)
@@ -73,9 +146,17 @@ export async function installAdapter(
     // stage tick just exists for progress symmetry on the picker.
 
     opts.onProgress?.('placing', located.adapter.name)
-    await placeAdapter(located.adapter.name, located.bundlePath)
+    try {
+      await placeAdapter(located.adapter.name, located.bundlePath)
+    } catch (err) {
+      const cause = err instanceof Error ? err.message : String(err)
+      return {
+        ok: false,
+        failure: { kind: 'place-failed', specifier, adapter: located.adapter.name, cause },
+      }
+    }
 
-    return { adapter: located.adapter }
+    return { ok: true, adapter: located.adapter }
   } finally {
     if (bundleCleanup) await bundleCleanup()
     if (needsCleanup && sourceDir) {

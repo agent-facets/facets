@@ -14,7 +14,7 @@
 export const CIRCLECI_OIDC = {
   organizationId: 'bfa561da-d33e-4a2a-a46d-48e096a828e0',
   projectId: '46274a40-97ed-41fd-a745-9702a7131ccc',
-  pipelineDefinitionId: '15756499-9950-43b5-b2d3-ac4086d9aa48',
+  pipelineDefinitionId: '9d2f5823-f2c9-4cba-918a-e7d0dc2f658a',
   contextIds: '691cddb9-b839-41e8-bc5c-ebb4484a2a1f',
   vcsOrigin: 'github.com/agent-facets/facets',
 } as const

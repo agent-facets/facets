@@ -1,4 +1,5 @@
 import { detectInstallMethod } from './detect.ts'
+import type { SelfUpdateErrorHandler } from './methods/types.ts'
 import { installMethods } from './registry.ts'
 import { getLatestVersion } from './version-check.ts'
 
@@ -20,10 +21,12 @@ export interface RunSelfUpdateOptions {
    */
   onOutput?: (line: string) => void
   /**
-   * Optional callback for error output (failed fetches, dev-mode refusal,
-   * spawn failures). The CLI passes a callback that writes to stderr.
+   * Optional callback for structured error events (failed fetches,
+   * dev-mode refusal, spawn failures, latest-version lookup failures).
+   * Engine emits a `SelfUpdateErrorEvent`; the CLI's handler renders
+   * each `kind` for the user.
    */
-  onError?: (line: string) => void
+  onError?: SelfUpdateErrorHandler
 }
 
 /**
@@ -54,8 +57,20 @@ export async function runSelfUpdate(opts: RunSelfUpdateOptions): Promise<number>
   }
 
   // Resolve the version we'd update TO. A pinned version skips the network
-  // probe — we already know what to install.
-  const target = opts.targetVersion ?? (await getLatestVersion())
+  // probe — we already know what to install. Otherwise, ask the registry.
+  // `getLatestVersion` returns a discriminated `LatestVersionResult`; on
+  // failure we surface the structured event and bail with exit code 1.
+  let target: string
+  if (opts.targetVersion !== undefined) {
+    target = opts.targetVersion
+  } else {
+    const result = await getLatestVersion()
+    if (!result.ok) {
+      opts.onError?.({ kind: 'latest-version-failure', failure: result })
+      return 1
+    }
+    target = result.version
+  }
 
   // Dry-run path: render the plan and exit. No filesystem side effects, no
   // subprocess, no exceptions for "already up to date" — just status.

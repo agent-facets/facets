@@ -11,20 +11,18 @@ const PACKAGE = 'agent-facets'
 const FETCH_TIMEOUT_MS = 10_000
 
 /**
- * Format a failure as the canonical two-line error message:
- *
- *   failed to fetch latest agent-facets version from <url>: <reason>
- *     → check your network connection or set FACET_CLI_REGISTRY to a reachable mirror
- *
- * The `→` line nudges users toward the most likely fix without dictating a
- * specific cause — the upstream `<reason>` already says what went wrong.
+ * Discriminated result for `getLatestVersion`. Every failure mode is part
+ * of the function's contract — a CLI doing self-update on a flaky network
+ * MUST handle each one, and pure data on the failure arm makes the
+ * obligation visible to the type system. Engine returns information; the
+ * CLI is responsible for formatting these into user-facing prose.
  */
-function makeError(url: string, reason: string): Error {
-  return new Error(
-    `failed to fetch latest agent-facets version from ${url}: ${reason}\n` +
-      `  → check your network connection or set FACET_CLI_REGISTRY to a reachable mirror`,
-  )
-}
+export type LatestVersionResult =
+  | { ok: true; version: string }
+  | { ok: false; reason: 'network'; url: string; cause: string }
+  | { ok: false; reason: 'http'; url: string; status: number }
+  | { ok: false; reason: 'invalid-json'; url: string }
+  | { ok: false; reason: 'missing-version'; url: string }
 
 /**
  * Look up the latest published version of `agent-facets` on npm.
@@ -32,13 +30,13 @@ function makeError(url: string, reason: string): Error {
  * Honors `FACET_CLI_REGISTRY` so the curl-installer's mirror convention
  * carries over to self-update. Caps each request at 10 seconds via
  * `AbortSignal.timeout` so a hung registry can't stall the CLI
- * indefinitely. Throws a clear, single-message Error on every failure
- * path; callers decide how to surface it.
+ * indefinitely.
  *
- * Tests mock `globalThis.fetch` via `spyOn`; this function takes no
- * dependencies of its own.
+ * Returns a discriminated `LatestVersionResult` — never throws on any
+ * documented failure mode. Tests mock `globalThis.fetch` via `spyOn`;
+ * this function takes no dependencies of its own.
  */
-export async function getLatestVersion(): Promise<string> {
+export async function getLatestVersion(): Promise<LatestVersionResult> {
   const envRegistry = process.env.FACET_CLI_REGISTRY
   const registry = envRegistry !== undefined && envRegistry !== '' ? envRegistry : DEFAULT_REGISTRY
   const url = `${registry.replace(/\/+$/, '')}/${PACKAGE}/latest`
@@ -50,28 +48,28 @@ export async function getLatestVersion(): Promise<string> {
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     })
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e)
-    throw makeError(url, `network error: ${message}`)
+    const cause = e instanceof Error ? e.message : String(e)
+    return { ok: false, reason: 'network', url, cause }
   }
 
   if (!response.ok) {
-    throw makeError(url, `HTTP ${response.status}`)
+    return { ok: false, reason: 'http', url, status: response.status }
   }
 
   let body: unknown
   try {
     body = await response.json()
   } catch {
-    throw makeError(url, 'response was not valid JSON')
+    return { ok: false, reason: 'invalid-json', url }
   }
 
   if (typeof body !== 'object' || body === null) {
-    throw makeError(url, 'response did not include a "version" field')
+    return { ok: false, reason: 'missing-version', url }
   }
   const version = (body as { version?: unknown }).version
   if (typeof version !== 'string' || version === '') {
-    throw makeError(url, 'response did not include a "version" field')
+    return { ok: false, reason: 'missing-version', url }
   }
 
-  return version
+  return { ok: true, version }
 }

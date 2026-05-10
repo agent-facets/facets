@@ -633,8 +633,7 @@ describe('writeBuildOutput', () => {
 
     const result = await runBuildPipeline(dir)
     expect(result.ok).toBe(true)
-    if (!result.ok) return
-
+    if (!result.ok) expect.unreachable()
     await writeBuildOutput(result, dir)
 
     // .facet file exists
@@ -690,8 +689,7 @@ describe('writeBuildOutput', () => {
 
     const result = await runBuildPipeline(dir)
     expect(result.ok).toBe(true)
-    if (!result.ok) return
-
+    if (!result.ok) expect.unreachable()
     await writeBuildOutput(result, dir)
 
     // Extract manifest and inner archive from outer tar
@@ -727,8 +725,7 @@ describe('writeBuildOutput', () => {
 
     const result = await runBuildPipeline(dir)
     expect(result.ok).toBe(true)
-    if (!result.ok) return
-
+    if (!result.ok) expect.unreachable()
     await writeBuildOutput(result, dir, { emitManifest: true })
 
     // dist/ contains both files
@@ -762,8 +759,7 @@ describe('writeBuildOutput', () => {
 
     const result = await runBuildPipeline(dir)
     expect(result.ok).toBe(true)
-    if (!result.ok) return
-
+    if (!result.ok) expect.unreachable()
     await writeBuildOutput(result, dir)
 
     // Stale file should be gone

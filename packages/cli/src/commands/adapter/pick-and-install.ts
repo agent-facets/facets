@@ -8,6 +8,7 @@ import {
 } from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
+import { describeAdapterInstallFailure } from '../../util/adapter-install-errors.ts'
 import { writeCliError } from '../../util/errors.ts'
 import { InstallPicker } from './install-picker.tsx'
 
@@ -76,24 +77,19 @@ export async function pickAndInstallAdapters(): Promise<PickAndInstallResult> {
   // Install each selected adapter sequentially so the terminal log
   // stays readable. Stop at the first failure.
   for (const option of picked) {
-    try {
-      const { adapter } = await installAdapter(option.npmPackage, {
-        onProgress: (stage, detail) => {
-          if (stage === 'resolving') console.log(`Resolving "${detail}"...`)
-          else if (stage === 'downloading') console.log(`Downloading ${detail}...`)
-          else if (stage === 'placing') console.log(`Installing adapter "${detail}"...`)
-        },
-        onLog: (line) => console.log(line),
-      })
-      console.log(`Adapter "${adapter.name}" installed successfully.`)
-    } catch (err) {
-      writeCliError({
-        what: `failed to install adapter "${option.name}"`,
-        detail: err instanceof Error ? err.message : String(err),
-        fix: 'see the stderr output above and retry; filesystem and network errors are usually transient',
-      })
+    const result = await installAdapter(option.npmPackage, {
+      onProgress: (stage, detail) => {
+        if (stage === 'resolving') console.log(`Resolving "${detail}"...`)
+        else if (stage === 'downloading') console.log(`Downloading ${detail}...`)
+        else if (stage === 'placing') console.log(`Installing adapter "${detail}"...`)
+      },
+      onLog: (line) => console.log(line),
+    })
+    if (!result.ok) {
+      writeCliError(describeAdapterInstallFailure(result.failure))
       return { ok: false, reason: 'install-failed' }
     }
+    console.log(`Adapter "${result.adapter.name}" installed successfully.`)
   }
 
   // Re-load adapters from disk so callers see the freshly-installed ones.

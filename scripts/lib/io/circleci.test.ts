@@ -94,7 +94,7 @@ describe('io.circleci.triggerPipelineForTag', () => {
     await io.circleci.triggerPipelineForTag(
       'gh/agent-facets/facets',
       '9d2f5823-f2c9-4cba-918a-e7d0dc2f658a',
-      '@agent-facets/core@1.0.0',
+      '@agent-facets/protocol@1.0.0',
       'core',
     )
 
@@ -102,8 +102,8 @@ describe('io.circleci.triggerPipelineForTag', () => {
     const body = JSON.parse((init as RequestInit).body as string)
     expect(body).toEqual({
       definition_id: '9d2f5823-f2c9-4cba-918a-e7d0dc2f658a',
-      config: { tag: '@agent-facets/core@1.0.0' },
-      checkout: { tag: '@agent-facets/core@1.0.0' },
+      config: { tag: '@agent-facets/protocol@1.0.0' },
+      checkout: { tag: '@agent-facets/protocol@1.0.0' },
       parameters: { package: 'core' },
     })
   })
@@ -121,7 +121,7 @@ describe('io.circleci.triggerPipelineForTag', () => {
       io.circleci.triggerPipelineForTag(
         'gh/agent-facets/facets',
         '9d2f5823-f2c9-4cba-918a-e7d0dc2f658a',
-        '@agent-facets/core@1.0.0',
+        '@agent-facets/protocol@1.0.0',
       ),
     ).rejects.toThrow(/CircleCI pipeline trigger failed .* 400/)
   })

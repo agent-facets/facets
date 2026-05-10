@@ -1,7 +1,6 @@
 import type { Adapter } from '@agent-facets/adapter'
 import { splitFrontMatter } from '@agent-facets/common'
-import type { LockfileAssetEntry } from '@agent-facets/protocol'
-import type { ResolvedFacetManifest } from '../loaders/facet.ts'
+import type { LockfileAssetEntry, ResolvedFacetManifest } from '@agent-facets/protocol'
 import type { InstallJournal } from './journal.ts'
 
 /**
@@ -66,7 +65,7 @@ export interface MaterializeOptions {
  * (some assets needed to be re-written even though the facet's lockfile
  * entry didn't change — e.g., a user manually deleted the on-disk file).
  */
-export interface MaterializeResult {
+export interface MaterializeCounts {
   /** Assets actually written to an adapter. Excludes skipped no-ops. */
   written: number
   /** Assets skipped because content + metadata matched on disk. */
@@ -74,6 +73,37 @@ export interface MaterializeResult {
   /** Assets deleted (drift removal within this facet). */
   deleted: number
 }
+
+/**
+ * Discriminated failure for `materialize`. Each kind preserves the
+ * adapter name (the smoking-gun problem with the previous throw-based
+ * shape was the caller fabricating `'unknown'` as the adapter — the
+ * info was right there but lost in the throw boundary).
+ *
+ *   - `unsupported-adapter` — caller passed an adapter whose
+ *     `supportsInstall !== true`. Defense-in-depth beyond the picker
+ *     filter; loud failure beats silent no-op.
+ *   - `read-failed` — `adapter.readAsset` threw something other than
+ *     ENOENT. ENOENT is the one "file didn't exist" signal we trust;
+ *     anything else (EACCES, EIO, EISDIR, adapter bugs) means we don't
+ *     know whether the asset existed, so the journal must not record
+ *     a delete-undo based on an assumption of absence.
+ *   - `install-failed` — `adapter.installAsset` threw.
+ *   - `delete-failed` — `adapter.deleteAsset` threw.
+ */
+export type MaterializeFailure =
+  | { kind: 'unsupported-adapter'; adapter: string }
+  | { kind: 'read-failed'; adapter: string; asset: LockfileAssetEntry; cause: string }
+  | { kind: 'install-failed'; adapter: string; asset: LockfileAssetEntry; cause: string }
+  | { kind: 'delete-failed'; adapter: string; asset: LockfileAssetEntry; cause: string }
+
+/**
+ * Result of one `materialize` call. Errors are values, not control
+ * flow — the caller pattern-matches on `failure.kind` and routes each
+ * to the matching `RunInstallFailure` code (`ADAPTER_UNSUPPORTED`,
+ * `ADAPTER_READ_FAILED`, `ADAPTER_INSTALL_FAILED`, `ADAPTER_DELETE_FAILED`).
+ */
+export type MaterializeResult = ({ ok: true } & MaterializeCounts) | { ok: false; failure: MaterializeFailure }
 
 /**
  * Apply the install + delete operations across all selected adapters and
@@ -87,8 +117,10 @@ export interface MaterializeResult {
  * so the caller can label outcomes accurately ("repaired" vs.
  * "unchanged") in summaries.
  *
- * Throws on the first adapter error; the caller is responsible for
- * driving rollback via `journal.rollback()` and emitting the failure.
+ * Returns a discriminated `MaterializeResult` — never throws on a
+ * documented failure mode. The caller is responsible for driving
+ * rollback via `journal.rollback()` and emitting the failure as a
+ * `RunInstallFailure`.
  */
 export async function materialize(opts: MaterializeOptions): Promise<MaterializeResult> {
   const toDelete = diffAssetsForDeletion(opts.oldAssets, opts.newAssets)
@@ -100,10 +132,7 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
     // Adjustment S — runtime supportsInstall check (defense-in-depth beyond
     // the picker filter). Fail loud rather than silent no-op.
     if (adapter.supportsInstall !== true) {
-      throw new Error(
-        `adapter "${adapter.name}" does not support install (supportsInstall is absent or false). ` +
-          `Update this adapter to a version with install support, or remove it with 'facet adapter remove ${adapter.name}'.`,
-      )
+      return { ok: false, failure: { kind: 'unsupported-adapter', adapter: adapter.name } }
     }
 
     for (const asset of opts.newAssets) {
@@ -113,13 +142,24 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
       // Capture original state for rollback (F14). A bare catch would treat
       // permission errors, I/O failures, and adapter bugs as "didn't exist",
       // so the journal's delete-undo could silently delete a pre-existing
-      // asset we never read successfully. Narrow to ENOENT only and rethrow
-      // everything else — install fails loud before we write anything.
+      // asset we never read successfully. Narrow to ENOENT only and surface
+      // everything else as a structured `read-failed` — install fails loud
+      // before we write anything.
       let previous: { content: string; metadata?: Record<string, unknown> } | null = null
       try {
         previous = await adapter.readAsset(asset.scope, asset.type, asset.name)
       } catch (err) {
-        if (!isFileMissingError(err)) throw err
+        if (!isFileMissingError(err)) {
+          return {
+            ok: false,
+            failure: {
+              kind: 'read-failed',
+              adapter: adapter.name,
+              asset,
+              cause: err instanceof Error ? err.message : String(err),
+            },
+          }
+        }
         previous = null
       }
 
@@ -142,8 +182,8 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
       //
       // We import `splitFrontMatter` from `common` rather than
       // `splitAssetContent` from the adapter SDK to keep the adapter SDK
-      // a type-only dep of `core`: a value import from the SDK pulls
-      // `yaml` into core's runtime graph and collides with `Bun.build`
+      // a type-only dep of engine: a value import from the SDK pulls
+      // `yaml` into engine's runtime graph and collides with `Bun.build`
       // when the CLI's adapter integration tests bundle the same source.
       const candidateSplit = splitFrontMatter(content)
       const mergedCandidateMetadata = { ...(candidateSplit.metadata ?? {}), ...metadata }
@@ -158,7 +198,19 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
       }
 
       opts.onLog?.(`[verbose]   +${asset.type}:${asset.name} → ${adapter.name}`)
-      await adapter.installAsset(asset.scope, asset.type, asset.name, content, metadata)
+      try {
+        await adapter.installAsset(asset.scope, asset.type, asset.name, content, metadata)
+      } catch (err) {
+        return {
+          ok: false,
+          failure: {
+            kind: 'install-failed',
+            adapter: adapter.name,
+            asset,
+            cause: err instanceof Error ? err.message : String(err),
+          },
+        }
+      }
       written++
 
       opts.journal.record({
@@ -179,12 +231,34 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
       try {
         previous = await adapter.readAsset(asset.scope, asset.type, asset.name)
       } catch (err) {
-        if (!isFileMissingError(err)) throw err
+        if (!isFileMissingError(err)) {
+          return {
+            ok: false,
+            failure: {
+              kind: 'read-failed',
+              adapter: adapter.name,
+              asset,
+              cause: err instanceof Error ? err.message : String(err),
+            },
+          }
+        }
         previous = null
       }
 
       opts.onLog?.(`[verbose]   -${asset.type}:${asset.name} → ${adapter.name}`)
-      await adapter.deleteAsset(asset.scope, asset.type, asset.name)
+      try {
+        await adapter.deleteAsset(asset.scope, asset.type, asset.name)
+      } catch (err) {
+        return {
+          ok: false,
+          failure: {
+            kind: 'delete-failed',
+            adapter: adapter.name,
+            asset,
+            cause: err instanceof Error ? err.message : String(err),
+          },
+        }
+      }
       deleted++
 
       if (previous) {
@@ -198,7 +272,7 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
     }
   }
 
-  return { written, skipped, deleted }
+  return { ok: true, written, skipped, deleted }
 }
 
 /**

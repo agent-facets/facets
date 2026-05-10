@@ -1,7 +1,7 @@
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
+import { FACET_MANIFEST_FILE } from '@agent-facets/protocol'
 import { KEBAB_CASE } from '../edit/scanner.ts'
-import { FACET_MANIFEST_FILE } from '../loaders/facet.ts'
 
 // --- Types ---
 

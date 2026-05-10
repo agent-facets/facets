@@ -3,21 +3,27 @@ import { getBuiltinAdapterNames, parseAdapterSpecifier } from '../specifier.ts'
 
 describe('parseAdapterSpecifier — built-in aliases', () => {
   test('opencode resolves to the npm package', () => {
-    expect(parseAdapterSpecifier('opencode')).toEqual({
+    const result = parseAdapterSpecifier('opencode')
+    if (!result.ok) expect.unreachable()
+    expect(result.resolved).toEqual({
       type: 'npm',
       packageName: '@agent-facets/adapter-opencode',
     })
   })
 
   test('claude-code resolves to the npm package', () => {
-    expect(parseAdapterSpecifier('claude-code')).toEqual({
+    const result = parseAdapterSpecifier('claude-code')
+    if (!result.ok) expect.unreachable()
+    expect(result.resolved).toEqual({
       type: 'npm',
       packageName: '@agent-facets/adapter-claude-code',
     })
   })
 
   test('codex resolves to the npm package', () => {
-    expect(parseAdapterSpecifier('codex')).toEqual({
+    const result = parseAdapterSpecifier('codex')
+    if (!result.ok) expect.unreachable()
+    expect(result.resolved).toEqual({
       type: 'npm',
       packageName: '@agent-facets/adapter-codex',
     })
@@ -26,7 +32,9 @@ describe('parseAdapterSpecifier — built-in aliases', () => {
 
 describe('parseAdapterSpecifier — git URLs', () => {
   test('git+https with ref', () => {
-    expect(parseAdapterSpecifier('git+https://example.com/adapter.git#v1')).toEqual({
+    const result = parseAdapterSpecifier('git+https://example.com/adapter.git#v1')
+    if (!result.ok) expect.unreachable()
+    expect(result.resolved).toEqual({
       type: 'git',
       url: 'https://example.com/adapter.git',
       commitish: 'v1',
@@ -34,7 +42,9 @@ describe('parseAdapterSpecifier — git URLs', () => {
   })
 
   test('git+ssh without ref', () => {
-    expect(parseAdapterSpecifier('git+ssh://git@example.com/adapter.git')).toEqual({
+    const result = parseAdapterSpecifier('git+ssh://git@example.com/adapter.git')
+    if (!result.ok) expect.unreachable()
+    expect(result.resolved).toEqual({
       type: 'git',
       url: 'ssh://git@example.com/adapter.git',
     })
@@ -49,34 +59,45 @@ describe('parseAdapterSpecifier — git URLs', () => {
     'git+javascript:alert(1)',
     'git+ftp://example.com/repo.git',
   ])('rejects git+ URL with disallowed scheme (%p)', (specifier) => {
-    expect(() => parseAdapterSpecifier(specifier)).toThrow(/must start with/)
+    const result = parseAdapterSpecifier(specifier)
+    if (result.ok) expect.unreachable()
+    expect(result.reason).toBe('invalid-git-url')
+    expect(result.specifier).toBe(specifier)
   })
 })
 
 describe('parseAdapterSpecifier — local and npm', () => {
   test('relative path', () => {
-    expect(parseAdapterSpecifier('./local/adapter')).toEqual({
+    const result = parseAdapterSpecifier('./local/adapter')
+    if (!result.ok) expect.unreachable()
+    expect(result.resolved).toEqual({
       type: 'local',
       path: './local/adapter',
     })
   })
 
   test('absolute path', () => {
-    expect(parseAdapterSpecifier('/abs/adapter')).toEqual({
+    const result = parseAdapterSpecifier('/abs/adapter')
+    if (!result.ok) expect.unreachable()
+    expect(result.resolved).toEqual({
       type: 'local',
       path: '/abs/adapter',
     })
   })
 
   test('scoped npm package', () => {
-    expect(parseAdapterSpecifier('@scope/my-adapter')).toEqual({
+    const result = parseAdapterSpecifier('@scope/my-adapter')
+    if (!result.ok) expect.unreachable()
+    expect(result.resolved).toEqual({
       type: 'npm',
       packageName: '@scope/my-adapter',
     })
   })
 
   test('bare npm package', () => {
-    expect(parseAdapterSpecifier('some-adapter')).toEqual({
+    const result = parseAdapterSpecifier('some-adapter')
+    if (!result.ok) expect.unreachable()
+    expect(result.resolved).toEqual({
       type: 'npm',
       packageName: 'some-adapter',
     })

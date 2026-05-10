@@ -1,38 +1,53 @@
+import type { RegistryError, WireErrorCode, WireErrorResponse } from '@agent-facets/engine'
 import type { CliError } from './errors.ts'
 
 /**
- * Wire-format error response from the registry API. Every 4xx/5xx from
- * `https://api.facet.cafe/v0/*` returns this shape (Tier 2 error contract,
- * pre-locked in osaka backend `packages/v0/core/src/errors/index.ts`).
+ * Wire-format error response from the registry API. Every 4xx/5xx
+ * returns this shape, named `ApiErrorBody` in the OpenAPI spec.
+ *
+ * Re-exported here under the legacy alias so existing CLI call sites
+ * keep compiling during the migration. The canonical name is
+ * `WireErrorResponse` from `@agent-facets/engine`.
  */
-export interface RegistryErrorResponse {
-  error: string
-  code: string
-  docsUrl: string
-}
+export type RegistryErrorResponse = WireErrorResponse
 
 /**
- * Canonical registry error codes. Five come from the backend's exhaustive
- * enum; `VERSION_EXISTS` is returned by the publish route on 409 dup but
- * sits outside the backend's E_* prefix because it isn't an "error" in the
- * registry-broken sense — it's a normal "you already published that"
- * response that publish auto-handles.
+ * Canonical registry error codes. Now sourced from the registry's
+ * OpenAPI specification rather than hand-authored — adding a new code
+ * server-side and regenerating the snapshot picks it up automatically.
+ *
+ * Re-exported under the legacy alias for the same reason as
+ * `RegistryErrorResponse` above.
  */
-export type RegistryErrorCode =
-  | 'E_FACET_NOT_FOUND'
-  | 'E_REGISTRY_UNAVAILABLE'
-  | 'E_TARBALL_CORRUPTED'
-  | 'E_TARBALL_TOO_LARGE'
-  | 'E_API_KEY_MISSING'
-  | 'VERSION_EXISTS'
+export type RegistryErrorCode = WireErrorCode
 
 /**
  * Detect the registry error wire shape on an unknown JSON value.
+ *
+ * Used at the boundary between untyped JSON (`response.json()` returns
+ * `unknown`) and our typed surface. Once every call site uses the
+ * typed registry client (which deserializes responses into the typed
+ * `error` field), this guard becomes dead code and can be removed.
  */
 export function isRegistryErrorResponse(value: unknown): value is RegistryErrorResponse {
   if (value === null || typeof value !== 'object') return false
   const v = value as Record<string, unknown>
   return typeof v.error === 'string' && typeof v.code === 'string' && typeof v.docsUrl === 'string'
+}
+
+/**
+ * Build the canonical docs URL for a registry error code. Centralizes
+ * the `https://agentfacets.io/errors/<CODE>` URL template so the
+ * pattern lives in one place — adding new codes or moving the docs
+ * site is a one-line change.
+ *
+ * The parameter is widened beyond `WireErrorCode` to accept arbitrary
+ * strings because (a) the publish path uses this for its own `404`-ish
+ * "no API key" pre-flight error, and (b) keeping the runtime input
+ * permissive matches the contract of the wire-side `code` field.
+ */
+export function docsUrlFor(code: WireErrorCode | (string & {})): string {
+  return `https://agentfacets.io/errors/${code}`
 }
 
 /**
@@ -53,6 +68,76 @@ export function translateRegistryError(response: RegistryErrorResponse): CliErro
     detail: response.error,
     fix,
     docsUrl: response.docsUrl,
+  }
+}
+
+/**
+ * Translate the engine's discriminated `RegistryError` into the CLI's
+ * user-facing `CliError`. This is the bridge between engine-side
+ * structured errors (returned by the typed client through
+ * `translateWireError` / `translateThrownError`) and the canonical
+ * 3-or-4-line stderr block the CLI renders.
+ *
+ * The engine surfaces four discriminator codes; this function chooses
+ * the right CLI-side messaging for each:
+ *
+ *   - `NOT_FOUND` → user typo or stale spec; suggest search.
+ *   - `NETWORK_ERROR` → transient transport failure; carries
+ *     `attempts` so we can show retry history when it's > 1.
+ *   - `REGISTRY_NOT_AVAILABLE` → the registry returned a structured
+ *     envelope. Pass through if we can identify the canonical CLI
+ *     translation from the wire's `code`; otherwise surface the
+ *     wire's strings verbatim.
+ *   - `UNEXPECTED_ERROR` → something we didn't anticipate; surface
+ *     honestly and ask the user to file a bug.
+ *
+ * Optional `wireCode` lets call sites that have access to the original
+ * wire envelope (e.g., publish, which special-cases `VERSION_EXISTS`)
+ * route `REGISTRY_NOT_AVAILABLE` errors through the canonical
+ * `whatForCode` / `fixForCode` translations rather than the
+ * (possibly less helpful) server-supplied strings.
+ */
+export function translateEngineRegistryError(err: RegistryError, wireCode?: WireErrorCode): CliError {
+  switch (err.code) {
+    case 'NOT_FOUND':
+      return {
+        what: `facet "${err.name}@${err.spec}" not found in registry`,
+        fix: "try 'facet search <term>' to find available facets",
+        docsUrl: docsUrlFor('E_FACET_NOT_FOUND'),
+      }
+    case 'NETWORK_ERROR':
+      return {
+        what: 'registry temporarily unavailable',
+        detail: err.attempts > 1 ? `${err.cause} (after ${err.attempts} attempts)` : err.cause,
+        fix: 'try again in a moment',
+        docsUrl: docsUrlFor('E_REGISTRY_UNAVAILABLE'),
+      }
+    case 'REGISTRY_NOT_AVAILABLE':
+      if (wireCode !== undefined) {
+        // Caller supplied the original `code` from the wire envelope;
+        // route through the canonical CLI translations. Server's
+        // human `error` text becomes `detail`, our canonical
+        // `whatForCode`/`fixForCode` produce `what`/`fix`.
+        return {
+          what: whatForCode(wireCode),
+          detail: err.what,
+          fix: fixForCode(wireCode),
+          docsUrl: docsUrlFor(wireCode),
+        }
+      }
+      // No wire envelope context — pass server's strings through.
+      return {
+        what: err.what,
+        fix: err.fix,
+        docsUrl: docsUrlFor('E_REGISTRY_UNAVAILABLE'),
+      }
+    case 'UNEXPECTED_ERROR':
+      return {
+        what: 'unexpected error from registry',
+        detail: err.cause,
+        fix: 'try again; if persistent, file a bug',
+        docsUrl: docsUrlFor('E_REGISTRY_UNAVAILABLE'),
+      }
   }
 }
 

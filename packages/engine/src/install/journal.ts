@@ -35,6 +35,13 @@ export interface JournalRollbackResult {
   ok: boolean
   /** Count of inverse ops that threw during replay. */
   failures: number
+  /**
+   * Count of inverse ops that successfully replayed. Together with
+   * `failures`, callers can compose the user-facing rollback summary
+   * ("rolled back N of M entries; K failed") without re-deriving
+   * the totals.
+   */
+  entriesUndone: number
 }
 
 export class InstallJournal {
@@ -50,17 +57,19 @@ export class InstallJournal {
 
   async rollback(opts: JournalRollbackOptions = {}): Promise<JournalRollbackResult> {
     let failures = 0
+    let entriesUndone = 0
     while (this.entries.length > 0) {
       const entry = this.entries.pop()
       if (!entry) break
       try {
         await entry.undo()
+        entriesUndone++
         opts.onLog?.(`[verbose] undo ${entry.label}`)
       } catch (err) {
         failures++
         opts.onLog?.(`[verbose] undo FAILED ${entry.label}: ${err instanceof Error ? err.message : String(err)}`)
       }
     }
-    return { ok: failures === 0, failures }
+    return { ok: failures === 0, failures, entriesUndone }
   }
 }

@@ -53,10 +53,12 @@ function mockFetchThrow(error: Error): void {
   })
 }
 
-describe('getLatestVersion', () => {
-  test('returns the version field from a happy-path registry response', async () => {
+describe('getLatestVersion — happy path', () => {
+  test('returns ok=true with the version field on a happy-path registry response', async () => {
     mockFetchJson({ name: 'agent-facets', version: '0.8.0' })
-    expect(await getLatestVersion()).toBe('0.8.0')
+    const result = await getLatestVersion()
+    if (!result.ok) expect.unreachable()
+    expect(result.version).toBe('0.8.0')
   })
 
   test('uses the default registry URL when no override is set', async () => {
@@ -68,7 +70,9 @@ describe('getLatestVersion', () => {
   test('honors FACET_CLI_REGISTRY env var', async () => {
     process.env.FACET_CLI_REGISTRY = 'https://npm.example.com'
     mockFetchJson({ version: '1.2.3' })
-    expect(await getLatestVersion()).toBe('1.2.3')
+    const result = await getLatestVersion()
+    if (!result.ok) expect.unreachable()
+    expect(result.version).toBe('1.2.3')
     expect(fetchSpy).toHaveBeenCalledWith('https://npm.example.com/agent-facets/latest', expect.any(Object))
   })
 
@@ -93,65 +97,6 @@ describe('getLatestVersion', () => {
     expect(fetchSpy).toHaveBeenCalledWith('https://registry.npmjs.org/agent-facets/latest', expect.any(Object))
   })
 
-  test('throws a clear error when fetch rejects (network error)', async () => {
-    mockFetchThrow(new Error('ECONNREFUSED'))
-    await expect(getLatestVersion()).rejects.toThrow(
-      /failed to fetch latest agent-facets version.*network error: ECONNREFUSED/s,
-    )
-  })
-
-  test('error mentions the URL it tried', async () => {
-    process.env.FACET_CLI_REGISTRY = 'https://wat.example.com'
-    mockFetchThrow(new Error('boom'))
-    await expect(getLatestVersion()).rejects.toThrow(/https:\/\/wat\.example\.com\/agent-facets\/latest/)
-  })
-
-  test('error includes the FACET_CLI_REGISTRY hint line', async () => {
-    mockFetchThrow(new Error('boom'))
-    await expect(getLatestVersion()).rejects.toThrow(/set FACET_CLI_REGISTRY to a reachable mirror/)
-  })
-
-  test('throws when registry returns a non-2xx status', async () => {
-    mockFetchRaw('not found', 404)
-    await expect(getLatestVersion()).rejects.toThrow(/HTTP 404/)
-  })
-
-  test('throws when registry returns 503', async () => {
-    mockFetchRaw('service unavailable', 503)
-    await expect(getLatestVersion()).rejects.toThrow(/HTTP 503/)
-  })
-
-  test('throws when response body is not valid JSON', async () => {
-    fetchSpy.mockImplementation(
-      async () =>
-        new Response('this is not json', {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        }),
-    )
-    await expect(getLatestVersion()).rejects.toThrow(/response was not valid JSON/)
-  })
-
-  test('throws when JSON has no version field', async () => {
-    mockFetchJson({ name: 'agent-facets' })
-    await expect(getLatestVersion()).rejects.toThrow(/response did not include a "version" field/)
-  })
-
-  test('throws when version is not a string', async () => {
-    mockFetchJson({ name: 'agent-facets', version: 42 })
-    await expect(getLatestVersion()).rejects.toThrow(/response did not include a "version" field/)
-  })
-
-  test('throws when version is an empty string', async () => {
-    mockFetchJson({ name: 'agent-facets', version: '' })
-    await expect(getLatestVersion()).rejects.toThrow(/response did not include a "version" field/)
-  })
-
-  test('throws when JSON body is null', async () => {
-    mockFetchJson(null)
-    await expect(getLatestVersion()).rejects.toThrow(/response did not include a "version" field/)
-  })
-
   test('sends accept: application/json header', async () => {
     mockFetchJson({ version: '0.8.0' })
     await getLatestVersion()
@@ -161,5 +106,84 @@ describe('getLatestVersion', () => {
         headers: expect.objectContaining({ accept: 'application/json' }),
       }),
     )
+  })
+})
+
+describe('getLatestVersion — failure modes (returned, never thrown)', () => {
+  test('network failure: ok=false, reason=network, carries url and cause', async () => {
+    mockFetchThrow(new Error('ECONNREFUSED'))
+    const result = await getLatestVersion()
+    if (result.ok) expect.unreachable()
+    if (result.reason !== 'network') expect.unreachable()
+    expect(result.url).toBe('https://registry.npmjs.org/agent-facets/latest')
+    expect(result.cause).toBe('ECONNREFUSED')
+  })
+
+  test('network failure preserves the registry override URL in the failure', async () => {
+    process.env.FACET_CLI_REGISTRY = 'https://wat.example.com'
+    mockFetchThrow(new Error('boom'))
+    const result = await getLatestVersion()
+    if (result.ok) expect.unreachable()
+    if (result.reason !== 'network') expect.unreachable()
+    expect(result.url).toBe('https://wat.example.com/agent-facets/latest')
+    expect(result.cause).toBe('boom')
+  })
+
+  test('http 404: ok=false, reason=http, carries status', async () => {
+    mockFetchRaw('not found', 404)
+    const result = await getLatestVersion()
+    if (result.ok) expect.unreachable()
+    if (result.reason !== 'http') expect.unreachable()
+    expect(result.status).toBe(404)
+    expect(result.url).toBe('https://registry.npmjs.org/agent-facets/latest')
+  })
+
+  test('http 503: ok=false, reason=http, carries status', async () => {
+    mockFetchRaw('service unavailable', 503)
+    const result = await getLatestVersion()
+    if (result.ok) expect.unreachable()
+    if (result.reason !== 'http') expect.unreachable()
+    expect(result.status).toBe(503)
+  })
+
+  test('non-JSON body: ok=false, reason=invalid-json', async () => {
+    fetchSpy.mockImplementation(
+      async () =>
+        new Response('this is not json', {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+    )
+    const result = await getLatestVersion()
+    if (result.ok) expect.unreachable()
+    expect(result.reason).toBe('invalid-json')
+  })
+
+  test('JSON has no version field: ok=false, reason=missing-version', async () => {
+    mockFetchJson({ name: 'agent-facets' })
+    const result = await getLatestVersion()
+    if (result.ok) expect.unreachable()
+    expect(result.reason).toBe('missing-version')
+  })
+
+  test('version is not a string: ok=false, reason=missing-version', async () => {
+    mockFetchJson({ name: 'agent-facets', version: 42 })
+    const result = await getLatestVersion()
+    if (result.ok) expect.unreachable()
+    expect(result.reason).toBe('missing-version')
+  })
+
+  test('version is an empty string: ok=false, reason=missing-version', async () => {
+    mockFetchJson({ name: 'agent-facets', version: '' })
+    const result = await getLatestVersion()
+    if (result.ok) expect.unreachable()
+    expect(result.reason).toBe('missing-version')
+  })
+
+  test('JSON body is null: ok=false, reason=missing-version', async () => {
+    mockFetchJson(null)
+    const result = await getLatestVersion()
+    if (result.ok) expect.unreachable()
+    expect(result.reason).toBe('missing-version')
   })
 })

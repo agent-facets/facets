@@ -1,5 +1,6 @@
 import { installAdapter, listInstalledAdapters, removeAdapter } from '@agent-facets/engine'
 import type { Command } from '../../commands.ts'
+import { describeAdapterInstallFailure } from '../../util/adapter-install-errors.ts'
 import { writeCliError } from '../../util/errors.ts'
 import { pickAndInstallAdapters } from './pick-and-install.ts'
 
@@ -51,34 +52,33 @@ async function handleInstall(args: string[]): Promise<number> {
     return handleInstallPicker()
   }
 
-  try {
-    const { adapter } = await installAdapter(specifier, {
-      onProgress: (stage, detail) => {
-        switch (stage) {
-          case 'resolving':
-            console.log(`Resolving "${detail}"...`)
-            break
-          case 'downloading':
-            console.log(`Downloading ${detail}...`)
-            break
-          case 'bundling':
-          case 'verifying':
-            // bundling + verifying are surfaced through `onLog`'s
-            // "Using prebuilt bundle..." / fallback diagnostics.
-            break
-          case 'placing':
-            console.log(`Installing adapter "${detail}"...`)
-            break
-        }
-      },
-      onLog: (line) => console.log(line),
-    })
-    console.log(`Adapter "${adapter.name}" installed successfully.`)
-    return 0
-  } catch (err) {
-    console.error(`Failed to install adapter: ${err instanceof Error ? err.message : String(err)}`)
+  const result = await installAdapter(specifier, {
+    onProgress: (stage, detail) => {
+      switch (stage) {
+        case 'resolving':
+          console.log(`Resolving "${detail}"...`)
+          break
+        case 'downloading':
+          console.log(`Downloading ${detail}...`)
+          break
+        case 'bundling':
+        case 'verifying':
+          // bundling + verifying are surfaced through `onLog`'s
+          // "Using prebuilt bundle..." / fallback diagnostics.
+          break
+        case 'placing':
+          console.log(`Installing adapter "${detail}"...`)
+          break
+      }
+    },
+    onLog: (line) => console.log(line),
+  })
+  if (!result.ok) {
+    writeCliError(describeAdapterInstallFailure(result.failure))
     return 1
   }
+  console.log(`Adapter "${result.adapter.name}" installed successfully.`)
+  return 0
 }
 
 async function handleInstallPicker(): Promise<number> {

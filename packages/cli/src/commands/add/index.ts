@@ -163,14 +163,14 @@ export const addCommand: Command = {
     // Step 6: on failure, restore the manifest snapshot.
     if (!captured?.ok) {
       restoreSnapshot(facetsJsonPath, snapshot)
-      // Branch the user-facing guidance on whether `runInstall` succeeded
-      // in undoing its asset writes. When `rollback.ok === false`, the
-      // journal couldn't reverse some materialize operations and adapter
-      // files may remain on disk — the user needs to know that rather
-      // than be told "project state unchanged" and assume a clean retry.
-      const rollbackFailed = captured !== undefined && !captured.rollback.ok
-      const partialFailureCount =
-        captured !== undefined && !captured.rollback.ok ? captured.rollback.partialFailures : 0
+      // Branch the user-facing guidance on the rollback outcome's `kind`.
+      // When `partial-failure`, the journal couldn't reverse some
+      // materialize operations and adapter files may remain on disk — the
+      // user needs to know that rather than be told "project state
+      // unchanged" and assume a clean retry.
+      const rollback = captured?.rollback
+      const partialFailureCount = rollback?.kind === 'partial-failure' ? rollback.failures : 0
+      const rollbackFailed = partialFailureCount > 0
       writeCliError({
         what: 'add failed',
         detail: captured ? `code=${captured.failure.code}` : 'no result from install pipeline',
@@ -255,20 +255,47 @@ async function peekFacetName(source: Source, specifier: string): Promise<string 
   let cleanup: (() => Promise<void>) | undefined
   if (source.kind === 'git') {
     const { cloneFacetGitSource } = await import('@agent-facets/engine')
-    try {
-      const cloned = await cloneFacetGitSource(source.url, source.ref)
-      sourceDir = cloned.dir
-      const { rm } = await import('node:fs/promises')
-      cleanup = async () => {
-        await rm(cloned.dir, { recursive: true, force: true }).catch(() => {})
+    const cloned = await cloneFacetGitSource(source.url, source.ref)
+    if (!cloned.ok) {
+      // Each failure mode gets its own user-facing message — engine
+      // returns the structured `reason`, the CLI renders prose. Adding
+      // a new variant to `CloneFacetGitResult` forces this switch to
+      // update (compile-time obligation).
+      switch (cloned.reason) {
+        case 'git-binary-missing':
+          writeCliError({
+            what: `could not clone git source "${specifier}"`,
+            detail: 'git is not installed (or not on PATH)',
+            fix: 'install git and re-run this command',
+          })
+          return null
+        case 'auth-required':
+          writeCliError({
+            what: `git authentication required for ${cloned.url}`,
+            detail: 'closed alpha supports public repos and SSH (via agent) only',
+            fix: 'use a public URL or configure your SSH agent',
+          })
+          return null
+        case 'clone-failed':
+          writeCliError({
+            what: `could not clone git source "${specifier}"`,
+            detail: cloned.stderr,
+            fix: 'verify the URL and your network connectivity',
+          })
+          return null
+        case 'checkout-failed':
+          writeCliError({
+            what: `could not check out commit ${cloned.commitish} in ${cloned.url}`,
+            detail: cloned.stderr,
+            fix: 'verify the commit SHA exists in the repository',
+          })
+          return null
       }
-    } catch (err) {
-      writeCliError({
-        what: `could not clone git source "${specifier}"`,
-        detail: err instanceof Error ? err.message : String(err),
-        fix: 'verify the URL and your network connectivity',
-      })
-      return null
+    }
+    sourceDir = cloned.dir
+    const { rm } = await import('node:fs/promises')
+    cleanup = async () => {
+      await rm(cloned.dir, { recursive: true, force: true }).catch(() => {})
     }
   } else {
     const { resolveLocalFacetSource } = await import('@agent-facets/engine')

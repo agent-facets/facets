@@ -69,7 +69,7 @@ describe('runSelfUpdate orchestration', () => {
 
   test('non-dev path resolves latest version when none pinned', async () => {
     detectSpy.mockImplementation(async () => 'npm')
-    getLatestSpy.mockImplementation(async () => '0.7.3') // matches current
+    getLatestSpy.mockImplementation(async () => ({ ok: true, version: '0.7.3' })) // matches current
     const { update, describe } = instrumentMethod('npm')
 
     // currentVersion === target ⇒ "already up to date" short-circuit, no
@@ -107,7 +107,7 @@ describe('runSelfUpdate orchestration', () => {
 
   test('--dry-run renders the plan and exits 0 without dispatching', async () => {
     detectSpy.mockImplementation(async () => 'npm')
-    getLatestSpy.mockImplementation(async () => '0.8.0')
+    getLatestSpy.mockImplementation(async () => ({ ok: true, version: '0.8.0' }))
     const { update, describe } = instrumentMethod('npm')
     describe.mockImplementation(() => 'npm install -g agent-facets@0.8.0')
 
@@ -117,5 +117,35 @@ describe('runSelfUpdate orchestration', () => {
     expect(update).toHaveBeenCalledTimes(0)
     update.mockRestore()
     describe.mockRestore()
+  })
+
+  test('non-dev path: getLatestVersion failure surfaces structured event and exits 1', async () => {
+    detectSpy.mockImplementation(async () => 'npm')
+    getLatestSpy.mockImplementation(async () => ({
+      ok: false,
+      reason: 'http',
+      url: 'https://registry.npmjs.org/agent-facets/latest',
+      status: 503,
+    }))
+    const { update } = instrumentMethod('npm')
+
+    const events: import('../methods/types.ts').SelfUpdateErrorEvent[] = []
+    const code = await runSelfUpdate({
+      currentVersion: '0.7.3',
+      dryRun: false,
+      onError: (e) => {
+        events.push(e)
+      },
+    })
+
+    expect(code).toBe(1)
+    expect(update).toHaveBeenCalledTimes(0)
+    expect(events).toHaveLength(1)
+    const event = events[0]
+    if (event === undefined) expect.unreachable()
+    if (event.kind !== 'latest-version-failure') expect.unreachable()
+    if (event.failure.reason !== 'http') expect.unreachable()
+    expect(event.failure.status).toBe(503)
+    update.mockRestore()
   })
 })

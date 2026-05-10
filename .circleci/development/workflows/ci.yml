@@ -7,6 +7,17 @@ jobs:
         branches:
           ignore:
             - main
+  - openapi-freshness:
+      # Advisory job: exits 1 when the vendored OpenAPI snapshot is
+      # older than STALENESS_THRESHOLD_DAYS (default 7). Produces a
+      # failed CircleCI status → red X on the PR. Not a blocker
+      # unless added to GitHub's required-checks list.
+      context:
+        - github
+      filters:
+        branches:
+          ignore:
+            - main
   - main-pipeline:
       serial-group: << pipeline.project.slug >>/main-pipeline
       context:

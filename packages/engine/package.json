@@ -6,26 +6,29 @@
     "url": "https://github.com/agent-facets/facets",
     "directory": "packages/engine"
   },
-  "version": "0.9.3",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
   "scripts": {
     "build": "tsdown",
+    "codegen:registry": "bun ./scripts/sync-registry-openapi.ts",
     "types": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
     "@agent-facets/adapter": "workspace:*",
     "@agent-facets/protocol": "workspace:*",
+    "arkregex": "0.0.5",
     "arktype": "2.2.0",
     "comment-json": "^5.0.0",
     "nanotar": "0.3.0",
+    "openapi-fetch": "0.17.0",
     "yaml": "2.8.4"
   },
   "devDependencies": {
     "@agent-facets/common": "workspace:*",
+    "openapi-typescript": "7.13.0",
     "tsdown": "^0.22.0",
     "typescript": "^6.0.3"
   },

@@ -86,13 +86,91 @@ export type RunInstallFailure =
       lockedIntegrity: string
     }
   | { code: 'COMPOSITION_REJECTED'; facet: string }
-  | { code: 'GIT_CLONE_FAILED'; facet: string; cause: string }
+  /** `git` is not installed (or not on PATH). */
+  | { code: 'GIT_BINARY_MISSING'; facet: string }
+  /**
+   * `git clone` failed because the registry rejected our auth attempt.
+   * Closed alpha supports public repos and SSH (via agent) only.
+   */
+  | { code: 'GIT_AUTH_REQUIRED'; facet: string; url: string }
+  /**
+   * `git clone` failed for a reason other than missing-binary or
+   * auth-required (network, ref-not-found, generic). Carries stderr
+   * verbatim for the CLI to surface.
+   */
+  | { code: 'GIT_CLONE_FAILED'; facet: string; url: string; stderr: string }
+  /** `git checkout <commit>` failed after a successful clone. */
+  | {
+      code: 'GIT_CHECKOUT_FAILED'
+      facet: string
+      url: string
+      commitish: string
+      stderr: string
+    }
   | { code: 'LOCAL_RESOLVE_FAILED'; facet: string; cause: string }
   | { code: 'BUILD_FAILED'; facet: string; errors: ReadonlyArray<ValidationError> }
   | { code: 'MANIFEST_NAME_MISMATCH'; facet: string; manifestName: string }
   | { code: 'MANIFEST_LOAD_FAILED'; facet: string; errors: ReadonlyArray<ValidationError> }
-  | { code: 'ADAPTER_INSTALL_FAILED'; facet: string; adapter: string; cause: string }
+  /**
+   * The selected adapter has `supportsInstall !== true`. Defense-in-depth
+   * beyond the picker filter — fail loud rather than silently no-op.
+   */
+  | { code: 'ADAPTER_UNSUPPORTED'; facet: string; adapter: string }
+  /**
+   * `adapter.readAsset` threw something other than ENOENT. The asset's
+   * pre-install state is unknown, so we abort before writing rather
+   * than risk a delete-undo on an asset we can't observe.
+   */
+  | {
+      code: 'ADAPTER_READ_FAILED'
+      facet: string
+      adapter: string
+      asset: LockfileAssetEntry
+      cause: string
+    }
+  /** `adapter.installAsset` threw. */
+  | {
+      code: 'ADAPTER_INSTALL_FAILED'
+      facet: string
+      adapter: string
+      asset: LockfileAssetEntry
+      cause: string
+    }
+  /** `adapter.deleteAsset` threw during drift removal. */
+  | {
+      code: 'ADAPTER_DELETE_FAILED'
+      facet: string
+      adapter: string
+      asset: LockfileAssetEntry
+      cause: string
+    }
   | { code: 'ABORTED' }
+
+/**
+ * Outcome of the rollback step on a failed install. Three semantically
+ * distinct arms encoded explicitly so view layers can render each
+ * differently — pre-#9 these all collapsed into `{ ok: true }` and the
+ * "we rolled back N entries" information was lost across the boundary.
+ *
+ *   - `not-needed` — no rollback was attempted because there was
+ *     nothing to undo. The `reason` string distinguishes pre-lock
+ *     failures (failed before acquiring the install lock; e.g.
+ *     `facets.json` missing) from post-lock-no-mutation failures
+ *     (lock acquired but no journal entries recorded yet). Default
+ *     rendering can collapse both to "no rollback needed"; verbose
+ *     mode can surface the distinction.
+ *   - `succeeded` — a real rollback ran and replayed every recorded
+ *     journal entry in reverse. `entriesUndone` counts them.
+ *   - `partial-failure` — the rollback ran but at least one inverse
+ *     op threw. `entriesUndone` is the count that successfully
+ *     replayed; `failures` is the count that didn't. View layers
+ *     surface this as the canonical "manual cleanup may be needed"
+ *     message.
+ */
+export type RollbackOutcome =
+  | { kind: 'not-needed'; reason: string }
+  | { kind: 'succeeded'; entriesUndone: number }
+  | { kind: 'partial-failure'; entriesUndone: number; failures: number }
 
 /**
  * Result of a `runInstall` invocation. Discriminated by `ok`.
@@ -101,9 +179,8 @@ export type RunInstallFailure =
  * disk), a summary of counts, per-facet outcomes, and any server
  * warnings collected during install.
  *
- * On failure, callers receive the structured failure plus the result
- * of the rollback attempt — view layers distinguish "clean abort" from
- * "partial rollback failure" by inspecting `rollback.ok`.
+ * On failure, callers receive the structured failure plus the
+ * `RollbackOutcome` — view layers branch on `rollback.kind`.
  */
 export type RunInstallResult =
   | {
@@ -116,7 +193,7 @@ export type RunInstallResult =
   | {
       ok: false
       failure: RunInstallFailure
-      rollback: { ok: true } | { ok: false; partialFailures: number }
+      rollback: RollbackOutcome
     }
 
 /**

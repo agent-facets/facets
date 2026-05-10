@@ -22,7 +22,11 @@ service whose API surface they describe — not by this package.
   `Uint8Array | string` that return `Validated<T>` (typed value or
   structured errors). No disk I/O.
 - **Front-matter encoding** — extract/strip YAML front matter from
-  asset bodies; this is part of the file-format contract.
+  asset bodies; this is part of the file-format contract. The
+  canonical implementation lives in `@agent-facets/common`'s
+  `splitFrontMatter` (so the adapter SDK can use it without taking
+  a runtime dep on protocol's heavy deps); protocol re-exports it
+  from `index.ts` so external consumers see one surface.
 - **Integrity verification** — registry three-check (lockfile / cache /
   archive-manifest / computed-content), git one-check (lockfile /
   computed). Pure functions on hash strings; no I/O.

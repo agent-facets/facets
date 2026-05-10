@@ -1,5 +1,6 @@
 import { runSelfUpdate } from '@agent-facets/engine'
 import type { Command } from '../commands.ts'
+import { formatSelfUpdateError } from '../util/self-update-errors.ts'
 import { version as currentVersion } from '../version.ts'
 
 /**
@@ -8,7 +9,7 @@ import { version as currentVersion } from '../version.ts'
  * Updates the running CLI binary by detecting the install method
  * (curl / npm / yarn / pnpm / bun / dev / unknown) and dispatching to the
  * matching install-method handler. The orchestration lives in
- * `@agent-facets/core`; this file is just the CLI surface that supplies
+ * `@agent-facets/engine`; this file is just the CLI surface that supplies
  * the running binary's version and routes output to the user's terminal.
  */
 export const selfUpdateCommand: Command = {
@@ -35,7 +36,7 @@ export const selfUpdateCommand: Command = {
       targetVersion,
       dryRun,
       onOutput: (line) => process.stdout.write(line),
-      onError: (line) => process.stderr.write(line),
+      onError: (event) => process.stderr.write(formatSelfUpdateError(event)),
     })
   },
 }

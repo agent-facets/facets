@@ -135,13 +135,40 @@ export function FailureBlock({ failure }: { failure: RunInstallFailure }): React
           <Text> {failure.facet} declares dependencies on other facets</Text>
         </Box>
       )
+    case 'GIT_BINARY_MISSING':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ git is not installed (or not on PATH)
+          </Text>
+          <Text> install git and re-run this command</Text>
+        </Box>
+      )
+    case 'GIT_AUTH_REQUIRED':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ git authentication required for {failure.url}
+          </Text>
+          <Text> closed alpha supports public repos and SSH (via agent) only</Text>
+        </Box>
+      )
     case 'GIT_CLONE_FAILED':
       return (
         <Box flexDirection="column" marginTop={1}>
           <Text color={THEME.warning} bold>
-            ✕ git clone failed for {failure.facet}
+            ✕ git clone failed for {failure.facet} ({failure.url})
           </Text>
-          <Text> {failure.cause}</Text>
+          <Text> {failure.stderr}</Text>
+        </Box>
+      )
+    case 'GIT_CHECKOUT_FAILED':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ git checkout {failure.commitish} failed for {failure.facet} ({failure.url})
+          </Text>
+          <Text> {failure.stderr}</Text>
         </Box>
       )
     case 'LOCAL_RESOLVE_FAILED':
@@ -189,11 +216,38 @@ export function FailureBlock({ failure }: { failure: RunInstallFailure }): React
           </Text>
         </Box>
       )
+    case 'ADAPTER_UNSUPPORTED':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ adapter {failure.adapter} does not support install
+          </Text>
+          <Text> update this adapter or remove it with `facet adapter remove {failure.adapter}`</Text>
+        </Box>
+      )
+    case 'ADAPTER_READ_FAILED':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ adapter {failure.adapter} could not read {failure.asset.type}:{failure.asset.name} for {failure.facet}
+          </Text>
+          <Text> {failure.cause}</Text>
+        </Box>
+      )
     case 'ADAPTER_INSTALL_FAILED':
       return (
         <Box flexDirection="column" marginTop={1}>
           <Text color={THEME.warning} bold>
-            ✕ adapter {failure.adapter} failed during install of {failure.facet}
+            ✕ adapter {failure.adapter} failed installing {failure.asset.type}:{failure.asset.name} for {failure.facet}
+          </Text>
+          <Text> {failure.cause}</Text>
+        </Box>
+      )
+    case 'ADAPTER_DELETE_FAILED':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ adapter {failure.adapter} failed deleting {failure.asset.type}:{failure.asset.name} for {failure.facet}
           </Text>
           <Text> {failure.cause}</Text>
         </Box>

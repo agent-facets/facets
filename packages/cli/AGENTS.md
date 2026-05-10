@@ -10,7 +10,8 @@ and otherwise wraps `@agent-facets/protocol` (data primitives) and
 If you imagine a future where the facet pipeline ships as an Electron
 app, a TUI separate from the terminal, or a language-server-style
 process driven by an editor, this package is the part that gets
-**replaced**, not extended. Everything durable lives in `core`.
+**replaced**, not extended. Everything durable lives in `protocol`
+and `engine`.
 
 ## What belongs here
 
@@ -30,27 +31,28 @@ process driven by an editor, this package is the part that gets
   unknown-command suggestion logic, the exit-code mapping.
 - **Smoke tests and e2e tests of the user-visible flows.** The CLI's
   test suite asserts on stdout/stderr/exit codes — those assertions
-  belong here, not in `core`.
+  belong here, not in `engine` or `protocol`.
 
 ## What does NOT belong here
 
 - **Any business logic.** Validation, parsing, building, installing,
-  caching, integrity, registry calls — all of it lives in `core`. The
-  CLI calls into `core` and renders the results.
-- **Filesystem mutations driven by command logic.** `core` writes
-  `facets.lock`, `facets.json`, the cache; the CLI just calls `core`.
+  caching, integrity, registry calls — all of it lives in `engine`
+  (or `protocol` for spec-defined primitives). The CLI calls into
+  those packages and renders the results.
+- **Filesystem mutations driven by command logic.** `engine` writes
+  `facets.lock`, `facets.json`, the cache; the CLI just calls `engine`.
   The exception: writing the CLI's own log files, if any.
-- **Network calls.** Registry I/O belongs in `core`'s registry client.
+- **Network calls.** Registry I/O belongs in `engine`'s registry client.
 - **Schema definitions.** Schemas for `facets.json`, `facet.json`,
-  `facets.lock` live in `core`.
+  `facets.lock` live in `protocol`.
 
 ## Rule of thumb
 
 Before adding a file here, ask: "Would a TUI, GUI, or RPC server need
-this exact code to do its job?" If yes, it belongs in `core` — pull it
-out and call it from here. If the code is intrinsically about how a
-terminal renders output, parses arguments, or shows interactive
-prompts, it belongs in `cli`.
+this exact code to do its job?" If yes, it belongs in `engine` or
+`protocol` — pull it out and call it from here. If the code is
+intrinsically about how a terminal renders output, parses arguments,
+or shows interactive prompts, it belongs in `cli`.
 
 A useful sanity check: imagine the day `engine` gets rewritten in Rust
 behind a gRPC interface. What in this package would still make sense?
@@ -71,6 +73,21 @@ new engine over the wire instead of as a workspace dep.
   cache, scaffold, edit, self-update, source resolvers, manifest
   mutations, gzip compression, and path-based loaders that wrap
   protocol's bytes-validators.
+
+The CLI imports wire-format types and the typed registry client
+(`createRegistryClient`, `WireErrorResponse`, `WireMetadataResponse`,
+etc.) via engine's public surface — never from a CLI-local codegen
+output. Engine owns the snapshot, the generated module, and the
+client factory; CLI consumes them through `@agent-facets/engine`
+exports.
+
+The CLI's `util/registry-errors.ts` is the bridge between engine's
+`RegistryError` discriminator and the CLI's user-facing `CliError`
+3-line error block. `translateEngineRegistryError(err, wireCode?)`
+chooses the right CLI messaging per discriminator code, and (when
+the wire envelope is available) routes through the canonical
+`whatForCode` / `fixForCode` translations rather than the server's
+free-form `error` text.
 
 Direct filesystem reads (other than CLI plumbing) and direct schema
 manipulation are smells — they mean we missed an API in engine or

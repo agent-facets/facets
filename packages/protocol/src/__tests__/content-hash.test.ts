@@ -6,6 +6,7 @@ import {
   computeAssetHashes,
   computeContentHash,
   parseFacetArchive,
+  parseInnerArchive,
 } from '@agent-facets/protocol'
 import { parseTar } from 'nanotar'
 import type { ResolvedFacetManifest } from '../loaders/facet.ts'
@@ -202,6 +203,27 @@ describe('assembleTar', () => {
   })
 })
 
+/**
+ * Build a tar buffer whose first header claims a body far larger than
+ * the buffer holds. `nanotar.parseTar` throws
+ * `RangeError: Length out of range of buffer` on inputs of this shape —
+ * the empirical failure mode for truncated `.facet` uploads. Shared by
+ * `parseFacetArchive` and `parseInnerArchive` regression tests.
+ *
+ * The throw only fires when there are bytes after the header (parseTar
+ * bails early with empty entries on a header-only buffer); we pad with
+ * one extra block so the over-claimed slice actually hits the boundary
+ * check.
+ */
+function buildMalformedTarBuffer(): Uint8Array {
+  const buf = new Uint8Array(1024) // one header block + one pad block
+  buf.set(new TextEncoder().encode('bad.txt'), 0)
+  // Size field at offset 124, 12 bytes wide, octal-encoded ASCII, NUL-terminated.
+  // `00004000000\0` = 0o4000000 = 1 MiB declared body — far past 1024 bytes.
+  buf.set(new TextEncoder().encode('00004000000\0'), 124)
+  return buf
+}
+
 describe('parseFacetArchive', () => {
   // A minimally-valid build manifest body matching BuildManifestSchema.
   // 64 hex chars after sha256: to satisfy the integrity regex.
@@ -290,5 +312,57 @@ describe('parseFacetArchive', () => {
     if (result.ok) expect.unreachable()
     expect(result.errors.length).toBeGreaterThan(0)
     expect(result.errors.some((e) => e.path.startsWith('build-manifest.json'))).toBe(true)
+  })
+
+  test('returns ok=false when outer-tar bytes are malformed (oversized header size)', () => {
+    // Without the try/catch in `parseFacetArchive`, this test crashes
+    // the suite with `RangeError: Length out of range of buffer`. With
+    // it, we get the documented `'<archive>'`-rooted error.
+    const result = parseFacetArchive(buildMalformedTarBuffer())
+
+    if (result.ok) expect.unreachable()
+    expect(result.errors).toHaveLength(1)
+    expect(result.errors[0]?.path).toBe('<archive>')
+    expect(result.errors[0]?.actual).toBe('malformed tar bytes')
+    expect(result.errors[0]?.message).toContain('not a valid tar file')
+  })
+})
+
+describe('parseInnerArchive', () => {
+  test('returns ok=true with parsed entries on a well-formed tar', () => {
+    const tar = assembleTar([
+      { path: 'agents/foo.md', content: 'foo body' },
+      { path: 'skills/bar/SKILL.md', content: 'bar body' },
+    ])
+
+    const result = parseInnerArchive(tar)
+
+    if (!result.ok) expect.unreachable()
+    expect(result.entries.map((e) => e.name)).toEqual(['agents/foo.md', 'skills/bar/SKILL.md'])
+    expect(result.entries[0]?.data && new TextDecoder().decode(result.entries[0].data)).toBe('foo body')
+    expect(result.entries[1]?.data && new TextDecoder().decode(result.entries[1].data)).toBe('bar body')
+  })
+
+  test('returns ok=true with empty entries on empty bytes', () => {
+    // An empty buffer is "no entries", not a parse error — `nanotar`
+    // bails out cleanly without throwing. Pin that behavior so a future
+    // `nanotar` upgrade that changes it surfaces as a test failure.
+    const result = parseInnerArchive(new Uint8Array(0))
+
+    if (!result.ok) expect.unreachable()
+    expect(result.entries).toEqual([])
+  })
+
+  test('returns ok=false when bytes are malformed (oversized header size)', () => {
+    // Same fixture as the `parseFacetArchive` regression test: a tar
+    // header whose declared body exceeds the buffer. Without the
+    // try/catch, this throws `RangeError`.
+    const result = parseInnerArchive(buildMalformedTarBuffer())
+
+    if (result.ok) expect.unreachable()
+    expect(result.errors).toHaveLength(1)
+    expect(result.errors[0]?.path).toBe('')
+    expect(result.errors[0]?.actual).toBe('malformed tar bytes')
+    expect(result.errors[0]?.message).toContain('Inner archive is not a valid tar file')
   })
 })

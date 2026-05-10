@@ -15,8 +15,7 @@ describe('resolveTargetDir', () => {
   test('no arg defaults to cwd', async () => {
     const result = await resolveTargetDir(undefined, { mustExist: true })
     expect(result.ok).toBe(true)
-    if (!result.ok) return
-
+    if (!result.ok) expect.unreachable()
     expect(result.dir).toBe(process.cwd())
     expect(result.display).toBe('.')
   })
@@ -27,8 +26,7 @@ describe('resolveTargetDir', () => {
 
     const result = await resolveTargetDir(join(dir, 'facet.json'), { mustExist: true })
     expect(result.ok).toBe(true)
-    if (!result.ok) return
-
+    if (!result.ok) expect.unreachable()
     expect(result.dir).toBe(dir)
   })
 
@@ -39,16 +37,14 @@ describe('resolveTargetDir', () => {
 
     const result = await resolveTargetDir(filePath, { mustExist: true })
     expect(result.ok).toBe(false)
-    if (result.ok) return
-
+    if (result.ok) expect.unreachable()
     expect(result.message).toContain('Expected a directory')
   })
 
   test('non-existent dir with mustExist true returns error', async () => {
     const result = await resolveTargetDir(`/tmp/does-not-exist-${Date.now()}`, { mustExist: true })
     expect(result.ok).toBe(false)
-    if (result.ok) return
-
+    if (result.ok) expect.unreachable()
     expect(result.message).toContain('does not exist')
   })
 
@@ -57,8 +53,7 @@ describe('resolveTargetDir', () => {
 
     const result = await resolveTargetDir(dir, { mustExist: false })
     expect(result.ok).toBe(true)
-    if (!result.ok) return
-
+    if (!result.ok) expect.unreachable()
     const { stat } = await import('node:fs/promises')
     const dirStat = await stat(result.dir)
     expect(dirStat.isDirectory()).toBe(true)
@@ -69,8 +64,7 @@ describe('resolveTargetDir', () => {
 
     const result = await resolveTargetDir(dir, { mustExist: true })
     expect(result.ok).toBe(true)
-    if (!result.ok) return
-
+    if (!result.ok) expect.unreachable()
     expect(result.dir).toBe(dir)
     expect(result.display).toBe(dir)
   })
@@ -80,8 +74,7 @@ describe('resolveTargetDir', () => {
 
     const result = await resolveTargetDir(dir, { mustExist: true, facetMustExist: true })
     expect(result.ok).toBe(false)
-    if (result.ok) return
-
+    if (result.ok) expect.unreachable()
     expect(result.message).toContain('facet.json')
   })
 

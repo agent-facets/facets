@@ -8,7 +8,12 @@ export type { BundleResult, ResolvedEntryPoint } from './adapters/bundler.ts'
 export { bundleAdapter, rebundleAdapter, resolveEntryPoint } from './adapters/bundler.ts'
 export type { FirstPartyAdapter } from './adapters/first-party.ts'
 export { FIRST_PARTY_ADAPTERS } from './adapters/first-party.ts'
-export type { AdapterInstallOptions, AdapterInstallResult, AdapterInstallStage } from './adapters/install-service.ts'
+export type {
+  AdapterInstallFailure,
+  AdapterInstallOptions,
+  AdapterInstallResult,
+  AdapterInstallStage,
+} from './adapters/install-service.ts'
 export { installAdapter, locateAndVerifyAdapter } from './adapters/install-service.ts'
 export { loadInstalledAdapters } from './adapters/loader.ts'
 export {
@@ -81,14 +86,17 @@ export type {
   FacetOutcome,
   FacetStage,
   InstallSummary,
+  RollbackOutcome,
   RunInstallFailure,
   RunInstallOptions,
   RunInstallResult,
   StageEvent,
 } from './install/types.ts'
-// loaders
-export type { ResolvedFacetManifest } from './loaders/facet.ts'
-export { FACET_MANIFEST_FILE, loadManifest, resolvePrompts } from './loaders/facet.ts'
+// loaders. Note: `ResolvedFacetManifest` and `FACET_MANIFEST_FILE` are
+// part of `@agent-facets/protocol`'s public surface, not engine's. CLI
+// imports them directly from protocol; we don't re-export them here to
+// avoid two import paths for the same value.
+export { loadManifest, resolvePrompts } from './loaders/facet.ts'
 export { loadServerManifest } from './loaders/server.ts'
 // manifest mutations
 export {
@@ -104,18 +112,36 @@ export type { LoadFacetsJsonResult } from './manifest/project-files.ts'
 export { loadFacetsJson, writeFacetsJson } from './manifest/project-files.ts'
 // registry
 export type {
+  PublishArgs,
+  PublishResult,
+  RegistryClientConfig,
   RegistryError,
   RegistryMetadata,
   RegistryResult,
   RegistrySpec,
+  RetryConfig,
+  TimeoutConfig,
+  WireAssetCounts,
+  WireErrorCode,
+  WireErrorResponse,
+  WireHealthResponse,
+  WireMetadataResponse,
+  WirePackageInfoResponse,
+  WirePackageListItem,
+  WirePackageListResponse,
+  WirePublishResponse,
 } from './registry/index.ts'
 export {
+  createRegistryClient,
   describeVersionSpec,
   downloadAndExtractFacet,
   encodeFacetName,
   getRegistryBaseUrl,
   packFacetSource,
+  publishFacetVersion,
   resolveRegistryMetadataBatch,
+  translateThrownError,
+  translateWireError,
 } from './registry/index.ts'
 // scaffold
 export type { ScaffoldOptions } from './scaffold/index.ts'
@@ -138,19 +164,33 @@ export type { RunSelfUpdateOptions } from './self-update/index.ts'
 export { runSelfUpdate } from './self-update/index.ts'
 export { runCurlInstaller } from './self-update/methods/curl.ts'
 export { spawnInherit } from './self-update/methods/spawn-inherit.ts'
-export type { InstallMethod, MethodKind, UpdateOptions } from './self-update/methods/types.ts'
+export type {
+  InstallMethod,
+  MethodKind,
+  SelfUpdateErrorEvent,
+  SelfUpdateErrorHandler,
+  UpdateOptions,
+} from './self-update/methods/types.ts'
 export { installMethods } from './self-update/registry.ts'
+export type { LatestVersionResult } from './self-update/version-check.ts'
 export { getLatestVersion } from './self-update/version-check.ts'
 // adapter sources
+export type { CloneAdapterGitResult } from './sources/adapter/git.ts'
 export { cloneAdapterGitRepository } from './sources/adapter/git.ts'
+export type { ResolveLocalAdapterResult } from './sources/adapter/local.ts'
 export { resolveLocalAdapterPath } from './sources/adapter/local.ts'
+export type {
+  AssertInsideTempDirResult,
+  DownloadNpmResult,
+  VerifyTarballIntegrityResult,
+} from './sources/adapter/npm.ts'
 export { assertInsideTempDir, downloadNpmPackage, verifyTarballIntegrity } from './sources/adapter/npm.ts'
-export type { ResolvedAdapterSpecifier } from './sources/adapter/specifier.ts'
+export type { ParseAdapterSpecifierResult, ResolvedAdapterSpecifier } from './sources/adapter/specifier.ts'
 export { getBuiltinAdapterNames, parseAdapterSpecifier } from './sources/adapter/specifier.ts'
 // facet sources
 export { parseFacetSource } from './sources/facet/parse-source.ts'
 export { parseVersionSpec } from './sources/facet/parse-version.ts'
-export type { ResolveFacetGitResult } from './sources/facet/resolve-git.ts'
+export type { CloneFacetGitResult } from './sources/facet/resolve-git.ts'
 export { cloneFacetGitSource } from './sources/facet/resolve-git.ts'
 export type { ResolveLocalFacetResult } from './sources/facet/resolve-local.ts'
 export { resolveLocalFacetSource } from './sources/facet/resolve-local.ts'

@@ -1,13 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { encodeFacetName, getRegistryBaseUrl, packFacetSource } from '@agent-facets/engine'
+import { createRegistryClient, packFacetSource, publishFacetVersion } from '@agent-facets/engine'
 import type { Command } from '../../commands.ts'
 import { writeCliError } from '../../util/errors.ts'
-import {
-  isRegistryErrorResponse,
-  type RegistryErrorResponse,
-  translateRegistryError,
-} from '../../util/registry-errors.ts'
+import { docsUrlFor, translateEngineRegistryError } from '../../util/registry-errors.ts'
 
 /**
  * `facet publish` — package the current directory as a `.tar.gz` and POST
@@ -55,7 +51,7 @@ export const publishCommand: Command = {
       writeCliError({
         what: 'FACET_REGISTRY_API_KEY environment variable not set',
         fix: 'export FACET_REGISTRY_API_KEY=<key from registry admin>',
-        docsUrl: 'https://agentfacets.io/errors/E_API_KEY_MISSING',
+        docsUrl: docsUrlFor('E_API_KEY_MISSING'),
       })
       return 1
     }
@@ -84,87 +80,37 @@ export const publishCommand: Command = {
     const tarball = await packFacetSource(projectRoot)
     process.stdout.write(`Packed ${tarball.byteLength} bytes\n`)
 
-    const result = await postPublish({
-      base: getRegistryBaseUrl(),
+    const client = createRegistryClient()
+    const result = await publishFacetVersion(client, {
       name: manifest.name,
       tarball,
       apiKey,
     })
 
-    if (result.kind === 'success') {
-      process.stdout.write(`Published ${manifest.name}@${manifest.version}.\n`)
-      return 0
+    if (!result.ok) {
+      writeCliError(translateEngineRegistryError(result.error))
+      return 1
     }
 
-    if (result.kind === 'version-exists') {
+    if (result.value.kind === 'version-exists') {
       writeCliError({
         what: `version ${manifest.version} already exists in the registry`,
-        detail: result.envelope.error,
+        detail: result.value.envelope.error,
         fix: 'bump `version` in facet.json and try again',
-        docsUrl: result.envelope.docsUrl,
+        docsUrl: result.value.envelope.docsUrl,
       })
       return 1
     }
 
-    writeCliError(result.failure)
-    return 1
-  },
-}
-
-interface PublishArgs {
-  base: string
-  name: string
-  tarball: Uint8Array
-  apiKey: string
-}
-
-type PublishResult =
-  | { kind: 'success' }
-  | { kind: 'version-exists'; envelope: RegistryErrorResponse }
-  | { kind: 'failure'; failure: import('../../util/errors.ts').CliError }
-
-async function postPublish(args: PublishArgs): Promise<PublishResult> {
-  const url = `${args.base}/packages/${encodeFacetName(args.name)}/versions`
-  let response: Response
-  try {
-    response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'x-api-key': args.apiKey,
-        'content-type': 'application/gzip',
-      },
-      body: args.tarball,
-    })
-  } catch (err) {
-    return {
-      kind: 'failure',
-      failure: {
-        what: 'registry temporarily unavailable',
-        detail: err instanceof Error ? err.message : String(err),
-        fix: 'try again in a moment',
-        docsUrl: 'https://agentfacets.io/errors/E_REGISTRY_UNAVAILABLE',
-      },
+    if (result.value.kind === 'structured-error') {
+      // Pass the wire `code` through so the canonical CLI translations
+      // produce the user-facing strings (rather than the server's
+      // free-form `error` text).
+      writeCliError(translateEngineRegistryError(result.value.error, result.value.envelope.code))
+      return 1
     }
-  }
-  if (response.ok) return { kind: 'success' }
 
-  let body: unknown
-  try {
-    body = await response.json()
-  } catch {
-    body = undefined
-  }
-  if (isRegistryErrorResponse(body)) {
-    if (body.code === 'VERSION_EXISTS') return { kind: 'version-exists', envelope: body }
-    return { kind: 'failure', failure: translateRegistryError(body) }
-  }
-  return {
-    kind: 'failure',
-    failure: {
-      what: 'registry returned an unexpected response',
-      detail: `HTTP ${response.status} ${response.statusText}`,
-      fix: 'try again in a moment',
-      docsUrl: 'https://agentfacets.io/errors/E_REGISTRY_UNAVAILABLE',
-    },
-  }
+    process.stdout.write(`Published ${manifest.name}@${manifest.version}.\n`)
+    return 0
+  },
 }
