@@ -1,5 +1,5 @@
 ---
-"@agent-facets/engine": minor
+"@agent-facets/protocol": minor
 "agent-facets": minor
 ---
 
