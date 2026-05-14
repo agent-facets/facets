@@ -12,6 +12,7 @@ pre-commit:
       # "No files were processed".
       exclude:
         - "sst-env.d.ts"
+        - "**/sst-env.d.ts"
       run: bun biome check --write --unsafe {staged_files}
       stage_fixed: true
     biome-lint:
@@ -19,6 +20,7 @@ pre-commit:
       glob: "*.{ts,js,json}"
       exclude:
         - "sst-env.d.ts"
+        - "**/sst-env.d.ts"
       run: bun biome check --error-on-warnings {staged_files}
     circleci-pack:
       priority: 4
