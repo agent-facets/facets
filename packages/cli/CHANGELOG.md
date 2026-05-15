@@ -1,20 +1,64 @@
 # agent-facets
 
+## 0.12.0
+
+### Minor Changes
+
+- [#260](https://github.com/agent-facets/facets/pull/260) [`16cd45a`](https://github.com/agent-facets/facets/commit/16cd45ae260e299eb3b7a1943c843c9998a7859a) Thanks [@eXamadeus](https://github.com/eXamadeus)! - **Breaking:** Consolidate every directory env var into a single
+    `FACET_DIR`, rename the launcher binary override, and move the install
+    advisory lock out of the project root.
+    ## What changed
+    One env var, `FACET_DIR` (default `~/.facet`), now controls every
+    directory the facet CLI writes to disk. Everything lives under it:
+    -   `$FACET_DIR/bin/` — curl-installed binary
+    -   `$FACET_DIR/cache/` — content-addressed cache for fetched payloads
+    -   `$FACET_DIR/adapters/` — installed adapter bundles
+    -   `$FACET_DIR/locks/` — install advisory locks (one file per project,
+        keyed by `<basename>-<sha256(realpath)[:16]>.lock`)
+    The launcher's binary override is renamed:
+    -   `FACET_BIN_PATH` → `FACET_BIN_OVERRIDE`
+    The name carries the semantics: setting it overrides which binary the
+    launcher executes, and `facet self-update` continues to refuse while
+    it's set because overriding means you've taken control of binary
+    placement.
+    The install advisory lock moves out of the project root. Previously it
+    was `<projectRoot>/.facets/.install.lock` (a directory `facet install`
+    silently materialized in every project). Now it lives at
+    `$FACET_DIR/locks/<basename>-<hash>.lock`, keyed by the project's
+    canonical path. The project root stays clean — `facet install` writes
+    nothing next to `facets.json`.
+    ## Removed env vars
+    Hard rename, no aliases. Old names are silently ignored; values fall
+    back to defaults until users rename in their shell rc files or CI configs:
+    -   `FACETS_CACHE_DIR`
+    -   `FACETS_ADAPTERS_DIR`
+    -   `FACET_CACHE_DIR`
+    -   `FACET_ADAPTERS_DIR`
+    -   `FACET_INSTALL_DIR`
+    -   `FACET_BIN_PATH`
+    `FACET_CLI_REGISTRY` and `FACET_VERSION` (used by `install.sh`) are
+    unchanged.
+    ## No migration
+    Existing cached payloads and adapters at `~/.facets/` are not detected,
+    copied, or warned about. The new code reads `$FACET_DIR` only.
+    Users may delete `~/.facets/` at any time; the new code will rebuild
+    cache and adapters on first use.
+
 ## 0.11.0
 
 ### Minor Changes
 
 - [#256](https://github.com/agent-facets/facets/pull/256) [`ce4861f`](https://github.com/agent-facets/facets/commit/ce4861f08193aa80e7c82452284b6d51fb179429) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Generate the registry client from the registry's published OpenAPI spec.
-    The registry server (`facet-cafe`) auto-generates an OpenAPI specification from its actual route handlers; the CLI now consumes that spec as its source of truth. A vendored snapshot of the OpenAPI lives in `@agent-facets/engine`, and TypeScript types are generated from it via `openapi-typescript`. Path strings, params, and response shapes are type-checked end-to-end at every call site through `openapi-fetch`. A registry response field that is renamed, removed, or changes shape now surfaces as a build-time error in a CLI pull request — not a runtime "unexpected response" in front of a user.
-    Run `bun run --cwd packages/engine codegen:registry` to refresh the snapshot. A CI job warns when the snapshot is more than 7 days behind the live registry (configurable via `STALENESS_THRESHOLD_DAYS`).
-    User-visible: `facet search` results now include a one-line asset-count summary per result (e.g., `1 agent, 2 commands, 1 server`) — surfacing data the registry has been returning all along.
-    Behavior corrections during the migration off `registryFetch`:
-    -   POST requests no longer auto-retry on network error (could re-issue an upload that was already received).
-    -   The 10s deadline is now per-call instead of per-attempt — a fully-failing call no longer blocks for up to 16s.
-    -   Caller-supplied abort signals are composed with the deadline via `AbortSignal.any` instead of being silently overwritten.
-    -   Retries honor the server's `Retry-After` header, capped at 5s.
-    -   Non-network errors now surface as `UNEXPECTED_ERROR` instead of being mislabeled as network failures.
-    -   Retry-exhausted errors carry an `attempts` count so user-facing messages can show retry history.
+  The registry server (`facet-cafe`) auto-generates an OpenAPI specification from its actual route handlers; the CLI now consumes that spec as its source of truth. A vendored snapshot of the OpenAPI lives in `@agent-facets/engine`, and TypeScript types are generated from it via `openapi-typescript`. Path strings, params, and response shapes are type-checked end-to-end at every call site through `openapi-fetch`. A registry response field that is renamed, removed, or changes shape now surfaces as a build-time error in a CLI pull request — not a runtime "unexpected response" in front of a user.
+  Run `bun run --cwd packages/engine codegen:registry` to refresh the snapshot. A CI job warns when the snapshot is more than 7 days behind the live registry (configurable via `STALENESS_THRESHOLD_DAYS`).
+  User-visible: `facet search` results now include a one-line asset-count summary per result (e.g., `1 agent, 2 commands, 1 server`) — surfacing data the registry has been returning all along.
+  Behavior corrections during the migration off `registryFetch`:
+  - POST requests no longer auto-retry on network error (could re-issue an upload that was already received).
+  - The 10s deadline is now per-call instead of per-attempt — a fully-failing call no longer blocks for up to 16s.
+  - Caller-supplied abort signals are composed with the deadline via `AbortSignal.any` instead of being silently overwritten.
+  - Retries honor the server's `Retry-After` header, capped at 5s.
+  - Non-network errors now surface as `UNEXPECTED_ERROR` instead of being mislabeled as network failures.
+  - Retry-exhausted errors carry an `attempts` count so user-facing messages can show retry history.
 
 ## 0.10.1
 
