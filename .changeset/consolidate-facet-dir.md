@@ -1,6 +1,5 @@
 ---
 "agent-facets": minor
-"@agent-facets/engine": minor
 ---
 
 **Breaking:** Consolidate every directory env var into a single
