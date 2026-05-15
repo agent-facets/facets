@@ -44,7 +44,7 @@ The system SHALL provide a launcher script that detects the user's platform, arc
 
 #### Scenario: Binary path override via environment variable
 
-- **WHEN** the `FACET_BIN_PATH` environment variable is set
+- **WHEN** the `FACET_BIN_OVERRIDE` environment variable is set
 - **THEN** the system SHALL execute the binary at the specified path
 - **AND** the system SHALL skip all other resolution steps
 
@@ -288,14 +288,14 @@ The system SHALL classify the running CLI binary into exactly one install-method
 
 #### Scenario: Dev-mode environment is classified as local-dev
 
-- **WHEN** the `FACET_BIN_PATH` environment variable is set
+- **WHEN** the `FACET_BIN_OVERRIDE` environment variable is set
 - **THEN** the system SHALL classify the install method as `local-dev`
 - **AND** the system SHALL NOT probe any package managers
 
 #### Scenario: Curl installer location is classified as curl
 
-- **WHEN** the resolved real path of the running binary is under the curl installer's binary directory (`${FACET_INSTALL_DIR:-$HOME/.facet}/bin/`)
-- **AND** `FACET_BIN_PATH` is not set
+- **WHEN** the resolved real path of the running binary is under the curl installer's binary directory (`${FACET_DIR:-$HOME/.facet}/bin/`)
+- **AND** `FACET_BIN_OVERRIDE` is not set
 - **THEN** the system SHALL classify the install method as `curl`
 
 #### Scenario: A JS package manager reports the package is globally installed

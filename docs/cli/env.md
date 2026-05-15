@@ -1,22 +1,68 @@
 ---
 title: Environment Variables
-description: Environment variables to configure the adapter system
+description: Environment variables that configure where facet stores state
 ---
 
 ## Environment Variables
 
-The adapter system uses environment variables to configure its behavior.
+A small set of environment variables controls where the facet CLI writes
+state and which binary the launcher runs. Two are user-facing; the rest
+are for tests and specialized installs.
 
-### `FACETS_ADAPTERS_DIR`
+### `FACET_DIR`
 
-Overrides the base directory used for installed adapters. When set, `install`, `list`, `remove`, and `build` all read from and write to this directory instead of the default `~/.facets/adapters/`.
+The single base directory for everything the facet CLI manages on disk:
+the content-addressed cache, installed adapters, install advisory locks,
+and (for curl installs) the binary itself.
+
+| Subdirectory          | Purpose                                                        |
+| --------------------- | -------------------------------------------------------------- |
+| `$FACET_DIR/bin/`     | Curl-installed binary (`$FACET_DIR/bin/facet`)                 |
+| `$FACET_DIR/cache/`   | Content-addressed cache for fetched facet payloads             |
+| `$FACET_DIR/adapters/`| Installed adapter bundles                                      |
+| `$FACET_DIR/locks/`   | Per-project install advisory locks (one file per project root) |
+
+**Default:** `~/.facet/`. Setting `FACET_DIR` is the override — there are
+no separate per-subsystem env vars.
 
 ```sh
-export FACETS_ADAPTERS_DIR=/path/to/adapters
+export FACET_DIR=/opt/facet
 facet adapter install opencode
-# adapter lands in /path/to/adapters/opencode/adapter.js
+# adapter lands in /opt/facet/adapters/opencode/adapter.js
+# cache lands in /opt/facet/cache/<name>@<version>/
+# install locks land in /opt/facet/locks/<basename>-<hash>.lock
 ```
 
-The directory is created automatically if it does not exist. Set the variable in your shell profile to make the override persist across sessions.
+Whitespace-only values (`FACET_DIR=`, `FACET_DIR=" "`) are treated as
+unset so a misconfigured shell rc doesn't accidentally point everything
+at a relative path. Surrounding whitespace is trimmed.
 
-This is currently the only supported way to change the adapter install location. A per-install `--target-dir` flag is not supported because it would require persistent configuration so that later invocations (such as `facet build`) could locate adapters placed in non-default locations.
+### `FACET_BIN_OVERRIDE`
+
+A direct override of the binary the launcher executes. When set, the
+launcher skips its normal resolution (cached hard-link, platform
+package lookup, etc.) and runs the binary at the override path.
+
+```sh
+export FACET_BIN_OVERRIDE=/home/me/dev/facets/packages/cli/dist/facet
+facet --version   # runs the binary at the override path
+```
+
+Setting `FACET_BIN_OVERRIDE` also disables `facet self-update`: when
+you've overridden which binary runs, self-update has no business writing
+over whatever you pointed it at. Unset the variable to re-enable
+self-update for a real install.
+
+This variable is primarily for CLI development. End users should not set
+it; if you want to control where the curl installer puts the binary, set
+`FACET_DIR` instead.
+
+### `FACET_CLI_REGISTRY`
+
+Overrides the npm registry base URL the curl installer and self-update
+use to fetch CLI tarballs. Defaults to `https://registry.npmjs.org`.
+
+### `FACET_VERSION`
+
+Read by the curl installer (`install.sh`) as an alternative to
+`--version`. If both are set, the flag wins.

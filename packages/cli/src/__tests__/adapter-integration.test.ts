@@ -13,7 +13,7 @@ import { loadInstalledAdapters, placeAdapter, runBuildPipeline, verifyAdapter } 
  * 3. The loaded adapter is passed to `runBuildPipeline` and its `buildAssetMetadata`
  *    is invoked against a matching `adapters` section in the manifest
  *
- * Uses temporary directories so the user's real `~/.facets/adapters/` is never touched.
+ * Uses temporary directories so the user's real `~/.facet/adapters/` is never touched.
  */
 
 /**

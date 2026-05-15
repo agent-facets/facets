@@ -18,7 +18,14 @@ function run(target) {
 }
 
 // Resolution #1: Environment variable override
-const envPath = process.env.FACET_BIN_PATH
+//
+// `FACET_BIN_OVERRIDE` is the user-controlled override of which binary
+// the launcher executes. When set, every resolution step below is
+// skipped — we run the binary at the override path directly. Self-update
+// is also refused while this is set (see self-update/methods/local-dev.ts),
+// because the override means the user has taken control of binary
+// placement and self-update has no business writing over it.
+const envPath = process.env.FACET_BIN_OVERRIDE
 if (envPath) {
   run(envPath)
 }

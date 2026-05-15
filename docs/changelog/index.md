@@ -4,6 +4,91 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-05-14" description="Consolidate everything under FACET_DIR; new FACET_BIN_OVERRIDE; lock moves out of project root" tags={["CLI", "Breaking"]} rss={{
+  title: "Consolidate everything under FACET_DIR and move the install lock out of the project root",
+  description: "One environment variable now controls everything the CLI writes to disk: FACET_DIR (default ~/.facet). The cache, installed adapters, install advisory locks, and the curl-installed binary all live under it. FACET_BIN_OVERRIDE replaces FACET_BIN_PATH as the launcher's binary override (and continues to refuse self-update when set, because overriding means you've taken control). The install advisory lock moves from <projectRoot>/.facets/.install.lock to $FACET_DIR/locks/<basename>-<hash>.lock — facet install no longer writes anything to your project root. Removed env vars (no aliases, hard rename): FACETS_CACHE_DIR, FACETS_ADAPTERS_DIR, FACET_CACHE_DIR, FACET_ADAPTERS_DIR, FACET_INSTALL_DIR, FACET_BIN_PATH. No automatic migration of existing ~/.facets/ data."
+}}>
+  ## One directory, one override
+
+  The facet CLI used to spread its state across four near-identical
+  locations and five separate environment variables. State for the
+  cache, installed adapters, the curl-installed binary, and parallel-
+  install coordination all lived in different places with different
+  overrides. This release collapses everything into a single root: one
+  directory, one environment variable.
+
+  ### The new shape
+
+  Everything the CLI writes to disk now lives under `$FACET_DIR`:
+
+  ```
+  $FACET_DIR/
+    ├── bin/        # curl-installed binary
+    ├── cache/      # content-addressed cache for fetched facets
+    ├── adapters/   # installed adapter bundles
+    └── locks/      # install advisory locks (one file per project)
+  ```
+
+  The default for `$FACET_DIR` is `~/.facet/`. Setting `FACET_DIR` IS
+  the override — there is no separate variable per subsystem. Curl
+  installs put the binary at `$FACET_DIR/bin/facet`; `facet add` and
+  `facet install` resolve cache and adapters relative to the same root.
+
+  ### What changed
+
+  | Before                                  | After                                     |
+  | --------------------------------------- | ----------------------------------------- |
+  | `FACETS_CACHE_DIR`                      | `FACET_DIR` (cache is `$FACET_DIR/cache`) |
+  | `FACETS_ADAPTERS_DIR`                   | `FACET_DIR` (adapters at `$FACET_DIR/adapters`) |
+  | `FACET_INSTALL_DIR`                     | `FACET_DIR` (curl bin at `$FACET_DIR/bin`)|
+  | `FACET_BIN_PATH`                        | `FACET_BIN_OVERRIDE`                      |
+  | `<projectRoot>/.facets/.install.lock`   | `$FACET_DIR/locks/<basename>-<hash>.lock` |
+  | `~/.facets/cache/<name>@<version>/`     | `$FACET_DIR/cache/<name>@<version>/`      |
+  | `~/.facets/adapters/<name>/`            | `$FACET_DIR/adapters/<name>/`             |
+
+  `FACET_CLI_REGISTRY` (npm registry URL override) and `FACET_VERSION`
+  (used by `install.sh`) are unchanged.
+
+  ### `FACET_BIN_OVERRIDE`, by name
+
+  The launcher's binary override gets a new name that carries its own
+  semantics: `FACET_BIN_OVERRIDE`. Setting it means you've taken control
+  of which binary the launcher executes. `facet self-update` continues
+  to refuse while it's set, because if you've overridden the binary
+  path, self-update has no business writing over whatever you pointed
+  it at. The refusal is coupled to the override on purpose.
+
+  Unset `FACET_BIN_OVERRIDE` to re-enable self-update for a real install.
+
+  ### Project root: clean
+
+  The install advisory lock no longer touches your project root.
+  Previously, `facet install` materialized `.facets/.install.lock` next
+  to `facets.json` — a project-local directory that wasn't tracked
+  anywhere and could be left behind on crashes. The lock now lives at
+  `$FACET_DIR/locks/<basename>-<sha256(realpath)[:16]>.lock`, keyed by
+  the project's canonical path so two checkouts of the same repo at
+  different paths (git worktrees, Conductor workspaces) get distinct
+  locks.
+
+  No `.facet.lock` file, no `.facets/` directory, no untracked entry
+  next to your `facets.json`. The project root stays as clean as
+  `facets.json` itself.
+
+  **Breaking:** No automatic migration. The new code reads `$FACET_DIR`
+  only — existing cached payloads and adapters at `~/.facets/` are not
+  detected, copied, or warned about. Old env vars (`FACETS_CACHE_DIR`,
+  `FACETS_ADAPTERS_DIR`, `FACET_CACHE_DIR`, `FACET_ADAPTERS_DIR`,
+  `FACET_INSTALL_DIR`, `FACET_BIN_PATH`) are silently ignored — anyone
+  who had them set in shell rc files or CI configs must rename to
+  `FACET_DIR` / `FACET_BIN_OVERRIDE` or the values stop taking effect.
+  Existing `~/.facets/` data can be deleted at any time; the new code
+  will rebuild cache and adapters on first use.
+
+  See the [environment variables](/cli/env) reference and the
+  [`facet install`](/cli/install) page for the updated paths.
+</Update>
+
 <Update label="2026-05-03" description="@agent-facets/core split into protocol (public, Node-native) and engine (private, Bun-native)" tags={["CLI", "Breaking", "Improvement"]} rss={{
   title: "Package split: @agent-facets/core → @agent-facets/protocol + @agent-facets/engine",
   description: "@agent-facets/core has been split into two packages. @agent-facets/protocol is the new public, Node-native package containing the facet artifact specification: schemas, validators, integrity verification, deterministic archive format, hash algorithm, and version-spec grammar. @agent-facets/engine is the Bun-native CLI machinery, now private to the monorepo. The legacy @agent-facets/core package is no longer published; existing pins to v0.9.1 continue to resolve. CLI behavior is unchanged."

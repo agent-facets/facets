@@ -237,7 +237,7 @@ describe('localDevMethod', () => {
     const code = await localDevMethod.update({ targetVersion: '0.8.0', dryRun: false, onError: cb.onError })
     expect(code).toBe(1)
     expect(cb.stderr()).toContain('disabled in dev mode')
-    expect(cb.stderr()).toContain('FACET_BIN_PATH')
+    expect(cb.stderr()).toContain('FACET_BIN_OVERRIDE')
     // Must not spawn or fetch anything.
     expect(spawnSpy).toHaveBeenCalledTimes(0)
     expect(fetchSpy).toHaveBeenCalledTimes(0)

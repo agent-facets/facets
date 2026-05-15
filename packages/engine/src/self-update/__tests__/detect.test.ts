@@ -36,28 +36,28 @@ function makeDeps(overrides: Partial<DetectDependencies>): Partial<DetectDepende
 }
 
 describe('detectInstallMethod', () => {
-  test('returns local-dev when FACET_BIN_PATH is set', async () => {
-    const result = await detectInstallMethod(makeDeps({ env: { FACET_BIN_PATH: '/dev/build/facet' } }))
+  test('returns local-dev when FACET_BIN_OVERRIDE is set', async () => {
+    const result = await detectInstallMethod(makeDeps({ env: { FACET_BIN_OVERRIDE: '/dev/build/facet' } }))
     expect(result).toBe<MethodKind>('local-dev')
   })
 
-  test('returns local-dev even when FACET_BIN_PATH is set to a curl-shaped path', async () => {
+  test('returns local-dev even when FACET_BIN_OVERRIDE is set to a curl-shaped path', async () => {
     // Edge case: dev short-circuit must win regardless of where the path points.
     const result = await detectInstallMethod(
       makeDeps({
         execPath: '/home/test/.facet/bin/facet',
         homedir: '/home/test',
-        env: { FACET_BIN_PATH: '/home/test/.facet/bin/facet' },
+        env: { FACET_BIN_OVERRIDE: '/home/test/.facet/bin/facet' },
       }),
     )
     expect(result).toBe<MethodKind>('local-dev')
   })
 
-  test('does NOT return local-dev when FACET_BIN_PATH is the empty string', async () => {
+  test('does NOT return local-dev when FACET_BIN_OVERRIDE is the empty string', async () => {
     // Empty string is not "set" per the env-var contract — fall through to detection.
     const result = await detectInstallMethod(
       makeDeps({
-        env: { FACET_BIN_PATH: '' },
+        env: { FACET_BIN_OVERRIDE: '' },
         spawn: fakeSpawn({}),
       }),
     )
@@ -75,11 +75,11 @@ describe('detectInstallMethod', () => {
     expect(result).toBe<MethodKind>('curl')
   })
 
-  test('returns curl when execPath is under FACET_INSTALL_DIR/bin', async () => {
+  test('returns curl when execPath is under $FACET_DIR/bin', async () => {
     const result = await detectInstallMethod(
       makeDeps({
         execPath: '/opt/facet-custom/bin/facet',
-        env: { FACET_INSTALL_DIR: '/opt/facet-custom' },
+        env: { FACET_DIR: '/opt/facet-custom' },
       }),
     )
     expect(result).toBe<MethodKind>('curl')
@@ -271,13 +271,13 @@ describe('detectInstallMethod', () => {
     expect(result).toBe<MethodKind>('unknown')
   })
 
-  test('FACET_INSTALL_DIR with trailing slash still matches the curl bin dir', async () => {
+  test('FACET_DIR with trailing slash still matches the curl bin dir', async () => {
     // path.resolve normalizes the trailing slash; the join+resolve should
     // produce the same dir whether or not the env var ends in /.
     const result = await detectInstallMethod(
       makeDeps({
         execPath: '/opt/facet-custom/bin/facet',
-        env: { FACET_INSTALL_DIR: '/opt/facet-custom/' },
+        env: { FACET_DIR: '/opt/facet-custom/' },
       }),
     )
     expect(result).toBe<MethodKind>('curl')

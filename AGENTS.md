@@ -115,7 +115,7 @@ src/
 ├── adapters/       # Adapter machinery: bundler, placement, verify, loader, install-service, first-party list
 ├── sources/        # Source resolvers: parse + clone/fetch (facet + adapter), Source type, ParseError
 ├── install/        # Install machinery: journal, lockfile-guard, lockfile-io, materialize, run-install orchestrator
-├── cache/          # ~/.facets/cache/ — content-addressed cache for fetched facet payloads
+├── cache/          # ~/.facet/cache/ — content-addressed cache for fetched facet payloads
 ├── manifest/       # Pure JSON mutations + project-files I/O bridge for facets.json
 ├── registry/       # Registry HTTP client: metadata resolution, download/extract, version-spec rendering
 ├── scaffold/       # Scaffold generator: `facet create` machinery

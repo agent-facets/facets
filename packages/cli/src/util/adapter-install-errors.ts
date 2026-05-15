@@ -36,7 +36,7 @@ export function describeAdapterInstallFailure(failure: AdapterInstallFailure): {
       return {
         what: `failed to place adapter "${failure.adapter}"`,
         detail: failure.cause,
-        fix: 'check filesystem permissions on ~/.facets/adapters/',
+        fix: 'check filesystem permissions on ~/.facet/adapters/',
       }
   }
 }

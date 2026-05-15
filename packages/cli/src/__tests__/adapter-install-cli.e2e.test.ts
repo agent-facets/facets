@@ -16,8 +16,8 @@ import { join, resolve } from 'node:path'
  *   - `placeAdapter` / `listInstalledAdapters` / `removeAdapter`
  *   - temp-dir cleanup in the `handleInstall` finally block
  *
- * Isolation: each test sets `FACETS_ADAPTERS_DIR` to a unique `mkdtemp` dir
- * so the user's real `~/.facets/adapters/` is never touched.
+ * Isolation: each test sets `FACET_DIR` to a unique `mkdtemp` dir
+ * so the user's real `~/.facet/adapters/` is never touched.
  */
 
 const CLI_PATH = resolve(import.meta.dir, '../../dist/facet')
@@ -124,7 +124,7 @@ const ADAPTER_SDK_SOURCE = resolve(REPO_ROOT, 'packages/adapter/src/index.ts')
  *   bundle imports a runtime dep that IS present in the source tree's
  *   `node_modules/`, so an in-place verification would succeed — but the
  *   dep would vanish after `placeAdapter()` copies the bundle to
- *   `~/.facets/adapters/<name>/adapter.js`. This is the regression scenario
+ *   `~/.facet/adapters/<name>/adapter.js`. This is the regression scenario
  *   from PR #142 / Codex review. Our fix verifies the bundle in an isolated
  *   temp dir (no neighboring node_modules), so the import correctly fails
  *   and the slow-path fallback kicks in. A working `src/index.ts` is
@@ -215,7 +215,7 @@ export default defineAdapter({
   await mkdir(join(dir, 'dist'), { recursive: true })
   // The published bundle imports an external. If we re-imported it in-place,
   // Node would resolve `fixture-runtime-dep` via `<sourceDir>/node_modules/`
-  // — but after copy to ~/.facets/adapters/<name>/adapter.js, that lookup
+  // — but after copy to ~/.facet/adapters/<name>/adapter.js, that lookup
   // would fail. Our isolation strategy catches that ahead of time.
   await writeFile(join(dir, 'dist/index.mjs'), `import { adapter } from '${externalDep}'\nexport default adapter\n`)
   // Plant the runtime dep in node_modules so an in-place verify would succeed.
@@ -234,9 +234,17 @@ export default defineAdapter({
   await writeFile(join(dir, 'src/index.ts'), workingSource)
 }
 
-/** Create a fresh temp base dir for FACETS_ADAPTERS_DIR. */
-async function makeBaseDir(): Promise<string> {
+/**
+ * Create a fresh temp `FACET_DIR` for the test. The CLI will then materialize
+ * adapters into `<facetDir>/adapters/` automatically.
+ */
+async function makeFacetDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), 'facets-install-cli-test-'))
+}
+
+/** Convenience: the adapters subdirectory inside a given `FACET_DIR`. */
+function adaptersIn(facetDir: string): string {
+  return join(facetDir, 'adapters')
 }
 
 beforeAll(async () => {
@@ -253,16 +261,16 @@ beforeAll(async () => {
 describe('facet adapter install — fast path from extracted npm tarball', () => {
   test('installs from a packed tarball using the prebuilt dist/index.mjs', async () => {
     const extractedDir = await packOpencode()
-    const baseDir = await makeBaseDir()
+    const facetDir = await makeFacetDir()
     try {
-      const result = await runCli(['adapter', 'install', extractedDir], { FACETS_ADAPTERS_DIR: baseDir })
+      const result = await runCli(['adapter', 'install', extractedDir], { FACET_DIR: facetDir })
 
       expect(result.exitCode).toBe(0)
       expect(result.stdout).toContain('Using prebuilt bundle...')
       expect(result.stdout).toContain('Adapter "opencode" installed successfully.')
 
-      // Adapter should be placed at <baseDir>/opencode/adapter.js
-      const installedBundle = join(baseDir, 'opencode', 'adapter.js')
+      // Adapter should be placed at <facetDir>/adapters/opencode/adapter.js
+      const installedBundle = join(adaptersIn(facetDir), 'opencode', 'adapter.js')
       const stats = await stat(installedBundle)
       expect(stats.isFile()).toBe(true)
 
@@ -272,7 +280,7 @@ describe('facet adapter install — fast path from extracted npm tarball', () =>
       const sourceStats = await stat(sourceBundle)
       expect(stats.size).toBe(sourceStats.size)
     } finally {
-      await rm(baseDir, { recursive: true, force: true })
+      await rm(facetDir, { recursive: true, force: true })
     }
   })
 })
@@ -281,35 +289,35 @@ describe('facet adapter install — slow path from unbuilt local source', () => 
   test('bundles from src/index.ts when no prebuilt dist exists', async () => {
     const workDir = await mkdtemp(join(tmpdir(), 'facets-install-cli-fixture-'))
     const adapterDir = join(workDir, 'my-adapter')
-    const baseDir = await makeBaseDir()
+    const facetDir = await makeFacetDir()
     try {
       await makeMinimalAdapter(adapterDir, { kind: 'unbuilt', name: 'my-unbuilt-adapter' })
 
-      const result = await runCli(['adapter', 'install', adapterDir], { FACETS_ADAPTERS_DIR: baseDir })
+      const result = await runCli(['adapter', 'install', adapterDir], { FACET_DIR: facetDir })
 
       expect(result.exitCode).toBe(0)
       // Fast path is NOT used (exports pointed at .ts, classified as 'source')
       expect(result.stdout).not.toContain('Using prebuilt bundle...')
       expect(result.stdout).toContain('Adapter "my-unbuilt-adapter" installed successfully.')
 
-      const installedBundle = join(baseDir, 'my-unbuilt-adapter', 'adapter.js')
+      const installedBundle = join(adaptersIn(facetDir), 'my-unbuilt-adapter', 'adapter.js')
       const stats = await stat(installedBundle)
       expect(stats.isFile()).toBe(true)
       expect(stats.size).toBeGreaterThan(0)
     } finally {
       await rm(workDir, { recursive: true, force: true })
-      await rm(baseDir, { recursive: true, force: true })
+      await rm(facetDir, { recursive: true, force: true })
     }
   })
 
   test("does not pollute the user's source tree with .facet-build artifacts", async () => {
     const workDir = await mkdtemp(join(tmpdir(), 'facets-install-cli-fixture-'))
     const adapterDir = join(workDir, 'my-adapter')
-    const baseDir = await makeBaseDir()
+    const facetDir = await makeFacetDir()
     try {
       await makeMinimalAdapter(adapterDir, { kind: 'unbuilt', name: 'my-clean-adapter' })
 
-      const result = await runCli(['adapter', 'install', adapterDir], { FACETS_ADAPTERS_DIR: baseDir })
+      const result = await runCli(['adapter', 'install', adapterDir], { FACET_DIR: facetDir })
       expect(result.exitCode).toBe(0)
 
       // The slow path must NOT write `.facet-build/` (or any other scratch
@@ -326,7 +334,7 @@ describe('facet adapter install — slow path from unbuilt local source', () => 
       }
     } finally {
       await rm(workDir, { recursive: true, force: true })
-      await rm(baseDir, { recursive: true, force: true })
+      await rm(facetDir, { recursive: true, force: true })
     }
   })
 })
@@ -335,11 +343,11 @@ describe('facet adapter install — slow-path fallback after broken prebuilt', (
   test('falls back to rebundling from source when the prebuilt bundle fails to load', async () => {
     const workDir = await mkdtemp(join(tmpdir(), 'facets-install-cli-fixture-'))
     const adapterDir = join(workDir, 'my-adapter')
-    const baseDir = await makeBaseDir()
+    const facetDir = await makeFacetDir()
     try {
       await makeMinimalAdapter(adapterDir, { kind: 'broken-prebuilt', name: 'my-fallback-adapter' })
 
-      const result = await runCli(['adapter', 'install', adapterDir], { FACETS_ADAPTERS_DIR: baseDir })
+      const result = await runCli(['adapter', 'install', adapterDir], { FACET_DIR: facetDir })
 
       expect(result.exitCode).toBe(0)
       // Fast path is attempted then rejected — both logs should appear
@@ -356,13 +364,13 @@ describe('facet adapter install — slow-path fallback after broken prebuilt', (
       const prebuiltLogCount = (result.stdout.match(/Using prebuilt bundle\.\.\./g) ?? []).length
       expect(prebuiltLogCount).toBe(1)
 
-      const installedBundle = join(baseDir, 'my-fallback-adapter', 'adapter.js')
+      const installedBundle = join(adaptersIn(facetDir), 'my-fallback-adapter', 'adapter.js')
       const stats = await stat(installedBundle)
       expect(stats.isFile()).toBe(true)
       expect(stats.size).toBeGreaterThan(0)
     } finally {
       await rm(workDir, { recursive: true, force: true })
-      await rm(baseDir, { recursive: true, force: true })
+      await rm(facetDir, { recursive: true, force: true })
     }
   })
 })
@@ -372,17 +380,17 @@ describe('facet adapter install — externalized prebuilt (PR #142 P1 regression
     // This guards against the Codex P1 from PR #142: a prebuilt bundle
     // that imports externals which happen to be present in the source
     // tree's `node_modules/` would falsely pass the old in-place
-    // verification, then break later when copied to ~/.facets/adapters.
+    // verification, then break later when copied to ~/.facet/adapters.
     // The fix verifies the bundle in an isolated tmpdir (no node_modules
     // siblings), so unresolved externals fail fast and we fall back to
     // the slow path.
     const workDir = await mkdtemp(join(tmpdir(), 'facets-install-cli-fixture-'))
     const adapterDir = join(workDir, 'my-adapter')
-    const baseDir = await makeBaseDir()
+    const facetDir = await makeFacetDir()
     try {
       await makeMinimalAdapter(adapterDir, { kind: 'externalized-prebuilt', name: 'my-externalized-adapter' })
 
-      const result = await runCli(['adapter', 'install', adapterDir], { FACETS_ADAPTERS_DIR: baseDir })
+      const result = await runCli(['adapter', 'install', adapterDir], { FACET_DIR: facetDir })
 
       expect(result.exitCode).toBe(0)
       // The fast path is tried (the bundle looks OK from package.json's
@@ -397,13 +405,13 @@ describe('facet adapter install — externalized prebuilt (PR #142 P1 regression
       // NOT the original dist/index.mjs. We assert by comparing sizes:
       // the rebundled file inlines `fixture-runtime-dep` so it must be
       // strictly larger than the 2-line stub in dist/index.mjs.
-      const installedBundle = join(baseDir, 'my-externalized-adapter', 'adapter.js')
+      const installedBundle = join(adaptersIn(facetDir), 'my-externalized-adapter', 'adapter.js')
       const installedStats = await stat(installedBundle)
       const sourceStats = await stat(join(adapterDir, 'dist/index.mjs'))
       expect(installedStats.size).toBeGreaterThan(sourceStats.size)
     } finally {
       await rm(workDir, { recursive: true, force: true })
-      await rm(baseDir, { recursive: true, force: true })
+      await rm(facetDir, { recursive: true, force: true })
     }
   })
 })
@@ -424,12 +432,12 @@ describe('facet adapter install — temp dir cleanup (PR #142 follow-up)', () =>
     // delta against this single install should be 0.
     const workDir = await mkdtemp(join(tmpdir(), 'facets-install-cli-fixture-'))
     const adapterDir = join(workDir, 'my-adapter')
-    const baseDir = await makeBaseDir()
+    const facetDir = await makeFacetDir()
     try {
       await makeMinimalAdapter(adapterDir, { kind: 'unbuilt', name: 'cleanup-check-adapter' })
 
       const before = (await readdir(tmpdir())).filter((n) => n.startsWith('facet-adapter-build-'))
-      const result = await runCli(['adapter', 'install', adapterDir], { FACETS_ADAPTERS_DIR: baseDir })
+      const result = await runCli(['adapter', 'install', adapterDir], { FACET_DIR: facetDir })
       const after = (await readdir(tmpdir())).filter((n) => n.startsWith('facet-adapter-build-'))
 
       expect(result.exitCode).toBe(0)
@@ -439,7 +447,7 @@ describe('facet adapter install — temp dir cleanup (PR #142 follow-up)', () =>
       expect(newlyCreated).toEqual([])
     } finally {
       await rm(workDir, { recursive: true, force: true })
-      await rm(baseDir, { recursive: true, force: true })
+      await rm(facetDir, { recursive: true, force: true })
     }
   })
 
@@ -448,12 +456,12 @@ describe('facet adapter install — temp dir cleanup (PR #142 follow-up)', () =>
     // the prebuilt → fail → rebundle path.
     const workDir = await mkdtemp(join(tmpdir(), 'facets-install-cli-fixture-'))
     const adapterDir = join(workDir, 'my-adapter')
-    const baseDir = await makeBaseDir()
+    const facetDir = await makeFacetDir()
     try {
       await makeMinimalAdapter(adapterDir, { kind: 'broken-prebuilt', name: 'cleanup-fallback-adapter' })
 
       const before = (await readdir(tmpdir())).filter((n) => n.startsWith('facet-adapter-build-'))
-      const result = await runCli(['adapter', 'install', adapterDir], { FACETS_ADAPTERS_DIR: baseDir })
+      const result = await runCli(['adapter', 'install', adapterDir], { FACET_DIR: facetDir })
       const after = (await readdir(tmpdir())).filter((n) => n.startsWith('facet-adapter-build-'))
 
       expect(result.exitCode).toBe(0)
@@ -461,16 +469,16 @@ describe('facet adapter install — temp dir cleanup (PR #142 follow-up)', () =>
       expect(newlyCreated).toEqual([])
     } finally {
       await rm(workDir, { recursive: true, force: true })
-      await rm(baseDir, { recursive: true, force: true })
+      await rm(facetDir, { recursive: true, force: true })
     }
   })
 })
 
 describe('facet adapter install + list + remove — round trip', () => {
-  test('all three subcommands share the same FACETS_ADAPTERS_DIR', async () => {
+  test('all three subcommands share the same FACET_DIR', async () => {
     const extractedDir = await packOpencode()
-    const baseDir = await makeBaseDir()
-    const env = { FACETS_ADAPTERS_DIR: baseDir }
+    const facetDir = await makeFacetDir()
+    const env = { FACET_DIR: facetDir }
     try {
       // Install
       const installResult = await runCli(['adapter', 'install', extractedDir], env)
@@ -494,43 +502,43 @@ describe('facet adapter install + list + remove — round trip', () => {
       expect(listAfterResult.stdout).not.toContain('opencode')
 
       // Filesystem confirms
-      const adapterDir = join(baseDir, 'opencode')
+      const adapterDir = join(adaptersIn(facetDir), 'opencode')
       await expect(stat(adapterDir)).rejects.toThrow()
     } finally {
-      await rm(baseDir, { recursive: true, force: true })
+      await rm(facetDir, { recursive: true, force: true })
     }
   })
 })
 
-describe('FACETS_ADAPTERS_DIR redirect', () => {
-  test('install writes to the env-var dir, leaving ~/.facets/adapters untouched', async () => {
+describe('FACET_DIR redirect', () => {
+  test('install writes to the env-var dir, leaving ~/.facet/adapters untouched', async () => {
     const extractedDir = await packOpencode()
-    const baseDir = await makeBaseDir()
+    const facetDir = await makeFacetDir()
     try {
-      // We don't have a safe way to snapshot the user's real ~/.facets/adapters
+      // We don't have a safe way to snapshot the user's real ~/.facet/adapters
       // and compare before/after, so this test asserts the positive: the
       // adapter DEFINITELY lands in the temp dir. Combined with the fact that
       // every other test also uses the env var, this guards against anyone
       // accidentally changing `resolveAdapterBaseDir()` to ignore it.
-      const result = await runCli(['adapter', 'install', extractedDir], { FACETS_ADAPTERS_DIR: baseDir })
+      const result = await runCli(['adapter', 'install', extractedDir], { FACET_DIR: facetDir })
 
       expect(result.exitCode).toBe(0)
 
-      const installedBundle = join(baseDir, 'opencode', 'adapter.js')
+      const installedBundle = join(adaptersIn(facetDir), 'opencode', 'adapter.js')
       const stats = await stat(installedBundle)
       expect(stats.isFile()).toBe(true)
     } finally {
-      await rm(baseDir, { recursive: true, force: true })
+      await rm(facetDir, { recursive: true, force: true })
     }
   })
 })
 
 describe('facet adapter install — error handling', () => {
   test('install from a nonexistent local path exits 1 with a clear error', async () => {
-    const baseDir = await makeBaseDir()
-    const missingPath = join(baseDir, 'does-not-exist')
+    const facetDir = await makeFacetDir()
+    const missingPath = join(facetDir, 'does-not-exist')
     try {
-      const result = await runCli(['adapter', 'install', missingPath], { FACETS_ADAPTERS_DIR: baseDir })
+      const result = await runCli(['adapter', 'install', missingPath], { FACET_DIR: facetDir })
 
       expect(result.exitCode).toBe(1)
       // Error should mention the path or "does not exist" / "not an adapter"
@@ -538,11 +546,11 @@ describe('facet adapter install — error handling', () => {
       expect(combined.toLowerCase()).toMatch(/does not exist|not.*adapter|no such file/)
 
       // No adapter should have been placed
-      const entries = await readdir(baseDir).catch(() => [])
+      const entries = await readdir(adaptersIn(facetDir)).catch(() => [])
       // The temp dir is empty except for any other files tests created (none)
       expect(entries.filter((e) => !e.startsWith('.'))).toEqual([])
     } finally {
-      await rm(baseDir, { recursive: true, force: true })
+      await rm(facetDir, { recursive: true, force: true })
     }
   })
 })

@@ -1,41 +1,31 @@
 import { mkdir, rm } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { facetAdaptersDir } from '../facet-dir.ts'
 
 /** The filename for the bundled adapter file */
 const ADAPTER_BUNDLE_FILENAME = 'adapter.js'
 
 /**
- * Resolves the base directory for installed adapters.
+ * Resolves the base directory for installed adapters: `$FACET_DIR/adapters/`.
  *
- * Precedence:
- *   1. `process.env.FACETS_ADAPTERS_DIR` — if set to a non-empty value,
- *      overrides the default. Whitespace-only values are treated as unset
- *      (and trimmed if otherwise valid) so that misconfigurations like
- *      `FACETS_ADAPTERS_DIR=` or `FACETS_ADAPTERS_DIR=" "` don't cause
- *      installs to land in a relative path.
- *   2. Default: `~/.facets/adapters`.
+ * Delegates to `facetAdaptersDir()` (the single source of truth for the
+ * facet directory tree). No per-subsystem env var — `FACET_DIR` is the
+ * one override. Read on every call so test subprocesses with a different
+ * `FACET_DIR` see the redirected path.
  *
- * The env var is currently the ONLY supported override mechanism. A per-
- * install `--target-dir` CLI flag was considered but deliberately deferred:
- * a per-install override would require persistent config so that later
- * invocations (`facet adapter list`, `facet build`, etc.) could locate
- * adapters installed to a non-default location. That requires real config
- * plumbing which isn't built yet.
- *
- * Because this function reads `process.env` on every call (rather than at
- * module-evaluation time), Bun test runs can redirect the dir per-test by
- * spawning the binary with a different `FACETS_ADAPTERS_DIR` in each
- * subprocess, without the env var being captured by a cached constant.
+ * A per-install `--target-dir` CLI flag was considered but deliberately
+ * deferred: a per-install override would require persistent config so
+ * that later invocations (`facet adapter list`, `facet build`, etc.)
+ * could locate adapters installed to a non-default location. That
+ * requires real config plumbing which isn't built yet.
  */
 function resolveAdapterBaseDir(): string {
-  const override = process.env.FACETS_ADAPTERS_DIR?.trim()
-  return override ? override : join(homedir(), '.facets', 'adapters')
+  return facetAdaptersDir()
 }
 
 /**
  * Returns the default base directory for all installed adapters.
- * Respects `FACETS_ADAPTERS_DIR` if set.
+ * Respects `FACET_DIR` if set.
  */
 export function getAdapterBaseDir(): string {
   return resolveAdapterBaseDir()
@@ -46,7 +36,7 @@ export function getAdapterBaseDir(): string {
  *
  * @param name - The adapter name
  * @param baseDir - Base directory for installed adapters (defaults to the
- *   resolved base dir, which honors `FACETS_ADAPTERS_DIR`).
+ *   resolved base dir, which honors `FACET_DIR`).
  */
 export function getAdapterDir(name: string, baseDir: string = resolveAdapterBaseDir()): string {
   return join(baseDir, name)
@@ -57,7 +47,7 @@ export function getAdapterDir(name: string, baseDir: string = resolveAdapterBase
  *
  * @param name - The adapter name
  * @param baseDir - Base directory for installed adapters (defaults to the
- *   resolved base dir, which honors `FACETS_ADAPTERS_DIR`).
+ *   resolved base dir, which honors `FACET_DIR`).
  */
 export function getAdapterBundlePath(name: string, baseDir: string = resolveAdapterBaseDir()): string {
   return join(baseDir, name, ADAPTER_BUNDLE_FILENAME)
@@ -69,7 +59,7 @@ export function getAdapterBundlePath(name: string, baseDir: string = resolveAdap
  * @param name - The adapter name (used as the directory name)
  * @param bundlePath - Absolute path to the built adapter.js file
  * @param baseDir - Base directory for installed adapters (defaults to the
- *   resolved base dir, which honors `FACETS_ADAPTERS_DIR`).
+ *   resolved base dir, which honors `FACET_DIR`).
  */
 export async function placeAdapter(
   name: string,
@@ -89,7 +79,7 @@ export async function placeAdapter(
  *
  * @param name - The adapter name to remove
  * @param baseDir - Base directory for installed adapters (defaults to the
- *   resolved base dir, which honors `FACETS_ADAPTERS_DIR`).
+ *   resolved base dir, which honors `FACET_DIR`).
  * @returns true if the adapter was removed, false if it didn't exist
  */
 export async function removeAdapter(name: string, baseDir: string = resolveAdapterBaseDir()): Promise<boolean> {
@@ -108,7 +98,7 @@ export async function removeAdapter(name: string, baseDir: string = resolveAdapt
  * Lists the names of all installed adapters by scanning the base directory.
  *
  * @param baseDir - Base directory for installed adapters (defaults to the
- *   resolved base dir, which honors `FACETS_ADAPTERS_DIR`).
+ *   resolved base dir, which honors `FACET_DIR`).
  */
 export async function listInstalledAdapters(baseDir: string = resolveAdapterBaseDir()): Promise<string[]> {
   try {

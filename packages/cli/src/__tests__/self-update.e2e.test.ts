@@ -33,9 +33,9 @@ async function runCli(args: string[], env: Record<string, string> = {}): Promise
     stderr: 'pipe',
     env: {
       ...process.env,
-      // FACET_BIN_PATH set ⇒ detection returns 'local-dev', short-circuiting
+      // FACET_BIN_OVERRIDE set ⇒ detection returns 'local-dev', short-circuiting
       // before any network / subprocess work.
-      FACET_BIN_PATH: CLI_PATH,
+      FACET_BIN_OVERRIDE: CLI_PATH,
       ...env,
     },
   })
@@ -70,7 +70,7 @@ describe('self-update — e2e', () => {
     const result = await runCli(['self-update'])
     expect(result.exitCode).toBe(1)
     expect(result.stderr).toContain('disabled in dev mode')
-    expect(result.stderr).toContain('FACET_BIN_PATH')
+    expect(result.stderr).toContain('FACET_BIN_OVERRIDE')
   })
 
   test('dev-mode refuses self-upgrade alias the same way', async () => {

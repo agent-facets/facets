@@ -98,7 +98,7 @@ describe('install.sh Windows branch', () => {
         env: {
           ...process.env,
           PATH: `${shimDir}:${process.env.PATH ?? ''}`,
-          FACET_INSTALL_DIR: join(shimDir, 'should-not-be-used'),
+          FACET_DIR: join(shimDir, 'should-not-be-used'),
         },
       })
 
@@ -318,7 +318,7 @@ describe('install.sh end-to-end against local registry', () => {
           env: {
             ...process.env,
             FACET_CLI_REGISTRY: registryUrl,
-            FACET_INSTALL_DIR: installDir,
+            FACET_DIR: installDir,
           },
         })
 

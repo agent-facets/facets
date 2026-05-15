@@ -22,37 +22,44 @@ import {
 let cacheDir: string
 let originalEnv: string | undefined
 
+// Note: `FACET_DIR` is the single source of truth for all facet-managed
+// directories. Setting it in these tests redirects the entire tree (cache,
+// adapters, locks, bin) to the temp dir — only the `cache/` subdirectory
+// is exercised here, but the redirection is global.
+let facetDir: string
+
 beforeEach(() => {
-  originalEnv = process.env.FACETS_CACHE_DIR
-  cacheDir = mkdtempSync(join(tmpdir(), 'facet-cache-test-'))
-  process.env.FACETS_CACHE_DIR = cacheDir
+  originalEnv = process.env.FACET_DIR
+  facetDir = mkdtempSync(join(tmpdir(), 'facet-cache-test-'))
+  cacheDir = join(facetDir, 'cache')
+  process.env.FACET_DIR = facetDir
 })
 
 afterEach(() => {
   if (originalEnv === undefined) {
-    delete process.env.FACETS_CACHE_DIR
+    delete process.env.FACET_DIR
   } else {
-    process.env.FACETS_CACHE_DIR = originalEnv
+    process.env.FACET_DIR = originalEnv
   }
-  rmSync(cacheDir, { recursive: true, force: true })
+  rmSync(facetDir, { recursive: true, force: true })
 })
 
 describe('resolveCacheRoot', () => {
-  test('uses FACETS_CACHE_DIR when set', () => {
+  test('uses $FACET_DIR/cache when FACET_DIR is set', () => {
     expect(resolveCacheRoot()).toBe(cacheDir)
   })
 
-  test('treats whitespace-only env as unset', () => {
-    process.env.FACETS_CACHE_DIR = '   '
+  test('treats whitespace-only FACET_DIR as unset', () => {
+    process.env.FACET_DIR = '   '
     const result = resolveCacheRoot()
     expect(result).not.toBe('   ')
-    expect(result.endsWith(join('.facets', 'cache'))).toBe(true)
+    expect(result.endsWith(join('.facet', 'cache'))).toBe(true)
   })
 
-  test('treats empty env as unset', () => {
-    process.env.FACETS_CACHE_DIR = ''
+  test('treats empty FACET_DIR as unset', () => {
+    process.env.FACET_DIR = ''
     const result = resolveCacheRoot()
-    expect(result.endsWith(join('.facets', 'cache'))).toBe(true)
+    expect(result.endsWith(join('.facet', 'cache'))).toBe(true)
   })
 })
 

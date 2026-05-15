@@ -19,10 +19,11 @@ function safeRealpath(p: string): string {
 
 /**
  * The expected binary location after a curl install — same expression the
- * installer script uses (`${FACET_INSTALL_DIR:-$HOME/.facet}/bin/facet`).
+ * installer script uses (`${FACET_DIR:-$HOME/.facet}/bin/facet`).
  */
 function curlBinaryPath(): string {
-  const installRoot = process.env.FACET_INSTALL_DIR ?? join(homedir(), '.facet')
+  const trimmed = process.env.FACET_DIR?.trim()
+  const installRoot = trimmed && trimmed.length > 0 ? trimmed : join(homedir(), '.facet')
   return join(installRoot, 'bin', 'facet')
 }
 
