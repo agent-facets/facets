@@ -24,7 +24,7 @@ async function runLauncher(args: string[] = [], env: Record<string, string> = {}
   return { stdout, stderr, exitCode }
 }
 
-describe('launcher — FACET_BIN_PATH override', () => {
+describe('launcher — FACET_BIN_OVERRIDE', () => {
   let tmpDir: string
   let mockBinaryPath: string
 
@@ -39,14 +39,14 @@ describe('launcher — FACET_BIN_PATH override', () => {
     await rm(tmpDir, { recursive: true, force: true })
   })
 
-  test('runs the binary at FACET_BIN_PATH', async () => {
-    const result = await runLauncher(['--version'], { FACET_BIN_PATH: mockBinaryPath })
+  test('runs the binary at FACET_BIN_OVERRIDE', async () => {
+    const result = await runLauncher(['--version'], { FACET_BIN_OVERRIDE: mockBinaryPath })
     expect(result.stdout).toContain('mock-facet:')
     expect(result.exitCode).toBe(0)
   })
 
   test('forwards arguments to the target binary', async () => {
-    const result = await runLauncher(['build', '--force', 'my-dir'], { FACET_BIN_PATH: mockBinaryPath })
+    const result = await runLauncher(['build', '--force', 'my-dir'], { FACET_BIN_OVERRIDE: mockBinaryPath })
     expect(result.stdout).toContain('build --force my-dir')
   })
 })
@@ -67,7 +67,7 @@ describe('launcher — forwards exit code', () => {
   })
 
   test('exits with the same code as the target binary', async () => {
-    const result = await runLauncher([], { FACET_BIN_PATH: exitingBinaryPath })
+    const result = await runLauncher([], { FACET_BIN_OVERRIDE: exitingBinaryPath })
     expect(result.exitCode).toBe(42)
   })
 })
@@ -78,7 +78,7 @@ describe('launcher — no binary found', () => {
 
   beforeAll(async () => {
     // Create an isolated copy of the launcher in a directory with no node_modules
-    // and no .facet, so resolution falls through to the error path.
+    // and no cached .facet binary, so resolution falls through to the error path.
     tmpDir = await mkdtemp(join(tmpdir(), 'launcher-nobin-'))
     isolatedLauncherPath = join(tmpDir, 'facet')
     await Bun.write(isolatedLauncherPath, await Bun.file(LAUNCHER_PATH).text())
@@ -91,7 +91,7 @@ describe('launcher — no binary found', () => {
 
   test('prints error with candidate package names and exits 1', async () => {
     const proc = Bun.spawn(['node', isolatedLauncherPath], {
-      env: { ...process.env, FACET_BIN_PATH: undefined },
+      env: { ...process.env, FACET_BIN_OVERRIDE: undefined },
       stdout: 'pipe',
       stderr: 'pipe',
     })

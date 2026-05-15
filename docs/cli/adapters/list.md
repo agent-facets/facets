@@ -11,20 +11,24 @@ tag: facet adapter list
 facet adapter list
 ```
 
-Lists all installed adapters by scanning `~/.facet/adapters/`.
+Lists all installed adapters by scanning the adapter base directory
+(default `$FACET_DIR/adapters/`, where `FACET_DIR` defaults to
+`~/.facet`).
 
 ## Environment variables
 
-### `FACET_ADAPTERS_DIR`
+### `FACET_DIR`
 
-Overrides the base directory used for installed adapters. When set, `install`, `list`, `remove`, and `build` all read from and write to this directory instead of the default `~/.facet/adapters/`.
+Overrides the facet directory root. The adapter base directory is
+always `$FACET_DIR/adapters/`. See the [environment variables
+reference](/cli/env) for the full layout.
 
 ```sh
-export FACET_ADAPTERS_DIR=/path/to/adapters
+export FACET_DIR=/opt/facet
 facet adapter install opencode
-# adapter lands in /path/to/adapters/opencode/adapter.js
+facet adapter list
+# lists adapters in /opt/facet/adapters/
 ```
 
-The directory is created automatically if it does not exist. Set the variable in your shell profile to make the override persist across sessions.
-
-This is currently the only supported way to change the adapter install location. A per-install `--target-dir` flag is not supported because it would require persistent configuration so that later invocations (such as `facet build`) could locate adapters placed in non-default locations.
+The directory is created automatically if it does not exist. Default is
+`~/.facet`.

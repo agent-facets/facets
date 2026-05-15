@@ -127,24 +127,34 @@ function buildLocalFixtureWithSkills(name: string, skills: string[], version = '
   return repo
 }
 
+// Single `FACET_DIR` tmpdir for the whole facet tree (cache + locks + adapters
+// + bin). Only cache and locks are exercised by these tests; adapters and bin
+// are unused. The `cacheDir` alias is preserved for any test that asserts on
+// the cache path directly.
+let facetDir: string
 let cacheDir: string
-let originalCacheEnv: string | undefined
+let originalFacetDir: string | undefined
 
 beforeEach(() => {
   projectRoot = realpathSync(mkdtempSync(join(tmpdir(), 'run-install-test-')))
-  cacheDir = realpathSync(mkdtempSync(join(tmpdir(), 'run-install-cache-')))
-  originalCacheEnv = process.env.FACET_CACHE_DIR
-  process.env.FACET_CACHE_DIR = cacheDir
+  facetDir = realpathSync(mkdtempSync(join(tmpdir(), 'run-install-facet-')))
+  cacheDir = join(facetDir, 'cache')
+  // Tests that seed the cache directly (e.g., via `mkdtempSync(join(cacheDir, ...))`)
+  // need the subdirectory to exist. The CLI's cache layer would create it
+  // lazily on first put, but seeding fixtures bypasses that path.
+  mkdirSync(cacheDir, { recursive: true })
+  originalFacetDir = process.env.FACET_DIR
+  process.env.FACET_DIR = facetDir
 })
 
 afterEach(() => {
-  if (originalCacheEnv === undefined) {
-    delete process.env.FACET_CACHE_DIR
+  if (originalFacetDir === undefined) {
+    delete process.env.FACET_DIR
   } else {
-    process.env.FACET_CACHE_DIR = originalCacheEnv
+    process.env.FACET_DIR = originalFacetDir
   }
   rmSync(projectRoot, { recursive: true, force: true })
-  rmSync(cacheDir, { recursive: true, force: true })
+  rmSync(facetDir, { recursive: true, force: true })
 })
 
 describe('runInstall — facets.json discovery', () => {

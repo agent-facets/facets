@@ -2,19 +2,23 @@ import type { InstallMethod } from './types.ts'
 
 /**
  * Dev-mode refusal. Per Decision 8, a dev who triggers `facet self-update`
- * with `FACET_BIN_PATH` set sees a clear message via the `onError` callback
- * (the CLI wires that to stderr) and gets a non-zero exit. Better to let
- * the red exit indicator surface a misconfigured CI job than to silently
- * no-op.
+ * with `FACET_BIN_OVERRIDE` set sees a clear message via the `onError`
+ * callback (the CLI wires that to stderr) and gets a non-zero exit. Better
+ * to let the red exit indicator surface a misconfigured CI job than to
+ * silently no-op.
+ *
+ * The refusal is coupled to the override env var by design: if the user
+ * has overridden which binary the launcher runs, self-update has no
+ * business writing over whatever's at that override path.
  */
 export const localDevMethod: InstallMethod = {
   kind: 'local-dev',
-  displayName: 'dev mode (FACET_BIN_PATH set)',
+  displayName: 'dev mode (FACET_BIN_OVERRIDE set)',
   describe: () => '(refused — dev mode)',
   update: async ({ onError }) => {
     onError?.({
       kind: 'message',
-      line: 'facet self-update is disabled in dev mode (FACET_BIN_PATH is set).\n',
+      line: 'facet self-update is disabled in dev mode (FACET_BIN_OVERRIDE is set).\n',
     })
     return 1
   },

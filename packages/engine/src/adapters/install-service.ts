@@ -182,7 +182,7 @@ const noopCleanup = async (): Promise<void> => {}
  * find unresolved externals via the source tree's neighboring
  * `node_modules/`, falsely reporting success — only for the bundle to fail
  * to load later, after `placeAdapter()` copies it to
- * `~/.facet/adapters/<name>/adapter.js` where no such `node_modules` exists.
+ * `$FACET_DIR/adapters/<name>/adapter.js` where no such `node_modules` exists.
  */
 export async function locateAndVerifyAdapter(
   sourceDir: string,

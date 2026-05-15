@@ -641,7 +641,7 @@ async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
 
       // Stage under the cache root (not the OS tmp dir). cachePutVerified's
       // final rename into the cache slot must be atomic, which requires the
-      // staging dir and the slot to share a filesystem. If FACET_CACHE_DIR
+      // staging dir and the slot to share a filesystem. If FACET_DIR
       // points at a volume different from /tmp, mkdtemp under tmpdir() would
       // make the rename throw EXDEV.
       const tempDir = cacheStagingDir()

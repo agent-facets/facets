@@ -71,11 +71,13 @@ export type {
   ReconciliationItem,
   ReconciliationResolution,
 } from './edit/types.ts'
+// facet-dir — single source of truth for the facet directory tree
+export { facetAdaptersDir, facetBinDir, facetCacheDir, facetLocksDir, resolveFacetDir } from './facet-dir.ts'
 // install machinery
 export type { JournalEntry, JournalRollbackOptions, JournalRollbackResult } from './install/journal.ts'
 export { InstallJournal } from './install/journal.ts'
 export type { AcquireLockError, AcquireLockResult, InstallLock } from './install/lockfile-guard.ts'
-export { acquireInstallLock } from './install/lockfile-guard.ts'
+export { acquireInstallLock, computeLockPath } from './install/lockfile-guard.ts'
 export type { LoadLockfileResult } from './install/lockfile-io.ts'
 export { emptyLockfile, FACETS_LOCK_FILE, loadLockfile, writeLockfile } from './install/lockfile-io.ts'
 export type { MaterializeOptions, MaterializeResult } from './install/materialize.ts'

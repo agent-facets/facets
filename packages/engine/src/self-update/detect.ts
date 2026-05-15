@@ -21,7 +21,7 @@ const PROBE_TIMEOUT_MS = 3000
 export interface DetectDependencies {
   /** Path of the running binary. Defaults to `process.execPath`. */
   execPath: string
-  /** Process environment. Reads `FACET_BIN_PATH` and `FACET_INSTALL_DIR`. */
+  /** Process environment. Reads `FACET_BIN_OVERRIDE` and `FACET_DIR`. */
   env: NodeJS.ProcessEnv
   /** User home directory. Defaults to `os.homedir()`. */
   homedir: string
@@ -128,7 +128,7 @@ function orderedProbes(execPath: string): readonly Probe[] {
  *
  * Algorithm:
  *
- *   1. `FACET_BIN_PATH` set → `local-dev` (dev mode short-circuit).
+ *   1. `FACET_BIN_OVERRIDE` set → `local-dev` (dev mode short-circuit).
  *   2. Resolved binary lives under the curl install dir → `curl`.
  *   3. Run all four package-manager probes in parallel; the one whose
  *      output mentions `agent-facets` wins. Path hints reorder ties.
@@ -147,7 +147,11 @@ export async function detectInstallMethod(deps?: Partial<DetectDependencies>): P
   }
 
   // ── 1. Dev mode short-circuit ────────────────────────────────────────
-  if (d.env.FACET_BIN_PATH !== undefined && d.env.FACET_BIN_PATH !== '') {
+  // `FACET_BIN_OVERRIDE` overrides the binary the launcher executes.
+  // When set, the user has taken control of which binary runs, so
+  // self-update must refuse — we don't know what's at the override path
+  // and have no business writing over it.
+  if (d.env.FACET_BIN_OVERRIDE !== undefined && d.env.FACET_BIN_OVERRIDE !== '') {
     return 'local-dev'
   }
 
@@ -165,7 +169,12 @@ export async function detectInstallMethod(deps?: Partial<DetectDependencies>): P
   }
 
   // ── 2. Curl-path match ──────────────────────────────────────────────
-  const installRoot = d.env.FACET_INSTALL_DIR ?? join(d.homedir, '.facet')
+  // The curl installer puts the binary at `$FACET_DIR/bin/facet`.
+  // Default `$FACET_DIR` is `$HOME/.facet`. Whitespace-only env values
+  // fall back to the default — matches `resolveFacetDir()` semantics in
+  // `facet-dir.ts` for the rest of the system.
+  const trimmedFacetDir = d.env.FACET_DIR?.trim()
+  const installRoot = trimmedFacetDir && trimmedFacetDir.length > 0 ? trimmedFacetDir : join(d.homedir, '.facet')
   const curlBinDir = pathResolve(installRoot, 'bin')
   if (dirname(resolvedExec) === curlBinDir) {
     return 'curl'

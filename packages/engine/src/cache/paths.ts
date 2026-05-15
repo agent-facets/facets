@@ -1,34 +1,17 @@
 import { createHash } from 'node:crypto'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { facetCacheDir } from '../facet-dir.ts'
 import type { CacheIdentity } from './types.ts'
 
 /**
- * Default cache root: `~/.facet/cache/`.
+ * Resolve the cache root directory: `$FACET_DIR/cache/`.
  *
- * Computed lazily from `homedir()` so test harnesses can override
- * `HOME` (or set `FACET_CACHE_DIR`) without import-order surprises.
- */
-function defaultCacheRoot(): string {
-  return join(homedir(), '.facet', 'cache')
-}
-
-/**
- * Resolve the cache root directory.
- *
- * Override precedence (matches the `FACET_ADAPTERS_DIR` pattern in
- * `placement.ts` — read on every call so per-test subprocess overrides
- * work as expected):
- *
- *   1. `FACET_CACHE_DIR` env var (trimmed; whitespace-only treated as unset).
- *   2. Default: `~/.facet/cache/`.
+ * Delegates to `facetCacheDir()` (the single source of truth for the
+ * facet directory tree). No per-subsystem env var — `FACET_DIR` is the
+ * one override.
  */
 export function resolveCacheRoot(): string {
-  const override = process.env.FACET_CACHE_DIR?.trim()
-  if (override !== undefined && override.length > 0) {
-    return override
-  }
-  return defaultCacheRoot()
+  return facetCacheDir()
 }
 
 /**

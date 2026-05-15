@@ -73,20 +73,21 @@ your `$PATH`.
 
 ## Dev mode
 
-When the `FACET_BIN_PATH` environment variable is set (typical in a
+When the `FACET_BIN_OVERRIDE` environment variable is set (typical in a
 workspace shell where you're testing changes via `bun dev`),
 `facet self-update` refuses with a clear stderr message and exits with
-code `1`. This is intentional: a developer running `self-update` from a
-checkout should not silently update a different `facet` binary. Unset
-`FACET_BIN_PATH` to update a real install.
+code `1`. This is intentional: when you've overridden which binary the
+launcher executes, you've taken control of binary placement — self-update
+has no business writing over the path you pointed it at. Unset
+`FACET_BIN_OVERRIDE` to update a real install.
 
 ## Environment variables
 
-| Variable             | Purpose                                                      |
-| -------------------- | ------------------------------------------------------------ |
-| `FACET_CLI_REGISTRY` | Override the npm registry used to look up the latest version |
-| `FACET_INSTALL_DIR`  | Override the curl installer's binary directory               |
-| `FACET_BIN_PATH`     | Dev-mode override; refuses self-update when set              |
+| Variable             | Purpose                                                                              |
+| -------------------- | ------------------------------------------------------------------------------------ |
+| `FACET_CLI_REGISTRY` | Override the npm registry used to look up the latest version                         |
+| `FACET_DIR`          | Override the facet directory root (default `~/.facet`); the curl bin lives at `$FACET_DIR/bin/facet` |
+| `FACET_BIN_OVERRIDE` | Override which binary the launcher executes; setting this also refuses self-update   |
 
 ## Exit codes
 

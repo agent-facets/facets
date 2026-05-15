@@ -71,15 +71,16 @@ Options:
 
 Environment:
   FACET_VERSION             Same as --version (flag wins if both are set)
-  FACET_INSTALL_DIR         Install root (default: \$HOME/.facet)
-                            Binary goes in <dir>/bin/facet
+  FACET_DIR                 Facet directory root (default: \$HOME/.facet)
+                            Binary goes in <dir>/bin/facet; cache, adapters,
+                            and install locks share the same root.
   FACET_CLI_REGISTRY        npm registry base URL for CLI tarballs
                             (default: https://registry.npmjs.org)
 
 Examples:
   curl -fsSL https://agentfacets.io/install | bash
   curl -fsSL https://agentfacets.io/install | bash -s -- --version 0.5.3
-  FACET_INSTALL_DIR=/opt/facet curl -fsSL https://agentfacets.io/install | bash
+  FACET_DIR=/opt/facet curl -fsSL https://agentfacets.io/install | bash
   ./install.sh --binary ./dist/facet
 EOF
 }
@@ -263,7 +264,7 @@ esac
 # Install paths
 # ---------------------------------------------------------------------------
 
-install_root=${FACET_INSTALL_DIR:-$HOME/.facet}
+install_root=${FACET_DIR:-$HOME/.facet}
 install_bin=$install_root/bin
 install_path=$install_bin/facet
 

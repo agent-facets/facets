@@ -30,8 +30,9 @@ existing manifest. Both run the same flow internally.
 
 4. **Cache lookup.** Resolved content is keyed by `<name>@<version>` (or
    `<name>@<commit>` for git, `<name>@local-<hash>` for local) under
-   `~/.facet/cache/`. The cache root can be overridden with the
-   `FACET_CACHE_DIR` environment variable. Cached content is treated as
+   `$FACET_DIR/cache/` (default `~/.facet/cache/`). The cache root is
+   part of the facet directory tree; set the `FACET_DIR` environment
+   variable to relocate it. Cached content is treated as
    trusted — never re-hashed on read.
 
 5. **Verify integrity.** Before any asset is written:

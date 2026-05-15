@@ -12,7 +12,7 @@ facet adapter install <specifier>
 
 Installs an adapter from the given specifier. An adapter is way for the `facet` system to talk to external tools, most often AI coding harnesses (OpenCode, Claude Code, Codex, etc.). Adapters define where assets and configuration live on disk.
 
-The `install` flow downloads the source, bundles it into a self-contained `adapter.js`, verifies it exports a valid adapter, and places it in `~/.facet/adapters/<name>/`.
+The `install` flow downloads the source, bundles it into a self-contained `adapter.js`, verifies it exports a valid adapter, and places it in the adapter base directory (default `$FACET_DIR/adapters/<name>/`, where `FACET_DIR` defaults to `~/.facet`).
 
 **Specifier formats:**
 
@@ -37,20 +37,26 @@ The `install` flow downloads the source, bundles it into a self-contained `adapt
 facet adapter remove <name>
 ```
 
-Removes an installed adapter by deleting its directory from `~/.facet/adapters/`.
+Removes an installed adapter by deleting its directory from the adapter base directory (default `$FACET_DIR/adapters/`, where `FACET_DIR` defaults to `~/.facet`).
 
 ## Environment variables
 
-### `FACET_ADAPTERS_DIR`
+### `FACET_DIR`
 
-Overrides the base directory used for installed adapters. When set, `install`, `list`, `remove`, and `build` all read from and write to this directory instead of the default `~/.facet/adapters/`.
+Overrides the facet directory root. The adapter base directory is always
+`$FACET_DIR/adapters/`. `install`, `list`, `remove`, and `build` all
+resolve through this single override.
 
 ```sh
-export FACET_ADAPTERS_DIR=/path/to/adapters
+export FACET_DIR=/opt/facet
 facet adapter install opencode
-# adapter lands in /path/to/adapters/opencode/adapter.js
+# adapter lands in /opt/facet/adapters/opencode/adapter.js
 ```
 
-The directory is created automatically if it does not exist. Set the variable in your shell profile to make the override persist across sessions.
+The directory is created automatically if it does not exist. Default is
+`~/.facet`. See the [environment variables reference](/cli/env) for the
+full layout.
 
-This is currently the only supported way to change the adapter install location. A per-install `--target-dir` flag is not supported because it would require persistent configuration so that later invocations (such as `facet build`) could locate adapters placed in non-default locations.
+A per-install `--target-dir` flag is not supported because it would
+require persistent configuration so that later invocations (such as
+`facet build`) could locate adapters placed in non-default locations.

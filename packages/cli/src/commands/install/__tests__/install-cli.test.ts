@@ -11,7 +11,7 @@ let originalCwd: string
 let fakeHome: string
 let originalHome: string | undefined
 let adaptersDir: string
-let originalAdaptersDir: string | undefined
+let originalFacetDir: string | undefined
 
 function buildLocalFixture(name: string, version = '0.1.0'): string {
   const repo = realpathSync(mkdtempSync(join(projectRoot, 'fixture-')))
@@ -69,13 +69,16 @@ export default {
 beforeEach(() => {
   originalCwd = process.cwd()
   originalHome = process.env.HOME
-  originalAdaptersDir = process.env.FACET_ADAPTERS_DIR
+  originalFacetDir = process.env.FACET_DIR
   projectRoot = realpathSync(mkdtempSync(join(tmpdir(), 'facet-install-cli-')))
   fakeHome = realpathSync(mkdtempSync(join(tmpdir(), 'facet-home-')))
-  adaptersDir = join(fakeHome, '.facet', 'adapters')
+  // `FACET_DIR` redirects the entire facet tree (cache, adapters, locks, bin)
+  // into the test temp dir. Adapter setup uses the derived adapters/ subdir.
+  const facetDir = join(fakeHome, '.facet')
+  adaptersDir = join(facetDir, 'adapters')
   mkdirSync(adaptersDir, { recursive: true })
   process.env.HOME = fakeHome
-  process.env.FACET_ADAPTERS_DIR = adaptersDir
+  process.env.FACET_DIR = facetDir
   process.chdir(projectRoot)
 })
 
@@ -83,8 +86,8 @@ afterEach(() => {
   process.chdir(originalCwd)
   if (originalHome === undefined) delete process.env.HOME
   else process.env.HOME = originalHome
-  if (originalAdaptersDir === undefined) delete process.env.FACET_ADAPTERS_DIR
-  else process.env.FACET_ADAPTERS_DIR = originalAdaptersDir
+  if (originalFacetDir === undefined) delete process.env.FACET_DIR
+  else process.env.FACET_DIR = originalFacetDir
   rmSync(projectRoot, { recursive: true, force: true })
   rmSync(fakeHome, { recursive: true, force: true })
 })
