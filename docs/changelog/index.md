@@ -4,6 +4,72 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-05-14" description="Unify on a single .facet directory and FACET_* env vars" tags={["CLI", "Breaking"]} rss={{
+  title: "Unify on a single .facet directory and FACET_* environment variables",
+  description: "User-home paths and env vars drop the plural: ~/.facets/cache → ~/.facet/cache, ~/.facets/adapters → ~/.facet/adapters, FACETS_CACHE_DIR → FACET_CACHE_DIR, FACETS_ADAPTERS_DIR → FACET_ADAPTERS_DIR. The project-local install lock moves from a .facets/.install.lock directory to a single .facet.lock file, so facet install no longer creates a directory in your project root. No automatic migration: users with existing data at ~/.facets/ should delete it manually, and anyone with the old env vars set in shell rc files must rename them."
+}}>
+  ## One `.facet`, singular
+
+  The facet CLI used four nearly-identical names for nearby things:
+  `~/.facets/cache/` for fetched payloads, `~/.facets/adapters/` for
+  installed adapters, `~/.facet/bin/` for the curl-installed binary, and
+  `<projectRoot>/.facets/.install.lock` for parallel-install coordination.
+  Three of those used the plural; one used the singular. Three lived in
+  the home directory; one materialized as a `.facets/` directory inside
+  every project the moment `facet install` ran. The naming was confusing
+  and the project-local directory was the worst offender — installs
+  silently created a directory in your tree that wasn't tracked anywhere
+  else.
+
+  This release unifies on `.facet` (singular) and consolidates the home-
+  directory tree into one root.
+
+  ### What moved
+
+  | Before                                 | After                              |
+  | -------------------------------------- | ---------------------------------- |
+  | `~/.facets/cache/<name>@<version>/`    | `~/.facet/cache/<name>@<version>/` |
+  | `~/.facets/adapters/<name>/`           | `~/.facet/adapters/<name>/`        |
+  | `FACETS_CACHE_DIR`                     | `FACET_CACHE_DIR`                  |
+  | `FACETS_ADAPTERS_DIR`                  | `FACET_ADAPTERS_DIR`               |
+  | `<projectRoot>/.facets/.install.lock`  | `<projectRoot>/.facet.lock`        |
+
+  `~/.facet/bin/` (the curl installer's binary location) was already
+  correct and is unchanged. `FACET_INSTALL_DIR` and `FACET_BIN_PATH` are
+  unchanged.
+
+  ### Project root: no more `.facets/` directory
+
+  The install lock used to live at `<projectRoot>/.facets/.install.lock`,
+  which meant `facet install` had to create a `.facets/` directory in the
+  project root and leave it sitting there. The lock now lives at
+  `<projectRoot>/.facet.lock` — a single file next to `facets.json`. No
+  project-local directory gets created at install time.
+
+  If a future feature legitimately needs a project-local override config
+  directory, we'll introduce `.facet/` (singular) with intentional design.
+  Until then, an install leaves no stray directory behind.
+
+  **Breaking:** No automatic migration. The new code looks at
+  `~/.facet/` only — existing cached payloads and installed adapters at
+  `~/.facets/` are not detected, copied, or warned about. To preserve
+  your cache and adapters, move them yourself:
+
+  ```sh
+  mv ~/.facets ~/.facet
+  ```
+
+  Otherwise delete `~/.facets/` whenever you want; the new code will
+  rebuild the cache on next install and you can re-install adapters with
+  `facet adapter install`. Anyone with `FACETS_CACHE_DIR` or
+  `FACETS_ADAPTERS_DIR` set in their shell rc files must rename them to
+  `FACET_CACHE_DIR` and `FACET_ADAPTERS_DIR` respectively, or the values
+  will be silently ignored.
+
+  See the [environment variables](/cli/env) reference and the
+  [`facet install`](/cli/install) page for the updated paths.
+</Update>
+
 <Update label="2026-05-03" description="@agent-facets/core split into protocol (public, Node-native) and engine (private, Bun-native)" tags={["CLI", "Breaking", "Improvement"]} rss={{
   title: "Package split: @agent-facets/core → @agent-facets/protocol + @agent-facets/engine",
   description: "@agent-facets/core has been split into two packages. @agent-facets/protocol is the new public, Node-native package containing the facet artifact specification: schemas, validators, integrity verification, deterministic archive format, hash algorithm, and version-spec grammar. @agent-facets/engine is the Bun-native CLI machinery, now private to the monorepo. The legacy @agent-facets/core package is no longer published; existing pins to v0.9.1 continue to resolve. CLI behavior is unchanged."

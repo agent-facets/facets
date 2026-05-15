@@ -38,7 +38,7 @@ would be replaced. The protocol it depends on would not.
   into a CLI workflow with progress events.
 - **`compressArchive`** — gzip is delivery, not part of the integrity
   contract. Kept here so protocol stays gzip-implementation-agnostic.
-- **Cache** — `~/.facets/cache/` layout, identity computation, atomic
+- **Cache** — `~/.facet/cache/` layout, identity computation, atomic
   put, lookup. Developer-machine state.
 - **Manifest mutations + project-files I/O** — the JSON rewrites for
   `facets.json` and the disk bridge that reads/writes it. Each CLI has

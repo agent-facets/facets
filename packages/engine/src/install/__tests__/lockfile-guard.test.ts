@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { acquireInstallLock } from '../lockfile-guard.ts'
@@ -15,12 +15,12 @@ afterEach(() => {
 })
 
 describe('acquireInstallLock', () => {
-  test('creates .facets/.install.lock and succeeds on first acquire', () => {
+  test('creates .facet.lock and succeeds on first acquire', () => {
     const result = acquireInstallLock(projectRoot)
     expect(result.ok).toBe(true)
-    expect(existsSync(join(projectRoot, '.facets/.install.lock'))).toBe(true)
+    expect(existsSync(join(projectRoot, '.facet.lock'))).toBe(true)
     if (result.ok) {
-      const raw = readFileSync(join(projectRoot, '.facets/.install.lock'), 'utf8')
+      const raw = readFileSync(join(projectRoot, '.facet.lock'), 'utf8')
       expect(JSON.parse(raw).pid).toBe(process.pid)
     }
   })
@@ -30,7 +30,7 @@ describe('acquireInstallLock', () => {
     expect(result.ok).toBe(true)
     if (result.ok) {
       await result.lock.release()
-      expect(existsSync(join(projectRoot, '.facets/.install.lock'))).toBe(false)
+      expect(existsSync(join(projectRoot, '.facet.lock'))).toBe(false)
     }
   })
 
@@ -41,7 +41,7 @@ describe('acquireInstallLock', () => {
     expect(second.ok).toBe(false)
     if (!second.ok) {
       expect(second.heldByPid).toBe(process.pid)
-      expect(second.path).toContain('.install.lock')
+      expect(second.path).toContain('.facet.lock')
     }
   })
 
@@ -49,8 +49,7 @@ describe('acquireInstallLock', () => {
     // A dead-pid stand-in: pid 99999 is highly unlikely to be alive as a
     // real user process. process.kill(pid, 0) will fail with ESRCH.
     const deadPid = 99999
-    mkdirSync(join(projectRoot, '.facets'), { recursive: true })
-    const lockPath = join(projectRoot, '.facets/.install.lock')
+    const lockPath = join(projectRoot, '.facet.lock')
     writeFileSync(lockPath, JSON.stringify({ pid: deadPid, acquiredAt: new Date().toISOString() }), 'utf8')
 
     const result = acquireInstallLock(projectRoot)
@@ -74,8 +73,7 @@ describe('acquireInstallLock', () => {
   test.skipIf(skipEperm)('lock with EPERM-mapped pid is treated as alive (not stolen)', () => {
     // pid 1 is alive on POSIX systems; non-root sees EPERM on probe.
     const epermPid = 1
-    mkdirSync(join(projectRoot, '.facets'), { recursive: true })
-    const lockPath = join(projectRoot, '.facets/.install.lock')
+    const lockPath = join(projectRoot, '.facet.lock')
     writeFileSync(lockPath, JSON.stringify({ pid: epermPid, acquiredAt: new Date().toISOString() }), 'utf8')
 
     const result = acquireInstallLock(projectRoot)

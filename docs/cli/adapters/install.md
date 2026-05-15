@@ -12,7 +12,7 @@ facet adapter install <specifier>
 
 Installs an adapter from the given specifier. An adapter is way for the `facet` system to talk to external tools, most often AI coding harnesses (OpenCode, Claude Code, Codex, etc.). Adapters define where assets and configuration live on disk.
 
-The `install` flow downloads the source, bundles it into a self-contained `adapter.js`, verifies it exports a valid adapter, and places it in `~/.facets/adapters/<name>/`.
+The `install` flow downloads the source, bundles it into a self-contained `adapter.js`, verifies it exports a valid adapter, and places it in `~/.facet/adapters/<name>/`.
 
 **Specifier formats:**
 
@@ -37,16 +37,16 @@ The `install` flow downloads the source, bundles it into a self-contained `adapt
 facet adapter remove <name>
 ```
 
-Removes an installed adapter by deleting its directory from `~/.facets/adapters/`.
+Removes an installed adapter by deleting its directory from `~/.facet/adapters/`.
 
 ## Environment variables
 
-### `FACETS_ADAPTERS_DIR`
+### `FACET_ADAPTERS_DIR`
 
-Overrides the base directory used for installed adapters. When set, `install`, `list`, `remove`, and `build` all read from and write to this directory instead of the default `~/.facets/adapters/`.
+Overrides the base directory used for installed adapters. When set, `install`, `list`, `remove`, and `build` all read from and write to this directory instead of the default `~/.facet/adapters/`.
 
 ```sh
-export FACETS_ADAPTERS_DIR=/path/to/adapters
+export FACET_ADAPTERS_DIR=/path/to/adapters
 facet adapter install opencode
 # adapter lands in /path/to/adapters/opencode/adapter.js
 ```

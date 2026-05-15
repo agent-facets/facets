@@ -18,7 +18,7 @@ Reads `facets.json`, fetches and materializes every facet declared there, and wr
 ## What it does
 
 1. **Validate the project.** `facets.json` must exist; at least one adapter must be installed (the picker auto-launches on a TTY if none are).
-2. **Acquire an install lock** at `.facets/.install.lock` so two installs can't race.
+2. **Acquire an install lock** at `.facet.lock` so two installs can't race.
 3. **Load the existing lockfile**, or use an empty skeleton if `facets.lock` is absent — `facet install` bootstraps the lockfile on first run, the same way `bun install` creates `bun.lock`.
 4. **For each facet in `facets.json`:**
    - If the lockfile pins a version, that version is honored verbatim; ranges in the manifest are not re-resolved.
@@ -62,9 +62,9 @@ Any mismatch is a hard security error: the install aborts before any asset is wr
 
 ## Cache
 
-Resolved facet content is stored at `~/.facets/cache/<name>@<version>/` so subsequent installs of the same identity don't hit the network. The cache is treated as trusted material — once written, it's never re-hashed on read.
+Resolved facet content is stored at `~/.facet/cache/<name>@<version>/` so subsequent installs of the same identity don't hit the network. The cache is treated as trusted material — once written, it's never re-hashed on read.
 
-The cache root can be overridden by setting the `FACETS_CACHE_DIR` environment variable.
+The cache root can be overridden by setting the `FACET_CACHE_DIR` environment variable.
 
 ## Servers
 

@@ -5,7 +5,7 @@ import { getAdapterBundlePath, listInstalledAdapters } from './placement.ts'
  * Loads all installed adapters by scanning the adapter base directory
  * and dynamically importing each `adapter.js` bundle.
  *
- * @param baseDir - Base directory for installed adapters (defaults to `~/.facets/adapters`)
+ * @param baseDir - Base directory for installed adapters (defaults to `~/.facet/adapters`)
  * @param opts.onWarn - Optional callback for warnings about adapters that
  *   couldn't be loaded (e.g. invalid export, dynamic import failure). The
  *   CLI passes a callback that writes to stderr; tests can pass a no-op

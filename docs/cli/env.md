@@ -7,12 +7,12 @@ description: Environment variables to configure the adapter system
 
 The adapter system uses environment variables to configure its behavior.
 
-### `FACETS_ADAPTERS_DIR`
+### `FACET_ADAPTERS_DIR`
 
-Overrides the base directory used for installed adapters. When set, `install`, `list`, `remove`, and `build` all read from and write to this directory instead of the default `~/.facets/adapters/`.
+Overrides the base directory used for installed adapters. When set, `install`, `list`, `remove`, and `build` all read from and write to this directory instead of the default `~/.facet/adapters/`.
 
 ```sh
-export FACETS_ADAPTERS_DIR=/path/to/adapters
+export FACET_ADAPTERS_DIR=/path/to/adapters
 facet adapter install opencode
 # adapter lands in /path/to/adapters/opencode/adapter.js
 ```

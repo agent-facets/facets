@@ -69,13 +69,13 @@ export default {
 beforeEach(() => {
   originalCwd = process.cwd()
   originalHome = process.env.HOME
-  originalAdaptersDir = process.env.FACETS_ADAPTERS_DIR
+  originalAdaptersDir = process.env.FACET_ADAPTERS_DIR
   projectRoot = realpathSync(mkdtempSync(join(tmpdir(), 'facet-install-cli-')))
   fakeHome = realpathSync(mkdtempSync(join(tmpdir(), 'facet-home-')))
-  adaptersDir = join(fakeHome, '.facets', 'adapters')
+  adaptersDir = join(fakeHome, '.facet', 'adapters')
   mkdirSync(adaptersDir, { recursive: true })
   process.env.HOME = fakeHome
-  process.env.FACETS_ADAPTERS_DIR = adaptersDir
+  process.env.FACET_ADAPTERS_DIR = adaptersDir
   process.chdir(projectRoot)
 })
 
@@ -83,8 +83,8 @@ afterEach(() => {
   process.chdir(originalCwd)
   if (originalHome === undefined) delete process.env.HOME
   else process.env.HOME = originalHome
-  if (originalAdaptersDir === undefined) delete process.env.FACETS_ADAPTERS_DIR
-  else process.env.FACETS_ADAPTERS_DIR = originalAdaptersDir
+  if (originalAdaptersDir === undefined) delete process.env.FACET_ADAPTERS_DIR
+  else process.env.FACET_ADAPTERS_DIR = originalAdaptersDir
   rmSync(projectRoot, { recursive: true, force: true })
   rmSync(fakeHome, { recursive: true, force: true })
 })

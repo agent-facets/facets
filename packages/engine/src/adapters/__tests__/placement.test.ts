@@ -5,15 +5,15 @@ import { getAdapterBaseDir, getAdapterBundlePath, getAdapterDir } from '../place
 
 /**
  * Unit tests for `placement.ts`'s env-var handling. Specifically validates
- * that `FACETS_ADAPTERS_DIR` is treated robustly:
- *   - Unset → default (~/.facets/adapters)
+ * that `FACET_ADAPTERS_DIR` is treated robustly:
+ *   - Unset → default (~/.facet/adapters)
  *   - Empty string → default
  *   - Whitespace-only → default
  *   - Whitespace-padded → trimmed
  */
 
-const ENV_VAR = 'FACETS_ADAPTERS_DIR'
-const DEFAULT_DIR = join(homedir(), '.facets', 'adapters')
+const ENV_VAR = 'FACET_ADAPTERS_DIR'
+const DEFAULT_DIR = join(homedir(), '.facet', 'adapters')
 
 let originalValue: string | undefined
 
@@ -30,8 +30,8 @@ afterEach(() => {
   }
 })
 
-describe('getAdapterBaseDir — FACETS_ADAPTERS_DIR handling', () => {
-  test('returns the default ~/.facets/adapters when env var is unset', () => {
+describe('getAdapterBaseDir — FACET_ADAPTERS_DIR handling', () => {
+  test('returns the default ~/.facet/adapters when env var is unset', () => {
     expect(getAdapterBaseDir()).toBe(DEFAULT_DIR)
   })
 

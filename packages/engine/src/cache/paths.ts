@@ -4,27 +4,27 @@ import { join } from 'node:path'
 import type { CacheIdentity } from './types.ts'
 
 /**
- * Default cache root: `~/.facets/cache/`.
+ * Default cache root: `~/.facet/cache/`.
  *
  * Computed lazily from `homedir()` so test harnesses can override
- * `HOME` (or set `FACETS_CACHE_DIR`) without import-order surprises.
+ * `HOME` (or set `FACET_CACHE_DIR`) without import-order surprises.
  */
 function defaultCacheRoot(): string {
-  return join(homedir(), '.facets', 'cache')
+  return join(homedir(), '.facet', 'cache')
 }
 
 /**
  * Resolve the cache root directory.
  *
- * Override precedence (matches the `FACETS_ADAPTERS_DIR` pattern in
+ * Override precedence (matches the `FACET_ADAPTERS_DIR` pattern in
  * `placement.ts` — read on every call so per-test subprocess overrides
  * work as expected):
  *
- *   1. `FACETS_CACHE_DIR` env var (trimmed; whitespace-only treated as unset).
- *   2. Default: `~/.facets/cache/`.
+ *   1. `FACET_CACHE_DIR` env var (trimmed; whitespace-only treated as unset).
+ *   2. Default: `~/.facet/cache/`.
  */
 export function resolveCacheRoot(): string {
-  const override = process.env.FACETS_CACHE_DIR?.trim()
+  const override = process.env.FACET_CACHE_DIR?.trim()
   if (override !== undefined && override.length > 0) {
     return override
   }

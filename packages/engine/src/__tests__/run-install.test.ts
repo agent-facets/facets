@@ -133,15 +133,15 @@ let originalCacheEnv: string | undefined
 beforeEach(() => {
   projectRoot = realpathSync(mkdtempSync(join(tmpdir(), 'run-install-test-')))
   cacheDir = realpathSync(mkdtempSync(join(tmpdir(), 'run-install-cache-')))
-  originalCacheEnv = process.env.FACETS_CACHE_DIR
-  process.env.FACETS_CACHE_DIR = cacheDir
+  originalCacheEnv = process.env.FACET_CACHE_DIR
+  process.env.FACET_CACHE_DIR = cacheDir
 })
 
 afterEach(() => {
   if (originalCacheEnv === undefined) {
-    delete process.env.FACETS_CACHE_DIR
+    delete process.env.FACET_CACHE_DIR
   } else {
-    process.env.FACETS_CACHE_DIR = originalCacheEnv
+    process.env.FACET_CACHE_DIR = originalCacheEnv
   }
   rmSync(projectRoot, { recursive: true, force: true })
   rmSync(cacheDir, { recursive: true, force: true })

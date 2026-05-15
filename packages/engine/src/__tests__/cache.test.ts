@@ -23,36 +23,36 @@ let cacheDir: string
 let originalEnv: string | undefined
 
 beforeEach(() => {
-  originalEnv = process.env.FACETS_CACHE_DIR
+  originalEnv = process.env.FACET_CACHE_DIR
   cacheDir = mkdtempSync(join(tmpdir(), 'facet-cache-test-'))
-  process.env.FACETS_CACHE_DIR = cacheDir
+  process.env.FACET_CACHE_DIR = cacheDir
 })
 
 afterEach(() => {
   if (originalEnv === undefined) {
-    delete process.env.FACETS_CACHE_DIR
+    delete process.env.FACET_CACHE_DIR
   } else {
-    process.env.FACETS_CACHE_DIR = originalEnv
+    process.env.FACET_CACHE_DIR = originalEnv
   }
   rmSync(cacheDir, { recursive: true, force: true })
 })
 
 describe('resolveCacheRoot', () => {
-  test('uses FACETS_CACHE_DIR when set', () => {
+  test('uses FACET_CACHE_DIR when set', () => {
     expect(resolveCacheRoot()).toBe(cacheDir)
   })
 
   test('treats whitespace-only env as unset', () => {
-    process.env.FACETS_CACHE_DIR = '   '
+    process.env.FACET_CACHE_DIR = '   '
     const result = resolveCacheRoot()
     expect(result).not.toBe('   ')
-    expect(result.endsWith(join('.facets', 'cache'))).toBe(true)
+    expect(result.endsWith(join('.facet', 'cache'))).toBe(true)
   })
 
   test('treats empty env as unset', () => {
-    process.env.FACETS_CACHE_DIR = ''
+    process.env.FACET_CACHE_DIR = ''
     const result = resolveCacheRoot()
-    expect(result.endsWith(join('.facets', 'cache'))).toBe(true)
+    expect(result.endsWith(join('.facet', 'cache'))).toBe(true)
   })
 })
 

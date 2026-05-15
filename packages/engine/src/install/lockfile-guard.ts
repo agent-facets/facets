@@ -1,17 +1,23 @@
-import { closeSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { closeSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 
 /**
  * Atomic parallel-install advisory lock (Adjustment H + U).
  *
- * Creates `<projectRoot>/.facets/.install.lock` with `O_CREAT|O_EXCL`
+ * Creates `<projectRoot>/.facet.lock` with `O_CREAT|O_EXCL`
  * (Node's `'wx'` flag) so only one process can acquire it. On EEXIST we
  * read the held pid and check liveness — if the holding process is dead
  * the lock is treated as stale and retried once.
+ *
+ * The lock is a top-level file (not a directory entry) so that running
+ * `facet install` never silently materializes a `.facet/` directory in
+ * the project root. A future feature may legitimately introduce a
+ * project-local `.facet/` for override config; until then, an install
+ * leaves no stray directory behind.
  */
 
-const LOCK_PATH = '.facets/.install.lock'
+const LOCK_PATH = '.facet.lock'
 
 export interface InstallLock {
   /** Release the lock. Idempotent. */
@@ -28,7 +34,6 @@ export type AcquireLockResult = { ok: true; lock: InstallLock } | AcquireLockErr
 
 export function acquireInstallLock(projectRoot: string): AcquireLockResult {
   const path = join(projectRoot, LOCK_PATH)
-  mkdirSync(dirname(path), { recursive: true })
 
   const contents = JSON.stringify({ pid: process.pid, acquiredAt: new Date().toISOString() })
 

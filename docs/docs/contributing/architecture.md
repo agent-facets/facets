@@ -93,7 +93,7 @@ What lives here:
 - **Install pipeline orchestrator** — `runInstall`, journal, lockfile-guard, lockfile-io, materialize. Drives the install flow on a developer's machine.
 - **Build pipeline orchestrator** — `runBuildPipeline`, `writeBuildOutput`. Wires protocol's primitives (validators, content-hash, tar layout) into a CLI workflow with progress events.
 - **`compressArchive`** — gzip is delivery, not part of the integrity contract. Kept here so protocol stays gzip-implementation-agnostic.
-- **Cache** — `~/.facets/cache/` layout, identity computation, atomic put, lookup. Developer-machine state.
+- **Cache** — `~/.facet/cache/` layout, identity computation, atomic put, lookup. Developer-machine state.
 - **Manifest mutations + project-files I/O** — the JSON rewrites for `facets.json` and the disk bridge that reads/writes it. Each CLI has its own mutation semantics; the spec only constrains the file's shape (which lives in protocol).
 - **Registry client** — HTTP I/O against the registry server, archive download/extract.
 - **Edit** — interactive reconcile, scanner, manifest-writer, edit operations.

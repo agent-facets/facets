@@ -10,7 +10,7 @@ type Entry = PromptEntry | OutEntry
  * The full CLI demo script shown on desktop. Starts with a registry
  * search, adds `viper-plans`, then lists installed facets. Structure
  * reflects reality: facets install INTO adapters (claude-code, opencode)
- * rather than into a standalone ~/.facets/... directory.
+ * rather than into a standalone ~/.facet/... directory.
  *
  * The HTML inside `out` entries is static source we control (no user
  * input), so `dangerouslySetInnerHTML` via `innerHTML` is safe here.
