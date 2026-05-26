@@ -1,4 +1,8 @@
 steps:
+  - restore_cache:
+      keys:
+        - v1-mint-{{ checksum "bun.lock" }}
+        - v1-mint-
   - run:
       name: Check
       # Runs on a `medium` resource class (4 GB, 2 vCPU). Even on `medium`,
@@ -12,3 +16,13 @@ steps:
       environment:
         TURBO_CONCURRENCY: "1"
       command: bun turbo check
+  - save_cache:
+      # Caches the ~306 MB Mintlify framework workspace that `mint validate`
+      # lazily downloads to ~/.mintlify/mint/ on first run. Keyed on bun.lock
+      # because the mint CLI version (which determines the framework version)
+      # is pinned there. Without this cache, every CI run is exposed to
+      # transient CDN failures from Mintlify's framework downloads
+      # (RequestError: read ETIMEDOUT).
+      key: v1-mint-{{ checksum "bun.lock" }}
+      paths:
+        - ~/.mintlify

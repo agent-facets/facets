@@ -12,11 +12,19 @@ commands:
                 when: on_fail
     run-check:
         steps:
+            - restore_cache:
+                keys:
+                    - v1-mint-{{ checksum "bun.lock" }}
+                    - v1-mint-
             - run:
                 command: bun turbo check
                 environment:
                     TURBO_CONCURRENCY: "1"
                 name: Check
+            - save_cache:
+                key: v1-mint-{{ checksum "bun.lock" }}
+                paths:
+                    - ~/.mintlify
     setup-mise:
         steps:
             - checkout
