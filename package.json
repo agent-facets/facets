@@ -28,7 +28,7 @@
     "docs:broken-links": "bun --cwd docs mint broken-links",
     "postinstall": "bun scripts/postinstall.ts",
     "clean": "rm -rf .turbo .sst node_modules packages/**/node_modules packages/**/.turbo packages/**/dist packages/cli/bin/.facet test-results/*.xml tmp docs/.mintlify",
-    "nuke": "bun run clean && bun install && bun check"
+    "nuke": "bun run clean && bun install && bun sst install && bun check"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.14",
