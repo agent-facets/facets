@@ -34,12 +34,14 @@ const steps: Step[] = [
   },
 ]
 
-if (!process.env.CI) {
-  steps.push({
-    label: 'sst types',
-    run: () => $`bun sst install`.quiet().then(() => undefined),
-  })
-}
+// TODO: sst provider install failed due to weird network shit...maybe we should take it out of the pipeline and
+//  cache the providers heavily?
+// if (!process.env.CI) {
+//   steps.push({
+//     label: 'sst types',
+//     run: () => $`bun sst install`.quiet().then(() => undefined),
+//   })
+// }
 
 for (const step of steps) {
   try {
