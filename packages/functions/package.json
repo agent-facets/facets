@@ -10,6 +10,6 @@
   "devDependencies": {
     "@tsconfig/node24": "24.0.4",
     "@types/aws-lambda": "8.10.161",
-    "@types/node": "24.12.3"
+    "@types/node": "24.12.4"
   }
 }
