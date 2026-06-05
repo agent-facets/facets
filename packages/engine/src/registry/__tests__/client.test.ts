@@ -57,6 +57,48 @@ describe('createRegistryClient — happy path', () => {
   })
 })
 
+describe('createRegistryClient — Bearer auth middleware', () => {
+  /** Capture the Authorization header the client sends on a request. */
+  function captureAuthHeader(): {
+    fetch: typeof globalThis.fetch
+    read: () => string | null
+  } {
+    let observed: string | null = null
+    const fetch = asFetch(async (input, init) => {
+      const req =
+        input instanceof Request ? input : new Request(typeof input === 'string' ? input : input.toString(), init)
+      observed = req.headers.get('authorization')
+      return new Response(JSON.stringify({ status: 'ok', version: '0.0.0' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    })
+    return { fetch, read: () => observed }
+  }
+
+  test('attaches Authorization: Bearer when a credential is supplied', async () => {
+    const cap = captureAuthHeader()
+    const client = createRegistryClient({ baseUrl: BASE_URL, fetch: cap.fetch, credential: 'fct_pub_abc' })
+    await client.GET('/v0/health')
+    expect(cap.read()).toBe('Bearer fct_pub_abc')
+  })
+
+  test('sends no Authorization header when no credential is supplied', async () => {
+    const cap = captureAuthHeader()
+    const client = createRegistryClient({ baseUrl: BASE_URL, fetch: cap.fetch })
+    await client.GET('/v0/health')
+    expect(cap.read()).toBeNull()
+  })
+
+  test('sends the credential unchanged — no inspection or validation', async () => {
+    // A malformed token is still sent as-is; the registry decides.
+    const cap = captureAuthHeader()
+    const client = createRegistryClient({ baseUrl: BASE_URL, fetch: cap.fetch, credential: 'not-a-real-token' })
+    await client.GET('/v0/health')
+    expect(cap.read()).toBe('Bearer not-a-real-token')
+  })
+})
+
 describe('createRegistryClient — HTTP error responses are NOT retried', () => {
   test('a 404 ends the call after one attempt', async () => {
     let attempts = 0
@@ -66,13 +108,14 @@ describe('createRegistryClient — HTTP error responses are NOT retried', () => 
         JSON.stringify({
           error: 'facet "missing" not found',
           code: 'E_FACET_NOT_FOUND',
+          fix: "run 'facet search' to find available facets",
           docsUrl: 'https://agentfacets.io/errors/E_FACET_NOT_FOUND',
         }),
         { status: 404, headers: { 'content-type': 'application/json' } },
       )
     })
     const client = createRegistryClient({ baseUrl: BASE_URL, fetch: stubFetch })
-    const { data, error, response } = await client.GET('/v0/packages/{name}', {
+    const { data, error, response } = await client.GET('/v0/facets/{name}', {
       params: { path: { name: 'missing' } },
     })
     expect(attempts).toBe(1)
@@ -89,6 +132,7 @@ describe('createRegistryClient — HTTP error responses are NOT retried', () => 
         JSON.stringify({
           error: 'registry temporarily unavailable',
           code: 'E_REGISTRY_UNAVAILABLE',
+          fix: 'try again in a moment',
           docsUrl: 'https://docs',
         }),
         { status: 503, headers: { 'content-type': 'application/json' } },

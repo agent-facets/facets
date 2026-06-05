@@ -1,5 +1,6 @@
 import {
   createRegistryClient,
+  resolveCredential,
   translateThrownError,
   translateWireError,
   type WireAssetCounts,
@@ -46,11 +47,25 @@ export const searchCommand: Command = {
     }
     const term = args[0]
 
-    const client = createRegistryClient()
+    // Reads carry the credential opportunistically (see design D3):
+    // when one is available it earns the authenticated rate-limit tier;
+    // when absent the search proceeds anonymously.
+    const cred = resolveCredential()
+    if (cred.source === 'absent' && cred.reason?.code === 'unreadable') {
+      // A credentials file exists but could not be read. The search can
+      // still run anonymously, but warn so the user knows why their
+      // saved login is not being used.
+      process.stderr.write(
+        `warning: couldn't read credentials at ${cred.reason.path} (${cred.reason.cause}); continuing anonymously\n`,
+      )
+    }
+    const client = createRegistryClient({
+      credential: cred.source === 'absent' ? undefined : cred.token,
+    })
     let facets: ReadonlyArray<WirePackageListItem>
     try {
-      const { data, error, response } = await client.GET('/v0/packages', {})
-      // Runtime check on `error`: the OpenAPI for `GET /v0/packages`
+      const { data, error, response } = await client.GET('/v0/facets', {})
+      // Runtime check on `error`: the OpenAPI for `GET /v0/facets`
       // currently declares only a 200 response, which makes
       // `result.error` typed as `never`. A non-2xx with a parseable
       // envelope can still arrive at runtime (the spec is incomplete,

@@ -82,11 +82,14 @@ export function FailureBlock({ failure }: { failure: RunInstallFailure }): React
           <Text color={THEME.warning} bold>
             ✕ registry error for {failure.facet}
           </Text>
-          {failure.error.code === 'REGISTRY_NOT_AVAILABLE' ? (
+          {failure.error.code === 'REGISTRY_REJECTED' ? (
             <>
-              <Text> {failure.error.what}</Text>
+              <Text> {failure.error.error}</Text>
               <Text color={THEME.hint}> fix: {failure.error.fix}</Text>
             </>
+          ) : null}
+          {failure.error.code === 'UNPARSEABLE_RESPONSE' ? (
+            <Text> registry returned an unreadable response (HTTP {failure.error.status})</Text>
           ) : null}
           {failure.error.code === 'NOT_FOUND' ? (
             <Text>

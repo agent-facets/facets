@@ -37,6 +37,36 @@ The author MAY inspect the local archive, test it, and iterate before publishing
 
 `facet publish` uploads the author's work to the registry. The registry assembles the canonical archive.
 
+`facet publish` accepts an optional directory argument and defaults to the current working directory, consistent with `facet build`, `facet edit`, and `facet create`:
+
+```bash
+facet publish            # publish the facet in the current directory
+facet publish ./cowsay   # publish the facet in ./cowsay
+```
+
+### Authentication
+
+Publishing is an authenticated operation. The CLI sends an `Authorization: Bearer <token>` header on the publish request, where the token is a personal access token (PAT) minted in the web UI. The CLI resolves the token from, in order of precedence:
+
+1. The `FACET_TOKEN` environment variable (preferred for CI and scripted use).
+2. A credentials file written by `facet login`, stored under `$FACET_DIR` (default `~/.facet/credentials`, mode `600`).
+
+If no token can be resolved, `facet publish` fails before packing or contacting the registry, directing the user to sign in.
+
+There are three commands for managing the credential:
+
+| Command         | What it does                                                                                                   |
+| --------------- | -------------------------------------------------------------------------------------------------------------- |
+| `facet login`   | Guided sign-in: paste a PAT, which is verified against the registry and then saved to the credentials file.     |
+| `facet whoami`  | Print the signed-in identity (username, email, tier). Indicates when `FACET_TOKEN` is the active credential.    |
+| `facet logout`  | Remove the saved credentials file. Makes no server call — revoke PATs in the web UI.                            |
+
+When `FACET_TOKEN` is set, it takes precedence over the saved file; `login` and `logout` both note this so the env var does not silently shadow the file. Read-only commands (such as `facet search` and `facet add`) send the token too when one is available — earning a higher rate-limit tier — but work anonymously when it is absent.
+
+<Note>
+  Errors returned by the registry are rendered verbatim — the CLI shows the registry's own message and suggested fix rather than maintaining its own copy of what each error code means. A duplicate-version publish, for example, surfaces the registry's "version already exists" guidance directly.
+</Note>
+
 ### What the Author Uploads
 
 - The facet manifest — unmodified
@@ -60,6 +90,10 @@ Composed files MUST NOT be uploaded by the author. This is the key security prop
 5. **Compute the content hash.** The registry MUST compute a SHA-256 hash of the assembled archive (see [Integrity Model](/specification/integrity)).
 
 6. **Store the artifact.** The registry stores the archive and content hash. Both MUST be available for download and verification by consumers.
+
+### Review Queue
+
+A first-time publish of a reserved or over-budget global facet MAY be accepted into a moderation queue rather than published immediately. This is a **success** outcome: `facet publish` reports that the submission was queued for review, renders the registry's guidance, and exits 0. The version becomes available once an admin approves it.
 
 ### Immutability
 

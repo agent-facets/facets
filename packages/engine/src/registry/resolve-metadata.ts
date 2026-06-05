@@ -1,6 +1,6 @@
 import { createRegistryClient, translateThrownError, translateWireError } from './client.ts'
+import { resolveCredential } from './credentials.ts'
 import { describeVersionSpec } from './describe.ts'
-import { encodeFacetName, getRegistryBaseUrl } from './http.ts'
 import type { RegistryMetadata, RegistryResult, RegistrySpec } from './types.ts'
 
 // Note on path-parameter encoding:
@@ -9,10 +9,6 @@ import type { RegistryMetadata, RegistryResult, RegistrySpec } from './types.ts'
 // pre-encoded value (e.g., `acme%2Fcowsay`) results in double-encoding
 // (`acme%252Fcowsay`). So we pass the raw `spec.name` to
 // `params.path.name` and `client.GET` does the right thing.
-//
-// `encodeFacetName` is still used below for the *derived* archive URL
-// (which we build manually because the OpenAPI doesn't model the 302
-// redirect target), where its single-encoding is correct.
 
 /**
  * Resolve registry metadata for a batch of `(name, version)` pairs.
@@ -40,9 +36,14 @@ export async function resolveRegistryMetadataBatch(
 ): Promise<RegistryResult<ReadonlyArray<RegistryMetadata>>> {
   if (specs.length === 0) return { ok: true, value: [] }
 
-  const client = createRegistryClient()
-  const base = getRegistryBaseUrl()
-  const results = await Promise.all(specs.map((spec) => fetchOne(client, base, spec)))
+  // Reads carry the credential opportunistically: when one is
+  // available it earns the authenticated rate-limit tier; when absent
+  // the reads proceed anonymously (see design D3).
+  const cred = resolveCredential()
+  const client = createRegistryClient({
+    credential: cred.source === 'absent' ? undefined : cred.token,
+  })
+  const results = await Promise.all(specs.map((spec) => fetchOne(client, spec)))
   for (const r of results) {
     if (!r.ok) return r
   }
@@ -65,16 +66,14 @@ export async function resolveRegistryMetadataBatch(
  *   - `body.contentHash` becomes `expectedIntegrity` (renamed). It is
  *     the sha256 of the gzipped tarball as uploaded; downstream
  *     `download.ts` uses it for the bytes-level integrity check.
- *   - `tarballUrl` is *derived* — not on the wire — and is built from
- *     the **server-resolved** `body.version`, not the input spec. So
- *     a `latest` request that resolves to `0.1.0` produces
- *     `…/packages/<name>/0.1.0/archive`. This is critical: passing
- *     `versionForUrl` (the input spec) here would break the archive
- *     URL for any wildcard / `latest` request.
+ *
+ * No archive URL is computed here. The archive request is issued
+ * just-in-time by `downloadAndExtractFacet` from the resolved
+ * `name` + `version` (see Option 3 / design D1), so this function
+ * returns only the published facts about the version.
  */
 async function fetchOne(
   client: ReturnType<typeof createRegistryClient>,
-  base: string,
   spec: RegistrySpec,
 ): Promise<RegistryResult<RegistryMetadata>> {
   // Surface form ('1.2.3', '1.*', '*', 'latest', etc.) is sent verbatim.
@@ -82,7 +81,7 @@ async function fetchOne(
   const versionForUrl = describeVersionSpec(spec.version)
 
   try {
-    const { data, error, response } = await client.GET('/v0/packages/{name}/{version}', {
+    const { data, error, response } = await client.GET('/v0/facets/{name}/{version}', {
       // Pass `spec.name` raw — openapi-fetch path-encodes it.
       params: { path: { name: spec.name, version: versionForUrl } },
     })
@@ -97,20 +96,12 @@ async function fetchOne(
       }
     }
 
-    // Compute the archive URL using the server-resolved version (in
-    // case the input was `latest` or a wildcard). The archive URL is
-    // built by hand (not by openapi-fetch) because the OpenAPI doesn't
-    // model the 302 redirect target. `encodeFacetName` produces the
-    // canonical npm-style %2F encoding for namespaced names.
-    const encodedName = encodeFacetName(spec.name)
-    const tarballUrl = `${base}/v0/packages/${encodedName}/${encodeURIComponent(data.version)}/archive`
     return {
       ok: true,
       value: {
         name: data.name,
         version: data.version,
         expectedIntegrity: data.contentHash,
-        tarballUrl,
       },
     }
   } catch (err) {

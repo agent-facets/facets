@@ -170,3 +170,48 @@ The CLI SHALL register a `logout` command that removes the saved credentials fil
 - **WHEN** a user runs `logout` with no saved credentials file present
 - **THEN** the CLI SHALL report that there were no saved credentials to remove
 - **AND** the process SHALL exit with code 0
+
+## MODIFIED Requirements
+
+### Requirement: Commands validate directory arguments before execution
+
+The system SHALL validate directory arguments provided to commands before executing any command logic. Invalid directory arguments SHALL produce clear, immediate error messages and exit with code 1.
+
+#### Scenario: No directory argument defaults to current directory
+
+- **WHEN** a user runs a command without a directory argument
+- **THEN** the system SHALL use the current working directory
+
+#### Scenario: Argument points to facet.json directly
+
+- **WHEN** a user provides a path ending with `facet.json` as the directory argument
+- **THEN** the system SHALL silently use the parent directory
+
+#### Scenario: Argument is a non-directory file
+
+- **WHEN** a user provides a path to a file that is not `facet.json`
+- **THEN** the system SHALL print an error indicating a directory was expected
+- **AND** the process SHALL exit with code 1
+
+#### Scenario: Directory does not exist for commands requiring it
+
+- **WHEN** a user provides a path to a non-existent directory for `build`, `edit`, or `publish`
+- **THEN** the system SHALL print an error indicating the directory does not exist
+- **AND** the process SHALL exit with code 1
+
+#### Scenario: Directory is auto-created for create command
+
+- **WHEN** a user provides a path to a non-existent directory for `create`
+- **THEN** the system SHALL create the directory automatically
+
+#### Scenario: Build, edit, and publish require facet.json to exist
+
+- **WHEN** a user runs `build`, `edit`, or `publish` in a directory without `facet.json`
+- **THEN** the system SHALL print an error indicating no facet manifest was found
+- **AND** the process SHALL exit with code 1
+
+#### Scenario: Publish accepts an optional directory argument
+
+- **WHEN** a user runs `publish` with a path to a directory that contains `facet.json`
+- **THEN** the system SHALL publish the facet in that directory
+- **AND** the system SHALL NOT require the user to change into that directory first

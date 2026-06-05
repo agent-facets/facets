@@ -25,9 +25,12 @@ const IMPLEMENTED_COMMAND_NAMES = [
   'edit',
   'install',
   'list',
+  'login',
+  'logout',
   'publish',
   'search',
   'self-update',
+  'whoami',
 ]
 // Stubs — invocable (to surface "did you mean…" suggestions) but hidden from
 // the global help listing (Adjustment K).
@@ -218,6 +221,14 @@ describe('CLI — directory validation', () => {
 
   test('edit with non-existent directory errors', async () => {
     const result = await runCli('edit', `/tmp/does-not-exist-${Date.now()}`)
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('does not exist')
+  })
+
+  test('publish with non-existent directory errors', async () => {
+    // Directory validation runs before credential resolution, so this
+    // errors on the directory regardless of any FACET_TOKEN in the env.
+    const result = await runCli('publish', `/tmp/does-not-exist-${Date.now()}`)
     expect(result.exitCode).toBe(1)
     expect(result.stderr).toContain('does not exist')
   })

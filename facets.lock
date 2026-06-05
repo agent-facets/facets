@@ -30,7 +30,7 @@
       ]
     },
     "cowsay": {
-      "source": "./fixtures/cowsay",
+      "source": "cowsay",
       "version": "0.1.1",
       "integrity": "sha256:dfbc7a5521ae40579e89abbd6958fa597e9eadd926110f6aad90adf37406f2fa",
       "assets": [

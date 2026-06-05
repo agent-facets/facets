@@ -1,13 +1,16 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { createRegistryClient, packFacetSource, publishFacetVersion } from '@agent-facets/engine'
+import { createRegistryClient, packFacetSource, publishFacetVersion, resolveCredential } from '@agent-facets/engine'
 import type { Command } from '../../commands.ts'
 import { writeCliError } from '../../util/errors.ts'
-import { docsUrlFor, translateEngineRegistryError } from '../../util/registry-errors.ts'
+import { translateEngineRegistryError } from '../../util/registry-errors.ts'
+import { resolveTargetDir } from '../resolve-dir.ts'
 
 /**
- * `facet publish` — package the current directory as a `.tar.gz` and POST
- * it to the registry.
+ * `facet publish [directory]` — package a facet source directory as a
+ * `.tar.gz` and POST it to the registry. The directory defaults to the
+ * current working directory; pass a path to publish a facet elsewhere
+ * (consistent with `build`, `edit`, and `create`).
  *
  * Publish does NOT mutate `facet.json`. The version published is whatever
  * is on disk; bumping the version is an explicit user action (edit
@@ -23,35 +26,40 @@ import { docsUrlFor, translateEngineRegistryError } from '../../util/registry-er
 export const publishCommand: Command = {
   name: 'publish',
   description: 'Publish a facet to the registry',
+  usage: '[directory]',
   implemented: true,
   run: async (args, _flags) => {
-    if (args.length > 0) {
+    // Resolve the target directory (defaults to cwd). `facetMustExist`
+    // ensures we fail with a clear message when there is no facet.json,
+    // matching build/edit's directory-resolution behavior.
+    const resolved = await resolveTargetDir(args[0], { mustExist: true, facetMustExist: true })
+    if (!resolved.ok) {
       writeCliError({
-        what: `facet publish does not accept positional arguments (got "${args[0]}")`,
-        fix: 'cd into the facet source directory and run `facet publish`',
+        what: resolved.message,
+        fix: 'pass a directory containing facet.json, or run `facet create` to scaffold one',
       })
       return 1
     }
-
-    const projectRoot = process.cwd()
+    const projectRoot = resolved.dir
     const manifestPath = join(projectRoot, 'facet.json')
-    if (!existsSync(manifestPath)) {
-      writeCliError({
-        what: 'no facet.json in this directory',
-        detail: `looked at ${manifestPath}`,
-        fix: 'cd into a directory with facet.json or run `facet create` to scaffold one',
-      })
-      return 1
-    }
 
-    // Read API key BEFORE doing any work — fail fast so the user doesn't
-    // wait through a tarball pack just to be told their env isn't set up.
-    const apiKey = process.env.FACET_REGISTRY_API_KEY
-    if (apiKey === undefined || apiKey.length === 0) {
+    // Resolve the credential BEFORE doing any work — fail fast so the
+    // user doesn't wait through a tarball pack just to be told they are
+    // not signed in. This is a pre-flight failure the registry never
+    // sees, so the CLI authors the message itself.
+    const cred = resolveCredential()
+    if (cred.source === 'absent') {
+      if (cred.reason?.code === 'unreadable') {
+        writeCliError({
+          what: "couldn't read your registry credentials file",
+          detail: `${cred.reason.path}: ${cred.reason.cause}`,
+          fix: "fix the file's permissions, or run `facet logout` then `facet login`",
+        })
+        return 1
+      }
       writeCliError({
-        what: 'FACET_REGISTRY_API_KEY environment variable not set',
-        fix: 'export FACET_REGISTRY_API_KEY=<key from registry admin>',
-        docsUrl: docsUrlFor('E_API_KEY_MISSING'),
+        what: 'not signed in — no registry credential found',
+        fix: 'run `facet login` to sign in, or set FACET_TOKEN in your environment',
       })
       return 1
     }
@@ -80,34 +88,27 @@ export const publishCommand: Command = {
     const tarball = await packFacetSource(projectRoot)
     process.stdout.write(`Packed ${tarball.byteLength} bytes\n`)
 
-    const client = createRegistryClient()
+    const client = createRegistryClient({ credential: cred.token })
     const result = await publishFacetVersion(client, {
       name: manifest.name,
       tarball,
-      apiKey,
     })
 
     if (!result.ok) {
+      // Registry-dumb rendering: the registry's own error and fix text
+      // are shown verbatim (a duplicate-version E_VERSION_EXISTS
+      // included). The CLI keeps no local code-to-message map.
       writeCliError(translateEngineRegistryError(result.error))
       return 1
     }
 
-    if (result.value.kind === 'version-exists') {
-      writeCliError({
-        what: `version ${manifest.version} already exists in the registry`,
-        detail: result.value.envelope.error,
-        fix: 'bump `version` in facet.json and try again',
-        docsUrl: result.value.envelope.docsUrl,
-      })
-      return 1
-    }
-
-    if (result.value.kind === 'structured-error') {
-      // Pass the wire `code` through so the canonical CLI translations
-      // produce the user-facing strings (rather than the server's
-      // free-form `error` text).
-      writeCliError(translateEngineRegistryError(result.value.error, result.value.envelope.code))
-      return 1
+    if (result.value.kind === 'queued') {
+      // Accepted into the moderation queue (202). This is a success
+      // outcome — render the registry's queue-acknowledgement guidance
+      // verbatim and exit 0.
+      process.stdout.write(`${manifest.name}@${manifest.version} was submitted for review.\n`)
+      process.stdout.write(`${result.value.queued.fix}\n`)
+      return 0
     }
 
     process.stdout.write(`Published ${manifest.name}@${manifest.version}.\n`)

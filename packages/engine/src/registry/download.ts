@@ -2,18 +2,36 @@ import { createHash } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, normalize, relative } from 'node:path'
 import { parseTarGzip } from 'nanotar'
+import type { Client } from 'openapi-fetch'
+import { createRegistryClient, translateWireError } from './client.ts'
+import { resolveCredential } from './credentials.ts'
+import type { paths } from './generated/registry-api.ts'
 import type { RegistryMetadata, RegistryResult } from './types.ts'
 
 /**
  * Download a `.tar.gz` archive from the registry and extract its contents
  * into `dest`.
  *
- * The V0 archive endpoint returns a 302 redirect to a presigned S3 URL;
- * `fetch` follows redirects by default so the call site doesn't need to
- * special-case it. The downloaded bytes are a gzipped tarball with
- * `facet.json` at the root (the same shape `facet build` would produce
- * before any `.facet` outer-tar wrapping — V0 publishes the source
- * distribution directly).
+ * The archive is fetched in two hops, both resolved here just-in-time
+ * from the metadata's `name` + `version`:
+ *
+ *   1. A typed request to `GET /v0/facets/{name}/{version}/archive` with
+ *      redirect-following disabled. The registry responds with a 302
+ *      whose `Location` header is a short-lived presigned S3 URL. Routing
+ *      this through the typed client keeps the registry request path
+ *      inside the generated contract and lets the Bearer credential flow
+ *      through the same middleware as every other registry call (so a
+ *      future auth-on-archive change needs no new plumbing). Resolving it
+ *      here — rather than at metadata time — means the presigned URL is
+ *      minted at the last possible moment and cannot expire before use.
+ *   2. A raw `fetch` of the presigned S3 URL for the bytes. This is the
+ *      only request that is intentionally NOT routed through the typed
+ *      client: a presigned S3 URL points at a different system and is
+ *      never a registry endpoint in the OpenAPI spec.
+ *
+ * The downloaded bytes are a gzipped tarball with `facet.json` at the
+ * root (the same shape `facet build` would produce before any `.facet`
+ * outer-tar wrapping — V0 publishes the source distribution directly).
  *
  * Verification: the registry's `expectedIntegrity` (sha256 of the
  * tarball-as-uploaded) is checked against the bytes we just downloaded.
@@ -28,9 +46,21 @@ import type { RegistryMetadata, RegistryResult } from './types.ts'
  * Always returns; never throws.
  */
 export async function downloadAndExtractFacet(meta: RegistryMetadata, dest: string): Promise<RegistryResult<void>> {
+  // Reads carry the credential opportunistically (see design D3): the
+  // archive-lookup request earns the authenticated rate-limit tier when
+  // a credential is available, and proceeds anonymously otherwise.
+  const cred = resolveCredential()
+  const client = createRegistryClient({
+    credential: cred.source === 'absent' ? undefined : cred.token,
+  })
+
+  const urlResult = await resolveArchiveUrl(client, meta)
+  if (!urlResult.ok) return urlResult
+  const archiveUrl = urlResult.value
+
   let response: Response
   try {
-    response = await fetch(meta.tarballUrl, { redirect: 'follow' })
+    response = await fetch(archiveUrl)
   } catch (err) {
     return {
       ok: false,
@@ -155,6 +185,95 @@ export async function downloadAndExtractFacet(meta: RegistryMetadata, dest: stri
   }
 
   return { ok: true, value: undefined }
+}
+
+/**
+ * Resolve the presigned archive URL for a facet version by issuing the
+ * typed archive request with redirect-following disabled and reading
+ * the `Location` header off the registry's 302.
+ *
+ * The request goes through the typed client (so it carries the Bearer
+ * credential and stays inside the generated contract), but the response
+ * is a redirect rather than a typed body — so we read the raw
+ * `response` directly. A 200 here (the registry serving bytes inline
+ * instead of redirecting) is also honored: in that case the archive URL
+ * is the request URL itself, and the caller's raw fetch re-fetches it.
+ */
+export async function resolveArchiveUrl(
+  client: Client<paths>,
+  meta: RegistryMetadata,
+): Promise<RegistryResult<string>> {
+  let response: Response
+  // openapi-fetch parses a non-2xx JSON body into `result.error` (the
+  // body stream is consumed in the process), so we capture it here and
+  // render it below rather than re-reading `response.json()`.
+  let wireError: unknown
+  try {
+    const result = await client.GET('/v0/facets/{name}/{version}/archive', {
+      params: { path: { name: meta.name, version: meta.version } },
+      // Do not follow the redirect inside the typed client; we want to
+      // read the presigned S3 URL off the `Location` header ourselves.
+      redirect: 'manual',
+    })
+    response = result.response
+    wireError = result.error
+  } catch (err) {
+    return {
+      ok: false,
+      error: {
+        code: 'NETWORK_ERROR',
+        cause: `archive lookup failed: ${err instanceof Error ? err.message : String(err)}`,
+        attempts: 1,
+      },
+    }
+  }
+
+  if (response.status === 404) {
+    return {
+      ok: false,
+      error: { code: 'NOT_FOUND', name: meta.name, spec: meta.version },
+    }
+  }
+
+  // A redirect (the expected V0 path): the Location header is the
+  // presigned S3 URL.
+  if (response.status >= 300 && response.status < 400) {
+    const location = response.headers.get('location')
+    if (location === null || location.length === 0) {
+      return {
+        ok: false,
+        error: {
+          code: 'UNEXPECTED_ERROR',
+          cause: `archive endpoint returned HTTP ${response.status} with no Location header`,
+        },
+      }
+    }
+    return { ok: true, value: location }
+  }
+
+  // A 2xx (the registry served the archive endpoint directly): the
+  // archive URL is the request URL itself.
+  if (response.ok) {
+    return { ok: true, value: response.url }
+  }
+
+  // Any other status (401/403/5xx, etc.) is a registry rejection, not a
+  // transport failure. Route the parsed envelope through
+  // `translateWireError` so the registry's own `error`/`fix` text renders
+  // verbatim (per the verbatim-error model), rather than flattening into
+  // a generic NETWORK_ERROR. A body that isn't a well-formed envelope
+  // (raw text, HTML 502, empty) yields UNPARSEABLE_RESPONSE via
+  // `translateWireError`'s string/undefined handling. (404 is handled
+  // above with the richer NOT_FOUND context, so it never reaches here.)
+  //
+  // The archive endpoint's OpenAPI declares no error response, so
+  // `wireError` is typed `never`; cast through `unknown` to hand the
+  // runtime body to `translateWireError` (same pattern as the search
+  // read).
+  return {
+    ok: false,
+    error: translateWireError(wireError as Parameters<typeof translateWireError>[0], response.status),
+  }
 }
 
 /**

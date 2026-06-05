@@ -121,26 +121,30 @@ describe('searchCommand', () => {
     }) as unknown as typeof fetch
     const { result, stderr } = await captureStderr(() => searchCommand.run([], {}))
     expect(result).toBe(1)
-    expect(stderr).toContain('registry temporarily unavailable')
-    expect(stderr).toContain('docs:')
+    // A transport failure is CLI-authored (the registry never replied),
+    // and carries no synthesized docs link.
+    expect(stderr).toContain('could not reach the registry')
+    expect(stderr).not.toContain('docs:')
   })
 
-  test('server returns structured error envelope: translates to a clean CliError', async () => {
+  test('server returns structured error envelope: renders the server text verbatim', async () => {
     globalThis.fetch = (async () =>
       new Response(
         JSON.stringify({
           error: 'whoops',
           code: 'E_REGISTRY_UNAVAILABLE',
+          fix: 'try again shortly',
           docsUrl: 'https://agentfacets.io/errors/E_REGISTRY_UNAVAILABLE',
         }),
         { status: 503, headers: { 'content-type': 'application/json' } },
       )) as unknown as typeof fetch
     const { result, stderr } = await captureStderr(() => searchCommand.run([], {}))
     expect(result).toBe(1)
-    // The wire envelope's `error` field is "whoops"; translation
-    // routes 5xx → REGISTRY_NOT_AVAILABLE → translateEngineRegistryError
-    // → CLI's canonical message and fix.
+    // Registry-dumb rendering: the server's own `error`, `fix`, and
+    // `docsUrl` are shown verbatim — no local code-to-message map.
     expect(stderr).toContain('whoops')
+    expect(stderr).toContain('try again shortly')
+    expect(stderr).toContain('https://agentfacets.io/errors/E_REGISTRY_UNAVAILABLE')
   })
 
   test('rejects more than one positional arg', async () => {

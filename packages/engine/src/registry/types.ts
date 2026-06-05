@@ -10,14 +10,21 @@ import type { VersionSpec } from '@agent-facets/protocol'
  *   - `expectedIntegrity`: the integrity hash the registry claims this
  *     `(name, version)` should produce. Format `sha256:<hex>`. Fed
  *     into the three-check protocol as the metadata-API anchor.
- *   - `tarballUrl`: the URL from which the `.facet` archive can be
- *     downloaded. Passed verbatim to `downloadAndExtractFacet`.
+ *
+ * Deliberately carries no archive URL. How the archive bytes are
+ * obtained (today: a typed request to the archive endpoint that
+ * returns a 302 redirect to a presigned S3 URL) is an implementation
+ * detail confined to `downloadAndExtractFacet`, which resolves it
+ * just-in-time from `name` + `version`. Keeping the URL out of this
+ * data model means a future change to the archive transport (e.g. the
+ * registry serving bytes directly, or changing the redirect target)
+ * is localized to the download path and does not ripple through this
+ * type or its callers.
  */
 export interface RegistryMetadata {
   name: string
   version: string
   expectedIntegrity: string
-  tarballUrl: string
 }
 
 /**
@@ -32,10 +39,18 @@ export interface RegistrySpec {
 /**
  * Discriminated registry-error type.
  *
- *   - `REGISTRY_NOT_AVAILABLE`: the registry returned a 4xx/5xx with
- *     a structured error envelope, OR the registry is otherwise
- *     refusing service in a way the caller should surface to the user
- *     verbatim. Carries the registry's own `what`/`fix` strings.
+ *   - `REGISTRY_REJECTED`: the registry returned a 4xx/5xx with a
+ *     well-formed structured error envelope. Carries the envelope's
+ *     `wireCode`, `error`, `fix`, and `docsUrl` **verbatim** — the CLI
+ *     renders the registry's own text without any local code-to-message
+ *     map. The registry is the single source of truth for what an error
+ *     means and how to fix it.
+ *   - `UNPARSEABLE_RESPONSE`: the registry replied with something that
+ *     is not a valid structured envelope (a CloudFront HTML 502, an
+ *     empty 503, raw text). There is no server text to render, so the
+ *     CLI authors a plain "could not process the response" message and
+ *     directs the user nowhere. `status` carries the HTTP status for
+ *     context.
  *   - `NOT_FOUND`: the requested name/version did not match any
  *     published facet (HTTP 404).
  *   - `NETWORK_ERROR`: transport failed (DNS, TCP, abort, timeout)
@@ -47,7 +62,8 @@ export interface RegistrySpec {
  *     silently relabeled as a network error (per design D11).
  */
 export type RegistryError =
-  | { code: 'REGISTRY_NOT_AVAILABLE'; what: string; fix: string }
+  | { code: 'REGISTRY_REJECTED'; wireCode: string; error: string; fix: string; docsUrl: string }
+  | { code: 'UNPARSEABLE_RESPONSE'; status: number }
   | { code: 'NOT_FOUND'; name: string; spec: string }
   | { code: 'NETWORK_ERROR'; cause: string; attempts: number }
   | { code: 'UNEXPECTED_ERROR'; cause: string }

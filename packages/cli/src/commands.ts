@@ -5,9 +5,12 @@ import { createCommand } from './commands/create/index.ts'
 import { editCommand } from './commands/edit/index.ts'
 import { installCommand } from './commands/install/index.ts'
 import { listCommand } from './commands/list/index.ts'
+import { loginCommand } from './commands/login/index.ts'
+import { logoutCommand } from './commands/logout/index.ts'
 import { publishCommand } from './commands/publish/index.ts'
 import { searchCommand } from './commands/search/index.ts'
 import { selfUpdateCommand } from './commands/self-update.ts'
+import { whoamiCommand } from './commands/whoami/index.ts'
 
 export type FlagDef = {
   type: 'boolean' | 'string'
@@ -56,11 +59,14 @@ export const commands: Record<string, Command> = {
   info: stubCommand('info', 'Show information about a facet'),
   install: installCommand,
   list: listCommand,
+  login: loginCommand,
+  logout: logoutCommand,
   publish: publishCommand,
   remove: stubCommand('remove', 'Remove a facet from the project'),
   search: searchCommand,
   'self-update': selfUpdateCommand,
   upgrade: stubCommand('upgrade', 'Upgrade installed facets'),
+  whoami: whoamiCommand,
 }
 
 /**

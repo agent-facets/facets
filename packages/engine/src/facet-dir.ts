@@ -44,3 +44,8 @@ export function facetLocksDir(): string {
 export function facetBinDir(): string {
   return join(resolveFacetDir(), 'bin')
 }
+
+/** Registry credentials file: `$FACET_DIR/credentials` (a file, not a directory). */
+export function facetCredentialsPath(): string {
+  return join(resolveFacetDir(), 'credentials')
+}
