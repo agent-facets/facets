@@ -1,0 +1,255 @@
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+/**
+ * Tests for the `facet add` orchestrator (`runAdd`).
+ *
+ * The registry resolve + download path is stubbed via `mock.module` so the
+ * test exercises `runAdd`'s manifest transaction (preserve / heal / pin and
+ * the per-source value rule) without a live registry. The stubbed
+ * `downloadAndExtractFacet` copies a local fixture into the staging dir it
+ * is handed; everything downstream (build, content-hash, materialize, lock-
+ * file) runs for real, so `lockfile.facets[name].version` is the fixture's
+ * own version. Production download verification (`download.ts`) is covered
+ * by its own tests and is intentionally bypassed here.
+ */
+
+// --- Registry mock state (mutated per-test before calling runAdd) ---------
+
+let registryFixtureDir: string | null = null
+let registryResolvedVersion = '0.1.1'
+
+mock.module('../../registry/resolve-metadata.ts', () => ({
+  resolveRegistryMetadataBatch: async (specs: ReadonlyArray<{ name: string }>) => ({
+    ok: true,
+    value: specs.map((s) => ({
+      name: s.name,
+      version: registryResolvedVersion,
+      expectedIntegrity: 'sha256:stub',
+    })),
+  }),
+}))
+
+mock.module('../../registry/download.ts', () => ({
+  downloadAndExtractFacet: async (_meta: { name: string }, dest: string) => {
+    if (registryFixtureDir === null) {
+      return { ok: false, error: { code: 'NETWORK_ERROR', cause: 'no fixture set', attempts: 1 } }
+    }
+    cpSync(registryFixtureDir, dest, { recursive: true })
+    return { ok: true, value: undefined }
+  },
+}))
+
+// Imported AFTER the mocks are registered so run-install picks up the stubs.
+const { runAdd } = await import('../run-add.ts')
+const { parseFacetSource } = await import('../../sources/facet/parse-source.ts')
+const { loadInstalledAdapters } = await import('../../adapters/loader.ts')
+
+let projectRoot: string
+let originalCwd: string
+let fakeHome: string
+let originalHome: string | undefined
+let originalFacetDir: string | undefined
+let adaptersDir: string
+
+/** Build a facet fixture directory (a `facet.json` + one skill). */
+function buildFixture(parent: string, name: string, version: string): string {
+  const repo = realpathSync(mkdtempSync(join(parent, 'fixture-')))
+  writeFileSync(
+    join(repo, 'facet.json'),
+    JSON.stringify({ name, version, skills: { planning: { description: 'planning skill' } } }),
+  )
+  mkdirSync(join(repo, 'skills/planning'), { recursive: true })
+  writeFileSync(join(repo, 'skills/planning/SKILL.md'), `# planning ${version}\n`)
+  return repo
+}
+
+function installFakeAdapter(baseDir: string, name: string): void {
+  const dir = join(baseDir, name)
+  mkdirSync(dir, { recursive: true })
+  const assetFsImport = require.resolve('@agent-facets/adapter')
+  writeFileSync(
+    join(dir, 'adapter.js'),
+    `
+import { installAssetFile, readAssetFile, deleteAssetFile } from '${assetFsImport}'
+import { join } from 'node:path'
+function path(type, name) { return join(process.cwd(), '.${name}', type + 's', name + '.md') }
+export default {
+  name: '${name}',
+  supportsInstall: true,
+  buildAssetMetadata(data) { return { ok: true, data: data || {} } },
+  async installAsset(scope, type, name, content, metadata) { await installAssetFile({ file: path(type, name) }, content, metadata) },
+  async readAsset(scope, type, name) { return readAssetFile({ file: path(type, name) }) },
+  async deleteAsset(scope, type, name) { await deleteAssetFile({ file: path(type, name) }) },
+}
+`,
+  )
+}
+
+function readFacets(): Record<string, string> {
+  return JSON.parse(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).facets
+}
+
+function writeFacets(facets: Record<string, string>): string {
+  const bytes = `${JSON.stringify({ facets }, null, 2)}\n`
+  writeFileSync(join(projectRoot, 'facets.json'), bytes)
+  return bytes
+}
+
+/** Run `runAdd` for a single specifier with the standard wiring. */
+async function add(specifier: string) {
+  const parsed = parseFacetSource(specifier)
+  if (!parsed.ok) throw new Error(`test bug: unparseable specifier ${specifier}`)
+  const adapters = await loadInstalledAdapters()
+  return runAdd({
+    projectRoot,
+    sources: [{ specifier, source: parsed.value }],
+    adapters: adapters.filter((a) => a.supportsInstall === true),
+  })
+}
+
+beforeEach(() => {
+  originalCwd = process.cwd()
+  originalHome = process.env.HOME
+  originalFacetDir = process.env.FACET_DIR
+  projectRoot = realpathSync(mkdtempSync(join(tmpdir(), 'facet-runadd-')))
+  fakeHome = realpathSync(mkdtempSync(join(tmpdir(), 'facet-home-')))
+  const facetDir = join(fakeHome, '.facet')
+  adaptersDir = join(facetDir, 'adapters')
+  mkdirSync(adaptersDir, { recursive: true })
+  process.env.HOME = fakeHome
+  process.env.FACET_DIR = facetDir
+  process.chdir(projectRoot)
+  installFakeAdapter(adaptersDir, 'test-adapter')
+  registryFixtureDir = null
+  registryResolvedVersion = '0.1.1'
+})
+
+afterEach(() => {
+  process.chdir(originalCwd)
+  if (originalHome === undefined) delete process.env.HOME
+  else process.env.HOME = originalHome
+  if (originalFacetDir === undefined) delete process.env.FACET_DIR
+  else process.env.FACET_DIR = originalFacetDir
+  rmSync(projectRoot, { recursive: true, force: true })
+  rmSync(fakeHome, { recursive: true, force: true })
+})
+
+describe('runAdd — registry manifest-value rule', () => {
+  test('bare name pins the resolved exact version', async () => {
+    registryResolvedVersion = '0.1.1'
+    registryFixtureDir = buildFixture(fakeHome, 'cowsay', '0.1.1')
+    const result = await add('cowsay')
+    expect(result.ok).toBe(true)
+    expect(readFacets().cowsay).toBe('0.1.1')
+  })
+
+  test('@latest is equivalent to a bare name (pins resolved exact)', async () => {
+    registryResolvedVersion = '0.1.1'
+    registryFixtureDir = buildFixture(fakeHome, 'cowsay', '0.1.1')
+    const result = await add('cowsay@latest')
+    expect(result.ok).toBe(true)
+    expect(readFacets().cowsay).toBe('0.1.1')
+  })
+
+  test('explicit exact version is recorded as written', async () => {
+    registryResolvedVersion = '0.1.1'
+    registryFixtureDir = buildFixture(fakeHome, 'cowsay', '0.1.1')
+    const result = await add('cowsay@0.1.1')
+    expect(result.ok).toBe(true)
+    expect(readFacets().cowsay).toBe('0.1.1')
+  })
+
+  test('major wildcard is preserved in the manifest as written', async () => {
+    registryResolvedVersion = '1.4.2'
+    registryFixtureDir = buildFixture(fakeHome, 'cowsay', '1.4.2')
+    const result = await add('cowsay@1.*')
+    expect(result.ok).toBe(true)
+    // Wildcard preserved in manifest; lockfile carries the exact version.
+    expect(readFacets().cowsay).toBe('1.*')
+  })
+
+  test('minor wildcard is preserved in the manifest as written', async () => {
+    registryResolvedVersion = '1.2.9'
+    registryFixtureDir = buildFixture(fakeHome, 'cowsay', '1.2.9')
+    const result = await add('cowsay@1.2.*')
+    expect(result.ok).toBe(true)
+    expect(readFacets().cowsay).toBe('1.2.*')
+  })
+
+  test('bare wildcard is preserved in the manifest as written', async () => {
+    registryResolvedVersion = '2.0.0'
+    registryFixtureDir = buildFixture(fakeHome, 'cowsay', '2.0.0')
+    const result = await add('cowsay@*')
+    expect(result.ok).toBe(true)
+    expect(readFacets().cowsay).toBe('*')
+  })
+
+  test('never records the facet name in the version position', async () => {
+    registryResolvedVersion = '0.1.1'
+    registryFixtureDir = buildFixture(fakeHome, 'cowsay', '0.1.1')
+    await add('cowsay')
+    expect(readFacets().cowsay).not.toBe('cowsay')
+  })
+})
+
+describe('runAdd — git/local manifest-value rule', () => {
+  test('local source records the full specifier', async () => {
+    const fixture = buildFixture(projectRoot, 'viper-plans', '0.1.0')
+    const rel = `./${fixture.split('/').pop()}`
+    const result = await add(rel)
+    expect(result.ok).toBe(true)
+    expect(readFacets()['viper-plans']).toBe(rel)
+  })
+})
+
+describe('runAdd — preserve / heal / pin', () => {
+  test('bare re-add preserves an existing valid version spec', async () => {
+    registryResolvedVersion = '2.5.0'
+    registryFixtureDir = buildFixture(fakeHome, 'cowsay', '2.5.0')
+    writeFacets({ cowsay: '1.*' })
+    const result = await add('cowsay')
+    expect(result.ok).toBe(true)
+    // Existing valid spec is preserved, NOT clobbered to the resolved exact.
+    expect(readFacets().cowsay).toBe('1.*')
+  })
+
+  test('bare re-add heals an invalid recorded value (name leaked into version)', async () => {
+    registryResolvedVersion = '0.1.1'
+    registryFixtureDir = buildFixture(fakeHome, 'cowsay', '0.1.1')
+    writeFacets({ cowsay: 'cowsay' })
+    const result = await add('cowsay')
+    expect(result.ok).toBe(true)
+    expect(readFacets().cowsay).toBe('0.1.1')
+  })
+
+  test('bare add pins the resolved exact version when no entry exists', async () => {
+    registryResolvedVersion = '0.3.0'
+    registryFixtureDir = buildFixture(fakeHome, 'cowsay', '0.3.0')
+    const result = await add('cowsay')
+    expect(result.ok).toBe(true)
+    expect(readFacets().cowsay).toBe('0.3.0')
+  })
+})
+
+describe('runAdd — install-failure restore', () => {
+  test('install failure restores facets.json byte-for-byte', async () => {
+    // No adapters → runInstall is given an empty adapter set. But the
+    // failure we force here is a manifest-name mismatch: the resolved
+    // registry name resolves to "cowsay", yet the fixture's facet.json
+    // declares a different name, tripping MANIFEST_NAME_MISMATCH inside
+    // runInstall after the provisional manifest write.
+    registryResolvedVersion = '0.1.1'
+    registryFixtureDir = buildFixture(fakeHome, 'not-cowsay', '0.1.1')
+    const before = writeFacets({ 'pre-existing': './fake' })
+
+    const result = await add('cowsay')
+    expect(result.ok).toBe(false)
+
+    // facets.json restored to its exact pre-command bytes.
+    const after = readFileSync(join(projectRoot, 'facets.json'), 'utf8')
+    expect(after).toBe(before)
+  })
+})

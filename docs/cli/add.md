@@ -81,6 +81,8 @@ Running `facet add` against a facet that's already in `facets.json` is supported
 
 - Same source as before → no-op (lockfile may report `unchanged` or `repaired`).
 - Different version pin → updates the entry; the install summary shows `(was X → Y)`.
+- Bare re-add (no version) over an existing **valid** version spec → the spec is **preserved**. A bare re-add never clobbers a deliberate pin or range — re-running `facet add viper-plans` won't overwrite a `viper-plans@1.*` you set on purpose.
+- Bare re-add over an **invalid** value (e.g. a stale entry where the name leaked into the version position) → the value is **healed** to the resolved exact version.
 
 ## Flags
 

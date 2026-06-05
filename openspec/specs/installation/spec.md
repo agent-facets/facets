@@ -193,17 +193,22 @@ When a user specifies a version, the system SHALL accept only one of five forms:
 
 ### Requirement: Adding a facet without a version stores the resolved version pinned
 
-When a user adds a registry facet without specifying a version, the system SHALL resolve the latest published version and SHALL record that exact version in the project manifest. A bare name and the literal tag `@latest` SHALL be equivalent and SHALL produce identical results. The user SHALL NOT need to specify a version explicitly to get reproducible builds.
+When a user adds a registry facet without specifying a version, the system SHALL resolve the latest published version and SHALL record a version specifier in the project manifest. The system SHALL NOT record the facet name in the version position. A bare name and the literal tag `@latest` SHALL be equivalent and SHALL produce identical results. The user SHALL NOT need to specify a version explicitly to get reproducible builds.
+
+When no manifest entry for the facet exists, or the existing entry's value is not a valid version specifier, the system SHALL record the resolved exact version (`name@MAJOR.MINOR.PATCH`). When a manifest entry already exists and its value is a valid version specifier, the system SHALL preserve that value unchanged, so that a re-add without a version does not overwrite a version the user previously chose.
 
 #### Scenario: Bare facet name is recorded as exact version
 
 - **WHEN** a user adds a registry facet using only its name (no version)
+- **AND** no entry for that facet exists in the project manifest
 - **THEN** the system SHALL resolve the latest published version
 - **AND** the system SHALL record `name@MAJOR.MINOR.PATCH` in the project manifest
+- **AND** the system SHALL NOT record the facet name as the version value
 
 #### Scenario: @latest tag is equivalent to a bare name
 
 - **WHEN** a user adds a registry facet using the literal `name@latest` form
+- **AND** no entry for that facet exists in the project manifest
 - **THEN** the system SHALL resolve the latest published version
 - **AND** the system SHALL record `name@MAJOR.MINOR.PATCH` in the project manifest
 - **AND** the resulting manifest, lockfile, and on-disk state SHALL be identical to what would have been produced by the bare-name form
@@ -213,6 +218,26 @@ When a user adds a registry facet without specifying a version, the system SHALL
 - **WHEN** a user adds a registry facet using a wildcard form (e.g., `name@1.*`)
 - **THEN** the system SHALL record the wildcard as written in the project manifest
 - **AND** the system SHALL record the resolved exact version in the lockfile
+
+#### Scenario: Re-adding without a version preserves an existing valid version
+
+- **WHEN** the project manifest already records a facet with a valid version specifier (e.g., `1.*`, `1.2.*`, `1.2.3`, `*`, or `latest`)
+- **AND** a user re-adds that facet without specifying a version
+- **THEN** the system SHALL preserve the existing version specifier in the project manifest unchanged
+- **AND** the system SHALL NOT overwrite it with the resolved exact version
+
+#### Scenario: Re-adding without a version heals an invalid recorded value
+
+- **WHEN** the project manifest records a facet whose value is not a valid version specifier (e.g., the facet name appears in the version position)
+- **AND** a user re-adds that facet without specifying a version
+- **THEN** the system SHALL resolve the latest published version
+- **AND** the system SHALL replace the invalid value with the resolved exact version (`name@MAJOR.MINOR.PATCH`) in the project manifest
+
+#### Scenario: Adding a git or local facet records the full source specifier
+
+- **WHEN** a user adds a facet from a git source or a local path
+- **THEN** the system SHALL record the full source specifier (the git URL with any ref, or the local path) as the manifest value
+- **AND** the system SHALL NOT replace it with a version specifier
 
 ### Requirement: Source specifier syntax matches established package-manager conventions
 

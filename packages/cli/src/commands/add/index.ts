@@ -1,17 +1,12 @@
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
 import {
-  emptyFacetsJson,
-  loadFacetsJson,
+  type AddPrepareFailure,
+  type AddSource,
   loadInstalledAdapters,
   type ParseError,
   parseFacetSource,
-  type RunInstallResult,
-  runInstall,
-  type Source,
-  upsertFacetInManifest,
-  writeFacetsJson,
+  type RunAddResult,
+  runAdd,
 } from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
@@ -24,17 +19,14 @@ import { pickAndInstallAdapters } from '../adapter/pick-and-install.ts'
  * `facet add <source> [more sources...]` — adds one or more facets to
  * `facets.json` and immediately installs them.
  *
- * The pipeline:
- *   1. Parse every source up front (no I/O). Any parse error aborts
- *      before mutating disk.
- *   2. Discover installable adapters. If none and stdout is a TTY,
- *      auto-launch the adapter picker. Non-TTY → fail.
- *   3. Byte-snapshot `facets.json` for rollback.
- *   4. Write the new entries to `facets.json` (default-to-pinned for
- *      bare/wildcard versions; wildcard form preserved as written).
- *   5. Mount `<InstallView mode="add" />` and call `runInstall`.
- *   6. On `runInstall` failure, restore the manifest snapshot
- *      byte-for-byte so the project is exactly as it was pre-command.
+ * This command is a thin caller over the engine `add` orchestrator
+ * (`runAdd`), which owns the entire manifest transaction: resolve each
+ * source's facet name, snapshot `facets.json`, write provisional entries
+ * (applying the per-source manifest-value rule), run the install
+ * pipeline, rewrite pinned entries with the resolved version on success,
+ * and restore the snapshot on failure. This file only parses argv,
+ * ensures adapters, renders progress, and maps the result to an exit
+ * code + error block.
  */
 export const addCommand: Command = {
   name: 'add',
@@ -57,73 +49,30 @@ export const addCommand: Command = {
     const verbose = flags.verbose === true
     const onLog = verbose ? (line: string) => process.stderr.write(`${line}\n`) : undefined
 
-    // Step 1: parse every source up front. No I/O happens here.
-    const parsed: Array<{ specifier: string; source: Source }> = []
+    // Parse every source up front. No I/O happens here; any parse error
+    // aborts before mounting the view or touching disk.
+    const sources: AddSource[] = []
     for (const specifier of args) {
       const result = parseFacetSource(specifier)
       if (!result.ok) {
         writeParseError(specifier, result.error)
         return 1
       }
-      parsed.push({ specifier, source: result.value })
+      sources.push({ specifier, source: result.value })
     }
 
     const projectRoot = process.cwd()
 
-    // Step 2: discover or pick adapters.
+    // Discover or pick adapters.
     const adapters = await ensureAdapters()
     if (adapters === null) {
       // ensureAdapters already wrote the appropriate CLI error.
       return 1
     }
 
-    // Step 3: byte-snapshot facets.json for rollback.
-    const facetsJsonPath = join(projectRoot, 'facets.json')
-    const snapshot: Buffer | null = existsSync(facetsJsonPath) ? readFileSync(facetsJsonPath) : null
-
-    // Step 4: write new entries to facets.json.
-    // Each entry is keyed by the facet's name; that comes from the
-    // facet's own facet.json which we'll learn during runInstall's
-    // planFacet step. For now we use the user's specifier as both the
-    // key candidate AND the value, then rely on runInstall to surface
-    // any name mismatch via its MANIFEST_NAME_MISMATCH failure code —
-    // but to write a sensible facets.json before the install runs, we
-    // need the name now. Pre-resolve it cheaply by reading the source's
-    // facet.json directly (the same loadManifest call runInstall makes
-    // internally; doing it here too is the price of "write manifest
-    // before install").
-    const namesByIndex: string[] = []
-    for (let i = 0; i < parsed.length; i++) {
-      const entry = parsed[i]
-      if (!entry) continue
-      const name = await peekFacetName(entry.source, entry.specifier)
-      if (name === null) {
-        // peekFacetName already wrote a CLI error.
-        return 1
-      }
-      namesByIndex[i] = name
-    }
-
-    // Now mutate facets.json with the new entries.
-    const loaded = loadFacetsJson(projectRoot)
-    if (!loaded.ok) {
-      writeCliError({
-        what: 'could not read facets.json',
-        detail: loaded.error,
-        fix: 'fix or delete the malformed facets.json and retry',
-      })
-      return 1
-    }
-    const json = loaded.existed ? loaded.data : emptyFacetsJson()
-    for (let i = 0; i < parsed.length; i++) {
-      const entry = parsed[i]
-      const name = namesByIndex[i]
-      if (!entry || !name) continue
-      upsertFacetInManifest(json, name, entry.specifier)
-    }
-    writeFacetsJson(projectRoot, json)
-
-    // Step 5: mount InstallView and run runInstall.
+    // Wire SIGINT to an AbortController so engine never installs a
+    // process-global signal handler. The view's deferred-exit pattern
+    // ensures the rollback render lands before unmount.
     const controller = new AbortController()
     const sigintHandler = () => {
       process.stderr.write('\nInterrupted. Rolling back...\n')
@@ -131,23 +80,32 @@ export const addCommand: Command = {
     }
     process.on('SIGINT', sigintHandler)
 
-    let captured: RunInstallResult | undefined
+    let captured: RunAddResult | undefined
     const instance = render(
       createElement(InstallView, {
         mode: 'add',
         run: async (onStage) => {
-          const result = await runInstall({
+          const result = await runAdd({
             projectRoot,
+            sources,
             adapters,
             onStage,
-            onLog,
+            ...(onLog ? { onLog } : {}),
             signal: controller.signal,
           })
           captured = result
-          return result
+          // The view renders from a RunInstallResult-shaped value. Map
+          // runAdd's result into what the view expects: install success
+          // and install failures pass through verbatim; a prepare-phase
+          // failure surfaces via the dedicated prepare-failure arm.
+          if (result.ok) return result.install
+          if (result.phase === 'install') return result.install
+          return { ok: false, prepareFailure: result.failure }
         },
         onComplete: (r) => {
-          captured = r
+          // `onComplete` receives the view-shaped result; `captured` is
+          // already the richer RunAddResult set in `run`.
+          void r
         },
       }),
     )
@@ -160,28 +118,36 @@ export const addCommand: Command = {
       process.off('SIGINT', sigintHandler)
     }
 
-    // Step 6: on failure, restore the manifest snapshot.
-    if (!captured?.ok) {
-      restoreSnapshot(facetsJsonPath, snapshot)
-      // Branch the user-facing guidance on the rollback outcome's `kind`.
-      // When `partial-failure`, the journal couldn't reverse some
-      // materialize operations and adapter files may remain on disk — the
-      // user needs to know that rather than be told "project state
-      // unchanged" and assume a clean retry.
-      const rollback = captured?.rollback
-      const partialFailureCount = rollback?.kind === 'partial-failure' ? rollback.failures : 0
-      const rollbackFailed = partialFailureCount > 0
+    if (!captured) {
       writeCliError({
         what: 'add failed',
-        detail: captured ? `code=${captured.failure.code}` : 'no result from install pipeline',
-        fix: rollbackFailed
-          ? `partial rollback: ${partialFailureCount} undo step(s) failed; some adapter files may remain. Inspect and clean manually before re-running 'facet add'.`
-          : "rollback complete; project state unchanged. Fix the underlying issue and re-run 'facet add'.",
+        detail: 'the add pipeline returned no result',
+        fix: 'this is a bug; please file an issue with the verbose log',
       })
       return 1
     }
 
-    return 0
+    if (captured.ok) return 0
+
+    if (captured.phase === 'prepare') {
+      writePrepareError(captured.failure)
+      return 1
+    }
+
+    // Install-phase failure. The orchestrator restored the manifest
+    // snapshot; branch the guidance on whether restore succeeded and
+    // whether the install rollback was partial.
+    const rollback = captured.install.rollback
+    const partialFailureCount = rollback.kind === 'partial-failure' ? rollback.failures : 0
+    const rollbackFailed = partialFailureCount > 0 || !captured.manifestRestored
+    writeCliError({
+      what: 'add failed',
+      detail: `code=${captured.install.failure.code}`,
+      fix: rollbackFailed
+        ? `partial rollback: some state may remain (manifest restored: ${captured.manifestRestored}). Inspect and clean manually before re-running 'facet add'.`
+        : "rollback complete; project state unchanged. Fix the underlying issue and re-run 'facet add'.",
+    })
+    return 1
   },
 }
 
@@ -232,109 +198,6 @@ async function ensureAdapters(): Promise<ReadonlyArray<Adapter> | null> {
   return null
 }
 
-/**
- * Read the source's `facet.json` just far enough to learn the facet's
- * name. We do this here (not just inside runInstall) so the manifest
- * write step can use the correct name as the `facets.json` key.
- *
- * This duplicates a small slice of `runInstall.planFacet`'s work. The
- * alternative is to pass the user's specifier in as the key and let
- * the install fail with `MANIFEST_NAME_MISMATCH` after the manifest is
- * already on disk — uglier and harder to roll back from cleanly.
- */
-async function peekFacetName(source: Source, specifier: string): Promise<string | null> {
-  if (source.kind === 'registry') {
-    // Registry source: the canonical name on the parsed source IS the
-    // facet name (the registry keys by canonical name), so we can write
-    // the manifest entry without a network round-trip. runInstall will
-    // verify the manifest's declared name matches when it downloads.
-    return source.name
-  }
-  const { loadManifest } = await import('@agent-facets/engine')
-  let sourceDir: string
-  let cleanup: (() => Promise<void>) | undefined
-  if (source.kind === 'git') {
-    const { cloneFacetGitSource } = await import('@agent-facets/engine')
-    const cloned = await cloneFacetGitSource(source.url, source.ref)
-    if (!cloned.ok) {
-      // Each failure mode gets its own user-facing message — engine
-      // returns the structured `reason`, the CLI renders prose. Adding
-      // a new variant to `CloneFacetGitResult` forces this switch to
-      // update (compile-time obligation).
-      switch (cloned.reason) {
-        case 'git-binary-missing':
-          writeCliError({
-            what: `could not clone git source "${specifier}"`,
-            detail: 'git is not installed (or not on PATH)',
-            fix: 'install git and re-run this command',
-          })
-          return null
-        case 'auth-required':
-          writeCliError({
-            what: `git authentication required for ${cloned.url}`,
-            detail: 'closed alpha supports public repos and SSH (via agent) only',
-            fix: 'use a public URL or configure your SSH agent',
-          })
-          return null
-        case 'clone-failed':
-          writeCliError({
-            what: `could not clone git source "${specifier}"`,
-            detail: cloned.stderr,
-            fix: 'verify the URL and your network connectivity',
-          })
-          return null
-        case 'checkout-failed':
-          writeCliError({
-            what: `could not check out commit ${cloned.commitish} in ${cloned.url}`,
-            detail: cloned.stderr,
-            fix: 'verify the commit SHA exists in the repository',
-          })
-          return null
-      }
-    }
-    sourceDir = cloned.dir
-    const { rm } = await import('node:fs/promises')
-    cleanup = async () => {
-      await rm(cloned.dir, { recursive: true, force: true }).catch(() => {})
-    }
-  } else {
-    const { resolveLocalFacetSource } = await import('@agent-facets/engine')
-    const resolved = await resolveLocalFacetSource(source.path, process.cwd())
-    if (!resolved.ok) {
-      writeCliError({
-        what: `could not resolve local source "${specifier}"`,
-        detail: resolved.error,
-        fix: 'check the path exists inside the project tree',
-      })
-      return null
-    }
-    sourceDir = resolved.dir
-  }
-
-  try {
-    const manifest = await loadManifest(sourceDir)
-    if (!manifest.ok) {
-      writeCliError({
-        what: `could not load facet.json from ${specifier}`,
-        detail: manifest.errors.map((e) => e.message).join('; '),
-        fix: 'verify the source is a facet directory with a valid facet.json',
-      })
-      return null
-    }
-    if (manifest.data.facets && manifest.data.facets.length > 0) {
-      writeCliError({
-        what: 'facet composition is not supported',
-        detail: `${specifier} declares dependencies on other facets`,
-        fix: 'use a non-composing facet, or wait until composition support ships',
-      })
-      return null
-    }
-    return manifest.data.name
-  } finally {
-    if (cleanup) await cleanup()
-  }
-}
-
 function writeParseError(specifier: string, error: ParseError): void {
   writeCliError({
     what: `could not parse source "${specifier}"`,
@@ -343,10 +206,68 @@ function writeParseError(specifier: string, error: ParseError): void {
   })
 }
 
-function restoreSnapshot(path: string, snapshot: Buffer | null): void {
-  if (snapshot === null) {
-    if (existsSync(path)) rmSync(path)
-    return
+/**
+ * Map an `AddPrepareFailure` (engine) to the canonical CLI error block on
+ * stderr. The view already rendered a richer block on stdout; this keeps
+ * stderr grep-friendly and gives each failure a precise fix line.
+ */
+function writePrepareError(failure: AddPrepareFailure): void {
+  switch (failure.reason) {
+    case 'manifest-read':
+      writeCliError({
+        what: 'could not read facets.json',
+        detail: failure.error,
+        fix: 'fix or delete the malformed facets.json and retry',
+      })
+      return
+    case 'git-binary-missing':
+      writeCliError({
+        what: `could not clone git source "${failure.specifier}"`,
+        detail: 'git is not installed (or not on PATH)',
+        fix: 'install git and re-run this command',
+      })
+      return
+    case 'git-auth-required':
+      writeCliError({
+        what: `git authentication required for ${failure.url}`,
+        detail: 'closed alpha supports public repos and SSH (via agent) only',
+        fix: 'use a public URL or configure your SSH agent',
+      })
+      return
+    case 'git-clone-failed':
+      writeCliError({
+        what: `could not clone git source "${failure.specifier}"`,
+        detail: failure.stderr,
+        fix: 'verify the URL and your network connectivity',
+      })
+      return
+    case 'git-checkout-failed':
+      writeCliError({
+        what: `could not check out commit ${failure.commitish} in "${failure.specifier}"`,
+        detail: failure.stderr,
+        fix: 'verify the commit SHA exists in the repository',
+      })
+      return
+    case 'local-resolve-failed':
+      writeCliError({
+        what: `could not resolve local source "${failure.specifier}"`,
+        detail: failure.error,
+        fix: 'check the path exists inside the project tree',
+      })
+      return
+    case 'manifest-load-failed':
+      writeCliError({
+        what: `could not load facet.json from ${failure.specifier}`,
+        detail: failure.detail,
+        fix: 'verify the source is a facet directory with a valid facet.json',
+      })
+      return
+    case 'composition-rejected':
+      writeCliError({
+        what: 'facet composition is not supported',
+        detail: `${failure.specifier} declares dependencies on other facets`,
+        fix: 'use a non-composing facet, or wait until composition support ships',
+      })
+      return
   }
-  writeFileSync(path, snapshot)
 }
