@@ -22,12 +22,14 @@
     "arkregex": "0.0.5",
     "arktype": "2.2.0",
     "comment-json": "^5.0.0",
+    "ini": "7.0.0",
     "nanotar": "0.3.0",
     "openapi-fetch": "0.17.0",
     "yaml": "2.8.4"
   },
   "devDependencies": {
     "@agent-facets/common": "workspace:*",
+    "@types/ini": "4.1.1",
     "openapi-typescript": "7.13.0",
     "tsdown": "^0.22.0",
     "typescript": "^6.0.3"

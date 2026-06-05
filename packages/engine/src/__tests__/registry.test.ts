@@ -50,7 +50,7 @@ describe('resolveRegistryMetadataBatch', () => {
     return input instanceof Request ? input.url : String(input)
   }
 
-  test('latest spec collapses to "latest" in the URL and uses the server-resolved version on the archive URL', async () => {
+  test('latest spec collapses to "latest" in the URL; metadata carries the server-resolved version', async () => {
     const calledUrls: string[] = []
     globalThis.fetch = (async (input: string | URL | Request) => {
       calledUrls.push(captureUrl(input))
@@ -68,11 +68,10 @@ describe('resolveRegistryMetadataBatch', () => {
     const result = await resolveRegistryMetadataBatch([{ name: 'cowsay', version: { kind: 'latest' } }])
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
-    expect(calledUrls[0]).toBe('https://api.test/v0/packages/cowsay/latest')
+    expect(calledUrls[0]).toBe('https://api.test/v0/facets/cowsay/latest')
     const meta = result.value[0]
     if (meta === undefined) expect.unreachable()
     expect(meta.version).toBe('0.1.0')
-    expect(meta.tarballUrl).toBe('https://api.test/v0/packages/cowsay/0.1.0/archive')
     expect(meta.expectedIntegrity).toBe('sha256:abc')
   })
 
@@ -92,7 +91,7 @@ describe('resolveRegistryMetadataBatch', () => {
       )
     }) as unknown as typeof fetch
     await resolveRegistryMetadataBatch([{ name: 'cowsay', version: { kind: 'exact', major: 1, minor: 2, patch: 3 } }])
-    expect(calledUrls[0]).toBe('https://api.test/v0/packages/cowsay/1.2.3')
+    expect(calledUrls[0]).toBe('https://api.test/v0/facets/cowsay/1.2.3')
   })
 
   test('namespaced names are URL-encoded (%2F) on the URL path', async () => {
@@ -111,7 +110,7 @@ describe('resolveRegistryMetadataBatch', () => {
       )
     }) as unknown as typeof fetch
     await resolveRegistryMetadataBatch([{ name: 'acme/cowsay', version: { kind: 'latest' } }])
-    expect(calledUrls[0]).toBe('https://api.test/v0/packages/acme%2Fcowsay/latest')
+    expect(calledUrls[0]).toBe('https://api.test/v0/facets/acme%2Fcowsay/latest')
   })
 
   test('404 maps to NOT_FOUND with the spec verbatim', async () => {
@@ -130,17 +129,20 @@ describe('resolveRegistryMetadataBatch', () => {
     expect(result.error.spec).toBe('1.0.0')
   })
 
-  test('5xx with non-JSON body maps to REGISTRY_NOT_AVAILABLE', async () => {
-    // The typed client now distinguishes "registry refused service"
-    // (REGISTRY_NOT_AVAILABLE) from "transport itself failed"
-    // (NETWORK_ERROR). A 503 with a raw HTML body — common from
-    // CDN error pages — flows through the defensive branch in
-    // `translateWireError` and surfaces as REGISTRY_NOT_AVAILABLE.
+  test('5xx with non-JSON body maps to UNPARSEABLE_RESPONSE', async () => {
+    // The typed client distinguishes a well-formed structured error
+    // envelope (REGISTRY_REJECTED) from a body that is not a valid
+    // envelope at all, and from a transport failure (NETWORK_ERROR). A
+    // 503 with a raw HTML body — common from CDN error pages — has no
+    // server text to render, so it flows through the defensive branch
+    // in `translateWireError` and surfaces as UNPARSEABLE_RESPONSE,
+    // carrying the HTTP status.
     globalThis.fetch = (async () => new Response('boom', { status: 503 })) as unknown as typeof fetch
     const result = await resolveRegistryMetadataBatch([{ name: 'x', version: { kind: 'latest' } }])
     expect(result.ok).toBe(false)
     if (result.ok) expect.unreachable()
-    expect(result.error.code).toBe('REGISTRY_NOT_AVAILABLE')
+    if (result.error.code !== 'UNPARSEABLE_RESPONSE') expect.unreachable()
+    expect(result.error.status).toBe(503)
   })
 
   test('thrown fetch maps to NETWORK_ERROR', async () => {
@@ -207,38 +209,54 @@ describe('downloadAndExtractFacet', () => {
     return { bytes, integrity }
   }
 
-  test('happy path: downloads, verifies sha256, extracts files preserving paths', async () => {
+  const S3_URL = 'https://s3.example/presigned/archive.tar.gz'
+
+  /**
+   * Stub the two-hop archive download. The first fetch (the typed
+   * archive request to `…/archive`) returns a 302 to the presigned S3
+   * URL; the second fetch (the raw S3 GET) returns the supplied
+   * `archive` Response. Returns the list of requested URLs for
+   * assertions.
+   */
+  function stubArchiveDownload(archive: Response): { urls: string[] } {
+    const urls: string[] = []
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = input instanceof Request ? input.url : String(input)
+      urls.push(url)
+      if (url.endsWith('/archive')) {
+        return new Response(null, { status: 302, headers: { location: S3_URL } })
+      }
+      return archive
+    }) as unknown as typeof fetch
+    return { urls }
+  }
+
+  const META = {
+    name: 'cowsay',
+    version: '0.1.0',
+    expectedIntegrity: 'sha256:placeholder',
+  }
+
+  test('happy path: resolves the 302, downloads from S3, verifies sha256, extracts files', async () => {
     const { bytes, integrity } = buildArchive([
       { name: 'facet.json', data: '{"name":"cowsay","version":"0.1.0"}' },
       { name: 'commands/cowsay.md', data: '# cowsay\n' },
     ])
-    globalThis.fetch = (async () => new Response(bytes, { status: 200 })) as unknown as typeof fetch
-    const result = await downloadAndExtractFacet(
-      {
-        name: 'cowsay',
-        version: '0.1.0',
-        expectedIntegrity: integrity,
-        tarballUrl: 'https://api.test/v0/packages/cowsay/0.1.0/archive',
-      },
-      dest,
-    )
+    const { urls } = stubArchiveDownload(new Response(bytes, { status: 200 }))
+    const result = await downloadAndExtractFacet({ ...META, expectedIntegrity: integrity }, dest)
     expect(result.ok).toBe(true)
+    // First hop is the typed archive endpoint; second hop is the
+    // presigned S3 URL read off the 302 Location header.
+    expect(urls[0]).toBe('https://api.test/v0/facets/cowsay/0.1.0/archive')
+    expect(urls[1]).toBe(S3_URL)
     expect(readFileSync(join(dest, 'facet.json'), 'utf8')).toContain('cowsay')
     expect(readFileSync(join(dest, 'commands/cowsay.md'), 'utf8')).toContain('# cowsay')
   })
 
   test('sha256 mismatch: returns NETWORK_ERROR with hash detail and writes nothing', async () => {
     const { bytes } = buildArchive([{ name: 'facet.json', data: '{}' }])
-    globalThis.fetch = (async () => new Response(bytes, { status: 200 })) as unknown as typeof fetch
-    const result = await downloadAndExtractFacet(
-      {
-        name: 'cowsay',
-        version: '0.1.0',
-        expectedIntegrity: 'sha256:0000',
-        tarballUrl: 'https://api.test',
-      },
-      dest,
-    )
+    stubArchiveDownload(new Response(bytes, { status: 200 }))
+    const result = await downloadAndExtractFacet({ ...META, expectedIntegrity: 'sha256:0000' }, dest)
     expect(result.ok).toBe(false)
     if (result.ok) expect.unreachable()
     expect(result.error.code).toBe('NETWORK_ERROR')
@@ -246,33 +264,25 @@ describe('downloadAndExtractFacet', () => {
     expect(result.error.cause).toContain('sha256 mismatch')
   })
 
-  test('404 maps to NOT_FOUND', async () => {
+  test('archive endpoint 404 maps to NOT_FOUND', async () => {
     globalThis.fetch = (async () => new Response('gone', { status: 404 })) as unknown as typeof fetch
-    const result = await downloadAndExtractFacet(
-      {
-        name: 'cowsay',
-        version: '0.1.0',
-        expectedIntegrity: 'sha256:x',
-        tarballUrl: 'https://api.test',
-      },
-      dest,
-    )
+    const result = await downloadAndExtractFacet({ ...META, expectedIntegrity: 'sha256:x' }, dest)
     expect(result.ok).toBe(false)
     if (result.ok) expect.unreachable()
     expect(result.error.code).toBe('NOT_FOUND')
   })
 
-  test('5xx maps to NETWORK_ERROR', async () => {
-    globalThis.fetch = (async () => new Response('boom', { status: 503 })) as unknown as typeof fetch
-    const result = await downloadAndExtractFacet(
-      {
-        name: 'x',
-        version: '1.0.0',
-        expectedIntegrity: 'sha256:x',
-        tarballUrl: 'https://api.test',
-      },
-      dest,
-    )
+  test('archive endpoint 302 with no Location maps to UNEXPECTED_ERROR', async () => {
+    globalThis.fetch = (async () => new Response(null, { status: 302 })) as unknown as typeof fetch
+    const result = await downloadAndExtractFacet({ ...META, expectedIntegrity: 'sha256:x' }, dest)
+    expect(result.ok).toBe(false)
+    if (result.ok) expect.unreachable()
+    expect(result.error.code).toBe('UNEXPECTED_ERROR')
+  })
+
+  test('S3 fetch 5xx maps to NETWORK_ERROR', async () => {
+    stubArchiveDownload(new Response('boom', { status: 503 }))
+    const result = await downloadAndExtractFacet({ ...META, expectedIntegrity: 'sha256:x' }, dest)
     expect(result.ok).toBe(false)
     if (result.ok) expect.unreachable()
     expect(result.error.code).toBe('NETWORK_ERROR')
@@ -286,14 +296,9 @@ describe('downloadAndExtractFacet', () => {
 
   test('non-gzip body: clean error', async () => {
     const bytes = new TextEncoder().encode('not a tarball')
-    globalThis.fetch = (async () => new Response(bytes, { status: 200 })) as unknown as typeof fetch
+    stubArchiveDownload(new Response(bytes, { status: 200 }))
     const result = await downloadAndExtractFacet(
-      {
-        name: 'x',
-        version: '1.0.0',
-        expectedIntegrity: `sha256:${createHash('sha256').update(bytes).digest('hex')}`,
-        tarballUrl: 'https://api.test',
-      },
+      { ...META, expectedIntegrity: `sha256:${createHash('sha256').update(bytes).digest('hex')}` },
       dest,
     )
     expect(result.ok).toBe(false)

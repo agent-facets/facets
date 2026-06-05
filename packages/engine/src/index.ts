@@ -121,9 +121,11 @@ export type {
   RegistryMetadata,
   RegistryResult,
   RegistrySpec,
+  ResolvedCredential,
   RetryConfig,
   TimeoutConfig,
   WireAssetCounts,
+  WireAuthMeResponse,
   WireErrorCode,
   WireErrorResponse,
   WireHealthResponse,
@@ -132,18 +134,24 @@ export type {
   WirePackageListItem,
   WirePackageListResponse,
   WirePublishResponse,
+  WireQueuedForReviewBody,
 } from './registry/index.ts'
 export {
   createRegistryClient,
+  deleteCredentialsFile,
   describeVersionSpec,
   downloadAndExtractFacet,
   encodeFacetName,
+  fetchAuthMe,
   getRegistryBaseUrl,
   packFacetSource,
   publishFacetVersion,
+  readCredentialsToken,
+  resolveCredential,
   resolveRegistryMetadataBatch,
   translateThrownError,
   translateWireError,
+  writeCredentialsToken,
 } from './registry/index.ts'
 // scaffold
 export type { ScaffoldOptions } from './scaffold/index.ts'

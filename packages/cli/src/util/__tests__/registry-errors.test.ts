@@ -1,87 +1,77 @@
 import { describe, expect, test } from 'bun:test'
-import {
-  isRegistryErrorResponse,
-  type RegistryErrorCode,
-  type RegistryErrorResponse,
-  translateRegistryError,
-} from '../registry-errors.ts'
+import type { RegistryError } from '@agent-facets/engine'
+import { translateEngineRegistryError } from '../registry-errors.ts'
 
-/**
- * Test factory that returns a `RegistryErrorResponse`-shaped object
- * with the given `code`. Accepts known codes directly and accepts an
- * arbitrary string via the second overload — the latter exists so the
- * unknown-code fallback test below can construct an `E_FUTURE_CODE`
- * fixture without a wider cast at the call site.
- */
-function stubResponse(code: RegistryErrorCode): RegistryErrorResponse
-function stubResponse(code: string): RegistryErrorResponse
-function stubResponse(code: string): RegistryErrorResponse {
-  return {
-    error: `the server's human message about ${code}`,
-    code: code as RegistryErrorCode,
-    docsUrl: `https://agentfacets.io/errors/${code}`,
-  }
-}
+describe('translateEngineRegistryError — registry-dumb rendering', () => {
+  test('REGISTRY_REJECTED renders the server error and fix verbatim', () => {
+    const err: RegistryError = {
+      code: 'REGISTRY_REJECTED',
+      wireCode: 'E_VERSION_EXISTS',
+      error: "version 1.2.3 of 'cool-facet' already exists",
+      fix: 'bump the version in facet.json and publish again',
+      docsUrl: 'https://agentfacets.io/errors/E_VERSION_EXISTS',
+    }
 
-describe('translateRegistryError', () => {
-  // Each canonical code must map to a non-generic, non-empty fix line.
-  // If a future code lands in the response without a mapping, it should
-  // fall through to the unknown-code branch — exercised separately below.
-  const canonicalCodes: ReadonlyArray<readonly [RegistryErrorCode, string]> = [
-    ['E_FACET_NOT_FOUND', "try 'facet search <term>' to find available facets"],
-    ['E_REGISTRY_UNAVAILABLE', 'try again in a moment'],
-    ['E_TARBALL_CORRUPTED', 'try again; if persistent, check your network'],
-    ['E_TARBALL_TOO_LARGE', 'reduce the facet contents below 5 MB or split into multiple facets'],
-    ['E_API_KEY_MISSING', 'set FACET_REGISTRY_API_KEY in your environment'],
-    ['VERSION_EXISTS', 'bump `version` in facet.json and try again'],
-  ]
+    const cli = translateEngineRegistryError(err)
 
-  test.each(canonicalCodes)('%s maps to its canonical fix', (code, expectedFix) => {
-    const cli = translateRegistryError(stubResponse(code))
-    expect(cli.fix).toBe(expectedFix)
-    expect(cli.detail).toBe(`the server's human message about ${code}`)
-    expect(cli.docsUrl).toBe(`https://agentfacets.io/errors/${code}`)
-    expect(cli.what.length).toBeGreaterThan(0)
+    expect(cli.what).toBe("version 1.2.3 of 'cool-facet' already exists")
+    expect(cli.fix).toBe('bump the version in facet.json and publish again')
+    expect(cli.docsUrl).toBe('https://agentfacets.io/errors/E_VERSION_EXISTS')
   })
 
-  test('unknown code falls through to a generic fix and surfaces the code in `what`', () => {
-    const cli = translateRegistryError(stubResponse('E_FUTURE_CODE'))
-    expect(cli.fix).toBe('check the docs URL for details')
-    expect(cli.what).toContain('E_FUTURE_CODE')
+  test('REGISTRY_REJECTED does not substitute any local text for the wire code', () => {
+    // Two different wire codes with identical server text must produce
+    // identical CLI output: the CLI keys nothing off the code.
+    const base = {
+      code: 'REGISTRY_REJECTED' as const,
+      error: 'the registry says no',
+      fix: 'do the thing the registry suggests',
+      docsUrl: 'https://docs',
+    }
+    const a = translateEngineRegistryError({ ...base, wireCode: 'E_FACET_NOT_FOUND' })
+    const b = translateEngineRegistryError({ ...base, wireCode: 'E_SOME_FUTURE_CODE' })
+
+    expect(a).toEqual(b)
   })
 
-  test('preserves the docsUrl verbatim so users can deep-link from terminal output', () => {
-    const cli = translateRegistryError({
-      error: 'x',
-      code: 'E_FACET_NOT_FOUND',
-      docsUrl: 'https://docs.example/notfound',
+  test('UNPARSEABLE_RESPONSE is CLI-authored and carries no docs link', () => {
+    const cli = translateEngineRegistryError({ code: 'UNPARSEABLE_RESPONSE', status: 502 })
+
+    expect(cli.what).toContain('could not process')
+    expect(cli.what).toContain('502')
+    expect(cli.fix.length).toBeGreaterThan(0)
+    expect(cli.docsUrl).toBeUndefined()
+  })
+
+  test('NOT_FOUND is CLI-authored with a search suggestion', () => {
+    const cli = translateEngineRegistryError({ code: 'NOT_FOUND', name: 'cool-facet', spec: '^1' })
+
+    expect(cli.what).toContain('cool-facet')
+    expect(cli.what).toContain('^1')
+    expect(cli.fix).toContain('facet search')
+    expect(cli.docsUrl).toBeUndefined()
+  })
+
+  test('NETWORK_ERROR surfaces retry history when attempts > 1', () => {
+    const single = translateEngineRegistryError({
+      code: 'NETWORK_ERROR',
+      cause: 'connection refused',
+      attempts: 1,
     })
-    expect(cli.docsUrl).toBe('https://docs.example/notfound')
-  })
-})
+    expect(single.detail).toBe('connection refused')
 
-describe('isRegistryErrorResponse', () => {
-  test('accepts a well-formed registry error response', () => {
-    expect(
-      isRegistryErrorResponse({
-        error: 'x',
-        code: 'E_FACET_NOT_FOUND',
-        docsUrl: 'https://docs',
-      }),
-    ).toBe(true)
+    const retried = translateEngineRegistryError({
+      code: 'NETWORK_ERROR',
+      cause: 'connection refused',
+      attempts: 3,
+    })
+    expect(retried.detail).toContain('after 3 attempts')
   })
 
-  test.each([
-    ['null', null],
-    ['undefined', undefined],
-    ['number', 42],
-    ['string', 'oops'],
-    ['empty object', {}],
-    ['missing code', { error: 'x', docsUrl: 'y' }],
-    ['missing error', { code: 'x', docsUrl: 'y' }],
-    ['missing docsUrl', { error: 'x', code: 'y' }],
-    ['code is non-string', { error: 'x', code: 42, docsUrl: 'y' }],
-  ])('rejects %s', (_label, value) => {
-    expect(isRegistryErrorResponse(value)).toBe(false)
+  test('UNEXPECTED_ERROR surfaces the cause and asks the user to file a bug', () => {
+    const cli = translateEngineRegistryError({ code: 'UNEXPECTED_ERROR', cause: 'TypeError: boom' })
+
+    expect(cli.detail).toBe('TypeError: boom')
+    expect(cli.fix).toContain('file a bug')
   })
 })

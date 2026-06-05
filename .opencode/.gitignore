@@ -4,6 +4,7 @@ commands/
 agents/
 
 plans/
+pr-reviews/
 node_modules
 package.json
 bun.lock

@@ -38,6 +38,20 @@ export interface RegistryClientConfig {
    * Useful in tests that want to point at a stub server.
    */
   baseUrl?: string
+  /**
+   * Bearer credential to attach to every outgoing request. When set,
+   * an `Authorization: Bearer <credential>` header is added to all
+   * requests — reads and writes alike — so authenticated traffic earns
+   * the registry's authenticated rate-limit tier. When omitted, no auth
+   * header is sent and requests go out anonymously.
+   *
+   * The factory does no env/file I/O: callers resolve the credential
+   * (via `resolveCredential()`) and pass the token here. The factory
+   * never inspects or validates the token — a malformed, expired, or
+   * revoked token is sent as-is and the registry decides what to do
+   * with it.
+   */
+  credential?: string
   /** Timeout middleware config. Omit to use defaults. */
   timeout?: Partial<TimeoutConfig>
   /** Retry middleware config. Omit to use defaults. */
@@ -68,9 +82,28 @@ export function createRegistryClient(cfg: RegistryClientConfig = {}): Client<pat
     baseUrl: cfg.baseUrl ?? getRegistryBaseUrl(),
     fetch: cfg.fetch,
   })
+  if (cfg.credential !== undefined) {
+    client.use(createAuthMiddleware(cfg.credential))
+  }
   client.use(createTimeoutMiddleware(cfg.timeout))
   client.use(createRetryMiddleware(cfg.retry))
   return client
+}
+
+/**
+ * Middleware that attaches `Authorization: Bearer <credential>` to
+ * every outgoing request. Registered only when a credential is
+ * supplied, so the anonymous path sends no auth header at all. Headers
+ * are set on the live `Request` before it is dispatched; `onRequest`
+ * fires forward, so this runs before timeout/retry arm the request.
+ */
+function createAuthMiddleware(credential: string) {
+  return {
+    onRequest({ request }: { request: Request }) {
+      request.headers.set('Authorization', `Bearer ${credential}`)
+      return request
+    },
+  }
 }
 
 /**
@@ -104,25 +137,23 @@ export function translateWireError(
   if (status === 404 && notFoundContext) {
     return { code: 'NOT_FOUND', name: notFoundContext.name, spec: notFoundContext.spec }
   }
-  // If the response body isn't a parseable structured envelope —
-  // raw text, missing, or otherwise non-object — surface a generic
-  // unavailability error keyed off the HTTP status. Better than
-  // throwing on `wire.error` access.
+  // If the response body isn't a well-formed structured envelope —
+  // raw text, missing, or otherwise non-object — there is no server
+  // text to render. Surface UNPARSEABLE_RESPONSE keyed off the HTTP
+  // status. Better than throwing on `wire.error` access.
   if (typeof wire !== 'object' || wire === null) {
-    return {
-      code: 'REGISTRY_NOT_AVAILABLE',
-      what: `registry returned HTTP ${status}`,
-      fix: 'try again in a moment',
-    }
+    return { code: 'UNPARSEABLE_RESPONSE', status }
   }
-  // Structured envelope: pass the server's strings through.
-  // REGISTRY_NOT_AVAILABLE is just the discriminator that tells the
-  // caller "the registry refused service for a reason it has
-  // explained."
+  // Structured envelope: carry the registry's `code`, `error`, `fix`,
+  // and `docsUrl` through verbatim. The registry is the single source
+  // of truth for what the error means and how to fix it; the CLI does
+  // not maintain any local code-to-message map (see design D4).
   return {
-    code: 'REGISTRY_NOT_AVAILABLE',
-    what: wire.error,
-    fix: `see ${wire.docsUrl}`,
+    code: 'REGISTRY_REJECTED',
+    wireCode: wire.code,
+    error: wire.error,
+    fix: wire.fix,
+    docsUrl: wire.docsUrl,
   }
 }
 

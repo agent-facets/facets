@@ -59,15 +59,32 @@ export type WireErrorCode = WireErrorResponse['code']
 
 /**
  * Wire shape of the publish endpoint's success response (HTTP 201).
- * The CLI does not currently read this body, but typing it here
- * keeps the door open for future consumers.
+ * Carries the published `name`, `version`, and `contentHash`.
  */
 export type WirePublishResponse = components['schemas']['PublishResponse']
+
+/**
+ * Wire shape of the publish endpoint's queued-for-review response
+ * (HTTP 202). Returned when a first-time publish of a reserved or
+ * over-budget global facet is accepted into the registry's moderation
+ * queue rather than published immediately. Carries `status:
+ * 'QUEUED_FOR_REVIEW'` (the success discriminant), a `reason`, and the
+ * `fix` / `docsUrl` guidance text the CLI renders verbatim.
+ */
+export type WireQueuedForReviewBody = components['schemas']['QueuedForReviewBody']
 
 /**
  * Wire shape of the health endpoint's success response.
  */
 export type WireHealthResponse = components['schemas']['HealthResponse']
+
+/**
+ * Wire shape returned by `GET /v0/auth/me` (the authenticated-profile
+ * endpoint). Carries `username`, `email`, `tier`, `suspended`, and
+ * `user_uuid`. Used to verify a pasted token at login time and to back
+ * the `facet whoami` readout.
+ */
+export type WireAuthMeResponse = components['schemas']['AuthMeResponse']
 
 /**
  * Asset counts attached to every search result and metadata response.

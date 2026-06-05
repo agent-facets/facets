@@ -4,6 +4,70 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-06-05" description="Bearer-token auth for the registry; new login/whoami/logout commands; FACET_REGISTRY_API_KEY removed" tags={["CLI", "Breaking", "New Feature"]} rss={{
+  title: "Registry auth moves to bearer tokens; new login/whoami/logout commands",
+  description: "The facet CLI now authenticates to the registry with a personal access token sent as a bearer credential, replacing the old FACET_REGISTRY_API_KEY API key. FACET_REGISTRY_API_KEY has been removed with no shim. Provide a token via the FACET_TOKEN environment variable or by running the new `facet login` command, which verifies the token and saves it to ~/.facet/credentials. Two more new commands: `facet whoami` prints the signed-in identity, and `facet logout` clears the saved credential. `facet publish` now also accepts an optional directory argument. Registry errors are now rendered using the registry's own message and suggested fix."
+}}>
+  ## Registry authentication is now bearer-token based
+
+  **Breaking:** the `FACET_REGISTRY_API_KEY` environment variable has been
+  **removed** — there is no fallback or deprecation shim. The CLI now sends an
+  `Authorization: Bearer <token>` header, where the token is a personal access
+  token (PAT) you mint in the web UI.
+
+  Provide the token one of two ways:
+
+  ```bash
+  # 1. Environment variable (preferred for CI):
+  export FACET_TOKEN=fct_pub_…
+  facet publish
+
+  # 2. Or sign in interactively — verifies the token and saves it to
+  #    ~/.facet/credentials (mode 600):
+  facet login
+  ```
+
+  When `FACET_TOKEN` is set it takes precedence over the saved file. Read-only
+  commands like `facet search` and `facet add` send the token too when one is
+  available (earning a higher rate-limit tier) and work anonymously otherwise.
+
+  ## New commands: `login`, `whoami`, `logout`
+
+  - **`facet login`** — guided sign-in. Paste a PAT; the CLI verifies it
+    against the registry before saving it, so a typo or expired token fails
+    fast instead of surfacing later at publish time. A browser sign-in option
+    is shown as "coming soon".
+  - **`facet whoami`** — prints the signed-in username, email, and tier, and
+    notes when `FACET_TOKEN` is the active credential.
+  - **`facet logout`** — removes the saved credentials file. It makes no
+    server call; revoke PATs in the web UI. If `FACET_TOKEN` is still set, it
+    tells you so.
+
+  ## `facet publish` takes an optional directory
+
+  `facet publish` now accepts a directory argument and defaults to the current
+  directory, matching `facet build`, `facet edit`, and `facet create`:
+
+  ```bash
+  facet publish            # publish the facet in the current directory
+  facet publish ./cowsay   # publish the facet in ./cowsay
+  ```
+
+  A first-time publish of a reserved or over-budget global facet may be queued
+  for admin review — this is reported as a success, not an error.
+
+  ## Registry errors render verbatim
+
+  When the registry rejects a request, the CLI now shows the registry's own
+  message and suggested fix rather than translating the error code through a
+  local table. The registry is the single source of truth for what an error
+  means — so error guidance stays accurate as the registry evolves, with no CLI
+  release required.
+
+  See the [Publish Flow](/specification/publish) spec for the full
+  authentication model.
+</Update>
+
 <Update label="2026-05-14" description="Consolidate everything under FACET_DIR; new FACET_BIN_OVERRIDE; lock moves out of project root" tags={["CLI", "Breaking"]} rss={{
   title: "Consolidate everything under FACET_DIR and move the install lock out of the project root",
   description: "One environment variable now controls everything the CLI writes to disk: FACET_DIR (default ~/.facet). The cache, installed adapters, install advisory locks, and the curl-installed binary all live under it. FACET_BIN_OVERRIDE replaces FACET_BIN_PATH as the launcher's binary override (and continues to refuse self-update when set, because overriding means you've taken control). The install advisory lock moves from <projectRoot>/.facets/.install.lock to $FACET_DIR/locks/<basename>-<hash>.lock — facet install no longer writes anything to your project root. Removed env vars (no aliases, hard rename): FACETS_CACHE_DIR, FACETS_ADAPTERS_DIR, FACET_CACHE_DIR, FACET_ADAPTERS_DIR, FACET_INSTALL_DIR, FACET_BIN_PATH. No automatic migration of existing ~/.facets/ data."
