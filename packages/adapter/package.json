@@ -21,7 +21,7 @@
     "types": "tsc --noEmit"
   },
   "dependencies": {
-    "yaml": "2.8.4"
+    "yaml": "2.9.0"
   },
   "devDependencies": {
     "@agent-facets/common": "workspace:*",
