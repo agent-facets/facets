@@ -8,6 +8,7 @@ import { loadManifest, resolvePrompts } from '../loaders/facet.ts'
 import { downloadAndExtractFacet } from '../registry/download.ts'
 import { resolveRegistryMetadataBatch } from '../registry/resolve-metadata.ts'
 import { parseFacetSource } from '../sources/facet/parse-source.ts'
+import type { Source } from '../sources/facet/types.ts'
 import { parseVersionSpec } from '../sources/facet/parse-version.ts'
 import { cloneFacetGitSource } from '../sources/facet/resolve-git.ts'
 import { resolveLocalFacetSource } from '../sources/facet/resolve-local.ts'
@@ -48,6 +49,35 @@ export interface PlanFacetSuccess {
 
 export type PlanFacetResult = { ok: true; value: PlanFacetSuccess } | { ok: false; failure: RunInstallFailure }
 
+/**
+ * Decide whether a lockfile entry still applies to the manifest source.
+ *
+ * Pure function — exported for unit testing. When it returns `undefined`,
+ * the caller treats the entry like a fresh add: no cache lookup by the old
+ * version, no clone at the old commit, and no integrity check against bytes
+ * from the old source.
+ */
+export function resolveEffectiveLockedForPlan(
+  locked: LockfileFacet | undefined,
+  source: Source,
+  specifier: string,
+): LockfileFacet | undefined {
+  // A registry lock is stale when its version no longer satisfies the
+  // manifest spec (hand-edit / pull / merge). A git lock is stale when
+  // the manifest source string no longer matches the locked source; the
+  // old commit/integrity belong to the old origin and must not constrain
+  // the new clone.
+  //
+  // Local entries are intentionally not stale here. Non-frozen local
+  // installs rebuild from disk and overwrite the entry; frozen installs
+  // reject source drift in the preflight before planning.
+  const isRegistryStale =
+    locked !== undefined && source.kind === 'registry' && !satisfies(parseLockedVersion(locked.version), source.version)
+  const isGitSourceChanged = locked !== undefined && source.kind === 'git' && specifier !== locked.source
+
+  return isRegistryStale || isGitSourceChanged ? undefined : locked
+}
+
 export async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
   const { facetName, specifier, projectRoot, previousLockfile, onStage, onLog } = args
 
@@ -83,20 +113,9 @@ export async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
   // exactly these bytes (or fail loudly). Cache hits short-circuit when
   // the sidecar matches `locked.integrity`.
   const locked = previousLockfile.facets[facetName]
-  // A registry lock is stale when its version no longer satisfies the
-  // manifest spec (hand-edit / pull / merge). A git lock is stale when
-  // the manifest source string no longer matches the locked source; the
-  // old commit/integrity belong to the old origin and must not constrain
-  // the new clone.
-  //
   // A stale entry is treated as absent below so the facet re-resolves like
   // a fresh add, overwriting the stale entry.
-  const isRegistryStale =
-    locked !== undefined &&
-    parsed.value.kind === 'registry' &&
-    !satisfies(parseLockedVersion(locked.version), parsed.value.version)
-  const isGitSourceChanged = locked !== undefined && parsed.value.kind === 'git' && specifier !== locked.source
-  const effectiveLocked = isRegistryStale || isGitSourceChanged ? undefined : locked
+  const effectiveLocked = resolveEffectiveLockedForPlan(locked, parsed.value, specifier)
   // Set when a cache hit's sidecar matches the locked integrity. The
   // sidecar IS the post-write trust certificate; we don't rebuild to
   // re-derive what the cache already proved at write time.
