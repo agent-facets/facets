@@ -1,22 +1,35 @@
 # agent-facets
 
+## 0.13.0
+
+### Minor Changes
+
+- [#281](https://github.com/agent-facets/facets/pull/281) [`e48aadf`](https://github.com/agent-facets/facets/commit/e48aadf76a0eff5bdcf36dfff612d0a1647cca38) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Migrate the CLI to the registry's Bearer-token `/v0/facets/*` contract.
+    **Breaking:** the `FACET_REGISTRY_API_KEY` environment variable is removed with no fallback. Authenticate with a personal access token instead — set `FACET_TOKEN`, or run the new `facet login` to verify and save one to `~/.facet/credentials`.
+    Also adds `facet whoami` and `facet logout`; renders registry errors using the registry's own message and suggested fix; lets `facet publish` take an optional directory argument; and treats a queued-for-review publish as success.
+
+### Patch Changes
+
+- [#282](https://github.com/agent-facets/facets/pull/282) [`2e49722`](https://github.com/agent-facets/facets/commit/2e497226bc5d0a843696b271b11007c64a080bc8) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Fix `facet add` to write resolved versions instead of the facet name
+- [#276](https://github.com/agent-facets/facets/pull/276) [`c3f0357`](https://github.com/agent-facets/facets/commit/c3f03572c4d46913a4af0d2e0b0d94252751c38b) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump ink from 7.0.2 to 7.0.5
+
 ## 0.12.0
 
 ### Minor Changes
 
 - [#260](https://github.com/agent-facets/facets/pull/260) [`16cd45a`](https://github.com/agent-facets/facets/commit/16cd45ae260e299eb3b7a1943c843c9998a7859a) Thanks [@eXamadeus](https://github.com/eXamadeus)! - **Breaking:** Consolidate every directory env var into a single
-    `FACET_DIR`, rename the launcher binary override, and move the install
-    advisory lock out of the project root.
-    ## What changed
-    One env var, `FACET_DIR` (default `~/.facet`), now controls every
-    directory the facet CLI writes to disk. Everything lives under it:
-    -   `$FACET_DIR/bin/` — curl-installed binary
-    -   `$FACET_DIR/cache/` — content-addressed cache for fetched payloads
-    -   `$FACET_DIR/adapters/` — installed adapter bundles
-    -   `$FACET_DIR/locks/` — install advisory locks (one file per project,
-        keyed by `<basename>-<sha256(realpath)[:16]>.lock`)
+  `FACET_DIR`, rename the launcher binary override, and move the install
+  advisory lock out of the project root.
+  ## What changed
+  One env var, `FACET_DIR` (default `~/.facet`), now controls every
+  directory the facet CLI writes to disk. Everything lives under it:
+  - `$FACET_DIR/bin/` — curl-installed binary
+  - `$FACET_DIR/cache/` — content-addressed cache for fetched payloads
+  - `$FACET_DIR/adapters/` — installed adapter bundles
+  - `$FACET_DIR/locks/` — install advisory locks (one file per project,
+    keyed by `<basename>-<sha256(realpath)[:16]>.lock`)
     The launcher's binary override is renamed:
-    -   `FACET_BIN_PATH` → `FACET_BIN_OVERRIDE`
+  - `FACET_BIN_PATH` → `FACET_BIN_OVERRIDE`
     The name carries the semantics: setting it overrides which binary the
     launcher executes, and `facet self-update` continues to refuse while
     it's set because overriding means you've taken control of binary
@@ -27,22 +40,22 @@
     `$FACET_DIR/locks/<basename>-<hash>.lock`, keyed by the project's
     canonical path. The project root stays clean — `facet install` writes
     nothing next to `facets.json`.
-    ## Removed env vars
-    Hard rename, no aliases. Old names are silently ignored; values fall
-    back to defaults until users rename in their shell rc files or CI configs:
-    -   `FACETS_CACHE_DIR`
-    -   `FACETS_ADAPTERS_DIR`
-    -   `FACET_CACHE_DIR`
-    -   `FACET_ADAPTERS_DIR`
-    -   `FACET_INSTALL_DIR`
-    -   `FACET_BIN_PATH`
+  ## Removed env vars
+  Hard rename, no aliases. Old names are silently ignored; values fall
+  back to defaults until users rename in their shell rc files or CI configs:
+  - `FACETS_CACHE_DIR`
+  - `FACETS_ADAPTERS_DIR`
+  - `FACET_CACHE_DIR`
+  - `FACET_ADAPTERS_DIR`
+  - `FACET_INSTALL_DIR`
+  - `FACET_BIN_PATH`
     `FACET_CLI_REGISTRY` and `FACET_VERSION` (used by `install.sh`) are
     unchanged.
-    ## No migration
-    Existing cached payloads and adapters at `~/.facets/` are not detected,
-    copied, or warned about. The new code reads `$FACET_DIR` only.
-    Users may delete `~/.facets/` at any time; the new code will rebuild
-    cache and adapters on first use.
+  ## No migration
+  Existing cached payloads and adapters at `~/.facets/` are not detected,
+  copied, or warned about. The new code reads `$FACET_DIR` only.
+  Users may delete `~/.facets/` at any time; the new code will rebuild
+  cache and adapters on first use.
 
 ## 0.11.0
 
