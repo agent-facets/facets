@@ -174,6 +174,16 @@ export function FailureBlock({ failure }: { failure: RunInstallFailure }): React
           <Text> {failure.stderr}</Text>
         </Box>
       )
+    case 'GIT_COMMIT_UNRESOLVED':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ could not resolve a commit for {failure.facet} ({failure.url})
+          </Text>
+          <Text> a git source must resolve to a commit to be reproducible</Text>
+          <Text> {failure.stderr}</Text>
+        </Box>
+      )
     case 'LOCAL_RESOLVE_FAILED':
       return (
         <Box flexDirection="column" marginTop={1}>

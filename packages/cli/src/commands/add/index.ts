@@ -248,6 +248,13 @@ function writePrepareError(failure: AddPrepareFailure): void {
         fix: 'verify the commit SHA exists in the repository',
       })
       return
+    case 'git-commit-unresolved':
+      writeCliError({
+        what: `could not pin a commit for git source "${failure.specifier}"`,
+        detail: failure.stderr || `cloned ${failure.url} but git rev-parse HEAD did not return a commit`,
+        fix: 'a git source must resolve to a commit to be reproducible; verify the repository has a valid HEAD',
+      })
+      return
     case 'local-resolve-failed':
       writeCliError({
         what: `could not resolve local source "${failure.specifier}"`,

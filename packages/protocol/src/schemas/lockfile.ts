@@ -51,16 +51,56 @@ const LockedVersion = type('string').narrow(
 )
 
 /**
+ * A locked git commit SHA. Narrowed so a commitless or non-SHA git source
+ * can't satisfy the schema — the commit is the immutable identity that makes
+ * a git install reproducible (see `LockfileSource`). Lowercase hex, at least
+ * 8 characters, with no upper bound: this admits abbreviated SHAs, full
+ * SHA-1 (40 chars), and SHA-256 (64 chars) without a special case. The
+ * install pipeline always writes a full `git rev-parse HEAD`; the lower
+ * bound only guards against hand-edited or truncated entries.
+ */
+const LOCKED_COMMIT_RE = /^[0-9a-f]{8,}$/
+const LockedCommit = type('string').narrow(
+  (s, ctx) => LOCKED_COMMIT_RE.test(s) || ctx.mustBe('a lowercase hex commit SHA (at least 8 characters)'),
+)
+
+/**
+ * Tagged source provenance for a locked facet entry. One variant per
+ * source kind; each carries only the provenance fields meaningful for
+ * that kind, so an illegal cross-kind combination is unrepresentable.
+ *
+ *   - `registry`: the registry origin (base URL) the artifact was
+ *     resolved from. Carries NO version specifier — the entry's
+ *     `version` field is the resolved identity and the facet name is
+ *     the map key, so there is no slot for an unresolved spec
+ *     (`latest`, `1.*`) to leak into.
+ *   - `git`: the repository URL plus the REQUIRED resolved commit SHA.
+ *     The commit is the immutable identity that makes the install
+ *     reproducible — a git entry without one is not reproducible and is
+ *     therefore not representable. The symbolic ref (`#main`, a tag) is
+ *     deliberately NOT recorded: a ref is what the user *requested*
+ *     (a manifest concern, and mutable), whereas the lockfile records
+ *     what was *resolved*.
+ *   - `local`: the resolved path.
+ *
+ * Expressed with `.or()` (the schema-layer idiom in this package) over
+ * three inline object literals discriminated by `kind`.
+ */
+const LockfileSource = type({ kind: "'registry'", registry: 'string' })
+  .or({ kind: "'git'", url: 'string', commit: LockedCommit })
+  .or({ kind: "'local'", path: 'string' })
+
+/**
  * A single resolved facet entry.
  *
- * `ref` and `commit` are git-source only. Local-path sources omit both.
- * `version` and `integrity` are always present (derived from the
- * freshly-built .facet, not trusted from the input).
+ * `source` is a tagged provenance value (see `LockfileSource`); git
+ * provenance, including the resolved commit, lives inside that value —
+ * there are no top-level `ref`/`commit` fields. `version` and
+ * `integrity` are always present (derived from the freshly-built
+ * .facet, not trusted from the input).
  */
 const LockfileFacetEntry = type({
-  source: 'string',
-  'ref?': 'string',
-  'commit?': 'string',
+  source: LockfileSource,
   version: LockedVersion,
   integrity: 'string',
   assets: LockfileAsset.array(),
@@ -84,6 +124,9 @@ export type Lockfile = typeof LockfileSchema.infer
 
 /** Inferred type for a single facet entry inside a lockfile */
 export type LockfileFacet = typeof LockfileFacetEntry.infer
+
+/** Inferred type for a locked facet's tagged source provenance */
+export type LockfileSource = typeof LockfileSource.infer
 
 /** Inferred type for a single asset entry in the lockfile */
 export type LockfileAssetEntry = typeof LockfileAsset.infer

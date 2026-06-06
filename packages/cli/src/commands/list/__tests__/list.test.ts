@@ -72,7 +72,7 @@ describe('listCommand', () => {
         lockfileVersion: 1,
         facets: {
           cowsay: {
-            source: 'cowsay@latest',
+            source: { kind: 'registry', registry: 'https://api.facet.cafe' },
             version: '0.1.0',
             integrity: 'sha256-deadbeef',
             assets: [],
@@ -104,7 +104,7 @@ describe('listCommand', () => {
         lockfileVersion: 1,
         facets: {
           installed: {
-            source: 'installed@1.0.0',
+            source: { kind: 'registry', registry: 'https://api.facet.cafe' },
             version: '1.0.0',
             integrity: 'sha256-x',
             assets: [],

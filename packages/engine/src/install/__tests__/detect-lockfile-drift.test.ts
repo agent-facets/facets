@@ -1,12 +1,23 @@
 import { describe, expect, test } from 'bun:test'
-import type { FacetsJson, Lockfile, LockfileFacet } from '@agent-facets/protocol'
+import type { FacetsJson, Lockfile, LockfileFacet, LockfileSource } from '@agent-facets/protocol'
 import { LOCKFILE_VERSION } from '@agent-facets/protocol'
 import { detectLockfileDrift } from '../detect-lockfile-drift.ts'
 
 const manifest = (facets: Record<string, string>): FacetsJson => ({ facets })
 
+/** Convert an OLD flat `source` string into the NEW tagged lockfile source. */
+const taggedSource = (source: string): LockfileSource => {
+  if (source.startsWith('./') || source.startsWith('../') || source.startsWith('/') || source.startsWith('file:')) {
+    return { kind: 'local', path: source }
+  }
+  if (source.startsWith('github:') || source.includes('git@') || source.endsWith('.git') || source.includes('://')) {
+    return { kind: 'git', url: source, commit: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }
+  }
+  return { kind: 'registry', registry: 'https://api.facet.cafe' }
+}
+
 const lockEntry = (version: string, source = version): LockfileFacet => ({
-  source,
+  source: taggedSource(source),
   version,
   integrity: 'sha256:stub',
   assets: [{ scope: 'user', type: 'skill', name: 'planning' }],
@@ -92,6 +103,40 @@ describe('detectLockfileDrift', () => {
     const drift = detectLockfileDrift(
       manifest({ planner: 'github:agent-facets/planner' }),
       lock({ planner: lockEntry('2.0.0', 'github:agent-facets/planner') }),
+      true,
+    )
+    expect(drift).toEqual([])
+  })
+
+  test('git entry whose manifest shorthand canonicalizes to the locked URL → no drift', () => {
+    // Manifest keeps `github:` shorthand; the lock stores the canonical
+    // `https://...git` URL a fresh install wrote. The frozen pre-flight must
+    // NOT report drift just because the raw strings differ.
+    const drift = detectLockfileDrift(
+      manifest({ planner: 'github:agent-facets/planner' }),
+      lock({ planner: lockEntry('2.0.0', 'https://github.com/agent-facets/planner.git') }),
+      true,
+    )
+    expect(drift).toEqual([])
+  })
+
+  test('git entry whose manifest adds only a #ref → no drift', () => {
+    // A ref is a manifest concern, not lockfile provenance: the repository
+    // URL is unchanged, so this is reproducible, not source drift.
+    const drift = detectLockfileDrift(
+      manifest({ planner: 'github:agent-facets/planner#main' }),
+      lock({ planner: lockEntry('2.0.0', 'https://github.com/agent-facets/planner.git') }),
+      true,
+    )
+    expect(drift).toEqual([])
+  })
+
+  test('local entry whose manifest path canonicalizes (file: prefix) to the locked path → no drift', () => {
+    // `parseFacetSource` strips the `file:` prefix; the canonical path then
+    // matches the locked path, so there is no drift.
+    const drift = detectLockfileDrift(
+      manifest({ cowsay: 'file:./facets/cowsay-v1' }),
+      lock({ cowsay: lockEntry('1.0.0', './facets/cowsay-v1') }),
       true,
     )
     expect(drift).toEqual([])

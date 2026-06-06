@@ -119,4 +119,12 @@ describe('cloneFacetGitSource — failure modes (returned, never thrown)', () =>
     expect(result.commitish).toBe(fakeSha)
     expect(result.stderr.length).toBeGreaterThan(0)
   })
+
+  // NOTE: the `commit-unresolved` arm (HEAD resolves to empty or a non-SHA
+  // string) is not exercised here. Against a real git repo, `rev-parse HEAD`
+  // after a successful clone always yields a valid SHA, and `runGit` is
+  // module-private (not injectable), so forcing non-SHA output would require
+  // a production refactor. The downstream safety property — a non-SHA/empty
+  // commit cannot enter the lockfile — is covered by the `LockfileSource`
+  // schema narrow tests in packages/protocol (git commit accept/reject).
 })

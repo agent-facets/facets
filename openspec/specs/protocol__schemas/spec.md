@@ -46,6 +46,8 @@ The shape of a project manifest (`facets.json`) SHALL be published as a normativ
 
 The shape of a lockfile (`facets.lock`) SHALL be published as a normative schema. Any system that reads, writes, or interprets a lockfile SHALL conform to the published schema. The schema SHALL define the lockfile version, source-provenance fields, identity-and-integrity fields, the asset list, and the rules for unrecognized fields.
 
+The published schema's source-provenance fields SHALL take a tagged form keyed on the source kind, so that the provenance fields meaningful for each kind are explicit. The published schema SHALL define a registry source that records the registry origin, a git source that records the repository URL and a required resolved commit, and a local source that records the resolved path. A lockfile whose entry source does not declare a recognized kind, or omits a field required for its declared kind (such as a git source without a commit), SHALL NOT satisfy the published schema. Consistent with the lockfile's tolerance of unrecognized fields, a source MAY carry additional unrecognized keys and still satisfy the published schema — forward-compatibility requires that a newer producer's extra fields not break an older consumer.
+
 #### Scenario: A consumer interprets a lockfile written by a different system
 
 - **WHEN** a system reads a `facets.lock` written by a different facet-compatible system
@@ -57,6 +59,26 @@ The shape of a lockfile (`facets.lock`) SHALL be published as a normative schema
 - **WHEN** a system writes a `facets.lock` after resolving facet sources
 - **THEN** the resulting file SHALL satisfy the published schema
 - **AND** another facet-compatible system SHALL be able to read the file and reproduce the same install state
+
+#### Scenario: Source provenance is tagged by kind
+
+- **WHEN** a facet-compatible system reads an entry's source provenance from a `facets.lock`
+- **THEN** the source SHALL declare its kind (registry, git, or local)
+- **AND** a registry source SHALL record the registry origin and SHALL NOT carry a version specifier
+- **AND** a git source SHALL record the repository URL and a required resolved commit, and SHALL NOT record a symbolic ref
+- **AND** a local source SHALL record the resolved path
+
+#### Scenario: A git source missing its required commit is rejected
+
+- **WHEN** a facet-compatible system reads a lockfile whose entry declares a git source with no commit
+- **THEN** the lockfile SHALL NOT satisfy the published schema
+- **AND** the system SHALL reject the lockfile
+
+#### Scenario: A source with extra unrecognized keys is accepted
+
+- **WHEN** a facet-compatible system reads a lockfile whose entry source declares a recognized kind with all its required fields, plus one or more unrecognized keys
+- **THEN** the lockfile SHALL satisfy the published schema
+- **AND** the system SHALL accept the lockfile (forward-compatibility with newer producers)
 
 ### Requirement: A build manifest schema is published as part of the protocol
 

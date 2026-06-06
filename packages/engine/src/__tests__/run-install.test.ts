@@ -676,9 +676,11 @@ function seedCacheSlotForGit(
 
   return {
     entry: {
-      source: `https://github.com/example/${facetName}.git`,
-      ref: 'main',
-      commit: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      source: {
+        kind: 'git',
+        url: `https://github.com/example/${facetName}.git`,
+        commit: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      },
       version,
       integrity,
       assets: [{ scope: 'project', type: 'skill', name: 'planning' }],
@@ -701,7 +703,10 @@ describe('runInstall — git cache hit short-circuits clone', () => {
       lockfileVersion: 1,
       facets: { [facetName]: entry },
     }
-    writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify({ facets: { [facetName]: entry.source } }))
+    writeFileSync(
+      join(projectRoot, 'facets.json'),
+      JSON.stringify({ facets: { [facetName]: `https://github.com/example/${facetName}.git` } }),
+    )
     writeFileSync(join(projectRoot, 'facets.lock'), JSON.stringify(lockfile))
 
     const result = await runInstall({
@@ -716,8 +721,12 @@ describe('runInstall — git cache hit short-circuits clone', () => {
     // integrity must equal input integrity exactly.
     expect(result.lockfile.facets[facetName]?.version).toBe(version)
     expect(result.lockfile.facets[facetName]?.integrity).toBe(entry.integrity)
-    expect(result.lockfile.facets[facetName]?.ref).toBe(entry.ref)
-    expect(result.lockfile.facets[facetName]?.commit).toBe(entry.commit)
+    // The git provenance — url + resolved commit — survives verbatim.
+    expect(result.lockfile.facets[facetName]?.source).toEqual({
+      kind: 'git',
+      url: `https://github.com/example/${facetName}.git`,
+      commit: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    })
   })
 
   test('returns CACHE_INTEGRITY_MISMATCH when sidecar disagrees with lockfile', async () => {
@@ -734,7 +743,10 @@ describe('runInstall — git cache hit short-circuits clone', () => {
     }
     // Manifest source matches the locked source so the cache-hit path runs;
     // the sidecar/lockfile integrity disagreement is what must be caught.
-    writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify({ facets: { [facetName]: entry.source } }))
+    writeFileSync(
+      join(projectRoot, 'facets.json'),
+      JSON.stringify({ facets: { [facetName]: `https://github.com/example/${facetName}.git` } }),
+    )
     writeFileSync(join(projectRoot, 'facets.lock'), JSON.stringify(lockfile))
 
     const result = await runInstall({

@@ -65,6 +65,8 @@ Every fetched facet is verified before any asset is written:
 
 Any mismatch is a hard security error: the install aborts before any asset is written, and the project state is unchanged.
 
+Git sources are pinned by commit: the lockfile records the resolved commit SHA (not the requested ref, which stays in `facets.json`). A git clone that cannot be resolved to a commit fails the install rather than recording an unreproducible entry.
+
 ## Cache
 
 Resolved facet content is stored at `$FACET_DIR/cache/<name>@<version>/` (default `~/.facet/cache/`) so subsequent installs of the same identity don't hit the network. The cache is treated as trusted material — once written, it's never re-hashed on read.
