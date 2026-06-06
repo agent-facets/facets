@@ -43,6 +43,7 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(projectRoot, { recursive: true, force: true })
+  mock.restore()
 })
 
 describe('planFacet — changed git source', () => {
