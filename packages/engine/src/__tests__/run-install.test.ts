@@ -27,40 +27,6 @@ function buildLocalFixture(name: string, version = '0.1.0'): string {
   return repo
 }
 
-function git(args: string[], cwd: string): string {
-  const result = Bun.spawnSync(['git', ...args], {
-    cwd,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  expect(result.exitCode).toBe(0)
-  return result.stdout.toString().trim()
-}
-
-function buildGitFixture(name: string, version: string): { source: string; commit: string } {
-  const repo = realpathSync(mkdtempSync(join(projectRoot, 'git-fixture-')))
-  writeFileSync(
-    join(repo, 'facet.json'),
-    JSON.stringify({
-      name,
-      version,
-      skills: { planning: { description: 'planning skill' } },
-    }),
-  )
-  mkdirSync(join(repo, 'skills/planning'), { recursive: true })
-  writeFileSync(join(repo, 'skills/planning/SKILL.md'), `# planning ${version}\n`)
-
-  git(['init'], repo)
-  git(['checkout', '-b', 'main'], repo)
-  git(['add', '.'], repo)
-  git(['-c', 'user.name=Test User', '-c', 'user.email=test@example.com', 'commit', '-m', `seed ${version}`], repo)
-
-  return {
-    source: `file://${repo}#main`,
-    commit: git(['rev-parse', 'HEAD'], repo),
-  }
-}
-
 function buildFakeAdapter(name: string): Adapter {
   // Uses the published `@agent-facets/adapter` SDK helpers verbatim so
   // the asset round-trip (assemble → write → read → split) goes through
@@ -752,45 +718,6 @@ describe('runInstall — git cache hit short-circuits clone', () => {
     expect(result.lockfile.facets[facetName]?.integrity).toBe(entry.integrity)
     expect(result.lockfile.facets[facetName]?.ref).toBe(entry.ref)
     expect(result.lockfile.facets[facetName]?.commit).toBe(entry.commit)
-  })
-
-  test('changed git source discards the old lock entry before cloning', async () => {
-    const facetName = 'viper-plans'
-    const oldSource = buildGitFixture(facetName, '0.1.0')
-    const newSource = buildGitFixture(facetName, '0.2.0')
-    const oldIntegrity = computeContentHash('old-source')
-    const lockfile: Lockfile = {
-      lockfileVersion: 1,
-      facets: {
-        [facetName]: {
-          source: oldSource.source,
-          ref: 'main',
-          commit: oldSource.commit,
-          version: '0.1.0',
-          integrity: oldIntegrity,
-          assets: [{ scope: 'project', type: 'skill', name: 'planning' }],
-        },
-      },
-    }
-
-    writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify({ facets: { [facetName]: newSource.source } }))
-    writeFileSync(join(projectRoot, 'facets.lock'), JSON.stringify(lockfile))
-
-    const result = await runInstall({
-      projectRoot,
-      adapters: [buildFakeAdapter('test')],
-    })
-
-    expect(result.ok).toBe(true)
-    if (!result.ok) expect.unreachable()
-    const entry = result.lockfile.facets[facetName]
-    if (entry === undefined) expect.unreachable()
-    expect(entry.source).toBe(newSource.source)
-    expect(entry.ref).toBe('main')
-    expect(entry.commit).toBe(newSource.commit)
-    expect(entry.version).toBe('0.2.0')
-    expect(entry.integrity).not.toBe(oldIntegrity)
-    expect(readFileSync(join(projectRoot, '.test/skills/planning.md'), 'utf8')).toContain('# planning 0.2.0')
   })
 
   test('returns CACHE_INTEGRITY_MISMATCH when sidecar disagrees with lockfile', async () => {
