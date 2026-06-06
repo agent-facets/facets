@@ -1,17 +1,17 @@
 import { rm } from 'node:fs/promises'
 import type { Adapter } from '@agent-facets/adapter'
 import type { BuildManifest, Lockfile, LockfileFacet, ResolvedFacetManifest } from '@agent-facets/protocol'
-import { satisfies, verifyGitOneCheck } from '@agent-facets/protocol'
+import { satisfies, verifyGitOneCheck, verifyLockfileOneCheck } from '@agent-facets/protocol'
 import { runBuildPipeline } from '../build/pipeline.ts'
 import { type CacheIdentity, cacheGet, cachePutVerified, cacheStagingDir, readCachedIntegrity } from '../cache/index.ts'
 import { loadManifest, resolvePrompts } from '../loaders/facet.ts'
 import { downloadAndExtractFacet } from '../registry/download.ts'
 import { resolveRegistryMetadataBatch } from '../registry/resolve-metadata.ts'
 import { parseFacetSource } from '../sources/facet/parse-source.ts'
-import type { Source } from '../sources/facet/types.ts'
 import { parseVersionSpec } from '../sources/facet/parse-version.ts'
 import { cloneFacetGitSource } from '../sources/facet/resolve-git.ts'
 import { resolveLocalFacetSource } from '../sources/facet/resolve-local.ts'
+import type { Source } from '../sources/facet/types.ts'
 import { cloneFailureToRunInstall } from './clone-failure.ts'
 import { computeAssetList } from './materialize.ts'
 import { parseLockedVersion } from './parse-locked-version.ts'
@@ -373,7 +373,13 @@ export async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
           parsed.value.kind === 'registry' ||
           (parsed.value.kind === 'local' && args.frozenLockfile === true))
       if (mustReproduceIntegrity) {
-        const guard = verifyGitOneCheck({
+        // Pick the verifier by source kind so the reported `check` honestly
+        // names what diverged. A git tag-move is `check: 'git'`; everything
+        // else reaching this guard (frozen LOCAL drift, or a cache-miss
+        // registry rebuild) is a built-vs-lockfile divergence → `'lockfile'`.
+        // Both verifiers run the same hash equality; only the label differs.
+        const verifyReproduction = parsed.value.kind === 'git' ? verifyGitOneCheck : verifyLockfileOneCheck
+        const guard = verifyReproduction({
           facet: facetName,
           computedIntegrity: buildResult.integrity,
           lockfileIntegrity: effectiveLocked.integrity,

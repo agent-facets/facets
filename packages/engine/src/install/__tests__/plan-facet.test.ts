@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import type { LockfileFacet } from '@agent-facets/protocol'
 import { parseFacetSource } from '../../sources/facet/parse-source.ts'
-import { resolveCloneRef } from '../resolve-clone-ref.ts'
 import { resolveEffectiveLockedForPlan } from '../plan-facet.ts'
+import { resolveCloneRef } from '../resolve-clone-ref.ts'
 
 const lockedGitEntry: LockfileFacet = {
   source: 'https://github.com/example/old.git#stable',

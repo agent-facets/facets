@@ -403,6 +403,11 @@ describe('runInstall — frozen-lockfile mode', () => {
     const result = await installFrozen()
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'INTEGRITY_FAILURE') expect.unreachable()
+    // The failure is labeled `lockfile`, not `git`: a local-content drift is
+    // a built-vs-lockfile divergence, and reporting `git` here would mislead
+    // the user (nothing git happened).
+    if (result.failure.failure.kind !== 'facet') expect.unreachable()
+    expect(result.failure.failure.check).toBe('lockfile')
     // Project files are byte-for-byte unchanged (no rewrite, no materialize).
     expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(facetsBefore)
     expect(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')).toBe(lockBefore)

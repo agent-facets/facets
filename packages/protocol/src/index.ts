@@ -38,7 +38,7 @@ export type {
   IntegrityResult,
   RegistryIntegrityInput,
 } from './integrity/index.ts'
-export { verifyGitOneCheck, verifyHash, verifyRegistryThreeCheck } from './integrity/index.ts'
+export { verifyGitOneCheck, verifyHash, verifyLockfileOneCheck, verifyRegistryThreeCheck } from './integrity/index.ts'
 // loaders (pure bytes-validators — no I/O)
 export type { ResolvedFacetManifest } from './loaders/facet.ts'
 export { FACET_MANIFEST_FILE, resolvePromptsFromMap, validateFacetManifest } from './loaders/facet.ts'
