@@ -26,6 +26,10 @@ export const installCommand: Command = {
   implemented: true,
   flags: {
     verbose: { type: 'boolean', description: 'Show detailed step output on stderr' },
+    'frozen-lockfile': {
+      type: 'boolean',
+      description: 'Treat the lockfile as the source of truth; fail on any manifest/lockfile drift',
+    },
   },
   run: async (args, flags) => {
     if (args.length > 0) {
@@ -37,6 +41,7 @@ export const installCommand: Command = {
     }
 
     const verbose = flags.verbose === true
+    const frozenLockfile = flags['frozen-lockfile'] === true
     const onLog = verbose ? (line: string) => process.stderr.write(`${line}\n`) : undefined
 
     const projectRoot = process.cwd()
@@ -87,6 +92,7 @@ export const installCommand: Command = {
             onStage,
             onLog,
             signal: controller.signal,
+            frozenLockfile,
           })
           captured = result
           return result
@@ -150,6 +156,9 @@ function failureFix(failure: RunInstallFailure, rollback: RollbackOutcome): stri
   }
   if (failure.code === 'ABORTED') {
     return 'rollback complete; project state unchanged'
+  }
+  if (failure.code === 'LOCKFILE_DRIFT') {
+    return "lockfile is out of date; run 'facet install' (without --frozen-lockfile) or 'facet add' to update it"
   }
   return "rollback complete; fix the underlying issue and re-run 'facet install'"
 }

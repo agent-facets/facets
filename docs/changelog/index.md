@@ -4,9 +4,9 @@ description: What's new in Agent Facets
 rss: true
 ---
 
-<Update label="2026-06-05" description="Bearer-token auth for the registry; new login/whoami/logout commands; FACET_REGISTRY_API_KEY removed" tags={["CLI", "Breaking", "New Feature"]} rss={{
-  title: "Registry auth moves to bearer tokens; new login/whoami/logout commands",
-  description: "The facet CLI now authenticates to the registry with a personal access token sent as a bearer credential, replacing the old FACET_REGISTRY_API_KEY API key. FACET_REGISTRY_API_KEY has been removed with no shim. Provide a token via the FACET_TOKEN environment variable or by running the new `facet login` command, which verifies the token and saves it to ~/.facet/credentials. Two more new commands: `facet whoami` prints the signed-in identity, and `facet logout` clears the saved credential. `facet publish` now also accepts an optional directory argument. Registry errors are now rendered using the registry's own message and suggested fix."
+<Update label="2026-06-05" description="Bearer-token auth for the registry; new login/whoami/logout commands; FACET_REGISTRY_API_KEY removed; install now re-resolves a stale lockfile; new --frozen-lockfile flag" tags={["CLI", "Breaking", "New Feature", "Fix"]} rss={{
+  title: "Registry auth moves to bearer tokens; new login/whoami/logout commands; install honors manifest edits",
+  description: "The facet CLI now authenticates to the registry with a personal access token sent as a bearer credential, replacing the old FACET_REGISTRY_API_KEY API key. FACET_REGISTRY_API_KEY has been removed with no shim. Provide a token via the FACET_TOKEN environment variable or by running the new `facet login` command, which verifies the token and saves it to ~/.facet/credentials. Two more new commands: `facet whoami` prints the signed-in identity, and `facet logout` clears the saved credential. `facet publish` now also accepts an optional directory argument. Registry errors are now rendered using the registry's own message and suggested fix. Bug fix: editing a facet's version in facets.json now takes effect — facet install re-resolves a lockfile entry that no longer satisfies the manifest, and fails if the requested version does not exist, instead of silently keeping the old version. New flag: facet install --frozen-lockfile treats the lockfile as the source of truth and fails on any manifest/lockfile drift, for reproducible CI installs."
 }}>
   ## Registry authentication is now bearer-token based
 
@@ -66,6 +66,42 @@ rss: true
 
   See the [Publish Flow](/specification/publish) spec for the full
   authentication model.
+
+  ## Editing a version in `facets.json` now takes effect
+
+  **Fix:** `facets.json` is the source of truth, but `facet install` was
+  ignoring an edited version when the lockfile still pinned the old one. If you
+  bumped a facet to a version that didn't exist, install "succeeded" and wrote a
+  self-contradictory lockfile entry instead of failing.
+
+  Now `facet install` compares each lockfile entry against its manifest
+  specifier. A locked version that no longer satisfies the manifest is treated
+  as stale and re-resolved:
+
+  ```bash
+  # facets.json edited: cowsay 0.1.1 → 0.1.2
+  facet install          # fetches 0.1.2, updates the lockfile (was 0.1.1 → 0.1.2)
+
+  # facets.json edited to a version that doesn't exist
+  facet install          # fails: version not found; project left unchanged
+  ```
+
+  A wildcard the lock still satisfies (manifest `1.*`, lock `1.2.3`) is
+  unaffected — it stays pinned and reproducible. See [`facet install`](/cli/install#lockfile-semantics).
+
+  ## New: `facet install --frozen-lockfile`
+
+  For reproducible CI installs, `--frozen-lockfile` makes the lockfile the
+  source of truth: install never re-resolves or writes the lockfile, and fails
+  if the lockfile is missing, omits a manifest facet, or has drifted out of sync
+  with `facets.json`.
+
+  ```bash
+  facet install --frozen-lockfile   # passes only if facets.json and facets.lock agree
+  ```
+
+  This mirrors `--frozen-lockfile` from `npm` and `bun`. See [the flag
+  reference](/cli/install#frozen-lockfile).
 </Update>
 
 <Update label="2026-05-14" description="Consolidate everything under FACET_DIR; new FACET_BIN_OVERRIDE; lock moves out of project root" tags={["CLI", "Breaking"]} rss={{

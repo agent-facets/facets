@@ -1,23 +1,15 @@
-import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { Adapter } from '@agent-facets/adapter'
-import type { BuildManifest, FacetsJson, Lockfile, LockfileFacet, ResolvedFacetManifest } from '@agent-facets/protocol'
-import { verifyGitOneCheck } from '@agent-facets/protocol'
-import { regex } from 'arkregex'
-import { runBuildPipeline } from '../build/pipeline.ts'
-import { type CacheIdentity, cacheGet, cachePutVerified, cacheStagingDir, readCachedIntegrity } from '../cache/index.ts'
-import { loadManifest, resolvePrompts } from '../loaders/facet.ts'
+import type { FacetsJson, Lockfile, LockfileFacet } from '@agent-facets/protocol'
 import { loadFacetsJson } from '../manifest/project-files.ts'
-import { downloadAndExtractFacet } from '../registry/download.ts'
-import { resolveRegistryMetadataBatch } from '../registry/resolve-metadata.ts'
-import { parseFacetSource } from '../sources/facet/parse-source.ts'
-import { parseVersionSpec } from '../sources/facet/parse-version.ts'
-import { type CloneFacetGitResult, cloneFacetGitSource } from '../sources/facet/resolve-git.ts'
-import { resolveLocalFacetSource } from '../sources/facet/resolve-local.ts'
+import { classifyOutcome } from './classify-outcome.ts'
+import { detectLockfileDrift } from './detect-lockfile-drift.ts'
 import { InstallJournal } from './journal.ts'
 import { acquireInstallLock } from './lockfile-guard.ts'
 import { emptyLockfile, FACETS_LOCK_FILE, loadLockfile, writeLockfile } from './lockfile-io.ts'
-import { computeAssetList, type MaterializeFailure, materialize } from './materialize.ts'
+import { materialize } from './materialize.ts'
+import { materializeFailureToRunInstall } from './materialize-failure.ts'
+import { planFacet } from './plan-facet.ts'
+import { removalManifest } from './removal-manifest.ts'
 import type {
   FacetOutcome,
   InstallSummary,
@@ -28,165 +20,18 @@ import type {
 } from './types.ts'
 
 /**
- * Resolve which git commitish to clone for a facet on a cache miss.
- *
- * Reproducibility: when the lockfile pins a commit, clone exactly that
- * commit — never the manifest ref. The manifest ref can move (`#main`,
- * mutable tags); the locked commit cannot. Without this, a cache-miss
- * reinstall of a locked entry pointing at `#main` would silently pull
- * whatever main points to today, then either fail integrity
- * verification (frustrating) or rewrite the lockfile (worse — a silent
- * reproducibility break). Fresh adds (no `locked` entry) fall back to
- * the manifest ref.
- *
- * Pure function — exported for unit testing.
- */
-export function resolveCloneRef(
-  locked: LockfileFacet | undefined,
-  manifestRef: string | undefined,
-): string | undefined {
-  return locked?.commit ?? manifestRef
-}
-
-/**
- * Pre-compiled M.N.P matcher for `parseLockedVersion`. The pattern is
- * the same shape narrowed by `LockfileSchema.version` — schema and
- * parser stay aligned by deliberate convention; if you widen one, widen
- * the other. `arkregex` types the captures so destructuring is
- * cast-free; the runtime `RegExp` instance behaves identically to a
- * native one.
- *
- * No prerelease support: `VersionSpec` (the type returned below) only
- * models `M.N.P`. Adding prerelease support means widening this regex
- * AND the lockfile schema's narrow check AND `VersionSpec` itself.
- */
-const LOCKED_VERSION_RE = regex('^(\\d+)\\.(\\d+)\\.(\\d+)$')
-
-/**
- * Parse a `LockfileFacet.version` string into an exact `VersionSpec` for
- * the registry resolver. Lockfile versions are always concrete `M.N.P`
- * by contract (the lockfile schema narrows the field to exactly that
- * shape — see `LockfileSchema.version` in protocol). This function is
- * the engine-side counterpart that turns the validated string into the
- * structured form the registry resolver consumes.
- *
- * The schema gates malformed versions up front — by the time we get
- * here, `version` has already passed the narrow regex. If the regex
- * disagrees at runtime, that's a programmer bug (schema and parser
- * regex got out of sync), not a user-facing failure mode — hence the
- * `expect.unreachable`-style throw. Anti-pattern 4: this branch is
- * genuinely unreachable on validated input.
- *
- * Used on the registry-source cache-miss path to pin the metadata
- * fetch at `locked.version` instead of re-resolving the manifest spec
- * (which may be `@latest` or a wildcard). See the call site for the
- * reproducibility rationale.
- */
-function parseLockedVersion(version: string): {
-  kind: 'exact'
-  major: number
-  minor: number
-  patch: number
-} {
-  const match = LOCKED_VERSION_RE.exec(version)
-  if (match === null) {
-    // The schema narrow regex (`LockfileSchema.version`) has the same
-    // shape as `LOCKED_VERSION_RE`. A null here means schema and parser
-    // regex have drifted apart — programmer bug, not user input.
-    throw new Error(`internal: lockfile schema accepted "${version}" but parseLockedVersion regex rejected it`)
-  }
-  const [, major, minor, patch] = match
-  return {
-    kind: 'exact',
-    major: Number(major),
-    minor: Number(minor),
-    patch: Number(patch),
-  }
-}
-
-/**
- * Translate a `MaterializeFailure` (engine-internal) into the matching
- * `RunInstallFailure` code (engine-public). Each `MaterializeFailure.kind`
- * maps to exactly one `RunInstallFailure.code`; the per-adapter context
- * (adapter name, asset, cause) flows through unchanged. Centralizes the
- * mapping so both materialize call sites in `runInstall` (the install
- * branch and the drift-removal branch) route failures the same way.
- */
-/**
- * Translate a `cloneFacetGitSource` failure into the matching
- * `RunInstallFailure` code. Each `reason` arm maps to exactly one
- * code; structured fields (URL, stderr, commitish) flow through
- * unchanged so the CLI doesn't have to reparse stderr text.
- */
-function cloneFailureToRunInstall(
-  facet: string,
-  cloned: Extract<CloneFacetGitResult, { ok: false }>,
-): RunInstallFailure {
-  switch (cloned.reason) {
-    case 'git-binary-missing':
-      return { code: 'GIT_BINARY_MISSING', facet }
-    case 'auth-required':
-      return { code: 'GIT_AUTH_REQUIRED', facet, url: cloned.url }
-    case 'clone-failed':
-      return { code: 'GIT_CLONE_FAILED', facet, url: cloned.url, stderr: cloned.stderr }
-    case 'checkout-failed':
-      return {
-        code: 'GIT_CHECKOUT_FAILED',
-        facet,
-        url: cloned.url,
-        commitish: cloned.commitish,
-        stderr: cloned.stderr,
-      }
-  }
-}
-
-function materializeFailureToRunInstall(facet: string, failure: MaterializeFailure): RunInstallFailure {
-  switch (failure.kind) {
-    case 'unsupported-adapter':
-      return { code: 'ADAPTER_UNSUPPORTED', facet, adapter: failure.adapter }
-    case 'read-failed':
-      return {
-        code: 'ADAPTER_READ_FAILED',
-        facet,
-        adapter: failure.adapter,
-        asset: failure.asset,
-        cause: failure.cause,
-      }
-    case 'install-failed':
-      return {
-        code: 'ADAPTER_INSTALL_FAILED',
-        facet,
-        adapter: failure.adapter,
-        asset: failure.asset,
-        cause: failure.cause,
-      }
-    case 'delete-failed':
-      return {
-        code: 'ADAPTER_DELETE_FAILED',
-        facet,
-        adapter: failure.adapter,
-        asset: failure.asset,
-        cause: failure.cause,
-      }
-  }
-}
-
-/**
  * Run the install pipeline for a project.
  *
  * Behavior is uniform across all callers (add, install, future TUI):
  *
  *   - For each facet declared in `facets.json`, honor the lockfile
- *     entry's pinned version if one exists; otherwise resolve fresh
- *     from the manifest specifier (bun-style bootstrap).
+ *     entry's pinned version if one exists and satisfies the manifest;
+ *     otherwise resolve fresh from the manifest specifier (bun-style
+ *     bootstrap, or re-resolving a stale entry).
  *   - Drift removal: any facet in the prior lockfile that's no longer
  *     in `facets.json` has its assets removed.
- *   - Always materialize, always write the lockfile.
- *
- * The "lockfile honored verbatim" property gives reproducible installs
- * across machines without `facet update` having to exist yet. When real
- * registry I/O lands, locked entries fetch their pinned version, while
- * newly-added manifest entries resolve their range.
+ *   - Always materialize, always write the lockfile (except in
+ *     frozen-lockfile mode).
  *
  * Always returns; never throws. Failures are reported via
  * `result.failure`; rollback status via `result.rollback`.
@@ -211,7 +56,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       path: join(projectRoot, 'facets.json'),
     })
   }
-  const facetsJson = facetsJsonResult.data
+  const facetsJson: FacetsJson = facetsJsonResult.data
 
   // 2. Acquire install lock.
   const lockResult = acquireInstallLock(projectRoot)
@@ -237,6 +82,17 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       })
     }
     const previousLockfile = lockfileResult.existed ? lockfileResult.data : emptyLockfile()
+
+    // Frozen-lockfile pre-flight. Runs before any mutation/journal entry so
+    // drift leaves the project untouched. The lockfile is authoritative:
+    // every manifest facet MUST have a lockfile entry whose version
+    // satisfies its specifier, or the install fails with LOCKFILE_DRIFT.
+    if (opts.frozenLockfile === true) {
+      const drift = detectLockfileDrift(facetsJson, previousLockfile, lockfileResult.existed)
+      if (drift.length > 0) {
+        return failureNoMutation({ code: 'LOCKFILE_DRIFT', facets: drift })
+      }
+    }
 
     onStage({
       kind: 'install-start',
@@ -360,20 +216,30 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       lockfileVersion: previousLockfile.lockfileVersion,
       facets: newFacetEntries,
     }
-    try {
-      writeLockfile(projectRoot, newLockfile)
-    } catch (error) {
-      return await rollbackAndFail(
-        journal,
-        {
-          code: 'LOCKFILE_WRITE_FAILED',
-          path: join(projectRoot, FACETS_LOCK_FILE),
-          cause: error instanceof Error ? error.message : String(error),
-        },
-        onLog,
-      )
+    // Frozen-lockfile mode treats the lockfile as the source of truth and
+    // MUST NOT write it. The pre-flight already proved the lockfile covers
+    // the manifest, so install reused each entry's locked version, integrity,
+    // and assets. `newLockfile` is rebuilt in memory for the return value but
+    // is intentionally not persisted — note that each entry's `source` tracks
+    // the current manifest specifier (e.g. a `1.*` range) and may therefore
+    // differ from the pinned `source` on disk even when the version still
+    // satisfies, so `newLockfile` is not necessarily byte-equal to the file.
+    if (opts.frozenLockfile !== true) {
+      try {
+        writeLockfile(projectRoot, newLockfile)
+      } catch (error) {
+        return await rollbackAndFail(
+          journal,
+          {
+            code: 'LOCKFILE_WRITE_FAILED',
+            path: join(projectRoot, FACETS_LOCK_FILE),
+            cause: error instanceof Error ? error.message : String(error),
+          },
+          onLog,
+        )
+      }
+      onStage({ kind: 'lockfile-write', path: join(projectRoot, FACETS_LOCK_FILE) })
     }
-    onStage({ kind: 'lockfile-write', path: join(projectRoot, FACETS_LOCK_FILE) })
 
     const summary: InstallSummary = {
       installed,
@@ -451,430 +317,3 @@ async function rollbackAndFail(
       : { kind: 'partial-failure', entriesUndone: rollback.entriesUndone, failures: rollback.failures },
   }
 }
-
-/**
- * Per-facet plan: parse → resolve → load → build → return entry.
- *
- * Wraps the entire flow in a try/finally that always cleans up the
- * cloned git directory, even if a downstream step fails.
- */
-interface PlanFacetArgs {
-  facetName: string
-  specifier: string
-  projectRoot: string
-  adapters: ReadonlyArray<Adapter>
-  previousLockfile: Lockfile
-  onStage: (event: StageEvent) => void
-  onLog: (line: string) => void
-}
-
-interface PlanFacetSuccess {
-  entry: LockfileFacet
-  resolved: ResolvedFacetManifest
-  serversDeclared: ReadonlyArray<string>
-}
-
-type PlanFacetResult = { ok: true; value: PlanFacetSuccess } | { ok: false; failure: RunInstallFailure }
-
-async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
-  const { facetName, specifier, projectRoot, previousLockfile, onStage, onLog } = args
-
-  // Parse the source specifier.
-  //
-  // The manifest is a `name → value` map. For a registry source the value
-  // is a bare version specifier (`1.2.3`, `1.*`, `*`, `latest`) and the
-  // facet name lives in the KEY — so when the value parses as a bare
-  // VersionSpec we reconstruct the full source as `${facetName}@${value}`.
-  // For git/local sources the value is a self-contained source string
-  // (URL, `file:` path) and the key is just a label; we parse the value
-  // standalone. This keeps `facets.json` values semver-shaped for registry
-  // entries (the value the user sees is `1.2.3`, not `cowsay@1.2.3`) while
-  // still round-tripping through source resolution.
-  onStage({ kind: 'facet-stage', facet: facetName, stage: 'parse' })
-  const sourceString = parseVersionSpec(specifier).ok ? `${facetName}@${specifier}` : specifier
-  const parsed = parseFacetSource(sourceString)
-  if (!parsed.ok) {
-    return {
-      ok: false,
-      failure: { code: 'PARSE_ERROR', facet: facetName, specifier, error: parsed.error },
-    }
-  }
-
-  let sourceDir: string | undefined
-  let cleanup: (() => Promise<void>) | undefined
-  // Captured by the clone path; consumed when constructing a fresh-add
-  // lockfile entry. Locked entries inherit ref/commit from `locked`.
-  let clonedRef: string | undefined
-  let clonedCommit: string | undefined
-  // `locked` is the committed lockfile entry for this facet, if any.
-  // When defined, it's the security contract: the install MUST reproduce
-  // exactly these bytes (or fail loudly). Cache hits short-circuit when
-  // the sidecar matches `locked.integrity`.
-  const locked = previousLockfile.facets[facetName]
-  // Set when a cache hit's sidecar matches the locked integrity. The
-  // sidecar IS the post-write trust certificate; we don't rebuild to
-  // re-derive what the cache already proved at write time.
-  let trustedCacheHit = false
-
-  // Resolve to a sourceDir.
-  onStage({ kind: 'facet-stage', facet: facetName, stage: 'resolve' })
-  if (parsed.value.kind === 'git') {
-    // Cache-first when we have a locked entry: name + version are both
-    // known from `locked`, so we can look up the cache slot without any
-    // clone or network round-trip.
-    if (locked !== undefined) {
-      const cacheId: CacheIdentity = {
-        kind: 'git',
-        name: facetName,
-        version: locked.version,
-      }
-      const lookup = cacheGet(cacheId)
-      if (lookup.hit) {
-        const cached = readCachedIntegrity(lookup.path)
-        if (cached === null) {
-          // Sidecar missing/invalid — incomplete cache slot. Treat as
-          // soft miss and fall through to clone.
-          onLog(`[verbose]   cache slot ${lookup.path} has no valid integrity sidecar; refetching`)
-        } else if (cached.integrity !== locked.integrity) {
-          // Cache disagrees with lockfile. Lockfile is the source of
-          // truth; surface as hard error rather than silently refetching.
-          return {
-            ok: false,
-            failure: {
-              code: 'CACHE_INTEGRITY_MISMATCH',
-              facet: facetName,
-              slotPath: lookup.path,
-              cachedIntegrity: cached.integrity,
-              lockedIntegrity: locked.integrity,
-            },
-          }
-        } else {
-          // Cache hit + sidecar matches lockfile. The sidecar is the
-          // post-write trust certificate; we trust it without rebuilding.
-          // No clone, no build pipeline, no rehashing.
-          sourceDir = lookup.path
-          trustedCacheHit = true
-          // No cleanup — cache entries are durable.
-          onLog(`[verbose]   cache hit ${lookup.path}`)
-        }
-      }
-    }
-
-    // Cache miss (or no locked entry, or sidecar invalid). Clone.
-    if (sourceDir === undefined) {
-      const cloneRef = resolveCloneRef(locked, parsed.value.ref)
-      const cloned = await cloneFacetGitSource(parsed.value.url, cloneRef)
-      if (!cloned.ok) {
-        return {
-          ok: false,
-          failure: cloneFailureToRunInstall(facetName, cloned),
-        }
-      }
-      sourceDir = cloned.dir
-      cleanup = async () => {
-        await rm(cloned.dir, { recursive: true, force: true }).catch(() => {})
-      }
-      clonedRef = cloneRef
-      clonedCommit = cloned.commit
-      onLog(`[verbose]   cloned ${parsed.value.url} → ${sourceDir} (sha: ${cloned.commit ?? '?'})`)
-    }
-  } else if (parsed.value.kind === 'local') {
-    const local = await resolveLocalFacetSource(parsed.value.path, projectRoot)
-    if (!local.ok) {
-      return {
-        ok: false,
-        failure: { code: 'LOCAL_RESOLVE_FAILED', facet: facetName, cause: local.error },
-      }
-    }
-    sourceDir = local.dir
-  } else {
-    // Registry source. Cache-first when locked; otherwise resolve metadata
-    // → download archive → extract to temp dir → let the build pipeline
-    // re-derive integrity (the cache write below moves temp → cache slot).
-    if (locked !== undefined) {
-      const cacheId: CacheIdentity = {
-        kind: 'registry',
-        name: facetName,
-        version: locked.version,
-      }
-      const lookup = cacheGet(cacheId)
-      if (lookup.hit) {
-        const cached = readCachedIntegrity(lookup.path)
-        if (cached === null) {
-          onLog(`[verbose]   cache slot ${lookup.path} has no valid integrity sidecar; refetching`)
-        } else if (cached.integrity !== locked.integrity) {
-          return {
-            ok: false,
-            failure: {
-              code: 'CACHE_INTEGRITY_MISMATCH',
-              facet: facetName,
-              slotPath: lookup.path,
-              cachedIntegrity: cached.integrity,
-              lockedIntegrity: locked.integrity,
-            },
-          }
-        } else {
-          sourceDir = lookup.path
-          trustedCacheHit = true
-          onLog(`[verbose]   cache hit ${lookup.path}`)
-        }
-      }
-    }
-
-    if (sourceDir === undefined) {
-      onStage({ kind: 'facet-stage', facet: facetName, stage: 'fetch' })
-      // Reproducibility: when the lockfile pins a version, resolve metadata
-      // for THAT exact version on a cache miss — never re-resolve from the
-      // manifest specifier (which may be `@latest` or a wildcard). Without
-      // this, a cold-cache reinstall of a project locked to `1.2.3` against
-      // a manifest of `@latest` would silently fetch `1.3.0` and trip the
-      // integrity check. Mirrors `resolveCloneRef` for the git path.
-      const versionForFetch: typeof parsed.value.version =
-        locked !== undefined ? parseLockedVersion(locked.version) : parsed.value.version
-      const metaResult = await resolveRegistryMetadataBatch([{ name: parsed.value.name, version: versionForFetch }])
-      if (!metaResult.ok) {
-        return { ok: false, failure: { code: 'REGISTRY_ERROR', facet: facetName, error: metaResult.error } }
-      }
-      const meta = metaResult.value[0]
-      if (meta === undefined) {
-        return {
-          ok: false,
-          failure: {
-            code: 'REGISTRY_ERROR',
-            facet: facetName,
-            error: {
-              code: 'NETWORK_ERROR',
-              cause: 'registry returned no metadata for the requested facet',
-              attempts: 1,
-            },
-          },
-        }
-      }
-
-      // Stage under the cache root (not the OS tmp dir). cachePutVerified's
-      // final rename into the cache slot must be atomic, which requires the
-      // staging dir and the slot to share a filesystem. If FACET_DIR
-      // points at a volume different from /tmp, mkdtemp under tmpdir() would
-      // make the rename throw EXDEV.
-      const tempDir = cacheStagingDir()
-      onStage({ kind: 'facet-stage', facet: facetName, stage: 'verify' })
-      const downloadResult = await downloadAndExtractFacet(meta, tempDir)
-      if (!downloadResult.ok) {
-        await rm(tempDir, { recursive: true, force: true }).catch(() => {})
-        return { ok: false, failure: { code: 'REGISTRY_ERROR', facet: facetName, error: downloadResult.error } }
-      }
-      sourceDir = tempDir
-      cleanup = async () => {
-        await rm(tempDir, { recursive: true, force: true }).catch(() => {})
-      }
-      onLog(`[verbose]   downloaded ${meta.name}@${meta.version} → ${sourceDir}`)
-    }
-  }
-
-  try {
-    // Load and validate the facet.json.
-    onStage({ kind: 'facet-stage', facet: facetName, stage: 'load' })
-    const rawManifest = await loadManifest(sourceDir)
-    if (!rawManifest.ok) {
-      return {
-        ok: false,
-        failure: { code: 'MANIFEST_LOAD_FAILED', facet: facetName, errors: rawManifest.errors },
-      }
-    }
-    if (rawManifest.data.name !== facetName) {
-      return {
-        ok: false,
-        failure: {
-          code: 'MANIFEST_NAME_MISMATCH',
-          facet: facetName,
-          manifestName: rawManifest.data.name,
-        },
-      }
-    }
-    if (rawManifest.data.facets && rawManifest.data.facets.length > 0) {
-      return { ok: false, failure: { code: 'COMPOSITION_REJECTED', facet: facetName } }
-    }
-
-    const serversDeclared = rawManifest.data.servers ? Object.keys(rawManifest.data.servers) : []
-
-    // Resolve prompts (loads actual prompt content from disk). Always
-    // runs — `materialize` reads prompt bodies from the resolved
-    // manifest, so this is needed on both the trusted-cache-hit path
-    // and the build path.
-    const resolved = await resolvePrompts(rawManifest.data, sourceDir)
-    if (!resolved.ok) {
-      return {
-        ok: false,
-        failure: { code: 'BUILD_FAILED', facet: facetName, errors: resolved.errors },
-      }
-    }
-
-    let entry: LockfileFacet
-    if (trustedCacheHit && locked !== undefined) {
-      // Trusted cache hit: sidecar already certified `locked.integrity`
-      // at write time. Skip the build pipeline entirely (no canonical
-      // tar assembly, no rehashing) and inherit the locked entry verbatim.
-      // The lockfile is sticky; we never rewrite locked fields.
-      entry = {
-        source: specifier,
-        ...(locked.ref !== undefined ? { ref: locked.ref } : {}),
-        ...(locked.commit !== undefined ? { commit: locked.commit } : {}),
-        version: locked.version,
-        integrity: locked.integrity,
-        assets: locked.assets,
-      }
-    } else {
-      // Build path: cache miss, soft miss, or local source.
-      onStage({ kind: 'facet-stage', facet: facetName, stage: 'build' })
-      const buildResult = await runBuildPipeline(sourceDir, [...args.adapters])
-      if (!buildResult.ok) {
-        return {
-          ok: false,
-          failure: { code: 'BUILD_FAILED', facet: facetName, errors: buildResult.errors },
-        }
-      }
-
-      // Tag-move guard: if this is a LOCKED GIT source, the just-built
-      // integrity MUST match the locked integrity. The lockfile is the
-      // security contract; the network-served artifact has been modified
-      // since we locked it if these disagree. Refuse the install — do
-      // NOT cache, do NOT write the lockfile, do NOT materialize.
-      //
-      // Local sources are intentionally exempt: filesystem-backed
-      // sources are mutable by definition (the user edits them), so
-      // an integrity drift is expected, not an attack. The lockfile
-      // entry's integrity gets overwritten by the new build for local
-      // sources. See `verifyGitOneCheck` docstring for the rationale.
-      // Same integrity guard as git: locked registry entry MUST reproduce
-      // its locked integrity. The lockfile is the security contract.
-      if (locked !== undefined && (parsed.value.kind === 'git' || parsed.value.kind === 'registry')) {
-        const guard = verifyGitOneCheck({
-          facet: facetName,
-          computedIntegrity: buildResult.integrity,
-          lockfileIntegrity: locked.integrity,
-        })
-        if (!guard.ok) {
-          return { ok: false, failure: { code: 'INTEGRITY_FAILURE', failure: guard.failure } }
-        }
-      }
-
-      // Fresh git clone or fresh registry download → audit-then-write to
-      // cache. Cache hits already have content in the slot; local sources
-      // skip the cache entirely.
-      if (cleanup !== undefined && (parsed.value.kind === 'git' || parsed.value.kind === 'registry')) {
-        const buildManifest = JSON.parse(buildResult.manifestJson) as BuildManifest
-        const cacheId: CacheIdentity =
-          parsed.value.kind === 'git'
-            ? { kind: 'git', name: facetName, version: buildResult.data.version }
-            : { kind: 'registry', name: facetName, version: buildResult.data.version }
-        const putResult = cachePutVerified(cacheId, sourceDir, buildManifest, buildResult.integrity, facetName)
-        if (!putResult.ok) {
-          if ('corruption' in putResult) {
-            return {
-              ok: false,
-              failure: {
-                code: 'CACHE_INTEGRITY_MISMATCH',
-                facet: facetName,
-                slotPath: putResult.corruption.slotPath,
-                cachedIntegrity: '<corrupt>',
-                lockedIntegrity: buildResult.integrity,
-              },
-            }
-          }
-          return { ok: false, failure: { code: 'INTEGRITY_FAILURE', failure: putResult.integrity } }
-        }
-        sourceDir = putResult.path
-        cleanup = undefined
-      }
-
-      // Construct the entry.
-      //
-      //   - Locked GIT/REGISTRY entries inherit locked.* verbatim (we just
-      //     verified buildResult matches, so values are equal — but the
-      //     lockfile is the source of truth and we never rewrite it).
-      //   - Local sources (locked or fresh) derive from the build.
-      //     Local is mutable by design; the user owns the version and
-      //     content, and the lockfile follows what's on disk.
-      //   - Fresh git adds derive from the build + the clone's commit.
-      //   - Fresh registry adds derive from the build (no ref/commit).
-      if (locked !== undefined && (parsed.value.kind === 'git' || parsed.value.kind === 'registry')) {
-        entry = {
-          source: specifier,
-          ...(locked.ref !== undefined ? { ref: locked.ref } : {}),
-          ...(locked.commit !== undefined ? { commit: locked.commit } : {}),
-          version: locked.version,
-          integrity: locked.integrity,
-          assets: locked.assets,
-        }
-      } else {
-        const newAssets = computeAssetList(resolved.data)
-        entry = {
-          source: specifier,
-          ...(clonedRef !== undefined ? { ref: clonedRef } : {}),
-          ...(clonedCommit !== undefined ? { commit: clonedCommit } : {}),
-          version: buildResult.data.version,
-          integrity: buildResult.integrity,
-          assets: newAssets,
-        }
-      }
-    }
-
-    return { ok: true, value: { entry, resolved: resolved.data, serversDeclared } }
-  } finally {
-    if (cleanup) await cleanup()
-  }
-}
-
-/**
- * Synthesize a placeholder manifest for a facet being removed during
- * drift cleanup. `materialize` only touches `manifest` for the install
- * branch, which is empty (`newAssets: []`) for removals — so the fields
- * here are never read.
- */
-function removalManifest(facetName: string): ResolvedFacetManifest {
-  return {
-    name: facetName,
-    version: '0.0.0',
-  }
-}
-
-/**
- * Classify a per-facet outcome by comparing the previous lockfile entry
- * (if any) against the new one. `assetsWritten` is the count of assets
- * `materialize` actually wrote (excluding skipped no-ops); when it's >0
- * but the lockfile entry is identical, the facet was "repaired" — the
- * on-disk state had drifted (file deleted, content edited) and we
- * restored it without bumping the version.
- */
-function classifyOutcome(
-  name: string,
-  previous: LockfileFacet | undefined,
-  current: LockfileFacet,
-  assetsWritten: number,
-): FacetOutcome {
-  if (previous === undefined) {
-    return { kind: 'installed', name, version: current.version }
-  }
-  if (previous.version !== current.version) {
-    return {
-      kind: 'updated',
-      name,
-      oldVersion: previous.version,
-      newVersion: current.version,
-    }
-  }
-  if (assetsWritten > 0) {
-    return { kind: 'repaired', name, version: current.version }
-  }
-  return { kind: 'unchanged', name, version: current.version }
-}
-
-/**
- * Helper used by callers (notably the add command) to compute the
- * default `facets.json` map after a successful planFacet — exported so
- * the `facet add` flow can byte-snapshot, mutate, write, then call
- * runInstall.
- *
- * Currently unused but reserved for the add command's wiring.
- */
-export type { FacetsJson }
