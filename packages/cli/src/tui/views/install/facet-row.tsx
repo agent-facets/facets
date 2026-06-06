@@ -139,6 +139,8 @@ function oneLineFailureSummary(failure: RunInstallFailure): string {
       return 'facet composition is not supported'
     case 'GIT_CLONE_FAILED':
       return 'git clone failed'
+    case 'GIT_COMMIT_UNRESOLVED':
+      return 'git commit could not be resolved'
     case 'LOCAL_RESOLVE_FAILED':
       return 'local path resolution failed'
     case 'BUILD_FAILED':

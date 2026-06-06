@@ -26,5 +26,7 @@ export function cloneFailureToRunInstall(
         commitish: cloned.commitish,
         stderr: cloned.stderr,
       }
+    case 'commit-unresolved':
+      return { code: 'GIT_COMMIT_UNRESOLVED', facet, url: cloned.url, stderr: cloned.stderr }
   }
 }

@@ -31,9 +31,11 @@ describe('loadLockfile — round-trip', () => {
       lockfileVersion: 1 as const,
       facets: {
         'viper-plans': {
-          source: 'github:agent-facets/viper-plans#main',
-          ref: 'main',
-          commit: 'abc123',
+          source: {
+            kind: 'git' as const,
+            url: 'github:agent-facets/viper-plans#main',
+            commit: 'abc123def0123456789abc123def0123456789ab',
+          },
           version: '0.1.0',
           integrity: 'sha256:deadbeef',
           assets: [{ scope: 'project' as const, type: 'skill' as const, name: 'planning' }],

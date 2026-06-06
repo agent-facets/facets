@@ -45,4 +45,15 @@ describe('cloneFailureToRunInstall', () => {
       stderr: 'nope',
     })
   })
+
+  test('commit-unresolved → GIT_COMMIT_UNRESOLVED with url + stderr', () => {
+    expect(
+      cloneFailureToRunInstall('cowsay', {
+        ok: false,
+        reason: 'commit-unresolved',
+        url: 'https://x/r.git',
+        stderr: 'no HEAD',
+      }),
+    ).toEqual({ code: 'GIT_COMMIT_UNRESOLVED', facet: 'cowsay', url: 'https://x/r.git', stderr: 'no HEAD' })
+  })
 })

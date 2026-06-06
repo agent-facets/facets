@@ -70,9 +70,21 @@ existing manifest. Both run the same flow internally.
    from `facets.json`).
 
 9. **Write the lockfile.** `facets.lock` records
-   `{source, ref, commit, version, integrity, assets: [{scope, type, name}]}`
-   per facet. Adapter-agnostic by design — the same asset set is
-   applied to every selected adapter.
+   `{source, version, integrity, assets: [{scope, type, name}]}`
+   per facet, where `source` is a tagged provenance value keyed on
+   `kind`:
+   - `{kind: "registry", registry}` — the registry origin (base URL)
+     the artifact was resolved from. No version specifier is recorded
+     here; the resolved version lives in the entry's `version` field.
+   - `{kind: "git", url, commit}` — the repository URL plus the
+     resolved commit SHA. The commit is required (it is the
+     reproducible identity); the requested ref is **not** recorded in
+     the lockfile — it lives in `facets.json`. A git clone that cannot
+     be pinned to a commit fails the install.
+   - `{kind: "local", path}` — the resolved local path.
+
+   Adapter-agnostic by design — the same asset set is applied to every
+   selected adapter.
 
 `facet install` rejects positional arguments — to add a new facet, use
 `facet add`. There is no `--dry-run` flag; both commands always commit.

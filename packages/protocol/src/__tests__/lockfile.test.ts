@@ -10,9 +10,11 @@ describe('LockfileSchema — valid lockfiles', () => {
       lockfileVersion: LOCKFILE_VERSION,
       facets: {
         'viper-plans': {
-          source: 'github:agent-facets/viper-plans',
-          ref: 'main',
-          commit: 'abc123def0123456789abc123def0123456789abc',
+          source: {
+            kind: 'git',
+            url: 'github:agent-facets/viper-plans',
+            commit: 'abc123def0123456789abc123def0123456789abc',
+          },
           version: '0.1.0',
           integrity: 'sha256:abcdef',
           assets: [
@@ -34,12 +36,12 @@ describe('LockfileSchema — valid lockfiles', () => {
     })
   })
 
-  test('local-source facet omits ref and commit', () => {
+  test('local-source facet records a path', () => {
     const input = {
       lockfileVersion: LOCKFILE_VERSION,
       facets: {
         'local-plans': {
-          source: 'file:./facets/local-plans',
+          source: { kind: 'local', path: 'file:./facets/local-plans' },
           version: '0.0.1',
           integrity: 'sha256:xyz',
           assets: [{ scope: 'project', type: 'agent', name: 'reviewer' }],
@@ -49,8 +51,29 @@ describe('LockfileSchema — valid lockfiles', () => {
     const result = LockfileSchema(input)
     expect(result).not.toBeInstanceOf(type.errors)
     const data = result as Lockfile
-    expect(data.facets['local-plans']?.ref).toBeUndefined()
-    expect(data.facets['local-plans']?.commit).toBeUndefined()
+    const source = data.facets['local-plans']?.source
+    if (source?.kind !== 'local') expect.unreachable()
+    expect(source.path).toBe('file:./facets/local-plans')
+  })
+
+  test('registry-source facet records the registry origin and no version specifier', () => {
+    const input = {
+      lockfileVersion: LOCKFILE_VERSION,
+      facets: {
+        cowsay: {
+          source: { kind: 'registry', registry: 'https://api.facet.cafe' },
+          version: '0.1.1',
+          integrity: 'sha256:reg',
+          assets: [{ scope: 'user', type: 'skill', name: 'planning' }],
+        },
+      },
+    }
+    const result = LockfileSchema(input)
+    expect(result).not.toBeInstanceOf(type.errors)
+    const data = result as Lockfile
+    const source = data.facets.cowsay?.source
+    if (source?.kind !== 'registry') expect.unreachable()
+    expect(source.registry).toBe('https://api.facet.cafe')
   })
 
   test('lockfile with zero facets is valid', () => {
@@ -69,9 +92,11 @@ describe('LockfileSchema — valid lockfiles', () => {
       lockfileVersion: LOCKFILE_VERSION,
       facets: {
         'empty-facet': {
-          source: 'github:agent-facets/empty-facet',
-          ref: 'main',
-          commit: 'aaa111',
+          source: {
+            kind: 'git',
+            url: 'github:agent-facets/empty-facet',
+            commit: 'aaa111aaa111aaa111aaa111aaa111aaa111aaa1',
+          },
           version: '1.0.0',
           integrity: 'sha256:empty',
           assets: [],
@@ -87,9 +112,7 @@ describe('LockfileSchema — valid lockfiles', () => {
       lockfileVersion: LOCKFILE_VERSION,
       facets: {
         'mixed-facet': {
-          source: 'github:a/b',
-          ref: 'main',
-          commit: 'abc',
+          source: { kind: 'git', url: 'github:a/b', commit: 'abcabcabcabcabcabcabcabcabcabcabcabcabca' },
           version: '1.0.0',
           integrity: 'sha256:mix',
           assets: [
@@ -121,7 +144,7 @@ describe('LockfileSchema — invalid lockfiles', () => {
       lockfileVersion: LOCKFILE_VERSION,
       facets: {
         'viper-plans': {
-          source: 'github:a/b',
+          source: { kind: 'git', url: 'github:a/b', commit: 'abcabcabcabcabcabcabcabcabcabcabcabcabca' },
           version: '0.1.0',
           assets: [],
         },
@@ -136,7 +159,7 @@ describe('LockfileSchema — invalid lockfiles', () => {
       lockfileVersion: LOCKFILE_VERSION,
       facets: {
         'viper-plans': {
-          source: 'github:a/b',
+          source: { kind: 'git', url: 'github:a/b', commit: 'abcabcabcabcabcabcabcabcabcabcabcabcabca' },
           version: '0.1.0',
           integrity: 'sha256:x',
           assets: [{ scope: 'global', type: 'skill', name: 'x' }],
@@ -152,7 +175,7 @@ describe('LockfileSchema — invalid lockfiles', () => {
       lockfileVersion: LOCKFILE_VERSION,
       facets: {
         'viper-plans': {
-          source: 'github:a/b',
+          source: { kind: 'git', url: 'github:a/b', commit: 'abcabcabcabcabcabcabcabcabcabcabcabcabca' },
           version: '0.1.0',
           integrity: 'sha256:x',
           assets: [{ scope: 'user', type: 'hook', name: 'x' }],
@@ -168,7 +191,7 @@ describe('LockfileSchema — invalid lockfiles', () => {
       lockfileVersion: LOCKFILE_VERSION,
       facets: {
         'viper-plans': {
-          source: 'github:a/b',
+          source: { kind: 'git', url: 'github:a/b', commit: 'abcabcabcabcabcabcabcabcabcabcabcabcabca' },
           version: '0.1.0',
           integrity: 'sha256:x',
         },
@@ -187,7 +210,7 @@ describe('LockfileSchema — invalid lockfiles', () => {
       lockfileVersion: LOCKFILE_VERSION,
       facets: {
         pwn: {
-          source: 'github:a/b',
+          source: { kind: 'git', url: 'github:a/b', commit: 'abcabcabcabcabcabcabcabcabcabcabcabcabca' },
           version: '0.1.0',
           integrity: 'sha256:x',
           assets: [{ scope: 'user', type: 'skill', name }],
@@ -219,8 +242,96 @@ describe('LockfileSchema — invalid lockfiles', () => {
       lockfileVersion: LOCKFILE_VERSION,
       facets: {
         'bad-version': {
-          source: 'github:a/b',
+          source: { kind: 'git', url: 'github:a/b', commit: 'abcabcabcabcabcabcabcabcabcabcabcabcabca' },
           version,
+          integrity: 'sha256:x',
+          assets: [],
+        },
+      },
+    }
+    const result = LockfileSchema(input)
+    expect(result).toBeInstanceOf(type.errors)
+  })
+
+  // A git source's commit is a REQUIRED field — a git entry without one
+  // is not reproducible, so it must fail validation. (Extra/unknown keys
+  // on a source remain tolerated by design for forward-compat; only
+  // missing-or-malformed required fields are rejected.)
+  test('git source without a commit is rejected', () => {
+    const input = {
+      lockfileVersion: LOCKFILE_VERSION,
+      facets: {
+        'viper-plans': {
+          source: { kind: 'git', url: 'github:a/b' },
+          version: '0.1.0',
+          integrity: 'sha256:x',
+          assets: [],
+        },
+      },
+    }
+    const result = LockfileSchema(input)
+    expect(result).toBeInstanceOf(type.errors)
+  })
+
+  // A git source's commit must be a lowercase hex SHA of at least 8 chars.
+  // An empty, too-short, or non-hex commit is effectively "unresolved" and
+  // would let a later clone fall back to a branch/default instead of pinning
+  // a reproducible identity — so it must fail validation up front.
+  test.each([
+    '',
+    'abc',
+    '1234567',
+    'ABCDEF0123456789',
+    'g'.repeat(40),
+    'abc123 ',
+    'sha256:abc',
+  ])('git commit %p is rejected', (commit) => {
+    const input = {
+      lockfileVersion: LOCKFILE_VERSION,
+      facets: {
+        'bad-commit': {
+          source: { kind: 'git', url: 'github:a/b', commit },
+          version: '0.1.0',
+          integrity: 'sha256:x',
+          assets: [],
+        },
+      },
+    }
+    const result = LockfileSchema(input)
+    expect(result).toBeInstanceOf(type.errors)
+  })
+
+  // Accepted: a full SHA-1 (40 chars), a SHA-256 (64 chars), and an
+  // abbreviated-but-≥8 hex commit. The narrow has no upper bound so future
+  // hash formats don't need a special case.
+  test.each([
+    'a'.repeat(40),
+    'a'.repeat(64),
+    'abc12345',
+    'abc123def0123456789abc123def0123456789abc',
+  ])('git commit %p is accepted', (commit) => {
+    const input = {
+      lockfileVersion: LOCKFILE_VERSION,
+      facets: {
+        'good-commit': {
+          source: { kind: 'git', url: 'github:a/b', commit },
+          version: '0.1.0',
+          integrity: 'sha256:x',
+          assets: [],
+        },
+      },
+    }
+    const result = LockfileSchema(input)
+    expect(result).not.toBeInstanceOf(type.errors)
+  })
+
+  test('source with an unrecognized kind is rejected', () => {
+    const input = {
+      lockfileVersion: LOCKFILE_VERSION,
+      facets: {
+        'viper-plans': {
+          source: { kind: 'ftp', url: 'ftp://x/y' },
+          version: '0.1.0',
           integrity: 'sha256:x',
           assets: [],
         },
@@ -244,5 +355,30 @@ describe('LockfileSchema — unknown field tolerance', () => {
     expect(result).not.toBeInstanceOf(type.errors)
     const data = result as Lockfile & { generatedAt: string }
     expect(data.generatedAt).toBe('2026-04-18')
+  })
+
+  // Forward-compat at the SOURCE level: a newer producer may add fields to
+  // a source variant that an older consumer doesn't recognize. The older
+  // consumer MUST still accept the lockfile — only a missing or malformed
+  // REQUIRED field fails. (This nested tolerance is arktype's default; the
+  // test pins it so it can't silently regress to strict rejection.)
+  test('a source carrying extra unrecognized keys is accepted', () => {
+    const input = {
+      lockfileVersion: LOCKFILE_VERSION,
+      facets: {
+        cowsay: {
+          source: { kind: 'registry', registry: 'https://api.facet.cafe', futureField: 'whatever' },
+          version: '0.1.1',
+          integrity: 'sha256:x',
+          assets: [],
+        },
+      },
+    }
+    const result = LockfileSchema(input)
+    expect(result).not.toBeInstanceOf(type.errors)
+    const data = result as Lockfile
+    const source = data.facets.cowsay?.source
+    if (source?.kind !== 'registry') expect.unreachable()
+    expect(source.registry).toBe('https://api.facet.cafe')
   })
 })

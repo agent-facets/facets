@@ -15,14 +15,15 @@ import { join } from 'node:path'
  * Failure modes are part of the function's contract — it never throws.
  * The caller pattern-matches on `result.reason` and routes each into the
  * matching `RunInstallFailure` code (`GIT_BINARY_MISSING`,
- * `GIT_AUTH_REQUIRED`, `GIT_CLONE_FAILED`, `GIT_CHECKOUT_FAILED`).
+ * `GIT_AUTH_REQUIRED`, `GIT_CLONE_FAILED`, `GIT_CHECKOUT_FAILED`,
+ * `GIT_COMMIT_UNRESOLVED`).
  */
 
 /**
  * Discriminated result for `cloneFacetGitSource`. The success arm carries
- * the temp dir and resolved HEAD commit; each failure arm carries the
- * fields the CLI needs to render a precise message without parsing
- * stderr text:
+ * the temp dir and the REQUIRED resolved HEAD commit; each failure arm
+ * carries the fields the CLI needs to render a precise message without
+ * parsing stderr text:
  *
  *   - `git-binary-missing` — `git` is not on `$PATH`. The user needs
  *     to install git before retrying.
@@ -34,13 +35,18 @@ import { join } from 'node:path'
  *     stderr verbatim for the CLI to surface.
  *   - `checkout-failed` — the SHA workflow's post-clone `git checkout`
  *     step failed (typically a typo in the requested commitish).
+ *   - `commit-unresolved` — the clone succeeded but `git rev-parse HEAD`
+ *     produced no commit. A git source that can't be pinned to a commit
+ *     is not reproducible, so it fails loudly rather than producing a
+ *     commitless lockfile entry.
  */
 export type CloneFacetGitResult =
-  | { ok: true; dir: string; commit?: string }
+  | { ok: true; dir: string; commit: string }
   | { ok: false; reason: 'git-binary-missing' }
   | { ok: false; reason: 'auth-required'; url: string }
   | { ok: false; reason: 'clone-failed'; url: string; stderr: string }
   | { ok: false; reason: 'checkout-failed'; url: string; commitish: string; stderr: string }
+  | { ok: false; reason: 'commit-unresolved'; url: string; stderr: string }
 
 const SHA_RE = /^[0-9a-f]{7,40}$/
 
@@ -141,8 +147,19 @@ export async function cloneFacetGitSource(url: string, commitish?: string): Prom
   }
 
   // Resolve the current HEAD so the caller can pin it in the lockfile.
+  // A git source MUST be pinnable to a commit — that commit is the
+  // immutable identity that makes the install reproducible. If HEAD
+  // can't be resolved after a successful clone, fail loudly rather than
+  // writing a commitless (non-reproducible) lockfile entry.
   const revParse = runGit(['rev-parse', 'HEAD'], { cwd: dir })
-  const commit = revParse.ok ? revParse.stdout.trim() : undefined
+  const commit = revParse.ok ? revParse.stdout.trim() : ''
+  // Require a real SHA, not merely non-empty output: if `rev-parse` emits
+  // unexpected/noisy text that isn't a commit, treat the source as unpinnable
+  // rather than writing an invalid commit into the lockfile.
+  if (commit.length === 0 || !SHA_RE.test(commit)) {
+    await rm(dir, { recursive: true, force: true }).catch(() => {})
+    return { ok: false, reason: 'commit-unresolved', url, stderr: revParse.stderr.trim() }
+  }
 
   return { ok: true, dir, commit }
 }

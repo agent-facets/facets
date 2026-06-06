@@ -17,16 +17,38 @@ The lockfile SHALL include a top-level `lockfileVersion` integer. The CLI SHALL 
 
 ### Requirement: Each facet entry records source provenance
 
-For every facet in `facets`, the lockfile SHALL record the original source specifier and (for git sources) the symbolic ref and resolved commit SHA. Local sources SHALL omit `ref` and `commit`.
+For every facet in `facets`, the lockfile SHALL record the facet's source provenance using a tagged shape whose form depends on the source kind. Each entry's source SHALL declare its kind and carry only the provenance fields meaningful for that kind:
+
+- A **registry** source SHALL record the registry origin (the base URL the artifact was resolved from). A registry source SHALL NOT carry a version specifier; the entry's `version` field is the resolved identity and the facet name is the entry key.
+- A **git** source SHALL record the repository URL and the resolved commit SHA. The commit SHALL be required, because it is the immutable identity that makes the install reproducible. A git source SHALL NOT record the symbolic ref: the ref is what the user requested and is recorded in the project manifest, whereas the lockfile records what was resolved.
+- A **local** source SHALL record the resolved path.
+
+Source-provenance fields SHALL live inside the source value (there are no top-level ref or commit fields; the git commit lives inside the git source). A lockfile entry whose source does not declare a recognized kind, or whose source omits a field required for its declared kind (such as a git source without a commit), SHALL be rejected. Consistent with the lockfile's general unknown-field tolerance, a source MAY carry additional unrecognized keys without being rejected — only a missing or malformed required field fails validation.
+
+#### Scenario: Valid registry-source entry
+
+- **WHEN** a lockfile facet entry declares a registry source recording the registry base URL, together with `version`, `integrity`, and `assets`
+- **THEN** the system SHALL accept the entry
+
+#### Scenario: Registry-source entry never carries a version specifier
+
+- **WHEN** the system writes a lockfile entry for a registry-sourced facet
+- **THEN** the recorded source SHALL NOT contain a version specifier of any form (an exact version, a wildcard such as `1.*` or `*`, or the `latest` tag)
+- **AND** the resolved version SHALL be recorded only in the entry's `version` field
 
 #### Scenario: Valid git-source entry
 
-- **WHEN** a lockfile facet entry includes `source`, `ref`, `commit`, `version`, `integrity`, and `assets`
+- **WHEN** a lockfile facet entry declares a git source recording the repository URL and the resolved commit SHA, together with `version`, `integrity`, and `assets`
 - **THEN** the system SHALL accept the entry
+
+#### Scenario: Git-source entry without a commit is rejected
+
+- **WHEN** a lockfile facet entry declares a git source that records a repository URL but no resolved commit
+- **THEN** the system SHALL reject the entry
 
 #### Scenario: Valid local-source entry
 
-- **WHEN** a lockfile facet entry includes `source: "file:./..."`, `version`, `integrity`, and `assets`, and omits `ref` / `commit`
+- **WHEN** a lockfile facet entry declares a local source recording the resolved path, together with `version`, `integrity`, and `assets`
 - **THEN** the system SHALL accept the entry
 
 ### Requirement: Each facet entry captures identity and integrity
@@ -395,15 +417,22 @@ The project manifest is the source of truth; the lockfile is a record of resolut
 - **THEN** the system SHALL verify the freshly fetched content through the full registry integrity protocol before writing any asset
 - **AND** the system SHALL NOT check the new content against the discarded stale entry's integrity hash
 
-#### Scenario: Lockfile entry and its source specifier always describe the same artifact
+#### Scenario: Lockfile entry and its source provenance always describe the same artifact
 
 - **WHEN** the system writes or updates a lockfile entry for a facet
-- **THEN** the entry's recorded source specifier, resolved version, and integrity hash SHALL all describe the same resolved artifact
-- **AND** the system SHALL NOT record a source specifier whose version disagrees with the entry's resolved version and integrity hash
+- **THEN** the entry's recorded source provenance, resolved version, and integrity hash SHALL all describe the same resolved artifact
+- **AND** the system SHALL NOT record source provenance whose version disagrees with the entry's resolved version and integrity hash
+
+#### Scenario: A registry entry has no version-bearing source to disagree with
+
+- **WHEN** a user adds or installs a registry-sourced facet whose manifest specifier is unresolved (a bare name, `latest`, or a wildcard)
+- **THEN** the lockfile entry's source SHALL record the registry origin only
+- **AND** the lockfile entry SHALL NOT record the unresolved specifier anywhere
+- **AND** the entry's `version` SHALL be the resolved exact version
 
 ### Requirement: Frozen-lockfile install treats the lockfile as authoritative
 
-The system SHALL provide a frozen-lockfile mode for install in which the lockfile is treated as the source of truth and reproduced exactly: no extra facets, no missing facets, no source changes, and no content changes. In this mode the system SHALL NOT re-resolve any specifier and SHALL NOT write the lockfile. Before installing, the system SHALL verify that the lockfile fully and consistently covers the manifest. The system SHALL fail without modifying the project if any of the following is true: no lockfile exists, the manifest declares a facet that has no lockfile entry, a lockfile entry's recorded version does not satisfy its manifest specifier, the lockfile pins a facet the manifest no longer declares (an orphaned entry that a non-frozen install would prune), or a git/local facet's manifest source string (URL, ref, or path) no longer matches the locked source. When the lockfile fully covers the manifest, the system SHALL install exactly the versions and integrity hashes recorded in the lockfile, and SHALL verify that every facet — including local sources, which a non-frozen install would rebuild from disk — reproduces its locked integrity, failing if any built content does not match. Frozen-lockfile mode SHALL be available only on install; the command that adds a facet SHALL NOT offer it, because adding a facet inherently updates the lockfile.
+The system SHALL provide a frozen-lockfile mode for install in which the lockfile is treated as the source of truth and reproduced exactly: no extra facets, no missing facets, no source changes, and no content changes. In this mode the system SHALL NOT re-resolve any specifier and SHALL NOT write the lockfile. Before installing, the system SHALL verify that the lockfile fully and consistently covers the manifest. The system SHALL fail without modifying the project if any of the following is true: no lockfile exists, the lockfile cannot be read or does not satisfy the published schema, the manifest declares a facet that has no lockfile entry, a lockfile entry's recorded version does not satisfy its manifest specifier, the lockfile pins a facet the manifest no longer declares (an orphaned entry that a non-frozen install would prune), or a git or local facet's manifest source string (URL, ref, or path) no longer matches the recorded git or local source provenance. When the lockfile fully covers the manifest, the system SHALL install exactly the versions and integrity hashes recorded in the lockfile, and SHALL verify that every facet — including local sources, which a non-frozen install would rebuild from disk — reproduces its recorded integrity, failing if any built content does not match. Frozen-lockfile mode SHALL be available only on install; the command that adds a facet SHALL NOT offer it, because adding a facet inherently updates the lockfile.
 
 #### Scenario: Frozen install proceeds when the lockfile covers the manifest
 
@@ -419,6 +448,13 @@ The system SHALL provide a frozen-lockfile mode for install in which the lockfil
 - **AND** no lockfile exists for the project
 - **THEN** the system SHALL fail with an error stating the lockfile is missing
 - **AND** the system SHALL NOT create or modify the lockfile
+
+#### Scenario: Frozen install fails when the lockfile is invalid
+
+- **WHEN** a user runs install in frozen-lockfile mode
+- **AND** a lockfile exists but cannot be read or does not satisfy the published schema (for example, an entry recorded under an older, untagged source shape)
+- **THEN** the system SHALL fail with an error stating the lockfile is invalid
+- **AND** the system SHALL leave the manifest, lockfile, and on-disk adapter state unchanged
 
 #### Scenario: Frozen install fails when a manifest facet is missing from the lockfile
 
@@ -456,6 +492,39 @@ The system SHALL provide a frozen-lockfile mode for install in which the lockfil
 - **WHEN** a user runs install in frozen-lockfile mode
 - **AND** a local facet's source path is unchanged but its on-disk content no longer reproduces the locked integrity
 - **THEN** the system SHALL fail with an integrity error rather than rebuilding and overwriting the entry
+- **AND** the system SHALL leave the manifest, lockfile, and on-disk adapter state unchanged
+
+### Requirement: An invalid lockfile fails install in every mode
+
+When a lockfile exists but cannot be read or does not satisfy the published schema, the system SHALL fail the install and SHALL leave the project unchanged, regardless of whether frozen-lockfile mode is in effect. The system SHALL NOT silently treat an invalid lockfile as absent and SHALL NOT silently regenerate it. Recovery SHALL be available by deleting the lockfile and re-running a non-frozen install, which regenerates a valid lockfile from the manifest.
+
+#### Scenario: Non-frozen install fails on an invalid lockfile
+
+- **WHEN** a user runs a non-frozen install
+- **AND** a lockfile exists but does not satisfy the published schema (for example, an entry recorded under an older, untagged source shape)
+- **THEN** the system SHALL fail with an error stating the lockfile is invalid
+- **AND** the system SHALL leave the manifest, lockfile, and on-disk adapter state unchanged
+
+#### Scenario: Deleting an invalid lockfile lets a non-frozen install regenerate it
+
+- **WHEN** a user deletes an invalid lockfile and runs a non-frozen install
+- **THEN** the system SHALL resolve the manifest's facets and write a new lockfile that satisfies the published schema
+- **AND** every registry entry's recorded source SHALL be the registry origin with no version specifier
+
+### Requirement: A git facet that cannot be pinned to a commit fails the install
+
+When the system installs a git-sourced facet, it SHALL resolve the cloned content to a specific commit and record that commit in the lockfile. If a git clone succeeds but the system cannot resolve it to a commit, the system SHALL fail the install with an error identifying the facet, and SHALL leave the manifest, lockfile, and on-disk adapter state unchanged. The system SHALL NOT write a git lockfile entry that lacks a commit.
+
+#### Scenario: Git facet is pinned to its resolved commit
+
+- **WHEN** a user adds or installs a git-sourced facet and the clone resolves to a commit
+- **THEN** the system SHALL record that commit in the facet's git source
+- **AND** the recorded git source SHALL NOT include the symbolic ref the user requested
+
+#### Scenario: Git facet whose commit cannot be resolved fails the install
+
+- **WHEN** a user adds or installs a git-sourced facet and the clone cannot be resolved to a commit
+- **THEN** the system SHALL fail with an error identifying the facet
 - **AND** the system SHALL leave the manifest, lockfile, and on-disk adapter state unchanged
 
 ### Requirement: Declared MCP servers do not block installation

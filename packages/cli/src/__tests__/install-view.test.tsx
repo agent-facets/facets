@@ -262,7 +262,7 @@ describe('InstallView — marketing aesthetic on `add`', () => {
         lockfileVersion: 1,
         facets: {
           cowsay: {
-            source: 'cowsay@latest',
+            source: { kind: 'registry', registry: 'https://api.facet.cafe' },
             version: '0.1.0',
             integrity: 'sha256:x',
             assets: [
@@ -314,7 +314,7 @@ describe('InstallView — marketing aesthetic on `add`', () => {
         lockfileVersion: 1,
         facets: {
           'pure-skills': {
-            source: 'pure-skills@1.0.0',
+            source: { kind: 'registry', registry: 'https://api.facet.cafe' },
             version: '1.0.0',
             integrity: 'sha256:x',
             assets: [{ scope: 'project', type: 'skill', name: 'planning' }],
@@ -367,7 +367,7 @@ describe('InstallView — marketing aesthetic on `add`', () => {
         facets: {
           // pre-existing — must NOT appear in the count
           'existing-skill': {
-            source: 'existing-skill@1.0.0',
+            source: { kind: 'registry', registry: 'https://api.facet.cafe' },
             version: '1.0.0',
             integrity: 'sha256:y',
             assets: [
@@ -378,7 +378,7 @@ describe('InstallView — marketing aesthetic on `add`', () => {
           },
           // newly installed this run
           cowsay: {
-            source: 'cowsay@latest',
+            source: { kind: 'registry', registry: 'https://api.facet.cafe' },
             version: '0.1.0',
             integrity: 'sha256:x',
             assets: [{ scope: 'project', type: 'command', name: 'cowsay' }],
@@ -434,7 +434,7 @@ describe('InstallView — marketing aesthetic on `add`', () => {
         lockfileVersion: 1,
         facets: {
           cowsay: {
-            source: 'cowsay@latest',
+            source: { kind: 'registry', registry: 'https://api.facet.cafe' },
             version: '0.1.0',
             integrity: 'sha256:x',
             assets: [{ scope: 'project', type: 'command', name: 'cowsay' }],

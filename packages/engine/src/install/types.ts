@@ -143,6 +143,13 @@ export type RunInstallFailure =
       commitish: string
       stderr: string
     }
+  /**
+   * `git clone` succeeded but `git rev-parse HEAD` produced no commit, so
+   * the source can't be pinned. A git lockfile entry requires a commit
+   * (it's the reproducible identity), so this fails the install rather
+   * than writing a commitless entry.
+   */
+  | { code: 'GIT_COMMIT_UNRESOLVED'; facet: string; url: string; stderr: string }
   | { code: 'LOCAL_RESOLVE_FAILED'; facet: string; cause: string }
   | { code: 'BUILD_FAILED'; facet: string; errors: ReadonlyArray<ValidationError> }
   | { code: 'MANIFEST_NAME_MISMATCH'; facet: string; manifestName: string }

@@ -3,6 +3,7 @@ import { satisfies } from '@agent-facets/protocol'
 import { parseFacetSource } from '../sources/facet/parse-source.ts'
 import { parseVersionSpec } from '../sources/facet/parse-version.ts'
 import { parseLockedVersion } from './parse-locked-version.ts'
+import { sourceMatchesLockedSource } from './source-matches.ts'
 import type { LockfileDriftEntry } from './types.ts'
 
 /**
@@ -33,13 +34,25 @@ export function detectLockfileDrift(
       if (!satisfies(parseLockedVersion(locked.version), parsed.value.version)) {
         drift.push({ name, reason: 'unsatisfied', manifestSpec: specifier, lockedVersion: locked.version })
       }
-    } else if (parsed.ok && specifier !== locked.source) {
-      // git/local: any change to the manifest source string (a swapped URL,
-      // ref, or local path) is drift in frozen mode. The locked source is the
+    } else if (parsed.ok) {
+      // git/local: any change to the parsed manifest source (a swapped URL
+      // or local path) is drift in frozen mode. The locked source is the
       // contract; a differing source would otherwise build from an unlocked
-      // origin. Registry version drift is handled by the `satisfies` check
-      // above, so this branch only fires for git and local sources.
-      drift.push({ name, reason: 'source-changed', manifestSpec: specifier, lockedSource: locked.source })
+      // origin. Compare canonical, post-parse values — never the raw
+      // specifier text — so a manifest shorthand (`github:owner/repo`, a
+      // `#ref` suffix, a `file:` prefix) matches the provenance a fresh
+      // install wrote. Registry version drift is handled by the `satisfies`
+      // check above, so this branch only fires for git and local sources —
+      // and a registry locked source never reaches here.
+      const lockedSourceString =
+        locked.source.kind === 'git'
+          ? locked.source.url
+          : locked.source.kind === 'local'
+            ? locked.source.path
+            : undefined
+      if (lockedSourceString !== undefined && !sourceMatchesLockedSource(parsed.value, locked.source)) {
+        drift.push({ name, reason: 'source-changed', manifestSpec: specifier, lockedSource: lockedSourceString })
+      }
     }
   }
 

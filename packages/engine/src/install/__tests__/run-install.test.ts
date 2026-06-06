@@ -129,12 +129,25 @@ function writeFacets(facets: Record<string, string>): string {
   return bytes
 }
 
+/** Convert an OLD flat `source` string into the NEW tagged lockfile source.
+ *  Git sources carry the resolved commit (placeholder when the caller does
+ *  not supply one). */
+function taggedSource(source: string, commit?: string): unknown {
+  if (source.startsWith('./') || source.startsWith('../') || source.startsWith('/') || source.startsWith('file:')) {
+    return { kind: 'local', path: source }
+  }
+  if (source.startsWith('github:') || source.includes('git@') || source.endsWith('.git') || source.includes('://')) {
+    return { kind: 'git', url: source, commit: commit ?? 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }
+  }
+  return { kind: 'registry', registry: 'https://api.facet.cafe' }
+}
+
 /** Seed a lockfile entry. `integrity` defaults to the stub the download path uses. */
 function writeLock(facets: Record<string, { source: string; version: string; integrity?: string }>): string {
   const entries: Record<string, unknown> = {}
   for (const [name, e] of Object.entries(facets)) {
     entries[name] = {
-      source: e.source,
+      source: taggedSource(e.source),
       version: e.version,
       integrity: e.integrity ?? 'sha256:stub',
       assets: [{ scope: 'user', type: 'skill', name: 'planning' }],
@@ -146,7 +159,7 @@ function writeLock(facets: Record<string, { source: string; version: string; int
 }
 
 function readLock(): {
-  facets: Record<string, { source: string; version: string; integrity: string }>
+  facets: Record<string, { source: unknown; version: string; integrity: string }>
 } {
   return JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8'))
 }

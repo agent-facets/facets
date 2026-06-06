@@ -63,6 +63,16 @@ export function AddPrepareFailureBlock({ failure }: { failure: AddPrepareFailure
           <Text> {failure.stderr}</Text>
         </Box>
       )
+    case 'git-commit-unresolved':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ could not pin a commit for {failure.specifier} ({failure.url})
+          </Text>
+          <Text> a git source must resolve to a commit to be reproducible</Text>
+          <Text> {failure.stderr}</Text>
+        </Box>
+      )
     case 'local-resolve-failed':
       return (
         <Box flexDirection="column" marginTop={1}>

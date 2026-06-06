@@ -1,11 +1,18 @@
 import { rm } from 'node:fs/promises'
 import type { Adapter } from '@agent-facets/adapter'
-import type { BuildManifest, Lockfile, LockfileFacet, ResolvedFacetManifest } from '@agent-facets/protocol'
+import type {
+  BuildManifest,
+  Lockfile,
+  LockfileFacet,
+  LockfileSource,
+  ResolvedFacetManifest,
+} from '@agent-facets/protocol'
 import { satisfies, verifyGitOneCheck, verifyLockfileOneCheck } from '@agent-facets/protocol'
 import { runBuildPipeline } from '../build/pipeline.ts'
 import { type CacheIdentity, cacheGet, cachePutVerified, cacheStagingDir, readCachedIntegrity } from '../cache/index.ts'
 import { loadManifest, resolvePrompts } from '../loaders/facet.ts'
 import { downloadAndExtractFacet } from '../registry/download.ts'
+import { getRegistryBaseUrl } from '../registry/http.ts'
 import { resolveRegistryMetadataBatch } from '../registry/resolve-metadata.ts'
 import { parseFacetSource } from '../sources/facet/parse-source.ts'
 import { parseVersionSpec } from '../sources/facet/parse-version.ts'
@@ -16,6 +23,7 @@ import { cloneFailureToRunInstall } from './clone-failure.ts'
 import { computeAssetList } from './materialize.ts'
 import { parseLockedVersion } from './parse-locked-version.ts'
 import { resolveCloneRef } from './resolve-clone-ref.ts'
+import { sourceMatchesLockedSource } from './source-matches.ts'
 import type { RunInstallFailure, StageEvent } from './types.ts'
 
 /**
@@ -60,11 +68,10 @@ export type PlanFacetResult = { ok: true; value: PlanFacetSuccess } | { ok: fals
 export function resolveEffectiveLockedForPlan(
   locked: LockfileFacet | undefined,
   source: Source,
-  specifier: string,
 ): LockfileFacet | undefined {
   // A registry lock is stale when its version no longer satisfies the
   // manifest spec (hand-edit / pull / merge). A git lock is stale when
-  // the manifest source string no longer matches the locked source; the
+  // the parsed manifest source no longer matches the locked source; the
   // old commit/integrity belong to the old origin and must not constrain
   // the new clone.
   //
@@ -73,7 +80,13 @@ export function resolveEffectiveLockedForPlan(
   // reject source drift in the preflight before planning.
   const isRegistryStale =
     locked !== undefined && source.kind === 'registry' && !satisfies(parseLockedVersion(locked.version), source.version)
-  const isGitSourceChanged = locked !== undefined && source.kind === 'git' && specifier !== locked.source
+  // The locked git source is a tagged value. Compare canonical (post-parse)
+  // URLs so a manifest shorthand (`github:owner/repo`, a `#ref` suffix)
+  // matches the provenance a fresh install wrote — never the raw specifier
+  // text. A locked entry that is not a git source can never match a git
+  // manifest source.
+  const isGitSourceChanged =
+    locked !== undefined && source.kind === 'git' && !sourceMatchesLockedSource(source, locked.source)
 
   return isRegistryStale || isGitSourceChanged ? undefined : locked
 }
@@ -105,8 +118,9 @@ export async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
   let sourceDir: string | undefined
   let cleanup: (() => Promise<void>) | undefined
   // Captured by the clone path; consumed when constructing a fresh-add
-  // lockfile entry. Locked entries inherit ref/commit from `locked`.
-  let clonedRef: string | undefined
+  // git lockfile source. Locked entries inherit their source from `locked`.
+  // The ref is not recorded in the lockfile (it's a manifest concern); only
+  // the resolved commit is pinned.
   let clonedCommit: string | undefined
   // `locked` is the committed lockfile entry for this facet, if any.
   // When defined, it's the security contract: the install MUST reproduce
@@ -115,7 +129,7 @@ export async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
   const locked = previousLockfile.facets[facetName]
   // A stale entry is treated as absent below so the facet re-resolves like
   // a fresh add, overwriting the stale entry.
-  const effectiveLocked = resolveEffectiveLockedForPlan(locked, parsed.value, specifier)
+  const effectiveLocked = resolveEffectiveLockedForPlan(locked, parsed.value)
   // Set when a cache hit's sidecar matches the locked integrity. The
   // sidecar IS the post-write trust certificate; we don't rebuild to
   // re-derive what the cache already proved at write time.
@@ -188,9 +202,8 @@ export async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
       cleanup = async () => {
         await rm(cloned.dir, { recursive: true, force: true }).catch(() => {})
       }
-      clonedRef = cloneRef
       clonedCommit = cloned.commit
-      onLog(`[verbose]   cloned ${parsed.value.url} → ${sourceDir} (sha: ${cloned.commit ?? '?'})`)
+      onLog(`[verbose]   cloned ${parsed.value.url} → ${sourceDir} (sha: ${cloned.commit})`)
     }
   } else if (parsed.value.kind === 'local') {
     const local = await resolveLocalFacetSource(parsed.value.path, projectRoot)
@@ -332,9 +345,7 @@ export async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
       // verbatim. A stale entry never reaches here — it never sets
       // `trustedCacheHit`.
       entry = {
-        source: specifier,
-        ...(effectiveLocked.ref !== undefined ? { ref: effectiveLocked.ref } : {}),
-        ...(effectiveLocked.commit !== undefined ? { commit: effectiveLocked.commit } : {}),
+        source: effectiveLocked.source,
         version: effectiveLocked.version,
         integrity: effectiveLocked.integrity,
         assets: effectiveLocked.assets,
@@ -432,22 +443,22 @@ export async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
       //     by design; the user owns the version and content, and the
       //     lockfile follows what's on disk.
       //   - Fresh git adds derive from the build + the clone's commit.
-      //   - Fresh registry adds derive from the build (no ref/commit).
+      //   - Fresh registry adds derive from the build (registry origin only).
       if (mustReproduceIntegrity) {
         entry = {
-          source: specifier,
-          ...(effectiveLocked.ref !== undefined ? { ref: effectiveLocked.ref } : {}),
-          ...(effectiveLocked.commit !== undefined ? { commit: effectiveLocked.commit } : {}),
+          source: effectiveLocked.source,
           version: effectiveLocked.version,
           integrity: effectiveLocked.integrity,
           assets: effectiveLocked.assets,
         }
       } else {
         const newAssets = computeAssetList(resolved.data)
+        const buildSource = buildLockfileSource(facetName, parsed.value, clonedCommit)
+        if (!buildSource.ok) {
+          return { ok: false, failure: buildSource.failure }
+        }
         entry = {
-          source: specifier,
-          ...(clonedRef !== undefined ? { ref: clonedRef } : {}),
-          ...(clonedCommit !== undefined ? { commit: clonedCommit } : {}),
+          source: buildSource.source,
           version: buildResult.data.version,
           integrity: buildResult.integrity,
           assets: newAssets,
@@ -458,5 +469,38 @@ export async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
     return { ok: true, value: { entry, resolved: resolved.data, serversDeclared } }
   } finally {
     if (cleanup) await cleanup()
+  }
+}
+
+/**
+ * Build the tagged lockfile `source` for a freshly-resolved (build-derived)
+ * entry from the parsed source and, for git, the resolved clone commit.
+ *
+ *   - registry → the registry origin (base URL) this run resolved against.
+ *     The version is recorded in the entry's `version` field, never here.
+ *   - git → the repository URL plus the required resolved commit. The
+ *     commit is guaranteed by the clone contract on the build-derived
+ *     path; a missing one is a programmer error and fails the install
+ *     rather than writing a commitless (non-reproducible) entry.
+ *   - local → the resolved path.
+ */
+function buildLockfileSource(
+  facetName: string,
+  source: Source,
+  clonedCommit: string | undefined,
+): { ok: true; source: LockfileSource } | { ok: false; failure: RunInstallFailure } {
+  switch (source.kind) {
+    case 'registry':
+      return { ok: true, source: { kind: 'registry', registry: getRegistryBaseUrl() } }
+    case 'git':
+      if (clonedCommit === undefined) {
+        return {
+          ok: false,
+          failure: { code: 'GIT_COMMIT_UNRESOLVED', facet: facetName, url: source.url, stderr: '' },
+        }
+      }
+      return { ok: true, source: { kind: 'git', url: source.url, commit: clonedCommit } }
+    case 'local':
+      return { ok: true, source: { kind: 'local', path: source.path } }
   }
 }

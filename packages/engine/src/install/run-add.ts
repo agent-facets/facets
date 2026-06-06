@@ -67,6 +67,7 @@ export type AddPrepareFailure =
   | { reason: 'git-auth-required'; specifier: string; url: string }
   | { reason: 'git-clone-failed'; specifier: string; stderr: string }
   | { reason: 'git-checkout-failed'; specifier: string; commitish: string; stderr: string }
+  | { reason: 'git-commit-unresolved'; specifier: string; url: string; stderr: string }
   | { reason: 'local-resolve-failed'; specifier: string; error: string }
   | { reason: 'manifest-load-failed'; specifier: string; detail: string }
   | { reason: 'composition-rejected'; specifier: string }
@@ -283,6 +284,15 @@ async function resolveFacetName(
           return {
             ok: false,
             failure: { reason: 'git-checkout-failed', specifier, commitish: cloned.commitish, stderr: cloned.stderr },
+          }
+        case 'commit-unresolved':
+          // The clone succeeded but HEAD couldn't be pinned to a commit.
+          // Surface it as its own failure (not `git-clone-failed`) so the
+          // CLI renders an accurate message and keeps the repository URL,
+          // consistent with the install-phase `GIT_COMMIT_UNRESOLVED` code.
+          return {
+            ok: false,
+            failure: { reason: 'git-commit-unresolved', specifier, url: cloned.url, stderr: cloned.stderr },
           }
       }
     }
