@@ -65,6 +65,24 @@ export type StageEvent =
   | { kind: 'install-complete'; outcome: 'success' | 'failure' | 'aborted' }
 
 /**
+ * One drifting facet in a frozen-lockfile (`--frozen-lockfile`) preflight
+ * failure. Tagged on `reason` so each arm carries exactly the fields that
+ * reason implies — no optional field doubles as a discriminator:
+ *   - `missing-lockfile` — no lockfile exists at all; only the spec is known.
+ *   - `no-entry`         — the manifest declares a facet the lockfile omits.
+ *   - `unsatisfied`      — the locked version does not satisfy the spec;
+ *                          always carries the offending `lockedVersion`.
+ *   - `orphaned`         — the lockfile pins a facet the manifest no longer
+ *                          declares; carries `lockedVersion` but no
+ *                          `manifestSpec` (the manifest says nothing about it).
+ */
+export type LockfileDriftEntry =
+  | { name: string; reason: 'missing-lockfile'; manifestSpec: string }
+  | { name: string; reason: 'no-entry'; manifestSpec: string }
+  | { name: string; reason: 'unsatisfied'; manifestSpec: string; lockedVersion: string }
+  | { name: string; reason: 'orphaned'; lockedVersion: string }
+
+/**
  * Discriminated failure type for `runInstall`. Every failure mode
  * carries the structured fields a view layer needs to render the
  * failure without parsing message strings.
@@ -86,6 +104,18 @@ export type RunInstallFailure =
       lockedIntegrity: string
     }
   | { code: 'COMPOSITION_REJECTED'; facet: string }
+  /**
+   * Frozen-lockfile mode (`--frozen-lockfile`) found the lockfile out of
+   * date relative to the manifest. Carries every drifting facet (see
+   * `LockfileDriftEntry` for the per-reason shape) so the CLI can render a
+   * complete report in one shot. No mutation occurs; the user must
+   * reconcile the files (run a normal install, or `facet add` to update
+   * the lockfile).
+   */
+  | {
+      code: 'LOCKFILE_DRIFT'
+      facets: ReadonlyArray<LockfileDriftEntry>
+    }
   /** `git` is not installed (or not on PATH). */
   | { code: 'GIT_BINARY_MISSING'; facet: string }
   /**
@@ -208,13 +238,25 @@ export type RunInstallResult =
  *   - `signal`: aborts the install at the next safe checkpoint and
  *     triggers rollback. Replaces direct SIGINT handling so core never
  *     installs process-global signal handlers.
+ *   - `frozenLockfile`: treat the lockfile as the source of truth.
+ *     Specifiers are never re-resolved, the lockfile is never written,
+ *     and any manifest/lockfile drift (missing lockfile, an uncovered
+ *     manifest entry, or a locked version that does not satisfy its
+ *     specifier) fails with `LOCKFILE_DRIFT` before any disk mutation.
+ *     Mirrors the ecosystem-standard `--frozen-lockfile` CI contract.
  *
  * The behavior is the same regardless of who's calling. If a lockfile
- * entry exists for a facet, its locked version is honored verbatim —
- * the manifest's range is not re-resolved. If no lockfile entry exists
+ * entry exists for a facet AND its locked version satisfies the
+ * manifest specifier, that locked version is honored verbatim — the
+ * manifest's range is not re-resolved. If the locked version does NOT
+ * satisfy the manifest specifier (a hand-edit or pull changed the
+ * manifest), the entry is stale: the manifest specifier is re-resolved
+ * and the stale entry is overwritten. If no lockfile entry exists
  * (bootstrap case, or a newly-added manifest entry), the manifest
  * specifier is resolved fresh and added to the lockfile. Drift removal
- * always runs. The lockfile is always written.
+ * always runs. The lockfile is always written — except in
+ * frozen-lockfile mode (see `frozenLockfile`), where it is never
+ * written and any manifest/lockfile drift is a hard error.
  */
 export interface RunInstallOptions {
   projectRoot: string
@@ -222,4 +264,5 @@ export interface RunInstallOptions {
   onStage?: (event: StageEvent) => void
   onLog?: (line: string) => void
   signal?: AbortSignal
+  frozenLockfile?: boolean
 }

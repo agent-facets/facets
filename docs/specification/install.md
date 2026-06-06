@@ -18,10 +18,14 @@ existing manifest. Both run the same flow internally.
    `MAJOR.MINOR.PATCH`, and `latest`; caret/tilde/comparator/OR/x-style
    ranges are rejected.
 
-2. **Honor the lockfile.** If `facets.lock` already pins a facet, that
-   exact version is fetched without re-resolving the manifest range. If
-   no lockfile exists, one is bootstrapped on first run (bun-style).
-   Manifest entries without a lockfile entry resolve fresh.
+2. **Honor the lockfile when it satisfies the manifest.** If `facets.lock`
+   pins a facet at a version that satisfies the manifest specifier, that
+   exact version is fetched without re-resolving the manifest range. If the
+   locked version no longer satisfies the manifest (a hand-edit or pull
+   changed `facets.json`), the entry is stale and the manifest specifier is
+   re-resolved, replacing the lockfile entry. If no lockfile exists, one is
+   bootstrapped on first run (bun-style). Manifest entries without a
+   lockfile entry resolve fresh.
 
 3. **Reject composition; warn on servers.** A source `facet.json` with a
    non-empty `facets: [...]` is hard-rejected. A `servers:` declaration
@@ -151,11 +155,13 @@ A facet name (or name@version) to install.
 
 ## Lockfile-First Installs
 
-If a lockfile already exists, `facet install` MUST use the pinned versions instead of resolving from the registry. This ensures reproducible installs across team members and environments.
+If a lockfile already exists, `facet install` MUST use the pinned versions **when they satisfy the manifest specifiers**, instead of resolving from the registry. This ensures reproducible installs across team members and environments. A pinned version that no longer satisfies its manifest specifier is stale: `facet install` MUST re-resolve that entry against the registry and update the lockfile, because the manifest is the source of truth.
 
-Only `facet upgrade` resolves newer versions.
+Only `facet upgrade` resolves newer versions for entries that already satisfy the manifest.
 
 The lockfile SHOULD be version-controlled so that all team members and CI environments get the same versions.
+
+`facet install --frozen-lockfile` inverts this: the lockfile becomes the source of truth. It MUST NOT re-resolve any specifier and MUST NOT write the lockfile, and it MUST fail without modifying the project if the lockfile is missing, omits a manifest facet, contains an entry that no longer satisfies its specifier, or pins a facet the manifest no longer declares (an orphaned entry a normal install would prune). This is the mode for reproducible CI installs.
 
 ## Upgrade
 

@@ -33,3 +33,34 @@ export type VersionSpec =
 export function resolvesToLatest(spec: VersionSpec): boolean {
   return spec.kind === 'wildcard' || spec.kind === 'latest'
 }
+
+/**
+ * True when a resolved exact version (the `M.N.P` a lockfile records)
+ * satisfies a manifest's `VersionSpec`. Used by the installer to decide
+ * whether a lockfile entry is still valid for its manifest specifier
+ * (satisfying → honor the lock) or stale (not satisfying → re-resolve
+ * against the registry).
+ *
+ *   - `exact`         → all three components equal
+ *   - `majorWildcard` → major equal
+ *   - `minorWildcard` → major and minor equal
+ *   - `wildcard`      → always true (any version satisfies "highest")
+ *   - `latest`        → always true
+ *
+ * Takes parsed components rather than a version string: the lockfile
+ * schema narrows `version` to exact `M.N.P`, and engine parses it once
+ * already, so the predicate stays pure and parse-free.
+ */
+export function satisfies(resolved: { major: number; minor: number; patch: number }, spec: VersionSpec): boolean {
+  switch (spec.kind) {
+    case 'exact':
+      return resolved.major === spec.major && resolved.minor === spec.minor && resolved.patch === spec.patch
+    case 'minorWildcard':
+      return resolved.major === spec.major && resolved.minor === spec.minor
+    case 'majorWildcard':
+      return resolved.major === spec.major
+    case 'wildcard':
+    case 'latest':
+      return true
+  }
+}

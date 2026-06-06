@@ -91,6 +91,7 @@ export type {
   FacetOutcome,
   FacetStage,
   InstallSummary,
+  LockfileDriftEntry,
   RollbackOutcome,
   RunInstallFailure,
   RunInstallOptions,

@@ -339,22 +339,23 @@ The system SHALL verify the integrity of fetched facet content before writing an
 - **THEN** the system SHALL abort the install
 - **AND** the system SHALL print a security error identifying the affected facet
 
-### Requirement: Lockfile-driven install does not re-resolve specifiers
+### Requirement: Lockfile-driven install honors the lock only when it satisfies the manifest
 
-When a user runs install on a project that already has a lockfile, the system SHALL install exactly the versions and integrity hashes recorded in the lockfile. The system SHALL NOT re-resolve specifiers against the registry. Refreshing locked versions against the project manifest SHALL be a separate, opt-in operation.
+The project manifest is the source of truth; the lockfile is a record of resolution results that keeps an unchanged manifest reproducible. When a user runs install on a project that already has a lockfile, the system SHALL install the locked version and integrity hash for a facet **when the locked version satisfies that facet's manifest specifier**, and SHALL NOT re-resolve a satisfying entry against the registry. When the locked version does **not** satisfy the manifest specifier, the lockfile entry SHALL be treated as stale: the system SHALL re-resolve the manifest specifier against the registry. If re-resolution succeeds, the system SHALL install the resolved version and SHALL replace the stale entry in the lockfile; if the manifest specifier resolves to no published version, the system SHALL fail and SHALL leave the project unchanged. A locked exact version SHALL satisfy an exact specifier only when they are equal, SHALL satisfy a wildcard specifier only when the locked version falls within the wildcard's pinned components, and SHALL always satisfy an unconstrained specifier (`*` or `latest`). Re-resolution SHALL apply only to registry-sourced facets.
 
-#### Scenario: Lockfile entry is honored verbatim
+#### Scenario: Lockfile entry is honored when it satisfies the manifest
 
 - **WHEN** a user runs install
 - **AND** the lockfile records a facet at an exact resolved version with an integrity hash
+- **AND** that version satisfies the facet's manifest specifier
 - **THEN** the system SHALL fetch (or read from cache) exactly that version
 - **AND** the system SHALL verify the fetched content against the lockfile's integrity hash
 - **AND** the system SHALL NOT contact the registry to look up newer versions
 
-#### Scenario: Manifest specifier widens but lockfile narrows
+#### Scenario: Manifest specifier widens but lockfile still satisfies it
 
 - **WHEN** a user's manifest specifies a wildcard version (e.g., `1.*`)
-- **AND** the lockfile records a specific resolved version (e.g., `1.2.3`)
+- **AND** the lockfile records a specific resolved version that satisfies it (e.g., `1.2.3`)
 - **THEN** install SHALL use `1.2.3`
 - **AND** install SHALL NOT pick up `1.2.4` even if it has been published
 
@@ -364,6 +365,83 @@ When a user runs install on a project that already has a lockfile, the system SH
 - **THEN** the system SHALL resolve that specifier
 - **AND** the system SHALL append the resolved version and integrity to the lockfile
 - **AND** the system SHALL NOT re-resolve any other entry that is already locked
+
+#### Scenario: Manifest pins an exact version the lockfile does not match
+
+- **WHEN** a user edits the manifest to pin an exact version (e.g., `0.1.2`) that differs from the lockfile's recorded version (e.g., `0.1.1`)
+- **AND** the user runs install
+- **THEN** the system SHALL treat the lockfile entry as stale and SHALL re-resolve the manifest's exact version against the registry
+- **AND** if that exact version is published, the system SHALL install it and SHALL replace the lockfile's version, integrity, and asset record with the resolved result
+- **AND** the system SHALL report the facet as updated from the previous version to the new one
+
+#### Scenario: Manifest pins a version that does not exist in the registry
+
+- **WHEN** a user edits the manifest to pin an exact version that does not exist in the registry (e.g., `0.1.2` with no such published version)
+- **AND** the user runs install
+- **THEN** the system SHALL fail with an error identifying the facet and the version that could not be found
+- **AND** the system SHALL NOT record the nonexistent version in the lockfile
+- **AND** the system SHALL leave the manifest, lockfile, and on-disk adapter state unchanged
+
+#### Scenario: Lockfile version no longer falls within a wildcard the manifest widened to
+
+- **WHEN** a user's manifest specifies a wildcard version (e.g., `2.*`)
+- **AND** the lockfile records a version outside that wildcard (e.g., `1.2.3`)
+- **THEN** the system SHALL treat the lockfile entry as stale and SHALL re-resolve the manifest specifier against the registry
+- **AND** the system SHALL NOT install the stale `1.2.3` in satisfaction of `2.*`
+
+#### Scenario: A stale re-resolve still verifies integrity of the freshly fetched content
+
+- **WHEN** the system re-resolves a stale lockfile entry and fetches new content from the registry
+- **THEN** the system SHALL verify the freshly fetched content through the full registry integrity protocol before writing any asset
+- **AND** the system SHALL NOT check the new content against the discarded stale entry's integrity hash
+
+#### Scenario: Lockfile entry and its source specifier always describe the same artifact
+
+- **WHEN** the system writes or updates a lockfile entry for a facet
+- **THEN** the entry's recorded source specifier, resolved version, and integrity hash SHALL all describe the same resolved artifact
+- **AND** the system SHALL NOT record a source specifier whose version disagrees with the entry's resolved version and integrity hash
+
+### Requirement: Frozen-lockfile install treats the lockfile as authoritative
+
+The system SHALL provide a frozen-lockfile mode for install in which the lockfile is treated as the source of truth. In this mode the system SHALL NOT re-resolve any specifier and SHALL NOT write the lockfile. Before installing, the system SHALL verify that the lockfile fully and consistently covers the manifest. The system SHALL fail without modifying the project if any of the following is true: no lockfile exists, the manifest declares a facet that has no lockfile entry, a lockfile entry's recorded version does not satisfy its manifest specifier, or the lockfile pins a facet the manifest no longer declares (an orphaned entry that a non-frozen install would prune). When the lockfile fully covers the manifest, the system SHALL install exactly the versions and integrity hashes recorded in the lockfile. Frozen-lockfile mode SHALL be available only on install; the command that adds a facet SHALL NOT offer it, because adding a facet inherently updates the lockfile.
+
+#### Scenario: Frozen install proceeds when the lockfile covers the manifest
+
+- **WHEN** a user runs install in frozen-lockfile mode
+- **AND** every facet in the manifest has a lockfile entry whose version satisfies its manifest specifier
+- **THEN** the system SHALL install exactly the versions and integrity hashes recorded in the lockfile
+- **AND** the system SHALL NOT re-resolve any specifier against the registry
+- **AND** the system SHALL NOT write the lockfile
+
+#### Scenario: Frozen install fails when no lockfile exists
+
+- **WHEN** a user runs install in frozen-lockfile mode
+- **AND** no lockfile exists for the project
+- **THEN** the system SHALL fail with an error stating the lockfile is missing
+- **AND** the system SHALL NOT create or modify the lockfile
+
+#### Scenario: Frozen install fails when a manifest facet is missing from the lockfile
+
+- **WHEN** a user runs install in frozen-lockfile mode
+- **AND** the manifest declares a facet that has no entry in the lockfile
+- **THEN** the system SHALL fail with an error identifying the uncovered facet
+- **AND** the system SHALL leave the manifest, lockfile, and on-disk adapter state unchanged
+
+#### Scenario: Frozen install fails when the lockfile drifts from the manifest
+
+- **WHEN** a user runs install in frozen-lockfile mode
+- **AND** a lockfile entry's recorded version does not satisfy its manifest specifier
+- **THEN** the system SHALL fail with an error identifying each drifting facet, its manifest specifier, and its locked version
+- **AND** the system SHALL NOT re-resolve or update any entry
+- **AND** the system SHALL leave the manifest, lockfile, and on-disk adapter state unchanged
+
+#### Scenario: Frozen install fails on an orphaned lockfile entry
+
+- **WHEN** a user runs install in frozen-lockfile mode
+- **AND** the lockfile pins a facet the manifest no longer declares
+- **THEN** the system SHALL fail with an error identifying the orphaned facet and its locked version
+- **AND** the system SHALL NOT prune the orphaned facet's assets
+- **AND** the system SHALL leave the manifest, lockfile, and on-disk adapter state unchanged
 
 ### Requirement: Declared MCP servers do not block installation
 

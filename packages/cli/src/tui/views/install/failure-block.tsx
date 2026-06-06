@@ -264,6 +264,28 @@ export function FailureBlock({ failure }: { failure: RunInstallFailure }): React
           <Text color={THEME.hint}> Rolled back to pre-install state.</Text>
         </Box>
       )
+    case 'LOCKFILE_DRIFT':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ lockfile is out of date with facets.json
+          </Text>
+          {failure.facets.map((f) => (
+            <Text key={f.name}>
+              {' '}
+              {f.name}:{' '}
+              {f.reason === 'missing-lockfile'
+                ? 'no lockfile'
+                : f.reason === 'no-entry'
+                  ? `not in lockfile (manifest wants ${f.manifestSpec})`
+                  : f.reason === 'orphaned'
+                    ? `in lockfile but not in facets.json (locked ${f.lockedVersion})`
+                    : `locked ${f.lockedVersion} does not satisfy ${f.manifestSpec}`}
+            </Text>
+          ))}
+          <Text color={THEME.hint}> Run without --frozen-lockfile, or `facet add` to update the lockfile.</Text>
+        </Box>
+      )
     default: {
       // Exhaustiveness guard: any new `RunInstallFailure` variant must
       // get a `case` arm above. Without this, an un-rendered failure

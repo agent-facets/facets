@@ -57,4 +57,4 @@ export type { ServerManifest } from './schemas/server-manifest.ts'
 export { ServerManifestSchema } from './schemas/server-manifest.ts'
 // version-spec grammar (versions as they appear inside artifacts)
 export type { VersionSpec } from './sources/version-spec.ts'
-export { resolvesToLatest } from './sources/version-spec.ts'
+export { resolvesToLatest, satisfies } from './sources/version-spec.ts'

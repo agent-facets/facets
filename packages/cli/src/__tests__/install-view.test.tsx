@@ -621,3 +621,36 @@ describe('InstallView — partial rollback failure surfaces', () => {
     instance.unmount()
   })
 })
+
+describe('InstallView — frozen-lockfile drift', () => {
+  test('renders each drifting facet with its reason', async () => {
+    const failure: RunInstallFailure = {
+      code: 'LOCKFILE_DRIFT',
+      facets: [
+        { name: 'cowsay', reason: 'unsatisfied', manifestSpec: '0.1.2', lockedVersion: '0.1.1' },
+        { name: 'extra', reason: 'no-entry', manifestSpec: '0.2.0' },
+        { name: 'stale', reason: 'orphaned', lockedVersion: '4.5.6' },
+      ],
+    }
+    const events: StageEvent[] = [{ kind: 'install-complete', outcome: 'failure' }]
+    const result: RunInstallResult = {
+      ok: false,
+      failure,
+      rollback: { kind: 'not-needed', reason: 'test fixture' },
+    }
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'install',
+        run: makeFakeRun(events, result),
+      }),
+    )
+    await settle()
+    const frame = findContentFrame(instance.frames)
+    expect(frame).toContain('lockfile is out of date')
+    expect(frame).toContain('locked 0.1.1 does not satisfy 0.1.2')
+    expect(frame).toContain('not in lockfile (manifest wants 0.2.0)')
+    expect(frame).toContain('in lockfile but not in facets.json (locked 4.5.6)')
+    expect(frame).toContain('without --frozen-lockfile')
+    instance.unmount()
+  })
+})

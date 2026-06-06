@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { LockfileFacet } from '@agent-facets/protocol'
-import { resolveCloneRef } from '../run-install.ts'
+import { resolveCloneRef } from '../resolve-clone-ref.ts'
 
 const lockedWithCommit: LockfileFacet = {
   source: 'github:agent-facets/viper-plans#main',
