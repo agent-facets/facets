@@ -1,16 +1,32 @@
 # agent-facets
 
+## 0.14.1
+
+### Patch Changes
+
+- [#286](https://github.com/agent-facets/facets/pull/286) [`f85cf3c`](https://github.com/agent-facets/facets/commit/f85cf3c6af1bd02b14879261b7805f05c925a264) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Make `facet install --frozen-lockfile` reproduce the lockfile exactly.
+    Frozen mode now guarantees the installed project matches the lockfile bit-for-bit — no extra facets, no missing facets, no source changes, and no content changes:
+    -   **Source drift** — a git or local facet whose manifest source string (URL, ref, or path) no longer matches the locked source now fails the preflight (`source-changed`) before any clone or build, instead of silently building from the unlocked origin.
+    -   **Local content drift** — a local facet is now verified against its locked integrity in frozen mode, exactly like git. Editing a local source's content fails the install rather than rebuilding and overwriting the entry.
+    -   **Cache correctness (frozen and non-frozen)** — a git facet whose manifest URL changed bypasses the content-addressed cache entirely (the cache key carries no source provenance), so a changed URL re-resolves from the new source instead of reusing cached bytes from the old one.
+- [#287](https://github.com/agent-facets/facets/pull/287) [`ad4e75a`](https://github.com/agent-facets/facets/commit/ad4e75a9b5360e056611ccd7622ae3660d4476cb) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Record lockfile source provenance as a tagged, per-kind shape so an entry can never disagree with itself.
+    The lockfile's `source` field was a single overloaded string — a registry version specifier, a git URL, or a local path depending on the facet. For registry facets this let an unresolved specifier (`latest`, `1.*`) leak into the lockfile next to a resolved `version`, an entry that contradicted itself. `source` is now a discriminated union keyed on `kind`:
+    -   **`registry`** — records the registry origin (base URL) and never a version. The resolved version lives in the entry's `version` field, so there is no slot for `latest` or a wildcard to leak into.
+    -   **`git`** — records the repository URL and a **required** resolved commit SHA. A git clone that cannot be pinned to a commit now fails the install rather than writing a non-reproducible entry. The requested ref is no longer recorded in the lockfile — it belongs to `facets.json`.
+    -   **`local`** — records the resolved path.
+    This is a breaking change to the published lockfile schema. There is no migration and no `lockfileVersion` bump: an older flat-`source` lockfile is simply invalid under the new shape and fails install in **every** mode (frozen and non-frozen alike), rather than being silently regenerated. Delete `facets.lock` and re-run install to regenerate it in the new shape. Extra unrecognized keys on a source remain tolerated for forward-compatibility.
+
 ## 0.14.0
 
 ### Minor Changes
 
 - [#283](https://github.com/agent-facets/facets/pull/283) [`2ed9672`](https://github.com/agent-facets/facets/commit/2ed967206d24a63e9db251605b69302d0bab9097) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Honor edited versions in `facets.json` and add `facet install --frozen-lockfile`.
-    `facet install` now re-resolves a lockfile entry whose version no longer satisfies the manifest (e.g. a hand-edited bump), and fails if the requested version doesn't exist instead of silently keeping the old one. The new `--frozen-lockfile` flag treats the lockfile as authoritative and fails on any manifest/lockfile drift, for reproducible CI installs.
+  `facet install` now re-resolves a lockfile entry whose version no longer satisfies the manifest (e.g. a hand-edited bump), and fails if the requested version doesn't exist instead of silently keeping the old one. The new `--frozen-lockfile` flag treats the lockfile as authoritative and fails on any manifest/lockfile drift, for reproducible CI installs.
 
 ### Patch Changes
 
 - [#283](https://github.com/agent-facets/facets/pull/283) [`2ed9672`](https://github.com/agent-facets/facets/commit/2ed967206d24a63e9db251605b69302d0bab9097) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Make `facet install --frozen-lockfile` fail on orphaned lockfile entries.
-    A frozen install now reports a facet that is pinned in `facets.lock` but no longer declared in `facets.json` as drift (`orphaned`) and fails before touching the project. Previously the preflight only checked manifest entries, so an orphaned entry slipped through and the drift-removal pass pruned its assets while skipping the lockfile write — mutating adapter state and leaving a stale lockfile. The drift report's per-facet shape is now a discriminated union on its reason, so an `unsatisfied` entry always carries its locked version and an `orphaned` entry carries no manifest specifier.
+  A frozen install now reports a facet that is pinned in `facets.lock` but no longer declared in `facets.json` as drift (`orphaned`) and fails before touching the project. Previously the preflight only checked manifest entries, so an orphaned entry slipped through and the drift-removal pass pruned its assets while skipping the lockfile write — mutating adapter state and leaving a stale lockfile. The drift report's per-facet shape is now a discriminated union on its reason, so an `unsatisfied` entry always carries its locked version and an `orphaned` entry carries no manifest specifier.
 
 ## 0.13.0
 
