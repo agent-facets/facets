@@ -18,9 +18,22 @@ commands:
                     curl https://mise.run | sh
                     echo 'eval "$(~/.local/bin/mise activate bash)"' >> "$BASH_ENV"
                 name: Install mise
+            - restore_cache:
+                keys:
+                    - v1-mise-{{ .Environment.MISE_ENV }}-{{ checksum "mise.toml" }}-{{ checksum "mise.development.toml" }}
+                    - v1-mise-{{ .Environment.MISE_ENV }}-
             - run:
                 command: mise install --yes
                 name: Install tools
+            - save_cache:
+                key: v1-mise-{{ .Environment.MISE_ENV }}-{{ checksum "mise.toml" }}-{{ checksum "mise.development.toml" }}
+                paths:
+                    - ~/.local/share/mise/installs
+                    - ~/.local/share/mise/downloads
+            - restore_cache:
+                keys:
+                    - v1-facet-{{ checksum "facets.lock" }}
+                    - v1-facet-
             - restore_cache:
                 keys:
                     - v1-deps-{{ checksum "bun.lock" }}
@@ -33,6 +46,10 @@ commands:
                 paths:
                     - node_modules
                     - ~/.bun/install/cache
+            - save_cache:
+                key: v1-facet-{{ checksum "facets.lock" }}
+                paths:
+                    - ~/.facet/cache
 jobs:
     build-cli:
         docker:
@@ -63,18 +80,17 @@ jobs:
             - aws-oidc-setup
             - restore_cache:
                 keys:
-                    - v2-sst-{{ checksum "bun.lock" }}-{{ checksum "sst.config.ts" }}
-                    - v2-sst-{{ checksum "bun.lock" }}-
-                    - v2-sst-
+                    - v3-sst-{{ checksum "sst.config.ts" }}
+                    - v3-sst-
             - run:
                 command: bun scripts/deploy/site.ts
                 name: Deploy SST main stage
                 no_output_timeout: 30m
             - save_cache:
-                key: v2-sst-{{ checksum "bun.lock" }}-{{ checksum "sst.config.ts" }}
+                key: v3-sst-{{ checksum "sst.config.ts" }}
                 paths:
                     - .sst
-                when: always
+                when: on_success
             - notify-failure
     finalize-cli:
         docker:

@@ -7,18 +7,25 @@ environment:
 steps:
   - setup-mise
   - aws-oidc-setup
+  # SST platform + pulumi providers (~470 MB in .sst/platform/node_modules/@pulumi/*).
+  # Keyed on sst.config.ts ALONE — provider versions are pinned there
+  # (e.g. aws '7.20.0'), so the download only changes when that file changes.
+  # The previous key included bun.lock, which over-invalidated: any unrelated
+  # dependency bump busted the 470 MB cache even though provider versions were
+  # unchanged. Key bumped v2 -> v3 to retire the stale entries.
   - restore_cache:
       keys:
-        - v2-sst-{{ checksum "bun.lock" }}-{{ checksum "sst.config.ts" }}
-        - v2-sst-{{ checksum "bun.lock" }}-
-        - v2-sst-
+        - v3-sst-{{ checksum "sst.config.ts" }}
+        - v3-sst-
   - run:
       name: Deploy SST main stage
       command: bun scripts/deploy/site.ts
       no_output_timeout: 30m
+  # `when: on_success` (not `always`): a failed deploy can leave .sst in a
+  # half-written state; persisting that would poison the cache for later runs.
   - save_cache:
-      key: v2-sst-{{ checksum "bun.lock" }}-{{ checksum "sst.config.ts" }}
+      key: v3-sst-{{ checksum "sst.config.ts" }}
       paths:
         - .sst
-      when: always
+      when: on_success
   - notify-failure
