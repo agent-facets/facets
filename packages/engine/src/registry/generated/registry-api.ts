@@ -337,6 +337,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v0/admin/migrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List registered migrations (admin)
+         * @description Returns every migration in the code registry, each with a summary of its most recent run (if any).
+         */
+        get: operations["getV0AdminMigrations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/admin/migrations/{id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List a migration’s runs (admin)
+         * @description Returns the run history for one migration, newest first.
+         */
+        get: operations["getV0AdminMigrationsByIdRuns"];
+        put?: never;
+        /**
+         * Trigger a migration run (admin)
+         * @description Acquires the per-migration single-run lease, then starts the Step Functions execution. Pass dry_run=true to scan + count without writing. Returns 404 if the id is unregistered, 409 if a run is already in progress.
+         */
+        post: operations["postV0AdminMigrationsByIdRuns"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/admin/migrations/{id}/runs/{runId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get one migration run (admin)
+         * @description Returns a single run by run_id, including its per-record failure rows.
+         */
+        get: operations["getV0AdminMigrationsByIdRunsByRunId"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v0/collections": {
         parameters: {
             query?: never;
@@ -403,7 +467,7 @@ export interface components {
     schemas: {
         ApiErrorBody: {
             /** @enum {unknown} */
-            code: "E_ACCOUNT_SUSPENDED" | "E_ADMIN_REQUIRED" | "E_ALREADY_ONBOARDED" | "E_API_KEY_MISSING" | "E_CLAIM_ALREADY_PENDING" | "E_CLAIM_PENDING_ELSEWHERE" | "E_COLLECTION_CLAIMED" | "E_COLLECTION_NOT_OWNED" | "E_FACET_NOT_FOUND" | "E_INTERACTIVE_SESSION_REQUIRED" | "E_INVALID_NAME" | "E_INVALID_VERSION" | "E_LOGOUT_REQUIRES_JWT" | "E_NAME_BLOCKED" | "E_ONBOARDING_REQUIRED" | "E_PREFIX_COLLISION_RETRY_EXHAUSTED" | "E_QUEUE_FULL" | "E_QUEUE_ITEM_NOT_FOUND" | "E_QUEUE_ITEM_NOT_PENDING" | "E_REGISTRY_UNAVAILABLE" | "E_RESERVATION_EXISTS" | "E_RESERVATION_NOT_FOUND" | "E_TARBALL_CORRUPTED" | "E_TARBALL_TOO_LARGE" | "E_TOKEN_EXPIRED" | "E_TOKEN_NOT_FOUND" | "E_TOKEN_REVOKED" | "E_UNAUTHENTICATED" | "E_USERNAME_TAKEN" | "E_USER_NOT_FOUND" | "E_VERSION_EXISTS";
+            code: "E_ACCOUNT_SUSPENDED" | "E_ADMIN_REQUIRED" | "E_ALREADY_ONBOARDED" | "E_API_KEY_MISSING" | "E_CLAIM_ALREADY_PENDING" | "E_CLAIM_PENDING_ELSEWHERE" | "E_COLLECTION_CLAIMED" | "E_COLLECTION_NOT_OWNED" | "E_FACET_NOT_FOUND" | "E_INTERACTIVE_SESSION_REQUIRED" | "E_INVALID_NAME" | "E_INVALID_VERSION" | "E_LOGOUT_REQUIRES_JWT" | "E_MIGRATION_NOT_FOUND" | "E_MIGRATION_RUNNING" | "E_NAME_BLOCKED" | "E_ONBOARDING_REQUIRED" | "E_PREFIX_COLLISION_RETRY_EXHAUSTED" | "E_PROFILE_CORRUPT" | "E_QUEUE_FULL" | "E_QUEUE_ITEM_NOT_FOUND" | "E_QUEUE_ITEM_NOT_PENDING" | "E_REGISTRY_UNAVAILABLE" | "E_RESERVATION_EXISTS" | "E_RESERVATION_NOT_FOUND" | "E_TARBALL_CORRUPTED" | "E_TARBALL_TOO_LARGE" | "E_TOKEN_EXPIRED" | "E_TOKEN_NOT_FOUND" | "E_TOKEN_REVOKED" | "E_UNAUTHENTICATED" | "E_USERNAME_TAKEN" | "E_USER_NOT_FOUND" | "E_VERSION_EXISTS";
             docsUrl: string;
             error: string;
             fix: string;
@@ -424,6 +488,7 @@ export interface components {
             latestVersion: string;
             name: string;
             publishedAt: string;
+            publisher: string;
             author?: string;
             description?: string;
         };
@@ -435,6 +500,7 @@ export interface components {
             latest: string;
             name: string;
             publishedAt: string;
+            publisher: string;
             versions: string[];
             author?: string;
             description?: string;
@@ -517,6 +583,66 @@ export interface components {
                 /** @enum {unknown} */
                 reason?: "pending" | "rate-limit" | "reserved";
                 rejection_reason?: string;
+            }[];
+        };
+        MigrationListResponse: {
+            migrations: {
+                description: string;
+                id: string;
+                latest_run?: {
+                    actor_username: string;
+                    dry_run: boolean;
+                    expected: number;
+                    failed: number;
+                    migration_id: string;
+                    repaired: number;
+                    run_id: string;
+                    scanned: number;
+                    skipped: number;
+                    started_at: string;
+                    /** @enum {unknown} */
+                    status: "failed" | "running" | "succeeded";
+                    error?: string;
+                    finished_at?: string;
+                };
+            }[];
+        };
+        MigrationRunResponse: {
+            actor_username: string;
+            dry_run: boolean;
+            expected: number;
+            failed: number;
+            failures: {
+                reason: string;
+                row_key: string;
+            }[];
+            migration_id: string;
+            repaired: number;
+            run_id: string;
+            scanned: number;
+            skipped: number;
+            started_at: string;
+            /** @enum {unknown} */
+            status: "failed" | "running" | "succeeded";
+            error?: string;
+            finished_at?: string;
+        };
+        MigrationRunListResponse: {
+            runs: {
+                actor_username: string;
+                dry_run: boolean;
+                expected: number;
+                failed: number;
+                migration_id: string;
+                repaired: number;
+                run_id: string;
+                scanned: number;
+                skipped: number;
+                started_at: string;
+                /** @enum {unknown} */
+                status: "failed" | "running" | "succeeded";
+                error?: string;
+                finished_at?: string;
             }[];
         };
         ClaimCollectionIdempotent: {
@@ -1388,6 +1514,129 @@ export interface operations {
             };
             /** @description Item is no longer pending */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    getV0AdminMigrations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Migration list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationListResponse"];
+                };
+            };
+        };
+    };
+    getV0AdminMigrationsByIdRuns: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Run history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationRunListResponse"];
+                };
+            };
+            /** @description No such migration */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    postV0AdminMigrationsByIdRuns: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Run accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationRunResponse"];
+                };
+            };
+            /** @description No such migration */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description A run is already in progress */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    getV0AdminMigrationsByIdRunsByRunId: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Run detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationRunResponse"];
+                };
+            };
+            /** @description No such run */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
