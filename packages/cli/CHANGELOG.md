@@ -1,12 +1,24 @@
 # agent-facets
 
+## 0.14.0
+
+### Minor Changes
+
+- [#283](https://github.com/agent-facets/facets/pull/283) [`2ed9672`](https://github.com/agent-facets/facets/commit/2ed967206d24a63e9db251605b69302d0bab9097) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Honor edited versions in `facets.json` and add `facet install --frozen-lockfile`.
+    `facet install` now re-resolves a lockfile entry whose version no longer satisfies the manifest (e.g. a hand-edited bump), and fails if the requested version doesn't exist instead of silently keeping the old one. The new `--frozen-lockfile` flag treats the lockfile as authoritative and fails on any manifest/lockfile drift, for reproducible CI installs.
+
+### Patch Changes
+
+- [#283](https://github.com/agent-facets/facets/pull/283) [`2ed9672`](https://github.com/agent-facets/facets/commit/2ed967206d24a63e9db251605b69302d0bab9097) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Make `facet install --frozen-lockfile` fail on orphaned lockfile entries.
+    A frozen install now reports a facet that is pinned in `facets.lock` but no longer declared in `facets.json` as drift (`orphaned`) and fails before touching the project. Previously the preflight only checked manifest entries, so an orphaned entry slipped through and the drift-removal pass pruned its assets while skipping the lockfile write — mutating adapter state and leaving a stale lockfile. The drift report's per-facet shape is now a discriminated union on its reason, so an `unsatisfied` entry always carries its locked version and an `orphaned` entry carries no manifest specifier.
+
 ## 0.13.0
 
 ### Minor Changes
 
 - [#281](https://github.com/agent-facets/facets/pull/281) [`e48aadf`](https://github.com/agent-facets/facets/commit/e48aadf76a0eff5bdcf36dfff612d0a1647cca38) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Migrate the CLI to the registry's Bearer-token `/v0/facets/*` contract.
-    **Breaking:** the `FACET_REGISTRY_API_KEY` environment variable is removed with no fallback. Authenticate with a personal access token instead — set `FACET_TOKEN`, or run the new `facet login` to verify and save one to `~/.facet/credentials`.
-    Also adds `facet whoami` and `facet logout`; renders registry errors using the registry's own message and suggested fix; lets `facet publish` take an optional directory argument; and treats a queued-for-review publish as success.
+  **Breaking:** the `FACET_REGISTRY_API_KEY` environment variable is removed with no fallback. Authenticate with a personal access token instead — set `FACET_TOKEN`, or run the new `facet login` to verify and save one to `~/.facet/credentials`.
+  Also adds `facet whoami` and `facet logout`; renders registry errors using the registry's own message and suggested fix; lets `facet publish` take an optional directory argument; and treats a queued-for-review publish as success.
 
 ### Patch Changes
 

@@ -74,7 +74,7 @@
     },
     "packages/cli": {
       "name": "agent-facets",
-      "version": "0.13.0",
+      "version": "0.14.0",
       "bin": {
         "facet": "./bin/facet",
       },
@@ -159,7 +159,7 @@
     },
     "packages/protocol": {
       "name": "@agent-facets/protocol",
-      "version": "0.12.0",
+      "version": "0.14.0",
       "dependencies": {
         "arktype": "2.2.0",
         "comment-json": "^5.0.0",
