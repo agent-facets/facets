@@ -1,8 +1,6 @@
-import type { Adapter } from '@agent-facets/adapter'
 import {
   type AddPrepareFailure,
   type AddSource,
-  loadInstalledAdapters,
   type ParseError,
   parseFacetSource,
   type RunAddResult,
@@ -13,7 +11,7 @@ import { createElement } from 'react'
 import type { Command } from '../../commands.ts'
 import { InstallView } from '../../tui/views/install/install-view.tsx'
 import { writeCliError } from '../../util/errors.ts'
-import { pickAndInstallAdapters } from '../adapter/pick-and-install.ts'
+import { ensureAdapters } from '../shared/ensure-adapters.ts'
 
 /**
  * `facet add <source> [more sources...]` — adds one or more facets to
@@ -149,53 +147,6 @@ export const addCommand: Command = {
     })
     return 1
   },
-}
-
-/**
- * Discover installable adapters. If none, auto-launch the picker on
- * TTY; on non-TTY return null with a CLI error already written.
- */
-async function ensureAdapters(): Promise<ReadonlyArray<Adapter> | null> {
-  const adapters = await loadInstalledAdapters()
-  const installable = adapters.filter((a) => a.supportsInstall === true)
-  if (installable.length > 0) return installable
-
-  if (adapters.length > 0) {
-    const stale = adapters.map((a) => a.name).join(', ')
-    writeCliError({
-      what: `installed adapters do not support install yet: ${stale}`,
-      detail: 'these adapters were bundled before install support shipped; the capability flag is missing',
-      fix: "update each with 'facet adapter install <name>' to pull a version with install support",
-    })
-    return null
-  }
-
-  // Zero installable adapters. TTY → picker; non-TTY → fail.
-  const result = await pickAndInstallAdapters()
-  if (result.ok) {
-    const installableAfter = result.adapters.filter((a) => a.supportsInstall === true)
-    if (installableAfter.length === 0) {
-      writeCliError({
-        what: 'no adapters with install support after picker',
-        detail: 'the selected adapter(s) bundled an old SDK without install support',
-        fix: 'pick a different adapter or update one with install support',
-      })
-      return null
-    }
-    return installableAfter
-  }
-
-  if (result.reason === 'non-tty') {
-    writeCliError({
-      what: 'no adapters installed',
-      detail: 'this is a non-interactive environment; the picker cannot run here',
-      fix: "run 'facet adapter install <name>' first (e.g. claude-code, opencode)",
-    })
-  } else if (result.reason === 'aborted') {
-    process.stderr.write('Aborted: no adapters installed.\n')
-  }
-  // 'install-failed': pickAndInstallAdapters wrote its own CLI error.
-  return null
 }
 
 function writeParseError(specifier: string, error: ParseError): void {

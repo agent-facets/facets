@@ -820,3 +820,83 @@ The CLI SHALL register a `logout` command that removes the saved credentials fil
 - **WHEN** a user runs `logout` with no saved credentials file present
 - **THEN** the CLI SHALL report that there were no saved credentials to remove
 - **AND** the process SHALL exit with code 0
+
+### Requirement: Remove command is registered
+
+The system SHALL register a `remove` command that removes one or more facets from the project manifest and uninstalls them in a single operation. The command SHALL accept one or more facet names as positional arguments. The system SHALL also accept `rm` as an alias of the same command, so users with muscle memory for either name succeed; both names SHALL invoke identical behavior.
+
+#### Scenario: Remove command is available in help
+
+- **WHEN** a user runs the CLI with `--help`
+- **THEN** the help output SHALL list the `remove` command with its description
+- **AND** the help output SHALL list `rm` as an alias of the same command
+
+#### Scenario: rm alias produces identical behavior
+
+- **WHEN** a user runs `rm` with the same arguments and flags as a corresponding `remove` invocation
+- **THEN** the system SHALL produce the same output, side effects, and exit code as `remove`
+
+#### Scenario: Remove command requires at least one name
+
+- **WHEN** a user runs `remove` with no positional arguments
+- **THEN** the system SHALL print a usage error
+- **AND** the process SHALL exit with code 1
+
+#### Scenario: Remove command accepts multiple names
+
+- **WHEN** a user runs `remove` with two or more facet names
+- **THEN** the system SHALL remove each named facet
+- **AND** the operation SHALL succeed only if every named facet is removed successfully
+
+### Requirement: Remove renders the unified progress view
+
+The `remove` command SHALL present progress through the same shared rendering used by the commands that add and install facets. A user watching `remove` SHALL see a per-facet section that names each removed facet and indicates whether its removal succeeded or failed, followed by a final summary that lists each affected facet on its own line.
+
+#### Scenario: Single-facet removal shows per-facet detail
+
+- **WHEN** a user runs `remove` with exactly one facet to remove
+- **THEN** the rendered view SHALL show the facet's name and its removal progress
+- **AND** on completion the view SHALL show a one-line summary identifying the removed facet
+
+#### Scenario: Multi-facet removal shows aggregate progress
+
+- **WHEN** a user runs `remove` with multiple facets to remove
+- **THEN** the rendered view SHALL show progress for each facet
+- **AND** on completion the view SHALL show one summary line per affected facet
+
+### Requirement: Remove reports an undeclared facet clearly
+
+When `remove` is asked to remove a facet that is not declared in the project, the system SHALL identify the undeclared facet by name and SHALL exit with a non-zero code without modifying the project.
+
+#### Scenario: Removing an undeclared facet is reported
+
+- **WHEN** a user runs `remove` with a name that is not declared in the project manifest
+- **THEN** the system SHALL print an error identifying the undeclared facet by name
+- **AND** the project manifest, lockfile, and adapter state SHALL be unchanged
+- **AND** the process SHALL exit with a non-zero code
+
+### Requirement: Remove reports rollback outcome on failure
+
+When a remove operation fails after the project manifest has been modified, the rendered view SHALL indicate whether the project was fully restored to its pre-operation state or whether some state may remain, and the process SHALL exit with a non-zero code.
+
+#### Scenario: Failed removal that fully rolls back
+
+- **WHEN** a remove operation fails and the system fully restores the project to its pre-operation state
+- **THEN** the rendered view SHALL indicate that the project state is unchanged
+- **AND** the process SHALL exit with a non-zero code
+
+#### Scenario: Failed removal that cannot fully roll back
+
+- **WHEN** a remove operation fails and the system cannot fully restore the project
+- **THEN** the rendered view SHALL warn the user that some state may remain
+- **AND** the process SHALL exit with a non-zero code
+
+### Requirement: Remove accepts verbose output
+
+The `remove` command SHALL accept a `--verbose` flag that emits additional diagnostic output. The verbose output SHALL be written to stderr so that it does not interfere with the rendered view on stdout.
+
+#### Scenario: Verbose flag emits diagnostics on stderr
+
+- **WHEN** a user runs `remove` with `--verbose`
+- **THEN** the rendered view SHALL appear on stdout as usual
+- **AND** additional diagnostic output SHALL appear on stderr

@@ -565,3 +565,69 @@ When an install operation fails for any reason after the manifest has been modif
 
 - **WHEN** an install operation fails before the lockfile is committed
 - **THEN** the lockfile on disk SHALL match its pre-operation contents
+
+### Requirement: Removing a facet uninstalls it
+
+When a user removes a facet from a project, the system SHALL drop the facet from the project manifest, delete the facet's materialized assets from every selected adapter, and update the lockfile so it no longer records the facet — all in a single operation. A user SHALL NOT need to run a separate install step after removing.
+
+#### Scenario: Removing a declared facet uninstalls it
+
+- **WHEN** a user removes a facet that is declared in the project manifest
+- **THEN** the system SHALL remove the facet's entry from the project manifest
+- **AND** the system SHALL delete every asset the facet contributed from every selected adapter
+- **AND** the system SHALL update the lockfile so it no longer records the facet
+- **AND** the operation SHALL complete in a single command invocation
+
+#### Scenario: Other facets are left intact
+
+- **WHEN** a user removes one facet from a project that declares several facets
+- **THEN** the system SHALL leave every other declared facet's manifest entry, lockfile entry, and materialized assets unchanged
+
+#### Scenario: Removing the last facet leaves an empty project
+
+- **WHEN** a user removes the only facet declared in the project
+- **THEN** the system SHALL leave the project manifest declaring no facets
+- **AND** the system SHALL leave a valid lockfile that records no facets
+
+### Requirement: Removing multiple facets is a single all-or-nothing operation
+
+When a user removes more than one facet in a single invocation, the system SHALL remove all of the named facets together. If any named facet cannot be removed, the system SHALL remove none of them and SHALL leave the project unchanged.
+
+#### Scenario: All named facets are removed together
+
+- **WHEN** a user removes two or more facets that are all declared in the project manifest
+- **THEN** the system SHALL remove every named facet's manifest entry, assets, and lockfile entry
+- **AND** the operation SHALL succeed only if every named facet was removed
+
+#### Scenario: One absent name aborts the whole removal
+
+- **WHEN** a user removes two or more facets and at least one of them is not declared in the project manifest
+- **THEN** the system SHALL NOT remove any of the named facets
+- **AND** the system SHALL leave the project manifest, lockfile, and adapter state unchanged
+
+### Requirement: Removing an undeclared facet fails
+
+When a user removes a facet that is not declared in the project manifest, the system SHALL fail with an error identifying the facet and SHALL leave the project unchanged. The system SHALL NOT treat the removal of an undeclared facet as a silent success.
+
+#### Scenario: Removing a facet that is not declared
+
+- **WHEN** a user removes a facet whose name does not appear in the project manifest
+- **THEN** the system SHALL fail with an error identifying the facet by name
+- **AND** the system SHALL leave the project manifest, lockfile, and adapter state unchanged
+- **AND** the system SHALL exit with a non-zero status
+
+### Requirement: Failed removals leave the project unchanged
+
+When a remove operation fails for any reason after the project manifest has been modified, the system SHALL restore the manifest to its pre-operation state. The user SHALL NOT be left with a project whose manifest no longer references a facet whose assets were never removed.
+
+#### Scenario: Removal failure rolls back the manifest
+
+- **WHEN** the system has removed a facet's entry from the project manifest as part of a remove operation
+- **AND** a subsequent step (asset deletion or lockfile update) fails
+- **THEN** the system SHALL restore the manifest to its exact pre-operation contents
+- **AND** the system SHALL surface the failure to the user
+
+#### Scenario: Removal failure leaves the lockfile unchanged
+
+- **WHEN** a remove operation fails before the lockfile update is committed
+- **THEN** the lockfile on disk SHALL match its pre-operation contents
