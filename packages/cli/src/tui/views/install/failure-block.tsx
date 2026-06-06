@@ -280,7 +280,9 @@ export function FailureBlock({ failure }: { failure: RunInstallFailure }): React
                   ? `not in lockfile (manifest wants ${f.manifestSpec})`
                   : f.reason === 'orphaned'
                     ? `in lockfile but not in facets.json (locked ${f.lockedVersion})`
-                    : `locked ${f.lockedVersion} does not satisfy ${f.manifestSpec}`}
+                    : f.reason === 'source-changed'
+                      ? `source changed: locked ${f.lockedSource}, manifest wants ${f.manifestSpec}`
+                      : `locked ${f.lockedVersion} does not satisfy ${f.manifestSpec}`}
             </Text>
           ))}
           <Text color={THEME.hint}> Run without --frozen-lockfile, or `facet add` to update the lockfile.</Text>

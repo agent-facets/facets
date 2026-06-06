@@ -630,6 +630,12 @@ describe('InstallView — frozen-lockfile drift', () => {
         { name: 'cowsay', reason: 'unsatisfied', manifestSpec: '0.1.2', lockedVersion: '0.1.1' },
         { name: 'extra', reason: 'no-entry', manifestSpec: '0.2.0' },
         { name: 'stale', reason: 'orphaned', lockedVersion: '4.5.6' },
+        {
+          name: 'planner',
+          reason: 'source-changed',
+          manifestSpec: 'github:attacker/planner',
+          lockedSource: 'github:agent-facets/planner',
+        },
       ],
     }
     const events: StageEvent[] = [{ kind: 'install-complete', outcome: 'failure' }]
@@ -650,6 +656,7 @@ describe('InstallView — frozen-lockfile drift', () => {
     expect(frame).toContain('locked 0.1.1 does not satisfy 0.1.2')
     expect(frame).toContain('not in lockfile (manifest wants 0.2.0)')
     expect(frame).toContain('in lockfile but not in facets.json (locked 4.5.6)')
+    expect(frame).toContain('source changed: locked github:agent-facets/planner')
     expect(frame).toContain('without --frozen-lockfile')
     instance.unmount()
   })

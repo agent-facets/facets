@@ -75,12 +75,18 @@ export type StageEvent =
  *   - `orphaned`         — the lockfile pins a facet the manifest no longer
  *                          declares; carries `lockedVersion` but no
  *                          `manifestSpec` (the manifest says nothing about it).
+ *   - `source-changed`   — a git/local facet whose manifest source string
+ *                          (URL/ref/path) no longer matches the locked
+ *                          source; carries both so the user sees the swap.
+ *                          Registry version drift is reported as
+ *                          `unsatisfied`, not here.
  */
 export type LockfileDriftEntry =
   | { name: string; reason: 'missing-lockfile'; manifestSpec: string }
   | { name: string; reason: 'no-entry'; manifestSpec: string }
   | { name: string; reason: 'unsatisfied'; manifestSpec: string; lockedVersion: string }
   | { name: string; reason: 'orphaned'; lockedVersion: string }
+  | { name: string; reason: 'source-changed'; manifestSpec: string; lockedSource: string }
 
 /**
  * Discriminated failure type for `runInstall`. Every failure mode

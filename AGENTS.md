@@ -319,6 +319,10 @@ system improvement is permanent.
 
 Use `bun check` to run tests, linting, and typeschecking.
 
+### Fixing formatting errors
+
+When `bun check` (or `bun run lint`) reports a Biome **formatting** error, run `bun format` to fix it — do NOT hand-edit whitespace, line wrapping, or trailing commas to satisfy the formatter. `bun format` runs `biome check --write --unsafe .` across all 432 files in a few hundred milliseconds; manually reflowing a call to one line is slower and error-prone. Edit by hand only for actual lint *rule* violations that `bun format` can't auto-fix.
+
 ```ts#index.test.ts
 import { test, expect } from "bun:test";
 
