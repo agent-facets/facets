@@ -26,6 +26,12 @@ Defined in `.circleci/release/jobs/deploy-site.yml` and
 deployment is part of the release lifecycle; the development pipeline is
 reserved for PR-time CI checks.
 
+The `deploy-site` job restores a CircleCI cache of `.sst` (keyed on
+`sst.config.ts`) before running the deploy script, so the ~470 MB pulumi
+providers are restored rather than redownloaded. Step 3b's `bun sst install`
+then just verifies the cached providers. See the "Caches" section in
+`.circleci/AGENTS.md` for the full key rationale.
+
 ## Scripts
 
 | Script    | CircleCI Job  | Purpose                                                    |

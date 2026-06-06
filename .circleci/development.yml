@@ -33,9 +33,22 @@ commands:
                     curl https://mise.run | sh
                     echo 'eval "$(~/.local/bin/mise activate bash)"' >> "$BASH_ENV"
                 name: Install mise
+            - restore_cache:
+                keys:
+                    - v1-mise-{{ .Environment.MISE_ENV }}-{{ checksum "mise.toml" }}-{{ checksum "mise.development.toml" }}
+                    - v1-mise-{{ .Environment.MISE_ENV }}-
             - run:
                 command: mise install --yes
                 name: Install tools
+            - save_cache:
+                key: v1-mise-{{ .Environment.MISE_ENV }}-{{ checksum "mise.toml" }}-{{ checksum "mise.development.toml" }}
+                paths:
+                    - ~/.local/share/mise/installs
+                    - ~/.local/share/mise/downloads
+            - restore_cache:
+                keys:
+                    - v1-facet-{{ checksum "facets.lock" }}
+                    - v1-facet-
             - restore_cache:
                 keys:
                     - v1-deps-{{ checksum "bun.lock" }}
@@ -48,6 +61,10 @@ commands:
                 paths:
                     - node_modules
                     - ~/.bun/install/cache
+            - save_cache:
+                key: v1-facet-{{ checksum "facets.lock" }}
+                paths:
+                    - ~/.facet/cache
 jobs:
     check:
         docker:

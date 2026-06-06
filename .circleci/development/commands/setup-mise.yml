@@ -5,9 +5,32 @@ steps:
       command: |
         curl https://mise.run | sh
         echo 'eval "$(~/.local/bin/mise activate bash)"' >> "$BASH_ENV"
+  # mise tool cache (~580 MB of bun/node/lefthook/gh, +circleci on CI jobs).
+  # Keyed on MISE_ENV so the two toolsets stay in separate slots: CI jobs (no
+  # MISE_ENV) load mise.toml + mise.development.toml and get the `circleci`
+  # tool; release jobs (MISE_ENV=release) load only mise.toml. Both checksums
+  # are in the key so a bump to either file invalidates the cache. Restore
+  # BEFORE `mise install` so it becomes a near-instant no-op on a hit.
+  - restore_cache:
+      keys:
+        - v1-mise-{{ .Environment.MISE_ENV }}-{{ checksum "mise.toml" }}-{{ checksum "mise.development.toml" }}
+        - v1-mise-{{ .Environment.MISE_ENV }}-
   - run:
       name: Install tools
       command: mise install --yes
+  - save_cache:
+      key: v1-mise-{{ .Environment.MISE_ENV }}-{{ checksum "mise.toml" }}-{{ checksum "mise.development.toml" }}
+      paths:
+        - ~/.local/share/mise/installs
+        - ~/.local/share/mise/downloads
+  # Facet cache (~/.facet/cache/ — git clones + registry downloads pulled by
+  # `bun install`'s postinstall `facet install`). Keyed on facets.lock so a
+  # moving git source (e.g. viper-plans#main) invalidates correctly while
+  # pinned facets stay cached. Restore BEFORE `bun install`.
+  - restore_cache:
+      keys:
+        - v1-facet-{{ checksum "facets.lock" }}
+        - v1-facet-
   - restore_cache:
       keys:
         - v1-deps-{{ checksum "bun.lock" }}
@@ -20,4 +43,7 @@ steps:
       paths:
         - node_modules
         - ~/.bun/install/cache
-
+  - save_cache:
+      key: v1-facet-{{ checksum "facets.lock" }}
+      paths:
+        - ~/.facet/cache

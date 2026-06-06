@@ -56,6 +56,49 @@ two paths cannot collide:
 Renaming the context env var to `GITHUB_TOKEN` would risk silently poisoning `gh`/script
 operations with the scopeless PAT in any job where `mintGithubTokens()` hasn't yet run.
 
+## Caches
+
+Three CircleCI caches keep CI from redownloading the same binaries and
+artifacts on every job. Two live in the shared `setup-mise` command (so all
+seven jobs that call it benefit); one is local to `deploy-site`.
+
+| Cache         | Key                                                                                   | Paths                                                       | Defined in                            |
+|---------------|---------------------------------------------------------------------------------------|------------------------------------------------------------|---------------------------------------|
+| mise tools    | `v1-mise-{{ .Environment.MISE_ENV }}-{{ checksum "mise.toml" }}-{{ checksum "mise.development.toml" }}` | `~/.local/share/mise/installs`, `~/.local/share/mise/downloads` | `commands/setup-mise.yml`            |
+| facets        | `v1-facet-{{ checksum "facets.lock" }}`                                                | `~/.facet/cache`                                            | `commands/setup-mise.yml`             |
+| bun deps      | `v1-deps-{{ checksum "bun.lock" }}`                                                    | `node_modules`, `~/.bun/install/cache`                     | `commands/setup-mise.yml`             |
+| SST providers | `v3-sst-{{ checksum "sst.config.ts" }}`                                                | `.sst`                                                      | `release/jobs/deploy-site.yml`        |
+
+### Why each key is shaped this way
+
+- **mise tools** — keyed on `MISE_ENV` because mise loads different config
+  files per env. With no `MISE_ENV` (CI jobs), mise loads `mise.toml` **and**
+  `mise.development.toml`, so the toolset includes `circleci`. With
+  `MISE_ENV=release` (the `deploy-site`, `build-cli`, `publish-platform`,
+  `finalize-cli` jobs), mise loads **only** `mise.toml` — no `circleci`.
+  Namespacing the key by `MISE_ENV` keeps the two toolsets in separate cache
+  slots so a release job never restores (or saves) a CI-shaped cache. Both
+  toml checksums are in the key so a bump to either file invalidates it. The
+  restore happens before `mise install`, which becomes a near-instant no-op on
+  a hit. (`mise.local.toml` is gitignored and absent in CI, so it's excluded
+  from the key.)
+- **facets** — keyed on `facets.lock`, not `facets.json`. `facets.json` can
+  reference a mutable git source (`viper-plans` tracks `#main`); the lockfile
+  records the resolved commit, so when `#main` moves, `facets.lock` changes and
+  the cache invalidates correctly. Pinned facets (e.g. `cowsay`) stay cached.
+- **SST providers** — keyed on `sst.config.ts` **alone**. Provider versions are
+  pinned there (`aws: '7.20.0'`), so the ~470 MB pulumi provider download only
+  changes when that file changes. The earlier `v2` key included `bun.lock`,
+  which over-invalidated: any unrelated dependency bump busted the cache even
+  though provider versions were unchanged. The save uses `when: on_success` so
+  a failed deploy can't persist a half-written `.sst` and poison later runs.
+  `bun sst install` (run explicitly in `scripts/deploy/site.ts`) is fast when
+  `.sst/platform` is restored — it just verifies providers rather than
+  redownloading them.
+
+When changing a cache's paths or invalidation inputs, bump the key's version
+prefix (`v1-` → `v2-`, etc.) so stale entries are retired rather than reused.
+
 ## Pipelines
 
 Two packed CircleCI configs, one per pipeline dir.
