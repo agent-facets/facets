@@ -28,13 +28,14 @@ const IMPLEMENTED_COMMAND_NAMES = [
   'login',
   'logout',
   'publish',
+  'remove',
   'search',
   'self-update',
   'whoami',
 ]
 // Stubs — invocable (to surface "did you mean…" suggestions) but hidden from
 // the global help listing (Adjustment K).
-const STUB_COMMAND_NAMES = ['info', 'remove', 'upgrade']
+const STUB_COMMAND_NAMES = ['info', 'upgrade']
 
 type ExecResult = {
   stdout: string

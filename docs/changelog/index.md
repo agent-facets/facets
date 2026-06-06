@@ -4,6 +4,37 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-06-06" description="New facet remove command (aliased rm)" tags={["CLI", "New Feature"]} rss={{
+  title: "New command: facet remove",
+  description: "facet remove (aliased rm) takes one or more facets out of a project: it removes them from facets.json, deletes their assets from every connected adapter, and rewrites facets.lock without them, in a single command. It is the inverse of facet add and reuses the same install pipeline, so removal is transactional — any failure restores facets.json byte-for-byte. Removing multiple facets is all-or-nothing, and removing a facet that is not declared fails without changing anything."
+}}>
+  ## New command: `facet remove`
+
+  `facet remove <facet> [more facets...]` is the inverse of `facet add`: it
+  takes facets back out of a project. In one command it removes the named
+  facets from `facets.json`, deletes their assets from every connected
+  adapter, and rewrites `facets.lock` without them.
+
+  ```bash
+  # Remove a single facet.
+  facet remove viper-plans
+
+  # rm is an alias.
+  facet rm viper-plans
+
+  # Remove several at once.
+  facet remove viper-plans rezi
+  ```
+
+  Removal reuses the same install pipeline as `facet add`, so it is
+  **transactional**: any failure restores `facets.json` byte-for-byte and
+  leaves the project unchanged. Removing multiple facets is all-or-nothing —
+  if any name is not declared in `facets.json`, nothing is removed. Every
+  facet you don't name is left untouched.
+
+  See the [`facet remove`](/cli/remove) reference for details.
+</Update>
+
 <Update label="2026-06-05" description="Bearer-token auth for the registry; new login/whoami/logout commands; FACET_REGISTRY_API_KEY removed; install now re-resolves a stale lockfile; new --frozen-lockfile flag" tags={["CLI", "Breaking", "New Feature", "Fix"]} rss={{
   title: "Registry auth moves to bearer tokens; new login/whoami/logout commands; install honors manifest edits",
   description: "The facet CLI now authenticates to the registry with a personal access token sent as a bearer credential, replacing the old FACET_REGISTRY_API_KEY API key. FACET_REGISTRY_API_KEY has been removed with no shim. Provide a token via the FACET_TOKEN environment variable or by running the new `facet login` command, which verifies the token and saves it to ~/.facet/credentials. Two more new commands: `facet whoami` prints the signed-in identity, and `facet logout` clears the saved credential. `facet publish` now also accepts an optional directory argument. Registry errors are now rendered using the registry's own message and suggested fix. Bug fix: editing a facet's version in facets.json now takes effect — facet install re-resolves a lockfile entry that no longer satisfies the manifest, and fails if the requested version does not exist, instead of silently keeping the old version. New flag: facet install --frozen-lockfile treats the lockfile as the source of truth and fails on any manifest/lockfile drift, for reproducible CI installs."

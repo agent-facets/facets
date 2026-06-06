@@ -205,9 +205,9 @@ The lockfile SHOULD be version-controlled so that all team members and CI enviro
 
 6. **Write the updated lockfile.** Record the new versions, content hashes, and API surface hashes for all updated artifacts.
 
-## Uninstall
+## Remove
 
-`facet uninstall` removes a facet and its managed assets.
+`facet remove` removes a facet and its managed assets.
 
 ### Steps
 

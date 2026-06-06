@@ -87,6 +87,14 @@ export type { AddPrepareFailure, AddSource, RunAddOptions, RunAddResult } from '
 export { runAdd } from './install/run-add.ts'
 // install orchestrator
 export { runInstall } from './install/run-install.ts'
+// remove orchestrator (owns the facet remove manifest transaction)
+export type {
+  RemovePrepareFailure,
+  RemovePrepareResult,
+  RunRemoveOptions,
+  RunRemoveResult,
+} from './install/run-remove.ts'
+export { prepareRemove, runRemove } from './install/run-remove.ts'
 export type {
   FacetOutcome,
   FacetStage,

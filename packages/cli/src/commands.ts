@@ -8,6 +8,7 @@ import { listCommand } from './commands/list/index.ts'
 import { loginCommand } from './commands/login/index.ts'
 import { logoutCommand } from './commands/logout/index.ts'
 import { publishCommand } from './commands/publish/index.ts'
+import { removeCommand } from './commands/remove/index.ts'
 import { searchCommand } from './commands/search/index.ts'
 import { selfUpdateCommand } from './commands/self-update.ts'
 import { whoamiCommand } from './commands/whoami/index.ts'
@@ -62,7 +63,7 @@ export const commands: Record<string, Command> = {
   login: loginCommand,
   logout: logoutCommand,
   publish: publishCommand,
-  remove: stubCommand('remove', 'Remove a facet from the project'),
+  remove: removeCommand,
   search: searchCommand,
   'self-update': selfUpdateCommand,
   upgrade: stubCommand('upgrade', 'Upgrade installed facets'),
