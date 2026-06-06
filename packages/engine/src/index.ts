@@ -82,6 +82,9 @@ export type { LoadLockfileResult } from './install/lockfile-io.ts'
 export { emptyLockfile, FACETS_LOCK_FILE, loadLockfile, writeLockfile } from './install/lockfile-io.ts'
 export type { MaterializeOptions, MaterializeResult } from './install/materialize.ts'
 export { computeAssetList, diffAssetsForDeletion, materialize } from './install/materialize.ts'
+// add orchestrator (owns the facet add manifest transaction)
+export type { AddPrepareFailure, AddSource, RunAddOptions, RunAddResult } from './install/run-add.ts'
+export { runAdd } from './install/run-add.ts'
 // install orchestrator
 export { runInstall } from './install/run-install.ts'
 export type {

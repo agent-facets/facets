@@ -1,9 +1,19 @@
-import type { RunInstallResult, StageEvent } from '@agent-facets/engine'
+import type { AddPrepareFailure, RunInstallResult, StageEvent } from '@agent-facets/engine'
 import { Box, Text, useApp } from 'ink'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { THEME } from '../../theme.ts'
+import { AddPrepareFailureBlock } from './add-prepare-failure-block.tsx'
 import { FacetRow, type FacetState } from './facet-row.tsx'
 import { FailureBlock } from './failure-block.tsx'
+
+/**
+ * Driver result. The `install` flow returns a `RunInstallResult`. The
+ * `add` flow may instead fail in its pre-install (prepare) phase — name
+ * resolution / manifest read — which has no `RunInstallResult` shape, so
+ * it surfaces as a distinct `prepare-failure` arm the view renders via
+ * {@link AddPrepareFailureBlock}.
+ */
+export type InstallViewResult = RunInstallResult | { ok: false; prepareFailure: AddPrepareFailure }
 
 export interface InstallViewProps {
   /**
@@ -11,7 +21,7 @@ export interface InstallViewProps {
    * an `onStage` callback and returns the result. The view runs it once
    * on mount and surfaces its events / outcome.
    */
-  run: (onStage: (event: StageEvent) => void) => Promise<RunInstallResult>
+  run: (onStage: (event: StageEvent) => void) => Promise<InstallViewResult>
   /**
    * Header copy hint. `'add'` renders "Adding facets..."; `'install'`
    * renders "Installing facets...". Functional behavior is identical.
@@ -21,7 +31,12 @@ export interface InstallViewProps {
    * Fires once when the install completes, before Ink unmounts. Lets
    * the caller capture the result for exit-code mapping.
    */
-  onComplete?: (result: RunInstallResult) => void
+  onComplete?: (result: InstallViewResult) => void
+}
+
+/** Type guard: a driver result that is an add prepare-phase failure. */
+function isPrepareFailure(r: InstallViewResult): r is { ok: false; prepareFailure: AddPrepareFailure } {
+  return !r.ok && 'prepareFailure' in r
 }
 
 interface ServerWarning {
@@ -40,7 +55,7 @@ export function InstallView({ run, mode, onComplete }: InstallViewProps) {
   const [facets, setFacets] = useState<Record<string, FacetState>>({})
   const [serverWarnings, setServerWarnings] = useState<ServerWarning[]>([])
   const [driftRemovals, setDriftRemovals] = useState<DriftRemoval[]>([])
-  const [result, setResult] = useState<RunInstallResult | null>(null)
+  const [result, setResult] = useState<InstallViewResult | null>(null)
   const [exitState, setExitState] = useState<
     { kind: 'idle' } | { kind: 'success' } | { kind: 'failure'; error: Error }
   >({ kind: 'idle' })
@@ -179,8 +194,9 @@ export function InstallView({ run, mode, onComplete }: InstallViewProps) {
       )}
 
       {result?.ok && <SuccessSummary result={result} mode={mode} />}
-      {result && !result.ok && <FailureBlock failure={result.failure} />}
-      {result && !result.ok && result.rollback.kind === 'partial-failure' && (
+      {result && isPrepareFailure(result) && <AddPrepareFailureBlock failure={result.prepareFailure} />}
+      {result && !result.ok && !isPrepareFailure(result) && <FailureBlock failure={result.failure} />}
+      {result && !result.ok && !isPrepareFailure(result) && result.rollback.kind === 'partial-failure' && (
         <Box flexDirection="column" marginTop={1}>
           <Text color={THEME.warning}>
             ⚠ rollback completed with {result.rollback.failures} partial failure

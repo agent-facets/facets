@@ -11,6 +11,7 @@ import { loadFacetsJson } from '../manifest/project-files.ts'
 import { downloadAndExtractFacet } from '../registry/download.ts'
 import { resolveRegistryMetadataBatch } from '../registry/resolve-metadata.ts'
 import { parseFacetSource } from '../sources/facet/parse-source.ts'
+import { parseVersionSpec } from '../sources/facet/parse-version.ts'
 import { type CloneFacetGitResult, cloneFacetGitSource } from '../sources/facet/resolve-git.ts'
 import { resolveLocalFacetSource } from '../sources/facet/resolve-local.ts'
 import { InstallJournal } from './journal.ts'
@@ -479,8 +480,19 @@ async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
   const { facetName, specifier, projectRoot, previousLockfile, onStage, onLog } = args
 
   // Parse the source specifier.
+  //
+  // The manifest is a `name → value` map. For a registry source the value
+  // is a bare version specifier (`1.2.3`, `1.*`, `*`, `latest`) and the
+  // facet name lives in the KEY — so when the value parses as a bare
+  // VersionSpec we reconstruct the full source as `${facetName}@${value}`.
+  // For git/local sources the value is a self-contained source string
+  // (URL, `file:` path) and the key is just a label; we parse the value
+  // standalone. This keeps `facets.json` values semver-shaped for registry
+  // entries (the value the user sees is `1.2.3`, not `cowsay@1.2.3`) while
+  // still round-tripping through source resolution.
   onStage({ kind: 'facet-stage', facet: facetName, stage: 'parse' })
-  const parsed = parseFacetSource(specifier)
+  const sourceString = parseVersionSpec(specifier).ok ? `${facetName}@${specifier}` : specifier
+  const parsed = parseFacetSource(sourceString)
   if (!parsed.ok) {
     return {
       ok: false,

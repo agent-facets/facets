@@ -92,7 +92,10 @@ export const installCommand: Command = {
           return result
         },
         onComplete: (r) => {
-          captured = r
+          // `install` never produces a prepare-phase failure; guard the
+          // wider InstallViewResult so the captured value stays a
+          // RunInstallResult. The `run` closure already set `captured`.
+          if (!('prepareFailure' in r)) captured = r
         },
       }),
     )
