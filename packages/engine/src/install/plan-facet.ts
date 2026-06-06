@@ -84,15 +84,19 @@ export async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
   // the sidecar matches `locked.integrity`.
   const locked = previousLockfile.facets[facetName]
   // A registry lock is stale when its version no longer satisfies the
-  // manifest spec (hand-edit / pull / merge). Only registry sources carry
-  // a VersionSpec; git is ref-based and local is mutable, so neither
-  // is ever stale here. A stale entry is treated as absent below so the
-  // facet re-resolves like a fresh add, overwriting the stale entry.
-  const isStale =
+  // manifest spec (hand-edit / pull / merge). A git lock is stale when
+  // the manifest source string no longer matches the locked source; the
+  // old commit/integrity belong to the old origin and must not constrain
+  // the new clone.
+  //
+  // A stale entry is treated as absent below so the facet re-resolves like
+  // a fresh add, overwriting the stale entry.
+  const isRegistryStale =
     locked !== undefined &&
     parsed.value.kind === 'registry' &&
     !satisfies(parseLockedVersion(locked.version), parsed.value.version)
-  const effectiveLocked = isStale ? undefined : locked
+  const isGitSourceChanged = locked !== undefined && parsed.value.kind === 'git' && specifier !== locked.source
+  const effectiveLocked = isRegistryStale || isGitSourceChanged ? undefined : locked
   // Set when a cache hit's sidecar matches the locked integrity. The
   // sidecar IS the post-write trust certificate; we don't rebuild to
   // re-derive what the cache already proved at write time.
@@ -101,9 +105,9 @@ export async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
   // Resolve to a sourceDir.
   onStage({ kind: 'facet-stage', facet: facetName, stage: 'resolve' })
   if (parsed.value.kind === 'git') {
-    // Cache-first when we have a locked entry whose source still matches the
-    // manifest: name + version are both known from `locked`, so we can look
-    // up the cache slot without any clone or network round-trip.
+    // Cache-first when we have an effective locked entry: name + version are
+    // both known from `effectiveLocked`, so we can look up the cache slot
+    // without any clone or network round-trip.
     //
     // Bypass the cache entirely when the manifest source no longer matches
     // `locked.source` (a swapped URL or ref). The cache slot is keyed on
@@ -113,11 +117,11 @@ export async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
     // mode the preflight already rejected this as `source-changed`; this guard
     // makes the cache correct for non-frozen installs too — a changed URL
     // re-resolves from the new source instead of silently reusing old bytes.)
-    if (locked !== undefined && specifier === locked.source) {
+    if (effectiveLocked !== undefined) {
       const cacheId: CacheIdentity = {
         kind: 'git',
         name: facetName,
-        version: locked.version,
+        version: effectiveLocked.version,
       }
       const lookup = cacheGet(cacheId)
       if (lookup.hit) {
@@ -126,7 +130,7 @@ export async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
           // Sidecar missing/invalid — incomplete cache slot. Treat as
           // soft miss and fall through to clone.
           onLog(`[verbose]   cache slot ${lookup.path} has no valid integrity sidecar; refetching`)
-        } else if (cached.integrity !== locked.integrity) {
+        } else if (cached.integrity !== effectiveLocked.integrity) {
           // Cache disagrees with lockfile. Lockfile is the source of
           // truth; surface as hard error rather than silently refetching.
           return {
@@ -136,7 +140,7 @@ export async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
               facet: facetName,
               slotPath: lookup.path,
               cachedIntegrity: cached.integrity,
-              lockedIntegrity: locked.integrity,
+              lockedIntegrity: effectiveLocked.integrity,
             },
           }
         } else {
@@ -153,7 +157,7 @@ export async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
 
     // Cache miss (or no locked entry, or sidecar invalid). Clone.
     if (sourceDir === undefined) {
-      const cloneRef = resolveCloneRef(locked, parsed.value.ref)
+      const cloneRef = resolveCloneRef(effectiveLocked, parsed.value.ref)
       const cloned = await cloneFacetGitSource(parsed.value.url, cloneRef)
       if (!cloned.ok) {
         return {
