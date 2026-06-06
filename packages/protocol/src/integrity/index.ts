@@ -7,4 +7,4 @@ export type {
   IntegrityResult,
   RegistryIntegrityInput,
 } from './types.ts'
-export { verifyGitOneCheck, verifyHash, verifyRegistryThreeCheck } from './verify.ts'
+export { verifyGitOneCheck, verifyHash, verifyLockfileOneCheck, verifyRegistryThreeCheck } from './verify.ts'

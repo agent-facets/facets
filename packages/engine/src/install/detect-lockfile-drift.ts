@@ -33,6 +33,13 @@ export function detectLockfileDrift(
       if (!satisfies(parseLockedVersion(locked.version), parsed.value.version)) {
         drift.push({ name, reason: 'unsatisfied', manifestSpec: specifier, lockedVersion: locked.version })
       }
+    } else if (parsed.ok && specifier !== locked.source) {
+      // git/local: any change to the manifest source string (a swapped URL,
+      // ref, or local path) is drift in frozen mode. The locked source is the
+      // contract; a differing source would otherwise build from an unlocked
+      // origin. Registry version drift is handled by the `satisfies` check
+      // above, so this branch only fires for git and local sources.
+      drift.push({ name, reason: 'source-changed', manifestSpec: specifier, lockedSource: locked.source })
     }
   }
 

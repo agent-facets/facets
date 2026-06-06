@@ -97,3 +97,24 @@ export function verifyRegistryThreeCheck(input: RegistryIntegrityInput): Integri
 export function verifyGitOneCheck(input: GitIntegrityInput): IntegrityResult {
   return verifyHash(input.facet, 'git', input.lockfileIntegrity, input.computedIntegrity)
 }
+
+/**
+ * Run the lockfile reproduction check. Returns `{ ok: true }` if the
+ * locally-built artifact's integrity matches the lockfile's recorded
+ * integrity, otherwise the structured failure with `check: 'lockfile'`.
+ *
+ * This is the non-git counterpart to `verifyGitOneCheck`. It applies
+ * wherever a build-derived artifact must reproduce its locked integrity
+ * but no git tag-move is involved — most notably a `--frozen-lockfile`
+ * install of a LOCAL source, where the on-disk content was edited and no
+ * longer hashes to what `facets.lock` pinned. Reusing the git check there
+ * would mislabel the failure as `check: 'git'` even though nothing git
+ * happened; `'lockfile'` correctly names the failure as built-vs-lockfile
+ * divergence (the same semantics as the registry three-check's first check).
+ *
+ * Takes `GitIntegrityInput` — the field shape (computed vs. lockfile
+ * integrity) is identical; only the emitted `check` label differs.
+ */
+export function verifyLockfileOneCheck(input: GitIntegrityInput): IntegrityResult {
+  return verifyHash(input.facet, 'lockfile', input.lockfileIntegrity, input.computedIntegrity)
+}

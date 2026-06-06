@@ -19,11 +19,7 @@ const lock = (facets: Record<string, LockfileFacet>): Lockfile => ({
 
 describe('detectLockfileDrift', () => {
   test('no drift when every registry entry satisfies its specifier', () => {
-    const drift = detectLockfileDrift(
-      manifest({ cowsay: '1.2.3', other: '1.*' }),
-      lock({ cowsay: lockEntry('1.2.3'), other: lockEntry('1.5.0') }),
-      true,
-    )
+    const drift = detectLockfileDrift(manifest({ cowsay: '1.*' }), lock({ cowsay: lockEntry('1.2.3', '1.2.3') }), true)
     expect(drift).toEqual([])
   })
 
@@ -57,6 +53,55 @@ describe('detectLockfileDrift', () => {
   test('non-registry (local/git) entries are not version-checked, only required to exist', () => {
     // A local source whose entry exists is fine regardless of version.
     const drift = detectLockfileDrift(manifest({ local: './pkg' }), lock({ local: lockEntry('9.9.9', './pkg') }), true)
+    expect(drift).toEqual([])
+  })
+
+  test('git entry whose manifest URL changed → source-changed', () => {
+    const drift = detectLockfileDrift(
+      manifest({ planner: 'github:attacker/planner' }),
+      lock({ planner: lockEntry('2.0.0', 'github:agent-facets/planner') }),
+      true,
+    )
+    expect(drift).toEqual([
+      {
+        name: 'planner',
+        reason: 'source-changed',
+        manifestSpec: 'github:attacker/planner',
+        lockedSource: 'github:agent-facets/planner',
+      },
+    ])
+  })
+
+  test('local entry whose manifest path changed → source-changed', () => {
+    const drift = detectLockfileDrift(
+      manifest({ cowsay: './facets/cowsay-EVIL' }),
+      lock({ cowsay: lockEntry('1.0.0', './facets/cowsay-v1') }),
+      true,
+    )
+    expect(drift).toEqual([
+      {
+        name: 'cowsay',
+        reason: 'source-changed',
+        manifestSpec: './facets/cowsay-EVIL',
+        lockedSource: './facets/cowsay-v1',
+      },
+    ])
+  })
+
+  test('git entry whose manifest source is unchanged → no drift', () => {
+    const drift = detectLockfileDrift(
+      manifest({ planner: 'github:agent-facets/planner' }),
+      lock({ planner: lockEntry('2.0.0', 'github:agent-facets/planner') }),
+      true,
+    )
+    expect(drift).toEqual([])
+  })
+
+  test('registry spec text change that still satisfies is NOT source-changed', () => {
+    // Manifest widened 1.2.3 → 1.* while the lock stays at 1.2.3 (which
+    // satisfies). This is reproducible, not drift — registry source/version
+    // drift is governed by `satisfies`, never reported as `source-changed`.
+    const drift = detectLockfileDrift(manifest({ cowsay: '1.*' }), lock({ cowsay: lockEntry('1.2.3', '1.2.3') }), true)
     expect(drift).toEqual([])
   })
 

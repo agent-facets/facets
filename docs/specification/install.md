@@ -161,7 +161,7 @@ Only `facet upgrade` resolves newer versions for entries that already satisfy th
 
 The lockfile SHOULD be version-controlled so that all team members and CI environments get the same versions.
 
-`facet install --frozen-lockfile` inverts this: the lockfile becomes the source of truth. It MUST NOT re-resolve any specifier and MUST NOT write the lockfile, and it MUST fail without modifying the project if the lockfile is missing, omits a manifest facet, contains an entry that no longer satisfies its specifier, or pins a facet the manifest no longer declares (an orphaned entry a normal install would prune). This is the mode for reproducible CI installs.
+`facet install --frozen-lockfile` inverts this: the lockfile becomes the source of truth and is reproduced exactly — no extra facets, no missing facets, no source changes, no content changes. It MUST NOT re-resolve any specifier and MUST NOT write the lockfile, and it MUST fail without modifying the project if the lockfile is missing, omits a manifest facet, contains an entry that no longer satisfies its specifier, pins a facet the manifest no longer declares (an orphaned entry a normal install would prune), or has a git/local facet whose manifest source (URL, ref, or path) no longer matches the locked source. It MUST also verify that every facet — including local sources, which a normal install rebuilds from disk — reproduces its locked integrity, failing on any content mismatch. This is the mode for reproducible CI installs.
 
 ## Upgrade
 

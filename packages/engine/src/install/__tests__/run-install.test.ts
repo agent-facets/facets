@@ -315,6 +315,32 @@ describe('runInstall — frozen-lockfile mode', () => {
     expect(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')).toBe(lockBefore)
   })
 
+  test('fails on a git source-string change without resolving or mutating', async () => {
+    // The lockfile pins a git URL; the manifest now points the same facet
+    // name at a different repo. Frozen mode must reject this at the preflight
+    // (before any clone) so it never builds from the unlocked origin.
+    const facetsBefore = writeFacets({ planner: 'github:attacker/planner' })
+    const lockBefore = writeLock({
+      planner: { source: 'github:agent-facets/planner', version: '2.0.0' },
+    })
+
+    const result = await installFrozen()
+    if (result.ok) expect.unreachable()
+    if (result.failure.code !== 'LOCKFILE_DRIFT') expect.unreachable()
+    expect(result.failure.facets).toEqual([
+      {
+        name: 'planner',
+        reason: 'source-changed',
+        manifestSpec: 'github:attacker/planner',
+        lockedSource: 'github:agent-facets/planner',
+      },
+    ])
+    // Never resolved/cloned; both project files byte-for-byte unchanged.
+    expect(resolveRequests).toEqual([])
+    expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(facetsBefore)
+    expect(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')).toBe(lockBefore)
+  })
+
   test('fails when no lockfile exists', async () => {
     const facetsBefore = writeFacets({ cowsay: '0.1.1' })
 
@@ -352,5 +378,38 @@ describe('runInstall — frozen-lockfile mode', () => {
     // The lockfile is never re-resolved or updated.
     expect(resolveRequests).toEqual([])
     expect(readLock().facets.cowsay?.version).toBe('0.1.1')
+  })
+
+  test('fails on local content drift with INTEGRITY_FAILURE and no mutation', async () => {
+    // A local facet whose source path is unchanged but whose CONTENT was
+    // edited. A normal install would rebuild and overwrite the entry, but
+    // frozen mode must reproduce the locked integrity exactly — so an edited
+    // local source blows up just like a git tag move, mutating nothing.
+    const localDir = join(projectRoot, 'local-cowsay')
+    mkdirSync(join(localDir, 'skills/planning'), { recursive: true })
+    writeFileSync(
+      join(localDir, 'facet.json'),
+      JSON.stringify({ name: 'cowsay', version: '1.0.0', skills: { planning: { description: 'planning skill' } } }),
+    )
+    writeFileSync(join(localDir, 'skills/planning/SKILL.md'), '# edited content that does not match the lock\n')
+
+    const facetsBefore = writeFacets({ cowsay: './local-cowsay' })
+    // Lock a deliberately wrong integrity so the freshly-built local content
+    // cannot reproduce it.
+    const lockBefore = writeLock({
+      cowsay: { source: './local-cowsay', version: '1.0.0', integrity: 'sha256:deadbeefdeadbeefdeadbeefdeadbeef' },
+    })
+
+    const result = await installFrozen()
+    if (result.ok) expect.unreachable()
+    if (result.failure.code !== 'INTEGRITY_FAILURE') expect.unreachable()
+    // The failure is labeled `lockfile`, not `git`: a local-content drift is
+    // a built-vs-lockfile divergence, and reporting `git` here would mislead
+    // the user (nothing git happened).
+    if (result.failure.failure.kind !== 'facet') expect.unreachable()
+    expect(result.failure.failure.check).toBe('lockfile')
+    // Project files are byte-for-byte unchanged (no rewrite, no materialize).
+    expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(facetsBefore)
+    expect(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')).toBe(lockBefore)
   })
 })

@@ -693,16 +693,15 @@ describe('runInstall — git cache hit short-circuits clone', () => {
     const version = '0.1.0'
     const { entry } = seedCacheSlotForGit(facetName, version)
 
-    // Use an UNREACHABLE git URL — if anything tries to clone, the test
-    // will hang/fail. The cache hit must short-circuit before cloning.
+    // The manifest source matches the locked source, so the cache-hit path
+    // is eligible. The URL points at an unreachable host — if anything tries
+    // to clone, the test will hang/fail. The cache hit must short-circuit
+    // before cloning.
     const lockfile: Lockfile = {
       lockfileVersion: 1,
       facets: { [facetName]: entry },
     }
-    writeFileSync(
-      join(projectRoot, 'facets.json'),
-      JSON.stringify({ facets: { [facetName]: 'https://invalid.invalid/never-clone.git' } }),
-    )
+    writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify({ facets: { [facetName]: entry.source } }))
     writeFileSync(join(projectRoot, 'facets.lock'), JSON.stringify(lockfile))
 
     const result = await runInstall({
@@ -733,10 +732,9 @@ describe('runInstall — git cache hit short-circuits clone', () => {
       lockfileVersion: 1,
       facets: { [facetName]: { ...entry, integrity: wrongIntegrity } },
     }
-    writeFileSync(
-      join(projectRoot, 'facets.json'),
-      JSON.stringify({ facets: { [facetName]: 'https://invalid.invalid/never-clone.git' } }),
-    )
+    // Manifest source matches the locked source so the cache-hit path runs;
+    // the sidecar/lockfile integrity disagreement is what must be caught.
+    writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify({ facets: { [facetName]: entry.source } }))
     writeFileSync(join(projectRoot, 'facets.lock'), JSON.stringify(lockfile))
 
     const result = await runInstall({

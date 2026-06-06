@@ -1,7 +1,7 @@
 import { rm } from 'node:fs/promises'
 import type { Adapter } from '@agent-facets/adapter'
 import type { BuildManifest, Lockfile, LockfileFacet, ResolvedFacetManifest } from '@agent-facets/protocol'
-import { satisfies, verifyGitOneCheck } from '@agent-facets/protocol'
+import { satisfies, verifyGitOneCheck, verifyLockfileOneCheck } from '@agent-facets/protocol'
 import { runBuildPipeline } from '../build/pipeline.ts'
 import { type CacheIdentity, cacheGet, cachePutVerified, cacheStagingDir, readCachedIntegrity } from '../cache/index.ts'
 import { loadManifest, resolvePrompts } from '../loaders/facet.ts'
@@ -11,6 +11,7 @@ import { parseFacetSource } from '../sources/facet/parse-source.ts'
 import { parseVersionSpec } from '../sources/facet/parse-version.ts'
 import { cloneFacetGitSource } from '../sources/facet/resolve-git.ts'
 import { resolveLocalFacetSource } from '../sources/facet/resolve-local.ts'
+import type { Source } from '../sources/facet/types.ts'
 import { cloneFailureToRunInstall } from './clone-failure.ts'
 import { computeAssetList } from './materialize.ts'
 import { parseLockedVersion } from './parse-locked-version.ts'
@@ -31,6 +32,13 @@ export interface PlanFacetArgs {
   previousLockfile: Lockfile
   onStage: (event: StageEvent) => void
   onLog: (line: string) => void
+  /**
+   * Frozen-lockfile mode. When true, a locked entry MUST reproduce its
+   * locked integrity for EVERY source kind — including local sources,
+   * which are otherwise mutable and rebuilt from disk. A mismatch fails
+   * the install with `INTEGRITY_FAILURE`; the entry is never rewritten.
+   */
+  frozenLockfile?: boolean
 }
 
 export interface PlanFacetSuccess {
@@ -40,6 +48,35 @@ export interface PlanFacetSuccess {
 }
 
 export type PlanFacetResult = { ok: true; value: PlanFacetSuccess } | { ok: false; failure: RunInstallFailure }
+
+/**
+ * Decide whether a lockfile entry still applies to the manifest source.
+ *
+ * Pure function — exported for unit testing. When it returns `undefined`,
+ * the caller treats the entry like a fresh add: no cache lookup by the old
+ * version, no clone at the old commit, and no integrity check against bytes
+ * from the old source.
+ */
+export function resolveEffectiveLockedForPlan(
+  locked: LockfileFacet | undefined,
+  source: Source,
+  specifier: string,
+): LockfileFacet | undefined {
+  // A registry lock is stale when its version no longer satisfies the
+  // manifest spec (hand-edit / pull / merge). A git lock is stale when
+  // the manifest source string no longer matches the locked source; the
+  // old commit/integrity belong to the old origin and must not constrain
+  // the new clone.
+  //
+  // Local entries are intentionally not stale here. Non-frozen local
+  // installs rebuild from disk and overwrite the entry; frozen installs
+  // reject source drift in the preflight before planning.
+  const isRegistryStale =
+    locked !== undefined && source.kind === 'registry' && !satisfies(parseLockedVersion(locked.version), source.version)
+  const isGitSourceChanged = locked !== undefined && source.kind === 'git' && specifier !== locked.source
+
+  return isRegistryStale || isGitSourceChanged ? undefined : locked
+}
 
 export async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
   const { facetName, specifier, projectRoot, previousLockfile, onStage, onLog } = args
@@ -76,16 +113,9 @@ export async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
   // exactly these bytes (or fail loudly). Cache hits short-circuit when
   // the sidecar matches `locked.integrity`.
   const locked = previousLockfile.facets[facetName]
-  // A registry lock is stale when its version no longer satisfies the
-  // manifest spec (hand-edit / pull / merge). Only registry sources carry
-  // a VersionSpec; git is ref-based and local is mutable, so neither
-  // is ever stale here. A stale entry is treated as absent below so the
-  // facet re-resolves like a fresh add, overwriting the stale entry.
-  const isStale =
-    locked !== undefined &&
-    parsed.value.kind === 'registry' &&
-    !satisfies(parseLockedVersion(locked.version), parsed.value.version)
-  const effectiveLocked = isStale ? undefined : locked
+  // A stale entry is treated as absent below so the facet re-resolves like
+  // a fresh add, overwriting the stale entry.
+  const effectiveLocked = resolveEffectiveLockedForPlan(locked, parsed.value, specifier)
   // Set when a cache hit's sidecar matches the locked integrity. The
   // sidecar IS the post-write trust certificate; we don't rebuild to
   // re-derive what the cache already proved at write time.
@@ -94,14 +124,23 @@ export async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
   // Resolve to a sourceDir.
   onStage({ kind: 'facet-stage', facet: facetName, stage: 'resolve' })
   if (parsed.value.kind === 'git') {
-    // Cache-first when we have a locked entry: name + version are both
-    // known from `locked`, so we can look up the cache slot without any
-    // clone or network round-trip.
-    if (locked !== undefined) {
+    // Cache-first when we have an effective locked entry: name + version are
+    // both known from `effectiveLocked`, so we can look up the cache slot
+    // without any clone or network round-trip.
+    //
+    // Bypass the cache entirely when the manifest source no longer matches
+    // `locked.source` (a swapped URL or ref). The cache slot is keyed on
+    // {name, version} and carries no source provenance, so a cache hit would
+    // serve bytes that may belong to a different origin. Skipping the lookup
+    // here falls through to cloning the manifest's current URL. (In frozen
+    // mode the preflight already rejected this as `source-changed`; this guard
+    // makes the cache correct for non-frozen installs too — a changed URL
+    // re-resolves from the new source instead of silently reusing old bytes.)
+    if (effectiveLocked !== undefined) {
       const cacheId: CacheIdentity = {
         kind: 'git',
         name: facetName,
-        version: locked.version,
+        version: effectiveLocked.version,
       }
       const lookup = cacheGet(cacheId)
       if (lookup.hit) {
@@ -110,7 +149,7 @@ export async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
           // Sidecar missing/invalid — incomplete cache slot. Treat as
           // soft miss and fall through to clone.
           onLog(`[verbose]   cache slot ${lookup.path} has no valid integrity sidecar; refetching`)
-        } else if (cached.integrity !== locked.integrity) {
+        } else if (cached.integrity !== effectiveLocked.integrity) {
           // Cache disagrees with lockfile. Lockfile is the source of
           // truth; surface as hard error rather than silently refetching.
           return {
@@ -120,7 +159,7 @@ export async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
               facet: facetName,
               slotPath: lookup.path,
               cachedIntegrity: cached.integrity,
-              lockedIntegrity: locked.integrity,
+              lockedIntegrity: effectiveLocked.integrity,
             },
           }
         } else {
@@ -137,7 +176,7 @@ export async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
 
     // Cache miss (or no locked entry, or sidecar invalid). Clone.
     if (sourceDir === undefined) {
-      const cloneRef = resolveCloneRef(locked, parsed.value.ref)
+      const cloneRef = resolveCloneRef(effectiveLocked, parsed.value.ref)
       const cloned = await cloneFacetGitSource(parsed.value.url, cloneRef)
       if (!cloned.ok) {
         return {
@@ -311,24 +350,36 @@ export async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
         }
       }
 
-      // Tag-move guard: if this is a LOCKED GIT source, the just-built
-      // integrity MUST match the locked integrity. The lockfile is the
-      // security contract; the network-served artifact has been modified
-      // since we locked it if these disagree. Refuse the install — do
-      // NOT cache, do NOT write the lockfile, do NOT materialize.
+      // Integrity reproduction guard: a satisfying locked entry MUST
+      // reproduce its locked integrity, or the install fails — do NOT
+      // cache, do NOT write the lockfile, do NOT materialize.
       //
-      // Local sources are intentionally exempt: filesystem-backed
-      // sources are mutable by definition (the user edits them), so
-      // an integrity drift is expected, not an attack. The lockfile
-      // entry's integrity gets overwritten by the new build for local
-      // sources. See `verifyGitOneCheck` docstring for the rationale.
-      // Tag-move guard: a satisfying locked git/registry entry MUST
-      // reproduce its locked integrity (the lockfile is the security
-      // contract). A stale entry is being discarded, so it has no locked
-      // integrity to reproduce — the guard is skipped and the fresh
-      // download is verified by the registry three-check instead.
-      if (effectiveLocked !== undefined && (parsed.value.kind === 'git' || parsed.value.kind === 'registry')) {
-        const guard = verifyGitOneCheck({
+      //   - GIT/REGISTRY (always): the lockfile is the security contract;
+      //     a network-served artifact that no longer hashes to the locked
+      //     integrity has been modified since we locked it (a tag move).
+      //   - LOCAL (frozen only): filesystem sources are mutable by design,
+      //     so a normal install rebuilds and overwrites the entry. But
+      //     `--frozen-lockfile` promises bit-for-bit reproduction of the
+      //     lockfile, so a frozen install treats local exactly like git:
+      //     the edited local content must still hash to the locked
+      //     integrity, or the install blows up.
+      //
+      // A stale entry (`effectiveLocked === undefined`) is being discarded,
+      // so it has no locked integrity to reproduce — the guard is skipped
+      // and the fresh download is verified by the registry three-check.
+      const mustReproduceIntegrity =
+        effectiveLocked !== undefined &&
+        (parsed.value.kind === 'git' ||
+          parsed.value.kind === 'registry' ||
+          (parsed.value.kind === 'local' && args.frozenLockfile === true))
+      if (mustReproduceIntegrity) {
+        // Pick the verifier by source kind so the reported `check` honestly
+        // names what diverged. A git tag-move is `check: 'git'`; everything
+        // else reaching this guard (frozen LOCAL drift, or a cache-miss
+        // registry rebuild) is a built-vs-lockfile divergence → `'lockfile'`.
+        // Both verifiers run the same hash equality; only the label differs.
+        const verifyReproduction = parsed.value.kind === 'git' ? verifyGitOneCheck : verifyLockfileOneCheck
+        const guard = verifyReproduction({
           facet: facetName,
           computedIntegrity: buildResult.integrity,
           lockfileIntegrity: effectiveLocked.integrity,
@@ -369,18 +420,20 @@ export async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
 
       // Construct the entry.
       //
-      //   - Satisfying GIT/REGISTRY entries inherit locked.* verbatim (we
-      //     just verified buildResult matches, so values are equal — but the
-      //     lockfile is the source of truth and we never rewrite it).
+      //   - Entries that just reproduced their locked integrity
+      //     (`mustReproduceIntegrity`) inherit locked.* verbatim — we
+      //     verified buildResult matches, and the lockfile is the source of
+      //     truth, so we never rewrite it. This now includes frozen LOCAL
+      //     sources: frozen never rewrites a local entry.
       //   - Stale registry entries (`effectiveLocked === undefined`) fall
       //     into the build-derived branch below, overwriting the
       //     contradictory entry with the freshly resolved version/integrity.
-      //   - Local sources (locked or fresh) derive from the build.
-      //     Local is mutable by design; the user owns the version and
-      //     content, and the lockfile follows what's on disk.
+      //   - Non-frozen LOCAL sources derive from the build. Local is mutable
+      //     by design; the user owns the version and content, and the
+      //     lockfile follows what's on disk.
       //   - Fresh git adds derive from the build + the clone's commit.
       //   - Fresh registry adds derive from the build (no ref/commit).
-      if (effectiveLocked !== undefined && (parsed.value.kind === 'git' || parsed.value.kind === 'registry')) {
+      if (mustReproduceIntegrity) {
         entry = {
           source: specifier,
           ...(effectiveLocked.ref !== undefined ? { ref: effectiveLocked.ref } : {}),

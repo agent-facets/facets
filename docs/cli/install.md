@@ -88,14 +88,17 @@ A facet that declares `facets: [...]` (cherry-picking from other facets) is hard
 
 ## Frozen lockfile
 
-`facet install --frozen-lockfile` inverts the source of truth: the **lockfile** becomes authoritative. In this mode install never re-resolves a specifier and never writes `facets.lock`. Before installing, it verifies the lockfile fully covers the manifest, and fails — changing nothing on disk — if any of these hold:
+`facet install --frozen-lockfile` inverts the source of truth: the **lockfile** becomes authoritative and is reproduced exactly — no extra facets, no missing facets, no source changes, no content changes. In this mode install never re-resolves a specifier and never writes `facets.lock`. Before installing, it verifies the lockfile fully covers the manifest, and fails — changing nothing on disk — if any of these hold:
 
 - no `facets.lock` exists;
 - a facet in `facets.json` has no lockfile entry;
 - a lockfile entry's version no longer satisfies its manifest specifier;
-- the lockfile pins a facet `facets.json` no longer declares (an orphaned entry a normal install would prune).
+- the lockfile pins a facet `facets.json` no longer declares (an orphaned entry a normal install would prune);
+- a git or local facet's manifest source (URL, ref, or path) no longer matches the locked source.
 
-This is the mode to use in CI: it guarantees that `facets.json` and `facets.lock` are already in agreement, so a forgotten `facet add` or a hand-edited manifest fails the build loudly instead of silently mutating the lockfile. It mirrors the `--frozen-lockfile` contract from `npm` and `bun`.
+It also verifies content: every facet — including local sources, which a normal install rebuilds from disk — must reproduce its locked integrity. Editing a local facet's files fails a frozen install instead of silently overwriting the entry, exactly as a git tag move would.
+
+This is the mode to use in CI: it guarantees that `facets.json` and `facets.lock` are already in agreement, so a forgotten `facet add`, a hand-edited manifest, or drifted local content fails the build loudly instead of silently mutating the lockfile. It mirrors the `--frozen-lockfile` contract from `npm` and `bun`.
 
 ## Exit codes
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { verifyGitOneCheck, verifyHash, verifyRegistryThreeCheck } from '@agent-facets/protocol'
+import { verifyGitOneCheck, verifyHash, verifyLockfileOneCheck, verifyRegistryThreeCheck } from '@agent-facets/protocol'
 
 const HASH_A = 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 const HASH_B = 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
@@ -207,6 +207,33 @@ describe('verifyGitOneCheck', () => {
       kind: 'facet',
       facet: 'p',
       check: 'git',
+      expected: HASH_A,
+      observed: HASH_B,
+    })
+  })
+})
+
+describe('verifyLockfileOneCheck', () => {
+  test('match returns ok', () => {
+    const result = verifyLockfileOneCheck({
+      facet: 'p',
+      computedIntegrity: HASH_A,
+      lockfileIntegrity: HASH_A,
+    })
+    expect(result.ok).toBe(true)
+  })
+
+  test('mismatch fires lockfile failure (not git)', () => {
+    const result = verifyLockfileOneCheck({
+      facet: 'p',
+      computedIntegrity: HASH_B,
+      lockfileIntegrity: HASH_A,
+    })
+    if (result.ok) expect.unreachable()
+    expect(result.failure).toEqual({
+      kind: 'facet',
+      facet: 'p',
+      check: 'lockfile',
       expected: HASH_A,
       observed: HASH_B,
     })

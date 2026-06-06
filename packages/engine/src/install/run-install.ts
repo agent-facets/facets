@@ -125,6 +125,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
         previousLockfile,
         onStage,
         onLog,
+        frozenLockfile: opts.frozenLockfile,
       })
       if (!planResult.ok) {
         onStage({ kind: 'facet-failure', facet: facetName, failure: planResult.failure })

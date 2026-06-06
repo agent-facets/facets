@@ -403,7 +403,7 @@ The project manifest is the source of truth; the lockfile is a record of resolut
 
 ### Requirement: Frozen-lockfile install treats the lockfile as authoritative
 
-The system SHALL provide a frozen-lockfile mode for install in which the lockfile is treated as the source of truth. In this mode the system SHALL NOT re-resolve any specifier and SHALL NOT write the lockfile. Before installing, the system SHALL verify that the lockfile fully and consistently covers the manifest. The system SHALL fail without modifying the project if any of the following is true: no lockfile exists, the manifest declares a facet that has no lockfile entry, a lockfile entry's recorded version does not satisfy its manifest specifier, or the lockfile pins a facet the manifest no longer declares (an orphaned entry that a non-frozen install would prune). When the lockfile fully covers the manifest, the system SHALL install exactly the versions and integrity hashes recorded in the lockfile. Frozen-lockfile mode SHALL be available only on install; the command that adds a facet SHALL NOT offer it, because adding a facet inherently updates the lockfile.
+The system SHALL provide a frozen-lockfile mode for install in which the lockfile is treated as the source of truth and reproduced exactly: no extra facets, no missing facets, no source changes, and no content changes. In this mode the system SHALL NOT re-resolve any specifier and SHALL NOT write the lockfile. Before installing, the system SHALL verify that the lockfile fully and consistently covers the manifest. The system SHALL fail without modifying the project if any of the following is true: no lockfile exists, the manifest declares a facet that has no lockfile entry, a lockfile entry's recorded version does not satisfy its manifest specifier, the lockfile pins a facet the manifest no longer declares (an orphaned entry that a non-frozen install would prune), or a git/local facet's manifest source string (URL, ref, or path) no longer matches the locked source. When the lockfile fully covers the manifest, the system SHALL install exactly the versions and integrity hashes recorded in the lockfile, and SHALL verify that every facet — including local sources, which a non-frozen install would rebuild from disk — reproduces its locked integrity, failing if any built content does not match. Frozen-lockfile mode SHALL be available only on install; the command that adds a facet SHALL NOT offer it, because adding a facet inherently updates the lockfile.
 
 #### Scenario: Frozen install proceeds when the lockfile covers the manifest
 
@@ -441,6 +441,21 @@ The system SHALL provide a frozen-lockfile mode for install in which the lockfil
 - **AND** the lockfile pins a facet the manifest no longer declares
 - **THEN** the system SHALL fail with an error identifying the orphaned facet and its locked version
 - **AND** the system SHALL NOT prune the orphaned facet's assets
+- **AND** the system SHALL leave the manifest, lockfile, and on-disk adapter state unchanged
+
+#### Scenario: Frozen install fails when a git or local source changed
+
+- **WHEN** a user runs install in frozen-lockfile mode
+- **AND** a git or local facet's manifest source string (URL, ref, or path) differs from the locked source
+- **THEN** the system SHALL fail with an error identifying the facet, its manifest source, and its locked source
+- **AND** the system SHALL NOT clone, resolve, or build from the changed source
+- **AND** the system SHALL leave the manifest, lockfile, and on-disk adapter state unchanged
+
+#### Scenario: Frozen install fails when local source content drifted
+
+- **WHEN** a user runs install in frozen-lockfile mode
+- **AND** a local facet's source path is unchanged but its on-disk content no longer reproduces the locked integrity
+- **THEN** the system SHALL fail with an integrity error rather than rebuilding and overwriting the entry
 - **AND** the system SHALL leave the manifest, lockfile, and on-disk adapter state unchanged
 
 ### Requirement: Declared MCP servers do not block installation
