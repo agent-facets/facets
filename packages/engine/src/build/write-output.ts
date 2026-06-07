@@ -1,8 +1,8 @@
 import { mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
+import { BUILD_OUTPUT_DIR } from '../registry/artifact-path.ts'
 import type { BuildResult } from './pipeline.ts'
 
-const DIST_DIR = 'dist'
 const BUILD_MANIFEST_FILE = 'build-manifest.json'
 
 export interface WriteBuildOutputOptions {
@@ -22,7 +22,7 @@ export async function writeBuildOutput(
   rootDir: string,
   options: WriteBuildOutputOptions = {},
 ): Promise<void> {
-  const distDir = join(rootDir, DIST_DIR)
+  const distDir = join(rootDir, BUILD_OUTPUT_DIR)
 
   // Clean previous output
   await rm(distDir, { recursive: true, force: true })

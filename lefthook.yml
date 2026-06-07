@@ -13,6 +13,7 @@ pre-commit:
       exclude:
         - "sst-env.d.ts"
         - "**/sst-env.d.ts"
+        - "**/generated/**"
       run: bun biome check --write --unsafe {staged_files}
       stage_fixed: true
     biome-lint:
@@ -21,6 +22,7 @@ pre-commit:
       exclude:
         - "sst-env.d.ts"
         - "**/sst-env.d.ts"
+        - "**/generated/**"
       run: bun biome check --error-on-warnings {staged_files}
     circleci-pack:
       priority: 4

@@ -34,11 +34,21 @@ export type {
   FacetIntegrityCheck,
   FacetIntegrityFailure,
   GitIntegrityInput,
+  GunzipFn,
+  GunzipResult,
   IntegrityFailure,
   IntegrityResult,
   RegistryIntegrityInput,
+  VerifiedArchive,
+  VerifiedAsset,
 } from './integrity/index.ts'
-export { verifyGitOneCheck, verifyHash, verifyLockfileOneCheck, verifyRegistryThreeCheck } from './integrity/index.ts'
+export {
+  validateFacetArchive,
+  verifyGitOneCheck,
+  verifyHash,
+  verifyLockfileOneCheck,
+  verifyRegistryThreeCheck,
+} from './integrity/index.ts'
 // loaders (pure bytes-validators — no I/O)
 export type { ResolvedFacetManifest } from './loaders/facet.ts'
 export { FACET_MANIFEST_FILE, resolvePromptsFromMap, validateFacetManifest } from './loaders/facet.ts'

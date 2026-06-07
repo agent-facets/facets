@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, normalize, relative } from 'node:path'
+import { parseFacetArchive } from '@agent-facets/protocol'
 import { parseTarGzip } from 'nanotar'
 import type { Client } from 'openapi-fetch'
 import { createRegistryClient, translateWireError } from './client.ts'
@@ -29,9 +30,10 @@ import type { RegistryMetadata, RegistryResult } from './types.ts'
  *      client: a presigned S3 URL points at a different system and is
  *      never a registry endpoint in the OpenAPI spec.
  *
- * The downloaded bytes are a gzipped tarball with `facet.json` at the
- * root (the same shape `facet build` would produce before any `.facet`
- * outer-tar wrapping — V0 publishes the source distribution directly).
+ * The downloaded bytes are a `.facet` archive — an uncompressed outer
+ * tar containing `build-manifest.json` and `archive.tar.gz` (the
+ * gzipped inner tar of source files). Both layers are unpacked here
+ * to extract the source files into `dest`.
  *
  * Verification: the registry's `expectedIntegrity` (sha256 of the
  * tarball-as-uploaded) is checked against the bytes we just downloaded.
@@ -120,15 +122,31 @@ export async function downloadAndExtractFacet(meta: RegistryMetadata, dest: stri
     }
   }
 
+  // The registry stores `.facet` archives — an uncompressed outer tar
+  // containing `build-manifest.json` + `archive.tar.gz` (the gzipped
+  // inner tar of source files). Unpack both layers to reach the entries.
+  const outerResult = parseFacetArchive(bytes)
+  if (!outerResult.ok) {
+    const msg = outerResult.errors.map((e) => e.message).join('; ')
+    return {
+      ok: false,
+      error: {
+        code: 'NETWORK_ERROR',
+        cause: `archive is not a valid .facet: ${msg}`,
+        attempts: 1,
+      },
+    }
+  }
+
   let entries: ReadonlyArray<{ name: string; data?: Uint8Array }>
   try {
-    entries = await parseTarGzip(bytes)
+    entries = await parseTarGzip(outerResult.data.innerArchiveBytes)
   } catch (err) {
     return {
       ok: false,
       error: {
         code: 'NETWORK_ERROR',
-        cause: `archive is not a valid gzipped tar: ${err instanceof Error ? err.message : String(err)}`,
+        cause: `inner archive is not a valid gzipped tar: ${err instanceof Error ? err.message : String(err)}`,
         attempts: 1,
       },
     }

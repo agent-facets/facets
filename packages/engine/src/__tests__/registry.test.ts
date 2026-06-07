@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { assembleOuterTar, computeContentHash } from '@agent-facets/protocol'
 import { createTar } from 'nanotar'
 import { describeVersionSpec, downloadAndExtractFacet, resolveRegistryMetadataBatch } from '../registry/index.ts'
 
@@ -194,19 +195,29 @@ describe('downloadAndExtractFacet', () => {
     rmSync(dest, { recursive: true, force: true })
   })
 
-  // Build a real gzipped tarball and its sha256 so the integrity check
-  // exercises the actual happy path.
+  // Build a two-layer `.facet` archive (outer tar wrapping
+  // build-manifest.json + archive.tar.gz) and its sha256 so the
+  // integrity check exercises the actual happy path.
   function buildArchive(entries: Array<{ name: string; data: string }>): {
     bytes: Uint8Array
     integrity: string
   } {
-    const tar = createTar(entries.map((e) => ({ name: e.name, data: e.data }))) as Uint8Array<ArrayBuffer>
-    // Bun.gzipSync's TS return type uses ArrayBufferLike which doesn't
-    // satisfy node's stricter ArrayBuffer-typed signatures for crypto and
-    // Response — cast through unknown so the rest of the helper compiles.
-    const bytes = Bun.gzipSync(tar) as unknown as Uint8Array<ArrayBuffer>
-    const integrity = `sha256:${createHash('sha256').update(bytes).digest('hex')}`
-    return { bytes, integrity }
+    const innerTar = createTar(entries.map((e) => ({ name: e.name, data: e.data }))) as Uint8Array<ArrayBuffer>
+    const innerGz = new Uint8Array(Bun.gzipSync(innerTar))
+    const contentHash = computeContentHash(innerTar)
+    const assets: Record<string, string> = {}
+    for (const e of entries) {
+      assets[e.name] = computeContentHash(e.data)
+    }
+    const buildManifest = JSON.stringify({
+      facetVersion: 1,
+      archive: 'cowsay-0.1.0.facet',
+      integrity: contentHash,
+      assets,
+    })
+    const outerTar = assembleOuterTar(buildManifest, innerGz)
+    const integrity = `sha256:${createHash('sha256').update(outerTar).digest('hex')}`
+    return { bytes: outerTar, integrity }
   }
 
   const S3_URL = 'https://s3.example/presigned/archive.tar.gz'
