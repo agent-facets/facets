@@ -31,6 +31,36 @@
           "name": "viper-run"
         }
       ]
+    },
+    "cowsay": {
+      "source": {
+        "kind": "registry",
+        "registry": "https://api.facet.cafe"
+      },
+      "version": "0.0.1",
+      "integrity": "sha256:18bbc44f9d570d48c3913bb64013f3764597dc150cffaa108af5f91150aa9968",
+      "assets": [
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "cowsay-rules"
+        },
+        {
+          "scope": "project",
+          "type": "agent",
+          "name": "cowsay"
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "cowchat"
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "cowsay"
+        }
+      ]
     }
   }
 }
