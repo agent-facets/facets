@@ -24,7 +24,14 @@ import type { WirePublishResponse, WireQueuedForReviewBody } from './wire.ts'
 export interface PublishArgs {
   /** Canonical facet name (e.g., `'cowsay'` or `'acme/cowsay'`). */
   name: string
-  /** Gzipped tarball bytes (as produced by `packFacetSource`). */
+  /**
+   * Verified `.facet` archive bytes — the outer-tar bytes produced by
+   * `facet build` (and re-verified by `validateFacetArchive` before
+   * upload). The wire `Content-Type` is `application/gzip` per the
+   * registry's OpenAPI; the *contents* are the protocol-defined
+   * two-layer `.facet` (outer uncompressed tar carrying
+   * `build-manifest.json` + the gzipped inner archive).
+   */
   tarball: Uint8Array
 }
 

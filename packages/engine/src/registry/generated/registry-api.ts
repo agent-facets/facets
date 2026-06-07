@@ -357,6 +357,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v0/admin/migrations/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List all migration runs across every migration (admin)
+         * @description Aggregates the run history of every registered migration into one newest-first list. Gathered by server-side fan-out over the registry (one query per migration).
+         */
+        get: operations["getV0AdminMigrationsRuns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v0/admin/migrations/{id}/runs": {
         parameters: {
             query?: never;
@@ -372,7 +392,7 @@ export interface paths {
         put?: never;
         /**
          * Trigger a migration run (admin)
-         * @description Acquires the per-migration single-run lease, then starts the Step Functions execution. Pass dry_run=true to scan + count without writing. Returns 404 if the id is unregistered, 409 if a run is already in progress.
+         * @description Acquires the per-migration single-run lease, then starts the Step Functions execution. Pass dry_run=true to scan + count without writing. A real run (dry_run=false) requires the most recent run to be a succeeded dry run. Returns 404 if the id is unregistered, 409 if a run is already in progress or no succeeded dry run precedes a real run.
          */
         post: operations["postV0AdminMigrationsByIdRuns"];
         delete?: never;
@@ -467,7 +487,7 @@ export interface components {
     schemas: {
         ApiErrorBody: {
             /** @enum {unknown} */
-            code: "E_ACCOUNT_SUSPENDED" | "E_ADMIN_REQUIRED" | "E_ALREADY_ONBOARDED" | "E_API_KEY_MISSING" | "E_CLAIM_ALREADY_PENDING" | "E_CLAIM_PENDING_ELSEWHERE" | "E_COLLECTION_CLAIMED" | "E_COLLECTION_NOT_OWNED" | "E_FACET_NOT_FOUND" | "E_INTERACTIVE_SESSION_REQUIRED" | "E_INVALID_NAME" | "E_INVALID_VERSION" | "E_LOGOUT_REQUIRES_JWT" | "E_MIGRATION_NOT_FOUND" | "E_MIGRATION_RUNNING" | "E_NAME_BLOCKED" | "E_ONBOARDING_REQUIRED" | "E_PREFIX_COLLISION_RETRY_EXHAUSTED" | "E_PROFILE_CORRUPT" | "E_QUEUE_FULL" | "E_QUEUE_ITEM_NOT_FOUND" | "E_QUEUE_ITEM_NOT_PENDING" | "E_REGISTRY_UNAVAILABLE" | "E_RESERVATION_EXISTS" | "E_RESERVATION_NOT_FOUND" | "E_TARBALL_CORRUPTED" | "E_TARBALL_TOO_LARGE" | "E_TOKEN_EXPIRED" | "E_TOKEN_NOT_FOUND" | "E_TOKEN_REVOKED" | "E_UNAUTHENTICATED" | "E_USERNAME_TAKEN" | "E_USER_NOT_FOUND" | "E_VERSION_EXISTS";
+            code: "E_ACCOUNT_SUSPENDED" | "E_ADMIN_REQUIRED" | "E_ALREADY_ONBOARDED" | "E_API_KEY_MISSING" | "E_CLAIM_ALREADY_PENDING" | "E_CLAIM_PENDING_ELSEWHERE" | "E_COLLECTION_CLAIMED" | "E_COLLECTION_NOT_OWNED" | "E_DRY_RUN_REQUIRED" | "E_FACET_NOT_FOUND" | "E_INTERACTIVE_SESSION_REQUIRED" | "E_INVALID_NAME" | "E_INVALID_VERSION" | "E_LOGOUT_REQUIRES_JWT" | "E_MIGRATION_NOT_FOUND" | "E_MIGRATION_RUNNING" | "E_NAME_BLOCKED" | "E_ONBOARDING_REQUIRED" | "E_PREFIX_COLLISION_RETRY_EXHAUSTED" | "E_PROFILE_CORRUPT" | "E_QUEUE_FULL" | "E_QUEUE_ITEM_NOT_FOUND" | "E_QUEUE_ITEM_NOT_PENDING" | "E_REGISTRY_UNAVAILABLE" | "E_RESERVATION_EXISTS" | "E_RESERVATION_NOT_FOUND" | "E_RUN_NOT_FOUND" | "E_TARBALL_CORRUPTED" | "E_TARBALL_TOO_LARGE" | "E_TOKEN_EXPIRED" | "E_TOKEN_NOT_FOUND" | "E_TOKEN_REVOKED" | "E_UNAUTHENTICATED" | "E_USERNAME_TAKEN" | "E_USER_NOT_FOUND" | "E_VERSION_EXISTS";
             docsUrl: string;
             error: string;
             fix: string;
@@ -607,6 +627,24 @@ export interface components {
                 };
             }[];
         };
+        MigrationRunListResponse: {
+            runs: {
+                actor_username: string;
+                dry_run: boolean;
+                expected: number;
+                failed: number;
+                migration_id: string;
+                repaired: number;
+                run_id: string;
+                scanned: number;
+                skipped: number;
+                started_at: string;
+                /** @enum {unknown} */
+                status: "failed" | "running" | "succeeded";
+                error?: string;
+                finished_at?: string;
+            }[];
+        };
         MigrationRunResponse: {
             actor_username: string;
             dry_run: boolean;
@@ -626,24 +664,6 @@ export interface components {
             status: "failed" | "running" | "succeeded";
             error?: string;
             finished_at?: string;
-        };
-        MigrationRunListResponse: {
-            runs: {
-                actor_username: string;
-                dry_run: boolean;
-                expected: number;
-                failed: number;
-                migration_id: string;
-                repaired: number;
-                run_id: string;
-                scanned: number;
-                skipped: number;
-                started_at: string;
-                /** @enum {unknown} */
-                status: "failed" | "running" | "succeeded";
-                error?: string;
-                finished_at?: string;
-            }[];
         };
         ClaimCollectionIdempotent: {
             /** @constant */
@@ -1539,6 +1559,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MigrationListResponse"];
+                };
+            };
+        };
+    };
+    getV0AdminMigrationsRuns: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All runs, newest-first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationRunListResponse"];
                 };
             };
         };

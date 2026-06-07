@@ -126,6 +126,8 @@ export type { LoadFacetsJsonResult } from './manifest/project-files.ts'
 export { loadFacetsJson, writeFacetsJson } from './manifest/project-files.ts'
 // registry
 export type {
+  DiscoverArtifactResult,
+  DriftResult,
   PublishArgs,
   PublishResult,
   RegistryClientConfig,
@@ -149,20 +151,25 @@ export type {
   WireQueuedForReviewBody,
 } from './registry/index.ts'
 export {
+  BUILD_OUTPUT_DIR,
+  buildArtifactFilename,
+  buildArtifactPath,
   createRegistryClient,
   deleteCredentialsFile,
   describeVersionSpec,
+  detectManifestDrift,
+  discoverBuiltArtifacts,
   downloadAndExtractFacet,
   encodeFacetName,
   fetchAuthMe,
   getRegistryBaseUrl,
-  packFacetSource,
   publishFacetVersion,
   readCredentialsToken,
   resolveCredential,
   resolveRegistryMetadataBatch,
   translateThrownError,
   translateWireError,
+  uncappedGunzip,
   writeCredentialsToken,
 } from './registry/index.ts'
 // scaffold

@@ -3,39 +3,31 @@ title: "Publish Flow"
 description: "How facets are built and published to the registry."
 ---
 
+`facet build` produces the canonical `.facet` archive on disk from your source tree. `facet publish` reads that built archive, verifies it against the facet artifact specification, and uploads it to the registry. Building and publishing are distinct steps with a single source of truth for what a `.facet` is: the protocol-defined two-layer format whose content-hash contract is described in the [Integrity Model](/specification/integrity).
+
 This page defines what happens during `facet build` and `facet publish` — the steps, inputs, outputs, and integrity guarantees. This covers facet archives only. MCP server publishing is defined in [MCP Server Assets](/specification/servers).
 
-The publish flow addresses two concerns:
+## Build
 
-1. **Text composition** — the `facets` section in the manifest references other facets. The composed text MUST be included in the published archive so that consumers receive a self-contained artifact.
-
-2. **Composition integrity** — if the author uploads a pre-assembled archive, they could tamper with composed files while the manifest still attributes the content to trusted sources. This is a supply chain attack on AI context.
-
-## Build (Local Preview)
-
-`facet build` produces a local archive for testing and inspection. This is a preview — not the artifact of record.
+`facet build` produces the canonical `.facet` archive from your source tree and writes it to `dist/<name>-<version>.facet`. This is the artifact of record: the bytes `facet publish` will later verify and upload.
 
 ### Steps
 
-1. **Parse the manifest.** Read the facet manifest (`facet.json`) and validate against the manifest schema. The manifest MUST be valid. Invalid manifests MUST be rejected with a descriptive error. Content files MUST NOT be empty. YAML front matter in content files is permitted and MUST be preserved verbatim in the archive — the manifest's `name`, `description`, and any per-adapter extras are merged on top of the author's front matter at install time.
+1. **Parse and validate the manifest.** Read the facet manifest (`facet.json`) and validate it against the manifest schema. Invalid manifests MUST be rejected with a descriptive error. The manifest's `name` MUST be filesystem-safe; the `version` MUST be a semver string; at least one text asset (skill, agent, command, or composed facet reference) MUST be declared.
 
-2. **Resolve text composition.** For each entry in the `facets` section:
-   - Fetch the referenced facet at the exact pinned version from the registry or local cache.
-   - For compact entries (`"name@version"`): extract all text assets and their files.
-   - For selective entries: extract only the named assets and their files.
-   - Detect naming collisions between composed assets and locally authored assets. Collisions MUST be a build error.
+2. **Resolve prompts.** Read each declared asset file from its conventional path: `skills/<name>/SKILL.md` for skills, `agents/<name>.md` for agents, `commands/<name>.md` for commands. Missing files are build errors. YAML front matter in content files is permitted and MUST be preserved verbatim in the archive — the manifest's `name`, `description`, and any per-adapter extras are merged on top of the author's front matter at install time.
 
-3. **Validate adapter metadata.** For each agent with an `adapters` section, validate the adapter-specific metadata against each installed adapter's schema. Unknown adapters SHOULD produce a warning. Invalid metadata for an installed adapter MUST be a build error.
+3. **Validate content.** No declared asset MAY be empty (zero bytes or whitespace only). No two assets within the same type MAY share a name. Compact `facets[]` entries MUST match the `name@version` shape.
 
-4. **Validate server references.** For each entry in the `servers` section, verify that the named server exists in the registry. Missing servers SHOULD produce a warning, not an error — the server MAY not yet be published.
+4. **Validate adapter metadata.** For each asset with an `adapters` block, validate the adapter-specific metadata against each installed adapter's schema. Unknown adapters SHOULD produce a warning. Invalid metadata for an installed adapter MUST be a build error.
 
-5. **Package the local archive.** Create the archive containing the manifest, all locally authored files, and all composed files. This is for local testing only.
+5. **Assemble the archive.** Compute per-asset SHA-256 hashes. Assemble the deterministic inner tar (`archive.tar.gz`). Compute the integrity hash over the uncompressed inner tar. Gzip the inner tar. Assemble the outer tar containing `build-manifest.json` (recording the integrity hash and the per-asset hash map) plus the gzipped inner archive. Write the result to `dist/<name>-<version>.facet`.
 
-The author MAY inspect the local archive, test it, and iterate before publishing.
+`facet build` purges `dist/` before writing, so the directory contains exactly one `.facet` after a successful build: the archive for the current source's name and version.
 
-## Publish (To Registry)
+## Publish
 
-`facet publish` uploads the author's work to the registry. The registry assembles the canonical archive.
+`facet publish` reads the built `.facet` from `dist/`, verifies it end-to-end via the shared archive-verification operation in `@agent-facets/protocol`, and uploads the verified bytes to the registry. Building and publishing are distinct: publish never constructs the archive on its normal path.
 
 `facet publish` accepts an optional directory argument and defaults to the current working directory, consistent with `facet build`, `facet edit`, and `facet create`:
 
@@ -44,6 +36,8 @@ facet publish            # publish the facet in the current directory
 facet publish ./cowsay   # publish the facet in ./cowsay
 ```
 
+When the expected built artifact is missing or out of date relative to the current source, publish handles each case explicitly — see [When the Built Artifact Is Missing](#when-the-built-artifact-is-missing) and [When the Built Artifact Has Drifted from Source](#when-the-built-artifact-has-drifted-from-source).
+
 ### Authentication
 
 Publishing is an authenticated operation. The CLI sends an `Authorization: Bearer <token>` header on the publish request, where the token is a personal access token (PAT) minted in the web UI. The CLI resolves the token from, in order of precedence:
@@ -51,7 +45,7 @@ Publishing is an authenticated operation. The CLI sends an `Authorization: Beare
 1. The `FACET_TOKEN` environment variable (preferred for CI and scripted use).
 2. A credentials file written by `facet login`, stored under `$FACET_DIR` (default `~/.facet/credentials`, mode `600`).
 
-If no token can be resolved, `facet publish` fails before packing or contacting the registry, directing the user to sign in.
+If no token can be resolved, `facet publish` fails before any verification or registry round-trip, directing the user to sign in.
 
 There are three commands for managing the credential:
 
@@ -69,27 +63,17 @@ When `FACET_TOKEN` is set, it takes precedence over the saved file; `login` and 
 
 ### What the Author Uploads
 
-- The facet manifest — unmodified
-- All locally authored text asset files (skills, agent prompts, command prompts)
+The CLI uploads the complete built `.facet` archive — the same self-contained two-layer artifact `facet build` produced. The outer tar contains the `build-manifest.json` (recording the integrity hash and per-asset hashes) and the gzipped inner archive (carrying the embedded `facet.json` and every declared asset). No part of the archive is re-derived at upload time: the bytes on disk are the bytes on the wire.
 
-Composed files MUST NOT be uploaded by the author. This is the key security property.
+The `name` and `version` used to address the upload come from the verified artifact's embedded manifest, not from a separate parse of the source-tree `facet.json`. This matters when the user explicitly chooses to ship a drifted artifact under its own embedded identity (see [identity drift](#when-the-built-artifact-has-drifted-from-source)).
 
 ### What the Registry Does
 
-1. **Validate the manifest.** Parse the facet manifest and validate against the schema. Invalid manifests MUST be rejected.
+1. **Verify the upload.** The registry runs the same archive-verification operation `facet publish` ran locally: parse the outer container, decompress the inner archive (within the registry's size policy), verify the integrity hash, verify each per-asset hash, validate the embedded manifest, and apply the artifact content rules. A verification failure rejects the publish.
 
-2. **Resolve text composition server-side.** For each entry in the `facets` section, the registry MUST fetch the referenced facet from its own storage — a trusted source. It extracts the composed assets and their files exactly as the local build would. Because the registry resolves composition from its own artifact store, the author cannot tamper with composed content.
+2. **Store the artifact.** The verified bytes are stored under `(name, version)` and the content hash is recorded for consumers to verify on download (see [Integrity Model](/specification/integrity)).
 
-3. **Detect naming collisions.** Composed asset names MUST NOT collide with locally authored asset names. Collisions MUST reject the publish.
-
-4. **Assemble the canonical archive.** The registry creates the facet archive containing:
-   - The facet manifest — unmodified
-   - All locally authored text asset files (from the author's upload)
-   - All composed text asset files (from the registry's own resolution)
-
-5. **Compute the content hash.** The registry MUST compute a SHA-256 hash of the assembled archive (see [Integrity Model](/specification/integrity)).
-
-6. **Store the artifact.** The registry stores the archive and content hash. Both MUST be available for download and verification by consumers.
+Publish-time errors from the registry — verification failures, duplicate-version conflicts, tier limits, size caps — are surfaced to the user with the registry's own text (see the [Authentication](#authentication) note above).
 
 ### Review Queue
 
@@ -99,38 +83,49 @@ A first-time publish of a reserved or over-budget global facet MAY be accepted i
 
 Once a facet version is published, the registry MUST NOT allow re-publishing the same name and version with different content. A version, once published, is immutable.
 
-## Publish Mechanisms
+### When the Built Artifact Is Missing
 
-Two mechanisms are defined for getting the author's work to the registry:
+When `dist/` is empty (or doesn't exist), there's nothing for publish to ship:
 
-### Direct Upload
+- **In an interactive terminal**, `facet publish` offers to build the current source. On acceptance, the CLI runs the build pipeline in the same view `facet build` uses, then verifies and uploads the freshly built artifact. On decline, publish reports that there is nothing to publish and exits non-zero — the registry is never contacted.
+- **In a non-interactive context** (CI, piped stdin), `facet publish` does not prompt. It fails with a clear "no built artifact; run `facet build` first" message and exits non-zero.
 
-The author runs `facet publish` locally. The CLI uploads the manifest and locally authored files. The registry assembles the archive server-side.
+### When the Built Artifact Has Drifted from Source
 
-### Git-Linked Pull
+When `dist/` contains a `.facet` but its embedded manifest disagrees with the current source-tree `facet.json`, `facet publish` distinguishes two drift classes and handles each with a different prompt.
 
-The author registers a Git repository URL with the registry. On publish trigger (tag, webhook, or manual), the registry clones the repository at the specified ref, extracts the manifest and locally authored files, and assembles the archive server-side. The registry uses only the manifest and locally authored files from the clone — composed content comes from its own storage.
+**Content drift** — same name and version, different manifest content (the user edited `description`, an asset descriptor, or similar without rebuilding). In an interactive terminal, the user gets a two-option prompt: rebuild and publish the new artifact, or publish the existing artifact unchanged. Both choices upload to the same `(name, version)` address; the registry has no view into the user's local edits.
 
-Both mechanisms MUST produce the same result: a canonical archive assembled by the registry with verified composition.
+**Identity drift** — different name or different version (the most common case: the user bumped `version` to `0.2.0` but `dist/` still has the `0.1.0` artifact). In an interactive terminal, the user gets a three-option prompt:
+
+1. **Build & publish the current source.** Run the build pipeline against the source's current name and version, verify the freshly built artifact, and upload it.
+2. **Publish the existing artifact as-is.** Upload the older built artifact under its own embedded `(name, version)`. If the registry already has that identity published, the upload fails with the registry's verbatim immutability message — that 409 is the signal that the source needs a version bump (or that the user already published the older version and forgot).
+3. **Cancel.** Exit non-zero without contacting the registry.
+
+The third option exists because there are real workflows where it succeeds: a user who built `v0.1.0` on machine A, copied the `.facet` to machine B, then started editing `facet.json` for the next version, and now wants to publish what they actually built before continuing.
+
+**In a non-interactive context**, both drift classes fall back to the same behavior: emit a warning to standard error summarising the drift, then upload the existing artifact unchanged. Pipelines that build a separately-versioned artifact and want it shipped as-is are exactly served by this default; pipelines that want a strict rebuild-from-source run `facet build && facet publish` as two commands.
 
 ## Build vs. Publish
 
-| Concern               | `facet build` (local)             | `facet publish` (registry)                   |
-| --------------------- | --------------------------------- | -------------------------------------------- |
-| Who assembles         | The CLI                           | The registry                                 |
-| Composition source    | Registry or local cache           | Registry's own artifact store                |
-| Output                | Local archive for testing         | Canonical archive stored in registry         |
-| Integrity guarantee   | None (local preview)              | Composed content matches attributed sources  |
-| Manifest modification | None                              | None                                         |
+| Concern                | `facet build`                                                                | `facet publish`                                                                                |
+| ---------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Role                   | Producer                                                                     | Verify-and-ship                                                                                |
+| Reads                  | Source tree (`facet.json` + asset files)                                     | Built archive in `dist/`                                                                       |
+| Produces               | `dist/<name>-<version>.facet`                                                | No on-disk output                                                                              |
+| Network                | None                                                                         | One POST to the registry                                                                       |
+| Verification           | Build-time validators (schema, content rules, collisions)                    | Full archive verification (integrity hash, per-asset hashes, embedded manifest, content rules) |
+| When the input is missing | Fails — no source to build                                                | Offers to build (TTY) or fails with `run facet build first` (CI)                               |
+| When the input is invalid | Fails with the relevant build error                                       | Fails with a verification error; never contacts the registry                                   |
+| Manifest mutation      | None                                                                         | None                                                                                           |
 
-## Why Server-Side Composition
+## Future: Text Composition
 
-If the author uploads a pre-assembled archive (including composed files), they could replace composed content with malicious prompts while the manifest still attributes the content to trusted sources. The `facets` section would claim "this skill came from `trusted-base@1.0.0`" but the actual file could contain anything.
-
-Server-side composition eliminates this attack. The registry fetches composed content from its own storage — the same storage that the original facet author published to. The content is guaranteed to match the attribution.
+The `facets` array in a manifest is reserved for referencing other facets — a composition model where a published facet can include text from another. This is not yet implemented. The current build and publish flow does not resolve composition references, and the registry does not assemble composed content. A future iteration will define how composition works end-to-end (likely with the author building a self-contained artifact locally, references resolved against signed registry sources, and the registry verifying composition signatures rather than re-assembling from scratch). Until that lands, the published `.facet` is exactly what `facet build` produced on the author's machine.
 
 ## Not in the Publish Flow
 
 - **MCP server resolution** — server references in `servers` are stored as declared. They are resolved at install time (see [Install & Resolve](/specification/install)).
 - **MCP server publishing** — servers are a separate artifact type with their own publish flow (see [MCP Server Assets](/specification/servers)).
 - **Lockfile generation** — the lockfile is an install-time artifact, not a publish-time artifact.
+- **Text composition resolution** — see [Future: Text Composition](#future-text-composition).

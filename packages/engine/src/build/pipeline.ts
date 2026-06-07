@@ -15,6 +15,7 @@ import {
   validateContentFiles,
 } from '@agent-facets/protocol'
 import { loadManifest, resolvePrompts } from '../loaders/facet.ts'
+import { buildArtifactFilename } from '../registry/artifact-path.ts'
 import { compressArchive } from './compress.ts'
 import { validateAdapterMetadata } from './validate-adapters.ts'
 
@@ -146,7 +147,7 @@ export async function runBuildPipeline(
   const tarBytes = assembleTar(entries)
   const integrity = computeContentHash(tarBytes)
   const innerArchiveBytes = compressArchive(tarBytes)
-  const archiveFilename = `${resolved.name}-${resolved.version}.facet`
+  const archiveFilename = buildArtifactFilename(resolved.name, resolved.version)
 
   // Build the build manifest and wrap into the outer tar
   const buildManifest = {
