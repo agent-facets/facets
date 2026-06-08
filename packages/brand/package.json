@@ -8,24 +8,33 @@
   "version": "0.5.3",
   "type": "module",
   "files": [
-    "src",
-    "!src/**/__tests__",
-    "!src/**/*.test.ts"
+    "dist"
   ],
   "exports": {
     ".": "./src/index.ts"
   },
   "scripts": {
+    "build": "tsdown",
     "prepack": "bun ../../scripts/prepack.ts",
     "postpack": "bun ../../scripts/postpack.ts",
     "types": "tsc --noEmit",
     "test": "bun test"
+  },
+  "devDependencies": {
+    "tsdown": "^0.22.0",
+    "typescript": "^6.0.3"
   },
   "peerDependencies": {
     "typescript": "^5 || ^6"
   },
   "publishConfig": {
     "access": "public",
-    "provenance": false
+    "provenance": false,
+    "exports": {
+      ".": {
+        "import": "./dist/index.mjs",
+        "types": "./dist/index.d.mts"
+      }
+    }
   }
 }
