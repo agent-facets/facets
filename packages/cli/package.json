@@ -18,7 +18,7 @@
     "postpack": "bun ../../scripts/postpack.ts",
     "types": "tsc --noEmit",
     "test": "bun test --path-ignore-patterns '**/*.e2e.test.ts'",
-    "test:e2e": "bun test --timeout 15000 src/__tests__/*.e2e.test.ts"
+    "test:e2e": "bun run build && bun test --timeout 15000 src/__tests__/*.e2e.test.ts"
   },
   "dependencies": {
     "@bomb.sh/args": "0.3.1",
