@@ -1,5 +1,11 @@
 # @agent-facets/adapter-opencode
 
+## 0.4.6
+
+### Patch Changes
+
+- [#299](https://github.com/agent-facets/facets/pull/299) [`982eafd`](https://github.com/agent-facets/facets/commit/982eafda525fa318ea8c41582c7541f552f34962) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Minor CI caching improvement
+
 ## 0.4.5
 
 ### Patch Changes

@@ -1,5 +1,11 @@
 # @agent-facets/brand
 
+## 0.5.4
+
+### Patch Changes
+
+- [#297](https://github.com/agent-facets/facets/pull/297) [`c4b420c`](https://github.com/agent-facets/facets/commit/c4b420c94d8e16737e34dc3202a900a450a303e9) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Add `tsdown` build pipeline to `@agent-facets/brand`
+
 ## 0.5.3
 
 ### Patch Changes
