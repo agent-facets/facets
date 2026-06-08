@@ -121,6 +121,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v0/facets/{name}/{version}/contents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the verified bodies of a version's resources
+         * @description Returns the verified body of each skill, agent, and command in the version. Because (name, version) is immutable, a concrete-version response is cacheable for a year with a strong ETag derived from the verified content fingerprint; conditional If-None-Match requests get a 304. `latest` resolves server-side and is not cached.
+         */
+        get: operations["getV0FacetsByNameByVersionContents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v0/facets/{name}/versions": {
         parameters: {
             query?: never;
@@ -487,7 +507,7 @@ export interface components {
     schemas: {
         ApiErrorBody: {
             /** @enum {unknown} */
-            code: "E_ACCOUNT_SUSPENDED" | "E_ADMIN_REQUIRED" | "E_ALREADY_ONBOARDED" | "E_API_KEY_MISSING" | "E_CLAIM_ALREADY_PENDING" | "E_CLAIM_PENDING_ELSEWHERE" | "E_COLLECTION_CLAIMED" | "E_COLLECTION_NOT_OWNED" | "E_DRY_RUN_REQUIRED" | "E_FACET_NOT_FOUND" | "E_INTERACTIVE_SESSION_REQUIRED" | "E_INVALID_NAME" | "E_INVALID_VERSION" | "E_LOGOUT_REQUIRES_JWT" | "E_MIGRATION_NOT_FOUND" | "E_MIGRATION_RUNNING" | "E_NAME_BLOCKED" | "E_ONBOARDING_REQUIRED" | "E_PREFIX_COLLISION_RETRY_EXHAUSTED" | "E_PROFILE_CORRUPT" | "E_QUEUE_FULL" | "E_QUEUE_ITEM_NOT_FOUND" | "E_QUEUE_ITEM_NOT_PENDING" | "E_REGISTRY_UNAVAILABLE" | "E_RESERVATION_EXISTS" | "E_RESERVATION_NOT_FOUND" | "E_RUN_NOT_FOUND" | "E_TARBALL_CORRUPTED" | "E_TARBALL_TOO_LARGE" | "E_TOKEN_EXPIRED" | "E_TOKEN_NOT_FOUND" | "E_TOKEN_REVOKED" | "E_UNAUTHENTICATED" | "E_USERNAME_TAKEN" | "E_USER_NOT_FOUND" | "E_VERSION_EXISTS";
+            code: "E_ACCOUNT_SUSPENDED" | "E_ADMIN_REQUIRED" | "E_ALREADY_ONBOARDED" | "E_API_KEY_MISSING" | "E_ARCHIVE_DECOMPRESSED_TOO_LARGE" | "E_ARCHIVE_MALFORMED" | "E_CLAIM_ALREADY_PENDING" | "E_CLAIM_PENDING_ELSEWHERE" | "E_COLLECTION_CLAIMED" | "E_COLLECTION_NOT_OWNED" | "E_CONTENT_INTEGRITY_MISMATCH" | "E_DRY_RUN_REQUIRED" | "E_FACET_NOT_FOUND" | "E_INTERACTIVE_SESSION_REQUIRED" | "E_INVALID_NAME" | "E_INVALID_VERSION" | "E_LOGOUT_REQUIRES_JWT" | "E_MANIFEST_CONTENT_MISMATCH" | "E_MIGRATION_ALREADY_COMPLETED" | "E_MIGRATION_NOT_FOUND" | "E_MIGRATION_RUNNING" | "E_NAME_BLOCKED" | "E_ONBOARDING_REQUIRED" | "E_PREFIX_COLLISION_RETRY_EXHAUSTED" | "E_PROFILE_CORRUPT" | "E_QUEUE_FULL" | "E_QUEUE_ITEM_NOT_FOUND" | "E_QUEUE_ITEM_NOT_PENDING" | "E_REGISTRY_UNAVAILABLE" | "E_RESERVATION_EXISTS" | "E_RESERVATION_NOT_FOUND" | "E_RUN_NOT_FOUND" | "E_TARBALL_CORRUPTED" | "E_TARBALL_TOO_LARGE" | "E_TOKEN_EXPIRED" | "E_TOKEN_NOT_FOUND" | "E_TOKEN_REVOKED" | "E_UNAUTHENTICATED" | "E_UNDECLARED_CONTENT" | "E_USERNAME_TAKEN" | "E_USER_NOT_FOUND" | "E_VERSION_EXISTS";
             docsUrl: string;
             error: string;
             fix: string;
@@ -535,6 +555,14 @@ export interface components {
             version: string;
             author?: string;
             description?: string;
+        };
+        ContentsResponse: {
+            content_integrity: string;
+            name: string;
+            resources: {
+                [key: string]: string;
+            };
+            version: string;
         };
         PublishResponse: {
             contentHash: string;
@@ -607,8 +635,11 @@ export interface components {
         };
         MigrationListResponse: {
             migrations: {
+                available: boolean;
                 description: string;
                 id: string;
+                /** @enum {unknown} */
+                kind: "once" | "rerunnable";
                 latest_run?: {
                     actor_username: string;
                     dry_run: boolean;
@@ -860,6 +891,47 @@ export interface operations {
             302: {
                 headers: {
                     Location?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Facet or version not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    getV0FacetsByNameByVersionContents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Canonical facet name. May contain a literal slash for namespaced facets — encode it as `%2F` in URLs (npm-style). */
+                name: string;
+                /** @description Semver version (e.g., `1.2.3`) or the literal `latest`. */
+                version: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Verified resource bodies */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentsResponse"];
+                };
+            };
+            /** @description Not modified (If-None-Match matched the ETag) */
+            304: {
+                headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
