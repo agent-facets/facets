@@ -13,7 +13,7 @@
       "outputs": ["$TURBO_ROOT$/test-results/**"]
     },
     "test:e2e": {
-      "dependsOn": ["build", "^build"],
+      "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/bunfig.toml"],
       "outputs": ["$TURBO_ROOT$/test-results/**"]
     },

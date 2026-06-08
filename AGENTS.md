@@ -440,31 +440,27 @@ itself is the assertion.
 
 The `check` pipeline (`bun check`) orchestrates `test`, `types`, `lint`, and other tasks via Turborepo. Caching rules:
 
-- **`build`** is cached by default. The CLI package (`packages/cli`) overrides this with `cache: false` in its package-level `turbo.json` because the compiled binary is too large for remote cache.
+- **`build`** is cached by default. The CLI package (`packages/cli`) overrides `outputs` to `[]` in its package-level `turbo.json` — Turbo caches the hash (knows the build succeeded) but never uploads the ~63 MB compiled binary to the remote cache.
 - **`test`** and **`types`** are cached and never depend on `build`. End-to-end tests that need a compiled binary live in a separate **`test:e2e`** task — see "Test conventions" below.
 - Package-level overrides live in `packages/<name>/turbo.json`.
 
 ### Test conventions
 
 - `*.test.ts` files are unit tests. They import from source (`../index.ts`, not `dist/`) and never depend on `build`.
-- `*.e2e.test.ts` files are end-to-end tests. They may spawn compiled binaries or read from `dist/`. They run via `test:e2e`, which `dependsOn: ["build", "^build"]`.
+- `*.e2e.test.ts` files are end-to-end tests. They may spawn compiled binaries or read from `dist/`. They run via `test:e2e`, which `dependsOn: ["^build"]` (upstream package builds). The CLI's `test:e2e` script inlines its own build (`bun run build && bun test ...`) so the compiled binary is produced fresh without making Turbo's cache depend on the large artifact.
 - `bun check` is the canonical entry point — it runs lint, types, unit tests, e2e tests, and the root-level `scripts/` tests via Turbo.
 - `bun test` at the repo root tests files in `scripts/` only (configured via root `bunfig.toml` `[test] root`). For per-package work use `bun test --cwd packages/<pkg>` (unit only) or `bun run --cwd packages/<pkg> test:e2e`.
 - The `test` script in each package excludes e2e files via `bun test --path-ignore-patterns '**/*.e2e.test.ts'` (set per-package in `package.json`).
 
 ### CLI build caching
 
-The CLI compiled binary is too large for remote cache (causes upload failures in CI). To handle this:
-
-- **Locally**: `packages/cli/turbo.json` has caching enabled — the CLI build caches normally.
-- **In CI**: The pipeline copies `packages/cli/turbo.ci.json` over `turbo.json` before running checks, which sets `cache: false` on the build task. After checks pass, it restores the original via `git checkout`.
-- **Keep in sync**: When modifying `packages/cli/turbo.json`, also update `turbo.ci.json`. The only difference between them should be `"cache": false` on the build task in the CI variant.
+The CLI compiled binary (~63 MB) is too large for the Lambda-based Turbo remote cache. To handle this, `packages/cli/turbo.json` sets `outputs: []` on the `build` task — Turbo caches the hash (knows the build succeeded for these inputs) but never tries to upload or download the binary. The `test:e2e` script inlines `bun run build &&` so the binary is produced fresh when e2e tests run, without poisoning the Turbo cache chain.
 
 ### When adding a new package
 
 1. Add `"test": "bun test"` and `"types": "tsc --noEmit"` scripts to its `package.json` so turbo picks them up for the `check` pipeline.
-2. If the package has end-to-end tests that depend on build output, name them `*.e2e.test.ts`, add a `test:e2e` script, and create a `turbo.json` with `"test:e2e": { "dependsOn": ["build", "^build"] }`. See `packages/cli/` for an example.
-3. If the package's build output is too large for remote cache, add `"build": { "cache": false }` to the package-level `turbo.json`.
+2. If the package has end-to-end tests that depend on build output, name them `*.e2e.test.ts`, add a `test:e2e` script that inlines the build (`bun run build && bun test ...`), and ensure the root `turbo.json`'s `test:e2e` task has `dependsOn: ["^build"]` (upstream builds only). See `packages/cli/` for an example.
+3. If the package's build output is too large for remote cache, set `"outputs": []` in the package-level `turbo.json` so Turbo caches the hash without uploading artifacts.
 
 ## Frontend
 
