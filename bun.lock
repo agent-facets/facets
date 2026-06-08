@@ -68,6 +68,10 @@
     "packages/brand": {
       "name": "@agent-facets/brand",
       "version": "0.5.3",
+      "devDependencies": {
+        "tsdown": "^0.22.0",
+        "typescript": "^6.0.3",
+      },
       "peerDependencies": {
         "typescript": "^5 || ^6",
       },
