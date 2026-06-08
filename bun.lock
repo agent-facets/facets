@@ -38,7 +38,7 @@
     },
     "packages/adapters/claude-code": {
       "name": "@agent-facets/adapter-claude-code",
-      "version": "0.4.5",
+      "version": "0.4.6",
       "devDependencies": {
         "@agent-facets/adapter": "workspace:*",
         "arktype": "2.2.0",
@@ -48,7 +48,7 @@
     },
     "packages/adapters/codex": {
       "name": "@agent-facets/adapter-codex",
-      "version": "0.3.5",
+      "version": "0.3.6",
       "devDependencies": {
         "@agent-facets/adapter": "workspace:*",
         "tsdown": "^0.22.0",
@@ -57,7 +57,7 @@
     },
     "packages/adapters/opencode": {
       "name": "@agent-facets/adapter-opencode",
-      "version": "0.4.5",
+      "version": "0.4.6",
       "devDependencies": {
         "@agent-facets/adapter": "workspace:*",
         "arktype": "2.2.0",
@@ -67,7 +67,7 @@
     },
     "packages/brand": {
       "name": "@agent-facets/brand",
-      "version": "0.5.3",
+      "version": "0.5.4",
       "devDependencies": {
         "tsdown": "^0.22.0",
         "typescript": "^6.0.3",
@@ -78,7 +78,7 @@
     },
     "packages/cli": {
       "name": "agent-facets",
-      "version": "0.16.0",
+      "version": "0.16.1",
       "bin": {
         "facet": "./bin/facet",
       },
