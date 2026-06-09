@@ -7,23 +7,20 @@
  * - `docs.agentfacets.io` serves Mintlify content; the CNAME pointing it at
  *   Mintlify's edge (`cname.mintlify-dns.com`) is defined in `infra/dns.ts`.
  *   The docs themselves are hosted by Mintlify, not by anything in this stack.
- * - WAF is enabled on the `main` stage only (SST's built-in managed rules +
- *   default rate limit). Preview and personal stages run without WAF to keep
- *   iteration cheap.
+ * - No WAF: the site is static CloudFront-hosted content with no server-side
+ *   attack surface (no backend, DB, or user input), so WAF filtering adds
+ *   cost without value.
  * - `www.agentfacets.io` 301-redirects to the apex via SST's native
  *   `domain.redirects` on the main stage.
  */
 
 import { SITE_DOMAIN, SITE_REDIRECTS } from './helpers/domain'
 
-const isMain = $app.stage === 'main'
-
 const siteRouter = new sst.aws.Router('AgentFacetsSite', {
   domain: {
     name: SITE_DOMAIN,
     redirects: SITE_REDIRECTS,
   },
-  waf: isMain ? true : undefined,
   invalidation: {
     paths: ['/*'],
     wait: false,
