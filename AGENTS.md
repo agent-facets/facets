@@ -23,9 +23,9 @@ account is shared with the sibling `facet-cafe` repo.
 | App name       | `agent-facets`                                     |
 | AWS profile    | `facet-cafe` (shared account)                      |
 | Node runtime   | `nodejs24.x` (matches `mise.toml` — single source) |
-| Main stage     | `main` → `agentfacets.io` (apex) + WAF             |
-| Preview stage  | `${stage}` → `${stage}.agentfacets.io`, no WAF     |
-| Personal stage | `${user}` → `${user}.agentfacets.io`, no WAF       |
+| Main stage     | `main` → `agentfacets.io` (apex)                   |
+| Preview stage  | `${stage}` → `${stage}.agentfacets.io`              |
+| Personal stage | `${user}` → `${user}.agentfacets.io`                |
 
 ### Prerequisites
 
