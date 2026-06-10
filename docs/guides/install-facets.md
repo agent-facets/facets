@@ -12,6 +12,7 @@ An adapter is the bridge between facets and your AI coding tool. It tells the `f
 ```sh
 facet adapter install
 ```
+<sub>[CLI reference ↗](/cli/adapters/install)</sub>
 
 Without a specifier, this launches an interactive picker listing the first-party adapters:
 
@@ -34,6 +35,7 @@ The adapter is downloaded, bundled into a self-contained `adapter.js`, and place
 ```sh
 facet search <term>
 ```
+<sub>[CLI reference ↗](/cli/search)</sub>
 
 Results show the facet name, latest version, asset counts, and the install command:
 
@@ -54,6 +56,7 @@ Run `facet search` with no arguments to list all published facets.
 ```sh
 facet add <source>
 ```
+<sub>[CLI reference ↗](/cli/add)</sub>
 
 `facet add` is the single command for bringing a facet into your project. It writes the entry to `facets.json` and runs the install pipeline in one step. There is no separate "install after add" step.
 
@@ -114,6 +117,7 @@ After cloning a project that already has `facets.json` and `facets.lock`:
 ```sh
 facet install
 ```
+<sub>[CLI reference ↗](/cli/install)</sub>
 
 This fetches and materializes every declared facet into your installed adapters. The lockfile ensures you get exactly the same versions your teammates resolved.
 
@@ -130,6 +134,7 @@ Frozen mode never re-resolves a specifier and never writes the lockfile. It fail
 ```sh
 facet list
 ```
+<sub>[CLI reference ↗](/cli/list)</sub>
 
 Shows all facets declared in `facets.json`. When `facets.lock` is present, displays the resolved version from the lockfile. For entries not yet installed, shows the source specifier so you know to run `facet install`.
 
@@ -138,6 +143,7 @@ Shows all facets declared in `facets.json`. When `facets.lock` is present, displ
 ```sh
 facet remove <name>
 ```
+<sub>[CLI reference ↗](/cli/remove)</sub>
 
 Removes the facet from `facets.json`, deletes its assets from every connected adapter, and rewrites the lockfile without it. Aliased as `facet rm`.
 

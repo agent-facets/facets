@@ -14,6 +14,7 @@ By the end of this guide you will have a working `.facet` file ready to publish 
 ```sh
 facet create my-facet
 ```
+<sub>[CLI reference ↗](/cli/authoring/create)</sub>
 
 The wizard walks you through four prompts:
 
@@ -172,6 +173,7 @@ Commands are user-invokable workflows. When an adapter supports slash commands (
 ```sh
 facet build
 ```
+<sub>[CLI reference ↗](/cli/authoring/build)</sub>
 
 The build runs a 6-stage validation pipeline:
 
@@ -204,6 +206,7 @@ If you add, rename, or remove files on disk without updating `facet.json`, the m
 ```sh
 facet edit
 ```
+<sub>[CLI reference ↗](/cli/authoring/edit)</sub>
 
 Reconciliation handles two drift cases:
 
