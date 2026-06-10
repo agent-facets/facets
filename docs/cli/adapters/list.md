@@ -1,6 +1,6 @@
 ---
 title: facet adapter list
-sidebarTitle: ' '
+sidebarTitle: list
 description: Lists installed adapters
 tag: facet adapter list
 ---

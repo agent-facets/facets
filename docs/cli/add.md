@@ -1,6 +1,6 @@
 ---
 title: facet add
-sidebarTitle: ' '
+sidebarTitle: add
 description: Adds one or more facets to `facets.json` and installs them
 tag: facet add
 ---

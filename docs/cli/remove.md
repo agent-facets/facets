@@ -1,6 +1,6 @@
 ---
 title: facet remove
-sidebarTitle: ' '
+sidebarTitle: remove
 description: Removes a facet from `facets.json` and uninstalls it
 tag: facet remove
 ---

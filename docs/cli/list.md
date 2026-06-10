@@ -1,6 +1,6 @@
 ---
 title: facet list
-sidebarTitle: ' '
+sidebarTitle: list
 description: List facets installed in the current project
 tag: facet list
 ---

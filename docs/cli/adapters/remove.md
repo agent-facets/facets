@@ -1,6 +1,6 @@
 ---
 title: facet adapter remove
-sidebarTitle: ' '
+sidebarTitle: remove
 description: Manage adapter installations
 tag: facet adapter remove
 ---

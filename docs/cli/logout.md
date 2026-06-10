@@ -1,6 +1,6 @@
 ---
 title: facet logout
-sidebarTitle: ' '
+sidebarTitle: logout
 description: Remove saved registry credentials
 tag: facet logout
 ---

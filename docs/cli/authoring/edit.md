@@ -1,6 +1,6 @@
 ---
 title: facet edit
-sidebarTitle: ' '
+sidebarTitle: edit
 description: Edit a facet project interactively
 tag: facet edit
 ---

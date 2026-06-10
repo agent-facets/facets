@@ -1,6 +1,6 @@
 ---
 title: facet publish
-sidebarTitle: ' '
+sidebarTitle: publish
 description: Verify a built facet and upload it to the registry
 tag: facet publish
 ---

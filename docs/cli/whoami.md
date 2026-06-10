@@ -1,6 +1,6 @@
 ---
 title: facet whoami
-sidebarTitle: ' '
+sidebarTitle: whoami
 description: Print the signed-in identity
 tag: facet whoami
 ---

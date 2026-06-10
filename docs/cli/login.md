@@ -1,6 +1,6 @@
 ---
 title: facet login
-sidebarTitle: ' '
+sidebarTitle: login
 description: Sign in to the facet registry
 tag: facet login
 ---

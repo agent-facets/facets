@@ -1,6 +1,6 @@
 ---
 title: facet create
-sidebarTitle: ' '
+sidebarTitle: create
 description: Create a new facet project interactively
 tag: facet create
 ---

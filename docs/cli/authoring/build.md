@@ -1,6 +1,6 @@
 ---
 title: facet build
-sidebarTitle: ' '
+sidebarTitle: build
 description: Build a facet from the current directory
 tag: facet build
 ---
