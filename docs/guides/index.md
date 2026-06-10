@@ -43,16 +43,16 @@ See [`facet self-update`](/cli/self-update) for flags and behavior.
 
 <CardGroup cols={3}>
 
+<Card title="Install Facets" icon="download" href="/guides/install-facets">
+  Set up an adapter, search the registry, add facets, and manage your project.
+</Card>
+
 <Card title="Create Your First Facet" icon="hammer" href="/guides/create-your-first-facet">
   Scaffold a project, write skills, agents, and commands, then build a `.facet` archive.
 </Card>
 
 <Card title="Publish a Facet" icon="upload" href="/guides/publish-a-facet">
   Sign in to the registry, build, publish, and handle drift detection.
-</Card>
-
-<Card title="Install Facets" icon="download" href="/guides/install-facets">
-  Set up an adapter, search the registry, add facets, and manage your project.
 </Card>
 
 </CardGroup>

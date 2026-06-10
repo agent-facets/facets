@@ -47,9 +47,9 @@
             "icon": "rocket",
             "pages": [
               "guides/index",
+              "guides/install-facets",
               "guides/create-your-first-facet",
-              "guides/publish-a-facet",
-              "guides/install-facets"
+              "guides/publish-a-facet"
             ]
           },
           {
