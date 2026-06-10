@@ -10,11 +10,16 @@ description: Set up the Facets development environment and learn the contributio
 ## Setup
 
 <Steps>
-  <Step title="Clone the repository">
+  <Step title="Fork and clone the repository">
+    Fork [agent-facets/facets](https://github.com/agent-facets/facets) on GitHub, then clone your fork:
+
     ```sh
-    git clone git@github.com:agent-facets/facets.git
+    git clone git@github.com:<your-username>/facets.git
     cd facets
+    git remote add upstream git@github.com:agent-facets/facets.git
     ```
+
+    Adding the `upstream` remote lets you pull in changes from the main repo later with `git fetch upstream`.
   </Step>
   <Step title="Install tools">
     ```sh
@@ -96,8 +101,9 @@ const { data, error, response } = await client.GET(
 
 ## Pull requests
 
+- Push your branch to your fork, then open a PR against `agent-facets/facets:main`.
 - Keep PRs focused on a single change.
-- Run `bun check` before submitting  -- CI runs the same command.
+- Run `bun check` before submitting -- CI runs the same command.
 - Add a changeset for any user-facing changes (see below).
 
 ## Changesets
