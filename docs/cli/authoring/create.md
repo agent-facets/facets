@@ -17,20 +17,20 @@ If a `facet.json` already exists in the target directory, the command prompts fo
 
 ## Wizard flow
 
-1. **Name** — the facet name, in kebab-case (e.g., `my-facet`).
-2. **Description** — a brief description of the facet.
-3. **Version** — defaults to `0.0.0`.
-4. **Assets** — add skills, agents, and commands by name. At least one asset is required. Each asset shows its description below the name — press Enter to edit the name, or press ↓ during name editing to edit the description in your terminal editor.
-5. **Confirmation** — review the summary and confirm.
+1. **Name**  -- the facet name, in kebab-case (e.g., `my-facet`).
+2. **Description**  -- a brief description of the facet.
+3. **Version**  -- defaults to `0.0.0`.
+4. **Assets**  -- add skills, agents, and commands by name. At least one asset is required. Each asset shows its description below the name  -- press Enter to edit the name, or press ↓ during name editing to edit the description in your terminal editor.
+5. **Confirmation**  -- review the summary and confirm.
 
 ## Generated files
 
 On confirmation, the wizard writes:
 
-- `facet.json` — the manifest with named asset descriptors
-- `skills/<name>/SKILL.md` — starter skill template (Agent Skills directory convention)
-- `agents/<name>.md` — starter agent template
-- `commands/<name>.md` — starter command template
+- `facet.json`  -- the manifest with named asset descriptors
+- `skills/<name>/SKILL.md`  -- starter skill template (Agent Skills directory convention)
+- `agents/<name>.md`  -- starter agent template
+- `commands/<name>.md`  -- starter command template
 
 Content files are markdown. Optional YAML front matter is preserved verbatim through the build; at install time the manifest's `name`, `description`, and any per-adapter extras are merged on top of whatever the author wrote.
 

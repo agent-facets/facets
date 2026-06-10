@@ -3,25 +3,25 @@ title: "Integrity Model"
 description: "Content hashing, OCI digest pinning, and API surface hashing."
 ---
 
-Facets and MCP servers are distributed artifacts. Consumers need confidence that what they install is what was published — no tampering, no corruption, no substitution. This page defines how artifacts are hashed, when hashes are verified, and how structural changes to MCP server APIs are detected.
+Facets and MCP servers are distributed artifacts. Consumers need confidence that what they install is what was published  -- no tampering, no corruption, no substitution. This page defines how artifacts are hashed, when hashes are verified, and how structural changes to MCP server APIs are detected.
 
 Three distinct integrity concerns are addressed:
 
-1. **Content integrity** — does the downloaded artifact match what was published?
-2. **OCI digest integrity** — for ref-mode MCP servers, does the container image match a known-good digest?
-3. **API surface integrity** — has an MCP server's API changed structurally between versions?
+1. **Content integrity**  -- does the downloaded artifact match what was published?
+2. **OCI digest integrity**  -- for ref-mode MCP servers, does the container image match a known-good digest?
+3. **API surface integrity**  -- has an MCP server's API changed structurally between versions?
 
 ## Content Hashing
 
 ### What It Covers
 
-Facet archives and source-mode MCP server artifacts — anything published to the facets registry.
+Facet archives and source-mode MCP server artifacts  -- anything published to the facets registry.
 
 ### How It Works
 
 At publish time, the registry MUST compute a SHA-256 hash of the complete artifact (the archive). The hash is stored as the artifact's integrity value. At install time, the CLI MUST download the artifact, compute the hash, and compare it to the registry's recorded value.
 
-A mismatch MUST be a hard failure — the artifact MUST be rejected.
+A mismatch MUST be a hard failure  -- the artifact MUST be rejected.
 
 ### Format
 
@@ -43,7 +43,7 @@ The bytes the consumer receives are identical to the bytes the registry stored. 
 
 ### What It Covers
 
-Ref-mode MCP servers — container images hosted in OCI registries (GHCR, Docker Hub, ECR, etc.).
+Ref-mode MCP servers  -- container images hosted in OCI registries (GHCR, Docker Hub, ECR, etc.).
 
 ### How It Works
 
@@ -57,8 +57,8 @@ servers:
 
 OCI images have two reference types:
 
-- **Tags** (`:v2`, `:latest`) — mutable labels. A tag can be moved to point to a different image at any time.
-- **Digests** (`@sha256:abc123...`) — immutable content hashes. A digest always points to the same image.
+- **Tags** (`:v2`, `:latest`)  -- mutable labels. A tag can be moved to point to a different image at any time.
+- **Digests** (`@sha256:abc123...`)  -- immutable content hashes. A digest always points to the same image.
 
 At install time, the CLI MUST resolve the tag to a digest by querying the OCI registry. The resolved digest MUST be pinned in the lockfile:
 
@@ -69,7 +69,7 @@ servers:
     digest: "sha256:abc123..."
 ```
 
-If the author specifies a digest directly (`image: "ghcr.io/acme/slack-bot@sha256:abc123"`), no resolution is needed — the digest MUST be used as-is.
+If the author specifies a digest directly (`image: "ghcr.io/acme/slack-bot@sha256:abc123"`), no resolution is needed  -- the digest MUST be used as-is.
 
 ### When It Is Applied
 
@@ -85,13 +85,13 @@ Once installed, the consumer always gets the same container image regardless of 
 
 ### Notes
 
-OCI images do not have semver versions — they have tags and digests. Tags that look like versions (`:v1.5.0`) are labels, not semantic versions. Floor constraints do NOT apply to ref-mode servers. Ref-mode servers are pinned by tag + resolved digest.
+OCI images do not have semver versions  -- they have tags and digests. Tags that look like versions (`:v1.5.0`) are labels, not semantic versions. Floor constraints do NOT apply to ref-mode servers. Ref-mode servers are pinned by tag + resolved digest.
 
 ## API Surface Hashing
 
 ### What It Covers
 
-MCP server API surfaces — the structural contract between a server and its consumers. Applies to both source-mode and ref-mode servers.
+MCP server API surfaces  -- the structural contract between a server and its consumers. Applies to both source-mode and ref-mode servers.
 
 ### How It Works
 
@@ -141,9 +141,9 @@ It does NOT catch behavioral changes where the API surface is unchanged but the 
 
 | Artifact type               | Content hash | OCI digest | API surface hash |
 | --------------------------- | ------------ | ---------- | ---------------- |
-| Facet archive               | Yes          | —          | —                |
-| Source-mode server artifact  | Yes          | —          | Yes              |
-| Ref-mode server (OCI image) | —            | Yes        | Yes              |
+| Facet archive               | Yes          |  --          |  --                |
+| Source-mode server artifact  | Yes          |  --          | Yes              |
+| Ref-mode server (OCI image) |  --            | Yes        | Yes              |
 
 ## Where Hashes Live
 
@@ -161,5 +161,5 @@ It does NOT catch behavioral changes where the API surface is unchanged but the 
 | Install          | OCI tag resolved to digest; digest pinned in lockfile for ref-mode.       |
 | Install          | API surface hash computed and recorded for all servers.                   |
 | Upgrade          | Content hash or OCI digest verified for new versions.                     |
-| Upgrade          | API surface hash compared to lockfile — changes flagged to consumer.      |
+| Upgrade          | API surface hash compared to lockfile  -- changes flagged to consumer.      |
 | Lockfile install | Pinned content hash or OCI digest used for exact reproduction.            |

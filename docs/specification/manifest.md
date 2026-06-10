@@ -1,6 +1,6 @@
 ---
 title: "Manifest Schema"
-description: "The facet manifest format — fields, types, and constraints."
+description: "The facet manifest format  -- fields, types, and constraints."
 ---
 
 The facet manifest (`facet.json`) is the source of truth for what a facet contains, what other facets it composes text
@@ -47,7 +47,7 @@ servers:
 **Closed-alpha note.** The `facets:` and `servers:` sections are spec'd here for the open-beta target, but the current installer treats them differently:
 
 - A non-empty `facets:` (composition) is **hard-rejected** during install. Composition support is open-beta scope.
-- A `servers:` declaration is **warned** during install — the server names are surfaced to the user but not materialized. Server materialization is also open-beta scope.
+- A `servers:` declaration is **warned** during install  -- the server names are surfaced to the user but not materialized. Server materialization is also open-beta scope.
 
 Authoring a facet with either section today produces a manifest the installer will refuse (composition) or partially handle (servers). Plan accordingly.
 </Note>
@@ -64,7 +64,7 @@ Authoring a facet with either section today produces a manifest the installer wi
 
 The `name` and `version` fields MUST be present. A manifest missing either field MUST be rejected.
 
-Consumers MUST tolerate unrecognized top-level fields. Unknown fields MUST be ignored — not rejected.
+Consumers MUST tolerate unrecognized top-level fields. Unknown fields MUST be ignored  -- not rejected.
 
 ## Text Assets
 
@@ -76,7 +76,7 @@ Text assets are the locally authored content included in the facet.
 | `agents`   | No       | map of string → agent descriptor  | Agent name → agent descriptor (description, prompt, adapter config).         |
 | `commands` | No       | map of string → command descriptor| Command name → command descriptor (description, prompt).                     |
 
-A facet MUST have at least one text asset — either locally authored or composed from other facets via the `facets` section. A manifest with no text assets MUST be rejected.
+A facet MUST have at least one text asset  -- either locally authored or composed from other facets via the `facets` section. A manifest with no text assets MUST be rejected.
 
 ### Agent Descriptor
 
@@ -143,8 +143,8 @@ A selective entry MUST include at least one asset type (`skills`, `agents`, or `
 
 Text composition is resolved before the facet archive reaches the registry. The `facets` section serves dual purpose:
 
-1. **Composition directive** — instructs the build/publish process which text assets to include from other facets.
-2. **Attribution record** — documents exactly where composed content came from.
+1. **Composition directive**  -- instructs the build/publish process which text assets to include from other facets.
+2. **Attribution record**  -- documents exactly where composed content came from.
 
 The manifest itself is never modified by composition. The build process reads it, resolves composition sources, and packages the composed files alongside local files into the facet archive.
 
@@ -186,7 +186,7 @@ The image reference follows standard OCI conventions: `:` for tags, `@` for dige
 
 | Key         | Value type | Mode        | Description                                                                |
 | ----------- | ---------- | ----------- | -------------------------------------------------------------------------- |
-| server name | string     | Source-mode | Floor version — minimum acceptable version (e.g., `"1.0.0"`).             |
+| server name | string     | Source-mode | Floor version  -- minimum acceptable version (e.g., `"1.0.0"`).             |
 | server name | object     | Ref-mode    | Object with `image` field containing an OCI image reference.               |
 
 ## Schema Constraints
@@ -196,4 +196,4 @@ The image reference follows standard OCI conventions: `:` for tags, `@` for dige
 3. Composed asset names MUST NOT collide with locally authored asset names.
 4. The `@` character is used for both scoping (`@scope/name`) and version pinning (`name@version`). Scoped and versioned: `@scope/name@version`.
 5. Consumers MUST tolerate unrecognized fields. Unknown fields MUST be ignored.
-6. The manifest MUST NOT be modified by any tooling — it is immutable.
+6. The manifest MUST NOT be modified by any tooling  -- it is immutable.

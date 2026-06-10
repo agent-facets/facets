@@ -8,10 +8,10 @@ description: How CircleCI authenticates with npm using OIDC tokens, and how to c
 OIDC trusted publishing lets CircleCI publish packages to npm without storing npm auth tokens. Instead, CircleCI provides a short-lived OIDC token (`$CIRCLE_OIDC_TOKEN_V2`) that npm validates against a trusted publisher configuration on each package. If the token's claims match (organization, project, pipeline, context), npm accepts the publish.
 
 <Info>
-  **Trusted publishing vs. provenance attestation** — these are different things. Trusted publishing is an
+  **Trusted publishing vs. provenance attestation**  -- these are different things. Trusted publishing is an
   **authentication** mechanism (how CI proves it's allowed to publish). Provenance attestation is a **supply-chain
   security** feature (cryptographically linking a package to its source). npm's `--provenance` flag only works on GitHub
-  Actions and GitLab CI — it is not supported on CircleCI. This project uses OIDC for authentication only.
+  Actions and GitLab CI  -- it is not supported on CircleCI. This project uses OIDC for authentication only.
 </Info>
 
 ## When to configure
@@ -99,10 +99,10 @@ The 12 platform packages that need OIDC configuration:
 2. When `npm publish` runs, npm exchanges the token with the registry. The registry validates the token's claims against the package's trusted publisher configuration.
 3. If the claims match, the publish succeeds. No long-lived npm tokens are involved.
 
-All CLI packages publish directly to the `latest` dist-tag. Platform binaries are published first via a matrix workflow (one per executor), verified on the registry, then the CLI package publishes last. This ordering ensures users never see a partial release — the CLI package (`agent-facets`) is the entry point, and it only appears on `latest` after all its platform dependencies are confirmed available.
+All CLI packages publish directly to the `latest` dist-tag. Platform binaries are published first via a matrix workflow (one per executor), verified on the registry, then the CLI package publishes last. This ordering ensures users never see a partial release  -- the CLI package (`agent-facets`) is the entry point, and it only appears on `latest` after all its platform dependencies are confirmed available.
 
 <Note>
   npm's OIDC trusted publishing only supports `npm publish`. Other operations like `npm dist-tag add` cannot
   authenticate via OIDC ([npm/cli#8547](https://github.com/npm/cli/issues/8547)). This is why we publish directly to
-  `latest` instead of publishing to a staging tag and promoting — the promote step would require a static npm token.
+  `latest` instead of publishing to a staging tag and promoting  -- the promote step would require a static npm token.
 </Note>

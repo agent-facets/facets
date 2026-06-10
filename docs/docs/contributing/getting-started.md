@@ -5,7 +5,7 @@ description: Set up the Facets development environment and learn the contributio
 
 ## Prerequisites
 
-- [mise](https://mise.jdx.dev) — manages tooling (Bun, lefthook) via `mise.toml`
+- [mise](https://mise.jdx.dev)  -- manages tooling (Bun, lefthook) via `mise.toml`
 
 ## Setup
 
@@ -78,7 +78,7 @@ bun run --cwd packages/engine codegen:registry --check --strict
 ```
 
 `--strict` exits non-zero on stale, which is what CircleCI runs for
-the `openapi-snapshot-freshness` job — produces a red X on the PR if
+the `openapi-snapshot-freshness` job  -- produces a red X on the PR if
 your snapshot is older than 7 days. The check is advisory by default
 and does not block merge.
 
@@ -97,7 +97,7 @@ const { data, error, response } = await client.GET(
 ## Pull requests
 
 - Keep PRs focused on a single change.
-- Run `bun check` before submitting — CI runs the same command.
+- Run `bun check` before submitting  -- CI runs the same command.
 - Add a changeset for any user-facing changes (see below).
 
 ## Changesets
@@ -116,7 +116,7 @@ A good changeset describes:
 - **Why** the change was made
 - **How** a consumer should update their code (if applicable)
 
-Not every PR needs a changeset — changes to docs, CI, or other non-published files can skip this step. The [changeset bot](https://github.com/apps/changeset-bot) comments on every PR to indicate whether one is present.
+Not every PR needs a changeset  -- changes to docs, CI, or other non-published files can skip this step. The [changeset bot](https://github.com/apps/changeset-bot) comments on every PR to indicate whether one is present.
 
 ## Platform packages
 

@@ -1,8 +1,81 @@
 ---
 title: Agents
-description: Portable agent definitions that allow for adapter-level configuration
-
+description: Portable agent definitions with role, behavior, and tool configuration
 ---
 
-TODO
+An agent is a markdown file defining an AI assistant persona with a specific role, behavior, and tool access. Agents are the identity layer of a facet -- they define who the assistant is and how it should act.
 
+## File location
+
+```
+agents/<name>.md
+```
+
+Each agent is a single markdown file. The filename (minus `.md`) is the agent name.
+
+## Manifest entry
+
+In `facet.json`, agents are declared as a map of name to descriptor:
+
+```json
+{
+  "agents": {
+    "reviewer": { "description": "Reviews code changes for correctness and style" }
+  }
+}
+```
+
+The `description` field is required. Adapter-specific metadata can be declared in the `adapters` field:
+
+```json
+{
+  "agents": {
+    "reviewer": {
+      "description": "Reviews code changes for correctness and style",
+      "adapters": {
+        "opencode": {
+          "tools": { "grep": true, "bash": true }
+        }
+      }
+    }
+  }
+}
+```
+
+At build time, each adapter's `buildAssetMetadata()` validates its metadata schema. Unknown adapters produce a warning but do not fail the build.
+
+## Content format
+
+The file content is the agent's system prompt. YAML front matter is optional. When present, it is preserved through the build and merged with the manifest's metadata at install time.
+
+```markdown
+You are a code reviewer. Your role is to review code changes for
+correctness, style, and maintainability.
+
+## Behavior
+
+- Read the diff carefully before commenting.
+- Distinguish between blocking issues and suggestions.
+- When you find a bug, explain why it is wrong and suggest a fix.
+- Do not comment on formatting if the project uses an autoformatter.
+
+## Tool access
+
+You have access to file reading and grep tools. Use them to check
+surrounding context when a diff is ambiguous.
+```
+
+## When to use agents
+
+Agents define **who the assistant is** -- a persona with a role, behavioral rules, and tool access. Use agents for:
+
+- Specialized reviewer personas (security reviewer, accessibility auditor)
+- Domain experts (database advisor, API designer)
+- Workflow-specific assistants (deployment helper, debugging partner)
+
+Use [skills](/docs/learn/skills) when you need passive knowledge without a persona. Use [commands](/docs/learn/commands) when you need a user-invokable action.
+
+## Further reading
+
+- [Manifest Schema](/specification/manifest) -- the `agents` field in `facet.json`
+- [Getting Started](/guides) -- step-by-step guide including writing an agent

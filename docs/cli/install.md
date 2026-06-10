@@ -13,16 +13,16 @@ facet install
 
 Reads `facets.json`, fetches and materializes every facet declared there, and writes a `facets.lock` recording the exact resolved versions and integrity hashes. Used after a fresh `git clone`, after pulling teammate changes that updated the manifest, or to reapply assets after manual edits to adapter directories.
 
-`facet install` does not accept positional arguments — to add a new facet, use [`facet add`](/cli/add).
+`facet install` does not accept positional arguments  -- to add a new facet, use [`facet add`](/cli/add).
 
 ## What it does
 
 1. **Validate the project.** `facets.json` must exist; at least one adapter must be installed (the picker auto-launches on a TTY if none are).
 2. **Acquire an install lock** at `$FACET_DIR/locks/<basename>-<hash>.lock` so two installs can't race. The lock lives under the facet directory tree (not in your project root), keyed by `sha256(realpath(projectRoot))` so each project gets its own slot.
-3. **Load the existing lockfile**, or use an empty skeleton if `facets.lock` is absent — `facet install` bootstraps the lockfile on first run, the same way `bun install` creates `bun.lock`.
+3. **Load the existing lockfile**, or use an empty skeleton if `facets.lock` is absent  -- `facet install` bootstraps the lockfile on first run, the same way `bun install` creates `bun.lock`.
 4. **For each facet in `facets.json`:**
    - If the lockfile pins a version that **satisfies** the manifest specifier, that version is honored; ranges in the manifest are not re-resolved.
-   - If the locked version **no longer satisfies** the manifest specifier — because you edited `facets.json` or pulled a teammate's change — the entry is stale: the manifest specifier is re-resolved and the lockfile entry is replaced. If the new specifier resolves to nothing (e.g. a version that doesn't exist), install fails and the project is left unchanged.
+   - If the locked version **no longer satisfies** the manifest specifier  -- because you edited `facets.json` or pulled a teammate's change  -- the entry is stale: the manifest specifier is re-resolved and the lockfile entry is replaced. If the new specifier resolves to nothing (e.g. a version that doesn't exist), install fails and the project is left unchanged.
    - If the lockfile has no entry yet (newly-added or freshly-bootstrapped), the manifest specifier is resolved fresh.
    - Fetch (from cache, or via git clone / registry / local path), verify integrity, build, and materialize the assets into every adapter.
 5. **Drift removal.** Any facet in the prior lockfile but no longer in `facets.json` has its assets cleaned up.
@@ -31,13 +31,13 @@ Reads `facets.json`, fetches and materializes every facet declared there, and wr
 
 ## Lockfile semantics
 
-`facets.json` is the source of truth; `facets.lock` records the resolved state so that an **unchanged** manifest installs reproducibly across machines. A pinned entry in `facets.lock` is honored as long as it **satisfies** its manifest specifier — a wildcard like `1.*` keeps using the locked `1.2.3` and won't drift to a newer `1.2.4`.
+`facets.json` is the source of truth; `facets.lock` records the resolved state so that an **unchanged** manifest installs reproducibly across machines. A pinned entry in `facets.lock` is honored as long as it **satisfies** its manifest specifier  -- a wildcard like `1.*` keeps using the locked `1.2.3` and won't drift to a newer `1.2.4`.
 
-When the manifest and lockfile disagree — you bumped an exact version, widened a wildcard the lock no longer falls within, or pulled a manifest change — the lockfile entry is **stale**. `facet install` re-resolves the manifest specifier and updates the lockfile to match. If the requested version doesn't exist in the registry, install fails rather than silently keeping the old one.
+When the manifest and lockfile disagree  -- you bumped an exact version, widened a wildcard the lock no longer falls within, or pulled a manifest change  -- the lockfile entry is **stale**. `facet install` re-resolves the manifest specifier and updates the lockfile to match. If the requested version doesn't exist in the registry, install fails rather than silently keeping the old one.
 
-To change the locked version of a facet, you can also run `facet add <facet>@<new-version>` — that updates both the manifest and the lockfile in one step. (A dedicated `facet update` command is on the roadmap.)
+To change the locked version of a facet, you can also run `facet add <facet>@<new-version>`  -- that updates both the manifest and the lockfile in one step. (A dedicated `facet update` command is on the roadmap.)
 
-To enforce that the lockfile is already in sync — never re-resolving — use [`--frozen-lockfile`](#frozen-lockfile).
+To enforce that the lockfile is already in sync  -- never re-resolving  -- use [`--frozen-lockfile`](#frozen-lockfile).
 
 ## Outcomes
 
@@ -46,7 +46,7 @@ The summary line classifies each facet by what happened on disk:
 | Outcome      | Meaning                                                                                       |
 | ------------ | --------------------------------------------------------------------------------------------- |
 | `installed`  | Facet was not in the previous lockfile.                                                       |
-| `updated`    | Facet was in the lockfile at a different version — including when a stale entry was re-resolved to match the manifest. Summary shows `(was X → Y)`. |
+| `updated`    | Facet was in the lockfile at a different version  -- including when a stale entry was re-resolved to match the manifest. Summary shows `(was X → Y)`. |
 | `repaired`   | Same lockfile entry, but at least one adapter file was missing or had drifted from the lockfile content. Restored. |
 | `unchanged`  | Same lockfile entry, every asset already in its desired state. Nothing was written.           |
 | `removed`    | Facet was in the lockfile but is no longer declared in `facets.json`. Assets cleaned up.      |
@@ -69,13 +69,13 @@ Git sources are pinned by commit: the lockfile records the resolved commit SHA (
 
 ## Cache
 
-Resolved facet content is stored at `$FACET_DIR/cache/<name>@<version>/` (default `~/.facet/cache/`) so subsequent installs of the same identity don't hit the network. The cache is treated as trusted material — once written, it's never re-hashed on read.
+Resolved facet content is stored at `$FACET_DIR/cache/<name>@<version>/` (default `~/.facet/cache/`) so subsequent installs of the same identity don't hit the network. The cache is treated as trusted material  -- once written, it's never re-hashed on read.
 
 The cache root is part of the facet directory tree; set `FACET_DIR` to change it. See the [environment variables reference](/cli/env).
 
 ## Servers
 
-A facet that declares `servers:` (MCP server dependencies) emits a warning during install — the server names are listed but not materialized. Server materialization is open-beta scope.
+A facet that declares `servers:` (MCP server dependencies) emits a warning during install  -- the server names are listed but not materialized. Server materialization is open-beta scope.
 
 ## Composition
 
@@ -90,7 +90,7 @@ A facet that declares `facets: [...]` (cherry-picking from other facets) is hard
 
 ## Frozen lockfile
 
-`facet install --frozen-lockfile` inverts the source of truth: the **lockfile** becomes authoritative and is reproduced exactly — no extra facets, no missing facets, no source changes, no content changes. In this mode install never re-resolves a specifier and never writes `facets.lock`. Before installing, it verifies the lockfile fully covers the manifest, and fails — changing nothing on disk — if any of these hold:
+`facet install --frozen-lockfile` inverts the source of truth: the **lockfile** becomes authoritative and is reproduced exactly  -- no extra facets, no missing facets, no source changes, no content changes. In this mode install never re-resolves a specifier and never writes `facets.lock`. Before installing, it verifies the lockfile fully covers the manifest, and fails  -- changing nothing on disk  -- if any of these hold:
 
 - no `facets.lock` exists;
 - a facet in `facets.json` has no lockfile entry;
@@ -98,7 +98,7 @@ A facet that declares `facets: [...]` (cherry-picking from other facets) is hard
 - the lockfile pins a facet `facets.json` no longer declares (an orphaned entry a normal install would prune);
 - a git or local facet's manifest source (URL, ref, or path) no longer matches the locked source.
 
-It also verifies content: every facet — including local sources, which a normal install rebuilds from disk — must reproduce its locked integrity. Editing a local facet's files fails a frozen install instead of silently overwriting the entry, exactly as a git tag move would.
+It also verifies content: every facet  -- including local sources, which a normal install rebuilds from disk  -- must reproduce its locked integrity. Editing a local facet's files fails a frozen install instead of silently overwriting the entry, exactly as a git tag move would.
 
 This is the mode to use in CI: it guarantees that `facets.json` and `facets.lock` are already in agreement, so a forgotten `facet add`, a hand-edited manifest, or drifted local content fails the build loudly instead of silently mutating the lockfile. It mirrors the `--frozen-lockfile` contract from `npm` and `bun`.
 
@@ -111,5 +111,5 @@ This is the mode to use in CI: it guarantees that `facets.json` and `facets.lock
 
 ## See also
 
-- [`facet add`](/cli/add) — adds a new facet to `facets.json` and installs it in one step.
-- [`facet adapter install`](/cli/adapters/install) — install adapters that `facet install` materializes facets into.
+- [`facet add`](/cli/add)  -- adds a new facet to `facets.json` and installs it in one step.
+- [`facet adapter install`](/cli/adapters/install)  -- install adapters that `facet install` materializes facets into.

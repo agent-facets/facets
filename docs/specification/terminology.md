@@ -39,8 +39,8 @@ This page defines the canonical terms used throughout the Facets specification. 
 | **Facet**          | A named, versioned collection of text assets defined by a manifest (the facet manifest). What the author creates locally, what gets published to the registry, and what gets extracted after install. |
 | **Facet archive**  | The published, self-contained artifact stored in the registry. Contains the manifest and all text assets (locally authored and composed). The transport form between publish and install.        |
 | **Asset**          | A discrete unit of content within a facet. Assets are either text assets (skills, agents, commands) or server assets (MCP server references).                                                  |
-| **Text asset**     | An asset containing text — a skill, an agent prompt, or a command prompt. Text assets are included in the facet archive.                                                                       |
-| **Server asset**   | An MCP server reference in a facet's manifest. Server assets are linked, not included — server code is published and archived separately from the facet.                                       |
+| **Text asset**     | An asset containing text  -- a skill, an agent prompt, or a command prompt. Text assets are included in the facet archive.                                                                       |
+| **Server asset**   | An MCP server reference in a facet's manifest. Server assets are linked, not included  -- server code is published and archived separately from the facet.                                       |
 | **MCP server**     | An asset type containing code (not text). Published independently from facets, versioned independently, resolved at install time. Two execution modes: source-mode and ref-mode.               |
 | **Adapter**        | An AI coding tool that wraps around an LLM (e.g., OpenCode, Claude Code, Codex). The adapter is the abstraction layer over its tool's storage, configuration, and asset conventions. Installed via `facet adapter install`. |
 
@@ -85,8 +85,8 @@ Use "integrity" when referring to the verification process ("integrity verificat
 
 | Stage          | What exists                                                                                                                                            |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Authoring**  | A facet — manifest and text assets in a local directory.                                                                                               |
-| **Publishing** | The facet is built into an archive — text assets assembled, content hash computed, stored in the registry.                                              |
+| **Authoring**  | A facet  -- manifest and text assets in a local directory.                                                                                               |
+| **Publishing** | The facet is built into an archive  -- text assets assembled, content hash computed, stored in the registry.                                              |
 | **Installing**    | The archive is downloaded and verified. Text assets are presented to the consumer for review, then placed in provider-specified directories. Server references are resolved and pinned in the lockfile. |
 | **Upgrading**     | Text asset changes are surfaced to the consumer with diffs. The consumer accepts, rejects, or modifies each change. Server API surface changes are flagged. The lockfile is updated. |
 | **Uninstalling**  | Assets being removed are summarized. The consumer can keep individual text assets as unmanaged. The lockfile entry is removed. |
