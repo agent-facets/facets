@@ -1,8 +1,6 @@
 ---
 title: facet remove
-sidebarTitle: remove
-description: Removes a facet from `facets.json` and uninstalls it
-tag: facet remove
+description: Remove one or more facets from the project
 ---
 
 ## Usage

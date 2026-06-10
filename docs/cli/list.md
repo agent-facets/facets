@@ -1,8 +1,6 @@
 ---
 title: facet list
-sidebarTitle: list
 description: List facets installed in the current project
-tag: facet list
 ---
 
 ## Usage

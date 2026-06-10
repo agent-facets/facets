@@ -1,8 +1,6 @@
 ---
 title: facet build
-sidebarTitle: build
 description: Build a facet from the current directory
-tag: facet build
 ---
 
 ## Usage

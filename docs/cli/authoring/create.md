@@ -1,8 +1,6 @@
 ---
 title: facet create
-sidebarTitle: create
-description: Create a new facet project interactively
-tag: facet create
+description: Scaffolds a new facet project
 ---
 
 ## Usage

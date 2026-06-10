@@ -1,8 +1,6 @@
 ---
 title: facet login
-sidebarTitle: login
 description: Sign in to the facet registry
-tag: facet login
 ---
 
 ## Usage

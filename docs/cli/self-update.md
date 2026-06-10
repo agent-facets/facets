@@ -1,8 +1,6 @@
 ---
 title: facet self-update
-sidebarTitle: self-update
 description: Update the facet CLI to a newer version
-tag: facet self-update
 ---
 
 ## Usage

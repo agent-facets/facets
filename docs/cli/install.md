@@ -1,8 +1,6 @@
 ---
 title: facet install
-sidebarTitle: install
-description: Installs facets defined in `facets.json` and updates `facets.lock`
-tag: facet install
+description: Installs all facets declared in `facets.json`
 ---
 
 ## Usage

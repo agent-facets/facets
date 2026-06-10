@@ -1,8 +1,6 @@
 ---
 title: facet search
-sidebarTitle: search
 description: Search the registry for published facets
-tag: facet search
 ---
 
 ## Usage

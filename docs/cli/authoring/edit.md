@@ -1,8 +1,6 @@
 ---
 title: facet edit
-sidebarTitle: edit
-description: Edit a facet project interactively
-tag: facet edit
+description: Interactive editor for reconciling and authoring a facet
 ---
 
 ## Usage

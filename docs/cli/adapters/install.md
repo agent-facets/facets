@@ -1,8 +1,6 @@
 ---
 title: facet adapter install
-sidebarTitle: install
 description: Installs an adapter
-tag: facet adapter install
 ---
 
 ## Usage

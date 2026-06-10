@@ -1,8 +1,6 @@
 ---
 title: facet upgrade
-sidebarTitle: upgrade
 description: Upgrade installed facets to newer versions
-tag: facet upgrade
 ---
 
 ## Usage
