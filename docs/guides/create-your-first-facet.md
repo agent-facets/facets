@@ -3,7 +3,7 @@ title: Create Your First Facet
 description: Scaffold, write content, build, and verify a facet from scratch
 ---
 
-By the end of this guide you will have a working `.facet` file ready to publish or share. Make sure you have the CLI installed first -- see [Getting Started](/guides).
+By the end of this guide you will have a working `.facet` file ready to publish or share. Make sure you have the CLI installed first -- see the [Introduction](/).
 
 ## Scaffold a new facet
 

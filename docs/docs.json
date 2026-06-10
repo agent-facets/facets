@@ -45,12 +45,7 @@
           {
             "group": "Guides",
             "icon": "rocket",
-            "pages": [
-              "guides/index",
-              "guides/install-facets",
-              "guides/create-your-first-facet",
-              "guides/publish-a-facet"
-            ]
+            "pages": ["guides/install-facets", "guides/create-your-first-facet", "guides/publish-a-facet"]
           },
           {
             "group": "Asset Types",
@@ -75,8 +70,8 @@
         "icon": "square-terminal",
         "groups": [
           {
-            "group": "General",
-            "pages": ["cli/index", "cli/env", "cli/self-update"]
+            "group": "CLI Reference",
+            "pages": ["cli/index"]
           },
           {
             "group": "Facet Management",
@@ -84,19 +79,24 @@
             "pages": ["cli/install", "cli/add", "cli/remove", "cli/update", "cli/search", "cli/list"]
           },
           {
-            "group": "Authentication",
-            "icon": "lock",
-            "pages": ["cli/login", "cli/whoami", "cli/logout"]
-          },
-          {
             "group": "Adapters",
             "icon": "wrench",
             "pages": ["cli/adapters/install", "cli/adapters/list", "cli/adapters/remove"]
           },
           {
+            "group": "Authentication",
+            "icon": "lock",
+            "pages": ["cli/login", "cli/whoami", "cli/logout"]
+          },
+          {
             "group": "Authoring",
             "icon": "pencil",
             "pages": ["cli/authoring/create", "cli/authoring/edit", "cli/authoring/build", "cli/authoring/publish"]
+          },
+          {
+            "group": "CLI",
+            "icon": "terminal",
+            "pages": ["cli/help", "cli/self-update", "cli/env"]
           }
         ]
       },
