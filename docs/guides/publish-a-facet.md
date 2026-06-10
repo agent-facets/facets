@@ -19,9 +19,8 @@ This guide covers the end-to-end flow for publishing a facet to the registry: si
 ```sh
 facet login
 ```
-<sub>[CLI reference ↗](/cli/login)</sub>
 
-The login flow presents an interactive menu. Select "Paste a token", then paste the PAT you created in the web UI.
+The [`facet login`](/cli/login) flow presents an interactive menu. Select "Paste a token", then paste the PAT you created in the web UI.
 
 The token is verified against the registry (`GET /v0/auth/me`) before it is saved. A typo or expired token fails immediately with the registry's own error message, and you are reprompted rather than left with an unusable credential.
 
@@ -33,9 +32,8 @@ On success, the token is persisted to `~/.facet/credentials` with mode `0600`.
 ```sh
 facet whoami
 ```
-<sub>[CLI reference ↗](/cli/whoami)</sub>
 
-Expected output:
+[`facet whoami`](/cli/whoami) shows your identity. Expected output:
 
 ```
 yourname <you@example.com>
@@ -58,18 +56,16 @@ Build your facet before publishing. If you have not built yet, or if your source
 ```sh
 facet build
 ```
-<sub>[CLI reference ↗](/cli/authoring/build)</sub>
 
-See the [build command reference](/cli/authoring/build) for details on the 6-stage pipeline. The build writes `dist/<name>-<version>.facet`.
+See [`facet build`](/cli/authoring/build) for details on the 6-stage pipeline. The build writes `dist/<name>-<version>.facet`.
 
 ## Publish
 
 ```sh
 facet publish
 ```
-<sub>[CLI reference ↗](/cli/authoring/publish)</sub>
 
-The publish command runs a 7-step pipeline:
+[`facet publish`](/cli/authoring/publish) runs a 7-step pipeline:
 
 1. **Resolve directory** -- defaults to the current working directory.
 2. **Resolve credential** -- checks `FACET_TOKEN` env, then `~/.facet/credentials`. Fails before any work if no credential is found.
@@ -120,9 +116,8 @@ If you forget to rebuild after bumping the version, publish detects the identity
 ```sh
 facet logout
 ```
-<sub>[CLI reference ↗](/cli/logout)</sub>
 
-This deletes the `~/.facet/credentials` file. No server call is made. Token revocation is done in the web UI.
+[`facet logout`](/cli/logout) deletes the `~/.facet/credentials` file. No server call is made. Token revocation is done in the web UI.
 
 <Warning>
 If `FACET_TOKEN` is set in your environment, it continues to authenticate every command after logout. Run `unset FACET_TOKEN` to fully sign out of the current shell.
