@@ -45,7 +45,6 @@ export const addCommand: Command = {
     }
 
     const verbose = flags.verbose === true
-    const onLog = verbose ? (line: string) => process.stderr.write(`${line}\n`) : undefined
 
     // Parse every source up front. No I/O happens here; any parse error
     // aborts before mounting the view or touching disk.
@@ -82,13 +81,13 @@ export const addCommand: Command = {
     const instance = render(
       createElement(InstallView, {
         mode: 'add',
-        run: async (onStage) => {
+        run: async (onStage, onLog) => {
           const result = await runAdd({
             projectRoot,
             sources,
             adapters,
             onStage,
-            ...(onLog ? { onLog } : {}),
+            ...(verbose && onLog ? { onLog } : {}),
             signal: controller.signal,
           })
           captured = result

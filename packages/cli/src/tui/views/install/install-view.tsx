@@ -1,5 +1,5 @@
 import type { AddPrepareFailure, RemovePrepareFailure, RunInstallResult, StageEvent } from '@agent-facets/engine'
-import { Box, Text, useApp } from 'ink'
+import { Box, Text, useApp, useStderr } from 'ink'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ProgressBar } from '../../components/progress-bar.tsx'
 import { ASSET_TYPE_COLORS, THEME } from '../../theme.ts'
@@ -24,10 +24,13 @@ export type InstallViewResult =
 export interface InstallViewProps {
   /**
    * Driver: caller supplies `runInstall`-equivalent closure that takes
-   * an `onStage` callback and returns the result. The view runs it once
-   * on mount and surfaces its events / outcome.
+   * an `onStage` callback and an optional `onLog` callback, and returns
+   * the result. The view runs it once on mount and surfaces its events /
+   * outcome. When verbose output is enabled, the caller should thread
+   * `onLog` into the engine call; the view routes it through Ink's
+   * stderr writer so it doesn't race the progress bar repaint.
    */
-  run: (onStage: (event: StageEvent) => void) => Promise<InstallViewResult>
+  run: (onStage: (event: StageEvent) => void, onLog?: (line: string) => void) => Promise<InstallViewResult>
   /**
    * Header copy hint. `'add'` renders "Adding facets..."; `'install'`
    * renders "Installing facets..."; `'remove'` renders "Removing
@@ -72,6 +75,7 @@ interface DriftRemoval {
 
 export function InstallView({ run, mode, onComplete }: InstallViewProps) {
   const { exit } = useApp()
+  const { write: writeToStderr } = useStderr()
   const [totalFacets, setTotalFacets] = useState(0)
   const [facetOrder, setFacetOrder] = useState<string[]>([])
   const [facets, setFacets] = useState<Record<string, FacetState>>({})
@@ -160,11 +164,25 @@ export function InstallView({ run, mode, onComplete }: InstallViewProps) {
     }
   }, [])
 
+  /**
+   * Verbose-log writer coordinated with Ink's rendering. Callers thread
+   * this into the engine's `onLog` so verbose lines reach stderr without
+   * racing the progress-bar repaint. `useStderr().write()` is Ink's
+   * equivalent of `<Static>` for strings: it writes once, in order,
+   * above the live region, on the stderr stream.
+   */
+  const onLog = useCallback(
+    (line: string) => {
+      writeToStderr(`${line}\n`)
+    },
+    [writeToStderr],
+  )
+
   const start = useCallback(async () => {
     if (startedRef.current) return
     startedRef.current = true
     try {
-      const r = await run(onStage)
+      const r = await run(onStage, onLog)
       setElapsedMs(Date.now() - startTimeRef.current)
       setResult(r)
       onComplete?.(r)
@@ -174,7 +192,7 @@ export function InstallView({ run, mode, onComplete }: InstallViewProps) {
       const err = error instanceof Error ? error : new Error(String(error))
       setExitState({ kind: 'failure', error: err })
     }
-  }, [run, onStage, onComplete])
+  }, [run, onStage, onLog, onComplete])
 
   useEffect(() => {
     if (exitState.kind === 'success') {

@@ -39,8 +39,8 @@ function findContentFrame(frames: ReadonlyArray<string | undefined>): string {
 function makeFakeRun(
   events: ReadonlyArray<StageEvent>,
   result: RunInstallResult,
-): (onStage: (e: StageEvent) => void) => Promise<RunInstallResult> {
-  return async (onStage) => {
+): (onStage: (e: StageEvent) => void, onLog?: (line: string) => void) => Promise<RunInstallResult> {
+  return async (onStage, _onLog) => {
     for (const event of events) {
       onStage(event)
     }
