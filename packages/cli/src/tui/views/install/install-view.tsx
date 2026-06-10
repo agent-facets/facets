@@ -1,9 +1,10 @@
 import type { AddPrepareFailure, RemovePrepareFailure, RunInstallResult, StageEvent } from '@agent-facets/engine'
 import { Box, Text, useApp } from 'ink'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { THEME } from '../../theme.ts'
+import { ProgressBar } from '../../components/progress-bar.tsx'
+import { ASSET_TYPE_COLORS, THEME } from '../../theme.ts'
 import { AddPrepareFailureBlock } from './add-prepare-failure-block.tsx'
-import { FacetRow, type FacetState } from './facet-row.tsx'
+import { type FacetState, STAGE_LABELS } from './facet-row.tsx'
 import { FailureBlock } from './failure-block.tsx'
 import { RemovePrepareFailureBlock } from './remove-prepare-failure-block.tsx'
 
@@ -71,20 +72,25 @@ interface DriftRemoval {
 
 export function InstallView({ run, mode, onComplete }: InstallViewProps) {
   const { exit } = useApp()
+  const [totalFacets, setTotalFacets] = useState(0)
   const [facetOrder, setFacetOrder] = useState<string[]>([])
   const [facets, setFacets] = useState<Record<string, FacetState>>({})
   const [serverWarnings, setServerWarnings] = useState<ServerWarning[]>([])
-  const [driftRemovals, setDriftRemovals] = useState<DriftRemoval[]>([])
+  const [_driftRemovals, setDriftRemovals] = useState<DriftRemoval[]>([])
+  /** Per-facet adapter completions: facetName → list of adapter names done. */
+  const [adaptersByFacet, setAdaptersByFacet] = useState<Record<string, string[]>>({})
   const [result, setResult] = useState<InstallViewResult | null>(null)
+  const [elapsedMs, setElapsedMs] = useState(0)
   const [exitState, setExitState] = useState<
     { kind: 'idle' } | { kind: 'success' } | { kind: 'failure'; error: Error }
   >({ kind: 'idle' })
   const startedRef = useRef(false)
+  const startTimeRef = useRef(Date.now())
 
   const onStage = useCallback((event: StageEvent) => {
     switch (event.kind) {
       case 'install-start':
-        // Header is static; no per-event update needed.
+        setTotalFacets(event.totalFacets)
         return
       case 'facet-start':
         setFacetOrder((prev) => (prev.includes(event.facet) ? prev : [...prev, event.facet]))
@@ -138,6 +144,13 @@ export function InstallView({ run, mode, onComplete }: InstallViewProps) {
       case 'drift-removal':
         setDriftRemovals((prev) => [...prev, { facet: event.facet, oldVersion: event.oldVersion }])
         return
+      case 'adapter-complete':
+        setAdaptersByFacet((prev) => {
+          const existing = prev[event.facet] ?? []
+          if (existing.includes(event.adapter)) return prev
+          return { ...prev, [event.facet]: [...existing, event.adapter] }
+        })
+        return
       case 'asset-installed':
       case 'asset-deleted':
       case 'lockfile-write':
@@ -152,6 +165,7 @@ export function InstallView({ run, mode, onComplete }: InstallViewProps) {
     startedRef.current = true
     try {
       const r = await run(onStage)
+      setElapsedMs(Date.now() - startTimeRef.current)
       setResult(r)
       onComplete?.(r)
       // Defer exit so React paints the result state before Ink unmounts.
@@ -174,27 +188,88 @@ export function InstallView({ run, mode, onComplete }: InstallViewProps) {
     void start()
   }, [exitState, exit, start])
 
-  const headerLabel =
-    mode === 'add' ? 'Adding facets...' : mode === 'remove' ? 'Removing facets...' : 'Installing facets...'
+  const headerLabel = mode === 'add' ? 'Adding facets:' : mode === 'remove' ? 'Removing facets:' : 'Installing facets:'
+
+  // Compute live counters: [done, remaining, failed].
+  let doneCount = 0
+  let failedCount = 0
+  let currentFacet: FacetState | null = null
+  for (const name of facetOrder) {
+    const state = facets[name]
+    if (!state) continue
+    if (state.outcome) doneCount++
+    else if (state.failure) failedCount++
+    else currentFacet = state // last in-flight facet
+  }
+  const remainingCount = totalFacets - doneCount - failedCount
+
+  // Current facet identity line (above the progress bar).
+  const currentFacetInfo = currentFacet ? (
+    <Text>
+      <Text bold>{currentFacet.name}</Text>
+      <Text color={THEME.hint}>@{currentFacet.specifier}</Text>
+    </Text>
+  ) : facetOrder.length > 0 ? (
+    (() => {
+      const last = facets[facetOrder[facetOrder.length - 1] ?? '']
+      if (!last?.outcome) return null
+      const version =
+        last.outcome.kind === 'updated'
+          ? last.outcome.newVersion
+          : 'version' in last.outcome
+            ? last.outcome.version
+            : last.outcome.oldVersion
+      return (
+        <Text>
+          <Text bold>{last.name}</Text>
+          <Text color={THEME.hint}>@{version}</Text>
+          <Text color={THEME.hint}> ({last.outcome.kind})</Text>
+        </Text>
+      )
+    })()
+  ) : null
+
+  // Stage label for the progress bar line.
+  const stageLabel = currentFacet ? (currentFacet.stage ? STAGE_LABELS[currentFacet.stage] : 'starting') : null
 
   return (
-    <Box flexDirection="column" padding={1} gap={1}>
-      <Text bold color={THEME.brand}>
-        {headerLabel}
-      </Text>
+    <Box flexDirection="column">
+      {result === null && (
+        <Text bold color={THEME.brand}>
+          {headerLabel}
+        </Text>
+      )}
 
-      {facetOrder.length > 0 && (
-        <Box flexDirection="column">
-          {facetOrder.map((name) => {
-            const state = facets[name]
-            if (!state) return null
-            return <FacetRow key={name} state={state} />
-          })}
+      {result === null && (
+        <Box flexDirection="column" marginLeft={2}>
+          {currentFacetInfo ? (
+            <Text>
+              {currentFacetInfo}
+              {stageLabel && <Text color={THEME.hint}> · {stageLabel}</Text>}
+            </Text>
+          ) : (
+            <Text color={THEME.hint}>Preparing to {mode} facets</Text>
+          )}
+          <Box>
+            <ProgressBar done={false} width={12} />
+            {totalFacets > 0 && (
+              <Text>
+                {' '}
+                <Text color={THEME.hint}>[</Text>
+                <Text color={THEME.brand}>{remainingCount}</Text>
+                <Text color={THEME.hint}>, </Text>
+                <Text color={THEME.success}>{doneCount}</Text>
+                <Text color={THEME.hint}>, </Text>
+                <Text color={THEME.warning}>{failedCount}</Text>
+                <Text color={THEME.hint}>]</Text>
+              </Text>
+            )}
+          </Box>
         </Box>
       )}
 
       {serverWarnings.length > 0 && (
-        <Box flexDirection="column">
+        <Box flexDirection="column" marginLeft={2}>
           {serverWarnings.map((w) => (
             <Text key={w.facet} color={THEME.warning}>
               ⚠ {w.facet}: {w.servers.length} server{w.servers.length === 1 ? '' : 's'} declared ({w.servers.join(', ')}
@@ -204,17 +279,14 @@ export function InstallView({ run, mode, onComplete }: InstallViewProps) {
         </Box>
       )}
 
-      {driftRemovals.length > 0 && (
-        <Box flexDirection="column">
-          {driftRemovals.map((d) => (
-            <Text key={d.facet} color={THEME.hint}>
-              - removed {d.facet}@{d.oldVersion} (no longer in facets.json)
-            </Text>
-          ))}
-        </Box>
+      {result?.ok && (
+        <SuccessSummary
+          result={result}
+          mode={mode}
+          adapterCount={new Set(Object.values(adaptersByFacet).flat()).size}
+          elapsedMs={elapsedMs}
+        />
       )}
-
-      {result?.ok && <SuccessSummary result={result} mode={mode} />}
       {result && isPrepareFailure(result) && <AddPrepareFailureBlock failure={result.prepareFailure} />}
       {result && isRemovePrepareFailure(result) && <RemovePrepareFailureBlock failure={result.removePrepareFailure} />}
       {result && isInstallFailure(result) && <FailureBlock failure={result.failure} />}
@@ -235,41 +307,70 @@ export function InstallView({ run, mode, onComplete }: InstallViewProps) {
 function SuccessSummary({
   result,
   mode,
+  adapterCount,
+  elapsedMs,
 }: {
   result: RunInstallResult & { ok: true }
   mode: 'add' | 'install' | 'remove'
+  adapterCount: number
+  elapsedMs: number
 }) {
   const { summary } = result
   const isNoOp = summary.installed === 0 && summary.updated === 0 && summary.repaired === 0 && summary.removed === 0
+  const elapsed = `${(elapsedMs / 1000).toFixed(2)}s`
+
   if (isNoOp) {
     return (
-      <Box flexDirection="column">
-        <Text color={THEME.hint}>Nothing to install. facets.lock is in sync with facets.json.</Text>
-      </Box>
+      <Text>
+        Checked <Text color={THEME.success}>{result.perFacet.length}</Text> facet
+        {result.perFacet.length === 1 ? '' : 's'} across <Text color={THEME.success}>{adapterCount}</Text> adapter
+        {adapterCount === 1 ? '' : 's'} <Text color={THEME.hint}>(no changes)</Text>{' '}
+        <Text color={THEME.hint}>[{elapsed}]</Text>
+      </Text>
     )
   }
-  // Bundle viz + landing line: only surface what landed THIS run. The
-  // lockfile carries every facet in the project; `perFacet` carries the
-  // outcomes from this invocation. The marketing aesthetic is "exactly
-  // which capability you just gained", so iterating the lockfile would
-  // advertise pre-existing facets every time the user adds one more.
+  const touched = touchedFacetNames(result)
   const counts = countAssetsByType(result)
-  const bundleViz = formatBundleViz(counts)
-  // Skip the landing line on `install` (no new capability — just a sync)
-  // and when nothing this run shipped a command asset.
-  const landingCommand = mode === 'add' ? firstCommandAsset(result) : undefined
+  const bundleVizNode = formatColoredBundleViz(counts)
+
+  const removedNames = result.perFacet.filter((o) => o.kind === 'removed').map((o) => o.name)
+
+  const actionLabel =
+    mode === 'add'
+      ? `${touched.join(', ')} installed.`
+      : mode === 'remove'
+        ? `${removedNames.join(', ')} removed.`
+        : 'Install complete.'
+  const registrationSuffix =
+    adapterCount > 0 ? ` Updated facets via ${adapterCount} adapter${adapterCount === 1 ? '' : 's'}` : ''
+
+  // Timer line: "Installed N facets" or "Removed N facets"
+  const timerVerb = mode === 'remove' ? 'Removed' : 'Installed'
+  const timerCount = mode === 'remove' ? removedNames.length : touched.length
+
   return (
     <Box flexDirection="column">
-      <Text color={THEME.success} bold>
-        Done.
-      </Text>
-      <Text color={THEME.hint}>{summaryLine(summary)}</Text>
-      {bundleViz !== null && <Text color={THEME.hint}>{bundleViz}</Text>}
-      {landingCommand !== undefined && (
-        <Text color={THEME.brand} bold>
-          Now /{landingCommand} is available to your agents.
+      <Text>
+        <Text color={THEME.success} bold>
+          {actionLabel}
         </Text>
-      )}
+        <Text color={THEME.hint}>{registrationSuffix}</Text>
+        {adapterCount > 0 && (
+          <Text>
+            {'  '}
+            <Text color={THEME.success}>✓</Text>
+          </Text>
+        )}
+      </Text>
+      <Box flexDirection="column" marginLeft={2}>
+        <Text color={THEME.hint}>{summaryLine(summary)}</Text>
+        {bundleVizNode}
+      </Box>
+      <Text>
+        {timerVerb} <Text color={THEME.success}>{timerCount}</Text> facet
+        {timerCount === 1 ? '' : 's'} across <Text color={THEME.success}>{adapterCount}</Text> adapter
+        {adapterCount === 1 ? '' : 's'} <Text color={THEME.hint}>[{elapsed}]</Text>
+      </Text>
     </Box>
   )
 }
@@ -307,30 +408,40 @@ function touchedFacetNames(result: RunInstallResult & { ok: true }): ReadonlyArr
   return names
 }
 
-function formatBundleViz(counts: AssetCounts): string | null {
-  const parts: string[] = []
-  if (counts.skill > 0) parts.push(`${counts.skill} skill${counts.skill === 1 ? '' : 's'}`)
-  if (counts.agent > 0) parts.push(`${counts.agent} agent${counts.agent === 1 ? '' : 's'}`)
-  if (counts.command > 0) parts.push(`${counts.command} command${counts.command === 1 ? '' : 's'}`)
-  if (parts.length === 0) return null
-  return `+ ${parts.join(' · ')}`
-}
-
 /**
- * Pick the first command asset across the facets THIS RUN installed/updated
- * — the landing line uses it as the suggested invocation. Returns undefined
- * when no facet from this run shipped a command (e.g., skill-only or
- * agent-only bundle, or only `unchanged` outcomes).
+ * Render a per-asset-type colored bundle viz. Returns null (no JSX)
+ * when all counts are zero.
  */
-function firstCommandAsset(result: RunInstallResult & { ok: true }): string | undefined {
-  for (const name of touchedFacetNames(result)) {
-    const facet = result.lockfile.facets[name]
-    if (facet === undefined) continue
-    for (const asset of facet.assets) {
-      if (asset.type === 'command') return asset.name
+function formatColoredBundleViz(counts: AssetCounts): React.ReactNode {
+  const KINDS: ReadonlyArray<{ key: keyof AssetCounts; singular: string; plural: string; color: string }> = [
+    { key: 'skill', singular: 'skill', plural: 'skills', color: ASSET_TYPE_COLORS.skill },
+    { key: 'agent', singular: 'agent', plural: 'agents', color: ASSET_TYPE_COLORS.agent },
+    { key: 'command', singular: 'command', plural: 'commands', color: ASSET_TYPE_COLORS.command },
+  ]
+  const parts: React.ReactNode[] = []
+  for (const { key, singular, plural, color } of KINDS) {
+    const n = counts[key]
+    if (n > 0) {
+      if (parts.length > 0)
+        parts.push(
+          <Text key={`sep-${key}`} color={THEME.hint}>
+            {' · '}
+          </Text>,
+        )
+      parts.push(
+        <Text key={key} color={color}>
+          {n} {n === 1 ? singular : plural}
+        </Text>,
+      )
     }
   }
-  return undefined
+  if (parts.length === 0) return null
+  return (
+    <Text>
+      <Text color={THEME.hint}>+ </Text>
+      {parts}
+    </Text>
+  )
 }
 
 function summaryLine(summary: {

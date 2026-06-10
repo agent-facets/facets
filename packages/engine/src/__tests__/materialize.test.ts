@@ -126,6 +126,7 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
     const newAssets = computeAssetList(manifest)
 
     const first = await materialize({
+      facetName: 'viper-plans',
       manifest,
       adapters: [fixture.adapter],
       oldAssets: [],
@@ -139,6 +140,7 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
     // Second materialize against the SDK-written file. If skip-if-identical
     // is broken (adapter round-trip drifts), this would still write.
     const second = await materialize({
+      facetName: 'viper-plans',
       manifest,
       adapters: [fixture.adapter],
       oldAssets: newAssets,
@@ -170,6 +172,7 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
     const newAssets = computeAssetList(manifest)
 
     const first = await materialize({
+      facetName: 'viper-plans',
       manifest,
       adapters: [fixture.adapter],
       oldAssets: [],
@@ -193,6 +196,7 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
     // Second materialize against the same disk state must skip — this
     // exercises the skip-if-identical fix in materialize.ts.
     const second = await materialize({
+      facetName: 'viper-plans',
       manifest,
       adapters: [fixture.adapter],
       oldAssets: newAssets,
@@ -225,6 +229,7 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
     const newAssets = computeAssetList(manifest)
 
     await materialize({
+      facetName: 'viper-plans',
       manifest,
       adapters: [fixture.adapter],
       oldAssets: [],
@@ -232,6 +237,7 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
       journal: new InstallJournal(),
     })
     const second = await materialize({
+      facetName: 'viper-plans',
       manifest,
       adapters: [fixture.adapter],
       oldAssets: newAssets,
@@ -256,6 +262,7 @@ describe('materialize — skip-if-identical', () => {
 
     // First materialize: writes once.
     const first = await materialize({
+      facetName: 'viper-plans',
       manifest,
       adapters: [adapter],
       oldAssets: [],
@@ -269,6 +276,7 @@ describe('materialize — skip-if-identical', () => {
 
     // Second materialize against the same disk state: skip-if-identical fires.
     const second = await materialize({
+      facetName: 'viper-plans',
       manifest,
       adapters: [adapter],
       oldAssets: newAssets,
@@ -293,6 +301,7 @@ describe('materialize — skip-if-identical', () => {
 
     // First materialize.
     await materialize({
+      facetName: 'viper-plans',
       manifest,
       adapters: [adapter],
       oldAssets: [],
@@ -306,6 +315,7 @@ describe('materialize — skip-if-identical', () => {
     writeFileSync(file, 'unrelated user edit\n')
 
     const second = await materialize({
+      facetName: 'viper-plans',
       manifest,
       adapters: [adapter],
       oldAssets: newAssets,
@@ -345,6 +355,7 @@ describe('materialize — skip-if-identical', () => {
     const newAssets = computeAssetList(manifestA)
 
     await materialize({
+      facetName: 'viper-plans',
       manifest: manifestA,
       adapters: [adapter],
       oldAssets: [],
@@ -352,6 +363,7 @@ describe('materialize — skip-if-identical', () => {
       journal: new InstallJournal(),
     })
     const second = await materialize({
+      facetName: 'viper-plans',
       manifest: manifestB,
       adapters: [adapter],
       oldAssets: newAssets,
@@ -393,6 +405,7 @@ describe('materialize — adapter-extras cannot override computed identity', () 
     const journal = new InstallJournal()
 
     await materialize({
+      facetName: 'viper-plans',
       manifest,
       adapters: [adapter],
       oldAssets: [],
