@@ -102,6 +102,26 @@ export const SURFACE_LIGHT = {
 } as const
 
 /**
+ * Per-asset-type color map for CLI terminal output. Keyed by the
+ * **singular** form of each asset type (`skill`, `agent`, `command`,
+ * `server`). Sources values from `ACCENTS_DARK` — the single source of
+ * truth for the accent palette — so the terminal and landing site stay
+ * in sync. The mapping was chosen to match the agentfacets.io marketing
+ * showcase:
+ *
+ *   - skill   → violet (purple)
+ *   - agent   → pink
+ *   - command → sky (blue-green)
+ *   - server  → amber (yellow)
+ */
+export const ASSET_TYPE_COLORS = {
+  skill: ACCENTS_DARK.violet,
+  agent: ACCENTS_DARK.pink,
+  command: ACCENTS_DARK.sky,
+  server: ACCENTS_DARK.amber,
+} as const
+
+/**
  * Parse a hex color string into an RGB tuple.
  */
 export function hexToRgb(hex: string): readonly [number, number, number] {

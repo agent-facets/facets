@@ -145,12 +145,14 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
 
       onStage({ kind: 'facet-stage', facet: facetName, stage: 'materialize' })
       const materializeResult = await materialize({
+        facetName,
         manifest: resolved,
         adapters: [...adapters],
         oldAssets,
         newAssets: entry.assets,
         journal,
         onLog,
+        onStage,
       })
       if (!materializeResult.ok) {
         const failure = materializeFailureToRunInstall(facetName, materializeResult.failure)
@@ -183,12 +185,14 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
 
       onStage({ kind: 'drift-removal', facet: facetName, oldVersion: prevEntry.version })
       const removalResult = await materialize({
+        facetName,
         manifest: removalManifest(facetName),
         adapters: [...adapters],
         oldAssets: prevEntry.assets,
         newAssets: [],
         journal,
         onLog,
+        onStage,
       })
       if (!removalResult.ok) {
         const failure = materializeFailureToRunInstall(facetName, removalResult.failure)

@@ -2,6 +2,7 @@ import type { Adapter } from '@agent-facets/adapter'
 import { splitFrontMatter } from '@agent-facets/common'
 import type { LockfileAssetEntry, ResolvedFacetManifest } from '@agent-facets/protocol'
 import type { InstallJournal } from './journal.ts'
+import type { StageEvent } from './types.ts'
 
 /**
  * Compute the NEW asset set a facet contributes at this version. Derived
@@ -49,6 +50,8 @@ function assetKey(asset: LockfileAssetEntry): string {
 }
 
 export interface MaterializeOptions {
+  /** Facet name — used to tag per-adapter progress events. */
+  facetName: string
   manifest: ResolvedFacetManifest
   /** Adapters already filtered to those with supportsInstall === true. */
   adapters: Adapter[]
@@ -57,6 +60,8 @@ export interface MaterializeOptions {
   newAssets: readonly LockfileAssetEntry[]
   journal: InstallJournal
   onLog?: (line: string) => void
+  /** Structured progress events for view layers. */
+  onStage?: (event: StageEvent) => void
 }
 
 /**
@@ -270,6 +275,8 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
         })
       }
     }
+
+    opts.onStage?.({ kind: 'adapter-complete', facet: opts.facetName, adapter: adapter.name })
   }
 
   return { ok: true, written, skipped, deleted }

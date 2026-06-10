@@ -22,7 +22,7 @@ export interface FacetState {
   failure: RunInstallFailure | null
 }
 
-const STAGE_LABELS: Record<FacetStage, string> = {
+export const STAGE_LABELS: Record<FacetStage, string> = {
   parse: 'parsing',
   resolve: 'resolving',
   fetch: 'fetching',
@@ -32,9 +32,9 @@ const STAGE_LABELS: Record<FacetStage, string> = {
   materialize: 'materializing',
 }
 
-export function FacetRow({ state }: { state: FacetState }) {
+export function FacetRow({ state, adapters = [] }: { state: FacetState; adapters?: string[] }) {
   if (state.outcome) {
-    return <OutcomeRow name={state.name} outcome={state.outcome} />
+    return <OutcomeRow name={state.name} outcome={state.outcome} adapters={adapters} />
   }
   if (state.failure) {
     return <FailureSummaryRow name={state.name} failure={state.failure} />
@@ -57,7 +57,24 @@ function ProgressRow({ name, specifier, stage }: { name: string; specifier: stri
   )
 }
 
-function OutcomeRow({ name, outcome }: { name: string; outcome: FacetOutcome }) {
+/** Inline adapter checkmarks: `→ claude-code ✓ opencode ✓` */
+function adapterSuffix(adapters: string[]): React.ReactNode {
+  if (adapters.length === 0) return null
+  return (
+    <Text color={THEME.hint}>
+      {' → '}
+      {adapters.map((a, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: stable ordered list
+        <Text key={i}>
+          {i > 0 && ' '}
+          {a} <Text color={THEME.success}>✓</Text>
+        </Text>
+      ))}
+    </Text>
+  )
+}
+
+function OutcomeRow({ name, outcome, adapters }: { name: string; outcome: FacetOutcome; adapters: string[] }) {
   switch (outcome.kind) {
     case 'installed':
       return (
@@ -65,6 +82,7 @@ function OutcomeRow({ name, outcome }: { name: string; outcome: FacetOutcome }) 
           <Text color={THEME.success}>+</Text>
           <Text>
             {name}@{outcome.version}
+            {adapterSuffix(adapters)}
           </Text>
         </Box>
       )
@@ -77,6 +95,7 @@ function OutcomeRow({ name, outcome }: { name: string; outcome: FacetOutcome }) 
             <Text color={THEME.hint}>
               (was {outcome.oldVersion} → {outcome.newVersion})
             </Text>
+            {adapterSuffix(adapters)}
           </Text>
         </Box>
       )

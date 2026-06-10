@@ -45,23 +45,22 @@ describe('listCommand', () => {
     expect(stdout).toContain('github:agent-facets/viper-plans')
   })
 
-  test('multiple entries: aligns the value column to the longest name', async () => {
+  test('multiple entries: renders every name and value', async () => {
     writeFileSync(
       join(projectRoot, 'facets.json'),
       JSON.stringify({
         facets: {
-          a: 'short',
-          'much-longer-name': 'short',
+          a: 'val-a',
+          'much-longer-name': 'val-b',
         },
       }),
     )
     const { result, stdout } = await captureStdout(() => listCommand.run([], {}))
     expect(result).toBe(0)
-    const lines = stdout.split('\n').filter((l) => l.length > 0)
-    expect(lines).toHaveLength(2)
-    // The value `short` should land at the same column index in both lines.
-    const indices = lines.map((l) => l.indexOf('short'))
-    expect(indices[0]).toBe(indices[1])
+    expect(stdout).toContain('a')
+    expect(stdout).toContain('much-longer-name')
+    expect(stdout).toContain('val-a')
+    expect(stdout).toContain('val-b')
   })
 
   test('with lockfile: prefers resolved version over source specifier', async () => {

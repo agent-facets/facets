@@ -59,6 +59,7 @@ export type StageEvent =
   | { kind: 'facet-failure'; facet: string; failure: RunInstallFailure }
   | { kind: 'server-warning'; facet: string; servers: ReadonlyArray<string> }
   | { kind: 'drift-removal'; facet: string; oldVersion: string }
+  | { kind: 'adapter-complete'; facet: string; adapter: string }
   | { kind: 'asset-installed'; facet: string; adapter: string; asset: LockfileAssetEntry }
   | { kind: 'asset-deleted'; facet: string; adapter: string; asset: LockfileAssetEntry }
   | { kind: 'lockfile-write'; path: string }

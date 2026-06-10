@@ -1,7 +1,10 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { FACETS_LOCK_FILE, loadFacetsJson, loadLockfile } from '@agent-facets/engine'
+import { render } from 'ink'
+import { createElement } from 'react'
 import type { Command } from '../../commands.ts'
+import { ListView } from '../../tui/views/list/list-view.tsx'
 import { writeCliError } from '../../util/errors.ts'
 
 /**
@@ -88,9 +91,8 @@ export const listCommand: Command = {
       return { name, value }
     })
 
-    const nameWidth = rows.reduce((max, r) => Math.max(max, r.name.length), 0)
-    const lines = rows.map((r) => `${r.name.padEnd(nameWidth)}  ${r.value}`)
-    process.stdout.write(`${lines.join('\n')}\n`)
+    const instance = render(createElement(ListView, { rows }))
+    instance.unmount()
     return 0
   },
 }
