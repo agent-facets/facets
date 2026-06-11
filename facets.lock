@@ -1,37 +1,6 @@
 {
   "lockfileVersion": 1,
   "facets": {
-    "viper-plans": {
-      "source": {
-        "kind": "git",
-        "url": "https://github.com/agent-facets/viper-plans.git",
-        "commit": "b6816a6e010f0364a6d6308e6b4157c64d3ca143"
-      },
-      "version": "0.1.0",
-      "integrity": "sha256:4033523b90d098adadf23ecc725b9c71ec4e334f04a6cb8ab7851ba247321526",
-      "assets": [
-        {
-          "scope": "project",
-          "type": "skill",
-          "name": "viper-execution-rules"
-        },
-        {
-          "scope": "project",
-          "type": "skill",
-          "name": "viper-planning"
-        },
-        {
-          "scope": "project",
-          "type": "command",
-          "name": "viper-plan"
-        },
-        {
-          "scope": "project",
-          "type": "command",
-          "name": "viper-run"
-        }
-      ]
-    },
     "cowsay": {
       "source": {
         "kind": "registry",
@@ -59,6 +28,36 @@
           "scope": "project",
           "type": "command",
           "name": "cowsay"
+        }
+      ]
+    },
+    "viper-plans": {
+      "source": {
+        "kind": "registry",
+        "registry": "https://api.facet.cafe"
+      },
+      "version": "0.1.0",
+      "integrity": "sha256:4033523b90d098adadf23ecc725b9c71ec4e334f04a6cb8ab7851ba247321526",
+      "assets": [
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "viper-execution-rules"
+        },
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "viper-planning"
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "viper-plan"
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "viper-run"
         }
       ]
     }

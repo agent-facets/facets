@@ -90,7 +90,7 @@ export function LoginMenu({ initialError, onSubmitToken, onCancel }: LoginMenuPr
         <Text>How would you like to sign in?</Text>
         <Box height={1} />
         <Box>
-          <Text color={THEME.primary}>▸ </Text>
+          <Text color={THEME.focus}>▸ </Text>
           <Text color={THEME.secondary}>● </Text>
           <Text>Paste a personal access token</Text>
         </Box>

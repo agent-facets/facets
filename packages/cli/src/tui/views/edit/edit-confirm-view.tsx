@@ -1,3 +1,4 @@
+import { ASSET_TYPE_COLORS } from '@agent-facets/brand'
 import { Box, Text } from 'ink'
 import { useEffect } from 'react'
 import { truncateDescription } from '../../components/asset-description.tsx'
@@ -24,7 +25,7 @@ export function EditConfirmView({ onConfirm, onBack }: { onConfirm: () => void; 
   }, [setFocusIds, focus])
 
   return (
-    <Box flexDirection="column" padding={1} gap={1}>
+    <Box flexDirection="column">
       <Text bold color={THEME.brand}>
         Review changes
       </Text>
@@ -59,7 +60,7 @@ export function EditConfirmView({ onConfirm, onBack }: { onConfirm: () => void; 
                 return (
                   <Box key={item} flexDirection="column" marginLeft={2}>
                     <Box gap={1}>
-                      <Text color={THEME.success}>●</Text>
+                      <Text color={ASSET_TYPE_COLORS[type]}>●</Text>
                       <Text>{item}</Text>
                     </Box>
                     <Box marginLeft={3}>

@@ -38,10 +38,10 @@ export function AssetFieldPicker({
       <Box gap={1} marginLeft={2}>
         {field === 'name' ? (
           <>
-            <Text color={THEME.primary} bold>
+            <Text color={THEME.focus} bold>
               ▸
             </Text>
-            <Text color={THEME.primary}>{name}</Text>
+            <Text color={THEME.focus}>{name}</Text>
             <Text color={THEME.hint}>
               <Text color={THEME.keyword}>↑↓</Text> select · <Text color={THEME.keyword}>Enter</Text> edit ·{' '}
               <Text color={THEME.keyword}>Esc</Text> back
@@ -57,10 +57,10 @@ export function AssetFieldPicker({
       <Box gap={1} marginLeft={2}>
         {field === 'description' ? (
           <>
-            <Text color={THEME.primary} bold>
+            <Text color={THEME.focus} bold>
               ▸
             </Text>
-            <Text color={THEME.primary}>{description}</Text>
+            <Text color={THEME.focus}>{description}</Text>
             <Text color={THEME.hint}>
               <Text color={THEME.keyword}>↑↓</Text> select · <Text color={THEME.keyword}>Enter</Text> edit ·{' '}
               <Text color={THEME.keyword}>Esc</Text> back

@@ -63,13 +63,13 @@ export function ReconciliationItemRow({
       <Box gap={2}>
         <Box gap={1}>
           {isFocused ? (
-            <Text color={THEME.primary} bold>
+            <Text color={THEME.focus} bold>
               ▸
             </Text>
           ) : (
             <Text> </Text>
           )}
-          <Text color={isFocused ? THEME.primary : undefined}>{description}</Text>
+          <Text color={isFocused ? THEME.focus : undefined}>{description}</Text>
         </Box>
 
         <Box gap={2}>

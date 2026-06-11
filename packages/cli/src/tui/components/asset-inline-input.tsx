@@ -62,8 +62,8 @@ export function AssetInlineInput({
   )
 
   return (
-    <Box marginLeft={2} gap={1}>
-      <Text color={THEME.tertiary}>{'>'}</Text>
+    <Box gap={1}>
+      <Text color={THEME.tertiary}>{'  >'}</Text>
       <TextInput value={value} onChange={onChange} placeholder={placeholder} focus={isFocused} />
       {error ? (
         <Text color={THEME.warning}>· {error}</Text>

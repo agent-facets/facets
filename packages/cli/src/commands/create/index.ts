@@ -69,19 +69,16 @@ export const createCommand: Command = {
       }
     }
 
-    const opts = await runCreateWizardInk()
-    if (!opts) {
+    const buildArg = args[0] ? ` ${displayDir}` : ''
+    const completed = await runCreateWizardInk({
+      onScaffold: (scaffoldOpts) => writeScaffold(scaffoldOpts, targetDir),
+      buildArg,
+    })
+
+    if (!completed) {
       console.log('\nCancelled.')
       return 1
     }
-
-    const files = await writeScaffold(opts, targetDir)
-
-    console.log(`\nFacet created: ${opts.name} → ${displayDir}`)
-    for (const file of files) {
-      console.log(`  ${displayDir}/${file}`)
-    }
-    console.log(`\nRun "facet build${args[0] ? ` ${displayDir}` : ''}" to validate your facet.`)
 
     return 0
   },

@@ -1,4 +1,4 @@
-import { applyEditOperations, buildEditContext, type EditResult } from '@agent-facets/engine'
+import { applyEditOperations, buildEditContext } from '@agent-facets/engine'
 import type { Command } from '../../commands.ts'
 import { resolveTargetDir } from '../resolve-dir.ts'
 import { runEditWizardInk } from './wizard.tsx'
@@ -23,17 +23,16 @@ export const editCommand: Command = {
     })
     if (!loaded.ok) return loaded.exitCode
 
-    const result: EditResult = await runEditWizardInk(loaded.context)
+    const buildArg = args[0] ? ` ${displayDir}` : ''
+    const completed = await runEditWizardInk(loaded.context, {
+      onApply: (result) => applyEditOperations(result.manifest, result.operations, rootDir),
+      buildArg,
+    })
 
-    if (result.outcome === 'cancelled') {
+    if (!completed) {
       console.log('\nCancelled — no changes applied.')
       return 1
     }
-
-    await applyEditOperations(result.manifest, result.operations, rootDir)
-
-    console.log(`\nChanges applied to ${displayDir}`)
-    console.log(`Run "facet build${args[0] ? ` ${displayDir}` : ''}" to validate your facet.`)
 
     return 0
   },

@@ -27,8 +27,8 @@ function AnimatedGradientText({ text }: { text: string }) {
 
 export function WizardLayout({ children }: { children: ReactNode }) {
   return (
-    <Box flexDirection="column" padding={1} gap={1}>
-      <Box borderStyle="round" borderColor={THEME.brand} paddingX={2} gap={1}>
+    <Box flexDirection="column">
+      <Box gap={1} marginBottom={1}>
         <Text bold color={THEME.brand}>
           Create a new
         </Text>

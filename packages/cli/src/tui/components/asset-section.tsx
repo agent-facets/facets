@@ -1,9 +1,11 @@
+import { ASSET_TYPE_COLORS } from '@agent-facets/brand'
 import { Box, Text } from 'ink'
 import { useState } from 'react'
 import { useFocusMode } from '../context/focus-mode-context.ts'
 import { useFocusOrder } from '../context/focus-order-context.ts'
 import type { AssetSectionKey } from '../context/form-state-context.ts'
 import { useFormState } from '../context/form-state-context.ts'
+import { THEME } from '../theme.ts'
 import { AssetDescription, truncateDescription } from './asset-description.tsx'
 import type { AssetField } from './asset-field-picker.tsx'
 import { AssetFieldPicker } from './asset-field-picker.tsx'
@@ -33,6 +35,8 @@ export function AssetSection({
   const [inputValue, setInputValue] = useState('')
   const [error, setError] = useState('')
   const [selectedItem, setSelectedItem] = useState<string | null>(null)
+
+  const sectionHasFocus = focusedId === `add-${section}` || items.some((_, i) => focusedId === `item-${section}-${i}`)
 
   const startAdding = () => {
     setAssetAdding(section, true)
@@ -83,8 +87,12 @@ export function AssetSection({
 
   return (
     <Box flexDirection="column" gap={0}>
-      <Box gap={1}>
-        <Text bold dimColor={dimmed}>
+      <Box gap={1} marginLeft={2}>
+        <Text
+          bold={sectionHasFocus}
+          color={sectionHasFocus ? THEME.focus : undefined}
+          dimColor={dimmed && !sectionHasFocus}
+        >
           {label}
         </Text>
         {items.length === 0 && !adding && <Text dimColor>(none)</Text>}
@@ -147,6 +155,7 @@ export function AssetSection({
             <AssetItem
               id={itemId}
               name={item}
+              bulletColor={ASSET_TYPE_COLORS[section]}
               isFocused={isFocusedItem}
               onEdit={() => startEditing(item)}
               onRemove={() => handleRemove(item)}
@@ -173,18 +182,16 @@ export function AssetSection({
           onCancel={closeInput}
         />
       ) : (
-        <Box marginLeft={2}>
-          <Button
-            id={`add-${section}`}
-            label="+ Add"
-            hint={
-              <Text dimColor>
-                <Text>Enter</Text> to add
-              </Text>
-            }
-            onPress={startAdding}
-          />
-        </Box>
+        <Button
+          id={`add-${section}`}
+          label="+ Add"
+          hint={
+            <Text dimColor>
+              <Text>Enter</Text> to add
+            </Text>
+          }
+          onPress={startAdding}
+        />
       )}
     </Box>
   )

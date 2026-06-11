@@ -11,8 +11,19 @@ interface EditorRequest {
   description: string
 }
 
-export async function runEditWizardInk(context: EditContext): Promise<EditResult> {
-  let result: EditResult = { outcome: 'cancelled' }
+export interface RunEditWizardOptions {
+  /** Apply edit operations to disk. */
+  onApply: (result: EditResult & { outcome: 'applied' }) => Promise<void>
+  /** Argument suffix for the "facet build" hint (e.g. " my-dir" or ""). */
+  buildArg: string
+}
+
+/**
+ * Run the edit wizard. Returns `true` if changes were applied (success),
+ * `false` if the user cancelled.
+ */
+export async function runEditWizardInk(context: EditContext, options: RunEditWizardOptions): Promise<boolean> {
+  let completed = false
   let snapshot: EditWizardSnapshot | undefined
   let pendingEditor: EditorRequest | null = null
   let done = false
@@ -25,14 +36,17 @@ export async function runEditWizardInk(context: EditContext): Promise<EditResult
         <EditWizard
           context={context}
           snapshot={snapshot}
+          onApply={options.onApply}
+          buildArg={options.buildArg}
           onComplete={(r) => {
-            result = r
+            completed = r.outcome === 'applied'
           }}
           onSnapshot={(s) => {
             snapshot = s
           }}
           onRequestEditor={(section, name, description) => {
             pendingEditor = { section, name, description }
+            instance.clear()
             instance.unmount()
           }}
         />,
@@ -70,5 +84,5 @@ export async function runEditWizardInk(context: EditContext): Promise<EditResult
     }
   }
 
-  return result
+  return completed
 }

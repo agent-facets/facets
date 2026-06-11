@@ -1,0 +1,21 @@
+{
+  "name": "viper-plans",
+  "version": "0.1.0",
+  "description": "VIPER planning and execution",
+  "skills": {
+    "viper-planning": {
+      "description": "How to construct well-formed plans using the VIPER step model"
+    },
+    "viper-execution-rules": {
+      "description": "Rules and constraints for executing VIPER plans"
+    }
+  },
+  "commands": {
+    "viper-plan": {
+      "description": "Create a structured VIPER plan for a goal"
+    },
+    "viper-run": {
+      "description": "Execute a VIPER plan from .opencode/plans/"
+    }
+  }
+}

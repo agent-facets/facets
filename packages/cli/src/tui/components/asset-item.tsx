@@ -3,12 +3,15 @@ import { THEME } from '../theme.ts'
 
 export function AssetItem({
   name,
+  bulletColor,
   isFocused,
   onEdit,
   onRemove,
 }: {
   id: string
   name: string
+  /** Color for the bullet dot when unfocused. */
+  bulletColor?: string
   isFocused: boolean
   onEdit: () => void
   onRemove: () => void
@@ -22,20 +25,21 @@ export function AssetItem({
   )
 
   return (
-    <Box gap={1} marginLeft={2}>
+    <Box gap={1}>
       {isFocused ? (
         <>
-          <Text color={THEME.primary} bold>
+          <Text color={THEME.focus} bold>
             ▸
           </Text>
-          <Text color={THEME.primary}>{name}</Text>
+          <Text color={THEME.focus}>{name}</Text>
           <Text color={THEME.hint}>
             <Text color={THEME.keyword}>Enter</Text> edit name · <Text color={THEME.keyword}>Del</Text> remove
           </Text>
         </>
       ) : (
         <>
-          <Text color={THEME.success}>•</Text>
+          <Text>{'  '}</Text>
+          <Text color={bulletColor ?? THEME.success}>•</Text>
           <Text>{name}</Text>
         </>
       )}

@@ -1,4 +1,4 @@
-import type { EditContext, EditResult, ReconciliationResolution } from '@agent-facets/engine'
+import type { EditContext, EditOperation, EditResult, ReconciliationResolution } from '@agent-facets/engine'
 import { useApp } from 'ink'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { FocusModeProvider, useFocusMode } from '../../context/focus-mode-context.ts'
@@ -11,9 +11,10 @@ import { EditConfirmView } from './edit-confirm-view.tsx'
 import { EditView } from './edit-view.tsx'
 import { manifestToFormState } from './manifest-to-form.ts'
 import { ReconciliationView } from './reconciliation-view.tsx'
+import { EditSuccessView } from './success-view.tsx'
 import { useEditSession } from './use-edit-session.ts'
 
-type EditPhase = 'reconciliation' | 'editing' | 'confirmation'
+type EditPhase = 'reconciliation' | 'editing' | 'confirmation' | 'done'
 
 export interface EditWizardSnapshot {
   phase: EditPhase
@@ -31,11 +32,23 @@ export interface EditWizardProps {
   context: EditContext
   snapshot?: EditWizardSnapshot
   onComplete: (result: EditResult) => void
+  /** Apply edit operations to disk. Called before the success view renders. */
+  onApply?: (result: EditResult & { outcome: 'applied' }) => Promise<void>
+  /** Argument suffix for the "facet build" hint (e.g. " my-dir" or ""). */
+  buildArg?: string
   onSnapshot?: (snapshot: EditWizardSnapshot) => void
   onRequestEditor?: (section: AssetSectionKey, name: string, description: string) => void
 }
 
-function EditWizardInner({ context, snapshot, onComplete, onSnapshot, onRequestEditor }: EditWizardProps) {
+function EditWizardInner({
+  context,
+  snapshot,
+  onComplete,
+  onApply,
+  buildArg = '',
+  onSnapshot,
+  onRequestEditor,
+}: EditWizardProps) {
   const { exit } = useApp()
   const { setMode } = useFocusMode()
   const { form } = useFormState()
@@ -44,12 +57,22 @@ function EditWizardInner({ context, snapshot, onComplete, onSnapshot, onRequestE
 
   const initialPhase = snapshot?.phase ?? (hasReconciliation ? 'reconciliation' : 'editing')
   const [phase, setPhase] = useState<EditPhase>(initialPhase)
+  const [doneOperations, setDoneOperations] = useState<EditOperation[]>([])
   const { resolutions, resolve, buildResult } = useEditSession(context)
 
   // Report snapshot to parent for editor round-trips
   useEffect(() => {
-    onSnapshot?.({ phase, formState: form, focusedId, resolutions })
+    if (phase !== 'done') {
+      onSnapshot?.({ phase, formState: form, focusedId, resolutions })
+    }
   }, [phase, form, focusedId, resolutions, onSnapshot])
+
+  // Defer exit so React paints the success view before Ink unmounts.
+  useEffect(() => {
+    if (phase === 'done') {
+      exit()
+    }
+  }, [phase, exit])
 
   const cancel = useCallback(() => {
     onComplete({ outcome: 'cancelled' })
@@ -67,10 +90,21 @@ function EditWizardInner({ context, snapshot, onComplete, onSnapshot, onRequestE
     [form, onRequestEditor],
   )
 
-  const handleConfirm = useCallback(() => {
-    onComplete(buildResult(form))
-    exit()
-  }, [form, buildResult, onComplete, exit])
+  const handleConfirm = useCallback(async () => {
+    const result = buildResult(form)
+    onComplete(result)
+    if (onApply && result.outcome === 'applied') {
+      await onApply(result)
+      setDoneOperations(result.operations)
+      setPhase('done')
+    } else {
+      exit()
+    }
+  }, [form, buildResult, onComplete, onApply, exit])
+
+  if (phase === 'done') {
+    return <EditSuccessView operations={doneOperations} buildArg={buildArg} />
+  }
 
   if (phase === 'reconciliation') {
     return (

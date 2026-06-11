@@ -1,4 +1,4 @@
-import { BRAND, BRIGHTNESS, hexToRgb } from './colors.ts'
+import { ACCENTS_DARK, BRAND, BRIGHTNESS, hexToRgb } from './colors.ts'
 
 /**
  * Semantic theme — all values are references to brand constants.
@@ -15,6 +15,7 @@ export const THEME = {
   // Semantic aliases (can diverge from brand later)
   success: BRAND.green,
   warning: BRAND.coral,
+  focus: ACCENTS_DARK.pink,
 
   // Text — structural
   hint: BRIGHTNESS.dim,
