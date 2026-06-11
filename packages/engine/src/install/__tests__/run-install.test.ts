@@ -53,7 +53,7 @@ mock.module('../../registry/resolve-metadata.ts', () => ({
     const resolved = spec.version.kind === 'exact' ? requested : (resolveRequests.at(-1)?.version ?? requested)
     return {
       ok: true,
-      value: [{ name: spec.name, version: resolved, expectedIntegrity: 'sha256:stub' }],
+      value: [{ name: spec.name, version: resolved, transportHash: 'sha256:stub', contentFingerprint: 'sha256:stub' }],
     }
   },
 }))

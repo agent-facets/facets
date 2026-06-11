@@ -9,8 +9,11 @@
  *     mode — the registry has retroactively redefined what a pinned
  *     version should hash to.
  *   - `'A'`: cache vs. registry metadata. Triggered on cache hit when
- *     the cached integrity does not match the registry's current
- *     metadata. The cache wins; the registry is the suspicious side.
+ *     the self-audited cached integrity (recomputed from the slot's
+ *     content, not read from the sidecar) does not match the registry's
+ *     published `contentFingerprint`. The cache audit has already
+ *     verified content against the sidecar; this check anchors it
+ *     against the registry.
  *   - `'B'`: archive manifest vs. registry metadata. Triggered when the
  *     downloaded archive's self-declared integrity does not match the
  *     metadata-API integrity. Detects metadata-vs-tarball split-brain.
@@ -83,8 +86,9 @@ export type IntegrityResult = { ok: true } | { ok: false; failure: IntegrityFail
  *   - `computedIntegrity`: locally computed by hashing the extracted
  *     archive content. The hash that's actually true.
  *   - `cachedIntegrity` (optional): present iff the resolution is a
- *     cache hit. When set, only Check A runs against `expectedIntegrity`
- *     and Checks B/C are skipped (cached content is trusted post-write).
+ *     cache hit that passed the self-audit (content re-hashed against
+ *     the sidecar). When set, only Check A runs against
+ *     `expectedIntegrity` and Checks B/C are skipped.
  *   - `lockfileIntegrity` (optional): present iff the project's lockfile
  *     pins this `(name, version)`. When set, the registry's
  *     `expectedIntegrity` is first checked against it; mismatch is

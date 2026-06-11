@@ -63,9 +63,14 @@ export async function resolveRegistryMetadataBatch(
  *
  * The wire→internal mapping is intentional and load-bearing:
  *
- *   - `body.content_hash` becomes `expectedIntegrity` (renamed). It is
- *     the sha256 of the gzipped tarball as uploaded; downstream
- *     `download.ts` uses it for the bytes-level integrity check.
+ *   - `body.content_hash` becomes `transportHash`. It is the sha256 of
+ *     the gzipped tarball as uploaded; `download.ts` uses it for the
+ *     raw-bytes transport check.
+ *   - `body.content_integrity` becomes `contentFingerprint`. It is the
+ *     sha256 of the canonical archive (inner uncompressed tar) — the
+ *     domain the sidecar, lockfile, and build-manifest all record. Fed
+ *     to the three-check protocol as `expectedIntegrity` and used for
+ *     integrity confirmation when creating a lockfile entry.
  *
  * No archive URL is computed here. The archive request is issued
  * just-in-time by `downloadAndExtractFacet` from the resolved
@@ -101,7 +106,8 @@ async function fetchOne(
       value: {
         name: data.name,
         version: data.version,
-        expectedIntegrity: data.content_hash,
+        transportHash: data.content_hash,
+        contentFingerprint: data.content_integrity,
       },
     }
   } catch (err) {
