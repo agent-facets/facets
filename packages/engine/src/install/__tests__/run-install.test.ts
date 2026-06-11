@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { BuildManifest } from '@agent-facets/protocol'
 
 /**
  * Tests for `runInstall`'s manifest-vs-lockfile reconciliation.
@@ -11,9 +12,12 @@ import { join } from 'node:path'
  * The resolver echoes back the exact version it was ASKED for (recording
  * each request), and 404s a designated nonexistent version — so a test can
  * assert that install fetched the MANIFEST's version, not the locked one.
- * The download stub copies a local fixture (built to match the resolved
- * version) into the staging dir; everything downstream (build, content
- * hash, materialize, lockfile) runs for real.
+ *
+ * All hash material is GENUINE: the metadata stub publishes the fixture's
+ * real canonical fingerprint and the download stub returns the fixture's
+ * real build manifest, so the per-version materialization chain (Check B,
+ * the post-download recompute, Check C, the verified cache put) runs for
+ * real — only network I/O is stubbed.
  */
 
 // --- Registry mock state (mutated per-test before calling runInstall) -----
@@ -22,6 +26,8 @@ type FixtureForVersion = (version: string) => string | null
 let fixtureForVersion: FixtureForVersion = () => null
 let resolveRequests: Array<{ name: string; version: string }> = []
 let nonexistentVersions = new Set<string>()
+/** Map of requested non-exact spec (e.g. `2.*`) → the exact version the stub registry resolves it to. */
+let wildcardResolutions: Record<string, string> = {}
 
 /** Render a VersionSpec the way the engine describes it for the registry. */
 function describeSpec(spec: { kind: string; major?: number; minor?: number; patch?: number }): string {
@@ -37,6 +43,15 @@ function describeSpec(spec: { kind: string; major?: number; minor?: number; patc
   }
 }
 
+/** Build the fixture's genuine build manifest — the same artifact a real
+ *  registry would serve in the outer tar. */
+async function manifestFor(fixtureDir: string): Promise<BuildManifest> {
+  const { runBuildPipeline } = await import('../../build/pipeline.ts')
+  const built = await runBuildPipeline(fixtureDir, [])
+  if (!built.ok) throw new Error('test bug: fixture failed to build')
+  return JSON.parse(built.manifestJson) as BuildManifest
+}
+
 mock.module('../../registry/resolve-metadata.ts', () => ({
   resolveRegistryMetadataBatch: async (
     specs: ReadonlyArray<{ name: string; version: { kind: string; major?: number; minor?: number; patch?: number } }>,
@@ -48,12 +63,19 @@ mock.module('../../registry/resolve-metadata.ts', () => ({
     if (nonexistentVersions.has(requested)) {
       return { ok: false, error: { code: 'NOT_FOUND', name: spec.name, spec: requested } }
     }
-    // Exact specifiers resolve to themselves; wildcard/latest resolve to a
-    // representative published version the test sets via fixtureForVersion.
-    const resolved = spec.version.kind === 'exact' ? requested : (resolveRequests.at(-1)?.version ?? requested)
+    // Exact specifiers resolve to themselves; wildcard/latest resolve via
+    // the per-test wildcardResolutions map.
+    const resolved = spec.version.kind === 'exact' ? requested : (wildcardResolutions[requested] ?? requested)
+    // The published canonical fingerprint must be GENUINE — the chain
+    // compares it against the manifest claim (Check B) and the audited
+    // content (Check A). Without a fixture there is nothing to
+    // fingerprint; a chain that consults the stub value fails closed,
+    // which is exactly what those tests assert.
+    const fixture = fixtureForVersion(resolved)
+    const contentFingerprint = fixture === null ? 'sha256:stub' : (await manifestFor(fixture)).integrity
     return {
       ok: true,
-      value: [{ name: spec.name, version: resolved, transportHash: 'sha256:stub', contentFingerprint: 'sha256:stub' }],
+      value: [{ name: spec.name, version: resolved, transportHash: 'sha256:stub', contentFingerprint }],
     }
   },
 }))
@@ -65,7 +87,7 @@ mock.module('../../registry/download.ts', () => ({
       return { ok: false, error: { code: 'NETWORK_ERROR', cause: `no fixture for ${meta.version}`, attempts: 1 } }
     }
     cpSync(fixture, dest, { recursive: true })
-    return { ok: true, value: undefined }
+    return { ok: true, value: await manifestFor(fixture) }
   },
 }))
 
@@ -194,6 +216,7 @@ beforeEach(() => {
   fixtureForVersion = () => null
   resolveRequests = []
   nonexistentVersions = new Set()
+  wildcardResolutions = {}
 })
 
 afterEach(() => {
@@ -273,9 +296,10 @@ describe('runInstall — wildcard manifest vs lockfile', () => {
 
   test('re-resolves when the locked version no longer satisfies the wildcard', async () => {
     // Manifest widened to 2.*, lock still at 1.2.3 → stale → re-resolve.
-    fixtureForVersion = (v) => (v === '2.*' ? buildFixture(fakeHome, 'cowsay', '2.0.0') : null)
-    // Wildcard resolves to the requested wildcard string in the mock, and the
-    // download fixture is keyed on that string; the built facet's version is 2.0.0.
+    // The stub registry resolves `2.*` to its newest published 2.x.
+    wildcardResolutions = { '2.*': '2.0.0' }
+    const fixture = buildFixture(fakeHome, 'cowsay', '2.0.0')
+    fixtureForVersion = (v) => (v === '2.0.0' ? fixture : null)
     writeFacets({ cowsay: '2.*' })
     writeLock({ cowsay: { source: '1.*', version: '1.2.3' } })
 

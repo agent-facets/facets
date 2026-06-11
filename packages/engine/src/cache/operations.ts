@@ -118,9 +118,11 @@ export function cacheGet(identity: CacheIdentity): CacheLookup {
  *
  * Concurrent-write resolution: if the destination slot already exists
  * as a directory at rename time (another writer won the race), we treat
- * the existing entry as authoritative — the cache invariant says cached
- * content is trusted — and the loser's `sourceDir` is removed so we
- * don't leak disk. The function returns `{ ok: true; path }` either way.
+ * the existing entry as authoritative — every populated slot went
+ * through the same verified-put audit, and every read re-audits via
+ * `auditCacheSlot` before materialization — and the loser's `sourceDir`
+ * is removed so we don't leak disk. The function returns
+ * `{ ok: true; path }` either way.
  *
  * Corruption resolution: if the destination slot exists but is not a
  * directory (a stray file, symlink, or other entry from a crashed
@@ -356,6 +358,50 @@ export function readCachedIntegrity(slotPath: string): CacheIntegrity | null {
 }
 
 /**
+ * Result of genuinely recomputing a content directory's hashes.
+ *
+ *   - `ok: true` → every listed asset was read; `assetHashes` carries
+ *     the freshly computed per-asset hashes and `integrity` the hash of
+ *     the reconstructed canonical deterministic tar.
+ *   - `ok: false, reason: 'unreadable'` → an asset file was missing or
+ *     unreadable; `path` names it.
+ */
+export type DirIntegrityResult =
+  | { ok: true; integrity: string; assetHashes: Record<string, string> }
+  | { ok: false; reason: 'unreadable'; path: string }
+
+/**
+ * Genuinely recompute a directory's canonical integrity from its bytes.
+ *
+ * Reads every file named in `assetPaths` from `dir`, computes its
+ * SHA-256 content hash, reconstructs the canonical deterministic tar
+ * over those entries (sorted by path), and hashes the tar. This is the
+ * single recompute primitive shared by the cache-hit self-audit
+ * (`auditCacheSlot`) and the registry miss path's post-download
+ * recompute — the value it returns is derived purely from on-disk
+ * bytes, never from any manifest's self-declared claim.
+ *
+ * Never throws. File-read failures are reported as `unreadable`.
+ */
+export function computeDirIntegrity(dir: string, assetPaths: ReadonlyArray<string>): DirIntegrityResult {
+  const entries: ArchiveEntry[] = []
+  const assetHashes: Record<string, string> = {}
+  for (const path of assetPaths) {
+    let content: string
+    try {
+      content = readFileSync(join(dir, path), 'utf8')
+    } catch {
+      return { ok: false, reason: 'unreadable', path }
+    }
+    assetHashes[path] = computeContentHash(content)
+    entries.push({ path, content })
+  }
+  entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+  const tarBytes = assembleTar(entries)
+  return { ok: true, integrity: computeContentHash(tarBytes), assetHashes }
+}
+
+/**
  * Result of auditing a cache slot's content against its sidecar.
  *
  *   - `ok: true` → every per-asset hash and the canonical archive hash
@@ -372,7 +418,7 @@ export type CacheAuditResult = { ok: true; integrity: string } | { ok: false; re
  * For every `(path, expectedHash)` in `sidecar.assets`, reads the file
  * from `slotPath`, recomputes SHA-256, and compares. Then reconstructs
  * the canonical deterministic tar from those files, hashes it, and
- * compares against `sidecar.integrity`.
+ * compares against `sidecar.integrity` (via `computeDirIntegrity`).
  *
  * A mismatch at any step returns `{ ok: false, reason: 'tampered' }`.
  * On full match returns `{ ok: true, integrity }` — the verified
@@ -383,31 +429,18 @@ export type CacheAuditResult = { ok: true; integrity: string } | { ok: false; re
  * as tampered.
  */
 export function auditCacheSlot(slotPath: string, sidecar: CacheIntegrity): CacheAuditResult {
-  // 1. Per-asset audit: recompute each file's hash and compare.
-  const entries: ArchiveEntry[] = []
-  for (const [path, expectedHash] of Object.entries(sidecar.assets)) {
-    let content: string
-    try {
-      content = readFileSync(join(slotPath, path), 'utf8')
-    } catch {
-      return { ok: false, reason: 'tampered' }
-    }
-    const observed = computeContentHash(content)
-    if (observed !== expectedHash) {
-      return { ok: false, reason: 'tampered' }
-    }
-    entries.push({ path, content })
-  }
-
-  // 2. Canonical archive audit: reconstruct the deterministic tar,
-  //    hash it, and compare against the sidecar's top-level integrity.
-  entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
-  const tarBytes = assembleTar(entries)
-  const computedIntegrity = computeContentHash(tarBytes)
-  if (computedIntegrity !== sidecar.integrity) {
+  const computed = computeDirIntegrity(slotPath, Object.keys(sidecar.assets))
+  if (!computed.ok) {
     return { ok: false, reason: 'tampered' }
   }
-
+  for (const [path, expectedHash] of Object.entries(sidecar.assets)) {
+    if (computed.assetHashes[path] !== expectedHash) {
+      return { ok: false, reason: 'tampered' }
+    }
+  }
+  if (computed.integrity !== sidecar.integrity) {
+    return { ok: false, reason: 'tampered' }
+  }
   return { ok: true, integrity: sidecar.integrity }
 }
 

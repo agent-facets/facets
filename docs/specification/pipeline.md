@@ -160,13 +160,15 @@ flowchart TD
     CMPL -->|no| FI["FAIL: lockfile mismatch"]
     CMPL -->|yes| MAT["Materialize"]
     LK -->|no| CONF["Integrity confirmation<br/>(registry metadata)"]
-    CONF -->|offline| FOFF["FAIL: cannot confirm"]
+    CONF -->|offline| FOFF["FAIL: cannot create a lockfile entry<br/>without registry confirmation"]
     CONF -->|mismatch| FC["FAIL: registry mismatch"]
     CONF -->|match| MAT
     C -->|miss| FETCH["Download"]
-    FETCH --> REG["Three-check verification"]
+    FETCH --> REG["Genuine recompute +<br/>three-check verification"]
     REG --> PUT["Cache + materialize"]
 ```
+
+On a miss, the downloaded content's canonical fingerprint is **genuinely recomputed** from the extracted bytes (per-asset hashes plus the canonical-archive hash) — never taken from the build manifest's self-declared claim. The recomputed value is verified against the registry's published `content_integrity` and, when the lockfile pins this version, against the locked integrity, before the verified content populates the cache.
 
 ### Manifest-write policy
 
@@ -188,6 +190,12 @@ Receipts are per-project, machine-local records stored outside the project's ver
   </Card>
   <Card title="Self-identifying" icon="fingerprint">
     The receipt embeds the canonical path. A mismatch on load fails closed — treated as absent and re-bootstrapped from the lockfile.
+  </Card>
+  <Card title="Untrusted input" icon="shield">
+    Asset entries with crafted names (path traversal, backslashes) are **reported and skipped individually** — the rest of the receipt still loads and is processed. A corrupted entry can cause a skipped cleanup, never a deletion outside the project's adapter trees.
+  </Card>
+  <Card title="Contained deletion" icon="box">
+    Deletion goes through adapters using validated semantic asset tuples — never raw filesystem paths taken from the receipt.
   </Card>
 </CardGroup>
 

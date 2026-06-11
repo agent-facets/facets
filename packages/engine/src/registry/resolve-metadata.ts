@@ -101,16 +101,65 @@ async function fetchOne(
       }
     }
 
-    return {
-      ok: true,
-      value: {
-        name: data.name,
-        version: data.version,
-        transportHash: data.content_hash,
-        contentFingerprint: data.content_integrity,
-      },
-    }
+    return metadataFromWire(data)
   } catch (err) {
     return { ok: false, error: translateThrownError(err) }
+  }
+}
+
+/**
+ * Map a wire metadata body to the internal `RegistryMetadata`, with a
+ * runtime guard on the two hash fields.
+ *
+ * The generated types declare `content_hash` and `content_integrity`
+ * as required strings, but `openapi-fetch` performs no response
+ * validation — a stale CDN-cached pre-migration object (camelCase, no
+ * `content_integrity`) deserializes with those fields `undefined`.
+ * Propagating `undefined` into the integrity chain would silently
+ * disable confirmation, so a missing or empty hash field fails closed
+ * as a structured contract violation. Never fall back to the other
+ * hash or skip the check (design D3a risk note).
+ *
+ * Exported for unit testing.
+ */
+export function metadataFromWire(body: {
+  name: string
+  version: string
+  content_hash: string
+  content_integrity: string
+}): RegistryResult<RegistryMetadata> {
+  if (!isNonEmptyString(body.content_hash)) {
+    return contractViolation(body, 'content_hash')
+  }
+  if (!isNonEmptyString(body.content_integrity)) {
+    return contractViolation(body, 'content_integrity')
+  }
+  return {
+    ok: true,
+    value: {
+      name: body.name,
+      version: body.version,
+      transportHash: body.content_hash,
+      contentFingerprint: body.content_integrity,
+    },
+  }
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0
+}
+
+function contractViolation(
+  body: { name: string; version: string },
+  field: 'content_hash' | 'content_integrity',
+): RegistryResult<RegistryMetadata> {
+  return {
+    ok: false,
+    error: {
+      code: 'UNEXPECTED_ERROR',
+      cause:
+        `registry metadata for ${body.name}@${body.version} is missing a usable ${field} ` +
+        '(stale CDN-cached or non-conforming response); refusing to proceed without it',
+    },
   }
 }

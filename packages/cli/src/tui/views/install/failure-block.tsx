@@ -100,6 +100,21 @@ export function FailureBlock({ failure }: { failure: RunInstallFailure }): React
           {failure.error.code === 'NETWORK_ERROR' ? <Text> network: {failure.error.cause}</Text> : null}
         </Box>
       )
+    case 'CONFIRMATION_UNAVAILABLE':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ cannot create a lockfile entry for {failure.facet}@{failure.version} without registry confirmation
+          </Text>
+          <Text>
+            {' '}
+            The content is already cached — nothing needed downloading — but a new lockfile entry requires the
+            registry's published integrity, and the registry could not be reached.
+          </Text>
+          {failure.error.code === 'NETWORK_ERROR' ? <Text> network: {failure.error.cause}</Text> : null}
+          <Text color={THEME.hint}> Reconnect and retry. Reproducing an existing lockfile entry works offline.</Text>
+        </Box>
+      )
     case 'INTEGRITY_FAILURE':
       return (
         <Box flexDirection="column" marginTop={1}>

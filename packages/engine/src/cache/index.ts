@@ -11,6 +11,8 @@ export {
   cachePutVerified,
   cacheSlotIsDir,
   cacheStagingDir,
+  computeDirIntegrity,
+  type DirIntegrityResult,
   evictCacheSlot,
   readCachedIntegrity,
 } from './operations.ts'
