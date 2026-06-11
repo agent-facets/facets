@@ -96,7 +96,7 @@ function SelectRow({ label, focused }: { label: string; focused: boolean }) {
   const cursor = focused ? '▸' : ' '
   return (
     <Box>
-      <Text color={THEME.primary}>{cursor}</Text>
+      <Text color={THEME.focus}>{cursor}</Text>
       <Text> {label}</Text>
     </Box>
   )

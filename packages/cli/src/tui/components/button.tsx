@@ -82,7 +82,7 @@ export function Button({
 
   return (
     <Box gap={0}>
-      <Text color={isFocused ? (color ?? THEME.primary) : undefined} bold={isFocused}>
+      <Text color={isFocused ? (color ?? THEME.focus) : undefined} bold={isFocused}>
         {prefix}
         {label}
       </Text>

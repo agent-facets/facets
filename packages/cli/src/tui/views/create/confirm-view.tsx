@@ -1,19 +1,20 @@
+import { ASSET_TYPE_COLORS } from '@agent-facets/brand'
 import { type ScaffoldOptions as CreateOptions, previewScaffoldFiles } from '@agent-facets/engine'
 import { Box, Text } from 'ink'
 import { useEffect } from 'react'
+import { truncateDescription } from '../../components/asset-description.tsx'
 import { Button } from '../../components/button.tsx'
 import { useFocusOrder } from '../../context/focus-order-context.ts'
+import type { AssetSectionKey } from '../../context/form-state-context.ts'
+import { useFormState } from '../../context/form-state-context.ts'
 import { WizardLayout } from '../../layouts/wizard-layout.tsx'
 import { THEME } from '../../theme.ts'
 
-function SummaryField({ label, value }: { label: string; value: string }) {
-  return (
-    <Box gap={1}>
-      <Text color={THEME.success}>✓</Text>
-      <Text bold>{label}:</Text>
-      <Text>{value}</Text>
-    </Box>
-  )
+const ASSET_TYPES: AssetSectionKey[] = ['skill', 'command', 'agent']
+const ASSET_LABELS: Record<AssetSectionKey, string> = {
+  skill: 'Skills',
+  command: 'Commands',
+  agent: 'Agents',
 }
 
 export function ConfirmView({
@@ -26,6 +27,7 @@ export function ConfirmView({
   onBack: () => void
 }) {
   const files = previewScaffoldFiles(opts)
+  const { form } = useFormState()
   const { setFocusIds, focus, focusedId } = useFocusOrder()
 
   useEffect(() => {
@@ -35,21 +37,58 @@ export function ConfirmView({
 
   return (
     <WizardLayout>
-      <Box flexDirection="column" marginLeft={2}>
-        <SummaryField label="Name" value={opts.name} />
-        <SummaryField label="Description" value={opts.description} />
-        <SummaryField label="Version" value={opts.version} />
-        {opts.skills.length > 0 && <SummaryField label="Skills" value={opts.skills.join(', ')} />}
-        {opts.agents.length > 0 && <SummaryField label="Agents" value={opts.agents.join(', ')} />}
-        {opts.commands.length > 0 && <SummaryField label="Commands" value={opts.commands.join(', ')} />}
+      <Box flexDirection="column">
+        <Box gap={1}>
+          <Text bold>Name:</Text>
+          <Text>{form.fields.name.value || '(none)'}</Text>
+        </Box>
+        <Box gap={1}>
+          <Text bold>Description:</Text>
+          <Text>{truncateDescription(form.fields.description.value || '(none)')}</Text>
+        </Box>
+        <Box gap={1}>
+          <Text bold>Version:</Text>
+          <Text>{form.fields.version.value || '(none)'}</Text>
+        </Box>
       </Box>
 
-      <Box flexDirection="column" borderStyle="round" borderColor={THEME.success} paddingX={2} paddingY={1} gap={0}>
+      {ASSET_TYPES.map((type) => {
+        const section = form.assets[type]
+        return (
+          <Box key={type} flexDirection="column">
+            <Text bold>{ASSET_LABELS[type]}:</Text>
+            {section.items.length === 0 ? (
+              <Box marginLeft={2}>
+                <Text dimColor>(none)</Text>
+              </Box>
+            ) : (
+              section.items.map((item) => {
+                const desc = section.descriptions[item] ?? `A ${item} ${type}`
+                return (
+                  <Box key={item} flexDirection="column" marginLeft={2}>
+                    <Box gap={1}>
+                      <Text color={ASSET_TYPE_COLORS[type]}>●</Text>
+                      <Text>{item}</Text>
+                    </Box>
+                    <Box marginLeft={3}>
+                      <Text dimColor>{truncateDescription(desc)}</Text>
+                    </Box>
+                  </Box>
+                )
+              })
+            )}
+          </Box>
+        )
+      })}
+
+      <Box flexDirection="column" marginTop={1}>
         <Text bold color={THEME.success}>
           Files to create:
         </Text>
         {files.map((f) => (
-          <Text key={f}> {f}</Text>
+          <Box key={f} marginLeft={2}>
+            <Text color={THEME.hint}>{f}</Text>
+          </Box>
         ))}
       </Box>
 

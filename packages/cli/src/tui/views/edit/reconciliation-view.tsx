@@ -130,7 +130,7 @@ export function ReconciliationView({
   }
 
   return (
-    <Box flexDirection="column" padding={1} gap={1}>
+    <Box flexDirection="column">
       <Text bold color={THEME.brand}>
         Reconciliation — {items.length} item{items.length !== 1 ? 's' : ''} to resolve
       </Text>

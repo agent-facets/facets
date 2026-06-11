@@ -11,8 +11,19 @@ interface EditorRequest {
   description: string
 }
 
-export async function runCreateWizardInk(): Promise<CreateOptions | null> {
-  let result: CreateOptions | null = null
+export interface RunCreateWizardOptions {
+  /** Write the scaffold to disk and return the list of created file paths. */
+  onScaffold: (opts: CreateOptions) => Promise<string[]>
+  /** Argument suffix for the "facet build" hint (e.g. " my-dir" or ""). */
+  buildArg: string
+}
+
+/**
+ * Run the create wizard. Returns `true` if the scaffold was written
+ * (success), `false` if the user cancelled.
+ */
+export async function runCreateWizardInk(options: RunCreateWizardOptions): Promise<boolean> {
+  let completed = false
   let snapshot: WizardSnapshot | undefined
   let pendingEditor: EditorRequest | null = null
   let done = false
@@ -24,17 +35,20 @@ export async function runCreateWizardInk(): Promise<CreateOptions | null> {
       const instance = render(
         <CreateWizard
           snapshot={snapshot}
-          onComplete={(opts) => {
-            result = opts
+          onScaffold={options.onScaffold}
+          buildArg={options.buildArg}
+          onComplete={() => {
+            completed = true
           }}
           onCancel={() => {
-            result = null
+            completed = false
           }}
           onSnapshot={(s) => {
             snapshot = s
           }}
           onRequestEditor={(section, name, description) => {
             pendingEditor = { section, name, description }
+            instance.clear()
             instance.unmount()
           }}
         />,
@@ -71,5 +85,5 @@ export async function runCreateWizardInk(): Promise<CreateOptions | null> {
     }
   }
 
-  return result
+  return completed
 }

@@ -68,7 +68,7 @@ export function EditView({
   }, [focusedId, focus])
 
   return (
-    <Box flexDirection="column" padding={1} gap={1}>
+    <Box flexDirection="column">
       <Text bold color={THEME.brand}>
         Edit facet
       </Text>

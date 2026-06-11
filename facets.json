@@ -1,6 +1,6 @@
 {
   "facets": {
-    "viper-plans": "github:agent-facets/viper-plans",
-    "cowsay": "0.0.1"
+    "cowsay": "0.0.1",
+    "viper-plans": "0.1.0"
   }
 }

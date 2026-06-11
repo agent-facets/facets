@@ -122,8 +122,8 @@ export function EditableField({
 
   return (
     <Box flexDirection="column" gap={0}>
-      <Box gap={1}>
-        <Text color={isFocused ? THEME.primary : undefined} bold={isFocused} dimColor={dimmed && !isFocused}>
+      <Box gap={1} marginLeft={2}>
+        <Text color={isFocused ? THEME.focus : undefined} bold={isFocused} dimColor={dimmed && !isFocused}>
           {label}:
         </Text>
         {isEditing && error ? (
@@ -146,26 +146,35 @@ export function EditableField({
           <Text dimColor>(not set)</Text>
         ) : null}
       </Box>
-      <Box marginLeft={2}>
-        {isEditing ? (
-          <Box gap={1}>
-            <Text color={THEME.tertiary}>{'> '}</Text>
-            <TextInput value={value} onChange={(v) => setFieldValue(field, v)} placeholder={placeholder} focus />
-            <Text color={THEME.hint}>
-              · <Text color={THEME.keyword}>Enter</Text> to save
-            </Text>
-          </Box>
+      <Box>
+        {isFocused ? (
+          <Text color={THEME.focus} bold>
+            {'▸ '}
+          </Text>
         ) : (
-          <Box gap={1}>
-            <Text dimColor={dimmed && !isFocused}>{value || ' '}</Text>
-            {isFocused && value && (
-              <Text color={THEME.hint}>
-                · <Text color={THEME.keyword}>Enter</Text> to edit · <Text color={THEME.keyword}>c</Text> to clear and
-                edit
-              </Text>
-            )}
-          </Box>
+          <Text>{'  '}</Text>
         )}
+        <Box gap={1} marginLeft={2}>
+          {isEditing ? (
+            <Box gap={1}>
+              <Text color={THEME.tertiary}>{'> '}</Text>
+              <TextInput value={value} onChange={(v) => setFieldValue(field, v)} placeholder={placeholder} focus />
+              <Text color={THEME.hint}>
+                · <Text color={THEME.keyword}>Enter</Text> to save
+              </Text>
+            </Box>
+          ) : (
+            <Box gap={1}>
+              <Text dimColor={dimmed && !isFocused}>{value || ' '}</Text>
+              {isFocused && value && (
+                <Text color={THEME.hint}>
+                  · <Text color={THEME.keyword}>Enter</Text> to edit · <Text color={THEME.keyword}>c</Text> to clear and
+                  edit
+                </Text>
+              )}
+            </Box>
+          )}
+        </Box>
       </Box>
     </Box>
   )
