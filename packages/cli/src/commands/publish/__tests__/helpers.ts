@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { buildArtifactPath, runBuildPipeline, writeBuildOutput } from '@agent-facets/engine'
+import { buildArtifactPath, fixtures, runBuildPipeline, writeBuildOutput } from '@agent-facets/engine'
 
 /**
  * Shape of the asset sets the fixture helper accepts. Each map is
@@ -146,7 +146,7 @@ export function createFetchSpy(responder?: (req: Request) => Response | Promise<
       body,
     })
     if (responder) return responder(req)
-    return new Response(JSON.stringify({ contentHash: 'sha256:placeholder', name: 'placeholder', version: '0.0.0' }), {
+    return new Response(JSON.stringify(fixtures.publishResponse({ name: 'placeholder', version: '0.0.0' })), {
       status: 201,
     })
   }) as unknown as typeof globalThis.fetch

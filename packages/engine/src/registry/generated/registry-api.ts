@@ -4,26 +4,6 @@
  */
 
 export interface paths {
-    "/v0/auth/logout": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Sign out (revoke refresh token)
-         * @description Revokes the supplied refresh token at Cognito. Authenticated by the refresh_token in the request body (not by Authorization header), so the call succeeds even after the access token has locally expired. After this call, any currently-issued access token remains valid until its natural expiry but no new tokens can be obtained without re-authenticating. PAT principals (CI tokens) should use `DELETE /v0/auth/tokens/:prefix` instead. Suspended users receive 403 E_ACCOUNT_SUSPENDED.
-         */
-        post: operations["postV0AuthLogout"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v0/health": {
         parameters: {
             query?: never;
@@ -61,7 +41,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v0/facets/{name}": {
+    "/v0/facets/{name}/latest-version": {
         parameters: {
             query?: never;
             header?: never;
@@ -69,10 +49,30 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get info about a facet
-         * @description npm-style info: returns the latest version metadata plus the full list of published versions, sourced from the FACET META row.
+         * Get the latest version pointer for a facet
+         * @description Returns the current latest version string for a facet. Short-cached (s-maxage=30) so CloudFront absorbs traffic; all downstream reads key off the concrete version it returns.
          */
-        get: operations["getV0FacetsByName"];
+        get: operations["getV0FacetsByNameLatestVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/facets/{name}/versions/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the full version list for a facet
+         * @description Returns the complete sorted version list. The :version in the path is the cache key (expected to be the current latest version). A concrete version gets immutable caching + ETag; the literal `latest` resolves server-side and is not cached.
+         */
+        get: operations["getV0FacetsByNameVersionsByVersion"];
         put?: never;
         post?: never;
         delete?: never;
@@ -90,7 +90,7 @@ export interface paths {
         };
         /**
          * Get metadata for a specific version
-         * @description Returns the version row's metadata including the verbatim manifestJson string. version may be `latest` to resolve through FACET META's `latest_version` attribute.
+         * @description Returns the version row's metadata including the verbatim manifestJson string and the verified publisher username. version may be `latest` to resolve through FACET META's `latest_version` attribute. Because (name, version) is immutable, a concrete-version response is cacheable for a year with a strong ETag derived from the verified content fingerprint; conditional If-None-Match requests get a 304. `latest` resolves server-side and is not cached.
          */
         get: operations["getV0FacetsByNameByVersion"];
         put?: never;
@@ -155,6 +155,26 @@ export interface paths {
          * @description POST a gzipped tarball with `facet.json` at its root. The registry validates the manifest (name grammar + semver), enforces ownership, then stores at a content-addressed S3 key and writes a FACET META + VERSION row. URL `name` MUST equal manifest `name`. Duplicate `name@version` returns 409 with `code: E_VERSION_EXISTS`. Body is capped at 5 MB.
          */
         post: operations["postV0FacetsByNameVersions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign out (revoke refresh token)
+         * @description Revokes the supplied refresh token at Cognito. Authenticated by the refresh_token in the request body (not by Authorization header), so the call succeeds even after the access token has locally expired. After this call, any currently-issued access token remains valid until its natural expiry but no new tokens can be obtained without re-authenticating. PAT principals (CI tokens) should use `DELETE /v0/auth/tokens/:prefix` instead. Suspended users receive 403 E_ACCOUNT_SUSPENDED.
+         */
+        post: operations["postV0AuthLogout"];
         delete?: never;
         options?: never;
         head?: never;
@@ -265,98 +285,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v0/admin/users/{id}/suspension": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Suspend a user
-         * @description Authoritative step: UpdateItem on the target user's PROFILE sets suspended_at, suspended_reason, and suspended_by_user_id. Best-effort cleanup follows sequentially: Cognito AdminUserGlobalSignOut, then per-PAT revoke. Failures in the cleanup phase don't roll back the suspension — the PROFILE gate is the source of truth.
-         */
-        post: operations["postV0AdminUsersByIdSuspension"];
-        /**
-         * Lift a user's suspension
-         * @description REMOVEs suspended_at, suspended_reason, suspended_by_user_id from the PROFILE row. Does NOT restore Cognito sessions or PATs that were invalidated by the original suspension — the user signs in again or mints new tokens.
-         */
-        delete: operations["deleteV0AdminUsersByIdSuspension"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v0/admin/reservation-list": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List all reservation-list entries (admin)
-         * @description Returns every reservation row across both pools, sorted by name. Collection-pool entries ('@'-prefixed) precede global-pool entries because '@' < 'a' in ASCII.
-         */
-        get: operations["getV0AdminReservationList"];
-        put?: never;
-        /**
-         * Add a reservation (admin)
-         * @description Adds a name to one pool ('collection' or 'global') or to every pool at once ('all'). The 'all' path uses TransactWriteItems for atomicity. Caller passes the BARE component name (without any '@' prefix); the registry prepends the prefix for the collection pool key. Returns 422 if the bare name fails the registry name grammar, 409 if any targeted pool already has the name reserved.
-         */
-        post: operations["postV0AdminReservationList"];
-        /**
-         * Remove a reservation (admin)
-         * @description Removes one pool entry. Caller passes the BARE component name (without any '@' prefix). Does NOT propagate across pools — to remove from multiple pools, call this endpoint per pool. Returns 422 if the bare name fails the registry name grammar.
-         */
-        delete: operations["deleteV0AdminReservationList"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v0/admin/review-queue": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List pending review queue (admin)
-         * @description Returns pending QUEUE rows across both queue types, sorted by GSI2SK (which encodes tier priority then created_at). Includes the submitting user’s username and tier for display.
-         */
-        get: operations["getV0AdminReviewQueue"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v0/admin/review-queue/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Approve or reject a pending queue item (admin)
-         * @description Approval of a collection-claim transitions the QUEUE row to 'approved' AND flips COLLECTION META from 'pending' → 'live' atomically. If a parallel admin approval already won (META is no longer pending), this user's queue row gets 'superseded' status instead. Rejection is a simple status transition.
-         */
-        post: operations["postV0AdminReviewQueueById"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v0/admin/migrations": {
         parameters: {
             query?: never;
@@ -441,6 +369,98 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v0/admin/reservation-list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List all reservation-list entries (admin)
+         * @description Returns every reservation row across both pools, sorted by name. Collection-pool entries ('@'-prefixed) precede global-pool entries because '@' < 'a' in ASCII.
+         */
+        get: operations["getV0AdminReservationList"];
+        put?: never;
+        /**
+         * Add a reservation (admin)
+         * @description Adds a name to one pool ('collection' or 'global') or to every pool at once ('all'). The 'all' path uses TransactWriteItems for atomicity. Caller passes the BARE component name (without any '@' prefix); the registry prepends the prefix for the collection pool key. Returns 422 if the bare name fails the registry name grammar, 409 if any targeted pool already has the name reserved.
+         */
+        post: operations["postV0AdminReservationList"];
+        /**
+         * Remove a reservation (admin)
+         * @description Removes one pool entry. Caller passes the BARE component name (without any '@' prefix). Does NOT propagate across pools — to remove from multiple pools, call this endpoint per pool. Returns 422 if the bare name fails the registry name grammar.
+         */
+        delete: operations["deleteV0AdminReservationList"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/admin/review-queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List review queue (admin)
+         * @description Returns QUEUE rows for the requested status bucket across both queue types. Pending rows sort by GSI2SK (tier priority then created_at, oldest higher-tier first). Decided rows sort newest-decision first. The 'cancelled' bucket coalesces superseded + withdrawn rows; the row's own `status` field preserves the distinction. Default bucket is 'pending'. Includes the submitting user’s username and tier for display.
+         */
+        get: operations["getV0AdminReviewQueue"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/admin/review-queue/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve or reject a pending queue item (admin)
+         * @description Approval of a collection-claim transitions the QUEUE row to 'approved' AND flips COLLECTION META from 'pending' → 'live' atomically. If a parallel admin approval already won (META is no longer pending), this user's queue row gets 'superseded' status instead. Rejection is a simple status transition.
+         */
+        post: operations["postV0AdminReviewQueueById"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/admin/users/{id}/suspension": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Suspend a user
+         * @description Authoritative step: UpdateItem on the target user's PROFILE sets suspended_at, suspended_reason, and suspended_by_user_id. Best-effort cleanup follows sequentially: Cognito AdminUserGlobalSignOut, then per-PAT revoke. Failures in the cleanup phase don't roll back the suspension — the PROFILE gate is the source of truth.
+         */
+        post: operations["postV0AdminUsersByIdSuspension"];
+        /**
+         * Lift a user's suspension
+         * @description REMOVEs suspended_at, suspended_reason, suspended_by_user_id from the PROFILE row. Does NOT restore Cognito sessions or PATs that were invalidated by the original suspension — the user signs in again or mints new tokens.
+         */
+        delete: operations["deleteV0AdminUsersByIdSuspension"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v0/collections": {
         parameters: {
             query?: never;
@@ -469,8 +489,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List the caller's pending review items
-         * @description Returns pending queue rows belonging to the authenticated caller across both queue types (collection-claim + global-facet). Rows are grouped by queue_type then ordered by created_at within each group — this reflects DynamoDB's sort-key ordering rather than a unified chronological list. Future settings UX is expected to render each queue_type in its own tab; a single chronological cross-type view is not a current product requirement.
+         * List the caller's review items
+         * @description Returns queue rows belonging to the authenticated caller in the requested status bucket (default: pending). Pending rows are ordered by SK (queue_type then created_at). Decided buckets (approved, rejected, cancelled) sort newest-decision first. The 'cancelled' bucket coalesces superseded + withdrawn.
          */
         get: operations["getV0SettingsReviewQueue"];
         put?: never;
@@ -505,13 +525,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        ApiErrorBody: {
-            /** @enum {unknown} */
-            code: "E_ACCOUNT_SUSPENDED" | "E_ADMIN_REQUIRED" | "E_ALREADY_ONBOARDED" | "E_API_KEY_MISSING" | "E_ARCHIVE_DECOMPRESSED_TOO_LARGE" | "E_ARCHIVE_MALFORMED" | "E_CLAIM_ALREADY_PENDING" | "E_CLAIM_PENDING_ELSEWHERE" | "E_COLLECTION_CLAIMED" | "E_COLLECTION_NOT_OWNED" | "E_CONTENT_INTEGRITY_MISMATCH" | "E_DRY_RUN_REQUIRED" | "E_FACET_NOT_FOUND" | "E_INTERACTIVE_SESSION_REQUIRED" | "E_INVALID_NAME" | "E_INVALID_VERSION" | "E_LOGOUT_REQUIRES_JWT" | "E_MANIFEST_CONTENT_MISMATCH" | "E_MIGRATION_ALREADY_COMPLETED" | "E_MIGRATION_NOT_FOUND" | "E_MIGRATION_RUNNING" | "E_NAME_BLOCKED" | "E_ONBOARDING_REQUIRED" | "E_PREFIX_COLLISION_RETRY_EXHAUSTED" | "E_PROFILE_CORRUPT" | "E_QUEUE_FULL" | "E_QUEUE_ITEM_NOT_FOUND" | "E_QUEUE_ITEM_NOT_PENDING" | "E_REGISTRY_UNAVAILABLE" | "E_RESERVATION_EXISTS" | "E_RESERVATION_NOT_FOUND" | "E_RUN_NOT_FOUND" | "E_TARBALL_CORRUPTED" | "E_TARBALL_TOO_LARGE" | "E_TOKEN_EXPIRED" | "E_TOKEN_NOT_FOUND" | "E_TOKEN_REVOKED" | "E_UNAUTHENTICATED" | "E_UNDECLARED_CONTENT" | "E_USERNAME_TAKEN" | "E_USER_NOT_FOUND" | "E_VERSION_EXISTS";
-            docsUrl: string;
-            error: string;
-            fix: string;
-        };
         HealthResponse: {
             /** @constant */
             status: "ok";
@@ -524,10 +537,10 @@ export interface components {
             skills: number;
         };
         FacetSummary: {
-            assetCounts: components["schemas"]["AssetCounts"];
-            latestVersion: string;
+            asset_counts: components["schemas"]["AssetCounts"];
+            latest_version: string;
             name: string;
-            publishedAt: string;
+            published_at: string;
             publisher: string;
             author?: string;
             description?: string;
@@ -535,23 +548,31 @@ export interface components {
         SearchResponse: {
             facets: components["schemas"]["FacetSummary"][];
         };
-        InfoResponse: {
-            assetCounts: components["schemas"]["AssetCounts"];
+        LatestVersionResponse: {
             latest: string;
             name: string;
-            publishedAt: string;
-            publisher: string;
+        };
+        ApiErrorBody: {
+            /** @enum {unknown} */
+            code: "E_ACCOUNT_SUSPENDED" | "E_ADMIN_REQUIRED" | "E_ALREADY_ONBOARDED" | "E_API_KEY_MISSING" | "E_ARCHIVE_DECOMPRESSED_TOO_LARGE" | "E_ARCHIVE_MALFORMED" | "E_CLAIM_ALREADY_PENDING" | "E_CLAIM_PENDING_ELSEWHERE" | "E_COLLECTION_CLAIMED" | "E_COLLECTION_NOT_OWNED" | "E_CONTENT_INTEGRITY_MISMATCH" | "E_DRY_RUN_REQUIRED" | "E_FACET_NOT_FOUND" | "E_INTERACTIVE_SESSION_REQUIRED" | "E_INVALID_NAME" | "E_INVALID_VERSION" | "E_LOGOUT_REQUIRES_JWT" | "E_MANIFEST_CONTENT_MISMATCH" | "E_MIGRATION_ALREADY_COMPLETED" | "E_MIGRATION_DEPENDENCY_UNMET" | "E_MIGRATION_NOT_FOUND" | "E_MIGRATION_RUNNING" | "E_NAME_BLOCKED" | "E_ONBOARDING_REQUIRED" | "E_PREFIX_COLLISION_RETRY_EXHAUSTED" | "E_PROFILE_CORRUPT" | "E_QUEUE_FULL" | "E_QUEUE_ITEM_NOT_FOUND" | "E_QUEUE_ITEM_NOT_PENDING" | "E_REGISTRY_UNAVAILABLE" | "E_RESERVATION_EXISTS" | "E_RESERVATION_NOT_FOUND" | "E_REVIEW_ARTIFACT_MISSING" | "E_RUN_NOT_FOUND" | "E_TARBALL_CORRUPTED" | "E_TARBALL_TOO_LARGE" | "E_TOKEN_EXPIRED" | "E_TOKEN_NOT_FOUND" | "E_TOKEN_REVOKED" | "E_UNAUTHENTICATED" | "E_UNDECLARED_CONTENT" | "E_USERNAME_TAKEN" | "E_USER_NOT_FOUND" | "E_VERSION_EXISTS";
+            docs_url: string;
+            error: string;
+            fix: string;
+        };
+        VersionListResponse: {
+            name: string;
+            version: string;
             versions: string[];
-            author?: string;
-            description?: string;
         };
         VersionMetadata: {
-            assetCounts: components["schemas"]["AssetCounts"];
-            contentHash: string;
-            manifestJson: string;
+            asset_counts: components["schemas"]["AssetCounts"];
+            content_hash: string;
+            content_integrity: string;
+            manifest_json: string;
             name: string;
-            publishedAt: string;
-            sizeBytes: number;
+            published_at: string;
+            publisher: string;
+            size_bytes: number;
             version: string;
             author?: string;
             description?: string;
@@ -565,12 +586,12 @@ export interface components {
             version: string;
         };
         PublishResponse: {
-            contentHash: string;
+            content_hash: string;
             name: string;
             version: string;
         };
         QueuedForReviewBody: {
-            docsUrl: string;
+            docs_url: string;
             fix: string;
             /** @enum {unknown} */
             reason: "pending" | "rate-limit" | "reserved";
@@ -602,37 +623,6 @@ export interface components {
                 revoked_at?: string;
             }[];
         };
-        ReservationListResponse: {
-            reservations: {
-                added_at: string;
-                added_by_user_id: string;
-                name: string;
-                /** @enum {unknown} */
-                pool: "collection" | "global";
-                reason?: string;
-            }[];
-        };
-        AdminQueueListResponse: {
-            items: {
-                created_at: string;
-                id: string;
-                /** @enum {unknown} */
-                queue_type: "collection-claim" | "global-facet";
-                /** @enum {unknown} */
-                status: "approved" | "pending" | "rejected" | "superseded";
-                target: string;
-                /** @enum {unknown} */
-                tier: "enterprise" | "free" | "pro";
-                user_uuid: string;
-                username: string;
-                decided_at?: string;
-                decided_by?: string;
-                justification?: string;
-                /** @enum {unknown} */
-                reason?: "pending" | "rate-limit" | "reserved";
-                rejection_reason?: string;
-            }[];
-        };
         MigrationListResponse: {
             migrations: {
                 available: boolean;
@@ -656,6 +646,7 @@ export interface components {
                     error?: string;
                     finished_at?: string;
                 };
+                unmet_dependencies?: string[];
             }[];
         };
         MigrationRunListResponse: {
@@ -696,6 +687,37 @@ export interface components {
             error?: string;
             finished_at?: string;
         };
+        ReservationListResponse: {
+            reservations: {
+                added_at: string;
+                added_by_user_id: string;
+                name: string;
+                /** @enum {unknown} */
+                pool: "collection" | "global";
+                reason?: string;
+            }[];
+        };
+        AdminQueueListResponse: {
+            items: {
+                created_at: string;
+                id: string;
+                /** @enum {unknown} */
+                queue_type: "collection-claim" | "global-facet";
+                /** @enum {unknown} */
+                reason: "pending" | "rate-limit" | "reserved";
+                /** @enum {unknown} */
+                status: "approved" | "pending" | "rejected" | "superseded" | "withdrawn";
+                target: string;
+                /** @enum {unknown} */
+                tier: "enterprise" | "free" | "pro";
+                user_uuid: string;
+                username: string;
+                decided_at?: string;
+                decided_by?: string;
+                decision_reason?: string;
+                justification?: string;
+            }[];
+        };
         ClaimCollectionIdempotent: {
             /** @constant */
             already_owned: "true";
@@ -712,14 +734,14 @@ export interface components {
                 /** @enum {unknown} */
                 queue_type: "collection-claim" | "global-facet";
                 /** @enum {unknown} */
-                status: "approved" | "pending" | "rejected" | "superseded";
+                reason: "pending" | "rate-limit" | "reserved";
+                /** @enum {unknown} */
+                status: "approved" | "pending" | "rejected" | "superseded" | "withdrawn";
                 target: string;
                 decided_at?: string;
                 decided_by?: string;
+                decision_reason?: string;
                 justification?: string;
-                /** @enum {unknown} */
-                reason?: "pending" | "rate-limit" | "reserved";
-                rejection_reason?: string;
             }[];
         };
     };
@@ -731,42 +753,6 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    postV0AuthLogout: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Refresh token revoked */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Refresh token invalid, expired, or revoked */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorBody"];
-                };
-            };
-            /** @description Account suspended (E_ACCOUNT_SUSPENDED) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorBody"];
-                };
-            };
-        };
-    };
     getV0Health: {
         parameters: {
             query?: never;
@@ -807,7 +793,7 @@ export interface operations {
             };
         };
     };
-    getV0FacetsByName: {
+    getV0FacetsByNameLatestVersion: {
         parameters: {
             query?: never;
             header?: never;
@@ -819,13 +805,47 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Facet info */
+            /** @description Latest version pointer */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["InfoResponse"];
+                    "application/json": components["schemas"]["LatestVersionResponse"];
+                };
+            };
+            /** @description Facet not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    getV0FacetsByNameVersionsByVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Canonical facet name. May contain a literal slash for namespaced facets — encode it as `%2F` in URLs (npm-style). */
+                name: string;
+                /** @description Semver version (e.g., `1.2.3`) or the literal `latest`. */
+                version: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Full version list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionListResponse"];
                 };
             };
             /** @description Facet not found */
@@ -861,6 +881,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["VersionMetadata"];
                 };
+            };
+            /** @description Not modified (If-None-Match matched the ETag) */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Facet or version not found */
             404: {
@@ -1028,6 +1055,42 @@ export interface operations {
             };
             /** @description Per-user pending queue cap reached */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    postV0AuthLogout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Refresh token revoked */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Refresh token invalid, expired, or revoked */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Account suspended (E_ACCOUNT_SUSPENDED) */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1281,7 +1344,47 @@ export interface operations {
             };
         };
     };
-    postV0AdminUsersByIdSuspension: {
+    getV0AdminMigrations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Migration list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationListResponse"];
+                };
+            };
+        };
+    };
+    getV0AdminMigrationsRuns: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All runs, newest-first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationRunListResponse"];
+                };
+            };
+        };
+    };
+    getV0AdminMigrationsByIdRuns: {
         parameters: {
             query?: never;
             header?: never;
@@ -1292,32 +1395,16 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description User suspended */
+            /** @description Run history */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-            /** @description Missing or invalid credentials */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
                 content: {
-                    "application/json": components["schemas"]["ApiErrorBody"];
+                    "application/json": components["schemas"]["MigrationRunListResponse"];
                 };
             };
-            /** @description Caller is not an admin (or caller is suspended) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorBody"];
-                };
-            };
-            /** @description Target user does not exist */
+            /** @description No such migration */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1328,7 +1415,7 @@ export interface operations {
             };
         };
     };
-    deleteV0AdminUsersByIdSuspension: {
+    postV0AdminMigrationsByIdRuns: {
         parameters: {
             query?: never;
             header?: never;
@@ -1339,32 +1426,57 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Suspension lifted */
+            /** @description Run accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationRunResponse"];
+                };
+            };
+            /** @description No such migration */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description A run is already in progress */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    getV0AdminMigrationsByIdRunsByRunId: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Run detail */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-            /** @description Missing or invalid credentials */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
                 content: {
-                    "application/json": components["schemas"]["ApiErrorBody"];
+                    "application/json": components["schemas"]["MigrationRunResponse"];
                 };
             };
-            /** @description Caller is not an admin (or caller is suspended) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorBody"];
-                };
-            };
-            /** @description Target user does not exist */
+            /** @description No such run */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1530,13 +1642,22 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Pending items */
+            /** @description Items in the requested bucket */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["AdminQueueListResponse"];
+                };
+            };
+            /** @description Invalid status query param */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
                 };
             };
             /** @description Missing or invalid credentials */
@@ -1615,47 +1736,7 @@ export interface operations {
             };
         };
     };
-    getV0AdminMigrations: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Migration list */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MigrationListResponse"];
-                };
-            };
-        };
-    };
-    getV0AdminMigrationsRuns: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description All runs, newest-first */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MigrationRunListResponse"];
-                };
-            };
-        };
-    };
-    getV0AdminMigrationsByIdRuns: {
+    postV0AdminUsersByIdSuspension: {
         parameters: {
             query?: never;
             header?: never;
@@ -1666,16 +1747,32 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Run history */
+            /** @description User suspended */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
+                content?: never;
+            };
+            /** @description Missing or invalid credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
                 content: {
-                    "application/json": components["schemas"]["MigrationRunListResponse"];
+                    "application/json": components["schemas"]["ApiErrorBody"];
                 };
             };
-            /** @description No such migration */
+            /** @description Caller is not an admin (or caller is suspended) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Target user does not exist */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1686,7 +1783,7 @@ export interface operations {
             };
         };
     };
-    postV0AdminMigrationsByIdRuns: {
+    deleteV0AdminUsersByIdSuspension: {
         parameters: {
             query?: never;
             header?: never;
@@ -1697,57 +1794,32 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Run accepted */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MigrationRunResponse"];
-                };
-            };
-            /** @description No such migration */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorBody"];
-                };
-            };
-            /** @description A run is already in progress */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorBody"];
-                };
-            };
-        };
-    };
-    getV0AdminMigrationsByIdRunsByRunId: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-                runId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Run detail */
+            /** @description Suspension lifted */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
+                content?: never;
+            };
+            /** @description Missing or invalid credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
                 content: {
-                    "application/json": components["schemas"]["MigrationRunResponse"];
+                    "application/json": components["schemas"]["ApiErrorBody"];
                 };
             };
-            /** @description No such run */
+            /** @description Caller is not an admin (or caller is suspended) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Target user does not exist */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1850,13 +1922,22 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Pending items */
+            /** @description Items in the requested bucket */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["ReviewQueueListResponse"];
+                };
+            };
+            /** @description Invalid status query param */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
                 };
             };
             /** @description Missing or invalid credentials */

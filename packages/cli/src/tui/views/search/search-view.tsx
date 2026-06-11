@@ -90,7 +90,7 @@ export function SearchView({ term, fetch, onComplete }: SearchViewProps) {
 
   // Results found.
   const nameWidth = filtered.reduce((max, f) => Math.max(max, f.name.length), 0)
-  const versionWidth = filtered.reduce((max, f) => Math.max(max, `v${f.latestVersion}`.length), 0)
+  const versionWidth = filtered.reduce((max, f) => Math.max(max, `v${f.latest_version}`.length), 0)
   const authorWidth = filtered.reduce((max, f) => Math.max(max, `by ${f.author ?? f.publisher ?? ''}`.length), 0)
 
   return (
@@ -156,8 +156,8 @@ function SearchResultRow({
   versionWidth: number
   authorWidth: number
 }) {
-  const version = `v${item.latestVersion}`
-  const counts = formatColoredAssetCounts(item.assetCounts)
+  const version = `v${item.latest_version}`
+  const counts = formatColoredAssetCounts(item.asset_counts)
 
   return (
     <Text>

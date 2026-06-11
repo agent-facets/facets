@@ -16,34 +16,28 @@
 import type { components } from './generated/registry-api.ts'
 
 /**
- * Wire shape returned by `GET /v0/packages/{name}/{version}` (the
+ * Wire shape returned by `GET /v0/facets/{name}/{version}` (the
  * version-metadata endpoint). Carries the canonical published metadata
  * for one resolved facet version.
  */
 export type WireMetadataResponse = components['schemas']['VersionMetadata']
 
 /**
- * Wire shape returned by `GET /v0/packages` (search/listing). Top
+ * Wire shape returned by `GET /v0/facets` (search/listing). Top
  * level is `{ facets: WirePackageListItem[] }`.
  */
 export type WirePackageListResponse = components['schemas']['SearchResponse']
 
 /**
  * Single facet entry inside `WirePackageListResponse.facets`. Includes
- * `name`, `latestVersion`, `publishedAt`, `assetCounts`, plus optional
- * `author` / `description`.
+ * `name`, `latest_version`, `published_at`, `asset_counts`, `publisher`,
+ * plus optional `author` / `description`.
  */
 export type WirePackageListItem = components['schemas']['FacetSummary']
 
 /**
- * Wire shape returned by `GET /v0/packages/{name}` (npm-style info:
- * latest version + version list).
- */
-export type WirePackageInfoResponse = components['schemas']['InfoResponse']
-
-/**
  * Wire shape of the registry's flat error envelope, returned on every
- * 4xx/5xx. Shape: `{ code, docsUrl, error }` where `error` is the
+ * 4xx/5xx. Shape: `{ code, docs_url, error }` where `error` is the
  * human message and `code` is one of the canonical error codes.
  */
 export type WireErrorResponse = components['schemas']['ApiErrorBody']
@@ -59,7 +53,7 @@ export type WireErrorCode = WireErrorResponse['code']
 
 /**
  * Wire shape of the publish endpoint's success response (HTTP 201).
- * Carries the published `name`, `version`, and `contentHash`.
+ * Carries the published `name`, `version`, and `content_hash`.
  */
 export type WirePublishResponse = components['schemas']['PublishResponse']
 
@@ -69,7 +63,7 @@ export type WirePublishResponse = components['schemas']['PublishResponse']
  * over-budget global facet is accepted into the registry's moderation
  * queue rather than published immediately. Carries `status:
  * 'QUEUED_FOR_REVIEW'` (the success discriminant), a `reason`, and the
- * `fix` / `docsUrl` guidance text the CLI renders verbatim.
+ * `fix` / `docs_url` guidance text the CLI renders verbatim.
  */
 export type WireQueuedForReviewBody = components['schemas']['QueuedForReviewBody']
 
