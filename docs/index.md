@@ -37,6 +37,20 @@ facet --version
 
 Once installed, update in place with [`facet self-update`](/cli/self-update).
 
+## Quick example
+
+Install an adapter for your AI tool, then add a facet:
+
+```sh
+# Pick an adapter (opencode, claude-code, or codex)
+facet adapter install
+
+# Add a facet from the registry
+facet add cowsay
+```
+
+That's it. The facet's skills, agents, and commands are now available in your AI coding tool.
+
 ## Guides
 
 <CardGroup cols={3}>
