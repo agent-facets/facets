@@ -67,7 +67,7 @@
     },
     "packages/brand": {
       "name": "@agent-facets/brand",
-      "version": "0.5.4",
+      "version": "0.5.5",
       "devDependencies": {
         "tsdown": "^0.22.0",
         "typescript": "^6.0.3",
@@ -78,7 +78,7 @@
     },
     "packages/cli": {
       "name": "agent-facets",
-      "version": "0.18.0",
+      "version": "0.18.1",
       "bin": {
         "facet": "./bin/facet",
       },
