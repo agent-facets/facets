@@ -51,7 +51,7 @@ export function facetSummary(overrides?: Partial<WirePackageListItem>): WirePack
     latest_version: '0.1.0',
     published_at: '2026-05-01T00:00:00Z',
     publisher: 'test-publisher',
-    asset_counts: { agents: 0, commands: 0, servers: 0, skills: 0 },
+    asset_counts: assetCounts(),
     ...overrides,
   }
 }
