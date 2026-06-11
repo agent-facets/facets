@@ -21,6 +21,7 @@ and (for curl installs) the binary itself.
 | `$FACET_DIR/cache/`   | Content-addressed cache for fetched facet payloads             |
 | `$FACET_DIR/adapters/`| Installed adapter bundles                                      |
 | `$FACET_DIR/locks/`   | Per-project install advisory locks (one file per project root) |
+| `$FACET_DIR/receipts/`| Machine-local install receipts (one per project, tracks materialized state) |
 
 **Default:** `~/.facet/`. Setting `FACET_DIR` is the override  -- there are
 no separate per-subsystem env vars.

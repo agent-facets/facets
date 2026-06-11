@@ -22,6 +22,7 @@ import type { IntegrityFailure } from '@agent-facets/protocol'
 import { verifyRegistryThreeCheck } from '@agent-facets/protocol'
 import {
   auditCacheSlot,
+  type CacheAuditResult,
   cachePutVerified,
   cacheStagingDir,
   evictCacheSlot,
@@ -118,6 +119,44 @@ export async function materializeVersion(input: MaterializeVersionInput): Promis
 // ---------------------------------------------------------------------------
 
 function handleLockedHit(input: LockedHit): MaterializeVersionResult {
+  return auditInput(input, (audit) => {
+    // Integrity confirmation: audited integrity must equal the registry's
+    // published canonical fingerprint.
+    // Lockfile comparison: audited integrity must equal locked integrity.
+    if (audit.integrity !== input.lockfileIntegrity) {
+      return {
+        ok: false,
+        code: 'lockfile-mismatch',
+        expected: input.lockfileIntegrity,
+        observed: audit.integrity,
+      }
+    }
+
+    return { ok: true, slotPath: input.slotPath, integrity: audit.integrity }
+  })
+}
+
+function handleConfirmingHit(input: ConfirmingHit): MaterializeVersionResult {
+  return auditInput(input, (audit) => {
+    // Integrity confirmation: audited integrity must equal the registry's
+    // published canonical fingerprint.
+    if (audit.integrity !== input.contentFingerprint) {
+      return {
+        ok: false,
+        code: 'confirmation-mismatch',
+        expected: input.contentFingerprint,
+        observed: audit.integrity,
+      }
+    }
+
+    return { ok: true, slotPath: input.slotPath, integrity: audit.integrity }
+  })
+}
+
+function auditInput(
+  input: LockedHit | ConfirmingHit,
+  onSuccess: (audit: Extract<CacheAuditResult, { ok: true }>) => MaterializeVersionResult,
+): MaterializeVersionResult {
   const sidecar = readCachedIntegrity(input.slotPath)
   if (sidecar === null) {
     // Missing/corrupt sidecar — evict and report as tampered so the
@@ -132,44 +171,7 @@ function handleLockedHit(input: LockedHit): MaterializeVersionResult {
     return { ok: false, code: 'cache-tampered' }
   }
 
-  // Lockfile comparison: audited integrity must equal locked integrity.
-  if (audit.integrity !== input.lockfileIntegrity) {
-    return {
-      ok: false,
-      code: 'lockfile-mismatch',
-      expected: input.lockfileIntegrity,
-      observed: audit.integrity,
-    }
-  }
-
-  return { ok: true, slotPath: input.slotPath, integrity: audit.integrity }
-}
-
-function handleConfirmingHit(input: ConfirmingHit): MaterializeVersionResult {
-  const sidecar = readCachedIntegrity(input.slotPath)
-  if (sidecar === null) {
-    evictCacheSlot(input.slotPath)
-    return { ok: false, code: 'cache-tampered' }
-  }
-
-  const audit = auditCacheSlot(input.slotPath, sidecar)
-  if (!audit.ok) {
-    evictCacheSlot(input.slotPath)
-    return { ok: false, code: 'cache-tampered' }
-  }
-
-  // Integrity confirmation: audited integrity must equal the registry's
-  // published canonical fingerprint.
-  if (audit.integrity !== input.contentFingerprint) {
-    return {
-      ok: false,
-      code: 'confirmation-mismatch',
-      expected: input.contentFingerprint,
-      observed: audit.integrity,
-    }
-  }
-
-  return { ok: true, slotPath: input.slotPath, integrity: audit.integrity }
+  return onSuccess(audit)
 }
 
 // ---------------------------------------------------------------------------

@@ -86,20 +86,21 @@ If we ever rewrote the engine in Rust for performance, every line in this packag
 
 What lives here:
 
-- **Adapter machinery**  -- bundling, install-service, placement, verify, loader, first-party list. Adapters are CLI-side abstractions over AI coding tools; the spec doesn't mandate adapters at all.
-- **Adapter sources**  -- npm tarball download, git clone, local path resolution. Subprocess-driven; engine-only.
-- **Facet sources**  -- git clone, local path resolution. Same shape as adapter sources.
-- **Source-specifier parsers**  -- `parseFacetSource`, `parseAdapterSpecifier`, `parseVersionSpec`. The CLI interprets user-input source strings; the parsed `Source` discriminant is engine-internal. Only the `VersionSpec` slice (which appears in published artifacts) lives in protocol.
-- **Install pipeline orchestrator**  -- `runInstall`, journal, lockfile-guard, lockfile-io, materialize. Drives the install flow on a developer's machine.
-- **Build pipeline orchestrator**  -- `runBuildPipeline`, `writeBuildOutput`. Wires protocol's primitives (validators, content-hash, tar layout) into a CLI workflow with progress events.
-- **`compressArchive`**  -- gzip is delivery, not part of the integrity contract. Kept here so protocol stays gzip-implementation-agnostic.
-- **Cache**  -- `~/.facet/cache/` layout, identity computation, atomic put, lookup. Developer-machine state.
-- **Manifest mutations + project-files I/O**  -- the JSON rewrites for `facets.json` and the disk bridge that reads/writes it. Each CLI has its own mutation semantics; the spec only constrains the file's shape (which lives in protocol).
-- **Registry client**  -- HTTP I/O against the registry server, archive download/extract.
-- **Edit**  -- interactive reconcile, scanner, manifest-writer, edit operations.
-- **Scaffold**  -- `facet create` machinery.
-- **Self-update**  -- detect install method, run the right updater (npm/pnpm/yarn/bun/curl).
-- **Path-based loaders**  -- `loadManifest(dir)`, `resolvePrompts(rootDir)`, `loadServerManifest(filePath)`. Thin wrappers over Bun's filesystem primitives that read bytes and call protocol's bytes-validators.
+- **Adapter machinery** -- bundling, install-service, placement, verify, loader, first-party list. Adapters are CLI-side abstractions over AI coding tools; the spec doesn't mandate adapters at all.
+- **Adapter sources** -- npm tarball download, git clone, local path resolution. Subprocess-driven; engine-only.
+- **Facet sources** -- git clone, local path resolution. Same shape as adapter sources.
+- **Source-specifier parsers** -- `parseFacetSource`, `parseAdapterSpecifier`, `parseVersionSpec`. The CLI interprets user-input source strings; the parsed `Source` discriminant is engine-internal. Only the `VersionSpec` slice (which appears in published artifacts) lives in protocol.
+- **Install pipeline orchestrator** -- plan/commit split: `prepareAdd`/`prepareRemove` produce a delta, `runInstall` is the commit orchestrator (resolution, integrity, materialization, transactional tri-write of manifest + lockfile + receipt). Journal for rollback.
+- **Build pipeline orchestrator** -- `runBuildPipeline`, `writeBuildOutput`. Wires protocol's primitives (validators, content-hash, tar layout) into a CLI workflow with progress events.
+- **`compressArchive`** -- gzip is delivery, not part of the integrity contract. Kept here so protocol stays gzip-implementation-agnostic.
+- **Cache** -- `~/.facet/cache/` layout, identity computation, atomic put, lookup, self-audit on every hit (content re-hashed against sidecar; tampered slots evicted). Developer-machine state.
+- **Install receipt** -- `~/.facet/receipts/` per-project machine-local record of materialized state, separate from the lockfile. Drives offline drift removal (orphan-on-pull cleanup).
+- **Manifest mutations + project-files I/O** -- the JSON rewrites for `facets.json` and the disk bridge that reads/writes it. Each CLI has its own mutation semantics; the spec only constrains the file's shape (which lives in protocol).
+- **Registry client** -- HTTP I/O against the registry server, archive download/extract.
+- **Edit** -- interactive reconcile, scanner, manifest-writer, edit operations.
+- **Scaffold** -- `facet create` machinery.
+- **Self-update** -- detect install method, run the right updater (npm/pnpm/yarn/bun/curl).
+- **Path-based loaders** -- `loadManifest(dir)`, `resolvePrompts(rootDir)`, `loadServerManifest(filePath)`. Thin wrappers over Bun's filesystem primitives that read bytes and call protocol's bytes-validators.
 
 ## Layer 3  -- `agent-facets` (the CLI)
 

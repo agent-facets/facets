@@ -15,14 +15,24 @@ If the project has no adapters installed, `facet add` will launch the adapter pi
 
 ## What it does
 
-1. **Parse every source** up front. If any source has invalid grammar (see [Source grammar](#source-grammar) below), the command exits before touching disk.
-2. **Discover adapters.** If none are installed: launch the picker on a TTY, fail on a non-TTY.
-3. **Snapshot `facets.json`** byte-for-byte. If anything fails downstream, the manifest is restored exactly as it was.
-4. **Read each source's `facet.json`** to learn its name and version.
-5. **Reject composition.** A source whose `facet.json` declares `facets: [...]` is rejected before any state mutation.
-6. **Write `facets.json`** with the new entries.
-7. **Run the install pipeline**  -- fetch, verify integrity, materialize assets into every adapter, write the lockfile.
-8. **On any failure**, restore the `facets.json` snapshot. The project is left exactly as it was before the command ran.
+<Steps>
+  <Step title="Parse">
+    Validate every source specifier up front. Invalid grammar exits before touching disk.
+  </Step>
+  <Step title="Discover adapters">
+    If none installed: launch the picker (TTY) or fail (non-TTY).
+  </Step>
+  <Step title="Prepare">
+    Read each source's `facet.json` to learn its name. Reject composition (`facets: [...]`). Load the project manifest if it exists.
+  </Step>
+  <Step title="Commit">
+    Delegate to the [install pipeline](/specification/pipeline) with the additions delta. Non-exact specifiers always re-resolve to the newest match. Exact versions with a warm cache skip the download entirely.
+  </Step>
+</Steps>
+
+<Tip>
+The manifest, lockfile, and receipt are **never written ahead** of success. On failure, the journal rolls back all materialization and the project is left unchanged.
+</Tip>
 
 ## Source grammar
 
@@ -75,12 +85,11 @@ facet add viper-plans rezi planner@2.*
 
 ## Re-adding a facet
 
-Running `facet add` against a facet that's already in `facets.json` is supported and idempotent at the manifest level:
+Running `facet add` against a facet that's already in `facets.json` is supported:
 
 - Same source as before → no-op (lockfile may report `unchanged` or `repaired`).
 - Different version pin → updates the entry; the install summary shows `(was X → Y)`.
-- Bare re-add (no version) over an existing **valid** version spec → the spec is **preserved**. A bare re-add never clobbers a deliberate pin or range  -- re-running `facet add viper-plans` won't overwrite a `viper-plans@1.*` you set on purpose.
-- Bare re-add over an **invalid** value (e.g. a stale entry where the name leaked into the version position) → the value is **healed** to the resolved exact version.
+- Bare re-add (no version) → resolves the newest published version and **pins** it in `facets.json`. A bare add always pins to the resolved exact version, even over an existing wildcard spec.
 
 ## Flags
 
@@ -93,7 +102,7 @@ Running `facet add` against a facet that's already in `facets.json` is supported
 | Code | Meaning                                                                              |
 | ---- | ------------------------------------------------------------------------------------ |
 | `0`  | Add and install succeeded.                                                           |
-| `1`  | Failed (parse error, no adapters in non-TTY, install failure, etc.). `facets.json` is restored byte-for-byte on every failure path. |
+| `1`  | Failed (parse error, no adapters in non-TTY, install failure, etc.). No files are modified on failure. |
 
 ## See also
 

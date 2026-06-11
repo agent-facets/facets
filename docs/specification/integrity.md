@@ -5,11 +5,12 @@ description: "Content hashing, OCI digest pinning, and API surface hashing."
 
 Facets and MCP servers are distributed artifacts. Consumers need confidence that what they install is what was published  -- no tampering, no corruption, no substitution. This page defines how artifacts are hashed, when hashes are verified, and how structural changes to MCP server APIs are detected.
 
-Three distinct integrity concerns are addressed:
+Four distinct integrity concerns are addressed:
 
-1. **Content integrity**  -- does the downloaded artifact match what was published?
-2. **OCI digest integrity**  -- for ref-mode MCP servers, does the container image match a known-good digest?
-3. **API surface integrity**  -- has an MCP server's API changed structurally between versions?
+1. **Content integrity** -- does the artifact match what was published? Verified at download, on every cache hit, and at lockfile-entry creation.
+2. **Cache integrity** -- has cached content been tampered with since it was written? Verified on every materialization from cache.
+3. **OCI digest integrity** -- for ref-mode MCP servers, does the container image match a known-good digest?
+4. **API surface integrity** -- has an MCP server's API changed structurally between versions?
 
 ## Content Hashing
 
@@ -17,11 +18,14 @@ Three distinct integrity concerns are addressed:
 
 Facet archives and source-mode MCP server artifacts  -- anything published to the facets registry.
 
-### How It Works
+### Two Hashes, Two Domains
 
-At publish time, the registry MUST compute a SHA-256 hash of the complete artifact (the archive). The hash is stored as the artifact's integrity value. At install time, the CLI MUST download the artifact, compute the hash, and compare it to the registry's recorded value.
+The registry publishes **two hashes** for each version, serving different purposes:
 
-A mismatch MUST be a hard failure  -- the artifact MUST be rejected.
+- **`content_integrity`** (canonical fingerprint) -- SHA-256 of the canonical uncompressed inner tar archive. This is the domain the lockfile, cache sidecar, and build manifest all record. It is the trust anchor for integrity confirmation and lockfile comparison.
+- **`content_hash`** (transport hash) -- SHA-256 of the uploaded `.facet` tarball (the gzipped delivery bytes). Used only at download time for a raw-bytes transport check. Never persisted to the lockfile.
+
+These are not interchangeable: gzip is a delivery concern outside the hash contract. The canonical fingerprint cannot be recomputed from the transport bytes without decompressing first.
 
 ### Format
 
@@ -29,15 +33,22 @@ A mismatch MUST be a hard failure  -- the artifact MUST be rejected.
 
 ### When It Is Applied
 
-| When             | What happens                                                           |
-| ---------------- | ---------------------------------------------------------------------- |
-| **Publish time** | Registry computes the hash after assembling the artifact.              |
-| **Install time** | CLI verifies the downloaded artifact against the registry's hash.      |
-| **Lockfile**     | The content hash is recorded in the lockfile for reproducible verification. |
+| When | What happens |
+| --- | --- |
+| **Publish time** | Registry computes both hashes after assembling the artifact. |
+| **Download** | The transport hash (`content_hash`) is verified against the raw downloaded bytes. |
+| **Cache write** | The canonical fingerprint (`content_integrity`) and per-asset hashes are written to a sidecar alongside the cached content. |
+| **Cache hit** | The cached content is re-hashed against its sidecar (self-audit). Tampered content is evicted and re-fetched. |
+| **Lockfile comparison** | When the lockfile pins a version, the audited integrity must equal the locked integrity. |
+| **Integrity confirmation** | When a lockfile entry is being created, the audited integrity must match the registry's published `content_integrity`. An unreachable registry fails the operation. |
+| **Lockfile** | The canonical fingerprint is recorded for reproducible verification. |
 
 ### What It Guarantees
 
-The bytes the consumer receives are identical to the bytes the registry stored. No tampering in transit, no corruption, no substitution.
+- **Transit integrity**: the downloaded bytes match what the registry stored (transport hash).
+- **At-rest integrity**: cached content is verified on every use, not just at write time (cache self-audit).
+- **Lockfile trust**: a lockfile entry for a registry facet is never created without same-operation registry confirmation of its canonical fingerprint.
+- **Immutability enforcement**: the registry's invariant that a published `name@version` never changes is enforced client-side via the lockfile comparison and integrity confirmation.
 
 ## OCI Digest Pinning
 
@@ -139,27 +150,32 @@ It does NOT catch behavioral changes where the API surface is unchanged but the 
 
 ## Hash Storage Summary
 
-| Artifact type               | Content hash | OCI digest | API surface hash |
-| --------------------------- | ------------ | ---------- | ---------------- |
-| Facet archive               | Yes          |  --          |  --                |
-| Source-mode server artifact  | Yes          |  --          | Yes              |
-| Ref-mode server (OCI image) |  --            | Yes        | Yes              |
+| Artifact type               | Canonical fingerprint | Transport hash | OCI digest | API surface hash |
+| --------------------------- | --------------------- | -------------- | ---------- | ---------------- |
+| Facet archive               | Yes                   | Yes            | —          | —                |
+| Source-mode server artifact  | Yes                   | Yes            | —          | Yes              |
+| Ref-mode server (OCI image) | —                     | —              | Yes        | Yes              |
 
 ## Where Hashes Live
 
-| Location        | What is stored                                                                              |
-| --------------- | ------------------------------------------------------------------------------------------- |
-| **Registry**    | Content hash for facet archives and source-mode servers. API surface hash for source-mode servers. |
-| **Lockfile**    | Content hash or OCI digest + API surface hash for every installed server.                   |
-| **Manifest**    | OCI image reference (tag or digest) for ref-mode servers.                                   |
+| Location            | What is stored |
+| ------------------- | --- |
+| **Registry**        | Both `content_integrity` (canonical fingerprint) and `content_hash` (transport hash) per version. API surface hash for source-mode servers. |
+| **Lockfile**        | Canonical fingerprint (`content_integrity`) per facet. OCI digest + API surface hash for servers. |
+| **Cache sidecar**   | Canonical fingerprint + per-asset hash map per cache slot. Written at cache-populate time; re-verified on every cache hit. |
+| **Build manifest**  | Canonical fingerprint + per-asset hash map. Embedded in the `.facet` archive. |
+| **Install receipt** | Asset tuples per materialized facet (not hashes — used for drift removal). |
+| **Manifest**        | OCI image reference (tag or digest) for ref-mode servers. |
 
 ## Verification Summary
 
-| When             | What is verified                                                          |
-| ---------------- | ------------------------------------------------------------------------- |
-| Install          | Content hash of facet archive and source-mode server artifacts.           |
-| Install          | OCI tag resolved to digest; digest pinned in lockfile for ref-mode.       |
-| Install          | API surface hash computed and recorded for all servers.                   |
-| Upgrade          | Content hash or OCI digest verified for new versions.                     |
-| Upgrade          | API surface hash compared to lockfile  -- changes flagged to consumer.      |
-| Lockfile install | Pinned content hash or OCI digest used for exact reproduction.            |
+| When | What is verified |
+| --- | --- |
+| Download | Transport hash (`content_hash`) of the raw archive bytes. |
+| Cache hit | Canonical fingerprint + per-asset hashes re-computed against the sidecar (self-audit). |
+| Lockfile comparison | Audited integrity vs. locked integrity (when the lockfile pins the version). |
+| Integrity confirmation | Audited integrity vs. registry's `content_integrity` (when creating a lockfile entry). |
+| Git install | Computed content vs. lockfile integrity (tag-move defense). |
+| Frozen install | Every facet -- including local sources -- must reproduce its locked integrity. |
+| OCI install | Tag resolved to digest; digest pinned in lockfile. |
+| Upgrade | Content hash or OCI digest verified. API surface hash compared to lockfile. |
