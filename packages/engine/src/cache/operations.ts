@@ -10,6 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
+import { validateAssetName } from '@agent-facets/common'
 import type {
   AssetIntegrityFailure,
   BuildManifest,
@@ -276,6 +277,17 @@ export function cachePutVerified(
 ): CachePutVerifiedResult {
   // 1. Per-asset audit.
   for (const [path, expected] of Object.entries(buildManifest.assets)) {
+    const nameCheck = validateAssetName(path)
+    if (!nameCheck.ok) {
+      const failure: AssetIntegrityFailure = {
+        kind: 'asset',
+        facet,
+        path,
+        expected,
+        observed: '<unsafe-path>',
+      }
+      return { ok: false, integrity: failure }
+    }
     let observed: string
     try {
       const bytes = readFileSync(join(sourceDir, path))
@@ -369,6 +381,7 @@ export function readCachedIntegrity(slotPath: string): CacheIntegrity | null {
 export type DirIntegrityResult =
   | { ok: true; integrity: string; assetHashes: Record<string, string> }
   | { ok: false; reason: 'unreadable'; path: string }
+  | { ok: false; reason: 'unsafe-path'; path: string }
 
 /**
  * Genuinely recompute a directory's canonical integrity from its bytes.
@@ -387,6 +400,10 @@ export function computeDirIntegrity(dir: string, assetPaths: ReadonlyArray<strin
   const entries: ArchiveEntry[] = []
   const assetHashes: Record<string, string> = {}
   for (const path of assetPaths) {
+    const nameCheck = validateAssetName(path)
+    if (!nameCheck.ok) {
+      return { ok: false, reason: 'unsafe-path', path }
+    }
     let content: string
     try {
       content = readFileSync(join(dir, path), 'utf8')

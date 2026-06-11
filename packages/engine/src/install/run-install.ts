@@ -90,6 +90,15 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       }
     }
 
+    // 3b. Delta conflict check. The same facet name in both additions
+    //     and removals is an illegal state the CLI should never produce;
+    //     this check is defense-in-depth, run before the install lock.
+    const additionNames = new Set(delta.additions.map((a) => a.facetName))
+    const conflict = delta.removals.find((r) => additionNames.has(r.facetName))
+    if (conflict !== undefined) {
+      return failureNoMutation({ code: 'DELTA_CONFLICT', facet: conflict.facetName })
+    }
+
     // 4. Frozen-lockfile gates. A frozen commit with a non-empty delta is
     //    rejected immediately — add/remove can never run frozen. The
     //    drift preflight runs before any mutation/journal entry so drift

@@ -74,22 +74,46 @@ export function commitProjectFiles(args: TriWriteArgs): TriWriteResult {
     capturePreImage(receiptPath(projectRoot)),
   ]
 
-  try {
-    const newManifest: FacetsJson = { ...args.facetsJson, facets: { ...args.desiredFacets } }
-    writeFacetsJson(projectRoot, newManifest)
-    writeLockfile(projectRoot, args.newLockfile)
-    writeReceipt(projectRoot, newReceipt)
-  } catch (error) {
-    for (const image of preImages) {
-      restorePreImage(image)
-    }
-    return {
-      ok: false,
-      failure: {
-        code: 'LOCKFILE_WRITE_FAILED',
-        path: join(projectRoot, FACETS_LOCK_FILE),
-        cause: error instanceof Error ? error.message : String(error),
+  // Each write is wrapped individually so a mid-trio failure identifies
+  // which file threw. The pre-image restore always runs for all three
+  // files regardless of which one failed, preserving the all-or-nothing
+  // guarantee.
+  const writes: Array<{ file: 'manifest' | 'lockfile' | 'receipt'; path: string; fn: () => void }> = [
+    {
+      file: 'manifest',
+      path: join(projectRoot, 'facets.json'),
+      fn: () => {
+        const newManifest: FacetsJson = { ...args.facetsJson, facets: { ...args.desiredFacets } }
+        writeFacetsJson(projectRoot, newManifest)
       },
+    },
+    {
+      file: 'lockfile',
+      path: join(projectRoot, FACETS_LOCK_FILE),
+      fn: () => writeLockfile(projectRoot, args.newLockfile),
+    },
+    {
+      file: 'receipt',
+      path: receiptPath(projectRoot),
+      fn: () => writeReceipt(projectRoot, newReceipt),
+    },
+  ]
+
+  for (const write of writes) {
+    try {
+      write.fn()
+    } catch (error) {
+      for (const image of preImages) {
+        restorePreImage(image)
+      }
+      return {
+        ok: false,
+        failure: {
+          code: 'LOCKFILE_WRITE_FAILED',
+          path: write.path,
+          cause: error instanceof Error ? error.message : String(error),
+        },
+      }
     }
   }
   return { ok: true }

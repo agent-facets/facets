@@ -16,6 +16,7 @@ import {
   cacheSlot,
   cacheSlotIsDir,
   cacheStagingDir,
+  computeDirIntegrity,
   evictCacheSlot,
   readCachedIntegrity,
   resolveCacheRoot,
@@ -539,5 +540,105 @@ describe('evictCacheSlot', () => {
     expect(cacheGet(id).hit).toBe(true)
     evictCacheSlot(slotPath)
     expect(cacheGet(id).hit).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Path traversal hardening (#28)
+// ---------------------------------------------------------------------------
+
+describe('computeDirIntegrity path traversal defense', () => {
+  test('rejects a relative traversal path (../../../../etc/passwd)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dir-integrity-traversal-'))
+    try {
+      const result = computeDirIntegrity(dir, ['../../../../etc/passwd'])
+      expect(result.ok).toBe(false)
+      if (result.ok) expect.unreachable()
+      expect(result.reason).toBe('unsafe-path')
+      expect(result.path).toBe('../../../../etc/passwd')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  test('rejects an absolute path (/etc/passwd)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dir-integrity-abs-'))
+    try {
+      const result = computeDirIntegrity(dir, ['/etc/passwd'])
+      expect(result.ok).toBe(false)
+      if (result.ok) expect.unreachable()
+      expect(result.reason).toBe('unsafe-path')
+      expect(result.path).toBe('/etc/passwd')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  test('rejects a backslash path segment', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dir-integrity-backslash-'))
+    try {
+      const result = computeDirIntegrity(dir, ['foo\\bar'])
+      expect(result.ok).toBe(false)
+      if (result.ok) expect.unreachable()
+      expect(result.reason).toBe('unsafe-path')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('cachePutVerified path traversal defense', () => {
+  test('rejects a traversal path in buildManifest.assets', () => {
+    const id: CacheIdentity = { kind: 'registry', name: 'traversal', version: '1.0.0' }
+    const staging = cacheStagingDir()
+    writeFileSync(join(staging, 'facet.json'), '{"name":"traversal","version":"1.0.0"}')
+    const manifest: BuildManifest = {
+      facetVersion: 0.1,
+      archive: 'archive.tar.gz',
+      integrity: 'sha256:fake',
+      assets: {
+        '../../../../etc/passwd': 'sha256:0000000000000000000000000000000000000000000000000000000000000000',
+      },
+    }
+
+    const result = cachePutVerified(id, staging, manifest, manifest.integrity, 'traversal')
+
+    expect(result.ok).toBe(false)
+    if (result.ok) expect.unreachable()
+    if (!('integrity' in result)) expect.unreachable()
+    expect(result.integrity.kind).toBe('asset')
+    if (result.integrity.kind !== 'asset') expect.unreachable()
+    expect(result.integrity.observed).toBe('<unsafe-path>')
+    expect(result.integrity.path).toBe('../../../../etc/passwd')
+
+    // Cache slot was NOT created; staging is intact.
+    expect(cacheSlotIsDir(id)).toBe(false)
+    expect(existsSync(staging)).toBe(true)
+    rmSync(staging, { recursive: true, force: true })
+  })
+
+  test('rejects an absolute path in buildManifest.assets', () => {
+    const id: CacheIdentity = { kind: 'registry', name: 'abs-path', version: '1.0.0' }
+    const staging = cacheStagingDir()
+    writeFileSync(join(staging, 'facet.json'), '{"name":"abs-path","version":"1.0.0"}')
+    const manifest: BuildManifest = {
+      facetVersion: 0.1,
+      archive: 'archive.tar.gz',
+      integrity: 'sha256:fake',
+      assets: {
+        '/etc/passwd': 'sha256:0000000000000000000000000000000000000000000000000000000000000000',
+      },
+    }
+
+    const result = cachePutVerified(id, staging, manifest, manifest.integrity, 'abs-path')
+
+    expect(result.ok).toBe(false)
+    if (result.ok) expect.unreachable()
+    if (!('integrity' in result)) expect.unreachable()
+    expect(result.integrity.kind).toBe('asset')
+    if (result.integrity.kind !== 'asset') expect.unreachable()
+    expect(result.integrity.observed).toBe('<unsafe-path>')
+
+    rmSync(staging, { recursive: true, force: true })
   })
 })

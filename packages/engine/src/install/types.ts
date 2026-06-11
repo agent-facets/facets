@@ -205,6 +205,12 @@ export type RunInstallFailure =
       cause: string
     }
   | { code: 'FROZEN_WITH_DELTA' }
+  /**
+   * The install delta contains the same facet name in both `additions`
+   * and `removals`. This is an illegal state the CLI should never
+   * produce; the check exists as defense-in-depth.
+   */
+  | { code: 'DELTA_CONFLICT'; facet: string }
   | { code: 'ABORTED' }
 
 /**

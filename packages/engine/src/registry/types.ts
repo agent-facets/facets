@@ -7,9 +7,12 @@ import type { VersionSpec } from '@agent-facets/protocol'
  *   - `version`: the exact resolved version (e.g., `"1.2.3"`). When the
  *     caller passed a wildcard or `latest`, this is the version the
  *     registry chose.
- *   - `transportHash`: sha256 of the uploaded `.facet` tarball (the
- *     gzipped delivery bytes). Used only by `download.ts` for the
- *     raw-bytes transport check after downloading.
+ *   - `transportHash`: sha256 of the uploaded `.facet` archive (the
+ *     uncompressed outer tar containing `build-manifest.json` and the
+ *     gzipped inner `archive.tar.gz`; the wire `Content-Type` is
+ *     `application/gzip` but these bytes are the outer tar itself).
+ *     Used only by `download.ts` for the raw-bytes transport check
+ *     after downloading.
  *   - `contentFingerprint`: sha256 of the canonical archive (the inner
  *     uncompressed tar). This is the domain the cache sidecar, the
  *     lockfile, and `build-manifest.json` all record. Fed to the

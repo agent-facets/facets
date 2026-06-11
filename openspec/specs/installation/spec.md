@@ -227,13 +227,14 @@ When no manifest entry for the facet exists, or the existing entry's value is no
 - **AND** the system SHALL record `name@MAJOR.MINOR.PATCH` in the project manifest
 - **AND** the system SHALL NOT record the facet name as the version value
 
-#### Scenario: @latest tag is equivalent to a bare name
+#### Scenario: Explicit @latest tag records "latest" in the manifest
 
 - **WHEN** a user adds a registry facet using the literal `name@latest` form
-- **AND** no entry for that facet exists in the project manifest
 - **THEN** the system SHALL resolve the latest published version
-- **AND** the system SHALL record `name@MAJOR.MINOR.PATCH` in the project manifest
-- **AND** the resulting manifest, lockfile, and on-disk state SHALL be identical to what would have been produced by the bare-name form
+- **AND** the system SHALL record `latest` as the version specifier in the project manifest (preserving the user's explicit intent to float)
+- **AND** the system SHALL record the resolved exact version in the lockfile
+
+> **Note:** This differs from the bare-name form, which pins to the resolved exact version. A bare name is shorthand for "give me the latest and pin it"; `name@latest` is an explicit floating specifier, analogous to `name@1.*`.
 
 #### Scenario: Wildcard-resolved version is recorded as exact version
 
@@ -311,7 +312,7 @@ The system performs three distinct network operations when installing a registry
 
 An exact version that is already cached SHALL require neither version resolution nor content download. A request whose exact version is already known (an exact specifier, or a satisfying lockfile entry) SHALL NOT trigger version resolution. The presence of a cached copy SHALL NOT, by itself, avoid version resolution when the exact version is not yet known, and SHALL NOT avoid integrity confirmation when a lockfile entry is being created.
 
-#### Scenario: Exact specifier with warm cache and satisfying lockfile entry contacts the network for nothing
+#### Scenario: Exact specifier with warm cache and satisfying lockfile entry requires no network access
 
 - **WHEN** a user adds a facet by an exact version whose content is already in the cache
 - **AND** the lockfile already records that exact version with its integrity
@@ -350,7 +351,7 @@ An exact version that is already cached SHALL require neither version resolution
 
 ### Requirement: An explicit add request is resolved fresh, independent of the lockfile
 
-When a user explicitly adds a facet, the system SHALL treat that request as authoritative and SHALL NOT consult the lockfile to satisfy it. The system SHALL distinguish a facet the user is **explicitly adding** from a facet **already recorded in the manifest** that is merely being reproduced, and SHALL trust the lockfile only for the latter.
+When a user explicitly adds a facet, the system SHALL treat that request as authoritative and SHALL NOT consult the lockfile for version resolution. The system MAY still use a satisfying lockfile entry's recorded integrity as a trust anchor (see the offline re-add scenario below). The system SHALL distinguish a facet the user is **explicitly adding** from a facet **already recorded in the manifest** that is merely being reproduced, and SHALL trust the lockfile only for the latter.
 
 For an explicit add:
 
@@ -390,46 +391,46 @@ For an explicit add:
 
 ### Requirement: A machine-local record tracks what each project has materialized
 
-The system SHALL maintain a machine-local record of what it has materialized into each project's adapter trees, separate from the lockfile. Because the lockfile is shared and version-controlled, it cannot reliably describe what a particular machine has on disk — a change pulled from version control can remove a lockfile entry while that facet's assets remain materialized in the working copy. The machine-local record SHALL persist outside the project's version-controlled files and SHALL survive operations that rewrite the lockfile from outside the system. Each project SHALL have its own record, identified by the project's canonical on-disk location, so that two distinct projects never share a record and concurrent operations in different projects never contend on one. For each materialized facet the record SHALL retain enough information — at minimum the asset set it contributed — to remove that facet's assets later without consulting the cache or the network. A project that has no such record yet SHALL have one created from the current lockfile on the next operation.
+The system SHALL maintain a machine-local install record — the **receipt** — of what it has materialized into each project's adapter trees, separate from the lockfile. Because the lockfile is shared and version-controlled, it cannot reliably describe what a particular machine has on disk — a change pulled from version control can remove a lockfile entry while that facet's assets remain materialized in the working copy. The receipt SHALL persist outside the project's version-controlled files and SHALL survive operations that rewrite the lockfile from outside the system. Each project SHALL have its own receipt, identified by the project's canonical on-disk location, so that two distinct projects never share a receipt and concurrent operations in different projects never contend on one. For each materialized facet the receipt SHALL retain enough information — at minimum the asset set it contributed — to remove that facet's assets later without consulting the cache or the network. A project that has no receipt yet SHALL have one created from the current lockfile on the next operation.
 
-The system SHALL treat this record, not the on-disk lockfile, as the description of what is currently materialized when deciding which assets to remove. When a facet is recorded as materialized but is no longer wanted (absent from the manifest and not being added), the system SHALL delete that facet's recorded assets from every selected adapter and SHALL drop the facet from both the lockfile and the machine-local record. This removal SHALL succeed without any network access and without any cached content, because the record itself carries the asset set to delete.
+The system SHALL treat the receipt, not the on-disk lockfile, as the description of what is currently materialized when deciding which assets to remove. When a facet is recorded as materialized but is no longer wanted (absent from the manifest and not being added), the system SHALL delete that facet's recorded assets from every selected adapter and SHALL drop the facet from both the lockfile and the receipt. This removal SHALL succeed without any network access and without any cached content, because the receipt itself carries the asset set to delete. In frozen-lockfile mode, this cleanup applies only after the frozen consistency check passes; an orphaned lockfile entry that the consistency check rejects SHALL cause the operation to fail before any cleanup occurs (see the frozen-lockfile requirement).
 
-The record SHALL be treated as untrusted input. Before acting on a record, the system SHALL verify it corresponds to the project being operated on; a record that does not (corruption, collision, or tampering) SHALL be ignored and recreated rather than acted upon. When deleting assets named by the record, the system SHALL delete only files that resolve to locations inside the project's adapter trees; a recorded path that resolves outside them SHALL NOT be deleted, and the system SHALL report it. A corrupted record MAY cause a cleanup to be skipped; it SHALL NOT cause deletion outside the project's adapter trees.
+The receipt SHALL be treated as untrusted input. Before acting on a receipt, the system SHALL verify it corresponds to the project being operated on; a receipt that does not (corruption, collision, or tampering) SHALL be ignored and recreated rather than acted upon. When deleting assets named by the receipt, the system SHALL delete only files that resolve to locations inside the project's adapter trees; a recorded path that resolves outside them SHALL NOT be deleted, and the system SHALL report it. A corrupted receipt MAY cause a cleanup to be skipped; it SHALL NOT cause deletion outside the project's adapter trees.
 
 #### Scenario: A pulled change that drops a lockfile entry still cleans up its assets
 
 - **WHEN** a change pulled from version control removes a facet from both the manifest and the lockfile
 - **AND** that facet's assets were previously materialized on this machine
 - **AND** the user runs install
-- **THEN** the system SHALL detect the facet as materialized but no longer wanted via the machine-local record
+- **THEN** the system SHALL detect the facet as materialized but no longer wanted via the receipt
 - **AND** the system SHALL delete that facet's assets from every selected adapter
 - **AND** the system SHALL NOT leave the facet's assets orphaned on disk
 
 #### Scenario: Removal needs neither cache nor network
 
 - **WHEN** a user removes a facet whose content is absent from the cache and whose registry is unreachable
-- **THEN** the system SHALL still delete that facet's assets using the asset set recorded in the machine-local record
+- **THEN** the system SHALL still delete that facet's assets using the asset set recorded in the receipt
 - **AND** the removal SHALL succeed
 
-#### Scenario: A project without a record bootstraps one
+#### Scenario: A project without a receipt bootstraps one
 
-- **WHEN** the system operates on a project that has a lockfile but no machine-local record yet
-- **THEN** the system SHALL create the record from the current lockfile's entries
-- **AND** subsequent operations SHALL use the record as the description of what is materialized
+- **WHEN** the system operates on a project that has a lockfile but no receipt yet
+- **THEN** the system SHALL create the receipt from the current lockfile's entries
+- **AND** subsequent operations SHALL use the receipt as the description of what is materialized
 
-#### Scenario: A record naming a path outside the project never causes deletion there
+#### Scenario: A receipt naming a path outside the project never causes deletion there
 
-- **WHEN** the machine-local record contains an asset path that resolves outside the project's adapter trees (for example via `..` segments, an absolute path elsewhere, or a symlink)
+- **WHEN** the receipt contains an asset path that resolves outside the project's adapter trees (for example via `..` segments, an absolute path elsewhere, or a symlink)
 - **AND** the system would otherwise remove that facet's assets
 - **THEN** the system SHALL NOT delete the escaping path
 - **AND** the system SHALL report the invalid entry
 - **AND** valid asset paths inside the adapter trees SHALL still be processed normally
 
-#### Scenario: A record that does not match its project is ignored, not acted on
+#### Scenario: A receipt that does not match its project is ignored, not acted on
 
-- **WHEN** the system loads a machine-local record whose recorded project identity does not match the project being operated on
-- **THEN** the system SHALL NOT delete any assets based on that record
-- **AND** the system SHALL recreate the record from the current lockfile as if none existed
+- **WHEN** the system loads a receipt whose recorded project identity does not match the project being operated on
+- **THEN** the system SHALL NOT delete any assets based on that receipt
+- **AND** the system SHALL recreate the receipt from the current lockfile as if none existed
 
 ### Requirement: Resolved facet content is cached locally
 
@@ -591,7 +592,7 @@ The project manifest is the source of truth; the lockfile is a record of resolut
 
 The system SHALL provide a frozen-lockfile mode for install in which the lockfile is treated as the source of truth and reproduced exactly: no extra facets, no missing facets, no source changes, and no content changes. In this mode the system SHALL NOT perform version resolution for any facet and SHALL NOT write the lockfile; content download for a locked exact version absent from the cache SHALL remain permitted, because downloading already-locked bytes is reproduction, not drift. Because adding or removing a facet changes the locked set, the system SHALL reject a frozen-lockfile operation that carries any explicit add or removal, before inspecting the lockfile. Before installing, the system SHALL verify that the lockfile fully and consistently covers the manifest. The system SHALL fail without modifying the project if any of the following is true: the operation carries an explicit add or removal, no lockfile exists, the lockfile cannot be read or does not satisfy the published schema, the manifest declares a facet that has no lockfile entry, a lockfile entry's recorded version does not satisfy its manifest specifier, the lockfile pins a facet the manifest no longer declares (an orphaned entry that a non-frozen install would prune), or a git or local facet's manifest source string (URL, ref, or path) no longer matches the recorded git or local source provenance. When the lockfile fully covers the manifest, the system SHALL install exactly the versions and integrity hashes recorded in the lockfile, downloading any whose content is not cached, and SHALL verify that every facet — including cached content and local sources, which a non-frozen install would rebuild from disk — reproduces its recorded integrity, failing if any content does not match. Because frozen mode never creates a lockfile entry, it SHALL NOT require integrity confirmation against the registry; its only permitted network activity is downloading already-locked content.
 
-Frozen mode constrains the locked set, not the machine's materialized state: assets that the machine-local record shows as materialized but that the lockfile-covered manifest no longer wants SHALL still be removed, and the machine-local record SHALL be updated to match — while the lockfile and manifest SHALL still never be written.
+Frozen mode constrains the locked set, not the machine's materialized state: assets that the receipt shows as materialized but that the lockfile-covered manifest no longer wants SHALL still be removed, and the receipt SHALL be updated to match — while the lockfile and manifest SHALL still never be written.
 
 #### Scenario: Frozen install proceeds when the lockfile covers the manifest
 
@@ -619,11 +620,11 @@ Frozen mode constrains the locked set, not the machine's materialized state: ass
 #### Scenario: Frozen mode still cleans up a facet dropped by a pulled change
 
 - **WHEN** a change pulled from version control removes a facet from both the manifest and the lockfile
-- **AND** the machine-local record shows that facet's assets as materialized on this machine
+- **AND** the receipt shows that facet's assets as materialized on this machine
 - **AND** a user runs install in frozen-lockfile mode
 - **THEN** the frozen consistency check SHALL pass (the manifest and lockfile agree)
-- **AND** the system SHALL delete that facet's assets using the machine-local record
-- **AND** the system SHALL update the machine-local record so it no longer lists the facet
+- **AND** the system SHALL delete that facet's assets using the receipt
+- **AND** the system SHALL update the receipt so it no longer lists the facet
 - **AND** the system SHALL NOT write the lockfile or the manifest
 
 #### Scenario: Frozen mode rejects an explicit add or removal
@@ -736,39 +737,39 @@ When a facet declares dependencies on other facets (composition), the system SHA
 
 ### Requirement: Failed installs leave the project unchanged
 
-The project manifest, the lockfile, and the machine-local install record SHALL be written together as a single transactional commit at the end of a successful operation. The system SHALL NOT write the manifest ahead of resolving and materializing a change. When an install, add, or remove operation fails for any reason, the manifest, the lockfile, and the install record on disk SHALL all remain exactly as they were before the operation. The user SHALL NOT be left with a project whose manifest references a facet that was never installed, nor with a lockfile or install record that records a state that was never materialized.
+The project manifest, the lockfile, and the receipt SHALL be written together as a single transactional commit at the end of a successful operation. The system SHALL NOT write the manifest ahead of resolving and materializing a change. When an install, add, or remove operation fails for any reason, the manifest, the lockfile, and the receipt on disk SHALL all remain exactly as they were before the operation. The user SHALL NOT be left with a project whose manifest references a facet that was never installed, nor with a lockfile or receipt that records a state that was never materialized.
 
-#### Scenario: Add failure leaves manifest, lockfile, and install record unchanged
+#### Scenario: Add failure leaves manifest, lockfile, and receipt unchanged
 
 - **WHEN** a user adds a facet
 - **AND** any step (resolution, download, integrity, materialization, or the final write) fails
 - **THEN** the manifest on disk SHALL match its pre-operation contents
 - **AND** the lockfile on disk SHALL match its pre-operation contents
-- **AND** the machine-local install record on disk SHALL match its pre-operation contents
+- **AND** the receipt on disk SHALL match its pre-operation contents
 - **AND** the system SHALL surface the failure to the user
 
-#### Scenario: Manifest, lockfile, and install record are written together on success
+#### Scenario: Manifest, lockfile, and receipt are written together on success
 
 - **WHEN** an add, remove, or install operation succeeds
-- **THEN** the system SHALL write the updated manifest, lockfile, and install record as one commit
+- **THEN** the system SHALL write the updated manifest, lockfile, and receipt as one commit
 - **AND** no one of the three files SHALL be left written while another is not
 
 ### Requirement: Removing a facet uninstalls it
 
-When a user removes a facet from a project, the system SHALL drop the facet from the project manifest, delete the facet's materialized assets from every selected adapter, and update the lockfile and the machine-local install record so neither records the facet — all in a single operation. A user SHALL NOT need to run a separate install step after removing. The asset set to delete SHALL be taken from the machine-local install record, so removal SHALL require neither the cache nor the network.
+When a user removes a facet from a project, the system SHALL drop the facet from the project manifest, delete the facet's materialized assets from every selected adapter, and update the lockfile and the receipt so neither records the facet — all in a single operation. A user SHALL NOT need to run a separate install step after removing. The asset set to delete SHALL be taken from the receipt, so removal SHALL require neither the cache nor the network.
 
 #### Scenario: Removing a declared facet uninstalls it
 
 - **WHEN** a user removes a facet that is declared in the project manifest
 - **THEN** the system SHALL remove the facet's entry from the project manifest
-- **AND** the system SHALL delete every asset the facet contributed from every selected adapter, using the asset set recorded in the machine-local install record
-- **AND** the system SHALL update the lockfile and the machine-local install record so neither records the facet
+- **AND** the system SHALL delete every asset the facet contributed from every selected adapter, using the asset set recorded in the receipt
+- **AND** the system SHALL update the lockfile and the receipt so neither records the facet
 - **AND** the operation SHALL complete in a single command invocation
 
 #### Scenario: Other facets are left intact
 
 - **WHEN** a user removes one facet from a project that declares several facets
-- **THEN** the system SHALL leave every other declared facet's manifest entry, lockfile entry, install-record entry, and materialized assets unchanged
+- **THEN** the system SHALL leave every other declared facet's manifest entry, lockfile entry, receipt entry, and materialized assets unchanged
 
 #### Scenario: Removing the last facet leaves an empty project
 
@@ -778,12 +779,12 @@ When a user removes a facet from a project, the system SHALL drop the facet from
 
 ### Requirement: Removing multiple declared facets is transactional
 
-When a user removes more than one facet in a single invocation, the system SHALL remove all of the declared facets together. If the removal of any declared facet fails (asset deletion, lockfile update, or manifest write), the system SHALL remove none of them and SHALL leave the project unchanged. Names that are not declared in the project manifest SHALL be silently ignored and SHALL NOT cause the operation to fail.
+When a user removes more than one facet in a single invocation, the system SHALL remove all of the declared facets together. If the removal of any declared facet fails (asset deletion or the final commit of the manifest, lockfile, and receipt), the system SHALL remove none of them and SHALL leave the manifest, lockfile, receipt, and adapter state unchanged. Names that are not declared in the project manifest SHALL be silently ignored and SHALL NOT cause the operation to fail.
 
 #### Scenario: All declared facets are removed together
 
 - **WHEN** a user removes two or more facets that are all declared in the project manifest
-- **THEN** the system SHALL remove every named facet's manifest entry, assets, and lockfile entry
+- **THEN** the system SHALL remove every named facet's manifest entry, assets, lockfile entry, and receipt entry
 - **AND** the operation SHALL succeed only if every declared facet was removed
 
 #### Scenario: Undeclared names are ignored in a multi-facet removal
@@ -795,12 +796,12 @@ When a user removes more than one facet in a single invocation, the system SHALL
 
 ### Requirement: Removing an undeclared facet is a silent no-op
 
-When a user removes a facet that is not declared in the project manifest, the system SHALL silently ignore the name. The project manifest, lockfile, and adapter state SHALL remain unchanged for that name. When every requested name is undeclared, the system SHALL exit successfully and SHALL report that no changes were made.
+When a user removes a facet that is not declared in the project manifest, the system SHALL silently ignore the name. The project manifest, lockfile, receipt, and adapter state SHALL remain unchanged for that name. When every requested name is undeclared, the system SHALL exit successfully and SHALL report that no changes were made.
 
 #### Scenario: Removing a facet that is not declared
 
 - **WHEN** a user removes a facet whose name does not appear in the project manifest
-- **THEN** the system SHALL leave the project manifest, lockfile, and adapter state unchanged
+- **THEN** the system SHALL leave the project manifest, lockfile, receipt, and adapter state unchanged
 - **AND** the system SHALL NOT fail with an error
 
 #### Scenario: All requested names are undeclared
@@ -811,16 +812,13 @@ When a user removes a facet that is not declared in the project manifest, the sy
 
 ### Requirement: Failed removals leave the project unchanged
 
-When a remove operation fails for any reason after the project manifest has been modified, the system SHALL restore the manifest to its pre-operation state. The user SHALL NOT be left with a project whose manifest no longer references a facet whose assets were never removed.
+When a remove operation fails for any reason, the manifest, lockfile, and receipt on disk SHALL all remain exactly as they were before the operation. The user SHALL NOT be left with a project whose manifest no longer references a facet whose assets were never removed, nor with a lockfile or receipt that records a state that was never materialized.
 
-#### Scenario: Removal failure rolls back the manifest
+#### Scenario: Removal failure leaves manifest, lockfile, and receipt unchanged
 
-- **WHEN** the system has removed a facet's entry from the project manifest as part of a remove operation
-- **AND** a subsequent step (asset deletion or lockfile update) fails
-- **THEN** the system SHALL restore the manifest to its exact pre-operation contents
+- **WHEN** a user removes a facet
+- **AND** any step (asset deletion or the final commit of the manifest, lockfile, and receipt) fails
+- **THEN** the manifest on disk SHALL match its pre-operation contents
+- **AND** the lockfile on disk SHALL match its pre-operation contents
+- **AND** the receipt on disk SHALL match its pre-operation contents
 - **AND** the system SHALL surface the failure to the user
-
-#### Scenario: Removal failure leaves the lockfile unchanged
-
-- **WHEN** a remove operation fails before the lockfile update is committed
-- **THEN** the lockfile on disk SHALL match its pre-operation contents

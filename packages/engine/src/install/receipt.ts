@@ -137,8 +137,17 @@ export function canonicalProjectPath(projectDir: string): string {
  * Never throws.
  */
 export function loadReceipt(projectDir: string): LoadReceiptResult {
-  const canonical = realpathSync(projectDir)
-  const filePath = receiptPath(projectDir)
+  let canonical: string
+  let filePath: string
+  try {
+    canonical = realpathSync(projectDir)
+    filePath = receiptPath(projectDir)
+  } catch {
+    // realpathSync throws when the path doesn't exist or is otherwise
+    // unresolvable (dangling symlink, permission denied). Treat the
+    // same as a missing receipt — the caller will bootstrap a fresh one.
+    return { ok: false, reason: 'corrupt' }
+  }
 
   if (!existsSync(filePath)) {
     return { ok: false, reason: 'missing' }
@@ -198,13 +207,21 @@ export function loadReceipt(projectDir: string): LoadReceiptResult {
 
 /**
  * Write a receipt atomically. Creates the receipts directory if needed.
+ *
+ * The embedded `path` field is always normalized to `canonicalProjectPath(projectDir)`
+ * regardless of what the passed `receipt` carries — this ensures the
+ * receipt's self-identification matches what `loadReceipt` computes,
+ * so a receipt can never round-trip to a spurious `path-mismatch`.
+ *
  * Never throws on ENOENT for the parent directory.
  */
 export function writeReceipt(projectDir: string, receipt: Receipt): void {
   const dir = facetReceiptsDir()
   mkdirSync(dir, { recursive: true })
   const filePath = receiptPath(projectDir)
-  atomicWriteFileSync(filePath, `${JSON.stringify(receipt, null, 2)}\n`)
+  const canonical = canonicalProjectPath(projectDir)
+  const normalized: Receipt = { ...receipt, path: canonical }
+  atomicWriteFileSync(filePath, `${JSON.stringify(normalized, null, 2)}\n`)
 }
 
 // ---------------------------------------------------------------------------

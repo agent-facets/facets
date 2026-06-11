@@ -171,6 +171,14 @@ describe('loadReceipt', () => {
     expect(result.receipt.facets.cowsay?.version).toBe('0.0.1')
     expect(result.receipt.facets.cowsay?.assets).toHaveLength(1)
   })
+
+  test('returns corrupt (not throw) on an unresolvable project path (#19)', () => {
+    const nonexistent = join(projectDir, 'this-does-not-exist')
+    const result = loadReceipt(nonexistent)
+    expect(result.ok).toBe(false)
+    if (result.ok) expect.unreachable()
+    expect(result.reason).toBe('corrupt')
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -215,6 +223,25 @@ describe('writeReceipt', () => {
     expect(Object.keys(result.receipt.facets)).toHaveLength(2)
     expect(result.receipt.facets.cowsay?.assets).toHaveLength(2)
     expect(result.receipt.facets.hello?.assets).toHaveLength(1)
+  })
+
+  test('normalizes receipt.path so a stale path does not cause path-mismatch (#20)', () => {
+    const canonical = realpathSync(projectDir)
+    const receipt: Receipt = {
+      version: 1,
+      path: '/some/other/path', // intentionally wrong
+      facets: {
+        cowsay: {
+          version: '0.0.1',
+          assets: [{ scope: 'project', type: 'skill', name: 'cowsay' }],
+        },
+      },
+    }
+    writeReceipt(projectDir, receipt)
+    const result = loadReceipt(projectDir)
+    expect(result.ok).toBe(true)
+    if (!result.ok) expect.unreachable()
+    expect(result.receipt.path).toBe(canonical)
   })
 })
 

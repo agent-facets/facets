@@ -229,6 +229,32 @@ afterEach(() => {
   rmSync(fakeHome, { recursive: true, force: true })
 })
 
+describe('runInstall — DELTA_CONFLICT (#23)', () => {
+  test('a delta with the same facet in additions and removals fails before any mutation', async () => {
+    writeFacets({ cowsay: '0.1.0' })
+    const adapters = await loadInstalledAdapters()
+    const result = await runInstall({
+      projectRoot,
+      adapters: adapters.filter((a) => a.supportsInstall === true),
+      delta: {
+        additions: [
+          {
+            facetName: 'cowsay',
+            specifier: 'cowsay@0.1.0',
+            source: { kind: 'registry', name: 'cowsay', version: { kind: 'exact', major: 0, minor: 1, patch: 0 } },
+          },
+        ],
+        removals: [{ facetName: 'cowsay' }],
+      },
+    })
+    if (result.ok) expect.unreachable()
+    expect(result.failure.code).toBe('DELTA_CONFLICT')
+    if (result.failure.code !== 'DELTA_CONFLICT') expect.unreachable()
+    expect(result.failure.facet).toBe('cowsay')
+    expect(result.rollback.kind).toBe('not-needed')
+  })
+})
+
 describe('runInstall — exact manifest pin differing from the lockfile', () => {
   test('re-resolves to the manifest version and reports updated', async () => {
     // Fixtures exist for both versions; the lock pins 0.1.1, manifest bumps to 0.1.2.
