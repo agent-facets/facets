@@ -2,7 +2,7 @@ import type { Adapter } from '@agent-facets/adapter'
 import type { ValidationError } from '@agent-facets/common'
 import type { IntegrityFailure, Lockfile, LockfileAssetEntry } from '@agent-facets/protocol'
 import type { RegistryError } from '../registry/index.ts'
-import type { ParseError } from '../sources/facet/types.ts'
+import type { ParseError, Source } from '../sources/facet/types.ts'
 
 /**
  * Per-facet outcome reported in the result. View layers render one
@@ -188,6 +188,7 @@ export type RunInstallFailure =
       asset: LockfileAssetEntry
       cause: string
     }
+  | { code: 'FROZEN_WITH_DELTA' }
   | { code: 'ABORTED' }
 
 /**
@@ -240,6 +241,42 @@ export type RunInstallResult =
       rollback: RollbackOutcome
     }
 
+// ---------------------------------------------------------------------------
+// Install delta — the plan phase's output, the commit phase's input
+// ---------------------------------------------------------------------------
+
+/**
+ * A facet the user explicitly asked to add. The specifier is carried
+ * verbatim so commit can apply the manifest-write policy (bare → pin;
+ * explicit → verbatim) and the structural discriminator (additions
+ * never trust the lockfile for version resolution).
+ */
+export interface Addition {
+  facetName: string
+  /** The raw specifier string as the user typed it (e.g. `cowsay@0.*`). */
+  specifier: string
+  /** The parsed source — already resolved from the specifier. */
+  source: Source
+}
+
+/**
+ * A facet the user explicitly asked to remove.
+ */
+export interface Removal {
+  facetName: string
+}
+
+/**
+ * The delta produced by the plan phase. `facet install` produces an
+ * empty delta; `facet add` populates `additions`; `facet remove`
+ * populates `removals`. Same-name in both is an illegal state the
+ * CLI cannot produce; `runInstall` validates it at the top.
+ */
+export interface InstallDelta {
+  additions: ReadonlyArray<Addition>
+  removals: ReadonlyArray<Removal>
+}
+
 /**
  * Options for `runInstall`.
  *
@@ -275,6 +312,9 @@ export type RunInstallResult =
 export interface RunInstallOptions {
   projectRoot: string
   adapters: ReadonlyArray<Adapter>
+  /** Explicit additions/removals from the plan phase. Omit or pass
+   *  `{ additions: [], removals: [] }` for a plain `facet install`. */
+  delta?: InstallDelta
   onStage?: (event: StageEvent) => void
   onLog?: (line: string) => void
   signal?: AbortSignal

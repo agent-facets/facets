@@ -156,18 +156,17 @@ export const removeCommand: Command = {
       return 1
     }
 
-    // Install-phase failure. The orchestrator restored the manifest
-    // snapshot; branch the guidance on whether restore succeeded and
-    // whether the install rollback was partial.
+    // Install-phase failure. The delta-based flow never writes the manifest
+    // ahead of install — the journal rollback handles asset cleanup.
     const rollback = captured.install.rollback
     const partialFailureCount = rollback.kind === 'partial-failure' ? rollback.failures : 0
-    const rollbackFailed = partialFailureCount > 0 || !captured.manifestRestored
     writeCliError({
       what: 'remove failed',
       detail: `code=${captured.install.failure.code}`,
-      fix: rollbackFailed
-        ? `partial rollback: some state may remain (manifest restored: ${captured.manifestRestored}). Inspect and clean manually before re-running 'facet remove'.`
-        : "rollback complete; project state unchanged. Fix the underlying issue and re-run 'facet remove'.",
+      fix:
+        partialFailureCount > 0
+          ? "partial rollback: some state may remain. Inspect and clean manually before re-running 'facet remove'."
+          : "rollback complete; project state unchanged. Fix the underlying issue and re-run 'facet remove'.",
     })
     return 1
   },
@@ -185,13 +184,6 @@ function writePrepareError(failure: RemovePrepareFailure): void {
         what: 'could not read facets.json',
         detail: failure.error,
         fix: 'run this command inside a project with a valid facets.json',
-      })
-      return
-    case 'manifest-write':
-      writeCliError({
-        what: 'could not write facets.json',
-        detail: failure.error,
-        fix: 'check file permissions and available disk space; nothing was removed',
       })
       return
   }

@@ -298,6 +298,15 @@ export function FailureBlock({ failure }: { failure: RunInstallFailure }): React
           <Text color={THEME.hint}> Run without --frozen-lockfile, or `facet add` to update the lockfile.</Text>
         </Box>
       )
+    case 'FROZEN_WITH_DELTA':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ cannot add or remove with --frozen-lockfile
+          </Text>
+          <Text color={THEME.hint}> Run without --frozen-lockfile to modify the locked set.</Text>
+        </Box>
+      )
     default: {
       // Exhaustiveness guard: any new `RunInstallFailure` variant must
       // get a `case` arm above. Without this, an un-rendered failure

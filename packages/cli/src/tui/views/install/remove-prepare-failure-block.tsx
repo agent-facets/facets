@@ -15,7 +15,8 @@ import { THEME } from '../../theme.ts'
  * {@link AddPrepareFailureBlock}.
  */
 export function RemovePrepareFailureBlock({ failure }: { failure: RemovePrepareFailure }): React.JSX.Element {
-  switch (failure.reason) {
+  const { reason } = failure
+  switch (reason) {
     case 'manifest-read':
       return (
         <Box flexDirection="column" marginTop={1}>
@@ -25,20 +26,8 @@ export function RemovePrepareFailureBlock({ failure }: { failure: RemovePrepareF
           <Text> {failure.error}</Text>
         </Box>
       )
-    case 'manifest-write':
-      return (
-        <Box flexDirection="column" marginTop={1}>
-          <Text color={THEME.warning} bold>
-            ✕ could not write facets.json
-          </Text>
-          <Text> {failure.error}</Text>
-          <Text color={THEME.hint}> nothing was removed; check file permissions and disk space</Text>
-        </Box>
-      )
     default: {
-      // Exhaustiveness guard: any new `RemovePrepareFailure` variant must
-      // get a `case` arm above.
-      const _exhaustive: never = failure
+      const _exhaustive: never = reason
       return _exhaustive
     }
   }

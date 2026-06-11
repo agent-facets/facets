@@ -47,6 +47,14 @@ export interface PlanFacetArgs {
    * the install with `INTEGRITY_FAILURE`; the entry is never rewritten.
    */
   frozenLockfile?: boolean
+  /**
+   * When true, this facet is an explicit user addition (from `facet add`).
+   * The structural discriminator: additions never trust the lockfile for
+   * version resolution of non-exact registry specifiers. An exact specifier
+   * in an addition still benefits from a lockfile entry for integrity
+   * comparison, but a `0.*`, `*`, `latest`, or bare add always re-resolves.
+   */
+  isExplicitAddition?: boolean
 }
 
 export interface PlanFacetSuccess {
@@ -129,7 +137,15 @@ export async function planFacet(args: PlanFacetArgs): Promise<PlanFacetResult> {
   const locked = previousLockfile.facets[facetName]
   // A stale entry is treated as absent below so the facet re-resolves like
   // a fresh add, overwriting the stale entry.
-  const effectiveLocked = resolveEffectiveLockedForPlan(locked, parsed.value)
+  //
+  // The structural discriminator: when this facet is an explicit addition
+  // with a non-exact registry specifier, the lockfile is NEVER trusted for
+  // version resolution — always re-resolve to the newest matching version.
+  // An exact specifier in an addition still benefits from the lockfile
+  // (the locked integrity is the trust anchor; no version resolution needed).
+  const isNonExactAddition =
+    args.isExplicitAddition === true && parsed.value.kind === 'registry' && parsed.value.version.kind !== 'exact'
+  const effectiveLocked = isNonExactAddition ? undefined : resolveEffectiveLockedForPlan(locked, parsed.value)
   // Set when a cache hit's sidecar matches the locked integrity. The
   // sidecar IS the post-write trust certificate; we don't rebuild to
   // re-derive what the cache already proved at write time.
