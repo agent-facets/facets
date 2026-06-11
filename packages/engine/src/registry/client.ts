@@ -145,7 +145,7 @@ export function translateWireError(
     return { code: 'UNPARSEABLE_RESPONSE', status }
   }
   // Structured envelope: carry the registry's `code`, `error`, `fix`,
-  // and `docsUrl` through verbatim. The registry is the single source
+  // and `docs_url` through verbatim. The registry is the single source
   // of truth for what the error means and how to fix it; the CLI does
   // not maintain any local code-to-message map (see design D4).
   return {
@@ -153,7 +153,7 @@ export function translateWireError(
     wireCode: wire.code,
     error: wire.error,
     fix: wire.fix,
-    docsUrl: wire.docsUrl,
+    docsUrl: wire.docs_url,
   }
 }
 

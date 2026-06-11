@@ -589,32 +589,38 @@ When a user removes a facet from a project, the system SHALL drop the facet from
 - **THEN** the system SHALL leave the project manifest declaring no facets
 - **AND** the system SHALL leave a valid lockfile that records no facets
 
-### Requirement: Removing multiple facets is a single all-or-nothing operation
+### Requirement: Removing multiple declared facets is transactional
 
-When a user removes more than one facet in a single invocation, the system SHALL remove all of the named facets together. If any named facet cannot be removed, the system SHALL remove none of them and SHALL leave the project unchanged.
+When a user removes more than one facet in a single invocation, the system SHALL remove all of the declared facets together. If the removal of any declared facet fails (asset deletion, lockfile update, or manifest write), the system SHALL remove none of them and SHALL leave the project unchanged. Names that are not declared in the project manifest SHALL be silently ignored and SHALL NOT cause the operation to fail.
 
-#### Scenario: All named facets are removed together
+#### Scenario: All declared facets are removed together
 
 - **WHEN** a user removes two or more facets that are all declared in the project manifest
 - **THEN** the system SHALL remove every named facet's manifest entry, assets, and lockfile entry
-- **AND** the operation SHALL succeed only if every named facet was removed
+- **AND** the operation SHALL succeed only if every declared facet was removed
 
-#### Scenario: One absent name aborts the whole removal
+#### Scenario: Undeclared names are ignored in a multi-facet removal
 
 - **WHEN** a user removes two or more facets and at least one of them is not declared in the project manifest
-- **THEN** the system SHALL NOT remove any of the named facets
-- **AND** the system SHALL leave the project manifest, lockfile, and adapter state unchanged
+- **THEN** the system SHALL remove every *declared* facet in the request
+- **AND** the system SHALL silently ignore the undeclared names
+- **AND** the operation SHALL succeed if every declared facet was removed successfully
 
-### Requirement: Removing an undeclared facet fails
+### Requirement: Removing an undeclared facet is a silent no-op
 
-When a user removes a facet that is not declared in the project manifest, the system SHALL fail with an error identifying the facet and SHALL leave the project unchanged. The system SHALL NOT treat the removal of an undeclared facet as a silent success.
+When a user removes a facet that is not declared in the project manifest, the system SHALL silently ignore the name. The project manifest, lockfile, and adapter state SHALL remain unchanged for that name. When every requested name is undeclared, the system SHALL exit successfully and SHALL report that no changes were made.
 
 #### Scenario: Removing a facet that is not declared
 
 - **WHEN** a user removes a facet whose name does not appear in the project manifest
-- **THEN** the system SHALL fail with an error identifying the facet by name
-- **AND** the system SHALL leave the project manifest, lockfile, and adapter state unchanged
-- **AND** the system SHALL exit with a non-zero status
+- **THEN** the system SHALL leave the project manifest, lockfile, and adapter state unchanged
+- **AND** the system SHALL NOT fail with an error
+
+#### Scenario: All requested names are undeclared
+
+- **WHEN** a user removes one or more facets and none of them are declared in the project manifest
+- **THEN** the system SHALL exit successfully
+- **AND** the system SHALL report that no changes were made
 
 ### Requirement: Failed removals leave the project unchanged
 

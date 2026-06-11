@@ -5,7 +5,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assembleOuterTar, computeContentHash } from '@agent-facets/protocol'
 import { createTar } from 'nanotar'
-import { describeVersionSpec, downloadAndExtractFacet, resolveRegistryMetadataBatch } from '../registry/index.ts'
+import {
+  describeVersionSpec,
+  downloadAndExtractFacet,
+  fixtures,
+  resolveRegistryMetadataBatch,
+} from '../registry/index.ts'
 
 const ORIGINAL_FETCH = globalThis.fetch
 const ORIGINAL_ENV = process.env.FACET_REGISTRY_URL
@@ -55,16 +60,7 @@ describe('resolveRegistryMetadataBatch', () => {
     const calledUrls: string[] = []
     globalThis.fetch = (async (input: string | URL | Request) => {
       calledUrls.push(captureUrl(input))
-      return new Response(
-        JSON.stringify({
-          name: 'cowsay',
-          version: '0.1.0',
-          contentHash: 'sha256:abc',
-          sizeBytes: 100,
-          publishedAt: '2026-05-01T00:00:00Z',
-        }),
-        { status: 200 },
-      )
+      return new Response(JSON.stringify(fixtures.versionMetadata({ content_hash: 'sha256:abc' })), { status: 200 })
     }) as unknown as typeof fetch
     const result = await resolveRegistryMetadataBatch([{ name: 'cowsay', version: { kind: 'latest' } }])
     expect(result.ok).toBe(true)
@@ -80,16 +76,9 @@ describe('resolveRegistryMetadataBatch', () => {
     const calledUrls: string[] = []
     globalThis.fetch = (async (input: string | URL | Request) => {
       calledUrls.push(captureUrl(input))
-      return new Response(
-        JSON.stringify({
-          name: 'cowsay',
-          version: '1.2.3',
-          contentHash: 'sha256:x',
-          sizeBytes: 1,
-          publishedAt: '2026-05-01',
-        }),
-        { status: 200 },
-      )
+      return new Response(JSON.stringify(fixtures.versionMetadata({ name: 'cowsay', version: '1.2.3' })), {
+        status: 200,
+      })
     }) as unknown as typeof fetch
     await resolveRegistryMetadataBatch([{ name: 'cowsay', version: { kind: 'exact', major: 1, minor: 2, patch: 3 } }])
     expect(calledUrls[0]).toBe('https://api.test/v0/facets/cowsay/1.2.3')
@@ -99,16 +88,7 @@ describe('resolveRegistryMetadataBatch', () => {
     const calledUrls: string[] = []
     globalThis.fetch = (async (input: string | URL | Request) => {
       calledUrls.push(captureUrl(input))
-      return new Response(
-        JSON.stringify({
-          name: 'acme/cowsay',
-          version: '0.1.0',
-          contentHash: 'sha256:x',
-          sizeBytes: 1,
-          publishedAt: '2026-05-01',
-        }),
-        { status: 200 },
-      )
+      return new Response(JSON.stringify(fixtures.versionMetadata({ name: 'acme/cowsay' })), { status: 200 })
     }) as unknown as typeof fetch
     await resolveRegistryMetadataBatch([{ name: 'acme/cowsay', version: { kind: 'latest' } }])
     expect(calledUrls[0]).toBe('https://api.test/v0/facets/acme%2Fcowsay/latest')
@@ -116,7 +96,7 @@ describe('resolveRegistryMetadataBatch', () => {
 
   test('404 maps to NOT_FOUND with the spec verbatim', async () => {
     globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ error: 'gone', code: 'E_FACET_NOT_FOUND', docsUrl: 'x' }), {
+      new Response(JSON.stringify(fixtures.apiError({ error: 'gone', docs_url: 'x' })), {
         status: 404,
       })) as unknown as typeof fetch
     const result = await resolveRegistryMetadataBatch([
@@ -164,18 +144,11 @@ describe('resolveRegistryMetadataBatch', () => {
       calls++
       const url = String(input)
       if (url.includes('good')) {
-        return new Response(
-          JSON.stringify({
-            name: 'good',
-            version: '1.0.0',
-            contentHash: 'sha256:x',
-            sizeBytes: 1,
-            publishedAt: '2026-05-01',
-          }),
-          { status: 200 },
-        )
+        return new Response(JSON.stringify(fixtures.versionMetadata({ name: 'good', version: '1.0.0' })), {
+          status: 200,
+        })
       }
-      return new Response(JSON.stringify({ code: 'E_FACET_NOT_FOUND' }), { status: 404 })
+      return new Response(JSON.stringify(fixtures.apiError()), { status: 404 })
     }) as unknown as typeof fetch
     const result = await resolveRegistryMetadataBatch([
       { name: 'good', version: { kind: 'latest' } },

@@ -39,8 +39,8 @@ function findContentFrame(frames: ReadonlyArray<string | undefined>): string {
 function makeFakeRun(
   events: ReadonlyArray<StageEvent>,
   result: RunInstallResult,
-): (onStage: (e: StageEvent) => void) => Promise<RunInstallResult> {
-  return async (onStage) => {
+): (onStage: (e: StageEvent) => void, onLog?: (line: string) => void) => Promise<RunInstallResult> {
+  return async (onStage, _onLog) => {
     for (const event of events) {
       onStage(event)
     }
@@ -121,9 +121,7 @@ describe('InstallView — single-facet success', () => {
     )
     await settle()
     const frame = findContentFrame(instance.frames)
-    expect(frame).toContain('Adding facets...')
-    expect(frame).toContain('viper-plans@1.2.3')
-    expect(frame).toContain('Done.')
+    expect(frame).toContain('viper-plans installed.')
     expect(frame).toContain('1 installed')
     instance.unmount()
   })
@@ -161,11 +159,7 @@ describe('InstallView — multi-facet success with update', () => {
     )
     await settle()
     const frame = findContentFrame(instance.frames)
-    expect(frame).toContain('Installing facets...')
-    expect(frame).toContain('viper-plans@1.2.3')
-    expect(frame).toContain('rezi@0.5.0')
-    expect(frame).toContain('planner@2.0.0')
-    expect(frame).toContain('was 1.0.0')
+    expect(frame).toContain('Install complete.')
     expect(frame).toContain('2 installed')
     expect(frame).toContain('1 updated')
     instance.unmount()
@@ -238,7 +232,6 @@ describe('InstallView — drift removal', () => {
     )
     await settle()
     const frame = findContentFrame(instance.frames)
-    expect(frame).toContain('removed orphan@1.0.0')
     expect(frame).toContain('1 removed')
     instance.unmount()
   })
@@ -292,8 +285,10 @@ describe('InstallView — marketing aesthetic on `add`', () => {
     )
     await settle()
     const frame = findContentFrame(instance.frames)
-    expect(frame).toContain('+ 1 skill · 1 command')
-    expect(frame).toContain('Now /cowsay is available to your agents.')
+    expect(frame).toContain('1 skill')
+    expect(frame).toContain('1 command')
+    // The "Now /x is available" line was removed in the marketing overhaul.
+    expect(frame).not.toContain('is available to your agents')
     instance.unmount()
   })
 
@@ -341,7 +336,7 @@ describe('InstallView — marketing aesthetic on `add`', () => {
     )
     await settle()
     const frame = findContentFrame(instance.frames)
-    expect(frame).toContain('+ 1 skill')
+    expect(frame).toContain('1 skill')
     expect(frame).not.toContain('is available to your agents')
     instance.unmount()
   })
@@ -410,10 +405,10 @@ describe('InstallView — marketing aesthetic on `add`', () => {
     await settle()
     const frame = findContentFrame(instance.frames)
     // Only cowsay's one command — no skills from `existing-skill`.
-    expect(frame).toContain('+ 1 command')
+    expect(frame).toContain('1 command')
     expect(frame).not.toContain('skill')
-    // Landing line picks up cowsay's command, not the pre-existing one.
-    expect(frame).toContain('Now /cowsay is available to your agents.')
+    // The "Now /x is available" line was removed in the marketing overhaul.
+    expect(frame).not.toContain('is available to your agents')
     expect(frame).not.toContain('old-command')
     instance.unmount()
   })
@@ -461,7 +456,7 @@ describe('InstallView — marketing aesthetic on `add`', () => {
     )
     await settle()
     const frame = findContentFrame(instance.frames)
-    expect(frame).toContain('+ 1 command')
+    expect(frame).toContain('1 command')
     expect(frame).not.toContain('is available to your agents')
     instance.unmount()
   })
@@ -481,7 +476,7 @@ describe('InstallView — empty / no-op', () => {
     )
     await settle()
     const frame = findContentFrame(instance.frames)
-    expect(frame).toContain('Nothing to install')
+    expect(frame).toContain('no changes')
     instance.unmount()
   })
 })
@@ -618,6 +613,38 @@ describe('InstallView — partial rollback failure surfaces', () => {
     const frame = findContentFrame(instance.frames)
     expect(frame).toContain('rollback completed with 2 partial failures')
     expect(frame).toContain('disk full')
+    instance.unmount()
+  })
+})
+
+describe('InstallView — adapter registration', () => {
+  test('renders adapter count when adapter-complete events are emitted', async () => {
+    const events: StageEvent[] = [
+      { kind: 'install-start', totalFacets: 1 },
+      { kind: 'facet-start', facet: 'cowsay', specifier: 'cowsay@latest' },
+      { kind: 'facet-stage', facet: 'cowsay', stage: 'materialize' },
+      { kind: 'adapter-complete', facet: 'cowsay', adapter: 'claude-code' },
+      { kind: 'adapter-complete', facet: 'cowsay', adapter: 'opencode' },
+      {
+        kind: 'facet-success',
+        facet: 'cowsay',
+        outcome: { kind: 'installed', name: 'cowsay', version: '0.1.0' },
+      },
+      { kind: 'install-complete', outcome: 'success' },
+    ]
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'add',
+        run: makeFakeRun(events, successResultSingle),
+      }),
+    )
+    await settle()
+    const frame = findContentFrame(instance.frames)
+    // Registration line: "Updated facets via 2 adapters"
+    expect(frame).toContain('Updated facets via')
+    expect(frame).toContain('2 adapter')
+    // Timer line: "across 2 adapters"
+    expect(frame).toContain('across')
     instance.unmount()
   })
 })

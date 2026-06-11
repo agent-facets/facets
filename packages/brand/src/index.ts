@@ -1,6 +1,7 @@
 export {
   ACCENTS_DARK,
   ACCENTS_LIGHT,
+  ASSET_TYPE_COLORS,
   BRAND,
   BRIGHTNESS,
   hexToRgb,

@@ -63,7 +63,7 @@ export async function resolveRegistryMetadataBatch(
  *
  * The wire→internal mapping is intentional and load-bearing:
  *
- *   - `body.contentHash` becomes `expectedIntegrity` (renamed). It is
+ *   - `body.content_hash` becomes `expectedIntegrity` (renamed). It is
  *     the sha256 of the gzipped tarball as uploaded; downstream
  *     `download.ts` uses it for the bytes-level integrity check.
  *
@@ -101,7 +101,7 @@ async function fetchOne(
       value: {
         name: data.name,
         version: data.version,
-        expectedIntegrity: data.contentHash,
+        expectedIntegrity: data.content_hash,
       },
     }
   } catch (err) {

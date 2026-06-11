@@ -192,37 +192,28 @@ describe('runRemove — multi-facet removal', () => {
     expect(existsSync(assetPath('test-adapter', 'fortune'))).toBe(true)
   })
 
-  test('one absent name aborts the whole operation, leaving the project unchanged', async () => {
+  test('absent names are silently ignored — only declared facets are removed', async () => {
     await installFacet('cowsay', '0.1.1')
-    const beforeFacets = readFileSync(join(projectRoot, 'facets.json'), 'utf8')
-    const beforeLock = readFileSync(join(projectRoot, 'facets.lock'), 'utf8')
 
     const result = await remove(['cowsay', 'does-not-exist'])
-    expect(result.ok).toBe(false)
-    if (result.ok) expect.unreachable()
-    if (result.phase !== 'prepare') expect.unreachable()
-    if (result.failure.reason !== 'not-declared') expect.unreachable()
-    expect(result.failure.names).toEqual(['does-not-exist'])
+    expect(result.ok).toBe(true)
+    if (!result.ok) expect.unreachable()
 
-    // Nothing removed.
-    expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(beforeFacets)
-    expect(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')).toBe(beforeLock)
-    expect(existsSync(assetPath('test-adapter', 'cowsay'))).toBe(true)
+    // cowsay was removed; does-not-exist was silently ignored.
+    expect(Object.keys(readFacets())).not.toContain('cowsay')
+    expect(existsSync(assetPath('test-adapter', 'cowsay'))).toBe(false)
   })
 })
 
 describe('runRemove — undeclared facet', () => {
-  test('fails with not-declared and leaves the project unchanged', async () => {
+  test('removing only undeclared facets succeeds as a no-op', async () => {
     await installFacet('cowsay', '0.1.1')
     const beforeFacets = readFileSync(join(projectRoot, 'facets.json'), 'utf8')
 
     const result = await remove(['ghost'])
-    expect(result.ok).toBe(false)
-    if (result.ok) expect.unreachable()
-    if (result.phase !== 'prepare') expect.unreachable()
-    if (result.failure.reason !== 'not-declared') expect.unreachable()
-    expect(result.failure.names).toEqual(['ghost'])
+    expect(result.ok).toBe(true)
 
+    // Nothing was removed — cowsay is still installed.
     expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(beforeFacets)
   })
 
@@ -252,30 +243,30 @@ describe('runRemove — last facet', () => {
 })
 
 describe('prepareRemove — read-only validation', () => {
-  test('returns not-declared for an undeclared name without mutating disk', async () => {
+  test('filters out undeclared names without mutating disk', async () => {
     await installFacet('cowsay', '0.1.1')
     const beforeFacets = readFileSync(join(projectRoot, 'facets.json'), 'utf8')
     const beforeLock = readFileSync(join(projectRoot, 'facets.lock'), 'utf8')
 
     const result = prepareRemove({ projectRoot, names: ['ghost'] })
-    expect(result.ok).toBe(false)
-    if (result.ok) expect.unreachable()
-    if (result.failure.reason !== 'not-declared') expect.unreachable()
-    expect(result.failure.names).toEqual(['ghost'])
+    expect(result.ok).toBe(true)
+    if (!result.ok) expect.unreachable()
+    // ghost is absent — filtered out; names list is empty.
+    expect(result.names).toEqual([])
 
     // Pure validation: nothing on disk changed.
     expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(beforeFacets)
     expect(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')).toBe(beforeLock)
   })
 
-  test('collects all absent names (all-or-nothing) when several are undeclared', async () => {
+  test('filters absent names and keeps only declared ones', async () => {
     await installFacet('cowsay', '0.1.1')
 
     const result = prepareRemove({ projectRoot, names: ['cowsay', 'ghost', 'phantom'] })
-    expect(result.ok).toBe(false)
-    if (result.ok) expect.unreachable()
-    if (result.failure.reason !== 'not-declared') expect.unreachable()
-    expect(result.failure.names).toEqual(['ghost', 'phantom'])
+    expect(result.ok).toBe(true)
+    if (!result.ok) expect.unreachable()
+    // Only cowsay is declared; ghost and phantom are filtered out.
+    expect(result.names).toEqual(['cowsay'])
   })
 
   test('returns manifest-read when no facets.json exists', () => {
@@ -293,6 +284,8 @@ describe('prepareRemove — read-only validation', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
     expect(result.json.facets.cowsay).toBe('0.1.1')
+    // Filtered names contains every requested name (all declared).
+    expect(result.names).toEqual(['cowsay'])
     // Snapshot captures the on-disk bytes for rollback.
     expect(result.snapshot).not.toBeNull()
     expect(result.snapshot?.toString('utf8')).toBe(readFileSync(join(projectRoot, 'facets.json'), 'utf8'))

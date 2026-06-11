@@ -11,14 +11,14 @@ import type { RunInstallResult, StageEvent } from './types.ts'
  * The `facet remove` orchestrator. Owns the manifest transaction for the
  * remove flow on a developer's machine, mirroring {@link runAdd}:
  *
- *   1. Prepare: load `facets.json`, validate every named facet is declared,
- *      and snapshot the manifest. A missing/invalid manifest or an
- *      undeclared name fails here, before any mutation (there is nothing to
- *      remove). Extracted into {@link prepareRemove} so the CLI can run this
- *      read-only validation *before* discovering adapters — an undeclared
- *      facet must fail with the facet error and leave state untouched, never
+ *   1. Prepare: load `facets.json`, filter the requested names to those
+ *      actually declared (silently ignoring absent names), and snapshot the
+ *      manifest. A missing/invalid manifest fails here, before any mutation.
+ *      Extracted into {@link prepareRemove} so the CLI can run this read-only
+ *      validation *before* discovering adapters — a missing manifest must
+ *      fail with the manifest error and leave state untouched, never
  *      launching the adapter picker or reporting "no adapters installed".
- *   2. Remove every named entry; write the manifest.
+ *   2. Remove every declared entry; write the manifest.
  *   3. Run the install pipeline. The removed facets are now orphaned
  *      lockfile entries, so the existing drift-removal loop deletes their
  *      assets from every adapter and rewrites the lockfile without them.
@@ -57,9 +57,6 @@ export interface RunRemoveOptions {
  * `reason` so each arm carries exactly the fields that reason implies:
  *   - `manifest-read`  — `facets.json` is missing, unreadable, or invalid;
  *                        there is nothing to remove.
- *   - `not-declared`   — one or more named facets are not declared in the
- *                        manifest. Carries every absent name so the CLI can
- *                        report them all in one shot (all-or-nothing).
  *   - `manifest-write` — reading the snapshot or writing the mutated
  *                        manifest hit an I/O error (permissions, disk full,
  *                        a race). The original `facets.json` is left intact
@@ -70,7 +67,6 @@ export interface RunRemoveOptions {
  */
 export type RemovePrepareFailure =
   | { reason: 'manifest-read'; error: string }
-  | { reason: 'not-declared'; names: ReadonlyArray<string> }
   | { reason: 'manifest-write'; error: string }
 
 /**
@@ -79,7 +75,7 @@ export type RemovePrepareFailure =
  * byte-for-byte snapshot used to restore on a later install failure.
  */
 export type RemovePrepareResult =
-  | { ok: true; json: FacetsJson; snapshot: Buffer | null }
+  | { ok: true; json: FacetsJson; snapshot: Buffer | null; names: ReadonlyArray<string> }
   | { ok: false; failure: RemovePrepareFailure }
 
 /**
@@ -106,13 +102,13 @@ export type RunRemoveResult =
 
 /**
  * The read-only validation + snapshot phase of a remove. Loads `facets.json`,
- * checks that every named facet is declared (collecting all absent names for
- * an all-or-nothing error), and snapshots the manifest for rollback.
+ * filters the requested names to those actually declared (silently ignoring
+ * absent names), and snapshots the manifest for rollback.
  *
  * Extracted from `runRemove` so the CLI can run it *before* discovering
- * adapters: an undeclared facet or missing manifest must fail with the facet
- * error and leave the project untouched, never launching the adapter picker
- * or reporting "no adapters installed". Performs no mutation.
+ * adapters: a missing manifest must fail with the manifest error and leave
+ * the project untouched, never launching the adapter picker or reporting
+ * "no adapters installed". Performs no mutation.
  *
  * Never throws — the snapshot read is guarded and surfaces as `manifest-write`.
  */
@@ -130,19 +126,19 @@ export function prepareRemove(opts: { projectRoot: string; names: ReadonlyArray<
   }
   const json = loaded.data
 
-  // 2. Validate every name is declared. Collect all absent names so the
-  //    user sees the full set in one error (all-or-nothing — Decision 2/3).
-  const absent = names.filter((name) => json.facets[name] === undefined)
-  if (absent.length > 0) {
-    return { ok: false, failure: { reason: 'not-declared', names: absent } }
-  }
+  // 2. Filter to names that are actually declared. Absent names are
+  //    silently ignored — removing a facet that isn't declared in
+  //    facets.json is a no-op, not an error. If every name is absent
+  //    the caller proceeds with an empty list, which produces a no-op
+  //    install ("no changes").
+  const present = names.filter((name) => Object.hasOwn(json.facets, name))
 
   // 3. Snapshot facets.json for rollback. Guard the read so an I/O error
   //    surfaces as a structured failure instead of escaping the function.
   const facetsJsonPath = join(projectRoot, FACETS_JSON_FILE)
   try {
     const snapshot: Buffer | null = existsSync(facetsJsonPath) ? readFileSync(facetsJsonPath) : null
-    return { ok: true, json, snapshot }
+    return { ok: true, json, snapshot, names: present }
   } catch (err) {
     return {
       ok: false,
@@ -163,14 +159,16 @@ export async function runRemove(opts: RunRemoveOptions): Promise<RunRemoveResult
   if (!prep.ok) {
     return { ok: false, phase: 'prepare', failure: prep.failure }
   }
-  const { json, snapshot } = prep
+  const { json, snapshot, names: filteredNames } = prep
   const facetsJsonPath = join(projectRoot, FACETS_JSON_FILE)
 
-  // 2. Remove every named entry and write the manifest. Guard the write so
-  //    an I/O error surfaces as `manifest-write` rather than escaping. The
-  //    write is atomic (tmp + rename) and no install has run yet, so a throw
-  //    leaves the original `facets.json` intact — nothing to restore.
-  for (const name of names) {
+  // 2. Remove every declared entry and write the manifest. Names that were
+  //    absent from facets.json were already filtered out by prepareRemove.
+  //    Guard the write so an I/O error surfaces as `manifest-write` rather
+  //    than escaping. The write is atomic (tmp + rename) and no install has
+  //    run yet, so a throw leaves the original `facets.json` intact —
+  //    nothing to restore.
+  for (const name of filteredNames) {
     removeFacetFromManifest(json, name)
     onLog?.(`[verbose]   removed "${name}" from ${FACETS_JSON_FILE}`)
   }
