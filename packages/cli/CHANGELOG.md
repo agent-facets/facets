@@ -1,5 +1,12 @@
 # agent-facets
 
+## 0.17.0
+
+### Minor Changes
+
+- [#303](https://github.com/agent-facets/facets/pull/303) [`92adbf8`](https://github.com/agent-facets/facets/commit/92adbf8c78c9235c361f8f1142154add34cedffb) Thanks [@eXamadeus](https://github.com/eXamadeus)! - UI updates for all facet management commands and `remove` will now silently ignore undeclared facets
+- [#305](https://github.com/agent-facets/facets/pull/305) [`da47e09`](https://github.com/agent-facets/facets/commit/da47e0931dad076174b7c263edb8603d0f4ea547) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Update CLI to match snake_case API values
+
 ## 0.16.1
 
 ### Patch Changes
