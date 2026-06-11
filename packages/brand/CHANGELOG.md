@@ -1,5 +1,11 @@
 # @agent-facets/brand
 
+## 0.5.5
+
+### Patch Changes
+
+- [#318](https://github.com/agent-facets/facets/pull/318) [`e168b9c`](https://github.com/agent-facets/facets/commit/e168b9ceaf49b384601f3b0343bb080009cd0b4d) Thanks [@eXamadeus](https://github.com/eXamadeus)! - UI changes for the CLI
+
 ## 0.5.4
 
 ### Patch Changes
