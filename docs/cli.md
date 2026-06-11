@@ -18,19 +18,19 @@ allows you to install the exact versions you want of **facets** and their depend
 The following are the most common `facet` commands. See the [roadmap](/roadmap) for planned commands.
 
 <Columns cols={2}>
-  <Card title={<Badge>facet create</Badge>}>
+  <Card title={<Badge>facet create</Badge>} href="/cli/authoring/create">
     Scaffolds a new **facet** project with an interactive wizard  -- name, description, version, and initial assets
   </Card>
-  <Card title={<Badge>facet edit</Badge>}>
+  <Card title={<Badge>facet edit</Badge>} href="/cli/authoring/edit">
     Full authoring workbench  -- edit identity, manage assets, reconcile disk vs manifest
   </Card>
-  <Card title={<Badge>facet build</Badge>}>
+  <Card title={<Badge>facet build</Badge>} href="/cli/authoring/build">
     Validates and packages your **facet** into a distributable archive with integrity hashes
   </Card>
   <Card title={<Badge>facet add</Badge>} href="/cli/add">
     Add a **facet** to the project  -- resolve from a source, download, and install in one step
   </Card>
-  <Card title={<Badge>facet publish</Badge>} href="/roadmap">
+  <Card title={<Badge>facet publish</Badge>} href="/cli/authoring/publish">
     Publish a built **facet** to the registry
   </Card>
   <Card title={<Badge>facet self-update</Badge>} href="/cli/self-update">

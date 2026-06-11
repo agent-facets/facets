@@ -1,4 +1,4 @@
-import type { Validated, ValidationError } from '@agent-facets/common'
+import { type Validated, type ValidationError, validateAssetName } from '@agent-facets/common'
 import { computeContentHash, INNER_ARCHIVE_NAME, parseFacetArchive, parseInnerArchive } from '../build/content-hash.ts'
 import { detectNamingCollisions } from '../build/detect-collisions.ts'
 import { validateContentFiles } from '../build/validate-content.ts'
@@ -170,6 +170,38 @@ export async function validateFacetArchive(
     }
   }
   const innerEntries = innerResult.entries
+
+  // Step 4b: validate all path names are safe before reconciliation.
+  // Defense-in-depth: reject traversal paths (../, absolute, backslash)
+  // in both the build manifest's asset keys and the inner tar's entry
+  // names before any hashing work. A malicious archive that smuggles an
+  // unsafe path through either channel is stopped here.
+  const pathSafetyErrors: ValidationError[] = []
+  for (const key of Object.keys(buildManifest.assets)) {
+    const check = validateAssetName(key)
+    if (!check.ok) {
+      pathSafetyErrors.push({
+        path: key,
+        message: `Build manifest asset key fails path safety validation: ${check.reason}`,
+        expected: 'safe relative path',
+        actual: key,
+      })
+    }
+  }
+  for (const entry of innerEntries) {
+    const check = validateAssetName(entry.name)
+    if (!check.ok) {
+      pathSafetyErrors.push({
+        path: entry.name,
+        message: `Inner archive entry name fails path safety validation: ${check.reason}`,
+        expected: 'safe relative path',
+        actual: entry.name,
+      })
+    }
+  }
+  if (pathSafetyErrors.length > 0) {
+    return { ok: false, errors: pathSafetyErrors }
+  }
 
   // Step 5: per-asset hash reconciliation
   const assetErrors: ValidationError[] = []

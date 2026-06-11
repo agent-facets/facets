@@ -432,6 +432,115 @@ describe('validateFacetArchive', () => {
     })
   })
 
+  describe('path traversal defense (Step 4b)', () => {
+    test('a traversal path in buildManifest.assets is rejected', async () => {
+      // Craft an archive whose build manifest declares a traversal path as
+      // an asset key. Steps 1–4 should pass, but Step 4b (path safety)
+      // should reject before any hashing work.
+      const facetJson = JSON.stringify(
+        {
+          name: 'test-facet',
+          version: '1.0.0',
+          skills: { 'code-review': { description: 'Review code' } },
+        },
+        null,
+        2,
+      )
+      const entries = [
+        { path: FACET_MANIFEST_FILE, content: facetJson },
+        { path: 'skills/code-review/SKILL.md', content: '# Code Review\n\nReview the diff.' },
+        { path: '../../../../etc/passwd', content: 'root:x:0:0:root:/root:/bin/bash' },
+      ]
+      entries.sort((a, b) => (a.path < b.path ? -1 : 1))
+      const assetHashes = computeAssetHashes(entries)
+      const innerTar = assembleTar(entries)
+      const integrity = computeContentHash(innerTar)
+      const innerGz = gz(innerTar)
+      const buildManifestJson = JSON.stringify(
+        { facetVersion: 0.1, archive: INNER_ARCHIVE_NAME, integrity, assets: assetHashes },
+        null,
+        2,
+      )
+      const outerBytes = assembleOuterTar(buildManifestJson, innerGz)
+
+      const result = await validateFacetArchive(outerBytes, { gunzip: okGunzip })
+
+      if (result.ok) expect.unreachable()
+      expect(result.errors.some((e) => e.path === '../../../../etc/passwd')).toBe(true)
+      expect(result.errors.some((e) => e.message.includes('path safety'))).toBe(true)
+    })
+
+    test('an absolute path in an inner-tar entry name is rejected', async () => {
+      const facetJson = JSON.stringify(
+        {
+          name: 'test-facet',
+          version: '1.0.0',
+          skills: { 'code-review': { description: 'Review code' } },
+        },
+        null,
+        2,
+      )
+      const entries = [
+        { path: FACET_MANIFEST_FILE, content: facetJson },
+        { path: 'skills/code-review/SKILL.md', content: '# Code Review\n\nReview the diff.' },
+      ]
+      // We need to craft an inner tar with a bad entry name. Since assembleTar
+      // accepts entries as-is, we add a poisoned entry before packing.
+      const poisonedEntries = [...entries, { path: '/etc/passwd', content: 'root:x:0:0:root:/root:/bin/bash' }]
+      poisonedEntries.sort((a, b) => (a.path < b.path ? -1 : 1))
+      const assetHashes = computeAssetHashes(poisonedEntries)
+      const innerTar = assembleTar(poisonedEntries)
+      const integrity = computeContentHash(innerTar)
+      const innerGz = gz(innerTar)
+      const buildManifestJson = JSON.stringify(
+        { facetVersion: 0.1, archive: INNER_ARCHIVE_NAME, integrity, assets: assetHashes },
+        null,
+        2,
+      )
+      const outerBytes = assembleOuterTar(buildManifestJson, innerGz)
+
+      const result = await validateFacetArchive(outerBytes, { gunzip: okGunzip })
+
+      if (result.ok) expect.unreachable()
+      expect(result.errors.some((e) => e.path === '/etc/passwd')).toBe(true)
+      expect(result.errors.some((e) => e.message.includes('path safety'))).toBe(true)
+    })
+
+    test('a backslash path in the build manifest is rejected', async () => {
+      const facetJson = JSON.stringify(
+        {
+          name: 'test-facet',
+          version: '1.0.0',
+          skills: { 'code-review': { description: 'Review code' } },
+        },
+        null,
+        2,
+      )
+      const entries = [
+        { path: FACET_MANIFEST_FILE, content: facetJson },
+        { path: 'skills/code-review/SKILL.md', content: '# Code Review\n\nReview the diff.' },
+        { path: 'foo\\bar', content: 'windows-style path' },
+      ]
+      entries.sort((a, b) => (a.path < b.path ? -1 : 1))
+      const assetHashes = computeAssetHashes(entries)
+      const innerTar = assembleTar(entries)
+      const integrity = computeContentHash(innerTar)
+      const innerGz = gz(innerTar)
+      const buildManifestJson = JSON.stringify(
+        { facetVersion: 0.1, archive: INNER_ARCHIVE_NAME, integrity, assets: assetHashes },
+        null,
+        2,
+      )
+      const outerBytes = assembleOuterTar(buildManifestJson, innerGz)
+
+      const result = await validateFacetArchive(outerBytes, { gunzip: okGunzip })
+
+      if (result.ok) expect.unreachable()
+      expect(result.errors.some((e) => e.path === 'foo\\bar')).toBe(true)
+      expect(result.errors.some((e) => e.message.includes('path safety'))).toBe(true)
+    })
+  })
+
   describe('contract invariants', () => {
     test('never throws on any failure mode', async () => {
       // Combine multiple failure-triggering inputs and assert no throw.

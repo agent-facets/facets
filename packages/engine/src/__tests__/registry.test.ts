@@ -3,8 +3,13 @@ import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { assembleOuterTar, computeContentHash } from '@agent-facets/protocol'
-import { createTar } from 'nanotar'
+import {
+  assembleOuterTar,
+  assembleTar,
+  computeAssetHashes,
+  computeContentHash,
+  INNER_ARCHIVE_NAME,
+} from '@agent-facets/protocol'
 import {
   describeVersionSpec,
   downloadAndExtractFacet,
@@ -169,25 +174,27 @@ describe('downloadAndExtractFacet', () => {
     rmSync(dest, { recursive: true, force: true })
   })
 
-  // Build a two-layer `.facet` archive (outer tar wrapping
-  // build-manifest.json + archive.tar.gz) and its sha256 so the
-  // integrity check exercises the actual happy path.
-  function buildArchive(entries: Array<{ name: string; data: string }>): {
+  // Re-wrap a Bun gzip output into a Uint8Array<ArrayBuffer> for protocol helpers.
+  const intoArrayBuffer = <B extends ArrayBufferLike>(bytes: Uint8Array<B>): Uint8Array<ArrayBuffer> =>
+    new Uint8Array(bytes)
+  const gz = (input: Uint8Array): Uint8Array => intoArrayBuffer(Bun.gzipSync(intoArrayBuffer(input)))
+
+  // Build a two-layer `.facet` archive using protocol's canonical helpers
+  // so the result passes `validateFacetArchive`'s full verification pipeline.
+  function buildArchive(entries: Array<{ path: string; content: string }>): {
     bytes: Uint8Array
     integrity: string
   } {
-    const innerTar = createTar(entries.map((e) => ({ name: e.name, data: e.data }))) as Uint8Array<ArrayBuffer>
-    const innerGz = new Uint8Array(Bun.gzipSync(innerTar))
+    const sorted = [...entries].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+    const assetHashes = computeAssetHashes(sorted)
+    const innerTar = assembleTar(sorted)
     const contentHash = computeContentHash(innerTar)
-    const assets: Record<string, string> = {}
-    for (const e of entries) {
-      assets[e.name] = computeContentHash(e.data)
-    }
+    const innerGz = gz(innerTar)
     const buildManifest = JSON.stringify({
-      facetVersion: 1,
-      archive: 'cowsay-0.1.0.facet',
+      facetVersion: 0.1,
+      archive: INNER_ARCHIVE_NAME,
       integrity: contentHash,
-      assets,
+      assets: assetHashes,
     })
     const outerTar = assembleOuterTar(buildManifest, innerGz)
     const integrity = `sha256:${createHash('sha256').update(outerTar).digest('hex')}`
@@ -224,9 +231,14 @@ describe('downloadAndExtractFacet', () => {
   }
 
   test('happy path: resolves the 302, downloads from S3, verifies sha256, extracts files', async () => {
+    const facetJson = JSON.stringify(
+      { name: 'cowsay', version: '0.1.0', commands: { cowsay: { description: 'Say moo' } } },
+      null,
+      2,
+    )
     const { bytes, integrity } = buildArchive([
-      { name: 'facet.json', data: '{"name":"cowsay","version":"0.1.0"}' },
-      { name: 'commands/cowsay.md', data: '# cowsay\n' },
+      { path: 'facet.json', content: facetJson },
+      { path: 'commands/cowsay.md', content: '# cowsay\n' },
     ])
     const { urls } = stubArchiveDownload(new Response(bytes, { status: 200 }))
     const result = await downloadAndExtractFacet({ ...META, transportHash: integrity }, dest)
@@ -240,7 +252,7 @@ describe('downloadAndExtractFacet', () => {
   })
 
   test('sha256 mismatch: returns NETWORK_ERROR with hash detail and writes nothing', async () => {
-    const { bytes } = buildArchive([{ name: 'facet.json', data: '{}' }])
+    const { bytes } = buildArchive([{ path: 'facet.json', content: JSON.stringify({ name: 'x', version: '0.1.0' }) }])
     stubArchiveDownload(new Response(bytes, { status: 200 }))
     const result = await downloadAndExtractFacet({ ...META, transportHash: 'sha256:0000' }, dest)
     expect(result.ok).toBe(false)

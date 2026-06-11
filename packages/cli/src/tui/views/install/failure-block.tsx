@@ -322,6 +322,22 @@ export function FailureBlock({ failure }: { failure: RunInstallFailure }): React
           <Text color={THEME.hint}> Run without --frozen-lockfile to modify the locked set.</Text>
         </Box>
       )
+    case 'DELTA_CONFLICT':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ internal error: delta conflict
+          </Text>
+          <Text> facet "{failure.facet}" appears in both additions and removals</Text>
+          <Text color={THEME.hint}>
+            {' '}
+            This is a bug — please file an issue @{' '}
+            <Text color={THEME.brand} bold>
+              https://github.com/agent-facets/facets/issues/new
+            </Text>
+          </Text>
+        </Box>
+      )
     default: {
       // Exhaustiveness guard: any new `RunInstallFailure` variant must
       // get a `case` arm above. Without this, an un-rendered failure

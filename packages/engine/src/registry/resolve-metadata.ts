@@ -64,8 +64,10 @@ export async function resolveRegistryMetadataBatch(
  * The wire→internal mapping is intentional and load-bearing:
  *
  *   - `body.content_hash` becomes `transportHash`. It is the sha256 of
- *     the gzipped tarball as uploaded; `download.ts` uses it for the
- *     raw-bytes transport check.
+ *     the uploaded `.facet` archive (the uncompressed outer tar
+ *     carrying `build-manifest.json` + the gzipped inner
+ *     `archive.tar.gz`); `download.ts` uses it for the raw-bytes
+ *     transport check.
  *   - `body.content_integrity` becomes `contentFingerprint`. It is the
  *     sha256 of the canonical archive (inner uncompressed tar) — the
  *     domain the sidecar, lockfile, and build-manifest all record. Fed
