@@ -3,83 +3,53 @@ title: "Introduction"
 description: "The open source Agent Facet specification"
 ---
 
-Facets are an open format and distribution system for modular AI assistant extensions. A facet packages skills, agents, and commands  -- the text assets that shape how an AI assistant behaves  -- into a versioned, distributable unit with a well-defined manifest, publish flow, install flow, and integrity model.
+Facets are an open format and distribution system for modular AI assistant extensions. A facet packages skills, agents,
+and commands into a versioned, distributable unit with a well-defined manifest, publish flow, install pipeline, and
+integrity model.
 
-This specification defines the authoritative requirements for the Facets format and protocol. For introductory material, see [Introduction](/) and [Key Concepts](/docs/learn/index.md).
+This specification defines the authoritative requirements for the Facets format and protocol. For introductory material,
+see [Introduction](/) and [Key Concepts](/docs/learn/index.md).
 
-
+<Info>
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in [RFC 2119](https://www.ietf.org/rfc/rfc2119.txt) and [RFC 8174](https://www.ietf.org/rfc/rfc8174.txt).
+</Info>
 
-## Key Details
+## Security and trust
 
-### Facets
+Facets enable arbitrary text injection into AI assistant contexts and arbitrary code execution via MCP servers.
+Implementors MUST address:
 
-A facet is a named, versioned collection of text assets  -- skills, agents, and commands  -- defined by a facet manifest. Facets MAY compose text from other facets and MAY reference MCP servers.
+1. **Composition integrity** -- composed text MUST be assembled server-side from trusted sources.
+2. **Content verification** -- hashes MUST be verified at install time and on every cache hit. A lockfile entry MUST NOT
+   be created without registry confirmation.
+3. **Server execution safety** -- the CLI MUST control exactly what executes. Servers MUST stop when the session ends.
+4. **User consent** -- consumers SHOULD understand what a facet contains before installing it.
 
-When a facet is published, the registry assembles a **facet archive**  -- a self-contained artifact containing the manifest and all text assets (both locally authored and composed). The archive is the unit of distribution between the registry and consumers.
-
-### MCP Servers
-
-MCP servers are code assets  -- separate from facets  -- that provide tool capabilities to AI assistants via the [Model Context Protocol](https://modelcontextprotocol.io). A facet's manifest references servers; it does not contain them.
-
-Two execution modes are defined:
-
-- **Source-mode**: Server source code is published to the facets registry and run using a managed runtime.
-- **Ref-mode**: The facet manifest references an OCI container image hosted in an external registry.
-
-### Integrity
-
-Three integrity mechanisms protect the supply chain:
-
-- **Content hashing**: SHA-256 of facet archives and source-mode server artifacts. Verifies downloaded bytes match what was published.
-- **OCI digest pinning**: Immutable content hashes for ref-mode server container images. Pins exact images in the lockfile.
-- **API surface hashing**: SHA-256 of MCP server tool declarations. Detects structural breaking changes between server versions.
-
-### Lifecycle
-
-| Stage          | What happens                                                                                     |
-| -------------- | ------------------------------------------------------------------------------------------------ |
-| **Authoring**  | An author creates a facet  -- a manifest and text assets in a local directory.                     |
-| **Publishing** | The facet is built into an archive  -- text assets assembled, hashes computed, stored in registry.  |
-| **Installing**    | The archive is downloaded and verified. Text assets are presented for review, then placed in provider-specified directories. Server references are resolved and pinned. |
-| **Upgrading**     | Text asset changes are surfaced with diffs. The consumer accepts, rejects, or modifies each change. Server API surface changes are flagged. |
-| **Uninstalling**  | Assets being removed are summarized. The consumer can keep individual text assets as unmanaged. |
-| **Running**       | The installed facet is loaded by the AI assistant. Text assets are in context. Servers are running. |
-
-## Security and Trust
-
-Facets enable arbitrary text injection into AI assistant contexts and arbitrary code execution via MCP servers. Implementors MUST address these trust considerations:
-
-1. **Composition integrity**: Composed text assets MUST be assembled server-side by the registry from trusted sources. Authors MUST NOT be able to upload pre-assembled composed content.
-
-2. **Content verification**: Consumers MUST verify content hashes at install time. A hash mismatch MUST be a hard failure.
-
-3. **Server execution safety**: The CLI MUST control exactly what executes. No arbitrary command or argument execution. Servers MUST be stopped when the AI assistant session ends.
-
-4. **User consent**: Consumers SHOULD understand what a facet contains before installing it, what changed during upgrades, and what is being removed during uninstall. Implementors SHOULD provide clear mechanisms for reviewing facet contents, text asset changes, and server capabilities.
-
-## Specification Sections
+## Sections
 
 <CardGroup cols={2}>
-  <Card title="Terminology" href="/specification/terminology">
-    Canonical terms used throughout this specification.
-  </Card>
-  <Card title="Architecture" href="/specification/architecture">
-    Actors, lifecycle, artifact types, and design principles.
-  </Card>
-  <Card title="Manifest Schema" href="/specification/manifest">
-    The facet manifest format  -- fields, types, and constraints.
-  </Card>
-  <Card title="Publish Flow" href="/specification/publish">
-    How facets are built and published to the registry.
-  </Card>
-  <Card title="Install & Resolve" href="/specification/install">
-    How facets are installed and server references resolved.
-  </Card>
-  <Card title="Integrity Model" href="/specification/integrity">
-    Content hashing, OCI digests, and API surface hashing.
-  </Card>
-  <Card title="MCP Server Assets" href="/specification/servers">
+   <Card title="Terminology" icon="book" href="/specification/terminology">
+      Canonical terms and definitions.
+   </Card>
+   <Card title="Integrity Model" icon="shield-check" href="/specification/integrity">
+      Content hashing, cache audit, OCI digests, API surface hashing.
+   </Card>
+   <Card title="Install & Resolve" icon="download" href="/specification/install">
+      How facets are installed and server references resolved.
+   </Card>
+   <Card title="Install Pipeline" icon="git-merge" href="/specification/pipeline">
+      Plan/commit pipeline, integrity chain, receipt, tri-write.
+   </Card>
+   <Card title="Publish Flow" icon="upload" href="/specification/publish">
+      How facets are built and published to the registry.
+   </Card>
+   <Card title="Architecture" icon="network" href="/specification/architecture">
+      Actors, artifact types, distribution model, design principles.
+   </Card>
+   <Card title="Manifest Schema" icon="file-code" href="/specification/manifest">
+      The `facet.json` format -- fields, types, constraints.
+   </Card>
+   <Card title="MCP Server Assets" icon="server" href="/specification/servers">
     Source-mode and ref-mode server publication and execution.
-  </Card>
+   </Card>
 </CardGroup>

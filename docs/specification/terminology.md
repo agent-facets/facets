@@ -3,91 +3,103 @@ title: "Terminology"
 description: "Canonical terms used throughout the Facets specification."
 ---
 
-This page defines the canonical terms used throughout the Facets specification. All specification sections use these terms consistently. Implementations SHOULD use the same terms in user-facing interfaces and documentation.
+Canonical terms used throughout the specification. Implementations SHOULD use the same terms in user-facing interfaces and documentation.
 
-## Core Concepts
+## Core concepts
 
-<Tabs>
-  <Tab title='Facet'>
-    A named, versioned collection of text assets defined by a manifest (the facet manifest). What the author creates locally, what gets published to the registry, and what gets extracted after install.
-  </Tab>
-  <Tab title='Assets'>
-    A discrete unit of content within a facet. Consisting of any combination of skills, agents, commands, and MCP
-    servers.
+<CardGroup cols={2}>
+  <Card title="Facet" icon="box">
+    A named, versioned collection of text assets defined by a manifest. What the author creates, what gets published, and what gets installed.
+  </Card>
+  <Card title="Facet archive" icon="package">
+    The published, self-contained artifact stored in the registry. Contains the manifest and all text assets. The transport form between publish and install.
+  </Card>
+  <Card title="Adapter" icon="plug">
+    An AI coding tool abstraction (OpenCode, Claude Code, Codex). The layer between facet assets and the tool's storage and configuration conventions.
+  </Card>
+  <Card title="MCP server" icon="server">
+    A code asset providing tool capabilities via the [Model Context Protocol](https://modelcontextprotocol.io). Published independently, versioned independently, resolved at install time.
+  </Card>
+</CardGroup>
 
-    <Columns col={2}>
-      <Card title='Skill'>
-        Text assets that follow the [Agent Skills](https://agentskills.io/specification) specification.
-      </Card>
-      <Card title='Agent'>
-        Text assets that follow the [Agent Skills](https://agentskills.io/specification) specification.
-      </Card>
-      <Card title='Command'>
-        Text assets that follow the [Agent Skills](https://agentskills.io/specification) specification.
-      </Card>
-      <Card title='Server'>
-        A reference to an MCP server that is compliant with the [Model Context Protocol](https://modelcontextprotocol.io/specification/latest)
-      </Card>
+### Asset types
 
-    </Columns>
-  </Tab>
+<CardGroup cols={4}>
+  <Card title="Skill" icon="sparkles" href="https://agentskills.io/specification">
+    Text asset following the Agent Skills spec.
+  </Card>
+  <Card title="Agent" icon="bot" href="https://agentskills.io/specification">
+    Text asset following the Agent Skills spec.
+  </Card>
+  <Card title="Command" icon="terminal" href="https://agentskills.io/specification">
+    Text asset following the Agent Skills spec.
+  </Card>
+  <Card title="Server" icon="server" href="https://modelcontextprotocol.io/specification/latest">
+    MCP server reference. Code, not text.
+  </Card>
+</CardGroup>
 
-</Tabs>
+### Asset management
 
-| Term               | Definition                                                                                                                                                                                      |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Facet**          | A named, versioned collection of text assets defined by a manifest (the facet manifest). What the author creates locally, what gets published to the registry, and what gets extracted after install. |
-| **Facet archive**  | The published, self-contained artifact stored in the registry. Contains the manifest and all text assets (locally authored and composed). The transport form between publish and install.        |
-| **Asset**          | A discrete unit of content within a facet. Assets are either text assets (skills, agents, commands) or server assets (MCP server references).                                                  |
-| **Text asset**     | An asset containing text  -- a skill, an agent prompt, or a command prompt. Text assets are included in the facet archive.                                                                       |
-| **Server asset**   | An MCP server reference in a facet's manifest. Server assets are linked, not included  -- server code is published and archived separately from the facet.                                       |
-| **MCP server**     | An asset type containing code (not text). Published independently from facets, versioned independently, resolved at install time. Two execution modes: source-mode and ref-mode.               |
-| **Adapter**        | An AI coding tool that wraps around an LLM (e.g., OpenCode, Claude Code, Codex). The adapter is the abstraction layer over its tool's storage, configuration, and asset conventions. Installed via `facet adapter install`. |
-
-## Asset Management
-
-| Term                | Definition                                                                                                                                                           |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Managed asset**   | A text asset installed by a facet and tracked in the lockfile. The lockfile records the facet, version, content hash, and any override.                              |
-| **Unmanaged asset** | A text asset that exists in a provider's install directory but is not connected to any facet. Either user-created or kept from an uninstalled facet.                 |
-| **Override**        | A user modification to a managed text asset, stored as a unified diff in the lockfile. Detected by content hash mismatch. Preserved across upgrades via 3-way merge. |
-| **Asset collision** | When a managed or to-be-managed asset has the same name as an existing asset on disk within the same asset type. Requires user resolution at install time.           |
-
-## Execution Modes
-
-| Term              | Definition                                                                                                                  |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| **Source-mode**   | MCP server execution mode where source code is published to the facets registry and run using a managed runtime. Always hyphenated. |
-| **Ref-mode**      | MCP server execution mode where the facet manifest references an OCI container image hosted in an external registry. Always hyphenated. |
-
-Do not use: `OCI-mode`, `source mode` (unhyphenated), `ref mode` (unhyphenated).
-
-## Version Constraints
-
-| Term                 | Definition                                                                                                                                          |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Floor constraint** | The version constraint mechanism for source-mode MCP servers. Declares a minimum acceptable version; the CLI resolves to the latest at or above the floor at install time. |
-| **Floor version**    | The specific minimum version value declared in a floor constraint (e.g., `"1.0.0"`).                                                              |
-
-Use "floor-only" as an adjective when describing the constraint type (e.g., "floor-only constraints, no upper bounds"). Do not use: `minimum version`, `floor-constrained`.
+| Term | Definition |
+| --- | --- |
+| **Managed asset** | Installed by a facet, tracked in the lockfile and <Tooltip tip="Per-project record under $FACET_DIR/receipts/ -- tracks what this machine has materialized.">install receipt</Tooltip>. |
+| **Unmanaged asset** | Exists in an adapter directory but not connected to any facet. User-created or kept from an uninstalled facet. |
 
 ## Integrity
 
-| Term                | Definition                                                                                                                                           |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Content hash**    | A SHA-256 hash of a published artifact (facet archive or source-mode server artifact). Verifies that downloaded bytes match what was published.      |
-| **API surface hash**| A SHA-256 hash of an MCP server's tool declarations (names, descriptions, parameters, schemas). Detects structural breaking changes between versions.|
-| **OCI digest**      | An immutable content hash for a container image. Used to pin ref-mode MCP servers in the lockfile.                                                  |
+<AccordionGroup>
+  <Accordion title="Hashes" icon="fingerprint" defaultOpen>
+    | Term | Definition |
+    | --- | --- |
+    | **Canonical fingerprint** | SHA-256 of the uncompressed inner tar (`content_integrity`). Recorded in the lockfile, cache sidecar, and build manifest. Trust anchor for verification. |
+    | **Transport hash** | SHA-256 of the uploaded `.facet` tarball (`content_hash`). Download-time transit check only. Never persisted to the lockfile. |
+    | **API surface hash** | SHA-256 of an MCP server's tool declarations. Detects structural breaking changes. |
+    | **OCI digest** | Immutable content hash for a container image. Pins ref-mode servers in the lockfile. |
+  </Accordion>
+  <Accordion title="Verification" icon="shield-check">
+    | Term | Definition |
+    | --- | --- |
+    | **Cache sidecar** | `cache-integrity.json` stored alongside cached content. Canonical fingerprint + per-asset hashes. |
+    | **Cache self-audit** | Re-verification of cached content against its sidecar on every materialization. Evicts on mismatch. |
+    | **Integrity confirmation** | Registry metadata request verifying content matches the published canonical fingerprint. Required when creating a lockfile entry. Fails offline. |
+  </Accordion>
+</AccordionGroup>
 
-Use "integrity" when referring to the verification process ("integrity verification"), not as a synonym for the hash itself. Do not use: `integrity hash`, `content integrity hash`.
+## Install pipeline
+
+| Term | Definition |
+| --- | --- |
+| **Install delta** | Additions (user's specifier verbatim) + removals (bare names). `facet install` produces an empty delta. |
+| **Structural discriminator** | Additions never trust the lockfile for version resolution; reproductions do. |
+| **Install receipt** | Machine-local record under `$FACET_DIR/receipts/` tracking materialized state per project. Drives offline drift removal. |
+| **Tri-write** | Atomic commit: `facets.json` + `facets.lock` + receipt written together. Failure leaves all three unchanged. |
+
+## Execution modes
+
+| Term | Definition |
+| --- | --- |
+| **Source-mode** | Server source code published to the facets registry, run via managed runtime. |
+| **Ref-mode** | Server references an OCI container image in an external registry. |
+
+<Info>
+Always hyphenate: `source-mode`, `ref-mode`. Do not use `OCI-mode` or unhyphenated forms.
+</Info>
+
+## Version constraints
+
+| Term | Definition |
+| --- | --- |
+| **Floor constraint** | Minimum acceptable version for source-mode servers. CLI resolves to the latest at or above the floor. |
+| **Floor version** | The specific minimum version value (e.g., `"1.0.0"`). |
 
 ## Lifecycle
 
-| Stage          | What exists                                                                                                                                            |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Authoring**  | A facet  -- manifest and text assets in a local directory.                                                                                               |
-| **Publishing** | The facet is built into an archive  -- text assets assembled, content hash computed, stored in the registry.                                              |
-| **Installing**    | The archive is downloaded and verified. Text assets are presented to the consumer for review, then placed in provider-specified directories. Server references are resolved and pinned in the lockfile. |
-| **Upgrading**     | Text asset changes are surfaced to the consumer with diffs. The consumer accepts, rejects, or modifies each change. Server API surface changes are flagged. The lockfile is updated. |
-| **Uninstalling**  | Assets being removed are summarized. The consumer can keep individual text assets as unmanaged. The lockfile entry is removed. |
-| **Running**       | The installed facet is loaded by the AI assistant. Text assets are in context. MCP servers are running processes managed by the CLI. |
+| Stage | What happens |
+| --- | --- |
+| **Authoring** | Author creates a manifest and text assets locally. |
+| **Publishing** | Registry assembles the archive, computes hashes. Version is immutable once published. |
+| **Installing** | [Plan/commit pipeline](/specification/pipeline): resolve, verify, materialize, tri-write. |
+| **Upgrading** | Diffs surfaced to consumer. API surface changes flagged. _(Future)_ |
+| **Uninstalling** | Assets removed via delta pipeline. Receipt updated. |
+| **Running** | Text in context. Servers running via MCP. |

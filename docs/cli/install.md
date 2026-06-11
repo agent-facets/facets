@@ -53,21 +53,24 @@ If you delete a materialized asset by hand and re-run `facet install`, the affec
 
 ## Integrity protocol
 
-Every fetched facet is verified before any asset is written:
+Every facet is verified before any asset is written. See the [Integrity Model](/specification/integrity) for the full hash contract.
 
-| Source kind | Checks                                                                                                                  |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Registry    | **Three checks.** (A) cache vs. registry metadata, (B) archive manifest vs. registry metadata, (C) computed content vs. archive manifest. Defends against split-brain registries, retroactive metadata mutation, and tampered archives. |
-| Git         | **One check.** Computed content vs. lockfile integrity. Defends against tag-move attacks.                               |
-| Local       | **No check.** Local sources are trust-by-path.                                                                          |
+| Source | Verification |
+| --- | --- |
+| Registry (cache hit) | <Tooltip tip="Re-hash content against the sidecar. Evict on mismatch.">Self-audit</Tooltip> → <Tooltip tip="Audited integrity must equal locked integrity.">lockfile comparison</Tooltip> or <Tooltip tip="Audited integrity must match the registry's content_integrity. Fails offline.">registry confirmation</Tooltip> |
+| Registry (download) | Transport hash check → three-check protocol (metadata vs. archive vs. computed) |
+| Git | Computed content vs. lockfile integrity (tag-move defense) |
+| Local | Trust-by-path (normal mode); lockfile-verified (frozen mode) |
 
-Any mismatch is a hard security error: the install aborts before any asset is written, and the project state is unchanged.
+<Warning>
+Any mismatch is a hard security error: install aborts before any asset is written.
+</Warning>
 
 Git sources are pinned by commit: the lockfile records the resolved commit SHA (not the requested ref, which stays in `facets.json`). A git clone that cannot be resolved to a commit fails the install rather than recording an unreproducible entry.
 
 ## Cache
 
-Resolved facet content is stored at `$FACET_DIR/cache/<name>@<version>/` (default `~/.facet/cache/`) so subsequent installs of the same identity don't hit the network. The cache is treated as trusted material  -- once written, it's never re-hashed on read.
+Resolved facet content is stored at `$FACET_DIR/cache/<name>@<version>/` (default `~/.facet/cache/`) so subsequent installs of the same identity don't hit the network. A cache hit is never trusted at face value: the content is re-hashed against its integrity sidecar on every materialization. Tampered content is evicted and re-fetched automatically.
 
 The cache root is part of the facet directory tree; set `FACET_DIR` to change it. See the [environment variables reference](/cli/env).
 
@@ -88,17 +91,26 @@ A facet that declares `facets: [...]` (cherry-picking from other facets) is hard
 
 ## Frozen lockfile
 
-`facet install --frozen-lockfile` inverts the source of truth: the **lockfile** becomes authoritative and is reproduced exactly  -- no extra facets, no missing facets, no source changes, no content changes. In this mode install never re-resolves a specifier and never writes `facets.lock`. Before installing, it verifies the lockfile fully covers the manifest, and fails  -- changing nothing on disk  -- if any of these hold:
+`facet install --frozen-lockfile` makes the **lockfile** authoritative. Install reproduces exactly what is locked -- no re-resolution, no lockfile writes.
 
-- no `facets.lock` exists;
-- a facet in `facets.json` has no lockfile entry;
-- a lockfile entry's version no longer satisfies its manifest specifier;
-- the lockfile pins a facet `facets.json` no longer declares (an orphaned entry a normal install would prune);
-- a git or local facet's manifest source (URL, ref, or path) no longer matches the locked source.
+<Tip>
+Use this in CI to guarantee `facets.json` and `facets.lock` are in agreement. Mirrors `--frozen-lockfile` from `npm` and `bun`.
+</Tip>
 
-It also verifies content: every facet  -- including local sources, which a normal install rebuilds from disk  -- must reproduce its locked integrity. Editing a local facet's files fails a frozen install instead of silently overwriting the entry, exactly as a git tag move would.
+Before installing, frozen mode verifies bidirectional consistency. It fails -- changing nothing -- if any of these hold:
 
-This is the mode to use in CI: it guarantees that `facets.json` and `facets.lock` are already in agreement, so a forgotten `facet add`, a hand-edited manifest, or drifted local content fails the build loudly instead of silently mutating the lockfile. It mirrors the `--frozen-lockfile` contract from `npm` and `bun`.
+<AccordionGroup>
+  <Accordion title="Pre-flight checks" defaultOpen>
+    - No `facets.lock` exists
+    - A manifest facet has no lockfile entry
+    - A locked version no longer satisfies its manifest specifier
+    - The lockfile pins a facet the manifest no longer declares
+    - A git/local source string changed since the entry was locked
+  </Accordion>
+  <Accordion title="Content verification">
+    Every facet — including local sources — must reproduce its locked integrity. Editing a local facet's files fails a frozen install instead of silently overwriting.
+  </Accordion>
+</AccordionGroup>
 
 ## Exit codes
 

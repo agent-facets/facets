@@ -106,17 +106,17 @@
         "groups": [
           {
             "group": "Specification",
-            "pages": ["specification/index"]
+            "pages": ["specification/index", "specification/terminology"]
           },
           {
             "group": "Sections",
             "icon": "section",
             "pages": [
-              "specification/terminology",
               "specification/architecture",
               "specification/manifest",
               "specification/publish",
               "specification/install",
+              "specification/pipeline",
               "specification/integrity",
               "specification/servers"
             ]

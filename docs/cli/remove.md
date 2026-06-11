@@ -15,10 +15,8 @@ Removes one or more facets from `facets.json`, deletes their assets from every c
 
 1. **Load `facets.json`.** A missing or invalid manifest fails before any change.
 2. **Filter to declared names.** Names not in `facets.json` are silently ignored. If every name is absent, the command exits successfully with no changes.
-3. **Snapshot `facets.json`** byte-for-byte for rollback.
-4. **Remove the named entries** from `facets.json`.
-5. **Run the install pipeline.** The removed facets are now absent from the manifest, so drift removal deletes their assets from every adapter and rewrites the lockfile without them. Every other facet is left untouched.
-6. **On any failure**, restore the `facets.json` snapshot. The project is left exactly as it was before the command ran.
+3. **Commit.** Delegate to the install pipeline with the removals delta. The pipeline removes assets using the machine-local install receipt (no cache or network needed for removal), then writes `facets.json`, `facets.lock`, and the receipt together. Every other facet is left untouched.
+4. **On any failure**, the journal rolls back all changes. The manifest, lockfile, and receipt are never written ahead of success.
 
 ## Examples
 
@@ -44,7 +42,7 @@ facet remove viper-plans rezi
 | Code | Meaning                                                                              |
 | ---- | ------------------------------------------------------------------------------------ |
 | `0`  | Removal succeeded, or all requested names were already absent from `facets.json` (no-op). |
-| `1`  | Failed (no names given, install failure, etc.). `facets.json` is restored byte-for-byte on every failure path. |
+| `1`  | Failed (no names given, install failure, etc.). No files are modified on failure. |
 
 ## See also
 

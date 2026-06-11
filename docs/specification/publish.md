@@ -71,7 +71,7 @@ The `name` and `version` used to address the upload come from the verified artif
 
 1. **Verify the upload.** The registry runs the same archive-verification operation `facet publish` ran locally: parse the outer container, decompress the inner archive (within the registry's size policy), verify the integrity hash, verify each per-asset hash, validate the embedded manifest, and apply the artifact content rules. A verification failure rejects the publish.
 
-2. **Store the artifact.** The verified bytes are stored under `(name, version)` and the content hash is recorded for consumers to verify on download (see [Integrity Model](/specification/integrity)).
+2. **Store the artifact.** The verified bytes are stored under `(name, version)`. The registry records both the canonical fingerprint (`content_integrity` — SHA-256 of the inner uncompressed tar) and the transport hash (`content_hash` — SHA-256 of the uploaded tarball). Consumers verify both at different stages (see [Integrity Model](/specification/integrity)).
 
 Publish-time errors from the registry  -- verification failures, duplicate-version conflicts, tier limits, size caps  -- are surfaced to the user with the registry's own text (see the [Authentication](#authentication) note above).
 
