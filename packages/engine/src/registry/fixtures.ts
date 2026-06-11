@@ -36,7 +36,7 @@ export function versionMetadata(overrides?: Partial<WireMetadataResponse>): Wire
     published_at: '2026-05-01T00:00:00Z',
     publisher: 'test-publisher',
     size_bytes: 100,
-    asset_counts: { agents: 0, commands: 1, servers: 0, skills: 0 },
+    asset_counts: assetCounts({ commands: 1 }),
     ...overrides,
   }
 }
