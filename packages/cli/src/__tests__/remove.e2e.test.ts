@@ -100,7 +100,7 @@ describe('facet remove — validates before adapter discovery', () => {
     rmSync(fakeHome, { recursive: true, force: true })
   })
 
-  test('removing an undeclared facet with no adapters reports the facet error, not the adapter error', async () => {
+  test('removing an undeclared facet prints no-op summary without discovering adapters', async () => {
     // Valid manifest that declares one facet — but NOT the one we remove.
     const before = `${JSON.stringify({ facets: { cowsay: '0.1.1' } }, null, 2)}\n`
     writeFileSync(join(projectRoot, 'facets.json'), before)
@@ -110,11 +110,13 @@ describe('facet remove — validates before adapter discovery', () => {
       env: { HOME: fakeHome, FACET_DIR: join(fakeHome, '.facet') },
     })
 
-    expect(result.exitCode).toBe(1)
-    // The undeclared-facet error wins because validation runs before adapter
-    // discovery. The old ordering would have reported the adapter error here.
-    expect(result.stderr).toContain('not declared in facets.json')
-    expect(result.stderr).toContain('ghost')
+    expect(result.exitCode).toBe(0)
+    // No-op summary printed — the one declared facet is counted.
+    expect(result.stdout).toContain('Checked 1 facet')
+    expect(result.stdout).toContain('no changes')
+    // No error output — undeclared facets are silently ignored, and
+    // adapter discovery is skipped entirely (no "no adapters installed").
+    expect(result.stderr).not.toContain('not declared')
     expect(result.stderr).not.toContain('no adapters installed')
     // Nothing was removed: the manifest is byte-for-byte unchanged.
     expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(before)

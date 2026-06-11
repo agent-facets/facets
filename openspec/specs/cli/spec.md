@@ -658,8 +658,9 @@ The system SHALL register a `remove` command that removes one or more facets fro
 #### Scenario: Remove command accepts multiple names
 
 - **WHEN** a user runs `remove` with two or more facet names
-- **THEN** the system SHALL remove each named facet
-- **AND** the operation SHALL succeed only if every named facet is removed successfully
+- **THEN** the system SHALL remove each declared facet
+- **AND** the system SHALL silently ignore any undeclared names
+- **AND** the operation SHALL succeed if every declared facet is removed successfully
 
 ### Requirement: Remove renders the unified progress view
 
@@ -677,16 +678,23 @@ The `remove` command SHALL present progress through the same shared rendering us
 - **THEN** the rendered view SHALL show progress for each facet
 - **AND** on completion the view SHALL show one summary line per affected facet
 
-### Requirement: Remove reports an undeclared facet clearly
+### Requirement: Remove handles undeclared names gracefully
 
-When `remove` is asked to remove a facet that is not declared in the project, the system SHALL identify the undeclared facet by name and SHALL exit with a non-zero code without modifying the project.
+When `remove` is given a name that is not declared in the project, the system SHALL silently ignore it. When every requested name is undeclared, the rendered view SHALL report that no changes were made and the process SHALL exit with code 0.
 
-#### Scenario: Removing an undeclared facet is reported
+#### Scenario: Removing only undeclared names shows no-op summary
 
-- **WHEN** a user runs `remove` with a name that is not declared in the project manifest
-- **THEN** the system SHALL print an error identifying the undeclared facet by name
-- **AND** the project manifest, lockfile, and adapter state SHALL be unchanged
-- **AND** the process SHALL exit with a non-zero code
+- **WHEN** a user runs `remove` with one or more names that are not declared in the project manifest
+- **AND** no requested name is declared
+- **THEN** the rendered view SHALL show a summary indicating no changes
+- **AND** the process SHALL exit with code 0
+
+#### Scenario: Mix of declared and undeclared names removes the declared ones
+
+- **WHEN** a user runs `remove` with names where some are declared and some are not
+- **THEN** the system SHALL remove the declared facets
+- **AND** the system SHALL silently ignore the undeclared names
+- **AND** the process SHALL exit with code 0 if all declared facets were removed successfully
 
 ### Requirement: Remove reports rollback outcome on failure
 

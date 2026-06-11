@@ -1,7 +1,8 @@
 import { prepareRemove, type RemovePrepareFailure, type RunRemoveResult, runRemove } from '@agent-facets/engine'
-import { render } from 'ink'
+import { Box, render, Text } from 'ink'
 import { createElement } from 'react'
 import type { Command } from '../../commands.ts'
+import { THEME } from '../../tui/theme.ts'
 import { InstallView } from '../../tui/views/install/install-view.tsx'
 import { writeCliError } from '../../util/errors.ts'
 import { ensureAdapters } from '../shared/ensure-adapters.ts'
@@ -37,8 +38,8 @@ export const removeCommand: Command = {
       return 1
     }
 
+    const startTime = performance.now()
     const verbose = flags.verbose === true
-    const onLog = verbose ? (line: string) => process.stderr.write(`${line}\n`) : undefined
 
     const names = args
     const projectRoot = process.cwd()
@@ -53,6 +54,33 @@ export const removeCommand: Command = {
     if (!prepared.ok) {
       writePrepareError(prepared.failure)
       return 1
+    }
+
+    // If every requested name was absent from facets.json, there is nothing
+    // to remove. Print the no-op summary and exit without discovering
+    // adapters — avoids a misleading "no adapters installed" error when the
+    // user removes a facet that was never declared.
+    if (prepared.names.length === 0) {
+      const facetCount = Object.keys(prepared.json.facets).length
+      const elapsed = `${((performance.now() - startTime) / 1000).toFixed(2)}s`
+      const instance = render(
+        createElement(
+          Box,
+          null,
+          createElement(
+            Text,
+            null,
+            'Checked ',
+            createElement(Text, { color: THEME.success }, facetCount),
+            ` facet${facetCount === 1 ? '' : 's'} `,
+            createElement(Text, { color: THEME.hint }, '(no changes)'),
+            ' ',
+            createElement(Text, { color: THEME.hint }, `[${elapsed}]`),
+          ),
+        ),
+      )
+      instance.unmount()
+      return 0
     }
 
     // Discover or pick adapters. Drift-removal calls `deleteAsset` on each
@@ -77,14 +105,14 @@ export const removeCommand: Command = {
     const instance = render(
       createElement(InstallView, {
         mode: 'remove',
-        run: async (onStage) => {
+        run: async (onStage, onLog) => {
           const result = await runRemove({
             projectRoot,
             names,
             adapters,
             prepared,
             onStage,
-            ...(onLog ? { onLog } : {}),
+            ...(verbose && onLog ? { onLog } : {}),
             signal: controller.signal,
           })
           captured = result
@@ -157,13 +185,6 @@ function writePrepareError(failure: RemovePrepareFailure): void {
         what: 'could not read facets.json',
         detail: failure.error,
         fix: 'run this command inside a project with a valid facets.json',
-      })
-      return
-    case 'not-declared':
-      writeCliError({
-        what: `facet ${failure.names.length === 1 ? 'is' : 'are'} not declared in facets.json`,
-        detail: failure.names.join(', '),
-        fix: 'check the name(s) against facets.json; nothing was removed',
       })
       return
     case 'manifest-write':

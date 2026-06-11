@@ -42,7 +42,6 @@ export const installCommand: Command = {
 
     const verbose = flags.verbose === true
     const frozenLockfile = flags['frozen-lockfile'] === true
-    const onLog = verbose ? (line: string) => process.stderr.write(`${line}\n`) : undefined
 
     const projectRoot = process.cwd()
 
@@ -85,12 +84,12 @@ export const installCommand: Command = {
     const instance = render(
       createElement(InstallView, {
         mode: 'install',
-        run: async (onStage) => {
+        run: async (onStage, onLog) => {
           const result = await runInstall({
             projectRoot,
             adapters: installable,
             onStage,
-            onLog,
+            ...(verbose && onLog ? { onLog } : {}),
             signal: controller.signal,
             frozenLockfile,
           })
