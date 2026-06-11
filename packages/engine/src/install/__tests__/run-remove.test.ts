@@ -278,7 +278,7 @@ describe('prepareRemove — read-only validation', () => {
     expect(result.failure.reason).toBe('manifest-read')
   })
 
-  test('returns the parsed manifest and a snapshot when every name is declared', async () => {
+  test('returns the parsed manifest and filtered names when every name is declared', async () => {
     await installFacet('cowsay', '0.1.1')
 
     const result = prepareRemove({ projectRoot, names: ['cowsay'] })
@@ -287,20 +287,17 @@ describe('prepareRemove — read-only validation', () => {
     expect(result.json.facets.cowsay).toBe('0.1.1')
     // Filtered names contains every requested name (all declared).
     expect(result.names).toEqual(['cowsay'])
-    // Snapshot captures the on-disk bytes for rollback.
-    expect(result.snapshot).not.toBeNull()
-    expect(result.snapshot?.toString('utf8')).toBe(readFileSync(join(projectRoot, 'facets.json'), 'utf8'))
   })
 })
 
-describe('runRemove — install-failure restore', () => {
-  test('restores facets.json byte-for-byte when install fails', async () => {
+describe('runRemove — install-failure leaves manifest unchanged', () => {
+  test('facets.json is untouched when install fails', async () => {
     await installFacet('cowsay', '0.1.1')
     const before = readFileSync(join(projectRoot, 'facets.json'), 'utf8')
 
     // Force a runInstall failure: hold the install lock so runRemove's
-    // runInstall call fails with LOCK_HELD AFTER the provisional manifest
-    // write, exercising the snapshot restore path.
+    // runInstall call fails with LOCK_HELD. With the delta-based flow,
+    // the manifest is never written ahead — it stays untouched on failure.
     const { acquireInstallLock } = await import('../lockfile-guard.ts')
     const lock = acquireInstallLock(projectRoot)
     if (!lock.ok) expect.unreachable()
@@ -309,13 +306,13 @@ describe('runRemove — install-failure restore', () => {
       const result = await remove(['cowsay'])
       expect(result.ok).toBe(false)
       if (result.ok) expect.unreachable()
-      if (result.phase !== 'install') expect.unreachable()
-      expect(result.manifestRestored).toBe(true)
+      expect(result.phase).toBe('install')
     } finally {
       await lock.lock.release()
     }
 
-    // facets.json restored to its exact pre-command bytes.
+    // facets.json is unchanged because the delta-based flow never writes
+    // the manifest ahead of install — it only writes on success.
     expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(before)
   })
 })

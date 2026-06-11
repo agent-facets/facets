@@ -90,8 +90,8 @@ export { emptyLockfile, FACETS_LOCK_FILE, loadLockfile, writeLockfile } from './
 export type { MaterializeOptions, MaterializeResult } from './install/materialize.ts'
 export { computeAssetList, diffAssetsForDeletion, materialize } from './install/materialize.ts'
 // add orchestrator (owns the facet add manifest transaction)
-export type { AddPrepareFailure, AddSource, RunAddOptions, RunAddResult } from './install/run-add.ts'
-export { runAdd } from './install/run-add.ts'
+export type { AddPrepareFailure, AddSource, PrepareAddResult, RunAddOptions, RunAddResult } from './install/run-add.ts'
+export { prepareAdd, runAdd } from './install/run-add.ts'
 // install orchestrator
 export { runInstall } from './install/run-install.ts'
 // remove orchestrator (owns the facet remove manifest transaction)
@@ -103,10 +103,13 @@ export type {
 } from './install/run-remove.ts'
 export { prepareRemove, runRemove } from './install/run-remove.ts'
 export type {
+  Addition,
   FacetOutcome,
   FacetStage,
+  InstallDelta,
   InstallSummary,
   LockfileDriftEntry,
+  Removal,
   RollbackOutcome,
   RunInstallFailure,
   RunInstallOptions,

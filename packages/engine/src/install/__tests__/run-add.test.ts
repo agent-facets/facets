@@ -207,14 +207,16 @@ describe('runAdd — git/local manifest-value rule', () => {
 })
 
 describe('runAdd — preserve / heal / pin', () => {
-  test('bare re-add preserves an existing valid version spec', async () => {
+  test('bare re-add pins to the resolved exact version (overwrites existing spec)', async () => {
     registryResolvedVersion = '2.5.0'
     registryFixtureDir = buildFixture(fakeHome, 'cowsay', '2.5.0')
     writeFacets({ cowsay: '1.*' })
     const result = await add('cowsay')
     expect(result.ok).toBe(true)
-    // Existing valid spec is preserved, NOT clobbered to the resolved exact.
-    expect(readFacets().cowsay).toBe('1.*')
+    // Bare add always pins to the resolved exact — the manifest-write policy
+    // does not preserve existing specs. The user explicitly asked for the
+    // newest version; they get it pinned.
+    expect(readFacets().cowsay).toBe('2.5.0')
   })
 
   test('bare re-add heals an invalid recorded value (name leaked into version)', async () => {

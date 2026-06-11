@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import type { FacetsJson, Lockfile, LockfileFacet } from '@agent-facets/protocol'
-import { loadFacetsJson } from '../manifest/project-files.ts'
+import { loadFacetsJson, writeFacetsJson } from '../manifest/project-files.ts'
+import { describeVersionSpec } from '../registry/describe.ts'
 import { classifyOutcome } from './classify-outcome.ts'
 import { detectLockfileDrift } from './detect-lockfile-drift.ts'
 import { InstallJournal } from './journal.ts'
@@ -9,9 +10,12 @@ import { emptyLockfile, FACETS_LOCK_FILE, loadLockfile, writeLockfile } from './
 import { materialize } from './materialize.ts'
 import { materializeFailureToRunInstall } from './materialize-failure.ts'
 import { planFacet } from './plan-facet.ts'
+import { bootstrapReceipt, loadReceipt, type Receipt, type ReceiptFacetEntry, writeReceipt } from './receipt.ts'
 import { removalManifest } from './removal-manifest.ts'
 import type {
+  Addition,
   FacetOutcome,
+  InstallDelta,
   InstallSummary,
   RunInstallFailure,
   RunInstallOptions,
@@ -38,10 +42,15 @@ import type {
  */
 export async function runInstall(opts: RunInstallOptions): Promise<RunInstallResult> {
   const { projectRoot, adapters, signal } = opts
+  const delta: InstallDelta = opts.delta ?? { additions: [], removals: [] }
   const onStage = opts.onStage ?? noopStage
   const onLog = opts.onLog ?? noopLog
 
-  // 1. Load facets.json.
+  // 1. Load facets.json. When the delta carries additions and no manifest
+  //    exists yet, start from an empty skeleton — the manifest will be
+  //    created as part of the transactional write. Without a delta, a
+  //    missing manifest is still a hard error (plain `facet install` with
+  //    nothing to install).
   const facetsJsonResult = loadFacetsJson(projectRoot)
   if (!facetsJsonResult.ok) {
     return failureWithoutRollback({
@@ -50,13 +59,13 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       error: facetsJsonResult.error,
     })
   }
-  if (!facetsJsonResult.existed) {
+  if (!facetsJsonResult.existed && delta.additions.length === 0) {
     return failureWithoutRollback({
       code: 'FACETS_JSON_NOT_FOUND',
       path: join(projectRoot, 'facets.json'),
     })
   }
-  const facetsJson: FacetsJson = facetsJsonResult.data
+  const facetsJson: FacetsJson = facetsJsonResult.existed ? facetsJsonResult.data : { facets: {} }
 
   // 2. Acquire install lock.
   const lockResult = acquireInstallLock(projectRoot)
@@ -83,6 +92,17 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     }
     const previousLockfile = lockfileResult.existed ? lockfileResult.data : emptyLockfile()
 
+    // Load (or bootstrap) the machine-local receipt.
+    const receiptResult = loadReceipt(projectRoot)
+    const receipt: Receipt = receiptResult.ok ? receiptResult.receipt : bootstrapReceipt(projectRoot, previousLockfile)
+
+    // Frozen-lockfile gate: a frozen commit with a non-empty delta is
+    // rejected immediately — add/remove can never run frozen.
+    const hasDelta = delta.additions.length > 0 || delta.removals.length > 0
+    if (opts.frozenLockfile === true && hasDelta) {
+      return failureNoMutation({ code: 'FROZEN_WITH_DELTA' })
+    }
+
     // Frozen-lockfile pre-flight. Runs before any mutation/journal entry so
     // drift leaves the project untouched. The lockfile is authoritative:
     // every manifest facet MUST have a lockfile entry whose version
@@ -94,9 +114,33 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       }
     }
 
+    // Merge the delta into the desired manifest in memory.
+    // Additions: upsert into the manifest with the user's specifier.
+    // Removals: delete from the manifest.
+    // The on-disk facets.json is NOT written yet — it's written as part
+    // of the transactional commit at the end.
+    const additionsByName = new Map<string, Addition>(delta.additions.map((a) => [a.facetName, a]))
+    const removalNames = new Set(delta.removals.map((r) => r.facetName))
+
+    // Build the desired manifest: start from on-disk, apply delta.
+    const desiredFacets: Record<string, string> = { ...facetsJson.facets }
+    for (const addition of delta.additions) {
+      // Write the specifier into the desired manifest. The manifest-write
+      // policy (bare → pin, explicit → verbatim) is applied AFTER install
+      // succeeds — for now we store the specifier as-is so planFacet can
+      // parse it. The final manifest value is computed from the resolved
+      // lockfile entry below.
+      const manifestValue =
+        addition.source.kind === 'registry' ? describeVersionSpec(addition.source.version) : addition.specifier
+      desiredFacets[addition.facetName] = manifestValue
+    }
+    for (const name of removalNames) {
+      delete desiredFacets[name]
+    }
+
     onStage({
       kind: 'install-start',
-      totalFacets: Object.keys(facetsJson.facets).length,
+      totalFacets: Object.keys(desiredFacets).length,
     })
 
     // 5. Per-facet install loop.
@@ -111,7 +155,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     let unchanged = 0
     let removed = 0
 
-    for (const [facetName, specifier] of Object.entries(facetsJson.facets)) {
+    for (const [facetName, specifier] of Object.entries(desiredFacets)) {
       if (signal?.aborted) {
         return await rollbackAndFail(journal, { code: 'ABORTED' }, onLog)
       }
@@ -126,6 +170,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
         onStage,
         onLog,
         frozenLockfile: opts.frozenLockfile,
+        isExplicitAddition: additionsByName.has(facetName),
       })
       if (!planResult.ok) {
         onStage({ kind: 'facet-failure', facet: facetName, failure: planResult.failure })
@@ -176,19 +221,34 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       onStage({ kind: 'facet-success', facet: facetName, outcome })
     }
 
-    // 6. Drift removal: facets in old lockfile but not in current facets.json.
-    for (const [facetName, prevEntry] of Object.entries(previousLockfile.facets)) {
+    // 6. Receipt-driven drift removal: facets the receipt records as
+    //    materialized but the desired set no longer wants. Also catch
+    //    lockfile-only entries (lockfile records it, receipt doesn't — e.g.
+    //    the receipt was just bootstrapped and doesn't have the entry yet).
+    const unwantedFromReceipt = Object.keys(receipt.facets).filter((name) => desiredFacets[name] === undefined)
+    const unwantedFromLockfile = Object.keys(previousLockfile.facets).filter(
+      (name) => desiredFacets[name] === undefined && !receipt.facets[name],
+    )
+    const unwantedNames = [...new Set([...unwantedFromReceipt, ...unwantedFromLockfile])]
+
+    for (const facetName of unwantedNames) {
       if (signal?.aborted) {
         return await rollbackAndFail(journal, { code: 'ABORTED' }, onLog)
       }
-      if (facetsJson.facets[facetName] !== undefined) continue
 
-      onStage({ kind: 'drift-removal', facet: facetName, oldVersion: prevEntry.version })
+      // The asset set to delete comes from the receipt (preferred) or the
+      // lockfile (fallback for entries the receipt doesn't have yet).
+      const receiptEntry = receipt.facets[facetName]
+      const lockfileEntry = previousLockfile.facets[facetName]
+      const oldAssets = receiptEntry?.assets ?? lockfileEntry?.assets ?? []
+      const oldVersion = receiptEntry?.version ?? lockfileEntry?.version ?? '0.0.0'
+
+      onStage({ kind: 'drift-removal', facet: facetName, oldVersion })
       const removalResult = await materialize({
         facetName,
         manifest: removalManifest(facetName),
         adapters: [...adapters],
-        oldAssets: prevEntry.assets,
+        oldAssets,
         newAssets: [],
         journal,
         onLog,
@@ -198,40 +258,67 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
         const failure = materializeFailureToRunInstall(facetName, removalResult.failure)
         return await rollbackAndFail(journal, failure, onLog)
       }
-      removedAssets += prevEntry.assets.length * adapters.length
+      removedAssets += oldAssets.length * adapters.length
       removed++
-      perFacet.push({ kind: 'removed', name: facetName, oldVersion: prevEntry.version })
+      perFacet.push({ kind: 'removed', name: facetName, oldVersion })
     }
 
     if (signal?.aborted) {
       return await rollbackAndFail(journal, { code: 'ABORTED' }, onLog)
     }
 
-    // 7. Write lockfile.
+    // 7. Transactional tri-write: manifest + lockfile + receipt.
     //
-    // Wrapped in try/catch because `writeLockfile` performs disk I/O
-    // (EACCES on a read-only fs, ENOSPC on disk-full, EIO on hardware
-    // faults). An unprotected throw here would exit `runInstall` via
-    // exception after assets are already materialized — breaking both
-    // the "always returns" contract AND leaving the project in an
-    // inconsistent state (assets written, lockfile not updated). Route
-    // through `rollbackAndFail` so the journal undoes the materialize
-    // and the caller gets a structured `LOCKFILE_WRITE_FAILED` result.
+    // Wrapped in try/catch because disk I/O can fail (EACCES, ENOSPC, EIO).
+    // An unprotected throw after materialization would leave the project
+    // inconsistent. Route through `rollbackAndFail` so the journal undoes
+    // the materialize and the caller gets a structured failure.
     const newLockfile: Lockfile = {
       lockfileVersion: previousLockfile.lockfileVersion,
       facets: newFacetEntries,
     }
-    // Frozen-lockfile mode treats the lockfile as the source of truth and
-    // MUST NOT write it. The pre-flight already proved the lockfile covers
-    // the manifest, so install reused each entry's locked version, integrity,
-    // and assets. `newLockfile` is rebuilt in memory for the return value but
-    // is intentionally not persisted — note that each entry's `source` tracks
-    // the current manifest specifier (e.g. a `1.*` range) and may therefore
-    // differ from the pinned `source` on disk even when the version still
-    // satisfies, so `newLockfile` is not necessarily byte-equal to the file.
-    if (opts.frozenLockfile !== true) {
+
+    // Build the new receipt from the desired set. The receipt is always
+    // written — even in frozen mode (materialization state converges).
+    const newReceiptFacets: Record<string, ReceiptFacetEntry> = {}
+    for (const [name, entry] of Object.entries(newFacetEntries)) {
+      newReceiptFacets[name] = {
+        version: entry.version,
+        assets: entry.assets.map((a) => ({ scope: a.scope, type: a.type, name: a.name })),
+      }
+    }
+    const newReceipt: Receipt = { ...receipt, facets: newReceiptFacets }
+
+    if (opts.frozenLockfile === true) {
+      // Frozen mode: write receipt only — never the manifest or lockfile.
       try {
+        writeReceipt(projectRoot, newReceipt)
+      } catch {
+        // Receipt write failure in frozen mode is non-fatal — the receipt
+        // is machine-local convenience state, not the locked set.
+      }
+    } else {
+      // Apply the manifest-write policy for additions before writing.
+      // - Bare registry add (kind: 'latest') → pin to the resolved exact version.
+      // - Explicit registry specifier → write verbatim (already in desiredFacets).
+      // - Git/local → write the specifier verbatim (already in desiredFacets).
+      // - Reproduction (not an addition) → leave unchanged (already in desiredFacets).
+      if (hasDelta) {
+        for (const addition of delta.additions) {
+          const lockEntry = newFacetEntries[addition.facetName]
+          if (lockEntry === undefined) continue
+          if (addition.source.kind === 'registry' && addition.source.version.kind === 'latest') {
+            desiredFacets[addition.facetName] = lockEntry.version
+          }
+        }
+      }
+
+      try {
+        // Tri-write: manifest + lockfile + receipt.
+        const newManifest: FacetsJson = { ...facetsJson, facets: desiredFacets }
+        writeFacetsJson(projectRoot, newManifest)
         writeLockfile(projectRoot, newLockfile)
+        writeReceipt(projectRoot, newReceipt)
       } catch (error) {
         return await rollbackAndFail(
           journal,

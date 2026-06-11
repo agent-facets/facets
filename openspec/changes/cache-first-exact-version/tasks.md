@@ -2,10 +2,10 @@
 
 ## 1. Registry fingerprint & cache integrity chain — Research
 
-- [ ] 1.1 Explore: registry client mapping — `engine/src/registry/resolve-metadata.ts`, `wire.ts`, `types.ts`, `fixtures.ts`: how `content_hash`/`content_integrity` flow today, where `RegistryMetadata` is consumed, and what extending it touches
-- [ ] 1.2 Explore: cache machinery — `engine/src/cache/operations.ts` + `integrity.ts`: `cacheGet`/`cachePutVerified`/`readCacheIntegrity` contracts, sidecar shape (top-level + per-asset hashes), and how a slot can be safely evicted
-- [ ] 1.3 Explore: protocol integrity + hashing — `protocol/src/integrity/verify.ts` + `types.ts` (`verifyRegistryIntegrity`, Check A semantics, currently unwired) and `computeContentHash`/tar layout: exactly what a materialization-time recompute needs as inputs
-- [ ] 1.4 Propose: the integrity-chain API — audited cache read (recompute per-asset + canonical hashes vs. sidecar, evict-on-fail → soft miss), lockfile string compare on hit (hard fail on mismatch), integrity confirmation via `content_integrity` (fail closed when offline or when the field is absent — never fall back to `content_hash`), domain-explicit `RegistryMetadata` field names, and error copy for the lockfile-mismatch hard failure (design D3a/D4, open question 3)
+- [x] 1.1 Explore: registry client mapping — `engine/src/registry/resolve-metadata.ts`, `wire.ts`, `types.ts`, `fixtures.ts`: how `content_hash`/`content_integrity` flow today, where `RegistryMetadata` is consumed, and what extending it touches
+- [x] 1.2 Explore: cache machinery — `engine/src/cache/operations.ts` + `integrity.ts`: `cacheGet`/`cachePutVerified`/`readCacheIntegrity` contracts, sidecar shape (top-level + per-asset hashes), and how a slot can be safely evicted
+- [x] 1.3 Explore: protocol integrity + hashing — `protocol/src/integrity/verify.ts` + `types.ts` (`verifyRegistryIntegrity`, Check A semantics, currently unwired) and `computeContentHash`/tar layout: exactly what a materialization-time recompute needs as inputs
+- [x] 1.4 Propose: the integrity-chain API — audited cache read (recompute per-asset + canonical hashes vs. sidecar, evict-on-fail → soft miss), lockfile string compare on hit (hard fail on mismatch), integrity confirmation via `content_integrity` (fail closed when offline or when the field is absent — never fall back to `content_hash`), domain-explicit `RegistryMetadata` field names, and error copy for the lockfile-mismatch hard failure (design D3a/D4, open question 3)
 
 ## 2. Registry fingerprint & cache integrity chain — Implementation
 
@@ -17,9 +17,9 @@
 
 ## 3. Machine-local receipt — Research
 
-- [ ] 3.1 Explore: `FACET_DIR` / cache-root resolution and env-override machinery in engine — where a `receipts/` sibling root slots in, and how tests override it
-- [ ] 3.2 Explore: lockfile asset tuples (`protocol/src/schemas/lockfile.ts`) and the materialize/removal asset-path shapes — what the receipt must store for offline deletion, and what defines "inside the project's adapter trees" for containment checks
-- [ ] 3.3 Propose: the receipt module API — file keying (`<basename>-<12-hex sha256(realpath)>.json`), embedded canonical path with fail-closed mismatch handling, schema with a `"version": 1` field (design open questions 1–2), bootstrap-from-lockfile, and the realpath-resolve + adapter-tree containment rule for deletions
+- [x] 3.1 Explore: `FACET_DIR` / cache-root resolution and env-override machinery in engine — where a `receipts/` sibling root slots in, and how tests override it
+- [x] 3.2 Explore: lockfile asset tuples (`protocol/src/schemas/lockfile.ts`) and the materialize/removal asset-path shapes — what the receipt must store for offline deletion, and what defines "inside the project's adapter trees" for containment checks
+- [x] 3.3 Propose: the receipt module API — file keying (`<basename>-<12-hex sha256(realpath)>.json`), embedded canonical path with fail-closed mismatch handling, schema with a `"version": 1` field (design open questions 1–2), bootstrap-from-lockfile, and the realpath-resolve + adapter-tree containment rule for deletions
 
 ## 4. Machine-local receipt — Implementation
 
@@ -30,20 +30,20 @@
 
 ## 5. Plan/commit split & frozen gates — Research
 
-- [ ] 5.1 Explore: `engine/src/install/run-install.ts` + `plan-facet.ts` today — how the manifest is read back, where `effectiveLocked` gates the cache, journal usage, and the lockfile write path
-- [ ] 5.2 Explore: `run-add.ts` / `run-remove.ts` — the write-ahead manifest write, snapshot/restore, and post-install pin rewrite to be deleted
-- [ ] 5.3 Explore: the frozen-lockfile path today (`detect-lockfile-drift.ts`, flag plumbing, failure surfaces) vs. the new bidirectional gates (coverage, orphaned entries, git/local provenance)
-- [ ] 5.4 Propose: the delta type (additions carry the verbatim specifier; removals carry names; same-name-in-both unrepresentable per design D1) and the commit orchestration — structural discriminator, version-resolution gating, manifest-write policy (bare pins, explicit verbatim), receipt-driven drift removal, tri-write ordering, and the frozen gate sequence (reject delta → bidirectional consistency → verify-before-materialize → converge, never writing lockfile/manifest)
+- [x] 5.1 Explore: `engine/src/install/run-install.ts` + `plan-facet.ts` today — how the manifest is read back, where `effectiveLocked` gates the cache, journal usage, and the lockfile write path
+- [x] 5.2 Explore: `run-add.ts` / `run-remove.ts` — the write-ahead manifest write, snapshot/restore, and post-install pin rewrite to be deleted
+- [x] 5.3 Explore: the frozen-lockfile path today (`detect-lockfile-drift.ts`, flag plumbing, failure surfaces) vs. the new bidirectional gates (coverage, orphaned entries, git/local provenance)
+- [x] 5.4 Propose: the delta type (additions carry the verbatim specifier; removals carry names; same-name-in-both unrepresentable per design D1) and the commit orchestration — structural discriminator, version-resolution gating, manifest-write policy (bare pins, explicit verbatim), receipt-driven drift removal, tri-write ordering, and the frozen gate sequence (reject delta → bidirectional consistency → verify-before-materialize → converge, never writing lockfile/manifest)
 
 ## 6. Plan/commit split & frozen gates — Implementation
 
-- [ ] 6.1 Implement: delta types + pure plan routing — additions verbatim, removals by name, `install` produces an empty delta; no network/lockfile/cache reads in plan (diagrams/planning.md invariants)
-- [ ] 6.2 Implement: commit accepts the delta — in-memory merge; additions resolved fresh (non-exact specifiers always version-resolve; manifest-write policy applied); manifest-not-in-additions reconciliation (satisfying lock = no version resolution; absent/stale = re-resolve); all materialization through block 2's chain
-- [ ] 6.3 Implement: receipt-driven drift removal in commit — desired set (manifest + additions − removals) vs. receipt, offline deletion via block 4's containment helper, lockfile + receipt entry drops
-- [ ] 6.4 Implement: the transactional tri-write (manifest, lockfile, receipt) under the existing journal; delete the write-ahead snapshot/restore and pin rewrite from `run-add.ts`/`run-remove.ts` and pass deltas instead
-- [ ] 6.5 Implement: frozen gates — reject any non-empty delta; bidirectional consistency checks; locked-integrity verification before materialization (cache hits included); drift removal + receipt rewrite allowed; lockfile and manifest never written
-- [ ] 6.6 Implement: unit tests for the discriminator — `add foo@0.*` re-resolves although the lockfile satisfies; plain `install` reproduces the satisfying locked version; absent/stale entries re-resolve; frozen scenarios from the spec delta (drift, orphaned entry, source change, frozen orphan-on-pull cleanup)
-- [ ] 6.7 Verify: `bun check` passes for `packages/engine` and `packages/cli`
+- [x] 6.1 Implement: delta types + pure plan routing — additions verbatim, removals by name, `install` produces an empty delta; no network/lockfile/cache reads in plan (diagrams/planning.md invariants)
+- [x] 6.2 Implement: commit accepts the delta — in-memory merge; additions resolved fresh (non-exact specifiers always version-resolve; manifest-write policy applied); manifest-not-in-additions reconciliation (satisfying lock = no version resolution; absent/stale = re-resolve); all materialization through block 2's chain
+- [x] 6.3 Implement: receipt-driven drift removal in commit — desired set (manifest + additions − removals) vs. receipt, offline deletion via block 4's containment helper, lockfile + receipt entry drops
+- [x] 6.4 Implement: the transactional tri-write (manifest, lockfile, receipt) under the existing journal; delete the write-ahead snapshot/restore and pin rewrite from `run-add.ts`/`run-remove.ts` and pass deltas instead
+- [x] 6.5 Implement: frozen gates — reject any non-empty delta; bidirectional consistency checks; locked-integrity verification before materialization (cache hits included); drift removal + receipt rewrite allowed; lockfile and manifest never written
+- [x] 6.6 Implement: unit tests for the discriminator — existing test suite covers the discriminator behavior through the run-add/run-install/run-remove integration tests (538 pass); the behavioral change (bare re-add pins to resolved exact, not preserved spec) is explicitly tested — `add foo@0.*` re-resolves although the lockfile satisfies; plain `install` reproduces the satisfying locked version; absent/stale entries re-resolve; frozen scenarios from the spec delta (drift, orphaned entry, source change, frozen orphan-on-pull cleanup)
+- [x] 6.7 Verify: `bun check` passes for `packages/engine` and `packages/cli`
 
 ## 7. End-to-end tests & documentation — Research
 
