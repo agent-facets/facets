@@ -19,16 +19,30 @@ import { join } from 'node:path'
 let registryFixtureDir: string | null = null
 let registryResolvedVersion = '0.1.1'
 
+/** Build the fixture's genuine build manifest — the same artifact a real
+ *  registry would serve in the outer tar. The chain's hash checks (B/C,
+ *  the post-download recompute) run for real against it. */
+async function manifestFor(fixtureDir: string) {
+  const { runBuildPipeline } = await import('../../build/pipeline.ts')
+  const built = await runBuildPipeline(fixtureDir, [])
+  if (!built.ok) throw new Error('test bug: fixture failed to build')
+  return JSON.parse(built.manifestJson) as import('@agent-facets/protocol').BuildManifest
+}
+
 mock.module('../../registry/resolve-metadata.ts', () => ({
-  resolveRegistryMetadataBatch: async (specs: ReadonlyArray<{ name: string }>) => ({
-    ok: true,
-    value: specs.map((s) => ({
-      name: s.name,
-      version: registryResolvedVersion,
-      transportHash: 'sha256:stub',
-      contentFingerprint: 'sha256:stub',
-    })),
-  }),
+  resolveRegistryMetadataBatch: async (specs: ReadonlyArray<{ name: string }>) => {
+    const contentFingerprint =
+      registryFixtureDir === null ? 'sha256:stub' : (await manifestFor(registryFixtureDir)).integrity
+    return {
+      ok: true,
+      value: specs.map((s) => ({
+        name: s.name,
+        version: registryResolvedVersion,
+        transportHash: 'sha256:stub',
+        contentFingerprint,
+      })),
+    }
+  },
 }))
 
 mock.module('../../registry/download.ts', () => ({
@@ -37,7 +51,7 @@ mock.module('../../registry/download.ts', () => ({
       return { ok: false, error: { code: 'NETWORK_ERROR', cause: 'no fixture set', attempts: 1 } }
     }
     cpSync(registryFixtureDir, dest, { recursive: true })
-    return { ok: true, value: undefined }
+    return { ok: true, value: await manifestFor(registryFixtureDir) }
   },
 }))
 
@@ -291,9 +305,14 @@ describe('prepareRemove — read-only validation', () => {
 })
 
 describe('runRemove — install-failure leaves manifest unchanged', () => {
-  test('facets.json is untouched when install fails', async () => {
+  test('facets.json, facets.lock, and the receipt are untouched when install fails', async () => {
     await installFacet('cowsay', '0.1.1')
-    const before = readFileSync(join(projectRoot, 'facets.json'), 'utf8')
+    const { receiptPath } = await import('../receipt.ts')
+    const before = {
+      facets: readFileSync(join(projectRoot, 'facets.json'), 'utf8'),
+      lock: readFileSync(join(projectRoot, 'facets.lock'), 'utf8'),
+      receipt: readFileSync(receiptPath(projectRoot), 'utf8'),
+    }
 
     // Force a runInstall failure: hold the install lock so runRemove's
     // runInstall call fails with LOCK_HELD. With the delta-based flow,
@@ -311,8 +330,10 @@ describe('runRemove — install-failure leaves manifest unchanged', () => {
       await lock.lock.release()
     }
 
-    // facets.json is unchanged because the delta-based flow never writes
-    // the manifest ahead of install — it only writes on success.
-    expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(before)
+    // All three project files unchanged: the delta-based flow never
+    // writes ahead of install — they are only written together on success.
+    expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(before.facets)
+    expect(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')).toBe(before.lock)
+    expect(readFileSync(receiptPath(projectRoot), 'utf8')).toBe(before.receipt)
   })
 })

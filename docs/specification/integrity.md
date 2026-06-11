@@ -37,6 +37,7 @@ These are not interchangeable: gzip is a delivery concern outside the hash contr
 | --- | --- |
 | **Publish time** | Registry computes both hashes after assembling the artifact. |
 | **Download** | The transport hash (`content_hash`) is verified against the raw downloaded bytes. |
+| **Post-extract recompute** | The canonical fingerprint is genuinely recomputed from the extracted content (per-asset hashes + canonical-archive hash) — never taken from the build manifest's self-declared claim — and must match both the manifest's claim and the registry's published `content_integrity`. |
 | **Cache write** | The canonical fingerprint (`content_integrity`) and per-asset hashes are written to a sidecar alongside the cached content. |
 | **Cache hit** | The cached content is re-hashed against its sidecar (self-audit). Tampered content is evicted and re-fetched. |
 | **Lockfile comparison** | When the lockfile pins a version, the audited integrity must equal the locked integrity. |
@@ -172,6 +173,7 @@ It does NOT catch behavioral changes where the API surface is unchanged but the 
 | When | What is verified |
 | --- | --- |
 | Download | Transport hash (`content_hash`) of the raw archive bytes. |
+| Post-extract | Canonical fingerprint genuinely recomputed from the extracted content; compared against the build manifest's claim and the registry's published `content_integrity`. |
 | Cache hit | Canonical fingerprint + per-asset hashes re-computed against the sidecar (self-audit). |
 | Lockfile comparison | Audited integrity vs. locked integrity (when the lockfile pins the version). |
 | Integrity confirmation | Audited integrity vs. registry's `content_integrity` (when creating a lockfile entry). |

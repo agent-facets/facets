@@ -6,7 +6,7 @@ import type { Adapter } from '@agent-facets/adapter'
 import { deleteAssetFile, installAssetFile, readAssetFile } from '@agent-facets/adapter'
 import type { BuildManifest, Lockfile } from '@agent-facets/protocol'
 import { computeContentHash } from '@agent-facets/protocol'
-import { type CacheIdentity, cachePath, cachePutVerified } from '../cache/index.ts'
+import { type CacheIdentity, cachePath, cachePutVerified, computeDirIntegrity } from '../cache/index.ts'
 import { runInstall } from '../install/run-install.ts'
 import type { StageEvent } from '../install/types.ts'
 
@@ -656,12 +656,14 @@ function seedCacheSlotForGit(
   mkdirSync(join(staging, 'skills/planning'), { recursive: true })
   writeFileSync(join(staging, 'skills/planning/SKILL.md'), skillBody)
 
-  // Hand-construct a build manifest matching the source. The integrity
-  // value is opaque from cachePutVerified's perspective — caller passes
-  // it as `computedIntegrity`, which the function compares to
-  // manifest.integrity. We use the same value for both, so the audit
-  // passes.
-  const integrity = computeContentHash(`fake-archive-${facetName}-${version}`)
+  // Construct a build manifest with the GENUINE canonical integrity of
+  // the staged content. Cache hits are audited on read (D4): the
+  // install recomputes per-asset hashes AND the canonical-tar hash and
+  // compares them to the sidecar, so a fake top-level integrity would
+  // fail the self-audit and evict the slot.
+  const computed = computeDirIntegrity(staging, ['facet.json', 'skills/planning/SKILL.md'])
+  if (!computed.ok) throw new Error('test bug: staged fixture unreadable')
+  const integrity = computed.integrity
   const manifest: BuildManifest = {
     facetVersion: 0.1,
     archive: 'archive.tar.gz',

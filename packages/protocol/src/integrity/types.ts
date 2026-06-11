@@ -79,16 +79,24 @@ export type IntegrityResult = { ok: true } | { ok: false; failure: IntegrityFail
  * Inputs to the registry three-check pipeline.
  *
  * Field semantics:
- *   - `expectedIntegrity`: from the registry's metadata API. The hash
- *     the registry claims this exact `(name, version)` should produce.
+ *   - `expectedIntegrity`: from the registry's metadata API (the
+ *     canonical fingerprint, `content_integrity`). The hash the
+ *     registry claims this exact `(name, version)` should produce.
  *   - `archiveIntegrity`: from the downloaded archive's own
  *     `build-manifest.json`. The hash the archive claims about itself.
- *   - `computedIntegrity`: locally computed by hashing the extracted
- *     archive content. The hash that's actually true.
+ *   - `computedIntegrity`: locally computed by GENUINELY re-hashing
+ *     the extracted archive content (per-asset hashes + the canonical
+ *     deterministic tar). The hash that's actually true. Callers MUST
+ *     NOT feed the manifest's self-declared integrity here — that
+ *     would make Check C compare the claim against itself.
  *   - `cachedIntegrity` (optional): present iff the resolution is a
  *     cache hit that passed the self-audit (content re-hashed against
- *     the sidecar). When set, only Check A runs against
- *     `expectedIntegrity` and Checks B/C are skipped.
+ *     the sidecar — the value MUST be the audited recompute, never the
+ *     sidecar's raw claim). When set, only Check A runs against
+ *     `expectedIntegrity` and Checks B/C are skipped. Check A is the
+ *     integrity-confirmation comparison the install pipeline applies
+ *     on every audited cache hit that creates a lockfile entry: the
+ *     audited content vs. the registry's published fingerprint.
  *   - `lockfileIntegrity` (optional): present iff the project's lockfile
  *     pins this `(name, version)`. When set, the registry's
  *     `expectedIntegrity` is first checked against it; mismatch is

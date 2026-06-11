@@ -39,12 +39,15 @@ export function verifyHash(
  *
  *   2. Cache-hit branch (if `cachedIntegrity` is provided).
  *      Run **Check A only**: `cachedIntegrity` must equal
- *      `expectedIntegrity`. On match, cached content is trusted and the
- *      protocol returns `{ ok: true }` without recomputing anything.
- *      Failure produces `check: 'A'`. Checks B and C are skipped on
- *      both pass and fail of A — the cache hit means we never went to
- *      the network for an archive, so there's no archive manifest or
- *      computed content to check against.
+ *      `expectedIntegrity`. The caller's `cachedIntegrity` MUST be the
+ *      product of the cache self-audit (the content genuinely re-hashed
+ *      against its sidecar), never the sidecar's raw claim — this
+ *      protocol verifies the anchor, not the bytes. Failure produces
+ *      `check: 'A'`. Checks B and C are skipped on both pass and fail
+ *      of A — the cache hit means we never went to the network for an
+ *      archive, so there's no archive manifest or computed content to
+ *      check against. This is the integrity-confirmation comparison
+ *      applied when a lockfile entry is created from a warm cache.
  *
  *   3. Cache-miss branch (when `cachedIntegrity` is not provided).
  *      Run **Check B** then **Check C**:

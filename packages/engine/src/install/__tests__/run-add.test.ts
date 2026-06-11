@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -21,16 +21,30 @@ import { join } from 'node:path'
 let registryFixtureDir: string | null = null
 let registryResolvedVersion = '0.1.1'
 
+/** Build the fixture's genuine build manifest — the same artifact a real
+ *  registry would serve in the outer tar. The chain's hash checks (B/C,
+ *  the post-download recompute) run for real against it. */
+async function manifestFor(fixtureDir: string) {
+  const { runBuildPipeline } = await import('../../build/pipeline.ts')
+  const built = await runBuildPipeline(fixtureDir, [])
+  if (!built.ok) throw new Error('test bug: fixture failed to build')
+  return JSON.parse(built.manifestJson) as import('@agent-facets/protocol').BuildManifest
+}
+
 mock.module('../../registry/resolve-metadata.ts', () => ({
-  resolveRegistryMetadataBatch: async (specs: ReadonlyArray<{ name: string }>) => ({
-    ok: true,
-    value: specs.map((s) => ({
-      name: s.name,
-      version: registryResolvedVersion,
-      transportHash: 'sha256:stub',
-      contentFingerprint: 'sha256:stub',
-    })),
-  }),
+  resolveRegistryMetadataBatch: async (specs: ReadonlyArray<{ name: string }>) => {
+    const contentFingerprint =
+      registryFixtureDir === null ? 'sha256:stub' : (await manifestFor(registryFixtureDir)).integrity
+    return {
+      ok: true,
+      value: specs.map((s) => ({
+        name: s.name,
+        version: registryResolvedVersion,
+        transportHash: 'sha256:stub',
+        contentFingerprint,
+      })),
+    }
+  },
 }))
 
 mock.module('../../registry/download.ts', () => ({
@@ -39,7 +53,7 @@ mock.module('../../registry/download.ts', () => ({
       return { ok: false, error: { code: 'NETWORK_ERROR', cause: 'no fixture set', attempts: 1 } }
     }
     cpSync(registryFixtureDir, dest, { recursive: true })
-    return { ok: true, value: undefined }
+    return { ok: true, value: await manifestFor(registryFixtureDir) }
   },
 }))
 
@@ -147,12 +161,16 @@ describe('runAdd — registry manifest-value rule', () => {
     expect(readFacets().cowsay).toBe('0.1.1')
   })
 
-  test('@latest is equivalent to a bare name (pins resolved exact)', async () => {
+  test('explicit @latest is written verbatim and floats (only a BARE add pins)', async () => {
+    // The manifest-write policy (diagrams/committing.md): a bare add is
+    // pinned to the resolved exact; an explicit `@latest` is written
+    // verbatim so the manifest entry keeps floating. Both re-resolve at
+    // add time; only the recorded manifest value differs.
     registryResolvedVersion = '0.1.1'
     registryFixtureDir = buildFixture(fakeHome, 'cowsay', '0.1.1')
     const result = await add('cowsay@latest')
     expect(result.ok).toBe(true)
-    expect(readFacets().cowsay).toBe('0.1.1')
+    expect(readFacets().cowsay).toBe('latest')
   })
 
   test('explicit exact version is recorded as written', async () => {
@@ -251,8 +269,38 @@ describe('runAdd — install-failure restore', () => {
     const result = await add('cowsay')
     expect(result.ok).toBe(false)
 
-    // facets.json restored to its exact pre-command bytes.
+    // facets.json restored to its exact pre-command bytes; the lockfile
+    // and receipt were never created.
     const after = readFileSync(join(projectRoot, 'facets.json'), 'utf8')
     expect(after).toBe(before)
+    expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)
+    const { receiptPath } = await import('../receipt.ts')
+    expect(existsSync(receiptPath(projectRoot))).toBe(false)
+  })
+
+  test('a failed add leaves an installed project byte-for-byte unchanged across all three files', async () => {
+    // Seed a real project state first: one successful add writes the
+    // manifest, lockfile, and receipt. The subsequent FAILING add must
+    // leave every one of them byte-identical.
+    registryResolvedVersion = '0.9.0'
+    registryFixtureDir = buildFixture(fakeHome, 'hello', '0.9.0')
+    const seeded = await add('hello')
+    expect(seeded.ok).toBe(true)
+
+    const { receiptPath } = await import('../receipt.ts')
+    const before = {
+      facets: readFileSync(join(projectRoot, 'facets.json'), 'utf8'),
+      lock: readFileSync(join(projectRoot, 'facets.lock'), 'utf8'),
+      receipt: readFileSync(receiptPath(projectRoot), 'utf8'),
+    }
+
+    registryResolvedVersion = '0.1.1'
+    registryFixtureDir = buildFixture(fakeHome, 'not-cowsay', '0.1.1')
+    const result = await add('cowsay')
+    expect(result.ok).toBe(false)
+
+    expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(before.facets)
+    expect(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')).toBe(before.lock)
+    expect(readFileSync(receiptPath(projectRoot), 'utf8')).toBe(before.receipt)
   })
 })

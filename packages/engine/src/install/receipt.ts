@@ -62,8 +62,21 @@ export interface Receipt {
   facets: Record<string, ReceiptFacetEntry>
 }
 
+/**
+ * A receipt asset entry rejected during load because its name failed
+ * validation (path traversal, backslashes, empty segments). Reported —
+ * never acted on — while the facet's remaining valid entries still
+ * load (D6: a corrupted receipt may cause a skipped cleanup; it must
+ * never poison the rest of the record).
+ */
+export interface InvalidReceiptAsset {
+  facet: string
+  asset: string
+  reason: string
+}
+
 export type LoadReceiptResult =
-  | { ok: true; receipt: Receipt }
+  | { ok: true; receipt: Receipt; invalidEntries: ReadonlyArray<InvalidReceiptAsset> }
   | { ok: false; reason: 'missing' | 'corrupt' | 'path-mismatch' }
 
 // ---------------------------------------------------------------------------
@@ -110,10 +123,16 @@ export function canonicalProjectPath(projectDir: string): string {
  *
  *   - `missing`: no receipt file exists (first operation on this project)
  *   - `corrupt`: file exists but is unreadable, unparseable, or fails
- *     schema validation (including crafted asset names)
+ *     schema validation
  *   - `path-mismatch`: the receipt's embedded path does not match the
  *     current project's canonical path (collision, corruption, or the
  *     project was moved)
+ *
+ * Crafted asset NAMES (path traversal, backslashes) do NOT poison the
+ * whole receipt: each invalid entry is extracted into `invalidEntries`
+ * (facet, asset, reason) for the caller to report, while every valid
+ * entry still loads and is processed normally. The returned receipt's
+ * asset lists contain only validated names.
  *
  * Never throws.
  */
@@ -152,17 +171,25 @@ export function loadReceipt(projectDir: string): LoadReceiptResult {
     return { ok: false, reason: 'path-mismatch' }
   }
 
-  // Validate all asset names — reject crafted names that could cause
-  // path traversal when passed to adapters.
-  for (const [, entry] of Object.entries(receipt.facets)) {
+  // Validate all asset names — extract crafted names that could cause
+  // path traversal when passed to adapters. Invalid entries are
+  // reported per-entry; valid entries are still processed.
+  const invalidEntries: InvalidReceiptAsset[] = []
+  const facets: Record<string, ReceiptFacetEntry> = {}
+  for (const [facetName, entry] of Object.entries(receipt.facets)) {
+    const validAssets: LockfileAssetEntry[] = []
     for (const asset of entry.assets) {
-      if (!validateAssetName(asset.name).ok) {
-        return { ok: false, reason: 'corrupt' }
+      const check = validateAssetName(asset.name)
+      if (check.ok) {
+        validAssets.push(asset)
+      } else {
+        invalidEntries.push({ facet: facetName, asset: asset.name, reason: check.reason })
       }
     }
+    facets[facetName] = { version: entry.version, assets: validAssets }
   }
 
-  return { ok: true, receipt }
+  return { ok: true, receipt: { ...receipt, facets }, invalidEntries }
 }
 
 // ---------------------------------------------------------------------------

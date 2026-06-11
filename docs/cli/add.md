@@ -26,7 +26,7 @@ If the project has no adapters installed, `facet add` will launch the adapter pi
     Read each source's `facet.json` to learn its name. Reject composition (`facets: [...]`). Load the project manifest if it exists.
   </Step>
   <Step title="Commit">
-    Delegate to the [install pipeline](/specification/pipeline) with the additions delta. Non-exact specifiers always re-resolve to the newest match. Exact versions with a warm cache skip the download entirely.
+    Delegate to the [install pipeline](/specification/pipeline) with the additions delta. Non-exact specifiers always re-resolve to the newest match. Exact versions with a warm cache skip the download entirely — but creating a new lockfile entry still requires one metadata call to confirm the content against the registry's published integrity. Offline, that confirmation fails closed ("cannot create a lockfile entry without registry confirmation") rather than writing an unconfirmed entry; reproducing an *existing* entry works fully offline.
   </Step>
 </Steps>
 
@@ -42,7 +42,7 @@ The manifest, lockfile, and receipt are **never written ahead** of success. On f
 | --------------------------------- | ------------------------------------------------ | ------------------------------------------------------ |
 | Registry name                     | `viper-plans`                                    | Equivalent to `viper-plans@latest`. Resolved version is written back to `facets.json` (default-to-pinned). |
 | Registry name with version        | `viper-plans@1.2.3`                              | Exact pin.                                             |
-| Registry name with `@latest`      | `viper-plans@latest`                             | Equivalent to bare-name; resolved exact version is written back. |
+| Registry name with `@latest`      | `viper-plans@latest`                             | Re-resolves to the newest published version; `latest` is preserved verbatim in `facets.json` (the entry floats). Only a bare name pins. |
 | Registry name with wildcard       | `viper-plans@*`, `1.*`, `1.2.*`                  | Wildcard preserved in `facets.json`; resolved exact version goes in the lockfile. |
 | GitHub shorthand                  | `github:owner/repo`, `github:owner/repo#main`    | Optional `#ref` (branch, tag, SHA).                    |
 | HTTPS git URL                     | `https://github.com/owner/repo.git#v1.0.0`       | Must end in `.git`.                                    |
@@ -90,6 +90,7 @@ Running `facet add` against a facet that's already in `facets.json` is supported
 - Same source as before → no-op (lockfile may report `unchanged` or `repaired`).
 - Different version pin → updates the entry; the install summary shows `(was X → Y)`.
 - Bare re-add (no version) → resolves the newest published version and **pins** it in `facets.json`. A bare add always pins to the resolved exact version, even over an existing wildcard spec.
+- Explicit `@latest`/wildcard re-add → re-resolves to the newest match (the lockfile never pins an explicit non-exact add), but the specifier itself is written verbatim and keeps floating.
 
 ## Flags
 

@@ -158,8 +158,10 @@ export function InstallView({ run, mode, onComplete }: InstallViewProps) {
       case 'asset-installed':
       case 'asset-deleted':
       case 'lockfile-write':
+      case 'receipt-invalid-asset':
       case 'install-complete':
-        // No per-event UI for these; the final result render covers them.
+        // No per-event UI for these; the final result render (or the
+        // verbose log, for rejected receipt entries) covers them.
         return
     }
   }, [])

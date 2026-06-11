@@ -99,14 +99,25 @@ describe('loadReceipt', () => {
     expect(result.reason).toBe('path-mismatch')
   })
 
-  test('returns corrupt when an asset name contains path traversal', () => {
+  test('extracts a path-traversal asset entry per-entry while valid entries still load', () => {
+    // One invalid asset (path traversal) alongside a valid one, plus a
+    // second facet that is entirely valid. The invalid entry must be
+    // reported — never acted on — while everything else loads normally
+    // (W2: per-entry extraction, not whole-receipt rejection).
     const receipt: Receipt = {
       version: 1,
       path: realpathSync(projectDir),
       facets: {
         cowsay: {
           version: '0.0.1',
-          assets: [{ scope: 'project', type: 'skill', name: '../escape' }],
+          assets: [
+            { scope: 'project', type: 'skill', name: '../escape' },
+            { scope: 'project', type: 'skill', name: 'cowsay' },
+          ],
+        },
+        hello: {
+          version: '1.0.0',
+          assets: [{ scope: 'project', type: 'agent', name: 'greeter' }],
         },
       },
     }
@@ -114,9 +125,32 @@ describe('loadReceipt', () => {
     mkdirSync(join(facetDir, 'receipts'), { recursive: true })
     writeFileSync(path, JSON.stringify(receipt))
     const result = loadReceipt(projectDir)
-    expect(result.ok).toBe(false)
-    if (result.ok) expect.unreachable()
-    expect(result.reason).toBe('corrupt')
+    if (!result.ok) expect.unreachable()
+    // The invalid entry is reported with its facet, name, and reason.
+    expect(result.invalidEntries).toHaveLength(1)
+    expect(result.invalidEntries[0]?.facet).toBe('cowsay')
+    expect(result.invalidEntries[0]?.asset).toBe('../escape')
+    expect(result.invalidEntries[0]?.reason.length).toBeGreaterThan(0)
+    // The valid sibling asset and the untouched facet still load.
+    expect(result.receipt.facets.cowsay?.assets).toEqual([{ scope: 'project', type: 'skill', name: 'cowsay' }])
+    expect(result.receipt.facets.hello?.assets).toHaveLength(1)
+  })
+
+  test('a fully valid receipt reports no invalid entries', () => {
+    const receipt: Receipt = {
+      version: 1,
+      path: realpathSync(projectDir),
+      facets: {
+        cowsay: {
+          version: '0.0.1',
+          assets: [{ scope: 'project', type: 'skill', name: 'cowsay' }],
+        },
+      },
+    }
+    writeReceipt(projectDir, receipt)
+    const result = loadReceipt(projectDir)
+    if (!result.ok) expect.unreachable()
+    expect(result.invalidEntries).toEqual([])
   })
 
   test('loads a valid receipt successfully', () => {

@@ -59,6 +59,12 @@ export type StageEvent =
   | { kind: 'facet-failure'; facet: string; failure: RunInstallFailure }
   | { kind: 'server-warning'; facet: string; servers: ReadonlyArray<string> }
   | { kind: 'drift-removal'; facet: string; oldVersion: string }
+  /**
+   * A receipt asset entry was rejected during load (path traversal,
+   * backslashes). The entry is skipped — never deleted on the
+   * receipt's say-so — while the rest of the receipt is processed.
+   */
+  | { kind: 'receipt-invalid-asset'; facet: string; asset: string; reason: string }
   | { kind: 'adapter-complete'; facet: string; adapter: string }
   | { kind: 'asset-installed'; facet: string; adapter: string; asset: LockfileAssetEntry }
   | { kind: 'asset-deleted'; facet: string; adapter: string; asset: LockfileAssetEntry }
@@ -102,6 +108,16 @@ export type RunInstallFailure =
   | { code: 'LOCK_HELD'; path: string; heldByPid: number }
   | { code: 'PARSE_ERROR'; facet: string; specifier: string; error: ParseError }
   | { code: 'REGISTRY_ERROR'; facet: string; error: RegistryError }
+  /**
+   * A registry lockfile entry was about to be created or replaced, the
+   * content was already on hand (warm cache), but the registry could not
+   * be reached for integrity confirmation. Distinct from
+   * `REGISTRY_ERROR`: nothing needed downloading — the ONLY missing
+   * piece was the registry's published fingerprint, and a lockfile entry
+   * is never written on trust (design D3). The commit fails closed with
+   * the project unchanged.
+   */
+  | { code: 'CONFIRMATION_UNAVAILABLE'; facet: string; version: string; error: RegistryError }
   | { code: 'INTEGRITY_FAILURE'; failure: IntegrityFailure }
   | {
       code: 'CACHE_INTEGRITY_MISMATCH'
