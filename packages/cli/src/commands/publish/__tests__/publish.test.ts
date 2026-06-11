@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { buildArtifactPath } from '@agent-facets/engine'
+import { buildArtifactPath, fixtures } from '@agent-facets/engine'
 import { parseFacetArchive } from '@agent-facets/protocol'
 import { captureStderr, captureStdout } from '../../../__tests__/helpers/capture-std.ts'
 import { withTTY } from '../../../__tests__/helpers/with-tty.ts'
@@ -99,7 +99,7 @@ describe('publishCommand — happy path', () => {
     })
     const spy = createFetchSpy(
       () =>
-        new Response(JSON.stringify({ contentHash: 'sha256:x', name: 'cowsay', version: '0.1.0' }), {
+        new Response(JSON.stringify(fixtures.publishResponse()), {
           status: 201,
         }),
     )
@@ -142,7 +142,7 @@ describe('publishCommand — missing artifact', () => {
     mockRunBuildViewToActuallyBuild()
     const spy = createFetchSpy(
       () =>
-        new Response(JSON.stringify({ contentHash: 'sha256:x', name: 'cowsay', version: '0.1.0' }), {
+        new Response(JSON.stringify(fixtures.publishResponse()), {
           status: 201,
         }),
     )
@@ -224,7 +224,7 @@ describe('publishCommand — content drift', () => {
     mockRunBuildViewToActuallyBuild()
     const spy = createFetchSpy(
       () =>
-        new Response(JSON.stringify({ contentHash: 'sha256:x', name: 'cowsay', version: '0.1.0' }), {
+        new Response(JSON.stringify(fixtures.publishResponse()), {
           status: 201,
         }),
     )
@@ -262,7 +262,7 @@ describe('publishCommand — content drift', () => {
     mockRebuildDriftedAnswer = false // decline
     const spy = createFetchSpy(
       () =>
-        new Response(JSON.stringify({ contentHash: 'sha256:x', name: 'cowsay', version: '0.1.0' }), {
+        new Response(JSON.stringify(fixtures.publishResponse()), {
           status: 201,
         }),
     )
@@ -294,7 +294,7 @@ describe('publishCommand — content drift', () => {
     writeFileSync(join(projectRoot, 'facet.json'), JSON.stringify(manifest, null, 2))
     const spy = createFetchSpy(
       () =>
-        new Response(JSON.stringify({ contentHash: 'sha256:x', name: 'cowsay', version: '0.1.0' }), {
+        new Response(JSON.stringify(fixtures.publishResponse()), {
           status: 201,
         }),
     )
@@ -334,7 +334,7 @@ describe('publishCommand — identity drift', () => {
     mockRunBuildViewToActuallyBuild()
     const spy = createFetchSpy(
       () =>
-        new Response(JSON.stringify({ contentHash: 'sha256:x', name: 'cowsay', version: '0.1.1' }), {
+        new Response(JSON.stringify(fixtures.publishResponse({ version: '0.1.1' })), {
           status: 201,
         }),
     )
@@ -368,7 +368,7 @@ describe('publishCommand — identity drift', () => {
     mockIdentityDriftDecision = 'ship-existing'
     const spy = createFetchSpy(
       () =>
-        new Response(JSON.stringify({ contentHash: 'sha256:x', name: 'cowsay', version: '0.1.0' }), {
+        new Response(JSON.stringify(fixtures.publishResponse()), {
           status: 201,
         }),
     )
@@ -421,7 +421,7 @@ describe('publishCommand — identity drift', () => {
     writeFileSync(join(projectRoot, 'facet.json'), JSON.stringify(manifest, null, 2))
     const spy = createFetchSpy(
       () =>
-        new Response(JSON.stringify({ contentHash: 'sha256:x', name: 'cowsay', version: '0.1.0' }), {
+        new Response(JSON.stringify(fixtures.publishResponse()), {
           status: 201,
         }),
     )
@@ -472,7 +472,7 @@ describe('publishCommand — embedded identity', () => {
     })
     const spy = createFetchSpy(
       () =>
-        new Response(JSON.stringify({ contentHash: 'sha256:x', name: 'cowsay', version: '0.1.0' }), {
+        new Response(JSON.stringify(fixtures.publishResponse()), {
           status: 201,
         }),
     )
@@ -501,18 +501,7 @@ describe('publishCommand — registry interaction (preserved scenarios)', () => 
       version: '0.1.0',
       commands: { cowsay: '# cowsay\n' },
     })
-    const spy = createFetchSpy(
-      () =>
-        new Response(
-          JSON.stringify({
-            status: 'QUEUED_FOR_REVIEW',
-            reason: 'reserved',
-            fix: 'an admin will review your submission shortly',
-            docsUrl: 'https://agentfacets.io/queue',
-          }),
-          { status: 202 },
-        ),
-    )
+    const spy = createFetchSpy(() => new Response(JSON.stringify(fixtures.queuedForReview()), { status: 202 }))
     globalThis.fetch = spy.fetch
 
     const { result, stdout } = await captureStdout(() => publishCommand.run([], {}))
@@ -530,7 +519,7 @@ describe('publishCommand — registry interaction (preserved scenarios)', () => 
     })
     const spy = createFetchSpy(
       () =>
-        new Response(JSON.stringify({ contentHash: 'sha256:x', name: 'acme/cowsay', version: '0.1.0' }), {
+        new Response(JSON.stringify(fixtures.publishResponse({ name: 'acme/cowsay' })), {
           status: 201,
         }),
     )
@@ -553,12 +542,14 @@ describe('publishCommand — registry interaction (preserved scenarios)', () => 
     const spy = createFetchSpy(
       () =>
         new Response(
-          JSON.stringify({
-            error: 'tarball exceeds the 5 MB size limit',
-            code: 'E_TARBALL_TOO_LARGE',
-            fix: 'reduce the facet contents below 5 MB or split into multiple facets',
-            docsUrl: 'https://agentfacets.io/errors/E_TARBALL_TOO_LARGE',
-          }),
+          JSON.stringify(
+            fixtures.apiError({
+              code: 'E_TARBALL_TOO_LARGE',
+              error: 'tarball exceeds the 5 MB size limit',
+              fix: 'reduce the facet contents below 5 MB or split into multiple facets',
+              docs_url: 'https://agentfacets.io/errors/E_TARBALL_TOO_LARGE',
+            }),
+          ),
           { status: 413 },
         ),
     )
@@ -580,12 +571,14 @@ describe('publishCommand — registry interaction (preserved scenarios)', () => 
     const spy = createFetchSpy(
       () =>
         new Response(
-          JSON.stringify({
-            error: 'version 0.1.0 already exists',
-            code: 'E_VERSION_EXISTS',
-            fix: 'bump the version in facet.json and publish again',
-            docsUrl: 'https://agentfacets.io/errors/E_VERSION_EXISTS',
-          }),
+          JSON.stringify(
+            fixtures.apiError({
+              code: 'E_VERSION_EXISTS',
+              error: 'version 0.1.0 already exists',
+              fix: 'bump the version in facet.json and publish again',
+              docs_url: 'https://agentfacets.io/errors/E_VERSION_EXISTS',
+            }),
+          ),
           { status: 409 },
         ),
     )
@@ -657,7 +650,7 @@ describe('publishCommand — pre-flight failures (preserved scenarios)', () => {
     })
     const spy = createFetchSpy(
       () =>
-        new Response(JSON.stringify({ contentHash: 'sha256:x', name: 'cowsay', version: '0.1.0' }), {
+        new Response(JSON.stringify(fixtures.publishResponse()), {
           status: 201,
         }),
     )
@@ -691,7 +684,7 @@ describe('publishCommand — build/publish parity', () => {
     const onDiskBytes = new Uint8Array(await Bun.file(distPath).bytes())
     const spy = createFetchSpy(
       () =>
-        new Response(JSON.stringify({ contentHash: 'sha256:x', name: 'cowsay', version: '0.1.0' }), {
+        new Response(JSON.stringify(fixtures.publishResponse()), {
           status: 201,
         }),
     )

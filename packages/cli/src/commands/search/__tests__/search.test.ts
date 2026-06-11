@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { fixtures, type WirePackageListItem } from '@agent-facets/engine'
 import { render as inkRender } from 'ink-testing-library'
 import { createElement } from 'react'
 import { captureStderr } from '../../../__tests__/helpers/capture-std.ts'
@@ -18,32 +19,8 @@ afterEach(() => {
   else process.env.FACET_REGISTRY_URL = ORIGINAL_ENV
 })
 
-function wireItem(
-  name: string,
-  latestVersion: string,
-  opts?: {
-    author?: string
-    publisher?: string
-    assetCounts?: { agents?: number; commands?: number; servers?: number; skills?: number }
-  },
-) {
-  return {
-    name,
-    latestVersion,
-    publishedAt: '2026-05-01T00:00:00Z',
-    publisher: opts?.publisher ?? 'test-publisher',
-    author: opts?.author,
-    assetCounts: {
-      agents: opts?.assetCounts?.agents ?? 0,
-      commands: opts?.assetCounts?.commands ?? 0,
-      servers: opts?.assetCounts?.servers ?? 0,
-      skills: opts?.assetCounts?.skills ?? 0,
-    },
-  }
-}
-
 /** Build a fetch function that resolves with the given items. */
-function mockFetch(items: ReturnType<typeof wireItem>[]): () => Promise<SearchResult> {
+function mockFetch(items: WirePackageListItem[]): () => Promise<SearchResult> {
   return async () => ({ ok: true, facets: items })
 }
 
@@ -57,37 +34,6 @@ function lastContentFrame(instance: ReturnType<typeof inkRender>): string {
     if (f.trim().length > 0) return f
   }
   return instance.lastFrame() ?? ''
-}
-
-function _mockPackages(
-  facets: ReadonlyArray<{
-    name: string
-    latestVersion: string
-    publishedAt?: string
-    publisher?: string
-    author?: string
-    assetCounts?: { agents?: number; commands?: number; servers?: number; skills?: number }
-  }>,
-): void {
-  globalThis.fetch = (async () =>
-    new Response(
-      JSON.stringify({
-        facets: facets.map((f) => ({
-          name: f.name,
-          latestVersion: f.latestVersion,
-          publishedAt: f.publishedAt ?? '2026-05-01T00:00:00Z',
-          publisher: f.publisher ?? 'test-publisher',
-          author: f.author,
-          assetCounts: {
-            agents: f.assetCounts?.agents ?? 0,
-            commands: f.assetCounts?.commands ?? 0,
-            servers: f.assetCounts?.servers ?? 0,
-            skills: f.assetCounts?.skills ?? 0,
-          },
-        })),
-      }),
-      { status: 200, headers: { 'content-type': 'application/json' } },
-    )) as unknown as typeof fetch
 }
 
 describe('SearchView — rendering', () => {
@@ -117,7 +63,7 @@ describe('SearchView — rendering', () => {
     const instance = inkRender(
       createElement(SearchView, {
         term: 'xyz-not-there',
-        fetch: mockFetch([wireItem('cowsay', '0.1.0')]),
+        fetch: mockFetch([fixtures.facetSummary({ latest_version: '0.1.0' })]),
         onComplete: () => {},
       }),
     )
@@ -130,7 +76,7 @@ describe('SearchView — rendering', () => {
     const instance = inkRender(
       createElement(SearchView, {
         term: undefined,
-        fetch: mockFetch([wireItem('cowsay', '0.1.0', { publisher: 'acme' })]),
+        fetch: mockFetch([fixtures.facetSummary({ latest_version: '0.1.0', publisher: 'acme' })]),
         onComplete: () => {},
       }),
     )
@@ -146,7 +92,7 @@ describe('SearchView — rendering', () => {
     const instance = inkRender(
       createElement(SearchView, {
         term: undefined,
-        fetch: mockFetch([wireItem('cowsay', '0.1.0', { author: 'jane', publisher: 'acme-org' })]),
+        fetch: mockFetch([fixtures.facetSummary({ latest_version: '0.1.0', author: 'jane', publisher: 'acme-org' })]),
         onComplete: () => {},
       }),
     )
@@ -158,7 +104,10 @@ describe('SearchView — rendering', () => {
     const instance = inkRender(
       createElement(SearchView, {
         term: 'cow',
-        fetch: mockFetch([wireItem('cowsay', '0.1.0'), wireItem('mooing-cow', '0.2.0')]),
+        fetch: mockFetch([
+          fixtures.facetSummary({ latest_version: '0.1.0' }),
+          fixtures.facetSummary({ name: 'mooing-cow', latest_version: '0.2.0' }),
+        ]),
         onComplete: () => {},
       }),
     )
@@ -173,7 +122,7 @@ describe('SearchView — rendering', () => {
     const instance = inkRender(
       createElement(SearchView, {
         term: 'camel',
-        fetch: mockFetch([wireItem('CamelCaseName', '1.0.0')]),
+        fetch: mockFetch([fixtures.facetSummary({ name: 'CamelCaseName', latest_version: '1.0.0' })]),
         onComplete: () => {},
       }),
     )
@@ -185,7 +134,10 @@ describe('SearchView — rendering', () => {
     const instance = inkRender(
       createElement(SearchView, {
         term: undefined,
-        fetch: mockFetch([wireItem('a', '1.0.0'), wireItem('b', '2.0.0')]),
+        fetch: mockFetch([
+          fixtures.facetSummary({ name: 'a', latest_version: '1.0.0' }),
+          fixtures.facetSummary({ name: 'b', latest_version: '2.0.0' }),
+        ]),
         onComplete: () => {},
       }),
     )
@@ -202,7 +154,11 @@ describe('SearchView — D10: assetCounts rendering', () => {
       createElement(SearchView, {
         term: undefined,
         fetch: mockFetch([
-          wireItem('multi', '1.0.0', { assetCounts: { agents: 1, commands: 2, servers: 1, skills: 0 } }),
+          fixtures.facetSummary({
+            name: 'multi',
+            latest_version: '1.0.0',
+            asset_counts: { agents: 1, commands: 2, servers: 1, skills: 0 },
+          }),
         ]),
         onComplete: () => {},
       }),
@@ -220,7 +176,11 @@ describe('SearchView — D10: assetCounts rendering', () => {
       createElement(SearchView, {
         term: undefined,
         fetch: mockFetch([
-          wireItem('commands-only', '1.0.0', { assetCounts: { agents: 0, commands: 2, servers: 0, skills: 0 } }),
+          fixtures.facetSummary({
+            name: 'commands-only',
+            latest_version: '1.0.0',
+            asset_counts: { agents: 0, commands: 2, servers: 0, skills: 0 },
+          }),
         ]),
         onComplete: () => {},
       }),
@@ -235,9 +195,7 @@ describe('SearchView — D10: assetCounts rendering', () => {
     const instance = inkRender(
       createElement(SearchView, {
         term: undefined,
-        fetch: mockFetch([
-          wireItem('empty', '1.0.0', { assetCounts: { agents: 0, commands: 0, servers: 0, skills: 0 } }),
-        ]),
+        fetch: mockFetch([fixtures.facetSummary({ name: 'empty', latest_version: '1.0.0' })]),
         onComplete: () => {},
       }),
     )
@@ -263,12 +221,14 @@ describe('searchCommand — error paths', () => {
   test('server returns structured error envelope: renders the server text verbatim', async () => {
     globalThis.fetch = (async () =>
       new Response(
-        JSON.stringify({
-          error: 'whoops',
-          code: 'E_REGISTRY_UNAVAILABLE',
-          fix: 'try again shortly',
-          docsUrl: 'https://agentfacets.io/errors/E_REGISTRY_UNAVAILABLE',
-        }),
+        JSON.stringify(
+          fixtures.apiError({
+            code: 'E_REGISTRY_UNAVAILABLE',
+            error: 'whoops',
+            fix: 'try again shortly',
+            docs_url: 'https://agentfacets.io/errors/E_REGISTRY_UNAVAILABLE',
+          }),
+        ),
         { status: 503, headers: { 'content-type': 'application/json' } },
       )) as unknown as typeof fetch
     const { result, stderr } = await captureStderr(() => searchCommand.run([], {}))

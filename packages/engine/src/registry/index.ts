@@ -19,6 +19,7 @@ export { describeVersionSpec } from './describe.ts'
 export { downloadAndExtractFacet } from './download.ts'
 export type { DriftResult } from './drift.ts'
 export { detectManifestDrift } from './drift.ts'
+export * as fixtures from './fixtures.ts'
 export { uncappedGunzip } from './gunzip.ts'
 export { encodeFacetName, getRegistryBaseUrl } from './http.ts'
 export type { RetryConfig } from './middleware/retry.ts'
@@ -34,7 +35,6 @@ export type {
   WireErrorResponse,
   WireHealthResponse,
   WireMetadataResponse,
-  WirePackageInfoResponse,
   WirePackageListItem,
   WirePackageListResponse,
   WirePublishResponse,

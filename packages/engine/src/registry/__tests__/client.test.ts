@@ -11,6 +11,7 @@
 
 import { describe, expect, test } from 'bun:test'
 import { createRegistryClient, translateThrownError } from '../client.ts'
+import { apiError } from '../fixtures.ts'
 
 const BASE_URL = 'https://api.test/v0'
 
@@ -105,18 +106,18 @@ describe('createRegistryClient — HTTP error responses are NOT retried', () => 
     const stubFetch = asFetch(async () => {
       attempts++
       return new Response(
-        JSON.stringify({
-          error: 'facet "missing" not found',
-          code: 'E_FACET_NOT_FOUND',
-          fix: "run 'facet search' to find available facets",
-          docsUrl: 'https://agentfacets.io/errors/E_FACET_NOT_FOUND',
-        }),
+        JSON.stringify(
+          apiError({
+            error: 'facet "missing" not found',
+            fix: "run 'facet search' to find available facets",
+          }),
+        ),
         { status: 404, headers: { 'content-type': 'application/json' } },
       )
     })
     const client = createRegistryClient({ baseUrl: BASE_URL, fetch: stubFetch })
-    const { data, error, response } = await client.GET('/v0/facets/{name}', {
-      params: { path: { name: 'missing' } },
+    const { data, error, response } = await client.GET('/v0/facets/{name}/{version}', {
+      params: { path: { name: 'missing', version: 'latest' } },
     })
     expect(attempts).toBe(1)
     expect(data).toBeUndefined()
@@ -129,12 +130,14 @@ describe('createRegistryClient — HTTP error responses are NOT retried', () => 
     const stubFetch = asFetch(async () => {
       attempts++
       return new Response(
-        JSON.stringify({
-          error: 'registry temporarily unavailable',
-          code: 'E_REGISTRY_UNAVAILABLE',
-          fix: 'try again in a moment',
-          docsUrl: 'https://docs',
-        }),
+        JSON.stringify(
+          apiError({
+            code: 'E_REGISTRY_UNAVAILABLE',
+            error: 'registry temporarily unavailable',
+            fix: 'try again in a moment',
+            docs_url: 'https://docs',
+          }),
+        ),
         { status: 503, headers: { 'content-type': 'application/json' } },
       )
     })
