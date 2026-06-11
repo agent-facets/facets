@@ -3,9 +3,9 @@ title: "MCP Server Assets"
 description: "Source-mode and ref-mode MCP server publication and execution."
 ---
 
-Facets contain text assets (skills, agents, commands). MCP servers contain code. This page defines how MCP servers are published, referenced, and executed — covering both source-mode (published to the facets registry) and ref-mode (OCI container images in external registries).
+Facets contain text assets (skills, agents, commands). MCP servers contain code. This page defines how MCP servers are published, referenced, and executed  -- covering both source-mode (published to the facets registry) and ref-mode (OCI container images in external registries).
 
-A facet references servers by name in its `servers` section (see [Manifest Schema](/specification/manifest)). Server code is never included in the facet archive — servers are linked, not embedded.
+A facet references servers by name in its `servers` section (see [Manifest Schema](/specification/manifest)). Server code is never included in the facet archive  -- servers are linked, not embedded.
 
 ## Two Execution Modes
 
@@ -30,7 +30,7 @@ Each source-mode server has a manifest:
 ```yaml
 name: jira
 version: "1.5.0"
-description: "Jira integration — create, search, update, and transition issues"
+description: "Jira integration  -- create, search, update, and transition issues"
 author: acme-org
 runtime: bun
 entry: index.ts
@@ -45,7 +45,7 @@ entry: index.ts
 | `runtime`     | Yes      | string | Managed runtime identifier. Day-one supported: `"bun"`.          |
 | `entry`       | Yes      | string | Entry point file path, relative to the artifact root.             |
 
-There is no `type` field — if it is published to the facets registry as a server artifact, it is source-mode by definition.
+There is no `type` field  -- if it is published to the facets registry as a server artifact, it is source-mode by definition.
 
 ### Publish Flow
 
@@ -54,7 +54,7 @@ There is no `type` field — if it is published to the facets registry as a serv
 3. The CLI packages the source code into an archive (tar) containing the manifest and all source files.
 4. The CLI uploads the archive to the registry.
 5. The registry MUST compute the content hash (see [Integrity Model](/specification/integrity)).
-6. The registry MUST compute the API surface hash — by starting the server temporarily using the declared runtime and entry point, querying its MCP tool declarations, and hashing them.
+6. The registry MUST compute the API surface hash  -- by starting the server temporarily using the declared runtime and entry point, querying its MCP tool declarations, and hashing them.
 7. The registry stores the artifact, content hash, and API surface hash.
 
 **Immutability:** Once a server version is published, the registry MUST NOT allow re-publishing the same name and version with different content.
@@ -86,7 +86,7 @@ The CLI guarantees the following when running an MCP server:
 1. The CLI downloads the server artifact from the facets registry.
 2. The CLI starts the server using the declared managed runtime (`bun` on day one) with the declared entry point.
 3. The server communicates via MCP over stdio.
-4. The CLI manages the server process lifecycle — start, stop, restart.
+4. The CLI manages the server process lifecycle  -- start, stop, restart.
 
 ### Ref-Mode Execution
 
@@ -101,14 +101,14 @@ The CLI MUST guarantee:
 
 - The server is started with the correct runtime or image.
 - The server process or container is stopped when the AI assistant session ends.
-- No arbitrary command or argument execution — the CLI controls exactly what executes.
+- No arbitrary command or argument execution  -- the CLI controls exactly what executes.
 - The server's MCP tools are exposed to the AI assistant through the adapter's MCP integration.
 
 The CLI MUST NOT guarantee:
 
 - Network access for the server (server-specific concern).
 - File system access beyond what the runtime or container provides.
-- Inter-server communication (servers are terminal — they MUST NOT depend on other servers).
+- Inter-server communication (servers are terminal  -- they MUST NOT depend on other servers).
 
 ## Runtime Enumeration
 

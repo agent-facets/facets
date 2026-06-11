@@ -21,9 +21,9 @@ Facets and MCP servers are fundamentally different artifacts with different life
 
 ### Facets
 
-A facet is a named, versioned collection of text assets — skills, agents, and commands — defined by a facet manifest. Facets MAY compose text from other published facets. Facets MAY reference MCP servers, but server code is never included in the facet.
+A facet is a named, versioned collection of text assets  -- skills, agents, and commands  -- defined by a facet manifest. Facets MAY compose text from other published facets. Facets MAY reference MCP servers, but server code is never included in the facet.
 
-When published, the registry assembles a **facet archive**: the manifest plus all text assets (locally authored and composed). The archive is self-contained — consumers need no further text resolution at install time.
+When published, the registry assembles a **facet archive**: the manifest plus all text assets (locally authored and composed). The archive is self-contained  -- consumers need no further text resolution at install time.
 
 ### MCP Servers
 
@@ -48,7 +48,7 @@ Text and code follow different distribution paths:
 
 - **Server assets** are resolved at **install time**. The facet manifest declares server references (floor constraints for source-mode, OCI image references for ref-mode). The CLI resolves these to specific versions and pins them in the lockfile.
 
-This separation exists because text and code have different update characteristics. Stale text (an older version of a skill) is safe — it may be suboptimal but it will not break anything. However, *changed* text is a trust concern — prompt injection, behavioral changes, or context manipulation can be introduced through text updates. Text asset changes are surfaced to the consumer at install and upgrade time so they can review what changed (see [Install & Resolve](/specification/install)). Stale code (an older version of a server with a security vulnerability) is dangerous. Floor constraints allow servers to be updated for security fixes without requiring the facet author to re-publish.
+This separation exists because text and code have different update characteristics. Stale text (an older version of a skill) is safe  -- it may be suboptimal but it will not break anything. However, *changed* text is a trust concern  -- prompt injection, behavioral changes, or context manipulation can be introduced through text updates. Text asset changes are surfaced to the consumer at install and upgrade time so they can review what changed (see [Install & Resolve](/specification/install)). Stale code (an older version of a server with a security vulnerability) is dangerous. Floor constraints allow servers to be updated for security fixes without requiring the facet author to re-publish.
 
 ## Lifecycle
 
@@ -58,7 +58,7 @@ An author creates a facet: a facet manifest (`facet.json`) and the associated te
 
 ### Publishing
 
-The facet is published to the registry. The author uploads the manifest and locally-authored files. The registry resolves text composition from its own trusted storage, assembles the facet archive, and computes the content hash. Once published, a version is immutable — re-publishing the same name and version with different content MUST be rejected.
+The facet is published to the registry. The author uploads the manifest and locally-authored files. The registry resolves text composition from its own trusted storage, assembles the facet archive, and computes the content hash. Once published, a version is immutable  -- re-publishing the same name and version with different content MUST be rejected.
 
 ### Installing
 
@@ -74,8 +74,8 @@ The installed facet is loaded by the AI assistant. Text assets are in the assist
 
 2. **Server-side composition.** Text composition MUST be performed by the registry from its own trusted storage. This prevents supply chain attacks where an author replaces composed content with malicious prompts while the manifest still attributes the content to trusted sources.
 
-3. **Adapter-agnostic format.** The facet manifest format is adapter-agnostic by default. Adapter-specific configuration (tool access, permissions, model preferences) lives in designated extension points within the manifest. Each installed adapter defines its own metadata schema — the CLI delegates validation to the adapter.
+3. **Adapter-agnostic format.** The facet manifest format is adapter-agnostic by default. Adapter-specific configuration (tool access, permissions, model preferences) lives in designated extension points within the manifest. Each installed adapter defines its own metadata schema  -- the CLI delegates validation to the adapter.
 
-4. **Terminal server dependencies.** MCP servers MUST NOT declare dependencies on other MCP servers. Resolution is always one level deep — no transitive dependency chains, no conflict resolution.
+4. **Terminal server dependencies.** MCP servers MUST NOT declare dependencies on other MCP servers. Resolution is always one level deep  -- no transitive dependency chains, no conflict resolution.
 
 5. **Forward compatibility.** Structural choices MUST NOT prevent future extensions. Consumers MUST tolerate unrecognized fields in manifests. New server modes, asset types, or manifest sections can be added without breaking existing consumers.

@@ -1,18 +1,34 @@
 ---
-title: facet update
-sidebarTitle: ' '
-description: Updates facets in `facets.json`
-tag: facet update
+title: facet upgrade
+description: Upgrade installed facets to newer versions
 ---
 
 ## Usage
 
 ```sh
-facet update
+facet upgrade
 ```
 
-WIP
+<Warning>
+This command is not yet implemented. Running it prints a notice and exits. It is on the roadmap for a future release.
+</Warning>
 
-## What it does
+## Planned behavior
 
-WIP
+`facet upgrade` will re-resolve version specifiers in `facets.json` against the registry and update `facets.lock` to the newest versions that satisfy each specifier. It is the complement to `facet install`, which honors existing lockfile pins.
+
+Until `facet upgrade` ships, you can upgrade a specific facet manually:
+
+```sh
+# Re-add at a new version (updates both facets.json and facets.lock).
+facet add viper-plans@2.0.0
+
+# Or widen the specifier and reinstall.
+# Edit facets.json to change "1.2.3" to "2.*", then:
+facet install
+```
+
+## See also
+
+- [`facet install`](/cli/install) -- install from the current lockfile.
+- [`facet add`](/cli/add) -- add or re-add a facet at a specific version.

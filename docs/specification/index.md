@@ -3,7 +3,7 @@ title: "Introduction"
 description: "The open source Agent Facet specification"
 ---
 
-Facets are an open format and distribution system for modular AI assistant extensions. A facet packages skills, agents, and commands — the text assets that shape how an AI assistant behaves — into a versioned, distributable unit with a well-defined manifest, publish flow, install flow, and integrity model.
+Facets are an open format and distribution system for modular AI assistant extensions. A facet packages skills, agents, and commands  -- the text assets that shape how an AI assistant behaves  -- into a versioned, distributable unit with a well-defined manifest, publish flow, install flow, and integrity model.
 
 This specification defines the authoritative requirements for the Facets format and protocol. For introductory material, see [Introduction](/) and [Key Concepts](/docs/learn/index.md).
 
@@ -14,13 +14,13 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 ### Facets
 
-A facet is a named, versioned collection of text assets — skills, agents, and commands — defined by a facet manifest. Facets MAY compose text from other facets and MAY reference MCP servers.
+A facet is a named, versioned collection of text assets  -- skills, agents, and commands  -- defined by a facet manifest. Facets MAY compose text from other facets and MAY reference MCP servers.
 
-When a facet is published, the registry assembles a **facet archive** — a self-contained artifact containing the manifest and all text assets (both locally authored and composed). The archive is the unit of distribution between the registry and consumers.
+When a facet is published, the registry assembles a **facet archive**  -- a self-contained artifact containing the manifest and all text assets (both locally authored and composed). The archive is the unit of distribution between the registry and consumers.
 
 ### MCP Servers
 
-MCP servers are code assets — separate from facets — that provide tool capabilities to AI assistants via the [Model Context Protocol](https://modelcontextprotocol.io). A facet's manifest references servers; it does not contain them.
+MCP servers are code assets  -- separate from facets  -- that provide tool capabilities to AI assistants via the [Model Context Protocol](https://modelcontextprotocol.io). A facet's manifest references servers; it does not contain them.
 
 Two execution modes are defined:
 
@@ -39,8 +39,8 @@ Three integrity mechanisms protect the supply chain:
 
 | Stage          | What happens                                                                                     |
 | -------------- | ------------------------------------------------------------------------------------------------ |
-| **Authoring**  | An author creates a facet — a manifest and text assets in a local directory.                     |
-| **Publishing** | The facet is built into an archive — text assets assembled, hashes computed, stored in registry.  |
+| **Authoring**  | An author creates a facet  -- a manifest and text assets in a local directory.                     |
+| **Publishing** | The facet is built into an archive  -- text assets assembled, hashes computed, stored in registry.  |
 | **Installing**    | The archive is downloaded and verified. Text assets are presented for review, then placed in provider-specified directories. Server references are resolved and pinned. |
 | **Upgrading**     | Text asset changes are surfaced with diffs. The consumer accepts, rejects, or modifies each change. Server API surface changes are flagged. |
 | **Uninstalling**  | Assets being removed are summarized. The consumer can keep individual text assets as unmanaged. |
@@ -68,7 +68,7 @@ Facets enable arbitrary text injection into AI assistant contexts and arbitrary 
     Actors, lifecycle, artifact types, and design principles.
   </Card>
   <Card title="Manifest Schema" href="/specification/manifest">
-    The facet manifest format — fields, types, and constraints.
+    The facet manifest format  -- fields, types, and constraints.
   </Card>
   <Card title="Publish Flow" href="/specification/publish">
     How facets are built and published to the registry.

@@ -12,9 +12,9 @@ These commands are implemented and ready to use:
 | Command         | Description                                                                         |
 |-----------------|-------------------------------------------------------------------------------------|
 | `facet create`  | Scaffold a new **facet** project with an interactive wizard                         |
-| `facet edit`    | Full authoring workbench — edit identity, manage assets, reconcile disk vs manifest |
+| `facet edit`    | Full authoring workbench  -- edit identity, manage assets, reconcile disk vs manifest |
 | `facet build`   | Validate and package a **facet** into a distributable archive                       |
-| `facet add`     | Add a **facet** to the project — resolve from registry, download, and install       |
+| `facet add`     | Add a **facet** to the project  -- resolve from registry, download, and install       |
 | `facet install` | Install all **facets** from the lockfile                                            |
 | `facet remove`  | Remove a **facet** from the project and update the lockfile                         |
 

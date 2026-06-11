@@ -1,8 +1,6 @@
 ---
 title: facet add
-sidebarTitle: ' '
 description: Adds one or more facets to `facets.json` and installs them
-tag: facet add
 ---
 
 ## Usage
@@ -11,7 +9,7 @@ tag: facet add
 facet add <source> [more sources...]
 ```
 
-Adds the named facet(s) to `facets.json` and immediately installs them into every connected adapter. There is no separate "install after add" step — `facet add` is the single command for bringing a new facet into a project.
+Adds the named facet(s) to `facets.json` and immediately installs them into every connected adapter. There is no separate "install after add" step  -- `facet add` is the single command for bringing a new facet into a project.
 
 If the project has no adapters installed, `facet add` will launch the adapter picker before doing any work (in an interactive terminal). In a non-interactive environment, it exits with an error pointing at `facet adapter install`.
 
@@ -23,7 +21,7 @@ If the project has no adapters installed, `facet add` will launch the adapter pi
 4. **Read each source's `facet.json`** to learn its name and version.
 5. **Reject composition.** A source whose `facet.json` declares `facets: [...]` is rejected before any state mutation.
 6. **Write `facets.json`** with the new entries.
-7. **Run the install pipeline** — fetch, verify integrity, materialize assets into every adapter, write the lockfile.
+7. **Run the install pipeline**  -- fetch, verify integrity, materialize assets into every adapter, write the lockfile.
 8. **On any failure**, restore the `facets.json` snapshot. The project is left exactly as it was before the command ran.
 
 ## Source grammar
@@ -54,14 +52,14 @@ If the project has no adapters installed, `facet add` will launch the adapter pi
 ## Examples
 
 ```sh
-# Bare name — resolves to the latest published version, writes the
+# Bare name  -- resolves to the latest published version, writes the
 # exact resolved version back to facets.json.
 facet add viper-plans
 
-# Pinned version — written verbatim to facets.json.
+# Pinned version  -- written verbatim to facets.json.
 facet add viper-plans@1.2.3
 
-# Major-pinned wildcard — wildcard preserved, lockfile records the
+# Major-pinned wildcard  -- wildcard preserved, lockfile records the
 # specific resolved version.
 facet add viper-plans@1.*
 
@@ -81,7 +79,7 @@ Running `facet add` against a facet that's already in `facets.json` is supported
 
 - Same source as before → no-op (lockfile may report `unchanged` or `repaired`).
 - Different version pin → updates the entry; the install summary shows `(was X → Y)`.
-- Bare re-add (no version) over an existing **valid** version spec → the spec is **preserved**. A bare re-add never clobbers a deliberate pin or range — re-running `facet add viper-plans` won't overwrite a `viper-plans@1.*` you set on purpose.
+- Bare re-add (no version) over an existing **valid** version spec → the spec is **preserved**. A bare re-add never clobbers a deliberate pin or range  -- re-running `facet add viper-plans` won't overwrite a `viper-plans@1.*` you set on purpose.
 - Bare re-add over an **invalid** value (e.g. a stale entry where the name leaked into the version position) → the value is **healed** to the resolved exact version.
 
 ## Flags
@@ -99,5 +97,5 @@ Running `facet add` against a facet that's already in `facets.json` is supported
 
 ## See also
 
-- [`facet install`](/cli/install) — re-runs the install pipeline against the current `facets.json` and lockfile, useful after a fresh `git clone` or to reapply assets after manual edits.
-- [`facet adapter install`](/cli/adapters/install) — install adapters into your machine.
+- [`facet install`](/cli/install)  -- re-runs the install pipeline against the current `facets.json` and lockfile, useful after a fresh `git clone` or to reapply assets after manual edits.
+- [`facet adapter install`](/cli/adapters/install)  -- install adapters into your machine.

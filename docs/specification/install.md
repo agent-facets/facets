@@ -30,14 +30,14 @@ existing manifest. Both run the same flow internally.
 3. **Reject composition; warn on servers.** A source `facet.json` with a
    non-empty `facets: [...]` is hard-rejected. A `servers:` declaration
    produces a warning naming each declared server but otherwise lets the
-   install proceed — server materialization is open-beta scope.
+   install proceed  -- server materialization is open-beta scope.
 
 4. **Cache lookup.** Resolved content is keyed by `<name>@<version>` (or
    `<name>@<commit>` for git, `<name>@local-<hash>` for local) under
    `$FACET_DIR/cache/` (default `~/.facet/cache/`). The cache root is
    part of the facet directory tree; set the `FACET_DIR` environment
    variable to relocate it. Cached content is treated as
-   trusted — never re-hashed on read.
+   trusted  -- never re-hashed on read.
 
 5. **Verify integrity.** Before any asset is written:
    - **Registry sources** run a three-check protocol: cache vs. registry
@@ -73,20 +73,20 @@ existing manifest. Both run the same flow internally.
    `{source, version, integrity, assets: [{scope, type, name}]}`
    per facet, where `source` is a tagged provenance value keyed on
    `kind`:
-   - `{kind: "registry", registry}` — the registry origin (base URL)
+   - `{kind: "registry", registry}`  -- the registry origin (base URL)
      the artifact was resolved from. No version specifier is recorded
      here; the resolved version lives in the entry's `version` field.
-   - `{kind: "git", url, commit}` — the repository URL plus the
+   - `{kind: "git", url, commit}`  -- the repository URL plus the
      resolved commit SHA. The commit is required (it is the
      reproducible identity); the requested ref is **not** recorded in
-     the lockfile — it lives in `facets.json`. A git clone that cannot
+     the lockfile  -- it lives in `facets.json`. A git clone that cannot
      be pinned to a commit fails the install.
-   - `{kind: "local", path}` — the resolved local path.
+   - `{kind: "local", path}`  -- the resolved local path.
 
-   Adapter-agnostic by design — the same asset set is applied to every
+   Adapter-agnostic by design  -- the same asset set is applied to every
    selected adapter.
 
-`facet install` rejects positional arguments — to add a new facet, use
+`facet install` rejects positional arguments  -- to add a new facet, use
 `facet add`. There is no `--dry-run` flag; both commands always commit.
 
 If any adapter errors mid-install, the installer triggers best-effort
@@ -99,12 +99,12 @@ on any failure so the project is exactly as it was before the command.
 
 ## Open-beta target (future)
 
-This page defines what happens during `facet install` and `facet upgrade` — how facet archives are downloaded, text assets are extracted, server references are resolved, and everything is pinned in a lockfile.
+This page defines what happens during `facet install` and `facet upgrade`  -- how facet archives are downloaded, text assets are extracted, server references are resolved, and everything is pinned in a lockfile.
 
 The install flow has two distinct resolution paths:
 
-1. **Text** — already resolved. The facet archive is self-contained (composed by the registry at publish time). No text resolution at install time.
-2. **MCP servers** — references that MUST be resolved to specific versions at install time.
+1. **Text**  -- already resolved. The facet archive is self-contained (composed by the registry at publish time). No text resolution at install time.
+2. **MCP servers**  -- references that MUST be resolved to specific versions at install time.
 
 ## Install
 
@@ -114,28 +114,28 @@ A facet name (or name@version) to install.
 
 ### Steps
 
-1. **Download the facet archive.** Query the registry for the facet at the requested version (or latest if no version specified). Download the archive. Verify the content hash against the registry's recorded hash (see [Integrity Model](/specification/integrity)). A hash mismatch MUST be a hard failure — the archive MUST be rejected.
+1. **Download the facet archive.** Query the registry for the facet at the requested version (or latest if no version specified). Download the archive. Verify the content hash against the registry's recorded hash (see [Integrity Model](/specification/integrity)). A hash mismatch MUST be a hard failure  -- the archive MUST be rejected.
 
 2. **Read the manifest.** Parse the facet manifest from the archive.
 
 3. **Present text assets for review.** Implementors SHOULD show the consumer a summary of all text assets to be installed. The consumer SHOULD be able to inspect any individual asset before accepting. If an asset with the same name already exists on disk (collision), the consumer MUST be presented with options to resolve it: accept the facet's version, keep the existing content as an override, or create a new override.
 
-4. **Install text assets.** Extract the archive's text assets (skills, agent prompts, command prompts — both locally authored and composed) into the provider-specified install directories according to the consumer's decisions from the review step. No resolution is needed — the archive is self-contained.
+4. **Install text assets.** Extract the archive's text assets (skills, agent prompts, command prompts  -- both locally authored and composed) into the provider-specified install directories according to the consumer's decisions from the review step. No resolution is needed  -- the archive is self-contained.
 
 5. **Resolve MCP server references.** For each entry in the `servers` section:
 
-   **Source-mode** (string value — floor version):
+   **Source-mode** (string value  -- floor version):
    - Query the registry for the latest version of the named server at or above the floor constraint.
    - Download the server artifact.
    - Verify the server artifact's content hash.
    - Compute the server's API surface hash for future breaking-change detection.
 
-   **Ref-mode** (object value — OCI image):
+   **Ref-mode** (object value  -- OCI image):
    - Resolve the OCI image tag to a digest by querying the OCI registry. If the reference is already a digest, use it as-is.
    - Pin the resolved digest in the lockfile.
    - Compute the server's API surface hash for future breaking-change detection.
 
-   Resolution is always one level deep. MCP servers are terminal — they MUST NOT declare dependencies on other servers. There is no transitive resolution.
+   Resolution is always one level deep. MCP servers are terminal  -- they MUST NOT declare dependencies on other servers. There is no transitive resolution.
 
 6. **Write the lockfile.** Record the exact resolved versions and integrity hashes:
 
@@ -173,7 +173,7 @@ Only `facet upgrade` resolves newer versions for entries that already satisfy th
 
 The lockfile SHOULD be version-controlled so that all team members and CI environments get the same versions.
 
-`facet install --frozen-lockfile` inverts this: the lockfile becomes the source of truth and is reproduced exactly — no extra facets, no missing facets, no source changes, no content changes. It MUST NOT re-resolve any specifier and MUST NOT write the lockfile, and it MUST fail without modifying the project if the lockfile is missing, omits a manifest facet, contains an entry that no longer satisfies its specifier, pins a facet the manifest no longer declares (an orphaned entry a normal install would prune), or has a git/local facet whose manifest source (URL, ref, or path) no longer matches the locked source. It MUST also verify that every facet — including local sources, which a normal install rebuilds from disk — reproduces its locked integrity, failing on any content mismatch. This is the mode for reproducible CI installs.
+`facet install --frozen-lockfile` inverts this: the lockfile becomes the source of truth and is reproduced exactly  -- no extra facets, no missing facets, no source changes, no content changes. It MUST NOT re-resolve any specifier and MUST NOT write the lockfile, and it MUST fail without modifying the project if the lockfile is missing, omits a manifest facet, contains an entry that no longer satisfies its specifier, pins a facet the manifest no longer declares (an orphaned entry a normal install would prune), or has a git/local facet whose manifest source (URL, ref, or path) no longer matches the locked source. It MUST also verify that every facet  -- including local sources, which a normal install rebuilds from disk  -- reproduces its locked integrity, failing on any content mismatch. This is the mode for reproducible CI installs.
 
 ## Upgrade
 
@@ -191,8 +191,8 @@ The lockfile SHOULD be version-controlled so that all team members and CI enviro
 3. **Detect API surface changes.** For each server with a newer version:
    - Download the new server artifact and compute its API surface hash.
    - Compare to the API surface hash in the lockfile.
-   - If unchanged — the upgrade is structurally safe.
-   - If changed — a structural change occurred. The consumer MUST be warned about structural changes.
+   - If unchanged  -- the upgrade is structurally safe.
+   - If changed  -- a structural change occurred. The consumer MUST be warned about structural changes.
 
 4. **Present available updates.** Implementors MUST surface text asset changes to the consumer:
    - **Text assets**: For each text asset that changed, show the diff. For new assets, show their content. For removed assets, flag the removal. The consumer gets accept/reject/modify for changed and new assets, and accept/reject for removed assets.
@@ -213,11 +213,11 @@ The lockfile SHOULD be version-controlled so that all team members and CI enviro
 
 1. **Read the lockfile.** Identify all managed assets belonging to the facet.
 
-2. **Present assets for removal.** Implementors SHOULD show the consumer a summary of all text assets and server configurations that will be removed. For each asset, the consumer can accept the removal or reject it (keep as unmanaged). There is no modify option — the facet no longer owns the asset.
+2. **Present assets for removal.** Implementors SHOULD show the consumer a summary of all text assets and server configurations that will be removed. For each asset, the consumer can accept the removal or reject it (keep as unmanaged). There is no modify option  -- the facet no longer owns the asset.
 
 3. **Remove accepted assets.** Delete text assets the consumer accepted for removal from the provider-specified install directories. Remove server configurations.
 
-4. **Update the lockfile.** Remove the facet entry and all its managed asset records. Assets kept by the consumer are not recorded in the lockfile — they are now unmanaged.
+4. **Update the lockfile.** Remove the facet entry and all its managed asset records. Assets kept by the consumer are not recorded in the lockfile  -- they are now unmanaged.
 
 ## Lockfile Semantics
 
@@ -232,10 +232,10 @@ The lockfile (`facets.lock`) pins the exact state of an installation:
 | `servers.<name>.integrity`   | Source-mode: content hash of the server artifact.                                   |
 | `servers.<name>.image`       | Ref-mode: the OCI image reference (tag or digest) from the manifest.                |
 | `servers.<name>.digest`      | Ref-mode: the resolved OCI digest pinned at install time.                           |
-| `servers.<name>.api_surface` | API surface hash at install time — the baseline for change detection (both modes).  |
+| `servers.<name>.api_surface` | API surface hash at install time  -- the baseline for change detection (both modes).  |
 
 ## Not in the Install Flow
 
-- **Text asset resolution** — text is already in the archive. No install-time fetching of composed facets.
-- **Transitive server resolution** — servers are terminal. No multi-level dependency resolution.
-- **Local disk layout specifics** — where files are placed on disk is determined by the installed adapters. Directory mapping is a CLI concern, not a specification-level decision.
+- **Text asset resolution**  -- text is already in the archive. No install-time fetching of composed facets.
+- **Transitive server resolution**  -- servers are terminal. No multi-level dependency resolution.
+- **Local disk layout specifics**  -- where files are placed on disk is determined by the installed adapters. Directory mapping is a CLI concern, not a specification-level decision.

@@ -1,8 +1,6 @@
 ---
 title: facet remove
-sidebarTitle: ' '
-description: Removes a facet from `facets.json` and uninstalls it
-tag: facet remove
+description: Remove one or more facets from the project
 ---
 
 ## Usage
@@ -11,7 +9,7 @@ tag: facet remove
 facet remove <facet> [more facets...]
 ```
 
-Removes one or more facets from `facets.json`, deletes their assets from every connected adapter, and rewrites `facets.lock` without them — in a single command. The inverse of [`facet add`](/cli/add). Aliased as `facet rm`.
+Removes one or more facets from `facets.json`, deletes their assets from every connected adapter, and rewrites `facets.lock` without them  -- in a single command. The inverse of [`facet add`](/cli/add). Aliased as `facet rm`.
 
 ## What it does
 
@@ -50,5 +48,5 @@ facet remove viper-plans rezi
 
 ## See also
 
-- [`facet add`](/cli/add) — the inverse: add a facet to `facets.json` and install it in one step.
-- [`facet install`](/cli/install) — reapply `facets.json` and the lockfile.
+- [`facet add`](/cli/add)  -- the inverse: add a facet to `facets.json` and install it in one step.
+- [`facet install`](/cli/install)  -- reapply `facets.json` and the lockfile.

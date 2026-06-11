@@ -20,15 +20,15 @@ Releases are fully automated. Merging a PR with changesets triggers a pipeline t
     A maintainer reviews and merges the version PR. CI detects the merge, compares each package version against what is published on npm, and creates a git tag for each package that has an unpublished version (e.g. `@agent-facets/protocol@0.3.0` or `agent-facets@1.0.0`).
   </Step>
   <Step title="Release pipeline triggered per tag">
-    After pushing tags, the `tag.ts` script also calls CircleCI's API v2 `pipeline/run` endpoint once per tag to explicitly trigger the release pipeline. We do not rely on GitHub-to-CircleCI tag-push webhooks because they are unreliable when the bot GitHub App pushes tags — CircleCI appears to filter events from other bot actors. The pipeline's workflow filters (tag regex in `.circleci/release.yml`) still apply, so scoped tags (`@agent-facets/*@*`) run the `release` workflow and unscoped tags (`agent-facets@*`) run `release-cli`.
+    After pushing tags, the `tag.ts` script also calls CircleCI's API v2 `pipeline/run` endpoint once per tag to explicitly trigger the release pipeline. We do not rely on GitHub-to-CircleCI tag-push webhooks because they are unreliable when the bot GitHub App pushes tags  -- CircleCI appears to filter events from other bot actors. The pipeline's workflow filters (tag regex in `.circleci/release.yml`) still apply, so scoped tags (`@agent-facets/*@*`) run the `release` workflow and unscoped tags (`agent-facets@*`) run `release-cli`.
 
-    For scoped tags, `tag.ts` also parses the package name (`@agent-facets/protocol@1.0.0` → `protocol`) and forwards it as the `package` pipeline parameter. The `release` workflow uses that parameter in its `serial-group` key, which queues releases per-package — so two different packages can release in parallel while repeat releases of the same package serialize. The CLI tag path does not use the parameter.
+    For scoped tags, `tag.ts` also parses the package name (`@agent-facets/protocol@1.0.0` → `protocol`) and forwards it as the `package` pipeline parameter. The `release` workflow uses that parameter in its `serial-group` key, which queues releases per-package  -- so two different packages can release in parallel while repeat releases of the same package serialize. The CLI tag path does not use the parameter.
   </Step>
   <Step title="Publish to npm">
     The publish path depends on the package type:
 
     - **Library packages** (`@agent-facets/protocol`, `@agent-facets/brand`, `@agent-facets/adapter`): build via turbo, then publish directly to `latest`.
-    - **CLI** (`agent-facets`): uses a three-stage matrix workflow — see below.
+    - **CLI** (`agent-facets`): uses a three-stage matrix workflow  -- see below.
   </Step>
   <Step title="Announce">
     After publishing, CI creates a GitHub Release with the changelog entry and sends a notification.
@@ -50,7 +50,7 @@ The CLI publishes 13 packages (12 platform binaries + 1 CLI package) directly to
     Poll the npm registry until all 12 platform packages are visible at the new version. Retries with exponential backoff.
   </Step>
   <Step title="Publish CLI package">
-    Synthesize the `agent-facets` package (with `optionalDependencies` pointing to all 12 platform packages) and publish to `latest`. This is the package users install — it only appears on `latest` after all its dependencies are confirmed available.
+    Synthesize the `agent-facets` package (with `optionalDependencies` pointing to all 12 platform packages) and publish to `latest`. This is the package users install  -- it only appears on `latest` after all its dependencies are confirmed available.
   </Step>
   <Step title="Verify all 13 packages">
     Confirm all 13 packages (12 platform + CLI) are visible at the new version.
@@ -72,7 +72,7 @@ Before merging a CLI-affecting PR (or a version PR that bumps the CLI):
 
 ## Adding changesets on behalf of contributors
 
-The [changeset bot](https://github.com/apps/changeset-bot) comments on every PR indicating whether a changeset is present. If a contributor doesn't add one, the bot's comment includes a link to create one in the browser — pre-filled with the correct filename. Write the summary, select the bump type, and commit directly to the PR branch.
+The [changeset bot](https://github.com/apps/changeset-bot) comments on every PR indicating whether a changeset is present. If a contributor doesn't add one, the bot's comment includes a link to create one in the browser  -- pre-filled with the correct filename. Write the summary, select the bump type, and commit directly to the PR branch.
 
 ## Troubleshooting
 
@@ -80,7 +80,7 @@ The [changeset bot](https://github.com/apps/changeset-bot) comments on every PR 
 
 **Symptom**: A version PR merges, tags appear on GitHub, but no `release` or `release-cli` pipeline shows up in CircleCI.
 
-**Background**: The release pipeline is triggered via CircleCI's API v2 `pipeline/run` endpoint, not via GitHub webhooks. `scripts/release/tag.ts` calls the API explicitly after pushing tags. If the API call fails, `tag.ts` throws and the `main-pipeline` job fails with a Slack notification — so a silent "no pipeline ran" failure usually means the trigger call never executed (tag push failed, or the job was cancelled before reaching the trigger step).
+**Background**: The release pipeline is triggered via CircleCI's API v2 `pipeline/run` endpoint, not via GitHub webhooks. `scripts/release/tag.ts` calls the API explicitly after pushing tags. If the API call fails, `tag.ts` throws and the `main-pipeline` job fails with a Slack notification  -- so a silent "no pipeline ran" failure usually means the trigger call never executed (tag push failed, or the job was cancelled before reaching the trigger step).
 
 **Fix**:
 
@@ -91,7 +91,7 @@ The [changeset bot](https://github.com/apps/changeset-bot) comments on every PR 
 To manually trigger a release pipeline for a tag that's already pushed, POST to the API directly:
 
 ```bash
-# Scoped tag — forward the parsed package name so the `release` workflow's
+# Scoped tag  -- forward the parsed package name so the `release` workflow's
 # per-package serial-group queues correctly.
 curl -X POST \
   "https://circleci.com/api/v2/project/gh/agent-facets/facets/pipeline/run" \
@@ -99,7 +99,7 @@ curl -X POST \
   -H "content-type: application/json" \
   --data '{"definition_id":"9d2f5823-f2c9-4cba-918a-e7d0dc2f658a","config":{"tag":"@agent-facets/protocol@0.4.0"},"checkout":{"tag":"@agent-facets/protocol@0.4.0"},"parameters":{"package":"protocol"}}'
 
-# CLI tag — no `package` parameter needed; release-cli doesn't use it.
+# CLI tag  -- no `package` parameter needed; release-cli doesn't use it.
 curl -X POST \
   "https://circleci.com/api/v2/project/gh/agent-facets/facets/pipeline/run" \
   -H "Circle-Token: $CIRCLECI_API_TOKEN" \
@@ -115,8 +115,8 @@ The idempotency checks in `scripts/release/publish.ts`, `publish-platform.ts`, a
 
 **Cause**:
 
-- **401** — `CIRCLECI_API_TOKEN` is missing, revoked, or belongs to a user without write access to the project.
-- **404** — `CIRCLECI_RELEASE_PIPELINE_DEFINITION_ID` is stale. If the release pipeline definition was recreated in the CircleCI UI, the UUID in `scripts/lib/constants.ts` needs updating.
+- **401**  -- `CIRCLECI_API_TOKEN` is missing, revoked, or belongs to a user without write access to the project.
+- **404**  -- `CIRCLECI_RELEASE_PIPELINE_DEFINITION_ID` is stale. If the release pipeline definition was recreated in the CircleCI UI, the UUID in `scripts/lib/constants.ts` needs updating.
 
 **Fix**:
 
@@ -155,6 +155,6 @@ The `mintGitHubAppToken` helper (`scripts/lib/github-app.ts`) detects 404s and s
 
 ### Release pipeline ran but only some packages published
 
-**Symptom**: Mixed state — some packages at the new version on npm, others still at the old version. Usually happens when `finalize-cli` fails partway through.
+**Symptom**: Mixed state  -- some packages at the new version on npm, others still at the old version. Usually happens when `finalize-cli` fails partway through.
 
-**Fix**: Re-push the tag. The idempotency checks in `publish-platform.ts`, `publish-cli-package.ts`, and `publish.ts` all guard against double-publishing — each will skip packages already at the target version and only publish what's missing.
+**Fix**: Re-push the tag. The idempotency checks in `publish-platform.ts`, `publish-cli-package.ts`, and `publish.ts` all guard against double-publishing  -- each will skip packages already at the target version and only publish what's missing.

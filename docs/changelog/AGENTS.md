@@ -9,7 +9,7 @@ five-principles guide](https://www.mintlify.com/blog/five-changelog-principles-f
 
 - **Single source of truth**: all changelog content lives in
   `docs/changelog/index.md`. Never create additional per-date files (e.g.
-  `2026-04-20.md`) — they fragment the changelog, duplicate nav entries, and
+  `2026-04-20.md`)  -- they fragment the changelog, duplicate nav entries, and
   create orphan pages.
 - **One changelog tab in `docs/docs.json`**: the Changelog tab must point only
   to `changelog/index`. Do not add a second tab.
@@ -28,10 +28,10 @@ Every entry is a Mintlify `<Update>` component:
 </Update>
 ```
 
-- **`label`** — ISO date (`YYYY-MM-DD`). Sorts naturally. Generates the
+- **`label`**  -- ISO date (`YYYY-MM-DD`). Sorts naturally. Generates the
   right-sidebar TOC entry.
-- **`description`** — a short, user-scannable tagline for the day's changes.
-- **`tags`** — see [Tag vocabulary](#tag-vocabulary) below.
+- **`description`**  -- a short, user-scannable tagline for the day's changes.
+- **`tags`**  -- see [Tag vocabulary](#tag-vocabulary) below.
 
 ## Tag vocabulary
 
@@ -40,31 +40,31 @@ and, if the `facet` CLI itself was modified, also the `CLI` tag.
 
 ### Change type (usually one, unless release spans multiple aspects, each aspect should be it's own section)
 
-- **`New Feature`** — a capability that didn't exist before (a new command, a new
+- **`New Feature`**  -- a capability that didn't exist before (a new command, a new
   adapter, a new site, a new docs surface).
-- **`Improvement`** — something that already existed got better: faster,
+- **`Improvement`**  -- something that already existed got better: faster,
   cleaner, more flexible, or picked up additional capabilities on an existing
   surface. Use this for performance wins, UX polish, and incremental additions
   to an existing command or format.
-- **`Fix`** — a user-visible bug fix. (No entries use this yet; reserved for
+- **`Fix`**  -- a user-visible bug fix. (No entries use this yet; reserved for
   future use.)
-- **`Breaking`** — a change that breaks existing behavior. Use this for
+- **`Breaking`**  -- a change that breaks existing behavior. Use this for
   backwards-incompatible changes, removals, or deprecations.
 
 ### Surface (optional)
 
-- **`CLI`** — the `facet` CLI / tooling was changed. Add this whenever an
+- **`CLI`**  -- the `facet` CLI / tooling was changed. Add this whenever an
   entry touches the CLI's commands, flags, behavior, build pipeline, archive
   format, or adapter SDK.
-- **No surface tag** — the change is non-product (docs, landing page, site
-  URLs, branding). Don't invent a `Docs` or `Site` tag — the absence of `CLI`
+- **No surface tag**  -- the change is non-product (docs, landing page, site
+  URLs, branding). Don't invent a `Docs` or `Site` tag  -- the absence of `CLI`
   is the signal.
 
 ### Mixed-surface days
 
 When a single day bundles CLI and non-CLI changes into one entry, tag by the
 **dominant** change. For example, if `facet add` ships on the same day as a
-docs URL move, tag the combined entry `["CLI", "New Feature"]` — the install-URL
+docs URL move, tag the combined entry `["CLI", "New Feature"]`  -- the install-URL
 cleanup rides along under the CLI release.
 
 ### Examples
@@ -96,7 +96,7 @@ An entry should read like a release announcement, not a commit summary.
   short entry, a big day gets a long one. Don't pad, but don't over-compress
   either.
 - **User-facing and descriptive**. Focus on what improved for the reader, not
-  what changed in the codebase. Show _how to use_ the thing — command
+  what changed in the codebase. Show _how to use_ the thing  -- command
   invocations, realistic examples, sample output where it helps.
 - **Connect and reference** (Mintlify principle #3): link to CLI reference
   pages (e.g. `/cli/add`, `/cli/install`), external docs, and related
@@ -115,7 +115,7 @@ goes at the top of the file.
 
 ## RSS considerations
 
-- RSS feed entries contain pure Markdown only — components, HTML, and code
+- RSS feed entries contain pure Markdown only  -- components, HTML, and code
   blocks are excluded. If an entry's substance is inside a code block or
   component, add an `rss` prop with an alternative text description.
 - Adding a new `<Update>` or modifying headings inside an existing one
@@ -125,7 +125,7 @@ goes at the top of the file.
 
 - [ ] Added to the top of `docs/changelog/index.md`.
 - [ ] `label="YYYY-MM-DD"` uses today's date (or the ship date).
-- [ ] No other `<Update>` in the file uses the same `label` — if one exists,
+- [ ] No other `<Update>` in the file uses the same `label`  -- if one exists,
       merge into it instead of creating a new entry.
 - [ ] `description` is a short tagline covering the full scope of the day's
       changes.

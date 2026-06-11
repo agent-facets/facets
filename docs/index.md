@@ -3,14 +3,11 @@ title: "Agent Facets"
 sidebarTitle: "Introduction"
 ---
 
-A facet packages the text that shapes how an AI assistant behaves: domain-specific instructions (skills), specialized
-agent configurations (agents), and custom slash commands (commands). Facets can also reference MCP servers — code that
-gives the assistant new tool capabilities — without bundling the server code itself.
+A facet packages the text that shapes how an AI assistant behaves: domain-specific instructions (skills), specialized agent configurations (agents), and custom slash commands (commands). Facets can also reference MCP servers -- code that gives the assistant new tool capabilities -- without bundling the server code itself.
 
-`facet` is a package manager for **facets** — modular, versioned bundles of skills, agents, commands, and MCP server
-references that extend AI coding assistants.
+`facet` is a package manager for **facets** -- modular, versioned bundles of skills, agents, commands, and MCP server references that extend AI coding assistants.
 
-## Quick Start
+## Install the CLI
 
 <CodeGroup>
 
@@ -32,14 +29,42 @@ pnpm install -g agent-facets
 
 </CodeGroup>
 
-## Updating
+Verify the install:
 
-Once `facet` is installed, update it in place with:
-
-```shell
-facet self-update
+```sh
+facet --version
 ```
 
-It detects how the binary was installed and dispatches to the matching
-update mechanism. See [`facet self-update`](/cli/self-update) for flags
-and behavior.
+Once installed, update in place with [`facet self-update`](/cli/self-update).
+
+## Quick example
+
+Install an adapter for your AI tool, then add a facet:
+
+```sh
+# Pick an adapter (opencode, claude-code, or codex)
+facet adapter install
+
+# Add a facet from the registry
+facet add cowsay
+```
+
+That's it. The facet's skills, agents, and commands are now available in your AI coding tool.
+
+## Guides
+
+<CardGroup cols={3}>
+
+<Card title="Install Facets" icon="download" href="/guides/install-facets">
+  Set up an adapter, search the registry, add facets, and manage your project.
+</Card>
+
+<Card title="Create Your First Facet" icon="hammer" href="/guides/create-your-first-facet">
+  Scaffold a project, write skills, agents, and commands, then build a `.facet` archive.
+</Card>
+
+<Card title="Publish a Facet" icon="upload" href="/guides/publish-a-facet">
+  Sign in to the registry, build, publish, and handle drift detection.
+</Card>
+
+</CardGroup>

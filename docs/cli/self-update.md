@@ -1,8 +1,6 @@
 ---
 title: facet self-update
-sidebarTitle: ' '
 description: Update the facet CLI to a newer version
-tag: facet self-update
 ---
 
 ## Usage
@@ -16,8 +14,8 @@ facet self-update
 ## What it does
 
 Updates the running `facet` binary in place. Detects how the binary was
-installed — the curl installer, an `npm` / `yarn` / `pnpm` / `bun` global
-install, dev mode, or an unclassified location — and dispatches to the
+installed  -- the curl installer, an `npm` / `yarn` / `pnpm` / `bun` global
+install, dev mode, or an unclassified location  -- and dispatches to the
 matching update mechanism for that path. Existing trust roots (the
 [install script](https://agentfacets.io/install) and the user's package
 manager) handle download, integrity verification, and the binary swap.
@@ -68,7 +66,7 @@ re-ran without `--dry-run`.
 If the binary location can't be classified, `facet self-update` falls back
 to the curl installer (which installs to `~/.facet/bin/facet`) and warns
 if `facet` on your `$PATH` still resolves to a different binary after the
-install — so you can decide whether to remove the older copy or reorder
+install  -- so you can decide whether to remove the older copy or reorder
 your `$PATH`.
 
 ## Dev mode
@@ -77,7 +75,7 @@ When the `FACET_BIN_OVERRIDE` environment variable is set (typical in a
 workspace shell where you're testing changes via `bun dev`),
 `facet self-update` refuses with a clear stderr message and exits with
 code `1`. This is intentional: when you've overridden which binary the
-launcher executes, you've taken control of binary placement — self-update
+launcher executes, you've taken control of binary placement  -- self-update
 has no business writing over the path you pointed it at. Unset
 `FACET_BIN_OVERRIDE` to update a real install.
 

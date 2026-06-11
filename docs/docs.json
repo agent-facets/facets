@@ -2,7 +2,7 @@
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
   "name": "Agent Facets",
-  "description": "A package manager for AI assistant extensions — skills, agents, commands, and MCP servers.",
+  "description": "A package manager for AI assistant extensions: skills, agents, commands, and MCP servers.",
   "logo": {
     "dark": "/assets/logo.svg",
     "light": "/assets/logo-light.svg",
@@ -43,6 +43,11 @@
             "pages": ["index", "docs/learn/index"]
           },
           {
+            "group": "Guides",
+            "icon": "rocket",
+            "pages": ["guides/install-facets", "guides/create-your-first-facet", "guides/publish-a-facet"]
+          },
+          {
             "group": "Asset Types",
             "icon": "book",
             "pages": ["docs/learn/skills", "docs/learn/commands", "docs/learn/agents", "docs/learn/servers"]
@@ -65,13 +70,13 @@
         "icon": "square-terminal",
         "groups": [
           {
-            "group": "General",
-            "pages": ["cli/index", "cli/env", "cli/self-update"]
+            "group": "CLI Reference",
+            "pages": ["cli/index"]
           },
           {
             "group": "Facet Management",
             "icon": "box",
-            "pages": ["cli/install", "cli/add", "cli/remove", "cli/update"]
+            "pages": ["cli/install", "cli/add", "cli/remove", "cli/update", "cli/search", "cli/list"]
           },
           {
             "group": "Adapters",
@@ -79,9 +84,19 @@
             "pages": ["cli/adapters/install", "cli/adapters/list", "cli/adapters/remove"]
           },
           {
+            "group": "Authentication",
+            "icon": "lock",
+            "pages": ["cli/login", "cli/whoami", "cli/logout"]
+          },
+          {
             "group": "Authoring",
             "icon": "pencil",
-            "pages": ["cli/authoring/create", "cli/authoring/edit", "cli/authoring/build"]
+            "pages": ["cli/authoring/create", "cli/authoring/edit", "cli/authoring/build", "cli/authoring/publish"]
+          },
+          {
+            "group": "CLI",
+            "icon": "terminal",
+            "pages": ["cli/help", "cli/self-update", "cli/env"]
           }
         ]
       },
