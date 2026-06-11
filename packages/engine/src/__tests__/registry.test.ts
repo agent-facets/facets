@@ -69,7 +69,8 @@ describe('resolveRegistryMetadataBatch', () => {
     const meta = result.value[0]
     if (meta === undefined) expect.unreachable()
     expect(meta.version).toBe('0.1.0')
-    expect(meta.expectedIntegrity).toBe('sha256:abc')
+    expect(meta.transportHash).toBe('sha256:abc')
+    expect(meta.contentFingerprint).toBe('sha256:def')
   })
 
   test('exact spec is sent verbatim', async () => {
@@ -218,7 +219,8 @@ describe('downloadAndExtractFacet', () => {
   const META = {
     name: 'cowsay',
     version: '0.1.0',
-    expectedIntegrity: 'sha256:placeholder',
+    transportHash: 'sha256:placeholder',
+    contentFingerprint: 'sha256:placeholder',
   }
 
   test('happy path: resolves the 302, downloads from S3, verifies sha256, extracts files', async () => {
@@ -227,7 +229,7 @@ describe('downloadAndExtractFacet', () => {
       { name: 'commands/cowsay.md', data: '# cowsay\n' },
     ])
     const { urls } = stubArchiveDownload(new Response(bytes, { status: 200 }))
-    const result = await downloadAndExtractFacet({ ...META, expectedIntegrity: integrity }, dest)
+    const result = await downloadAndExtractFacet({ ...META, transportHash: integrity }, dest)
     expect(result.ok).toBe(true)
     // First hop is the typed archive endpoint; second hop is the
     // presigned S3 URL read off the 302 Location header.
@@ -240,7 +242,7 @@ describe('downloadAndExtractFacet', () => {
   test('sha256 mismatch: returns NETWORK_ERROR with hash detail and writes nothing', async () => {
     const { bytes } = buildArchive([{ name: 'facet.json', data: '{}' }])
     stubArchiveDownload(new Response(bytes, { status: 200 }))
-    const result = await downloadAndExtractFacet({ ...META, expectedIntegrity: 'sha256:0000' }, dest)
+    const result = await downloadAndExtractFacet({ ...META, transportHash: 'sha256:0000' }, dest)
     expect(result.ok).toBe(false)
     if (result.ok) expect.unreachable()
     expect(result.error.code).toBe('NETWORK_ERROR')
@@ -250,7 +252,7 @@ describe('downloadAndExtractFacet', () => {
 
   test('archive endpoint 404 maps to NOT_FOUND', async () => {
     globalThis.fetch = (async () => new Response('gone', { status: 404 })) as unknown as typeof fetch
-    const result = await downloadAndExtractFacet({ ...META, expectedIntegrity: 'sha256:x' }, dest)
+    const result = await downloadAndExtractFacet({ ...META, transportHash: 'sha256:x' }, dest)
     expect(result.ok).toBe(false)
     if (result.ok) expect.unreachable()
     expect(result.error.code).toBe('NOT_FOUND')
@@ -258,7 +260,7 @@ describe('downloadAndExtractFacet', () => {
 
   test('archive endpoint 302 with no Location maps to UNEXPECTED_ERROR', async () => {
     globalThis.fetch = (async () => new Response(null, { status: 302 })) as unknown as typeof fetch
-    const result = await downloadAndExtractFacet({ ...META, expectedIntegrity: 'sha256:x' }, dest)
+    const result = await downloadAndExtractFacet({ ...META, transportHash: 'sha256:x' }, dest)
     expect(result.ok).toBe(false)
     if (result.ok) expect.unreachable()
     expect(result.error.code).toBe('UNEXPECTED_ERROR')
@@ -266,7 +268,7 @@ describe('downloadAndExtractFacet', () => {
 
   test('S3 fetch 5xx maps to NETWORK_ERROR', async () => {
     stubArchiveDownload(new Response('boom', { status: 503 }))
-    const result = await downloadAndExtractFacet({ ...META, expectedIntegrity: 'sha256:x' }, dest)
+    const result = await downloadAndExtractFacet({ ...META, transportHash: 'sha256:x' }, dest)
     expect(result.ok).toBe(false)
     if (result.ok) expect.unreachable()
     expect(result.error.code).toBe('NETWORK_ERROR')
@@ -282,7 +284,7 @@ describe('downloadAndExtractFacet', () => {
     const bytes = new TextEncoder().encode('not a tarball')
     stubArchiveDownload(new Response(bytes, { status: 200 }))
     const result = await downloadAndExtractFacet(
-      { ...META, expectedIntegrity: `sha256:${createHash('sha256').update(bytes).digest('hex')}` },
+      { ...META, transportHash: `sha256:${createHash('sha256').update(bytes).digest('hex')}` },
       dest,
     )
     expect(result.ok).toBe(false)

@@ -16,7 +16,7 @@ import type {
   FacetIntegrityFailure,
   IntegrityFailure,
 } from '@agent-facets/protocol'
-import { computeContentHash } from '@agent-facets/protocol'
+import { type ArchiveEntry, assembleTar, computeContentHash } from '@agent-facets/protocol'
 import { type } from 'arktype'
 import { CACHE_INTEGRITY_FILE, type CacheIntegrity, CacheIntegritySchema } from './integrity.ts'
 import { cachePath, resolveCacheRoot } from './paths.ts'
@@ -93,9 +93,10 @@ function classifyNonDirEntry(path: string): 'file' | 'symlink' | 'other' {
  * subsequent `cachePut`. A non-directory entry at the slot path
  * (e.g., a stray file from a crashed process) is treated as a miss.
  *
- * The cache is trusted: a cache hit is taken at face value and is NOT
- * re-hashed against the originating source's integrity declarations.
- * Integrity verification happens upstream, before content lands here.
+ * A cache hit is NOT trusted at face value. The caller MUST audit the
+ * slot's content via `auditCacheSlot` before materialization — every
+ * hit is re-hashed against the integrity sidecar. A tampered slot is
+ * evicted via `evictCacheSlot` and treated as a miss.
  */
 export function cacheGet(identity: CacheIdentity): CacheLookup {
   const path = cachePath(identity)
@@ -352,4 +353,73 @@ export function readCachedIntegrity(slotPath: string): CacheIntegrity | null {
   const validated = CacheIntegritySchema(parsed)
   if (validated instanceof type.errors) return null
   return validated as CacheIntegrity
+}
+
+/**
+ * Result of auditing a cache slot's content against its sidecar.
+ *
+ *   - `ok: true` → every per-asset hash and the canonical archive hash
+ *     match the sidecar. `integrity` is the verified canonical hash,
+ *     ready for lockfile comparison or integrity confirmation.
+ *   - `ok: false, reason: 'tampered'` → at least one hash mismatch.
+ *     The caller should evict the slot and treat it as a miss.
+ */
+export type CacheAuditResult = { ok: true; integrity: string } | { ok: false; reason: 'tampered' }
+
+/**
+ * Re-verify a cache slot's content against its integrity sidecar.
+ *
+ * For every `(path, expectedHash)` in `sidecar.assets`, reads the file
+ * from `slotPath`, recomputes SHA-256, and compares. Then reconstructs
+ * the canonical deterministic tar from those files, hashes it, and
+ * compares against `sidecar.integrity`.
+ *
+ * A mismatch at any step returns `{ ok: false, reason: 'tampered' }`.
+ * On full match returns `{ ok: true, integrity }` — the verified
+ * canonical hash string the caller can use for lockfile comparison or
+ * registry integrity confirmation.
+ *
+ * Never throws. File-read failures (missing, unreadable) are treated
+ * as tampered.
+ */
+export function auditCacheSlot(slotPath: string, sidecar: CacheIntegrity): CacheAuditResult {
+  // 1. Per-asset audit: recompute each file's hash and compare.
+  const entries: ArchiveEntry[] = []
+  for (const [path, expectedHash] of Object.entries(sidecar.assets)) {
+    let content: string
+    try {
+      content = readFileSync(join(slotPath, path), 'utf8')
+    } catch {
+      return { ok: false, reason: 'tampered' }
+    }
+    const observed = computeContentHash(content)
+    if (observed !== expectedHash) {
+      return { ok: false, reason: 'tampered' }
+    }
+    entries.push({ path, content })
+  }
+
+  // 2. Canonical archive audit: reconstruct the deterministic tar,
+  //    hash it, and compare against the sidecar's top-level integrity.
+  entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+  const tarBytes = assembleTar(entries)
+  const computedIntegrity = computeContentHash(tarBytes)
+  if (computedIntegrity !== sidecar.integrity) {
+    return { ok: false, reason: 'tampered' }
+  }
+
+  return { ok: true, integrity: sidecar.integrity }
+}
+
+/**
+ * Evict a cache slot by removing its directory tree.
+ *
+ * After eviction the slot path no longer exists and a subsequent
+ * `cacheGet` for the same identity will return a miss. The caller
+ * can then re-download and re-populate the slot.
+ *
+ * Force-removes so missing paths are silently ignored (idempotent).
+ */
+export function evictCacheSlot(slotPath: string): void {
+  rmSync(slotPath, { recursive: true, force: true })
 }

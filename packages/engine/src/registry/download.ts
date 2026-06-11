@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, normalize, relative } from 'node:path'
-import { parseFacetArchive } from '@agent-facets/protocol'
+import { type BuildManifest, parseFacetArchive } from '@agent-facets/protocol'
 import { parseTarGzip } from 'nanotar'
 import type { Client } from 'openapi-fetch'
 import { createRegistryClient, translateWireError } from './client.ts'
@@ -35,7 +35,7 @@ import type { RegistryMetadata, RegistryResult } from './types.ts'
  * gzipped inner tar of source files). Both layers are unpacked here
  * to extract the source files into `dest`.
  *
- * Verification: the registry's `expectedIntegrity` (sha256 of the
+ * Verification: the registry's `transportHash` (sha256 of the
  * tarball-as-uploaded) is checked against the bytes we just downloaded.
  * Mismatch is a hard error — the tarball was tampered with in transit
  * or the registry's record is corrupt; either way, refuse to extract.
@@ -47,7 +47,10 @@ import type { RegistryMetadata, RegistryResult } from './types.ts'
  *
  * Always returns; never throws.
  */
-export async function downloadAndExtractFacet(meta: RegistryMetadata, dest: string): Promise<RegistryResult<void>> {
+export async function downloadAndExtractFacet(
+  meta: RegistryMetadata,
+  dest: string,
+): Promise<RegistryResult<BuildManifest>> {
   // Reads carry the credential opportunistically (see design D3): the
   // archive-lookup request earns the authenticated rate-limit tier when
   // a credential is available, and proceeds anonymously otherwise.
@@ -111,12 +114,12 @@ export async function downloadAndExtractFacet(meta: RegistryMetadata, dest: stri
   // Integrity check before any extraction. If the bytes are not what the
   // registry told us they would be, do NOT touch the filesystem.
   const actualIntegrity = `sha256:${createHash('sha256').update(bytes).digest('hex')}`
-  if (actualIntegrity !== meta.expectedIntegrity) {
+  if (actualIntegrity !== meta.transportHash) {
     return {
       ok: false,
       error: {
         code: 'NETWORK_ERROR',
-        cause: `archive sha256 mismatch: expected ${meta.expectedIntegrity}, got ${actualIntegrity}`,
+        cause: `archive sha256 mismatch: expected ${meta.transportHash}, got ${actualIntegrity}`,
         attempts: 1,
       },
     }
@@ -202,7 +205,7 @@ export async function downloadAndExtractFacet(meta: RegistryMetadata, dest: stri
     await writeFile(target, data)
   }
 
-  return { ok: true, value: undefined }
+  return { ok: true, value: outerResult.data.buildManifest }
 }
 
 /**

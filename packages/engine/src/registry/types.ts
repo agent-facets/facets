@@ -7,9 +7,14 @@ import type { VersionSpec } from '@agent-facets/protocol'
  *   - `version`: the exact resolved version (e.g., `"1.2.3"`). When the
  *     caller passed a wildcard or `latest`, this is the version the
  *     registry chose.
- *   - `expectedIntegrity`: the integrity hash the registry claims this
- *     `(name, version)` should produce. Format `sha256:<hex>`. Fed
- *     into the three-check protocol as the metadata-API anchor.
+ *   - `transportHash`: sha256 of the uploaded `.facet` tarball (the
+ *     gzipped delivery bytes). Used only by `download.ts` for the
+ *     raw-bytes transport check after downloading.
+ *   - `contentFingerprint`: sha256 of the canonical archive (the inner
+ *     uncompressed tar). This is the domain the cache sidecar, the
+ *     lockfile, and `build-manifest.json` all record. Fed to the
+ *     three-check protocol as `expectedIntegrity` and used for
+ *     integrity confirmation when creating a lockfile entry.
  *
  * Deliberately carries no archive URL. How the archive bytes are
  * obtained (today: a typed request to the archive endpoint that
@@ -24,7 +29,8 @@ import type { VersionSpec } from '@agent-facets/protocol'
 export interface RegistryMetadata {
   name: string
   version: string
-  expectedIntegrity: string
+  transportHash: string
+  contentFingerprint: string
 }
 
 /**

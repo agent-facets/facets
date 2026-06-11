@@ -25,7 +25,8 @@ mock.module('../../registry/resolve-metadata.ts', () => ({
     value: specs.map((s) => ({
       name: s.name,
       version: registryResolvedVersion,
-      expectedIntegrity: 'sha256:stub',
+      transportHash: 'sha256:stub',
+      contentFingerprint: 'sha256:stub',
     })),
   }),
 }))

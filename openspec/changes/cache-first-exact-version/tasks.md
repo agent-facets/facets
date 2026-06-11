@@ -9,11 +9,11 @@
 
 ## 2. Registry fingerprint & cache integrity chain — Implementation
 
-- [ ] 2.1 Implement: extend `RegistryMetadata` and the `resolve-metadata.ts` wire mapping to carry the canonical fingerprint (`content_integrity`) alongside the transport hash, with domain-explicit names; update `wire.ts`, `fixtures.ts`, and affected unit tests
-- [ ] 2.2 Implement: audited cache read — recompute hashes against the sidecar at materialization time, evict the slot on mismatch and report a soft miss; rewrite the `cacheGet` "trusted, NOT re-hashed" doc contract to match (design D4, Article III)
-- [ ] 2.3 Implement: the shared per-version materialization chain as a reusable engine unit — hit path: self-audit → lockfile compare (when pinned) → integrity confirmation (when creating an entry); miss path: download → locked compare or registry three-check → verified-put — wiring `verifyRegistryIntegrity` with `expectedIntegrity` = `content_integrity`; update protocol's Check A doc comments (design D3a wiring note)
-- [ ] 2.4 Implement: unit tests — tampered cache bytes are evicted and re-fetched (never installed, never seed a lockfile entry); hit with locked mismatch hard-fails; hit without a lock entry confirms against the registry (offline → fail closed; missing `content_integrity` → fail closed)
-- [ ] 2.5 Verify: `bun check` passes for `packages/protocol` and `packages/engine`
+- [x] 2.1 Implement: extend `RegistryMetadata` and the `resolve-metadata.ts` wire mapping to carry the canonical fingerprint (`content_integrity`) alongside the transport hash, with domain-explicit names; update `wire.ts`, `fixtures.ts`, and affected unit tests
+- [x] 2.2 Implement: audited cache read — recompute hashes against the sidecar at materialization time, evict the slot on mismatch and report a soft miss; rewrite the `cacheGet` "trusted, NOT re-hashed" doc contract to match (design D4, Article III)
+- [x] 2.3 Implement: the shared per-version materialization chain as a reusable engine unit — hit path: self-audit → lockfile compare (when pinned) → integrity confirmation (when creating an entry); miss path: download → locked compare or registry three-check → verified-put — wiring `verifyRegistryIntegrity` with `expectedIntegrity` = `content_integrity`; update protocol's Check A doc comments (design D3a wiring note)
+- [x] 2.4 Implement: unit tests — tampered cache bytes are evicted and re-fetched (never installed, never seed a lockfile entry); hit with locked mismatch hard-fails; hit without a lock entry confirms against the registry (offline → fail closed; missing `content_integrity` → fail closed)
+- [x] 2.5 Verify: `bun check` passes for `packages/protocol` and `packages/engine`
 
 ## 3. Machine-local receipt — Research
 

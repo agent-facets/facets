@@ -3,8 +3,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { BuildManifest } from '@agent-facets/protocol'
-import { computeContentHash } from '@agent-facets/protocol'
+import { assembleTar, computeContentHash } from '@agent-facets/protocol'
 import {
+  auditCacheSlot,
   CACHE_INTEGRITY_FILE,
   type CacheIdentity,
   type CacheIntegrity,
@@ -15,6 +16,7 @@ import {
   cacheSlot,
   cacheSlotIsDir,
   cacheStagingDir,
+  evictCacheSlot,
   readCachedIntegrity,
   resolveCacheRoot,
 } from '../cache/index.ts'
@@ -424,5 +426,118 @@ describe('readCachedIntegrity', () => {
     mkdirSync(cachePath(id), { recursive: true })
     writeFileSync(join(cachePath(id), CACHE_INTEGRITY_FILE), JSON.stringify({ foo: 'bar' }))
     expect(readCachedIntegrity(cachePath(id))).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// auditCacheSlot
+// ---------------------------------------------------------------------------
+
+describe('auditCacheSlot', () => {
+  /** Populate a cache slot with known content and a matching sidecar. */
+  function seedSlot(id: CacheIdentity, files: Record<string, string>): { slotPath: string; sidecar: CacheIntegrity } {
+    const slotPath = cachePath(id)
+    mkdirSync(slotPath, { recursive: true })
+    const assets: Record<string, string> = {}
+    for (const [path, content] of Object.entries(files)) {
+      const fullPath = join(slotPath, path)
+      mkdirSync(join(slotPath, path, '..'), { recursive: true })
+      writeFileSync(fullPath, content)
+      assets[path] = computeContentHash(content)
+    }
+    // Compute the canonical integrity from the sorted entries.
+    const entries = Object.entries(files)
+      .map(([path, content]) => ({ path, content }))
+      .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+    const tarBytes = assembleTar(entries)
+    const integrity = computeContentHash(tarBytes)
+    const sidecar: CacheIntegrity = { integrity, assets }
+    writeFileSync(join(slotPath, CACHE_INTEGRITY_FILE), JSON.stringify(sidecar, null, 2))
+    return { slotPath, sidecar }
+  }
+
+  test('passes on untampered content', () => {
+    const id: CacheIdentity = { kind: 'registry', name: 'audit-ok', version: '1.0.0' }
+    const { slotPath, sidecar } = seedSlot(id, {
+      'facet.json': '{"name":"audit-ok","version":"1.0.0"}',
+      'skills/hello/SKILL.md': '# Hello\n',
+    })
+    const result = auditCacheSlot(slotPath, sidecar)
+    expect(result.ok).toBe(true)
+    if (!result.ok) expect.unreachable()
+    expect(result.integrity).toBe(sidecar.integrity)
+  })
+
+  test('fails when an asset file is tampered', () => {
+    const id: CacheIdentity = { kind: 'registry', name: 'audit-tamper', version: '1.0.0' }
+    const { slotPath, sidecar } = seedSlot(id, {
+      'facet.json': '{"name":"audit-tamper","version":"1.0.0"}',
+    })
+    // Tamper the file after seeding.
+    writeFileSync(join(slotPath, 'facet.json'), '{"name":"EVIL","version":"1.0.0"}')
+    const result = auditCacheSlot(slotPath, sidecar)
+    expect(result.ok).toBe(false)
+    if (result.ok) expect.unreachable()
+    expect(result.reason).toBe('tampered')
+  })
+
+  test('fails when an asset file is missing', () => {
+    const id: CacheIdentity = { kind: 'registry', name: 'audit-miss', version: '1.0.0' }
+    const { slotPath, sidecar } = seedSlot(id, {
+      'facet.json': '{"name":"audit-miss","version":"1.0.0"}',
+      'skills/hello/SKILL.md': '# Hello\n',
+    })
+    // Delete one file.
+    rmSync(join(slotPath, 'skills/hello/SKILL.md'))
+    const result = auditCacheSlot(slotPath, sidecar)
+    expect(result.ok).toBe(false)
+    if (result.ok) expect.unreachable()
+    expect(result.reason).toBe('tampered')
+  })
+
+  test('fails when the canonical archive hash disagrees with the sidecar', () => {
+    const id: CacheIdentity = { kind: 'registry', name: 'audit-canon', version: '1.0.0' }
+    const { slotPath, sidecar } = seedSlot(id, {
+      'facet.json': '{"name":"audit-canon","version":"1.0.0"}',
+    })
+    // Corrupt the sidecar's top-level integrity while leaving assets intact.
+    const corruptSidecar: CacheIntegrity = {
+      ...sidecar,
+      integrity: 'sha256:0000000000000000000000000000000000000000000000000000000000000000',
+    }
+    const result = auditCacheSlot(slotPath, corruptSidecar)
+    expect(result.ok).toBe(false)
+    if (result.ok) expect.unreachable()
+    expect(result.reason).toBe('tampered')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// evictCacheSlot
+// ---------------------------------------------------------------------------
+
+describe('evictCacheSlot', () => {
+  test('removes the slot directory', () => {
+    const id: CacheIdentity = { kind: 'registry', name: 'evict-me', version: '1.0.0' }
+    const slotPath = cachePath(id)
+    mkdirSync(slotPath, { recursive: true })
+    writeFileSync(join(slotPath, 'facet.json'), '{}')
+    expect(existsSync(slotPath)).toBe(true)
+    evictCacheSlot(slotPath)
+    expect(existsSync(slotPath)).toBe(false)
+  })
+
+  test('is idempotent on an already-missing path', () => {
+    evictCacheSlot(join(cacheDir, 'nonexistent'))
+    // No throw, no error.
+  })
+
+  test('subsequent cacheGet returns a miss', () => {
+    const id: CacheIdentity = { kind: 'registry', name: 'evict-miss', version: '1.0.0' }
+    const slotPath = cachePath(id)
+    mkdirSync(slotPath, { recursive: true })
+    expect(cacheGet(id).hit).toBe(true)
+    evictCacheSlot(slotPath)
+    expect(cacheGet(id).hit).toBe(false)
   })
 })
