@@ -72,7 +72,14 @@ export type {
   ReconciliationResolution,
 } from './edit/types.ts'
 // facet-dir — single source of truth for the facet directory tree
-export { facetAdaptersDir, facetBinDir, facetCacheDir, facetLocksDir, resolveFacetDir } from './facet-dir.ts'
+export {
+  facetAdaptersDir,
+  facetBinDir,
+  facetCacheDir,
+  facetLocksDir,
+  facetReceiptsDir,
+  resolveFacetDir,
+} from './facet-dir.ts'
 // install machinery
 export type { JournalEntry, JournalRollbackOptions, JournalRollbackResult } from './install/journal.ts'
 export { InstallJournal } from './install/journal.ts'

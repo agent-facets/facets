@@ -45,6 +45,11 @@ export function facetBinDir(): string {
   return join(resolveFacetDir(), 'bin')
 }
 
+/** Machine-local install receipts: `$FACET_DIR/receipts/`. */
+export function facetReceiptsDir(): string {
+  return join(resolveFacetDir(), 'receipts')
+}
+
 /** Registry credentials file: `$FACET_DIR/credentials` (a file, not a directory). */
 export function facetCredentialsPath(): string {
   return join(resolveFacetDir(), 'credentials')

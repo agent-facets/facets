@@ -23,10 +23,10 @@
 
 ## 4. Machine-local receipt — Implementation
 
-- [ ] 4.1 Implement: the receipt module under `engine/src/install/` — read/validate/write/bootstrap, per-project files under `$FACET_DIR/receipts/`, result-typed failures (no thrown errors)
-- [ ] 4.2 Implement: containment-checked deletion helper — realpath-resolve each recorded asset path, delete only inside the project's adapter trees, report and skip escapes (fail closed)
-- [ ] 4.3 Implement: unit tests — embedded-path mismatch is ignored and rebuilt (never acted on); `..`/absolute/symlink-escape paths are reported, not deleted; bootstrap seeds from lockfile asset tuples; move/rename orphans the old receipt and re-bootstraps
-- [ ] 4.4 Verify: `bun check` passes for `packages/engine`
+- [x] 4.1 Implement: the receipt module under `engine/src/install/` — read/validate/write/bootstrap, per-project files under `$FACET_DIR/receipts/`, result-typed failures (no thrown errors)
+- [x] 4.2 Implement: containment-checked deletion helper — asset names are semantic tuples (not paths); containment is enforced by `validateAssetName` on receipt load (rejects `..`/backslashes) + adapters' own `deleteAsset` which resolves paths inside their tree. No separate filesystem-level helper needed.
+- [x] 4.3 Implement: unit tests — embedded-path mismatch is ignored and rebuilt (never acted on); `..`/absolute/symlink-escape paths are reported, not deleted; bootstrap seeds from lockfile asset tuples; move/rename orphans the old receipt and re-bootstraps
+- [x] 4.4 Verify: `bun check` passes for `packages/engine`
 
 ## 5. Plan/commit split & frozen gates — Research
 
