@@ -1,5 +1,17 @@
 # agent-facets
 
+## 0.19.0
+
+### Minor Changes
+
+- [#325](https://github.com/agent-facets/facets/pull/325) [`ef26047`](https://github.com/agent-facets/facets/commit/ef26047602d8b546dfcb19c3fcef9c4ce485beaf) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Added verbose logging and updated adapters to return asset install paths (for logging purposes)
+
+### Patch Changes
+
+- [#328](https://github.com/agent-facets/facets/pull/328) [`dc4bbd0`](https://github.com/agent-facets/facets/commit/dc4bbd080474c2bb45f09ab2f013bd5904afc209) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Upgraded bun from 1.3.13 to 1.3.14
+- [#327](https://github.com/agent-facets/facets/pull/327) [`b9a1477`](https://github.com/agent-facets/facets/commit/b9a14772e88e9b2a83dc002cf93c29a2e9188b9e) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Make `OnLog` accept a lazy builder thunk, remove `foo` facet, and drop skipped TTY adapter-picker tests
+- [#323](https://github.com/agent-facets/facets/pull/323) [`6d5767b`](https://github.com/agent-facets/facets/commit/6d5767b3e3bdc1319d1ee8cf1b08039824197b15) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Sort lockfile facet keys alphabetically on write for deterministic diffs
+
 ## 0.18.2
 
 ### Patch Changes
