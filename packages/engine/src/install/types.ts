@@ -48,9 +48,12 @@ export interface InstallSummary {
 export type FacetStage = 'parse' | 'resolve' | 'fetch' | 'verify' | 'load' | 'build' | 'materialize'
 
 /**
- * Verbose-log sink. Receives a single, fully-formatted line (the caller
- * owns formatting — prefix, indentation, sigils). The CLI routes these to
- * stderr under `--verbose`. Convention:
+ * Verbose-log sink. Accepts a lazy builder (thunk) that produces a single,
+ * fully-formatted line. The thunk is only invoked when the sink is active,
+ * so template interpolation and conditional concatenation are skipped
+ * entirely when `--verbose` is off and `onLog` is undefined.
+ *
+ * The builder should return a line following these conventions:
  *
  *   - prefix `[verbose] ` (diagnostics) or `[warn] ` (non-fatal)
  *   - top-level operations: one space after prefix (`[verbose] …`)
@@ -58,7 +61,7 @@ export type FacetStage = 'parse' | 'resolve' | 'fetch' | 'verify' | 'load' | 'bu
  *   - asset sigils: `+` new / `~` repaired/updated / `-` deleted / `=` unchanged
  *   - `→` (U+2192) separates source → destination
  */
-export type OnLog = (line: string) => void
+export type OnLog = (build: () => string) => void
 
 /**
  * Structured progress event. View layers subscribe via the `onStage`

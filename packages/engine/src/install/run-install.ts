@@ -85,7 +85,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     const receipt: Receipt = receiptResult.ok ? receiptResult.receipt : bootstrapReceipt(projectRoot, previousLockfile)
     if (receiptResult.ok) {
       for (const invalid of receiptResult.invalidEntries) {
-        onLog(`[warn] receipt asset entry rejected for ${invalid.facet}: "${invalid.asset}" (${invalid.reason})`)
+        onLog(() => `[warn] receipt asset entry rejected for ${invalid.facet}: "${invalid.asset}" (${invalid.reason})`)
         onStage({ kind: 'receipt-invalid-asset', ...invalid })
       }
     }
@@ -196,7 +196,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
   }
 
   function noopStage(_event: StageEvent): void {}
-  function noopLog(_line: string): void {}
+  function noopLog(_build: () => string): void {}
 
   /**
    * Failure path that runs before the install lock has been released

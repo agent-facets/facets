@@ -71,7 +71,7 @@ async function handleInstall(args: string[]): Promise<number> {
           break
       }
     },
-    onLog: (line) => console.log(line),
+    onLog: (build) => console.log(build()),
   })
   if (!result.ok) {
     writeCliError(describeAdapterInstallFailure(result.failure))

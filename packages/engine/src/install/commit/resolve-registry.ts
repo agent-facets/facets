@@ -82,7 +82,7 @@ export async function resolveRegistryFacet(args: ResolveRegistryFacetArgs): Prom
     }
     meta = metaResult.value
     exactVersion = meta.version
-    onLog(`[verbose]   resolved ${facetName} ${describeVersionSpec(source.version)} → ${exactVersion}`)
+    onLog(() => `[verbose]   resolved ${facetName} ${describeVersionSpec(source.version)} → ${exactVersion}`)
   }
 
   // Lazily fetch (at most once) the metadata for the exact version —
@@ -156,16 +156,16 @@ export async function resolveRegistryFacet(args: ResolveRegistryFacetArgs): Prom
 
   // Log cache hit/miss for verbose diagnostics.
   if (lookup.hit) {
-    onLog(`[verbose]   cache hit ${facetName}@${exactVersion}`)
+    onLog(() => `[verbose]   cache hit ${facetName}@${exactVersion}`)
   } else {
-    onLog(`[verbose]   cache miss ${facetName}@${exactVersion}; downloading`)
+    onLog(() => `[verbose]   cache miss ${facetName}@${exactVersion}; downloading`)
   }
 
   // 4. Run the chain; retry once as a miss after a tampered-slot evict.
   onStage({ kind: 'facet-stage', facet: facetName, stage: 'verify' })
   let result = await materializeVersion(input)
   if (!result.ok && result.code === 'cache-tampered') {
-    onLog(`[verbose]   cache slot for ${facetName}@${exactVersion} failed its self-audit; evicted, refetching`)
+    onLog(() => `[verbose]   cache slot for ${facetName}@${exactVersion} failed its self-audit; evicted, refetching`)
     const m = await ensureMeta()
     if (!m.ok) {
       return { ok: false, failure: { code: 'REGISTRY_ERROR', facet: facetName, error: m.error } }
@@ -175,9 +175,9 @@ export async function resolveRegistryFacet(args: ResolveRegistryFacetArgs): Prom
   if (!result.ok) {
     return { ok: false, failure: chainFailureToRunInstall(facetName, result) }
   }
-  onLog(`[verbose]   materialized ${facetName}@${exactVersion} from ${result.slotPath}`)
+  onLog(() => `[verbose]   materialized ${facetName}@${exactVersion} from ${result.slotPath}`)
   if (!lookup.hit) {
-    onLog(`[verbose]   downloaded + cached ${facetName}@${exactVersion}`)
+    onLog(() => `[verbose]   downloaded + cached ${facetName}@${exactVersion}`)
   }
 
   // Finalize from the verified slot.
