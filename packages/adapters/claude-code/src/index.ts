@@ -43,7 +43,7 @@ export default defineAdapter({
   },
 
   async installAsset(scope, assetType, name, content, metadata) {
-    await installAssetFile({ file: resolvePath(scope, assetType, name) }, content, metadata as Record<string, unknown>)
+    return installAssetFile({ file: resolvePath(scope, assetType, name) }, content, metadata as Record<string, unknown>)
   },
 
   async readAsset(scope, assetType, name) {
@@ -51,7 +51,7 @@ export default defineAdapter({
   },
 
   async deleteAsset(scope, assetType, name) {
-    await deleteAssetFile({ file: resolvePath(scope, assetType, name) })
+    return deleteAssetFile({ file: resolvePath(scope, assetType, name) })
   },
 })
 

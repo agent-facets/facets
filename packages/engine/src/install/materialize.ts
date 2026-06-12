@@ -2,7 +2,7 @@ import type { Adapter } from '@agent-facets/adapter'
 import { splitFrontMatter } from '@agent-facets/common'
 import type { LockfileAssetEntry, ResolvedFacetManifest } from '@agent-facets/protocol'
 import type { InstallJournal } from './journal.ts'
-import type { StageEvent } from './types.ts'
+import type { OnLog, StageEvent } from './types.ts'
 
 /**
  * Compute the NEW asset set a facet contributes at this version. Derived
@@ -59,7 +59,7 @@ export interface MaterializeOptions {
   oldAssets: readonly LockfileAssetEntry[]
   newAssets: readonly LockfileAssetEntry[]
   journal: InstallJournal
-  onLog?: (line: string) => void
+  onLog?: OnLog
   /** Structured progress events for view layers. */
   onStage?: (event: StageEvent) => void
 }
@@ -140,6 +140,8 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
       return { ok: false, failure: { kind: 'unsupported-adapter', adapter: adapter.name } }
     }
 
+    opts.onLog?.(`[verbose]   installing ${opts.facetName}@${opts.manifest.version} → ${adapter.name}`)
+
     for (const asset of opts.newAssets) {
       const content = contentFor(opts.manifest, asset)
       const metadata = buildAssetMetadata(opts.manifest, asset, adapter.name)
@@ -197,14 +199,16 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
         previous.content === candidateSplit.content &&
         JSON.stringify(previous.metadata ?? {}) === JSON.stringify(mergedCandidateMetadata)
       ) {
-        opts.onLog?.(`[verbose]   =${asset.type}:${asset.name} → ${adapter.name} (skipped)`)
+        opts.onLog?.(`[verbose]     =${asset.type}:${asset.name} (skipped)`)
         skipped++
         continue
       }
 
-      opts.onLog?.(`[verbose]   +${asset.type}:${asset.name} → ${adapter.name}`)
+      // Sigil: `+` new asset (didn't exist before), `~` repaired/updated (existed but changed)
+      const sigil = previous === null ? '+' : '~'
+      let writtenPath: string | undefined
       try {
-        await adapter.installAsset(asset.scope, asset.type, asset.name, content, metadata)
+        writtenPath = await adapter.installAsset(asset.scope, asset.type, asset.name, content, metadata)
       } catch (err) {
         return {
           ok: false,
@@ -216,6 +220,7 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
           },
         }
       }
+      opts.onLog?.(`[verbose]     ${sigil}${asset.type}:${asset.name}${writtenPath ? ` → ${writtenPath}` : ''}`)
       written++
 
       opts.journal.record({
@@ -250,9 +255,9 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
         previous = null
       }
 
-      opts.onLog?.(`[verbose]   -${asset.type}:${asset.name} → ${adapter.name}`)
+      let deletedPath: string | undefined
       try {
-        await adapter.deleteAsset(asset.scope, asset.type, asset.name)
+        deletedPath = await adapter.deleteAsset(asset.scope, asset.type, asset.name)
       } catch (err) {
         return {
           ok: false,
@@ -264,6 +269,7 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
           },
         }
       }
+      opts.onLog?.(`[verbose]     -${asset.type}:${asset.name}${deletedPath ? ` → ${deletedPath}` : ''}`)
       deleted++
 
       if (previous) {

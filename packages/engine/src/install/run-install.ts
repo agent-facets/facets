@@ -173,6 +173,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       newLockfile,
       newReceipt,
       frozenLockfile,
+      onLog,
     })
     if (!written.ok) {
       return await rollbackAndFail(journal, written.failure, onLog)

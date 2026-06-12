@@ -109,6 +109,7 @@ export type {
   InstallDelta,
   InstallSummary,
   LockfileDriftEntry,
+  OnLog,
   Removal,
   RollbackOutcome,
   RunInstallFailure,

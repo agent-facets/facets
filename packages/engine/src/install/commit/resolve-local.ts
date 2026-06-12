@@ -5,7 +5,7 @@ import { runBuildPipeline } from '../../build/pipeline.ts'
 import { resolveLocalFacetSource } from '../../sources/facet/resolve-local.ts'
 import type { Source } from '../../sources/facet/types.ts'
 import { computeAssetList } from '../materialize.ts'
-import type { StageEvent } from '../types.ts'
+import type { OnLog, StageEvent } from '../types.ts'
 import { buildLockfileSource, loadFacetContent } from './finalize-facet.ts'
 import type { ResolveFacetResult } from './types.ts'
 
@@ -26,7 +26,7 @@ export interface ResolveLocalFacetArgs {
    */
   frozenLockfile: boolean
   onStage: (event: StageEvent) => void
-  onLog: (line: string) => void
+  onLog: OnLog
 }
 
 /**

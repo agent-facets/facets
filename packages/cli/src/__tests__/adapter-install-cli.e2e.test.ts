@@ -266,7 +266,7 @@ describe('facet adapter install — fast path from extracted npm tarball', () =>
       const result = await runCli(['adapter', 'install', extractedDir], { FACET_DIR: facetDir })
 
       expect(result.exitCode).toBe(0)
-      expect(result.stdout).toContain('Using prebuilt bundle...')
+      expect(result.stdout).toContain('using prebuilt bundle for')
       expect(result.stdout).toContain('Adapter "opencode" installed successfully.')
 
       // Adapter should be placed at <facetDir>/adapters/opencode/adapter.js
@@ -351,17 +351,17 @@ describe('facet adapter install — slow-path fallback after broken prebuilt', (
 
       expect(result.exitCode).toBe(0)
       // Fast path is attempted then rejected — both logs should appear
-      expect(result.stdout).toContain('Using prebuilt bundle...')
-      expect(result.stdout).toContain('Prebuilt bundle did not load cleanly')
-      expect(result.stdout).toContain('Rebundling from source')
+      expect(result.stdout).toContain('using prebuilt bundle for')
+      expect(result.stdout).toContain('did not load cleanly')
+      expect(result.stdout).toContain('rebundling from source')
       expect(result.stdout).toContain('Adapter "my-fallback-adapter" installed successfully.')
 
-      // No double resolution: `Using prebuilt bundle...` must appear exactly
-      // once. If the slow-path dispatch erroneously called bundleAdapter()
-      // (which re-runs resolveEntryPoint), a stale prebuilt could be picked
-      // again and we'd see the log twice. Guards against the regression
-      // described in the Cursor review for PR #142.
-      const prebuiltLogCount = (result.stdout.match(/Using prebuilt bundle\.\.\./g) ?? []).length
+      // No double resolution: the prebuilt log must appear exactly once. If
+      // the slow-path dispatch erroneously called bundleAdapter() (which
+      // re-runs resolveEntryPoint), a stale prebuilt could be picked again
+      // and we'd see the log twice. Guards against the regression described
+      // in the Cursor review for PR #142.
+      const prebuiltLogCount = (result.stdout.match(/using prebuilt bundle for/g) ?? []).length
       expect(prebuiltLogCount).toBe(1)
 
       const installedBundle = join(adaptersIn(facetDir), 'my-fallback-adapter', 'adapter.js')
@@ -396,9 +396,9 @@ describe('facet adapter install — externalized prebuilt (PR #142 P1 regression
       // The fast path is tried (the bundle looks OK from package.json's
       // POV) but isolated verification fails because `fixture-runtime-dep`
       // can't be resolved away from the source tree.
-      expect(result.stdout).toContain('Using prebuilt bundle...')
-      expect(result.stdout).toContain('Prebuilt bundle did not load cleanly')
-      expect(result.stdout).toContain('Rebundling from source')
+      expect(result.stdout).toContain('using prebuilt bundle for')
+      expect(result.stdout).toContain('did not load cleanly')
+      expect(result.stdout).toContain('rebundling from source')
       expect(result.stdout).toContain('Adapter "my-externalized-adapter" installed successfully.')
 
       // The placed bundle should be the rebundled (self-contained) output,

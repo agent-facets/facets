@@ -117,7 +117,8 @@ describe('deleteAssetFile', () => {
   })
 
   test('is a no-op when the asset is absent', async () => {
-    await expect(deleteAssetFile({ file: join(workDir, 'missing.md') })).resolves.toBeUndefined()
+    const missingPath = join(workDir, 'missing.md')
+    await expect(deleteAssetFile({ file: missingPath })).resolves.toBe(missingPath)
   })
 })
 

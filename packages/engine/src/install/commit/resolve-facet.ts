@@ -2,7 +2,7 @@ import type { Adapter } from '@agent-facets/adapter'
 import type { Lockfile } from '@agent-facets/protocol'
 import { parseFacetSource } from '../../sources/facet/parse-source.ts'
 import { parseVersionSpec } from '../../sources/facet/parse-version.ts'
-import type { StageEvent } from '../types.ts'
+import type { OnLog, StageEvent } from '../types.ts'
 import { resolveEffectiveLocked } from './effective-locked.ts'
 import { resolveGitFacet } from './resolve-git.ts'
 import { resolveLocalFacet } from './resolve-local.ts'
@@ -18,7 +18,7 @@ export interface ResolveFacetArgs {
   isExplicitAddition: boolean
   frozenLockfile: boolean
   onStage: (event: StageEvent) => void
-  onLog: (line: string) => void
+  onLog: OnLog
 }
 
 /**

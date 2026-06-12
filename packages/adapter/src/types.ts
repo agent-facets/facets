@@ -33,14 +33,29 @@ export interface Adapter {
    */
   buildAssetMetadata(data: unknown): Validated<AdapterMetadata>
 
-  /** Install an asset at the given scope */
-  installAsset(scope: Scope, assetType: AssetType, name: string, content: string, metadata: unknown): Promise<void>
+  /**
+   * Install an asset at the given scope. Returns the absolute path the
+   * asset was written to, if available — used for verbose diagnostic
+   * logging. Returning `void` is backward-compatible (older adapters
+   * that don't return a path still satisfy the contract).
+   */
+  installAsset(
+    scope: Scope,
+    assetType: AssetType,
+    name: string,
+    content: string,
+    metadata: unknown,
+  ): Promise<string | undefined>
 
   /** Read an asset's content from the given scope */
   readAsset(scope: Scope, assetType: AssetType, name: string): Promise<{ content: string; metadata?: AdapterMetadata }>
 
-  /** Delete an asset from the given scope */
-  deleteAsset(scope: Scope, assetType: AssetType, name: string): Promise<void>
+  /**
+   * Delete an asset from the given scope. Returns the absolute path of
+   * the deleted asset, if available — used for verbose diagnostic
+   * logging. Returning `void` is backward-compatible.
+   */
+  deleteAsset(scope: Scope, assetType: AssetType, name: string): Promise<string | undefined>
 }
 
 // Re-export common types for convenience — SDK consumers don't need to install common
