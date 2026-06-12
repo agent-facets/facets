@@ -48,12 +48,16 @@ Before executing ANY step, check its type prefix and follow the corresponding ru
 ### Propose Steps (READ-ONLY + USER GATE)
 
 1. Read the relevant files mentioned in the step
-2. Show the user the current code and your intended changes
-3. Use `mcp_question` to ask for explicit approval
-4. **DO NOT write, edit, or create ANY files during a Propose step**
-5. **DO NOT proceed to the next step until the user approves**
+2. **Present the full proposal as regular assistant output text** — include current code, intended changes, rationale, and any other details the user needs to make a decision. All of this goes in your message text, NOT in the `question` MCP tool.
+3. **After** presenting the proposal, use the `question` MCP tool with a short approval prompt. The question must be concise (e.g., "Do you approve this change?") with three options:
+   - **Approve** — Proceed with the proposed changes
+   - **Reject** — Do not make this change
+   - **Request changes** — The user will describe what to adjust (custom input)
+4. **NEVER put detailed explanations, code snippets, or rationale inside the `question` MCP tool options or descriptions.** The question tool is only for the approval gate — all substance goes in the assistant message above it.
+5. **DO NOT write, edit, or create ANY files during a Propose step**
+6. **DO NOT proceed to the next step until the user approves**
 
-If the user rejects or requests changes, revise the proposal and ask again.
+If the user requests changes, revise the proposal and present + ask again.
 
 ### Implement Steps (WRITE)
 
@@ -64,10 +68,13 @@ If the user rejects or requests changes, revise the proposal and ask again.
 ### Review Steps (READ-ONLY + USER GATE)
 
 1. Analyze what was done or found — read code, examine changes, assess quality
-2. Present your findings and analysis to the user
-3. Use `mcp_question` to ask for feedback before proceeding
-4. **DO NOT write, edit, or create ANY files during a Review step**
-5. **DO NOT proceed to the next step until the user responds**
+2. **Present your full findings and analysis as regular assistant output text.** Include all relevant details, code references, and observations in your message — NOT in the `question` MCP tool.
+3. **After** presenting your analysis, use the `question` MCP tool with a short feedback prompt. The question must be concise (e.g., "How would you like to proceed?") with options like:
+   - **Looks good, continue** — Proceed to the next step
+   - **I have concerns** — The user will describe their concerns (custom input)
+4. **NEVER put detailed findings, code snippets, or analysis inside the `question` MCP tool options or descriptions.** The question tool is only for the gate — all substance goes in the assistant message above it.
+5. **DO NOT write, edit, or create ANY files during a Review step**
+6. **DO NOT proceed to the next step until the user responds**
 
 If the user has concerns, address them before moving on.
 

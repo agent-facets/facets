@@ -36,8 +36,8 @@
         "kind": "registry",
         "registry": "https://api.facet.cafe"
       },
-      "version": "0.1.0",
-      "integrity": "sha256:4033523b90d098adadf23ecc725b9c71ec4e334f04a6cb8ab7851ba247321526",
+      "version": "0.2.0",
+      "integrity": "sha256:343ff1fba77c66b934d89a5f544ecac2bcac9e15e57fa46885544a33c49bdcac",
       "assets": [
         {
           "scope": "project",
@@ -48,6 +48,11 @@
           "scope": "project",
           "type": "skill",
           "name": "viper-planning"
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "viper-continue"
         },
         {
           "scope": "project",
