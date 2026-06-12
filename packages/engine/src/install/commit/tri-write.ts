@@ -4,7 +4,7 @@ import type { FacetsJson, Lockfile, LockfileFacet } from '@agent-facets/protocol
 import { writeFacetsJson } from '../../manifest/project-files.ts'
 import { FACETS_LOCK_FILE, writeLockfile } from '../lockfile-io.ts'
 import { type Receipt, type ReceiptFacetEntry, receiptPath, writeReceipt } from '../receipt.ts'
-import type { RunInstallFailure } from '../types.ts'
+import type { OnLog, RunInstallFailure } from '../types.ts'
 
 /**
  * Derive the new receipt from the entries this run resolved. The
@@ -34,6 +34,7 @@ export interface TriWriteArgs {
   newLockfile: Lockfile
   newReceipt: Receipt
   frozenLockfile: boolean
+  onLog?: OnLog
 }
 
 /**
@@ -60,6 +61,7 @@ export function commitProjectFiles(args: TriWriteArgs): TriWriteResult {
   if (frozenLockfile) {
     try {
       writeReceipt(projectRoot, newReceipt)
+      args.onLog?.(`[verbose]   wrote receipt (${receiptPath(projectRoot)}) [frozen]`)
     } catch {
       // Non-fatal by design (see doc comment).
     }
@@ -102,6 +104,7 @@ export function commitProjectFiles(args: TriWriteArgs): TriWriteResult {
   for (const write of writes) {
     try {
       write.fn()
+      args.onLog?.(`[verbose]   wrote ${write.file} (${write.path})`)
     } catch (error) {
       for (const image of preImages) {
         restorePreImage(image)

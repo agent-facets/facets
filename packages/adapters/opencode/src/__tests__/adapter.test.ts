@@ -112,7 +112,7 @@ describe('opencode adapter — project-scope I/O round-trip', () => {
   })
 
   test('deleteAsset is a no-op when asset is absent', async () => {
-    await expect(adapter.deleteAsset('project', 'skill', 'never-installed')).resolves.toBeUndefined()
+    await expect(adapter.deleteAsset('project', 'skill', 'never-installed')).resolves.toBeString()
   })
 
   test('installAsset overwrites unconditionally (idempotent by contract)', async () => {

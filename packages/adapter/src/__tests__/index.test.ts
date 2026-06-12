@@ -10,11 +10,15 @@ function validDefinition(): Adapter {
   return {
     name: 'test-adapter',
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
-    async installAsset() {},
+    async installAsset() {
+      return undefined
+    },
     async readAsset() {
       return { content: 'test' }
     },
-    async deleteAsset() {},
+    async deleteAsset() {
+      return undefined
+    },
   }
 }
 
@@ -79,11 +83,15 @@ describe('defineAdapter — returned adapter shape', () => {
           data: { defaulted: this.defaultValue },
         }
       },
-      async installAsset() {},
+      async installAsset() {
+        return undefined
+      },
       async readAsset() {
         return { content: 'test' }
       },
-      async deleteAsset() {},
+      async deleteAsset() {
+        return undefined
+      },
     }
     const adapter = defineAdapter(definition)
 
@@ -141,6 +149,7 @@ describe('defineAdapter — stub fallbacks for missing asset methods', () => {
       buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
       async installAsset() {
         installCalled = true
+        return undefined
       },
       async readAsset() {
         readCalled = true
@@ -148,6 +157,7 @@ describe('defineAdapter — stub fallbacks for missing asset methods', () => {
       },
       async deleteAsset() {
         deleteCalled = true
+        return undefined
       },
     })
 

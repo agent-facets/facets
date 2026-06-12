@@ -139,11 +139,15 @@ describe('detectNamingCollisions', () => {
 const mockAdapter = defineAdapter({
   name: 'mock-adapter',
   buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
-  async installAsset() {},
+  async installAsset() {
+    return undefined
+  },
   async readAsset() {
     return { content: 'Your asset sir...' }
   },
-  async deleteAsset() {},
+  async deleteAsset() {
+    return undefined
+  },
 })
 
 /** A mock adapter that rejects all metadata */
@@ -153,11 +157,15 @@ const rejectingAdapter = defineAdapter({
     ok: false,
     errors: [{ path: 'tools', message: 'Invalid tools config', expected: 'Record<string, boolean>', actual: 'string' }],
   }),
-  async installAsset() {},
+  async installAsset() {
+    return undefined
+  },
   async readAsset() {
     return { content: 'Your asset sir...' }
   },
-  async deleteAsset() {},
+  async deleteAsset() {
+    return undefined
+  },
 })
 
 describe('validateAdapterMetadata', () => {
@@ -515,11 +523,15 @@ describe('runBuildPipeline', () => {
         enrichedData = { model: input.model ?? 'auto' }
         return { ok: true, data: enrichedData }
       },
-      async installAsset() {},
+      async installAsset() {
+        return undefined
+      },
       async readAsset() {
         return { content: 'Your asset sir...' }
       },
-      async deleteAsset() {},
+      async deleteAsset() {
+        return undefined
+      },
     })
 
     const result = await runBuildPipeline(dir, [defaultingAdapter])

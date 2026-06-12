@@ -5,7 +5,7 @@ import { materialize } from '../materialize.ts'
 import { materializeFailureToRunInstall } from '../materialize-failure.ts'
 import type { Receipt } from '../receipt.ts'
 import { removalManifest } from '../removal-manifest.ts'
-import type { FacetOutcome, RunInstallFailure, StageEvent } from '../types.ts'
+import type { FacetOutcome, OnLog, RunInstallFailure, StageEvent } from '../types.ts'
 
 export interface DriftRemovalSuccess {
   /** One `removed` outcome per cleaned-up facet. */
@@ -23,7 +23,7 @@ export interface DriftRemovalArgs {
   journal: InstallJournal
   signal?: AbortSignal
   onStage: (event: StageEvent) => void
-  onLog: (line: string) => void
+  onLog: OnLog
 }
 
 /**

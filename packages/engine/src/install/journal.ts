@@ -19,6 +19,8 @@
  * per Adjustment B).
  */
 
+import type { OnLog } from './types.ts'
+
 export interface JournalEntry {
   /** Human-readable label, surfaced through --verbose. */
   label: string
@@ -27,7 +29,7 @@ export interface JournalEntry {
 }
 
 export interface JournalRollbackOptions {
-  onLog?: (line: string) => void
+  onLog?: OnLog
 }
 
 export interface JournalRollbackResult {

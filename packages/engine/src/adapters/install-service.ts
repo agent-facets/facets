@@ -2,6 +2,7 @@ import { cp, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
+import type { OnLog } from '../install/types.ts'
 import { type CloneAdapterGitResult, cloneAdapterGitRepository } from '../sources/adapter/git.ts'
 import { type ResolveLocalAdapterResult, resolveLocalAdapterPath } from '../sources/adapter/local.ts'
 import { type DownloadNpmResult, downloadNpmPackage } from '../sources/adapter/npm.ts'
@@ -30,7 +31,7 @@ export interface AdapterInstallOptions {
    * reasons). Terminal mode prints these; the Ink picker can route them
    * into a `detail` slot under the running stage.
    */
-  onLog?: (line: string) => void
+  onLog?: OnLog
 }
 
 /**
@@ -186,17 +187,19 @@ const noopCleanup = async (): Promise<void> => {}
  */
 export async function locateAndVerifyAdapter(
   sourceDir: string,
-  opts: { onLog?: (line: string) => void } = {},
+  opts: { onLog?: OnLog } = {},
 ): Promise<{ bundlePath: string; adapter: Adapter; cleanup: () => Promise<void> }> {
   const resolved = await resolveEntryPoint(sourceDir)
 
   if (resolved.kind === 'prebuilt') {
-    opts.onLog?.('Using prebuilt bundle...')
+    opts.onLog?.(`[verbose]   using prebuilt bundle for ${basename(sourceDir)}`)
     const verifyResult = await verifyPrebuiltInIsolation(resolved.path)
     if (verifyResult.ok) {
       return { bundlePath: resolved.path, adapter: verifyResult.adapter, cleanup: noopCleanup }
     }
-    opts.onLog?.(`Prebuilt bundle did not load cleanly (${verifyResult.message}). Rebundling from source...`)
+    opts.onLog?.(
+      `[verbose]   prebuilt bundle for ${basename(sourceDir)} did not load cleanly (${verifyResult.message}); rebundling from source`,
+    )
     const sourceEntry = await resolveSourceEntry(sourceDir, resolved.path)
     const built = await rebundleAdapter(sourceDir, sourceEntry)
     const adapter = await verifyAdapter(built.bundlePath)
