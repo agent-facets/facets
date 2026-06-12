@@ -1,5 +1,11 @@
 # agent-facets
 
+## 0.18.2
+
+### Patch Changes
+
+- [#321](https://github.com/agent-facets/facets/pull/321) [`44f1f35`](https://github.com/agent-facets/facets/commit/44f1f35c48a90b4fc3da52756b7f671f90d8abed) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Share `ensureAdapters` with `install`, and skip unpilotable TTY adapter-picker test
+
 ## 0.18.1
 
 ### Patch Changes
