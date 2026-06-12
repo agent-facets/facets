@@ -12,12 +12,14 @@ Every plan MUST include a Step Types legend at the top so the executor can refer
 - **Verify** → CHECK. Run automated checks (tests, lint, type checks).
   If all checks pass, proceed. If anything fails, STOP and notify the user.
 - **Implement** → WRITE. Make code changes — create, edit, or delete files.
-- **Propose** → READ-ONLY + USER GATE. Show the user intended changes and ask for approval
-  using the `question` tool. Do not write anything. Do not proceed until the user approves.
+- **Propose** → READ-ONLY + USER GATE. Present intended changes in your message text first,
+  then ask for approval using the `question` tool with a short prompt (Approve / Reject / Request changes).
+  Never put details in the question — the question is just the gate. Do not write anything.
 - **Explore** → READ-ONLY. Read files, search the codebase, investigate broadly.
   No writes allowed. Use this to understand the problem space before acting.
-- **Review** → READ-ONLY + USER GATE. Analyze what was done or found, present findings
-  to the user, and wait for feedback before proceeding.
+- **Review** → READ-ONLY + USER GATE. Present findings and analysis in your message text first,
+  then ask for feedback using the `question` tool with a short prompt.
+  Never put details in the question — the question is just the gate.
 ```
 
 ## Hard Rules

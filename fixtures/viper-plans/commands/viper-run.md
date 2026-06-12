@@ -4,7 +4,7 @@ Plan name (if provided): $ARGUMENTS
 
 ## Workflow
 
-1. **Discover plans**: Use the `viper-list-plans` tool to discover available plans
+1. **Discover plans**: If the `viper-list-plans` tool is available, use it. Otherwise, enumerate the subdirectories of `.opencode/plans/` with your file tools.
 
 2. **Select a plan**:
    - If a plan name was provided as an argument, use it (look for a plan directory with that name)
@@ -14,7 +14,7 @@ Plan name (if provided): $ARGUMENTS
       - Allow only one selection
    - If no plans exist, tell the user and suggest using `/viper-plan` to create one
 
-3. **Load the plan**: Read `.opencode/plans/<name>/plan.md` fully
+3. **Load the plan**: Read `.opencode/plans/<name>/plan.md` fully. If the `viper-read-plan` tool is available, use it. Otherwise, read the file directly with your file tools.
 
 4. **Display the plan to the user**: Show the VIPER plan steps to the user
 
@@ -35,4 +35,4 @@ Plan name (if provided): $ARGUMENTS
 
 Once complete, ask the user if they want to delete the plan with the `question` tool using a simple yes/no binary.
 
-If they answer yes, use the `viper-delete-plan` tool to remove the plan.
+If they answer yes: if the `viper-delete-plan` tool is available, use it. Otherwise, delete the `.opencode/plans/<name>/` directory directly with your file tools.
