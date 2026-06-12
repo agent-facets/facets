@@ -60,9 +60,21 @@ export function loadLockfile(projectRoot: string): LoadLockfileResult {
   return { ok: true, data: validated as Lockfile, existed: true }
 }
 
+/**
+ * Serialize and write `facets.lock` atomically. Top-level facet keys are
+ * sorted alphabetically so the output is deterministic regardless of the
+ * insertion order the in-memory map was built in — add/remove/add produces
+ * byte-identical output when the resolved set is the same. (Same rationale
+ * as the per-facet asset sort in `materialize.ts`.)
+ */
 export function writeLockfile(projectRoot: string, lockfile: Lockfile): void {
   const path = join(projectRoot, FACETS_LOCK_FILE)
-  atomicWriteFileSync(path, `${JSON.stringify(lockfile, null, 2)}\n`)
+  const sortedFacets: Lockfile['facets'] = {}
+  for (const [key, entry] of Object.entries(lockfile.facets).sort(([a], [b]) => a.localeCompare(b))) {
+    sortedFacets[key] = entry
+  }
+  const canonical: Lockfile = { lockfileVersion: lockfile.lockfileVersion, facets: sortedFacets }
+  atomicWriteFileSync(path, `${JSON.stringify(canonical, null, 2)}\n`)
 }
 
 export function emptyLockfile(): Lockfile {

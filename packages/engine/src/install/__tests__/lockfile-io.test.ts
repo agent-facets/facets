@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { FACETS_LOCK_FILE, loadLockfile, writeLockfile } from '../lockfile-io.ts'
@@ -87,5 +87,61 @@ describe('loadLockfile — F9 forward-compat guard', () => {
     const result = loadLockfile(projectRoot)
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.existed).toBe(true)
+  })
+})
+
+// Deterministic key ordering — top-level facet keys are sorted alphabetically
+// on write so add/remove/add produces stable diffs.
+describe('writeLockfile — key ordering', () => {
+  /** Minimal valid facet entry for ordering tests. */
+  const entry = (version: string) => ({
+    source: { kind: 'git' as const, url: 'github:test/test#main', commit: 'a'.repeat(40) },
+    version,
+    integrity: 'sha256:0000',
+    assets: [{ scope: 'project' as const, type: 'skill' as const, name: 'x' }],
+  })
+
+  test('sorts top-level facet keys alphabetically', () => {
+    const lockfile = {
+      lockfileVersion: 1 as const,
+      facets: { zeta: entry('0.3.0'), alpha: entry('0.1.0'), mu: entry('0.2.0') },
+    }
+    writeLockfile(projectRoot, lockfile)
+    const raw = readFileSync(join(projectRoot, FACETS_LOCK_FILE), 'utf8')
+    const keys = Object.keys(JSON.parse(raw).facets)
+    expect(keys).toEqual(['alpha', 'mu', 'zeta'])
+  })
+
+  test('idempotent across remove+re-add reordering', () => {
+    // Simulate original order: a, b, c
+    const original = {
+      lockfileVersion: 1 as const,
+      facets: { a: entry('0.1.0'), b: entry('0.2.0'), c: entry('0.3.0') },
+    }
+    writeLockfile(projectRoot, original)
+    const bytesOriginal = readFileSync(join(projectRoot, FACETS_LOCK_FILE), 'utf8')
+
+    // Simulate remove b then re-add b (b moves to end of insertion order)
+    const reordered = {
+      lockfileVersion: 1 as const,
+      facets: { a: entry('0.1.0'), c: entry('0.3.0'), b: entry('0.2.0') },
+    }
+    writeLockfile(projectRoot, reordered)
+    const bytesReordered = readFileSync(join(projectRoot, FACETS_LOCK_FILE), 'utf8')
+
+    expect(bytesReordered).toBe(bytesOriginal)
+  })
+
+  test('sorted output round-trips through loadLockfile', () => {
+    const lockfile = {
+      lockfileVersion: 1 as const,
+      facets: { zeta: entry('0.3.0'), alpha: entry('0.1.0') },
+    }
+    writeLockfile(projectRoot, lockfile)
+    const result = loadLockfile(projectRoot)
+    expect(result.ok).toBe(true)
+    if (!result.ok) expect.unreachable()
+    expect(result.data.facets.alpha).toEqual(lockfile.facets.alpha)
+    expect(result.data.facets.zeta).toEqual(lockfile.facets.zeta)
   })
 })
