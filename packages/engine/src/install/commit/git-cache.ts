@@ -34,14 +34,14 @@ export function auditedGitCacheLookup(facetName: string, effectiveLocked: Lockfi
     // Missing/invalid sidecar — the slot cannot be audited, so it
     // cannot be used. Evict and re-clone (soft miss).
     evictCacheSlot(lookup.path)
-    onLog(`[verbose]   cache slot ${lookup.path} has no valid integrity sidecar; evicted, recloning`)
+    onLog(() => `[verbose]   cache slot ${lookup.path} has no valid integrity sidecar; evicted, recloning`)
     return { kind: 'miss' }
   }
 
   const audit = auditCacheSlot(lookup.path, sidecar)
   if (!audit.ok) {
     evictCacheSlot(lookup.path)
-    onLog(`[verbose]   cache slot ${lookup.path} failed its self-audit; evicted, recloning`)
+    onLog(() => `[verbose]   cache slot ${lookup.path} failed its self-audit; evicted, recloning`)
     return { kind: 'miss' }
   }
 
@@ -61,6 +61,6 @@ export function auditedGitCacheLookup(facetName: string, effectiveLocked: Lockfi
     }
   }
 
-  onLog(`[verbose]   cache hit ${lookup.path} (audited)`)
+  onLog(() => `[verbose]   cache hit ${lookup.path} (audited)`)
   return { kind: 'hit', slotPath: lookup.path }
 }

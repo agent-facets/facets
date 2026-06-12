@@ -192,13 +192,14 @@ export async function locateAndVerifyAdapter(
   const resolved = await resolveEntryPoint(sourceDir)
 
   if (resolved.kind === 'prebuilt') {
-    opts.onLog?.(`[verbose]   using prebuilt bundle for ${basename(sourceDir)}`)
+    opts.onLog?.(() => `[verbose]   using prebuilt bundle for ${basename(sourceDir)}`)
     const verifyResult = await verifyPrebuiltInIsolation(resolved.path)
     if (verifyResult.ok) {
       return { bundlePath: resolved.path, adapter: verifyResult.adapter, cleanup: noopCleanup }
     }
     opts.onLog?.(
-      `[verbose]   prebuilt bundle for ${basename(sourceDir)} did not load cleanly (${verifyResult.message}); rebundling from source`,
+      () =>
+        `[verbose]   prebuilt bundle for ${basename(sourceDir)} did not load cleanly (${verifyResult.message}); rebundling from source`,
     )
     const sourceEntry = await resolveSourceEntry(sourceDir, resolved.path)
     const built = await rebundleAdapter(sourceDir, sourceEntry)

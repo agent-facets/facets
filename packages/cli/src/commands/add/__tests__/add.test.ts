@@ -195,27 +195,6 @@ describe('facet add — error paths', () => {
     expect(code).toBe(1)
     expect(stderr).toContain('no adapters installed')
   })
-
-  // Skipped: in TTY mode with zero adapters, `addCommand` mounts the
-  // adapter picker and waits for input. Driving the picker from inside
-  // an in-process unit test would require either spying on
-  // `pickAndInstallAdapters` (the cleanest contract — assert the
-  // handoff happens) or simulating keypresses against a live Ink
-  // mount. The picker itself is covered in isolation by
-  // `install-picker.test.tsx`, so the marginal coverage here is "did
-  // we route to the picker". Capturing that properly requires module
-  // mocking infrastructure we don't currently have wired up — left as
-  // a deliberate skip with a follow-up note.
-  test.skip('no adapters + TTY → hands off to pickAndInstallAdapters', async () => {
-    const fixture = buildLocalFixture('viper-plans')
-    const rel = `./${fixture.split('/').pop()}`
-    await withTTY(true, async () => {
-      // TODO: spy on pickAndInstallAdapters and assert it was called.
-      // Until then, this test is intentionally skipped — running it
-      // unmodified would mount the picker and hang the suite.
-      await addCommand.run([rel], {})
-    })
-  })
 })
 
 describe('facet add — manifest snapshot rollback', () => {

@@ -140,7 +140,7 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
       return { ok: false, failure: { kind: 'unsupported-adapter', adapter: adapter.name } }
     }
 
-    opts.onLog?.(`[verbose]   installing ${opts.facetName}@${opts.manifest.version} → ${adapter.name}`)
+    opts.onLog?.(() => `[verbose]   installing ${opts.facetName}@${opts.manifest.version} → ${adapter.name}`)
 
     for (const asset of opts.newAssets) {
       const content = contentFor(opts.manifest, asset)
@@ -199,7 +199,7 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
         previous.content === candidateSplit.content &&
         JSON.stringify(previous.metadata ?? {}) === JSON.stringify(mergedCandidateMetadata)
       ) {
-        opts.onLog?.(`[verbose]     =${asset.type}:${asset.name} (skipped)`)
+        opts.onLog?.(() => `[verbose]     =${asset.type}:${asset.name} (skipped)`)
         skipped++
         continue
       }
@@ -220,7 +220,7 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
           },
         }
       }
-      opts.onLog?.(`[verbose]     ${sigil}${asset.type}:${asset.name}${writtenPath ? ` → ${writtenPath}` : ''}`)
+      opts.onLog?.(() => `[verbose]     ${sigil}${asset.type}:${asset.name}${writtenPath ? ` → ${writtenPath}` : ''}`)
       written++
 
       opts.journal.record({
@@ -269,7 +269,7 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
           },
         }
       }
-      opts.onLog?.(`[verbose]     -${asset.type}:${asset.name}${deletedPath ? ` → ${deletedPath}` : ''}`)
+      opts.onLog?.(() => `[verbose]     -${asset.type}:${asset.name}${deletedPath ? ` → ${deletedPath}` : ''}`)
       deleted++
 
       if (previous) {

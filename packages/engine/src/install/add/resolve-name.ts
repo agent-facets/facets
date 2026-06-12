@@ -83,7 +83,7 @@ export async function resolveFacetName(source: Source, specifier: string, onLog?
     if (manifest.data.facets && manifest.data.facets.length > 0) {
       return { ok: false, failure: { reason: 'composition-rejected', specifier } }
     }
-    onLog?.(`[verbose]   resolved name "${manifest.data.name}" from ${specifier}`)
+    onLog?.(() => `[verbose]   resolved name "${manifest.data.name}" from ${specifier}`)
     return { ok: true, name: manifest.data.name }
   } finally {
     if (cleanup) await cleanup()

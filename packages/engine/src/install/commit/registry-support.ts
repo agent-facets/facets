@@ -15,7 +15,7 @@ export async function fetchMeta(
   onStage: (event: StageEvent) => void,
   onLog: OnLog,
 ): Promise<{ ok: true; value: RegistryMetadata } | { ok: false; error: RegistryError }> {
-  onLog(`[verbose]   fetching registry metadata for ${name}`)
+  onLog(() => `[verbose]   fetching registry metadata for ${name}`)
   onStage({ kind: 'facet-stage', facet: name, stage: 'fetch' })
   const metaResult = await resolveRegistryMetadataBatch([{ name, version }])
   if (!metaResult.ok) return metaResult

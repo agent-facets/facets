@@ -87,7 +87,7 @@ export async function resolveGitFacet(args: ResolveGitFacetArgs): Promise<Resolv
       await rm(cloned.dir, { recursive: true, force: true }).catch(() => {})
     }
     clonedCommit = cloned.commit
-    onLog(`[verbose]   cloned ${source.url} → ${sourceDir} (sha: ${cloned.commit})`)
+    onLog(() => `[verbose]   cloned ${source.url} → ${sourceDir} (sha: ${cloned.commit})`)
   }
 
   try {
@@ -151,7 +151,7 @@ export async function resolveGitFacet(args: ResolveGitFacetArgs): Promise<Resolv
       }
       sourceDir = putResult.path
       cleanup = undefined
-      onLog(`[verbose]   cached ${facetName}@${buildResult.data.version} from clone`)
+      onLog(() => `[verbose]   cached ${facetName}@${buildResult.data.version} from clone`)
 
       if (effectiveLocked !== undefined) {
         // The build just reproduced the locked integrity; the lockfile

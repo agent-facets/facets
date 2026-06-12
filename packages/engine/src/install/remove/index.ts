@@ -55,7 +55,7 @@ export async function runRemove(opts: RunRemoveOptions): Promise<RunRemoveResult
   const filteredNames = prep.names
 
   for (const name of filteredNames) {
-    onLog?.(`[verbose]   removing "${name}"`)
+    onLog?.(() => `[verbose]   removing "${name}"`)
   }
 
   const removals: Removal[] = filteredNames.map((name) => ({ facetName: name }))

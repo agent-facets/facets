@@ -66,10 +66,10 @@ export class InstallJournal {
       try {
         await entry.undo()
         entriesUndone++
-        opts.onLog?.(`[verbose] undo ${entry.label}`)
+        opts.onLog?.(() => `[verbose] undo ${entry.label}`)
       } catch (err) {
         failures++
-        opts.onLog?.(`[verbose] undo FAILED ${entry.label}: ${err instanceof Error ? err.message : String(err)}`)
+        opts.onLog?.(() => `[verbose] undo FAILED ${entry.label}: ${err instanceof Error ? err.message : String(err)}`)
       }
     }
     return { ok: failures === 0, failures, entriesUndone }

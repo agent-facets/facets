@@ -31,21 +31,6 @@
         }
       ]
     },
-    "foo": {
-      "source": {
-        "kind": "registry",
-        "registry": "https://api.facet.cafe"
-      },
-      "version": "0.0.0",
-      "integrity": "sha256:20771b24e69769d83758b275d8b1807b8f6675cae7fa5034ee40a17a5fca8089",
-      "assets": [
-        {
-          "scope": "project",
-          "type": "skill",
-          "name": "foo"
-        }
-      ]
-    },
     "viper-plans": {
       "source": {
         "kind": "registry",
