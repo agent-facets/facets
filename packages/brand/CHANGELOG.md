@@ -1,5 +1,11 @@
 # @agent-facets/brand
 
+## 0.5.6
+
+### Patch Changes
+
+- [#328](https://github.com/agent-facets/facets/pull/328) [`dc4bbd0`](https://github.com/agent-facets/facets/commit/dc4bbd080474c2bb45f09ab2f013bd5904afc209) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Upgraded bun from 1.3.13 to 1.3.14
+
 ## 0.5.5
 
 ### Patch Changes
