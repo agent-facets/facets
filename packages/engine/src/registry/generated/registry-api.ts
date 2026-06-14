@@ -41,6 +41,126 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v0/facets/{scope{(@|%40)[^}/]+}/{name}/latest-version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the latest version pointer for a scoped facet
+         * @description Returns the current latest version string for a scoped facet. Short-cached.
+         */
+        get: operations["getV0FacetsByScope40ByNameLatestVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/facets/{scope{(@|%40)[^}/]+}/{name}/versions/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the full version list for a scoped facet
+         * @description Returns the complete sorted version list for a scoped facet.
+         */
+        get: operations["getV0FacetsByScope40ByNameVersionsByVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/facets/{scope{(@|%40)[^}/]+}/{name}/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get metadata for a specific version of a scoped facet
+         * @description Returns the version metadata for a scoped facet. The version may be `latest`.
+         */
+        get: operations["getV0FacetsByScope40ByNameByVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/facets/{scope{(@|%40)[^}/]+}/{name}/{version}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download a scoped facet version's tarball
+         * @description 302 redirects to a 5-minute presigned S3 URL.
+         */
+        get: operations["getV0FacetsByScope40ByNameByVersionArchive"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/facets/{scope{(@|%40)[^}/]+}/{name}/{version}/contents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the verified bodies of a scoped facet version's resources
+         * @description Returns the verified body of each skill, agent, and command in the scoped facet version.
+         */
+        get: operations["getV0FacetsByScope40ByNameByVersionContents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/facets/{scope{(@|%40)[^}/]+}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get scope-root detail
+         * @description Returns a live scope by its @-prefixed name, including the structured owner identity and summaries of the facets published under that scope. Missing scopes return 404; pending organization claims are never exposed as live scopes.
+         */
+        get: operations["getV0FacetsByScope40"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v0/facets/{name}/latest-version": {
         parameters: {
             query?: never;
@@ -276,7 +396,7 @@ export interface paths {
         put?: never;
         /**
          * Bootstrap a new registry account (claim first username)
-         * @description For Cognito-authenticated callers who have NOT yet been provisioned in the registry. Creates the USERNAME reservation and the PROFILE row atomically. Returns 409 E_USERNAME_TAKEN if the username is already claimed. Usernames are immutable once set; this route runs exactly once per Cognito sub.
+         * @description For Cognito-authenticated callers who have NOT yet been provisioned in the registry. Creates the USERNAME reservation, the PROFILE row, the COGNITO_SUB reservation, and the user’s `@<username>` scope atomically. Returns 409 E_USERNAME_TAKEN if the username is already claimed, 403 E_NAME_BLOCKED if the name is reserved or blocked. Usernames are immutable once set; this route runs exactly once per Cognito sub.
          */
         post: operations["postV0OnboardingUsername"];
         delete?: never;
@@ -378,13 +498,13 @@ export interface paths {
         };
         /**
          * List all reservation-list entries (admin)
-         * @description Returns every reservation row across both pools, sorted by name. Collection-pool entries ('@'-prefixed) precede global-pool entries because '@' < 'a' in ASCII.
+         * @description Returns every reservation row across both pools, sorted by name. Scope-pool entries ('@'-prefixed) precede global-pool entries because '@' < 'a' in ASCII.
          */
         get: operations["getV0AdminReservationList"];
         put?: never;
         /**
          * Add a reservation (admin)
-         * @description Adds a name to one pool ('collection' or 'global') or to every pool at once ('all'). The 'all' path uses TransactWriteItems for atomicity. Caller passes the BARE component name (without any '@' prefix); the registry prepends the prefix for the collection pool key. Returns 422 if the bare name fails the registry name grammar, 409 if any targeted pool already has the name reserved.
+         * @description Adds a name to one pool ('scope' or 'global') or to every pool at once ('all'). The 'all' path uses TransactWriteItems for atomicity. Caller passes the BARE component name (without any '@' prefix); the registry prepends the prefix for the scope pool key. Returns 422 if the bare name fails the registry name grammar, 409 if any targeted pool already has the name reserved.
          */
         post: operations["postV0AdminReservationList"];
         /**
@@ -406,7 +526,7 @@ export interface paths {
         };
         /**
          * List review queue (admin)
-         * @description Returns QUEUE rows for the requested status bucket across both queue types. Pending rows sort by GSI2SK (tier priority then created_at, oldest higher-tier first). Decided rows sort newest-decision first. The 'cancelled' bucket coalesces superseded + withdrawn rows; the row's own `status` field preserves the distinction. Default bucket is 'pending'. Includes the submitting user’s username and tier for display.
+         * @description Returns QUEUE rows for the requested status bucket. Pending rows sort by GSI2SK (tier priority then created_at, oldest higher-tier first). Decided rows sort newest-decision first. The 'cancelled' bucket coalesces superseded + withdrawn rows; the row's own `status` field preserves the distinction. Default bucket is 'pending'. Includes the submitting user’s username and tier for display.
          */
         get: operations["getV0AdminReviewQueue"];
         put?: never;
@@ -428,7 +548,7 @@ export interface paths {
         put?: never;
         /**
          * Approve or reject a pending queue item (admin)
-         * @description Approval of a collection-claim transitions the QUEUE row to 'approved' AND flips COLLECTION META from 'pending' → 'live' atomically. If a parallel admin approval already won (META is no longer pending), this user's queue row gets 'superseded' status instead. Rejection is a simple status transition.
+         * @description Approval of a global-facet first-publish transitions the QUEUE row to 'approved' AND writes the FACET META + VERSION rows atomically. If a parallel admin approval already won (the facet now exists), this user's queue row gets 'superseded' status instead. Rejection is a simple status transition.
          */
         post: operations["postV0AdminReviewQueueById"];
         delete?: never;
@@ -456,26 +576,6 @@ export interface paths {
          * @description REMOVEs suspended_at, suspended_reason, suspended_by_user_id from the PROFILE row. Does NOT restore Cognito sessions or PATs that were invalidated by the original suspension — the user signs in again or mints new tokens.
          */
         delete: operations["deleteV0AdminUsersByIdSuspension"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v0/collections": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Claim a collection
-         * @description Claim ownership of @<collection>. Requires an interactive (browser/CLI) session — publish tokens cannot claim. Outcomes: (a) 201 fresh claim; (b) 200 idempotent same-user (you already own it); (c) 409 E_COLLECTION_CLAIMED (owned by another user); (d) 409 E_CLAIM_PENDING_ELSEWHERE (another user has a pending review claim for this name); (e) 202 QUEUED_FOR_REVIEW with reason ∈ {'rate-limit', 'reserved'}. Admin tier bypasses the rate-limit gate but goes through reservation review like everyone.
-         */
-        post: operations["postV0Collections"];
-        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -554,7 +654,7 @@ export interface components {
         };
         ApiErrorBody: {
             /** @enum {unknown} */
-            code: "E_ACCOUNT_SUSPENDED" | "E_ADMIN_REQUIRED" | "E_ALREADY_ONBOARDED" | "E_API_KEY_MISSING" | "E_ARCHIVE_DECOMPRESSED_TOO_LARGE" | "E_ARCHIVE_MALFORMED" | "E_CLAIM_ALREADY_PENDING" | "E_CLAIM_PENDING_ELSEWHERE" | "E_COLLECTION_CLAIMED" | "E_COLLECTION_NOT_OWNED" | "E_CONTENT_INTEGRITY_MISMATCH" | "E_DRY_RUN_REQUIRED" | "E_FACET_NOT_FOUND" | "E_INTERACTIVE_SESSION_REQUIRED" | "E_INVALID_NAME" | "E_INVALID_VERSION" | "E_LOGOUT_REQUIRES_JWT" | "E_MANIFEST_CONTENT_MISMATCH" | "E_MIGRATION_ALREADY_COMPLETED" | "E_MIGRATION_DEPENDENCY_UNMET" | "E_MIGRATION_NOT_FOUND" | "E_MIGRATION_RUNNING" | "E_NAME_BLOCKED" | "E_ONBOARDING_REQUIRED" | "E_PREFIX_COLLISION_RETRY_EXHAUSTED" | "E_PROFILE_CORRUPT" | "E_QUEUE_FULL" | "E_QUEUE_ITEM_NOT_FOUND" | "E_QUEUE_ITEM_NOT_PENDING" | "E_REGISTRY_UNAVAILABLE" | "E_RESERVATION_EXISTS" | "E_RESERVATION_NOT_FOUND" | "E_REVIEW_ARTIFACT_MISSING" | "E_RUN_NOT_FOUND" | "E_TARBALL_CORRUPTED" | "E_TARBALL_TOO_LARGE" | "E_TOKEN_EXPIRED" | "E_TOKEN_NOT_FOUND" | "E_TOKEN_REVOKED" | "E_UNAUTHENTICATED" | "E_UNDECLARED_CONTENT" | "E_USERNAME_TAKEN" | "E_USER_NOT_FOUND" | "E_VERSION_EXISTS";
+            code: "E_ACCOUNT_SUSPENDED" | "E_ADMIN_REQUIRED" | "E_ALREADY_ONBOARDED" | "E_API_KEY_MISSING" | "E_ARCHIVE_DECOMPRESSED_TOO_LARGE" | "E_ARCHIVE_MALFORMED" | "E_CLAIM_ALREADY_PENDING" | "E_CLAIM_PENDING_ELSEWHERE" | "E_CONTENT_INTEGRITY_MISMATCH" | "E_DRY_RUN_REQUIRED" | "E_FACET_NOT_FOUND" | "E_FACET_NOT_OWNED" | "E_INTERACTIVE_SESSION_REQUIRED" | "E_INVALID_NAME" | "E_INVALID_VERSION" | "E_LOGOUT_REQUIRES_JWT" | "E_MANIFEST_CONTENT_MISMATCH" | "E_MIGRATION_ALREADY_COMPLETED" | "E_MIGRATION_DEPENDENCY_UNMET" | "E_MIGRATION_NOT_FOUND" | "E_MIGRATION_RUNNING" | "E_NAME_BLOCKED" | "E_ONBOARDING_REQUIRED" | "E_PREFIX_COLLISION_RETRY_EXHAUSTED" | "E_PROFILE_CORRUPT" | "E_QUEUE_FULL" | "E_QUEUE_ITEM_NOT_FOUND" | "E_QUEUE_ITEM_NOT_PENDING" | "E_REGISTRY_UNAVAILABLE" | "E_RESERVATION_EXISTS" | "E_RESERVATION_NOT_FOUND" | "E_REVIEW_ARTIFACT_MISSING" | "E_RUN_NOT_FOUND" | "E_SCOPE_NOT_FOUND" | "E_SCOPE_NOT_OWNED" | "E_TARBALL_CORRUPTED" | "E_TARBALL_TOO_LARGE" | "E_TOKEN_EXPIRED" | "E_TOKEN_NOT_FOUND" | "E_TOKEN_REVOKED" | "E_UNAUTHENTICATED" | "E_UNDECLARED_CONTENT" | "E_USERNAME_TAKEN" | "E_USER_NOT_FOUND" | "E_VERSION_EXISTS";
             docs_url: string;
             error: string;
             fix: string;
@@ -584,6 +684,17 @@ export interface components {
                 [key: string]: string;
             };
             version: string;
+        };
+        OwnerRef: {
+            /** @constant */
+            kind: "user";
+            username: string;
+        };
+        ScopeRootResponse: {
+            created_at: string;
+            facets: components["schemas"]["FacetSummary"][];
+            name: string;
+            owner: components["schemas"]["OwnerRef"];
         };
         PublishResponse: {
             content_hash: string;
@@ -632,6 +743,8 @@ export interface components {
                 kind: "once" | "rerunnable";
                 latest_run?: {
                     actor_username: string;
+                    created: number;
+                    deleted: number;
                     dry_run: boolean;
                     expected: number;
                     failed: number;
@@ -652,6 +765,8 @@ export interface components {
         MigrationRunListResponse: {
             runs: {
                 actor_username: string;
+                created: number;
+                deleted: number;
                 dry_run: boolean;
                 expected: number;
                 failed: number;
@@ -669,6 +784,8 @@ export interface components {
         };
         MigrationRunResponse: {
             actor_username: string;
+            created: number;
+            deleted: number;
             dry_run: boolean;
             expected: number;
             failed: number;
@@ -693,7 +810,7 @@ export interface components {
                 added_by_user_id: string;
                 name: string;
                 /** @enum {unknown} */
-                pool: "collection" | "global";
+                pool: "global" | "scope";
                 reason?: string;
             }[];
         };
@@ -701,8 +818,8 @@ export interface components {
             items: {
                 created_at: string;
                 id: string;
-                /** @enum {unknown} */
-                queue_type: "collection-claim" | "global-facet";
+                /** @constant */
+                queue_type: "global-facet";
                 /** @enum {unknown} */
                 reason: "pending" | "rate-limit" | "reserved";
                 /** @enum {unknown} */
@@ -718,21 +835,12 @@ export interface components {
                 justification?: string;
             }[];
         };
-        ClaimCollectionIdempotent: {
-            /** @constant */
-            already_owned: "true";
-            name: string;
-        };
-        ClaimCollectionSuccess: {
-            name: string;
-            owner: string;
-        };
         ReviewQueueListResponse: {
             items: {
                 created_at: string;
                 id: string;
-                /** @enum {unknown} */
-                queue_type: "collection-claim" | "global-facet";
+                /** @constant */
+                queue_type: "global-facet";
                 /** @enum {unknown} */
                 reason: "pending" | "rate-limit" | "reserved";
                 /** @enum {unknown} */
@@ -793,12 +901,250 @@ export interface operations {
             };
         };
     };
+    getV0FacetsByScope40ByNameLatestVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Scope name with the leading `@` (e.g. `@julian`). */
+                scope: string;
+                /** @description Facet name within the scope (e.g. `cowsay`). */
+                name: string;
+                "scope{(@|%40)[^": string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Latest version pointer */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LatestVersionResponse"];
+                };
+            };
+            /** @description Facet not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    getV0FacetsByScope40ByNameVersionsByVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Scope name with the leading `@` (e.g. `@julian`). */
+                scope: string;
+                /** @description Facet name within the scope (e.g. `cowsay`). */
+                name: string;
+                /** @description Semver version (e.g., `1.2.3`) or the literal `latest`. */
+                version: string;
+                "scope{(@|%40)[^": string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Full version list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionListResponse"];
+                };
+            };
+            /** @description Facet not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    getV0FacetsByScope40ByNameByVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Scope name with the leading `@` (e.g. `@julian`). */
+                scope: string;
+                /** @description Facet name within the scope (e.g. `cowsay`). */
+                name: string;
+                /** @description Semver version (e.g., `1.2.3`) or the literal `latest`. */
+                version: string;
+                "scope{(@|%40)[^": string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Version metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionMetadata"];
+                };
+            };
+            /** @description Not modified (If-None-Match matched the ETag) */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Facet or version not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    getV0FacetsByScope40ByNameByVersionArchive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Scope name with the leading `@` (e.g. `@julian`). */
+                scope: string;
+                /** @description Facet name within the scope (e.g. `cowsay`). */
+                name: string;
+                /** @description Semver version (e.g., `1.2.3`) or the literal `latest`. */
+                version: string;
+                "scope{(@|%40)[^": string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirect to a 5-minute presigned S3 URL */
+            302: {
+                headers: {
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Facet or version not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    getV0FacetsByScope40ByNameByVersionContents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Scope name with the leading `@` (e.g. `@julian`). */
+                scope: string;
+                /** @description Facet name within the scope (e.g. `cowsay`). */
+                name: string;
+                /** @description Semver version (e.g., `1.2.3`) or the literal `latest`. */
+                version: string;
+                "scope{(@|%40)[^": string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Verified resource bodies */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentsResponse"];
+                };
+            };
+            /** @description Not modified (If-None-Match matched the ETag) */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Facet or version not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    getV0FacetsByScope40: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Scope name with the leading `@` (e.g. `@julian`). */
+                scope: string;
+                "scope{(@|%40)[^": string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Scope-root detail with facets */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScopeRootResponse"];
+                };
+            };
+            /** @description Scope not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Invalid scope name */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
     getV0FacetsByNameLatestVersion: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description Canonical facet name. May contain a literal slash for namespaced facets — encode it as `%2F` in URLs (npm-style). */
+                /** @description Canonical facet name. For scoped facets use the literal-slash path (`/@scope/name/...`) instead of encoding the slash. */
                 name: string;
             };
             cookie?: never;
@@ -830,7 +1176,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Canonical facet name. May contain a literal slash for namespaced facets — encode it as `%2F` in URLs (npm-style). */
+                /** @description Canonical facet name. For scoped facets use the literal-slash path (`/@scope/name/...`) instead of encoding the slash. */
                 name: string;
                 /** @description Semver version (e.g., `1.2.3`) or the literal `latest`. */
                 version: string;
@@ -864,7 +1210,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Canonical facet name. May contain a literal slash for namespaced facets — encode it as `%2F` in URLs (npm-style). */
+                /** @description Canonical facet name. For scoped facets use the literal-slash path (`/@scope/name/...`) instead of encoding the slash. */
                 name: string;
                 /** @description Semver version (e.g., `1.2.3`) or the literal `latest`. */
                 version: string;
@@ -905,7 +1251,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Canonical facet name. May contain a literal slash for namespaced facets — encode it as `%2F` in URLs (npm-style). */
+                /** @description Canonical facet name. For scoped facets use the literal-slash path (`/@scope/name/...`) instead of encoding the slash. */
                 name: string;
                 /** @description Semver version (e.g., `1.2.3`) or the literal `latest`. */
                 version: string;
@@ -938,7 +1284,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Canonical facet name. May contain a literal slash for namespaced facets — encode it as `%2F` in URLs (npm-style). */
+                /** @description Canonical facet name. For scoped facets use the literal-slash path (`/@scope/name/...`) instead of encoding the slash. */
                 name: string;
                 /** @description Semver version (e.g., `1.2.3`) or the literal `latest`. */
                 version: string;
@@ -979,7 +1325,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Canonical facet name. May contain a literal slash for namespaced facets — encode it as `%2F` in URLs (npm-style). */
+                /** @description Canonical facet name. For scoped facets use the literal-slash path (`/@scope/name/...`) instead of encoding the slash. */
                 name: string;
             };
             cookie?: never;
@@ -1317,6 +1663,15 @@ export interface operations {
             };
             /** @description Missing or invalid credentials */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description The requested name is reserved or permanently blocked */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1821,89 +2176,6 @@ export interface operations {
             };
             /** @description Target user does not exist */
             404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorBody"];
-                };
-            };
-        };
-    };
-    postV0Collections: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Idempotent — you already own this collection */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ClaimCollectionIdempotent"];
-                };
-            };
-            /** @description Fresh claim accepted */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ClaimCollectionSuccess"];
-                };
-            };
-            /** @description Queued for admin review */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["QueuedForReviewBody"];
-                };
-            };
-            /** @description Missing or invalid credentials */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorBody"];
-                };
-            };
-            /** @description Account suspended, or name is permanently blocked */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorBody"];
-                };
-            };
-            /** @description Already claimed by another user */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorBody"];
-                };
-            };
-            /** @description Invalid name grammar */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorBody"];
-                };
-            };
-            /** @description Per-user pending queue cap reached */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
