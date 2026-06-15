@@ -1,6 +1,21 @@
 {
   "lockfileVersion": 1,
   "facets": {
+    "@julian/review-openspec-design": {
+      "source": {
+        "kind": "registry",
+        "registry": "https://api.facet.cafe"
+      },
+      "version": "1.0.0",
+      "integrity": "sha256:85593c37edc4e1afa60670c55c5d9727669e14aca2fc4388a4a502492ab2ca2b",
+      "assets": [
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "review-openspec-design"
+        }
+      ]
+    },
     "cowsay": {
       "source": {
         "kind": "registry",

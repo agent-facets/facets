@@ -1,6 +1,7 @@
 {
   "facets": {
     "viper-plans": "0.2.0",
-    "cowsay": "0.2.0"
+    "cowsay": "0.2.0",
+    "@julian/review-openspec-design": "1.0.0"
   }
 }
