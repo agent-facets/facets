@@ -1,12 +1,18 @@
 # @agent-facets/protocol
 
+## 0.21.0
+
+### Minor Changes
+
+- [#338](https://github.com/agent-facets/facets/pull/338) [`b663d3c`](https://github.com/agent-facets/facets/commit/b663d3c4b50ec0bb9a288c3b0f0d0382acf69d0c) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Tighten `parseSlug` to 2-64 chars, reject consecutive hyphens, and refresh manifest spec docs to document canonical facet-name grammar
+
 ## 0.20.0
 
 ### Minor Changes
 
 - [#331](https://github.com/agent-facets/facets/pull/331) [`644f53b`](https://github.com/agent-facets/facets/commit/644f53b8757ac5a882e01c7b77cc0e2e753684de) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Add a facet identity grammar to the public API and enforce it in `FacetManifestSchema`.
-    New exports: `parseFacetName`, `parseSlug`, and `validateFacetName`, along with the `FacetName`, `FacetNameResult`, and `SlugResult` types. A facet identity is either an unscoped slug (`cowsay`) or a scoped `@scope/name` (`@julian/cowsay`), where every segment is a lowercase kebab slug. The parsers return discriminated-union results instead of throwing, and `parseSlug` is exported on its own so other facet-spec implementations (e.g. a registry enforcing scope ownership) validate scopes with the exact same grammar.
-    `FacetManifestSchema` now validates the manifest `name` field against this grammar. This tightens the previous `name: string` behavior: malformed facet identities (uppercase, leading/trailing hyphens, traversal segments, extra path depth, missing slash after `@scope`, etc.) now fail at manifest validation instead of deferring failure to build, publish, or install. Asset names remain governed separately by `validateAssetName` — asset names stay local path-safe identifiers while facet identities may carry a registry scope.
+  New exports: `parseFacetName`, `parseSlug`, and `validateFacetName`, along with the `FacetName`, `FacetNameResult`, and `SlugResult` types. A facet identity is either an unscoped slug (`cowsay`) or a scoped `@scope/name` (`@julian/cowsay`), where every segment is a lowercase kebab slug. The parsers return discriminated-union results instead of throwing, and `parseSlug` is exported on its own so other facet-spec implementations (e.g. a registry enforcing scope ownership) validate scopes with the exact same grammar.
+  `FacetManifestSchema` now validates the manifest `name` field against this grammar. This tightens the previous `name: string` behavior: malformed facet identities (uppercase, leading/trailing hyphens, traversal segments, extra path depth, missing slash after `@scope`, etc.) now fail at manifest validation instead of deferring failure to build, publish, or install. Asset names remain governed separately by `validateAssetName` — asset names stay local path-safe identifiers while facet identities may carry a registry scope.
 
 ## 0.19.0
 
