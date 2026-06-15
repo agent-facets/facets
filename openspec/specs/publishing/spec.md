@@ -20,7 +20,7 @@ In a non-interactive context the system SHALL NOT prompt for either drift kind; 
 
 When the system uploads a freshly built artifact through a build offer, it SHALL write the build output to the build-output location, verify the freshly built artifact, and upload that. When the system uploads an existing artifact through a "publish existing" choice, it SHALL upload that artifact unchanged and use its embedded identity for the upload address; if the registry rejects the upload because that identity is already published (immutability), the rejection SHALL be surfaced verbatim to the user as the indication that the source needs a version bump.
 
-The name and version used to address the upload SHALL be read from the verified artifact's embedded build manifest and facet manifest, not from a separate parse of the source-tree facet manifest.
+The name and version used to address the upload SHALL be read from the verified artifact's embedded build manifest and facet manifest, not from a separate parse of the source-tree facet manifest. When that name is scoped, the upload SHALL address the registry using the registry's scoped route shape, with the literal scope marker and facet name as separate path components accepted by the registry API.
 
 #### Scenario: Missing artifact in an interactive terminal — user accepts the build offer
 
@@ -116,6 +116,19 @@ The name and version used to address the upload SHALL be read from the verified 
 - **WHEN** a user publishes any built artifact
 - **THEN** the name and version used to address the upload SHALL come from the artifact's embedded build manifest and facet manifest
 - **AND** the system SHALL NOT separately parse the source-tree facet manifest to determine the upload address
+
+#### Scenario: Scoped upload uses scoped registry address
+
+- **WHEN** a user publishes a verified artifact whose embedded facet name is `@julian/cowsay`
+- **THEN** the system SHALL upload the artifact under the `@julian` scope and `cowsay` name accepted by the registry API
+- **AND** the system SHALL NOT collapse the scoped identity into a single percent-encoded name segment
+
+#### Scenario: Registry rejects scoped upload authorization
+
+- **WHEN** a user publishes a verified artifact whose embedded facet name is `@acme/cowsay`
+- **AND** the registry rejects the upload because the authenticated user is not authorized to publish under `@acme`
+- **THEN** the system SHALL surface the registry's rejection verbatim
+- **AND** the system SHALL NOT replace the registry's scope ownership explanation with CLI-authored text
 
 ### Requirement: Publishing authenticates with a bearer token
 
