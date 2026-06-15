@@ -1,17 +1,57 @@
 {
   "lockfileVersion": 1,
   "facets": {
-    "@julian/review-openspec-design": {
+    "@julian/openspec-adversary": {
       "source": {
         "kind": "registry",
         "registry": "https://api.facet.cafe"
       },
       "version": "1.0.0",
-      "integrity": "sha256:85593c37edc4e1afa60670c55c5d9727669e14aca2fc4388a4a502492ab2ca2b",
+      "integrity": "sha256:8f10c3bbc7bd7fea6cc2d7f1d32f6b30642e8115666ac82be49d2b08bf79930a",
       "assets": [
         {
           "scope": "project",
           "type": "skill",
+          "name": "openspec-adversary-continue"
+        },
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "review-openspec-adversary"
+        },
+        {
+          "scope": "project",
+          "type": "agent",
+          "name": "openspec-adversary"
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "review-adversary"
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "run-adversary"
+        }
+      ]
+    },
+    "@julian/review-openspec-design": {
+      "source": {
+        "kind": "registry",
+        "registry": "https://api.facet.cafe"
+      },
+      "version": "1.1.0",
+      "integrity": "sha256:a413dd26cdedc41f658e1dc8c0d86e02ac2d174bc386e78bd3718732f6c80e89",
+      "assets": [
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "openspec-design-review-rules"
+        },
+        {
+          "scope": "project",
+          "type": "command",
           "name": "review-openspec-design"
         }
       ]
