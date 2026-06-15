@@ -1,32 +1,39 @@
 ---
-title: "Manifest Schema"
-description: "The facet manifest format  -- fields, types, and constraints."
+title: "Facet Manifest – facet.json"
+sidebarTitle: Facet Manifest
+tag: facet.json
+description: "The manifest format schema -- fields, types, and constraints."
 ---
 
 The facet manifest (`facet.json`) is the source of truth for a facet's identity and the text assets it contains. This page defines every field in the manifest schema and is the canonical reference for the facet name grammar.
 
 ## Example
 
-```yaml
-name: acme-dev
-version: 1.0.0
-description: "Acme org developer toolkit"
-author: acme-org
-
-skills: [code-standards, pr-template]
-
-agents:
-  reviewer:
-    description: "Org code reviewer"
-    prompt: { file: agents/reviewer.md }
-    adapters:
-      opencode:
-        tools: { grep: true, bash: true }
-
-commands:
-  review:
-    description: "Run a code review"
-    prompt: { file: commands/review.md }
+```json
+{
+  "name": "acme-dev",
+  "version": "1.0.0",
+  "description": "Acme org developer toolkit",
+  "author": "acme-org",
+  "skills": ["code-standards", "pr-template"],
+  "agents": {
+    "reviewer": {
+      "description": "Org code reviewer",
+      "prompt": { "file": "agents/reviewer.md" },
+      "adapters": {
+        "opencode": {
+          "tools": { "grep": true, "bash": true }
+        }
+      }
+    }
+  },
+  "commands": {
+    "review": {
+      "description": "Run a code review",
+      "prompt": { "file": "commands/review.md" }
+    }
+  }
+}
 ```
 
 ## Identity
