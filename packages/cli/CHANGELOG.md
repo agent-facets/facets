@@ -1,5 +1,16 @@
 # agent-facets
 
+## 0.21.0
+
+### Minor Changes
+
+- [#338](https://github.com/agent-facets/facets/pull/338) [`b663d3c`](https://github.com/agent-facets/facets/commit/b663d3c4b50ec0bb9a288c3b0f0d0382acf69d0c) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Tighten `parseSlug` to 2-64 chars, reject consecutive hyphens, and refresh manifest spec docs to document canonical facet-name grammar
+
+### Patch Changes
+
+- [#334](https://github.com/agent-facets/facets/pull/334) [`c44c321`](https://github.com/agent-facets/facets/commit/c44c321c168ee05d827dc33284fb6d5fed650d77) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Route scoped facet publish, resolve, and download through two-segment `{scope}/{name}` registry paths to avoid `%2F`-encoding rejection
+- [#335](https://github.com/agent-facets/facets/pull/335) [`2861755`](https://github.com/agent-facets/facets/commit/28617556e84f5edd82dec1d4b1d7127e526c64fd) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Fix `writeBuildOutput` to create parent directories for scoped (`@scope/name`) and slash-containing archive paths, and accept scoped facet names in create/edit views
+
 ## 0.19.0
 
 ### Minor Changes
