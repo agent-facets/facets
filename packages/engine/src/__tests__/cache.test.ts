@@ -198,6 +198,28 @@ describe('cachePut', () => {
     expect(cacheSlotIsDir(b)).toBe(true)
   })
 
+  // Slash-containing identities (scoped `@scope/name` and namespaced
+  // `acme/name`) render as nested slot paths under the cache root. cachePut
+  // must create the slot's parent directory before the rename, or the
+  // rename fails with ENOENT. Goes through cachePut (not seedSlot, which
+  // mkdir -p's the full path and would mask the defect).
+  test.each([
+    ['scoped', '@julian/cowsay'],
+    ['namespaced unscoped', 'acme/cowsay'],
+  ])('populates a %s slot whose identity contains a slash', (_label, name) => {
+    const id: CacheIdentity = { kind: 'registry', name, version: '1.0.0' }
+    const staging = cacheStagingDir()
+    writeFileSync(join(staging, 'facet.json'), `{"name":"${name}","version":"1.0.0"}`)
+    const result = cachePut(id, staging)
+    expect(result.ok).toBe(true)
+    if (!result.ok) expect.unreachable()
+    expect(result.path).toBe(cachePath(id))
+    expect(existsSync(staging)).toBe(false)
+    expect(cacheSlotIsDir(id)).toBe(true)
+    expect(cacheGet(id).hit).toBe(true)
+    expect(existsSync(join(result.path, 'facet.json'))).toBe(true)
+  })
+
   test('local-source slots disambiguate by absolute path', () => {
     const a: CacheIdentity = { kind: 'local', name: 'p', absolutePath: '/path/a' }
     const b: CacheIdentity = { kind: 'local', name: 'p', absolutePath: '/path/b' }

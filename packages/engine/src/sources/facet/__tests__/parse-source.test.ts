@@ -33,6 +33,23 @@ describe('parseSource — registry forms', () => {
       'acme/cowsay@latest',
       { kind: 'registry', name: 'acme/cowsay', version: { kind: 'latest' } },
     ],
+    ['scoped bare name', '@julian/cowsay', { kind: 'registry', name: '@julian/cowsay', version: { kind: 'latest' } }],
+    [
+      'scoped name@latest',
+      '@julian/cowsay@latest',
+      { kind: 'registry', name: '@julian/cowsay', version: { kind: 'latest' } },
+    ],
+    [
+      'scoped name@exact',
+      '@julian/cowsay@1.2.3',
+      { kind: 'registry', name: '@julian/cowsay', version: { kind: 'exact', major: 1, minor: 2, patch: 3 } },
+    ],
+    [
+      'scoped name@major.*',
+      '@julian/cowsay@1.*',
+      { kind: 'registry', name: '@julian/cowsay', version: { kind: 'majorWildcard', major: 1 } },
+    ],
+    ['scoped name@*', '@julian/cowsay@*', { kind: 'registry', name: '@julian/cowsay', version: { kind: 'wildcard' } }],
   ]
   test.each(cases)('parses %s as registry source', (_label, input, expected) => {
     const result = parseSource(input)
@@ -268,5 +285,25 @@ describe('parseSource — rejected forms', () => {
     const result = parseSource('cowsay/')
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error.code).toBe('INVALID_REGISTRY_NAME')
+  })
+
+  // Malformed scoped registry names (installation/spec.md). The leading `@`
+  // marks a scope; these forms are not valid `@scope/name[@version]`.
+  test.each([
+    '@scope', // missing slash + name
+    '@scope/', // empty name
+    '@/cowsay', // empty scope
+    '@julian/cow/say', // extra path depth
+    '@julian/cowsay@', // empty version after the trailing @
+  ])('malformed scoped registry name %p is rejected', (input) => {
+    const result = parseSource(input)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.code).toBe('INVALID_REGISTRY_NAME')
+  })
+
+  test('unsupported range on a scoped name is rejected with the version error', () => {
+    const result = parseSource('@julian/cowsay@^1.0.0')
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.code).toBe('CARET_RANGE')
   })
 })

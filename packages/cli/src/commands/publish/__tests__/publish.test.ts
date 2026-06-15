@@ -511,18 +511,17 @@ describe('publishCommand — registry interaction (preserved scenarios)', () => 
     expect(stdout).toContain('an admin will review your submission shortly')
   })
 
-  test('scoped facet: URL-encodes the scoped identity', async () => {
+  test('scoped facet: uploads via the two-segment scoped route (no %2F)', async () => {
     // The facet identity grammar (FacetManifestSchema) accepts an unscoped
     // slug (`cowsay`) or a scoped `@scope/name` (`@acme/cowsay`); the legacy
     // bare-slash form (`acme/cowsay`) is no longer a valid manifest name.
     //
-    // TODO(scoped-routes): the registry has moved to literal-slash scoped
-    // routes (`/v0/facets/@scope/name/...`), but the engine registry client
-    // still hits the single-`{name}` route and lets openapi-fetch percent-
-    // encode the whole identity (`@acme/cowsay` → `%40acme%2Fcowsay`). The
-    // scoped-route migration (publish/resolve/download) is tracked separately;
-    // this assertion documents the *current* client behavior and is expected
-    // to flip to the literal-slash form when that lands.
+    // The publish client routes scoped names through the registry's
+    // two-segment scoped route (`/v0/facets/{scope}/{name}/versions`) so the
+    // scope `/` stays a literal path separator. The scope marker is its own
+    // segment (`%40acme`) and the name is a separate segment (`cowsay`); the
+    // slash between them is NOT percent-encoded to `%2F` (which the registry
+    // rejects with E_INVALID_NAME).
     await buildFacetFixture(projectRoot, {
       name: '@acme/cowsay',
       version: '0.1.0',
@@ -541,7 +540,8 @@ describe('publishCommand — registry interaction (preserved scenarios)', () => 
     expect(spy.calls).toHaveLength(1)
     const call = spy.calls[0]
     if (call === undefined) expect.unreachable()
-    expect(call.url).toBe('https://api.test/v0/facets/%40acme%2Fcowsay/versions')
+    expect(call.url).toBe('https://api.test/v0/facets/%40acme/cowsay/versions')
+    expect(call.url).not.toContain('%2F')
   })
 
   test('413 (tarball too large): renders the registry error verbatim', async () => {
