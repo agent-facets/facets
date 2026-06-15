@@ -753,6 +753,72 @@ describe('writeBuildOutput', () => {
     expect(looseText).toBe(embeddedEntry.text)
   })
 
+  test('writes a scoped facet to a nested dist/ path, creating parent dirs', async () => {
+    const dir = await createFixtureDir('scoped-output')
+    await Bun.write(join(dir, 'skills/cowsay/SKILL.md'), '# Cowsay')
+    await Bun.write(
+      join(dir, 'facet.json'),
+      JSON.stringify({
+        name: '@julian/cowsay',
+        version: '1.0.0',
+        skills: { cowsay: { description: 'Cowsay tools' } },
+      }),
+    )
+
+    const result = await runBuildPipeline(dir)
+    expect(result.ok).toBe(true)
+    if (!result.ok) expect.unreachable()
+    // Without the parent-dir mkdir this rejects with ENOENT.
+    await writeBuildOutput(result, dir)
+
+    // The archive lands at the nested scoped path.
+    const archivePath = join(dir, 'dist/@julian/cowsay-1.0.0.facet')
+    expect(await Bun.file(archivePath).exists()).toBe(true)
+
+    // The archive's embedded facet.json keeps the scoped identity; the inner
+    // asset paths are still derived from asset names, not the facet identity.
+    const outerBytes = await Bun.file(archivePath).arrayBuffer()
+    const outerEntries = parseTar(outerBytes)
+    const innerEntry = outerEntries.find((e) => e.name === 'archive.tar.gz')
+    if (!innerEntry?.data) throw new Error('archive.tar.gz not found in outer tar')
+    const innerFiles = await parseTarGzip(innerEntry.data)
+    const facetJsonEntry = innerFiles.find((f) => f.name === 'facet.json')
+    if (!facetJsonEntry) throw new Error('facet.json not found in inner archive')
+    expect(JSON.parse(facetJsonEntry.text).name).toBe('@julian/cowsay')
+    expect(innerFiles.map((f) => f.name).sort()).toEqual(['facet.json', 'skills/cowsay/SKILL.md'])
+  })
+
+  test('writeBuildOutput creates parent dirs for a slash-containing archive filename', async () => {
+    // The build-output parent-dir fix is the load-bearing repair. A bare
+    // slash-containing manifest name (`acme/cowsay`) no longer passes
+    // FacetManifestSchema, so it can't reach here through runBuildPipeline —
+    // but the write boundary itself must still create parent dirs for ANY
+    // slash-containing archive filename (scoped names, plus defense-in-depth
+    // for the pre-existing nested-path bug). We exercise the boundary
+    // directly with a synthesized BuildResult.
+    const dir = await createFixtureDir('slash-write-boundary')
+    const realResult = await (async () => {
+      await Bun.write(join(dir, 'skills/cowsay/SKILL.md'), '# Cowsay')
+      await Bun.write(
+        join(dir, 'facet.json'),
+        JSON.stringify({
+          name: '@acme/cowsay',
+          version: '1.0.0',
+          skills: { cowsay: { description: 'Cowsay tools' } },
+        }),
+      )
+      const r = await runBuildPipeline(dir)
+      if (!r.ok) expect.unreachable()
+      return r
+    })()
+    // Re-point the archive filename at a bare slash-namespaced path to prove
+    // the write boundary creates parents regardless of how the name renders.
+    const slashResult = { ...realResult, archiveFilename: 'acme/cowsay-1.0.0.facet' }
+    await writeBuildOutput(slashResult, dir)
+
+    expect(await Bun.file(join(dir, 'dist/acme/cowsay-1.0.0.facet')).exists()).toBe(true)
+  })
+
   test('cleans previous dist/ before writing', async () => {
     const dir = await createFixtureDir('clean-dist')
     await Bun.write(join(dir, 'skills/x/SKILL.md'), '# Skill')

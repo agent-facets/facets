@@ -311,6 +311,38 @@ describe('publishCommand — content drift', () => {
     if (call === undefined) expect.unreachable()
     expect(call.body).toEqual(originalBytes)
   })
+
+  test('scoped facet, non-TTY content drift: warns and uploads via the scoped route', async () => {
+    // Exercises the scoped build-output fix (nested dist/ path), name-agnostic
+    // drift detection, and the scoped upload route together.
+    await buildFacetFixture(projectRoot, {
+      name: '@acme/cowsay',
+      version: '0.1.0',
+      description: 'old description',
+      commands: { cowsay: '# cowsay\n' },
+    })
+    const manifest = JSON.parse(readFileSync(join(projectRoot, 'facet.json'), 'utf8')) as { description: string }
+    manifest.description = 'new description'
+    writeFileSync(join(projectRoot, 'facet.json'), JSON.stringify(manifest, null, 2))
+    const spy = createFetchSpy(
+      () => new Response(JSON.stringify(fixtures.publishResponse({ name: '@acme/cowsay' })), { status: 201 }),
+    )
+    globalThis.fetch = spy.fetch
+    const distPath = buildArtifactPath(projectRoot, '@acme/cowsay', '0.1.0')
+    const originalBytes = new Uint8Array(await Bun.file(distPath).bytes())
+
+    const { result, stderr } = await withTTY(false, () => captureStderr(() => publishCommand.run([], {})))
+
+    expect(result).toBe(0)
+    expect(stderr).toContain('out of date')
+    expect(spy.calls).toHaveLength(1)
+    const call = spy.calls[0]
+    if (call === undefined) expect.unreachable()
+    // Drifted-but-existing artifact uploaded unchanged, via the scoped route.
+    expect(call.body).toEqual(originalBytes)
+    expect(call.url).toBe('https://api.test/v0/facets/%40acme/cowsay/versions')
+    expect(call.url).not.toContain('%2F')
+  })
 })
 
 describe('publishCommand — identity drift', () => {

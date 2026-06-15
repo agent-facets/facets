@@ -2,11 +2,35 @@ import { describe, expect, test } from 'bun:test'
 import { mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { isValidKebabCase } from '@agent-facets/engine'
 import type { FacetManifest } from '@agent-facets/protocol'
 import { writeManifest } from '../edit/manifest-writer.ts'
 import { reconcile } from '../edit/reconcile.ts'
 import type { DiscoveredAsset } from '../edit/scanner.ts'
 import { scanAssets } from '../edit/scanner.ts'
+
+// --- Asset-name grammar (diverges from facet identity grammar) ---
+
+describe('isValidKebabCase — asset-name grammar', () => {
+  test.each(['cowsay', 'code-review', 'viper-plans', 'x1', 'a'])('accepts kebab asset name %p', (name) => {
+    expect(isValidKebabCase(name)).toBe(true)
+  })
+
+  // Asset names stay local kebab identifiers and are NOT scoped facet
+  // identities: the scope marker `@` and the scope separator `/` are both
+  // rejected, along with uppercase, underscores, and spaces.
+  test.each([
+    '@scope',
+    '@scope/name',
+    'acme/cowsay',
+    'Cowsay',
+    'cow_say',
+    'cow say',
+    'cow/say',
+  ])('rejects non-kebab asset name %p (e.g. @ and /)', (name) => {
+    expect(isValidKebabCase(name)).toBe(false)
+  })
+})
 
 async function createFixtureDir(name: string): Promise<string> {
   const dir = join(tmpdir(), `facets-edit-test-${name}-${Date.now()}`)

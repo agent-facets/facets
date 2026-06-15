@@ -1,4 +1,5 @@
 import { DEFAULT_VERSION, isValidKebabCase } from '@agent-facets/engine'
+import { parseFacetName, validateFacetName } from '@agent-facets/protocol'
 import { Box, Text } from 'ink'
 import { useCallback, useEffect } from 'react'
 import type { AssetType } from '../../../commands/create/types'
@@ -45,9 +46,12 @@ export function CreateView({
   const { form } = useFormState()
   const { setFocusIds, focus, focusedId } = useFocusOrder()
 
-  const validateKebab = useCallback((v: string) => {
+  // Facet identity: an unscoped slug (`my-facet`) or a scoped `@scope/name`
+  // (`@acme/my-facet`). Asset names (below) stay kebab-case only.
+  const validateName = useCallback((v: string) => {
     if (!v) return undefined
-    if (!isValidKebabCase(v)) return 'Must be kebab-case (e.g., my-facet)'
+    const result = validateFacetName(v)
+    if (!result.ok) return 'Must be a facet name (e.g., my-facet or @scope/name)'
     return undefined
   }, [])
 
@@ -67,6 +71,17 @@ export function CreateView({
 
   const totalAssets = form.assets.skill.items.length + form.assets.command.items.length + form.assets.agent.items.length
   const canCreate = assetsReady && totalAssets > 0
+
+  // The first asset of each type defaults its name to the facet's unscoped
+  // base segment (`@acme/cowsay` → `cowsay`), so the suggestion is always a
+  // valid kebab asset name. Falls back to the raw value while the name is
+  // still being typed / invalid.
+  const defaultAssetName = (() => {
+    const raw = form.fields.name.value
+    if (!raw) return undefined
+    const parsed = parseFacetName(raw)
+    return parsed.ok ? parsed.value.name : raw
+  })()
 
   // Recompute focus order
   useEffect(() => {
@@ -91,8 +106,8 @@ export function CreateView({
         field="name"
         label="Name"
         placeholder="my-facet"
-        hint="kebab-case"
-        validate={validateKebab}
+        hint="name or @scope/name"
+        validate={validateName}
         onConfirm={() => focus('field-description')}
       />
 
@@ -119,7 +134,7 @@ export function CreateView({
           <AssetSection
             section={type}
             label={ASSET_LABELS[type]}
-            defaultName={form.assets[type].items.length === 0 ? form.fields.name.value : undefined}
+            defaultName={form.assets[type].items.length === 0 ? defaultAssetName : undefined}
             dimmed={!assetsReady}
             onEditDescription={onEditDescription}
             validate={(v) => {

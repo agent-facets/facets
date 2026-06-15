@@ -150,7 +150,7 @@ The scaffolded project SHALL be immediately buildable — running the build comm
 
 The system SHALL compile a facet project into a build output directory. The build command SHALL read the manifest, validate it, verify that every declared asset file exists, is non-empty, and contains no YAML front matter, resolve all file-based prompts to their content, run all validation checks, assemble the resolved output into a deterministic compressed archive, compute content hashes, and write the archive and build manifest to a `dist/` directory. The build command SHALL NOT modify the manifest or any content files. The build command SHALL NOT be interactive — it SHALL behave identically in all environments.
 
-The build output SHALL contain a compressed archive (`.facet` file) with the manifest and all text asset files with prompts resolved to their final string content, and a build manifest (`build-manifest.json`) recording content hashes. For a slash-containing facet identity, including a scoped identity, the system SHALL create any required parent directories under `dist/` before writing the built archive.
+The build output SHALL contain a compressed archive (`.facet` file) with the manifest and all text asset files with prompts resolved to their final string content, and a build manifest (`build-manifest.json`) recording content hashes. For a scoped facet identity, whose name renders as a nested path under `dist/`, the system SHALL create any required parent directories under `dist/` before writing the built archive. The build-output write boundary SHALL create parent directories for any slash-containing archive path, so the same fix also repairs the pre-existing failure for any nested archive filename.
 
 The build command SHALL render its progress as a step-by-step display, showing each pipeline stage as it completes — including the archive assembly stage. On success, the system SHALL display the archive contents listing and the archive content hash. On failure, the system SHALL indicate which stage failed and display errors with their field paths, and SHALL suggest running the editing command to fix the issues. After the display exits, the system SHALL print a brief plain-text summary to stdout — including the content hash — so it persists in terminal scroll-back.
 
@@ -170,10 +170,11 @@ The build command SHALL render its progress as a step-by-step display, showing e
 - **AND** the archive SHALL contain `facet.json` at the archive root with `name` set to `@julian/cowsay`
 - **AND** the archive's internal asset paths SHALL continue to be derived from asset names, not from the facet identity
 
-#### Scenario: Successful build of a slash-containing unscoped facet identity
+#### Scenario: Build-output write boundary creates parent directories for a nested archive path
 
-- **WHEN** the author runs the build command for a valid facet whose name is `acme/cowsay`
-- **THEN** the system SHALL write the built archive under `dist/` without failing on the slash in the identity
+- **WHEN** the build-output write boundary writes an archive whose filename renders as a nested path under `dist/` (for example a scoped `@scope/name` identity, or any other slash-containing archive filename)
+- **THEN** the system SHALL create the required parent directories under `dist/` before writing the archive
+- **AND** the write SHALL NOT fail with a missing-directory error
 
 #### Scenario: Build fails on invalid manifest
 

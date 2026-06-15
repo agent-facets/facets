@@ -1,4 +1,5 @@
 import { DEFAULT_VERSION, isValidKebabCase } from '@agent-facets/engine'
+import { validateFacetName } from '@agent-facets/protocol'
 import { Box, Text } from 'ink'
 import { useCallback, useEffect } from 'react'
 import { AssetSection } from '../../components/asset-section.tsx'
@@ -43,9 +44,15 @@ export function EditView({
   const { form } = useFormState()
   const { setFocusIds, focus, focusedId } = useFocusOrder()
 
-  const validateKebab = useCallback((v: string) => {
+  // Facet identity: an unscoped slug or a scoped `@scope/name`. Changing the
+  // name from one scope to another is a normal local edit — there is no
+  // special scope-change warning (cross-scope movement is a registry
+  // authorization concern, surfaced downstream). Asset names (below) stay
+  // kebab-case only.
+  const validateName = useCallback((v: string) => {
     if (!v) return undefined
-    if (!isValidKebabCase(v)) return 'Must be kebab-case (e.g., my-facet)'
+    const result = validateFacetName(v)
+    if (!result.ok) return 'Must be a facet name (e.g., my-facet or @scope/name)'
     return undefined
   }, [])
 
@@ -78,8 +85,8 @@ export function EditView({
           field="name"
           label="Name"
           placeholder="my-facet"
-          hint="kebab-case"
-          validate={validateKebab}
+          hint="name or @scope/name"
+          validate={validateName}
           onConfirm={() => focus('field-description')}
         />
 
