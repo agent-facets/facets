@@ -132,6 +132,11 @@ describe('FacetManifestSchema — invalid manifests', () => {
     '../cowsay', // traversal
     'cow_say', // underscore (unscoped)
     'cow say', // space
+    'a', // single character
+    'abc--def', // consecutive hyphens
+    'scope/name', // legacy scoped syntax without at-prefix
+    'gооgle', // Cyrillic homoglyphs
+    'a'.repeat(65), // exceeds maximum length
   ])('malformed facet identity %p is rejected', (name) => {
     const input = { name, version: '1.0.0', skills: { x: { description: 'A skill' } } }
     const result = FacetManifestSchema(input)

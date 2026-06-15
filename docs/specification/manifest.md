@@ -3,8 +3,7 @@ title: "Manifest Schema"
 description: "The facet manifest format  -- fields, types, and constraints."
 ---
 
-The facet manifest (`facet.json`) is the source of truth for what a facet contains, what other facets it composes text
-from, and which MCP servers it references. This page defines every field in the manifest schema.
+The facet manifest (`facet.json`) is the source of truth for a facet's identity and the text assets it contains. This page defines every field in the manifest schema and is the canonical reference for the facet name grammar.
 
 ## Example
 
@@ -28,30 +27,7 @@ commands:
   review:
     description: "Run a code review"
     prompt: { file: commands/review.md }
-
-facets:
-  - "code-review-base@1.0.0"
-  - name: typescript-patterns
-    version: "2.1.0"
-    skills: [ts-conventions, any-usage]
-
-servers:
-  jira: "1.0.0"
-  github: "2.3.0"
-  "@acme/deploy": "0.5.0"
-  slack:
-    image: "ghcr.io/acme/slack-bot:v2"
 ```
-
-<Note>
-**Closed-alpha note.** The `facets:` and `servers:` sections are spec'd here for the open-beta target, but the current installer treats them differently:
-
-- A non-empty `facets:` (composition) is **hard-rejected** during install. Composition support is open-beta scope.
-- A `servers:` declaration is **warned** during install  -- the server names are surfaced to the user but not materialized. Server materialization is also open-beta scope.
-
-Authoring a facet with either section today produces a manifest the installer will refuse (composition) or partially handle (servers). Plan accordingly.
-</Note>
-
 
 ## Identity
 
@@ -62,9 +38,37 @@ Authoring a facet with either section today produces a manifest the installer wi
 | `description` | No       | string | Human-readable description.   |
 | `author`      | No       | string | Author name or identifier.    |
 
-The `name` and `version` fields MUST be present. A manifest missing either field MUST be rejected. The `name` MUST be a valid facet identity: an unscoped name, or a scoped `@scope/name`, where each segment is a lowercase kebab-case slug (starts with a lowercase letter; lowercase letters, digits, and hyphens after; ends with a letter or digit). Asset names (skills, agents, commands) are validated independently as local kebab-case identifiers and are never scoped.
+The `name` and `version` fields MUST be present. A manifest missing either field MUST be rejected. The `name` MUST be a valid facet identity: an unscoped name (`<slug>`) or a scoped name (`@<scope>/<slug>`). Asset names (skills, agents, commands) are validated independently as local kebab-case identifiers and are never scoped.
 
 Consumers MUST tolerate unrecognized top-level fields. Unknown fields MUST be ignored  -- not rejected.
+
+### Facet Name Grammar
+
+A facet identity is one of exactly two forms:
+
+- **Unscoped:** a single slug, e.g. `cowsay`.
+- **Scoped:** `@<scope>/<slug>`, where both the scope and the base name are slugs, e.g. `@julian/cowsay`.
+
+Every slug component (the unscoped name, a scope, and a scoped base name) MUST satisfy the same grammar:
+
+- It MUST be at least 2 and at most 64 characters long.
+- It MUST start with a lowercase ASCII letter (`a`-`z`).
+- It MUST end with a lowercase ASCII letter or ASCII digit.
+- It MUST contain only lowercase ASCII letters, ASCII digits, and hyphens (`-`).
+- It MUST NOT contain consecutive hyphens.
+
+Names are validated, never normalized. Uppercase letters, non-ASCII characters, underscores, dots, spaces, and other characters outside the grammar are rejected rather than rewritten.
+
+| Valid          | Invalid             | Why invalid                          |
+| -------------- | ------------------- | ------------------------------------ |
+| `ab`           | `a`                 | shorter than 2 characters            |
+| `cowsay`       | `Cowsay`            | uppercase letters                    |
+| `admin-tester` | `1abc`              | does not start with a letter         |
+| `apple-b34r`   | `abc-`              | ends with a hyphen                   |
+| `@julian/cowsay` | `abc--def`        | consecutive hyphens                  |
+| `@acme/deploy-tools` | `abc_def`       | underscore is not allowed            |
+
+The following scoped shapes are rejected: a bare scope (`@scope`), a missing scope (`@/name`), a missing name (`@scope/`), extra path depth (`@scope/name/extra`), and the legacy un-prefixed form (`scope/name`).
 
 ## Text Assets
 
@@ -76,7 +80,7 @@ Text assets are the locally authored content included in the facet.
 | `agents`   | No       | map of string → agent descriptor  | Agent name → agent descriptor (description, prompt, adapter config).         |
 | `commands` | No       | map of string → command descriptor| Command name → command descriptor (description, prompt).                     |
 
-A facet MUST have at least one text asset  -- either locally authored or composed from other facets via the `facets` section. A manifest with no text assets MUST be rejected.
+A facet MUST have at least one locally authored text asset. A manifest with no text assets MUST be rejected.
 
 ### Agent Descriptor
 
@@ -101,99 +105,10 @@ The `adapters` section is OPTIONAL. It contains adapter-specific configuration (
 
 The `prompt` field follows the same rules as the agent descriptor's `prompt`.
 
-## Composed Facets
-
-The `facets` section declares text composed from other published facets. Each entry is either a compact string or a selective object.
-
-### Compact Form
-
-Takes all text assets from the referenced facet:
-
-```yaml
-facets:
-  - "code-review-base@1.0.0"
-```
-
-Format: `"name@version"`. For scoped names: `"@scope/name@version"`.
-
-### Selective Form
-
-Cherry-picks specific assets from the referenced facet:
-
-```yaml
-facets:
-  - name: typescript-patterns
-    version: "2.1.0"
-    skills: [ts-conventions, any-usage]
-    agents: [baseline-reviewer]
-    commands: [lint-check]
-```
-
-| Field      | Required | Type             | Description                          |
-| ---------- | -------- | ---------------- | ------------------------------------ |
-| `name`     | Yes      | string           | Source facet name.                    |
-| `version`  | Yes      | string           | Exact version to compose from.       |
-| `skills`   | No       | array of strings | Skill names to include.              |
-| `agents`   | No       | array of strings | Agent names to include.              |
-| `commands` | No       | array of strings | Command names to include.            |
-
-A selective entry MUST include at least one asset type (`skills`, `agents`, or `commands`). A selective entry with none MUST be rejected.
-
-### Composition Semantics
-
-Text composition is resolved before the facet archive reaches the registry. The `facets` section serves dual purpose:
-
-1. **Composition directive**  -- instructs the build/publish process which text assets to include from other facets.
-2. **Attribution record**  -- documents exactly where composed content came from.
-
-The manifest itself is never modified by composition. The build process reads it, resolves composition sources, and packages the composed files alongside local files into the facet archive.
-
-Composed text uses **exact version pins** (e.g., `"name@1.0.0"`). The composed text is frozen at that version in the archive.
-
-### Naming Constraints
-
-Composed asset names MUST NOT collide with locally authored asset names. If a composed facet includes a skill named `code-review` and the local facet also declares a skill named `code-review`, this is a naming collision. Collisions MUST be detected at build time and MUST be an error.
-
-## Server References
-
-The `servers` section declares MCP server references. MCP servers are a separate artifact type from facets (see [MCP Server Assets](/specification/servers)). The `servers` section declares which servers this facet needs. There are two forms depending on the server's execution mode.
-
-### Source-Mode
-
-A string value declares a floor version constraint:
-
-```yaml
-servers:
-  jira: "1.0.0"
-  "@acme/deploy": "0.5.0"
-```
-
-The floor version is the minimum acceptable version. At install time, the CLI resolves the reference to the latest version at or above the floor (see [Install & Resolve](/specification/install)).
-
-### Ref-Mode
-
-An object value with an `image` field declares an OCI image reference:
-
-```yaml
-servers:
-  slack:
-    image: "ghcr.io/acme/slack-bot:v2"
-```
-
-The image reference follows standard OCI conventions: `:` for tags, `@` for digests. At install time, the CLI resolves tags to digests and pins the digest in the lockfile.
-
-### Server Reference Summary
-
-| Key         | Value type | Mode        | Description                                                                |
-| ----------- | ---------- | ----------- | -------------------------------------------------------------------------- |
-| server name | string     | Source-mode | Floor version  -- minimum acceptable version (e.g., `"1.0.0"`).             |
-| server name | object     | Ref-mode    | Object with `image` field containing an OCI image reference.               |
-
 ## Schema Constraints
 
-1. A facet MUST have at least one text asset (locally authored or composed).
-2. Selective `facets` entries MUST include at least one asset type.
-3. Composed asset names MUST NOT collide with locally authored asset names.
-4. The `@` character is used for both scoping (`@scope/name`) and version pinning (`name@version`). Scoped and versioned: `@scope/name@version`.
-5. Consumers MUST tolerate unrecognized fields. Unknown fields MUST be ignored.
-6. The manifest MUST NOT be modified by any tooling  -- it is immutable.
+1. The `name` MUST be a valid facet identity (see [Facet Name Grammar](#facet-name-grammar)), and the `version` MUST be a semver string.
+2. A facet MUST have at least one locally authored text asset.
+3. The `@` character marks a scope (`@scope/name`) and also separates a name from a version when a facet is referenced elsewhere (`name@version`, `@scope/name@version`).
+4. Consumers MUST tolerate unrecognized fields. Unknown fields MUST be ignored.
+5. The manifest MUST NOT be modified by any tooling  -- it is immutable.
