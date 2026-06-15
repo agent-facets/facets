@@ -59,8 +59,8 @@ Only one level of cascade is permitted: `<category>` plus `<category>__<sibling>
 
 #### Scenario: Parent category and sibling targets form a cascade
 
-- **WHEN** a parent concept carries genuinely-shared rules across multiple target variants (e.g., `publishing` holds shared identity, tokens, ownership, and provenance rules; `publishing__collections` holds rules specific to collection-scoped facets; `publishing__global_facets` holds rules specific to global facets)
-- **THEN** a parent spec MAY be created at `openspec/specs/publishing/spec.md` alongside sibling specs at `openspec/specs/publishing__collections/spec.md` and `openspec/specs/publishing__global_facets/spec.md`
+- **WHEN** a parent concept carries genuinely-shared rules across multiple target variants (e.g., `publishing` holds shared identity, tokens, ownership, and provenance rules; `publishing__scoped_facets` holds rules specific to scoped facets; `publishing__global_facets` holds rules specific to global facets)
+- **THEN** a parent spec MAY be created at `openspec/specs/publishing/spec.md` alongside sibling specs at `openspec/specs/publishing__scoped_facets/spec.md` and `openspec/specs/publishing__global_facets/spec.md`
 - **AND** the parent spec SHALL hold the shared requirements
 - **AND** each sibling spec SHALL hold only its target-specific requirements
 - **AND** sibling specs SHALL NOT restate any requirement already present in the parent
@@ -80,7 +80,7 @@ Only one level of cascade is permitted: `<category>` plus `<category>__<sibling>
 
 #### Scenario: Multi-level nesting is not permitted
 
-- **WHEN** an author proposes a spec name with more than one `__` separator (e.g., `publishing__collections__facets`)
+- **WHEN** an author proposes a spec name with more than one `__` separator (e.g., `publishing__scoped_facets__variants`)
 - **THEN** the proposal SHALL be rejected
 - **AND** the author SHALL restructure into a single level of cascade or express the additional distinction as a requirement within a single sibling spec
 

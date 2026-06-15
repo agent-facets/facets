@@ -57,7 +57,7 @@ Build your facet before publishing. If you have not built yet, or if your source
 facet build
 ```
 
-See [`facet build`](/cli/authoring/build) for details on the 6-stage pipeline. The build writes `dist/<name>-<version>.facet`.
+See [`facet build`](/cli/authoring/build) for details on the 6-stage pipeline. The build writes `dist/<name>-<version>.facet` (a scoped name renders as a nested path, e.g. `dist/@acme/cowsay-1.0.0.facet`).
 
 ## Publish
 

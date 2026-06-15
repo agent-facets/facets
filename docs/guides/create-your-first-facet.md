@@ -17,10 +17,10 @@ facet create my-facet
 
 The [`facet create`](/cli/authoring/create) wizard walks you through four prompts:
 
-1. **Name** -- kebab-case identifier for the facet (e.g., `my-facet`).
+1. **Name** -- the facet identity: an unscoped name (`my-facet`) or a scoped name (`@scope/name`, e.g. `@acme/my-facet`). Each segment is kebab-case.
 2. **Description** -- a brief summary of what the facet does.
 3. **Version** -- defaults to `0.0.0`.
-4. **Assets** -- add skills, agents, and commands by name. At least one asset is required.
+4. **Assets** -- add skills, agents, and commands by name. Asset names are always plain kebab-case  -- never scoped, even when the facet identity is. At least one asset is required.
 
 After confirming, the wizard writes the project files.
 </Step>
@@ -188,6 +188,8 @@ On success, the build writes to `dist/`:
 dist/
 └── my-facet-0.0.0.facet
 ```
+
+A scoped facet identity renders as a nested path: `@acme/my-facet` at `0.0.0` is written to `dist/@acme/my-facet-0.0.0.facet`.
 
 The `.facet` file is the single distributable artifact. Use `--emit-manifest` to also write a loose `build-manifest.json` to `dist/` for debugging:
 

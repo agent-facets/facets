@@ -57,12 +57,12 @@ Authoring a facet with either section today produces a manifest the installer wi
 
 | Field         | Required | Type   | Description                   |
 | ------------- | -------- | ------ | ----------------------------- |
-| `name`        | Yes      | string | Facet name. MUST be non-empty.|
+| `name`        | Yes      | string | Facet identity. An unscoped name (`cowsay`) or a scoped name (`@scope/name`). See [Schema Constraints](#schema-constraints). |
 | `version`     | Yes      | string | Semver version string.        |
 | `description` | No       | string | Human-readable description.   |
 | `author`      | No       | string | Author name or identifier.    |
 
-The `name` and `version` fields MUST be present. A manifest missing either field MUST be rejected.
+The `name` and `version` fields MUST be present. A manifest missing either field MUST be rejected. The `name` MUST be a valid facet identity: an unscoped name, or a scoped `@scope/name`, where each segment is a lowercase kebab-case slug (starts with a lowercase letter; lowercase letters, digits, and hyphens after; ends with a letter or digit). Asset names (skills, agents, commands) are validated independently as local kebab-case identifiers and are never scoped.
 
 Consumers MUST tolerate unrecognized top-level fields. Unknown fields MUST be ignored  -- not rejected.
 
