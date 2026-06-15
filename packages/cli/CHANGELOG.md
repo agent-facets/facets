@@ -1,5 +1,11 @@
 # agent-facets
 
+## 0.21.1
+
+### Patch Changes
+
+- [#342](https://github.com/agent-facets/facets/pull/342) [`3314057`](https://github.com/agent-facets/facets/commit/3314057512906a0494240086dcfcd55cc07ee1c9) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Add in registry URL to `facet whoami`
+
 ## 0.21.0
 
 ### Minor Changes
