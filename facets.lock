@@ -6,9 +6,14 @@
         "kind": "registry",
         "registry": "https://api.facet.cafe"
       },
-      "version": "1.0.0",
-      "integrity": "sha256:8f10c3bbc7bd7fea6cc2d7f1d32f6b30642e8115666ac82be49d2b08bf79930a",
+      "version": "2.0.0",
+      "integrity": "sha256:a2345cd23eee7b0e07b166bbb8a49d129025587d8e89ca235d4b94a3121532e8",
       "assets": [
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "openspec-adversary-compare"
+        },
         {
           "scope": "project",
           "type": "skill",
@@ -21,8 +26,8 @@
         },
         {
           "scope": "project",
-          "type": "agent",
-          "name": "openspec-adversary"
+          "type": "command",
+          "name": "compare-adversary"
         },
         {
           "scope": "project",
