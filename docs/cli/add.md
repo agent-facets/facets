@@ -44,6 +44,7 @@ The manifest, lockfile, and receipt are **never written ahead** of success. On f
 | Registry name with version        | `viper-plans@1.2.3`                              | Exact pin.                                             |
 | Registry name with `@latest`      | `viper-plans@latest`                             | Re-resolves to the newest published version; `latest` is preserved verbatim in `facets.json` (the entry floats). Only a bare name pins. |
 | Registry name with wildcard       | `viper-plans@*`, `1.*`, `1.2.*`                  | Wildcard preserved in `facets.json`; resolved exact version goes in the lockfile. |
+| Scoped registry name              | `@scope/name`, `@scope/name@1.2.3`, `@scope/name@latest`, `@scope/name@1.*` | A scoped facet (`@scope/name`). The leading `@` marks the scope; a trailing `@` separates the version (so `@scope/name@1.2.3` pins `@scope/name` to `1.2.3`). Versioning and pinning rules are identical to unscoped names. |
 | GitHub shorthand                  | `github:owner/repo`, `github:owner/repo#main`    | Optional `#ref` (branch, tag, SHA).                    |
 | HTTPS git URL                     | `https://github.com/owner/repo.git#v1.0.0`       | Must end in `.git`.                                    |
 | SCP-style git URL                 | `git@github.com:owner/repo.git#main`             | Standard `user@host:path` SSH form.                    |
@@ -72,6 +73,10 @@ facet add viper-plans@1.2.3
 # Major-pinned wildcard  -- wildcard preserved, lockfile records the
 # specific resolved version.
 facet add viper-plans@1.*
+
+# Scoped facet  -- the leading @ is the scope; an optional trailing
+# @version pins it (e.g. @acme/deploy-tools@1.2.3).
+facet add @acme/deploy-tools
 
 # GitHub shorthand with a ref.
 facet add github:agent-facets/viper-plans#main
