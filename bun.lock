@@ -163,7 +163,7 @@
     },
     "packages/protocol": {
       "name": "@agent-facets/protocol",
-      "version": "0.19.0",
+      "version": "0.20.0",
       "dependencies": {
         "arktype": "2.2.0",
         "comment-json": "^5.0.0",
