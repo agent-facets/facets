@@ -4,7 +4,20 @@ import { parseFacetName, parseSlug, validateFacetName } from '@agent-facets/prot
 // --- parseSlug: the atomic identity grammar ---
 
 describe('parseSlug — valid slugs', () => {
-  test.each(['a', 'cowsay', 'viper-plans', 'code-review', 'x1', 'a-b-c', 'web3', 'foo--bar'])('accepts %p', (value) => {
+  test.each([
+    'ab',
+    'cowsay',
+    'julian',
+    'admin-tester',
+    'apple-b34r',
+    'f-o-s-s-o',
+    'viper-plans',
+    'code-review',
+    'x1',
+    'a-b-c',
+    'web3',
+    'a'.repeat(64), // maximum length
+  ])('accepts %p', (value) => {
     const result = parseSlug(value)
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
@@ -15,18 +28,35 @@ describe('parseSlug — valid slugs', () => {
 describe('parseSlug — invalid slugs', () => {
   test.each([
     '', // empty
+    'a', // single character
+    'z', // single character
+    'A', // single uppercase character
     'Cowsay', // uppercase
     'COWSAY',
     'cow_say', // underscore
+    'abc_def', // underscore
+    '1abc', // leading digit
     '1cow', // leading digit
+    '-abc', // leading hyphen
     '-cow', // leading hyphen
+    'abc-', // trailing hyphen
     'cow-', // trailing hyphen
+    'abc--def', // consecutive hyphens
+    'foo--bar', // consecutive hyphens
+    'abc def', // space
     'cow say', // space
     '@cow', // at-sign
     'cow/say', // slash
+    'abc.def', // dot
     'cow.say', // dot
+    'a+b', // plus sign
+    'a~b', // tilde
+    'a😀b', // emoji
     '..',
     'café', // non-ascii
+    'éclair', // non-ascii
+    'gооgle', // Cyrillic homoglyphs
+    'a'.repeat(65), // exceeds maximum length
   ])('rejects %p', (value) => {
     const result = parseSlug(value)
     expect(result.ok).toBe(false)
@@ -36,7 +66,7 @@ describe('parseSlug — invalid slugs', () => {
 // --- parseFacetName: unscoped + scoped composition ---
 
 describe('parseFacetName — valid unscoped identities', () => {
-  test.each(['cowsay', 'viper-plans', 'a', 'code-review'])('accepts %p as unscoped', (value) => {
+  test.each(['cowsay', 'viper-plans', 'ab', 'code-review'])('accepts %p as unscoped', (value) => {
     const result = parseFacetName(value)
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
@@ -51,7 +81,7 @@ describe('parseFacetName — valid scoped identities', () => {
   test.each([
     ['@julian/cowsay', 'julian', 'cowsay'],
     ['@acme/deploy-tools', 'acme', 'deploy-tools'],
-    ['@a/b', 'a', 'b'],
+    ['@ab/cd', 'ab', 'cd'],
   ])('accepts %p', (value, scope, name) => {
     const result = parseFacetName(value)
     expect(result.ok).toBe(true)
@@ -67,14 +97,21 @@ describe('parseFacetName — invalid scoped identities', () => {
   // Cases drawn from protocol__schemas/spec.md scenario "rejects a malformed
   // facet identity" plus the design.md risk list.
   test.each([
+    '@scope', // missing slash
     '@julian', // missing slash
-    '@julian/', // empty name
+    '@/name', // empty scope
     '@/cowsay', // empty scope
+    '@scope/', // empty name
+    '@julian/', // empty name
+    '@scope/name/extra', // extra path depth
     '@julian/cow/say', // extra path depth
     '@julian/cow_say', // underscore in name
     '@Julian/cowsay', // uppercase scope
     '@julian/Cowsay', // uppercase name
     '@julian/cow-', // trailing hyphen in name
+    '@julian/co--w', // consecutive hyphens in name
+    '@a/cowsay', // single-character scope
+    '@julian/a', // single-character name
     '@julian/cowsay@', // trailing at-sign (not a valid name segment)
   ])('rejects %p', (value) => {
     const result = parseFacetName(value)
@@ -85,9 +122,12 @@ describe('parseFacetName — invalid scoped identities', () => {
 describe('parseFacetName — invalid unscoped / legacy-ish identities', () => {
   test.each([
     '', // empty
+    'a', // single character
     'Cowsay', // uppercase
     'cow_say', // underscore
+    'co--wsay', // consecutive hyphens
     '../cowsay', // traversal
+    'scope/name', // legacy scoped syntax without at-prefix
     'cow/say', // bare slash (not scoped)
     'cow say', // space
     'cow-', // trailing hyphen

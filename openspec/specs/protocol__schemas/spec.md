@@ -6,9 +6,11 @@ Defines the published, normative schemas for the artifacts a facet-compatible sy
 
 ### Requirement: A facet manifest schema is published as part of the protocol
 
-The shape of a facet manifest (`facet.json`) SHALL be published as a normative schema. Any system that produces a facet manifest SHALL produce one conforming to the published schema. Any system that consumes a facet manifest SHALL validate it against the published schema before treating any value as trusted. The schema SHALL define the required fields, the permitted shapes for skills/agents/commands, the optional `facets` and `servers` sections, the accepted facet identity grammar, and the rules for unrecognized fields.
+The shape of a facet manifest (`facet.json`) SHALL be published as a normative schema. Any system that produces a facet manifest SHALL produce one conforming to the published schema. Any system that consumes a facet manifest SHALL validate it against the published schema before treating any value as trusted. The schema SHALL define the required fields, the permitted shapes for skills/agents/commands, the accepted facet identity grammar, and the rules for unrecognized fields.
 
-A facet identity name SHALL be either an unscoped kebab-case name (`name`) or a scoped name (`@scope/name`). In a scoped name, both `scope` and `name` SHALL use lowercase kebab-case segments that start with a lowercase letter, contain only lowercase letters, digits, and hyphens after the first character, and end with a lowercase letter or digit. A facet manifest whose `name` is malformed SHALL be rejected as invalid. Asset names SHALL remain independently validated as local asset identifiers and SHALL NOT become scoped names.
+A facet identity name SHALL be either an unscoped name (`<slug>`) or a scoped name (`@<scope>/<slug>`). Each `slug` and `scope` component SHALL satisfy the same component grammar: it MUST be at least 2 characters and at most 64 characters, MUST start with a lowercase ASCII letter, MUST end with a lowercase ASCII letter or ASCII digit, MUST contain only lowercase ASCII letters, ASCII digits, and hyphens, and MUST NOT contain consecutive hyphens. Uppercase letters, non-ASCII characters, underscores, dots, spaces, plus signs, tildes, emoji, and any other character outside the component grammar SHALL be rejected rather than normalized. A facet manifest whose `name` is malformed SHALL be rejected as invalid. Asset names SHALL remain independently validated as local asset identifiers and SHALL NOT become scoped names.
+
+The facet manifest schema SHALL NOT document unsupported composition or server-reference fields as part of the current user-facing manifest contract. Current user-facing manifest documentation SHALL describe only supported manifest behavior and SHALL use the manifest specification page as the canonical place for facet-name grammar.
 
 #### Scenario: A producer emits a manifest conforming to the published schema
 
@@ -16,15 +18,28 @@ A facet identity name SHALL be either an unscoped kebab-case name (`name`) or a 
 - **THEN** the produced manifest SHALL satisfy every requirement of the published schema
 - **AND** another facet-compatible system SHALL accept the manifest after validating it
 
-#### Scenario: A consumer accepts a scoped facet identity
+#### Scenario: A consumer accepts valid unscoped facet identities
+
+- **WHEN** a system receives a `facet.json` whose `name` is `ab`, `cowsay`, `julian`, `admin-tester`, `apple-b34r`, or `f-o-s-s-o`
+- **THEN** the system SHALL accept the facet identity as valid
+- **AND** the accepted identity SHALL remain the facet's canonical name without normalization
+
+#### Scenario: A consumer accepts a valid scoped facet identity
 
 - **WHEN** a system receives a `facet.json` whose `name` is `@julian/cowsay`
 - **THEN** the system SHALL accept the facet identity as valid
+- **AND** both scoped identity components SHALL satisfy the same component grammar as unscoped facet names
 - **AND** the scoped identity SHALL remain the facet's canonical name
 
-#### Scenario: A consumer rejects a malformed facet identity
+#### Scenario: A consumer rejects invalid slug components
 
-- **WHEN** a system receives a `facet.json` whose `name` is `@julian`, `@/cowsay`, `@julian/`, `@julian/cow/say`, `@julian/cow_say`, `Cowsay`, or `../cowsay`
+- **WHEN** a system receives a `facet.json` whose `name` is empty, `a`, `z`, `A`, `Cowsay`, `1abc`, `-abc`, `abc-`, `abc--def`, `abc_def`, `abc.def`, `abc def`, `éclair`, `gооgle` with Cyrillic homoglyphs, or any component longer than 64 characters
+- **THEN** the system SHALL reject the manifest as invalid
+- **AND** the system SHALL surface a structured error indicating that the facet identity is malformed
+
+#### Scenario: A consumer rejects malformed scoped facet identities
+
+- **WHEN** a system receives a `facet.json` whose `name` is `@scope`, `@/name`, `@scope/`, `@scope/name/extra`, or `scope/name`
 - **THEN** the system SHALL reject the manifest as invalid
 - **AND** the system SHALL surface a structured error indicating that the facet identity is malformed
 

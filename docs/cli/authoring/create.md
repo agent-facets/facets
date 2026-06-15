@@ -15,7 +15,7 @@ If a `facet.json` already exists in the target directory, the command prompts fo
 
 ## Wizard flow
 
-1. **Name**  -- the facet identity. Either an unscoped name (`my-facet`) or a scoped name (`@scope/name`, e.g. `@acme/my-facet`). Each segment is kebab-case (a lowercase letter, then lowercase letters, digits, or hyphens).
+1. **Name**  -- the facet identity. Either an unscoped name (`my-facet`) or a scoped name (`@scope/name`, e.g. `@acme/my-facet`). See the [Manifest Schema](/specification/manifest#facet-name-grammar) for the full name grammar.
 2. **Description**  -- a brief description of the facet.
 3. **Version**  -- defaults to `0.0.0`.
 4. **Assets**  -- add skills, agents, and commands by name. Asset names are always plain kebab-case local identifiers (`code-review`)  -- they are never scoped, even when the facet identity is. The first asset of each type defaults its name to the facet's unscoped name segment (`@acme/cowsay` suggests `cowsay`). At least one asset is required. Each asset shows its description below the name  -- press Enter to edit the name, or press ↓ during name editing to edit the description in your terminal editor.
