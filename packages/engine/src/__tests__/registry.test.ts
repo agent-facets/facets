@@ -100,6 +100,24 @@ describe('resolveRegistryMetadataBatch', () => {
     expect(calledUrls[0]).toBe('https://api.test/v0/facets/acme%2Fcowsay/latest')
   })
 
+  test('scoped names use the two-segment scoped route with an unencoded slash', async () => {
+    const calledUrls: string[] = []
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      calledUrls.push(captureUrl(input))
+      return new Response(JSON.stringify(fixtures.versionMetadata({ name: '@julian/cowsay', version: '1.2.3' })), {
+        status: 200,
+      })
+    }) as unknown as typeof fetch
+    await resolveRegistryMetadataBatch([
+      { name: '@julian/cowsay', version: { kind: 'exact', major: 1, minor: 2, patch: 3 } },
+    ])
+    // Scope and name are independent path segments: the scope marker is a
+    // single segment (`%40julian`) and the slash between scope and name is a
+    // real path separator — never collapsed into `%2F`.
+    expect(calledUrls[0]).toBe('https://api.test/v0/facets/%40julian/cowsay/1.2.3')
+    expect(calledUrls[0]).not.toContain('%2F')
+  })
+
   test('404 maps to NOT_FOUND with the spec verbatim', async () => {
     globalThis.fetch = (async () =>
       new Response(JSON.stringify(fixtures.apiError({ error: 'gone', docs_url: 'x' })), {
@@ -249,6 +267,24 @@ describe('downloadAndExtractFacet', () => {
     expect(urls[1]).toBe(S3_URL)
     expect(readFileSync(join(dest, 'facet.json'), 'utf8')).toContain('cowsay')
     expect(readFileSync(join(dest, 'commands/cowsay.md'), 'utf8')).toContain('# cowsay')
+  })
+
+  test('scoped name uses the two-segment scoped archive route (no %2F)', async () => {
+    const facetJson = JSON.stringify(
+      { name: '@julian/cowsay', version: '0.1.0', commands: { cowsay: { description: 'Say moo' } } },
+      null,
+      2,
+    )
+    const { bytes, integrity } = buildArchive([
+      { path: 'facet.json', content: facetJson },
+      { path: 'commands/cowsay.md', content: '# cowsay\n' },
+    ])
+    const { urls } = stubArchiveDownload(new Response(bytes, { status: 200 }))
+    const result = await downloadAndExtractFacet({ ...META, name: '@julian/cowsay', transportHash: integrity }, dest)
+    expect(result.ok).toBe(true)
+    expect(urls[0]).toBe('https://api.test/v0/facets/%40julian/cowsay/0.1.0/archive')
+    expect(urls[0]).not.toContain('%2F')
+    expect(urls[1]).toBe(S3_URL)
   })
 
   test('sha256 mismatch: returns NETWORK_ERROR with hash detail and writes nothing', async () => {

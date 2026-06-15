@@ -41,7 +41,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v0/facets/{scope{(@|%40)[^}/]+}/{name}/latest-version": {
+    "/v0/facets/{scope}/{name}/latest-version": {
         parameters: {
             query?: never;
             header?: never;
@@ -52,7 +52,7 @@ export interface paths {
          * Get the latest version pointer for a scoped facet
          * @description Returns the current latest version string for a scoped facet. Short-cached.
          */
-        get: operations["getV0FacetsByScope40ByNameLatestVersion"];
+        get: operations["getV0FacetsByScopeByNameLatestVersion"];
         put?: never;
         post?: never;
         delete?: never;
@@ -61,7 +61,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v0/facets/{scope{(@|%40)[^}/]+}/{name}/versions/{version}": {
+    "/v0/facets/{scope}/{name}/versions/{version}": {
         parameters: {
             query?: never;
             header?: never;
@@ -72,7 +72,7 @@ export interface paths {
          * Get the full version list for a scoped facet
          * @description Returns the complete sorted version list for a scoped facet.
          */
-        get: operations["getV0FacetsByScope40ByNameVersionsByVersion"];
+        get: operations["getV0FacetsByScopeByNameVersionsByVersion"];
         put?: never;
         post?: never;
         delete?: never;
@@ -81,7 +81,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v0/facets/{scope{(@|%40)[^}/]+}/{name}/{version}": {
+    "/v0/facets/{scope}/{name}/{version}": {
         parameters: {
             query?: never;
             header?: never;
@@ -92,7 +92,7 @@ export interface paths {
          * Get metadata for a specific version of a scoped facet
          * @description Returns the version metadata for a scoped facet. The version may be `latest`.
          */
-        get: operations["getV0FacetsByScope40ByNameByVersion"];
+        get: operations["getV0FacetsByScopeByNameByVersion"];
         put?: never;
         post?: never;
         delete?: never;
@@ -101,7 +101,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v0/facets/{scope{(@|%40)[^}/]+}/{name}/{version}/archive": {
+    "/v0/facets/{scope}/{name}/{version}/archive": {
         parameters: {
             query?: never;
             header?: never;
@@ -112,7 +112,7 @@ export interface paths {
          * Download a scoped facet version's tarball
          * @description 302 redirects to a 5-minute presigned S3 URL.
          */
-        get: operations["getV0FacetsByScope40ByNameByVersionArchive"];
+        get: operations["getV0FacetsByScopeByNameByVersionArchive"];
         put?: never;
         post?: never;
         delete?: never;
@@ -121,7 +121,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v0/facets/{scope{(@|%40)[^}/]+}/{name}/{version}/contents": {
+    "/v0/facets/{scope}/{name}/{version}/contents": {
         parameters: {
             query?: never;
             header?: never;
@@ -132,7 +132,7 @@ export interface paths {
          * Get the verified bodies of a scoped facet version's resources
          * @description Returns the verified body of each skill, agent, and command in the scoped facet version.
          */
-        get: operations["getV0FacetsByScope40ByNameByVersionContents"];
+        get: operations["getV0FacetsByScopeByNameByVersionContents"];
         put?: never;
         post?: never;
         delete?: never;
@@ -141,7 +141,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v0/facets/{scope{(@|%40)[^}/]+}": {
+    "/v0/facets/{scope}": {
         parameters: {
             query?: never;
             header?: never;
@@ -152,7 +152,7 @@ export interface paths {
          * Get scope-root detail
          * @description Returns a live scope by its @-prefixed name, including the structured owner identity and summaries of the facets published under that scope. Missing scopes return 404; pending organization claims are never exposed as live scopes.
          */
-        get: operations["getV0FacetsByScope40"];
+        get: operations["getV0FacetsByScope"];
         put?: never;
         post?: never;
         delete?: never;
@@ -255,6 +255,26 @@ export interface paths {
         get: operations["getV0FacetsByNameByVersionContents"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/facets/{scope}/{name}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish a new version of a scoped facet
+         * @description POST a gzipped tarball with `facet.json` at its root to `/@scope/name/versions`. The scope/facet separator MUST be a literal slash; `%2F` is rejected with `E_INVALID_NAME`. The caller MUST own the scope. The reconstructed `@scope/name` MUST equal the manifest `name`. Body is capped at 5 MB.
+         */
+        post: operations["postV0FacetsByScopeByNameVersions"];
         delete?: never;
         options?: never;
         head?: never;
@@ -901,7 +921,7 @@ export interface operations {
             };
         };
     };
-    getV0FacetsByScope40ByNameLatestVersion: {
+    getV0FacetsByScopeByNameLatestVersion: {
         parameters: {
             query?: never;
             header?: never;
@@ -910,7 +930,6 @@ export interface operations {
                 scope: string;
                 /** @description Facet name within the scope (e.g. `cowsay`). */
                 name: string;
-                "scope{(@|%40)[^": string;
             };
             cookie?: never;
         };
@@ -936,7 +955,7 @@ export interface operations {
             };
         };
     };
-    getV0FacetsByScope40ByNameVersionsByVersion: {
+    getV0FacetsByScopeByNameVersionsByVersion: {
         parameters: {
             query?: never;
             header?: never;
@@ -947,7 +966,6 @@ export interface operations {
                 name: string;
                 /** @description Semver version (e.g., `1.2.3`) or the literal `latest`. */
                 version: string;
-                "scope{(@|%40)[^": string;
             };
             cookie?: never;
         };
@@ -973,7 +991,7 @@ export interface operations {
             };
         };
     };
-    getV0FacetsByScope40ByNameByVersion: {
+    getV0FacetsByScopeByNameByVersion: {
         parameters: {
             query?: never;
             header?: never;
@@ -984,7 +1002,6 @@ export interface operations {
                 name: string;
                 /** @description Semver version (e.g., `1.2.3`) or the literal `latest`. */
                 version: string;
-                "scope{(@|%40)[^": string;
             };
             cookie?: never;
         };
@@ -1017,7 +1034,7 @@ export interface operations {
             };
         };
     };
-    getV0FacetsByScope40ByNameByVersionArchive: {
+    getV0FacetsByScopeByNameByVersionArchive: {
         parameters: {
             query?: never;
             header?: never;
@@ -1028,7 +1045,6 @@ export interface operations {
                 name: string;
                 /** @description Semver version (e.g., `1.2.3`) or the literal `latest`. */
                 version: string;
-                "scope{(@|%40)[^": string;
             };
             cookie?: never;
         };
@@ -1053,7 +1069,7 @@ export interface operations {
             };
         };
     };
-    getV0FacetsByScope40ByNameByVersionContents: {
+    getV0FacetsByScopeByNameByVersionContents: {
         parameters: {
             query?: never;
             header?: never;
@@ -1064,7 +1080,6 @@ export interface operations {
                 name: string;
                 /** @description Semver version (e.g., `1.2.3`) or the literal `latest`. */
                 version: string;
-                "scope{(@|%40)[^": string;
             };
             cookie?: never;
         };
@@ -1097,14 +1112,13 @@ export interface operations {
             };
         };
     };
-    getV0FacetsByScope40: {
+    getV0FacetsByScope: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 /** @description Scope name with the leading `@` (e.g. `@julian`). */
                 scope: string;
-                "scope{(@|%40)[^": string;
             };
             cookie?: never;
         };
@@ -1311,6 +1325,98 @@ export interface operations {
             };
             /** @description Facet or version not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    postV0FacetsByScopeByNameVersions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Scope name with the leading `@` (e.g. `@julian`). */
+                scope: string;
+                /** @description Facet name within the scope (e.g. `cowsay`). */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/gzip": string;
+            };
+        };
+        responses: {
+            /** @description Version published */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublishResponse"];
+                };
+            };
+            /** @description Queued for admin review (first-publish of a reserved or over-budget global facet) */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueuedForReviewBody"];
+                };
+            };
+            /** @description Missing or invalid credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Account suspended, name blocked, or caller does not own the publishing target */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Duplicate version, or another user has a pending claim for this name */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Tarball exceeds 5 MB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Tarball corrupt, manifest invalid, name grammar bad, or non-semver version */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Per-user pending queue cap reached */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

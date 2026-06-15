@@ -7,6 +7,7 @@ import { createRegistryClient, translateWireError } from './client.ts'
 import { resolveCredential } from './credentials.ts'
 import type { paths } from './generated/registry-api.ts'
 import { uncappedGunzip } from './gunzip.ts'
+import { facetNameToRoute } from './http.ts'
 import type { RegistryMetadata, RegistryResult } from './types.ts'
 
 /**
@@ -178,13 +179,22 @@ export async function resolveArchiveUrl(
   // body stream is consumed in the process), so we capture it here and
   // render it below rather than re-reading `response.json()`.
   let wireError: unknown
+  // Scoped names use the two-segment scoped archive route so the scope `/`
+  // is never collapsed into `%2F` (which the registry rejects).
+  const route = facetNameToRoute(meta.name)
   try {
-    const result = await client.GET('/v0/facets/{name}/{version}/archive', {
-      params: { path: { name: meta.name, version: meta.version } },
-      // Do not follow the redirect inside the typed client; we want to
-      // read the presigned S3 URL off the `Location` header ourselves.
-      redirect: 'manual',
-    })
+    const result =
+      route.kind === 'scoped'
+        ? await client.GET('/v0/facets/{scope}/{name}/{version}/archive', {
+            params: { path: { scope: route.scope, name: route.name, version: meta.version } },
+            redirect: 'manual',
+          })
+        : await client.GET('/v0/facets/{name}/{version}/archive', {
+            params: { path: { name: route.name, version: meta.version } },
+            // Do not follow the redirect inside the typed client; we want to
+            // read the presigned S3 URL off the `Location` header ourselves.
+            redirect: 'manual',
+          })
     response = result.response
     wireError = result.error
   } catch (err) {

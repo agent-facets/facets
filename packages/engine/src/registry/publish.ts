@@ -17,7 +17,7 @@
 import type { Client } from 'openapi-fetch'
 import { translateThrownError, translateWireError } from './client.ts'
 import type { paths } from './generated/registry-api.ts'
-import { encodeFacetName } from './http.ts'
+import { encodeFacetName, facetNameToRoute } from './http.ts'
 import type { RegistryResult } from './types.ts'
 import type { WirePublishResponse, WireQueuedForReviewBody } from './wire.ts'
 
@@ -72,24 +72,36 @@ export async function publishFacetVersion(
   args: PublishArgs,
 ): Promise<RegistryResult<PublishResult>> {
   try {
-    const result = await client.POST('/v0/facets/{name}/versions', {
-      params: { path: { name: args.name } },
-      headers: {
-        'content-type': 'application/gzip',
-      },
-      // Cast the Uint8Array through unknown to satisfy the generated
-      // `string` body type. The bodySerializer below ensures the
-      // runtime body is the raw bytes — without it, openapi-fetch's
-      // default serializer would `JSON.stringify` the Uint8Array,
-      // corrupting the upload.
-      //
-      // The `bodySerializer` return type is `any` per openapi-fetch,
-      // so we cast back to `unknown as Uint8Array` and let the runtime
-      // `fetch` accept it (Bun and undici both accept Uint8Array as
-      // a body init).
-      body: args.tarball as unknown as string,
-      bodySerializer: (body) => body as unknown as Uint8Array,
-    })
+    // Scoped names publish through the two-segment scoped route so the
+    // scope `/` stays a literal path separator (the registry rejects a
+    // `%2F`-collapsed name with E_INVALID_NAME). The body plumbing is
+    // identical for both routes.
+    const route = facetNameToRoute(args.name)
+    const headers = { 'content-type': 'application/gzip' } as const
+    // Cast the Uint8Array through unknown to satisfy the generated
+    // `string` body type. The bodySerializer below ensures the runtime
+    // body is the raw bytes — without it, openapi-fetch's default
+    // serializer would `JSON.stringify` the Uint8Array, corrupting the
+    // upload. The `bodySerializer` return type is `any` per openapi-fetch,
+    // so we cast back to `unknown as Uint8Array` and let the runtime
+    // `fetch` accept it (Bun and undici both accept Uint8Array as a body
+    // init).
+    const body = args.tarball as unknown as string
+    const bodySerializer = (b: unknown) => b as unknown as Uint8Array
+    const result =
+      route.kind === 'scoped'
+        ? await client.POST('/v0/facets/{scope}/{name}/versions', {
+            params: { path: { scope: route.scope, name: route.name } },
+            headers,
+            body,
+            bodySerializer,
+          })
+        : await client.POST('/v0/facets/{name}/versions', {
+            params: { path: { name: route.name } },
+            headers,
+            body,
+            bodySerializer,
+          })
 
     const runtimeError = result.error as unknown
     if (runtimeError !== undefined) {
