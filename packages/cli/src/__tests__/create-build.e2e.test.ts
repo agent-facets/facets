@@ -150,6 +150,35 @@ describe('writeScaffold', () => {
     expect(manifest.version).toBe('0.0.0')
   })
 
+  test('scaffolds a scoped facet and builds it to a nested dist/ path', async () => {
+    const dir = await createFixtureDir('scaffold-scoped')
+    const files = await writeScaffold(
+      {
+        name: '@julian/cowsay',
+        version: DEFAULT_VERSION,
+        description: 'Cowsay tools',
+        // The default first-asset name suggestion is the unscoped segment
+        // (`cowsay`), so a scoped scaffold uses a plain kebab asset name.
+        skills: ['cowsay'],
+        agents: [],
+        commands: [],
+      },
+      dir,
+    )
+
+    // The manifest carries the scoped identity verbatim; the asset path is
+    // derived from the (unscoped) asset name.
+    expect(files).toContain('skills/cowsay/SKILL.md')
+    const manifest = JSON.parse(await Bun.file(join(dir, 'facet.json')).text())
+    expect(manifest.name).toBe('@julian/cowsay')
+
+    // The scoped project builds, and the archive lands at the nested path.
+    const result = await runCli('build', dir)
+    expect(result.exitCode).toBe(0)
+    const distArchive = await Bun.file(join(dir, `dist/@julian/cowsay-${DEFAULT_VERSION}.facet`)).exists()
+    expect(distArchive).toBe(true)
+  })
+
   test('scaffolded project passes build', async () => {
     const dir = await createFixtureDir('scaffold-buildable')
     await writeScaffold(
