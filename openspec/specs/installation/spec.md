@@ -100,7 +100,7 @@ The system SHALL accept lockfiles containing fields not defined in the current s
 
 ### Requirement: Adding a facet installs it
 
-When a user adds a facet to a project, the system SHALL fetch its content, verify its integrity, materialize its assets into every selected adapter, and update the lockfile in a single operation. A user SHALL NOT need to run a separate install step after adding.
+When a user adds a facet to a project, the system SHALL fetch its content, verify its integrity, materialize its assets into every selected adapter, and update the lockfile in a single operation. A user SHALL NOT need to run a separate install step after adding. Registry-sourced facets SHALL support unscoped names and scoped names.
 
 #### Scenario: Adding a registry facet installs it
 
@@ -111,6 +111,12 @@ When a user adds a facet to a project, the system SHALL fetch its content, verif
 - **AND** the system SHALL materialize the facet's assets into every selected adapter
 - **AND** the system SHALL update the lockfile to record the resolved version, integrity hash, and asset list
 - **AND** the operation SHALL complete in a single command invocation
+
+#### Scenario: Adding a scoped registry facet installs it
+
+- **WHEN** a user adds `@julian/cowsay` to a project that has at least one selected adapter
+- **THEN** the system SHALL treat `@julian/cowsay` as a registry facet source
+- **AND** the system SHALL fetch, verify, materialize, and lock the scoped facet in a single command invocation
 
 #### Scenario: Adding a git facet installs it
 
@@ -217,7 +223,7 @@ When a user specifies a version, the system SHALL accept only one of five forms:
 
 When a user adds a registry facet without specifying a version, the system SHALL resolve the latest published version and SHALL record a version specifier in the project manifest. The system SHALL NOT record the facet name in the version position. A bare name and the literal tag `@latest` SHALL be equivalent and SHALL produce identical results. The user SHALL NOT need to specify a version explicitly to get reproducible builds.
 
-When no manifest entry for the facet exists, or the existing entry's value is not a valid version specifier, the system SHALL record the resolved exact version (`name@MAJOR.MINOR.PATCH`). When a manifest entry already exists and its value is a valid version specifier, the system SHALL preserve that value unchanged, so that a re-add without a version does not overwrite a version the user previously chose.
+When no manifest entry for the facet exists, or the existing entry's value is not a valid version specifier, the system SHALL record the resolved exact version (`name@MAJOR.MINOR.PATCH` for unscoped names, `@scope/name@MAJOR.MINOR.PATCH` for scoped names). When a manifest entry already exists and its value is a valid version specifier, the system SHALL preserve that value unchanged, so that a re-add without a version does not overwrite a version the user previously chose.
 
 #### Scenario: Bare facet name is recorded as exact version
 
@@ -227,11 +233,25 @@ When no manifest entry for the facet exists, or the existing entry's value is no
 - **AND** the system SHALL record `name@MAJOR.MINOR.PATCH` in the project manifest
 - **AND** the system SHALL NOT record the facet name as the version value
 
+#### Scenario: Scoped bare facet name is recorded as exact version
+
+- **WHEN** a user adds `@julian/cowsay` with no version
+- **AND** no entry for that facet exists in the project manifest
+- **THEN** the system SHALL resolve the latest published version
+- **AND** the system SHALL record `@julian/cowsay@MAJOR.MINOR.PATCH` in the project manifest
+
 #### Scenario: Explicit @latest tag records "latest" in the manifest
 
 - **WHEN** a user adds a registry facet using the literal `name@latest` form
 - **THEN** the system SHALL resolve the latest published version
 - **AND** the system SHALL record `latest` as the version specifier in the project manifest (preserving the user's explicit intent to float)
+- **AND** the system SHALL record the resolved exact version in the lockfile
+
+#### Scenario: Explicit @latest tag on a scoped name records "latest" in the manifest
+
+- **WHEN** a user adds a registry facet using the literal `@scope/name@latest` form
+- **THEN** the system SHALL resolve the latest published version for `@scope/name`
+- **AND** the system SHALL record `latest` as the version specifier in the project manifest
 - **AND** the system SHALL record the resolved exact version in the lockfile
 
 > **Note:** This differs from the bare-name form, which pins to the resolved exact version. A bare name is shorthand for "give me the latest and pin it"; `name@latest` is an explicit floating specifier, analogous to `name@1.*`.
@@ -254,7 +274,7 @@ When no manifest entry for the facet exists, or the existing entry's value is no
 - **WHEN** the project manifest records a facet whose value is not a valid version specifier (e.g., the facet name appears in the version position)
 - **AND** a user re-adds that facet without specifying a version
 - **THEN** the system SHALL resolve the latest published version
-- **AND** the system SHALL replace the invalid value with the resolved exact version (`name@MAJOR.MINOR.PATCH`) in the project manifest
+- **AND** the system SHALL replace the invalid value with the resolved exact version (`name@MAJOR.MINOR.PATCH` or `@scope/name@MAJOR.MINOR.PATCH`) in the project manifest
 
 #### Scenario: Adding a git or local facet records the full source specifier
 
@@ -264,12 +284,29 @@ When no manifest entry for the facet exists, or the existing entry's value is no
 
 ### Requirement: Source specifier syntax matches established package-manager conventions
 
-When a user specifies a facet source, the system SHALL accept the same set of forms users expect from established package managers, and SHALL reject obsolete or deprecated prefixes with a clear migration message.
+When a user specifies a facet source, the system SHALL accept the same set of forms users expect from established package managers, and SHALL reject obsolete or deprecated prefixes with a clear migration message. Registry sources SHALL accept unscoped names (`name` and `name@version`) and scoped names (`@scope/name` and `@scope/name@version`). In a scoped registry source, the leading `@` SHALL identify the scope and the version separator SHALL be the `@` after the name segment.
 
 #### Scenario: Registry name is accepted
 
 - **WHEN** a user specifies a source of the form `name` or `name@version`
 - **THEN** the system SHALL treat it as a registry source
+
+#### Scenario: Scoped registry name is accepted
+
+- **WHEN** a user specifies a source of the form `@scope/name` or `@scope/name@version`
+- **THEN** the system SHALL treat it as a registry source
+- **AND** the system SHALL parse the name as `@scope/name`
+
+#### Scenario: Scoped registry name with latest is accepted
+
+- **WHEN** a user specifies `@scope/name@latest`
+- **THEN** the system SHALL treat it as a registry source for `@scope/name`
+- **AND** the system SHALL parse the version specifier as `latest`
+
+#### Scenario: Malformed scoped registry name is rejected
+
+- **WHEN** a user specifies `@scope`, `@scope/`, `@scope/name@`, or `@scope/name@^1.0.0`
+- **THEN** the system SHALL reject the source specifier with an actionable error
 
 #### Scenario: GitHub shorthand is accepted
 
@@ -438,7 +475,7 @@ When the system fetches and verifies a facet's content for the first time, the s
 
 Cached content SHALL NOT be installed on trust: before each use, the system SHALL verify that the cached content still matches the integrity recorded for it when it was cached. Cached content that fails this verification SHALL be discarded and treated as absent (re-downloaded and re-verified), and SHALL NOT be installed or recorded in the lockfile.
 
-The cache SHALL be addressed by the **fully-qualified exact version** of a facet, never by the presence or absence of a lockfile entry. Whenever the system holds an exact `name@version` to install — regardless of how that version was determined (an exact specifier, a satisfying lockfile entry, or a freshly resolved wildcard or `latest`) — the system SHALL consult the cache for that version before downloading, and SHALL use the cached content on a hit.
+The cache SHALL be addressed by the **fully-qualified exact version** of a facet, never by the presence or absence of a lockfile entry. Whenever the system holds an exact `name@version` or `@scope/name@version` to install — regardless of how that version was determined (an exact specifier, a satisfying lockfile entry, or a freshly resolved wildcard or `latest`) — the system SHALL consult the cache for that version before downloading, and SHALL use the cached content on a hit. For slash-containing facet identities, the system SHALL create any required cache parent directories before writing the cache entry.
 
 #### Scenario: First fetch populates the cache
 
@@ -446,6 +483,13 @@ The cache SHALL be addressed by the **fully-qualified exact version** of a facet
 - **THEN** the system SHALL fetch the facet's content
 - **AND** the system SHALL verify the content's integrity
 - **AND** the system SHALL store the verified content in the cache keyed by the exact version
+
+#### Scenario: First fetch of a scoped facet populates the cache
+
+- **WHEN** the system installs `@julian/cowsay@1.0.0` and that exact version is not present in the cache
+- **THEN** the system SHALL fetch and verify the facet's content
+- **AND** the system SHALL store the verified content in the cache keyed by `@julian/cowsay@1.0.0`
+- **AND** the cache write SHALL NOT fail because the facet identity contains a slash
 
 #### Scenario: Subsequent install of the same version hits the cache
 
