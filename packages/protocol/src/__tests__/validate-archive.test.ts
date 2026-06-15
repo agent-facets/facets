@@ -301,6 +301,23 @@ describe('validateFacetArchive', () => {
   })
 
   describe('embedded facet manifest failures (Step 6)', () => {
+    test('a scoped embedded facet manifest is accepted', async () => {
+      // Archive validation inherits the facet-name grammar via
+      // validateFacetManifest. A scoped identity (`@scope/name`) must verify
+      // exactly like an unscoped one.
+      const scopedResolved: ResolvedFacetManifest = {
+        ...validResolved,
+        name: '@julian/cowsay',
+      }
+      const { outerBytes } = buildFixtureArchive(scopedResolved)
+
+      const result = await validateFacetArchive(outerBytes, { gunzip: okGunzip })
+
+      expect(result.ok).toBe(true)
+      if (!result.ok) expect.unreachable()
+      expect(result.data.facetManifest.name).toBe('@julian/cowsay')
+    })
+
     test('an invalid embedded facet manifest is rejected', async () => {
       // Pack a facet.json that is malformed JSON. The outer build manifest
       // and per-asset hashes will still be self-consistent — the failure

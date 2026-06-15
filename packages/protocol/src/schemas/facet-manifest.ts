@@ -1,5 +1,6 @@
 import { validateAssetName } from '@agent-facets/common'
 import { type } from 'arktype'
+import { validateFacetName } from './facet-name.ts'
 
 // --- Sub-schemas ---
 
@@ -51,6 +52,11 @@ const ServerReference = type('string').or({ image: 'string' })
  * Structural validation covers field types and shapes. Narrow constraints enforce:
  * 1. At least one text asset (skills, agents, commands, or facets) must be present
  * 2. Selective facets entries must include at least one asset type selection
+ * 3. Asset names must be filesystem-safe (validateAssetName)
+ * 4. The facet identity `name` must be a valid facet name — an unscoped slug
+ *    or a scoped `@scope/name` (validateFacetName). Asset names and facet
+ *    identities intentionally diverge: asset names stay local kebab-ish path
+ *    identifiers; facet identities may carry a registry scope.
  */
 export const FacetManifestSchema = type({
   name: 'string',
@@ -63,6 +69,17 @@ export const FacetManifestSchema = type({
   'facets?': FacetsEntry.array(),
   'servers?': type.Record('string', ServerReference),
 }).narrow((data, ctx) => {
+  // Constraint 0: the facet identity name must be a valid facet name. Either
+  // an unscoped slug (`cowsay`) or a scoped `@scope/name` (`@julian/cowsay`).
+  // This intentionally tightens the previous `name: string` behavior so
+  // malformed local identities fail at manifest validation instead of
+  // deferring failure to build/publish/install. Asset names are governed
+  // separately by validateAssetName (Constraint 3).
+  const facetName = validateFacetName(data.name)
+  if (!facetName.ok) {
+    ctx.mustBe(`a valid facet name: ${facetName.reason}`)
+  }
+
   // Constraint 1: at least one text asset
   const hasSkills = data.skills && Object.keys(data.skills).length > 0
   const hasAgents = data.agents && Object.keys(data.agents).length > 0

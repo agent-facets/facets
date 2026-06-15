@@ -59,6 +59,11 @@ export type { BuildManifest } from './schemas/build-manifest.ts'
 export { BuildManifestSchema } from './schemas/build-manifest.ts'
 export type { FacetManifest } from './schemas/facet-manifest.ts'
 export { FacetManifestSchema } from './schemas/facet-manifest.ts'
+// facet identity grammar (slugs + scoped/unscoped facet names) — exported so
+// other facet-spec implementations (e.g. the registry enforcing scope
+// ownership) validate scopes with the same grammar.
+export type { FacetName, FacetNameResult, SlugResult } from './schemas/facet-name.ts'
+export { parseFacetName, parseSlug, validateFacetName } from './schemas/facet-name.ts'
 export type { Lockfile, LockfileAssetEntry, LockfileFacet, LockfileSource } from './schemas/lockfile.ts'
 export { LOCKFILE_VERSION, LockfileSchema } from './schemas/lockfile.ts'
 export type { FacetsJson } from './schemas/project-manifest.ts'
