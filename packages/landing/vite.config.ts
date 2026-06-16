@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
+import { agentPromptPlugin } from './vite/agent-prompt-plugin'
 import { brandTokensPlugin } from './vite/brand-tokens-plugin'
 
 // Inject the CLI package's version at build time so the hero eyebrow can
@@ -17,7 +18,7 @@ const cliPkg = JSON.parse(readFileSync(fileURLToPath(cliPkgUrl), 'utf8')) as { v
 const tokensEmitPath = fileURLToPath(new URL('./src/styles/tokens.generated.css', import.meta.url))
 
 export default defineConfig({
-  plugins: [react(), brandTokensPlugin({ emitPath: tokensEmitPath })],
+  plugins: [react(), brandTokensPlugin({ emitPath: tokensEmitPath }), agentPromptPlugin()],
   define: {
     __APP_VERSION__: JSON.stringify(cliPkg.version),
   },

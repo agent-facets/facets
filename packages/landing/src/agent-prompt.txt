@@ -6,7 +6,7 @@ project so their agent can do more.
 
 This prompt is the source of truth for how to onboard a user. It lives
 at https://agentfacets.io/agent-prompt.txt (in the agent-facets repo at
-packages/landing/public/agent-prompt.txt). If anything below is unclear,
+packages/landing/src/agent-prompt.txt). If anything below is unclear,
 fetch the latest copy of this URL — it changes more often than the page
 that points to it.
 
@@ -47,57 +47,30 @@ Two paths from there:
 
 # Step 3 — search the registry
 
-The facet.cafe registry exposes a JSON API at https://api.facet.cafe/v0.
-All read endpoints are unauthenticated and CORS-open. You can curl
-directly from the user's session.
+Use the CLI you just installed — don't hand-roll HTTP calls against the
+registry. `facet search` talks to the facet.cafe registry for you,
+handling name encoding, version resolution, and error formatting
+correctly:
 
-List all published facets:
+    facet search                 # list every published facet
+    facet search <term>          # filter by substring (name/description)
 
-    curl -fsSL https://api.facet.cafe/v0/packages
+The output lists each facet's canonical name (bare for global facets,
+`@scope/name` for scoped), its latest version, attribution, and a count
+of what it provides per asset type (skills, agents, commands, servers).
 
-Response shape:
-
-    {
-      "facets": [
-        {
-          "name": "owner/facet-name",
-          "latestVersion": "1.2.3",
-          "publishedAt": "2025-...",
-          "description": "...",     // optional
-          "author": "...",          // optional
-          "assetCounts": { "skills": 3, "agents": 1, "commands": 0, "servers": 0 }
-        },
-        ...
-      ]
-    }
-
-V0 has no server-side `?q=` filter — pull the list and filter
-client-side (substring match against name/description). The list is
-capped at 200 facets for now; expect that to grow.
-
-Get info about a specific facet (name may contain a `/`, URL-encode
-it as `%2F`):
-
-    curl -fsSL https://api.facet.cafe/v0/packages/<name>
-
-Get a specific version's metadata (use the literal `latest` for the
-LATEST pointer):
-
-    curl -fsSL https://api.facet.cafe/v0/packages/<name>/<version>
-
-Errors come back as JSON with a stable `code` and a `docsUrl`:
-
-    { "error": "...", "code": "E_FACET_NOT_FOUND",
-      "docsUrl": "https://agentfacets.io/errors/E_FACET_NOT_FOUND" }
+For attribution, the registry distinguishes verified identity (the
+registry account that published the version) from the self-declared,
+unverified `author` field in the manifest. The CLI surfaces the
+verified attribution; prefer it.
 
 Heads up: the registry is in V0. The list may currently be small or
-empty. If nothing matches the user's request, fall back to suggesting
-they install a known github source directly (Step 4) or browse
-https://facet.cafe in the browser.
+empty. If `facet search` returns nothing matching the user's request,
+fall back to suggesting they install a known github source directly
+(Step 4) or browse https://facet.cafe in the browser.
 
 When you find a candidate, summarize it for the user — name, what it
-provides (assetCounts), description if present — and confirm before
-installing.
+provides, description if present — and confirm before installing.
 
 
 # Step 4 — install the facet
@@ -109,11 +82,13 @@ lives, or where they want it created):
 
 `<source>` accepts several forms:
 
-  Registry (once a facet is published):
-      facet add owner/facet-name
-      facet add owner/facet-name@1.2.3
+  Registry:
+      facet add cowsay                 # global facet: bare name
+      facet add cowsay@1.2.3           # pin a version
+      facet add @scope/name            # scoped facet: literal @ prefix
+      facet add @julian/cowsay@1.2.3   # scoped + pinned version
 
-  GitHub (most common in the wild today):
+  GitHub:
       facet add github:owner/repo
       facet add github:owner/repo#branch-or-tag-or-sha
       facet add github:owner/repo/subdir#ref
@@ -139,7 +114,7 @@ Useful flags:
 
 - After install, show `facet --version` output.
 - After `facet add`, show what was installed (the CLI prints this).
-- If anything fails, the error has a `code` and `docsUrl` — surface
+- If anything fails, the error has a `code` and `docs_url` — surface
   both to the user.
 
 Be conversational. The user shouldn't feel like they're being walked
@@ -153,3 +128,10 @@ tool.
   Browse:   https://facet.cafe
   API spec: https://api.facet.cafe/v0/openapi.yaml
   Source:   https://github.com/agent-facets/facets
+
+The `facet` CLI is the supported interface to the registry — it is the
+contract, and it stays current as the registry evolves. Should you ever
+need to drop below the CLI and talk to the registry directly, do not
+hardcode endpoint paths: fetch the OpenAPI spec above and derive the
+routes from it, so you always match the live API rather than a snapshot
+baked into this prompt.
