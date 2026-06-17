@@ -26,6 +26,13 @@ export interface FormState {
     description: FieldState
     version: FieldState
   }
+  // Author-facing privacy intent. This is a sibling of `fields` (not a member)
+  // because `fields` is a fixed map of string-valued `FieldState`s, whereas
+  // privacy is a binary choice. The UI has exactly two states — public and
+  // private — and `false` is the public default. Omission-vs-explicit-`false`
+  // in the manifest is a serialization concern handled at the output boundary
+  // (scaffold generation for create, `buildManifest` for edit), not here.
+  private: boolean
   assets: {
     skill: AssetSectionState
     command: AssetSectionState
@@ -41,6 +48,9 @@ interface FormStateContextValue {
   // Field operations
   setFieldValue: (field: RequiredFieldKey, value: string) => void
   setFieldStatus: (field: RequiredFieldKey, status: FieldStatus) => void
+
+  // Privacy operation
+  setPrivate: (value: boolean) => void
 
   // Asset operations
   addAsset: (section: AssetSectionKey, name: string) => void
@@ -69,6 +79,7 @@ const defaultForm: FormState = {
     description: { value: '', status: 'empty' },
     version: { value: '', status: 'empty' },
   },
+  private: false,
   assets: {
     skill: { ...defaultAssetSection },
     command: { ...defaultAssetSection },
@@ -80,6 +91,7 @@ const FormStateContext = createContext<FormStateContextValue>({
   form: defaultForm,
   setFieldValue: () => {},
   setFieldStatus: () => {},
+  setPrivate: () => {},
   addAsset: () => {},
   removeAsset: () => {},
   renameAsset: () => {},
@@ -112,6 +124,10 @@ export function FormStateProvider({ children, initialState }: { children: ReactN
         [field]: { ...prev.fields[field], status },
       },
     }))
+  }, [])
+
+  const setPrivate = useCallback((value: boolean) => {
+    setForm((prev) => ({ ...prev, private: value }))
   }, [])
 
   const addAsset = useCallback((section: AssetSectionKey, name: string) => {
@@ -218,6 +234,8 @@ export function FormStateProvider({ children, initialState }: { children: ReactN
       skills: form.assets.skill.items,
       commands: form.assets.command.items,
       agents: form.assets.agent.items,
+      // True-only: public is represented by omission, never `private: false`.
+      ...(form.private ? { private: true } : {}),
     }),
     [form],
   )
@@ -227,6 +245,7 @@ export function FormStateProvider({ children, initialState }: { children: ReactN
       form,
       setFieldValue,
       setFieldStatus,
+      setPrivate,
       addAsset,
       removeAsset,
       renameAsset,
@@ -239,6 +258,7 @@ export function FormStateProvider({ children, initialState }: { children: ReactN
       form,
       setFieldValue,
       setFieldStatus,
+      setPrivate,
       addAsset,
       removeAsset,
       renameAsset,

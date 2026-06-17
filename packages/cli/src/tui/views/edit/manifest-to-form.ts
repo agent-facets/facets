@@ -33,6 +33,11 @@ export function manifestToFormState(manifest: FacetManifest): FormState {
       description: { value: manifest.description ?? '', status: 'confirmed' },
       version: { value: manifest.version, status: 'confirmed' },
     },
+    // Author-facing privacy is binary: only an explicit `private: true` hydrates
+    // as private. Omission and an explicit `private: false` both hydrate as the
+    // public UI state. The omission-vs-explicit-false distinction is preserved
+    // at the output boundary (`buildManifest`), not carried in the form.
+    private: manifest.private === true,
     assets,
   }
 }

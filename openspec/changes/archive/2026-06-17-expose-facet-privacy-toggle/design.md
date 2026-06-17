@@ -94,15 +94,15 @@ Alternatives considered:
 - **Only delete `private` when the user changed it**: rejected because the output rules should be derivable from the current form state plus the original manifest representation, not hidden UI touched-state.
 - **Copy the `description` conditional-assignment pattern**: rejected because it is the wrong local precedent for fields that must be removable after `...original`.
 
-### 5. Confirmation summaries SHALL show privacy and brief publish guidance
+### 5. Confirmation summaries SHALL show privacy as a colored row
 
-Create and edit confirmation views SHALL include a `Privacy:` row with `Public` or `Private`. The form view or confirmation summary SHALL also include concise guidance that privacy is manifest content and takes effect in built/published artifacts only after rebuild; if the version is already published, visibility changes require a version bump. This text SHOULD be short enough not to overwhelm the wizard, for example: `Privacy is embedded at build time; rebuild after changing it. Published versions require a version bump.`
+Create and edit confirmation views SHALL include a `Privacy:` row with `Public` or `Private`, colored to match the form toggle (success for public, warning for private). No rebuild/version-bump guidance text is rendered in the confirmation summary or the form: that wording read as noise next to the binary value and told the author nothing actionable at that moment.
 
-Rationale: the proposal requires authors not to discover rebuild/version rules only at publish time. Confirmation is the last safe point before writing the source manifest and is an appropriate low-friction place to remind them.
+Rationale: the confirmation summary's job is to show the final manifest intent the author is about to write. The rebuild-after-change and version-bump-for-published-versions consequences are real but belong in the authoring/publish documentation, not inline in every create/edit confirmation. Coloring the value keeps the summary scannable and consistent with the toggle.
 
 Alternatives considered:
 
-- **Warn only in docs**: rejected because the author can toggle privacy without reading publish docs.
+- **Inline guidance text on the confirmation page**: rejected after review — it added a line that restated documentation without giving the author a decision to make at that point.
 - **Add a blocking modal warning on every toggle**: rejected as too disruptive for a local manifest edit that does not itself publish anything.
 - **Warn conditionally only when the current version is already published**: rejected because that requires a registry lookup, credentials, and network failure handling inside an authoring flow. Build/publish state remains outside this change.
 

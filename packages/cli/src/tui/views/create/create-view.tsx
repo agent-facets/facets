@@ -4,6 +4,7 @@ import { Box, Text } from 'ink'
 import { useCallback, useEffect } from 'react'
 import type { AssetType } from '../../../commands/create/types'
 import { AssetSection } from '../../components/asset-section.tsx'
+import { BooleanToggle } from '../../components/boolean-toggle.tsx'
 import { Button } from '../../components/button.tsx'
 import { EditableField } from '../../components/editable-field.tsx'
 import { useFocusOrder } from '../../context/focus-order-context.ts'
@@ -19,7 +20,9 @@ const ASSET_LABELS: Record<AssetType, string> = {
 }
 
 function computeFocusIds(form: ReturnType<typeof useFormState>['form']): string[] {
-  const ids: string[] = ['field-name', 'field-description', 'field-version']
+  // NOTE: `field-private` sits between `field-version` and the asset controls.
+  // This focus list is duplicated in edit-view.tsx; keep both in lockstep.
+  const ids: string[] = ['field-name', 'field-description', 'field-version', 'field-private']
 
   for (const type of ASSET_TYPES) {
     const section = form.assets[type]
@@ -43,7 +46,7 @@ export function CreateView({
   onSubmit: () => void
   onEditDescription?: (section: import('../../context/form-state-context.ts').AssetSectionKey, name: string) => void
 }) {
-  const { form } = useFormState()
+  const { form, setPrivate } = useFormState()
   const { setFocusIds, focus, focusedId } = useFocusOrder()
 
   // Facet identity: an unscoped slug (`my-facet`) or a scoped `@scope/name`
@@ -126,6 +129,17 @@ export function CreateView({
         defaultValue={DEFAULT_VERSION}
         dimmed={!versionReady}
         validate={(v) => (/^\d+\.\d+\.\d+$/.test(v) ? undefined : `Must be SemVer (e.g., ${DEFAULT_VERSION})`)}
+        onConfirm={() => focus('field-private')}
+      />
+
+      <BooleanToggle
+        id="field-private"
+        label="Privacy"
+        value={form.private}
+        onLabel="Private"
+        offLabel="Public"
+        onToggle={setPrivate}
+        dimmed={!assetsReady}
         onConfirm={() => focus(`add-${ASSET_TYPES[0]}`)}
       />
 
