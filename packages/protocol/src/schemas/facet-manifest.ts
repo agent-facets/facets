@@ -63,6 +63,12 @@ export const FacetManifestSchema = type({
   version: 'string',
   'description?': 'string',
   'author?': 'string',
+  // Optional facet privacy declaration. `private: true` declares private
+  // publish intent; `private: false` or omission is public-by-default. The
+  // field is recognized (not unknown extension data) so non-boolean values
+  // are rejected with a `private`-pathed error. No default is injected:
+  // omission stays omission in validated data (see protocol__schemas spec).
+  'private?': 'boolean',
   'skills?': type.Record('string', SkillDescriptor),
   'agents?': type.Record('string', AgentDescriptor),
   'commands?': type.Record('string', CommandDescriptor),

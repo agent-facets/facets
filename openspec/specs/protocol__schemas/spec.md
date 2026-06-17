@@ -6,9 +6,11 @@ Defines the published, normative schemas for the artifacts a facet-compatible sy
 
 ### Requirement: A facet manifest schema is published as part of the protocol
 
-The shape of a facet manifest (`facet.json`) SHALL be published as a normative schema. Any system that produces a facet manifest SHALL produce one conforming to the published schema. Any system that consumes a facet manifest SHALL validate it against the published schema before treating any value as trusted. The schema SHALL define the required fields, the permitted shapes for skills/agents/commands, the accepted facet identity grammar, and the rules for unrecognized fields.
+The shape of a facet manifest (`facet.json`) SHALL be published as a normative schema. Any system that produces a facet manifest SHALL produce one conforming to the published schema. Any system that consumes a facet manifest SHALL validate it against the published schema before treating any value as trusted. The schema SHALL define the required fields, the permitted shapes for skills/agents/commands, the accepted facet identity grammar, the optional facet privacy declaration, and the rules for unrecognized fields.
 
 A facet identity name SHALL be either an unscoped name (`<slug>`) or a scoped name (`@<scope>/<slug>`). Each `slug` and `scope` component SHALL satisfy the same component grammar: it MUST be at least 2 characters and at most 64 characters, MUST start with a lowercase ASCII letter, MUST end with a lowercase ASCII letter or ASCII digit, MUST contain only lowercase ASCII letters, ASCII digits, and hyphens, and MUST NOT contain consecutive hyphens. Uppercase letters, non-ASCII characters, underscores, dots, spaces, plus signs, tildes, emoji, and any other character outside the component grammar SHALL be rejected rather than normalized. A facet manifest whose `name` is malformed SHALL be rejected as invalid. Asset names SHALL remain independently validated as local asset identifiers and SHALL NOT become scoped names.
+
+The facet manifest schema SHALL define an optional top-level `private` field. When present, `private` SHALL be a boolean. A manifest with `private: true` SHALL express the author's intent that the facet is private. A manifest with `private: false`, or with no `private` field, SHALL express public-by-default behavior. Validation SHALL NOT inject `private: false` into a manifest that omits the field; omission remains omission in validated data. Values of any non-boolean type SHALL be rejected rather than treated as unknown extension data or coerced to booleans.
 
 The facet manifest schema SHALL NOT document unsupported composition or server-reference fields as part of the current user-facing manifest contract. Current user-facing manifest documentation SHALL describe only supported manifest behavior and SHALL use the manifest specification page as the canonical place for facet-name grammar.
 
@@ -30,6 +32,30 @@ The facet manifest schema SHALL NOT document unsupported composition or server-r
 - **THEN** the system SHALL accept the facet identity as valid
 - **AND** both scoped identity components SHALL satisfy the same component grammar as unscoped facet names
 - **AND** the scoped identity SHALL remain the facet's canonical name
+
+#### Scenario: A consumer accepts omitted public privacy declaration
+
+- **WHEN** a system receives a `facet.json` with no `private` field
+- **THEN** the system SHALL accept the manifest as public by default
+- **AND** validation SHALL NOT add a `private` field to the accepted manifest data
+
+#### Scenario: A consumer accepts explicit public privacy declaration
+
+- **WHEN** a system receives a `facet.json` with `private: false`
+- **THEN** the system SHALL accept the manifest as explicitly public
+- **AND** the accepted manifest SHALL preserve `private: false`
+
+#### Scenario: A consumer accepts private privacy declaration
+
+- **WHEN** a system receives a `facet.json` with `private: true`
+- **THEN** the system SHALL accept the manifest as declaring private publish intent
+- **AND** the accepted manifest SHALL preserve `private: true`
+
+#### Scenario: A consumer rejects non-boolean privacy declaration
+
+- **WHEN** a system receives a `facet.json` whose `private` field is a string, number, object, array, or null
+- **THEN** the system SHALL reject the manifest as invalid
+- **AND** the system SHALL surface a structured error indicating that `private` must be boolean
 
 #### Scenario: A consumer rejects invalid slug components
 

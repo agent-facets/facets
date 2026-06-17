@@ -849,3 +849,77 @@ describe('writeBuildOutput', () => {
     expect(distFiles).toEqual(['test-1.0.0.facet'])
   })
 })
+
+// --- Embedded manifest privacy preservation ---
+
+/**
+ * Parse the embedded `facet.json` out of a build's outer-tar `archiveBytes`.
+ * Mirrors the inner-archive read used by the scoped-identity test above.
+ */
+async function readEmbeddedManifest(archiveBytes: Uint8Array): Promise<Record<string, unknown>> {
+  const outerEntries = parseTar(archiveBytes)
+  const innerEntry = outerEntries.find((e) => e.name === 'archive.tar.gz')
+  if (!innerEntry?.data) throw new Error('archive.tar.gz not found in outer tar')
+  const innerFiles = await parseTarGzip(innerEntry.data)
+  const facetJsonEntry = innerFiles.find((f) => f.name === 'facet.json')
+  if (!facetJsonEntry) throw new Error('facet.json not found in inner archive')
+  return JSON.parse(facetJsonEntry.text) as Record<string, unknown>
+}
+
+describe('runBuildPipeline — embedded manifest privacy', () => {
+  test('build with private: true embeds private: true', async () => {
+    const dir = await createFixtureDir('private-true')
+    await Bun.write(join(dir, 'skills/example/SKILL.md'), '# Example skill')
+    await Bun.write(
+      join(dir, 'facet.json'),
+      JSON.stringify({
+        name: 'private-facet',
+        version: '1.0.0',
+        private: true,
+        skills: { example: { description: 'An example skill' } },
+      }),
+    )
+
+    const result = await runBuildPipeline(dir)
+    if (!result.ok) expect.unreachable()
+    const embedded = await readEmbeddedManifest(result.archiveBytes)
+    expect(embedded.private).toBe(true)
+  })
+
+  test('build with private: false embeds private: false', async () => {
+    const dir = await createFixtureDir('private-false')
+    await Bun.write(join(dir, 'skills/example/SKILL.md'), '# Example skill')
+    await Bun.write(
+      join(dir, 'facet.json'),
+      JSON.stringify({
+        name: 'public-facet',
+        version: '1.0.0',
+        private: false,
+        skills: { example: { description: 'An example skill' } },
+      }),
+    )
+
+    const result = await runBuildPipeline(dir)
+    if (!result.ok) expect.unreachable()
+    const embedded = await readEmbeddedManifest(result.archiveBytes)
+    expect(embedded.private).toBe(false)
+  })
+
+  test('build with omitted private keeps private omitted (no injected default)', async () => {
+    const dir = await createFixtureDir('private-omitted')
+    await Bun.write(join(dir, 'skills/example/SKILL.md'), '# Example skill')
+    await Bun.write(
+      join(dir, 'facet.json'),
+      JSON.stringify({
+        name: 'default-facet',
+        version: '1.0.0',
+        skills: { example: { description: 'An example skill' } },
+      }),
+    )
+
+    const result = await runBuildPipeline(dir)
+    if (!result.ok) expect.unreachable()
+    const embedded = await readEmbeddedManifest(result.archiveBytes)
+    expect('private' in embedded).toBe(false)
+  })
+})

@@ -79,7 +79,7 @@ facet publish
 
 When the built artifact and the source-tree `facet.json` disagree, `facet publish` distinguishes two cases:
 
-**Content drift** -- same name and version, different manifest content (you edited a description or asset descriptor without rebuilding). In an interactive terminal, you get two options: rebuild and publish, or publish the existing artifact unchanged.
+**Content drift** -- same name and version, different manifest content (you edited a description, an asset descriptor, or the [`private`](/specification/manifest#privacy) flag without rebuilding). In an interactive terminal, you get two options: rebuild and publish, or publish the existing artifact unchanged. If you flip `private` without rebuilding, publishing the existing artifact ships its old embedded privacy value; rebuild first to embed the new one.
 
 **Identity drift** -- different name or version (the most common case: you bumped `version` in `facet.json` but `dist/` still has the old build). In an interactive terminal, you get three options:
 
@@ -110,6 +110,18 @@ To publish a new version:
 3. Republish: `facet publish`.
 
 If you forget to rebuild after bumping the version, publish detects the identity drift and offers to build for you (in an interactive terminal).
+
+### Making a published facet private (or public)
+
+The [`private`](/specification/manifest#privacy) flag is manifest content, so changing it is a content change like any other. A version that is already published is immutable: you cannot flip `private` on an existing `(name, version)`. To change visibility, bump the `version`, rebuild, and republish:
+
+```sh
+# edit facet.json: set "private": true (or remove it / set false to go public)
+facet build
+facet publish
+```
+
+Omitting `private` (or setting it to `false`) keeps the facet public; `true` declares private publish intent. Registry-side enforcement of who can see or download a private facet is handled by the registry, not the CLI.
 
 ## Sign out
 
