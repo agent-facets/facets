@@ -6,9 +6,14 @@
         "kind": "registry",
         "registry": "https://api.facet.cafe"
       },
-      "version": "2.3.2",
-      "integrity": "sha256:abedfa1f9247a3808007acdc75b5721969de97089aa31aee139cf7c4d8bb7ac8",
+      "version": "3.0.0",
+      "integrity": "sha256:fa804e44ce4554c35128a519af4705c541b0df29307d021aa777a11b9ac761b5",
       "assets": [
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "openspec-adversary-author"
+        },
         {
           "scope": "project",
           "type": "skill",
@@ -17,12 +22,12 @@
         {
           "scope": "project",
           "type": "skill",
-          "name": "openspec-adversary-continue"
+          "name": "openspec-adversary-reconcile"
         },
         {
           "scope": "project",
           "type": "skill",
-          "name": "review-openspec-adversary"
+          "name": "openspec-adversary-run"
         },
         {
           "scope": "project",
@@ -32,12 +37,7 @@
         {
           "scope": "project",
           "type": "command",
-          "name": "compare-adversary"
-        },
-        {
-          "scope": "project",
-          "type": "command",
-          "name": "reconcile-adversary-review"
+          "name": "reconcile-adversary"
         },
         {
           "scope": "project",
