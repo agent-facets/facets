@@ -1,0 +1,30 @@
+{
+  "change": "add-facet-visibility-to-manifest",
+  "schema": "spec-driven",
+  "entries": {
+    "proposal": {
+      "artifactId": "proposal",
+      "mainPaths": ["proposal.md"],
+      "adversarialPaths": ["adversarial/artifacts/proposal.md"],
+      "reviewPath": "adversarial/reviews/proposal-review.md",
+      "dependencies": [],
+      "status": "reconciled",
+      "authoredAt": "2026-06-16T18:47:51Z",
+      "comparedAt": "2026-06-16T18:48:56Z",
+      "reconciledAt": "2026-06-16T18:55:00Z",
+      "notes": "Adopted adversary's sharper out-of-band-config framing and explicit optional private boolean constraints. Preserved main proposal's Non-goals, content-drift impact, docs scope, and chose boolean over a broader visibility discriminator."
+    },
+    "design": {
+      "artifactId": "design",
+      "mainPaths": ["design.md"],
+      "adversarialPaths": ["adversarial/artifacts/design.md"],
+      "reviewPath": "adversarial/reviews/design-review.md",
+      "dependencies": ["proposal"],
+      "status": "reconciled",
+      "authoredAt": "2026-06-16T19:38:09Z",
+      "comparedAt": "2026-06-16T19:59:34Z",
+      "reconciledAt": "2026-06-16T20:06:04Z",
+      "notes": "Adopted adversary's content-integrity and immutability consequence, no schema-injected default hardening, explicit adjacent-schema non-work, and stale-dist risk. Preserved main design's ResolvedFacetManifest requirement and settled private boolean decision."
+    }
+  }
+}
