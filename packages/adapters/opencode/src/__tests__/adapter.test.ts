@@ -37,6 +37,39 @@ describe('opencode adapter — buildAssetMetadata', () => {
     const result = adapter.buildAssetMetadata({ model: 123 })
     expect(result.ok).toBe(false)
   })
+
+  test('accepts command frontmatter: agent + subtask', () => {
+    const result = adapter.buildAssetMetadata({ agent: 'opencode-adversary', subtask: true })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data).toEqual({ agent: 'opencode-adversary', subtask: true })
+    }
+  })
+
+  test('accepts agent frontmatter: mode subagent', () => {
+    const result = adapter.buildAssetMetadata({ mode: 'subagent' })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data).toEqual({ mode: 'subagent' })
+    }
+  })
+
+  test('accepts scoped permission block (string shorthand + nested glob object)', () => {
+    const result = adapter.buildAssetMetadata({
+      permission: { edit: { '*': 'deny', 'openspec/changes/*/adversarial/**': 'allow' }, bash: 'ask' },
+    })
+    expect(result.ok).toBe(true)
+  })
+
+  test('rejects invalid mode', () => {
+    const result = adapter.buildAssetMetadata({ mode: 'nonsense' })
+    expect(result.ok).toBe(false)
+  })
+
+  test('rejects non-boolean subtask', () => {
+    const result = adapter.buildAssetMetadata({ subtask: 'yes' })
+    expect(result.ok).toBe(false)
+  })
 })
 
 describe('opencode adapter — project-scope I/O round-trip', () => {
@@ -84,6 +117,36 @@ describe('opencode adapter — project-scope I/O round-trip', () => {
     expect(raw).toContain('description: plan things')
     expect(raw).toContain('model: sonnet')
     expect(raw).toContain('# plan')
+  })
+
+  test('agent installs with mode: subagent front-matter and round-trips', async () => {
+    await adapter.installAsset('project', 'agent', 'openspec-adversary/adversary', 'agent body', {
+      name: 'adversary',
+      description: 'adversary subagent',
+      mode: 'subagent',
+    })
+    const path = join(workDir, '.opencode/agents/openspec-adversary/adversary.md')
+    const raw = readFileSync(path, 'utf8')
+    expect(raw).toContain('mode: subagent')
+    expect(raw).toContain('agent body')
+
+    const result = await adapter.readAsset('project', 'agent', 'openspec-adversary/adversary')
+    expect(result.content.trim()).toBe('agent body')
+    expect(result.metadata).toEqual({ name: 'adversary', description: 'adversary subagent', mode: 'subagent' })
+  })
+
+  test('command installs with agent + subtask front-matter', async () => {
+    await adapter.installAsset('project', 'command', 'openspec-adversary/run-adversary', 'command body', {
+      name: 'run-adversary',
+      description: 'authoring half',
+      agent: 'opencode-adversary',
+      subtask: true,
+    })
+    const path = join(workDir, '.opencode/commands/openspec-adversary/run-adversary.md')
+    const raw = readFileSync(path, 'utf8')
+    expect(raw).toContain('agent: opencode-adversary')
+    expect(raw).toContain('subtask: true')
+    expect(raw).toContain('command body')
   })
 
   test('readAsset round-trips body and front-matter metadata', async () => {

@@ -6,8 +6,8 @@
         "kind": "registry",
         "registry": "https://api.facet.cafe"
       },
-      "version": "2.0.0",
-      "integrity": "sha256:a2345cd23eee7b0e07b166bbb8a49d129025587d8e89ca235d4b94a3121532e8",
+      "version": "2.1.0",
+      "integrity": "sha256:e17f53f75b6acd198e893ebfa1b754749f043b34f27b9d53426bb713dff7bfa3",
       "assets": [
         {
           "scope": "project",
@@ -32,7 +32,7 @@
         {
           "scope": "project",
           "type": "command",
-          "name": "review-adversary"
+          "name": "reconcile-adversary-review"
         },
         {
           "scope": "project",
