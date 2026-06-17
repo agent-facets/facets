@@ -8,7 +8,7 @@ Facet manifests already support a top-level `private` boolean, and publish docum
 - The `facet edit` workbench SHALL add the same privacy choice so authors can inspect and change an existing facet between public-by-default and private publish intent without hand-editing JSON.
 - Newly created facets SHALL default to public-by-default, and the generated manifest SHALL omit the `private` field unless the author selects private.
 - The authoring workflows SHALL preserve the manifest schema's existing serialization model: `private: true` is written when selected; public selections omit `private` rather than injecting `private: false`, including when editing a previously private facet back to public.
-- The authoring workflows SHALL make clear that changing privacy is a manifest content change that requires a rebuild before it affects the built artifact, and a version bump if the current version has already been published.
+- The authoring workflows SHALL NOT automatically rebuild or republish when privacy changes; build and publish remain explicit steps. The rebuild-after-change and version-bump-for-published-versions consequences are documented in the authoring and publish guides rather than surfaced as confirmation-time messaging.
 - User-facing authoring documentation SHALL describe the new privacy step in `facet create` and `facet edit`, and publish guidance SHALL stop presenting hand-editing `facet.json` as the primary way to change visibility.
 
 ## Non-goals

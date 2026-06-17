@@ -259,9 +259,9 @@ All changes during an edit session SHALL be queued — nothing SHALL be written 
 
 ## ADDED Requirements
 
-### Requirement: Authoring workflows make privacy publish consequences visible
+### Requirement: A privacy change does not rebuild, republish, or contact the registry
 
-Because privacy intent is manifest content embedded in the built artifact, changing it in the create or edit workflows SHALL NOT, on its own, alter any already-built artifact or any already-published version. The authoring workflows SHALL make clear to the author that a privacy change takes effect only after a rebuild, and that propagating the change to a version that has already been published requires a version bump and republish. The authoring workflows SHALL NOT automatically rebuild, republish, or contact the registry as a result of a privacy change.
+Because privacy intent is manifest content embedded in the built artifact, changing it in the create or edit workflows SHALL NOT, on its own, alter any already-built artifact or any already-published version. The authoring workflows SHALL NOT automatically rebuild, republish, or contact the registry as a result of a privacy change. The rebuild-after-change and version-bump-for-published-versions consequences are documented in the authoring and publish guides rather than surfaced as confirmation-time messaging.
 
 #### Scenario: Editing privacy does not rebuild or publish
 
@@ -270,13 +270,3 @@ Because privacy intent is manifest content embedded in the built artifact, chang
 - **AND** the system SHALL NOT rebuild the facet
 - **AND** the system SHALL NOT publish the facet
 - **AND** the system SHALL NOT contact the registry
-
-#### Scenario: Author is informed that a privacy change needs a rebuild
-
-- **WHEN** the author reviews privacy intent during create or edit confirmation
-- **THEN** the system SHALL make clear that the change affects built artifacts only after the facet is rebuilt
-
-#### Scenario: Author is informed that a published version needs a version bump
-
-- **WHEN** the author reviews privacy intent during create or edit confirmation
-- **THEN** the system SHALL make clear that changing visibility for an already-published version requires a version bump and republish

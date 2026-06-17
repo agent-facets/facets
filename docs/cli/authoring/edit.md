@@ -31,6 +31,7 @@ All reconciliation items must be resolved before proceeding to editing.
 After reconciliation (or immediately if no drift), the edit phase allows:
 
 - **Identity editing**  -- modify the facet name, description, and version
+- **Privacy editing**  -- inspect the facet's current visibility intent without opening `facet.json`, and switch between Public and Private.
 - **Asset management**  -- add, remove, or rename skills, agents, and commands
 - **Description editing**  -- press Enter on an asset to edit its name, or press ↓ during name editing to open the description in your terminal editor (`$VISUAL` / `$EDITOR` / `vi`)
 
@@ -38,7 +39,7 @@ All changes are transactional  -- nothing is written to disk until you review an
 
 ## Confirmation
 
-Before applying, a summary shows the final state of your facet  -- identity fields and all assets with their descriptions. Choose "Apply" to write changes or "Go back" to continue editing.
+Before applying, a summary shows the final state of your facet  -- identity fields, the privacy intent, and all assets with their descriptions  -- along with a reminder that a privacy change is embedded at build time (rebuild to apply it, and bump the version if it was already published). Choose "Apply" to write changes or "Go back" to continue editing.
 
 On apply, the edit command:
 - Writes the updated `facet.json`
@@ -47,7 +48,7 @@ On apply, the edit command:
 
 ## Exit codes
 
-| Code | Meaning |
-| ---- | ------- |
-| `0`  | Changes applied successfully |
+| Code | Meaning                       |
+|------|-------------------------------|
+| `0`  | Changes applied successfully  |
 | `1`  | Cancelled or manifest invalid |

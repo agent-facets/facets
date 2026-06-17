@@ -1,6 +1,15 @@
 import type { Dispatch, ReactNode, SetStateAction } from 'react'
 import { createContext, createElement, useCallback, useContext, useMemo, useState } from 'react'
 
+/**
+ * Focus ids whose field consumes plain Tab for its own action instead of
+ * advancing focus. `useNavigationKeys` checks this set so it does not also
+ * move focus forward when one of these fields handles Tab itself. The privacy
+ * toggle (`field-private`) uses Tab to flip Public/Private; ↓ still advances,
+ * and Shift+Tab still moves backward.
+ */
+export const TAB_TOGGLE_FOCUS_IDS: ReadonlySet<string> = new Set(['field-private'])
+
 interface FocusOrderState {
   focusedId: string | null
   focusIds: string[]
