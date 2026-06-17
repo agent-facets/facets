@@ -1,5 +1,11 @@
 # @agent-facets/adapter-opencode
 
+## 0.6.0
+
+### Minor Changes
+
+- [#348](https://github.com/agent-facets/facets/pull/348) [`c4ac343`](https://github.com/agent-facets/facets/commit/c4ac343ebbc4a2c77dda8e56115f86fe368d77bc) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Expand metadata support to include model, permission, agent, and subtask fields
+
 ## 0.5.0
 
 ### Minor Changes
