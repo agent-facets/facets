@@ -1,5 +1,11 @@
 # agent-facets
 
+## 0.22.0
+
+### Minor Changes
+
+- [#353](https://github.com/agent-facets/facets/pull/353) [`5d78611`](https://github.com/agent-facets/facets/commit/5d786119970546d9f008052fa3cfd02266321893) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Add in private facet support
+
 ## 0.21.1
 
 ### Patch Changes
