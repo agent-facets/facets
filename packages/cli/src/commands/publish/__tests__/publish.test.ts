@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { buildArtifactPath, fixtures } from '@agent-facets/engine'
-import { parseFacetArchive } from '@agent-facets/protocol'
+import { buildArtifactPath, fixtures, uncappedGunzip } from '@agent-facets/engine'
+import { parseFacetArchive, validateFacetArchive } from '@agent-facets/protocol'
 import { captureStderr, captureStdout } from '../../../__tests__/helpers/capture-std.ts'
 import { withTTY } from '../../../__tests__/helpers/with-tty.ts'
 import { publishCommand } from '../index.ts'
@@ -342,6 +342,103 @@ describe('publishCommand — content drift', () => {
     expect(call.body).toEqual(originalBytes)
     expect(call.url).toBe('https://api.test/v0/facets/%40acme/cowsay/versions')
     expect(call.url).not.toContain('%2F')
+  })
+})
+
+describe('publishCommand — privacy drift', () => {
+  // Privacy drift: the author edits the manifest's `private` field after
+  // building, without changing name or version. Privacy is manifest content,
+  // so this routes through the existing content-drift path. These tests prove
+  // (a) a privacy edit is detected as content drift, (b) declining rebuild
+  // ships the existing artifact's embedded privacy unchanged, and (c) accepting
+  // rebuild produces fresh bytes carrying the new privacy value.
+
+  /** Read the embedded facet manifest's privacy field out of uploaded `.facet` bytes. */
+  async function embeddedPrivate(archiveBytes: Uint8Array): Promise<boolean | undefined> {
+    const verified = await validateFacetArchive(archiveBytes, { gunzip: uncappedGunzip })
+    if (!verified.ok) expect.unreachable()
+    return verified.data.facetManifest.private
+  }
+
+  test('TTY, privacy edit, declines rebuild: uploads existing artifact, embedded privacy unchanged', async () => {
+    // Build a public (no `private`) artifact, then add `private: true` to source.
+    await buildFacetFixture(projectRoot, {
+      name: 'cowsay',
+      version: '0.1.0',
+      commands: { cowsay: '# cowsay\n' },
+    })
+    const manifest = JSON.parse(readFileSync(join(projectRoot, 'facet.json'), 'utf8')) as Record<string, unknown>
+    manifest.private = true
+    writeFileSync(join(projectRoot, 'facet.json'), JSON.stringify(manifest, null, 2))
+    mockRebuildDriftedAnswer = false // decline rebuild → ship existing
+    const spy = createFetchSpy(() => new Response(JSON.stringify(fixtures.publishResponse()), { status: 201 }))
+    globalThis.fetch = spy.fetch
+    const distPath = buildArtifactPath(projectRoot, 'cowsay', '0.1.0')
+    const originalBytes = new Uint8Array(await Bun.file(distPath).bytes())
+
+    const { result } = await withTTY(true, () => captureStdout(() => publishCommand.run([], {})))
+
+    expect(result).toBe(0)
+    expect(spy.calls).toHaveLength(1)
+    const call = spy.calls[0]
+    if (call === undefined) expect.unreachable()
+    // Existing artifact uploaded unchanged — publish did NOT rewrite the
+    // embedded privacy declaration to match the edited source.
+    expect(call.body).toEqual(originalBytes)
+    // The shipped artifact has no embedded `private` (it was built before the edit).
+    expect(await embeddedPrivate(call.body)).toBeUndefined()
+  })
+
+  test('non-TTY, privacy edit: warns about content drift and ships existing artifact unchanged', async () => {
+    await buildFacetFixture(projectRoot, {
+      name: 'cowsay',
+      version: '0.1.0',
+      commands: { cowsay: '# cowsay\n' },
+    })
+    const manifest = JSON.parse(readFileSync(join(projectRoot, 'facet.json'), 'utf8')) as Record<string, unknown>
+    manifest.private = true
+    writeFileSync(join(projectRoot, 'facet.json'), JSON.stringify(manifest, null, 2))
+    const spy = createFetchSpy(() => new Response(JSON.stringify(fixtures.publishResponse()), { status: 201 }))
+    globalThis.fetch = spy.fetch
+    const distPath = buildArtifactPath(projectRoot, 'cowsay', '0.1.0')
+    const originalBytes = new Uint8Array(await Bun.file(distPath).bytes())
+
+    const { result, stderr } = await withTTY(false, () => captureStderr(() => publishCommand.run([], {})))
+
+    expect(result).toBe(0)
+    expect(spy.calls).toHaveLength(1)
+    // Content-drift warning (not identity drift).
+    expect(stderr).toContain('out of date')
+    const call = spy.calls[0]
+    if (call === undefined) expect.unreachable()
+    expect(call.body).toEqual(originalBytes)
+  })
+
+  test('TTY, privacy edit, accepts rebuild: uploads fresh bytes with new embedded privacy', async () => {
+    await buildFacetFixture(projectRoot, {
+      name: 'cowsay',
+      version: '0.1.0',
+      commands: { cowsay: '# cowsay\n' },
+    })
+    const manifest = JSON.parse(readFileSync(join(projectRoot, 'facet.json'), 'utf8')) as Record<string, unknown>
+    manifest.private = true
+    writeFileSync(join(projectRoot, 'facet.json'), JSON.stringify(manifest, null, 2))
+    mockRebuildDriftedAnswer = true // accept rebuild
+    mockRunBuildViewToActuallyBuild()
+    const spy = createFetchSpy(() => new Response(JSON.stringify(fixtures.publishResponse()), { status: 201 }))
+    globalThis.fetch = spy.fetch
+    const distPath = buildArtifactPath(projectRoot, 'cowsay', '0.1.0')
+    const originalBytes = new Uint8Array(await Bun.file(distPath).bytes())
+
+    const { result } = await withTTY(true, () => captureStdout(() => publishCommand.run([], {})))
+
+    expect(result).toBe(0)
+    expect(spy.calls).toHaveLength(1)
+    const call = spy.calls[0]
+    if (call === undefined) expect.unreachable()
+    // Rebuild produced new bytes (embedded facet.json now carries private: true).
+    expect(call.body).not.toEqual(originalBytes)
+    expect(await embeddedPrivate(call.body)).toBe(true)
   })
 })
 

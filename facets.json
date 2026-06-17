@@ -3,6 +3,6 @@
     "viper-plans": "0.2.0",
     "cowsay": "0.2.0",
     "@julian/review-openspec-design": "1.1.0",
-    "@julian/openspec-adversary": "2.2.1"
+    "@julian/openspec-adversary": "2.3.0"
   }
 }

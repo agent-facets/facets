@@ -44,10 +44,22 @@ The facet manifest (`facet.json`) is the source of truth for a facet's identity 
 | `version`     | Yes      | string | Semver version string.        |
 | `description` | No       | string | Human-readable description.   |
 | `author`      | No       | string | Author name or identifier.    |
+| `private`     | No       | boolean | Privacy declaration. `true` declares private publish intent; `false` or omission is public-by-default. See [Privacy](#privacy). |
 
 The `name` and `version` fields MUST be present. A manifest missing either field MUST be rejected. The `name` MUST be a valid facet identity: an unscoped name (`<slug>`) or a scoped name (`@<scope>/<slug>`). Asset names (skills, agents, commands) are validated independently as local kebab-case identifiers and are never scoped.
 
 Consumers MUST tolerate unrecognized top-level fields. Unknown fields MUST be ignored  -- not rejected.
+
+### Privacy
+
+The optional `private` field declares the author's publish-visibility intent:
+
+- `private: true` declares that the facet is **private**.
+- `private: false`, or **omitting** the field, declares the facet is **public** (public-by-default).
+
+`private` is a recognized schema field, not an unknown extension. It MUST be a boolean: a non-boolean value (string, number, object, array, or null) MUST be rejected with a `private`-identified error rather than tolerated or coerced. Validation MUST NOT inject `private: false` into a manifest that omits the field  -- omission remains omission in the validated data, so tooling sees exactly what the author wrote.
+
+The `private` declaration is part of manifest content: it is embedded verbatim in the built `.facet` artifact and travels to the registry at publish time (see [Publish Flow](/specification/publish)). It expresses author intent; registry-side authorization and visibility enforcement are the registry's responsibility, not the CLI's.
 
 ### Facet Name Grammar
 
@@ -118,4 +130,5 @@ The `prompt` field follows the same rules as the agent descriptor's `prompt`.
 2. A facet MUST have at least one locally authored text asset.
 3. The `@` character marks a scope (`@scope/name`) and also separates a name from a version when a facet is referenced elsewhere (`name@version`, `@scope/name@version`).
 4. Consumers MUST tolerate unrecognized fields. Unknown fields MUST be ignored.
-5. The manifest MUST NOT be modified by any tooling  -- it is immutable.
+5. If present, `private` MUST be a boolean; non-boolean values are rejected. Omission is not rewritten to `private: false` (see [Privacy](#privacy)).
+6. The manifest MUST NOT be modified by any tooling  -- it is immutable.

@@ -67,6 +67,8 @@ The CLI uploads the complete built `.facet` archive  -- the same self-contained 
 
 The `name` and `version` used to address the upload come from the verified artifact's embedded manifest, not from a separate parse of the source-tree `facet.json`. This matters when the user explicitly chooses to ship a drifted artifact under its own embedded identity (see [identity drift](#when-the-built-artifact-has-drifted-from-source)).
 
+The manifest's [`private`](/specification/manifest#privacy) declaration is part of that embedded manifest, so it travels with the upload like any other manifest content  -- there is no separate publish flag for privacy. The registry reads the author's privacy intent from the embedded `facet.json`. Registry-side authorization and visibility enforcement are outside the CLI/protocol surface described here.
+
 ### What the Registry Does
 
 1. **Verify the upload.** The registry runs the same archive-verification operation `facet publish` ran locally: parse the outer container, decompress the inner archive (within the registry's size policy), verify the integrity hash, verify each per-asset hash, validate the embedded manifest, and apply the artifact content rules. A verification failure rejects the publish.
@@ -83,6 +85,8 @@ A first-time publish of a reserved or over-budget global facet MAY be accepted i
 
 Once a facet version is published, the registry MUST NOT allow re-publishing the same name and version with different content. A version, once published, is immutable.
 
+Because `private` is manifest content embedded in the artifact, changing a facet's privacy after a version is published requires the same version bump as any other content change. Re-publishing the same `(name, version)` with a flipped `private` value collides with immutability and is rejected; publish the visibility change under a new version.
+
 ### When the Built Artifact Is Missing
 
 When `dist/` is empty (or doesn't exist), there's nothing for publish to ship:
@@ -94,7 +98,7 @@ When `dist/` is empty (or doesn't exist), there's nothing for publish to ship:
 
 When `dist/` contains a `.facet` but its embedded manifest disagrees with the current source-tree `facet.json`, `facet publish` distinguishes two drift classes and handles each with a different prompt.
 
-**Content drift**  -- same name and version, different manifest content (the user edited `description`, an asset descriptor, or similar without rebuilding). In an interactive terminal, the user gets a two-option prompt: rebuild and publish the new artifact, or publish the existing artifact unchanged. Both choices upload to the same `(name, version)` address; the registry has no view into the user's local edits.
+**Content drift**  -- same name and version, different manifest content (the user edited `description`, `private`, an asset descriptor, or similar without rebuilding). In an interactive terminal, the user gets a two-option prompt: rebuild and publish the new artifact, or publish the existing artifact unchanged. Both choices upload to the same `(name, version)` address; the registry has no view into the user's local edits. Editing `private` is content drift like any other manifest edit  -- publishing the existing artifact ships its embedded privacy declaration unchanged, while rebuilding embeds the new value.
 
 **Identity drift**  -- different name or different version (the most common case: the user bumped `version` to `0.2.0` but `dist/` still has the `0.1.0` artifact). In an interactive terminal, the user gets a three-option prompt:
 

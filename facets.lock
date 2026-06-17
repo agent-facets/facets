@@ -6,8 +6,8 @@
         "kind": "registry",
         "registry": "https://api.facet.cafe"
       },
-      "version": "2.2.1",
-      "integrity": "sha256:c89f3a38e0deade748ab63c6e8d74ae65eee717fa2ccd8cc69ebca96c0caf189",
+      "version": "2.3.0",
+      "integrity": "sha256:12f91506d77467081816cd89412828df91a25d2de2ab897803a7dbc468dc1c1b",
       "assets": [
         {
           "scope": "project",
@@ -27,7 +27,7 @@
         {
           "scope": "project",
           "type": "agent",
-          "name": "opencode-adversary"
+          "name": "openspec-adversary"
         },
         {
           "scope": "project",

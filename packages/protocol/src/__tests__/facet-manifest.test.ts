@@ -246,6 +246,68 @@ describe('FacetManifestSchema — invalid manifests', () => {
   })
 })
 
+// --- Privacy declaration (private?: boolean) ---
+
+describe('FacetManifestSchema — privacy declaration', () => {
+  test('omitted private is accepted and not synthesized', () => {
+    const input = {
+      name: 'my-facet',
+      version: '1.0.0',
+      skills: { x: { description: 'A skill' } },
+    }
+    const result = FacetManifestSchema(input)
+    expect(result).not.toBeInstanceOf(type.errors)
+    const data = result as FacetManifest
+    expect('private' in data).toBe(false)
+    expect(data.private).toBeUndefined()
+  })
+
+  test('private: false is accepted and preserved', () => {
+    const input = {
+      name: 'my-facet',
+      version: '1.0.0',
+      private: false,
+      skills: { x: { description: 'A skill' } },
+    }
+    const result = FacetManifestSchema(input)
+    expect(result).not.toBeInstanceOf(type.errors)
+    const data = result as FacetManifest
+    expect(data.private).toBe(false)
+  })
+
+  test('private: true is accepted and preserved', () => {
+    const input = {
+      name: 'my-facet',
+      version: '1.0.0',
+      private: true,
+      skills: { x: { description: 'A skill' } },
+    }
+    const result = FacetManifestSchema(input)
+    expect(result).not.toBeInstanceOf(type.errors)
+    const data = result as FacetManifest
+    expect(data.private).toBe(true)
+  })
+
+  test.each([
+    ['string', 'true'],
+    ['number', 1],
+    ['object', {}],
+    ['array', []],
+    ['null', null],
+  ])('non-boolean private (%s) is rejected with a private-pathed error', (_label, value) => {
+    const input = {
+      name: 'my-facet',
+      version: '1.0.0',
+      private: value,
+      skills: { x: { description: 'A skill' } },
+    }
+    const result = FacetManifestSchema(input)
+    expect(result).toBeInstanceOf(type.errors)
+    const errors = result as InstanceType<typeof type.errors>
+    expect(errors.some((e) => e.path.includes('private'))).toBe(true)
+  })
+})
+
 // --- Command descriptor parity with skills/agents ---
 
 describe('FacetManifestSchema — command descriptor extras', () => {

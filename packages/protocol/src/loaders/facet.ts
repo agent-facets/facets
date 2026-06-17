@@ -15,6 +15,8 @@ export interface ResolvedFacetManifest {
   version: string
   description?: string
   author?: string
+  /** Privacy declaration carried through from the validated manifest when present. */
+  private?: boolean
   skills?: Record<
     string,
     {
@@ -153,6 +155,7 @@ export function resolvePromptsFromMap(
     version: manifest.version,
     ...(manifest.description !== undefined && { description: manifest.description }),
     ...(manifest.author !== undefined && { author: manifest.author }),
+    ...(manifest.private !== undefined && { private: manifest.private }),
     ...(resolvedSkills !== undefined && { skills: resolvedSkills }),
     ...(resolvedAgents !== undefined && { agents: resolvedAgents }),
     ...(resolvedCommands !== undefined && { commands: resolvedCommands }),

@@ -6,7 +6,7 @@ A facet author writes a facet manifest to declare their facet's identity, text a
 
 ### Requirement: Valid facet manifests are accepted
 
-The system SHALL accept a facet manifest that conforms to the manifest schema. A valid manifest has a name, a version, and at least one text asset (skills, agents, commands, or composed facets). The name SHALL be either an unscoped kebab-case facet identity (`name`) or a scoped facet identity (`@scope/name`). All three text asset types — skills, agents, and commands — use the same descriptor model: a map of asset name to a descriptor with a required description and optional platform metadata. Descriptors SHALL NOT contain prompt references — prompt content is inferred from the file-path convention. Skills use the Agent Skills directory convention `skills/<name>/SKILL.md`. Agents and commands use the flat file convention `agents/<name>.md` and `commands/<name>.md` respectively. All three descriptor types SHALL require a `description` field. Asset names SHALL remain local kebab-case identifiers and SHALL NOT be scoped facet identities.
+The system SHALL accept a facet manifest that conforms to the manifest schema. A valid manifest has a name, a version, and at least one text asset (skills, agents, commands, or composed facets). The name SHALL be either an unscoped kebab-case facet identity (`name`) or a scoped facet identity (`@scope/name`). A manifest MAY include an optional top-level `private` boolean; `private: true` declares private publish intent, while `private: false` or omission preserves public-by-default behavior. All three text asset types — skills, agents, and commands — use the same descriptor model: a map of asset name to a descriptor with a required description and optional platform metadata. Descriptors SHALL NOT contain prompt references — prompt content is inferred from the file-path convention. Skills use the Agent Skills directory convention `skills/<name>/SKILL.md`. Agents and commands use the flat file convention `agents/<name>.md` and `commands/<name>.md` respectively. All three descriptor types SHALL require a `description` field. Asset names SHALL remain local kebab-case identifiers and SHALL NOT be scoped facet identities.
 
 #### Scenario: Minimal valid manifest with a skill
 
@@ -27,6 +27,24 @@ The system SHALL accept a facet manifest that conforms to the manifest schema. A
 
 - **WHEN** an author provides a manifest with `name`, `version`, and a `facets` section but no local skills, agents, or commands
 - **THEN** the system SHALL accept the manifest
+
+#### Scenario: Manifest with private publish intent is valid
+
+- **WHEN** an author provides a manifest with `private: true`, valid identity fields, and at least one text asset
+- **THEN** the system SHALL accept the manifest
+- **AND** the loaded manifest data SHALL preserve `private: true`
+
+#### Scenario: Manifest with explicit public publish intent is valid
+
+- **WHEN** an author provides a manifest with `private: false`, valid identity fields, and at least one text asset
+- **THEN** the system SHALL accept the manifest
+- **AND** the loaded manifest data SHALL preserve `private: false`
+
+#### Scenario: Manifest with omitted privacy declaration remains public by default
+
+- **WHEN** an author provides a manifest with no `private` field, valid identity fields, and at least one text asset
+- **THEN** the system SHALL accept the manifest
+- **AND** the loaded manifest data SHALL NOT synthesize a `private` field
 
 ### Requirement: Invalid facet manifests are rejected with actionable errors
 
@@ -61,6 +79,12 @@ The system SHALL reject a facet manifest that does not conform to the manifest s
 - **WHEN** an author writes a server reference as an object but omits the `image` field
 - **THEN** the system SHALL reject the manifest
 - **AND** the error SHALL identify the server by name
+
+#### Scenario: Privacy declaration is not boolean
+
+- **WHEN** an author writes `private` as a string, number, object, array, or null
+- **THEN** the system SHALL reject the manifest
+- **AND** the error SHALL identify `private` and indicate that a boolean value is expected
 
 ### Requirement: Unrecognized fields are tolerated
 
@@ -601,3 +625,19 @@ The manifest SHALL be the single source of truth for asset metadata (name, descr
 
 - **WHEN** a facet is built into an archive
 - **THEN** all content files in the archive SHALL contain pure markdown with no YAML front matter
+
+### Requirement: Built facet artifacts preserve manifest privacy declarations
+
+When an author builds a facet, the built artifact SHALL preserve the source manifest's privacy declaration in its embedded facet manifest. If the source manifest contains `private: true` or `private: false`, the embedded manifest SHALL contain the same boolean value. If the source manifest omits `private`, the embedded manifest SHALL also omit `private`; build SHALL NOT inject a default privacy field.
+
+#### Scenario: Build preserves private publish intent
+
+- **WHEN** an author builds a facet whose source manifest contains `private: true`
+- **THEN** the built artifact's embedded facet manifest SHALL contain `private: true`
+- **AND** verification of the built artifact SHALL treat that value as part of the embedded manifest content
+
+#### Scenario: Build preserves omitted privacy declaration
+
+- **WHEN** an author builds a facet whose source manifest omits `private`
+- **THEN** the built artifact's embedded facet manifest SHALL omit `private`
+- **AND** build SHALL NOT inject `private: false` into the embedded manifest
