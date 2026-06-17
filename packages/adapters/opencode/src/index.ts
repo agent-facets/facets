@@ -10,11 +10,30 @@ import {
 } from '@agent-facets/adapter'
 import { type } from 'arktype'
 
-/** OpenCode per-asset metadata schema */
+/**
+ * OpenCode per-asset metadata schema.
+ *
+ * A single generic schema serves every asset type because the adapter's
+ * `buildAssetMetadata` hook is not asset-type-aware. Command-only keys
+ * (`agent`, `subtask`) and agent-only keys (`mode`) therefore coexist here;
+ * a facet only sets the keys relevant to the asset it attaches them to.
+ *
+ * `permission` is `Record<string, unknown>` because OpenCode permission
+ * values may be a shorthand action string ("allow" | "ask" | "deny") OR a
+ * nested glob/pattern → action object (e.g. `edit: { "*": "deny", "foo/**":
+ * "allow" }`). Constraining it tighter would reject valid OpenCode config.
+ * The legacy `permissions` key is retained unchanged for back-compat.
+ */
 const OpenCodeMetadataSchema = type({
   'tools?': 'Record<string, boolean>',
   'model?': 'string',
   'permissions?': 'Record<string, "allow" | "deny">',
+  // OpenCode agent frontmatter
+  'mode?': '"primary" | "subagent" | "all"',
+  'permission?': 'Record<string, unknown>',
+  // OpenCode command frontmatter — a command may target an agent and force a subtask
+  'agent?': 'string',
+  'subtask?': 'boolean',
 })
 
 /**
