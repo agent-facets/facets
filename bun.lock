@@ -57,7 +57,7 @@
     },
     "packages/adapters/opencode": {
       "name": "@agent-facets/adapter-opencode",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "devDependencies": {
         "@agent-facets/adapter": "workspace:*",
         "arktype": "2.2.0",
