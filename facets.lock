@@ -6,8 +6,8 @@
         "kind": "registry",
         "registry": "https://api.facet.cafe"
       },
-      "version": "3.0.0",
-      "integrity": "sha256:fa804e44ce4554c35128a519af4705c541b0df29307d021aa777a11b9ac761b5",
+      "version": "3.1.0",
+      "integrity": "sha256:ec982d17392d71ee4f940434d58c7eba26010adaf64162b2fa0d99173121aa82",
       "assets": [
         {
           "scope": "project",
@@ -43,6 +43,11 @@
           "scope": "project",
           "type": "command",
           "name": "run-adversary"
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "run-inline-adversary"
         }
       ]
     },
