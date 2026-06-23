@@ -37,11 +37,13 @@ export function designSystemPlugin(): Plugin {
         if (url === LIGHT_SERVED_PATH) {
           res.setHeader('Content-Type', 'text/html; charset=utf-8')
           res.end(readFileSync(LIGHT_DESIGN_PATH, 'utf8'))
+          return
         }
 
         if (url === DARK_SERVED_PATH) {
           res.setHeader('Content-Type', 'text/html; charset=utf-8')
-          res.end(readFileSync(LIGHT_DESIGN_PATH, 'utf8'))
+          res.end(readFileSync(DARK_DESIGN_PATH, 'utf8'))
+          return
         }
 
         throw new Error('Uh oh – design system plugin is malfunctioning!')

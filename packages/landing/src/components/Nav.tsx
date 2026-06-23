@@ -49,7 +49,7 @@ export function Nav() {
             Agent Facets
           </button>
         ) : (
-          <a className={styles.brand} href={designLink} aria-label="Agent Facets — back to top">
+          <a className={styles.brand} href={designLink} aria-label="Agent Facets — Design System">
             <BrandMark />
             Agent Facets
           </a>
