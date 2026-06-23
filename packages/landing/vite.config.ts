@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 import { agentPromptPlugin } from './vite/agent-prompt-plugin'
 import { brandTokensPlugin } from './vite/brand-tokens-plugin'
+import { designSystemPlugin } from './vite/design-system-plugin.ts'
 
 // Inject the CLI package's version at build time so the hero eyebrow can
 // display the shipped CLI version. The CLI is the user-facing artifact;
@@ -18,7 +19,7 @@ const cliPkg = JSON.parse(readFileSync(fileURLToPath(cliPkgUrl), 'utf8')) as { v
 const tokensEmitPath = fileURLToPath(new URL('./src/styles/tokens.generated.css', import.meta.url))
 
 export default defineConfig({
-  plugins: [react(), brandTokensPlugin({ emitPath: tokensEmitPath }), agentPromptPlugin()],
+  plugins: [react(), brandTokensPlugin({ emitPath: tokensEmitPath }), agentPromptPlugin(), designSystemPlugin()],
   define: {
     __APP_VERSION__: JSON.stringify(cliPkg.version),
   },

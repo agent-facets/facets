@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!**/sst-env.d.ts", "!packages/engine/src/registry/generated"]
+    "includes": ["**", "!**/sst-env.d.ts", "!packages/engine/src/registry/generated", "!packages/landing/design*.html"]
   },
   "formatter": {
     "enabled": true,

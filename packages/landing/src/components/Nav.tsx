@@ -1,5 +1,6 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { useTheme } from '../hooks/useTheme.ts'
 import { BrandMark } from './BrandMark'
 import { MobileMenu } from './MobileMenu'
 import styles from './Nav.module.css'
@@ -14,6 +15,7 @@ import { ThemeToggle } from './ThemeToggle'
  */
 export function Nav() {
   const isMobile = useIsMobile()
+  const [theme] = useTheme()
   const [menuOpen, setMenuOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
 
@@ -26,6 +28,8 @@ export function Nav() {
   const toggleMenu = useCallback(() => {
     setMenuOpen((v) => !v)
   }, [])
+
+  const designLink = useMemo(() => `/design-${theme}`, [theme])
 
   return (
     <>
@@ -45,7 +49,7 @@ export function Nav() {
             Agent Facets
           </button>
         ) : (
-          <a className={styles.brand} href="#top" aria-label="Agent Facets — back to top">
+          <a className={styles.brand} href={designLink} aria-label="Agent Facets — Design System">
             <BrandMark />
             Agent Facets
           </a>
