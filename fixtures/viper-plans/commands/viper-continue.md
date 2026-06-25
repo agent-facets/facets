@@ -66,4 +66,4 @@ No plan was detected in conversation history. Fall back to the full selection fl
 
 Once complete, ask the user if they want to delete the plan with the `question` tool using a simple yes/no binary.
 
-If they answer yes: if the `viper-delete-plan` tool is available, use it. Otherwise, delete the `.opencode/plans/<name>/` directory directly with your file tools.
+If they answer yes: if the `viper-delete-plan` tool is available, use it. Otherwise, recursively remove the entire `.opencode/plans/<name>/` directory and all of its contents with your file tools, leaving no orphaned files or empty directory behind.
