@@ -34,7 +34,6 @@ export const FIRST_PARTY_ADAPTERS: readonly FirstPartyAdapter[] = [
   {
     name: 'codex',
     npmPackage: '@agent-facets/adapter-codex',
-    supportsInstall: false,
-    comingSoonLabel: '(install support coming soon)',
+    supportsInstall: true,
   },
 ] as const

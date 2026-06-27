@@ -35,10 +35,10 @@ export function versionMetadata(overrides?: Partial<WireMetadataResponse>): Wire
     manifest_json: '{}',
     published_at: '2026-05-01T00:00:00Z',
     publisher: 'test-publisher',
-    owner: { kind: 'user', username: 'test-publisher' },
-    visibility: 'public',
     size_bytes: 100,
     asset_counts: assetCounts({ commands: 1 }),
+    owner: { kind: 'user', username: 'test-publisher' },
+    visibility: 'public',
     ...overrides,
   }
 }
@@ -53,9 +53,9 @@ export function facetSummary(overrides?: Partial<WirePackageListItem>): WirePack
     latest_version: '0.1.0',
     published_at: '2026-05-01T00:00:00Z',
     publisher: 'test-publisher',
+    asset_counts: assetCounts(),
     owner: { kind: 'user', username: 'test-publisher' },
     visibility: 'public',
-    asset_counts: assetCounts(),
     ...overrides,
   }
 }
