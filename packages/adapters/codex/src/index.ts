@@ -153,11 +153,7 @@ function relativePathFor(assetType: AssetType, name: string): string {
  * Mirrors how claude-code / opencode treat content as the body and metadata
  * as the envelope — no content sniffing or format detection.
  */
-async function installAgentToml(
-  filePath: string,
-  content: string,
-  metadata?: Record<string, unknown>,
-): Promise<void> {
+async function installAgentToml(filePath: string, content: string, metadata?: Record<string, unknown>): Promise<void> {
   await mkdir(dirname(filePath), { recursive: true })
 
   const doc: Record<string, unknown> = { ...(metadata ?? {}) }
