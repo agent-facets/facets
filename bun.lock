@@ -48,7 +48,7 @@
     },
     "packages/adapters/codex": {
       "name": "@agent-facets/adapter-codex",
-      "version": "0.3.7",
+      "version": "0.4.0",
       "devDependencies": {
         "@agent-facets/adapter": "workspace:*",
         "arktype": "2.2.0",
@@ -80,7 +80,7 @@
     },
     "packages/cli": {
       "name": "agent-facets",
-      "version": "0.22.0",
+      "version": "0.22.1",
       "bin": {
         "facet": "./bin/facet",
       },

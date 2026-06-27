@@ -1,5 +1,11 @@
 # agent-facets
 
+## 0.22.1
+
+### Patch Changes
+
+- [#361](https://github.com/agent-facets/facets/pull/361) [`940a2f1`](https://github.com/agent-facets/facets/commit/940a2f155216bff258a210855feb5bde1bfb22bd) Thanks [@JKryne](https://github.com/JKryne)! - Added support for codex adapter
+
 ## 0.22.0
 
 ### Minor Changes
