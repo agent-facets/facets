@@ -161,7 +161,7 @@ describe('InstallPicker — keyboard interaction', () => {
     instance.unmount()
   })
 
-  test('Cursor visits the codex row now that it is selectable', async () => {
+  test('Cursor able to select multiple adapter rows', async () => {
     // All three first-party adapters are selectable:
     // claude-code → opencode → codex → wrap back to claude-code.
     const state: { confirmed: { name: string }[] | null } = { confirmed: null }
