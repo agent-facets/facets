@@ -27,6 +27,7 @@ The `install` flow downloads the source, bundles it into a self-contained `adapt
 - `opencode`  -- OpenCode adapter (`@agent-facets/adapter-opencode`)
 - `claude-code`  -- Claude Code adapter (`@agent-facets/adapter-claude-code`)
 - `codex`  -- Codex adapter (`@agent-facets/adapter-codex`)
+- `openclaw`  -- OpenClaw adapter (`@agent-facets/adapter-openclaw`)
 
 
 ### `facet adapter remove`

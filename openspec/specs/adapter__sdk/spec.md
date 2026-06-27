@@ -1,6 +1,6 @@
 ## Purpose
 
-An adapter is an AI coding tool (OpenCode, Claude Code, Codex, etc.) that wraps an LLM and consumes skills, agents, and commands. Adapter authors use the Adapter SDK to describe how their tool validates per-asset metadata and where/how assets are stored, so the system can validate manifests against specific adapters and delegate all asset I/O to the adapter that owns it.
+An adapter is an AI coding tool (OpenCode, Claude Code, Codex, OpenClaw, etc.) that wraps an LLM and consumes skills, agents, and commands. Adapter authors use the Adapter SDK to describe how their tool validates per-asset metadata and where/how assets are stored, so the system can validate manifests against specific adapters and delegate all asset I/O to the adapter that owns it.
 
 ## Requirements
 

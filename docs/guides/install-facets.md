@@ -20,6 +20,7 @@ Without a specifier, [`facet adapter install`](/cli/adapters/install) launches a
 | `opencode`    | `@agent-facets/adapter-opencode`     | OpenCode    |
 | `claude-code` | `@agent-facets/adapter-claude-code`  | Claude Code |
 | `codex`       | `@agent-facets/adapter-codex`        | Codex       |
+| `openclaw`    | `@agent-facets/adapter-openclaw`     | OpenClaw    |
 
 You can also install by name directly:
 

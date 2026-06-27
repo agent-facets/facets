@@ -36,4 +36,9 @@ export const FIRST_PARTY_ADAPTERS: readonly FirstPartyAdapter[] = [
     npmPackage: '@agent-facets/adapter-codex',
     supportsInstall: true,
   },
+  {
+    name: 'openclaw',
+    npmPackage: '@agent-facets/adapter-openclaw',
+    supportsInstall: true,
+  },
 ] as const

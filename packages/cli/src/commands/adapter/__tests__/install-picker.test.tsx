@@ -72,6 +72,7 @@ describe('InstallPicker — initial render', () => {
     expect(frame).toContain('claude-code')
     expect(frame).toContain('opencode')
     expect(frame).toContain('codex')
+    expect(frame).toContain('openclaw')
     instance.unmount()
   })
 
@@ -160,8 +161,8 @@ describe('InstallPicker — keyboard interaction', () => {
   })
 
   test('Cursor able to select multiple adapter rows', async () => {
-    // All three first-party adapters are selectable:
-    // claude-code → opencode → codex → wrap back to claude-code.
+    // All first-party adapters are selectable:
+    // claude-code → opencode → codex → openclaw → wrap back to claude-code.
     const state: { confirmed: { name: string }[] | null } = { confirmed: null }
     const instance = render(
       createElement(InstallPicker, {
@@ -177,7 +178,9 @@ describe('InstallPicker — keyboard interaction', () => {
     await nextTick()
     instance.stdin.write(KEY_SPACE) // select codex
     await nextTick()
-    instance.stdin.write(KEY_DOWN) // codex → wrap back to claude-code
+    instance.stdin.write(KEY_DOWN) // codex → openclaw
+    await nextTick()
+    instance.stdin.write(KEY_DOWN) // openclaw → wrap back to claude-code
     await nextTick()
     instance.stdin.write(KEY_SPACE) // select claude-code
     await nextTick()

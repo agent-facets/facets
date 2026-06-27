@@ -23,6 +23,13 @@ describe('parseAdapterSpecifier', () => {
     expect(result.resolved).toEqual({ type: 'npm', packageName: '@agent-facets/adapter-codex' })
   })
 
+  test('built-in name "openclaw" resolves to npm package', () => {
+    const result = parseAdapterSpecifier('openclaw')
+    if (!result.ok) expect.unreachable()
+
+    expect(result.resolved).toEqual({ type: 'npm', packageName: '@agent-facets/adapter-openclaw' })
+  })
+
   test('scoped npm package passes through', () => {
     const result = parseAdapterSpecifier('@acme/adapter-custom')
     if (!result.ok) expect.unreachable()
@@ -85,11 +92,12 @@ describe('parseAdapterSpecifier', () => {
 })
 
 describe('getBuiltinAdapterNames', () => {
-  test('returns all three built-in adapter names', () => {
+  test('returns all built-in adapter names', () => {
     const names = getBuiltinAdapterNames()
     expect(names).toContain('opencode')
     expect(names).toContain('claude-code')
     expect(names).toContain('codex')
-    expect(names).toHaveLength(3)
+    expect(names).toContain('openclaw')
+    expect(names).toHaveLength(4)
   })
 })
