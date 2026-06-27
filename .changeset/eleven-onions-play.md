@@ -1,6 +1,5 @@
 ---
 "@agent-facets/adapter-codex": minor
-"@agent-facets/engine": patch
 "agent-facets": patch
 ---
 
