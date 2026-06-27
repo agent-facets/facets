@@ -54,7 +54,16 @@ describe('whoamiCommand', () => {
     expect(stdout).toContain('ada')
     expect(stdout).toContain('ada@example.com')
     expect(stdout).toContain('pro')
+    expect(stdout).toContain('registry: https://api.test')
     expect(stdout).toContain('FACET_TOKEN')
+  })
+
+  test('falls back to the default registry URL when FACET_REGISTRY_URL is unset', async () => {
+    delete process.env.FACET_REGISTRY_URL
+    stubProfile()
+    const { result, stdout } = await captureStdout(() => whoamiCommand.run([], {}))
+    expect(result).toBe(0)
+    expect(stdout).toContain('registry: https://api.facet.cafe')
   })
 
   test('does not name the env source when the credential comes from the file', async () => {

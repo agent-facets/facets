@@ -9,7 +9,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { validateAssetName } from '@agent-facets/common'
 import type {
   AssetIntegrityFailure,
@@ -145,8 +145,14 @@ export function cacheGet(identity: CacheIdentity): CacheLookup {
  */
 export function cachePut(identity: CacheIdentity, sourceDir: string): CachePutResult {
   const finalPath = cachePath(identity)
-  const root = resolveCacheRoot()
-  mkdirSync(root, { recursive: true })
+  // Create the slot's PARENT directory, not just the cache root. For a flat
+  // (unscoped, slashless) identity `dirname(finalPath)` is the cache root, so
+  // this also covers the common case. For a slash-containing identity —
+  // scoped `@scope/name@version` or namespaced `acme/name@version` — the slot
+  // renders as a nested path (`<root>/@scope/name@version`), whose parent
+  // (`<root>/@scope`) does not exist by default; without this the renameSync
+  // below fails with ENOENT.
+  mkdirSync(dirname(finalPath), { recursive: true })
 
   if (existsSync(finalPath)) {
     if (!isExistingDirectory(finalPath)) {

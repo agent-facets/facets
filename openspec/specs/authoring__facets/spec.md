@@ -6,11 +6,16 @@ A facet author writes a facet manifest to declare their facet's identity, text a
 
 ### Requirement: Valid facet manifests are accepted
 
-The system SHALL accept a facet manifest that conforms to the manifest schema. A valid manifest has a name, a version, and at least one text asset (skills, agents, commands, or composed facets). All three text asset types — skills, agents, and commands — use the same descriptor model: a map of asset name to a descriptor with a required description and optional platform metadata. Descriptors SHALL NOT contain prompt references — prompt content is inferred from the file-path convention. Skills use the Agent Skills directory convention `skills/<name>/SKILL.md`. Agents and commands use the flat file convention `agents/<name>.md` and `commands/<name>.md` respectively. All three descriptor types SHALL require a `description` field.
+The system SHALL accept a facet manifest that conforms to the manifest schema. A valid manifest has a name, a version, and at least one text asset (skills, agents, commands, or composed facets). The name SHALL be either an unscoped kebab-case facet identity (`name`) or a scoped facet identity (`@scope/name`). A manifest MAY include an optional top-level `private` boolean; `private: true` declares private publish intent, while `private: false` or omission preserves public-by-default behavior. All three text asset types — skills, agents, and commands — use the same descriptor model: a map of asset name to a descriptor with a required description and optional platform metadata. Descriptors SHALL NOT contain prompt references — prompt content is inferred from the file-path convention. Skills use the Agent Skills directory convention `skills/<name>/SKILL.md`. Agents and commands use the flat file convention `agents/<name>.md` and `commands/<name>.md` respectively. All three descriptor types SHALL require a `description` field. Asset names SHALL remain local kebab-case identifiers and SHALL NOT be scoped facet identities.
 
 #### Scenario: Minimal valid manifest with a skill
 
 - **WHEN** an author provides a manifest with a name, version, and a single skill descriptor that includes a description
+- **THEN** the system SHALL accept the manifest
+
+#### Scenario: Valid manifest with a scoped facet identity
+
+- **WHEN** an author provides a manifest whose `name` is `@julian/cowsay`, with a version and a single skill descriptor that includes a description
 - **THEN** the system SHALL accept the manifest
 
 #### Scenario: Manifest with all sections
@@ -22,6 +27,24 @@ The system SHALL accept a facet manifest that conforms to the manifest schema. A
 
 - **WHEN** an author provides a manifest with `name`, `version`, and a `facets` section but no local skills, agents, or commands
 - **THEN** the system SHALL accept the manifest
+
+#### Scenario: Manifest with private publish intent is valid
+
+- **WHEN** an author provides a manifest with `private: true`, valid identity fields, and at least one text asset
+- **THEN** the system SHALL accept the manifest
+- **AND** the loaded manifest data SHALL preserve `private: true`
+
+#### Scenario: Manifest with explicit public publish intent is valid
+
+- **WHEN** an author provides a manifest with `private: false`, valid identity fields, and at least one text asset
+- **THEN** the system SHALL accept the manifest
+- **AND** the loaded manifest data SHALL preserve `private: false`
+
+#### Scenario: Manifest with omitted privacy declaration remains public by default
+
+- **WHEN** an author provides a manifest with no `private` field, valid identity fields, and at least one text asset
+- **THEN** the system SHALL accept the manifest
+- **AND** the loaded manifest data SHALL NOT synthesize a `private` field
 
 ### Requirement: Invalid facet manifests are rejected with actionable errors
 
@@ -56,6 +79,12 @@ The system SHALL reject a facet manifest that does not conform to the manifest s
 - **WHEN** an author writes a server reference as an object but omits the `image` field
 - **THEN** the system SHALL reject the manifest
 - **AND** the error SHALL identify the server by name
+
+#### Scenario: Privacy declaration is not boolean
+
+- **WHEN** an author writes `private` as a string, number, object, array, or null
+- **THEN** the system SHALL reject the manifest
+- **AND** the error SHALL identify `private` and indicate that a boolean value is expected
 
 ### Requirement: Unrecognized fields are tolerated
 
@@ -120,12 +149,13 @@ After validation, the system SHALL resolve prompt content for all skills, agents
 
 The system SHALL provide an interactive wizard that guides the author through creating a new facet project. The wizard SHALL collect the following required information:
 
-- **Name**: A valid kebab-case facet name. The system SHALL validate the name in real-time and reject invalid input.
+- **Name**: A valid facet identity name. The name SHALL be either an unscoped kebab-case name (`name`) or a scoped name (`@scope/name`). The system SHALL validate the name in real-time and reject invalid input.
 - **Description**: A non-empty description. The system SHALL NOT allow the author to complete the wizard without providing a description.
 
 The wizard SHALL also collect optional information:
 
 - **Version**: A valid SemVer version (N.N.N format). The system SHALL default to `0.0.0`. The author MAY accept the default or change it.
+- **Privacy**: A choice of whether the new facet declares private publish intent. The system SHALL default to public visibility intent. The author MAY accept the public default or choose private.
 
 The wizard SHALL also allow the author to manage assets (skills, commands, and agents):
 
@@ -135,19 +165,28 @@ The wizard SHALL also allow the author to manage assets (skills, commands, and a
 - All asset names SHALL be validated as kebab-case in real-time
 - Asset names SHALL be unique within their type — the system SHALL reject duplicates within the same asset type
 - Assets of different types MAY share the same name
-- The first asset added to each type SHOULD default its name to the facet name as a suggestion
+- The first asset added to each type SHOULD default its name to the unscoped name segment of the facet identity as a suggestion
 
 The wizard SHALL require the author to add at least one **asset** before completing. Name, description, and at least one **asset** are all required.
 
-All fields SHALL remain editable throughout the wizard — the author SHALL be able to go back and change any previously entered value.
+All fields SHALL remain editable throughout the wizard — the author SHALL be able to go back and change any previously entered value, including privacy.
 
-Before completing, the wizard SHALL display a confirmation summary showing only the asset types that have entries and a preview of the files to be created. The author SHALL be able to confirm or go back.
+Before completing, the wizard SHALL display a confirmation summary showing only the asset types that have entries, the selected privacy intent, and a preview of the files to be created. The author SHALL be able to confirm or go back.
 
 The wizard SHALL provide an exit confirmation mechanism that prevents accidental loss of unsaved work.
 
 Upon confirmation, the system SHALL create a project directory containing a valid manifest and named starter files for each asset the author specified, with each starter file containing template content that guides authors on what belongs in each section. Skill starter files SHALL be created at `skills/<name>/SKILL.md`. Agent and command starter files SHALL be created at `agents/<name>.md` and `commands/<name>.md` respectively. All starter files SHALL contain no YAML front matter.
 
+When the author selects private visibility intent, the generated manifest SHALL contain `private: true`. When the author accepts public visibility intent, the generated manifest SHALL omit `private`.
+
 The scaffolded project SHALL be immediately buildable — running the build command on a freshly scaffolded project SHALL succeed with no errors.
+
+#### Scenario: Author scaffolds a scoped project with named skills
+
+- **WHEN** the author runs the create wizard, provides a name `@julian/cowsay` and description `Cowsay tools`, and adds a skill named `cowsay`
+- **THEN** the system SHALL create a project directory containing a manifest whose `name` is `@julian/cowsay`
+- **AND** a starter file SHALL be created at `skills/cowsay/SKILL.md`
+- **AND** the manifest SHALL reference all starter files correctly
 
 #### Scenario: Author scaffolds a project with named skills
 
@@ -168,9 +207,20 @@ The scaffolded project SHALL be immediately buildable — running the build comm
 - **THEN** the system SHALL NOT allow completion
 - **AND** the system SHALL indicate that a description is required
 
+#### Scenario: Scoped facet identity is accepted
+
+- **WHEN** the author enters `@acme/deploy-tools` as the facet name
+- **THEN** the system SHALL accept the name as a valid facet identity
+
+#### Scenario: Invalid facet identity is rejected
+
+- **WHEN** the author enters `@acme/Deploy_Tools` as the facet name
+- **THEN** the system SHALL indicate the name is invalid
+- **AND** the system SHALL NOT accept the invalid name
+
 #### Scenario: Asset names are validated as kebab-case
 
-- **WHEN** the author enters an asset name containing uppercase letters, spaces, or underscores
+- **WHEN** the author enters an asset name containing uppercase letters, spaces, underscores, slashes, or an at sign
 - **THEN** the system SHALL indicate the name is invalid
 - **AND** the system SHALL NOT accept the invalid name
 
@@ -215,6 +265,24 @@ The scaffolded project SHALL be immediately buildable — running the build comm
 - **WHEN** the author does not change the version field
 - **THEN** the manifest SHALL contain version `0.0.0`
 
+#### Scenario: New facet defaults to public visibility intent
+
+- **WHEN** an author creates a facet interactively and accepts the default privacy choice
+- **THEN** the generated manifest SHALL omit `private`
+- **AND** the confirmation summary SHALL show the facet as public
+
+#### Scenario: New private facet writes private true
+
+- **WHEN** an author creates a facet interactively and selects private visibility intent
+- **THEN** the generated manifest SHALL contain `private: true`
+- **AND** the confirmation summary SHALL show the facet as private
+
+#### Scenario: Author selects private then reverts to public before completing
+
+- **WHEN** an author creates a facet interactively, selects private visibility intent, and then changes the privacy choice back to public before completing the wizard
+- **THEN** the generated manifest SHALL omit `private`
+- **AND** the confirmation summary SHALL show the facet as public
+
 #### Scenario: Target directory already contains a manifest
 
 - **WHEN** the author runs the create wizard and a manifest already exists in the target directory
@@ -224,7 +292,7 @@ The scaffolded project SHALL be immediately buildable — running the build comm
 
 The system SHALL compile a facet project into a build output directory. The build command SHALL read the manifest, validate it, verify that every declared asset file exists, is non-empty, and contains no YAML front matter, resolve all file-based prompts to their content, run all validation checks, assemble the resolved output into a deterministic compressed archive, compute content hashes, and write the archive and build manifest to a `dist/` directory. The build command SHALL NOT modify the manifest or any content files. The build command SHALL NOT be interactive — it SHALL behave identically in all environments.
 
-The build output SHALL contain a compressed archive (`.facet` file) with the manifest and all text asset files with prompts resolved to their final string content, and a build manifest (`build-manifest.json`) recording content hashes.
+The build output SHALL contain a compressed archive (`.facet` file) with the manifest and all text asset files with prompts resolved to their final string content, and a build manifest (`build-manifest.json`) recording content hashes. For a scoped facet identity, whose name renders as a nested path under `dist/`, the system SHALL create any required parent directories under `dist/` before writing the built archive. The build-output write boundary SHALL create parent directories for any slash-containing archive path, so the same fix also repairs the pre-existing failure for any nested archive filename.
 
 The build command SHALL render its progress as a step-by-step display, showing each pipeline stage as it completes — including the archive assembly stage. On success, the system SHALL display the archive contents listing and the archive content hash. On failure, the system SHALL indicate which stage failed and display errors with their field paths, and SHALL suggest running the editing command to fix the issues. After the display exits, the system SHALL print a brief plain-text summary to stdout — including the content hash — so it persists in terminal scroll-back.
 
@@ -236,6 +304,19 @@ The build command SHALL render its progress as a step-by-step display, showing e
 - **AND** the build manifest SHALL contain the archive content hash and per-asset content hashes
 - **AND** the system SHALL display the archive contents and content hash
 - **AND** the system SHALL print a brief success summary to stdout including the content hash
+
+#### Scenario: Successful build of a scoped facet identity
+
+- **WHEN** the author runs the build command for a valid facet whose name is `@julian/cowsay`
+- **THEN** the system SHALL write the built archive under `dist/` without failing on the scoped name separator
+- **AND** the archive SHALL contain `facet.json` at the archive root with `name` set to `@julian/cowsay`
+- **AND** the archive's internal asset paths SHALL continue to be derived from asset names, not from the facet identity
+
+#### Scenario: Build-output write boundary creates parent directories for a nested archive path
+
+- **WHEN** the build-output write boundary writes an archive whose filename renders as a nested path under `dist/` (for example a scoped `@scope/name` identity, or any other slash-containing archive filename)
+- **THEN** the system SHALL create the required parent directories under `dist/` before writing the archive
+- **AND** the write SHALL NOT fail with a missing-directory error
 
 #### Scenario: Build fails on invalid manifest
 
@@ -344,7 +425,9 @@ The system SHALL validate the `facets` section of the manifest for structural co
 
 ### Requirement: Authors can edit a facet project interactively
 
-The system SHALL provide an interactive editing command that serves as the full authoring workbench for facet manifests. The editing command SHALL combine all capabilities of the scaffolding wizard (identity editing, asset creation, asset removal) with automatic reconciliation of disk contents against the manifest. The editing command SHALL scan conventional **asset** directories to detect discrepancies between disk contents and the manifest. If the manifest is invalid, the editing command SHALL display errors and exit. If drift is detected, the editing command SHALL present a reconciliation phase before proceeding to editing.
+The system SHALL provide an interactive editing command that serves as the full authoring workbench for facet manifests. The editing command SHALL combine all capabilities of the scaffolding wizard (identity editing, privacy editing, asset creation, asset removal) with automatic reconciliation of disk contents against the manifest. The editing command SHALL scan conventional **asset** directories to detect discrepancies between disk contents and the manifest. If the manifest is invalid, the editing command SHALL display errors and exit. If drift is detected, the editing command SHALL present a reconciliation phase before proceeding to editing.
+
+The editing command SHALL display the facet's current privacy intent so the author can inspect it without opening the manifest file, and SHALL allow the author to change between public and private. When the author sets or leaves the facet as private, the written manifest SHALL contain `private: true`. When the author changes a private facet to public, the written manifest SHALL omit `private`. When the author leaves a facet public, the written manifest SHALL preserve whether the source manifest omitted `private` or explicitly contained `private: false`.
 
 #### Scenario: Author edits facet identity fields
 
@@ -352,6 +435,52 @@ The system SHALL provide an interactive editing command that serves as the full 
 - **THEN** the system SHALL display the current name, description, and version
 - **AND** the author SHALL be able to change any of them
 - **AND** if version is absent, the system SHALL default it to `0.0.0`
+
+#### Scenario: Author inspects private manifest as private
+
+- **WHEN** the author runs the edit command on a facet whose source manifest contains `private: true`
+- **THEN** the system SHALL show the facet as private
+- **AND** the author SHALL be able to leave it private or switch it to public before applying changes
+
+#### Scenario: Author inspects omitted privacy as public
+
+- **WHEN** the author runs the edit command on a facet whose source manifest omits `private`
+- **THEN** the system SHALL show the facet as public
+
+#### Scenario: Author inspects explicit public false as public
+
+- **WHEN** the author runs the edit command on a facet whose source manifest contains `private: false`
+- **THEN** the system SHALL show the facet as public
+
+#### Scenario: Edit shows omitted privacy as public and preserves omission
+
+- **WHEN** an author edits a facet whose source manifest omits `private`
+- **AND** the author leaves the facet public
+- **THEN** the applied manifest SHALL omit `private`
+
+#### Scenario: Edit preserves explicit public false when left public
+
+- **WHEN** an author edits a facet whose source manifest contains `private: false`
+- **AND** the author leaves the facet public
+- **THEN** the applied manifest SHALL preserve `private: false`
+
+#### Scenario: Edit changes private facet to public omission
+
+- **WHEN** an author edits a facet whose source manifest contains `private: true`
+- **AND** the author switches the facet to public before applying changes
+- **THEN** the applied manifest SHALL omit `private`
+
+#### Scenario: Edit changes public facet to private
+
+- **WHEN** an author edits a facet whose source manifest omits `private` or contains `private: false`
+- **AND** the author switches the facet to private before applying changes
+- **THEN** the applied manifest SHALL contain `private: true`
+
+#### Scenario: Author changes a facet identity to a different scope
+
+- **WHEN** the author changes a facet's name from `@julian/cowsay` to `@acme/cowsay` during edit
+- **THEN** the system SHALL treat the change as a normal local identity edit
+- **AND** the system SHALL NOT warn specially about changing scopes
 
 #### Scenario: Author creates a new skill from scratch
 
@@ -523,7 +652,7 @@ The system SHALL parse YAML front matter from any file encountered during edit �
 
 ### Requirement: Edit is transactional with confirmation
 
-All changes during an edit session SHALL be queued — nothing SHALL be written to disk or manifest until the author explicitly confirms. Before confirmation, the system SHALL display a manifest preview showing identity fields (name, description, version) and **asset** sections (name and truncated description per **asset**). The author SHALL be able to confirm ("Apply") or go back to editing. The author SHALL be able to exit at any point before confirmation with no changes applied.
+All changes during an edit session SHALL be queued — nothing SHALL be written to disk or manifest until the author explicitly confirms. Before confirmation, the system SHALL display a manifest preview showing identity fields (name, description, version), privacy intent, and **asset** sections (name and truncated description per **asset**). The author SHALL be able to confirm ("Apply") or go back to editing. The author SHALL be able to exit at any point before confirmation with no changes applied.
 
 #### Scenario: Author confirms changes
 
@@ -536,10 +665,15 @@ All changes during an edit session SHALL be queued — nothing SHALL be written 
 - **THEN** no files SHALL be created, modified, or deleted
 - **AND** the manifest SHALL remain unchanged
 
+#### Scenario: Confirmation summary shows privacy intent
+
+- **WHEN** the author reaches the edit confirmation summary
+- **THEN** the confirmation summary SHALL show the facet's privacy intent alongside the identity fields
+
 #### Scenario: Confirmation summary shows all deltas
 
-- **WHEN** an edit session includes identity changes, two additions, one deletion, and one front matter strip
-- **THEN** the confirmation summary SHALL list all five changes with their details
+- **WHEN** an edit session includes identity changes, a privacy change, two additions, one deletion, and one front matter strip
+- **THEN** the confirmation summary SHALL list all six changes with their details
 
 ### Requirement: Content files contain no front matter
 
@@ -559,3 +693,31 @@ The manifest SHALL be the single source of truth for asset metadata (name, descr
 
 - **WHEN** a facet is built into an archive
 - **THEN** all content files in the archive SHALL contain pure markdown with no YAML front matter
+
+### Requirement: Built facet artifacts preserve manifest privacy declarations
+
+When an author builds a facet, the built artifact SHALL preserve the source manifest's privacy declaration in its embedded facet manifest. If the source manifest contains `private: true` or `private: false`, the embedded manifest SHALL contain the same boolean value. If the source manifest omits `private`, the embedded manifest SHALL also omit `private`; build SHALL NOT inject a default privacy field.
+
+#### Scenario: Build preserves private publish intent
+
+- **WHEN** an author builds a facet whose source manifest contains `private: true`
+- **THEN** the built artifact's embedded facet manifest SHALL contain `private: true`
+- **AND** verification of the built artifact SHALL treat that value as part of the embedded manifest content
+
+#### Scenario: Build preserves omitted privacy declaration
+
+- **WHEN** an author builds a facet whose source manifest omits `private`
+- **THEN** the built artifact's embedded facet manifest SHALL omit `private`
+- **AND** build SHALL NOT inject `private: false` into the embedded manifest
+
+### Requirement: A privacy change does not rebuild, republish, or contact the registry
+
+Because privacy intent is manifest content embedded in the built artifact, changing it in the create or edit workflows SHALL NOT, on its own, alter any already-built artifact or any already-published version. The authoring workflows SHALL NOT automatically rebuild, republish, or contact the registry as a result of a privacy change. The rebuild-after-change and version-bump-for-published-versions consequences are documented in the authoring and publish guides rather than surfaced as confirmation-time messaging.
+
+#### Scenario: Editing privacy does not rebuild or publish
+
+- **WHEN** the author changes a facet's privacy intent in the edit workflow and confirms
+- **THEN** the system SHALL update the source manifest only
+- **AND** the system SHALL NOT rebuild the facet
+- **AND** the system SHALL NOT publish the facet
+- **AND** the system SHALL NOT contact the registry

@@ -8,7 +8,7 @@ import { computeAssetList } from '../materialize.ts'
 import type { ConfirmingMiss, LockedMiss, MaterializeVersionInput } from '../materialize-version/index.ts'
 import { materializeVersion } from '../materialize-version/index.ts'
 import { parseLockedVersion } from '../parse-locked-version.ts'
-import type { StageEvent } from '../types.ts'
+import type { OnLog, StageEvent } from '../types.ts'
 import { loadFacetContent } from './finalize-facet.ts'
 import { chainFailureToRunInstall, fetchMeta } from './registry-support.ts'
 import type { ResolveFacetResult } from './types.ts'
@@ -26,7 +26,7 @@ export interface ResolveRegistryFacetArgs {
    */
   effectiveLocked: LockfileFacet | undefined
   onStage: (event: StageEvent) => void
-  onLog: (line: string) => void
+  onLog: OnLog
 }
 
 /**
@@ -76,19 +76,20 @@ export async function resolveRegistryFacet(args: ResolveRegistryFacetArgs): Prom
     // arrives here with `effectiveLocked === undefined` by the
     // structural discriminator): resolve fresh. Confirmation rides this
     // same response.
-    const metaResult = await fetchMeta(facetName, source.version, onStage)
+    const metaResult = await fetchMeta(facetName, source.version, onStage, onLog)
     if (!metaResult.ok) {
       return { ok: false, failure: { code: 'REGISTRY_ERROR', facet: facetName, error: metaResult.error } }
     }
     meta = metaResult.value
     exactVersion = meta.version
+    onLog(() => `[verbose]   resolved ${facetName} ${describeVersionSpec(source.version)} → ${exactVersion}`)
   }
 
   // Lazily fetch (at most once) the metadata for the exact version —
   // needed for confirming-hit confirmation and for any download.
   const ensureMeta = async (): ReturnType<typeof fetchMeta> => {
     if (meta !== undefined) return { ok: true, value: meta }
-    const result = await fetchMeta(facetName, parseLockedVersion(exactVersion), onStage)
+    const result = await fetchMeta(facetName, parseLockedVersion(exactVersion), onStage, onLog)
     if (result.ok) meta = result.value
     return result
   }
@@ -153,11 +154,18 @@ export async function resolveRegistryFacet(args: ResolveRegistryFacetArgs): Prom
     input = missInput(m.value)
   }
 
+  // Log cache hit/miss for verbose diagnostics.
+  if (lookup.hit) {
+    onLog(() => `[verbose]   cache hit ${facetName}@${exactVersion}`)
+  } else {
+    onLog(() => `[verbose]   cache miss ${facetName}@${exactVersion}; downloading`)
+  }
+
   // 4. Run the chain; retry once as a miss after a tampered-slot evict.
   onStage({ kind: 'facet-stage', facet: facetName, stage: 'verify' })
   let result = await materializeVersion(input)
   if (!result.ok && result.code === 'cache-tampered') {
-    onLog(`[verbose]   cache slot for ${facetName}@${exactVersion} failed its self-audit; evicted, refetching`)
+    onLog(() => `[verbose]   cache slot for ${facetName}@${exactVersion} failed its self-audit; evicted, refetching`)
     const m = await ensureMeta()
     if (!m.ok) {
       return { ok: false, failure: { code: 'REGISTRY_ERROR', facet: facetName, error: m.error } }
@@ -167,7 +175,10 @@ export async function resolveRegistryFacet(args: ResolveRegistryFacetArgs): Prom
   if (!result.ok) {
     return { ok: false, failure: chainFailureToRunInstall(facetName, result) }
   }
-  onLog(`[verbose]   materialized ${facetName}@${exactVersion} from ${result.slotPath}`)
+  onLog(() => `[verbose]   materialized ${facetName}@${exactVersion} from ${result.slotPath}`)
+  if (!lookup.hit) {
+    onLog(() => `[verbose]   downloaded + cached ${facetName}@${exactVersion}`)
+  }
 
   // Finalize from the verified slot.
   const content = await loadFacetContent(facetName, result.slotPath, onStage)

@@ -19,6 +19,8 @@
  * per Adjustment B).
  */
 
+import type { OnLog } from './types.ts'
+
 export interface JournalEntry {
   /** Human-readable label, surfaced through --verbose. */
   label: string
@@ -27,7 +29,7 @@ export interface JournalEntry {
 }
 
 export interface JournalRollbackOptions {
-  onLog?: (line: string) => void
+  onLog?: OnLog
 }
 
 export interface JournalRollbackResult {
@@ -64,10 +66,10 @@ export class InstallJournal {
       try {
         await entry.undo()
         entriesUndone++
-        opts.onLog?.(`[verbose] undo ${entry.label}`)
+        opts.onLog?.(() => `[verbose] undo ${entry.label}`)
       } catch (err) {
         failures++
-        opts.onLog?.(`[verbose] undo FAILED ${entry.label}: ${err instanceof Error ? err.message : String(err)}`)
+        opts.onLog?.(() => `[verbose] undo FAILED ${entry.label}: ${err instanceof Error ? err.message : String(err)}`)
       }
     }
     return { ok: failures === 0, failures, entriesUndone }

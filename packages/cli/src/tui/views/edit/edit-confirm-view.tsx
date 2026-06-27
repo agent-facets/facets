@@ -43,6 +43,10 @@ export function EditConfirmView({ onConfirm, onBack }: { onConfirm: () => void; 
           <Text bold>Version:</Text>
           <Text>{form.fields.version.value || '(none)'}</Text>
         </Box>
+        <Box gap={1}>
+          <Text bold>Privacy:</Text>
+          <Text color={form.private ? THEME.warning : THEME.success}>{form.private ? 'Private' : 'Public'}</Text>
+        </Box>
       </Box>
 
       {ASSET_TYPES.map((type) => {

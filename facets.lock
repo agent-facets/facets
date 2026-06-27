@@ -1,13 +1,83 @@
 {
   "lockfileVersion": 1,
   "facets": {
+    "@julian/openspec-adversary": {
+      "source": {
+        "kind": "registry",
+        "registry": "https://api.facet.cafe"
+      },
+      "version": "3.1.2",
+      "integrity": "sha256:af8c255844d9e24d4603de468b94e50de3712e37c7c0f758883f580619e26714",
+      "assets": [
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "openspec-adversary-author"
+        },
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "openspec-adversary-compare"
+        },
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "openspec-adversary-reconcile"
+        },
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "openspec-adversary-run"
+        },
+        {
+          "scope": "project",
+          "type": "agent",
+          "name": "openspec-adversary"
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "reconcile-adversary"
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "run-adversary"
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "run-inline-adversary"
+        }
+      ]
+    },
+    "@julian/review-openspec-design": {
+      "source": {
+        "kind": "registry",
+        "registry": "https://api.facet.cafe"
+      },
+      "version": "1.1.0",
+      "integrity": "sha256:a413dd26cdedc41f658e1dc8c0d86e02ac2d174bc386e78bd3718732f6c80e89",
+      "assets": [
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "openspec-design-review-rules"
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "review-openspec-design"
+        }
+      ]
+    },
     "cowsay": {
       "source": {
         "kind": "registry",
         "registry": "https://api.facet.cafe"
       },
-      "version": "0.0.1",
-      "integrity": "sha256:18bbc44f9d570d48c3913bb64013f3764597dc150cffaa108af5f91150aa9968",
+      "version": "0.2.0",
+      "integrity": "sha256:a7130eec60c10e9cede541fb0433e79c26f9a8294eb686ca220dac6b9e7956d8",
       "assets": [
         {
           "scope": "project",
@@ -36,8 +106,8 @@
         "kind": "registry",
         "registry": "https://api.facet.cafe"
       },
-      "version": "0.1.0",
-      "integrity": "sha256:4033523b90d098adadf23ecc725b9c71ec4e334f04a6cb8ab7851ba247321526",
+      "version": "0.2.1",
+      "integrity": "sha256:e15446f622365222d68eb8e94b3d628adff1b94c11f06c0b04c15f105807df26",
       "assets": [
         {
           "scope": "project",
@@ -48,6 +118,11 @@
           "scope": "project",
           "type": "skill",
           "name": "viper-planning"
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "viper-continue"
         },
         {
           "scope": "project",

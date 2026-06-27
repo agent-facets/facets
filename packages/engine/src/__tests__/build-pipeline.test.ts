@@ -139,11 +139,15 @@ describe('detectNamingCollisions', () => {
 const mockAdapter = defineAdapter({
   name: 'mock-adapter',
   buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
-  async installAsset() {},
+  async installAsset() {
+    return undefined
+  },
   async readAsset() {
     return { content: 'Your asset sir...' }
   },
-  async deleteAsset() {},
+  async deleteAsset() {
+    return undefined
+  },
 })
 
 /** A mock adapter that rejects all metadata */
@@ -153,11 +157,15 @@ const rejectingAdapter = defineAdapter({
     ok: false,
     errors: [{ path: 'tools', message: 'Invalid tools config', expected: 'Record<string, boolean>', actual: 'string' }],
   }),
-  async installAsset() {},
+  async installAsset() {
+    return undefined
+  },
   async readAsset() {
     return { content: 'Your asset sir...' }
   },
-  async deleteAsset() {},
+  async deleteAsset() {
+    return undefined
+  },
 })
 
 describe('validateAdapterMetadata', () => {
@@ -515,11 +523,15 @@ describe('runBuildPipeline', () => {
         enrichedData = { model: input.model ?? 'auto' }
         return { ok: true, data: enrichedData }
       },
-      async installAsset() {},
+      async installAsset() {
+        return undefined
+      },
       async readAsset() {
         return { content: 'Your asset sir...' }
       },
-      async deleteAsset() {},
+      async deleteAsset() {
+        return undefined
+      },
     })
 
     const result = await runBuildPipeline(dir, [defaultingAdapter])
@@ -741,6 +753,72 @@ describe('writeBuildOutput', () => {
     expect(looseText).toBe(embeddedEntry.text)
   })
 
+  test('writes a scoped facet to a nested dist/ path, creating parent dirs', async () => {
+    const dir = await createFixtureDir('scoped-output')
+    await Bun.write(join(dir, 'skills/cowsay/SKILL.md'), '# Cowsay')
+    await Bun.write(
+      join(dir, 'facet.json'),
+      JSON.stringify({
+        name: '@julian/cowsay',
+        version: '1.0.0',
+        skills: { cowsay: { description: 'Cowsay tools' } },
+      }),
+    )
+
+    const result = await runBuildPipeline(dir)
+    expect(result.ok).toBe(true)
+    if (!result.ok) expect.unreachable()
+    // Without the parent-dir mkdir this rejects with ENOENT.
+    await writeBuildOutput(result, dir)
+
+    // The archive lands at the nested scoped path.
+    const archivePath = join(dir, 'dist/@julian/cowsay-1.0.0.facet')
+    expect(await Bun.file(archivePath).exists()).toBe(true)
+
+    // The archive's embedded facet.json keeps the scoped identity; the inner
+    // asset paths are still derived from asset names, not the facet identity.
+    const outerBytes = await Bun.file(archivePath).arrayBuffer()
+    const outerEntries = parseTar(outerBytes)
+    const innerEntry = outerEntries.find((e) => e.name === 'archive.tar.gz')
+    if (!innerEntry?.data) throw new Error('archive.tar.gz not found in outer tar')
+    const innerFiles = await parseTarGzip(innerEntry.data)
+    const facetJsonEntry = innerFiles.find((f) => f.name === 'facet.json')
+    if (!facetJsonEntry) throw new Error('facet.json not found in inner archive')
+    expect(JSON.parse(facetJsonEntry.text).name).toBe('@julian/cowsay')
+    expect(innerFiles.map((f) => f.name).sort()).toEqual(['facet.json', 'skills/cowsay/SKILL.md'])
+  })
+
+  test('writeBuildOutput creates parent dirs for a slash-containing archive filename', async () => {
+    // The build-output parent-dir fix is the load-bearing repair. A bare
+    // slash-containing manifest name (`acme/cowsay`) no longer passes
+    // FacetManifestSchema, so it can't reach here through runBuildPipeline —
+    // but the write boundary itself must still create parent dirs for ANY
+    // slash-containing archive filename (scoped names, plus defense-in-depth
+    // for the pre-existing nested-path bug). We exercise the boundary
+    // directly with a synthesized BuildResult.
+    const dir = await createFixtureDir('slash-write-boundary')
+    const realResult = await (async () => {
+      await Bun.write(join(dir, 'skills/cowsay/SKILL.md'), '# Cowsay')
+      await Bun.write(
+        join(dir, 'facet.json'),
+        JSON.stringify({
+          name: '@acme/cowsay',
+          version: '1.0.0',
+          skills: { cowsay: { description: 'Cowsay tools' } },
+        }),
+      )
+      const r = await runBuildPipeline(dir)
+      if (!r.ok) expect.unreachable()
+      return r
+    })()
+    // Re-point the archive filename at a bare slash-namespaced path to prove
+    // the write boundary creates parents regardless of how the name renders.
+    const slashResult = { ...realResult, archiveFilename: 'acme/cowsay-1.0.0.facet' }
+    await writeBuildOutput(slashResult, dir)
+
+    expect(await Bun.file(join(dir, 'dist/acme/cowsay-1.0.0.facet')).exists()).toBe(true)
+  })
+
   test('cleans previous dist/ before writing', async () => {
     const dir = await createFixtureDir('clean-dist')
     await Bun.write(join(dir, 'skills/x/SKILL.md'), '# Skill')
@@ -769,5 +847,79 @@ describe('writeBuildOutput', () => {
     // Only the .facet archive should exist (no loose manifest by default)
     const distFiles = await readdir(join(dir, 'dist'))
     expect(distFiles).toEqual(['test-1.0.0.facet'])
+  })
+})
+
+// --- Embedded manifest privacy preservation ---
+
+/**
+ * Parse the embedded `facet.json` out of a build's outer-tar `archiveBytes`.
+ * Mirrors the inner-archive read used by the scoped-identity test above.
+ */
+async function readEmbeddedManifest(archiveBytes: Uint8Array): Promise<Record<string, unknown>> {
+  const outerEntries = parseTar(archiveBytes)
+  const innerEntry = outerEntries.find((e) => e.name === 'archive.tar.gz')
+  if (!innerEntry?.data) throw new Error('archive.tar.gz not found in outer tar')
+  const innerFiles = await parseTarGzip(innerEntry.data)
+  const facetJsonEntry = innerFiles.find((f) => f.name === 'facet.json')
+  if (!facetJsonEntry) throw new Error('facet.json not found in inner archive')
+  return JSON.parse(facetJsonEntry.text) as Record<string, unknown>
+}
+
+describe('runBuildPipeline — embedded manifest privacy', () => {
+  test('build with private: true embeds private: true', async () => {
+    const dir = await createFixtureDir('private-true')
+    await Bun.write(join(dir, 'skills/example/SKILL.md'), '# Example skill')
+    await Bun.write(
+      join(dir, 'facet.json'),
+      JSON.stringify({
+        name: 'private-facet',
+        version: '1.0.0',
+        private: true,
+        skills: { example: { description: 'An example skill' } },
+      }),
+    )
+
+    const result = await runBuildPipeline(dir)
+    if (!result.ok) expect.unreachable()
+    const embedded = await readEmbeddedManifest(result.archiveBytes)
+    expect(embedded.private).toBe(true)
+  })
+
+  test('build with private: false embeds private: false', async () => {
+    const dir = await createFixtureDir('private-false')
+    await Bun.write(join(dir, 'skills/example/SKILL.md'), '# Example skill')
+    await Bun.write(
+      join(dir, 'facet.json'),
+      JSON.stringify({
+        name: 'public-facet',
+        version: '1.0.0',
+        private: false,
+        skills: { example: { description: 'An example skill' } },
+      }),
+    )
+
+    const result = await runBuildPipeline(dir)
+    if (!result.ok) expect.unreachable()
+    const embedded = await readEmbeddedManifest(result.archiveBytes)
+    expect(embedded.private).toBe(false)
+  })
+
+  test('build with omitted private keeps private omitted (no injected default)', async () => {
+    const dir = await createFixtureDir('private-omitted')
+    await Bun.write(join(dir, 'skills/example/SKILL.md'), '# Example skill')
+    await Bun.write(
+      join(dir, 'facet.json'),
+      JSON.stringify({
+        name: 'default-facet',
+        version: '1.0.0',
+        skills: { example: { description: 'An example skill' } },
+      }),
+    )
+
+    const result = await runBuildPipeline(dir)
+    if (!result.ok) expect.unreachable()
+    const embedded = await readEmbeddedManifest(result.archiveBytes)
+    expect('private' in embedded).toBe(false)
   })
 })

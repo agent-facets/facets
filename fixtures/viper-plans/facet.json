@@ -1,6 +1,6 @@
 {
   "name": "viper-plans",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "VIPER planning and execution",
   "skills": {
     "viper-planning": {
@@ -16,6 +16,9 @@
     },
     "viper-run": {
       "description": "Execute a VIPER plan from .opencode/plans/"
+    },
+    "viper-continue": {
+      "description": "Continue execution of the most recently persisted VIPER plan"
     }
   }
 }

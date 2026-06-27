@@ -9,7 +9,7 @@ import type { Source } from '../../sources/facet/types.ts'
 import { cloneFailureToRunInstall } from '../clone-failure.ts'
 import { computeAssetList } from '../materialize.ts'
 import { resolveCloneRef } from '../resolve-clone-ref.ts'
-import type { StageEvent } from '../types.ts'
+import type { OnLog, StageEvent } from '../types.ts'
 import { buildLockfileSource, loadFacetContent } from './finalize-facet.ts'
 import { auditedGitCacheLookup } from './git-cache.ts'
 import type { ResolveFacetResult } from './types.ts'
@@ -21,7 +21,7 @@ export interface ResolveGitFacetArgs {
   /** See `ResolveRegistryFacetArgs.effectiveLocked`. */
   effectiveLocked: LockfileFacet | undefined
   onStage: (event: StageEvent) => void
-  onLog: (line: string) => void
+  onLog: OnLog
 }
 
 /**
@@ -87,7 +87,7 @@ export async function resolveGitFacet(args: ResolveGitFacetArgs): Promise<Resolv
       await rm(cloned.dir, { recursive: true, force: true }).catch(() => {})
     }
     clonedCommit = cloned.commit
-    onLog(`[verbose]   cloned ${source.url} → ${sourceDir} (sha: ${cloned.commit})`)
+    onLog(() => `[verbose]   cloned ${source.url} → ${sourceDir} (sha: ${cloned.commit})`)
   }
 
   try {
@@ -151,6 +151,7 @@ export async function resolveGitFacet(args: ResolveGitFacetArgs): Promise<Resolv
       }
       sourceDir = putResult.path
       cleanup = undefined
+      onLog(() => `[verbose]   cached ${facetName}@${buildResult.data.version} from clone`)
 
       if (effectiveLocked !== undefined) {
         // The build just reproduced the locked integrity; the lockfile

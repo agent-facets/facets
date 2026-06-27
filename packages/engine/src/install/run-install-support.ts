@@ -1,5 +1,5 @@
 import type { InstallJournal } from './journal.ts'
-import type { FacetOutcome, InstallSummary, RunInstallFailure, RunInstallResult } from './types.ts'
+import type { FacetOutcome, InstallSummary, OnLog, RunInstallFailure, RunInstallResult } from './types.ts'
 
 /** Aggregate per-facet outcomes into the post-install summary counts. */
 export function summarize(
@@ -26,7 +26,7 @@ export function summarize(
 export async function rollbackAndFail(
   journal: InstallJournal,
   failure: RunInstallFailure,
-  onLog: (line: string) => void,
+  onLog: OnLog,
 ): Promise<RunInstallResult> {
   const rollback = await journal.rollback({ onLog })
   return {

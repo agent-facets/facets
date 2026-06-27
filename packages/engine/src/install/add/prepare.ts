@@ -1,7 +1,7 @@
 import type { FacetsJson } from '@agent-facets/protocol'
 import { loadFacetsJson } from '../../manifest/project-files.ts'
 import type { Source } from '../../sources/facet/types.ts'
-import type { Addition } from '../types.ts'
+import type { Addition, OnLog } from '../types.ts'
 import { type ResolveNameFailure, resolveFacetName } from './resolve-name.ts'
 
 /**
@@ -39,7 +39,7 @@ export type PrepareAddResult =
 export async function prepareAdd(
   projectRoot: string,
   sources: ReadonlyArray<AddSource>,
-  onLog?: (line: string) => void,
+  onLog?: OnLog,
 ): Promise<PrepareAddResult> {
   // 1. Load the manifest (or note it doesn't exist yet).
   const loaded = loadFacetsJson(projectRoot)

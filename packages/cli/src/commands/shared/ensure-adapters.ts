@@ -5,13 +5,14 @@ import { pickAndInstallAdapters } from '../adapter/pick-and-install.ts'
 
 /**
  * Discover install-capable adapters for commands that materialize or
- * delete assets (`add`, `remove`). If none are installable, auto-launch
- * the picker on a TTY; on a non-TTY return `null` with a CLI error
- * already written.
+ * delete assets (`add`, `remove`, `install`). If none are installable,
+ * auto-launch the picker on a TTY; on a non-TTY return `null` with a CLI
+ * error already written.
  *
- * Shared by `add` and `remove` because both drive the install pipeline,
- * which writes (`add`) or deletes (`remove`) assets across every selected
- * adapter — the adapter-discovery contract is identical for both.
+ * Shared by `add`, `remove`, and `install` because all three drive the
+ * install pipeline, which writes (`add`/`install`) or deletes (`remove`)
+ * assets across every selected adapter — the adapter-discovery contract
+ * is identical for all of them.
  */
 export async function ensureAdapters(): Promise<ReadonlyArray<Adapter> | null> {
   const adapters = await loadInstalledAdapters()

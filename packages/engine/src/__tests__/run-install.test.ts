@@ -107,7 +107,9 @@ function buildBadReadAdapter(name: string): Adapter {
       err.code = 'EACCES'
       throw err
     },
-    async deleteAsset() {},
+    async deleteAsset() {
+      return undefined
+    },
   } as Adapter
 }
 

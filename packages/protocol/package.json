@@ -5,7 +5,7 @@
     "url": "https://github.com/agent-facets/facets",
     "directory": "packages/protocol"
   },
-  "version": "0.18.0",
+  "version": "0.22.0",
   "type": "module",
   "files": [
     "dist"
@@ -27,7 +27,7 @@
     "arktype": "2.2.0",
     "comment-json": "^5.0.0",
     "nanotar": "0.3.0",
-    "yaml": "2.8.4"
+    "yaml": "2.9.0"
   },
   "devDependencies": {
     "@agent-facets/common": "workspace:*",

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AGENT_PROMPT_POINTER } from '../lib/agent-prompt'
+import { AGENT_PROMPT_BODY } from '../lib/agent-prompt'
 import { copyToClipboard } from '../lib/copy'
 import styles from './Hero.module.css'
 
@@ -18,7 +18,7 @@ export function AgentPromptButton() {
   )
 
   const copyAgentPrompt = useCallback(async () => {
-    setAgentCopied(await copyToClipboard(AGENT_PROMPT_POINTER))
+    setAgentCopied(await copyToClipboard(AGENT_PROMPT_BODY))
     if (agentTimerRef.current) clearTimeout(agentTimerRef.current)
     agentTimerRef.current = setTimeout(() => setAgentCopied(false), AGENT_COPIED_RESET_MS)
   }, [])

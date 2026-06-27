@@ -3,6 +3,7 @@ import { loadManifest } from '../../loaders/facet.ts'
 import { cloneFacetGitSource } from '../../sources/facet/resolve-git.ts'
 import { resolveLocalFacetSource } from '../../sources/facet/resolve-local.ts'
 import type { Source } from '../../sources/facet/types.ts'
+import type { OnLog } from '../types.ts'
 
 /**
  * Structured failure for facet name resolution. Tagged on `reason` so
@@ -31,11 +32,7 @@ export type ResolveNameResult = { ok: true; name: string } | { ok: false; failur
  * Composition (a facet that declares other facets) is rejected.
  * Never throws.
  */
-export async function resolveFacetName(
-  source: Source,
-  specifier: string,
-  onLog?: (line: string) => void,
-): Promise<ResolveNameResult> {
+export async function resolveFacetName(source: Source, specifier: string, onLog?: OnLog): Promise<ResolveNameResult> {
   if (source.kind === 'registry') {
     return { ok: true, name: source.name }
   }
@@ -86,7 +83,7 @@ export async function resolveFacetName(
     if (manifest.data.facets && manifest.data.facets.length > 0) {
       return { ok: false, failure: { reason: 'composition-rejected', specifier } }
     }
-    onLog?.(`[verbose]   resolved name "${manifest.data.name}" from ${specifier}`)
+    onLog?.(() => `[verbose]   resolved name "${manifest.data.name}" from ${specifier}`)
     return { ok: true, name: manifest.data.name }
   } finally {
     if (cleanup) await cleanup()

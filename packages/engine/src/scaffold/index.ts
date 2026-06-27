@@ -9,6 +9,12 @@ export interface ScaffoldOptions {
   name: string
   version: string
   description: string
+  // Privacy publish intent. True-only by design: public visibility is
+  // represented by omitting this option (and omitting `private` from the
+  // generated manifest), never by passing `false`. This mirrors the manifest
+  // serialization contract where omission is public-by-default, so callers
+  // cannot pass a meaningful `false` the engine would have to discard.
+  private?: true
   skills: string[]
   agents: string[]
   commands: string[]
@@ -105,6 +111,12 @@ export function generateScaffoldManifest(opts: ScaffoldOptions): string {
 
   if (opts.description) {
     manifest.description = opts.description
+  }
+
+  // Placed after name/version/description and before asset sections to match
+  // manifest field order. Written only when private; public omits the key.
+  if (opts.private) {
+    manifest.private = true
   }
 
   if (opts.skills.length > 0) {

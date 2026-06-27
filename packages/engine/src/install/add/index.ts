@@ -1,6 +1,6 @@
 import type { Adapter } from '@agent-facets/adapter'
 import { runInstall } from '../run-install.ts'
-import type { RunInstallResult, StageEvent } from '../types.ts'
+import type { OnLog, RunInstallResult, StageEvent } from '../types.ts'
 import { type AddPrepareFailure, type AddSource, type PrepareAddResult, prepareAdd } from './prepare.ts'
 
 export type { AddPrepareFailure, AddSource, PrepareAddResult }
@@ -14,7 +14,7 @@ export interface RunAddOptions {
    *  name resolution and manifest loading (the expensive part). */
   prepared?: Extract<PrepareAddResult, { ok: true }>
   onStage?: (event: StageEvent) => void
-  onLog?: (line: string) => void
+  onLog?: OnLog
   signal?: AbortSignal
 }
 

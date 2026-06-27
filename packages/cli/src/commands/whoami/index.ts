@@ -1,4 +1,4 @@
-import { fetchAuthMe, resolveCredential } from '@agent-facets/engine'
+import { fetchAuthMe, getRegistryBaseUrl, resolveCredential } from '@agent-facets/engine'
 import type { Command } from '../../commands.ts'
 import { writeCliError } from '../../util/errors.ts'
 import { translateEngineRegistryError } from '../../util/registry-errors.ts'
@@ -44,6 +44,7 @@ export const whoamiCommand: Command = {
     if (suspended) {
       process.stdout.write('  status: suspended\n')
     }
+    process.stdout.write(`  registry: ${getRegistryBaseUrl()}\n`)
     if (cred.source === 'env') {
       process.stdout.write('  credential: FACET_TOKEN (environment)\n')
     }

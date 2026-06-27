@@ -15,11 +15,12 @@ If a `facet.json` already exists in the target directory, the command prompts fo
 
 ## Wizard flow
 
-1. **Name**  -- the facet name, in kebab-case (e.g., `my-facet`).
+1. **Name**  -- the facet identity. Either an unscoped name (`my-facet`) or a scoped name (`@scope/name`, e.g. `@acme/my-facet`). See the [Manifest Schema](/specification/manifest#facet-name-grammar) for the full name grammar.
 2. **Description**  -- a brief description of the facet.
 3. **Version**  -- defaults to `0.0.0`.
-4. **Assets**  -- add skills, agents, and commands by name. At least one asset is required. Each asset shows its description below the name  -- press Enter to edit the name, or press ↓ during name editing to edit the description in your terminal editor.
-5. **Confirmation**  -- review the summary and confirm.
+4. **Privacy**  -- choose Public (the default) or Private.
+5. **Assets**  -- add skills, agents, and commands by name.
+6. **Confirmation**  -- review the summary  -- and confirm.
 
 ## Generated files
 

@@ -1,5 +1,46 @@
 # agent-facets
 
+## 0.22.0
+
+### Minor Changes
+
+- [#353](https://github.com/agent-facets/facets/pull/353) [`5d78611`](https://github.com/agent-facets/facets/commit/5d786119970546d9f008052fa3cfd02266321893) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Add in private facet support
+
+## 0.21.1
+
+### Patch Changes
+
+- [#342](https://github.com/agent-facets/facets/pull/342) [`3314057`](https://github.com/agent-facets/facets/commit/3314057512906a0494240086dcfcd55cc07ee1c9) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Add in registry URL to `facet whoami`
+
+## 0.21.0
+
+### Minor Changes
+
+- [#338](https://github.com/agent-facets/facets/pull/338) [`b663d3c`](https://github.com/agent-facets/facets/commit/b663d3c4b50ec0bb9a288c3b0f0d0382acf69d0c) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Tighten `parseSlug` to 2-64 chars, reject consecutive hyphens, and refresh manifest spec docs to document canonical facet-name grammar
+
+### Patch Changes
+
+- [#334](https://github.com/agent-facets/facets/pull/334) [`c44c321`](https://github.com/agent-facets/facets/commit/c44c321c168ee05d827dc33284fb6d5fed650d77) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Route scoped facet publish, resolve, and download through two-segment `{scope}/{name}` registry paths to avoid `%2F`-encoding rejection
+- [#335](https://github.com/agent-facets/facets/pull/335) [`2861755`](https://github.com/agent-facets/facets/commit/28617556e84f5edd82dec1d4b1d7127e526c64fd) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Fix `writeBuildOutput` to create parent directories for scoped (`@scope/name`) and slash-containing archive paths, and accept scoped facet names in create/edit views
+
+## 0.19.0
+
+### Minor Changes
+
+- [#325](https://github.com/agent-facets/facets/pull/325) [`ef26047`](https://github.com/agent-facets/facets/commit/ef26047602d8b546dfcb19c3fcef9c4ce485beaf) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Added verbose logging and updated adapters to return asset install paths (for logging purposes)
+
+### Patch Changes
+
+- [#328](https://github.com/agent-facets/facets/pull/328) [`dc4bbd0`](https://github.com/agent-facets/facets/commit/dc4bbd080474c2bb45f09ab2f013bd5904afc209) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Upgraded bun from 1.3.13 to 1.3.14
+- [#327](https://github.com/agent-facets/facets/pull/327) [`b9a1477`](https://github.com/agent-facets/facets/commit/b9a14772e88e9b2a83dc002cf93c29a2e9188b9e) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Make `OnLog` accept a lazy builder thunk, remove `foo` facet, and drop skipped TTY adapter-picker tests
+- [#323](https://github.com/agent-facets/facets/pull/323) [`6d5767b`](https://github.com/agent-facets/facets/commit/6d5767b3e3bdc1319d1ee8cf1b08039824197b15) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Sort lockfile facet keys alphabetically on write for deterministic diffs
+
+## 0.18.2
+
+### Patch Changes
+
+- [#321](https://github.com/agent-facets/facets/pull/321) [`44f1f35`](https://github.com/agent-facets/facets/commit/44f1f35c48a90b4fc3da52756b7f671f90d8abed) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Share `ensureAdapters` with `install`, and skip unpilotable TTY adapter-picker test
+
 ## 0.18.1
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 import type { LockfileFacet } from '@agent-facets/protocol'
 import { auditCacheSlot, type CacheIdentity, cacheGet, evictCacheSlot, readCachedIntegrity } from '../../cache/index.ts'
-import type { RunInstallFailure } from '../types.ts'
+import type { OnLog, RunInstallFailure } from '../types.ts'
 
 /**
  * Outcome of an audited git cache lookup.
@@ -24,11 +24,7 @@ export type GitCacheLookup =
  * audit (tampered bytes, missing/invalid sidecar) evicts the slot and
  * degrades to a miss (re-clone).
  */
-export function auditedGitCacheLookup(
-  facetName: string,
-  effectiveLocked: LockfileFacet,
-  onLog: (line: string) => void,
-): GitCacheLookup {
+export function auditedGitCacheLookup(facetName: string, effectiveLocked: LockfileFacet, onLog: OnLog): GitCacheLookup {
   const cacheId: CacheIdentity = { kind: 'git', name: facetName, version: effectiveLocked.version }
   const lookup = cacheGet(cacheId)
   if (!lookup.hit) return { kind: 'miss' }
@@ -38,14 +34,14 @@ export function auditedGitCacheLookup(
     // Missing/invalid sidecar — the slot cannot be audited, so it
     // cannot be used. Evict and re-clone (soft miss).
     evictCacheSlot(lookup.path)
-    onLog(`[verbose]   cache slot ${lookup.path} has no valid integrity sidecar; evicted, recloning`)
+    onLog(() => `[verbose]   cache slot ${lookup.path} has no valid integrity sidecar; evicted, recloning`)
     return { kind: 'miss' }
   }
 
   const audit = auditCacheSlot(lookup.path, sidecar)
   if (!audit.ok) {
     evictCacheSlot(lookup.path)
-    onLog(`[verbose]   cache slot ${lookup.path} failed its self-audit; evicted, recloning`)
+    onLog(() => `[verbose]   cache slot ${lookup.path} failed its self-audit; evicted, recloning`)
     return { kind: 'miss' }
   }
 
@@ -65,6 +61,6 @@ export function auditedGitCacheLookup(
     }
   }
 
-  onLog(`[verbose]   cache hit ${lookup.path} (audited)`)
+  onLog(() => `[verbose]   cache hit ${lookup.path} (audited)`)
   return { kind: 'hit', slotPath: lookup.path }
 }

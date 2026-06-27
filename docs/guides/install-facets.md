@@ -15,11 +15,11 @@ facet adapter install
 
 Without a specifier, [`facet adapter install`](/cli/adapters/install) launches an interactive picker listing the first-party adapters:
 
-| Name          | Package                              | Tool        |
-| ------------- | ------------------------------------ | ----------- |
-| `opencode`    | `@agent-facets/adapter-opencode`     | OpenCode    |
-| `claude-code` | `@agent-facets/adapter-claude-code`  | Claude Code |
-| `codex`       | `@agent-facets/adapter-codex`        | Codex       |
+| Name          | Package                             | Tool        |
+|---------------|-------------------------------------|-------------|
+| `opencode`    | `@agent-facets/adapter-opencode`    | OpenCode    |
+| `claude-code` | `@agent-facets/adapter-claude-code` | Claude Code |
+| `codex`       | `@agent-facets/adapter-codex`       | Codex       |
 
 You can also install by name directly:
 
@@ -31,7 +31,7 @@ The adapter is downloaded, bundled into a self-contained `adapter.js`, and place
 
 ## Search the registry
 
-```sh
+```shell
 facet search <term>
 ```
 
@@ -59,14 +59,15 @@ facet add <source>
 
 ### Source grammar
 
-| Form                         | Example                                       |
-| ---------------------------- | --------------------------------------------- |
-| Registry name                | `facet add viper-plans`                        |
-| Registry name with version   | `facet add viper-plans@1.2.3`                  |
-| Major-pinned wildcard        | `facet add viper-plans@1.*`                    |
-| GitHub shorthand             | `facet add github:owner/repo#main`             |
-| HTTPS git URL                | `facet add https://github.com/owner/repo.git`  |
-| Local path                   | `facet add ./local-facets/my-plans`            |
+| Form                       | Example                                       |
+|----------------------------|-----------------------------------------------|
+| Registry name              | `facet add viper-plans`                       |
+| Registry name with version | `facet add viper-plans@1.2.3`                 |
+| Major-pinned wildcard      | `facet add viper-plans@1.*`                   |
+| Scoped registry name       | `facet add @acme/deploy-tools`                |
+| GitHub shorthand           | `facet add github:owner/repo#main`            |
+| HTTPS git URL              | `facet add https://github.com/owner/repo.git` |
+| Local path                 | `facet add ./local-facets/my-plans`           |
 
 A bare name (no version) resolves to the latest published version and writes the exact resolved version back to `facets.json`. Wildcards like `1.*` are preserved in `facets.json`; the specific resolved version goes in the lockfile.
 
@@ -90,12 +91,13 @@ The project manifest. Maps facet names to source specifiers:
 {
   "facets": {
     "viper-plans": "1.2.3",
-    "rezi": "0.5.0"
+    "rezi": "0.5.0",
+    "@acme/deploy-tools": "2.0.0"
   }
 }
 ```
 
-This is the source of truth for which facets belong to the project and at what version.
+This is the source of truth for which facets belong to the project and at what version. Scoped facets (`@scope/name`) appear as keys verbatim, including the leading `@`.
 
 ### `facets.lock`
 

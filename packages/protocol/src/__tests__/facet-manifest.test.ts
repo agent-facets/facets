@@ -89,6 +89,18 @@ describe('FacetManifestSchema — valid manifests', () => {
     const result = FacetManifestSchema(input)
     expect(result).not.toBeInstanceOf(type.errors)
   })
+
+  test('manifest with a scoped facet identity is valid', () => {
+    const input = {
+      name: '@julian/cowsay',
+      version: '1.0.0',
+      skills: { cowsay: { description: 'Cowsay tools' } },
+    }
+    const result = FacetManifestSchema(input)
+    expect(result).not.toBeInstanceOf(type.errors)
+    const data = result as FacetManifest
+    expect(data.name).toBe('@julian/cowsay')
+  })
 })
 
 // --- Invalid manifests ---
@@ -104,6 +116,33 @@ describe('FacetManifestSchema — invalid manifests', () => {
     const input = { name: 'my-facet', skills: { x: { description: 'A skill' } } }
     const result = FacetManifestSchema(input)
     expect(result).toBeInstanceOf(type.errors)
+  })
+
+  // Facet identity grammar (protocol__schemas/spec.md). The manifest `name`
+  // must be a valid facet name — an unscoped slug or a scoped `@scope/name`.
+  // This intentionally tightens the previous `name: string` behavior so
+  // malformed legacy-ish identities (which used to pass) now fail.
+  test.each([
+    '@julian', // missing slash
+    '@/cowsay', // empty scope
+    '@julian/', // empty name
+    '@julian/cow/say', // extra path depth
+    '@julian/cow_say', // underscore
+    'Cowsay', // uppercase
+    '../cowsay', // traversal
+    'cow_say', // underscore (unscoped)
+    'cow say', // space
+    'a', // single character
+    'abc--def', // consecutive hyphens
+    'scope/name', // legacy scoped syntax without at-prefix
+    'gооgle', // Cyrillic homoglyphs
+    'a'.repeat(65), // exceeds maximum length
+  ])('malformed facet identity %p is rejected', (name) => {
+    const input = { name, version: '1.0.0', skills: { x: { description: 'A skill' } } }
+    const result = FacetManifestSchema(input)
+    expect(result).toBeInstanceOf(type.errors)
+    const errors = result as InstanceType<typeof type.errors>
+    expect(errors.some((e) => e.message.includes('valid facet name'))).toBe(true)
   })
 
   test('agent missing description', () => {
@@ -204,6 +243,68 @@ describe('FacetManifestSchema — invalid manifests', () => {
     expect(result).toBeInstanceOf(type.errors)
     const errors = result as InstanceType<typeof type.errors>
     expect(errors.some((e) => e.message.includes('backslash'))).toBe(true)
+  })
+})
+
+// --- Privacy declaration (private?: boolean) ---
+
+describe('FacetManifestSchema — privacy declaration', () => {
+  test('omitted private is accepted and not synthesized', () => {
+    const input = {
+      name: 'my-facet',
+      version: '1.0.0',
+      skills: { x: { description: 'A skill' } },
+    }
+    const result = FacetManifestSchema(input)
+    expect(result).not.toBeInstanceOf(type.errors)
+    const data = result as FacetManifest
+    expect('private' in data).toBe(false)
+    expect(data.private).toBeUndefined()
+  })
+
+  test('private: false is accepted and preserved', () => {
+    const input = {
+      name: 'my-facet',
+      version: '1.0.0',
+      private: false,
+      skills: { x: { description: 'A skill' } },
+    }
+    const result = FacetManifestSchema(input)
+    expect(result).not.toBeInstanceOf(type.errors)
+    const data = result as FacetManifest
+    expect(data.private).toBe(false)
+  })
+
+  test('private: true is accepted and preserved', () => {
+    const input = {
+      name: 'my-facet',
+      version: '1.0.0',
+      private: true,
+      skills: { x: { description: 'A skill' } },
+    }
+    const result = FacetManifestSchema(input)
+    expect(result).not.toBeInstanceOf(type.errors)
+    const data = result as FacetManifest
+    expect(data.private).toBe(true)
+  })
+
+  test.each([
+    ['string', 'true'],
+    ['number', 1],
+    ['object', {}],
+    ['array', []],
+    ['null', null],
+  ])('non-boolean private (%s) is rejected with a private-pathed error', (_label, value) => {
+    const input = {
+      name: 'my-facet',
+      version: '1.0.0',
+      private: value,
+      skills: { x: { description: 'A skill' } },
+    }
+    const result = FacetManifestSchema(input)
+    expect(result).toBeInstanceOf(type.errors)
+    const errors = result as InstanceType<typeof type.errors>
+    expect(errors.some((e) => e.path.includes('private'))).toBe(true)
   })
 })
 

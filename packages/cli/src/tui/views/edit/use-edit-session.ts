@@ -11,7 +11,7 @@ const FORM_TO_MANIFEST: Record<AssetSectionKey, 'skills' | 'agents' | 'commands'
 }
 
 /** Builds a manifest from form state, preserving non-asset fields from the original. */
-function buildManifest(original: FacetManifest, form: FormState): FacetManifest {
+export function buildManifest(original: FacetManifest, form: FormState): FacetManifest {
   const manifest: FacetManifest = {
     ...original,
     name: form.fields.name.value,
@@ -20,6 +20,18 @@ function buildManifest(original: FacetManifest, form: FormState): FacetManifest 
 
   if (form.fields.description.value) {
     manifest.description = form.fields.description.value
+  }
+
+  // Privacy is handled after `...original` so a private→public edit actively
+  // removes a spread-in `private: true`. The form is binary, but the manifest
+  // can represent public either by omission or by an explicit `private: false`:
+  // - private              → write `private: true`
+  // - public + original false → preserve `private: false` (already spread in)
+  // - public + original omitted/true → delete `private`
+  if (form.private) {
+    manifest.private = true
+  } else if (original.private !== false) {
+    delete manifest.private
   }
 
   for (const [formKey, manifestKey] of Object.entries(FORM_TO_MANIFEST) as [

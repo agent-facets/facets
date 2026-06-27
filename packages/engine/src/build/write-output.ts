@@ -1,5 +1,5 @@
 import { mkdir, rm } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { BUILD_OUTPUT_DIR } from '../registry/artifact-path.ts'
 import type { BuildResult } from './pipeline.ts'
 
@@ -28,8 +28,16 @@ export async function writeBuildOutput(
   await rm(distDir, { recursive: true, force: true })
   await mkdir(distDir, { recursive: true })
 
-  // Write the .facet archive (self-contained outer tar)
-  await Bun.write(join(distDir, result.archiveFilename), result.archiveBytes)
+  // Write the .facet archive (self-contained outer tar). For a scoped
+  // (`@scope/name`) or slash-containing unscoped (`acme/name`) facet
+  // identity, `archiveFilename` embeds the slash and renders as a nested
+  // path under dist/ (e.g. `dist/@scope/name-1.0.0.facet`). `Bun.write`
+  // does not create parent directories, so create the archive's parent
+  // first. For a flat name, `dirname` is `distDir` (already created above),
+  // making this a no-op.
+  const archivePath = join(distDir, result.archiveFilename)
+  await mkdir(dirname(archivePath), { recursive: true })
+  await Bun.write(archivePath, result.archiveBytes)
 
   // Optionally write loose build manifest
   if (options.emitManifest) {

@@ -1,3 +1,4 @@
+import { parseFacetName } from '@agent-facets/protocol'
 import { parseVersionSpec } from './parse-version.ts'
 import type { ParseError, ParseErrorCode, ParseResult, Source } from './types.ts'
 
@@ -60,7 +61,8 @@ const REGISTRY_RE = /^([a-z][a-z0-9-]*(?:\/[a-z][a-z0-9-]*)?)(?:@(.+))?$/
  *   5. PATH_RE                                  → local
  *   6. SCP_RE                                   → git (split on `#`)
  *   7. has scheme                               → git (if path ends in `.git`) | reject
- *   8. otherwise                                → registry name + parseVersionSpec
+ *   8. leading `@`                              → scoped registry name + parseVersionSpec
+ *   9. otherwise                                → registry name + parseVersionSpec
  */
 export function parseFacetSource(input: string): ParseResult<Source> {
   if (input.length === 0) {
@@ -141,6 +143,53 @@ export function parseFacetSource(input: string): ParseResult<Source> {
       )
     }
     return ok({ kind: 'git', url, ...(ref.length > 0 ? { ref } : {}) })
+  }
+
+  // Scoped registry name (`@scope/name`, optionally `@scope/name@version`).
+  //
+  // The leading `@` is the scope marker; a *subsequent* `@` (after the
+  // `@scope/name` segment) is the version separator. We split the version
+  // tail on the LAST `@` so `@scope/name@1.2.3` parses as name `@scope/name`
+  // + version `1.2.3`, while `@scope/name` (no second `@`) is a bare latest.
+  // The name portion is validated with protocol's `parseFacetName`, the
+  // single source of truth for scoped-name grammar. Malformed scoped forms
+  // (`@scope`, `@scope/`, `@/name`, `@scope/name@`, etc.) return typed
+  // parse failures.
+  if (input.startsWith('@')) {
+    const lastAt = input.lastIndexOf('@')
+    // A scoped name always has the scope `@` at index 0. If that's the only
+    // `@`, there is no version tail; otherwise the last `@` separates the
+    // version. `@scope/name@` (empty tail) is rejected by parseVersionSpec
+    // below via the empty-name fallthrough.
+    const hasVersionTail = lastAt > 0
+    const namePart = hasVersionTail ? input.slice(0, lastAt) : input
+    const versionPart = hasVersionTail ? input.slice(lastAt + 1) : undefined
+
+    const nameResult = parseFacetName(namePart)
+    if (!nameResult.ok) {
+      return err(
+        'INVALID_REGISTRY_NAME',
+        `invalid scoped facet name "${namePart}": ${nameResult.reason}`,
+        'use a scoped registry name of the form @scope/name (e.g., @julian/cowsay)',
+      )
+    }
+
+    if (versionPart === undefined) {
+      // Bare scoped name — equivalent to `@scope/name@latest`.
+      return ok({ kind: 'registry', name: nameResult.canonical, version: { kind: 'latest' } })
+    }
+    if (versionPart === '') {
+      return err(
+        'INVALID_REGISTRY_NAME',
+        `scoped facet name "${input}" has an empty version after "@"`,
+        'provide a version (e.g., @scope/name@1.2.3) or omit the trailing @',
+      )
+    }
+    const scopedVersionResult = parseVersionSpec(versionPart)
+    if (!scopedVersionResult.ok) {
+      return { ok: false, error: scopedVersionResult.error }
+    }
+    return ok({ kind: 'registry', name: nameResult.canonical, version: scopedVersionResult.value })
   }
 
   // Registry name (with optional version tail).

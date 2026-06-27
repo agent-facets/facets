@@ -1,8 +1,10 @@
 import { DEFAULT_VERSION, isValidKebabCase } from '@agent-facets/engine'
+import { parseFacetName, validateFacetName } from '@agent-facets/protocol'
 import { Box, Text } from 'ink'
 import { useCallback, useEffect } from 'react'
 import type { AssetType } from '../../../commands/create/types'
 import { AssetSection } from '../../components/asset-section.tsx'
+import { BooleanToggle } from '../../components/boolean-toggle.tsx'
 import { Button } from '../../components/button.tsx'
 import { EditableField } from '../../components/editable-field.tsx'
 import { useFocusOrder } from '../../context/focus-order-context.ts'
@@ -18,7 +20,9 @@ const ASSET_LABELS: Record<AssetType, string> = {
 }
 
 function computeFocusIds(form: ReturnType<typeof useFormState>['form']): string[] {
-  const ids: string[] = ['field-name', 'field-description', 'field-version']
+  // NOTE: `field-private` sits between `field-version` and the asset controls.
+  // This focus list is duplicated in edit-view.tsx; keep both in lockstep.
+  const ids: string[] = ['field-name', 'field-description', 'field-version', 'field-private']
 
   for (const type of ASSET_TYPES) {
     const section = form.assets[type]
@@ -42,12 +46,15 @@ export function CreateView({
   onSubmit: () => void
   onEditDescription?: (section: import('../../context/form-state-context.ts').AssetSectionKey, name: string) => void
 }) {
-  const { form } = useFormState()
+  const { form, setPrivate } = useFormState()
   const { setFocusIds, focus, focusedId } = useFocusOrder()
 
-  const validateKebab = useCallback((v: string) => {
+  // Facet identity: an unscoped slug (`my-facet`) or a scoped `@scope/name`
+  // (`@acme/my-facet`). Asset names (below) stay kebab-case only.
+  const validateName = useCallback((v: string) => {
     if (!v) return undefined
-    if (!isValidKebabCase(v)) return 'Must be kebab-case (e.g., my-facet)'
+    const result = validateFacetName(v)
+    if (!result.ok) return 'Must be a facet name (e.g., my-facet or @scope/name)'
     return undefined
   }, [])
 
@@ -67,6 +74,17 @@ export function CreateView({
 
   const totalAssets = form.assets.skill.items.length + form.assets.command.items.length + form.assets.agent.items.length
   const canCreate = assetsReady && totalAssets > 0
+
+  // The first asset of each type defaults its name to the facet's unscoped
+  // base segment (`@acme/cowsay` → `cowsay`), so the suggestion is always a
+  // valid kebab asset name. Falls back to the raw value while the name is
+  // still being typed / invalid.
+  const defaultAssetName = (() => {
+    const raw = form.fields.name.value
+    if (!raw) return undefined
+    const parsed = parseFacetName(raw)
+    return parsed.ok ? parsed.value.name : raw
+  })()
 
   // Recompute focus order
   useEffect(() => {
@@ -91,8 +109,8 @@ export function CreateView({
         field="name"
         label="Name"
         placeholder="my-facet"
-        hint="kebab-case"
-        validate={validateKebab}
+        hint="name or @scope/name"
+        validate={validateName}
         onConfirm={() => focus('field-description')}
       />
 
@@ -111,6 +129,17 @@ export function CreateView({
         defaultValue={DEFAULT_VERSION}
         dimmed={!versionReady}
         validate={(v) => (/^\d+\.\d+\.\d+$/.test(v) ? undefined : `Must be SemVer (e.g., ${DEFAULT_VERSION})`)}
+        onConfirm={() => focus('field-private')}
+      />
+
+      <BooleanToggle
+        id="field-private"
+        label="Privacy"
+        value={form.private}
+        onLabel="Private"
+        offLabel="Public"
+        onToggle={setPrivate}
+        dimmed={!assetsReady}
         onConfirm={() => focus(`add-${ASSET_TYPES[0]}`)}
       />
 
@@ -119,7 +148,7 @@ export function CreateView({
           <AssetSection
             section={type}
             label={ASSET_LABELS[type]}
-            defaultName={form.assets[type].items.length === 0 ? form.fields.name.value : undefined}
+            defaultName={form.assets[type].items.length === 0 ? defaultAssetName : undefined}
             dimmed={!assetsReady}
             onEditDescription={onEditDescription}
             validate={(v) => {

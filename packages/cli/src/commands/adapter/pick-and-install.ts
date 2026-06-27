@@ -83,7 +83,7 @@ export async function pickAndInstallAdapters(): Promise<PickAndInstallResult> {
         else if (stage === 'downloading') console.log(`Downloading ${detail}...`)
         else if (stage === 'placing') console.log(`Installing adapter "${detail}"...`)
       },
-      onLog: (line) => console.log(line),
+      onLog: (build) => console.log(build()),
     })
     if (!result.ok) {
       writeCliError(describeAdapterInstallFailure(result.failure))

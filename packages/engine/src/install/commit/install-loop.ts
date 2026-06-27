@@ -4,7 +4,7 @@ import { classifyOutcome } from '../classify-outcome.ts'
 import type { InstallJournal } from '../journal.ts'
 import { materialize } from '../materialize.ts'
 import { materializeFailureToRunInstall } from '../materialize-failure.ts'
-import type { FacetOutcome, RunInstallFailure, StageEvent } from '../types.ts'
+import type { FacetOutcome, OnLog, RunInstallFailure, StageEvent } from '../types.ts'
 import { resolveFacet } from './resolve-facet.ts'
 
 export interface InstallLoopSuccess {
@@ -28,7 +28,7 @@ export interface InstallLoopArgs {
   journal: InstallJournal
   signal?: AbortSignal
   onStage: (event: StageEvent) => void
-  onLog: (line: string) => void
+  onLog: OnLog
 }
 
 /**

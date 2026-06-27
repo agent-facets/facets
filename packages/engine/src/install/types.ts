@@ -48,6 +48,22 @@ export interface InstallSummary {
 export type FacetStage = 'parse' | 'resolve' | 'fetch' | 'verify' | 'load' | 'build' | 'materialize'
 
 /**
+ * Verbose-log sink. Accepts a lazy builder (thunk) that produces a single,
+ * fully-formatted line. The thunk is only invoked when the sink is active,
+ * so template interpolation and conditional concatenation are skipped
+ * entirely when `--verbose` is off and `onLog` is undefined.
+ *
+ * The builder should return a line following these conventions:
+ *
+ *   - prefix `[verbose] ` (diagnostics) or `[warn] ` (non-fatal)
+ *   - top-level operations: one space after prefix (`[verbose] …`)
+ *   - per-facet / per-asset detail: three spaces (`[verbose]   …`)
+ *   - asset sigils: `+` new / `~` repaired/updated / `-` deleted / `=` unchanged
+ *   - `→` (U+2192) separates source → destination
+ */
+export type OnLog = (build: () => string) => void
+
+/**
  * Structured progress event. View layers subscribe via the `onStage`
  * callback and render whatever subset they care about.
  */
@@ -338,7 +354,7 @@ export interface RunInstallOptions {
    *  `{ additions: [], removals: [] }` for a plain `facet install`. */
   delta?: InstallDelta
   onStage?: (event: StageEvent) => void
-  onLog?: (line: string) => void
+  onLog?: OnLog
   signal?: AbortSignal
   frozenLockfile?: boolean
 }

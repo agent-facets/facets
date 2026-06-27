@@ -57,7 +57,7 @@ Build your facet before publishing. If you have not built yet, or if your source
 facet build
 ```
 
-See [`facet build`](/cli/authoring/build) for details on the 6-stage pipeline. The build writes `dist/<name>-<version>.facet`.
+See [`facet build`](/cli/authoring/build) for details on the 6-stage pipeline. The build writes `dist/<name>-<version>.facet` (a scoped name renders as a nested path, e.g. `dist/@acme/cowsay-1.0.0.facet`).
 
 ## Publish
 
@@ -79,7 +79,7 @@ facet publish
 
 When the built artifact and the source-tree `facet.json` disagree, `facet publish` distinguishes two cases:
 
-**Content drift** -- same name and version, different manifest content (you edited a description or asset descriptor without rebuilding). In an interactive terminal, you get two options: rebuild and publish, or publish the existing artifact unchanged.
+**Content drift** -- same name and version, different manifest content (you edited a description, an asset descriptor, or the [`private`](/specification/manifest#privacy) flag without rebuilding). In an interactive terminal, you get two options: rebuild and publish, or publish the existing artifact unchanged. If you flip `private` without rebuilding, publishing the existing artifact ships its old embedded privacy value; rebuild first to embed the new one.
 
 **Identity drift** -- different name or version (the most common case: you bumped `version` in `facet.json` but `dist/` still has the old build). In an interactive terminal, you get three options:
 
@@ -91,11 +91,11 @@ In a non-interactive context (CI, piped stdin), both drift classes warn to stder
 
 ## Publish outcomes
 
-| HTTP status | Meaning |
-| ----------- | ------- |
-| `201`       | Published immediately. The facet is live in the registry. |
+| HTTP status | Meaning                                                                                                                                                       |
+|-------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `201`       | Published immediately. The facet is live in the registry.                                                                                                     |
 | `202`       | Queued for review. The CLI reports the submission was accepted and surfaces the registry's guidance. The version becomes available once an admin approves it. |
-| `409`       | Version already exists. The registry enforces immutability. Once a version is published, it cannot be republished with different content. |
+| `409`       | Version already exists. The registry enforces immutability. Once a version is published, it cannot be republished with different content.                     |
 
 <Note>
 Registry errors are rendered verbatim. The CLI shows the registry's own message and suggested fix rather than maintaining its own copy of what each error code means.
@@ -111,6 +111,19 @@ To publish a new version:
 
 If you forget to rebuild after bumping the version, publish detects the identity drift and offers to build for you (in an interactive terminal).
 
+### Making a published facet private (or public)
+
+The [`private`](/specification/manifest#privacy) flag is manifest content, so changing it is a content change like any other. A version that is already published is immutable: you cannot flip `private` on an existing `(name, version)`. To change visibility, set the privacy intent, bump the `version`, rebuild, and republish:
+
+```sh
+facet edit    # toggle Privacy between Public and Private (no hand-editing JSON)
+# edit facet.json: bump "version"
+facet build
+facet publish
+```
+
+Use [`facet edit`](/cli/authoring/edit) to change visibility interactively  -- it shows the current privacy intent and writes the manifest for you. (You can still hand-edit `facet.json` if you prefer.) Omitting `private` (or setting it to `false`) keeps the facet public; `true` declares private publish intent. Registry-side enforcement of who can see or download a private facet is handled by the registry, not the CLI.
+
 ## Sign out
 
 ```sh
@@ -125,7 +138,7 @@ If `FACET_TOKEN` is set in your environment, it continues to authenticate every 
 
 ## Environment variables
 
-| Variable             | Description |
-| -------------------- | ----------- |
+| Variable             | Description                                                                                            |
+|----------------------|--------------------------------------------------------------------------------------------------------|
 | `FACET_TOKEN`        | Registry personal access token. Takes precedence over the credentials file. Use this for CI pipelines. |
-| `FACET_REGISTRY_URL` | Override the registry base URL. Defaults to the production registry. |
+| `FACET_REGISTRY_URL` | Override the registry base URL. Defaults to the production registry.                                   |

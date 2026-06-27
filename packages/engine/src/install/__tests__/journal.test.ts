@@ -158,7 +158,7 @@ describe('InstallJournal — onLog observability', () => {
     journal.record({ label: 'install foo', undo: async () => {} })
     journal.record({ label: 'install bar', undo: async () => {} })
 
-    await journal.rollback({ onLog: (line) => lines.push(line) })
+    await journal.rollback({ onLog: (build) => lines.push(build()) })
 
     // LIFO so `bar` first, `foo` second.
     expect(lines).toEqual(['[verbose] undo install bar', '[verbose] undo install foo'])
@@ -174,7 +174,7 @@ describe('InstallJournal — onLog observability', () => {
       },
     })
 
-    await journal.rollback({ onLog: (line) => lines.push(line) })
+    await journal.rollback({ onLog: (build) => lines.push(build()) })
 
     expect(lines).toHaveLength(1)
     expect(lines[0]).toContain('undo FAILED install foo')

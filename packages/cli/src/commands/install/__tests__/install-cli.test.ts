@@ -137,24 +137,6 @@ describe('facet install — CLI error paths', () => {
     expect(stderr).toContain('facet adapter install <name>')
   })
 
-  test('no adapters + TTY → exits 1 with picker-prompt hint', async () => {
-    writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify({ facets: {} }))
-    const { result: code, stderr } = await withTTY(true, () => captureStderr(() => installCommand.run([], {})))
-    expect(code).toBe(1)
-    expect(stderr).toContain('no adapters installed')
-    expect(stderr).toContain('at least one installed adapter')
-    expect(stderr).toContain('facet adapter install')
-  })
-
-  test('no adapters + TTY → exits 1 with picker-prompt hint', async () => {
-    writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify({ facets: {} }))
-    const { result: code, stderr } = await withTTY(true, () => captureStderr(() => installCommand.run([], {})))
-    expect(code).toBe(1)
-    expect(stderr).toContain('no adapters installed')
-    expect(stderr).toContain('at least one installed adapter')
-    expect(stderr).toContain('facet adapter install')
-  })
-
   test('exits 1 with usage error on positional argument', async () => {
     installFakeAdapter(adaptersDir, 'test-adapter')
     writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify({ facets: {} }))

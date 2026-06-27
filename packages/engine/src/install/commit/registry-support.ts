@@ -2,7 +2,7 @@ import type { VersionSpec } from '@agent-facets/protocol'
 import { resolveRegistryMetadataBatch } from '../../registry/index.ts'
 import type { RegistryError, RegistryMetadata } from '../../registry/types.ts'
 import type { MaterializeVersionResult } from '../materialize-version/index.ts'
-import type { RunInstallFailure, StageEvent } from '../types.ts'
+import type { OnLog, RunInstallFailure, StageEvent } from '../types.ts'
 
 /**
  * Fetch metadata for a single spec, normalizing the batch surface to a
@@ -13,7 +13,9 @@ export async function fetchMeta(
   name: string,
   version: VersionSpec,
   onStage: (event: StageEvent) => void,
+  onLog: OnLog,
 ): Promise<{ ok: true; value: RegistryMetadata } | { ok: false; error: RegistryError }> {
+  onLog(() => `[verbose]   fetching registry metadata for ${name}`)
   onStage({ kind: 'facet-stage', facet: name, stage: 'fetch' })
   const metaResult = await resolveRegistryMetadataBatch([{ name, version }])
   if (!metaResult.ok) return metaResult

@@ -1,15 +1,10 @@
-import {
-  loadInstalledAdapters,
-  type RollbackOutcome,
-  type RunInstallFailure,
-  type RunInstallResult,
-  runInstall,
-} from '@agent-facets/engine'
+import { type RollbackOutcome, type RunInstallFailure, type RunInstallResult, runInstall } from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
 import type { Command } from '../../commands.ts'
 import { InstallView } from '../../tui/views/install/install-view.tsx'
 import { writeCliError } from '../../util/errors.ts'
+import { ensureAdapters } from '../shared/ensure-adapters.ts'
 
 /**
  * `facet install` — bring the project on disk into agreement with
@@ -45,28 +40,10 @@ export const installCommand: Command = {
 
     const projectRoot = process.cwd()
 
-    // Discover installed adapters. Failures here are surfaced as
-    // CLI errors directly — runInstall doesn't know how to render the
-    // "no adapters installed" hint that points users at the picker.
-    const adapters = await loadInstalledAdapters()
-    const installable = adapters.filter((a) => a.supportsInstall === true)
-    if (adapters.length > 0 && installable.length === 0) {
-      const stale = adapters.map((a) => a.name).join(', ')
-      writeCliError({
-        what: `installed adapters do not support install yet: ${stale}`,
-        detail: 'these adapters were bundled before install support shipped; the capability flag is missing',
-        fix: "update each with 'facet adapter install <name>' to pull a version with install support",
-      })
-      return 1
-    }
-    if (installable.length === 0) {
-      const detail = process.stdout.isTTY
-        ? 'facet install requires at least one installed adapter to materialize assets'
-        : 'this is a non-interactive environment; the picker cannot run here'
-      const fix = process.stdout.isTTY
-        ? "run 'facet adapter install' and pick which AI tools to connect"
-        : "run 'facet adapter install <name>' with an explicit adapter (e.g. claude-code, opencode)"
-      writeCliError({ what: 'no adapters installed', detail, fix })
+    // Discover or pick adapters.
+    const adapters = await ensureAdapters()
+    if (adapters === null) {
+      // ensureAdapters already wrote the appropriate CLI error.
       return 1
     }
 
@@ -87,7 +64,7 @@ export const installCommand: Command = {
         run: async (onStage, onLog) => {
           const result = await runInstall({
             projectRoot,
-            adapters: installable,
+            adapters,
             onStage,
             ...(verbose && onLog ? { onLog } : {}),
             signal: controller.signal,

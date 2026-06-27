@@ -1,6 +1,7 @@
 import { createRegistryClient, translateThrownError, translateWireError } from './client.ts'
 import { resolveCredential } from './credentials.ts'
 import { describeVersionSpec } from './describe.ts'
+import { facetNameToRoute } from './http.ts'
 import type { RegistryMetadata, RegistryResult, RegistrySpec } from './types.ts'
 
 // Note on path-parameter encoding:
@@ -87,11 +88,22 @@ async function fetchOne(
   // The server is responsible for accepting/rejecting; we don't widen.
   const versionForUrl = describeVersionSpec(spec.version)
 
+  // Scoped names use the registry's two-segment scoped route
+  // (`/v0/facets/{scope}/{name}/{version}`) with `scope` and `name` as
+  // independent params, so the `/` is never collapsed into `%2F`. Unscoped
+  // names keep the single-`{name}` route. openapi-fetch path-encodes each
+  // segment independently.
+  const route = facetNameToRoute(spec.name)
+
   try {
-    const { data, error, response } = await client.GET('/v0/facets/{name}/{version}', {
-      // Pass `spec.name` raw — openapi-fetch path-encodes it.
-      params: { path: { name: spec.name, version: versionForUrl } },
-    })
+    const { data, error, response } =
+      route.kind === 'scoped'
+        ? await client.GET('/v0/facets/{scope}/{name}/{version}', {
+            params: { path: { scope: route.scope, name: route.name, version: versionForUrl } },
+          })
+        : await client.GET('/v0/facets/{name}/{version}', {
+            params: { path: { name: route.name, version: versionForUrl } },
+          })
 
     if (error !== undefined) {
       return {

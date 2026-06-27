@@ -26,6 +26,8 @@ On success, the build writes output to `dist/`:
 
 - `dist/<name>-<version>.facet`  -- a self-contained archive (uncompressed tar containing `build-manifest.json` and `archive.tar.gz`)
 
+For a scoped facet identity, the name's `/` renders as a nested path under `dist/`. For example, `@acme/cowsay` at `1.0.0` is written to `dist/@acme/cowsay-1.0.0.facet`; the build creates the required parent directories.
+
 The `.facet` file is the single distributable artifact. The build manifest is embedded inside it. Use `--emit-manifest` to also write a loose copy of `build-manifest.json` to `dist/` for debugging or tooling integration.
 
 If the build fails, errors are displayed inline under the failed pipeline stage, with a suggestion to run `facet edit` to fix the issues.

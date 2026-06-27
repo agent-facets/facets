@@ -212,6 +212,30 @@ describe('runAdd — registry manifest-value rule', () => {
     await add('cowsay')
     expect(readFacets().cowsay).not.toBe('cowsay')
   })
+
+  test('scoped bare name pins the resolved exact version under the scoped key', async () => {
+    registryResolvedVersion = '0.1.1'
+    registryFixtureDir = buildFixture(fakeHome, '@julian/cowsay', '0.1.1')
+    const result = await add('@julian/cowsay')
+    expect(result.ok).toBe(true)
+    expect(readFacets()['@julian/cowsay']).toBe('0.1.1')
+  })
+
+  test('scoped explicit @latest is written verbatim and floats', async () => {
+    registryResolvedVersion = '0.1.1'
+    registryFixtureDir = buildFixture(fakeHome, '@julian/cowsay', '0.1.1')
+    const result = await add('@julian/cowsay@latest')
+    expect(result.ok).toBe(true)
+    expect(readFacets()['@julian/cowsay']).toBe('latest')
+  })
+
+  test('scoped explicit exact version is recorded as written', async () => {
+    registryResolvedVersion = '0.1.1'
+    registryFixtureDir = buildFixture(fakeHome, '@julian/cowsay', '0.1.1')
+    const result = await add('@julian/cowsay@0.1.1')
+    expect(result.ok).toBe(true)
+    expect(readFacets()['@julian/cowsay']).toBe('0.1.1')
+  })
 })
 
 describe('runAdd — git/local manifest-value rule', () => {

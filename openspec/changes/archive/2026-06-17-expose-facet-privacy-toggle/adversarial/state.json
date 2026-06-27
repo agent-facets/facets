@@ -1,0 +1,54 @@
+{
+  "change": "expose-facet-privacy-toggle",
+  "schema": "spec-driven",
+  "entries": {
+    "proposal": {
+      "artifactId": "proposal",
+      "mainPaths": ["proposal.md"],
+      "adversarialPaths": ["adversarial/artifacts/proposal.md"],
+      "reviewPath": "adversarial/reviews/proposal-review.md",
+      "dependencies": [],
+      "status": "reconciled",
+      "authoredAt": "2026-06-17T03:13:56Z",
+      "comparedAt": "2026-06-17T03:20:00Z",
+      "reconciledAt": "2026-06-17T03:26:39Z",
+      "notes": "Adopted RFC 2119 wording, rebuild/version-bump author guidance, stronger documentation drift coverage, and non-goal fences for no standalone privacy command or auto rebuild/republish. Kept main proposal's TUI impact specificity and the user-decided omit-when-public behavior."
+    },
+    "design": {
+      "artifactId": "design",
+      "mainPaths": ["design.md"],
+      "adversarialPaths": ["adversarial/artifacts/design.md"],
+      "reviewPath": "adversarial/reviews/design-review.md",
+      "dependencies": ["proposal"],
+      "status": "reconciled",
+      "authoredAt": "2026-06-17T03:31:58Z",
+      "comparedAt": "2026-06-17T03:34:52Z",
+      "reconciledAt": "2026-06-17T03:41:49Z",
+      "notes": "Adopted code-grounded design refinements: form boolean as sibling of string fields, focus-order duplication warning, asset-section set/delete guidance over description pattern, explicit private:false-to-omission normalization and required spec scenario, static guidance rationale, and future-scope notes. Kept main's true-only ScaffoldOptions.private?: true type and focus-transition chain."
+    },
+    "specs": {
+      "artifactId": "specs",
+      "mainPaths": ["specs/**/*.md"],
+      "adversarialPaths": ["adversarial/artifacts/specs/authoring__facets/spec.md"],
+      "reviewPath": "adversarial/reviews/specs-review.md",
+      "dependencies": ["proposal"],
+      "status": "reconciled",
+      "authoredAt": "2026-06-17T03:59:55Z",
+      "comparedAt": "2026-06-17T04:03:18Z",
+      "reconciledAt": "2026-06-17T04:09:38Z",
+      "notes": "Partially adopted adversary: moved privacy coverage into MODIFIED create/edit/transactional requirements, added create revert and confirmation scenarios, and added standalone rebuild/version-bump/no-registry requirement. Rejected adversary's private:false normalization because current reconciled design preserves explicit private:false when left public."
+    },
+    "tasks": {
+      "artifactId": "tasks",
+      "mainPaths": ["tasks.md"],
+      "adversarialPaths": ["adversarial/artifacts/tasks.md"],
+      "reviewPath": "adversarial/reviews/tasks-review.md",
+      "dependencies": ["specs", "design"],
+      "status": "reconciled",
+      "authoredAt": "2026-06-17T04:15:49Z",
+      "comparedAt": "2026-06-17T04:19:03Z",
+      "reconciledAt": "2026-06-17T04:21:36Z",
+      "notes": "Adopted adversary's concrete file/symbol references, lockstep computeFocusIds risk language, exact guidance string, field-ordering tests, true-only interface note, and scenario-to-test mapping. Kept main's terminal bun check/bun format and OpenSpec validation gates plus unrelated top-level field preservation coverage."
+    }
+  }
+}

@@ -1,3 +1,5 @@
+import { parseFacetName } from '@agent-facets/protocol'
+
 /**
  * Default registry base URL. Overridable via `FACET_REGISTRY_URL`.
  *
@@ -33,4 +35,38 @@ export function getRegistryBaseUrl(): string {
  */
 export function encodeFacetName(name: string): string {
   return encodeURIComponent(name)
+}
+
+/**
+ * A canonical facet name split into the path components the registry's
+ * OpenAPI routes expect.
+ *
+ * The registry models scoped facets as two separate path segments — a
+ * literal `@scope` segment and a bare `name` segment (`/v0/facets/{scope}/
+ * {name}/...`) — NOT as one `{name}` parameter carrying a slash. Collapsing
+ * `@scope/name` into a single param percent-encodes the `/` to `%2F`, which
+ * the registry rejects with `E_INVALID_NAME`. So scoped requests MUST use
+ * the scoped routes with `scope` and `name` as independent params.
+ */
+export type RegistryFacetRoute = { kind: 'unscoped'; name: string } | { kind: 'scoped'; scope: string; name: string }
+
+/**
+ * Split a canonical facet name into registry route components.
+ *
+ * Uses protocol's `parseFacetName` — the single source of truth for facet
+ * identity grammar — so the scope/name split here always agrees with how
+ * the name was validated at manifest and source-parse time. `scope` carries
+ * the leading `@` exactly as the registry's `{scope}` parameter expects.
+ *
+ * The input is assumed to already be a valid facet identity (it has passed
+ * source parsing or manifest validation). If it somehow isn't, it is treated
+ * as an unscoped name verbatim so the caller still issues a well-formed (if
+ * ultimately 404-ing) request rather than throwing.
+ */
+export function facetNameToRoute(name: string): RegistryFacetRoute {
+  const parsed = parseFacetName(name)
+  if (parsed.ok && parsed.value.kind === 'scoped') {
+    return { kind: 'scoped', scope: `@${parsed.value.scope}`, name: parsed.value.name }
+  }
+  return { kind: 'unscoped', name }
 }

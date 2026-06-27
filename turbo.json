@@ -8,7 +8,7 @@
       "outputs": ["dist/**"]
     },
     "test": {
-      "dependsOn": [],
+      "dependsOn": ["^test"],
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/bunfig.toml"],
       "outputs": ["$TURBO_ROOT$/test-results/**"]
     },
@@ -18,7 +18,7 @@
       "outputs": ["$TURBO_ROOT$/test-results/**"]
     },
     "types": {
-      "dependsOn": []
+      "dependsOn": ["^types"]
     },
     "check": {
       "dependsOn": [
@@ -42,7 +42,7 @@
       ]
     },
     "//#test:scripts": {
-      "inputs": ["scripts/**"],
+      "inputs": ["scripts/**", ".changeset/**"],
       "outputs": ["$TURBO_ROOT$/test-results/scripts-junit.xml"]
     },
     "//#types": {

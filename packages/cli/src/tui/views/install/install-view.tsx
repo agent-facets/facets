@@ -30,7 +30,7 @@ export interface InstallViewProps {
    * `onLog` into the engine call; the view routes it through Ink's
    * stderr writer so it doesn't race the progress bar repaint.
    */
-  run: (onStage: (event: StageEvent) => void, onLog?: (line: string) => void) => Promise<InstallViewResult>
+  run: (onStage: (event: StageEvent) => void, onLog?: (build: () => string) => void) => Promise<InstallViewResult>
   /**
    * Header copy hint. `'add'` renders "Adding facets..."; `'install'`
    * renders "Installing facets..."; `'remove'` renders "Removing
@@ -174,8 +174,8 @@ export function InstallView({ run, mode, onComplete }: InstallViewProps) {
    * above the live region, on the stderr stream.
    */
   const onLog = useCallback(
-    (line: string) => {
-      writeToStderr(`${line}\n`)
+    (build: () => string) => {
+      writeToStderr(`${build()}\n`)
     },
     [writeToStderr],
   )

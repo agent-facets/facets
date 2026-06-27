@@ -1,6 +1,6 @@
 import type { Adapter } from '@agent-facets/adapter'
 import { runInstall } from '../run-install.ts'
-import type { Removal, RunInstallResult, StageEvent } from '../types.ts'
+import type { OnLog, Removal, RunInstallResult, StageEvent } from '../types.ts'
 import { prepareRemove, type RemovePrepareFailure, type RemovePrepareResult } from './prepare.ts'
 
 export type { RemovePrepareFailure, RemovePrepareResult }
@@ -14,7 +14,7 @@ export interface RunRemoveOptions {
   /** Pre-validated state from {@link prepareRemove}. */
   prepared?: Extract<RemovePrepareResult, { ok: true }>
   onStage?: (event: StageEvent) => void
-  onLog?: (line: string) => void
+  onLog?: OnLog
   signal?: AbortSignal
 }
 
@@ -55,7 +55,7 @@ export async function runRemove(opts: RunRemoveOptions): Promise<RunRemoveResult
   const filteredNames = prep.names
 
   for (const name of filteredNames) {
-    onLog?.(`[verbose]   removing "${name}"`)
+    onLog?.(() => `[verbose]   removing "${name}"`)
   }
 
   const removals: Removal[] = filteredNames.map((name) => ({ facetName: name }))

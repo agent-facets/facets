@@ -57,10 +57,11 @@ export async function installAssetFile(
   path: AssetPath,
   body: string,
   metadata?: Record<string, unknown>,
-): Promise<void> {
+): Promise<string> {
   await mkdir(dirname(path.file), { recursive: true })
   const combined = assembleAssetContent(body, metadata)
   await writeFile(path.file, combined, 'utf8')
+  return path.file
 }
 
 /**
@@ -78,9 +79,10 @@ export async function readAssetFile(path: AssetPath): Promise<{ content: string;
  * contract — see Adjustment B). Also removes any legacy `.meta.json`
  * sidecar left behind by earlier versions so upgrades reconverge cleanly.
  */
-export async function deleteAssetFile(path: AssetPath): Promise<void> {
+export async function deleteAssetFile(path: AssetPath): Promise<string> {
   await rm(path.file, { force: true })
   await rm(`${path.file}.meta.json`, { force: true })
+  return path.file
 }
 
 // --- front-matter helpers (exported for adapter-level customization) ---
