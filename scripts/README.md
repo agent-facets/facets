@@ -102,7 +102,7 @@ The CLI package (`agent-facets`) is marked `"private": true` in its `package.jso
 
 ## Workspace-only packages
 
-Some workspace packages — `@agent-facets/common`, `@agent-facets/landing`, `@agent-facets/functions` — are private helpers that are never published and have no companion release pipeline. `"private": true` alone isn't enough to skip them: the CLI package is also private but MUST be tagged (its tag triggers the binary release pipeline).
+Some workspace packages — `@agent-facets/engine`, `@agent-facets/common`, `@agent-facets/landing`, `@agent-facets/functions` — are private helpers that are never published and have no companion release pipeline. `"private": true` alone isn't enough to skip them: the CLI package is also private but MUST be tagged (its tag triggers the binary release pipeline).
 
 The contract for marking a package as "workspace-only, never release" has three parts:
 
@@ -111,6 +111,14 @@ The contract for marking a package as "workspace-only, never release" has three 
 3. **`prepack` strips `devDependencies` outright** via `stripDevDependencies` in `scripts/lib/prepack.ts` — this is the load-bearing protection that lets published packages keep `workspace:*` devDep references to versionless workspace-only packages (e.g. `@agent-facets/common` in `core` / `adapter` / `cli` devDeps). `bun pm pack` (used by the publish pipeline since PR #206) validates every `workspace:*` specifier — including those in `devDependencies` — and refuses to pack when one is unresolvable. `npm publish` strips devDeps from the tarball regardless, so deleting them at pack time has no effect on the published artifact, and `postpack` restores the original manifest. `DEP_FIELDS` excludes `devDependencies` from rewriting as belt-and-suspenders so the helper stays safe on any input shape. `prepack` and `postpack` write all diagnostic output to stderr (not stdout) so `bun pm pack --quiet`'s stdout stays parseable by `extractPackFilename` — see "Why pack-then-upload?" below.
 
 Together these keep workspace-only packages out of the release pipeline entirely — no tags, no npm publishes, no lingering "unpublished" state, and no prepack failures.
+
+### Hard guard: changesets must not bump ignored or unknown packages
+
+The Changesets UI sometimes adds a bump for a package in the `ignore` list, or for a fake/misnamed package (a typo'd name that isn't in the workspace). Either one breaks the release/deploy pipeline if merged — an ignored bump is silently dropped by `changeset version` (so the bump never ships), and an unknown package makes `changeset version` fail outright. `bun check` includes a hard guard against both: the `repository changeset guard` test in `scripts/lib/changesets.test.ts` reads the `ignore` list from `.changeset/config.json`, enumerates the valid workspace package names via `loadWorkspacePackages()`, parses every pending `.changeset/*.md` file's front-matter (`parseChangesetBumps`), and runs `findForbiddenBumps` (all in `scripts/lib/changesets.ts`). It fails with a per-file violation list — grouped into `ignored` vs `unknown` classes via `formatForbiddenBumps` — if any bump targets a package that is either in the `ignore` list or not a workspace package at all. `ignore` takes precedence over the workspace set, so an ignored package classifies as `ignored`, not `unknown`. The guard passes when there are no pending changesets.
+
+Note: `changeset status` already errors on unknown packages, but it is *blind* to ignored-package bumps (it reports "NO packages to be bumped" and exits 0). This guard is the only check that catches the ignored case, and it folds in the unknown case too so both live in one fast, pure, unit-tested place.
+
+`turbo.json`'s `//#test:scripts` task includes `.changeset/**` in its inputs so adding or editing a changeset reliably reruns the guard instead of serving a stale cache hit.
 
 ## Why pack-then-upload?
 

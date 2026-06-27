@@ -439,3 +439,158 @@ export function replaceChangelogEntry(changelog: string, version: string, newCon
 
   return [...before, '', trimmedContent, '', ...after].join('\n')
 }
+
+// ---------------------------------------------------------------------------
+// Ignored-package guard
+// ---------------------------------------------------------------------------
+
+/** A single package bump declared in a changeset's front-matter. */
+export interface PackageBump {
+  name: string
+  bump: string
+}
+
+/**
+ * Parse the package bumps from a single changeset file's contents.
+ *
+ * Changeset front-matter looks like:
+ *
+ *   ---
+ *   "@agent-facets/protocol": patch
+ *   "agent-facets": minor
+ *   ---
+ *   Summary text...
+ *
+ * Returns one entry per quoted `"name": bump` line inside the leading
+ * front-matter block. Package names without surrounding quotes, or content
+ * outside the front-matter block, are ignored. The bump value is captured
+ * verbatim (e.g. `patch`, `minor`, `major`) for diagnostic reporting; this
+ * guard does not interpret it.
+ */
+export function parseChangesetBumps(content: string): PackageBump[] {
+  const lines = content.split('\n')
+
+  // Locate the front-matter block delimited by the first two `---` fences.
+  let openIdx = -1
+  let closeIdx = -1
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i]?.trim() === '---') {
+      if (openIdx === -1) {
+        openIdx = i
+      } else {
+        closeIdx = i
+        break
+      }
+    }
+  }
+
+  if (openIdx === -1 || closeIdx === -1) return []
+
+  const bumps: PackageBump[] = []
+  const lineRe = /^\s*"([^"]+)"\s*:\s*(\S+)\s*$/
+  for (let i = openIdx + 1; i < closeIdx; i++) {
+    const match = (lines[i] ?? '').match(lineRe)
+    if (match?.[1] && match[2]) {
+      bumps.push({ name: match[1], bump: match[2] })
+    }
+  }
+
+  return bumps
+}
+
+/** A pending changeset together with the bumps it declares. */
+export interface ParsedChangeset {
+  file: string
+  bumps: PackageBump[]
+}
+
+/**
+ * A forbidden bump found in a pending changeset.
+ *
+ * `reason` discriminates why the bump is illegal:
+ * - `ignored`  — the package exists in the workspace but is listed in
+ *   `.changeset/config.json` `ignore`; it is never released, and bumping it
+ *   breaks the release/deploy pipeline.
+ * - `unknown`  — the package is not a workspace package at all (a fake or
+ *   misnamed entry, e.g. from a typo in the Changesets UI). Versioning it
+ *   would fail outright.
+ */
+export interface ForbiddenBump {
+  file: string
+  name: string
+  bump: string
+  reason: 'ignored' | 'unknown'
+}
+
+/**
+ * Result of scanning pending changesets for forbidden package bumps.
+ *
+ * `ok: false` carries the structured violations so a caller (e.g. a test)
+ * can render a clear failure without parsing a message string. Failure here
+ * is part of the contract — a guard that finds a forbidden bump — not an
+ * exceptional condition, so it is modeled as data rather than a thrown error.
+ */
+export type ForbiddenBumpScanResult = { ok: true } | { ok: false; violations: ForbiddenBump[] }
+
+/**
+ * Scan parsed pending changesets for any bump that targets a package which
+ * either (a) is listed in the changesets `ignore` array, or (b) is not a
+ * known workspace package at all. Pure: callers supply the already-parsed
+ * changesets, the ignore list (from `.changeset/config.json`), and the set
+ * of valid workspace package names (from `loadWorkspacePackages()`).
+ *
+ * `ignore` takes precedence over `knownPackages`: an ignored package is a
+ * real workspace package, so it is classified as `ignored`, not `unknown`.
+ */
+export function findForbiddenBumps(
+  changesets: ParsedChangeset[],
+  ignore: string[],
+  knownPackages: string[],
+): ForbiddenBumpScanResult {
+  const ignored = new Set(ignore)
+  const known = new Set(knownPackages)
+  const violations: ForbiddenBump[] = []
+
+  for (const changeset of changesets) {
+    for (const { name, bump } of changeset.bumps) {
+      if (ignored.has(name)) {
+        violations.push({ file: changeset.file, name, bump, reason: 'ignored' })
+      } else if (!known.has(name)) {
+        violations.push({ file: changeset.file, name, bump, reason: 'unknown' })
+      }
+    }
+  }
+
+  return violations.length === 0 ? { ok: true } : { ok: false, violations }
+}
+
+/**
+ * Render a forbidden-bump scan failure as a human-readable, multi-line
+ * message for surfacing in CI / test output. Groups violations by reason so
+ * the operator sees the two distinct failure classes separately.
+ */
+export function formatForbiddenBumps(violations: ForbiddenBump[]): string {
+  const sections: string[] = []
+
+  const ignored = violations.filter((v) => v.reason === 'ignored')
+  if (ignored.length > 0) {
+    sections.push(
+      'Changeset(s) bump packages listed in `.changeset/config.json` `ignore`. ' +
+        'These packages are never released and bumping them breaks the release/deploy pipeline. ' +
+        'Remove the offending package(s) from the changeset(s):',
+      ...ignored.map((v) => `  - ${v.file}: "${v.name}": ${v.bump}`),
+    )
+  }
+
+  const unknown = violations.filter((v) => v.reason === 'unknown')
+  if (unknown.length > 0) {
+    if (sections.length > 0) sections.push('')
+    sections.push(
+      'Changeset(s) bump packages that are not in the workspace (fake or misnamed). ' +
+        'Fix the package name(s) in the changeset(s):',
+      ...unknown.map((v) => `  - ${v.file}: "${v.name}": ${v.bump}`),
+    )
+  }
+
+  return sections.join('\n')
+}
