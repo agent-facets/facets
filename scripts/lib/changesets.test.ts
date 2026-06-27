@@ -968,6 +968,52 @@ describe('parseChangesetBumps', () => {
     `
     expect(parseChangesetBumps(content)).toEqual([{ name: 'agent-facets', bump: 'major' }])
   })
+
+  test('allows leading blank lines before the front-matter', () => {
+    const content = '\n\n---\n"agent-facets": patch\n---\n\nBody'
+    expect(parseChangesetBumps(content)).toEqual([{ name: 'agent-facets', bump: 'patch' }])
+  })
+
+  test('ignores prose before a later thematic break (no leading front-matter)', () => {
+    const content = dedent`
+      Some intro prose that is not front-matter.
+
+      ---
+      "agent-facets": patch
+      ---
+    `
+    expect(parseChangesetBumps(content)).toEqual([])
+  })
+
+  test('returns empty array when the closing fence is missing', () => {
+    const content = dedent`
+      ---
+      "agent-facets": patch
+    `
+    expect(parseChangesetBumps(content)).toEqual([])
+  })
+
+  test('parses single-quoted package keys', () => {
+    const content = dedent`
+      ---
+      '@agent-facets/engine': patch
+      ---
+    `
+    expect(parseChangesetBumps(content)).toEqual([{ name: '@agent-facets/engine', bump: 'patch' }])
+  })
+
+  test('parses a mix of single- and double-quoted keys', () => {
+    const content = dedent`
+      ---
+      '@agent-facets/engine': minor
+      "agent-facets": patch
+      ---
+    `
+    expect(parseChangesetBumps(content)).toEqual([
+      { name: '@agent-facets/engine', bump: 'minor' },
+      { name: 'agent-facets', bump: 'patch' },
+    ])
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -1042,8 +1088,14 @@ describe('findForbiddenBumps', () => {
       { file: 'fake.md', name: '@agent-facets/nope', bump: 'major', reason: 'unknown' },
     ])
   })
+})
 
-  test('formatForbiddenBumps renders both classes with distinct guidance', () => {
+// ---------------------------------------------------------------------------
+// formatForbiddenBumps
+// ---------------------------------------------------------------------------
+
+describe('formatForbiddenBumps', () => {
+  test('renders both classes with distinct guidance', () => {
     const message = formatForbiddenBumps([
       { file: 'a.md', name: '@agent-facets/engine', bump: 'patch', reason: 'ignored' },
       { file: 'b.md', name: '@agent-facets/fake', bump: 'minor', reason: 'unknown' },
