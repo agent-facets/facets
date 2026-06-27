@@ -461,37 +461,45 @@ export interface PackageBump {
  *   ---
  *   Summary text...
  *
- * Returns one entry per quoted `"name": bump` line inside the leading
- * front-matter block. Package names without surrounding quotes, or content
- * outside the front-matter block, are ignored. The bump value is captured
- * verbatim (e.g. `patch`, `minor`, `major`) for diagnostic reporting; this
- * guard does not interpret it.
+ * Returns one entry per quoted `"name": bump` (or `'name': bump`) line inside
+ * the leading front-matter block. The block must be the first non-empty
+ * content in the file: the first non-blank line has to be a `---` fence, and a
+ * matching closing `---` fence must follow. Content with prose before the
+ * front-matter, or with no opening/closing fence, yields no entries. Lines
+ * with unquoted keys, or content outside the front-matter block, are ignored.
+ * Both single- and double-quoted package keys are accepted (Changesets and
+ * YAML allow either). The bump value is captured verbatim (e.g. `patch`,
+ * `minor`, `major`) for diagnostic reporting; this guard does not interpret it.
  */
 export function parseChangesetBumps(content: string): PackageBump[] {
   const lines = content.split('\n')
 
-  // Locate the front-matter block delimited by the first two `---` fences.
-  let openIdx = -1
+  // The front-matter must lead the file: the first non-blank line has to be
+  // the opening `---` fence. Anything else (prose, a later thematic break)
+  // means there is no leading front-matter block to parse.
+  const openIdx = lines.findIndex((line) => line.trim() !== '')
+  if (openIdx === -1 || lines[openIdx]?.trim() !== '---') return []
+
+  // Find the closing `---` fence after the opening one.
   let closeIdx = -1
-  for (let i = 0; i < lines.length; i++) {
+  for (let i = openIdx + 1; i < lines.length; i++) {
     if (lines[i]?.trim() === '---') {
-      if (openIdx === -1) {
-        openIdx = i
-      } else {
-        closeIdx = i
-        break
-      }
+      closeIdx = i
+      break
     }
   }
-
-  if (openIdx === -1 || closeIdx === -1) return []
+  if (closeIdx === -1) return []
 
   const bumps: PackageBump[] = []
-  const lineRe = /^\s*"([^"]+)"\s*:\s*(\S+)\s*$/
+  // Accept either single- or double-quoted keys: "name": bump | 'name': bump.
+  const lineRe = /^\s*"([^"]+)"\s*:\s*(\S+)\s*$|^\s*'([^']+)'\s*:\s*(\S+)\s*$/
   for (let i = openIdx + 1; i < closeIdx; i++) {
     const match = (lines[i] ?? '').match(lineRe)
-    if (match?.[1] && match[2]) {
-      bumps.push({ name: match[1], bump: match[2] })
+    if (!match) continue
+    const name = match[1] ?? match[3]
+    const bump = match[2] ?? match[4]
+    if (name && bump) {
+      bumps.push({ name, bump })
     }
   }
 
