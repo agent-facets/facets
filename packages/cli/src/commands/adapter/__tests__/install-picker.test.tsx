@@ -61,7 +61,7 @@ describe('InstallPicker — initial render', () => {
     instance.unmount()
   })
 
-  test('lists all first-party adapters including the dimmed codex row', () => {
+  test('lists all first-party adapters with codex now selectable', () => {
     const instance = render(
       createElement(InstallPicker, {
         onConfirm: () => {},
@@ -72,7 +72,8 @@ describe('InstallPicker — initial render', () => {
     expect(frame).toContain('claude-code')
     expect(frame).toContain('opencode')
     expect(frame).toContain('codex')
-    expect(frame).toContain('(install support coming soon)')
+    // codex now supports install — the "coming soon" label must be gone.
+    expect(frame).not.toContain('(install support coming soon)')
     instance.unmount()
   })
 
@@ -160,9 +161,9 @@ describe('InstallPicker — keyboard interaction', () => {
     instance.unmount()
   })
 
-  test('Cursor skips the dimmed codex row when navigating', async () => {
-    // claude-code (selectable) → opencode (selectable) → wrap back to claude-code.
-    // codex is dimmed and must be skipped.
+  test('Cursor visits the codex row now that it is selectable', async () => {
+    // All three first-party adapters are selectable:
+    // claude-code → opencode → codex → wrap back to claude-code.
     const state: { confirmed: { name: string }[] | null } = { confirmed: null }
     const instance = render(
       createElement(InstallPicker, {
@@ -174,15 +175,18 @@ describe('InstallPicker — keyboard interaction', () => {
     )
     instance.stdin.write(KEY_DOWN) // claude-code → opencode
     await nextTick()
-    instance.stdin.write(KEY_SPACE) // select opencode
+    instance.stdin.write(KEY_DOWN) // opencode → codex (no longer skipped)
     await nextTick()
-    instance.stdin.write(KEY_DOWN) // opencode → claude-code (wrap; skips codex)
+    instance.stdin.write(KEY_SPACE) // select codex
+    await nextTick()
+    instance.stdin.write(KEY_DOWN) // codex → wrap back to claude-code
     await nextTick()
     instance.stdin.write(KEY_SPACE) // select claude-code
     await nextTick()
     instance.stdin.write(KEY_ENTER)
     await nextTick()
-    expect(state.confirmed).toEqual([{ name: 'claude-code' }, { name: 'opencode' }])
+    // Confirmed selection is returned in catalog order (claude-code, then codex).
+    expect(state.confirmed).toEqual([{ name: 'claude-code' }, { name: 'codex' }])
     instance.unmount()
   })
 

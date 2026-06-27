@@ -5,6 +5,8 @@ lefthook-local.yml
 mise.local.toml
 .DS_Store
 
+.env
+
 *.bun-build
 bun.lockb
 
