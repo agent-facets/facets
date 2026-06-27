@@ -34,14 +34,12 @@ describe('codex adapter — buildAssetMetadata', () => {
       description: 'Code review specialist',
       developer_instructions: 'You are an expert reviewer.',
     })
-    expect(result.ok).toBe(true)
-    if (result.ok) {
-      expect(result.data).toEqual({
-        name: 'reviewer',
-        description: 'Code review specialist',
-        developer_instructions: 'You are an expert reviewer.',
-      })
-    }
+    if (!result.ok) expect.unreachable()
+    expect(result.data).toEqual({
+      name: 'reviewer',
+      description: 'Code review specialist',
+      developer_instructions: 'You are an expert reviewer.',
+    })
   })
 
   test('accepts partial metadata (only name)', () => {
@@ -51,10 +49,8 @@ describe('codex adapter — buildAssetMetadata', () => {
 
   test('rejects invalid name type', () => {
     const result = adapter.buildAssetMetadata({ name: 42 })
-    expect(result.ok).toBe(false)
-    if (!result.ok) {
-      expect(result.errors[0]?.message).toBeTruthy()
-    }
+    if (result.ok) expect.unreachable()
+    expect(result.errors[0]?.message).toBeTruthy()
   })
 
   test('rejects invalid description type', () => {
@@ -207,6 +203,10 @@ describe('codex adapter — project-scope agent I/O', () => {
     await adapter.installAsset('project', 'agent', 'viper-plans/reviewer', 'instructions', {})
     const path = join(workDir, '.codex/agents/viper-plans/reviewer.toml')
     expect(existsSync(path)).toBe(true)
+  })
+
+  test('readAsset rejects when the agent TOML file is absent', async () => {
+    await expect(adapter.readAsset('project', 'agent', 'never-installed')).rejects.toThrow()
   })
 })
 

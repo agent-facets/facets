@@ -11,6 +11,6 @@ export default defineConfig({
   // self-contained bundle. The CLI loads this file directly at install time
   // without needing a node_modules tree.
   deps: {
-    alwaysBundle: ['@agent-facets/adapter', 'smol-toml'],
+    alwaysBundle: ['@agent-facets/adapter', 'arktype', 'smol-toml'],
   },
 })

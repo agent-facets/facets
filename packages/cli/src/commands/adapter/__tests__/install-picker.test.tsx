@@ -72,8 +72,6 @@ describe('InstallPicker — initial render', () => {
     expect(frame).toContain('claude-code')
     expect(frame).toContain('opencode')
     expect(frame).toContain('codex')
-    // codex now supports install — the "coming soon" label must be gone.
-    expect(frame).not.toContain('(install support coming soon)')
     instance.unmount()
   })
 

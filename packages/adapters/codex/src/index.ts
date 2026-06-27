@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import {
@@ -161,16 +161,19 @@ async function installAgentToml(filePath: string, content: string, metadata?: Re
     doc.developer_instructions = content
   }
 
-  await writeFile(filePath, stringifyToml(doc), 'utf8')
+  await Bun.write(filePath, stringifyToml(doc))
 }
 
 /**
  * Read a Codex agent TOML file. Returns `developer_instructions` as `content`
- * and the remaining top-level keys as `metadata`. Falls back gracefully when
- * the file is missing or malformed.
+ * and the remaining top-level keys as `metadata`.
+ *
+ * Throws if the file is missing or contains malformed TOML — mirroring the
+ * shared `readAssetFile` helper used for skills and commands, so a missing
+ * agent surfaces as a read failure rather than silently returning empty.
  */
 async function readAgentToml(filePath: string): Promise<{ content: string; metadata?: Record<string, unknown> }> {
-  const raw = await readFile(filePath, 'utf8')
+  const raw = await Bun.file(filePath).text()
   const parsed = parseToml(raw) as Record<string, unknown>
 
   const { developer_instructions, ...rest } = parsed
