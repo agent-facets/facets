@@ -41,6 +41,146 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v0/facets/count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Public facet count
+         * @description Returns the projected count of live public facets. The count is event-backed and eventually consistent; it is never derived from facet search and never reveals private facet counts.
+         */
+        get: operations["getV0FacetsCount"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/facets/{scope}/{name}/latest-version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the latest version pointer for a scoped facet
+         * @description Returns the current latest version string for a scoped facet. Short-cached.
+         */
+        get: operations["getV0FacetsByScopeByNameLatestVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/facets/{scope}/{name}/versions/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the full version list for a scoped facet
+         * @description Returns the complete sorted version list for a scoped facet.
+         */
+        get: operations["getV0FacetsByScopeByNameVersionsByVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/facets/{scope}/{name}/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get metadata for a specific version of a scoped facet
+         * @description Returns the version metadata for a scoped facet. The version may be `latest`.
+         */
+        get: operations["getV0FacetsByScopeByNameByVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/facets/{scope}/{name}/{version}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download a scoped facet version's tarball
+         * @description 302 redirects to a 5-minute presigned S3 URL.
+         */
+        get: operations["getV0FacetsByScopeByNameByVersionArchive"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/facets/{scope}/{name}/{version}/contents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the verified bodies of a scoped facet version's resources
+         * @description Returns the verified body of each skill, agent, and command in the scoped facet version.
+         */
+        get: operations["getV0FacetsByScopeByNameByVersionContents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/facets/{scope}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get scope-root detail
+         * @description Returns a live scope by its @-prefixed name, including the structured owner identity and summaries of the facets published under that scope. Missing scopes return 404; pending organization claims are never exposed as live scopes.
+         */
+        get: operations["getV0FacetsByScope"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v0/facets/{name}/latest-version": {
         parameters: {
             query?: never;
@@ -50,7 +190,7 @@ export interface paths {
         };
         /**
          * Get the latest version pointer for a facet
-         * @description Returns the current latest version string for a facet. Short-cached (s-maxage=30) so CloudFront absorbs traffic; all downstream reads key off the concrete version it returns.
+         * @description Returns the caller-relative latest version string for a facet — the highest version the caller is authorized to read. Downstream reads key off the concrete version it returns.
          */
         get: operations["getV0FacetsByNameLatestVersion"];
         put?: never;
@@ -70,7 +210,7 @@ export interface paths {
         };
         /**
          * Get the full version list for a facet
-         * @description Returns the complete sorted version list. The :version in the path is the cache key (expected to be the current latest version). A concrete version gets immutable caching + ETag; the literal `latest` resolves server-side and is not cached.
+         * @description Returns the sorted list of versions the caller is authorized to see. Responses are `no-store`: the visible set is caller-relative, so a list cached for one caller must not be served to another.
          */
         get: operations["getV0FacetsByNameVersionsByVersion"];
         put?: never;
@@ -90,7 +230,7 @@ export interface paths {
         };
         /**
          * Get metadata for a specific version
-         * @description Returns the version row's metadata including the verbatim manifestJson string and the verified publisher username. version may be `latest` to resolve through FACET META's `latest_version` attribute. Because (name, version) is immutable, a concrete-version response is cacheable for a year with a strong ETag derived from the verified content fingerprint; conditional If-None-Match requests get a 304. `latest` resolves server-side and is not cached.
+         * @description Returns the version row's metadata including the verbatim manifestJson string and the verified publisher username. `version` may be `latest`, which resolves to the highest version the caller is authorized to read. A concrete public version is immutable and identical for every caller, so it is long-cacheable; a private version is `no-store` because each read is authorized at request time, as is a `latest` resolution.
          */
         get: operations["getV0FacetsByNameByVersion"];
         put?: never;
@@ -130,11 +270,31 @@ export interface paths {
         };
         /**
          * Get the verified bodies of a version's resources
-         * @description Returns the verified body of each skill, agent, and command in the version. Because (name, version) is immutable, a concrete-version response is cacheable for a year with a strong ETag derived from the verified content fingerprint; conditional If-None-Match requests get a 304. `latest` resolves server-side and is not cached.
+         * @description Returns the verified body of each skill, agent, and command in the version. A concrete public version is immutable and identical for every caller, so it is long-cacheable; a private version is `no-store` because each read is authorized at request time, as is a `latest` resolution.
          */
         get: operations["getV0FacetsByNameByVersionContents"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/facets/{scope}/{name}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish a new version of a scoped facet
+         * @description POST a gzipped tarball with `facet.json` at its root to `/@scope/name/versions`. The scope/facet separator MUST be a literal slash; `%2F` is rejected with `E_INVALID_NAME`. The caller MUST own the scope. The reconstructed `@scope/name` MUST equal the manifest `name`. Body is capped at 5 MB.
+         */
+        post: operations["postV0FacetsByScopeByNameVersions"];
         delete?: never;
         options?: never;
         head?: never;
@@ -265,6 +425,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v0/auth/impersonation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Stop impersonating
+         * @description Stateless no-op that returns 204. Impersonation holds no server state; the client stops by dropping the impersonation header and stored target metadata.
+         */
+        delete: operations["deleteV0AuthImpersonation"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v0/onboarding/username": {
         parameters: {
             query?: never;
@@ -276,7 +456,7 @@ export interface paths {
         put?: never;
         /**
          * Bootstrap a new registry account (claim first username)
-         * @description For Cognito-authenticated callers who have NOT yet been provisioned in the registry. Creates the USERNAME reservation and the PROFILE row atomically. Returns 409 E_USERNAME_TAKEN if the username is already claimed. Usernames are immutable once set; this route runs exactly once per Cognito sub.
+         * @description For Cognito-authenticated callers who have NOT yet been provisioned in the registry. Creates the USERNAME reservation, the PROFILE row, the COGNITO_SUB reservation, and the user’s `@<username>` scope atomically. Returns 409 E_USERNAME_TAKEN if the username is already claimed, 403 E_NAME_BLOCKED if the name is reserved or blocked. Usernames are immutable once set; this route runs exactly once per Cognito sub.
          */
         post: operations["postV0OnboardingUsername"];
         delete?: never;
@@ -319,6 +499,66 @@ export interface paths {
         get: operations["getV0AdminMigrationsRuns"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/admin/migrations/batches/latest-once": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a "migrate to latest" batch (admin)
+         * @description Runs every pending one-time migration as a dry run followed by a real run, in dependency order, stopping on the first failure. Refuses to start if a migration or batch is already in progress.
+         */
+        post: operations["postV0AdminMigrationsBatchesLatestOnce"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/admin/migrations/batches/{batchId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a migration batch (admin)
+         * @description Returns a batch by id for polling: status, progress, and references to the current/failed run.
+         */
+        get: operations["getV0AdminMigrationsBatchesByBatchId"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/admin/migrations/batches/{batchId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel a running migration batch (admin)
+         * @description Marks the batch failed (cancelled), stops the orchestrator execution (live stages), and force-releases the global migration lease so a stopped run does not block migrations until its lease expires. A non-running batch returns its current state unchanged.
+         */
+        post: operations["postV0AdminMigrationsBatchesByBatchIdCancel"];
         delete?: never;
         options?: never;
         head?: never;
@@ -378,13 +618,13 @@ export interface paths {
         };
         /**
          * List all reservation-list entries (admin)
-         * @description Returns every reservation row across both pools, sorted by name. Collection-pool entries ('@'-prefixed) precede global-pool entries because '@' < 'a' in ASCII.
+         * @description Returns every reservation row across both pools, sorted by name. Scope-pool entries ('@'-prefixed) precede global-pool entries because '@' < 'a' in ASCII.
          */
         get: operations["getV0AdminReservationList"];
         put?: never;
         /**
          * Add a reservation (admin)
-         * @description Adds a name to one pool ('collection' or 'global') or to every pool at once ('all'). The 'all' path uses TransactWriteItems for atomicity. Caller passes the BARE component name (without any '@' prefix); the registry prepends the prefix for the collection pool key. Returns 422 if the bare name fails the registry name grammar, 409 if any targeted pool already has the name reserved.
+         * @description Adds a name to one pool ('scope' or 'global') or to every pool at once ('all'). The 'all' path uses TransactWriteItems for atomicity. Caller passes the BARE component name (without any '@' prefix); the registry prepends the prefix for the scope pool key. Returns 422 if the bare name fails the registry name grammar, 409 if any targeted pool already has the name reserved.
          */
         post: operations["postV0AdminReservationList"];
         /**
@@ -406,7 +646,7 @@ export interface paths {
         };
         /**
          * List review queue (admin)
-         * @description Returns QUEUE rows for the requested status bucket across both queue types. Pending rows sort by GSI2SK (tier priority then created_at, oldest higher-tier first). Decided rows sort newest-decision first. The 'cancelled' bucket coalesces superseded + withdrawn rows; the row's own `status` field preserves the distinction. Default bucket is 'pending'. Includes the submitting user’s username and tier for display.
+         * @description Returns QUEUE rows for the requested status bucket. Pending rows sort by GSI2SK (tier priority then created_at, oldest higher-tier first). Decided rows sort newest-decision first. The 'cancelled' bucket coalesces superseded + withdrawn rows; the row's own `status` field preserves the distinction. Default bucket is 'pending'. Includes the submitting user’s username and tier for display.
          */
         get: operations["getV0AdminReviewQueue"];
         put?: never;
@@ -428,9 +668,49 @@ export interface paths {
         put?: never;
         /**
          * Approve or reject a pending queue item (admin)
-         * @description Approval of a collection-claim transitions the QUEUE row to 'approved' AND flips COLLECTION META from 'pending' → 'live' atomically. If a parallel admin approval already won (META is no longer pending), this user's queue row gets 'superseded' status instead. Rejection is a simple status transition.
+         * @description Approval of a global-facet first-publish transitions the QUEUE row to 'approved' AND writes the FACET META + VERSION rows atomically. If a parallel admin approval already won (the facet now exists), this user's queue row gets 'superseded' status instead. Rejection is a simple status transition.
          */
         post: operations["postV0AdminReviewQueueById"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search users by username prefix
+         * @description Bounded username-prefix search over the GSI3 USER_ALL#<first-letter> partition. Admin-gated, so the response carries email, tier, and suspension status. An empty `q` returns no users.
+         */
+        get: operations["getV0AdminUsers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/admin/users/{id}/impersonation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start impersonating a user
+         * @description Validates that the target exists and is not an admin, then returns the non-secret metadata the UI stores to drive impersonation. No token is minted — every subsequent request re-authorizes from the admin's live JWT plus the X-Facet-Impersonate-User-Id header.
+         */
+        post: operations["postV0AdminUsersByIdImpersonation"];
         delete?: never;
         options?: never;
         head?: never;
@@ -461,20 +741,20 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v0/collections": {
+    "/v0/admin/event-health": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
-        put?: never;
         /**
-         * Claim a collection
-         * @description Claim ownership of @<collection>. Requires an interactive (browser/CLI) session — publish tokens cannot claim. Outcomes: (a) 201 fresh claim; (b) 200 idempotent same-user (you already own it); (c) 409 E_COLLECTION_CLAIMED (owned by another user); (d) 409 E_CLAIM_PENDING_ELSEWHERE (another user has a pending review claim for this name); (e) 202 QUEUED_FOR_REVIEW with reason ∈ {'rate-limit', 'reserved'}. Admin tier bypasses the rate-limit gate but goes through reservation review like everyone.
+         * Event delivery health
+         * @description Product-event delivery health: pending backlog size, oldest-pending age, and the full unresolved dead-letter set. Admin only.
          */
-        post: operations["postV0Collections"];
+        get: operations["getV0AdminEventHealth"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -521,6 +801,167 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v0/organizations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the caller's organizations and invitations */
+        get: operations["getV0Organizations"];
+        put?: never;
+        /**
+         * Create or claim an organization
+         * @description Auto-creates the organization when the slug is unprotected and within the per-user claim budget (1/24h, 5/30d); otherwise queues the claim for admin review. Reserves the matching @<slug> scope and makes the caller the founding Admin.
+         */
+        post: operations["postV0Organizations"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/organizations/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get an organization and the caller role */
+        get: operations["getV0OrganizationsBySlug"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/organizations/{slug}/lookup-user": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search users by username prefix for an organization invite
+         * @description Returns up to 10 users whose username begins with the query, across all users. The caller must be an Admin of the organization in the URL.
+         */
+        get: operations["getV0OrganizationsBySlugLookupUser"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/organizations/{slug}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List organization members */
+        get: operations["getV0OrganizationsBySlugMembers"];
+        put?: never;
+        /** Invite a user to the organization */
+        post: operations["postV0OrganizationsBySlugMembers"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/organizations/{slug}/members/{userId}/role": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Change a member's role */
+        post: operations["postV0OrganizationsBySlugMembersByUserIdRole"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/organizations/{slug}/members/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a member */
+        delete: operations["deleteV0OrganizationsBySlugMembersByUserId"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/organizations/{slug}/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Edit organization profile/settings */
+        post: operations["postV0OrganizationsBySlugProfile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/organizations/{slug}/invitation/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept an organization invitation */
+        post: operations["postV0OrganizationsBySlugInvitationAccept"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/organizations/{slug}/invitation/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Decline an organization invitation */
+        post: operations["postV0OrganizationsBySlugInvitationDecline"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -540,13 +981,27 @@ export interface components {
             asset_counts: components["schemas"]["AssetCounts"];
             latest_version: string;
             name: string;
+            owner: {
+                /** @constant */
+                kind: "org";
+                slug: string;
+            } | {
+                /** @constant */
+                kind: "user";
+                username: string;
+            };
             published_at: string;
             publisher: string;
+            /** @enum {unknown} */
+            visibility: "private" | "public";
             author?: string;
             description?: string;
         };
         SearchResponse: {
             facets: components["schemas"]["FacetSummary"][];
+        };
+        PublicFacetCountResponse: {
+            count: number;
         };
         LatestVersionResponse: {
             latest: string;
@@ -554,7 +1009,7 @@ export interface components {
         };
         ApiErrorBody: {
             /** @enum {unknown} */
-            code: "E_ACCOUNT_SUSPENDED" | "E_ADMIN_REQUIRED" | "E_ALREADY_ONBOARDED" | "E_API_KEY_MISSING" | "E_ARCHIVE_DECOMPRESSED_TOO_LARGE" | "E_ARCHIVE_MALFORMED" | "E_CLAIM_ALREADY_PENDING" | "E_CLAIM_PENDING_ELSEWHERE" | "E_COLLECTION_CLAIMED" | "E_COLLECTION_NOT_OWNED" | "E_CONTENT_INTEGRITY_MISMATCH" | "E_DRY_RUN_REQUIRED" | "E_FACET_NOT_FOUND" | "E_INTERACTIVE_SESSION_REQUIRED" | "E_INVALID_NAME" | "E_INVALID_VERSION" | "E_LOGOUT_REQUIRES_JWT" | "E_MANIFEST_CONTENT_MISMATCH" | "E_MIGRATION_ALREADY_COMPLETED" | "E_MIGRATION_DEPENDENCY_UNMET" | "E_MIGRATION_NOT_FOUND" | "E_MIGRATION_RUNNING" | "E_NAME_BLOCKED" | "E_ONBOARDING_REQUIRED" | "E_PREFIX_COLLISION_RETRY_EXHAUSTED" | "E_PROFILE_CORRUPT" | "E_QUEUE_FULL" | "E_QUEUE_ITEM_NOT_FOUND" | "E_QUEUE_ITEM_NOT_PENDING" | "E_REGISTRY_UNAVAILABLE" | "E_RESERVATION_EXISTS" | "E_RESERVATION_NOT_FOUND" | "E_REVIEW_ARTIFACT_MISSING" | "E_RUN_NOT_FOUND" | "E_TARBALL_CORRUPTED" | "E_TARBALL_TOO_LARGE" | "E_TOKEN_EXPIRED" | "E_TOKEN_NOT_FOUND" | "E_TOKEN_REVOKED" | "E_UNAUTHENTICATED" | "E_UNDECLARED_CONTENT" | "E_USERNAME_TAKEN" | "E_USER_NOT_FOUND" | "E_VERSION_EXISTS";
+            code: "E_ACCOUNT_SUSPENDED" | "E_ADMIN_REQUIRED" | "E_ALREADY_MEMBER" | "E_ALREADY_ONBOARDED" | "E_API_KEY_MISSING" | "E_ARCHIVE_DECOMPRESSED_TOO_LARGE" | "E_ARCHIVE_MALFORMED" | "E_CLAIM_ALREADY_PENDING" | "E_CLAIM_PENDING_ELSEWHERE" | "E_CONTENT_INTEGRITY_MISMATCH" | "E_DRY_RUN_REQUIRED" | "E_FACET_NOT_FOUND" | "E_FACET_NOT_OWNED" | "E_FORBIDDEN" | "E_GLOBAL_FACET_MUST_BE_PUBLIC" | "E_IMPERSONATION_FORBIDDEN" | "E_INTERACTIVE_SESSION_REQUIRED" | "E_INVALID_NAME" | "E_INVALID_VERSION" | "E_INVITATION_NOT_FOUND" | "E_LOGOUT_REQUIRES_JWT" | "E_MANIFEST_CONTENT_MISMATCH" | "E_MEMBER_NOT_FOUND" | "E_MIGRATION_ALREADY_COMPLETED" | "E_MIGRATION_BATCH_NOT_FOUND" | "E_MIGRATION_BATCH_RUNNING" | "E_MIGRATION_DEPENDENCY_UNMET" | "E_MIGRATION_NOT_FOUND" | "E_MIGRATION_RUNNING" | "E_NAME_BLOCKED" | "E_ONBOARDING_REQUIRED" | "E_ORG_FORBIDDEN" | "E_ORG_LAST_ADMIN" | "E_ORG_NAME_RESERVED" | "E_ORG_NAME_TAKEN" | "E_ORG_NOT_FOUND" | "E_PREFIX_COLLISION_RETRY_EXHAUSTED" | "E_PRIVATE_FACET_ENTITLEMENT_REQUIRED" | "E_PROFILE_CORRUPT" | "E_QUEUE_FULL" | "E_QUEUE_ITEM_NOT_FOUND" | "E_QUEUE_ITEM_NOT_PENDING" | "E_REGISTRY_UNAVAILABLE" | "E_RESERVATION_EXISTS" | "E_RESERVATION_NOT_FOUND" | "E_REVIEW_ARTIFACT_MISSING" | "E_RUN_NOT_FOUND" | "E_SCOPE_NOT_FOUND" | "E_SCOPE_NOT_OWNED" | "E_TARBALL_CORRUPTED" | "E_TARBALL_TOO_LARGE" | "E_TOKEN_EXPIRED" | "E_TOKEN_NOT_FOUND" | "E_TOKEN_REVOKED" | "E_UNAUTHENTICATED" | "E_UNDECLARED_CONTENT" | "E_USERNAME_TAKEN" | "E_USER_NOT_FOUND" | "E_VERSION_EXISTS";
             docs_url: string;
             error: string;
             fix: string;
@@ -570,10 +1025,21 @@ export interface components {
             content_integrity: string;
             manifest_json: string;
             name: string;
+            owner: {
+                /** @constant */
+                kind: "org";
+                slug: string;
+            } | {
+                /** @constant */
+                kind: "user";
+                username: string;
+            };
             published_at: string;
             publisher: string;
             size_bytes: number;
             version: string;
+            /** @enum {unknown} */
+            visibility: "private" | "public";
             author?: string;
             description?: string;
         };
@@ -584,6 +1050,20 @@ export interface components {
                 [key: string]: string;
             };
             version: string;
+        };
+        ScopeRootResponse: {
+            created_at: string;
+            facets: components["schemas"]["FacetSummary"][];
+            name: string;
+            owner: {
+                /** @constant */
+                kind: "org";
+                slug: string;
+            } | {
+                /** @constant */
+                kind: "user";
+                username: string;
+            };
         };
         PublishResponse: {
             content_hash: string;
@@ -632,6 +1112,8 @@ export interface components {
                 kind: "once" | "rerunnable";
                 latest_run?: {
                     actor_username: string;
+                    created: number;
+                    deleted: number;
                     dry_run: boolean;
                     expected: number;
                     failed: number;
@@ -648,10 +1130,35 @@ export interface components {
                 };
                 unmet_dependencies?: string[];
             }[];
+            latest_batch?: {
+                actor_username: string;
+                batch_id: string;
+                completed_migration_ids: string[];
+                started_at: string;
+                /** @enum {unknown} */
+                status: "failed" | "running" | "succeeded";
+                total_pending: number;
+                current?: {
+                    migration_id: string;
+                    /** @enum {unknown} */
+                    phase: "dry_run" | "real_run";
+                    run_id?: string;
+                };
+                failed?: {
+                    /** @enum {unknown} */
+                    phase: "dry_run" | "real_run";
+                    error?: string;
+                    migration_id?: string;
+                    run_id?: string;
+                };
+                finished_at?: string;
+            };
         };
         MigrationRunListResponse: {
             runs: {
                 actor_username: string;
+                created: number;
+                deleted: number;
                 dry_run: boolean;
                 expected: number;
                 failed: number;
@@ -667,8 +1174,33 @@ export interface components {
                 finished_at?: string;
             }[];
         };
+        MigrationBatchResponse: {
+            actor_username: string;
+            batch_id: string;
+            completed_migration_ids: string[];
+            started_at: string;
+            /** @enum {unknown} */
+            status: "failed" | "running" | "succeeded";
+            total_pending: number;
+            current?: {
+                migration_id: string;
+                /** @enum {unknown} */
+                phase: "dry_run" | "real_run";
+                run_id?: string;
+            };
+            failed?: {
+                /** @enum {unknown} */
+                phase: "dry_run" | "real_run";
+                error?: string;
+                migration_id?: string;
+                run_id?: string;
+            };
+            finished_at?: string;
+        };
         MigrationRunResponse: {
             actor_username: string;
+            created: number;
+            deleted: number;
             dry_run: boolean;
             expected: number;
             failed: number;
@@ -693,7 +1225,7 @@ export interface components {
                 added_by_user_id: string;
                 name: string;
                 /** @enum {unknown} */
-                pool: "collection" | "global";
+                pool: "global" | "scope";
                 reason?: string;
             }[];
         };
@@ -702,7 +1234,7 @@ export interface components {
                 created_at: string;
                 id: string;
                 /** @enum {unknown} */
-                queue_type: "collection-claim" | "global-facet";
+                queue_type: "global-facet" | "org-claim";
                 /** @enum {unknown} */
                 reason: "pending" | "rate-limit" | "reserved";
                 /** @enum {unknown} */
@@ -716,23 +1248,48 @@ export interface components {
                 decided_by?: string;
                 decision_reason?: string;
                 justification?: string;
+                requested_display_name?: string;
+                requested_slug?: string;
             }[];
         };
-        ClaimCollectionIdempotent: {
-            /** @constant */
-            already_owned: "true";
-            name: string;
+        AdminUserListResponse: {
+            users: {
+                email: string;
+                suspended: boolean;
+                /** @enum {unknown} */
+                tier: "admin" | "enterprise" | "free" | "pro";
+                user_id: string;
+                username: string;
+            }[];
         };
-        ClaimCollectionSuccess: {
-            name: string;
-            owner: string;
+        StartImpersonationResponse: {
+            target: {
+                user_id: string;
+                username: string;
+            };
+        };
+        EventDeliveryHealthResponse: {
+            dead_lettered_count: number;
+            dead_letters: {
+                attempt_count: number;
+                event_id: string;
+                event_type: string;
+                failed_at: string;
+                occurred_at: string;
+                producer: string;
+                subject: string;
+                subject_sequence: number;
+                last_error?: string;
+            }[];
+            oldest_pending_age_ms: number | null;
+            pending_count: number;
         };
         ReviewQueueListResponse: {
             items: {
                 created_at: string;
                 id: string;
                 /** @enum {unknown} */
-                queue_type: "collection-claim" | "global-facet";
+                queue_type: "global-facet" | "org-claim";
                 /** @enum {unknown} */
                 reason: "pending" | "rate-limit" | "reserved";
                 /** @enum {unknown} */
@@ -742,6 +1299,49 @@ export interface components {
                 decided_by?: string;
                 decision_reason?: string;
                 justification?: string;
+                requested_display_name?: string;
+                requested_slug?: string;
+            }[];
+        };
+        OrgDetailResponse: {
+            created_at: string;
+            display_name: string;
+            slug: string;
+            /** @enum {unknown} */
+            viewer_role: "admin" | "none" | "publisher" | "viewer";
+            description?: string;
+            homepage_url?: string;
+        };
+        OrgListResponse: {
+            invitations: {
+                display_name: string;
+                invited_by_user_id: string;
+                /** @enum {unknown} */
+                role: "admin" | "publisher" | "viewer";
+                slug: string;
+            }[];
+            organizations: {
+                display_name: string;
+                /** @enum {unknown} */
+                role: "admin" | "publisher" | "viewer";
+                slug: string;
+            }[];
+        };
+        UserSearchResponse: {
+            users: {
+                user_id: string;
+                username: string;
+            }[];
+        };
+        OrgMemberListResponse: {
+            members: {
+                email: string;
+                /** @enum {unknown} */
+                role: "admin" | "publisher" | "viewer";
+                /** @enum {unknown} */
+                status: "active" | "invited";
+                user_id: string;
+                username: string;
             }[];
         };
     };
@@ -793,12 +1393,34 @@ export interface operations {
             };
         };
     };
-    getV0FacetsByNameLatestVersion: {
+    getV0FacetsCount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Aggregate public facet count */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicFacetCountResponse"];
+                };
+            };
+        };
+    };
+    getV0FacetsByScopeByNameLatestVersion: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description Canonical facet name. May contain a literal slash for namespaced facets — encode it as `%2F` in URLs (npm-style). */
+                /** @description Scope name with the leading `@` (e.g. `@julian`). */
+                scope: string;
+                /** @description Facet name within the scope (e.g. `cowsay`). */
                 name: string;
             };
             cookie?: never;
@@ -825,12 +1447,14 @@ export interface operations {
             };
         };
     };
-    getV0FacetsByNameVersionsByVersion: {
+    getV0FacetsByScopeByNameVersionsByVersion: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description Canonical facet name. May contain a literal slash for namespaced facets — encode it as `%2F` in URLs (npm-style). */
+                /** @description Scope name with the leading `@` (e.g. `@julian`). */
+                scope: string;
+                /** @description Facet name within the scope (e.g. `cowsay`). */
                 name: string;
                 /** @description Semver version (e.g., `1.2.3`) or the literal `latest`. */
                 version: string;
@@ -859,12 +1483,14 @@ export interface operations {
             };
         };
     };
-    getV0FacetsByNameByVersion: {
+    getV0FacetsByScopeByNameByVersion: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description Canonical facet name. May contain a literal slash for namespaced facets — encode it as `%2F` in URLs (npm-style). */
+                /** @description Scope name with the leading `@` (e.g. `@julian`). */
+                scope: string;
+                /** @description Facet name within the scope (e.g. `cowsay`). */
                 name: string;
                 /** @description Semver version (e.g., `1.2.3`) or the literal `latest`. */
                 version: string;
@@ -900,12 +1526,14 @@ export interface operations {
             };
         };
     };
-    getV0FacetsByNameByVersionArchive: {
+    getV0FacetsByScopeByNameByVersionArchive: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description Canonical facet name. May contain a literal slash for namespaced facets — encode it as `%2F` in URLs (npm-style). */
+                /** @description Scope name with the leading `@` (e.g. `@julian`). */
+                scope: string;
+                /** @description Facet name within the scope (e.g. `cowsay`). */
                 name: string;
                 /** @description Semver version (e.g., `1.2.3`) or the literal `latest`. */
                 version: string;
@@ -933,12 +1561,14 @@ export interface operations {
             };
         };
     };
-    getV0FacetsByNameByVersionContents: {
+    getV0FacetsByScopeByNameByVersionContents: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description Canonical facet name. May contain a literal slash for namespaced facets — encode it as `%2F` in URLs (npm-style). */
+                /** @description Scope name with the leading `@` (e.g. `@julian`). */
+                scope: string;
+                /** @description Facet name within the scope (e.g. `cowsay`). */
                 name: string;
                 /** @description Semver version (e.g., `1.2.3`) or the literal `latest`. */
                 version: string;
@@ -974,12 +1604,312 @@ export interface operations {
             };
         };
     };
+    getV0FacetsByScope: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Scope name with the leading `@` (e.g. `@julian`). */
+                scope: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Scope-root detail with facets */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScopeRootResponse"];
+                };
+            };
+            /** @description Scope not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Invalid scope name */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    getV0FacetsByNameLatestVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Canonical facet name. For scoped facets use the literal-slash path (`/@scope/name/...`) instead of encoding the slash. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Latest version pointer */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LatestVersionResponse"];
+                };
+            };
+            /** @description Facet not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    getV0FacetsByNameVersionsByVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Canonical facet name. For scoped facets use the literal-slash path (`/@scope/name/...`) instead of encoding the slash. */
+                name: string;
+                /** @description Semver version (e.g., `1.2.3`) or the literal `latest`. */
+                version: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Full version list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionListResponse"];
+                };
+            };
+            /** @description Facet not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    getV0FacetsByNameByVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Canonical facet name. For scoped facets use the literal-slash path (`/@scope/name/...`) instead of encoding the slash. */
+                name: string;
+                /** @description Semver version (e.g., `1.2.3`) or the literal `latest`. */
+                version: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Version metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionMetadata"];
+                };
+            };
+            /** @description Facet or version not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    getV0FacetsByNameByVersionArchive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Canonical facet name. For scoped facets use the literal-slash path (`/@scope/name/...`) instead of encoding the slash. */
+                name: string;
+                /** @description Semver version (e.g., `1.2.3`) or the literal `latest`. */
+                version: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirect to a 5-minute presigned S3 URL */
+            302: {
+                headers: {
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Facet or version not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    getV0FacetsByNameByVersionContents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Canonical facet name. For scoped facets use the literal-slash path (`/@scope/name/...`) instead of encoding the slash. */
+                name: string;
+                /** @description Semver version (e.g., `1.2.3`) or the literal `latest`. */
+                version: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Verified resource bodies */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentsResponse"];
+                };
+            };
+            /** @description Facet or version not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    postV0FacetsByScopeByNameVersions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Scope name with the leading `@` (e.g. `@julian`). */
+                scope: string;
+                /** @description Facet name within the scope (e.g. `cowsay`). */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/gzip": string;
+            };
+        };
+        responses: {
+            /** @description Version published */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublishResponse"];
+                };
+            };
+            /** @description Queued for admin review (first-publish of a reserved or over-budget global facet) */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueuedForReviewBody"];
+                };
+            };
+            /** @description Missing or invalid credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Account suspended, name blocked, or caller does not own the publishing target */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Duplicate version, or another user has a pending claim for this name */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Tarball exceeds 5 MB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Tarball corrupt, manifest invalid, name grammar bad, or non-semver version */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Per-user pending queue cap reached */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
     postV0FacetsByNameVersions: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description Canonical facet name. May contain a literal slash for namespaced facets — encode it as `%2F` in URLs (npm-style). */
+                /** @description Canonical facet name. For scoped facets use the literal-slash path (`/@scope/name/...`) instead of encoding the slash. */
                 name: string;
             };
             cookie?: never;
@@ -1297,6 +2227,24 @@ export interface operations {
             };
         };
     };
+    deleteV0AuthImpersonation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Impersonation stopped */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     postV0OnboardingUsername: {
         parameters: {
             query?: never;
@@ -1317,6 +2265,15 @@ export interface operations {
             };
             /** @description Missing or invalid credentials */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description The requested name is reserved or permanently blocked */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1380,6 +2337,97 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MigrationRunListResponse"];
+                };
+            };
+        };
+    };
+    postV0AdminMigrationsBatchesLatestOnce: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Batch accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationBatchResponse"];
+                };
+            };
+            /** @description A migration or batch is already in progress */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    getV0AdminMigrationsBatchesByBatchId: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batchId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Batch status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationBatchResponse"];
+                };
+            };
+            /** @description No such batch */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    postV0AdminMigrationsBatchesByBatchIdCancel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batchId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Batch cancelled (or already terminal) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationBatchResponse"];
+                };
+            };
+            /** @description No such batch */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
                 };
             };
         };
@@ -1736,6 +2784,93 @@ export interface operations {
             };
         };
     };
+    getV0AdminUsers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Matching users */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserListResponse"];
+                };
+            };
+            /** @description Missing or invalid credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Caller is not an admin (or caller is suspended) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    postV0AdminUsersByIdImpersonation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Impersonation target validated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StartImpersonationResponse"];
+                };
+            };
+            /** @description Missing or invalid credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Caller is not an admin, or the target is an admin (E_IMPERSONATION_FORBIDDEN) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Target user does not exist */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
     postV0AdminUsersByIdSuspension: {
         parameters: {
             query?: never;
@@ -1830,7 +2965,7 @@ export interface operations {
             };
         };
     };
-    postV0Collections: {
+    getV0AdminEventHealth: {
         parameters: {
             query?: never;
             header?: never;
@@ -1839,76 +2974,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Idempotent — you already own this collection */
+            /** @description Delivery-health surface */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ClaimCollectionIdempotent"];
-                };
-            };
-            /** @description Fresh claim accepted */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ClaimCollectionSuccess"];
-                };
-            };
-            /** @description Queued for admin review */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["QueuedForReviewBody"];
-                };
-            };
-            /** @description Missing or invalid credentials */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorBody"];
-                };
-            };
-            /** @description Account suspended, or name is permanently blocked */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorBody"];
-                };
-            };
-            /** @description Already claimed by another user */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorBody"];
-                };
-            };
-            /** @description Invalid name grammar */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorBody"];
-                };
-            };
-            /** @description Per-user pending queue cap reached */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorBody"];
+                    "application/json": components["schemas"]["EventDeliveryHealthResponse"];
                 };
             };
         };
@@ -1989,6 +3061,403 @@ export interface operations {
             };
             /** @description Item is no longer pending */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    getV0Organizations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Organizations + invitations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrgListResponse"];
+                };
+            };
+        };
+    };
+    postV0Organizations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Organization created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrgDetailResponse"];
+                };
+            };
+            /** @description Claim queued for admin review */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Blocked or reserved name */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Slug taken or a pending claim exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    getV0OrganizationsBySlug: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Organization detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrgDetailResponse"];
+                };
+            };
+            /** @description No such organization */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    getV0OrganizationsBySlugLookupUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Matching users */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserSearchResponse"];
+                };
+            };
+            /** @description Caller is not an Admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description No such organization */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    getV0OrganizationsBySlugMembers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Member list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrgMemberListResponse"];
+                };
+            };
+            /** @description Not a member */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description No such organization */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    postV0OrganizationsBySlugMembers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Invitation created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Caller is not an Admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description No such organization or user */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description User is already a member or invited */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    postV0OrganizationsBySlugMembersByUserIdRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Role changed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Caller is not an Admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description No such organization or member */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    deleteV0OrganizationsBySlugMembersByUserId: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Member removed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Caller is not an Admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description No such organization or member */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    postV0OrganizationsBySlugProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Profile updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Caller is not an Admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description No such organization */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    postV0OrganizationsBySlugInvitationAccept: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Invitation accepted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such organization or pending invitation */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    postV0OrganizationsBySlugInvitationDecline: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Invitation declined */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such organization or pending invitation */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

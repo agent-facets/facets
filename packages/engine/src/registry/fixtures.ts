@@ -37,6 +37,8 @@ export function versionMetadata(overrides?: Partial<WireMetadataResponse>): Wire
     publisher: 'test-publisher',
     size_bytes: 100,
     asset_counts: assetCounts({ commands: 1 }),
+    owner: { kind: 'user', username: 'test-publisher' },
+    visibility: 'public',
     ...overrides,
   }
 }
@@ -52,6 +54,8 @@ export function facetSummary(overrides?: Partial<WirePackageListItem>): WirePack
     published_at: '2026-05-01T00:00:00Z',
     publisher: 'test-publisher',
     asset_counts: assetCounts(),
+    owner: { kind: 'user', username: 'test-publisher' },
+    visibility: 'public',
     ...overrides,
   }
 }
