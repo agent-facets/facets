@@ -5,6 +5,12 @@ lefthook-local.yml
 mise.local.toml
 .DS_Store
 
+# Facet Adapter targets
+.agents/
+.claude/
+.codex/
+.opencode/
+
 .env
 
 *.bun-build
