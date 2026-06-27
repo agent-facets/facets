@@ -61,7 +61,7 @@ describe('InstallPicker — initial render', () => {
     instance.unmount()
   })
 
-  test('lists all first-party adapters with codex now selectable', () => {
+  test('lists all first-party adapters', () => {
     const instance = render(
       createElement(InstallPicker, {
         onConfirm: () => {},
