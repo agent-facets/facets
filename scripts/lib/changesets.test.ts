@@ -1,15 +1,21 @@
 import { describe, expect, test } from 'bun:test'
+import { Glob } from 'bun'
 import dedent from 'dedent'
 import {
   buildVersionPrBody,
   comparePackageOrder,
   filterPendingChangesets,
+  findForbiddenBumps,
+  formatForbiddenBumps,
   hasUnpublishedVersions,
+  type ParsedChangeset,
+  parseChangesetBumps,
   replaceChangelogEntry,
   shouldPublish,
   transformChangelogContent,
   type WorkspacePackage,
 } from './changesets'
+import { loadWorkspacePackages } from './ci'
 
 describe('filterPendingChangesets', () => {
   test('returns empty array when no files', () => {
@@ -895,5 +901,190 @@ describe('comparePackageOrder', () => {
     const packages = ['agent-facets', '@agent-facets/protocol', '@agent-facets/brand']
     const sorted = [...packages].sort(comparePackageOrder)
     expect(sorted).toEqual(packages)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// parseChangesetBumps
+// ---------------------------------------------------------------------------
+
+describe('parseChangesetBumps', () => {
+  test('parses a single package bump', () => {
+    const content = dedent`
+      ---
+      "@agent-facets/protocol": patch
+      ---
+
+      Fix a bug
+    `
+    expect(parseChangesetBumps(content)).toEqual([{ name: '@agent-facets/protocol', bump: 'patch' }])
+  })
+
+  test('parses multiple package bumps', () => {
+    const content = dedent`
+      ---
+      "@agent-facets/protocol": minor
+      "agent-facets": patch
+      ---
+
+      Add a feature
+    `
+    expect(parseChangesetBumps(content)).toEqual([
+      { name: '@agent-facets/protocol', bump: 'minor' },
+      { name: 'agent-facets', bump: 'patch' },
+    ])
+  })
+
+  test('returns empty array when there is no front-matter', () => {
+    expect(parseChangesetBumps('just some prose without front-matter')).toEqual([])
+  })
+
+  test('returns empty array for an empty front-matter block', () => {
+    const content = dedent`
+      ---
+      ---
+
+      Body only
+    `
+    expect(parseChangesetBumps(content)).toEqual([])
+  })
+
+  test('ignores lines outside the front-matter block', () => {
+    const content = dedent`
+      ---
+      "agent-facets": patch
+      ---
+
+      "@agent-facets/engine": major
+    `
+    expect(parseChangesetBumps(content)).toEqual([{ name: 'agent-facets', bump: 'patch' }])
+  })
+
+  test('tolerates extra whitespace around the colon', () => {
+    const content = dedent`
+      ---
+      "agent-facets"   :   major
+      ---
+    `
+    expect(parseChangesetBumps(content)).toEqual([{ name: 'agent-facets', bump: 'major' }])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// findForbiddenBumps
+// ---------------------------------------------------------------------------
+
+describe('findForbiddenBumps', () => {
+  const ignore = ['@agent-facets/engine', '@agent-facets/common']
+  const known = [
+    'agent-facets',
+    '@agent-facets/protocol',
+    '@agent-facets/brand',
+    '@agent-facets/engine',
+    '@agent-facets/common',
+  ]
+
+  test('returns ok when every bump targets a known, non-ignored package', () => {
+    const changesets: ParsedChangeset[] = [
+      { file: 'brave-lion.md', bumps: [{ name: 'agent-facets', bump: 'patch' }] },
+      { file: 'funny-turtle.md', bumps: [{ name: '@agent-facets/protocol', bump: 'minor' }] },
+    ]
+    expect(findForbiddenBumps(changesets, ignore, known)).toEqual({ ok: true })
+  })
+
+  test('returns ok for an empty changeset list', () => {
+    expect(findForbiddenBumps([], ignore, known)).toEqual({ ok: true })
+  })
+
+  test('flags a single ignored-package bump with reason "ignored"', () => {
+    const changesets: ParsedChangeset[] = [{ file: 'bad.md', bumps: [{ name: '@agent-facets/engine', bump: 'patch' }] }]
+    const result = findForbiddenBumps(changesets, ignore, known)
+    if (result.ok) expect.unreachable()
+    expect(result.violations).toEqual([
+      { file: 'bad.md', name: '@agent-facets/engine', bump: 'patch', reason: 'ignored' },
+    ])
+  })
+
+  test('flags an unknown/fake package with reason "unknown"', () => {
+    const changesets: ParsedChangeset[] = [{ file: 'bad.md', bumps: [{ name: '@agent-facets/fake', bump: 'patch' }] }]
+    const result = findForbiddenBumps(changesets, ignore, known)
+    if (result.ok) expect.unreachable()
+    expect(result.violations).toEqual([
+      { file: 'bad.md', name: '@agent-facets/fake', bump: 'patch', reason: 'unknown' },
+    ])
+  })
+
+  test('ignore takes precedence: an ignored package is "ignored", not "unknown"', () => {
+    // @agent-facets/common is ignored AND a real workspace package; it must
+    // classify as ignored even though it is also in the known set.
+    const changesets: ParsedChangeset[] = [{ file: 'bad.md', bumps: [{ name: '@agent-facets/common', bump: 'patch' }] }]
+    const result = findForbiddenBumps(changesets, ignore, known)
+    if (result.ok) expect.unreachable()
+    if (result.violations[0]?.reason !== 'ignored') expect.unreachable()
+    expect(result.violations[0].name).toBe('@agent-facets/common')
+  })
+
+  test('flags both ignored and unknown bumps across multiple changesets', () => {
+    const changesets: ParsedChangeset[] = [
+      {
+        file: 'mixed.md',
+        bumps: [
+          { name: 'agent-facets', bump: 'patch' },
+          { name: '@agent-facets/common', bump: 'minor' },
+        ],
+      },
+      { file: 'fake.md', bumps: [{ name: '@agent-facets/nope', bump: 'major' }] },
+    ]
+    const result = findForbiddenBumps(changesets, ignore, known)
+    if (result.ok) expect.unreachable()
+    expect(result.violations).toEqual([
+      { file: 'mixed.md', name: '@agent-facets/common', bump: 'minor', reason: 'ignored' },
+      { file: 'fake.md', name: '@agent-facets/nope', bump: 'major', reason: 'unknown' },
+    ])
+  })
+
+  test('formatForbiddenBumps renders both classes with distinct guidance', () => {
+    const message = formatForbiddenBumps([
+      { file: 'a.md', name: '@agent-facets/engine', bump: 'patch', reason: 'ignored' },
+      { file: 'b.md', name: '@agent-facets/fake', bump: 'minor', reason: 'unknown' },
+    ])
+    expect(message).toContain('ignore')
+    expect(message).toContain('"@agent-facets/engine": patch')
+    expect(message).toContain('not in the workspace')
+    expect(message).toContain('"@agent-facets/fake": minor')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Repository guard: no pending changeset may bump an ignored or unknown package
+// ---------------------------------------------------------------------------
+
+describe('repository changeset guard', () => {
+  test('no pending changeset bumps an ignored or unknown package', async () => {
+    // scripts/lib/changesets.test.ts -> repo root is two levels up
+    const repoRoot = new URL('../../', import.meta.url).pathname
+    const changesetDir = `${repoRoot}.changeset`
+
+    const config = (await Bun.file(`${changesetDir}/config.json`).json()) as { ignore?: string[] }
+    const ignore = config.ignore ?? []
+    const knownPackages = (await loadWorkspacePackages()).map((p) => p.name)
+
+    const files: string[] = []
+    for await (const entry of new Glob('*.md').scan(changesetDir)) {
+      if (entry !== 'README.md') files.push(entry)
+    }
+
+    const changesets: ParsedChangeset[] = await Promise.all(
+      files.map(async (file) => ({
+        file,
+        bumps: parseChangesetBumps(await Bun.file(`${changesetDir}/${file}`).text()),
+      })),
+    )
+
+    const result = findForbiddenBumps(changesets, ignore, knownPackages)
+    if (!result.ok) {
+      expect.unreachable(formatForbiddenBumps(result.violations))
+    }
+    expect(result.ok).toBe(true)
   })
 })
