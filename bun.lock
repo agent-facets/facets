@@ -59,7 +59,7 @@
     },
     "packages/adapters/copilot": {
       "name": "@agent-facets/adapter-copilot",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "devDependencies": {
         "@agent-facets/adapter": "workspace:*",
         "arktype": "2.2.0",
@@ -90,7 +90,7 @@
     },
     "packages/cli": {
       "name": "agent-facets",
-      "version": "0.22.1",
+      "version": "0.22.2",
       "bin": {
         "facet": "./bin/facet",
       },

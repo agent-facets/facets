@@ -1,5 +1,11 @@
 # agent-facets
 
+## 0.22.2
+
+### Patch Changes
+
+- 26e1c93 Thanks @JKryne! - Added support for the GitHub Copilot adapter
+
 ## 0.22.1
 
 ### Patch Changes
