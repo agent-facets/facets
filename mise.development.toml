@@ -2,4 +2,8 @@
 circleci = "0.1.34950"
 
 [env]
-AWS_PROFILE = "facet-cafe"
+# Local development targets the dedicated staging AWS account. Non-`main` SST
+# stages deploy under staging.agentfacets.io in this account, so a developer
+# machine can never touch production (`main`/apex) resources. Production
+# (`main`) is deployed only by CircleCI. See AGENTS.md → SST.
+AWS_PROFILE = "agent-facets-staging"

@@ -2,6 +2,15 @@
 
 Continuous deployment (CD) of the SST `main` stage on every push to `main`.
 
+> **Account isolation:** `main` is the only stage that deploys to the dedicated
+> production AWS account (`agentfacets.io`, `445459853351`), and it is deployed
+> **only** by this CI pipeline via
+> OIDC (`AWS_ROLE_ARN`). All non-`main` stages deploy from developer machines to
+> the separate `agent-facets-staging` account under `staging.agentfacets.io`.
+> `sst.config.ts` refuses to run `main` locally, and the `main` stage is
+> permanently protected and retained. See AGENTS.md → SST for the full
+> account/stage matrix.
+
 ## Flow
 
 ```

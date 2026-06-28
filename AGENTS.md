@@ -15,22 +15,58 @@
 
 ## SST
 
-This repo hosts `agentfacets.io` via SST. The SST app name is `agent-facets`. The AWS
-account is shared with the sibling `facet-cafe` repo.
+This repo hosts `agentfacets.io` via SST. The SST app name is `agent-facets`.
+
+Production and non-production stages live in **separate AWS accounts** so a
+developer machine can never mutate production:
+
+| Stage          | Domain                                | AWS account             | Who deploys     |
+|----------------|---------------------------------------|-------------------------|-----------------|
+| `main`         | `agentfacets.io` (apex)               | dedicated prod `agentfacets.io` (445459853351) | CircleCI only   |
+| `${stage}`     | `${stage}.staging.agentfacets.io`     | `agent-facets-staging`  | developers      |
+| `${user}`      | `${user}.staging.agentfacets.io`      | `agent-facets-staging`  | developers      |
 
 | Key            | Value                                              |
 |----------------|----------------------------------------------------|
 | App name       | `agent-facets`                                     |
-| AWS profile    | `facet-cafe` (shared account)                      |
+| Prod account   | `445459853351` (`agentfacets.io`) — `main`/apex only; profile `agent-facets-prod` |
+| Staging account| `705557196199` (`staging.agentfacets.io`) — all non-main; profile `agent-facets-staging` |
+| Local profile  | `agent-facets-staging` (SSO, `ex-machina` session) |
 | Node runtime   | `nodejs24.x` (matches `mise.toml` — single source) |
-| Main stage     | `main` → `agentfacets.io` (apex)                   |
-| Preview stage  | `${stage}` → `${stage}.agentfacets.io`              |
-| Personal stage | `${user}` → `${user}.agentfacets.io`                |
+
+> **Do not use the shared `facet-cafe` profile name** in this repo's tooling.
+> It lives in a shared `~/.aws/config` and the sibling `facet.cafe` repo
+> repoints it (e.g. to its own staging account). Use the repo-owned
+> `agent-facets-prod` / `agent-facets-staging` profiles, both keyed by account ID.
+> Production formerly shared the `facet.cafe` account (`726911960883`); it now
+> has its own dedicated `agentfacets.io` account (`445459853351`). The
+> `agent-facets-legacy-prod` profile (→ `726911960883`) exists only for
+> maintenance of any residual shared-account resources.
+
+`main` is deployed **only by CircleCI** (via OIDC; no AWS profile).
+`sst.config.ts` throws if you try to operate on the `main` stage locally, and
+the `main` stage is permanently `protect`ed and its resources `retain`ed so
+removing it requires a deliberate edit to `sst.config.ts`. The staging subdomain
+`staging.agentfacets.io` is a Route53
+hosted zone in the staging account, delegated via an `NS` record from the prod
+`agentfacets.io` zone.
 
 ### Prerequisites
 
-- **mise** must be active. `mise.development.toml` sets `AWS_PROFILE=facet-cafe` for
-  local development. There is no `.env.local`.
+- **mise** must be active. `mise.development.toml` sets
+  `AWS_PROFILE=agent-facets-staging` for local development. There is no `.env.local`.
+- You need SSO access to the `agent-facets-staging` account. Add this profile to
+  `~/.aws/config` (the `ex-machina` sso-session block already exists) and run
+  `aws sso login --sso-session ex-machina`:
+
+  ```ini
+  [profile agent-facets-staging]
+  sso_session = ex-machina
+  sso_account_id = 705557196199
+  sso_role_name = Admin
+  region = us-east-1
+  ```
+
 - `bun install` runs `sst install` automatically (skipped in CI).
 
 ### Commands
@@ -63,10 +99,15 @@ Manual deploys are still supported for ad-hoc stages via the `bun sst deploy
 
 ### DNS
 
-- `agentfacets.io` A → SST-managed CloudFront (apex).
+- `agentfacets.io` A → SST-managed CloudFront (apex). Zone lives in the
+  dedicated prod `agentfacets.io` account (`445459853351`).
 - `www.agentfacets.io` → 301 to apex via SST `domain.redirects`.
 - `docs.agentfacets.io` CNAME → Mintlify custom-domain target (managed by SST in
   `infra/dns.ts`).
+- `staging.agentfacets.io` → delegated (`NS`) from the prod zone to a hosted zone
+  in the `agent-facets-staging` account. All non-`main` stages get
+  `${stage}.staging.agentfacets.io` records created there by SST, so developer
+  deploys never write to the prod zone.
 
 </SST>
 
