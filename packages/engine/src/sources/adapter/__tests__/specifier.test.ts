@@ -28,6 +28,15 @@ describe('parseAdapterSpecifier — built-in aliases', () => {
       packageName: '@agent-facets/adapter-codex',
     })
   })
+
+  test('copilot resolves to the npm package', () => {
+    const result = parseAdapterSpecifier('copilot')
+    if (!result.ok) expect.unreachable()
+    expect(result.resolved).toEqual({
+      type: 'npm',
+      packageName: '@agent-facets/adapter-copilot',
+    })
+  })
 })
 
 describe('parseAdapterSpecifier — git URLs', () => {
@@ -105,11 +114,12 @@ describe('parseAdapterSpecifier — local and npm', () => {
 })
 
 describe('getBuiltinAdapterNames', () => {
-  test('returns all three built-in adapter names', () => {
+  test('returns all built-in adapter names', () => {
     const names = getBuiltinAdapterNames()
     expect(names).toContain('opencode')
     expect(names).toContain('claude-code')
     expect(names).toContain('codex')
-    expect(names).toHaveLength(3)
+    expect(names).toContain('copilot')
+    expect(names).toHaveLength(4)
   })
 })

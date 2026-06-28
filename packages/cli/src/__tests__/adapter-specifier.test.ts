@@ -23,6 +23,13 @@ describe('parseAdapterSpecifier', () => {
     expect(result.resolved).toEqual({ type: 'npm', packageName: '@agent-facets/adapter-codex' })
   })
 
+  test('built-in name "copilot" resolves to npm package', () => {
+    const result = parseAdapterSpecifier('copilot')
+    if (!result.ok) expect.unreachable()
+
+    expect(result.resolved).toEqual({ type: 'npm', packageName: '@agent-facets/adapter-copilot' })
+  })
+
   test('scoped npm package passes through', () => {
     const result = parseAdapterSpecifier('@acme/adapter-custom')
     if (!result.ok) expect.unreachable()
@@ -85,11 +92,12 @@ describe('parseAdapterSpecifier', () => {
 })
 
 describe('getBuiltinAdapterNames', () => {
-  test('returns all three built-in adapter names', () => {
+  test('returns all built-in adapter names', () => {
     const names = getBuiltinAdapterNames()
     expect(names).toContain('opencode')
     expect(names).toContain('claude-code')
     expect(names).toContain('codex')
-    expect(names).toHaveLength(3)
+    expect(names).toContain('copilot')
+    expect(names).toHaveLength(4)
   })
 })

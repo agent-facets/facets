@@ -57,6 +57,16 @@
         "typescript": "^6.0.3",
       },
     },
+    "packages/adapters/copilot": {
+      "name": "@agent-facets/adapter-copilot",
+      "version": "0.5.0",
+      "devDependencies": {
+        "@agent-facets/adapter": "workspace:*",
+        "arktype": "2.2.0",
+        "tsdown": "^0.22.0",
+        "typescript": "^6.0.3",
+      },
+    },
     "packages/adapters/opencode": {
       "name": "@agent-facets/adapter-opencode",
       "version": "0.6.0",
@@ -188,6 +198,8 @@
     "@agent-facets/adapter-claude-code": ["@agent-facets/adapter-claude-code@workspace:packages/adapters/claude-code"],
 
     "@agent-facets/adapter-codex": ["@agent-facets/adapter-codex@workspace:packages/adapters/codex"],
+
+    "@agent-facets/adapter-copilot": ["@agent-facets/adapter-copilot@workspace:packages/adapters/copilot"],
 
     "@agent-facets/adapter-opencode": ["@agent-facets/adapter-opencode@workspace:packages/adapters/opencode"],
 

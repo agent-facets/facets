@@ -2,7 +2,7 @@
  * Parses an adapter install specifier into a resolved source type.
  *
  * Specifier formats:
- * - Built-in name: "opencode", "claude-code", "codex"
+ * - Built-in name: "opencode", "claude-code", "codex", "copilot"
  * - npm package: "@scope/adapter-name" or "adapter-name"
  * - Git URL: "git+https://...", "git+ssh://..."
  * - Local path: "./path", "../path", "/absolute/path"
@@ -13,6 +13,7 @@ const BUILTIN_ALIASES: Record<string, string> = {
   opencode: '@agent-facets/adapter-opencode',
   'claude-code': '@agent-facets/adapter-claude-code',
   codex: '@agent-facets/adapter-codex',
+  copilot: '@agent-facets/adapter-copilot',
 }
 
 export type ResolvedAdapterSpecifier =

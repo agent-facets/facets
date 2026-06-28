@@ -29,7 +29,8 @@ Welcome. You are invited to help dogfood Agent Facets before open beta. In about
 
      ▸ ○ claude-code
        ○ opencode
-       ● codex (install support coming soon)     ← dimmed, non-selectable
+       ○ codex
+       ○ copilot
 
    ↑↓ move · Space toggle · Enter confirm · Esc cancel
    ```

@@ -36,4 +36,9 @@ export const FIRST_PARTY_ADAPTERS: readonly FirstPartyAdapter[] = [
     npmPackage: '@agent-facets/adapter-codex',
     supportsInstall: true,
   },
+  {
+    name: 'copilot',
+    npmPackage: '@agent-facets/adapter-copilot',
+    supportsInstall: true,
+  },
 ] as const

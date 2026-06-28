@@ -42,7 +42,7 @@ Once installed, update in place with [`facet self-update`](/cli/self-update).
 Install an adapter for your AI tool, then add a facet:
 
 ```sh
-# Pick an adapter (opencode, claude-code, or codex)
+# Pick an adapter (opencode, claude-code, codex, or copilot)
 facet adapter install
 
 # Add a facet from the registry
