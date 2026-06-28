@@ -17,10 +17,9 @@ Without a specifier, [`facet adapter install`](/cli/adapters/install) launches a
 
 | Name          | Package                             | Tool        |
 |---------------|-------------------------------------|-------------|
-| `opencode`    | `@agent-facets/adapter-opencode`    | OpenCode       |
-| `claude-code` | `@agent-facets/adapter-claude-code` | Claude Code    |
-| `codex`       | `@agent-facets/adapter-codex`       | Codex          |
-| `copilot`     | `@agent-facets/adapter-copilot`     | GitHub Copilot |
+| `opencode`    | `@agent-facets/adapter-opencode`    | OpenCode    |
+| `claude-code` | `@agent-facets/adapter-claude-code` | Claude Code |
+| `codex`       | `@agent-facets/adapter-codex`       | Codex       |
 
 You can also install by name directly:
 

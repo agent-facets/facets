@@ -27,7 +27,6 @@ The `install` flow downloads the source, bundles it into a self-contained `adapt
 - `opencode`  -- OpenCode adapter (`@agent-facets/adapter-opencode`)
 - `claude-code`  -- Claude Code adapter (`@agent-facets/adapter-claude-code`)
 - `codex`  -- Codex adapter (`@agent-facets/adapter-codex`)
-- `copilot`  -- GitHub Copilot adapter (`@agent-facets/adapter-copilot`). Project scope only; installs under `.github/skills/`, `.github/agents/`, and `.github/prompts/`
 
 
 ### `facet adapter remove`
