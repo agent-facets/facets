@@ -1,5 +1,12 @@
 # agent-facets
 
+## 0.22.2
+
+### Patch Changes
+
+- [#373](https://github.com/agent-facets/facets/pull/373) [`0da8ff6`](https://github.com/agent-facets/facets/commit/0da8ff6456fe37bae9f9559db4b5de6ca0844b1f) Thanks [@eXamadeus](https://github.com/eXamadeus)! - This fixes a bug with `facet edit` where configuration values outside the description and name were stripped for assets.
+    They now should survive `facet edit` correctly
+
 ## 0.22.1
 
 ### Patch Changes
