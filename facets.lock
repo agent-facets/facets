@@ -6,8 +6,8 @@
         "kind": "registry",
         "registry": "https://api.facet.cafe"
       },
-      "version": "0.2.3",
-      "integrity": "sha256:abdf9e262c2b139cf9d11f73cbc44340be477502d8913af011e35755eaf18b26",
+      "version": "0.2.4",
+      "integrity": "sha256:6ab722715aff1ae1182137d873b9e124b1f28139234245f9f362fbabd9f6fa01",
       "assets": [
         {
           "scope": "project",
