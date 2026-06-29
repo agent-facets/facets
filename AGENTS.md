@@ -29,7 +29,7 @@ developer machine can never mutate production:
 | Key            | Value                                              |
 |----------------|----------------------------------------------------|
 | App name       | `agent-facets`                                     |
-| Prod account   | `445459853351` (`agentfacets.io`) — `main`/apex only; profile `agent-facets-prod` |
+| Prod account   | `445459853351` (`agentfacets.io`) — `main`/apex only. SST never selects a profile for `main` (CircleCI deploys via OIDC; local `main` is refused). The `agent-facets-prod` profile is for manual AWS CLI operations against this account only. |
 | Staging account| `705557196199` (`staging.agentfacets.io`) — all non-main; profile `agent-facets-staging` |
 | Local profile  | `agent-facets-staging` (SSO, `ex-machina` session) |
 | Node runtime   | `nodejs24.x` (matches `mise.toml` — single source) |

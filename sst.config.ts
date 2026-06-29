@@ -5,8 +5,9 @@
 //                  ONLY by CircleCI (apex agentfacets.io).
 //   - all others → `agent-facets-staging` account, under staging.agentfacets.io.
 //
-// `main` is CI-only. CI is detected via the `CI` env var (set by CircleCI);
-// any local attempt to operate on `main` throws. The `main` stage is also
+// `main` is CI-only. CircleCI is detected via the `CIRCLECI` env var (set only
+// by CircleCI, unlike the broad `CI` var that any CI provider or local shell may
+// set); any local attempt to operate on `main` throws. The `main` stage is also
 // permanently protected and its resources retained, so removing it requires a
 // deliberate edit to this file.
 // Dedicated, repo-owned profile name. We deliberately do NOT reuse the shared
@@ -20,27 +21,46 @@
 // the sibling `facet.cafe` app now.
 const STAGING_PROFILE = 'agent-facets-staging'
 
+// CircleCI sets `CIRCLECI=true`. We key the OIDC/no-profile branch off this
+// specific signal rather than the broad `CI` var, which any CI provider or a
+// local shell can set — that breadth would let a non-CircleCI run skip the
+// `main` guard below.
+const IS_CIRCLECI = process.env.CIRCLECI === 'true'
+
 function resolveAwsProfile(stage: string): string | undefined {
-  // In CI, credentials come from the environment (OIDC); never pin a profile.
-  if (process.env.CI) return undefined
+  // In CircleCI, credentials come from the environment (OIDC); never pin a profile.
+  if (IS_CIRCLECI) return undefined
 
   // `main` is CI-only; any local invocation throws.
   if (stage === 'main') {
     throw new Error('Refusing to operate on the `main` stage locally. `main` deploys run ' + 'through CircleCI only.')
   }
 
-  // An explicit AWS_PROFILE always wins for non-main stages. This lets an
-  // operator target a specific staging account for maintenance (e.g. tearing
-  // down an old stage) without the stage→account default getting in the way.
-  if (process.env.AWS_PROFILE) return process.env.AWS_PROFILE
+  // For non-`main` stages, an explicit AWS_PROFILE is honored ONLY if it is the
+  // staging profile. Any other value (e.g. a prod profile lingering in the
+  // shell) is refused, so a developer machine can never target a non-staging
+  // account. This is a footgun guard; the real isolation is the account/SSO
+  // boundary.
+  if (process.env.AWS_PROFILE && process.env.AWS_PROFILE !== STAGING_PROFILE) {
+    throw new Error(
+      `Refusing to use AWS profile "${process.env.AWS_PROFILE}" for a non-\`main\` stage. ` +
+        `Only "${STAGING_PROFILE}" is permitted; edit sst.config.ts if you genuinely need another.`,
+    )
+  }
 
-  // Non-main stages otherwise target the staging account.
-  return STAGING_PROFILE
+  // Non-main stages target the staging account.
+  return process.env.AWS_PROFILE ?? STAGING_PROFILE
 }
 
 export default $config({
   app(input) {
-    const isMain = input?.stage === 'main'
+    // A stage must always be resolved; an absent stage is an illegal state, so
+    // fail loud rather than silently defaulting it.
+    const stage = input?.stage
+    if (!stage) {
+      throw new Error('No SST stage resolved. A stage is always required; refusing to continue.')
+    }
+    const isMain = stage === 'main'
     return {
       name: 'agent-facets',
       // `main` resources are retained on destroy and the stage is protected
@@ -50,7 +70,7 @@ export default $config({
       home: 'aws',
       providers: {
         aws: {
-          profile: resolveAwsProfile(input?.stage),
+          profile: resolveAwsProfile(stage),
           version: '7.20.0',
         },
       },
