@@ -80,7 +80,7 @@
     },
     "packages/cli": {
       "name": "agent-facets",
-      "version": "0.22.1",
+      "version": "0.22.2",
       "bin": {
         "facet": "./bin/facet",
       },
