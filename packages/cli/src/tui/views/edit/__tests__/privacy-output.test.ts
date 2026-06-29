@@ -71,3 +71,51 @@ describe('buildManifest privacy output', () => {
     expect('private' in out).toBe(false)
   })
 })
+
+describe('buildManifest adapter-config preservation', () => {
+  test('skill adapters survive an edit round-trip', () => {
+    const original = manifest({
+      skills: { cowsay: { description: 'A skill', adapters: { claude: { permission: { bash: 'ask' } } } } },
+    })
+    const out = buildManifest(original, formFrom(original))
+    expect(out.skills?.cowsay?.adapters).toEqual({ claude: { permission: { bash: 'ask' } } })
+  })
+
+  test('agent adapters survive an edit round-trip', () => {
+    const original = manifest({
+      skills: undefined,
+      agents: { reviewer: { description: 'An agent', adapters: { opencode: { model: 'gpt' } } } },
+    } as Partial<FacetManifest>)
+    const out = buildManifest(original, formFrom(original))
+    expect(out.agents?.reviewer?.adapters).toEqual({ opencode: { model: 'gpt' } })
+  })
+
+  test('command adapters survive an edit round-trip', () => {
+    const original = manifest({
+      skills: undefined,
+      commands: { deploy: { description: 'A command', adapters: { codex: { foo: 'bar' } } } },
+    } as Partial<FacetManifest>)
+    const out = buildManifest(original, formFrom(original))
+    expect(out.commands?.deploy?.adapters).toEqual({ codex: { foo: 'bar' } })
+  })
+
+  test('editable description updates while adapter config is preserved', () => {
+    const original = manifest({
+      skills: { cowsay: { description: 'old', adapters: { claude: { x: 1 } } } },
+    })
+    const form = manifestToFormState(original)
+    form.assets.skill.descriptions.cowsay = 'new'
+    const out = buildManifest(original, form)
+    expect(out.skills?.cowsay?.description).toBe('new')
+    expect(out.skills?.cowsay?.adapters).toEqual({ claude: { x: 1 } })
+  })
+
+  test('newly added asset has no adapters block', () => {
+    const original = manifest()
+    const form = manifestToFormState(original)
+    form.assets.skill.items.push('brand-new')
+    form.assets.skill.descriptions['brand-new'] = 'fresh'
+    const out = buildManifest(original, form)
+    expect(out.skills?.['brand-new']).toEqual({ description: 'fresh' })
+  })
+})
