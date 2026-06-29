@@ -4,6 +4,6 @@
     "cowsay": "0.2.0",
     "@julian/review-openspec-design": "1.1.0",
     "@julian/openspec-adversary": "3.1.2",
-    "@julian/address-pr-feedback": "0.2.0"
+    "@julian/address-pr-feedback": "0.2.3"
   }
 }
