@@ -1,6 +1,31 @@
 {
   "lockfileVersion": 1,
   "facets": {
+    "@julian/address-pr-feedback": {
+      "source": {
+        "kind": "registry",
+        "registry": "https://api.facet.cafe"
+      },
+      "version": "0.2.0",
+      "integrity": "sha256:85645173867ed685a5d0aa3965390246ac1c99c87c655622766307b43398234a",
+      "assets": [
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "address-pr-feedback-rules"
+        },
+        {
+          "scope": "project",
+          "type": "agent",
+          "name": "address-pr-feedback"
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "address-pr-feedback"
+        }
+      ]
+    },
     "@julian/openspec-adversary": {
       "source": {
         "kind": "registry",
