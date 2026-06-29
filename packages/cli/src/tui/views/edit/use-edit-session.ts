@@ -40,9 +40,19 @@ export function buildManifest(original: FacetManifest, form: FormState): FacetMa
   ][]) {
     const items = form.assets[formKey].items
     if (items.length > 0) {
-      const section: Record<string, { description: string }> = {}
+      // Start each descriptor from the original so descriptor-level metadata
+      // (notably per-asset `adapters` front-matter, which the form never
+      // surfaces) survives the edit round-trip. Only `description` — the one
+      // field the form edits — is overwritten. New assets have no original
+      // descriptor, so they collapse to `{ description }`.
+      const originalSection = original[manifestKey]
+      const section: NonNullable<FacetManifest[typeof manifestKey]> = {}
       for (const name of items) {
-        section[name] = { description: form.assets[formKey].descriptions[name] ?? '' }
+        const originalDescriptor = originalSection?.[name]
+        section[name] = {
+          ...originalDescriptor,
+          description: form.assets[formKey].descriptions[name] ?? '',
+        }
       }
       manifest[manifestKey] = section
     } else {
