@@ -1,9 +1,9 @@
 {
   "facets": {
-    "viper-plans": "0.2.1",
-    "cowsay": "0.2.0",
-    "@julian/review-openspec-design": "1.1.0",
-    "@julian/openspec-adversary": "3.1.3",
-    "@julian/address-pr-feedback": "0.2.4"
+    "viper-plans": "latest",
+    "cowsay": "latest",
+    "@julian/review-openspec-design": "latest",
+    "@julian/openspec-adversary": "latest",
+    "@julian/address-pr-feedback": "latest"
   }
 }
