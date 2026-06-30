@@ -6,8 +6,8 @@
         "kind": "registry",
         "registry": "https://api.facet.cafe"
       },
-      "version": "0.2.4",
-      "integrity": "sha256:6ab722715aff1ae1182137d873b9e124b1f28139234245f9f362fbabd9f6fa01",
+      "version": "0.2.5",
+      "integrity": "sha256:f27dfd4a55872c4fb94ce5eca3cc054b7b66f54764509cd9c5de0025853b3076",
       "assets": [
         {
           "scope": "project",
@@ -31,8 +31,8 @@
         "kind": "registry",
         "registry": "https://api.facet.cafe"
       },
-      "version": "3.1.3",
-      "integrity": "sha256:f0b77dbfc52c299247afe2a3ebc4d82fe4c1c60a93381342fc5816b6635389ed",
+      "version": "3.1.6",
+      "integrity": "sha256:b1feba0882984fedec7a2cd44ae04297abf5636bb650bc3b9bc0ef66a2b4f5ec",
       "assets": [
         {
           "scope": "project",
