@@ -1,11 +1,17 @@
 # agent-facets
 
+## 0.22.3
+
+### Patch Changes
+
+- [#384](https://github.com/agent-facets/facets/pull/384) [`52e51ac`](https://github.com/agent-facets/facets/commit/52e51acce1a4371487eab550bc96260830a795ff) Thanks [@dependabot](https://github.com/apps/dependabot)! - Updated arkregex dep
+
 ## 0.22.2
 
 ### Patch Changes
 
 - [#373](https://github.com/agent-facets/facets/pull/373) [`0da8ff6`](https://github.com/agent-facets/facets/commit/0da8ff6456fe37bae9f9559db4b5de6ca0844b1f) Thanks [@eXamadeus](https://github.com/eXamadeus)! - This fixes a bug with `facet edit` where configuration values outside the description and name were stripped for assets.
-    They now should survive `facet edit` correctly
+  They now should survive `facet edit` correctly
 
 ## 0.22.1
 

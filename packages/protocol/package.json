@@ -5,7 +5,7 @@
     "url": "https://github.com/agent-facets/facets",
     "directory": "packages/protocol"
   },
-  "version": "0.22.0",
+  "version": "0.22.3",
   "type": "module",
   "files": [
     "dist"
