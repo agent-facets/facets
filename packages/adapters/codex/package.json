@@ -23,7 +23,7 @@
   "devDependencies": {
     "@agent-facets/adapter": "workspace:*",
     "arktype": "2.2.0",
-    "smol-toml": "^1.3.1",
+    "smol-toml": "^1.7.0",
     "tsdown": "^0.22.0",
     "typescript": "^6.0.3"
   },
