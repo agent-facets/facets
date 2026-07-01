@@ -1,5 +1,12 @@
 # @agent-facets/adapter-codex
 
+## 0.4.1
+
+### Patch Changes
+
+- [#380](https://github.com/agent-facets/facets/pull/380) [`e6a38e2`](https://github.com/agent-facets/facets/commit/e6a38e26062d37d9b9ad2640f1740f0c4e261db7) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump smol-toml from 1.6.1 to 1.7.0
+- [#382](https://github.com/agent-facets/facets/pull/382) [`79b1d50`](https://github.com/agent-facets/facets/commit/79b1d50b9ba1721081900e0f775cd3fed8dc2767) Thanks [@dependabot](https://github.com/apps/dependabot)! - Updated tsdown from 0.22.0 to 0.22.3
+
 ## 0.4.0
 
 ### Minor Changes

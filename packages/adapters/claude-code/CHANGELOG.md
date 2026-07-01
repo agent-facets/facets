@@ -1,5 +1,11 @@
 # @agent-facets/adapter-claude-code
 
+## 0.5.1
+
+### Patch Changes
+
+- [#382](https://github.com/agent-facets/facets/pull/382) [`79b1d50`](https://github.com/agent-facets/facets/commit/79b1d50b9ba1721081900e0f775cd3fed8dc2767) Thanks [@dependabot](https://github.com/apps/dependabot)! - Updated tsdown from 0.22.0 to 0.22.3
+
 ## 0.5.0
 
 ### Minor Changes
