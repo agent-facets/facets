@@ -48,6 +48,6 @@
     "type-fest": "5.7.0"
   },
   "dependencies": {
-    "sst": "4.15.2"
+    "sst": "4.17.0"
   }
 }
