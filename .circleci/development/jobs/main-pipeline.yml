@@ -8,6 +8,7 @@ steps:
   - run-check
   - store_test_results:
       path: test-results
+      when: always
   - run:
       name: Version Changesets
       command: bun scripts/release/version.ts
