@@ -1,0 +1,2 @@
+[test.reporter]
+junit = "../../test-results/common-junit.xml"

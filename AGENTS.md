@@ -11,6 +11,15 @@
 
 </CircleCI>
 
+<RunningBunCommands>
+
+Sometimes `bun` is not available in the shell. If that happens prefix the `bun`
+commands with `mise exec --` like the following: `mise exec -- bun format`.
+
+Mise will ensure you find the `bun` executable correctly.
+
+</RunningBunCommands>
+
 <SST>
 
 ## SST

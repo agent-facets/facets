@@ -6,3 +6,4 @@ steps:
   - run-check
   - store_test_results:
       path: test-results
+      when: always

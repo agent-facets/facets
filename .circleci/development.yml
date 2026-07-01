@@ -75,6 +75,7 @@ jobs:
             - run-check
             - store_test_results:
                 path: test-results
+                when: always
     main-pipeline:
         docker:
             - image: cimg/base:current
@@ -86,6 +87,7 @@ jobs:
             - run-check
             - store_test_results:
                 path: test-results
+                when: always
             - run:
                 command: bun scripts/release/version.ts
                 name: Version Changesets
