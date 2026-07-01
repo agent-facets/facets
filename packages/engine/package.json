@@ -19,7 +19,7 @@
   "dependencies": {
     "@agent-facets/adapter": "workspace:*",
     "@agent-facets/protocol": "workspace:*",
-    "arkregex": "0.0.5",
+    "arkregex": "0.0.6",
     "arktype": "2.2.0",
     "comment-json": "^5.0.0",
     "ini": "7.0.0",
