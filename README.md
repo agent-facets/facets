@@ -2,6 +2,8 @@
 
 `facet` is a CLI package manager and toolkit for facets — modular skills, agents, commands, and tools that extend AI coding assistants.
 
+The official registry for Agent Facets is the [Facet.cafe](https://facet.cafe) where you can share/host your facets.
+
 ## Documentation
 
 Full documentation is available at [docs.agentfacets.io](https://docs.agentfacets.io).
