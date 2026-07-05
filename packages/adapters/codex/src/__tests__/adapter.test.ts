@@ -211,7 +211,7 @@ describe('codex adapter — project-scope agent I/O', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Project-scope I/O — commands (Markdown)
+// Project-scope I/O — commands (installed as skills + openai.yaml sidecar)
 // ---------------------------------------------------------------------------
 
 describe('codex adapter — project-scope command I/O', () => {
@@ -229,10 +229,90 @@ describe('codex adapter — project-scope command I/O', () => {
     rmSync(workDir, { recursive: true, force: true })
   })
 
-  test('command installs at .agents/commands/<name>.md', async () => {
+  test('command installs as a skill at .agents/skills/<name>/SKILL.md', async () => {
     await adapter.installAsset('project', 'command', 'viper-plans/plan', 'command body', {})
-    const path = join(workDir, '.agents/commands/viper-plans/plan.md')
+    const path = join(workDir, '.agents/skills/viper-plans/plan/SKILL.md')
     expect(readFileSync(path, 'utf8')).toBe('command body')
+    // The legacy .agents/commands/ path must no longer be written.
+    expect(existsSync(join(workDir, '.agents/commands/viper-plans/plan.md'))).toBe(false)
+  })
+
+  test('command writes SKILL.md front-matter with name + description only', async () => {
+    await adapter.installAsset('project', 'command', 'plan', '# body', {
+      name: 'plan',
+      description: 'plan things',
+    })
+    const raw = readFileSync(join(workDir, '.agents/skills/plan/SKILL.md'), 'utf8')
+    expect(raw).toContain('name: plan')
+    expect(raw).toContain('description: plan things')
+    expect(raw).toContain('# body')
+    // openai.yaml-only keys never leak into SKILL.md front-matter.
+    expect(raw).not.toContain('allow_implicit_invocation')
+    expect(raw).not.toContain('interface')
+  })
+
+  test('command writes agents/openai.yaml disabling implicit invocation', async () => {
+    await adapter.installAsset('project', 'command', 'plan', '# body', {
+      name: 'plan',
+      description: 'plan things',
+    })
+    const yamlPath = join(workDir, '.agents/skills/plan/agents/openai.yaml')
+    const yaml = readFileSync(yamlPath, 'utf8')
+    expect(yaml).toContain('allow_implicit_invocation: false')
+    expect(yaml).toContain('display_name: plan')
+    expect(yaml).toContain('short_description: plan things')
+  })
+
+  test('command passes through author interface + dependencies blocks', async () => {
+    await adapter.installAsset('project', 'command', 'plan', '# body', {
+      name: 'plan',
+      description: 'auto desc',
+      interface: {
+        display_name: 'Planner',
+        icon_small: './assets/small.svg',
+        brand_color: '#3B82F6',
+      },
+      dependencies: {
+        tools: [{ type: 'mcp', value: 'docs', url: 'https://example.com/mcp' }],
+      },
+    })
+    const yaml = readFileSync(join(workDir, '.agents/skills/plan/agents/openai.yaml'), 'utf8')
+    // Author-provided display_name wins over the auto fallback.
+    expect(yaml).toContain('display_name: Planner')
+    // Auto short_description still fills the gap the author left.
+    expect(yaml).toContain('short_description: auto desc')
+    expect(yaml).toContain('icon_small: ./assets/small.svg')
+    expect(yaml).toContain('brand_color: "#3B82F6"')
+    expect(yaml).toContain('value: docs')
+    expect(yaml).toContain('allow_implicit_invocation: false')
+  })
+
+  test('command cannot re-enable implicit invocation via author policy', async () => {
+    await adapter.installAsset('project', 'command', 'plan', '# body', {
+      name: 'plan',
+      policy: { allow_implicit_invocation: true },
+    })
+    const yaml = readFileSync(join(workDir, '.agents/skills/plan/agents/openai.yaml'), 'utf8')
+    expect(yaml).toContain('allow_implicit_invocation: false')
+    expect(yaml).not.toContain('allow_implicit_invocation: true')
+  })
+
+  test('readAsset round-trips a command body from its SKILL.md', async () => {
+    await adapter.installAsset('project', 'command', 'plan', '# body', {
+      name: 'plan',
+      description: 'plan things',
+    })
+    const result = await adapter.readAsset('project', 'command', 'plan')
+    expect(result.content.trim()).toBe('# body')
+    expect(result.metadata).toEqual({ name: 'plan', description: 'plan things' })
+  })
+
+  test('deleteAsset removes the whole command skill directory', async () => {
+    await adapter.installAsset('project', 'command', 'plan', '# body', { name: 'plan' })
+    await adapter.deleteAsset('project', 'command', 'plan')
+    expect(existsSync(join(workDir, '.agents/skills/plan/SKILL.md'))).toBe(false)
+    expect(existsSync(join(workDir, '.agents/skills/plan/agents/openai.yaml'))).toBe(false)
+    expect(existsSync(join(workDir, '.agents/skills/plan'))).toBe(false)
   })
 })
 
@@ -269,10 +349,12 @@ describe('codex adapter — user-scope base dirs', () => {
     expect(existsSync(path)).toBe(true)
   })
 
-  test('user-scope command writes under ~/.agents/commands', async () => {
+  test('user-scope command writes under ~/.agents/skills as a skill', async () => {
     await adapter.installAsset('user', 'command', 'plan', 'command body', {})
-    const path = join(fakeHome, '.agents/commands/plan.md')
+    const path = join(fakeHome, '.agents/skills/plan/SKILL.md')
     expect(readFileSync(path, 'utf8')).toBe('command body')
+    const yaml = readFileSync(join(fakeHome, '.agents/skills/plan/agents/openai.yaml'), 'utf8')
+    expect(yaml).toContain('allow_implicit_invocation: false')
   })
 })
 
