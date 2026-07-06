@@ -43,7 +43,7 @@
     "dedent": "1.7.2",
     "mint": "4.2.655",
     "turbo": "2.9.18",
-    "typescript": "6.0.3",
+    "typescript": "7.0.1-rc",
     "@types/aws-lambda": "8.10.161",
     "type-fest": "5.7.0"
   },

@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "packages/common/src",
+    "packages/protocol/src",
+    "packages/engine/src",
+    "packages/adapter/src",
+    "packages/brand/src",
+    "packages/adapters/opencode/src",
+    "packages/adapters/codex/src",
+    "packages/adapters/claude-code/src"
+  ]
+}

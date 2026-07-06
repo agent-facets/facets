@@ -1,10 +1,12 @@
 import { defineConfig } from 'tsdown'
+import { dtsTsconfigPath, tscPath } from '../../tsdown.shared.ts'
 
 export default defineConfig({
   entry: ['src/index.ts'],
   format: ['esm'],
+  tsconfig: dtsTsconfigPath,
   dts: {
-    eager: true,
+    tsgo: { path: tscPath },
   },
   clean: true,
   deps: {

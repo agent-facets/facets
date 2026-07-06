@@ -31,10 +31,9 @@
     "@agent-facets/common": "workspace:*",
     "@types/ini": "4.1.1",
     "openapi-typescript": "7.13.0",
-    "tsdown": "^0.22.3",
-    "typescript": "^6.0.3"
+    "tsdown": "^0.22.3"
   },
   "peerDependencies": {
-    "typescript": "^5 || ^6"
+    "typescript": "^5 || ^6 || ^7 || 7.0.1-rc"
   }
 }
