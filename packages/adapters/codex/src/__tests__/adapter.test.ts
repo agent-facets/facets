@@ -307,12 +307,28 @@ describe('codex adapter — project-scope command I/O', () => {
     expect(result.metadata).toEqual({ name: 'plan', description: 'plan things' })
   })
 
-  test('deleteAsset removes the whole command skill directory', async () => {
+  test('deleteAsset removes the command SKILL.md, sidecar, and empty dir', async () => {
     await adapter.installAsset('project', 'command', 'plan', '# body', { name: 'plan' })
     await adapter.deleteAsset('project', 'command', 'plan')
     expect(existsSync(join(workDir, '.agents/skills/plan/SKILL.md'))).toBe(false)
     expect(existsSync(join(workDir, '.agents/skills/plan/agents/openai.yaml'))).toBe(false)
     expect(existsSync(join(workDir, '.agents/skills/plan'))).toBe(false)
+  })
+
+  test('deleting a command does not recurse into a namespaced sibling skill', async () => {
+    // Command "space" lives at .agents/skills/space/; skill "space/spec" lives at
+    // .agents/skills/space/spec/ — i.e. inside the command's directory. Deleting
+    // the command must NOT remove the sibling skill via a recursive dir delete.
+    await adapter.installAsset('project', 'command', 'space', '# cmd', { name: 'space' })
+    await adapter.installAsset('project', 'skill', 'space/spec', '# skill', { name: 'spec' })
+
+    await adapter.deleteAsset('project', 'command', 'space')
+
+    // Command's own files are gone...
+    expect(existsSync(join(workDir, '.agents/skills/space/SKILL.md'))).toBe(false)
+    expect(existsSync(join(workDir, '.agents/skills/space/agents/openai.yaml'))).toBe(false)
+    // ...but the nested skill (and the shared parent dir) survive.
+    expect(readFileSync(join(workDir, '.agents/skills/space/spec/SKILL.md'), 'utf8')).toContain('# skill')
   })
 })
 

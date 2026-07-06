@@ -1,4 +1,4 @@
-import { mkdir, rm } from 'node:fs/promises'
+import { mkdir, readdir, rm, rmdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import {
@@ -130,9 +130,7 @@ export default defineAdapter({
     if (assetType === 'agent') {
       await rm(path, { force: true })
     } else if (assetType === 'command') {
-      // Remove the whole skill directory so the SKILL.md, the agents/openai.yaml
-      // sidecar, and the now-empty <name>/ folder all go on facet remove.
-      await rm(dirname(path), { recursive: true, force: true })
+      await deleteCommandSkill(path)
     } else {
       await deleteAssetFile({ file: path })
     }
@@ -256,6 +254,35 @@ function buildCommandYaml(metadata: Record<string, unknown>): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Delete a command that was installed as a skill.
+ *
+ * Only the files this adapter created are removed — `SKILL.md` and the
+ * `agents/openai.yaml` sidecar — followed by a best-effort cleanup of the two
+ * directories we created (`agents/` and the `<name>/` skill dir), each removed
+ * only when empty. This deliberately avoids a recursive delete of the skill
+ * directory: a recursive remove would also destroy an unrelated skill that
+ * shares the namespace prefix (e.g. deleting command `foo` must not wipe skill
+ * `foo/bar` living at `.agents/skills/foo/bar/SKILL.md`).
+ */
+async function deleteCommandSkill(skillMdPath: string): Promise<void> {
+  const skillDir = dirname(skillMdPath)
+
+  await deleteAssetFile({ file: skillMdPath })
+  await rm(join(skillDir, 'agents', 'openai.yaml'), { force: true })
+
+  await removeDirIfEmpty(join(skillDir, 'agents'))
+  await removeDirIfEmpty(skillDir)
+}
+
+/** Remove `dir` only if it exists and is empty. No-op otherwise (never recurses). */
+async function removeDirIfEmpty(dir: string): Promise<void> {
+  const entries = await readdir(dir).catch(() => null)
+  if (entries && entries.length === 0) {
+    await rmdir(dir).catch(() => {})
+  }
 }
 
 // --- TOML agent helpers ---
