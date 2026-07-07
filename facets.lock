@@ -1,13 +1,13 @@
 {
   "lockfileVersion": 1,
   "facets": {
-    "@julian/address-pr-feedback": {
+    "@agentfacets/address-pr-feedback": {
       "source": {
         "kind": "registry",
-        "registry": "https://api.facet.cafe"
+        "registry": "https://api.agentfacets.io"
       },
-      "version": "0.2.5",
-      "integrity": "sha256:f27dfd4a55872c4fb94ce5eca3cc054b7b66f54764509cd9c5de0025853b3076",
+      "version": "1.0.0",
+      "integrity": "sha256:ed944fd6249d1eb4b1050d6ba1b8bc212136222c2ab2c498032eed2abf0e2360",
       "assets": [
         {
           "scope": "project",
@@ -26,13 +26,13 @@
         }
       ]
     },
-    "@julian/openspec-adversary": {
+    "@agentfacets/openspec-adversary": {
       "source": {
         "kind": "registry",
-        "registry": "https://api.facet.cafe"
+        "registry": "https://api.agentfacets.io"
       },
-      "version": "3.1.6",
-      "integrity": "sha256:b1feba0882984fedec7a2cd44ae04297abf5636bb650bc3b9bc0ef66a2b4f5ec",
+      "version": "1.0.0",
+      "integrity": "sha256:124f6045f8959d69f9a7116d342a799094bc03fc638c76cab536f9db803d4a94",
       "assets": [
         {
           "scope": "project",
@@ -76,13 +76,13 @@
         }
       ]
     },
-    "@julian/review-openspec-design": {
+    "@agentfacets/review-openspec-design": {
       "source": {
         "kind": "registry",
-        "registry": "https://api.facet.cafe"
+        "registry": "https://api.agentfacets.io"
       },
-      "version": "1.1.0",
-      "integrity": "sha256:a413dd26cdedc41f658e1dc8c0d86e02ac2d174bc386e78bd3718732f6c80e89",
+      "version": "1.0.0",
+      "integrity": "sha256:d9905f6076c5c454e9d563980eda52c5a9ceb9e761003f9c454e362cd56efd61",
       "assets": [
         {
           "scope": "project",
@@ -99,10 +99,10 @@
     "cowsay": {
       "source": {
         "kind": "registry",
-        "registry": "https://api.facet.cafe"
+        "registry": "https://api.agentfacets.io"
       },
-      "version": "0.2.0",
-      "integrity": "sha256:a7130eec60c10e9cede541fb0433e79c26f9a8294eb686ca220dac6b9e7956d8",
+      "version": "1.0.0",
+      "integrity": "sha256:70fe8f9f0ba16132c70826d1cda70af9f0b4e63f3394178d2d5b4c374c833818",
       "assets": [
         {
           "scope": "project",
@@ -129,10 +129,10 @@
     "viper-plans": {
       "source": {
         "kind": "registry",
-        "registry": "https://api.facet.cafe"
+        "registry": "https://api.agentfacets.io"
       },
-      "version": "0.2.1",
-      "integrity": "sha256:e15446f622365222d68eb8e94b3d628adff1b94c11f06c0b04c15f105807df26",
+      "version": "1.0.0",
+      "integrity": "sha256:d745129217896c754f60f62088a792042d9867151279d7b7fe55a7493cc73ebb",
       "assets": [
         {
           "scope": "project",

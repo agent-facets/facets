@@ -161,7 +161,7 @@ function taggedSource(source: string, commit?: string): unknown {
   if (source.startsWith('github:') || source.includes('git@') || source.endsWith('.git') || source.includes('://')) {
     return { kind: 'git', url: source, commit: commit ?? 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }
   }
-  return { kind: 'registry', registry: 'https://api.facet.cafe' }
+  return { kind: 'registry', registry: 'https://api.agentfacets.io' }
 }
 
 /** Seed a lockfile entry. `integrity` defaults to the stub the download path uses. */

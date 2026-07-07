@@ -45,7 +45,7 @@ describe('resolveArchiveUrl — registry rejections render verbatim', () => {
       code: 'E_UNAUTHENTICATED',
       error: 'this facet version is awaiting review',
       fix: 'wait for an admin to approve it, or contact support',
-      docs_url: 'https://docs.facet.cafe/errors/E_FORBIDDEN',
+      docs_url: 'https://docs.agentfacets.io/errors/E_FORBIDDEN',
     })
     const stubFetch = asFetch(
       async () =>
@@ -63,7 +63,7 @@ describe('resolveArchiveUrl — registry rejections render verbatim', () => {
     expect(result.error.wireCode).toBe('E_UNAUTHENTICATED')
     expect(result.error.error).toBe('this facet version is awaiting review')
     expect(result.error.fix).toBe('wait for an admin to approve it, or contact support')
-    expect(result.error.docsUrl).toBe('https://docs.facet.cafe/errors/E_FORBIDDEN')
+    expect(result.error.docsUrl).toBe('https://docs.agentfacets.io/errors/E_FORBIDDEN')
   })
 
   test('500 with a structured envelope yields REGISTRY_REJECTED, not NETWORK_ERROR', async () => {
@@ -71,7 +71,7 @@ describe('resolveArchiveUrl — registry rejections render verbatim', () => {
       code: 'E_REGISTRY_UNAVAILABLE',
       error: 'something went wrong on our end',
       fix: 'try again in a few minutes',
-      docs_url: 'https://docs.facet.cafe/errors/E_INTERNAL',
+      docs_url: 'https://docs.agentfacets.io/errors/E_INTERNAL',
     })
     const stubFetch = asFetch(
       async () =>

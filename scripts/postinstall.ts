@@ -1,11 +1,10 @@
 /**
  * Postinstall: set up local dev tooling quietly.
  *
- * Runs four steps in sequence:
+ * Runs three steps in sequence:
  *   1. lefthook install        — git hooks
- *   2. facet install           — install repo facets
- *   3. facet adapter install   — install the opencode adapter
- *   4. sst install             — SST link types (skipped in CI)
+ *   2. facet adapter install   — install the opencode adapter
+ *   3. facet install           — install repo facets
  *
  * Each step's stdout/stderr is captured and only printed if the step
  * fails. On success we print a single line per step so the user can

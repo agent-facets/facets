@@ -1,9 +1,4 @@
 commands:
-    aws-oidc-setup:
-        steps:
-            - aws-cli/setup:
-                region: us-east-1
-                role_arn: ${AWS_ROLE_ARN}
     notify-failure:
         steps:
             - run:
@@ -118,8 +113,6 @@ jobs:
                 command: bun scripts/release/publish.ts
                 name: Publish
             - notify-failure
-orbs:
-    aws-cli: circleci/aws-cli@5.4.1
 parameters:
     package:
         default: ""

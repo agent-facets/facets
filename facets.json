@@ -2,8 +2,8 @@
   "facets": {
     "viper-plans": "latest",
     "cowsay": "latest",
-    "@julian/review-openspec-design": "latest",
-    "@julian/openspec-adversary": "latest",
-    "@julian/address-pr-feedback": "latest"
+    "@agentfacets/review-openspec-design": "latest",
+    "@agentfacets/openspec-adversary": "latest",
+    "@agentfacets/address-pr-feedback": "latest"
   }
 }

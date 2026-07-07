@@ -71,7 +71,7 @@ describe('listCommand', () => {
         lockfileVersion: 1,
         facets: {
           cowsay: {
-            source: { kind: 'registry', registry: 'https://api.facet.cafe' },
+            source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
             version: '0.1.0',
             integrity: 'sha256-deadbeef',
             assets: [],
@@ -103,7 +103,7 @@ describe('listCommand', () => {
         lockfileVersion: 1,
         facets: {
           installed: {
-            source: { kind: 'registry', registry: 'https://api.facet.cafe' },
+            source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
             version: '1.0.0',
             integrity: 'sha256-x',
             assets: [],

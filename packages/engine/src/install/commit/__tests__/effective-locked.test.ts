@@ -15,7 +15,7 @@ const lockedGitEntry: LockfileFacet = {
 }
 
 const lockedRegistryEntry: LockfileFacet = {
-  source: { kind: 'registry', registry: 'https://api.facet.cafe' },
+  source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
   version: '0.4.0',
   integrity: 'sha256:0000000000000000000000000000000000000000000000000000000000000000',
   assets: [{ scope: 'project', type: 'skill', name: 'planning' }],

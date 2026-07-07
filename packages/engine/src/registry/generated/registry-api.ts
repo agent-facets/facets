@@ -30,7 +30,7 @@ export interface paths {
         };
         /**
          * List or search facets
-         * @description Returns up to 200 published facets (FACET META rows). V0 ships without server-side `?q=` filtering — clients filter client-side. Pagination lands in alpha.
+         * @description Searches published facets via the supported search path. Supports `?q=` substring matching, `?sort=` (relevance|recent|name) with deterministic ordering, and opaque `?cursor=` pagination. Anonymous callers see only public facets; authenticated callers also see private facets they are entitled to. The response is `no-store` and never reveals how many facets were hidden.
          */
         get: operations["getV0Facets"];
         put?: never;
@@ -332,7 +332,7 @@ export interface paths {
         put?: never;
         /**
          * Sign out (revoke refresh token)
-         * @description Revokes the supplied refresh token at Cognito. Authenticated by the refresh_token in the request body (not by Authorization header), so the call succeeds even after the access token has locally expired. After this call, any currently-issued access token remains valid until its natural expiry but no new tokens can be obtained without re-authenticating. PAT principals (CI tokens) should use `DELETE /v0/auth/tokens/:prefix` instead. Suspended users receive 403 E_ACCOUNT_SUSPENDED.
+         * @description Revokes the supplied refresh token at Cognito. Authenticated by the refresh_token in the request body (not by Authorization header), so the call succeeds even after the access token has locally expired. After this call, any currently-issued access token remains valid until its natural expiry but no new tokens can be obtained without re-authenticating. PAT callers (CI tokens) should use `DELETE /v0/auth/tokens/:prefix` instead. Suspended users receive 403 E_ACCOUNT_SUSPENDED.
          */
         post: operations["postV0AuthLogout"];
         delete?: never;
@@ -376,7 +376,7 @@ export interface paths {
         put?: never;
         /**
          * Mint a new personal access token
-         * @description Returns the plaintext token EXACTLY ONCE in the `plaintext_token` field. The registry stores only the HMAC of the secret portion. If you lose the plaintext, you must mint a new token. Up to 3 prefix-collision retries before returning 500 E_PREFIX_COLLISION_RETRY_EXHAUSTED. Requires an interactive (JWT) session — PAT principals receive 403 E_INTERACTIVE_SESSION_REQUIRED.
+         * @description Returns the plaintext token EXACTLY ONCE in the `plaintext_token` field. The registry stores only the HMAC of the secret portion. If you lose the plaintext, you must mint a new token. Up to 3 prefix-collision retries before returning 500 E_PREFIX_COLLISION_RETRY_EXHAUSTED. Requires an interactive (JWT) session — PAT callers receive 403 E_INTERACTIVE_SESSION_REQUIRED. Impersonated (admin-as-target) sessions receive 403 E_IMPERSONATION_FORBIDDEN — stop impersonating before minting.
          */
         post: operations["postV0AuthTokens"];
         delete?: never;
@@ -416,7 +416,7 @@ export interface paths {
         put?: never;
         /**
          * Sign out from all Cognito sessions
-         * @description Invalidates all access and refresh tokens for the caller's Cognito user. Subsequent requests with those tokens fail with 401. Does NOT revoke the caller's PATs — use `GET /v0/auth/tokens` + per-prefix DELETE for that. PAT principals receive 400 (PATs don't have Cognito sessions). Suspended users receive 403 E_ACCOUNT_SUSPENDED.
+         * @description Invalidates all access and refresh tokens for the caller's Cognito user. Subsequent requests with those tokens fail with 401. Does NOT revoke the caller's PATs — use `GET /v0/auth/tokens` + per-prefix DELETE for that. PAT callers receive 400 (PATs don't have Cognito sessions). Suspended users receive 403 E_ACCOUNT_SUSPENDED.
          */
         post: operations["postV0AuthSignOutEverywhere"];
         delete?: never;
@@ -459,6 +459,26 @@ export interface paths {
          * @description For Cognito-authenticated callers who have NOT yet been provisioned in the registry. Creates the USERNAME reservation, the PROFILE row, the COGNITO_SUB reservation, and the user’s `@<username>` scope atomically. Returns 409 E_USERNAME_TAKEN if the username is already claimed, 403 E_NAME_BLOCKED if the name is reserved or blocked. Usernames are immutable once set; this route runs exactly once per Cognito sub.
          */
         post: operations["postV0OnboardingUsername"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/admin/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin overview (section/page status rollup)
+         * @description Raw per-page operational signals — pending review count, pending migrations, event-delivery health, read-only mode, control count — for the admin hub cards and rail/flyout status. Admin only.
+         */
+        get: operations["getV0AdminOverview"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -686,7 +706,7 @@ export interface paths {
         };
         /**
          * Search users by username prefix
-         * @description Bounded username-prefix search over the GSI3 USER_ALL#<first-letter> partition. Admin-gated, so the response carries email, tier, and suspension status. An empty `q` returns no users.
+         * @description Bounded username search. With OpenSearch enabled, an empty `q` browses all users alphabetically (match_all) and a non-empty `q` is an infix substring match; without search it falls back to a GSI3 USER_ALL#<first-letter> prefix query (empty `q` returns no users, since that index is sharded by first letter). Admin-gated, so the response carries email, tier, and suspension status.
          */
         get: operations["getV0AdminUsers"];
         put?: never;
@@ -741,6 +761,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v0/admin/orgs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search organizations by name/slug prefix
+         * @description Bounded organization search over the OpenSearch organizations index, returning org id, slug, and display name for admin autocomplete. An empty `q` browses all organizations alphabetically (capped). Requires search to be configured for the stage.
+         */
+        get: operations["getV0AdminOrgs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v0/admin/event-health": {
         parameters: {
             query?: never;
@@ -755,6 +795,234 @@ export interface paths {
         get: operations["getV0AdminEventHealth"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/admin/event-health/flush": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trigger an analytics flush now
+         * @description Async-invokes the analytics flush Lambda to drain the raw archive into ClickHouse on demand. Admin only.
+         */
+        post: operations["postV0AdminEventHealthFlush"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/admin/event-health/resync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset the analytics flush watermark and resync
+         * @description Clears this stage's flush cursor under its lock and triggers a flush to reprocess the archive from the beginning. Admin only.
+         */
+        post: operations["postV0AdminEventHealthResync"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/admin/event-health/rebuild": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * DROP and rebuild the analytics query store
+         * @description Async-invokes the flush Lambda to DROP and re-apply the shared ClickHouse schema (wiping all stages' rows) and reload this stage from the archive. Destructive. Admin only.
+         */
+        post: operations["postV0AdminEventHealthRebuild"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/admin/system-controls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List system controls (admin)
+         * @description Every system-purpose control with its catalog metadata, current global rule (if set), and resolved global state.
+         */
+        get: operations["getV0AdminSystemControls"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/admin/system-controls/{controlKey}/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * System control audit history (admin)
+         * @description Append-only history of global rule mutations for one system control, newest first.
+         */
+        get: operations["getV0AdminSystemControlsByControlKeyAudit"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/admin/system-controls/{controlKey}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set a system control global rule (admin)
+         * @description Create or update the single global rule value for a system control.
+         */
+        put: operations["putV0AdminSystemControlsByControlKey"];
+        post?: never;
+        /**
+         * Remove a system control global rule (admin)
+         * @description Delete the global rule so the control resolves to its code fallback.
+         */
+        delete: operations["deleteV0AdminSystemControlsByControlKey"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/admin/application-controls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List application controls (admin)
+         * @description Every application-purpose control with its catalog metadata and all current runtime rules.
+         */
+        get: operations["getV0AdminApplicationControls"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/admin/application-controls/{controlKey}/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Application control audit history (admin)
+         * @description Append-only history of control mutations for one application control, newest first.
+         */
+        get: operations["getV0AdminApplicationControlsByControlKeyAudit"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/admin/application-controls/{controlKey}/rule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set an application control rule (admin)
+         * @description Create or update the control for one user, organization, or tier target.
+         */
+        post: operations["postV0AdminApplicationControlsByControlKeyRule"];
+        /**
+         * Remove an application control rule (admin)
+         * @description Delete the control for one target; evaluation then falls through to lower precedence or fallback.
+         */
+        delete: operations["deleteV0AdminApplicationControlsByControlKeyRule"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/admin/application-controls/{controlKey}/bulk-tier": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bulk-set application control tier rules (admin)
+         * @description Apply one value across the given tiers as independent per-target controls sharing a batch id. Each target succeeds or fails on its own.
+         */
+        post: operations["postV0AdminApplicationControlsByControlKeyBulkTier"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/admin/application-controls/{controlKey}/inspect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Inspect resolved application control state (admin)
+         * @description Resolve an application control for a supplied user or organization-member context, returning the value, deciding source, and ordered precedence trace.
+         */
+        post: operations["postV0AdminApplicationControlsByControlKeyInspect"];
         delete?: never;
         options?: never;
         head?: never;
@@ -999,6 +1267,7 @@ export interface components {
         };
         SearchResponse: {
             facets: components["schemas"]["FacetSummary"][];
+            next_cursor?: string;
         };
         PublicFacetCountResponse: {
             count: number;
@@ -1009,7 +1278,7 @@ export interface components {
         };
         ApiErrorBody: {
             /** @enum {unknown} */
-            code: "E_ACCOUNT_SUSPENDED" | "E_ADMIN_REQUIRED" | "E_ALREADY_MEMBER" | "E_ALREADY_ONBOARDED" | "E_API_KEY_MISSING" | "E_ARCHIVE_DECOMPRESSED_TOO_LARGE" | "E_ARCHIVE_MALFORMED" | "E_CLAIM_ALREADY_PENDING" | "E_CLAIM_PENDING_ELSEWHERE" | "E_CONTENT_INTEGRITY_MISMATCH" | "E_DRY_RUN_REQUIRED" | "E_FACET_NOT_FOUND" | "E_FACET_NOT_OWNED" | "E_FORBIDDEN" | "E_GLOBAL_FACET_MUST_BE_PUBLIC" | "E_IMPERSONATION_FORBIDDEN" | "E_INTERACTIVE_SESSION_REQUIRED" | "E_INVALID_NAME" | "E_INVALID_VERSION" | "E_INVITATION_NOT_FOUND" | "E_LOGOUT_REQUIRES_JWT" | "E_MANIFEST_CONTENT_MISMATCH" | "E_MEMBER_NOT_FOUND" | "E_MIGRATION_ALREADY_COMPLETED" | "E_MIGRATION_BATCH_NOT_FOUND" | "E_MIGRATION_BATCH_RUNNING" | "E_MIGRATION_DEPENDENCY_UNMET" | "E_MIGRATION_NOT_FOUND" | "E_MIGRATION_RUNNING" | "E_NAME_BLOCKED" | "E_ONBOARDING_REQUIRED" | "E_ORG_FORBIDDEN" | "E_ORG_LAST_ADMIN" | "E_ORG_NAME_RESERVED" | "E_ORG_NAME_TAKEN" | "E_ORG_NOT_FOUND" | "E_PREFIX_COLLISION_RETRY_EXHAUSTED" | "E_PRIVATE_FACET_ENTITLEMENT_REQUIRED" | "E_PROFILE_CORRUPT" | "E_QUEUE_FULL" | "E_QUEUE_ITEM_NOT_FOUND" | "E_QUEUE_ITEM_NOT_PENDING" | "E_REGISTRY_UNAVAILABLE" | "E_RESERVATION_EXISTS" | "E_RESERVATION_NOT_FOUND" | "E_REVIEW_ARTIFACT_MISSING" | "E_RUN_NOT_FOUND" | "E_SCOPE_NOT_FOUND" | "E_SCOPE_NOT_OWNED" | "E_TARBALL_CORRUPTED" | "E_TARBALL_TOO_LARGE" | "E_TOKEN_EXPIRED" | "E_TOKEN_NOT_FOUND" | "E_TOKEN_REVOKED" | "E_UNAUTHENTICATED" | "E_UNDECLARED_CONTENT" | "E_USERNAME_TAKEN" | "E_USER_NOT_FOUND" | "E_VERSION_EXISTS";
+            code: "E_ACCOUNT_SUSPENDED" | "E_ADMIN_REQUIRED" | "E_ALREADY_MEMBER" | "E_ALREADY_ONBOARDED" | "E_API_KEY_MISSING" | "E_ARCHIVE_DECOMPRESSED_TOO_LARGE" | "E_ARCHIVE_MALFORMED" | "E_CLAIM_ALREADY_PENDING" | "E_CLAIM_PENDING_ELSEWHERE" | "E_CONTENT_INTEGRITY_MISMATCH" | "E_CONTROL_CONCURRENT_MODIFICATION" | "E_CONTROL_INVALID_TARGET" | "E_CONTROL_INVALID_VALUE" | "E_CONTROL_MANAGEMENT_IMMUTABLE" | "E_CONTROL_NOT_FOUND" | "E_CONTROL_RULE_NOT_FOUND" | "E_DRY_RUN_REQUIRED" | "E_FACET_NOT_FOUND" | "E_FACET_NOT_OWNED" | "E_FORBIDDEN" | "E_GLOBAL_FACET_MUST_BE_PUBLIC" | "E_IMPERSONATION_FORBIDDEN" | "E_INTERACTIVE_SESSION_REQUIRED" | "E_INTERNAL" | "E_INVALID_CURSOR" | "E_INVALID_NAME" | "E_INVALID_VERSION" | "E_INVITATION_NOT_FOUND" | "E_LOGOUT_REQUIRES_JWT" | "E_MANIFEST_CONTENT_MISMATCH" | "E_MEMBER_NOT_FOUND" | "E_MIGRATION_ALREADY_COMPLETED" | "E_MIGRATION_BATCH_NOT_FOUND" | "E_MIGRATION_BATCH_RUNNING" | "E_MIGRATION_DEPENDENCY_UNMET" | "E_MIGRATION_NOT_FOUND" | "E_MIGRATION_RUNNING" | "E_NAME_BLOCKED" | "E_ONBOARDING_REQUIRED" | "E_ORG_FORBIDDEN" | "E_ORG_LAST_ADMIN" | "E_ORG_NAME_RESERVED" | "E_ORG_NAME_TAKEN" | "E_ORG_NOT_FOUND" | "E_PREFIX_COLLISION_RETRY_EXHAUSTED" | "E_PRIVATE_FACET_ENTITLEMENT_REQUIRED" | "E_PROFILE_CORRUPT" | "E_QUEUE_FULL" | "E_QUEUE_ITEM_NOT_FOUND" | "E_QUEUE_ITEM_NOT_PENDING" | "E_READ_ONLY" | "E_REGISTRY_UNAVAILABLE" | "E_RESERVATION_EXISTS" | "E_RESERVATION_NOT_FOUND" | "E_REVIEW_ARTIFACT_MISSING" | "E_RUN_NOT_FOUND" | "E_SCOPE_NOT_FOUND" | "E_SCOPE_NOT_OWNED" | "E_TARBALL_CORRUPTED" | "E_TARBALL_TOO_LARGE" | "E_TOKEN_EXPIRED" | "E_TOKEN_NOT_FOUND" | "E_TOKEN_REVOKED" | "E_UNAUTHENTICATED" | "E_UNDECLARED_CONTENT" | "E_USERNAME_TAKEN" | "E_USER_NOT_FOUND" | "E_VERSION_EXISTS" | "E_WRITE_BANNED";
             docs_url: string;
             error: string;
             fix: string;
@@ -1103,6 +1372,22 @@ export interface components {
                 revoked_at?: string;
             }[];
         };
+        AdminOverviewResponse: {
+            control_count: number;
+            events: {
+                dead_lettered: number;
+                unhealthy_consumers: number;
+            };
+            migrations_pending: number;
+            read_only_mode: boolean;
+            review_pending: number;
+            search: {
+                configured: boolean;
+                missing: number;
+                red: number;
+                yellow: number;
+            };
+        };
         MigrationListResponse: {
             migrations: {
                 available: boolean;
@@ -1115,6 +1400,7 @@ export interface components {
                     created: number;
                     deleted: number;
                     dry_run: boolean;
+                    effected: number;
                     expected: number;
                     failed: number;
                     migration_id: string;
@@ -1160,6 +1446,7 @@ export interface components {
                 created: number;
                 deleted: number;
                 dry_run: boolean;
+                effected: number;
                 expected: number;
                 failed: number;
                 migration_id: string;
@@ -1202,6 +1489,7 @@ export interface components {
             created: number;
             deleted: number;
             dry_run: boolean;
+            effected: number;
             expected: number;
             failed: number;
             failures: {
@@ -1268,7 +1556,38 @@ export interface components {
                 username: string;
             };
         };
+        AdminOrgListResponse: {
+            organizations: {
+                display_name: string;
+                org_id: string;
+                slug: string;
+            }[];
+        };
         EventDeliveryHealthResponse: {
+            consumers: ({
+                analytics_lag: {
+                    capture_dead_letter_count: number | null;
+                    flush_running: boolean;
+                    has_more: boolean;
+                    last_loaded_key: string | null;
+                    last_run_at: string | null;
+                    open_pending_at_least: number;
+                    resync_pending: boolean;
+                    sealed_unflushed_at_least: number;
+                };
+                capture_dlq_depth: number | null;
+                /** @constant */
+                consumer: "analytics";
+            } | {
+                apply_dlq_depth: number;
+                /** @constant */
+                consumer: "search-indexer";
+                delivery_dlq_depth: number | null;
+            } | {
+                /** @constant */
+                consumer: "public-facet-count";
+                delivery_dlq_depth: number | null;
+            })[];
             dead_lettered_count: number;
             dead_letters: {
                 attempt_count: number;
@@ -1283,6 +1602,385 @@ export interface components {
             }[];
             oldest_pending_age_ms: number | null;
             pending_count: number;
+        };
+        SystemControlListResponse: {
+            controls: {
+                definition: {
+                    allowed_values: string[];
+                    description: string;
+                    display_name: string;
+                    domain: string;
+                    expired: boolean;
+                    fallback: string;
+                    key: string;
+                    /** @constant */
+                    kind: "string-enum";
+                    lifecycle: {
+                        /** @enum {unknown} */
+                        kind: "permanent" | "temporary";
+                        expires_at?: string;
+                    };
+                    /** @enum {unknown} */
+                    management: "admin" | "none";
+                    /** @enum {unknown} */
+                    purpose: "application" | "system";
+                } | {
+                    description: string;
+                    display_name: string;
+                    domain: string;
+                    expired: boolean;
+                    fallback: number;
+                    key: string;
+                    /** @constant */
+                    kind: "number";
+                    lifecycle: {
+                        /** @enum {unknown} */
+                        kind: "permanent" | "temporary";
+                        expires_at?: string;
+                    };
+                    /** @enum {unknown} */
+                    management: "admin" | "none";
+                    /** @enum {unknown} */
+                    number_type: "decimal" | "integer";
+                    /** @enum {unknown} */
+                    purpose: "application" | "system";
+                    max?: number;
+                    max_precision?: number;
+                    min?: number;
+                } | {
+                    description: string;
+                    display_name: string;
+                    domain: string;
+                    expired: boolean;
+                    fallback: boolean;
+                    key: string;
+                    /** @constant */
+                    kind: "boolean";
+                    lifecycle: {
+                        /** @enum {unknown} */
+                        kind: "permanent" | "temporary";
+                        expires_at?: string;
+                    };
+                    /** @enum {unknown} */
+                    management: "admin" | "none";
+                    /** @enum {unknown} */
+                    purpose: "application" | "system";
+                };
+                resolution: {
+                    control_key: string;
+                    /** @enum {unknown} */
+                    source: "code-fallback" | "organization" | "organization_role" | "organization_tier" | "system" | "user" | "user_tier";
+                    value: number | string | boolean;
+                    /** @enum {unknown} */
+                    fallback_reason?: "no-configured-rule" | "runtime-state-unavailable";
+                };
+                rule?: {
+                    target: {
+                        /** @constant */
+                        kind: "organization";
+                        org_id: string;
+                    } | {
+                        /** @constant */
+                        kind: "organization_role";
+                        org_id: string;
+                        /** @enum {unknown} */
+                        org_role: "admin" | "publisher" | "viewer";
+                    } | {
+                        /** @constant */
+                        kind: "organization_tier";
+                        /** @enum {unknown} */
+                        organization_tier: "enterprise" | "free" | "pro";
+                    } | {
+                        /** @constant */
+                        kind: "system";
+                    } | {
+                        /** @constant */
+                        kind: "user";
+                        user_id: string;
+                    } | {
+                        /** @constant */
+                        kind: "user_tier";
+                        /** @enum {unknown} */
+                        user_tier: "admin" | "enterprise" | "free" | "pro";
+                    };
+                    updated_at: string;
+                    updated_by_user_id: string;
+                    value: {
+                        /** @constant */
+                        kind: "boolean";
+                        value: boolean;
+                    } | {
+                        /** @constant */
+                        kind: "number";
+                        value: number;
+                    } | {
+                        /** @constant */
+                        kind: "string-enum";
+                        value: string;
+                    };
+                    reason?: string;
+                    target_org_slug?: string;
+                    target_username?: string;
+                    updated_by_username?: string;
+                };
+            }[];
+        };
+        ControlAuditResponse: {
+            events: {
+                /** @enum {unknown} */
+                action: "rule_created" | "rule_removed" | "value_changed";
+                actor_user_id: string;
+                control_key: string;
+                occurred_at: string;
+                target: {
+                    /** @constant */
+                    kind: "organization";
+                    org_id: string;
+                } | {
+                    /** @constant */
+                    kind: "organization_role";
+                    org_id: string;
+                    /** @enum {unknown} */
+                    org_role: "admin" | "publisher" | "viewer";
+                } | {
+                    /** @constant */
+                    kind: "organization_tier";
+                    /** @enum {unknown} */
+                    organization_tier: "enterprise" | "free" | "pro";
+                } | {
+                    /** @constant */
+                    kind: "system";
+                } | {
+                    /** @constant */
+                    kind: "user";
+                    user_id: string;
+                } | {
+                    /** @constant */
+                    kind: "user_tier";
+                    /** @enum {unknown} */
+                    user_tier: "admin" | "enterprise" | "free" | "pro";
+                };
+                actor_username?: string;
+                batch_id?: string;
+                new_value?: {
+                    /** @constant */
+                    kind: "boolean";
+                    value: boolean;
+                } | {
+                    /** @constant */
+                    kind: "number";
+                    value: number;
+                } | {
+                    /** @constant */
+                    kind: "string-enum";
+                    value: string;
+                };
+                previous_value?: {
+                    /** @constant */
+                    kind: "boolean";
+                    value: boolean;
+                } | {
+                    /** @constant */
+                    kind: "number";
+                    value: number;
+                } | {
+                    /** @constant */
+                    kind: "string-enum";
+                    value: string;
+                };
+                reason?: string;
+                target_org_slug?: string;
+                target_username?: string;
+            }[];
+        };
+        ApplicationControlListResponse: {
+            controls: {
+                definition: {
+                    allowed_values: string[];
+                    description: string;
+                    display_name: string;
+                    domain: string;
+                    expired: boolean;
+                    fallback: string;
+                    key: string;
+                    /** @constant */
+                    kind: "string-enum";
+                    lifecycle: {
+                        /** @enum {unknown} */
+                        kind: "permanent" | "temporary";
+                        expires_at?: string;
+                    };
+                    /** @enum {unknown} */
+                    management: "admin" | "none";
+                    /** @enum {unknown} */
+                    purpose: "application" | "system";
+                } | {
+                    description: string;
+                    display_name: string;
+                    domain: string;
+                    expired: boolean;
+                    fallback: number;
+                    key: string;
+                    /** @constant */
+                    kind: "number";
+                    lifecycle: {
+                        /** @enum {unknown} */
+                        kind: "permanent" | "temporary";
+                        expires_at?: string;
+                    };
+                    /** @enum {unknown} */
+                    management: "admin" | "none";
+                    /** @enum {unknown} */
+                    number_type: "decimal" | "integer";
+                    /** @enum {unknown} */
+                    purpose: "application" | "system";
+                    max?: number;
+                    max_precision?: number;
+                    min?: number;
+                } | {
+                    description: string;
+                    display_name: string;
+                    domain: string;
+                    expired: boolean;
+                    fallback: boolean;
+                    key: string;
+                    /** @constant */
+                    kind: "boolean";
+                    lifecycle: {
+                        /** @enum {unknown} */
+                        kind: "permanent" | "temporary";
+                        expires_at?: string;
+                    };
+                    /** @enum {unknown} */
+                    management: "admin" | "none";
+                    /** @enum {unknown} */
+                    purpose: "application" | "system";
+                };
+                rules: {
+                    target: {
+                        /** @constant */
+                        kind: "organization";
+                        org_id: string;
+                    } | {
+                        /** @constant */
+                        kind: "organization_role";
+                        org_id: string;
+                        /** @enum {unknown} */
+                        org_role: "admin" | "publisher" | "viewer";
+                    } | {
+                        /** @constant */
+                        kind: "organization_tier";
+                        /** @enum {unknown} */
+                        organization_tier: "enterprise" | "free" | "pro";
+                    } | {
+                        /** @constant */
+                        kind: "system";
+                    } | {
+                        /** @constant */
+                        kind: "user";
+                        user_id: string;
+                    } | {
+                        /** @constant */
+                        kind: "user_tier";
+                        /** @enum {unknown} */
+                        user_tier: "admin" | "enterprise" | "free" | "pro";
+                    };
+                    updated_at: string;
+                    updated_by_user_id: string;
+                    value: {
+                        /** @constant */
+                        kind: "boolean";
+                        value: boolean;
+                    } | {
+                        /** @constant */
+                        kind: "number";
+                        value: number;
+                    } | {
+                        /** @constant */
+                        kind: "string-enum";
+                        value: string;
+                    };
+                    reason?: string;
+                    target_org_slug?: string;
+                    target_username?: string;
+                    updated_by_username?: string;
+                }[];
+            }[];
+        };
+        BulkTierRuleResponse: {
+            batch_id: string;
+            outcomes: {
+                /** @enum {unknown} */
+                result: "concurrent-modification" | "created" | "rejected" | "updated";
+                target: {
+                    /** @constant */
+                    kind: "organization";
+                    org_id: string;
+                } | {
+                    /** @constant */
+                    kind: "organization_role";
+                    org_id: string;
+                    /** @enum {unknown} */
+                    org_role: "admin" | "publisher" | "viewer";
+                } | {
+                    /** @constant */
+                    kind: "organization_tier";
+                    /** @enum {unknown} */
+                    organization_tier: "enterprise" | "free" | "pro";
+                } | {
+                    /** @constant */
+                    kind: "system";
+                } | {
+                    /** @constant */
+                    kind: "user";
+                    user_id: string;
+                } | {
+                    /** @constant */
+                    kind: "user_tier";
+                    /** @enum {unknown} */
+                    user_tier: "admin" | "enterprise" | "free" | "pro";
+                };
+                detail?: string;
+            }[];
+        };
+        ControlInspectionResponse: {
+            resolution: {
+                control_key: string;
+                /** @enum {unknown} */
+                source: "code-fallback" | "organization" | "organization_role" | "organization_tier" | "system" | "user" | "user_tier";
+                value: number | string | boolean;
+                /** @enum {unknown} */
+                fallback_reason?: "no-configured-rule" | "runtime-state-unavailable";
+            };
+            trace: {
+                /** @enum {unknown} */
+                outcome: "applied" | "invalid-control" | "no-control" | "shadowed";
+                /** @enum {unknown} */
+                source: "organization" | "organization_role" | "organization_tier" | "system" | "user" | "user_tier";
+                detail?: string;
+            }[];
+            org_contexts?: {
+                org_display_name: string;
+                org_id: string;
+                /** @enum {unknown} */
+                org_role: "admin" | "publisher" | "viewer";
+                org_slug: string;
+                resolution: {
+                    control_key: string;
+                    /** @enum {unknown} */
+                    source: "code-fallback" | "organization" | "organization_role" | "organization_tier" | "system" | "user" | "user_tier";
+                    value: number | string | boolean;
+                    /** @enum {unknown} */
+                    fallback_reason?: "no-configured-rule" | "runtime-state-unavailable";
+                };
+                trace: {
+                    /** @enum {unknown} */
+                    outcome: "applied" | "invalid-control" | "no-control" | "shadowed";
+                    /** @enum {unknown} */
+                    source: "organization" | "organization_role" | "organization_tier" | "system" | "user" | "user_tier";
+                    detail?: string;
+                }[];
+            }[];
         };
         ReviewQueueListResponse: {
             items: {
@@ -1382,7 +2080,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description List of facet summaries */
+            /** @description A page of facet summaries with an optional continuation cursor */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1456,7 +2154,7 @@ export interface operations {
                 scope: string;
                 /** @description Facet name within the scope (e.g. `cowsay`). */
                 name: string;
-                /** @description Semver version (e.g., `1.2.3`) or the literal `latest`. */
+                /** @description Semver version (e.g., `1.2.3`), `latest`, or a wildcard: `M.*` (highest in major), `M.N.*` (highest patch), or `*` (latest). Wildcards exclude pre-release versions. */
                 version: string;
             };
             cookie?: never;
@@ -1492,7 +2190,7 @@ export interface operations {
                 scope: string;
                 /** @description Facet name within the scope (e.g. `cowsay`). */
                 name: string;
-                /** @description Semver version (e.g., `1.2.3`) or the literal `latest`. */
+                /** @description Semver version (e.g., `1.2.3`), `latest`, or a wildcard: `M.*` (highest in major), `M.N.*` (highest patch), or `*` (latest). Wildcards exclude pre-release versions. */
                 version: string;
             };
             cookie?: never;
@@ -1535,7 +2233,7 @@ export interface operations {
                 scope: string;
                 /** @description Facet name within the scope (e.g. `cowsay`). */
                 name: string;
-                /** @description Semver version (e.g., `1.2.3`) or the literal `latest`. */
+                /** @description Semver version (e.g., `1.2.3`), `latest`, or a wildcard: `M.*` (highest in major), `M.N.*` (highest patch), or `*` (latest). Wildcards exclude pre-release versions. */
                 version: string;
             };
             cookie?: never;
@@ -1570,7 +2268,7 @@ export interface operations {
                 scope: string;
                 /** @description Facet name within the scope (e.g. `cowsay`). */
                 name: string;
-                /** @description Semver version (e.g., `1.2.3`) or the literal `latest`. */
+                /** @description Semver version (e.g., `1.2.3`), `latest`, or a wildcard: `M.*` (highest in major), `M.N.*` (highest patch), or `*` (latest). Wildcards exclude pre-release versions. */
                 version: string;
             };
             cookie?: never;
@@ -1684,7 +2382,7 @@ export interface operations {
             path: {
                 /** @description Canonical facet name. For scoped facets use the literal-slash path (`/@scope/name/...`) instead of encoding the slash. */
                 name: string;
-                /** @description Semver version (e.g., `1.2.3`) or the literal `latest`. */
+                /** @description Semver version (e.g., `1.2.3`), `latest`, or a wildcard: `M.*` (highest in major), `M.N.*` (highest patch), or `*` (latest). Wildcards exclude pre-release versions. */
                 version: string;
             };
             cookie?: never;
@@ -1718,7 +2416,7 @@ export interface operations {
             path: {
                 /** @description Canonical facet name. For scoped facets use the literal-slash path (`/@scope/name/...`) instead of encoding the slash. */
                 name: string;
-                /** @description Semver version (e.g., `1.2.3`) or the literal `latest`. */
+                /** @description Semver version (e.g., `1.2.3`), `latest`, or a wildcard: `M.*` (highest in major), `M.N.*` (highest patch), or `*` (latest). Wildcards exclude pre-release versions. */
                 version: string;
             };
             cookie?: never;
@@ -1752,7 +2450,7 @@ export interface operations {
             path: {
                 /** @description Canonical facet name. For scoped facets use the literal-slash path (`/@scope/name/...`) instead of encoding the slash. */
                 name: string;
-                /** @description Semver version (e.g., `1.2.3`) or the literal `latest`. */
+                /** @description Semver version (e.g., `1.2.3`), `latest`, or a wildcard: `M.*` (highest in major), `M.N.*` (highest patch), or `*` (latest). Wildcards exclude pre-release versions. */
                 version: string;
             };
             cookie?: never;
@@ -1785,7 +2483,7 @@ export interface operations {
             path: {
                 /** @description Canonical facet name. For scoped facets use the literal-slash path (`/@scope/name/...`) instead of encoding the slash. */
                 name: string;
-                /** @description Semver version (e.g., `1.2.3`) or the literal `latest`. */
+                /** @description Semver version (e.g., `1.2.3`), `latest`, or a wildcard: `M.*` (highest in major), `M.N.*` (highest patch), or `*` (latest). Wildcards exclude pre-release versions. */
                 version: string;
             };
             cookie?: never;
@@ -2115,7 +2813,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorBody"];
                 };
             };
-            /** @description Account suspended OR PAT principal (interactive session required) */
+            /** @description Account suspended, PAT caller (interactive session required), or impersonated session */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2198,7 +2896,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description PAT principal (no Cognito session to invalidate) */
+            /** @description PAT caller (no Cognito session to invalidate) */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2297,6 +2995,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    getV0AdminOverview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Operational signal rollup */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOverviewResponse"];
                 };
             };
         };
@@ -2965,6 +3683,53 @@ export interface operations {
             };
         };
     };
+    getV0AdminOrgs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Matching organizations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrgListResponse"];
+                };
+            };
+            /** @description Missing or invalid credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Caller is not an admin (or caller is suspended) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Search is unavailable or not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
     getV0AdminEventHealth: {
         parameters: {
             query?: never;
@@ -2981,6 +3746,618 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EventDeliveryHealthResponse"];
+                };
+            };
+        };
+    };
+    postV0AdminEventHealthFlush: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Flush started */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Analytics not configured for this stage */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    postV0AdminEventHealthResync: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Resync started */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Analytics not configured, or a flush is in flight */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    postV0AdminEventHealthRebuild: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Rebuild accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Analytics not configured for this stage */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getV0AdminSystemControls: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description System controls */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemControlListResponse"];
+                };
+            };
+            /** @description Missing or invalid credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Caller is not an admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    getV0AdminSystemControlsByControlKeyAudit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                controlKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Audit history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlAuditResponse"];
+                };
+            };
+            /** @description Missing or invalid credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Caller is not an admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description No such system control */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    putV0AdminSystemControlsByControlKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                controlKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Control updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Control created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or invalid credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Caller is not an admin, or the control management axis is immutable */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description No such system control */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Concurrent modification */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Invalid control value */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    deleteV0AdminSystemControlsByControlKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                controlKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Control removed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or invalid credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Caller is not an admin, or the control management axis is immutable */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description No such system control, or no control to remove */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Concurrent modification */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    getV0AdminApplicationControls: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Application controls */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationControlListResponse"];
+                };
+            };
+            /** @description Missing or invalid credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Caller is not an admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    getV0AdminApplicationControlsByControlKeyAudit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                controlKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Audit history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlAuditResponse"];
+                };
+            };
+            /** @description Missing or invalid credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Caller is not an admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description No such application control */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    postV0AdminApplicationControlsByControlKeyRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                controlKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Control updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Control created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or invalid credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Caller is not an admin, or the control management axis is immutable */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description No such application control */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Concurrent modification */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Invalid target or value */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    deleteV0AdminApplicationControlsByControlKeyRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                controlKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Control removed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or invalid credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Caller is not an admin, or the control management axis is immutable */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description No such application control, or no control to remove */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Concurrent modification */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Invalid target */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    postV0AdminApplicationControlsByControlKeyBulkTier: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                controlKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Per-target outcomes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkTierRuleResponse"];
+                };
+            };
+            /** @description Missing or invalid credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Caller is not an admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description No such application control */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    postV0AdminApplicationControlsByControlKeyInspect: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                controlKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Resolved state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlInspectionResponse"];
+                };
+            };
+            /** @description Missing or invalid credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Caller is not an admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description No such application control */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
                 };
             };
         };

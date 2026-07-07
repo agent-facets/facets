@@ -61,7 +61,7 @@ describe('LockfileSchema — valid lockfiles', () => {
       lockfileVersion: LOCKFILE_VERSION,
       facets: {
         cowsay: {
-          source: { kind: 'registry', registry: 'https://api.facet.cafe' },
+          source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
           version: '0.1.1',
           integrity: 'sha256:reg',
           assets: [{ scope: 'user', type: 'skill', name: 'planning' }],
@@ -73,7 +73,7 @@ describe('LockfileSchema — valid lockfiles', () => {
     const data = result as Lockfile
     const source = data.facets.cowsay?.source
     if (source?.kind !== 'registry') expect.unreachable()
-    expect(source.registry).toBe('https://api.facet.cafe')
+    expect(source.registry).toBe('https://api.agentfacets.io')
   })
 
   test('lockfile with zero facets is valid', () => {
@@ -367,7 +367,7 @@ describe('LockfileSchema — unknown field tolerance', () => {
       lockfileVersion: LOCKFILE_VERSION,
       facets: {
         cowsay: {
-          source: { kind: 'registry', registry: 'https://api.facet.cafe', futureField: 'whatever' },
+          source: { kind: 'registry', registry: 'https://api.agentfacets.io', futureField: 'whatever' },
           version: '0.1.1',
           integrity: 'sha256:x',
           assets: [],
@@ -379,6 +379,6 @@ describe('LockfileSchema — unknown field tolerance', () => {
     const data = result as Lockfile
     const source = data.facets.cowsay?.source
     if (source?.kind !== 'registry') expect.unreachable()
-    expect(source.registry).toBe('https://api.facet.cafe')
+    expect(source.registry).toBe('https://api.agentfacets.io')
   })
 })

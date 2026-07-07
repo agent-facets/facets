@@ -255,7 +255,7 @@ describe('bootstrapReceipt', () => {
       lockfileVersion: LOCKFILE_VERSION,
       facets: {
         cowsay: {
-          source: { kind: 'registry', registry: 'https://api.facet.cafe' },
+          source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
           version: '0.0.1',
           integrity: 'sha256:abc',
           assets: [

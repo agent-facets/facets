@@ -9,7 +9,7 @@ description: Remove saved registry credentials
 facet logout
 ```
 
-Removes the saved credentials file. No server call is made -- token revocation is done in the web UI at [facet.cafe](https://facet.cafe).
+Removes the saved credentials file. No server call is made -- token revocation is done in the web UI at [agentfacets.io](https://agentfacets.io).
 
 ## What it does
 

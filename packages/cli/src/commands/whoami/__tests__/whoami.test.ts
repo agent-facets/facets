@@ -63,7 +63,7 @@ describe('whoamiCommand', () => {
     stubProfile()
     const { result, stdout } = await captureStdout(() => whoamiCommand.run([], {}))
     expect(result).toBe(0)
-    expect(stdout).toContain('registry: https://api.facet.cafe')
+    expect(stdout).toContain('registry: https://api.agentfacets.io')
   })
 
   test('does not name the env source when the credential comes from the file', async () => {

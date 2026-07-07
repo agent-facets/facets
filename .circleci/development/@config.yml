@@ -1,6 +1,4 @@
 version: 2.1
-orbs:
-  aws-cli: circleci/aws-cli@5.4.1
 parameters:
   # Package name parsed from the release tag (`@agent-facets/<pkg>@<version>`) by
   # scripts/release/tag.ts, forwarded via the CircleCI API v2 trigger. Consumed

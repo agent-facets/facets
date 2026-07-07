@@ -165,7 +165,7 @@ function writeLock(facets: Record<string, { version: string; integrity: string }
   const entries: Record<string, LockfileFacet> = {}
   for (const [name, e] of Object.entries(facets)) {
     entries[name] = {
-      source: { kind: 'registry', registry: 'https://api.facet.cafe' },
+      source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
       version: e.version,
       integrity: e.integrity,
       assets: [{ scope: 'user', type: 'skill', name: 'planning' }],

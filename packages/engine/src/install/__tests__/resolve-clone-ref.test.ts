@@ -14,7 +14,7 @@ const lockedGit: LockfileFacet = {
 // A locked non-git source (registry/local) carries no commit, so the
 // helper falls back to the manifest ref — same path as a fresh add.
 const lockedRegistry: LockfileFacet = {
-  source: { kind: 'registry', registry: 'https://api.facet.cafe' },
+  source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
   version: '0.1.0',
   integrity: 'sha256:0000000000000000000000000000000000000000000000000000000000000000',
   assets: [],

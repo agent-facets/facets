@@ -36,7 +36,7 @@ import { fileURLToPath } from 'node:url'
 import { atomicWriteFileSync } from '@agent-facets/common'
 import { parse as parseYaml } from 'yaml'
 
-const DEFAULT_OPENAPI_URL = 'https://api.facet.cafe/v0/openapi.yaml'
+const DEFAULT_OPENAPI_URL = 'https://api.agentfacets.io/v0/openapi.yaml'
 const DEFAULT_STALENESS_THRESHOLD_DAYS = 7
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))

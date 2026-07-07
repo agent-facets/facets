@@ -8,7 +8,7 @@ This guide covers the end-to-end flow for publishing a facet to the registry: si
 ## Prerequisites
 
 - A facet project with a valid `facet.json` and at least one text asset. See [Create Your First Facet](/guides/create-your-first-facet) if you need to scaffold one.
-- A registry account. Sign up at [facet.cafe](https://facet.cafe) and create a personal access token (PAT) from your account settings.
+- A registry account. Sign up at [agentfacets.io](https://agentfacets.io) and create a personal access token (PAT) from your account settings.
 
 ## Sign in
 

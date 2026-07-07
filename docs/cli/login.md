@@ -13,7 +13,7 @@ Signs in to the registry by pasting a personal access token (PAT). Requires an i
 
 ## What it does
 
-1. **Prompt for token.** Presents an interactive menu. Select "Paste a token" and paste the PAT from your account at [facet.cafe](https://facet.cafe).
+1. **Prompt for token.** Presents an interactive menu. Select "Paste a token" and paste the PAT from your account at [agentfacets.io](https://agentfacets.io).
 2. **Verify token.** Calls `GET /v0/auth/me` to confirm the token is valid. A typo or expired token fails immediately with the registry's own error message, and you are reprompted.
 3. **Persist credential.** Writes the verified token to `$FACET_DIR/credentials` (default `~/.facet/credentials`) in INI format with mode `0600`.
 
