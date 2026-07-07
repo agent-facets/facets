@@ -1,5 +1,5 @@
 ---
-title: "Install & Resolve"
+title: "Planning & Resolution"
 description: "How facets are installed, server references resolved, and everything pinned in a lockfile."
 ---
 
@@ -45,11 +45,11 @@ The manifest is **never written ahead** of the install. A failed `facet add` lea
 
 Per facet: `{source, version, integrity, assets}`. The `source` is tagged:
 
-| Kind | Fields | Notes |
-| --- | --- | --- |
-| `registry` | `registry` | Version in the entry's `version` field |
-| `git` | `url`, `commit` | Ref stays in `facets.json` |
-| `local` | `path` | Resolved local path |
+| Kind       | Fields          | Notes                                  |
+|------------|-----------------|----------------------------------------|
+| `registry` | `registry`      | Version in the entry's `version` field |
+| `git`      | `url`, `commit` | Ref stays in `facets.json`             |
+| `local`    | `path`          | Resolved local path                    |
 
 Adapter-agnostic — the same asset set is applied to every selected adapter.
 
@@ -65,13 +65,13 @@ Additions or removals are **rejected immediately**. Only `facet install` can run
 
 The system checks bidirectional consistency before touching anything: every manifest facet must have a satisfying lockfile entry, the lockfile must not pin anything the manifest dropped, and git/local sources must match their locked provenance.
 
-| Behavior | Frozen mode |
-| --- | --- |
-| Version resolution | Forbidden |
-| Archive download | Allowed (reproduction) |
-| Integrity verification | Required for every facet, including local |
-| Drift removal + receipt | Runs |
-| Lockfile / manifest write | Never |
+| Behavior                  | Frozen mode                               |
+|---------------------------|-------------------------------------------|
+| Version resolution        | Forbidden                                 |
+| Archive download          | Allowed (reproduction)                    |
+| Integrity verification    | Required for every facet, including local |
+| Drift removal + receipt   | Runs                                      |
+| Lockfile / manifest write | Never                                     |
 
 ---
 

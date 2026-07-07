@@ -1,6 +1,6 @@
 ---
-title: "Install Pipeline"
-description: "The two-phase plan/commit pipeline: how facets are resolved, verified, materialized, and committed."
+title: "Trusted Pipeline"
+description: "The two-phase plan/commit pipeline -- how facets are resolved, verified, materialized, and committed."
 ---
 
 The install pipeline splits into two phases: **plan** (pure routing) and **commit** (all resolution, integrity verification, materialization, and writes). `facet add`, `facet remove`, and `facet install` all converge on the same commit phase — they differ only in the <Tooltip tip="A list of additions (with the user's specifier verbatim) and removals (bare names). facet install produces an empty delta.">delta</Tooltip> they produce.
@@ -20,17 +20,19 @@ The install pipeline splits into two phases: **plan** (pure routing) and **commi
 
 ## Plan phase
 
-Plan turns a user request into a **delta** — a list of additions and removals.
-
 <Info>
-Plan performs **no network I/O, no lockfile lookups, no cache reads, and no version resolution.** Its only job is to determine what is changing. All resolution is the commit phase's responsibility.
+    Planning performs **no network I/O, no lockfile lookups, no cache reads, and no version resolution.**
+
+    Its only job is to determine what is changing. All resolution, I/O, and mutation is the commit phase's responsibility.
 </Info>
 
-| Delta field | Contents | Source command |
-| --- | --- | --- |
-| **Additions** | User's specifier verbatim (`1.2.3`, `0.*`, `*`, `latest`, or bare name) | `facet add` |
-| **Removals** | Bare facet names | `facet remove` |
-| _(empty)_ | No additions, no removals | `facet install` |
+Plan turns a user request into a **delta** — a list of additions and removals.
+
+| Delta field | Contents                                                                | Source command  |
+|-------------|-------------------------------------------------------------------------|-----------------|
+| _Additions_ | User's specifier verbatim (`1.2.3`, `0.*`, `*`, `latest`, or bare name) | `facet add`     |
+| _Removals_  | Bare facet names                                                        | `facet remove`  |
+| _(empty)_   | No additions, no removals                                               | `facet install` |
 
 ```mermaid
 flowchart LR
@@ -98,16 +100,24 @@ Registry versions are immutable — the bytes for a published `name@version` nev
 
 ### The structural discriminator
 
-Whether the lockfile is trusted for version resolution depends on **where an entry comes from**, not on a flag:
+Whether the lockfile is trusted for version resolution depends on **how an entry is requested**, not on a flag:
 
 <AccordionGroup>
-  <Accordion title="Additions (explicit request)" icon="plus">
-    The lockfile is **NOT trusted** for version resolution. A non-exact specifier always triggers version resolution to the newest matching version, even when the lockfile already satisfies it.
+  <Accordion title="Implicit version request">
+      The lockfile is **NOT trusted** for version resolution when an implicit
+      version or range is requested. A non-exact version specifier during an
+      `add` will always trigger version resolution to the newest matching
+      version. **Even when the lockfile already satisfies it**.
 
-    The user explicitly asked for this facet — we honor the request.
+      Example specifiers: `foo-facet`, `foo-facet@1.*`, `foo-facet@latest`
+  
+      The user explicitly asked for this facet version (or range) — we honor the request.
   </Accordion>
-  <Accordion title="Manifest (reproduction)" icon="repeat">
-    The lockfile **IS trusted** when satisfying. A satisfying recorded version needs no version resolution. Only an absent or stale entry triggers it.
+  <Accordion title="Explicit version request">
+    The lockfile **IS trusted** when satisfying a version. A satisfying recorded
+    version needs no version resolution. Only an absent or stale entry triggers it.
+
+    Example specifiers: `foo-facet@2.0.1`, `foo-facet@1.0.0`
 
     The facet was already declared — we reproduce the locked state.
   </Accordion>
