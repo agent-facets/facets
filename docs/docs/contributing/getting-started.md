@@ -69,7 +69,7 @@ bun run --cwd packages/engine codegen:registry
 ```
 
 The script fetches the live OpenAPI from
-`https://api.facet.cafe/v0/openapi.yaml` (or
+`https://api.agentfacets.io/v0/openapi.yaml` (or
 `FACET_REGISTRY_OPENAPI_URL`), regenerates the typed module, and
 updates the on-disk snapshot. Both files are committed; PRs review
 the diff just like any other change.

@@ -356,7 +356,7 @@ rss: true
   - **Mobile navigation**  -- the nav bar collapses into a slide-down menu on screens ≤ 1024 px wide, with all links accessible from a single tap.
   - **Adapted CLI demo**  -- the interactive terminal demo skips the widest step on small screens so it fits without horizontal scrolling.
   - **Stacked sections**  -- the explainer, hero, and footer all reflow into a clean single-column layout on narrow viewports.
-  - **Registry CTA**  -- on mobile, the install command is replaced with a link to [facet.cafe](https://facet.cafe) so you can browse facets without needing a terminal.
+  - **Registry CTA**  -- on mobile, the install command is replaced with a link to [agentfacets.io](https://agentfacets.io) so you can browse facets without needing a terminal.
 
   The desktop layout is unchanged.
 </Update>

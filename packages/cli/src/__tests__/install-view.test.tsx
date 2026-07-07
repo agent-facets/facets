@@ -255,7 +255,7 @@ describe('InstallView — marketing aesthetic on `add`', () => {
         lockfileVersion: 1,
         facets: {
           cowsay: {
-            source: { kind: 'registry', registry: 'https://api.facet.cafe' },
+            source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
             version: '0.1.0',
             integrity: 'sha256:x',
             assets: [
@@ -309,7 +309,7 @@ describe('InstallView — marketing aesthetic on `add`', () => {
         lockfileVersion: 1,
         facets: {
           'pure-skills': {
-            source: { kind: 'registry', registry: 'https://api.facet.cafe' },
+            source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
             version: '1.0.0',
             integrity: 'sha256:x',
             assets: [{ scope: 'project', type: 'skill', name: 'planning' }],
@@ -362,7 +362,7 @@ describe('InstallView — marketing aesthetic on `add`', () => {
         facets: {
           // pre-existing — must NOT appear in the count
           'existing-skill': {
-            source: { kind: 'registry', registry: 'https://api.facet.cafe' },
+            source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
             version: '1.0.0',
             integrity: 'sha256:y',
             assets: [
@@ -373,7 +373,7 @@ describe('InstallView — marketing aesthetic on `add`', () => {
           },
           // newly installed this run
           cowsay: {
-            source: { kind: 'registry', registry: 'https://api.facet.cafe' },
+            source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
             version: '0.1.0',
             integrity: 'sha256:x',
             assets: [{ scope: 'project', type: 'command', name: 'cowsay' }],
@@ -429,7 +429,7 @@ describe('InstallView — marketing aesthetic on `add`', () => {
         lockfileVersion: 1,
         facets: {
           cowsay: {
-            source: { kind: 'registry', registry: 'https://api.facet.cafe' },
+            source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
             version: '0.1.0',
             integrity: 'sha256:x',
             assets: [{ scope: 'project', type: 'command', name: 'cowsay' }],

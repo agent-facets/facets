@@ -9,7 +9,7 @@ import { parseFacetName } from '@agent-facets/protocol'
  * concatenates `baseUrl + path` to produce the final URL. Including
  * `/v0` in the base would double the prefix.
  */
-const DEFAULT_REGISTRY_URL = 'https://api.facet.cafe'
+const DEFAULT_REGISTRY_URL = 'https://api.agentfacets.io'
 
 /**
  * Resolve the registry base URL from env, stripping any trailing slash so

@@ -1,4 +1,0 @@
-{
-  "extends": "../.sst/platform/tsconfig.json",
-  "include": [".", "../sst.config.ts"]
-}

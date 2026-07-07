@@ -1,4 +1,0 @@
-steps:
-  - aws-cli/setup:
-      role_arn: ${AWS_ROLE_ARN}
-      region: us-east-1

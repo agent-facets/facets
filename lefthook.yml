@@ -11,22 +11,16 @@ pre-commit:
       # ignored file as the only argument makes biome exit 1 with
       # "No files were processed".
       exclude:
-        - "sst-env.d.ts"
-        - "**/sst-env.d.ts"
         - "**/generated/**"
         - "openspec/changes/archive/**"
-        - "packages/landing/design*.html"
       run: bun biome check --write --unsafe {staged_files}
       stage_fixed: true
     biome-lint:
       priority: 3
       glob: "*.{ts,js,json}"
       exclude:
-        - "sst-env.d.ts"
-        - "**/sst-env.d.ts"
         - "**/generated/**"
         - "openspec/changes/archive/**"
-        - "packages/landing/design*.html"
       run: bun biome check --error-on-warnings {staged_files}
     circleci-pack:
       priority: 4

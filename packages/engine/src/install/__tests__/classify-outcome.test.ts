@@ -3,7 +3,7 @@ import type { LockfileFacet } from '@agent-facets/protocol'
 import { classifyOutcome } from '../classify-outcome.ts'
 
 const entry = (version: string): LockfileFacet => ({
-  source: { kind: 'registry', registry: 'https://api.facet.cafe' },
+  source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
   version,
   integrity: 'sha256:stub',
   assets: [{ scope: 'user', type: 'skill', name: 'planning' }],

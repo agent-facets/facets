@@ -21,9 +21,6 @@ scripts/
 │   ├── seed.ts                 # Seed platform package names on npm
 │   └── targets.ts              # Platform target matrix definitions
 │
-├── deploy/                     # SST main-stage CD pipeline
-│   └── site.ts                 # `sst install` + `sst deploy --stage main`
-│
 ├── lib/                        # Shared utilities
 │   ├── io/                     # IO adapter (split by domain, nested namespaces)
 │   │   ├── index.ts            # Composes io = { npm, git, gh, circleci, shell, console }
@@ -46,14 +43,14 @@ scripts/
 │
 ├── prepack.ts                  # Rewrite workspace:* deps + hoist publishConfig overrides before npm publish
 ├── postpack.ts                 # Restore package.json after pack
-├── postinstall.ts              # Quiet `bun install` postinstall (lefthook + facets + adapter + sst)
+├── postinstall.ts              # Quiet `bun install` postinstall (lefthook + adapter + facets)
 └── check-bun-version.ts        # Verify Bun version matches mise.toml
 ```
 
-## Three Pipelines
+## Two Pipelines
 
-There are three independent release-pipeline workflows — two triggered by git tag
-patterns, one triggered by pushes to `main`:
+There are two independent release-pipeline workflows, both triggered by git tag
+patterns:
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -85,9 +82,6 @@ patterns, one triggered by pushes to `main`:
     │ See release/    │                  │ See release-cli/     │
     │ README.md       │                  │ README.md            │
     └─────────────────┘                  └──────────────────────┘
-
-Independently, every push to `main` triggers the `deploy` workflow which
-runs `sst deploy --stage main` via `deploy/site.ts`. See `deploy/README.md`.
 ```
 
 ## Why is the CLI package private?
@@ -102,7 +96,7 @@ The CLI package (`agent-facets`) is marked `"private": true` in its `package.jso
 
 ## Workspace-only packages
 
-Some workspace packages — `@agent-facets/engine`, `@agent-facets/common`, `@agent-facets/landing`, `@agent-facets/functions` — are private helpers that are never published and have no companion release pipeline. `"private": true` alone isn't enough to skip them: the CLI package is also private but MUST be tagged (its tag triggers the binary release pipeline).
+Some workspace packages — `@agent-facets/engine`, `@agent-facets/common` — are private helpers that are never published and have no companion release pipeline. `"private": true` alone isn't enough to skip them: the CLI package is also private but MUST be tagged (its tag triggers the binary release pipeline).
 
 The contract for marking a package as "workspace-only, never release" has three parts:
 
@@ -114,7 +108,7 @@ Together these keep workspace-only packages out of the release pipeline entirely
 
 ### Hard guard: changesets must not bump ignored or unknown packages
 
-The Changesets UI sometimes adds a bump for a package in the `ignore` list, or for a fake/misnamed package (a typo'd name that isn't in the workspace). Either one breaks the release/deploy pipeline if merged — an ignored bump is silently dropped by `changeset version` (so the bump never ships), and an unknown package makes `changeset version` fail outright. `bun check` includes a hard guard against both: the `repository changeset guard` test in `scripts/lib/changesets.test.ts` reads the `ignore` list from `.changeset/config.json`, enumerates the valid workspace package names via `loadWorkspacePackages()`, parses every pending `.changeset/*.md` file's front-matter (`parseChangesetBumps`), and runs `findForbiddenBumps` (all in `scripts/lib/changesets.ts`). It fails with a per-file violation list — grouped into `ignored` vs `unknown` classes via `formatForbiddenBumps` — if any bump targets a package that is either in the `ignore` list or not a workspace package at all. `ignore` takes precedence over the workspace set, so an ignored package classifies as `ignored`, not `unknown`. The guard passes when there are no pending changesets.
+The Changesets UI sometimes adds a bump for a package in the `ignore` list, or for a fake/misnamed package (a typo'd name that isn't in the workspace). Either one breaks the release pipeline if merged — an ignored bump is silently dropped by `changeset version` (so the bump never ships), and an unknown package makes `changeset version` fail outright. `bun check` includes a hard guard against both: the `repository changeset guard` test in `scripts/lib/changesets.test.ts` reads the `ignore` list from `.changeset/config.json`, enumerates the valid workspace package names via `loadWorkspacePackages()`, parses every pending `.changeset/*.md` file's front-matter (`parseChangesetBumps`), and runs `findForbiddenBumps` (all in `scripts/lib/changesets.ts`). It fails with a per-file violation list — grouped into `ignored` vs `unknown` classes via `formatForbiddenBumps` — if any bump targets a package that is either in the `ignore` list or not a workspace package at all. `ignore` takes precedence over the workspace set, so an ignored package classifies as `ignored`, not `unknown`. The guard passes when there are no pending changesets.
 
 Note: `changeset status` already errors on unknown packages, but it is *blind* to ignored-package bumps (it reports "NO packages to be bumped" and exits 0). This guard is the only check that catches the ignored case, and it folds in the unknown case too so both live in one fast, pure, unit-tested place.
 

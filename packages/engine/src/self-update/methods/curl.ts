@@ -1,9 +1,8 @@
 import type { InstallMethod, SelfUpdateErrorHandler } from './types.ts'
 
 /**
- * Default URL serving the canonical installer script. Lives in this repo
- * at `packages/landing/scripts/install.sh` and is delivered by the Lambda
- * at `packages/functions/src/install.ts`.
+ * Default URL serving the canonical installer script. The script and its
+ * hosting live outside this repo (served at `https://agentfacets.io/install`).
  *
  * `FACET_INSTALL_URL` overrides it for testing or self-hosted mirrors. Not
  * a user-facing flag — env var only.

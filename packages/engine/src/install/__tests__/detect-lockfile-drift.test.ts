@@ -13,7 +13,7 @@ const taggedSource = (source: string): LockfileSource => {
   if (source.startsWith('github:') || source.includes('git@') || source.endsWith('.git') || source.includes('://')) {
     return { kind: 'git', url: source, commit: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }
   }
-  return { kind: 'registry', registry: 'https://api.facet.cafe' }
+  return { kind: 'registry', registry: 'https://api.agentfacets.io' }
 }
 
 const lockEntry = (version: string, source = version): LockfileFacet => ({

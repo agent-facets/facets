@@ -11,8 +11,6 @@
   },
   "scripts": {
     "dev": "exec bun packages/cli/src/index.ts",
-    "ui": "bun run --cwd packages/landing dev",
-    "ui:build": "bun run --cwd packages/landing build",
     "types": "tsc --noEmit",
     "check": "bun turbo check",
     "test:scripts": "bun test scripts/",
@@ -28,8 +26,8 @@
     "docs:validate": "bun --cwd docs mint validate",
     "docs:broken-links": "bun --cwd docs mint broken-links",
     "postinstall": "bun scripts/postinstall.ts",
-    "clean": "rm -rf .turbo .sst node_modules packages/**/node_modules packages/**/.turbo packages/**/dist packages/cli/bin/.facet test-results/*.xml tmp docs/.mintlify",
-    "nuke": "bun run clean && bun install && bun sst install && bun check"
+    "clean": "rm -rf .turbo node_modules packages/**/node_modules packages/**/.turbo packages/**/dist packages/cli/bin/.facet test-results/*.xml tmp docs/.mintlify",
+    "nuke": "bun run clean && bun install && bun check"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.16",
@@ -44,10 +42,6 @@
     "mint": "4.2.655",
     "turbo": "2.9.18",
     "typescript": "6.0.3",
-    "@types/aws-lambda": "8.10.161",
     "type-fest": "5.7.0"
-  },
-  "dependencies": {
-    "sst": "4.17.0"
   }
 }
