@@ -1,5 +1,11 @@
 # @agent-facets/protocol
 
+## 0.23.0
+
+### Minor Changes
+
+- [#393](https://github.com/agent-facets/facets/pull/393) [`b0c0be6`](https://github.com/agent-facets/facets/commit/b0c0be6a44bbfe4c9199684180d2ba3bd66f7949) Thanks [@eXamadeus](https://github.com/eXamadeus)! - BREAKING CHANGE: Rebrand from Facet.cafe to agentfacets.io for the registry
+
 ## 0.22.3
 
 ### Patch Changes
