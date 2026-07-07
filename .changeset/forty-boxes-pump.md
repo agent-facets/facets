@@ -8,4 +8,4 @@
 "agent-facets": minor
 ---
 
-Rebrand from Facet.cafe to agentfacets.io for the registry
+BREAKING CHANGE: Rebrand from Facet.cafe to agentfacets.io for the registry
