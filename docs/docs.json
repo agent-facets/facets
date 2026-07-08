@@ -1,6 +1,6 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
+  "theme": "maple",
   "name": "Agent Facets",
   "description": "A package manager for AI assistant extensions: skills, agents, commands, and MCP servers.",
   "logo": {
@@ -51,17 +51,6 @@
             "group": "Asset Types",
             "icon": "book",
             "pages": ["docs/learn/skills", "docs/learn/commands", "docs/learn/agents", "docs/learn/servers"]
-          },
-          {
-            "group": "Contributing",
-            "icon": "handshake",
-            "pages": [
-              "docs/contributing/getting-started",
-              "docs/contributing/architecture",
-              "docs/contributing/release-pipeline",
-              "docs/contributing/ci-architecture",
-              "docs/contributing/publishing"
-            ]
           }
         ]
       },
@@ -136,17 +125,18 @@
     ]
   },
   "navbar": {
-    "primary": {
-      "type": "button",
-      "label": "Search Facets",
-      "href": "https://agentfacets.io/"
-    },
     "links": [
       {
         "type": "button",
         "icon": "download",
         "label": "Download CLI",
         "href": "https://agentfacets.io/install"
+      },
+      {
+        "type": "button",
+        "icon": "search",
+        "label": "Search Facets",
+        "href": "https://agentfacets.io/"
       }
     ]
   },

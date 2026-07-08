@@ -8,17 +8,17 @@ The Facets system distributes AI assistant extensions through a registry-based m
 ## Actors
 
 <CardGroup cols={2}>
-  <Card title="Author" icon="pen">
-    Creates facets and/or MCP servers. Publishes to the registry.
+  <Card horizontal title="Author" icon="pen">
+    Creates facets for agentic use. Publishes to the registry.
   </Card>
-  <Card title="Registry" icon="database">
-    Stores archives, assembles server-side composition, computes integrity hashes.
+  <Card horizontal title="CLI" icon="terminal">
+    Installs facets, resolves server references, manages the lockfile and caches.
   </Card>
-  <Card title="CLI" icon="terminal">
-    Installs facets, resolves server references, manages the lockfile and receipt, runs MCP servers.
+  <Card horizontal title="Registry" icon="database">
+    Stores archives, provides provenance, and acts as an integrity authority.
   </Card>
-  <Card title="AI assistant" icon="bot">
-    Loads text assets into context. Connects to running MCP servers.
+  <Card horizontal title="AI assistant" icon="bot">
+    Loads facets into context. Connects to running MCP servers.
   </Card>
 </CardGroup>
 
