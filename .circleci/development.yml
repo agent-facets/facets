@@ -1,150 +1,149 @@
 commands:
-    notify-failure:
-        steps:
-            - run:
-                command: bun scripts/lib/notify-failure.ts
-                name: Notify failure
-                when: on_fail
-    run-check:
-        steps:
-            - restore_cache:
-                keys:
-                    - v1-mint-{{ checksum "bun.lock" }}
-                    - v1-mint-
-            - run:
-                command: bun turbo check
-                environment:
-                    TURBO_CONCURRENCY: "1"
-                name: Check
-            - save_cache:
-                key: v1-mint-{{ checksum "bun.lock" }}
-                paths:
-                    - ~/.mintlify
-    setup-mise:
-        steps:
-            - checkout
-            - run:
-                command: |
-                    curl https://mise.run | sh
-                    echo 'eval "$(~/.local/bin/mise activate bash)"' >> "$BASH_ENV"
-                name: Install mise
-            - restore_cache:
-                keys:
-                    - v1-mise-{{ .Environment.MISE_ENV }}-{{ checksum "mise.toml" }}-{{ checksum "mise.development.toml" }}
-                    - v1-mise-{{ .Environment.MISE_ENV }}-
-            - run:
-                command: mise install --yes
-                name: Install tools
-            - save_cache:
-                key: v1-mise-{{ .Environment.MISE_ENV }}-{{ checksum "mise.toml" }}-{{ checksum "mise.development.toml" }}
-                paths:
-                    - ~/.local/share/mise/installs
-                    - ~/.local/share/mise/downloads
-            - restore_cache:
-                keys:
-                    - v1-facet-{{ checksum "facets.lock" }}
-                    - v1-facet-
-            - restore_cache:
-                keys:
-                    - v1-deps-{{ checksum "bun.lock" }}
-                    - v1-deps-
-            - run:
-                command: bun install --frozen-lockfile
-                name: Install dependencies
-            - save_cache:
-                key: v1-deps-{{ checksum "bun.lock" }}
-                paths:
-                    - node_modules
-                    - ~/.bun/install/cache
-            - save_cache:
-                key: v1-facet-{{ checksum "facets.lock" }}
-                paths:
-                    - ~/.facet/cache
-jobs:
-    check:
-        docker:
-            - image: cimg/base:current
-        resource_class: medium
-        steps:
-            - setup-mise
-            - run-check
-            - store_test_results:
-                path: test-results
-                when: always
-    main-pipeline:
-        docker:
-            - image: cimg/base:current
-        environment:
-            LEFTHOOK: "0"
-        resource_class: medium
-        steps:
-            - setup-mise
-            - run-check
-            - store_test_results:
-                path: test-results
-                when: always
-            - run:
-                command: bun scripts/release/version.ts
-                name: Version Changesets
-            - run:
-                command: bun scripts/release/tag.ts
-                name: Tag Release
-            - notify-failure
-    openapi-freshness:
-        docker:
-            - image: cimg/base:current
-        resource_class: small
-        steps:
-            - setup-mise
-            - run:
-                command: bun run --cwd packages/engine codegen:registry --check --strict
-                name: OpenAPI snapshot freshness
-    release:
-        docker:
-            - image: cimg/base:current
-        environment:
-            LEFTHOOK: "0"
-            MISE_ENV: release
+  notify-failure:
+    steps:
+      - run:
+          command: bun scripts/lib/notify-failure.ts
+          name: Notify failure
+          when: on_fail
+  run-check:
+    steps:
+      - restore_cache:
+          keys:
+            - v1-mint-{{ checksum "bun.lock" }}
+            - v1-mint-
+      - run:
+          command: bun turbo check
+          environment:
             TURBO_CONCURRENCY: "1"
-        resource_class: medium
-        steps:
-            - setup-mise
-            - run:
-                command: bun scripts/release/publish.ts
-                name: Publish
-            - notify-failure
+          name: Check
+      - save_cache:
+          key: v1-mint-{{ checksum "bun.lock" }}
+          paths:
+            - ~/.mintlify
+  setup-mise:
+    steps:
+      - checkout
+      - run:
+          command: |
+            curl https://mise.run | sh
+            echo 'eval "$(~/.local/bin/mise activate bash)"' >> "$BASH_ENV"
+          name: Install mise
+      - restore_cache:
+          keys:
+            - v1-mise-{{ .Environment.MISE_ENV }}-{{ checksum "mise.toml" }}-{{ checksum "mise.development.toml" }}
+            - v1-mise-{{ .Environment.MISE_ENV }}-
+      - run:
+          command: mise install --yes
+          name: Install tools
+      - save_cache:
+          key: v1-mise-{{ .Environment.MISE_ENV }}-{{ checksum "mise.toml" }}-{{ checksum "mise.development.toml" }}
+          paths:
+            - ~/.local/share/mise/installs
+            - ~/.local/share/mise/downloads
+      - restore_cache:
+          keys:
+            - v1-facet-{{ checksum "facets.lock" }}
+            - v1-facet-
+      - restore_cache:
+          keys:
+            - v1-deps-{{ checksum "bun.lock" }}
+            - v1-deps-
+      - run:
+          command: bun install --frozen-lockfile
+          name: Install dependencies
+      - save_cache:
+          key: v1-deps-{{ checksum "bun.lock" }}
+          paths:
+            - node_modules
+            - ~/.bun/install/cache
+      - save_cache:
+          key: v1-facet-{{ checksum "facets.lock" }}
+          paths:
+            - ~/.facet/cache
+jobs:
+  check:
+    docker:
+      - image: cimg/base:current
+    resource_class: medium
+    steps:
+      - setup-mise
+      - run-check
+      - store_test_results:
+          path: test-results
+          when: always
+  main-pipeline:
+    docker:
+      - image: cimg/base:current
+    environment:
+      LEFTHOOK: "0"
+    resource_class: medium
+    steps:
+      - setup-mise
+      - run-check
+      - store_test_results:
+          path: test-results
+          when: always
+      - run:
+          command: bun scripts/release/version.ts
+          name: Version Changesets
+      - run:
+          command: bun scripts/release/tag.ts
+          name: Tag Release
+      - notify-failure
+  openapi-freshness:
+    docker:
+      - image: cimg/base:current
+    resource_class: small
+    steps:
+      - setup-mise
+      - run:
+          command: bun run --cwd packages/engine codegen:registry --check --strict
+          name: OpenAPI snapshot freshness
+  release:
+    docker:
+      - image: cimg/base:current
+    environment:
+      LEFTHOOK: "0"
+      MISE_ENV: release
+      TURBO_CONCURRENCY: "1"
+    resource_class: medium
+    steps:
+      - setup-mise
+      - run:
+          command: bun scripts/release/publish.ts
+          name: Publish
+      - notify-failure
 parameters:
-    package:
-        default: ""
-        type: string
+  package:
+    default: ""
+    type: string
 version: 2.1
 workflows:
-    ci:
-        jobs:
-            - check:
-                context:
-                    - turbo-cache
-                    - github
-                filters:
-                    branches:
-                        ignore:
-                            - main
-            - openapi-freshness:
-                context:
-                    - github
-                filters:
-                    branches:
-                        ignore:
-                            - main
-            - main-pipeline:
-                context:
-                    - turbo-cache
-                    - bot-context
-                    - slack-secrets
-                    - github
-                filters:
-                    branches:
-                        only:
-                            - main
-                serial-group: << pipeline.project.slug >>/main-pipeline
-
+  ci:
+    jobs:
+      - check:
+          context:
+            - turbo-cache
+            - github
+          filters:
+            branches:
+              ignore:
+                - main
+      - openapi-freshness:
+          context:
+            - github
+          filters:
+            branches:
+              ignore:
+                - main
+      - main-pipeline:
+          context:
+            - turbo-cache
+            - bot-context
+            - slack-secrets
+            - github
+          filters:
+            branches:
+              only:
+                - main
+          serial-group: << pipeline.project.slug >>/main-pipeline
