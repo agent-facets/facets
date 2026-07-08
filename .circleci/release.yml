@@ -1,197 +1,196 @@
 commands:
-    notify-failure:
-        steps:
-            - run:
-                command: bun scripts/lib/notify-failure.ts
-                name: Notify failure
-                when: on_fail
-    setup-mise:
-        steps:
-            - checkout
-            - run:
-                command: |
-                    curl https://mise.run | sh
-                    echo 'eval "$(~/.local/bin/mise activate bash)"' >> "$BASH_ENV"
-                name: Install mise
-            - restore_cache:
-                keys:
-                    - v1-mise-{{ .Environment.MISE_ENV }}-{{ checksum "mise.toml" }}-{{ checksum "mise.development.toml" }}
-                    - v1-mise-{{ .Environment.MISE_ENV }}-
-            - run:
-                command: mise install --yes
-                name: Install tools
-            - save_cache:
-                key: v1-mise-{{ .Environment.MISE_ENV }}-{{ checksum "mise.toml" }}-{{ checksum "mise.development.toml" }}
-                paths:
-                    - ~/.local/share/mise/installs
-                    - ~/.local/share/mise/downloads
-            - restore_cache:
-                keys:
-                    - v1-facet-{{ checksum "facets.lock" }}
-                    - v1-facet-
-            - restore_cache:
-                keys:
-                    - v1-deps-{{ checksum "bun.lock" }}
-                    - v1-deps-
-            - run:
-                command: bun install --frozen-lockfile
-                name: Install dependencies
-            - save_cache:
-                key: v1-deps-{{ checksum "bun.lock" }}
-                paths:
-                    - node_modules
-                    - ~/.bun/install/cache
-            - save_cache:
-                key: v1-facet-{{ checksum "facets.lock" }}
-                paths:
-                    - ~/.facet/cache
+  notify-failure:
+    steps:
+      - run:
+          command: bun scripts/lib/notify-failure.ts
+          name: Notify failure
+          when: on_fail
+  setup-mise:
+    steps:
+      - checkout
+      - run:
+          command: |
+            curl https://mise.run | sh
+            echo 'eval "$(~/.local/bin/mise activate bash)"' >> "$BASH_ENV"
+          name: Install mise
+      - restore_cache:
+          keys:
+            - v1-mise-{{ .Environment.MISE_ENV }}-{{ checksum "mise.toml" }}-{{ checksum "mise.development.toml" }}
+            - v1-mise-{{ .Environment.MISE_ENV }}-
+      - run:
+          command: mise install --yes
+          name: Install tools
+      - save_cache:
+          key: v1-mise-{{ .Environment.MISE_ENV }}-{{ checksum "mise.toml" }}-{{ checksum "mise.development.toml" }}
+          paths:
+            - ~/.local/share/mise/installs
+            - ~/.local/share/mise/downloads
+      - restore_cache:
+          keys:
+            - v1-facet-{{ checksum "facets.lock" }}
+            - v1-facet-
+      - restore_cache:
+          keys:
+            - v1-deps-{{ checksum "bun.lock" }}
+            - v1-deps-
+      - run:
+          command: bun install --frozen-lockfile
+          name: Install dependencies
+      - save_cache:
+          key: v1-deps-{{ checksum "bun.lock" }}
+          paths:
+            - node_modules
+            - ~/.bun/install/cache
+      - save_cache:
+          key: v1-facet-{{ checksum "facets.lock" }}
+          paths:
+            - ~/.facet/cache
 jobs:
-    build-cli:
-        docker:
-            - image: cimg/base:current
-        environment:
-            LEFTHOOK: "0"
-            MISE_ENV: release
-        resource_class: small
-        steps:
-            - setup-mise
-            - run:
-                command: bun scripts/release-cli/build.ts
-                name: Build CLI binaries
-            - persist_to_workspace:
-                paths:
-                    - packages/cli/dist
-                root: .
-            - notify-failure
-    finalize-cli:
-        docker:
-            - image: cimg/base:current
-        environment:
-            LEFTHOOK: "0"
-            MISE_ENV: release
-        resource_class: small
-        steps:
-            - setup-mise
-            - attach_workspace:
-                at: .
-            - run:
-                command: bun scripts/release-cli/finalize.ts
-                name: Finalize CLI Release
-            - notify-failure
-    publish-platform:
-        docker:
-            - image: cimg/base:current
-        environment:
-            LEFTHOOK: "0"
-            MISE_ENV: release
-        parameters:
-            target:
-                type: string
-        resource_class: small
-        steps:
-            - setup-mise
-            - attach_workspace:
-                at: .
-            - run:
-                command: bun scripts/release-cli/publish-platform.ts << parameters.target >>
-                name: Publish << parameters.target >>
-            - notify-failure
-    release:
-        docker:
-            - image: cimg/base:current
-        environment:
-            LEFTHOOK: "0"
-            MISE_ENV: release
-            TURBO_CONCURRENCY: "1"
-        resource_class: medium
-        steps:
-            - setup-mise
-            - run:
-                command: bun scripts/release/publish.ts
-                name: Publish
-            - notify-failure
-parameters:
-    package:
-        default: ""
+  build-cli:
+    docker:
+      - image: cimg/base:current
+    environment:
+      LEFTHOOK: "0"
+      MISE_ENV: release
+    resource_class: small
+    steps:
+      - setup-mise
+      - run:
+          command: bun scripts/release-cli/build.ts
+          name: Build CLI binaries
+      - persist_to_workspace:
+          paths:
+            - packages/cli/dist
+          root: .
+      - notify-failure
+  finalize-cli:
+    docker:
+      - image: cimg/base:current
+    environment:
+      LEFTHOOK: "0"
+      MISE_ENV: release
+    resource_class: small
+    steps:
+      - setup-mise
+      - attach_workspace:
+          at: .
+      - run:
+          command: bun scripts/release-cli/finalize.ts
+          name: Finalize CLI Release
+      - notify-failure
+  publish-platform:
+    docker:
+      - image: cimg/base:current
+    environment:
+      LEFTHOOK: "0"
+      MISE_ENV: release
+    parameters:
+      target:
         type: string
+    resource_class: small
+    steps:
+      - setup-mise
+      - attach_workspace:
+          at: .
+      - run:
+          command: bun scripts/release-cli/publish-platform.ts << parameters.target >>
+          name: Publish << parameters.target >>
+      - notify-failure
+  release:
+    docker:
+      - image: cimg/base:current
+    environment:
+      LEFTHOOK: "0"
+      MISE_ENV: release
+      TURBO_CONCURRENCY: "1"
+    resource_class: medium
+    steps:
+      - setup-mise
+      - run:
+          command: bun scripts/release/publish.ts
+          name: Publish
+      - notify-failure
+parameters:
+  package:
+    default: ""
+    type: string
 version: 2.1
 workflows:
-    release:
-        jobs:
-            - release:
-                context:
-                    - turbo-cache
-                    - bot-context
-                    - slack-secrets
-                    - github
-                filters:
-                    branches:
-                        ignore:
-                            - /.*/
-                    tags:
-                        only:
-                            - /^@agent-facets\/.+@\d+\..+/
-                serial-group: << pipeline.project.slug >>/release/<< pipeline.parameters.package >>
-    release-cli:
-        jobs:
-            - build-cli:
-                context:
-                    - turbo-cache
-                    - bot-context
-                    - slack-secrets
-                    - github
-                filters:
-                    branches:
-                        ignore:
-                            - /.*/
-                    tags:
-                        only:
-                            - /^agent-facets@\d+\..+/
-                serial-group: << pipeline.project.slug >>/release-cli-build
-            - publish-platform:
-                context:
-                    - turbo-cache
-                    - bot-context
-                    - slack-secrets
-                    - github
-                filters:
-                    branches:
-                        ignore:
-                            - /.*/
-                    tags:
-                        only:
-                            - /^agent-facets@\d+\..+/
-                matrix:
-                    parameters:
-                        target:
-                            - cli-darwin-arm64
-                            - cli-darwin-x64
-                            - cli-darwin-x64-baseline
-                            - cli-linux-arm64
-                            - cli-linux-arm64-musl
-                            - cli-linux-x64
-                            - cli-linux-x64-baseline
-                            - cli-linux-x64-baseline-musl
-                            - cli-linux-x64-musl
-                            - cli-windows-arm64
-                            - cli-windows-x64
-                            - cli-windows-x64-baseline
-                requires:
-                    - build-cli
-            - finalize-cli:
-                context:
-                    - turbo-cache
-                    - bot-context
-                    - slack-secrets
-                    - github
-                filters:
-                    branches:
-                        ignore:
-                            - /.*/
-                    tags:
-                        only:
-                            - /^agent-facets@\d+\..+/
-                requires:
-                    - publish-platform
-                serial-group: << pipeline.project.slug >>/release-cli-finalize
-
+  release:
+    jobs:
+      - release:
+          context:
+            - turbo-cache
+            - bot-context
+            - slack-secrets
+            - github
+          filters:
+            branches:
+              ignore:
+                - /.*/
+            tags:
+              only:
+                - /^@agent-facets\/.+@\d+\..+/
+          serial-group: << pipeline.project.slug >>/release/<< pipeline.parameters.package >>
+  release-cli:
+    jobs:
+      - build-cli:
+          context:
+            - turbo-cache
+            - bot-context
+            - slack-secrets
+            - github
+          filters:
+            branches:
+              ignore:
+                - /.*/
+            tags:
+              only:
+                - /^agent-facets@\d+\..+/
+          serial-group: << pipeline.project.slug >>/release-cli-build
+      - publish-platform:
+          context:
+            - turbo-cache
+            - bot-context
+            - slack-secrets
+            - github
+          filters:
+            branches:
+              ignore:
+                - /.*/
+            tags:
+              only:
+                - /^agent-facets@\d+\..+/
+          matrix:
+            parameters:
+              target:
+                - cli-darwin-arm64
+                - cli-darwin-x64
+                - cli-darwin-x64-baseline
+                - cli-linux-arm64
+                - cli-linux-arm64-musl
+                - cli-linux-x64
+                - cli-linux-x64-baseline
+                - cli-linux-x64-baseline-musl
+                - cli-linux-x64-musl
+                - cli-windows-arm64
+                - cli-windows-x64
+                - cli-windows-x64-baseline
+          requires:
+            - build-cli
+      - finalize-cli:
+          context:
+            - turbo-cache
+            - bot-context
+            - slack-secrets
+            - github
+          filters:
+            branches:
+              ignore:
+                - /.*/
+            tags:
+              only:
+                - /^agent-facets@\d+\..+/
+          requires:
+            - publish-platform
+          serial-group: << pipeline.project.slug >>/release-cli-finalize
