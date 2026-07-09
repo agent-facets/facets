@@ -706,7 +706,7 @@ export interface paths {
         };
         /**
          * Search users by username prefix
-         * @description Bounded username search. With OpenSearch enabled, an empty `q` browses all users alphabetically (match_all) and a non-empty `q` is an infix substring match; without search it falls back to a GSI3 USER_ALL#<first-letter> prefix query (empty `q` returns no users, since that index is sharded by first letter). Admin-gated, so the response carries email, tier, and suspension status.
+         * @description Bounded username search over the OpenSearch users index: an empty `q` browses all users alphabetically (match_all) and a non-empty `q` is an infix substring match. Admin-gated, so the response carries email, tier, and suspension status.
          */
         get: operations["getV0AdminUsers"];
         put?: never;
@@ -770,7 +770,7 @@ export interface paths {
         };
         /**
          * Search organizations by name/slug prefix
-         * @description Bounded organization search over the OpenSearch organizations index, returning org id, slug, and display name for admin autocomplete. An empty `q` browses all organizations alphabetically (capped). Requires search to be configured for the stage.
+         * @description Bounded organization search over the OpenSearch organizations index, returning org id, slug, and display name for admin autocomplete. An empty `q` browses all organizations alphabetically (capped).
          */
         get: operations["getV0AdminOrgs"];
         put?: never;
@@ -855,6 +855,26 @@ export interface paths {
          * @description Async-invokes the flush Lambda to DROP and re-apply the shared ClickHouse schema (wiping all stages' rows) and reload this stage from the archive. Destructive. Admin only.
          */
         post: operations["postV0AdminEventHealthRebuild"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/admin/event-health/redrive-dlq": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Redrive a consumer dead-letter queue
+         * @description Async-invokes the redrive Lambda to re-publish one consumer's dead-lettered events to the product bus for re-delivery. Per-consumer. Admin only.
+         */
+        post: operations["postV0AdminEventHealthRedriveDlq"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1373,6 +1393,9 @@ export interface components {
             }[];
         };
         AdminOverviewResponse: {
+            analytics: {
+                resync_pending: boolean;
+            };
             control_count: number;
             events: {
                 dead_lettered: number;
@@ -1382,7 +1405,6 @@ export interface components {
             read_only_mode: boolean;
             review_pending: number;
             search: {
-                configured: boolean;
                 missing: number;
                 red: number;
                 yellow: number;
@@ -3766,13 +3788,6 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Analytics not configured for this stage */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
         };
     };
     postV0AdminEventHealthResync: {
@@ -3791,7 +3806,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Analytics not configured, or a flush is in flight */
+            /** @description A flush is in flight */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -3816,7 +3831,32 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Analytics not configured for this stage */
+        };
+    };
+    postV0AdminEventHealthRedriveDlq: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redrive started */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown consumer */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Redrive not available for this consumer on this stage */
             409: {
                 headers: {
                     [name: string]: unknown;
