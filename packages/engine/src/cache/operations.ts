@@ -19,6 +19,7 @@ import type {
 } from '@agent-facets/protocol'
 import { type ArchiveEntry, assembleTar, computeContentHash } from '@agent-facets/protocol'
 import { type } from 'arktype'
+import { jsonFileText } from '../json-file-text.ts'
 import { CACHE_INTEGRITY_FILE, type CacheIntegrity, CacheIntegritySchema } from './integrity.ts'
 import { cachePath, resolveCacheRoot } from './paths.ts'
 import type { CacheIdentity } from './types.ts'
@@ -337,7 +338,7 @@ export function cachePutVerified(
     integrity: computedIntegrity,
     assets: buildManifest.assets,
   }
-  writeFileSync(join(sourceDir, CACHE_INTEGRITY_FILE), JSON.stringify(sidecar, null, 2))
+  writeFileSync(join(sourceDir, CACHE_INTEGRITY_FILE), jsonFileText(sidecar))
 
   // 4. Delegate to cachePut.
   const putResult = cachePut(identity, sourceDir)

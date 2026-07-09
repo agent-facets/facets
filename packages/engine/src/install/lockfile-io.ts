@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { atomicWriteFileSync } from '@agent-facets/common'
 import { LOCKFILE_VERSION, type Lockfile, LockfileSchema } from '@agent-facets/protocol'
 import { type } from 'arktype'
+import { jsonFileText } from '../json-file-text.ts'
 
 /**
  * Bytes-level I/O for facets.lock. Keeps JSON parse/serialize in one place
@@ -74,7 +75,7 @@ export function writeLockfile(projectRoot: string, lockfile: Lockfile): void {
     sortedFacets[key] = entry
   }
   const canonical: Lockfile = { lockfileVersion: lockfile.lockfileVersion, facets: sortedFacets }
-  atomicWriteFileSync(path, `${JSON.stringify(canonical, null, 2)}\n`)
+  atomicWriteFileSync(path, jsonFileText(canonical))
 }
 
 export function emptyLockfile(): Lockfile {

@@ -53,6 +53,10 @@ export function parseFacetsJson(raw: string): Validated<FacetsJson> {
 /**
  * Serialize a FacetsJson value back to bytes, preserving any comment metadata
  * the value carries. Uses 2-space indentation to match ADR-006.
+ *
+ * Deliberately does NOT go through engine's `jsonFileText` helper: it must
+ * serialize via comment-json to preserve comments, so it upholds the same
+ * invariant (2-space indent, trailing newline) independently.
  */
 export function serializeFacetsJson(json: FacetsJson): string {
   return `${stringifyCommentJson(json, null, 2)}\n`
