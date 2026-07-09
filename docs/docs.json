@@ -2,11 +2,16 @@
   "$schema": "https://mintlify.com/docs.json",
   "theme": "maple",
   "name": "Agent Facets",
-  "description": "A package manager for AI assistant extensions: skills, agents, and commands.",
+  "description": "Modular, versioned bundles of skills, agents, and commands that extend AI coding assistants",
   "logo": {
     "dark": "/assets/logo-dark.svg",
     "light": "/assets/logo-light.svg",
     "href": "https://agentfacets.io/"
+  },
+  "seo": {
+    "metatags": {
+      "canonical": "https://docs.agentfacets.io"
+    }
   },
   "appearance": {
     "default": "system"
