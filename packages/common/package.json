@@ -6,7 +6,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "types": "tsc --noEmit",
+    "types": "tsgo --noEmit",
     "test": "bun test"
   },
   "dependencies": {
