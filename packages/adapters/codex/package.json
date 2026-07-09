@@ -17,7 +17,7 @@
     "build": "tsdown",
     "prepack": "bun ../../../scripts/prepack.ts",
     "postpack": "bun ../../../scripts/postpack.ts",
-    "types": "tsc --noEmit",
+    "types": "tsgo --noEmit",
     "test": "bun test"
   },
   "devDependencies": {

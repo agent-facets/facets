@@ -20,7 +20,7 @@
     "build": "tsdown",
     "prepack": "bun ../../scripts/prepack.ts",
     "postpack": "bun ../../scripts/postpack.ts",
-    "types": "tsc --noEmit",
+    "types": "tsgo --noEmit",
     "test": "bun test --pass-with-no-tests"
   },
   "dependencies": {
@@ -35,7 +35,7 @@
     "typescript": "^6.0.3"
   },
   "peerDependencies": {
-    "typescript": "^5 || ^6"
+    "typescript": "^5 || ^6 || ^7"
   },
   "publishConfig": {
     "access": "public",

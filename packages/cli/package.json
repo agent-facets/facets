@@ -16,7 +16,7 @@
     "postinstall": "node scripts/postinstall.mjs",
     "prepack": "bun ../../scripts/prepack.ts",
     "postpack": "bun ../../scripts/postpack.ts",
-    "types": "tsc --noEmit",
+    "types": "tsgo --noEmit",
     "test": "bun test --path-ignore-patterns '**/*.e2e.test.ts' --reporter=junit --reporter-outfile=../../test-results/cli-junit.xml",
     "test:e2e": "bun run build && bun test --timeout 15000 --reporter=junit --reporter-outfile=../../test-results/cli-e2e-junit.xml src/__tests__/*.e2e.test.ts"
   },
@@ -41,6 +41,6 @@
     "ink-testing-library": "4.0.0"
   },
   "peerDependencies": {
-    "typescript": "^5 || ^6"
+    "typescript": "^5 || ^6 || ^7"
   }
 }
