@@ -5,6 +5,31 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-07-09" description="Generated JSON files now end with a trailing newline" tags={["CLI", "Fix"]} rss={{
+  title: "Generated JSON files now end with a trailing newline",
+  description: "Every JSON file the CLI writes -- facets.lock, install receipts, build manifests, scaffolded facet.json, and cache metadata -- now ends with exactly one trailing newline and uses consistent 2-space indentation. This eliminates spurious diffs when editors that auto-append a final newline open a CLI-generated file. facets.json continues to be written through the comment-preserving serializer and now upholds the same invariant."
+}}>
+  ## Trailing newlines on generated JSON
+
+  Every JSON file the CLI writes now ends with exactly one trailing
+  newline and uses consistent 2-space indentation:
+
+  - `facets.lock`
+  - install receipts and parallel-install lock payloads
+  - build manifests inside the `.facet` archive
+  - scaffolded `facet.json` (from `facet create`)
+  - cache integrity sidecars
+
+  Previously these files ended without a trailing newline, so editors
+  configured to auto-append one produced a one-character diff every
+  time you opened a CLI-generated file. That's fixed -- open a file,
+  save it, no diff.
+
+  `facets.json` continues to be written through the comment-preserving
+  serializer (so your hand-edited comments survive) and now upholds the
+  same trailing-newline invariant.
+</Update>
+
 <Update label="2026-07-09" description="Agent-friendly CLI: new facet instructions and facet modify commands; headless facet create; facet build --verify/--json" tags={["CLI", "New Feature"]} rss={{
   title: "Agent-friendly CLI: instructions, modify, headless create, and verify",
   description: "The facet CLI is now built for AI agents to drive non-interactively. New command: facet instructions [topic] prints agent-oriented usage guidance (overview, manifest, authoring, usage); the manifest topic emits the facet.json JSON Schema generated live from the schema definition. New command: facet modify is the scriptable counterpart to the interactive facet edit wizard — add/remove/rename/re-describe skills, agents, and commands, set facet metadata, and set per-asset adapter config with --adapter-<name> '<json>' / --remove-adapter-<name>, all with an optional --json output. facet create gains headless flags (--name, --description, --version, --private, repeatable --skill/--agent/--command, --json) that scaffold without the interactive wizard. facet build gains --verify (run the full validation pipeline without writing any output) and --json (machine-readable result). Fix: a subcommand flag named --version (e.g. facet modify facet --version 1.2.3) is no longer shadowed by the global --version flag."
