@@ -1,5 +1,13 @@
 # @agent-facets/adapter-codex
 
+## 0.5.1
+
+### Patch Changes
+
+- [#404](https://github.com/agent-facets/facets/pull/404) [`ba747bd`](https://github.com/agent-facets/facets/commit/ba747bdcf1884ff82e397b21e9897a32eac8055c) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Widen the `typescript` peerDependency range to `^5 || ^6 || ^7` so the
+    package installs cleanly for consumers on TypeScript 7. Consumers on
+    TypeScript 5 or 6 are unaffected.
+
 ## 0.5.0
 
 ### Minor Changes
