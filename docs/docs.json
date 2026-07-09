@@ -10,7 +10,12 @@
   },
   "seo": {
     "metatags": {
-      "canonical": "https://docs.agentfacets.io"
+      "canonical": "https://docs.agentfacets.io",
+      "description": "Modular, versioned bundles of skills, agents, and commands that extend AI coding assistants",
+      "language": "en",
+      "color-scheme": "light dark",
+      "reply-to": "support@agentfacets.io",
+      "og:description": "Modular, versioned bundles of skills, agents, and commands that extend AI coding assistants"
     }
   },
   "appearance": {
