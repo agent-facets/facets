@@ -2,6 +2,7 @@ import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { FACET_MANIFEST_FILE } from '@agent-facets/protocol'
 import { KEBAB_CASE } from '../edit/scanner.ts'
+import { jsonFileText } from '../json-file-text.ts'
 
 // --- Types ---
 
@@ -143,7 +144,7 @@ export function generateScaffoldManifest(opts: ScaffoldOptions): string {
     manifest.commands = commands
   }
 
-  return JSON.stringify(manifest, null, 2)
+  return jsonFileText(manifest)
 }
 
 // --- File listing preview ---

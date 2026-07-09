@@ -3,6 +3,7 @@ import { closeSync, mkdirSync, openSync, readFileSync, realpathSync, unlinkSync,
 import { rm } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { facetLocksDir } from '../facet-dir.ts'
+import { jsonFileText } from '../json-file-text.ts'
 
 /**
  * Atomic parallel-install advisory lock (Adjustment H + U).
@@ -78,7 +79,7 @@ export function acquireInstallLock(projectRoot: string): AcquireLockResult {
   // tree.
   mkdirSync(facetLocksDir(), { recursive: true })
 
-  const contents = JSON.stringify({ pid: process.pid, acquiredAt: new Date().toISOString() })
+  const contents = jsonFileText({ pid: process.pid, acquiredAt: new Date().toISOString() })
 
   try {
     const fd = openSync(path, 'wx')

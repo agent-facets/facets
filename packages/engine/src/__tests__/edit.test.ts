@@ -211,4 +211,18 @@ describe('writeManifest', () => {
     // 2-space indent means lines like '  "name": "test"'
     expect(content).toContain('  "name"')
   })
+
+  test('output ends with a trailing newline', async () => {
+    const dir = await createFixtureDir('write-newline')
+    const manifest: FacetManifest = {
+      name: 'test',
+      version: '1.0.0',
+      skills: { x: { description: 'X' } },
+    }
+
+    await writeManifest(manifest, dir)
+
+    const content = await Bun.file(join(dir, 'facet.json')).text()
+    expect(content.endsWith('}\n')).toBe(true)
+  })
 })

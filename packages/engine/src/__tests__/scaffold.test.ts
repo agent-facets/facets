@@ -36,4 +36,9 @@ describe('generateScaffoldManifest privacy', () => {
     const keys = Object.keys(manifest)
     expect(keys).toEqual(['name', 'version', 'skills'])
   })
+
+  test('serialized manifest ends with a trailing newline', () => {
+    const json = generateScaffoldManifest(baseOptions())
+    expect(json.endsWith('}\n')).toBe(true)
+  })
 })

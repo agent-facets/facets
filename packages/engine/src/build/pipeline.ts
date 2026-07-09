@@ -14,6 +14,7 @@ import {
   validateCompactFacets,
   validateContentFiles,
 } from '@agent-facets/protocol'
+import { jsonFileText } from '../json-file-text.ts'
 import { loadManifest, resolvePrompts } from '../loaders/facet.ts'
 import { buildArtifactFilename } from '../registry/artifact-path.ts'
 import { compressArchive } from './compress.ts'
@@ -156,7 +157,7 @@ export async function runBuildPipeline(
     integrity,
     assets: assetHashes,
   }
-  const manifestJson = JSON.stringify(buildManifest, null, 2)
+  const manifestJson = jsonFileText(buildManifest)
   const archiveBytes = assembleOuterTar(manifestJson, innerArchiveBytes)
 
   onProgress?.({ stage: 'Assembling archive', status: 'done' })

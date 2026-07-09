@@ -25,6 +25,7 @@ import { atomicWriteFileSync, validateAssetName } from '@agent-facets/common'
 import type { Lockfile, LockfileAssetEntry } from '@agent-facets/protocol'
 import { type } from 'arktype'
 import { facetReceiptsDir } from '../facet-dir.ts'
+import { jsonFileText } from '../json-file-text.ts'
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -221,7 +222,7 @@ export function writeReceipt(projectDir: string, receipt: Receipt): void {
   const filePath = receiptPath(projectDir)
   const canonical = canonicalProjectPath(projectDir)
   const normalized: Receipt = { ...receipt, path: canonical }
-  atomicWriteFileSync(filePath, `${JSON.stringify(normalized, null, 2)}\n`)
+  atomicWriteFileSync(filePath, jsonFileText(normalized))
 }
 
 // ---------------------------------------------------------------------------
