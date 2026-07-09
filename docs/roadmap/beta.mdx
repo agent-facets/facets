@@ -1,0 +1,31 @@
+---
+title: Open Beta
+sidebarTitle: Beta
+description: Goals for the public beta
+---
+
+The open beta begins when the features below ship. The [alpha](/roadmap/alpha) already covers the full author → publish → install loop; the beta rounds out the ecosystem.
+
+## Planned
+
+<ResponseField name="facet upgrade" type="command">
+  Check installed facets for newer versions, surface what changed, and let you choose which updates to apply. Today, re-run `facet add <name>` to move a facet to a new version.
+</ResponseField>
+
+<ResponseField name="facet info" type="command">
+  Show a published facet's metadata, versions, and assets straight from the registry, without installing it.
+</ResponseField>
+
+<ResponseField name="Facet composition" type="format">
+  A facet that declares `facets: [...]` composes text from other published facets. The manifest format reserves the field today; installs reject it until server-side composition ships.
+</ResponseField>
+
+<ResponseField name="MCP server support" type="format">
+  Facets will be able to reference MCP servers so a single install can wire up tools as well as text. The manifest reserves a `servers` field today; declarations warn at install and are not materialized.
+</ResponseField>
+
+## Hardening
+
+Beyond features, the beta gate includes registry policy maturity (review queues, name reservations), CLI surface stability, and documentation completeness.
+
+See the [stable release](/roadmap/stable) criteria for what comes after.

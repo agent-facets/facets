@@ -1,0 +1,95 @@
+---
+title: facet create
+description: Scaffolds a new facet project
+---
+
+## Usage
+
+```sh
+facet create [directory] [--force]
+```
+
+Creates a new facet project in the specified directory (defaults to the current directory). Walks through an interactive wizard to configure the facet.
+
+If a `facet.json` already exists in the target directory, the command prompts for confirmation before overwriting. Use `--force` to skip the prompt.
+
+## Headless mode
+
+Pass any authoring flag and `facet create` skips the interactive wizard and scaffolds directly — the path AI agents and scripts should use. See <code>[facet instructions authoring](/cli/instructions)</code>.
+
+```sh
+facet create ./my-facet \
+  --name my-facet \
+  --description "What it does" \
+  --version 0.1.0 \
+  --skill greet --agent helper --command run \
+  --json
+```
+
+- `--name` is required in headless mode and must be a valid facet name (an unscoped slug or a scoped `@scope/name`).
+- `--version` defaults to `0.0.0`; it must be semver.
+- `--skill`, `--agent`, and `--command` are repeatable; at least one asset is required. Asset names must be kebab-case.
+- `--private` marks the facet private (`private: true`).
+- `--force` is required to overwrite an existing `facet.json` in headless mode (there is no interactive confirm to fall back on).
+- `--json` prints a structured result: the created facet's name, version, target directory, and the list of files written.
+
+After scaffolding, validate with <code>[facet build --verify](/cli/authoring/build)</code>, or make further changes with <code>[facet modify](/cli/authoring/modify)</code>.
+
+## Wizard flow
+
+1. **Name**  -- the facet identity. Either an unscoped name (`my-facet`) or a scoped name (`@scope/name`, e.g. `@acme/my-facet`). See the [Manifest Schema](/specification/manifest#facet-name-grammar) for the full name grammar.
+2. **Description**  -- a brief description of the facet.
+3. **Version**  -- defaults to `0.0.0`.
+4. **Privacy**  -- choose Public (the default) or Private.
+5. **Assets**  -- add skills, agents, and commands by name.
+6. **Confirmation**  -- review the summary  -- and confirm.
+
+## Generated files
+
+On confirmation, the wizard writes:
+
+- `facet.json`  -- the manifest with named asset descriptors
+- `skills/<name>/SKILL.md`  -- starter skill template (Agent Skills directory convention)
+- `agents/<name>.md`  -- starter agent template
+- `commands/<name>.md`  -- starter command template
+
+Content files are markdown. Optional YAML front matter is preserved verbatim through the build; at install time the manifest's `name`, `description`, and any per-adapter extras are merged on top of whatever the author wrote.
+
+After creating the project, use `facet edit` to iterate on your facet, or `facet build` to validate and package it.
+
+## Options
+
+<ResponseField name="--name" type="string" required>
+  Facet name (headless mode). An unscoped slug or a scoped `@scope/name`.
+</ResponseField>
+
+<ResponseField name="--description" type="string">
+  Facet description (headless mode).
+</ResponseField>
+
+<ResponseField name="--version" type="semver">
+  Facet version (headless mode). Defaults to `0.0.0`.
+</ResponseField>
+
+<ResponseField name="--private" type="boolean">
+  Mark the facet private (headless mode).
+</ResponseField>
+
+<ResponseField name="--skill / --agent / --command" type="repeatable">
+  An asset to scaffold (headless mode). Repeat per asset; at least one is required.
+</ResponseField>
+
+<ResponseField name="--force" type="boolean">
+  Overwrite an existing `facet.json`. Required in headless mode when a manifest already exists.
+</ResponseField>
+
+<ResponseField name="--json" type="boolean">
+  Emit a machine-readable result (headless mode).
+</ResponseField>
+
+## Exit codes
+
+| Code | Meaning |
+| ---- | ------- |
+| `0`  | Facet created successfully |
+| `1`  | Cancelled, declined overwrite, or invalid input |

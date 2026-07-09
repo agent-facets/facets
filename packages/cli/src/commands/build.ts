@@ -1,9 +1,18 @@
-import { loadInstalledAdapters } from '@agent-facets/engine'
+import {
+  type BuildFailure,
+  type BuildResult,
+  loadInstalledAdapters,
+  runBuildPipeline,
+  writeBuildOutput,
+} from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
 import type { Command } from '../commands.ts'
 import { BuildView } from '../tui/views/build/build-view.tsx'
 import { resolveTargetDir } from './resolve-dir.ts'
+
+/** Version tag for the machine-readable `--json` output document. */
+const BUILD_JSON_SCHEMA_VERSION = '1'
 
 export const buildCommand: Command = {
   name: 'build',
@@ -14,6 +23,14 @@ export const buildCommand: Command = {
     'emit-manifest': {
       type: 'boolean',
       description: 'Write a loose build-manifest.json to dist/ alongside the .facet file',
+    },
+    verify: {
+      type: 'boolean',
+      description: 'Validate the facet without writing any output (no dist/ writes)',
+    },
+    json: {
+      type: 'boolean',
+      description: 'Emit machine-readable JSON to stdout instead of the interactive view',
     },
   },
   run: async (args: string[], flags: Record<string, unknown>): Promise<number> => {
@@ -26,13 +43,33 @@ export const buildCommand: Command = {
     const rootDir = resolved.dir
     const displayDir = resolved.display
     const emitManifest = flags['emit-manifest'] === true
+    const verify = flags.verify === true
+    const json = flags.json === true
 
-    // Load installed adapters so their metadata schemas can validate the manifest
+    // Load installed adapters so their metadata schemas can validate the manifest.
+    // In JSON mode adapter-load warnings would corrupt the JSON document on stdout,
+    // so route them to stderr (which they already use) and keep stdout clean.
     const adapters = await loadInstalledAdapters(undefined, {
       onWarn: (line) => console.error(line),
     })
 
-    // Track result for stdout summary after Ink exits
+    // --verify or --json take the plain (non-Ink) path: run the pipeline
+    // directly, and only write output when not verifying.
+    if (verify || json) {
+      const result = await runBuildPipeline(rootDir, adapters)
+      const wrote = !verify && result.ok
+      if (wrote && result.ok) {
+        await writeBuildOutput(result, rootDir, { emitManifest })
+      }
+      if (json) {
+        printBuildJson(result, verify)
+      } else {
+        printBuildPlain(result, verify, displayDir)
+      }
+      return result.ok ? 0 : 1
+    }
+
+    // Default interactive path — unchanged.
     let buildName = ''
     let buildVersion = ''
     let artifactCount = 0
@@ -71,4 +108,56 @@ export const buildCommand: Command = {
       return 1
     }
   },
+}
+
+/**
+ * Emit the versioned JSON build document to stdout. `verified` is true when
+ * the run was a `--verify` (no output written); false for a real build.
+ */
+function printBuildJson(result: BuildResult | BuildFailure, verified: boolean): void {
+  const doc = result.ok
+    ? {
+        schemaVersion: BUILD_JSON_SCHEMA_VERSION,
+        ok: true,
+        verified,
+        name: result.data.name,
+        version: result.data.version,
+        assets: Object.keys(result.assetHashes).sort(),
+        integrity: result.integrity,
+        warnings: result.warnings,
+      }
+    : {
+        schemaVersion: BUILD_JSON_SCHEMA_VERSION,
+        ok: false,
+        verified,
+        errors: result.errors.map((e) => ({ message: e.message, path: e.path })),
+        warnings: result.warnings,
+      }
+  process.stdout.write(`${JSON.stringify(doc, null, 2)}\n`)
+}
+
+/** Plain-text summary for the `--verify` (non-JSON) path. */
+function printBuildPlain(result: BuildResult | BuildFailure, verified: boolean, displayDir: string): void {
+  for (const warning of result.warnings) {
+    process.stderr.write(`⚠ ${warning}\n`)
+  }
+  if (result.ok) {
+    const assetCount = Object.keys(result.assetHashes).length
+    if (verified) {
+      process.stdout.write(
+        `✓ Verified ${result.data.name} v${result.data.version} (${assetCount} asset${assetCount !== 1 ? 's' : ''}, no output written)\n`,
+      )
+    } else {
+      process.stdout.write(
+        `✓ Built ${result.data.name} v${result.data.version} → ${displayDir}/dist/ (${assetCount} asset${assetCount !== 1 ? 's' : ''}, ${result.integrity})\n`,
+      )
+    }
+    return
+  }
+  process.stderr.write(
+    `✗ ${verified ? 'Verification' : 'Build'} failed — ${result.errors.length} error${result.errors.length !== 1 ? 's' : ''}:\n`,
+  )
+  for (const err of result.errors) {
+    process.stderr.write(`  ${err.message}\n`)
+  }
 }

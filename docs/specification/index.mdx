@@ -1,0 +1,51 @@
+---
+title: "Introduction"
+description: "The open source Agent Facet specification"
+---
+
+Facets are an open format and distribution system for modular AI assistant extensions. A facet packages skills, agents,
+and commands into a versioned, distributable unit with a well-defined manifest, publish flow, install pipeline, and
+integrity model.
+
+This specification defines the authoritative requirements for the Facets format and protocol. For introductory material,
+see [Introduction](/) and [Key Concepts](/docs/learn).
+
+<Info>
+The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in [RFC 2119](https://www.ietf.org/rfc/rfc2119.txt) and [RFC 8174](https://www.ietf.org/rfc/rfc8174.txt).
+</Info>
+
+## Security and trust
+
+Facets enable arbitrary text injection into AI assistant contexts.
+Implementors MUST address:
+
+1. **Composition integrity** -- composed text MUST be assembled server-side from trusted sources.
+2. **Content verification** -- hashes MUST be verified at install time and on every cache hit. A lockfile entry MUST NOT
+   be created without registry confirmation.
+3. **User consent** -- consumers SHOULD understand what a facet contains before installing it.
+
+## Sections
+
+<CardGroup cols={2}>
+   <Card title="Terminology" icon="book" href="/specification/terminology">
+      Canonical terms and definitions.
+   </Card>
+   <Card title="Integrity Model" icon="shield-check" href="/specification/integrity">
+      Content hashing and cache audit.
+   </Card>
+   <Card title="Install & Resolve" icon="download" href="/specification/install">
+      How facets are resolved and installed.
+   </Card>
+   <Card title="Install Pipeline" icon="git-merge" href="/specification/pipeline">
+      Plan/commit pipeline, integrity chain, receipt, tri-write.
+   </Card>
+   <Card title="Publish Flow" icon="upload" href="/specification/publish">
+      How facets are built and published to the registry.
+   </Card>
+   <Card title="Architecture" icon="network" href="/specification/architecture">
+      Actors, artifact types, distribution model, design principles.
+   </Card>
+   <Card title="Manifest Schema" icon="file-code" href="/specification/manifest">
+      The `facet.json` format -- fields, types, constraints.
+   </Card>
+</CardGroup>

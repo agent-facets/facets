@@ -212,6 +212,56 @@ describe('writeScaffold', () => {
   })
 })
 
+// --- Headless create (e2e) ---
+
+describe('facet create — headless', () => {
+  test('scaffolds a facet from flags and emits JSON', async () => {
+    const dir = await createFixtureDir('create-headless')
+    const result = await runCli(
+      'create',
+      dir,
+      '--name',
+      'my-facet',
+      '--description',
+      'A headless facet',
+      '--skill',
+      'greet',
+      '--agent',
+      'helper',
+      '--json',
+    )
+    expect(result.exitCode).toBe(0)
+    const doc = JSON.parse(result.stdout)
+    expect(doc.ok).toBe(true)
+    expect(doc.name).toBe('my-facet')
+    expect(doc.files).toContain('facet.json')
+    expect(doc.files).toContain('skills/greet/SKILL.md')
+
+    const manifest = JSON.parse(await Bun.file(join(dir, 'facet.json')).text())
+    expect(manifest.skills.greet).toBeDefined()
+    expect(manifest.agents.helper).toBeDefined()
+  })
+
+  test('missing --name fails with a clear error', async () => {
+    const dir = await createFixtureDir('create-headless-noname')
+    const result = await runCli('create', dir, '--skill', 'greet')
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('missing --name')
+  })
+
+  test('refuses to overwrite an existing facet.json without --force', async () => {
+    const dir = await createFixtureDir('create-headless-overwrite')
+    await Bun.write(join(dir, 'facet.json'), JSON.stringify({ name: 'existing', version: '0.0.0' }))
+    const result = await runCli('create', dir, '--name', 'my-facet', '--skill', 'greet')
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('--force')
+
+    // With --force it succeeds.
+    const forced = await runCli('create', dir, '--name', 'my-facet', '--skill', 'greet', '--force')
+    expect(forced.exitCode).toBe(0)
+  })
+})
+
 // --- Build command (e2e) ---
 
 describe('facet build', () => {
@@ -263,5 +313,55 @@ describe('facet build', () => {
     const result = await runCli('build', dir)
     expect(result.exitCode).toBe(1)
     expect(result.stdout).toContain('Build failed')
+  })
+})
+
+// --- Build --verify / --json (e2e) ---
+
+describe('facet build --verify', () => {
+  async function scaffoldValid(name: string): Promise<string> {
+    const dir = await createFixtureDir(name)
+    await writeScaffold(
+      { name: 'verifiable', version: DEFAULT_VERSION, description: 'x', skills: ['helper'], agents: [], commands: [] },
+      dir,
+    )
+    return dir
+  }
+
+  test('--verify validates without writing dist/', async () => {
+    const dir = await scaffoldValid('verify-ok')
+    const result = await runCli('build', dir, '--verify')
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('Verified verifiable')
+    expect(existsSync(join(dir, 'dist'))).toBe(false)
+  })
+
+  test('--verify --json emits a structured success document', async () => {
+    const dir = await scaffoldValid('verify-json')
+    const result = await runCli('build', dir, '--verify', '--json')
+    expect(result.exitCode).toBe(0)
+    const doc = JSON.parse(result.stdout)
+    expect(doc.schemaVersion).toBe('1')
+    expect(doc.ok).toBe(true)
+    expect(doc.verified).toBe(true)
+    expect(doc.name).toBe('verifiable')
+    expect(Array.isArray(doc.assets)).toBe(true)
+    expect(existsSync(join(dir, 'dist'))).toBe(false)
+  })
+
+  test('--verify --json reports errors with exit 1 and no dist/', async () => {
+    const dir = await createFixtureDir('verify-json-fail')
+    // Manifest references a skill whose file is missing → resolve-prompts error.
+    await Bun.write(
+      join(dir, 'facet.json'),
+      JSON.stringify({ name: 'broken', version: '1.0.0', skills: { review: { description: 'x' } } }),
+    )
+    const result = await runCli('build', dir, '--verify', '--json')
+    expect(result.exitCode).toBe(1)
+    const doc = JSON.parse(result.stdout)
+    expect(doc.ok).toBe(false)
+    expect(doc.verified).toBe(true)
+    expect(doc.errors.length).toBeGreaterThan(0)
+    expect(existsSync(join(dir, 'dist'))).toBe(false)
   })
 })

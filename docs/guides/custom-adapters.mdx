@@ -1,0 +1,214 @@
+---
+title: Build a Custom Adapter
+description: Write custom adapters for AI coding tools
+---
+
+An <Tooltip headline="Adapter" tip={<span>The bridge between facets and an AI coding tool. It tells <code>facet</code> where and how to write a facet's assets on disk so the tool can find them.</span>} cta="Adapter reference" href="/cli/adapters/install">adapter</Tooltip> teaches the `facet` CLI how to install assets into a specific AI coding tool. The first-party adapters cover Claude Code, OpenCode, and Codex; this guide shows how to build your own using the <code>[@agent-facets/adapter](https://github.com/agent-facets/facets/tree/main/packages/adapter)</code> SDK.
+
+An adapter is a small TypeScript library. You write one file, build it, and install it locally  -- from a directory, from GitHub, or (once published) by name.
+
+<Visibility for="agents">
+
+> **Building an adapter?** It's a TypeScript package that default-exports a
+> `defineAdapter({...})` call. The contract lives in `@agent-facets/adapter`:
+>
+> - `name` (required) — unique adapter id.
+> - `buildAssetMetadata(data)` (required) — validate/enrich per-asset
+>   manifest metadata; return `Validated<AdapterMetadata>`.
+> - `supportsInstall: true` + `installAsset` / `readAsset` / `deleteAsset` —
+>   the filesystem I/O that materializes assets. Without these the adapter
+>   is metadata-only and hidden from the install picker.
+>
+> Use the SDK's `installAssetFile` / `readAssetFile` / `deleteAssetFile`
+> helpers for front-matter-aware file I/O. `Scope` is `'system' | 'user' |
+> 'project'`; `AssetType` is `'skill' | 'agent' | 'command'`.
+>
+> Build with `tsdown`/`tsc`, then install:
+>
+> ```sh
+> facet adapter install ./my-adapter                        # local directory
+> facet adapter install git+https://github.com/you/repo.git # from GitHub
+> facet adapter install my-adapter                           # by npm name, once published
+> ```
+
+</Visibility>
+
+<Visibility for="humans">
+
+## How an adapter fits in
+
+When you run `facet install`, the CLI reads each facet's assets and hands them to every installed adapter. The adapter decides **where** on disk each asset goes and **how** it's formatted, so the target tool picks it up. That's the entire job: translate a facet asset into files your tool understands.
+
+An adapter implements a small contract from the SDK. Two methods matter most:
+
+- `buildAssetMetadata` validates the per-asset metadata an author put in `facet.json` (the `adapters.<name>` block) and enriches it with your defaults.
+- `installAsset` writes the asset to disk. Its siblings `readAsset` and `deleteAsset` complete the lifecycle.
+
+## Scaffold the package
+
+<Steps>
+
+<Step title="Create a package and add the SDK">
+
+```sh
+mkdir my-adapter && cd my-adapter
+bun init -y
+bun add @agent-facets/adapter
+```
+
+The SDK is a leaf library with no heavy dependencies  -- `@agent-facets/common` (the shared types) is bundled into it, so you don't install anything else.
+
+</Step>
+
+<Step title="Write the adapter">
+
+Create `src/index.ts` and default-export a <code>[defineAdapter](https://github.com/agent-facets/facets/tree/main/packages/adapter)</code> call. Here is a minimal, working adapter that writes each asset to `~/.my-tool/<type>s/<name>.md`:
+
+```ts expandable src/index.ts
+import {
+  defineAdapter,
+  installAssetFile,
+  readAssetFile,
+  deleteAssetFile,
+  type Scope,
+  type AssetType,
+  type Validated,
+  type AdapterMetadata,
+} from '@agent-facets/adapter'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+
+// Where an asset of a given type lives on disk for this tool.
+function assetPath(assetType: AssetType, name: string): { file: string } {
+  return { file: join(homedir(), '.my-tool', `${assetType}s`, `${name}.md`) }
+}
+
+export default defineAdapter({
+  name: 'my-tool',
+  supportsInstall: true,
+
+  // Validate + enrich the author's `adapters.my-tool` block. Return the
+  // metadata you want written as front-matter, or errors if it's invalid.
+  buildAssetMetadata(data: unknown): Validated<AdapterMetadata> {
+    // Trivial pass-through; use arktype/zod here for a real schema.
+    const meta = (data ?? {}) as AdapterMetadata
+    return { ok: true, data: meta }
+  },
+
+  // Write the asset. `content` is the asset body; `metadata` becomes
+  // YAML front-matter. installAssetFile handles the front-matter assembly,
+  // directory creation, and idempotent overwrite for you.
+  async installAsset(scope: Scope, assetType: AssetType, name: string, content: string, metadata: unknown) {
+    return installAssetFile(assetPath(assetType, name), content, metadata as AdapterMetadata)
+  },
+
+  async readAsset(scope: Scope, assetType: AssetType, name: string) {
+    return readAssetFile(assetPath(assetType, name))
+  },
+
+  async deleteAsset(scope: Scope, assetType: AssetType, name: string) {
+    return deleteAssetFile(assetPath(assetType, name))
+  },
+})
+```
+
+<Note>
+  `installAssetFile`, `readAssetFile`, and `deleteAssetFile` are SDK helpers that manage YAML front-matter, create parent directories, and stay byte-stable across a write→read round-trip. Use them instead of hand-rolling file I/O so re-installs don't report phantom drift.
+</Note>
+
+</Step>
+
+</Steps>
+
+## The adapter contract
+
+Everything an adapter can implement, from <code>[@agent-facets/adapter](https://github.com/agent-facets/facets/tree/main/packages/adapter)</code>:
+
+<ResponseField name="name" type="string" required>
+  A unique id (e.g. `my-tool`). Users install and reference the adapter by this name.
+</ResponseField>
+
+<ResponseField name="buildAssetMetadata(data)" type="Validated<AdapterMetadata>" required>
+  Validate and enrich the per-asset metadata from a facet's `adapters.<name>` block. Return `{ ok: true, data }` or `{ ok: false, errors }`. Runs during `facet build`, so bad config is caught early.
+</ResponseField>
+
+<ResponseField name="supportsInstall" type="boolean">
+  Set to `true` only when all three I/O methods below are implemented. It makes the adapter selectable in the install picker; a metadata-only adapter omits it and stays hidden.
+</ResponseField>
+
+<ResponseField name="installAsset(scope, assetType, name, content, metadata)" type="Promise<string | undefined>">
+  Write the asset to disk. Return the absolute path (for verbose logs) or `undefined`.
+</ResponseField>
+
+<ResponseField name="readAsset(scope, assetType, name)" type="Promise<{ content, metadata }>">
+  Read an asset back from disk.
+</ResponseField>
+
+<ResponseField name="deleteAsset(scope, assetType, name)" type="Promise<string | undefined>">
+  Remove an asset. Return its path or `undefined`.
+</ResponseField>
+
+Two shared argument types run through the I/O methods: `scope` is `'system'`, `'user'`, or `'project'` (decide your on-disk layout per scope), and `assetType` is `'skill'`, `'agent'`, or `'command'`.
+
+<Tip>
+  You can ship a **metadata-only** adapter: implement just `name` and `buildAssetMetadata`, and omit `supportsInstall`. It validates manifest config during builds without materializing anything  -- useful while you're still figuring out a tool's on-disk layout.
+</Tip>
+
+## Bundle it
+
+`facet adapter install` re-bundles your adapter into a self-contained `adapter.js`, but it needs a clean single-module entry to start from. Compile your package first  -- for example with `tsdown` (what the first-party adapters use) or `tsc`:
+
+```sh
+bunx tsdown src/index.ts
+```
+
+Point your `package.json` `exports`/`main` at the compiled entry so the CLI can resolve it.
+
+## Install your adapter
+
+`facet adapter install` accepts your adapter three ways:
+
+<CodeGroup>
+
+```sh Local directory
+# Fastest while developing — installs from a local build.
+facet adapter install ./my-adapter
+```
+
+```sh Git repository
+# Note the git+ prefix; add #ref to pin a tag or branch.
+facet adapter install git+https://github.com/you/my-adapter.git
+facet adapter install git+https://github.com/you/my-adapter.git#v1.0.0
+```
+
+```sh npm package
+# By package name, once you've published it.
+facet adapter install my-adapter
+```
+
+</CodeGroup>
+
+The CLI downloads the source, bundles it into `adapter.js`, verifies it exports a valid adapter, and places it in `$FACET_DIR/adapters/<name>/` (default `~/.facet`). See <code>[facet adapter install](/cli/adapters/install)</code> for every specifier format.
+
+<Tip>
+  During development, `facet adapter install ./my-adapter` picks up your latest local build immediately. Reinstall after each rebuild to test changes end-to-end.
+</Tip>
+
+## Verify it works
+
+Confirm the adapter is registered, then install a facet to see it materialize assets:
+
+```sh
+facet adapter list          # your adapter should appear
+facet add cowsay            # installs into every connected adapter, yours included
+```
+
+Check that files landed where your `assetPath` puts them. From here, harden `buildAssetMetadata` with a real schema and flesh out the on-disk layout your tool expects.
+
+## Share it upstream
+
+Built an adapter for a major AI coding assistant? Contributions are welcome. If your adapter targets a widely used tool, open a pull request on the <code>[facets repository](https://github.com/agent-facets/facets)</code> to share it upstream as a first-party adapter.
+
+A first-party adapter is installable by name (`facet adapter install <name>`) via the CLI, so everyone using that tool benefits.
+
+</Visibility>

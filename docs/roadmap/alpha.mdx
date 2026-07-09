@@ -1,0 +1,42 @@
+---
+title: Pre-Release Alpha
+sidebarTitle: Alpha
+description: The current phase — what's shipped today
+---
+
+The alpha is the **current phase**. The core loop  -- author, publish, discover, install  -- is live end to end against the public registry at [agentfacets.io](https://agentfacets.io).
+
+## Shipped
+
+**Authoring**
+
+- <code>[facet create](/cli/authoring/create)</code>  -- scaffold a facet, interactively or headless via flags
+- <code>[facet edit](/cli/authoring/edit)</code>  -- interactive authoring workbench with disk/manifest reconciliation
+- <code>[facet modify](/cli/authoring/modify)</code>  -- headless, scriptable edits (assets, metadata, adapter config)
+- <code>[facet build](/cli/authoring/build)</code>  -- validate and package; `--verify` for a no-output validation pass, `--json` for machine-readable results
+
+**Registry**
+
+- <code>[facet publish](/cli/authoring/publish)</code>  -- upload with drift detection and immutable versions
+- <code>[facet search](/cli/search)</code>  -- discover published facets
+- <code>[facet login](/cli/login)</code> / <code>[facet whoami](/cli/whoami)</code> / <code>[facet logout](/cli/logout)</code>  -- token-based auth
+
+**Project management**
+
+- <code>[facet add](/cli/add)</code>  -- add and install in one step, registry-first source grammar
+- <code>[facet install](/cli/install)</code>  -- lockfile-driven reproducible installs, `--frozen-lockfile` for CI
+- <code>[facet remove](/cli/remove)</code>  -- transactional removal (aliased `rm`)
+- <code>[facet list](/cli/list)</code>  -- see what's declared and resolved
+
+**Platform**
+
+- <code>[facet adapter](/cli/adapters/install)</code>  -- install/list/remove adapters; first-party adapters for Claude Code, OpenCode, and Codex; a public [adapter SDK](/guides/custom-adapters) for building your own
+- <code>[facet instructions](/cli/instructions)</code>  -- built-in usage guidance for AI agents
+- <code>[facet self-update](/cli/self-update)</code>  -- update the CLI in place
+
+## Alpha caveats
+
+- Published versions are immutable, but registry policies (review queues, name reservations) are still being tuned.
+- Breaking CLI changes may still ship between alpha versions  -- check the [changelog](/changelog).
+
+See the [beta goals](/roadmap/beta) for what's next.

@@ -2,9 +2,9 @@
   "$schema": "https://mintlify.com/docs.json",
   "theme": "maple",
   "name": "Agent Facets",
-  "description": "A package manager for AI assistant extensions: skills, agents, commands, and MCP servers.",
+  "description": "A package manager for AI assistant extensions: skills, agents, and commands.",
   "logo": {
-    "dark": "/assets/logo.svg",
+    "dark": "/assets/logo-dark.svg",
     "light": "/assets/logo-light.svg",
     "href": "https://agentfacets.io/"
   },
@@ -20,7 +20,9 @@
     }
   },
   "fonts": {
-    "family": "Arimo Sans, sans-serif"
+    "family": "Geist",
+    "source": "https://cdn.jsdelivr.net/npm/@fontsource-variable/geist@5/files/geist-latin-wght-normal.woff2",
+    "format": "woff2"
   },
   "icons": {
     "library": "lucide"
@@ -39,18 +41,23 @@
         "groups": [
           {
             "group": "Agent Facets",
-            "icon": "/assets/icon.svg",
+            "icon": "box",
             "pages": ["index", "docs/learn/index"]
           },
           {
             "group": "Guides",
             "icon": "rocket",
-            "pages": ["guides/install-facets", "guides/create-your-first-facet", "guides/publish-a-facet"]
+            "pages": [
+              "guides/install-facets",
+              "guides/create-your-first-facet",
+              "guides/publish-a-facet",
+              "guides/custom-adapters"
+            ]
           },
           {
             "group": "Asset Types",
             "icon": "book",
-            "pages": ["docs/learn/skills", "docs/learn/commands", "docs/learn/agents", "docs/learn/servers"]
+            "pages": ["docs/learn/skills", "docs/learn/commands", "docs/learn/agents"]
           }
         ]
       },
@@ -60,7 +67,7 @@
         "groups": [
           {
             "group": "CLI Reference",
-            "pages": ["cli/index"]
+            "pages": ["cli/index", "cli/env"]
           },
           {
             "group": "Facet Management",
@@ -80,12 +87,18 @@
           {
             "group": "Authoring",
             "icon": "pencil",
-            "pages": ["cli/authoring/create", "cli/authoring/edit", "cli/authoring/build", "cli/authoring/publish"]
+            "pages": [
+              "cli/authoring/create",
+              "cli/authoring/edit",
+              "cli/authoring/modify",
+              "cli/authoring/build",
+              "cli/authoring/publish"
+            ]
           },
           {
             "group": "CLI",
             "icon": "terminal",
-            "pages": ["cli/help", "cli/self-update", "cli/env"]
+            "pages": ["cli/instructions", "cli/help", "cli/self-update"]
           }
         ]
       },
@@ -106,8 +119,7 @@
               "specification/publish",
               "specification/install",
               "specification/pipeline",
-              "specification/integrity",
-              "specification/servers"
+              "specification/integrity"
             ]
           }
         ]
