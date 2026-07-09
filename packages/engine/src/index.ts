@@ -57,9 +57,19 @@ export {
   resolveCacheRoot,
 } from './cache/index.ts'
 // edit
+export type {
+  ApplyModifyError,
+  ApplyModifyResult,
+  AssetTarget,
+  FacetMetaFields,
+  FieldMutation,
+  ModifyFileOp,
+  ModifyOp,
+} from './edit/apply-modify.ts'
+export { applyModify, assetPath } from './edit/apply-modify.ts'
 export { buildEditContext } from './edit/context.ts'
 export { writeManifest } from './edit/manifest-writer.ts'
-export { applyEditOperations } from './edit/operations.ts'
+export { applyEditOperations, applyModifyFileOps } from './edit/operations.ts'
 export type { MatchedAsset, MissingAsset, ReconciliationResult } from './edit/reconcile.ts'
 export { reconcile } from './edit/reconcile.ts'
 export type { AssetManifestKey, DiscoveredAsset } from './edit/scanner.ts'

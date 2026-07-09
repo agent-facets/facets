@@ -4,9 +4,11 @@ import { buildCommand } from './commands/build.ts'
 import { createCommand } from './commands/create/index.ts'
 import { editCommand } from './commands/edit/index.ts'
 import { installCommand } from './commands/install/index.ts'
+import { instructionsCommand } from './commands/instructions/index.ts'
 import { listCommand } from './commands/list/index.ts'
 import { loginCommand } from './commands/login/index.ts'
 import { logoutCommand } from './commands/logout/index.ts'
+import { modifyCommand } from './commands/modify/index.ts'
 import { publishCommand } from './commands/publish/index.ts'
 import { removeCommand } from './commands/remove/index.ts'
 import { searchCommand } from './commands/search/index.ts'
@@ -14,7 +16,7 @@ import { selfUpdateCommand } from './commands/self-update.ts'
 import { whoamiCommand } from './commands/whoami/index.ts'
 
 export type FlagDef = {
-  type: 'boolean' | 'string'
+  type: 'boolean' | 'string' | 'array'
   description: string
 }
 
@@ -59,9 +61,11 @@ export const commands: Record<string, Command> = {
   edit: editCommand,
   info: stubCommand('info', 'Show information about a facet'),
   install: installCommand,
+  instructions: instructionsCommand,
   list: listCommand,
   login: loginCommand,
   logout: logoutCommand,
+  modify: modifyCommand,
   publish: publishCommand,
   remove: removeCommand,
   search: searchCommand,

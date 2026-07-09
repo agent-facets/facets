@@ -1,0 +1,93 @@
+---
+title: "Planning & Resolution"
+description: "How facets resolve, pin, and install"
+---
+
+## Current behavior
+
+The install pipeline splits into **plan** (pure routing) and **commit** (resolution, integrity, materialization, writes). `facet add`, `facet remove`, and `facet install` converge on the same commit phase — they differ only in the <Tooltip tip="A list of additions (user's specifier verbatim) and removals (bare names). facet install produces an empty delta.">delta</Tooltip> they produce.
+
+<Tip>
+The [Install Pipeline](/specification/pipeline) page has the full normative flow with diagrams and detailed integrity chain documentation.
+</Tip>
+
+### The pipeline
+
+<Steps>
+  <Step title="Plan">
+    Build the delta. No network, no lockfile, no cache.
+  </Step>
+  <Step title="Parse sources">
+    Registry (`name@1.*`), GitHub (`github:owner/repo#ref`), git URLs, local paths. Caret/tilde/comparator ranges are rejected.
+  </Step>
+  <Step title="Resolve versions">
+    **Additions** always re-resolve non-exact specifiers. **Reproductions** trust the lockfile when satisfying; re-resolve only absent or stale entries.
+  </Step>
+  <Step title="Cache + integrity">
+    Cache keyed by `<name>@<version>`. Hits are re-hashed against the <Tooltip tip="cache-integrity.json -- canonical fingerprint + per-asset hashes, written at cache-populate time.">sidecar</Tooltip>. Tampered content is evicted. Lockfile pins are string-compared; new entries require <Tooltip tip="A metadata request verifying content against the registry's published content_integrity. Fails offline.">registry confirmation</Tooltip>.
+  </Step>
+  <Step title="Materialize">
+    Assets written to every selected adapter. Skip-if-identical. Inverse ops journaled for rollback.
+  </Step>
+  <Step title="Drift removal">
+    The <Tooltip tip="Per-project record under $FACET_DIR/receipts/ -- tracks what this machine has materialized.">install receipt</Tooltip> drives cleanup. No cache or network needed.
+  </Step>
+  <Step title="Tri-write">
+    `facets.json` + `facets.lock` + receipt written together on success. Failure rolls back everything.
+  </Step>
+</Steps>
+
+<Info>
+The manifest is **never written ahead** of the install. A failed `facet add` leaves the project exactly as it was.
+</Info>
+
+### Lockfile shape
+
+Per facet: `{source, version, integrity, assets}`. The `source` is tagged:
+
+| Kind       | Fields          | Notes                                  |
+|------------|-----------------|----------------------------------------|
+| `registry` | `registry`      | Version in the entry's `version` field |
+| `git`      | `url`, `commit` | Ref stays in `facets.json`             |
+| `local`    | `path`          | Resolved local path                    |
+
+Adapter-agnostic — the same asset set is applied to every selected adapter.
+
+---
+
+## Frozen lockfile
+
+`--frozen-lockfile` makes the lockfile authoritative.
+
+<Note>
+Additions or removals are **rejected immediately**. Only `facet install` can run frozen.
+</Note>
+
+The system checks bidirectional consistency before touching anything: every manifest facet must have a satisfying lockfile entry, the lockfile must not pin anything the manifest dropped, and git/local sources must match their locked provenance.
+
+| Behavior                  | Frozen mode                               |
+|---------------------------|-------------------------------------------|
+| Version resolution        | Forbidden                                 |
+| Archive download          | Allowed (reproduction)                    |
+| Integrity verification    | Required for every facet, including local |
+| Drift removal + receipt   | Runs                                      |
+| Lockfile / manifest write | Never                                     |
+
+---
+
+## Future
+
+<Warning>
+Not yet implemented. The section below describes planned behavior.
+</Warning>
+
+### Upgrade
+
+`facet upgrade` will check for newer versions, surface text diffs, and let the consumer choose which updates to apply.
+
+---
+
+## Not in the install flow
+
+- **Text asset resolution** -- text is in the archive. No install-time fetching.
+- **Disk layout** -- determined by adapters, not the specification.

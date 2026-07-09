@@ -1,0 +1,231 @@
+---
+title: Install Facets in Your Project
+description: Add facets from the registry or other sources
+---
+
+Bring facets into a project in two moves: connect an adapter for your AI tool, then add the facets you want. This guide walks the whole loop  -- add, list, reinstall, and remove.
+
+<Visibility for="agents">
+
+> **Using facets in a project? Read the CLI's own agent instructions first.**
+>
+> ```sh
+> facet instructions usage   # add/update/remove facets; install adapter tooling
+> ```
+>
+> The short version:
+>
+> ```sh
+> facet adapter install claude-code   # connect your AI tool (once per machine)
+> facet add viper-plans               # registry-first: a bare name is a registry facet
+> facet add viper-plans@1.2.3         # or pin a version
+> facet install                       # after a git clone: materialize from the lockfile
+> facet remove viper-plans            # take a facet back out
+> ```
+>
+> See <code>[facet add](/cli/add)</code>, <code>[facet install](/cli/install)</code>,
+> <code>[facet remove](/cli/remove)</code>, and <code>[facet adapter install](/cli/adapters/install)</code>.
+
+</Visibility>
+
+<Visibility for="humans">
+
+## Connect an adapter
+
+An adapter is the bridge between facets and your AI coding tool  -- it tells the CLI where to place assets on disk so your tool can find them. You need at least one before adding facets.
+
+```sh
+facet adapter install claude-code
+```
+
+The first-party adapters are `claude-code`, `opencode`, and `codex`. Run <code>[facet adapter install](/cli/adapters/install)</code> with no name for an interactive picker, or pass a name to install it directly. Third-party adapters install the same way from an npm package, git URL, or local path.
+
+<Tip>
+  If you skip this step, `facet add` and `facet install` will launch the adapter picker for you on first use.
+</Tip>
+
+## Find and add a facet
+
+<Steps>
+
+<Step title="Search the registry (optional)">
+
+```sh
+facet search viper # as an example
+```
+
+<code>[facet search](/cli/search)</code> lists matching facets with their latest version, asset counts, and the exact `facet add` command to install each. Run it with no term to browse everything published.
+
+</Step>
+
+<Step title="Add it">
+
+```sh
+facet add viper-plans
+```
+
+<code>[facet add](/cli/add)</code> brings a facet into your project in one step: it writes the entry to `facets.json` and runs the install pipeline. There is no separate "install after add".
+
+The **registry is the default source** (hosted at [agentfacets.io](https://agentfacets.io))  -- a bare name resolves to the latest published version. You can also pin a version, use a wildcard, or point at other sources.
+
+<Expandable title={<span> <code>facet add</code> version examples </span>}>
+
+```shell there are many different ways to add a facet
+facet add viper-plans                       # latest from the registry
+facet add viper-plans@1.2.3                 # exact version
+facet add viper-plans@1.*                   # latest 1.x
+facet add @acme/deploy-tools                # scoped registry facet
+facet add github:owner/repo#main            # a GitHub repo at a ref
+facet add ./local-facets/my-plans           # a local directory
+facet add viper-plans rezi planner@2.*      # several at once
+```
+
+</Expandable>
+
+A bare name is pinned to its resolved version in `facets.json`; a wildcard like `1.*` is preserved there, with the specific version recorded in the lockfile. See <code>[facet add](/cli/add)</code> for the full source grammar.
+
+</Step>
+
+</Steps>
+
+## What `facet add` writes
+
+Your project now has two files  -- commit both to version control so teammates and CI resolve identical versions.
+
+**`facets.json`**  -- the project manifest: which facets belong to the project, and at what version. It is the source of truth for your dependencies.
+
+**`facets.lock`**  -- the lockfile: exact resolved versions, <Tooltip headline="Integrity hash" tip="A content hash of a facet's assets, checked on every install so you get exactly the bytes that were published — tampering or corruption fails the install." cta="How integrity works" href="/specification/integrity">integrity hashes</Tooltip>, and asset lists for reproducible installs. It is managed by the CLI; you never hand-edit it.
+
+<CodeGroup>
+
+```json facets.json
+{
+  "facets": {
+    "cowsay": "1.*",
+    "viper-plans": "1.0.0"
+  }
+}
+```
+
+```json expandable facets.lock
+{
+  "lockfileVersion": 1,
+  "facets": {
+    "cowsay": {
+      "source": {
+        "kind": "registry",
+        "registry": "https://api.agentfacets.io"
+      },
+      "version": "1.0.0",
+      "integrity": "sha256:70fe8f9f0ba16132c70826d1cda70af9f0b4e63f3394178d2d5b4c374c833818",
+      "assets": [
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "cowsay-rules"
+        },
+        {
+          "scope": "project",
+          "type": "agent",
+          "name": "cowsay"
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "cowchat"
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "cowsay"
+        }
+      ]
+    },
+    "viper-plans": {
+      "source": {
+        "kind": "registry",
+        "registry": "https://api.agentfacets.io"
+      },
+      "version": "1.0.0",
+      "integrity": "sha256:d745129217896c754f60f62088a792042d9867151279d7b7fe55a7493cc73ebb",
+      "assets": [
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "viper-execution-rules"
+        },
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "viper-planning"
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "viper-continue"
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "viper-plan"
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "viper-run"
+        }
+      ]
+    }
+  }
+}
+```
+
+</CodeGroup>
+
+<Note>
+  The lockfile honors the manifest. A pinned entry is reused as long as it still satisfies `facets.json`; when you bump a version or widen a wildcard, `facet install` re-resolves and updates the lock.
+</Note>
+
+## Reinstall after a git clone
+
+When you clone a project that already has `facets.json` and `facets.lock`, materialize into your adapters with:
+
+```sh
+facet install
+```
+
+<code>[facet install](/cli/install)</code> fetches and installs every declared facet at the exact versions in the lockfile  -- so you get precisely what is pinned.
+
+<Tip>
+  For CI, add `--frozen-lockfile`. It never re-resolves or writes the lockfile and **fails** if `facets.json` and `facets.lock` disagree  -- catching a forgotten `facet add` or a hand-edited manifest instead of silently mutating the lock.
+</Tip>
+
+## Manage what's installed
+
+**See what's declared:**
+
+```sh
+facet list
+```
+
+<code>[facet list](/cli/list)</code> shows every facet in `facets.json` with its resolved version (from the lockfile), or its source specifier if it hasn't been installed yet.
+
+**Remove a facet:**
+
+```sh
+facet remove viper-plans          # aliased: facet rm
+facet remove viper-plans rezi     # several at once (all-or-nothing)
+```
+
+<code>[facet remove](/cli/remove)</code> takes a facet out of `facets.json`, deletes its assets from every connected adapter, and rewrites the lockfile without it. If any named facet isn't declared, the command fails and changes nothing.
+
+**Manage adapters:**
+
+```sh
+facet adapter list                # what's connected
+facet adapter remove opencode     # disconnect one
+```
+
+See the [adapter reference](/cli/adapters/install) for details.
+
+</Visibility>

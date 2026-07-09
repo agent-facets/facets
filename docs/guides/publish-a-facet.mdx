@@ -1,0 +1,180 @@
+---
+title: Publish a Facet
+description: Build, update, and publish your facets
+---
+
+Publishing takes a built facet to the registry so others can install it. The flow is: sign in, build, publish. This guide covers each step and the outcomes you might hit.
+
+**Before you start:** a facet project with a valid `facet.json` and at least one asset (see [Create Your First Facet](/guides/create-your-first-facet)), and a registry account with a <Tooltip headline="Personal access token (PAT)" tip={<span>A revocable credential you mint in the web UI and use to authenticate the CLI to the registry — via <code>facet login</code> or the <code>FACET_TOKEN</code> environment variable.</span>}>personal access token (PAT)</Tooltip>  -- sign up at [agentfacets.io](https://agentfacets.io) and create a PAT in your account settings.
+
+<Visibility for="agents">
+
+> **Publishing is authenticated and version-immutable.** The steps:
+>
+> ```sh
+> # 1. Authenticate (token from the FACET_TOKEN env var is preferred in CI):
+> export FACET_TOKEN=fct_pub_…          # or run `facet login` interactively
+> facet whoami                          # confirm the identity
+>
+> # 2. Build the artifact, then publish it:
+> facet build
+> facet publish
+> ```
+>
+> A published `(name, version)` is **immutable** — to ship changes, bump
+> `version` in facet.json (e.g. `facet modify facet --version 1.2.0`),
+> rebuild, and publish again. In non-interactive contexts, run
+> `facet build && facet publish` as two commands so a stale `dist/` never
+> ships silently.
+>
+> See <code>[facet publish](/cli/authoring/publish)</code>,
+> <code>[facet build](/cli/authoring/build)</code>, and
+> <code>[facet login](/cli/login)</code>.
+
+</Visibility>
+
+<Visibility for="humans">
+
+## Authenticate the CLI
+
+<Steps>
+
+<Step title="Login">
+
+```sh
+facet login
+```
+
+<code>[facet login](/cli/login)</code> shows an interactive menu  -- choose "Paste a token" and paste your PAT. The token is verified against the registry before it's saved, so a typo or expired token fails immediately instead of surfacing later at publish time. On success it's written to `~/.facet/credentials` (mode `0600`).
+
+<Tip>
+  For CI, skip `facet login` and set `FACET_TOKEN` in the environment instead. It takes precedence over the saved credentials file.
+</Tip>
+
+</Step>
+
+<Step title="Confirm your identity">
+
+```sh
+facet whoami
+```
+
+<code>[facet whoami](/cli/whoami)</code> prints your username, email, and tier  -- and notes when the credential came from `FACET_TOKEN` rather than the saved file.
+
+</Step>
+
+</Steps>
+
+## Build, then publish
+
+<Steps>
+
+<Step title="Build the artifact">
+
+```sh
+facet build
+```
+
+<code>[facet build](/cli/authoring/build)</code> writes `dist/<name>-<version>.facet` (a scoped name renders as a nested path, e.g. `dist/@acme/cowsay-1.0.0.facet`). Rebuild whenever your source has changed since the last build.
+
+</Step>
+
+<Step title="Publish it">
+
+```sh
+facet publish
+```
+
+<code>[facet publish](/cli/authoring/publish)</code> resolves your credential, validates the manifest, finds the `.facet` in `dist/`, re-verifies its integrity, and uploads it under the artifact's embedded name and version. It publishes what's in `dist/`  -- which is why the build step comes first.
+
+</Step>
+
+</Steps>
+
+## When the build and source disagree
+
+If `dist/` was built from a different `facet.json` than what's on disk now, publish detects the drift and asks what to do (in an interactive terminal):
+
+- **Identity drift**  -- different name or version. The usual case: you bumped `version` but didn't rebuild. You can build and publish the current source, publish the existing artifact as-is, or cancel.
+- **Content drift**  -- same name and version, different content (an edited description or the <code>[private](/specification/manifest#privacy)</code> flag). You can rebuild and publish, or publish the existing artifact unchanged.
+
+<Warning>
+  In a non-interactive context (CI or piped stdin), both drift cases warn to stderr and ship the **existing** artifact unchanged. For strict CI, run `facet build && facet publish` as two separate commands so a stale `dist/` can never be published silently.
+</Warning>
+
+## Publish outcomes
+
+The registry responds one of three ways:
+
+| Status | Meaning                                                                                                                    |
+|--------|----------------------------------------------------------------------------------------------------------------------------|
+| `201`  | Published. The version is live in the registry.                                                                            |
+| `202`  | Queued for review. Accepted, but a reserved or over-budget global facet becomes available only after an admin approves it. |
+| `409`  | Version already exists. Published versions are immutable and cannot be republished with different content.                 |
+
+<Note>
+  Registry errors render verbatim  -- the CLI shows the registry's own message and suggested fix rather than its own copy of what each code means.
+</Note>
+
+## Ship a new version
+
+A published `(name, version)` is immutable, so every change ships as a new version:
+
+<Steps>
+
+<Step title="Bump the version">
+
+```sh
+facet modify facet --version 1.2.0
+```
+
+<code>[facet modify](/cli/authoring/modify)</code> updates `facet.json` for you (or edit the `version` field by hand).
+
+</Step>
+
+<Step title="Rebuild and republish">
+
+```sh
+facet build
+facet publish
+```
+
+If you forget to rebuild, publish catches the identity drift and offers to build for you.
+
+</Step>
+
+</Steps>
+
+### Changing visibility
+
+The <code>[private](/specification/manifest#privacy)</code> flag is manifest content, so changing it is a content change  -- and a published version can't be changed. To flip visibility, set the flag, bump the version, rebuild, and republish:
+
+```sh
+facet modify facet --private            # or --private false to go public
+facet modify facet --version 1.3.0
+facet build
+facet publish
+```
+
+Omitting `private` (or setting it `false`) keeps a facet public; `true` declares private publish intent. Who can see or download a private facet is enforced by the registry, not the CLI.
+
+## Sign out
+
+```sh
+facet logout
+```
+
+<code>[facet logout](/cli/logout)</code> deletes `~/.facet/credentials`. It makes no server call  -- revoke PATs in the web UI.
+
+<Warning>
+  If `FACET_TOKEN` is set, it keeps authenticating every command after logout. Run `unset FACET_TOKEN` to fully sign out of the current shell.
+</Warning>
+
+## Environment variables
+
+| Variable             | Description                                                                 |
+|----------------------|-----------------------------------------------------------------------------|
+| `FACET_TOKEN`        | Registry PAT. Takes precedence over the credentials file  -- use it for CI. |
+| `FACET_REGISTRY_URL` | Override the registry base URL. Defaults to production.                     |
+
+</Visibility>

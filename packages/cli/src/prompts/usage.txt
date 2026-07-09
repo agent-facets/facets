@@ -1,0 +1,46 @@
+facet — usage instructions for AI agents
+
+"Using" facets means managing them inside a consuming project: adding,
+updating, and removing facets, plus installing the adapter tooling that lets
+facets target specific AI coding tools. This is project management, distinct
+from AUTHORING (writing facets — see: facet instructions authoring).
+
+Add a facet to a project — `facet add`
+  Adds an entry to the project's facets.json and installs it immediately.
+    facet add <source> [more sources...]
+  Use --verbose for detailed step output on stderr. On failure the install is
+  rolled back automatically.
+
+  PREFERRED: the facet registry (agentfacets.io)
+  The registry is the default, first-choice source. A bare name resolves to a
+  published registry facet — reach for this first:
+    facet add viper-plans                Latest published version.
+    facet add viper-plans@1.2.3          An exact version.
+    facet add viper-plans@1.*            Latest 1.x.
+    facet add viper-plans@1.2.*          Latest 1.2.x.
+    facet add viper-plans@latest         Explicit latest (same as bare name).
+    facet add @julian/cowsay             A scoped registry facet.
+    facet add @julian/cowsay@2.0.0       Scoped, exact version.
+    facet add acme/cowsay                A namespaced registry facet.
+
+  Other sources (use only when a facet is not on the registry)
+    facet add github:owner/repo#ref      A facet in a GitHub repo at a git ref.
+    facet add https://host/repo.git#ref  Any git URL at a ref.
+    facet add git@host:owner/repo#ref    SSH git URL at a ref.
+    facet add ./path/to/facet            A local facet directory in the project.
+
+The project files
+  facets.json – Your dependency list: a map of facet name to source specifier.
+                `facet add` maintains it. You generally do not hand-edit it.
+  facets.lock – The install lockfile, managed by the CLI. Do not hand-edit.
+
+Adapter tooling — `facet adapter`
+  Adapters teach facets how to target a specific AI coding tool. Installing an
+  adapter is project setup, not authoring.
+    facet adapter install <specifier>     Install an adapter.
+    facet adapter list                    List installed adapters.
+    facet adapter remove <name>           Remove an installed adapter.
+
+  NOTE: This is about installing the adapter TOOLING. Configuring a facet's
+  per-asset adapter settings (the `adapters` block in facet.json) is an
+  AUTHORING task — see: facet instructions authoring

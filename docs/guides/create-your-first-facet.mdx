@@ -1,0 +1,167 @@
+---
+title: Create Your First Facet
+description: Scaffold, author, build, and verify a facet
+---
+
+By the end of this guide you will have a working `.facet` file ready to publish or share. Make sure you have the CLI installed first  -- see the [Introduction](/).
+
+<Visibility for="agents">
+
+> **Authoring a facet? Read the CLI's own agent instructions first.** The CLI
+> is the single source of truth for the non-interactive authoring workflow:
+>
+> ```sh
+> facet instructions authoring   # scaffold → modify → verify, headless
+> facet instructions manifest    # facet.json structure + generated JSON Schema
+> ```
+>
+> The short version:
+>
+> ```sh
+> # 1. Scaffold headlessly (no wizard):
+> facet create my-facet \
+>   --name my-facet --description "My first facet" \
+>   --skill code-review --agent reviewer --command review-pr
+>
+> # 2. Write the asset files: skills/<name>/SKILL.md, agents/<name>.md,
+> #    commands/<name>.md. Change the manifest with `facet modify`
+> #    (e.g. descriptions, adapter config) instead of `facet edit`.
+> facet modify skill code-review --description "Guidelines for reviewing code"
+>
+> # 3. Validate without producing an artifact, then build:
+> facet build --verify
+> facet build
+> ```
+>
+> See <code>[facet instructions](/cli/instructions)</code>, <code>[facet create](/cli/authoring/create)</code>,
+> <code>[facet modify](/cli/authoring/modify)</code>, and <code>[facet build](/cli/authoring/build)</code>.
+
+</Visibility>
+
+<Visibility for="humans">
+
+## Scaffold a new facet
+
+Scaffold a facet in one command. Pass the assets you want and the CLI writes the manifest plus a starter file for each:
+
+```sh
+facet create my-facet \
+  --name my-facet --description "My first facet" \
+  --skill code-review --agent reviewer --command review-pr
+```
+
+<Tip>
+  Prefer a guided setup? Run `facet create my-facet` with no flags for an interactive wizard. See <code>[facet create](/cli/authoring/create)</code>.
+</Tip>
+
+That gives you:
+
+```
+my-facet/
+├── facet.json
+├── skills/code-review/SKILL.md
+├── agents/reviewer.md
+└── commands/review-pr.md
+```
+
+Each asset type has a conventional path: skills at `skills/<name>/SKILL.md`, agents at `agents/<name>.md`, commands at `commands/<name>.md`. Asset names are always plain kebab-case, even when the facet identity is scoped (`@scope/name`).
+
+## Understand the manifest
+
+`facet.json` is the source of truth for what the facet contains:
+
+```json
+{
+  "name": "my-facet",
+  "version": "0.0.0",
+  "description": "My first facet",
+  "skills":   { "code-review": { "description": "A Code Review skill" } },
+  "agents":   { "reviewer":    { "description": "A Reviewer agent" } },
+  "commands": { "review-pr":   { "description": "A Review Pr command" } }
+}
+```
+
+Each asset type is a map of name to descriptor. A descriptor needs a `description` and may carry optional `adapters` metadata. The name maps to the file at its conventional path. At least one asset is required.
+
+You rarely hand-edit `facet.json` for routine changes  -- <code>[facet modify](/cli/authoring/modify)</code> does it for you:
+
+```sh
+facet modify skill code-review --description "Guidelines for reviewing code"
+facet modify facet --version 0.1.0
+```
+
+## Write your content
+
+Open each starter file and replace the template with your content. The files are plain markdown; optional YAML front matter is preserved through the build and merged with the manifest's metadata at install time.
+
+**`skills/code-review/SKILL.md`**  -- a [skill](https://agentskills.io/specification) provides reusable guidelines:
+
+```markdown
+---
+description: Guidelines for reviewing code changes
+---
+
+# Code Review
+
+- Check new files are in the right directory and imports are tidy.
+- Look for off-by-one errors, unawaited async, and missing error handling.
+- Every new function needs a test; cover edge cases (empty, null, boundaries).
+```
+
+**`agents/reviewer.md`**  -- an agent's content is its system prompt:
+
+```markdown
+You are a code reviewer. Review changes for correctness, style, and
+maintainability. Distinguish blocking issues from suggestions, and when
+you find a bug, explain why and suggest a fix.
+```
+
+**`commands/review-pr.md`**  -- a command is a user-invokable workflow:
+
+```markdown
+Review the current pull request: read the diff against the base branch,
+check each changed file for logic errors, missing error handling, and
+untested paths, then summarize findings as "blocking" or "suggestion".
+```
+
+<Tip>
+  Adapter-specific settings (tool lists, model preferences, permissions) live in the manifest, not the content file. Set them with `facet modify`:
+
+  ```sh
+  facet modify agent reviewer --adapter-opencode '{"tools":{"grep":true,"bash":true}}'
+  ```
+</Tip>
+
+## Verify, then build
+
+Check that the manifest and every asset are valid  -- without producing an artifact  -- using `--verify`:
+
+```sh
+facet build --verify
+```
+
+When it passes, build the distributable `.facet`:
+
+```sh
+facet build
+```
+
+On success the archive lands in `dist/`:
+
+```
+dist/
+└── my-facet-0.0.0.facet
+```
+
+A scoped identity renders as a nested path: `@acme/my-facet` at `0.0.0` writes to `dist/@acme/my-facet-0.0.0.facet`. The `.facet` file is the single distributable artifact; pass `--emit-manifest` to also write a loose `build-manifest.json` for debugging. See <code>[facet build](/cli/authoring/build)</code>.
+
+## Keep editing
+
+Two ways to change a facet after scaffolding:
+
+- **<code>[facet modify](/cli/authoring/modify)</code>**  -- scriptable, one change per command. Add, remove, rename, or re-describe assets, set adapter config, or update facet metadata. This is the fastest path (and what agents use).
+- **<code>[facet edit](/cli/authoring/edit)</code>**  -- an interactive workbench that also reconciles drift between `facet.json` and files you added, renamed, or removed on disk.
+
+Whichever you use, finish with `facet build --verify` to confirm the facet still builds.
+
+</Visibility>

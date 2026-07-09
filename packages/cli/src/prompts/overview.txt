@@ -1,0 +1,39 @@
+facet — instructions for AI agents
+
+This CLI manages "facets": portable bundles of skills, agents, and commands
+for AI coding tools. As an agent you will do one of two things with it. Decide
+which, then read the matching topic before acting.
+
+  AUTHORING a facet  — you are writing or changing a facet (its facet.json and
+                       its skill/agent/command files). Run:
+                         facet instructions authoring
+
+  USING facets       — you are adding, updating, or removing facets inside a
+                       project (usually from the registry at agentfacets.io),
+                       or installing adapter tooling. Run:
+                         facet instructions usage
+
+The three artifact files
+  facet.json   The authoring manifest. Declares a facet's identity (name,
+               version) and its assets (skills, agents, commands) with their
+               descriptions and optional per-adapter config. You edit this when
+               AUTHORING. See: facet instructions manifest
+  facets.json  A consuming project's dependency list: which facets it installs.
+               You touch this when USING facets (via `facet add`).
+  facets.lock  The install lockfile. Managed by the CLI; do not hand-edit.
+
+Command index
+  facet create        Scaffold a new facet (headless flags available).
+  facet modify         Make a scriptable edit to a facet.
+  facet build          Build a facet; use --verify to validate without output.
+  facet edit           Interactive editing wizard (TTY only — prefer `modify`).
+  facet add            Add a facet to a project and install it.
+  facet adapter        Install / list / remove adapter tooling.
+  facet instructions   Print these instructions. Topics: overview (default),
+                       manifest, authoring, usage.
+
+Machine-readable output
+  `facet create`, `facet modify`, and `facet build` accept `--json` for
+  structured output. Prefer it when you need to parse results.
+
+Before doing any authoring work, run: facet instructions authoring

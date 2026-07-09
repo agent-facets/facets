@@ -1,0 +1,16 @@
+---
+title: Stable Release
+sidebarTitle: Stable
+description: Criteria for the v1.0.0 general-availability release
+---
+
+The stable release will be announced as **v1.0.0** and flags general availability. It ships when the [beta](/roadmap/beta) feature set has proven itself in public use.
+
+## GA criteria
+
+- **Everything in the [beta](/roadmap/beta) is shipped and stable**  -- upgrade flow, `facet info`, composition, and MCP server support.
+- **Format stability**  -- the `facet.json` manifest, `facets.json`, `facets.lock`, and the `.facet` archive format are frozen under semver guarantees; breaking format changes require a major version.
+- **CLI surface stability**  -- commands and flags stop churning; deprecations get a documented migration window.
+- **Specification completeness**  -- the [specification](/specification) fully describes the shipped behavior, suitable for independent implementations.
+
+Progress is tracked in the [changelog](/changelog).

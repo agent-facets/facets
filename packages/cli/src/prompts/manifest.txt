@@ -1,0 +1,38 @@
+facet — manifest (facet.json) structure for AI agents
+
+facet.json is the authoring manifest for a facet. It declares the facet's
+identity and its assets. Minimal example:
+
+  {
+    "name": "my-facet",
+    "version": "0.1.0",
+    "description": "What this facet does",
+    "skills":   { "greet":  { "description": "Greets the user" } },
+    "agents":   { "helper": { "description": "Reviews code" } },
+    "commands": { "run":    { "description": "Runs the task" } }
+  }
+
+Field notes
+  name       Required. An unscoped slug (my-facet) or a scoped name
+             (@scope/my-facet). At least 2 characters.
+  version    Required. Semver: MAJOR.MINOR.PATCH.
+  description Optional facet description.
+  private    Optional. `true` declares private publish intent. Omit for public.
+  skills / agents / commands
+             Maps of kebab-case asset name to a descriptor. Each descriptor
+             has a required `description` and an optional `adapters` object
+             (per-adapter config passed through at install time — see
+             `facet instructions authoring`).
+  facets     Optional. Compose other facets (advanced).
+  servers    Optional. Declare MCP servers (advanced).
+
+Business rules the JSON Schema below cannot express
+  - A facet must declare at least one asset (skill, agent, command, or facet).
+  - Asset names must be kebab-case and filesystem-safe (no "..", no slashes).
+  - `name` must be a valid facet identity as described above.
+Run `facet build --verify` to check all of these against a real facet.
+
+The JSON Schema below is generated from the live manifest schema — it is the
+authoritative structural contract.
+
+--- JSON Schema (generated) ---

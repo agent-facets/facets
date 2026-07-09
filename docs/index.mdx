@@ -1,0 +1,88 @@
+---
+title: "Agent Facets"
+sidebarTitle: "Introduction"
+---
+
+<Tooltip headline="Facet" tip="A modular, versioned bundle of skills, agents, and commands that extends an AI coding assistant." cta="Read the spec" href="/specification/architecture#facets">Facets</Tooltip> are modular, versioned bundles of skills, agents, and commands that extend AI coding assistants.
+
+The `facet` CLI tool is a package manager for facets with a free public <Tooltip headline="Registry" tip="The public registry at agentfacets.io where facets are published, discovered, and installed." cta="Browse facets" href="https://agentfacets.io">registry</Tooltip>, https://agentfacets.io. The registry is a place to help discover and install facets without building them yourself. It's also a place to share facets you author **publicly** with the world or **privately** with your team.
+
+The CLI and registry are **free to the public**. Private hosting plans are available for individuals and teams. The CLI is hosted at https://github.com/agent-facets/facets and fully open-sourced via an MIT license.
+
+## Get Started
+
+<Steps>
+
+<Step title="Install the CLI">
+
+<CodeGroup>
+
+```shell curl
+curl -fsSL https://agentfacets.io/install | bash
+```
+
+```shell npm
+npm install -g agent-facets
+```
+
+```shell bun
+bun add -g agent-facets
+```
+
+```shell pnpm
+pnpm install -g agent-facets
+```
+
+</CodeGroup>
+
+</Step>
+
+<Step title="Verify the installation">
+
+```sh
+facet --version
+```
+
+</Step>
+
+<Step title="Install the adapter for your AI coding assistant">
+
+```sh
+facet adapter install
+```
+
+Bundled adapters are hosted on GitHub. There is an [adapter SDK](https://github.com/agent-facets/facets/tree/main/packages/adapter) you can use to <Tooltip headline="Facet Adapter SDK" tip="The SDK can be used to build custom adapters. Adapters completely manage the lifecycle of facet installation." cta="Learn More" href="/guides/custom-adapters">build custom adapters</Tooltip>.
+
+</Step>
+
+</Steps>
+
+<Tip>Once installed, you can update the CLI in place with <code>[facet self-update](/cli/self-update)</code></Tip>
+
+## Quick example -- installing your first facet
+
+Add a facet from the registry with:
+
+```sh
+facet add cowsay
+```
+
+You can now run `/cowsay` and `/cowchat` from any of the coding assistants you installed adapters for.
+
+## Guides
+
+<CardGroup cols={3}>
+
+<Card title="Install Facets" icon="download" href="/guides/install-facets">
+  Set up an adapter, search the registry, add facets, and manage your project.
+</Card>
+
+<Card title="Create Your First Facet" icon="hammer" href="/guides/create-your-first-facet">
+  Scaffold a project, write skills, agents, and commands, then build a `.facet` archive.
+</Card>
+
+<Card title="Publish a Facet" icon="upload" href="/guides/publish-a-facet">
+  Sign in to the registry, build, publish, and handle drift detection.
+</Card>
+
+</CardGroup>

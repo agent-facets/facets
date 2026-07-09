@@ -1,0 +1,60 @@
+---
+title: facet instructions
+description: Print CLI usage instructions for AI agents
+---
+
+## Usage
+
+```sh
+facet instructions [topic]
+```
+
+`facet instructions` prints agent-oriented usage guidance for the CLI. It is **for AI agents**: workflow guidance that tells an autonomous agent how to author and use facets, rather than per-flag help (for that, use `facet <command> --help`).
+
+The default topic is `overview`. It routes the agent to the right domain — authoring a facet, or using facets in a project — and indexes the other topics.
+
+## Topics
+
+<ResponseField name="overview" type="default">
+  What facets are, the three artifact files, and the two workflows: authoring vs. using.
+</ResponseField>
+
+<ResponseField name="manifest" type="topic">
+  The `facet.json` structure, plus the JSON Schema generated live from the schema definition.
+</ResponseField>
+
+<ResponseField name="authoring" type="topic">
+  Writing facets: scaffold → modify → verify, including per-asset adapter configuration.
+</ResponseField>
+
+<ResponseField name="usage" type="topic">
+  Project management: add/update/remove facets (registry-first), and install adapter tooling.
+</ResponseField>
+
+```sh
+facet instructions            # overview
+facet instructions manifest   # facet.json structure + generated JSON Schema
+facet instructions authoring  # how to author a facet non-interactively
+facet instructions usage      # how to use facets in a project
+```
+
+## The manifest schema is generated
+
+The `manifest` topic appends the `facet.json` **JSON Schema generated at runtime from the schema definition** — it is never a hand-maintained copy, so it always matches the CLI you are running. The narrow business rules the schema cannot express (at least one asset, kebab-case asset names, valid facet name) are described in prose alongside it; run <code>[facet build --verify](/cli/authoring/build)</code> to check them against a real facet.
+
+## Related commands
+
+The instructions point agents at the non-interactive, machine-readable surfaces:
+
+- <code>[facet create](/cli/authoring/create)</code> — scaffold a facet with headless flags.
+- <code>[facet modify](/cli/authoring/modify)</code> — make scriptable edits to a facet.
+- <code>[facet build](/cli/authoring/build)</code> — build, or `--verify` to validate without output.
+- <code>[facet add](/cli/add)</code> — add facets to a project (registry-first).
+- <code>[facet adapter](/cli/adapters/install)</code> — install and manage adapter tooling.
+
+## Exit codes
+
+| Code | Meaning                                   |
+| ---- | ----------------------------------------- |
+| `0`  | Instructions printed                      |
+| `1`  | Unknown topic (valid topics are listed)   |

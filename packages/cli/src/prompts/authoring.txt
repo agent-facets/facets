@@ -1,0 +1,76 @@
+facet — authoring instructions for AI agents
+
+Authoring a facet means writing or changing its facet.json manifest and its
+asset files. The loop is: scaffold → change → verify. You can do all of it
+non-interactively. Do NOT use `facet edit` (it is an interactive TTY wizard);
+use `facet modify` or edit files directly, then verify.
+
+Asset file layout (relative to the facet root)
+  skills/<name>/SKILL.md    A skill.
+  agents/<name>.md          An agent.
+  commands/<name>.md        A command.
+Asset names are kebab-case (lowercase letters, digits, single hyphens).
+
+1) SCAFFOLD a new facet — `facet create`
+   Pass headless flags to skip the interactive wizard:
+     facet create ./my-facet \
+       --name my-facet \
+       --description "What it does" \
+       --version 0.1.0 \
+       --skill greet --agent helper --command run
+   Repeat --skill / --agent / --command for multiple assets. Use --private to
+   mark the facet private, --force to overwrite an existing facet.json, and
+   --json for structured output. At least one asset is required.
+
+2) CHANGE an existing facet — `facet modify`
+   Grammar: facet modify <target> <name> [directory] [flags]
+   <target> is skill | agent | command | facet. [directory] defaults to the
+   current directory and must contain a facet.json.
+
+   Add an asset (creates the manifest entry AND scaffolds the file):
+     facet modify skill greet --add --description "Greets the user"
+   Change an asset's description:
+     facet modify agent helper --description "Reviews code"
+   Rename an asset (moves its file too):
+     facet modify command run --rename start
+   Remove an asset (deletes its file too):
+     facet modify skill greet --remove
+   Set facet-level metadata (target is the literal word `facet`):
+     facet modify facet --version 1.0.0 --description "..." --private
+
+   Rules:
+   - Exactly one lifecycle action per call: --add, --remove, or --rename.
+   - --description and adapter flags may accompany --add or --rename, or stand
+     alone. --remove takes no other field flags.
+   - Add --json for a structured change summary.
+
+3) ADAPTER CONFIG — per-asset, per-adapter settings
+   Each skill/agent/command may carry an `adapters` block in facet.json: a map
+   of adapter name to a free-form config object that the CLI passes through to
+   that adapter at install time. Set it with a name-embedded flag whose value
+   is a JSON object (the whole suffix after `--adapter-` is the adapter name,
+   so hyphenated names like claude-code work):
+     facet modify skill greet \
+       --adapter-claude-code '{"permission":{"bash":"ask"}}' \
+       --adapter-opencode    '{"model":"..."}'
+   Setting an adapter REPLACES that adapter's block wholesale. Remove one with:
+     facet modify skill greet --remove-adapter-opencode
+
+   Equivalent hand-edit: you may edit facet.json directly instead. Add an
+   `adapters` object to the asset's descriptor, e.g.
+     "skills": {
+       "greet": {
+         "description": "...",
+         "adapters": { "claude-code": { "permission": { "bash": "ask" } } }
+       }
+     }
+   Hand-edits round-trip safely; the CLI preserves unknown descriptor fields.
+
+4) VERIFY — always validate after changes
+   Run the full build pipeline WITHOUT writing any output:
+     facet build --verify
+   Add --json for a machine-readable result (ok, errors, warnings). A clean
+   verify means facet.json and all asset files are valid and buildable. To
+   produce the actual .facet artifact, run `facet build` (no --verify).
+
+See the manifest structure and JSON Schema with: facet instructions manifest
