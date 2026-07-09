@@ -5,6 +5,21 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-07-09" description="TypeScript 7 support for SDK consumers" tags={["SDK", "Improvement"]} rss={{
+  title: "TypeScript 7 support for SDK consumers",
+  description: "The typescript peer dependency on the published Agent Facets SDK packages has been widened to ^5 || ^6 || ^7. If your project uses TypeScript 7 (the new native @typescript/native-preview compiler), installs no longer emit peer-dependency warnings or fail resolution. TypeScript 5 and 6 users are unaffected — no code changes required."
+}}>
+  ## TypeScript 7 support for SDK consumers
+
+  The `typescript` peer dependency on the published Agent Facets SDK
+  packages now accepts **`^5 || ^6 || ^7`**. If your project has adopted
+  TypeScript 7 (the new native `@typescript/native-preview` compiler),
+  installs no longer surface peer-dependency warnings or fail to resolve.
+
+  TypeScript 5 and 6 users are unaffected  -- no code changes required.
+</Update>
+
+
 <Update label="2026-07-09" description="Generated JSON files now end with a trailing newline" tags={["CLI", "Fix"]} rss={{
   title: "Generated JSON files now end with a trailing newline",
   description: "Every JSON file the CLI writes -- facets.lock, install receipts, build manifests, scaffolded facet.json, and cache metadata -- now ends with exactly one trailing newline and uses consistent 2-space indentation. This eliminates spurious diffs when editors that auto-append a final newline open a CLI-generated file. facets.json continues to be written through the comment-preserving serializer and now upholds the same invariant."
