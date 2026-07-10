@@ -5,6 +5,27 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-07-09" description="TypeScript 7 is now a supported peer for @agent-facets/protocol, @agent-facets/adapter, @agent-facets/brand, and the first-party adapters" tags={["Improvement"]} rss={{
+  title: "TypeScript 7 support for the public packages",
+  description: "The public @agent-facets/* packages -- @agent-facets/protocol, @agent-facets/adapter, @agent-facets/brand, @agent-facets/adapter-claude-code, @agent-facets/adapter-codex, and @agent-facets/adapter-opencode -- now declare their typescript peerDependency as ^5 || ^6 || ^7, so they install cleanly on projects that have upgraded to TypeScript 7. Consumers on TypeScript 5 or 6 are unaffected."
+}}>
+  ## TypeScript 7 support
+
+  The public `@agent-facets/*` packages now declare their `typescript`
+  peer dependency as `^5 || ^6 || ^7`, so they install cleanly on
+  projects that have upgraded to TypeScript 7. Consumers still on
+  TypeScript 5 or 6 are unaffected -- no action needed.
+
+  This applies to:
+
+  - `@agent-facets/protocol`
+  - `@agent-facets/adapter`
+  - `@agent-facets/brand`
+  - `@agent-facets/adapter-claude-code`
+  - `@agent-facets/adapter-codex`
+  - `@agent-facets/adapter-opencode`
+</Update>
+
 <Update label="2026-07-09" description="Generated JSON files now end with a trailing newline" tags={["CLI", "Fix"]} rss={{
   title: "Generated JSON files now end with a trailing newline",
   description: "Every JSON file the CLI writes -- facets.lock, install receipts, build manifests, scaffolded facet.json, and cache metadata -- now ends with exactly one trailing newline and uses consistent 2-space indentation. This eliminates spurious diffs when editors that auto-append a final newline open a CLI-generated file. facets.json continues to be written through the comment-preserving serializer and now upholds the same invariant."
