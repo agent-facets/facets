@@ -186,6 +186,20 @@ Your project now has two files  -- commit both to version control so teammates a
   The lockfile honors the manifest. A pinned entry is reused as long as it still satisfies `facets.json`; when you bump a version or widen a wildcard, `facet install` re-resolves and updates the lock.
 </Note>
 
+## Where assets land
+
+`facet add` also writes each asset into every connected adapter's **project-local** directory, so your tool picks them up immediately. With the `opencode` adapter, adding `cowsay` writes:
+
+```
+.opencode/
+├── skills/cowsay-rules/SKILL.md
+├── agents/cowsay.md
+├── commands/cowsay.md
+└── commands/cowchat.md
+```
+
+Other adapters use their own conventional location (Claude Code under `.claude/`, and so on). These files are `project`-scoped  -- the same `scope` you see in the lockfile  -- so they belong to the checkout, not your machine. `facet remove` deletes them again, and `facet install` recreates them from the lockfile after a clone.
+
 ## Reinstall after a git clone
 
 When you clone a project that already has `facets.json` and `facets.lock`, materialize into your adapters with:

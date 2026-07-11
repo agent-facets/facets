@@ -7,20 +7,20 @@ This page introduces the core concepts behind Facets. For normative requirements
 
 ## Facets
 
-A **facet** is a versioned collection of [assets](#assets) defined by a facet manifest (`facet.json`). What the author creates locally, what gets published to the registry, and what gets extracted after install.
+A **facet** is a versioned collection of [assets](#assets) defined by a facet manifest (`facet.json`) — the same bundle an author creates locally, publishes to the registry, and installs into a project.
 
 ## Assets
 
-A discrete unit of content within a facet. Consisting of any combination of skills, agents, and commands.
+An asset is a discrete unit of content within a facet. A facet bundles any combination of the three asset types below. All three are text assets that follow the [Agent Skills](https://agentskills.io/specification) specification.
 
 <Columns col={2}>
   <Card title='Skills' href='/docs/learn/skills'>
-    Text assets that follow the [Agent Skills](https://agentskills.io/specification) specification.
+    Reusable knowledge and guidelines the assistant applies passively.
   </Card>
   <Card title='Commands' href='/docs/learn/commands'>
-    Text assets that follow the [Agent Skills](https://agentskills.io/specification) specification.
+    User-invokable workflows, exposed as slash commands.
   </Card>
   <Card title='Agents' href='/docs/learn/agents'>
-    Text assets that follow the [Agent Skills](https://agentskills.io/specification) specification.
+    Personas with a defined role, behavior, and tool access.
   </Card>
 </Columns>

@@ -1,0 +1,83 @@
+---
+title: Quickstart
+description: Install, add, and use your first facet
+---
+
+By the end of this page you'll have the `facet` CLI installed, a facet added to your project, and a new slash command working in your AI coding tool — in under five minutes.
+
+<Steps>
+  <Step title="Install the CLI">
+    <CodeGroup>
+      ```sh curl
+      curl -fsSL https://agentfacets.io/install | bash
+      ```
+
+      ```sh npm
+      npm install -g agent-facets
+      ```
+
+      ```sh bun
+      bun add -g agent-facets
+      ```
+    </CodeGroup>
+
+    Verify it:
+
+    ```sh
+    facet --version
+    ```
+  </Step>
+
+  <Step title="Connect your AI tool (once per machine)">
+    Install the <Tooltip tip="An adapter is the bridge between facet and a specific AI coding tool — it decides where assets and config land on disk.">adapter</Tooltip> for the tool you use:
+
+    ```sh
+    facet adapter install claude-code   # or: opencode, codex
+    ```
+  </Step>
+
+  <Step title="Add a facet">
+    From your project directory, add a facet by name from the registry:
+
+    ```sh
+    facet add cowsay
+    ```
+
+    ```
+    cowsay installed. Updated facets via 1 adapter  ✓
+      1 installed · 4 assets written
+      + 1 skill · 1 agent · 2 commands
+    ```
+  </Step>
+
+  <Step title="Use it">
+    The facet's commands are now available in your tool. Run:
+
+    ```
+    /cowsay
+    /cowchat
+    ```
+
+    That's it — you've installed and used your first facet.
+  </Step>
+</Steps>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Set up publishing" icon="key" href="/guides/setup">
+    Install adapters and mint a token so you can publish your own facets.
+  </Card>
+
+  <Card title="Create your first facet" icon="hammer" href="/guides/create-your-first-facet">
+    Scaffold, author, build, and verify a facet of your own.
+  </Card>
+
+  <Card title="Install facets" icon="download" href="/guides/install-facets">
+    Add, pin, reinstall, and remove facets in a project.
+  </Card>
+
+  <Card title="Hit a snag?" icon="life-buoy" href="/guides/troubleshooting">
+    Fixes for the most common CLI errors.
+  </Card>
+</CardGroup>

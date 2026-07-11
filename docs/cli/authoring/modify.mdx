@@ -13,6 +13,10 @@ facet modify <target> [name] [directory] [flags]
 
 `<target>` is one of `skill`, `agent`, `command`, or `facet`. `[directory]` defaults to the current directory and must contain a `facet.json`.
 
+<Note>
+  Requires the facet CLI **v0.24.0 or newer**. If `facet modify` reports *"Unknown command"*, update with <code>[facet self-update](/cli/self-update)</code>.
+</Note>
+
 ## Editing an asset
 
 For the asset targets (`skill`, `agent`, `command`), pass the asset name and exactly one lifecycle action, optionally with field changes.

@@ -1,0 +1,74 @@
+---
+title: Setup & Prerequisites
+description: Install the CLI, an adapter, and a token
+---
+
+What you need before adding, authoring, or publishing facets. If you just want to try a facet, the [Quickstart](/quickstart) is faster.
+
+<Steps>
+  <Step title="Install the CLI">
+    <CodeGroup>
+      ```sh curl
+      curl -fsSL https://agentfacets.io/install | bash
+      ```
+
+      ```sh npm
+      npm install -g agent-facets
+      ```
+
+      ```sh bun
+      bun add -g agent-facets
+      ```
+    </CodeGroup>
+
+    Keep it current — the newer authoring commands need **v0.24.0+**:
+
+    ```sh
+    facet --version
+    facet self-update   # update in place if needed
+    ```
+  </Step>
+
+  <Step title="Connect an adapter (required before `facet add`)">
+    A facet is only useful once it's materialized into an AI tool, which the <Tooltip tip="An adapter is the bridge between facet and a specific AI coding tool.">adapter</Tooltip> handles. Install one per machine:
+
+    ```sh
+    facet adapter install claude-code   # or: opencode, codex
+    facet adapter list
+    ```
+
+    <Note>
+      Without an adapter, `facet add` shows a picker in a terminal — and **fails** in a non-interactive shell (CI). Install one first.
+    </Note>
+  </Step>
+
+  <Step title="Create a registry account + token (only to publish)">
+    Adding public facets needs no account. **Publishing** does: sign up at [agentfacets.io](https://agentfacets.io) and create a <Tooltip tip="A revocable credential you mint in the web UI to authenticate the CLI to the registry.">personal access token (PAT)</Tooltip> in your account settings.
+
+    ```sh
+    facet login                     # interactive; stores the token
+    export FACET_TOKEN=fct_pub_…    # or, preferred for CI/scripts
+    facet whoami                    # confirm the signed-in identity
+    ```
+  </Step>
+</Steps>
+
+## Verify your setup
+
+```sh
+facet --version        # CLI is installed and recent
+facet adapter list     # at least one adapter connected
+facet whoami           # signed in (only needed for publishing)
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Install facets" icon="download" href="/guides/install-facets">
+    Add, pin, reinstall, and remove facets.
+  </Card>
+
+  <Card title="Create your first facet" icon="hammer" href="/guides/create-your-first-facet">
+    Scaffold, author, build, and verify.
+  </Card>
+</CardGroup>

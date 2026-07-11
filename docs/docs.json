@@ -52,16 +52,18 @@
           {
             "group": "Agent Facets",
             "icon": "box",
-            "pages": ["index", "docs/learn/index"]
+            "pages": ["index", "quickstart", "docs/learn/index"]
           },
           {
             "group": "Guides",
             "icon": "rocket",
             "pages": [
+              "guides/setup",
               "guides/install-facets",
               "guides/create-your-first-facet",
               "guides/publish-a-facet",
-              "guides/custom-adapters"
+              "guides/custom-adapters",
+              "guides/troubleshooting"
             ]
           },
           {

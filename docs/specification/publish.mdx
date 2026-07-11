@@ -1,6 +1,6 @@
 ---
 title: "Publish Flow"
-description: "How facets are built and published to the registry."
+description: How facets are built and published
 ---
 
 `facet build` produces the canonical `.facet` archive on disk from your source tree. `facet publish` reads that built archive, verifies it against the facet artifact specification, and uploads it to the registry. Building and publishing are distinct steps with a single source of truth for what a `.facet` is: the protocol-defined two-layer format whose content-hash contract is described in the [Integrity Model](/specification/integrity).

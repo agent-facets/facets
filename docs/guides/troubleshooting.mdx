@@ -1,0 +1,80 @@
+---
+title: Troubleshooting
+description: Fix common facet CLI errors
+---
+
+Common errors, what causes them, and how to fix them. Each entry mirrors the CLI's own `error: … fix: …` output.
+
+<AccordionGroup>
+  <Accordion title='"Unknown command" (e.g. facet instructions / modify)'>
+    **Cause:** your installed CLI predates the command. `facet instructions`, `facet modify`, headless `facet create`, and `facet build --verify/--json` require **v0.24.0 or newer**.
+
+    **Fix:** update in place, then re-run:
+
+    ```sh
+    facet self-update
+    facet --version
+    ```
+  </Accordion>
+
+  <Accordion title='"could not reach the registry"'>
+    **Cause:** `facet search`, a registry `facet add`, and `facet publish` need network access to the registry. Offline, they **fail closed** rather than write an unconfirmed entry.
+
+    **Fix:** check your connection and retry. Note that **local paths** (`./my-facet`) and **git sources** (`github:owner/repo`) resolve without the registry, so you can keep working offline with those.
+  </Accordion>
+
+  <Accordion title='"no adapters installed" when running facet add (non-interactive)'>
+    **Cause:** a facet has to be materialized into at least one adapter, but none is connected. In a real terminal `facet add` shows a picker; in a non-interactive shell (CI, piped stdin) it exits with an error instead.
+
+    **Fix:** install an adapter first:
+
+    ```sh
+    facet adapter install claude-code
+    facet adapter list
+    ```
+  </Accordion>
+
+  <Accordion title='"not signed in — no registry credential found"'>
+    **Cause:** `facet publish` (and `facet whoami`) need a registry credential and none was found.
+
+    **Fix:** authenticate, then retry. In CI, prefer the environment variable:
+
+    ```sh
+    facet login              # interactive
+    export FACET_TOKEN=fct_pub_…   # or, for CI/scripts
+    facet whoami             # confirm the identity
+    ```
+  </Accordion>
+
+  <Accordion title='Publish rejected: version already exists (HTTP 409)'>
+    **Cause:** published `(name, version)` pairs are **immutable** — you can't republish a version with different content.
+
+    **Fix:** bump the version, rebuild, and publish again:
+
+    ```sh
+    facet modify facet --version 1.2.0
+    facet build
+    facet publish
+    ```
+  </Accordion>
+
+  <Accordion title='Build fails: skills["0"] must be an object'>
+    **Cause:** `skills` is written as an array of strings. It must be a **map** of name → descriptor.
+
+    **Fix:**
+
+    ```json
+    {
+      "skills": {
+        "code-review": { "description": "Guidelines for reviewing code changes" }
+      }
+    }
+    ```
+
+    Then re-check with `facet build --verify`. See the [Manifest reference](/specification/manifest).
+  </Accordion>
+</AccordionGroup>
+
+## Still stuck?
+
+Ask in the [community Discord](https://discord.gg/qXQYaYna5w) or open an issue on [GitHub](https://github.com/agent-facets/facets).
