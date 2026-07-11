@@ -250,6 +250,122 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
   })
 })
 
+describe('materialize — adapter-owned normalizeForCompare', () => {
+  /**
+   * A TOML-style adapter modeled on Codex's agent serialization: content
+   * round-trips VERBATIM (no YAML front-matter split). Without
+   * `normalizeForCompare`, the default YAML normalization strips any
+   * `---` block out of the candidate content, so an agent whose prompt
+   * contains front-matter never matches its own round-trip — the
+   * TASK-192 "repaired forever" loop.
+   */
+  function buildVerbatimAdapter(name: string, withHook: boolean): { adapter: Adapter } {
+    const file = (type: string, n: string) => join(projectRoot, `.${name}`, `${type}s`, `${n}.txt`)
+    const adapter: Adapter = {
+      name,
+      supportsInstall: true,
+      buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
+      async installAsset(_scope, type, n, content, metadata) {
+        mkdirSync(join(projectRoot, `.${name}`, `${type}s`), { recursive: true })
+        writeFileSync(file(type, n), JSON.stringify({ content, metadata: metadata ?? {} }))
+        return undefined
+      },
+      async readAsset(_scope, type, n) {
+        if (!existsSync(file(type, n))) {
+          const err: NodeJS.ErrnoException = new Error('ENOENT')
+          err.code = 'ENOENT'
+          throw err
+        }
+        const parsed = JSON.parse(readFileSync(file(type, n), 'utf8')) as {
+          content: string
+          metadata: Record<string, unknown>
+        }
+        return parsed
+      },
+      async deleteAsset(_scope, type, n) {
+        if (existsSync(file(type, n))) rmSync(file(type, n))
+        return undefined
+      },
+      ...(withHook
+        ? {
+            normalizeForCompare(_assetType: string, content: string, metadata: Record<string, unknown>) {
+              // Verbatim round-trip: candidate needs no transformation.
+              return { content, metadata }
+            },
+          }
+        : {}),
+    }
+    return { adapter }
+  }
+
+  const frontMatterManifest: ResolvedFacetManifest = {
+    name: 'viper-plans',
+    version: '0.1.0',
+    agents: {
+      reviewer: {
+        description: 'reviews things',
+        prompt: '---\nrole: reviewer\n---\nYou are an expert reviewer.\n',
+      },
+    },
+  }
+
+  test('agent prompt with front-matter reports skipped:1 on re-run when the adapter owns normalization', async () => {
+    const { adapter } = buildVerbatimAdapter('verbatim-hooked', true)
+    const newAssets = computeAssetList(frontMatterManifest)
+
+    const first = await materialize({
+      facetName: 'viper-plans',
+      manifest: frontMatterManifest,
+      adapters: [adapter],
+      oldAssets: [],
+      newAssets,
+      journal: new InstallJournal(),
+    })
+    if (!first.ok) expect.unreachable()
+    expect(first.written).toBe(1)
+
+    const second = await materialize({
+      facetName: 'viper-plans',
+      manifest: frontMatterManifest,
+      adapters: [adapter],
+      oldAssets: newAssets,
+      newAssets,
+      journal: new InstallJournal(),
+    })
+    if (!second.ok) expect.unreachable()
+    expect(second.written).toBe(0)
+    expect(second.skipped).toBe(1)
+  })
+
+  test('same adapter WITHOUT the hook re-writes forever — documents why the hook exists', async () => {
+    // Control case: proves the test above is load-bearing. A verbatim
+    // round-trip adapter under the default YAML normalization can never
+    // skip an agent whose prompt contains front-matter.
+    const { adapter } = buildVerbatimAdapter('verbatim-bare', false)
+    const newAssets = computeAssetList(frontMatterManifest)
+
+    await materialize({
+      facetName: 'viper-plans',
+      manifest: frontMatterManifest,
+      adapters: [adapter],
+      oldAssets: [],
+      newAssets,
+      journal: new InstallJournal(),
+    })
+    const second = await materialize({
+      facetName: 'viper-plans',
+      manifest: frontMatterManifest,
+      adapters: [adapter],
+      oldAssets: newAssets,
+      newAssets,
+      journal: new InstallJournal(),
+    })
+    if (!second.ok) expect.unreachable()
+    expect(second.written).toBe(1)
+    expect(second.skipped).toBe(0)
+  })
+})
+
 describe('materialize — skip-if-identical', () => {
   test('returns skipped:1, written:0 when content + metadata match on disk', async () => {
     const manifest: ResolvedFacetManifest = {

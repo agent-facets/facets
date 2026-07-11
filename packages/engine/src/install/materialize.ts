@@ -175,29 +175,31 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
       // entry is recorded (there's nothing to undo).
       //
       // The candidate (`content`, `metadata`) we hand to `installAsset`
-      // is NOT what lands on disk byte-for-byte. The adapter SDK's
-      // `assembleAssetContent` splits any author-supplied front matter
-      // out of `content` and merges it under the caller's `metadata`
-      // (caller wins on key collisions), then re-emits a `--- yaml ---
-      // body` file. To compare apples-to-apples with what `readAsset`
-      // returns, we replay that merge here:
-      //   - body is the post-split candidate body (via the same
-      //     `splitFrontMatter` primitive the adapter SDK uses)
-      //   - metadata is the same merge the SDK would do
-      // The on-disk `previous.content` and `previous.metadata` reflect
-      // that merged shape, so equality holds iff a no-op write is safe.
+      // is NOT what lands on disk byte-for-byte. To compare
+      // apples-to-apples with what `readAsset` returns, the candidate is
+      // normalized into the post-round-trip shape first:
       //
-      // We import `splitFrontMatter` from `common` rather than
-      // `splitAssetContent` from the adapter SDK to keep the adapter SDK
-      // a type-only dep of engine: a value import from the SDK pulls
+      //   - If the adapter implements `normalizeForCompare`, it owns the
+      //     mapping — required whenever its serialization diverges from
+      //     the standard YAML front-matter model (e.g. Codex's TOML
+      //     agents, sidecar-routed metadata keys).
+      //   - Otherwise we replay the adapter SDK's default: split any
+      //     author-supplied front matter out of `content` and merge it
+      //     under the caller's `metadata` (caller wins on collisions),
+      //     matching `assembleAssetContent`/`readAssetFile`.
+      //
+      // The default uses `splitFrontMatter` from `common` rather than
+      // the SDK's `normalizeAssetContent` to keep the adapter SDK a
+      // type-only dep of engine: a value import from the SDK pulls
       // `yaml` into engine's runtime graph and collides with `Bun.build`
       // when the CLI's adapter integration tests bundle the same source.
-      const candidateSplit = splitFrontMatter(content)
-      const mergedCandidateMetadata = { ...(candidateSplit.metadata ?? {}), ...metadata }
+      const candidate = adapter.normalizeForCompare
+        ? adapter.normalizeForCompare(asset.type, content, metadata)
+        : defaultNormalizeForCompare(content, metadata)
       if (
         previous &&
-        previous.content === candidateSplit.content &&
-        JSON.stringify(previous.metadata ?? {}) === JSON.stringify(mergedCandidateMetadata)
+        previous.content === candidate.content &&
+        JSON.stringify(previous.metadata ?? {}) === JSON.stringify(candidate.metadata)
       ) {
         opts.onLog?.(() => `[verbose]     =${asset.type}:${asset.name} (skipped)`)
         skipped++
@@ -286,6 +288,20 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
   }
 
   return { ok: true, written, skipped, deleted }
+}
+
+/**
+ * Engine-local mirror of the adapter SDK's `normalizeAssetContent` — the
+ * fallback for adapters that don't implement `normalizeForCompare`. Kept
+ * here (built on `common`'s `splitFrontMatter`) instead of value-importing
+ * the SDK helper so the adapter SDK stays a type-only dep of engine.
+ */
+function defaultNormalizeForCompare(
+  content: string,
+  metadata: Record<string, unknown>,
+): { content: string; metadata: Record<string, unknown> } {
+  const split = splitFrontMatter(content)
+  return { content: split.content, metadata: { ...(split.metadata ?? {}), ...metadata } }
 }
 
 /**

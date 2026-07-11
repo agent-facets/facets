@@ -128,6 +128,26 @@ export function splitAssetContent(raw: string): { content: string; metadata?: Re
 }
 
 /**
+ * The default `normalizeForCompare` behavior: replay the YAML front-matter
+ * split+merge that `installAssetFile` performs, yielding the exact
+ * `{ content, metadata }` shape `readAssetFile` returns after a real
+ * round-trip.
+ *
+ * Adapters that delegate to `installAssetFile`/`readAssetFile` never need
+ * this (the install pipeline applies the same default). It's exported for
+ * adapters with *mixed* serialization — e.g. an adapter whose skills use
+ * the standard YAML model but whose agents are TOML can compose this for
+ * the standard branches of its own `normalizeForCompare`.
+ */
+export function normalizeAssetContent(
+  content: string,
+  metadata: Record<string, unknown>,
+): { content: string; metadata: Record<string, unknown> } {
+  const split = splitFrontMatter(content)
+  return { content: split.content, metadata: { ...(split.metadata ?? {}), ...metadata } }
+}
+
+/**
  * Assert that an asset name is safe to join onto a filesystem path. Throws
  * a clear error if not. Exposed so adapter implementations can call this
  * defensively before using `name` in `path.join` — even though the CLI

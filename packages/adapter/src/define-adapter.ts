@@ -35,6 +35,10 @@ export function defineAdapter(definition: Adapter): Adapter {
 
     buildAssetMetadata: definition.buildAssetMetadata.bind(definition),
 
+    // Optional — left undefined when the adapter doesn't provide it so the
+    // install pipeline can detect absence and apply its YAML default.
+    normalizeForCompare: definition.normalizeForCompare?.bind(definition),
+
     // CRUD stubs — full implementations deferred to install pipeline
     installAsset:
       definition.installAsset?.bind(definition) ??

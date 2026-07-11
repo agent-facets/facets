@@ -4,6 +4,7 @@ export {
   assertSafeAssetName,
   deleteAssetFile,
   installAssetFile,
+  normalizeAssetContent,
   readAssetFile,
   splitAssetContent,
 } from './asset-fs.ts'

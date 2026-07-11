@@ -51,6 +51,29 @@ export interface Adapter {
   readAsset(scope: Scope, assetType: AssetType, name: string): Promise<{ content: string; metadata?: AdapterMetadata }>
 
   /**
+   * Normalize a would-write `(content, metadata)` candidate into the exact
+   * shape `readAsset` would return after a real install round-trip.
+   *
+   * The install pipeline compares this normalized candidate against the
+   * current on-disk asset (via `readAsset`) to decide whether a write can
+   * be skipped ("skip-if-identical"). If an adapter's on-disk serialization
+   * differs from the standard YAML front-matter model — e.g. TOML agents,
+   * or metadata keys routed to a sidecar file — it MUST implement this
+   * method so the comparison is apples-to-apples. Otherwise every install
+   * run re-writes ("repairs") assets that are already in their desired
+   * state.
+   *
+   * Optional: adapters whose round-trip is the standard YAML front-matter
+   * split+merge (`installAssetFile`/`readAssetFile`) don't need it — the
+   * pipeline falls back to that default (see `normalizeAssetContent`).
+   */
+  normalizeForCompare?(
+    assetType: AssetType,
+    content: string,
+    metadata: AdapterMetadata,
+  ): { content: string; metadata: AdapterMetadata }
+
+  /**
    * Delete an asset from the given scope. Returns the absolute path of
    * the deleted asset, if available — used for verbose diagnostic
    * logging. Returning `void` is backward-compatible.
