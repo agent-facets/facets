@@ -34,6 +34,10 @@ If the build fails, errors are displayed inline under the failed pipeline stage,
 
 ## Validate without building: `--verify`
 
+<Note>
+  The `--verify` and `--json` flags require the facet CLI **v0.24.0 or newer**. Update with <code>[facet self-update](/cli/self-update)</code> if your build doesn't recognize them.
+</Note>
+
 `facet build --verify` runs the full validation pipeline (stages 1–5 above) **without writing any output** — a no-op build. Nothing is written to `dist/`. Use it to confirm that `facet.json` and every asset file are valid and buildable, without producing an artifact.
 
 ```sh

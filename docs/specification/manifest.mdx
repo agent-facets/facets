@@ -2,10 +2,12 @@
 title: "Facet Manifest – facet.json"
 sidebarTitle: Facet Manifest
 tag: facet.json
-description: "The manifest format schema -- fields, types, and constraints."
+description: The facet.json schema and name grammar
 ---
 
 The facet manifest (`facet.json`) is the source of truth for a facet's identity and the text assets it contains. This page defines every field in the manifest schema and is the canonical reference for the facet name grammar.
+
+For conceptual guides to each asset type, see [Skills](/docs/learn/skills), [Commands](/docs/learn/commands), and [Agents](/docs/learn/agents).
 
 ## Example
 
@@ -15,11 +17,13 @@ The facet manifest (`facet.json`) is the source of truth for a facet's identity 
   "version": "1.0.0",
   "description": "Acme org developer toolkit",
   "author": "acme-org",
-  "skills": ["code-standards", "pr-template"],
+  "skills": {
+    "code-standards": { "description": "House coding standards" },
+    "pr-template": { "description": "Pull request description template" }
+  },
   "agents": {
     "reviewer": {
       "description": "Org code reviewer",
-      "prompt": { "file": "agents/reviewer.md" },
       "adapters": {
         "opencode": {
           "tools": { "grep": true, "bash": true }
@@ -29,8 +33,7 @@ The facet manifest (`facet.json`) is the source of truth for a facet's identity 
   },
   "commands": {
     "review": {
-      "description": "Run a code review",
-      "prompt": { "file": "commands/review.md" }
+      "description": "Run a code review"
     }
   }
 }
@@ -95,39 +98,56 @@ Text assets are the locally authored content included in the facet.
 
 | Field      | Required | Type                              | Description                                                                  |
 | ---------- | -------- | --------------------------------- | ---------------------------------------------------------------------------- |
-| `skills`   | No       | array of strings                  | Skill names. Each corresponds to a file in the facet.                        |
-| `agents`   | No       | map of string → agent descriptor  | Agent name → agent descriptor (description, prompt, adapter config).         |
-| `commands` | No       | map of string → command descriptor| Command name → command descriptor (description, prompt).                     |
+| `skills`   | No       | map of string → skill descriptor  | Skill name → skill descriptor (description, adapter config).                  |
+| `agents`   | No       | map of string → agent descriptor  | Agent name → agent descriptor (description, adapter config).                  |
+| `commands` | No       | map of string → command descriptor| Command name → command descriptor (description, adapter config).             |
+| `facets`   | No       | array of facets entries           | References to other facets (composition). Not yet implemented -- see [Publish Flow](/specification/publish). |
+| `servers`  | No       | map of string → server reference  | MCP server references (source-mode version string or ref-mode `{ image }`). Server support is in development. |
 
-A facet MUST have at least one locally authored text asset. A manifest with no text assets MUST be rejected.
+A facet MUST have at least one text asset -- skills, agents, commands, or facets. A manifest with none of these MUST be rejected.
+
+### Skill Descriptor
+
+<ResponseField name="description" type="string" required>
+  Human-readable description of the skill.
+</ResponseField>
+
+<ResponseField name="adapters" type="map of string → adapter config">
+  Adapter name → adapter-specific skill configuration.
+</ResponseField>
+
+The skill's prompt is the content of `skills/<name>/SKILL.md`, resolved by convention at build time -- it is not a manifest field.
 
 ### Agent Descriptor
 
-| Field         | Required | Type                          | Description                                                            |
-| ------------- | -------- | ----------------------------- | ---------------------------------------------------------------------- |
-| `description` | No       | string                        | Human-readable description of the agent.                               |
-| `prompt`      | Yes      | string or `{file: path}`       | The agent's prompt content or a reference to it.              |
-| `adapters`   | No       | map of string → adapter config | Adapter name → adapter-specific agent configuration.                 |
+<ResponseField name="description" type="string" required>
+  Human-readable description of the agent.
+</ResponseField>
 
-The `prompt` field MUST be present. It MAY be:
-- A string containing the prompt text directly
-- An object with a `file` key containing a path relative to the facet root
+<ResponseField name="adapters" type="map of string → adapter config">
+  Adapter name → adapter-specific agent configuration.
+</ResponseField>
+
+The agent's prompt is the content of `agents/<name>.md`, resolved by convention at build time -- it is not a manifest field.
 
 The `adapters` section is OPTIONAL. It contains adapter-specific configuration (tool access, permissions, model preferences) keyed by adapter name. Each installed adapter validates its own metadata schema at build time. Unknown adapters produce a warning. Invalid metadata for an installed adapter is a build error.
 
 ### Command Descriptor
 
-| Field         | Required | Type                          | Description                                                            |
-| ------------- | -------- | ----------------------------- | ---------------------------------------------------------------------- |
-| `description` | No       | string                        | Human-readable description of the command.                             |
-| `prompt`      | Yes      | string or `{file: path}`       | The command's prompt content or a reference to it.            |
+<ResponseField name="description" type="string" required>
+  Human-readable description of the command.
+</ResponseField>
 
-The `prompt` field follows the same rules as the agent descriptor's `prompt`.
+<ResponseField name="adapters" type="map of string → adapter config">
+  Adapter name → adapter-specific command configuration.
+</ResponseField>
+
+The command's prompt is the content of `commands/<name>.md`, resolved by convention at build time -- it is not a manifest field.
 
 ## Schema Constraints
 
 1. The `name` MUST be a valid facet identity (see [Facet Name Grammar](#facet-name-grammar)), and the `version` MUST be a semver string.
-2. A facet MUST have at least one locally authored text asset.
+2. A facet MUST have at least one text asset -- skills, agents, commands, or facets.
 3. The `@` character marks a scope (`@scope/name`) and also separates a name from a version when a facet is referenced elsewhere (`name@version`, `@scope/name@version`).
 4. Consumers MUST tolerate unrecognized fields. Unknown fields MUST be ignored.
 5. If present, `private` MUST be a boolean; non-boolean values are rejected. Omission is not rewritten to `private: false` (see [Privacy](#privacy)).
