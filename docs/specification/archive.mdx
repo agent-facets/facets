@@ -1,0 +1,48 @@
+---
+title: "Facet Archive – .facet"
+sidebarTitle: Facet Archive
+tag: .facet
+description: The two-layer .facet archive format
+---
+
+The facet archive (`.facet`) is the self-contained artifact a facet travels in: built by [`facet build`](/specification/build) (the sole producer), verified and uploaded by [`facet publish`](/specification/publish), stored by the registry, and downloaded and verified at [install](/specification/commit#verify). It contains the embedded [facet manifest](/specification/manifest) and every declared asset — nothing is fetched at install time.
+
+The `.facet` file is a two-layer container. Both layers are tar archives; only the inner layer is compressed. Its content-hash contract is defined in the [Integrity Model](/specification/integrity).
+
+## Outer layer
+
+An **uncompressed tar** with exactly two entries:
+
+<ResponseField name="build-manifest.json" type="JSON" required>
+  The build manifest: `facetVersion` (the archive-format revision this artifact conforms to — currently `0.1`; breaking changes to the archive layout MUST bump it, and consumers key compatibility off this field), `archive` (the inner archive's entry name), `integrity` (the canonical fingerprint, `sha256:` followed by 64 hex characters), and `assets` (a map of inner-archive entry path to `sha256:<hex>` per-asset hash).
+</ResponseField>
+
+<ResponseField name="archive.tar.gz" type="gzip" required>
+  The gzip-compressed inner archive carrying the actual content.
+</ResponseField>
+
+The outer tar MUST be uncompressed so the build manifest can be read without decompressing the inner archive.
+
+## Inner archive
+
+The inner archive decompresses to a **deterministic uncompressed tar** containing the embedded `facet.json` plus every declared asset at its conventional path (`skills/<name>/SKILL.md`, `agents/<name>.md`, `commands/<name>.md`). Entries MUST be sorted lexicographically by path.
+
+## Determinism
+
+Tar metadata MUST be fixed at known values so build output is byte-identical across builds, machines, and platforms: `mtime` 0, `uid` 0, `gid` 0, mode `644`, empty user and group names. The integrity hash is computed over these tar bytes, so any third-party producer that wants its artifacts to interoperate MUST use the same metadata.
+
+## Hash domains
+
+The **canonical fingerprint** (`content_integrity`) is the SHA-256 of the *uncompressed* inner tar bytes, formatted `sha256:<hex>`. Gzip output is NOT hashed — compression is a delivery concern, and different gzip implementations produce different bytes that decompress to identical tars. The full two-hash contract lives in the [Integrity Model](/specification/integrity).
+
+Verifiers MUST recompute the fingerprint by decompressing the inner archive and hashing the resulting tar bytes. The build manifest's self-declared `integrity` is a claim to be checked, never a value to be trusted.
+
+## Content rules
+
+Beyond hash verification, a verifier MUST enforce three structural rules on the archive's contents. An archive violating any of them MUST be rejected.
+
+1. **Path safety.** Every asset key in the build manifest's `assets` map and every entry name in the inner tar MUST be a safe relative path: no traversal segments (`..`), no absolute paths, no backslashes. A malicious archive that smuggles an unsafe path through either channel is stopped before any content is trusted.
+
+2. **Declared-vs-present reconciliation, in both directions.** Every inner-tar entry MUST appear in the build manifest's `assets` map, and every `assets` key MUST have a matching inner-tar entry — an undeclared extra entry and a declared-but-missing asset are both rejections. Each entry's recomputed content hash MUST equal the hash the `assets` map records for it.
+
+3. **Outer exclusivity.** Every inner-tar entry MUST be derivable from the embedded `facet.json`: the entry set is limited to `facet.json` itself plus the conventional path of each declared asset (`skills/<name>/SKILL.md`, `agents/<name>.md`, `commands/<name>.md`). The build manifest is attacker-controlled, so rule 2 alone is insufficient — the embedded facet manifest is the trust root. Without this rule, an archive could carry undeclared files that land on disk at install time.

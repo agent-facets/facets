@@ -1,0 +1,75 @@
+---
+title: "Lockfile – facets.lock"
+sidebarTitle: Lockfile
+tag: facets.lock
+description: The facets.lock schema and entry semantics
+---
+
+The lockfile (`facets.lock`) records resolved installation state: for every declared facet, the exact version, the verified integrity, the provenance it was resolved from, and the assets it contributed. It is the **resolution** counterpart to the [project manifest](/specification/project-manifest)'s **intent** — the manifest records what the user asked for, the lockfile records what that resolved to.
+
+Both files are version-controlled. The lockfile is written **only** by the install pipeline, as part of the [tri-write](/specification/commit#transactional-tri-write) — never ahead of success, and never by hand. A hand-edited or merge-conflicted lockfile fails validation at load rather than surfacing as a failure deep inside an install.
+
+## Example
+
+```json expandable facets.lock
+{
+  "lockfileVersion": 1,
+  "facets": {
+    "cowsay": {
+      "source": { "kind": "registry", "registry": "https://api.agentfacets.io" },
+      "version": "1.2.0",
+      "integrity": "sha256:a1b2c3…",
+      "assets": [
+        { "scope": "project", "type": "command", "name": "cowsay" }
+      ]
+    },
+    "viper-plans": {
+      "source": { "kind": "git", "url": "https://github.com/acme/viper.git", "commit": "8c1f2a9d0e4b7c65a3f1d28e9b0a4c7d6e5f3a21" },
+      "version": "2.0.0",
+      "integrity": "sha256:d4e5f6…",
+      "assets": [
+        { "scope": "project", "type": "skill", "name": "viper-planning" }
+      ]
+    }
+  }
+}
+```
+
+## Fields
+
+<ResponseField name="lockfileVersion" type="number" required>
+  The lockfile schema version, currently `1`. Breaking shape changes MUST bump it; migrations key off this field. An implementation encountering a `lockfileVersion` greater than it supports MUST fail the load rather than guess.
+</ResponseField>
+
+<ResponseField name="facets" type="map<name, entry>" required>
+  One entry per resolved facet, keyed by facet name. The name lives only in the key — entries do not repeat it.
+</ResponseField>
+
+## Entry fields
+
+<ResponseField name="source" type="tagged union" required>
+  Provenance, discriminated by `kind`, one variant per source kind so an illegal cross-kind combination is unrepresentable:
+
+  - `registry` — `{ kind, registry }`. The registry origin (base URL) the artifact was resolved from. Deliberately carries **no version specifier**: the entry's `version` field is the resolved identity, so an unresolved spec (`latest`, `1.*`) has no slot to leak into.
+  - `git` — `{ kind, url, commit }`. The repository URL plus the resolved commit SHA (lowercase hex, at least 8 characters; the pipeline writes a full `git rev-parse HEAD`). The commit is REQUIRED — it is the immutable identity that makes a git install reproducible. The symbolic ref (`#main`, a tag) is deliberately NOT recorded: a ref is what the user *requested* (a [project-manifest](/specification/project-manifest) concern, and mutable), whereas the lockfile records what was *resolved*.
+  - `local` — `{ kind, path }`. The resolved local path.
+</ResponseField>
+
+<ResponseField name="version" type="string" required>
+  MUST be an exact `M.N.P` version — no ranges, no wildcards, no prerelease. Always written by the pipeline from resolution, never copied from a specifier.
+</ResponseField>
+
+<ResponseField name="integrity" type="string" required>
+  The [canonical fingerprint](/specification/integrity#two-hashes-two-domains) (`sha256:<hex>`) of the verified content. Derived from the freshly verified or built archive — never trusted from input.
+</ResponseField>
+
+<ResponseField name="assets" type="array" required>
+  The assets this facet contributed, as `{ scope, type, name }` tuples (`scope`: `system` | `user` | `project`; `type`: `skill` | `agent` | `command`). Names MUST pass asset-name validation — a crafted lockfile cannot smuggle path traversal into adapter I/O. Adapter-agnostic by design: the same asset set is applied to every selected adapter, and no per-adapter fields exist here.
+</ResponseField>
+
+## Role in the pipeline
+
+- **Trust anchor.** When the lockfile pins a version, the audited content MUST hash to the locked integrity — a mismatch is a hard failure, never a silent re-download. → [Commit — Verify](/specification/commit#verify)
+- **Lockfile trust for resolution.** Whether a satisfying entry short-circuits version resolution depends on how the facet was requested (addition vs reproduction). → [Commit — Resolve](/specification/commit#resolve)
+- **Drift-proof deletion.** The entry's `assets` array is the OLD asset set; the freshly extracted build manifest is the NEW set; the difference is deleted with no separate bookkeeping. → [Drift removal](/specification/commit#drift-removal)
+- **Frozen mode.** With `--frozen-lockfile`, the lockfile is the complete, authoritative source of truth and is never written. → [Frozen lockfile](/specification/commit#frozen-lockfile)

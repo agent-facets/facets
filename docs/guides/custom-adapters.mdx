@@ -3,7 +3,7 @@ title: Build a Custom Adapter
 description: Write custom adapters for AI coding tools
 ---
 
-An <Tooltip headline="Adapter" tip={<span>The bridge between facets and an AI coding tool. It tells <code>facet</code> where and how to write a facet's assets on disk so the tool can find them.</span>} cta="Adapter reference" href="/cli/adapters/install">adapter</Tooltip> teaches the `facet` CLI how to install assets into a specific AI coding tool. The first-party adapters cover Claude Code, OpenCode, and Codex; this guide shows how to build your own using the <code>[@agent-facets/adapter](https://github.com/agent-facets/facets/tree/main/packages/adapter)</code> SDK.
+An <Tooltip headline="Adapter" tip={<span>The bridge between facets and an AI coding tool. It tells <code>facet</code> where and how to write a facet's assets on disk so the tool can find them.</span>} cta="Adapter reference" href="/cli/adapters/install">adapter</Tooltip> teaches the `facet` CLI how to install assets into a specific AI coding tool. The first-party adapters cover Claude Code, OpenCode, and Codex; this guide shows how to build your own using the [`@agent-facets/adapter`](https://github.com/agent-facets/facets/tree/main/packages/adapter) SDK.
 
 An adapter is a small TypeScript library. You write one file, build it, and install it locally  -- from a directory, from GitHub, or (once published) by name.
 
@@ -62,7 +62,7 @@ The SDK is a leaf library with no heavy dependencies  -- `@agent-facets/common` 
 
 <Step title="Write the adapter">
 
-Create `src/index.ts` and default-export a <code>[defineAdapter](https://github.com/agent-facets/facets/tree/main/packages/adapter)</code> call. Here is a minimal, working adapter that writes each asset to `~/.my-tool/<type>s/<name>.md`:
+Create `src/index.ts` and default-export a [`defineAdapter`](https://github.com/agent-facets/facets/tree/main/packages/adapter) call. Here is a minimal, working adapter that writes each asset to `~/.my-tool/<type>s/<name>.md`:
 
 ```ts expandable src/index.ts
 import {
@@ -122,7 +122,7 @@ export default defineAdapter({
 
 ## The adapter contract
 
-Everything an adapter can implement, from <code>[@agent-facets/adapter](https://github.com/agent-facets/facets/tree/main/packages/adapter)</code>:
+Everything an adapter can implement, from [`@agent-facets/adapter`](https://github.com/agent-facets/facets/tree/main/packages/adapter):
 
 <ResponseField name="name" type="string" required>
   A unique id (e.g. `my-tool`). Users install and reference the adapter by this name.
@@ -188,7 +188,7 @@ facet adapter install my-adapter
 
 </CodeGroup>
 
-The CLI downloads the source, bundles it into `adapter.js`, verifies it exports a valid adapter, and places it in `$FACET_DIR/adapters/<name>/` (default `~/.facet`). See <code>[facet adapter install](/cli/adapters/install)</code> for every specifier format.
+The CLI downloads the source, bundles it into `adapter.js`, verifies it exports a valid adapter, and places it in `$FACET_DIR/adapters/<name>/` (default `~/.facet`). See [`facet adapter install`](/cli/adapters/install) for every specifier format.
 
 <Tip>
   During development, `facet adapter install ./my-adapter` picks up your latest local build immediately. Reinstall after each rebuild to test changes end-to-end.
@@ -207,7 +207,7 @@ Check that files landed where your `assetPath` puts them. From here, harden `bui
 
 ## Share it upstream
 
-Built an adapter for a major AI coding assistant? Contributions are welcome. If your adapter targets a widely used tool, open a pull request on the <code>[facets repository](https://github.com/agent-facets/facets)</code> to share it upstream as a first-party adapter.
+Built an adapter for a major AI coding assistant? Contributions are welcome. If your adapter targets a widely used tool, open a pull request on the [`facets repository`](https://github.com/agent-facets/facets) to share it upstream as a first-party adapter.
 
 A first-party adapter is installable by name (`facet adapter install <name>`) via the CLI, so everyone using that tool benefits.
 

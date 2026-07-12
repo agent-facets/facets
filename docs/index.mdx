@@ -1,6 +1,7 @@
 ---
 title: "Agent Facets"
 sidebarTitle: "Introduction"
+description: Modular, versioned bundles for AI tools
 ---
 
 <Tooltip headline="Facet" tip="The Agent Facet format specification is open-source and built on other standards like the Agent Skills specification." cta="Read the spec" href="/specification">Facets</Tooltip> are modular, versioned bundles of skills, agents, and commands that extend AI coding assistants.
@@ -9,65 +10,11 @@ The `facet` CLI tool is a package manager for facets with a free public <Tooltip
 
 The CLI and registry are **free to the public**. Private hosting plans are available for individuals and teams. The CLI is hosted at https://github.com/agent-facets/facets and fully open-sourced via an MIT license.
 
-## Get Started
+## Get started
 
-<Steps>
-
-<Step title="Install the CLI">
-
-<CodeGroup>
-
-```shell curl
-curl -fsSL https://agentfacets.io/install | bash
-```
-
-```shell npm
-npm install -g agent-facets
-```
-
-```shell bun
-bun add -g agent-facets
-```
-
-```shell pnpm
-pnpm install -g agent-facets
-```
-
-</CodeGroup>
-
-</Step>
-
-<Step title="Verify the installation">
-
-```sh
-facet --version
-```
-
-</Step>
-
-<Step title="Install the adapter for your AI coding assistant">
-
-```sh
-facet adapter install
-```
-
-Bundled <Tooltip headline="Adapter" tip="The bridge between facet and a specific AI coding tool — it decides where a facet's assets and config land on disk." cta="Adapter reference" href="/cli/adapters/install">adapters</Tooltip> are hosted on GitHub. There is an [adapter SDK](https://github.com/agent-facets/facets/tree/main/packages/adapter) you can use to <Tooltip headline="Facet Adapter SDK" tip="The SDK can be used to build custom adapters. Adapters completely manage the lifecycle of facet installation." cta="Learn More" href="/guides/custom-adapters">build custom adapters</Tooltip>.
-
-</Step>
-
-</Steps>
-
-<Tip>Once installed, you can update the CLI in place with <code>[facet self-update](/cli/self-update)</code></Tip>
-
-## Quick example -- installing your first facet
-
-Add a facet from the registry with:
-
-```sh
-facet add cowsay
-```
-
-You can now run `/cowsay` and `/cowchat` from any of the coding assistants you installed adapters for.
+<Card title="Quickstart" icon="rocket" href="/quickstart" horizontal>
+  Install the CLI, connect your AI tool, and use your first facet — in under five minutes.
+</Card>
 
 ## Guides
 

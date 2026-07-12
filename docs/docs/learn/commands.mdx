@@ -5,46 +5,11 @@ description: User-invokable workflows
 
 A command is a markdown file defining a user-invokable workflow. Commands are the action layer of a facet -- they define what happens when the user triggers a specific task.
 
-## File location
+Each command lives at `commands/<name>.md` and is declared in `facet.json` under the `commands` map. The normative rules — placement, descriptor shape, and the YAML front-matter contract — live at [Text assets](/specification/manifest#text-assets) in the manifest specification.
 
-```
-commands/<name>.md
-```
+## Example
 
-Each command is a single markdown file. The filename (minus `.md`) is the command name.
-
-## Manifest entry
-
-In `facet.json`, commands are declared as a map of name to descriptor:
-
-```json
-{
-  "commands": {
-    "review-pr": { "description": "Run a code review on the current PR" }
-  }
-}
-```
-
-The `description` field is required. Adapter-specific metadata can be declared in the `adapters` field:
-
-```json
-{
-  "commands": {
-    "review-pr": {
-      "description": "Run a code review on the current PR",
-      "adapters": {
-        "claude-code": {
-          "allowed_tools": ["read", "grep", "bash"]
-        }
-      }
-    }
-  }
-}
-```
-
-## Content format
-
-The file content is the command's prompt -- the instructions that run when the user invokes the command. YAML front matter is optional and is preserved through the build.
+The file content is the command's prompt -- the instructions that run when the user invokes the command:
 
 ```markdown
 Review the current pull request.
@@ -77,5 +42,5 @@ Use [skills](/docs/learn/skills) when you need passive knowledge the assistant s
 
 ## Further reading
 
-- [Manifest Schema](/specification/manifest) -- the `commands` field in `facet.json`
-- [Getting Started](/guides) -- step-by-step guide including writing a command
+- [Text assets](/specification/manifest#text-assets) -- placement, descriptor shape, and front-matter rules
+- [Create Your First Facet](/guides/create-your-first-facet) -- step-by-step guide including writing a command

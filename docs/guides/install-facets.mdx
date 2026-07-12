@@ -1,6 +1,6 @@
 ---
 title: Install Facets in Your Project
-description: Add facets from the registry or other sources
+description: Add, pin, reinstall, and remove facets
 ---
 
 Bring facets into a project in two moves: connect an adapter for your AI tool, then add the facets you want. This guide walks the whole loop  -- add, list, reinstall, and remove.
@@ -23,8 +23,8 @@ Bring facets into a project in two moves: connect an adapter for your AI tool, t
 > facet remove viper-plans            # take a facet back out
 > ```
 >
-> See <code>[facet add](/cli/add)</code>, <code>[facet install](/cli/install)</code>,
-> <code>[facet remove](/cli/remove)</code>, and <code>[facet adapter install](/cli/adapters/install)</code>.
+> See [`facet add`](/cli/add), [`facet install`](/cli/install),
+> [`facet remove`](/cli/remove), and [`facet adapter install`](/cli/adapters/install).
 
 </Visibility>
 
@@ -38,7 +38,7 @@ An adapter is the bridge between facets and your AI coding tool  -- it tells the
 facet adapter install claude-code
 ```
 
-The first-party adapters are `claude-code`, `opencode`, and `codex`. Run <code>[facet adapter install](/cli/adapters/install)</code> with no name for an interactive picker, or pass a name to install it directly. Third-party adapters install the same way from an npm package, git URL, or local path.
+The first-party adapters are `claude-code`, `opencode`, and `codex`. Run [`facet adapter install`](/cli/adapters/install) with no name for an interactive picker, or pass a name to install it directly. Third-party adapters install the same way from an npm package, git URL, or local path.
 
 <Tip>
   If you skip this step, `facet add` and `facet install` will launch the adapter picker for you on first use.
@@ -54,7 +54,7 @@ The first-party adapters are `claude-code`, `opencode`, and `codex`. Run <code>[
 facet search viper # as an example
 ```
 
-<code>[facet search](/cli/search)</code> lists matching facets with their latest version, asset counts, and the exact `facet add` command to install each. Run it with no term to browse everything published.
+[`facet search`](/cli/search) lists matching facets with their latest version, author, and asset counts. Run it with no term to browse everything published.
 
 </Step>
 
@@ -64,13 +64,13 @@ facet search viper # as an example
 facet add viper-plans
 ```
 
-<code>[facet add](/cli/add)</code> brings a facet into your project in one step: it writes the entry to `facets.json` and runs the install pipeline. There is no separate "install after add".
+[`facet add`](/cli/add) brings a facet into your project in one step: it writes the entry to `facets.json` and runs the install pipeline. There is no separate "install after add".
 
 The **registry is the default source** (hosted at [agentfacets.io](https://agentfacets.io))  -- a bare name resolves to the latest published version. You can also pin a version, use a wildcard, or point at other sources.
 
 <Expandable title={<span> <code>facet add</code> version examples </span>}>
 
-```shell there are many different ways to add a facet
+```sh facet add sources
 facet add viper-plans                       # latest from the registry
 facet add viper-plans@1.2.3                 # exact version
 facet add viper-plans@1.*                   # latest 1.x
@@ -82,7 +82,7 @@ facet add viper-plans rezi planner@2.*      # several at once
 
 </Expandable>
 
-A bare name is pinned to its resolved version in `facets.json`; a wildcard like `1.*` is preserved there, with the specific version recorded in the lockfile. See <code>[facet add](/cli/add)</code> for the full source grammar.
+A bare name is pinned to its resolved version in `facets.json`; a wildcard like `1.*` is preserved there, with the specific version recorded in the lockfile. See [`facet add`](/cli/add) for the full source grammar.
 
 </Step>
 
@@ -112,68 +112,14 @@ Your project now has two files  -- commit both to version control so teammates a
   "lockfileVersion": 1,
   "facets": {
     "cowsay": {
-      "source": {
-        "kind": "registry",
-        "registry": "https://api.agentfacets.io"
-      },
+      "source": { "kind": "registry", "registry": "https://api.agentfacets.io" },
       "version": "1.0.0",
-      "integrity": "sha256:70fe8f9f0ba16132c70826d1cda70af9f0b4e63f3394178d2d5b4c374c833818",
+      "integrity": "sha256:70fe8f9f0ba1…",
       "assets": [
-        {
-          "scope": "project",
-          "type": "skill",
-          "name": "cowsay-rules"
-        },
-        {
-          "scope": "project",
-          "type": "agent",
-          "name": "cowsay"
-        },
-        {
-          "scope": "project",
-          "type": "command",
-          "name": "cowchat"
-        },
-        {
-          "scope": "project",
-          "type": "command",
-          "name": "cowsay"
-        }
-      ]
-    },
-    "viper-plans": {
-      "source": {
-        "kind": "registry",
-        "registry": "https://api.agentfacets.io"
-      },
-      "version": "1.0.0",
-      "integrity": "sha256:d745129217896c754f60f62088a792042d9867151279d7b7fe55a7493cc73ebb",
-      "assets": [
-        {
-          "scope": "project",
-          "type": "skill",
-          "name": "viper-execution-rules"
-        },
-        {
-          "scope": "project",
-          "type": "skill",
-          "name": "viper-planning"
-        },
-        {
-          "scope": "project",
-          "type": "command",
-          "name": "viper-continue"
-        },
-        {
-          "scope": "project",
-          "type": "command",
-          "name": "viper-plan"
-        },
-        {
-          "scope": "project",
-          "type": "command",
-          "name": "viper-run"
-        }
+        { "scope": "project", "type": "skill", "name": "cowsay-rules" },
+        { "scope": "project", "type": "agent", "name": "cowsay" },
+        { "scope": "project", "type": "command", "name": "cowchat" },
+        { "scope": "project", "type": "command", "name": "cowsay" }
       ]
     }
   }
@@ -182,8 +128,10 @@ Your project now has two files  -- commit both to version control so teammates a
 
 </CodeGroup>
 
+The full schema — every field, the tagged source kinds, and the exact-version rules — is specified in [Lockfile](/specification/lockfile).
+
 <Note>
-  The lockfile honors the manifest. A pinned entry is reused as long as it still satisfies `facets.json`; when you bump a version or widen a wildcard, `facet install` re-resolves and updates the lock.
+  The lockfile honors the manifest. A pinned entry is reused as long as it still satisfies `facets.json`; when you bump a version or widen a wildcard, `facet install` [re-resolves](/specification/commit#resolve) and updates the lock.
 </Note>
 
 ## Where assets land
@@ -208,7 +156,7 @@ When you clone a project that already has `facets.json` and `facets.lock`, mater
 facet install
 ```
 
-<code>[facet install](/cli/install)</code> fetches and installs every declared facet at the exact versions in the lockfile  -- so you get precisely what is pinned.
+[`facet install`](/cli/install) fetches and installs every declared facet at the exact versions in the lockfile  -- so you get precisely what is pinned.
 
 <Tip>
   For CI, add `--frozen-lockfile`. It never re-resolves or writes the lockfile and **fails** if `facets.json` and `facets.lock` disagree  -- catching a forgotten `facet add` or a hand-edited manifest instead of silently mutating the lock.
@@ -222,7 +170,15 @@ facet install
 facet list
 ```
 
-<code>[facet list](/cli/list)</code> shows every facet in `facets.json` with its resolved version (from the lockfile), or its source specifier if it hasn't been installed yet.
+[`facet list`](/cli/list) shows every facet in `facets.json` with its resolved version (from the lockfile), or its source specifier if it hasn't been installed yet.
+
+**Move to a newer version:**
+
+```sh
+facet add viper-plans@2.0.0    # re-add at the new version
+```
+
+Re-adding at a new version updates both `facets.json` and the lockfile. A dedicated [`facet upgrade`](/cli/upgrade) command is on the roadmap; its page documents the manual paths until it ships.
 
 **Remove a facet:**
 
@@ -231,7 +187,7 @@ facet remove viper-plans          # aliased: facet rm
 facet remove viper-plans rezi     # several at once (all-or-nothing)
 ```
 
-<code>[facet remove](/cli/remove)</code> takes a facet out of `facets.json`, deletes its assets from every connected adapter, and rewrites the lockfile without it. If any named facet isn't declared, the command fails and changes nothing.
+[`facet remove`](/cli/remove) takes a facet out of `facets.json`, deletes its assets from every connected adapter, and rewrites the lockfile without it. If any named facet isn't declared, the command fails and changes nothing.
 
 **Manage adapters:**
 

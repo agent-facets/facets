@@ -1,79 +1,102 @@
 ---
 title: "Terminology"
-description: Canonical terms used in the spec
+description: Canonical terms and definitions
 ---
 
-Canonical terms used throughout the specification. Implementations SHOULD use the same terms in user-facing interfaces and documentation.
+Canonical terms used throughout the specification. Implementations SHOULD use the same terms in user-facing interfaces and documentation. Each entry links to the section that owns the full definition — the sentence here is a pointer, not a second specification.
 
 ## Core concepts
 
 <CardGroup cols={2}>
-  <Card title="Facet" icon="box">
+  <Card title="Facet" icon="box" href="/specification#the-facet-artifact">
     A named, versioned collection of text assets defined by a manifest. What the author creates, what gets published, and what gets installed.
   </Card>
-  <Card title="Facet archive" icon="package">
-    The published, self-contained artifact stored in the registry. Contains the manifest and all text assets. The transport form between publish and install.
+  <Card title="Project manifest" icon="files" href="/specification/project-manifest">
+      `facets.json` — the file in a consuming project that declares which facets are installed. Distinct from the facet manifest.
+    </Card>
+  <Card title="Facet manifest" icon="file-code" href="/specification/manifest">
+    `facet.json` — the source of truth for a facet's identity and the text assets it contains.
   </Card>
-  <Card title="Adapter" icon="plug">
+  <Card title="Facet archive" icon="package" href="/specification/archive">
+    The self-contained two-layer `.facet` artifact the author's CLI builds and the registry stores. The transport form between publish and install.
+  </Card>
+  <Card title="Adapter" icon="plug" href="/cli/adapters/install">
     An AI coding tool abstraction (OpenCode, Claude Code, Codex). The layer between facet assets and the tool's storage and configuration conventions.
   </Card>
+  <Card title="Registry" icon="database" href="/specification/publish#what-the-registry-does">
+    The service that stores published facet archives, serves version metadata, and publishes both integrity hashes per version.
+  </Card>
 </CardGroup>
 
-### Asset types
+## Asset types
 
 <CardGroup cols={3}>
-  <Card title="Skill" icon="sparkles" href="https://agentskills.io/specification">
-    Text asset following the Agent Skills spec.
+  <Card title="Skill" icon="sparkles" href="/docs/learn/skills">
+    A directory asset following the Agent Skills format.<br /><br />`skills/<name>/SKILL.md`
   </Card>
-  <Card title="Agent" icon="bot" href="https://agentskills.io/specification">
-    Text asset following the Agent Skills spec.
+  <Card title="Agent" icon="bot" href="/docs/learn/agents">
+    A single-file agent definition.<br /><br />`agents/<name>.md`
   </Card>
-  <Card title="Command" icon="terminal" href="https://agentskills.io/specification">
-    Text asset following the Agent Skills spec.
+  <Card title="Command" icon="terminal" href="/docs/learn/commands">
+    A user-invokable prompt.<br /><br />`commands/<name>.md`
   </Card>
 </CardGroup>
 
-### Asset management
+| Term | Definition | Reference |
+| --- | --- | --- |
+| **Asset tuple** | A `(scope, type, name)` triple — the adapter-agnostic identity of a materialized asset. | [Install receipt](/specification/commit#machine-local-install-receipt) |
+| **Managed asset** | Installed by a facet; tracked in the lockfile and install receipt. | [`facet edit`](/cli/authoring/edit) |
+| **Unmanaged asset** | In an adapter directory but not connected to any facet: user-created, or kept from an uninstalled facet. | [`facet edit`](/cli/authoring/edit) |
 
-| Term | Definition |
-| --- | --- |
-| **Managed asset** | Installed by a facet, tracked in the lockfile and <Tooltip tip="Per-project record under $FACET_DIR/receipts/ -- tracks what this machine has materialized.">install receipt</Tooltip>. |
-| **Unmanaged asset** | Exists in an adapter directory but not connected to any facet. User-created or kept from an uninstalled facet. |
+## Identity & versioning
+
+| Term | Definition | Reference |
+| --- | --- | --- |
+| **Facet identity** | An unscoped slug (`cowsay`) or scoped `@scope/slug`; validated, never normalized. | [Facet name grammar](/specification/manifest#facet-name-grammar) |
+| **Version specifier** | An exact version, bounded wildcard (`1.*`, `1.2.*`), open wildcard (`*`), or `latest`; caret, tilde, and comparator ranges are rejected. | [Accepted source kinds](/specification/planning#accepted-source-kinds) |
+| **Source kinds** | The tagged taxonomy every addition parses into: `registry`, `git`, or `local`; `github:owner/repo` shorthand normalizes to `git`. | [Accepted source kinds](/specification/planning#accepted-source-kinds) |
+| **Immutability** | A published `(name, version)` never changes; republishing with different content is rejected. | [Publish — Immutability](/specification/publish#immutability) |
 
 ## Integrity
 
-<AccordionGroup>
-  <Accordion title="Hashes" icon="fingerprint" defaultOpen>
-    | Term | Definition |
-    | --- | --- |
-    | **Canonical fingerprint** | SHA-256 of the uncompressed inner tar (`content_integrity`). Recorded in the lockfile, cache sidecar, and build manifest. Trust anchor for verification. |
-    | **Transport hash** | SHA-256 of the uploaded `.facet` tarball (`content_hash`). Download-time transit check only. Never persisted to the lockfile. |
-  </Accordion>
-  <Accordion title="Verification" icon="shield-check">
-    | Term | Definition |
-    | --- | --- |
-    | **Cache sidecar** | `cache-integrity.json` stored alongside cached content. Canonical fingerprint + per-asset hashes. |
-    | **Cache self-audit** | Re-verification of cached content against its sidecar on every materialization. Evicts on mismatch. |
-    | **Integrity confirmation** | Registry metadata request verifying content matches the published canonical fingerprint. Required when creating a lockfile entry. Fails offline. |
-  </Accordion>
-</AccordionGroup>
+| Term | Definition | Reference |
+| --- | --- | --- |
+| **Canonical fingerprint** | `content_integrity` — SHA-256 of the uncompressed inner tar; the trust anchor recorded in the lockfile, cache sidecar, and build manifest. | [Two hashes, two domains](/specification/integrity#two-hashes-two-domains) |
+| **Transport hash** | `content_hash` — SHA-256 of the uploaded `.facet` tarball; a download-time transit check only, never persisted. | [Two hashes, two domains](/specification/integrity#two-hashes-two-domains) |
+| **Build manifest** | `build-manifest.json`, embedded in the archive's outer layer; the integrity claim and per-asset hash map. | [Archive format](/specification/archive) |
+| **Cache sidecar** | `cache-integrity.json`, stored alongside cached content; the canonical fingerprint plus per-asset hashes. | [Where hashes live](/specification/integrity#where-hashes-live) |
+| **Cache self-audit** | Re-verification of cached content against its sidecar on every materialization; a mismatch evicts the slot. | [Commit — Verify](/specification/commit#verify) |
+| **Integrity confirmation** | The registry metadata check required whenever a lockfile entry is created or replaced; fails offline. | [Registry interactions](/specification/commit#registry-interactions) |
+| **One-check reproduction guard** | The git-source defense: built content must hash to the locked integrity (the tag-move defense). | [Git and local sources](/specification/commit#git-and-local-sources) |
+| **Frozen mode** | `--frozen-lockfile` — the lockfile is the complete, authoritative source of truth; every facet must reproduce its locked integrity. | [Frozen lockfile](/specification/commit#frozen-lockfile) |
 
 ## Install pipeline
 
-| Term | Definition |
-| --- | --- |
-| **Install delta** | Additions (user's specifier verbatim) + removals (bare names). `facet install` produces an empty delta. |
-| **Structural discriminator** | Additions never trust the lockfile for version resolution; reproductions do. |
-| **Install receipt** | Machine-local record under `$FACET_DIR/receipts/` tracking materialized state per project. Drives offline drift removal. |
-| **Tri-write** | Atomic commit: `facets.json` + `facets.lock` + receipt written together. Failure leaves all three unchanged. |
+| Term | Definition | Reference |
+| --- | --- | --- |
+| **Install pipeline** | The two-phase flow every install command runs: planning, then commit. | [Installation](/specification/install) |
+| **Planning** | Phase 1: turn a command into a delta; no resolution, no lockfile reads, no writes. | [Planning](/specification/planning) |
+| **Commit** | Phase 2: the transaction that resolves, verifies, materializes, and writes atomically. | [Commit](/specification/commit) |
+| **Delta** | Additions (the user's specifier verbatim) plus removals (bare names); `facet install` produces an empty delta. | [The delta](/specification/planning#the-delta) |
+| **Addition / reproduction** | The structural discriminator: non-exact additions never trust the lockfile for version resolution; reproductions and exact additions do. | [The delta](/specification/planning#the-delta) |
+| **Desired set** | The manifest's facets after the delta is merged in memory. | [Sequence](/specification/commit#sequence) |
+| **Install lock** | The per-project advisory lock ensuring one install at a time. | [Sequence](/specification/commit#sequence) |
+| **Journal** | The log in which every materialization write records its inverse operation, replayed in reverse on failure. | [Commit](/specification/commit) |
+| **Materialization** | Writing assets from verified content into each selected adapter's storage. | [Materialize](/specification/commit#materialize) |
+| **Install receipt** | The machine-local, per-project record under `$FACET_DIR/receipts/` tracking what this machine has materialized. | [Install receipt](/specification/commit#machine-local-install-receipt) |
+| **Drift removal** | Deleting assets of facets no longer wanted, computed from the receipt, entirely offline. | [Drift removal](/specification/commit#drift-removal) |
+| **Orphan-on-pull** | The recoverable state where a teammate's removal reaches you via `git pull`; the receipt still remembers. | [Drift removal](/specification/commit#drift-removal) |
+| **Tri-write** | The atomic commit of `facets.json`, `facets.lock`, and the receipt together; failure leaves all three unchanged. | [Transactional tri-write](/specification/commit#transactional-tri-write) |
+| **Lockfile** | `facets.lock` — resolved installation state: tagged source, exact version, integrity, and asset tuples per facet. | [Lockfile](/specification/lockfile) |
+| **Cache** | The machine-local content-addressed store for fetched facet payloads under `$FACET_DIR/cache/`. | [`facet install`](/cli/install#cache) |
 
-## Lifecycle
+## Authoring & publishing
 
-| Stage | What happens |
-| --- | --- |
-| **Authoring** | Author creates a manifest and text assets locally. |
-| **Publishing** | Registry assembles the archive, computes hashes. Version is immutable once published. |
-| **Installing** | [Plan/commit pipeline](/specification/pipeline): resolve, verify, materialize, tri-write. |
-| **Upgrading** | Diffs surfaced to consumer. _(Future)_ |
-| **Uninstalling** | Assets removed via delta pipeline. Receipt updated. |
-| **Running** | Text loaded into the assistant's context. |
+| Term | Definition | Reference |
+| --- | --- | --- |
+| **Build** | Producing the canonical `.facet` archive from the author's source tree; never contacts the registry. | [Build](/specification/build) |
+| **Publish** | Verifying the built archive end-to-end and uploading the verified bytes to the registry. | [Publish](/specification/publish) |
+| **Content drift** | Built artifact and source tree share a name and version but differ in manifest content. | [Drift classes](/specification/publish#when-the-built-artifact-has-drifted-from-source) |
+| **Identity drift** | Built artifact and source tree disagree on name or version. | [Drift classes](/specification/publish#when-the-built-artifact-has-drifted-from-source) |
+| **Review queue** | The moderation path where a first-time publish is accepted but held for approval; a success outcome. | [Review queue](/specification/publish#review-queue) |
+| **Personal access token (PAT)** | The revocable `fct_pub_…` credential minted in the web UI that authenticates publishes. | [Authentication](/specification/publish#authentication) |

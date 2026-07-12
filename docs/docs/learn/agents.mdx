@@ -5,48 +5,11 @@ description: Portable agent definitions
 
 An agent is a markdown file defining an AI assistant persona with a specific role, behavior, and tool access. Agents are the identity layer of a facet -- they define who the assistant is and how it should act.
 
-## File location
+Each agent lives at `agents/<name>.md` and is declared in `facet.json` under the `agents` map. The normative rules — placement, descriptor shape, and the YAML front-matter contract — live at [Text assets](/specification/manifest#text-assets) in the manifest specification.
 
-```
-agents/<name>.md
-```
+## Example
 
-Each agent is a single markdown file. The filename (minus `.md`) is the agent name.
-
-## Manifest entry
-
-In `facet.json`, agents are declared as a map of name to descriptor:
-
-```json
-{
-  "agents": {
-    "reviewer": { "description": "Reviews code changes for correctness and style" }
-  }
-}
-```
-
-The `description` field is required. Adapter-specific metadata can be declared in the `adapters` field:
-
-```json
-{
-  "agents": {
-    "reviewer": {
-      "description": "Reviews code changes for correctness and style",
-      "adapters": {
-        "opencode": {
-          "tools": { "grep": true, "bash": true }
-        }
-      }
-    }
-  }
-}
-```
-
-At build time, each adapter's `buildAssetMetadata()` validates its metadata schema. Unknown adapters produce a warning but do not fail the build.
-
-## Content format
-
-The file content is the agent's system prompt. YAML front matter is optional. When present, it is preserved through the build and merged with the manifest's metadata at install time.
+The file content is the agent's system prompt:
 
 ```markdown
 You are a code reviewer. Your role is to review code changes for
@@ -77,5 +40,5 @@ Use [skills](/docs/learn/skills) when you need passive knowledge without a perso
 
 ## Further reading
 
-- [Manifest Schema](/specification/manifest) -- the `agents` field in `facet.json`
-- [Getting Started](/guides) -- step-by-step guide including writing an agent
+- [Text assets](/specification/manifest#text-assets) -- placement, descriptor shape, and front-matter rules
+- [Create Your First Facet](/guides/create-your-first-facet) -- step-by-step guide including writing an agent

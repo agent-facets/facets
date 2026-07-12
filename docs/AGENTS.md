@@ -19,30 +19,28 @@ paths too (`/docs/learn`, not `/docs/learn/index.md`).
 ## Linked inline code
 
 When a link's visible text is inline code (a command, flag, filename, or
-symbol), wrap the Markdown link in `<code>…</code>` rather than using a
-code span inside the link.
+symbol), use a backtick code span inside the Markdown link:
+`` [`facet build`](/cli/authoring/build) ``.
 
-Markdown's `` [`code`](url) `` renders the backtick span and the link
-boundary with poor spacing (the code cell hugs the surrounding text and the
-underline sits awkwardly). Wrapping the whole link in `<code>` gives the
-link a clean monospace cell with correct padding.
+Do **not** wrap the link in `<code>…</code>`. Mintlify applies typographic
+transformation to text inside `<code>` elements, which corrupts
+double-hyphen flag names (`--frozen-lockfile` renders as an en dash).
+Backtick spans preserve literal dashes.
 
 **Do:**
-
-```mdx
-See <code>[facet build](/cli/authoring/build)</code> for the full pipeline.
-```
-
-**Don't:**
 
 ```mdx
 See [`facet build`](/cli/authoring/build) for the full pipeline.
 ```
 
+**Don't:**
+
+```mdx
+See <code>[facet build](/cli/authoring/build)</code> for the full pipeline.
+```
+
 Notes:
 
-- Inside `<code>…</code>`, the link text is plain (no backticks) — the
-  `<code>` element already provides the monospace styling.
 - This applies only when the **entire** visible link text is code. A link
   whose text is prose stays a normal Markdown link: `[the manifest](/…)`.
 - Inline code that is **not** a link stays a normal backtick span
@@ -214,6 +212,6 @@ not the main text.
 ## Cross-linking
 
 Connect pages instead of duplicating them. Link to the CLI reference
-(`/cli/...`), the specification, and related guides using the
-`<code>[…](/url)</code>` convention for command/symbol links. A guide should
+(`/cli/...`), the specification, and related guides using the backtick-link
+convention (`` [`…`](/url) ``) for command/symbol links. A guide should
 teach the path and defer exhaustive detail to the reference it links.

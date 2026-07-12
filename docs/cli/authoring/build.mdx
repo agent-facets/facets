@@ -11,52 +11,6 @@ facet build [directory]
 
 Validates and builds the facet in the specified directory (defaults to the current directory). The build command is purely deterministic  -- it never modifies the manifest and behaves identically in all environments.
 
-## What it does
-
-The build command runs a validation pipeline, assembles an archive, and computes content hashes:
-
-1. **Parse manifest**  -- reads `facet.json`, parses JSON, validates against the schema including business-rule constraints (at least one text asset, etc.)
-2. **Resolve prompts**  -- reads prompt files at conventional paths. Skills use `skills/<name>/SKILL.md` (Agent Skills directory convention). Agents use `agents/<name>.md`. Commands use `commands/<name>.md`. If an expected file doesn't exist, the build fails.
-3. **Validate assets**  -- checks that all content files are non-empty. Author-supplied YAML front matter is preserved verbatim in the archive; the manifest's `name`, `description`, and any per-adapter extras are merged on top of it at install time.
-4. **Check collisions**  -- validates compact facets entries match the `name@version` format. Fails if the same name is used more than once within the same asset type.
-5. **Validate adapters**  -- validates adapter metadata for installed adapters (e.g., `opencode`, `claude-code`). Each adapter validates its own metadata schema. Unknown adapters produce a warning but do not fail the build.
-6. **Assemble archive**  -- collects the manifest and all resolved text assets into a deterministic tar archive, computes the integrity hash, compresses it with gzip, then wraps the compressed archive and a build manifest into the self-contained `.facet` file.
-
-On success, the build writes output to `dist/`:
-
-- `dist/<name>-<version>.facet`  -- a self-contained archive (uncompressed tar containing `build-manifest.json` and `archive.tar.gz`)
-
-For a scoped facet identity, the name's `/` renders as a nested path under `dist/`. For example, `@acme/cowsay` at `1.0.0` is written to `dist/@acme/cowsay-1.0.0.facet`; the build creates the required parent directories.
-
-The `.facet` file is the single distributable artifact. The build manifest is embedded inside it. Use `--emit-manifest` to also write a loose copy of `build-manifest.json` to `dist/` for debugging or tooling integration.
-
-If the build fails, errors are displayed inline under the failed pipeline stage, with a suggestion to run `facet edit` to fix the issues.
-
-## Validate without building: `--verify`
-
-<Note>
-  The `--verify` and `--json` flags require the facet CLI **v0.24.0 or newer**. Update with <code>[facet self-update](/cli/self-update)</code> if your build doesn't recognize them.
-</Note>
-
-`facet build --verify` runs the full validation pipeline (stages 1–5 above) **without writing any output** — a no-op build. Nothing is written to `dist/`. Use it to confirm that `facet.json` and every asset file are valid and buildable, without producing an artifact.
-
-```sh
-facet build --verify          # validate only; dist/ is never touched
-```
-
-A clean verify means the facet would build. To produce the actual `.facet` artifact, run `facet build` without `--verify`. This is the recommended check after editing a facet — see <code>[facet instructions authoring](/cli/instructions)</code>.
-
-## Machine-readable output: `--json`
-
-`facet build --json` emits a structured JSON document to stdout instead of the interactive view. It works with or without `--verify`.
-
-```sh
-facet build --verify --json   # validation result as JSON, no output written
-facet build --json            # build and write output, then print JSON
-```
-
-The document is versioned (`schemaVersion`) and reports `ok`, whether it was a verify (`verified`), and on success the facet `name`, `version`, `assets`, and `integrity` — or on failure a list of `errors` (each with a `message` and `path`) and any `warnings`.
-
 ## Flags
 
 <ResponseField name="--verify" type="boolean">
@@ -77,3 +31,43 @@ The document is versioned (`schemaVersion`) and reports `ok`, whether it was a v
 | ---- | ------- |
 | `0`  | Build (or verify) succeeded |
 | `1`  | Build (or verify) failed (validation errors) |
+
+## What it does
+
+`facet build` runs the validation-and-assembly pipeline defined in the [Build specification](/specification/build): parse and validate the manifest, resolve prompts from their conventional paths, validate content, validate adapter metadata, and assemble the deterministic two-layer archive.
+
+On success, the build writes `dist/<name>-<version>.facet` — the single distributable artifact, with the build manifest embedded inside it (see [Archive format](/specification/archive)). `dist/` is purged first, so it contains exactly one `.facet` after a successful build. For a scoped identity the name's `/` renders as a nested path: `@acme/cowsay` at `1.0.0` lands at `dist/@acme/cowsay-1.0.0.facet`.
+
+Use `--emit-manifest` to also write a loose copy of `build-manifest.json` to `dist/` for debugging or tooling integration.
+
+If the build fails, errors are displayed inline under the failed pipeline stage, with a suggestion to run `facet edit` to fix the issues.
+
+## Validate without building: `--verify`
+
+<Note>
+  The `--verify` and `--json` flags require the facet CLI **v0.24.0 or newer**. Update with [`facet self-update`](/cli/self-update) if your build doesn't recognize them.
+</Note>
+
+`facet build --verify` runs the full validation pipeline **without writing any output** — a no-op build. Nothing is written to `dist/`. Use it to confirm that `facet.json` and every asset file are valid and buildable, without producing an artifact.
+
+```sh
+facet build --verify          # validate only; dist/ is never touched
+```
+
+A clean verify means the facet would build. To produce the actual `.facet` artifact, run `facet build` without `--verify`. This is the recommended check after editing a facet — see [`facet instructions authoring`](/cli/instructions).
+
+## Machine-readable output: `--json`
+
+`facet build --json` emits a structured JSON document to stdout instead of the interactive view. It works with or without `--verify`.
+
+```sh
+facet build --verify --json   # validation result as JSON, no output written
+facet build --json            # build and write output, then print JSON
+```
+
+The document is versioned (`schemaVersion`) and reports `ok`, whether it was a verify (`verified`), and on success the facet `name`, `version`, `assets`, and `integrity` — or on failure a list of `errors` (each with a `message` and `path`) and any `warnings`.
+
+## See also
+
+- [`facet publish`](/cli/authoring/publish) -- verify and upload the built archive.
+- [Build specification](/specification/build) -- the normative build steps and archive format.

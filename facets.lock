@@ -131,8 +131,8 @@
         "kind": "registry",
         "registry": "https://api.agentfacets.io"
       },
-      "version": "1.0.0",
-      "integrity": "sha256:d745129217896c754f60f62088a792042d9867151279d7b7fe55a7493cc73ebb",
+      "version": "1.1.4",
+      "integrity": "sha256:541e612339660d35d0ed891f478b041fe4041e8b0fe9938d03e5c9d198d5d9e4",
       "assets": [
         {
           "scope": "project",

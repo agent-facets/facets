@@ -9,24 +9,15 @@ description: Lists installed adapters
 facet adapter list
 ```
 
-Lists all installed adapters by scanning the adapter base directory
-(default `$FACET_DIR/adapters/`, where `FACET_DIR` defaults to
-`~/.facet`).
+Lists all installed adapters by scanning the adapter base directory, `$FACET_DIR/adapters/` (see [environment variables](/cli/env) for the `FACET_DIR` layout).
 
-## Environment variables
+## Exit codes
 
-### `FACET_DIR`
+| Code | Meaning |
+| ---- | ------- |
+| `0`  | Always — listed successfully, including an empty list |
 
-Overrides the facet directory root. The adapter base directory is
-always `$FACET_DIR/adapters/`. See the [environment variables
-reference](/cli/env) for the full layout.
+## See also
 
-```sh
-export FACET_DIR=/opt/facet
-facet adapter install opencode
-facet adapter list
-# lists adapters in /opt/facet/adapters/
-```
-
-The directory is created automatically if it does not exist. Default is
-`~/.facet`.
+- [`facet adapter install`](/cli/adapters/install) -- install an adapter.
+- [`facet adapter remove`](/cli/adapters/remove) -- remove an installed adapter.

@@ -29,7 +29,7 @@ By the end of this page you'll have the `facet` CLI installed, a facet added to 
   </Step>
 
   <Step title="Connect your AI tool (once per machine)">
-    Install the <Tooltip tip="An adapter is the bridge between facet and a specific AI coding tool — it decides where assets and config land on disk.">adapter</Tooltip> for the tool you use:
+    Install the <Tooltip tip="An adapter is the bridge between facet and a specific AI coding tool — it decides where assets and config land on disk.">adapter</Tooltip> for the tool you use with [`facet adapter install`](/cli/adapters/install):
 
     ```sh
     facet adapter install claude-code   # or: opencode, codex
@@ -37,7 +37,7 @@ By the end of this page you'll have the `facet` CLI installed, a facet added to 
   </Step>
 
   <Step title="Add a facet">
-    From your project directory, add a facet by name from the registry:
+    From your project directory, add a facet by name from the registry with [`facet add`](/cli/add):
 
     ```sh
     facet add cowsay
@@ -51,11 +51,11 @@ By the end of this page you'll have the `facet` CLI installed, a facet added to 
   </Step>
 
   <Step title="Use it">
-    The facet's commands are now available in your tool. Run:
+    The facet's commands are now available in your tool. Inside your AI coding tool, run:
 
     ```
-    /cowsay
-    /cowchat
+    /cowsay hey there
+    /cowchat how's the weather?
     ```
 
     That's it — you've installed and used your first facet.
@@ -65,6 +65,10 @@ By the end of this page you'll have the `facet` CLI installed, a facet added to 
 ## Next steps
 
 <CardGroup cols={2}>
+  <Card title="Key concepts" icon="lightbulb" href="/docs/learn">
+    What facets and assets are, and when to use each asset type.
+  </Card>
+
   <Card title="Set up publishing" icon="key" href="/guides/setup">
     Install adapters and mint a token so you can publish your own facets.
   </Card>

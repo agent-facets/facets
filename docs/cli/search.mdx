@@ -9,26 +9,7 @@ description: Search the registry for published facets
 facet search [term]
 ```
 
-Queries the registry for facets matching the given substring (case-insensitive). Without a term, lists all published facets.
-
-## What it does
-
-1. **Send query.** Calls the registry search endpoint with the provided term (or no filter if omitted).
-2. **Display results.** Each result shows the facet name, latest version, asset counts, and the install command.
-
-## Output format
-
-```
-viper-plans   v1.2.0
-  2 skills, 1 agent, 1 command
-  -> facet add viper-plans
-
-rezi   v0.5.0
-  3 skills
-  -> facet add rezi
-```
-
-Asset counts are omitted when all are zero.
+Queries the registry for facets matching the given substring (case-insensitive). Without a term, lists all published facets. At most one term is accepted — passing more than one argument is an error (exit `1`).
 
 ## Examples
 
@@ -46,3 +27,29 @@ facet search
 | ---- | ------- |
 | `0`  | Search completed (even if no results). |
 | `1`  | Failed (network error, registry unavailable, etc.). |
+
+## What it does
+
+<Steps>
+  <Step title="Send query">
+    Calls the registry search endpoint with the provided term (or no filter if omitted).
+  </Step>
+  <Step title="Display results">
+    Each result shows the facet name, latest version, author, and asset counts.
+  </Step>
+</Steps>
+
+## Output format
+
+```
+Searching registry for 'plan'...found 2 matches.
+
+viper-plans  v1.2.0 · by acme · 2 skills, 1 agent, 1 command
+rezi         v0.5.0 · by julian · 3 skills
+```
+
+Asset counts are omitted when all are zero.
+
+## See also
+
+- [`facet add`](/cli/add) -- add a found facet to your project.

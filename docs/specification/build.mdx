@@ -1,0 +1,24 @@
+---
+title: "Build"
+description: Produce the canonical .facet archive
+---
+
+`facet build` produces the canonical `.facet` archive from the author's source tree and writes it to `dist/<name>-<version>.facet`. This is the artifact of record: the bytes [`facet publish`](/specification/publish) will later verify and upload. There is a single source of truth for what a `.facet` is: the two-layer [archive format](/specification/archive), whose content-hash contract is described in the [Integrity Model](/specification/integrity).
+
+## Steps
+
+1. **Parse and validate the manifest.** Read the facet manifest (`facet.json`) and validate it against the [manifest schema](/specification/manifest). Invalid manifests MUST be rejected with a descriptive error. The manifest's `name` MUST be a valid facet identity; the `version` MUST be a semver string; at least one text asset MUST be declared.
+
+2. **Resolve prompts.** Read each declared asset file from its conventional path: `skills/<name>/SKILL.md` for skills, `agents/<name>.md` for agents, `commands/<name>.md` for commands. Missing files are build errors. YAML front matter in content files is permitted and MUST be preserved verbatim in the archive  -- the manifest's `name`, `description`, and any per-adapter extras are merged on top of the author's front matter at install time.
+
+3. **Validate content.** A declared asset MUST NOT be empty (zero bytes or whitespace only). Two assets within the same type MUST NOT share a name. Compact `facets[]` entries MUST match the `name@version` shape.
+
+4. **Validate adapter metadata.** For each asset with an `adapters` block, validate the adapter-specific metadata against each installed adapter's schema. Unknown adapters SHOULD produce a warning. Invalid metadata for an installed adapter MUST be a build error.
+
+5. **Assemble the archive.** Compute per-asset SHA-256 hashes. Assemble the deterministic inner tar. Compute the integrity hash over the uncompressed inner tar. Gzip the inner tar (`archive.tar.gz`). Assemble the outer tar containing `build-manifest.json` (recording the integrity hash and the per-asset hash map) plus the gzipped inner archive. Write the result to `dist/<name>-<version>.facet`. The layout, determinism rules, and hash domains are specified in [Facet Archive](/specification/archive).
+
+`facet build` purges `dist/` before writing, so the directory contains exactly one `.facet` after a successful build: the archive for the current source's name and version. For a scoped facet identity, the name's `/` renders as a nested path under `dist/` — `@acme/cowsay` at `1.0.0` is written to `dist/@acme/cowsay-1.0.0.facet`, with parent directories created as required.
+
+## Boundaries
+
+Building never contacts the registry and never mutates the manifest. What happens to the built artifact next — verification, upload, drift handling — is defined in [Publish](/specification/publish). Command usage and flags are documented at [`facet build`](/cli/authoring/build).

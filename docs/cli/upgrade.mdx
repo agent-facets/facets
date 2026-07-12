@@ -13,9 +13,15 @@ facet upgrade
 This command is not yet implemented. Running it prints a notice and exits. It is on the roadmap for a future release.
 </Warning>
 
+## Exit codes
+
+| Code | Meaning |
+| ---- | ------- |
+| `0`  | Always -- the command prints its not-yet-implemented notice and exits |
+
 ## Planned behavior
 
-`facet upgrade` will re-resolve version specifiers in `facets.json` against the registry and update `facets.lock` to the newest versions that satisfy each specifier. It is the complement to `facet install`, which honors existing lockfile pins.
+`facet upgrade` will re-resolve version specifiers in `facets.json` against the registry and update `facets.lock` to the newest versions that satisfy each specifier ([resolution semantics](/specification/commit#resolve)). It is the complement to `facet install`, which honors existing lockfile pins.
 
 Until `facet upgrade` ships, you can upgrade a specific facet manually:
 
@@ -30,5 +36,5 @@ facet install
 
 ## See also
 
-- <code>[facet install](/cli/install)</code> -- install from the current lockfile.
-- <code>[facet add](/cli/add)</code> -- add or re-add a facet at a specific version.
+- [`facet install`](/cli/install) -- install from the current lockfile.
+- [`facet add`](/cli/add) -- add or re-add a facet at a specific version.

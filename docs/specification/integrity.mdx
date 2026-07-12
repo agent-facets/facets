@@ -7,16 +7,16 @@ Facets are distributed artifacts. Consumers need confidence that what they insta
 
 Two distinct integrity concerns are addressed:
 
-1. **Content integrity** -- does the artifact match what was published? Verified at download, on every cache hit, and at lockfile-entry creation.
-2. **Cache integrity** -- has cached content been tampered with since it was written? Verified on every materialization from cache.
+1. **Content integrity** -- does the artifact match what was published? MUST be verified at download, on every cache hit, and at lockfile-entry creation.
+2. **Cache integrity** -- has cached content been tampered with since it was written? MUST be verified on every materialization from cache.
 
-## Content Hashing
+## Content hashing
 
-### What It Covers
+### What it covers
 
-Facet archives  -- anything published to the facets registry.
+Facet archives -- anything published to the facets registry -- participate in the full hashing lifecycle below. Git and local sources are built from source rather than downloaded, so they participate through the lockfile-integrity checks described in [Git and frozen variants](#when-it-is-applied) rather than through registry hashes.
 
-### Two Hashes, Two Domains
+### Two hashes, two domains
 
 The registry publishes **two hashes** for each version, serving different purposes:
 
@@ -29,44 +29,57 @@ These are not interchangeable: gzip is a delivery concern outside the hash contr
 
 `sha256:<hex-encoded hash>` (e.g., `sha256:a1b2c3d4e5f6...`)
 
-### When It Is Applied
+### When it is applied
 
-| When | What happens |
-| --- | --- |
-| **Publish time** | Registry computes both hashes after assembling the artifact. |
-| **Download** | The transport hash (`content_hash`) is verified against the raw downloaded bytes. |
-| **Post-extract recompute** | The canonical fingerprint is genuinely recomputed from the extracted content (per-asset hashes + canonical-archive hash) — never taken from the build manifest's self-declared claim — and must match both the manifest's claim and the registry's published `content_integrity`. |
-| **Cache write** | The canonical fingerprint (`content_integrity`) and per-asset hashes are written to a sidecar alongside the cached content. |
-| **Cache hit** | The cached content is re-hashed against its sidecar (self-audit). Tampered content is evicted and re-fetched. |
-| **Lockfile comparison** | When the lockfile pins a version, the audited integrity must equal the locked integrity. |
-| **Integrity confirmation** | When a lockfile entry is being created, the audited integrity must match the registry's published `content_integrity`. An unreachable registry fails the operation. |
-| **Lockfile** | The canonical fingerprint is recorded for reproducible verification. |
+<Steps>
+  <Step title="Build & publish">
+    The author's CLI assembles the archive and computes the canonical fingerprint at [build](/specification/build) time. At [publish](/specification/publish), the registry verifies the upload and records both hashes — no part of the archive is re-derived from trust.
+  </Step>
+  <Step title="Download">
+    The transport hash (`content_hash`) MUST be verified against the raw downloaded bytes.
+  </Step>
+  <Step title="Post-extract recompute">
+    The canonical fingerprint MUST be genuinely recomputed from the extracted content (per-asset hashes + canonical-archive hash) — never taken from the build manifest's self-declared claim — and MUST match both the manifest's claim and the registry's published `content_integrity`.
+  </Step>
+  <Step title="Cache write">
+    The canonical fingerprint (`content_integrity`) and per-asset hashes are written to a sidecar alongside the cached content.
+  </Step>
+  <Step title="Cache hit">
+    The cached content MUST be re-hashed against its sidecar (self-audit). Tampered content MUST be evicted and re-fetched.
+  </Step>
+  <Step title="Lockfile comparison">
+    When the lockfile pins a version, the audited integrity MUST equal the locked integrity.
+  </Step>
+  <Step title="Integrity confirmation">
+    When a lockfile entry is being created or replaced, the audited integrity MUST match the registry's published `content_integrity`. An unreachable registry MUST fail the operation.
+  </Step>
+  <Step title="Lockfile record">
+    The canonical fingerprint is recorded for reproducible verification.
+  </Step>
+</Steps>
 
-### What It Guarantees
+Two variants sit outside this lifecycle: **git installs** MUST verify built content against the lockfile integrity (the [one-check reproduction guard](/specification/commit#git-and-local-sources)), and **frozen installs** MUST require every facet — including local sources — to reproduce its locked integrity. The pipeline mechanics for all of these live in [Commit — Verify](/specification/commit#verify).
+
+### What it guarantees
 
 - **Transit integrity**: the downloaded bytes match what the registry stored (transport hash).
 - **At-rest integrity**: cached content is verified on every use, not just at write time (cache self-audit).
-- **Lockfile trust**: a lockfile entry for a registry facet is never created without same-operation registry confirmation of its canonical fingerprint.
+- **Lockfile trust**: a lockfile entry for a registry facet MUST NOT be created without same-operation registry confirmation of its canonical fingerprint.
 - **Immutability enforcement**: the registry's invariant that a published `name@version` never changes is enforced client-side via the lockfile comparison and integrity confirmation.
 
-## Where Hashes Live
+## Where hashes live
 
-| Location            | What is stored |
-| ------------------- | --- |
-| **Registry**        | Both `content_integrity` (canonical fingerprint) and `content_hash` (transport hash) per version. |
-| **Lockfile**        | Canonical fingerprint (`content_integrity`) per facet. |
-| **Cache sidecar**   | Canonical fingerprint + per-asset hash map per cache slot. Written at cache-populate time; re-verified on every cache hit. |
-| **Build manifest**  | Canonical fingerprint + per-asset hash map. Embedded in the `.facet` archive. |
-| **Install receipt** | Asset tuples per materialized facet (not hashes — used for drift removal). |
-
-## Verification Summary
-
-| When | What is verified |
-| --- | --- |
-| Download | Transport hash (`content_hash`) of the raw archive bytes. |
-| Post-extract | Canonical fingerprint genuinely recomputed from the extracted content; compared against the build manifest's claim and the registry's published `content_integrity`. |
-| Cache hit | Canonical fingerprint + per-asset hashes re-computed against the sidecar (self-audit). |
-| Lockfile comparison | Audited integrity vs. locked integrity (when the lockfile pins the version). |
-| Integrity confirmation | Audited integrity vs. registry's `content_integrity` (when creating a lockfile entry). |
-| Git install | Computed content vs. lockfile integrity (tag-move defense). |
-| Frozen install | Every facet -- including local sources -- must reproduce its locked integrity. |
+<CardGroup cols={2}>
+  <Card title="Lockfile" icon="lock" href="/specification/lockfile">
+    Canonical fingerprint (`content_integrity`) per facet.
+  </Card>
+  <Card title="Cache sidecar" icon="folder" href="/specification/commit#verify">
+    Canonical fingerprint + per-asset hash map (`cache-integrity.json`) per cache slot. Written at cache-populate time; re-verified on every cache hit.
+  </Card>
+  <Card title="Build manifest" icon="file-code" href="/specification/archive">
+    Canonical fingerprint + per-asset hash map. Embedded in the `.facet` archive.
+  </Card>
+  <Card title="Install receipt" icon="receipt" href="/specification/commit#machine-local-install-receipt">
+    Asset tuples per materialized facet (not hashes — used for drift removal).
+  </Card>
+</CardGroup>
