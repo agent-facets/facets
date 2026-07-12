@@ -20,7 +20,7 @@ Common errors, what causes them, and how to fix them. Each entry mirrors the CLI
   <Accordion title='"could not reach the registry"'>
     **Cause:** `facet search`, a registry `facet add`, and `facet publish` need network access to the registry. Offline, they **fail closed** rather than write an unconfirmed entry.
 
-    **Fix:** check your connection and retry. Note that **local paths** (`./my-facet`) and **git sources** (`github:owner/repo`) resolve without the registry, so you can keep working offline with those.
+    **Fix:** check your connection and retry. Note that **local paths** (`./my-facet`) and **git sources** (`github:owner/repo`) resolve without the registry, so you do not need registry access to install/add from these sources.
   </Accordion>
 
   <Accordion title='"no adapters installed" when running facet add (non-interactive)'>
