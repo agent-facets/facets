@@ -5,9 +5,9 @@ description: What's new in Agent Facets
 rss: true
 ---
 
-<Update label="2026-07-13" description="facet search now uses server-side filtering, sorting, and paging" tags={["CLI", "Improvement"]} rss={{
-  title: "facet search now uses server-side filtering, sorting, and paging",
-  description: "facet search forwards your query term to the registry as the ?q= parameter and renders results exactly as the server returns them. The registry now owns relevance ranking, sorting, and paging -- so results reflect the same ordering you see in the web UI, and future improvements to registry search take effect immediately without a CLI upgrade. The old client-side case-insensitive substring filter has been removed."
+<Update label="2026-07-13" description="Server-side search for facet search; asset names now follow the Agent Skills grammar" tags={["CLI", "Improvement", "Breaking"]} rss={{
+  title: "Server-side search for facet search; asset names now follow the Agent Skills grammar",
+  description: "facet search forwards your query term to the registry as the ?q= parameter and renders results exactly as the server returns them. The registry now owns relevance ranking, sorting, and paging -- so results reflect the same ordering you see in the web UI, and future improvements to registry search take effect immediately without a CLI upgrade. The old client-side case-insensitive substring filter has been removed. Separately: skill, command, and agent names in facet.json are now validated against the Agent Skills name grammar at build and install time. Each /-separated segment must be 1-64 characters of lowercase ASCII letters, digits, and hyphens, with no leading, trailing, or consecutive hyphens. Digit-start names like 2fa are now allowed; non-conforming names like MySkill or foo_bar are now rejected. Namespaced names like viper-plans/planning validate per segment. Error messages now cite the specific grammar rule violated. facet modify --update and --remove still accept legacy names so you can fix or remove assets created under the old, looser rules."
 }}>
   ## Server-side search for `facet search`
 
@@ -35,6 +35,41 @@ rss: true
     local filtering.
 
   See the [`facet search`](/cli/search) reference for usage.
+
+  ## Asset names now follow the Agent Skills grammar
+
+  **Breaking:** skill, command, and agent names declared in `facet.json`
+  are now validated against the [Agent Skills name
+  grammar](https://agentskills.io/specification#name-field) at both
+  build and install time. Each `/`-separated segment must be:
+
+  - 1–64 characters long
+  - lowercase ASCII letters, digits, and hyphens only
+  - no leading, trailing, or consecutive hyphens
+
+  Digit-start names like `2fa` are now accepted; previously they were
+  rejected. Non-conforming names like `MySkill` or `foo_bar` are now
+  rejected  -- previously they slipped past the looser kebab-case check.
+  Namespaced names like `viper-plans/planning` validate per segment.
+
+  ```bash
+  # Accepted (was rejected before):
+  facet modify skill 2fa --add
+
+  # Rejected (was accepted before):
+  facet modify skill MySkill --add
+  facet modify skill foo_bar --add
+  facet modify skill really-long-name-that-goes-well-past-sixty-four-characters-in-length --add
+  ```
+
+  Error messages now cite the specific rule that failed (e.g. `"must be
+  at most 64 characters"`) instead of a generic kebab-case hint.
+
+  If you have a facet with a legacy non-kebab asset name, `facet modify
+  --update` and `facet modify --remove` still accept the old name so you
+  can rename or drop the asset without a chicken-and-egg problem. See
+  the [manifest schema](/specification/manifest) and [`facet
+  modify`](/cli/authoring/modify) reference.
 </Update>
 
 <Update label="2026-07-09" description="Agent-friendly CLI: instructions, modify, headless create, build --verify; TypeScript 7 support; trailing newlines on generated JSON" tags={["CLI", "New Feature", "Improvement", "Fix"]} rss={{
