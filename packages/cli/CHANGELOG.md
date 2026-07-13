@@ -1,5 +1,19 @@
 # agent-facets
 
+## 0.25.0
+
+### Minor Changes
+
+- [#418](https://github.com/agent-facets/facets/pull/418) [`3ef7a65`](https://github.com/agent-facets/facets/commit/3ef7a6572a3b4c8ab834e3f27c8e9cbd4957af85) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Enforce the Agent Skills name grammar for skill, command, and agent names everywhere names enter the system.
+    `@agent-facets/protocol` gains a canonical asset-name grammar (`schemas/asset-name.ts`) modeled on the [Agent Skills spec](https://agentskills.io/specification#name-field). New exports: `parseAssetName`, `parseAssetNameSegment`, `validateAssetName`, and `validateAssetNameSegment`, along with the `AssetNameResult` and `AssetNameSegmentResult` types. A single segment is 1–64 characters of lowercase ASCII letters, digits, and hyphens, must not start or end with a hyphen, and must not contain consecutive hyphens. Full asset names may carry `/`-separated namespace segments (`viper-plans/planning`), each validated independently; the parsers return discriminated-union results instead of throwing.
+    BREAKING CHANGE: `FacetManifestSchema` now validates every asset name against this grammar instead of the previous path-safety-only check. Manifests declaring non-conforming asset names (uppercase like `MySkill`, underscores like `foo_bar`, leading/trailing or consecutive hyphens, names over 64 characters) now fail at build **and** install — the schema validates fetched manifests too — rather than passing silently. Digit-start names (`2fa`) are now valid, diverging from the stricter facet-identity slug grammar. Lockfile asset names intentionally keep the weaker path-safety guard so existing installs continue to load and can be removed.
+    The `agent-facets` CLI routes `facet create` (wizard and headless), the create/edit TUI views, and `facet modify` (`--add` and `--rename`) through the shared validator, surfacing the grammar's own reason strings in errors. `facet modify --update`/`--remove` still accept legacy non-conforming names so users can fix or remove them.
+
+### Patch Changes
+
+- [#419](https://github.com/agent-facets/facets/pull/419) [`c80c076`](https://github.com/agent-facets/facets/commit/c80c0767c74d8ffddd20148660fa7fd72d3221e4) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Validate `adapters` blocks on command assets during `facet build`.
+    Command descriptors have always been allowed to declare an `adapters` block (symmetric with skills and agents), but the build pipeline only ran adapter-metadata validation over skills and agents — command adapter config was silently accepted without being checked. `facet build` now validates command `adapters` blocks the same way: an installed adapter that rejects the metadata fails the build with a `commands.<name>.adapters.<adapter>.<field>` error path, and an unknown adapter on a command produces the usual "metadata will not be validated" warning.
+
 ## 0.24.2
 
 ### Patch Changes
