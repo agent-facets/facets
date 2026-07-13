@@ -9,85 +9,15 @@ description: Make a headless, scriptable edit to a facet
 facet modify <target> [name] [directory] [flags]
 ```
 
-`facet modify` is the headless, flag-driven counterpart to the interactive <code>[facet edit](/cli/authoring/edit)</code> wizard. It applies **one** change to a facet's `facet.json` (and its asset files) and exits — the path AI agents and scripts should use for authoring. See <code>[facet instructions authoring](/cli/instructions)</code>.
+<Note>
+  Requires the facet CLI **v0.24.0 or newer**. If `facet modify` reports *"Unknown command"*, update with [`facet self-update`](/cli/self-update).
+</Note>
+
+`facet modify` is the headless, flag-driven counterpart to the interactive [`facet edit`](/cli/authoring/edit) wizard. It applies **one** change to a facet's `facet.json` (and its asset files) and exits — the path AI agents and scripts should use for authoring. See [`facet instructions authoring`](/cli/instructions).
 
 `<target>` is one of `skill`, `agent`, `command`, or `facet`. `[directory]` defaults to the current directory and must contain a `facet.json`.
 
-<Note>
-  Requires the facet CLI **v0.24.0 or newer**. If `facet modify` reports *"Unknown command"*, update with <code>[facet self-update](/cli/self-update)</code>.
-</Note>
-
-## Editing an asset
-
-For the asset targets (`skill`, `agent`, `command`), pass the asset name and exactly one lifecycle action, optionally with field changes.
-
-### Add an asset
-
-Creates the manifest descriptor **and** scaffolds the starter file (`skills/<name>/SKILL.md`, `agents/<name>.md`, or `commands/<name>.md`). May carry a description and adapter config in the same call.
-
-```sh
-facet modify skill greet --add --description "Greets the user"
-```
-
-### Change a description
-
-```sh
-facet modify agent helper --description "Reviews code"
-```
-
-### Rename an asset
-
-Renames the manifest key and moves the asset's file (removing the now-empty skill directory, for skills).
-
-```sh
-facet modify command run --rename start
-```
-
-### Remove an asset
-
-Removes the manifest descriptor and deletes the asset's file.
-
-```sh
-facet modify skill greet --remove
-```
-
-## Adapter configuration
-
-Each asset descriptor may carry an `adapters` block: a map of adapter name to a free-form config object that the CLI passes through to that adapter at install time. Set one with a **name-embedded flag** whose value is a JSON object — the whole suffix after `--adapter-` is the adapter name, so hyphenated names like `claude-code` work:
-
-```sh
-facet modify skill greet \
-  --adapter-claude-code '{"permission":{"bash":"ask"}}' \
-  --adapter-opencode    '{"model":"..."}'
-```
-
-Setting an adapter **replaces** that adapter's block wholesale. Remove one with `--remove-adapter-<name>`:
-
-```sh
-facet modify skill greet --remove-adapter-opencode
-```
-
-Adapter flags may accompany `--add` or `--rename`, or stand alone. You can also hand-edit the `adapters` object in `facet.json` directly; edits round-trip safely because the CLI preserves unknown descriptor fields.
-
-## Editing facet metadata
-
-The `facet` target sets facet-level fields (it takes no asset name). Pass at least one of `--name`, `--description`, `--version`, or `--private`.
-
-```sh
-facet modify facet --version 1.0.0 --description "..." --private
-```
-
-## Validation
-
-After every mutation the resulting manifest is re-validated before anything is written. A change that would make `facet.json` invalid (for example, removing the only asset) is rejected and nothing is written.
-
-## Rules
-
-- Exactly **one** lifecycle action per call: `--add`, `--remove`, or `--rename`. Combining them is an error.
-- `--description` and adapter flags may ride along with `--add` or `--rename`, or stand alone as an update. `--remove` takes no field flags.
-- Asset flags (`--add`/`--remove`/`--rename`) are not valid for the `facet` target, and facet-metadata flags (`--name`/`--version`/`--private`) are not valid for asset targets.
-
-## Options
+## Flags
 
 <ResponseField name="--add" type="boolean">
   Add a new asset (scaffold + manifest entry).
@@ -127,3 +57,74 @@ After every mutation the resulting manifest is re-validated before anything is w
 | ---- | ------------------------------------------------ |
 | `0`  | Change applied successfully                      |
 | `1`  | Invalid arguments, asset not found, or the change would make the manifest invalid |
+
+## Editing an asset
+
+For the asset targets (`skill`, `agent`, `command`), pass the asset name and at most one lifecycle action, optionally with field changes.
+
+### Add an asset
+
+Creates the manifest descriptor **and** scaffolds the starter file (`skills/<name>/SKILL.md`, `agents/<name>.md`, or `commands/<name>.md`). May carry a description and adapter config in the same call.
+
+```sh
+facet modify skill greet --add --description "Greets the user"
+```
+
+### Change a description
+
+```sh
+facet modify agent helper --description "Reviews code"
+```
+
+### Rename an asset
+
+Renames the manifest key and moves the asset's file (removing the now-empty skill directory, for skills).
+
+```sh
+facet modify command run --rename start
+```
+
+### Remove an asset
+
+Removes the manifest descriptor and deletes the asset's file.
+
+```sh
+facet modify skill greet --remove
+```
+
+## Adapter configuration
+
+Each asset descriptor may carry an [`adapters`](/specification/manifest#fields) block: a map of adapter name to a free-form config object that the CLI passes through to that adapter at install time. Set one with a **name-embedded flag** whose value is a JSON object — the whole suffix after `--adapter-` is the adapter name, so hyphenated names like `claude-code` work:
+
+```sh
+facet modify skill greet \
+  --adapter-claude-code '{"permission":{"bash":"ask"}}' \
+  --adapter-opencode    '{"model":"..."}'
+```
+
+Setting an adapter **replaces** that adapter's block wholesale. Remove one with `--remove-adapter-<name>`:
+
+```sh
+facet modify skill greet --remove-adapter-opencode
+```
+
+Adapter flags may accompany `--add` or `--rename`, or stand alone. You can also hand-edit the `adapters` object in `facet.json` directly; edits round-trip safely because the CLI preserves unknown descriptor fields.
+
+## Editing facet metadata
+
+The `facet` target sets facet-level fields (it takes no asset name). Pass at least one of `--name`, `--description`, `--version`, or `--private`.
+
+```sh
+facet modify facet --version 1.0.0 --description "..." --private
+```
+
+## Validation
+
+After every mutation the resulting manifest is re-validated before anything is written. A change that would make `facet.json` invalid (for example, removing the only asset) is rejected and nothing is written.
+
+## Rules
+
+- Exactly **one** lifecycle action per call: `--add`, `--remove`, or `--rename`. Combining them is an error.
+- `--description` and adapter flags may ride along with `--add` or `--rename`, or stand alone as an update. `--remove` takes no field flags.
+- Asset flags (`--add`/`--remove`/`--rename`) are not valid for the `facet` target, and facet-metadata flags (`--name`/`--version`/`--private`) are not valid for asset targets.
+

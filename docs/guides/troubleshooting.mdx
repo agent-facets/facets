@@ -9,7 +9,7 @@ Common errors, what causes them, and how to fix them. Each entry mirrors the CLI
   <Accordion title='"Unknown command" (e.g. facet instructions / modify)'>
     **Cause:** your installed CLI predates the command. `facet instructions`, `facet modify`, headless `facet create`, and `facet build --verify/--json` require **v0.24.0 or newer**.
 
-    **Fix:** update in place, then re-run:
+    **Fix:** update in place with [`facet self-update`](/cli/self-update), then re-run:
 
     ```sh
     facet self-update
@@ -18,7 +18,7 @@ Common errors, what causes them, and how to fix them. Each entry mirrors the CLI
   </Accordion>
 
   <Accordion title='"could not reach the registry"'>
-    **Cause:** `facet search`, a registry `facet add`, and `facet publish` need network access to the registry. Offline, they **fail closed** rather than write an unconfirmed entry.
+    **Cause:** `facet search`, a registry `facet add`, and `facet publish` need network access to the registry. Offline, they [**fail closed**](/specification/commit#verify) rather than write an unconfirmed entry.
 
     **Fix:** check your connection and retry. Note that **local paths** (`./my-facet`) and **git sources** (`github:owner/repo`) resolve without the registry, so you do not need registry access to install/add from these sources.
   </Accordion>
@@ -26,7 +26,7 @@ Common errors, what causes them, and how to fix them. Each entry mirrors the CLI
   <Accordion title='"no adapters installed" when running facet add (non-interactive)'>
     **Cause:** a facet has to be materialized into at least one adapter, but none is connected. In a real terminal `facet add` shows a picker; in a non-interactive shell (CI, piped stdin) it exits with an error instead.
 
-    **Fix:** install an adapter first:
+    **Fix:** install an adapter first with [`facet adapter install`](/cli/adapters/install):
 
     ```sh
     facet adapter install claude-code
@@ -37,7 +37,7 @@ Common errors, what causes them, and how to fix them. Each entry mirrors the CLI
   <Accordion title='"not signed in — no registry credential found"'>
     **Cause:** `facet publish` (and `facet whoami`) need a registry credential and none was found.
 
-    **Fix:** authenticate, then retry. In CI, prefer the environment variable:
+    **Fix:** authenticate with [`facet login`](/cli/login), then retry. In CI, prefer the [`FACET_TOKEN`](/cli/env) environment variable:
 
     ```sh
     facet login              # interactive
@@ -47,7 +47,7 @@ Common errors, what causes them, and how to fix them. Each entry mirrors the CLI
   </Accordion>
 
   <Accordion title='Publish rejected: version already exists (HTTP 409)'>
-    **Cause:** published `(name, version)` pairs are **immutable** — you can't republish a version with different content.
+    **Cause:** published `(name, version)` pairs are [**immutable**](/specification/publish#immutability) — you can't republish a version with different content. The status table lives at [`facet publish`](/cli/authoring/publish#publish-outcomes).
 
     **Fix:** bump the version, rebuild, and publish again:
 

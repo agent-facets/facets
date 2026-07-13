@@ -6,40 +6,70 @@ description: Verify and upload a built facet
 ## Usage
 
 ```sh
-facet publish [directory]
+facet publish            # publish the facet in the current directory
+facet publish ./cowsay   # publish the facet in ./cowsay
 ```
 
-Reads the built `.facet` archive from `dist/`, verifies it against the facet artifact specification, and uploads it to the registry. The directory defaults to the current working directory. Publish is a verify-and-ship step, not a build -- `facet build` is the sole producer of the `.facet` archive.
+Reads the built `.facet` archive from `dist/`, verifies it against the facet artifact specification, and uploads it to the registry. The directory argument is optional and defaults to the current working directory, consistent with `facet build`, `facet edit`, and `facet create`. Publish is a verify-and-ship step, not a build -- `facet build` is the sole producer of the `.facet` archive.
+
+## Exit codes
+
+| Code | Meaning |
+| ---- | ------- |
+| `0`  | Publish succeeded (201 published or 202 queued). |
+| `1`  | Failed (no credential, invalid manifest, verification failure, no artifact in non-TTY, registry error, etc.). |
 
 ## What it does
 
-1. **Resolve directory.** Defaults to the current working directory. The directory must contain a `facet.json`.
-2. **Resolve credential.** Checks `FACET_TOKEN` environment variable first, then the credentials file at `~/.facet/credentials`. Fails before any further work if no credential is found.
-3. **Validate manifest.** Loads and validates the source-tree `facet.json` against the schema.
-4. **Discover dist/ artifact.** Finds the `.facet` file in `dist/`. If `dist/` contains multiple `.facet` files, publish fails -- run `facet build` to prune `dist/` or remove the extras manually.
-5. **Drift detection.** Compares the built artifact's embedded manifest against the current source-tree `facet.json`. See [Drift detection](#drift-detection) below.
-6. **Re-verify archive.** Runs full archive verification: integrity hash, per-asset hashes, embedded manifest, and content rules. The archive is verified immediately before upload regardless of whether earlier steps already verified it.
-7. **Upload.** POSTs the verified bytes to the registry. The `name` and `version` used to address the upload come from the verified artifact's embedded manifest, not from a separate parse of the source-tree `facet.json`.
+<Steps>
+  <Step title="Resolve directory">
+    Defaults to the current working directory. The directory must contain a `facet.json`.
+  </Step>
+  <Step title="Resolve credential">
+    Checks `FACET_TOKEN` environment variable first, then the credentials file at `$FACET_DIR/credentials` (default `~/.facet/credentials`). Fails before any further work if no credential is found.
+  </Step>
+  <Step title="Validate manifest">
+    Loads and validates the source-tree `facet.json` against the schema.
+  </Step>
+  <Step title="Discover dist/ artifact">
+    Finds the `.facet` file in `dist/`. If `dist/` contains multiple `.facet` files, publish fails -- run `facet build` to prune `dist/` or remove the extras manually.
+  </Step>
+  <Step title="Drift detection">
+    Compares the built artifact's embedded manifest against the current source-tree `facet.json`. See [Drift detection](#drift-detection) below.
+  </Step>
+  <Step title="Re-verify archive">
+    Runs full archive verification: integrity hash, per-asset hashes, embedded manifest, and content rules. The archive is verified immediately before upload regardless of whether earlier steps already verified it.
+  </Step>
+  <Step title="Upload">
+    POSTs the verified bytes to the registry. The `name` and `version` used to address the upload come from the verified artifact's embedded manifest, not from a separate parse of the source-tree `facet.json`.
+  </Step>
+</Steps>
 
 ## Credential resolution
 
-The CLI resolves the publish token from, in order of precedence:
-
-1. `FACET_TOKEN` environment variable (preferred for CI and scripted use).
-2. Credentials file at `$FACET_DIR/credentials` (default `~/.facet/credentials`), written by `facet login` with mode `0600`.
-
-If no token is found, publish fails before any verification or registry round-trip.
+The publish token comes from `FACET_TOKEN` or the credentials file written by [`facet login`](/cli/login) — see that page for precedence and the file format. If no token is found, publish fails before any verification or registry round-trip.
 
 ## Drift detection
 
-When `dist/` contains a `.facet` whose embedded manifest disagrees with the current source-tree `facet.json`, publish handles four scenarios:
+Publish compares the built artifact's embedded manifest against the current source tree and handles a missing artifact, content drift, and identity drift — each with defined interactive and non-interactive behavior. The decision semantics are specified in the [Publish specification](/specification/publish#when-the-built-artifact-is-missing); the prompts you see in a terminal are below.
 
-| Scenario        | Description | Interactive behavior | Non-interactive behavior |
-| --------------- | ----------- | -------------------- | ------------------------ |
-| No artifact     | `dist/` is empty or missing. | Offers to build the current source. | Fails with "run `facet build` first". |
-| In sync         | Embedded manifest matches source. | Uploads directly. | Uploads directly. |
-| Content drift   | Same name and version, different content. | Two-option prompt: rebuild and publish, or publish existing. | Warns to stderr, ships existing. |
-| Identity drift  | Different name or version. | Three-option prompt: build and publish current source, publish existing under its own identity, or cancel. | Warns to stderr, ships existing. |
+## Interactive prompts
+
+In an interactive terminal, each scenario gets its own prompt. In a non-interactive context (CI, piped stdin) the CLI never prompts: a missing artifact fails with "no built artifact; run `facet build` first", and both drift classes warn on standard error and upload the existing artifact unchanged. Pipelines that want a strict rebuild-from-source run `facet build && facet publish` as two commands.
+
+**Missing artifact** — when `dist/` is empty, the CLI offers to build the current source. On acceptance it runs the build pipeline in the same view `facet build` uses, then verifies and uploads the freshly built artifact. On decline it reports that there is nothing to publish and exits non-zero — the registry is never contacted.
+
+**Content drift** — a two-option prompt: rebuild and publish the new artifact, or publish the existing artifact unchanged.
+
+**Identity drift** — a three-option prompt:
+
+- **Build & publish the current source.** Run the build pipeline against the source's current name and version, verify, and upload.
+- **Publish the existing artifact as-is.** Upload the older artifact under its own embedded `(name, version)`. If that identity is already published, the upload fails with the registry's verbatim immutability message — that 409 is the signal that the source needs a version bump (or that the older version was already published).
+- **Cancel.** Exit non-zero without contacting the registry.
+
+<Note>
+The second option exists because there are real workflows where it succeeds: a user who built `v0.1.0` on machine A, copied the `.facet` to machine B, then started editing `facet.json` for the next version, and now wants to publish what they actually built before continuing.
+</Note>
 
 ## Publish outcomes
 
@@ -50,19 +80,12 @@ When `dist/` contains a `.facet` whose embedded manifest disagrees with the curr
 | `409`       | `1`      | Version already exists. The registry enforces immutability -- a version cannot be republished with different content. |
 
 <Note>
-Registry errors are rendered verbatim -- the CLI shows the registry's own message and suggested fix rather than maintaining its own copy of what each error code means.
+Registry errors are rendered verbatim, as the [Publish specification](/specification/publish#authentication) requires.
 </Note>
-
-## Exit codes
-
-| Code | Meaning |
-| ---- | ------- |
-| `0`  | Publish succeeded (201 published or 202 queued). |
-| `1`  | Failed (no credential, invalid manifest, verification failure, no artifact in non-TTY, registry error, etc.). |
 
 ## See also
 
-- <code>[facet build](/cli/authoring/build)</code> -- produce the `.facet` archive that publish uploads.
-- <code>[facet login](/cli/login)</code> -- sign in to the registry.
-- <code>[facet whoami](/cli/whoami)</code> -- verify the signed-in identity.
-- [Publish Flow specification](/specification/publish) -- the normative specification for building and publishing.
+- [`facet build`](/cli/authoring/build) -- produce the `.facet` archive that publish uploads.
+- [`facet login`](/cli/login) -- sign in to the registry.
+- [`facet whoami`](/cli/whoami) -- verify the signed-in identity.
+- [Publish specification](/specification/publish) -- the normative publish requirements.

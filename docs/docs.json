@@ -84,7 +84,7 @@
           {
             "group": "Facet Management",
             "icon": "box",
-            "pages": ["cli/install", "cli/add", "cli/remove", "cli/update", "cli/search", "cli/list"]
+            "pages": ["cli/install", "cli/add", "cli/remove", "cli/upgrade", "cli/search", "cli/list"]
           },
           {
             "group": "Adapters",
@@ -120,19 +120,26 @@
         "groups": [
           {
             "group": "Specification",
-            "pages": ["specification/index", "specification/terminology"]
-          },
-          {
-            "group": "Sections",
-            "icon": "section",
             "pages": [
-              "specification/architecture",
+              "specification/index",
+              "specification/project-manifest",
+              "specification/lockfile",
               "specification/manifest",
-              "specification/publish",
-              "specification/install",
-              "specification/pipeline",
+              "specification/archive",
               "specification/integrity"
             ]
+          },
+          {
+            "group": "Installation",
+            "pages": ["specification/install", "specification/planning", "specification/commit"]
+          },
+          {
+            "group": "Authoring",
+            "pages": ["specification/build", "specification/publish"]
+          },
+          {
+            "group": "Reference",
+            "pages": ["specification/terminology"]
           }
         ]
       },

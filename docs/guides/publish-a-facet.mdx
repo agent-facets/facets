@@ -27,9 +27,9 @@ Publishing takes a built facet to the registry so others can install it. The flo
 > `facet build && facet publish` as two commands so a stale `dist/` never
 > ships silently.
 >
-> See <code>[facet publish](/cli/authoring/publish)</code>,
-> <code>[facet build](/cli/authoring/build)</code>, and
-> <code>[facet login](/cli/login)</code>.
+> See [`facet publish`](/cli/authoring/publish),
+> [`facet build`](/cli/authoring/build), and
+> [`facet login`](/cli/login).
 
 </Visibility>
 
@@ -45,7 +45,7 @@ Publishing takes a built facet to the registry so others can install it. The flo
 facet login
 ```
 
-<code>[facet login](/cli/login)</code> shows an interactive menu  -- choose "Paste a token" and paste your PAT. The token is verified against the registry before it's saved, so a typo or expired token fails immediately instead of surfacing later at publish time. On success it's written to `~/.facet/credentials` (mode `0600`).
+[`facet login`](/cli/login) shows an interactive menu  -- choose "Paste a personal access token" and paste your PAT. The token is verified against the registry before it's saved, so a typo or expired token fails immediately instead of surfacing later at publish time.
 
 <Tip>
   For CI, skip `facet login` and set `FACET_TOKEN` in the environment instead. It takes precedence over the saved credentials file.
@@ -59,7 +59,7 @@ facet login
 facet whoami
 ```
 
-<code>[facet whoami](/cli/whoami)</code> prints your username, email, and tier  -- and notes when the credential came from `FACET_TOKEN` rather than the saved file.
+[`facet whoami`](/cli/whoami) prints your username, email, and tier  -- and notes when the credential came from `FACET_TOKEN` rather than the saved file.
 
 </Step>
 
@@ -75,7 +75,7 @@ facet whoami
 facet build
 ```
 
-<code>[facet build](/cli/authoring/build)</code> writes `dist/<name>-<version>.facet` (a scoped name renders as a nested path, e.g. `dist/@acme/cowsay-1.0.0.facet`). Rebuild whenever your source has changed since the last build.
+[`facet build`](/cli/authoring/build) writes `dist/<name>-<version>.facet` (a scoped name renders as a nested path, e.g. `dist/@acme/cowsay-1.0.0.facet`). Rebuild whenever your source has changed since the last build.
 
 </Step>
 
@@ -85,7 +85,7 @@ facet build
 facet publish
 ```
 
-<code>[facet publish](/cli/authoring/publish)</code> resolves your credential, validates the manifest, finds the `.facet` in `dist/`, re-verifies its integrity, and uploads it under the artifact's embedded name and version. It publishes what's in `dist/`  -- which is why the build step comes first.
+[`facet publish`](/cli/authoring/publish) resolves your credential, validates the manifest, finds the `.facet` in `dist/`, re-verifies its integrity, and uploads it under the artifact's embedded name and version. It publishes what's in `dist/`  -- which is why the build step comes first.
 
 </Step>
 
@@ -96,7 +96,9 @@ facet publish
 If `dist/` was built from a different `facet.json` than what's on disk now, publish detects the drift and asks what to do (in an interactive terminal):
 
 - **Identity drift**  -- different name or version. The usual case: you bumped `version` but didn't rebuild. You can build and publish the current source, publish the existing artifact as-is, or cancel.
-- **Content drift**  -- same name and version, different content (an edited description or the <code>[private](/specification/manifest#privacy)</code> flag). You can rebuild and publish, or publish the existing artifact unchanged.
+- **Content drift**  -- same name and version, different content (an edited description or the [`private`](/specification/manifest#privacy) flag). You can rebuild and publish, or publish the existing artifact unchanged.
+
+The full drift semantics are specified in [Publish — drift](/specification/publish#when-the-built-artifact-has-drifted-from-source).
 
 <Warning>
   In a non-interactive context (CI or piped stdin), both drift cases warn to stderr and ship the **existing** artifact unchanged. For strict CI, run `facet build && facet publish` as two separate commands so a stale `dist/` can never be published silently.
@@ -104,17 +106,7 @@ If `dist/` was built from a different `facet.json` than what's on disk now, publ
 
 ## Publish outcomes
 
-The registry responds one of three ways:
-
-| Status | Meaning                                                                                                                    |
-|--------|----------------------------------------------------------------------------------------------------------------------------|
-| `201`  | Published. The version is live in the registry.                                                                            |
-| `202`  | Queued for review. Accepted, but a reserved or over-budget global facet becomes available only after an admin approves it. |
-| `409`  | Version already exists. Published versions are immutable and cannot be republished with different content.                 |
-
-<Note>
-  Registry errors render verbatim  -- the CLI shows the registry's own message and suggested fix rather than its own copy of what each code means.
-</Note>
+A publish either goes live immediately, is queued for review (still a success — the version appears once approved), or is rejected because the version already exists. The full status table lives at [`facet publish`](/cli/authoring/publish#publish-outcomes).
 
 ## Ship a new version
 
@@ -128,7 +120,7 @@ A published `(name, version)` is immutable, so every change ships as a new versi
 facet modify facet --version 1.2.0
 ```
 
-<code>[facet modify](/cli/authoring/modify)</code> updates `facet.json` for you (or edit the `version` field by hand).
+[`facet modify`](/cli/authoring/modify) updates `facet.json` for you (or edit the `version` field by hand).
 
 </Step>
 
@@ -147,10 +139,10 @@ If you forget to rebuild, publish catches the identity drift and offers to build
 
 ### Changing visibility
 
-The <code>[private](/specification/manifest#privacy)</code> flag is manifest content, so changing it is a content change  -- and a published version can't be changed. To flip visibility, set the flag, bump the version, rebuild, and republish:
+The [`private`](/specification/manifest#privacy) flag is manifest content, so changing it is a content change  -- and a published version can't be changed. To flip visibility, set the flag, bump the version, rebuild, and republish:
 
 ```sh
-facet modify facet --private            # or --private false to go public
+facet modify facet --private            # or --private=false to go public
 facet modify facet --version 1.3.0
 facet build
 facet publish
@@ -164,7 +156,7 @@ Omitting `private` (or setting it `false`) keeps a facet public; `true` declares
 facet logout
 ```
 
-<code>[facet logout](/cli/logout)</code> deletes `~/.facet/credentials`. It makes no server call  -- revoke PATs in the web UI.
+[`facet logout`](/cli/logout) deletes `~/.facet/credentials`. It makes no server call  -- revoke PATs in the web UI.
 
 <Warning>
   If `FACET_TOKEN` is set, it keeps authenticating every command after logout. Run `unset FACET_TOKEN` to fully sign out of the current shell.
@@ -172,9 +164,6 @@ facet logout
 
 ## Environment variables
 
-| Variable             | Description                                                                 |
-|----------------------|-----------------------------------------------------------------------------|
-| `FACET_TOKEN`        | Registry PAT. Takes precedence over the credentials file  -- use it for CI. |
-| `FACET_REGISTRY_URL` | Override the registry base URL. Defaults to production.                     |
+`FACET_TOKEN` (a registry PAT that takes precedence over the credentials file — use it for CI) and `FACET_REGISTRY_URL` (override the registry base URL) are documented in the [environment variables reference](/cli/env).
 
 </Visibility>

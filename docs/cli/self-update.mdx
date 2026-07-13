@@ -11,14 +11,17 @@ facet self-update
 
 `facet self-upgrade` is an alias of the same command.
 
-## What it does
+## Examples
 
-Updates the running `facet` binary in place. Detects how the binary was
-installed  -- the curl installer, an `npm` / `yarn` / `pnpm` / `bun` global
-install, dev mode, or an unclassified location  -- and dispatches to the
-matching update mechanism for that path. Existing trust roots (the
-[install script](https://agentfacets.io/install) and the user's package
-manager) handle download, integrity verification, and the binary swap.
+```sh
+facet self-update                  # update to the latest published version
+facet self-update --version 0.7.0  # pin to a specific version
+facet self-update --dry-run        # preview the plan without changing anything
+```
+
+The `--dry-run` output reports the current and target versions, the
+detected install method, and the exact command that would run if you
+re-ran without `--dry-run`.
 
 ## Flags
 
@@ -30,33 +33,22 @@ manager) handle download, integrity verification, and the binary swap.
   Print the plan; do not modify any files.
 </ResponseField>
 
-<ResponseField name="--help" type="boolean">
-  Show command help.
-</ResponseField>
+## Exit codes
 
-### Examples
+| Code | Meaning |
+| ---- | ------- |
+| `0`  | Successful update, already up to date, or `--dry-run` (any state except dev mode) |
+| `1`  | Dev-mode refusal, network error, or malformed registry data |
+| other | The underlying installer or package manager's exit code, passed through |
 
-Update to the latest published version:
+## What it does
 
-```sh
-facet self-update
-```
-
-Pin to a specific version:
-
-```sh
-facet self-update --version 0.7.0
-```
-
-Preview the plan without changing anything:
-
-```sh
-facet self-update --dry-run
-```
-
-The `--dry-run` output reports the current and target versions, the
-detected install method, and the exact command that would run if you
-re-ran without `--dry-run`.
+Updates the running `facet` binary in place. Detects how the binary was
+installed  -- the curl installer, an `npm` / `yarn` / `pnpm` / `bun` global
+install, dev mode, or an unclassified location  -- and dispatches to the
+matching update mechanism for that path. Existing trust roots (the
+[install script](https://agentfacets.io/install) and the user's package
+manager) handle download, integrity verification, and the binary swap.
 
 ## Install methods
 
@@ -87,19 +79,8 @@ has no business writing over the path you pointed it at. Unset
 
 ## Environment variables
 
-| Variable             | Purpose                                                                              |
-| -------------------- | ------------------------------------------------------------------------------------ |
-| `FACET_CLI_REGISTRY` | Override the npm registry used to look up the latest version                         |
-| `FACET_DIR`          | Override the facet directory root (default `~/.facet`); the curl bin lives at `$FACET_DIR/bin/facet` |
-| `FACET_BIN_OVERRIDE` | Override which binary the launcher executes; setting this also refuses self-update   |
+Three variables affect self-update — `FACET_CLI_REGISTRY` (npm registry for version lookup), `FACET_DIR` (where the curl-installed binary lives), and `FACET_BIN_OVERRIDE` (triggers the dev-mode refusal above). See the [environment variables reference](/cli/env) for details.
 
-## Exit codes
+## See also
 
-| Outcome                                    | Code |
-| ------------------------------------------ | ---- |
-| Successful update                          | `0`  |
-| `--dry-run` (any state)                    | `0`  |
-| Already up to date                         | `0`  |
-| Dev-mode refusal                           | `1`  |
-| Network error / malformed registry data    | `1`  |
-| Underlying installer or package manager... | passes through that tool's exit code |
+- [Environment variables](/cli/env) -- `FACET_CLI_REGISTRY`, `FACET_DIR`, and `FACET_BIN_OVERRIDE` in full.

@@ -5,9 +5,9 @@ description: What's new in Agent Facets
 rss: true
 ---
 
-<Update label="2026-07-09" description="TypeScript 7 is now a supported peer for @agent-facets/protocol, @agent-facets/adapter, @agent-facets/brand, and the first-party adapters" tags={["Improvement"]} rss={{
-  title: "TypeScript 7 support for the public packages",
-  description: "The public @agent-facets/* packages -- @agent-facets/protocol, @agent-facets/adapter, @agent-facets/brand, @agent-facets/adapter-claude-code, @agent-facets/adapter-codex, and @agent-facets/adapter-opencode -- now declare their typescript peerDependency as ^5 || ^6 || ^7, so they install cleanly on projects that have upgraded to TypeScript 7. Consumers on TypeScript 5 or 6 are unaffected."
+<Update label="2026-07-09" description="Agent-friendly CLI: instructions, modify, headless create, build --verify; TypeScript 7 support; trailing newlines on generated JSON" tags={["CLI", "New Feature", "Improvement", "Fix"]} rss={{
+  title: "Agent-friendly CLI, TypeScript 7 support, and trailing newlines on generated JSON",
+  description: "The facet CLI is now built for AI agents to drive non-interactively: new facet instructions [topic] prints agent-oriented usage guidance (the manifest topic emits the facet.json JSON Schema generated live from the schema definition); new facet modify makes one scriptable, flag-driven edit to a facet; facet create gains headless flags; facet build gains --verify and --json. Also: the public @agent-facets/* packages now declare their typescript peerDependency as ^5 || ^6 || ^7, so they install cleanly on TypeScript 7 projects. And every JSON file the CLI writes -- facets.lock, install receipts, build manifests, scaffolded facet.json, and cache metadata -- now ends with exactly one trailing newline and uses consistent 2-space indentation."
 }}>
   ## TypeScript 7 support
 
@@ -24,12 +24,7 @@ rss: true
   - `@agent-facets/adapter-claude-code`
   - `@agent-facets/adapter-codex`
   - `@agent-facets/adapter-opencode`
-</Update>
 
-<Update label="2026-07-09" description="Generated JSON files now end with a trailing newline" tags={["CLI", "Fix"]} rss={{
-  title: "Generated JSON files now end with a trailing newline",
-  description: "Every JSON file the CLI writes -- facets.lock, install receipts, build manifests, scaffolded facet.json, and cache metadata -- now ends with exactly one trailing newline and uses consistent 2-space indentation. This eliminates spurious diffs when editors that auto-append a final newline open a CLI-generated file. facets.json continues to be written through the comment-preserving serializer and now upholds the same invariant."
-}}>
   ## Trailing newlines on generated JSON
 
   Every JSON file the CLI writes now ends with exactly one trailing
@@ -49,12 +44,7 @@ rss: true
   `facets.json` continues to be written through the comment-preserving
   serializer (so your hand-edited comments survive) and now upholds the
   same trailing-newline invariant.
-</Update>
 
-<Update label="2026-07-09" description="Agent-friendly CLI: new facet instructions and facet modify commands; headless facet create; facet build --verify/--json" tags={["CLI", "New Feature"]} rss={{
-  title: "Agent-friendly CLI: instructions, modify, headless create, and verify",
-  description: "The facet CLI is now built for AI agents to drive non-interactively. New command: facet instructions [topic] prints agent-oriented usage guidance (overview, manifest, authoring, usage); the manifest topic emits the facet.json JSON Schema generated live from the schema definition. New command: facet modify is the scriptable counterpart to the interactive facet edit wizard — add/remove/rename/re-describe skills, agents, and commands, set facet metadata, and set per-asset adapter config with --adapter-<name> '<json>' / --remove-adapter-<name>, all with an optional --json output. facet create gains headless flags (--name, --description, --version, --private, repeatable --skill/--agent/--command, --json) that scaffold without the interactive wizard. facet build gains --verify (run the full validation pipeline without writing any output) and --json (machine-readable result). Fix: a subcommand flag named --version (e.g. facet modify facet --version 1.2.3) is no longer shadowed by the global --version flag."
-}}>
   ## The CLI is now agent-friendly
 
   Every interactive authoring flow now has a non-interactive, scriptable
@@ -77,12 +67,12 @@ rss: true
 
   The `manifest` topic appends the **facet.json JSON Schema generated live
   from the schema definition** — a single source of truth, never a
-  hand-maintained copy. See <code>[facet instructions](/cli/instructions)</code>.
+  hand-maintained copy. See [`facet instructions`](/cli/instructions).
 
   ## New command: `facet modify`
 
   `facet modify` is the scriptable counterpart to the interactive
-  <code>[facet edit](/cli/authoring/edit)</code> wizard: one headless, flag-driven edit
+  [`facet edit`](/cli/authoring/edit) wizard: one headless, flag-driven edit
   to a facet.
 
   ```bash
@@ -105,7 +95,7 @@ rss: true
   and `--remove-adapter-<name>` deletes one. Add `--json` for a structured
   change summary. Exactly one lifecycle action (`--add`, `--remove`, or
   `--rename`) is allowed per call; illegal flag combinations are rejected up
-  front. See <code>[facet modify](/cli/authoring/modify)</code>.
+  front. See [`facet modify`](/cli/authoring/modify).
 
   ## `facet create` gains headless flags
 
@@ -120,7 +110,7 @@ rss: true
   Repeat `--skill`/`--agent`/`--command` for multiple assets; `--private`
   marks the facet private, `--force` overwrites an existing `facet.json`
   (required in headless mode), and `--json` prints a structured result. See
-  <code>[facet create](/cli/authoring/create)</code>.
+  [`facet create`](/cli/authoring/create).
 
   ## `facet build --verify` and `--json`
 
@@ -134,7 +124,7 @@ rss: true
   facet build --verify --json   # machine-readable: { ok, errors, warnings, … }
   ```
 
-  See <code>[facet build](/cli/authoring/build)</code>.
+  See [`facet build`](/cli/authoring/build).
 
   ## Fix: subcommand `--version` is no longer shadowed
 
@@ -171,7 +161,7 @@ rss: true
   if any name is not declared in `facets.json`, nothing is removed. Every
   facet you don't name is left untouched.
 
-  See the <code>[facet remove](/cli/remove)</code> reference for details.
+  See the [`facet remove`](/cli/remove) reference for details.
 </Update>
 
 <Update label="2026-06-05" description="Bearer-token auth for the registry; new login/whoami/logout commands; FACET_REGISTRY_API_KEY removed; install now re-resolves a stale lockfile; new --frozen-lockfile flag" tags={["CLI", "Breaking", "New Feature", "Fix"]} rss={{
@@ -257,7 +247,7 @@ rss: true
   ```
 
   A wildcard the lock still satisfies (manifest `1.*`, lock `1.2.3`) is
-  unaffected  -- it stays pinned and reproducible. See <code>[facet install](/cli/install#lockfile-semantics)</code>.
+  unaffected  -- it stays pinned and reproducible. See [resolution semantics](/specification/commit#resolve).
 
   ## New: `facet install --frozen-lockfile`
 
@@ -270,8 +260,8 @@ rss: true
   facet install --frozen-lockfile   # passes only if facets.json and facets.lock agree
   ```
 
-  This mirrors `--frozen-lockfile` from `npm` and `bun`. See [the flag
-  reference](/cli/install#frozen-lockfile).
+  This mirrors `--frozen-lockfile` from `npm` and `bun`. See [frozen
+  lockfile semantics](/specification/commit#frozen-lockfile).
 </Update>
 
 <Update label="2026-05-14" description="Consolidate everything under FACET_DIR; new FACET_BIN_OVERRIDE; lock moves out of project root" tags={["CLI", "Breaking"]} rss={{
@@ -356,7 +346,7 @@ rss: true
   will rebuild cache and adapters on first use.
 
   See the [environment variables](/cli/env) reference and the
-  <code>[facet install](/cli/install)</code> page for the updated paths.
+  [`facet install`](/cli/install) page for the updated paths.
 </Update>
 
 <Update label="2026-05-03" description="@agent-facets/core split into protocol (public, Node-native) and engine (private, Bun-native)" tags={["CLI", "Breaking", "Improvement"]} rss={{
@@ -373,7 +363,7 @@ rss: true
   - **`@agent-facets/engine`** (RENAMED from `@agent-facets/core`, made private)  -- the Bun-native CLI machinery. Install pipeline, registry HTTP client, adapter machinery, source resolvers, manifest mutations, cache, scaffold, edit, self-update, build pipeline orchestrator, gzip compression, path-based loaders. Internal to the monorepo; never published.
   - **`agent-facets`** (the CLI binary, unchanged)  -- argv parsing, Ink TUI, error formatting, exit codes.
 
-  See `docs/contributing/architecture` for the full layer description and the design rationale for keeping the registry HTTP API outside the protocol.
+  See the [specification](/specification) for the full layer description and the design rationale for keeping the registry HTTP API outside the protocol.
 
   **Breaking:** `@agent-facets/core` is no longer published. The package is frozen at v0.9.1 on npm; existing pins continue to resolve, but there will be no further versions. New consumers (registry servers, third-party tooling) MUST use `@agent-facets/protocol`. There is no deprecation message on the legacy package  -- closed-alpha, no known external consumers.
 
@@ -556,7 +546,7 @@ rss: true
   npm install -g agent-facets
   ```
 
-  The [download link](/index) on the docs site has been updated automatically.
+  The [download link](/) on the docs site has been updated automatically.
 </Update>
 
 <Update label="2026-04-18" description="Faster adapter installs" tags={["CLI", "Improvement"]}>

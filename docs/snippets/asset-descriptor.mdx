@@ -1,0 +1,17 @@
+export const AssetDescriptor = ({ assetType, promptPath }) => (
+  <>
+    <ResponseField name="description" type="string" required>
+      Human-readable description of the {assetType}.
+    </ResponseField>
+    <ResponseField name="adapters" type="map of string → adapter config">
+      Adapter name → adapter-specific {assetType} configuration. Each installed
+      adapter validates its own metadata schema at build time. Unknown adapters
+      produce a warning; invalid metadata for an installed adapter is a build
+      error.
+    </ResponseField>
+    <p>
+      The {assetType}'s prompt is the content of <code>{promptPath}</code>,
+      resolved by convention at build time — it is not a manifest field.
+    </p>
+  </>
+);

@@ -9,14 +9,7 @@ description: Remove one or more facets from the project
 facet remove <facet> [more facets...]
 ```
 
-Removes one or more facets from `facets.json`, deletes their assets from every connected adapter, and rewrites `facets.lock` without them  -- in a single command. The inverse of <code>[facet add](/cli/add)</code>. Aliased as `facet rm`.
-
-## What it does
-
-1. **Load `facets.json`.** A missing or invalid manifest fails before any change.
-2. **Filter to declared names.** Names not in `facets.json` are silently ignored. If every name is absent, the command exits successfully with no changes.
-3. **Commit.** Delegate to the install pipeline with the removals delta. The pipeline removes assets using the machine-local install receipt (no cache or network needed for removal), then writes `facets.json`, `facets.lock`, and the receipt together. Every other facet is left untouched.
-4. **On any failure**, the journal rolls back all changes. The manifest, lockfile, and receipt are never written ahead of success.
+Removes one or more facets from `facets.json`, deletes their assets from every connected adapter, and rewrites `facets.lock` without them  -- in a single command. The inverse of [`facet add`](/cli/add). Aliased as `facet rm`.
 
 ## Examples
 
@@ -44,7 +37,24 @@ facet remove viper-plans rezi
 | `0`  | Removal succeeded, or all requested names were already absent from `facets.json` (no-op). |
 | `1`  | Failed (no names given, install failure, etc.). No files are modified on failure. |
 
+## What it does
+
+<Steps>
+  <Step title="Load facets.json">
+    A missing or invalid manifest fails before any change.
+  </Step>
+  <Step title="Filter to declared names">
+    Names not in `facets.json` are silently ignored. If every name is absent, the command exits successfully with no changes.
+  </Step>
+  <Step title="Commit">
+    Delegate to the [install pipeline](/specification/install) with the removals delta. Removal is [receipt-driven and offline](/specification/commit#drift-removal); the manifest, lockfile, and receipt are [written together](/specification/commit#transactional-tri-write). Every other facet is left untouched.
+  </Step>
+  <Step title="On any failure">
+    The journal rolls back all changes. Nothing is written ahead of success.
+  </Step>
+</Steps>
+
 ## See also
 
-- <code>[facet add](/cli/add)</code>  -- the inverse: add a facet to `facets.json` and install it in one step.
-- <code>[facet install](/cli/install)</code>  -- reapply `facets.json` and the lockfile.
+- [`facet add`](/cli/add)  -- the inverse: add a facet to `facets.json` and install it in one step.
+- [`facet install`](/cli/install)  -- reapply `facets.json` and the lockfile.

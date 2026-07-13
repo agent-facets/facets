@@ -1,6 +1,6 @@
 ---
 title: facet adapter remove
-description: Manage adapter installations
+description: Remove an installed adapter
 ---
 
 ## Usage
@@ -9,20 +9,16 @@ description: Manage adapter installations
 facet adapter remove <name>
 ```
 
-Removes an installed adapter by deleting its directory from the adapter
-base directory (default `$FACET_DIR/adapters/`, where `FACET_DIR`
-defaults to `~/.facet`).
+Removes an installed adapter by deleting its directory from the adapter base directory, `$FACET_DIR/adapters/` (see [environment variables](/cli/env) for the `FACET_DIR` layout).
 
-### `FACET_DIR`
+## Exit codes
 
-Overrides the facet directory root. The adapter base directory is
-always `$FACET_DIR/adapters/`. See the [environment variables
-reference](/cli/env) for the full layout.
+| Code | Meaning |
+| ---- | ------- |
+| `0`  | Adapter removed |
+| `1`  | Removal failed (adapter not installed, filesystem error) |
 
-```sh
-export FACET_DIR=/opt/facet
-facet adapter remove opencode
-# removes /opt/facet/adapters/opencode
-```
+## See also
 
-Default is `~/.facet`.
+- [`facet adapter install`](/cli/adapters/install) -- install an adapter.
+- [`facet adapter list`](/cli/adapters/list) -- list installed adapters.

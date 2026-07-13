@@ -12,13 +12,20 @@ facet <command> --help
 
 Prints usage information. With no command, shows the global help listing all available commands. With a command name, shows that command's usage, description, and flags.
 
+## Exit codes
+
+| Code | Meaning |
+| ---- | ------- |
+| `0`  | Help or version printed — including `facet help <unknown-topic>`, which falls back to the global help |
+| `1`  | Unknown command (`facet <unknown-command>`) |
+
 ## Global help
 
 ```sh
 facet --help
 ```
 
-Lists every registered command with a short description. Stub commands (not yet implemented) are hidden from this output but still resolve for typo suggestions.
+Lists every registered command with a short description. Aliases (e.g., `self-upgrade` for `self-update`) are listed alongside the canonical name. Stub commands (not yet implemented) are hidden from this output but still resolve for typo suggestions.
 
 ## Per-command help
 
@@ -28,7 +35,7 @@ facet build --help
 facet adapter install --help
 ```
 
-Shows the command's usage line, description, available flags with defaults, and a `--help` flag reference. Aliases (e.g., `self-upgrade` for `self-update`) are listed alongside the canonical name.
+Shows the command's usage line, description, available flags with defaults, and a `--help` flag reference.
 
 ## Version
 

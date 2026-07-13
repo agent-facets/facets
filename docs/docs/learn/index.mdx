@@ -1,19 +1,19 @@
 ---
 title: Key Concepts
-description: Asset types, manifests, and the facet lifecycle
+description: Facets, assets, and the three asset types
 ---
 
 This page introduces the core concepts behind Facets. For normative requirements, see the [Specification](/specification).
 
 ## Facets
 
-A **facet** is a versioned collection of [assets](#assets) defined by a facet manifest (`facet.json`) — the same bundle an author creates locally, publishes to the registry, and installs into a project.
+A **facet** is a versioned collection of [assets](#assets) defined by a [facet manifest](/specification/manifest) (`facet.json`) — the same bundle an author creates locally, publishes to the registry, and installs into a project.
 
 ## Assets
 
-An asset is a discrete unit of content within a facet. A facet bundles any combination of the three asset types below. All three are text assets that follow the [Agent Skills](https://agentskills.io/specification) specification.
+An asset is a discrete unit of content within a facet. A facet bundles any combination of the three text asset types below. Skills follow the [Agent Skills](https://agentskills.io/specification) specification; agents and commands are single-file conventions defined by the [facet specification](/specification).
 
-<Columns col={2}>
+<Columns cols={3}>
   <Card title='Skills' href='/docs/learn/skills'>
     Reusable knowledge and guidelines the assistant applies passively.
   </Card>

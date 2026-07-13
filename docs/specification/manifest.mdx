@@ -5,13 +5,19 @@ tag: facet.json
 description: The facet.json schema and name grammar
 ---
 
+import { AssetDescriptor } from "/snippets/asset-descriptor.mdx";
+
 The facet manifest (`facet.json`) is the source of truth for a facet's identity and the text assets it contains. This page defines every field in the manifest schema and is the canonical reference for the facet name grammar.
+
+<Note>
+The facet manifest is distinct from the [project manifest](/specification/project-manifest) (`facets.json`) — the file in a consuming project that declares which facets are installed. Throughout this page, "the manifest" means the facet manifest.
+</Note>
 
 For conceptual guides to each asset type, see [Skills](/docs/learn/skills), [Commands](/docs/learn/commands), and [Agents](/docs/learn/agents).
 
 ## Example
 
-```json
+```json expandable facet.json
 {
   "name": "acme-dev",
   "version": "1.0.0",
@@ -39,19 +45,60 @@ For conceptual guides to each asset type, see [Skills](/docs/learn/skills), [Com
 }
 ```
 
-## Identity
+## Schema
 
-| Field         | Required | Type   | Description                   |
-| ------------- | -------- | ------ | ----------------------------- |
-| `name`        | Yes      | string | Facet identity. An unscoped name (`cowsay`) or a scoped name (`@scope/name`). See [Schema Constraints](#schema-constraints). |
-| `version`     | Yes      | string | Semver version string.        |
-| `description` | No       | string | Human-readable description.   |
-| `author`      | No       | string | Author name or identifier.    |
-| `private`     | No       | boolean | Privacy declaration. `true` declares private publish intent; `false` or omission is public-by-default. See [Privacy](#privacy). |
+Every top-level field of `facet.json`. The `name` and `version` fields MUST be present; a manifest missing either MUST be rejected. A facet MUST also declare at least one text asset (`skills`, `agents`, `commands`, or `facets`). Consumers MUST tolerate unrecognized top-level fields — unknown fields MUST be ignored, not rejected.
 
-The `name` and `version` fields MUST be present. A manifest missing either field MUST be rejected. The `name` MUST be a valid facet identity: an unscoped name (`<slug>`) or a scoped name (`@<scope>/<slug>`). Asset names (skills, agents, commands) are validated independently as local kebab-case identifiers and are never scoped.
+### Fields
 
-Consumers MUST tolerate unrecognized top-level fields. Unknown fields MUST be ignored  -- not rejected.
+<ResponseField name="name" type="string" required>
+  Facet identity: an unscoped name (`cowsay`) or a scoped name (`@scope/name`). Validated, never normalized — see [Facet name grammar](#facet-name-grammar). Asset names — skill, command, and agent names alike — are validated independently as local kebab-case identifiers per the [Agent Skills name grammar](https://agentskills.io/specification#name-field) and are never scoped.
+</ResponseField>
+
+<ResponseField name="version" type="string" required>
+  Semver version string.
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  Human-readable description.
+</ResponseField>
+
+<ResponseField name="author" type="string">
+  Author name or identifier.
+</ResponseField>
+
+<ResponseField name="private" type="boolean">
+  Privacy declaration. `true` declares private publish intent; `false` or omission is public-by-default. See [Privacy](#privacy).
+</ResponseField>
+
+<ResponseField name="skills" type="map of string → skill descriptor">
+  Skill name → skill descriptor.
+  <Expandable title="skill descriptor">
+    <AssetDescriptor assetType="skill" promptPath="skills/<name>/SKILL.md" />
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="agents" type="map of string → agent descriptor">
+  Agent name → agent descriptor.
+  <Expandable title="agent descriptor">
+    <AssetDescriptor assetType="agent" promptPath="agents/<name>.md" />
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="commands" type="map of string → command descriptor">
+  Command name → command descriptor.
+  <Expandable title="command descriptor">
+    <AssetDescriptor assetType="command" promptPath="commands/<name>.md" />
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="facets" type="array of facets entries">
+  References to other facets (`name@version` strings or selective entries). Schema-validated only: build does not resolve the references, and [`facet add`](/cli/add) rejects sources that declare a non-empty `facets` array.
+</ResponseField>
+
+<ResponseField name="servers" type="map of string → server reference">
+  MCP server references (source-mode version string or ref-mode `{ image }`). Declared servers are validated but not installed; the install pipeline SHOULD surface a warning for facets that declare them.
+</ResponseField>
 
 ### Privacy
 
@@ -62,9 +109,9 @@ The optional `private` field declares the author's publish-visibility intent:
 
 `private` is a recognized schema field, not an unknown extension. It MUST be a boolean: a non-boolean value (string, number, object, array, or null) MUST be rejected with a `private`-identified error rather than tolerated or coerced. Validation MUST NOT inject `private: false` into a manifest that omits the field  -- omission remains omission in the validated data, so tooling sees exactly what the author wrote.
 
-The `private` declaration is part of manifest content: it is embedded verbatim in the built `.facet` artifact and travels to the registry at publish time (see [Publish Flow](/specification/publish)). It expresses author intent; registry-side authorization and visibility enforcement are the registry's responsibility, not the CLI's.
+The `private` declaration is part of manifest content: it is embedded verbatim in the built `.facet` artifact and travels to the registry at publish time (see [Publish](/specification/publish)). It expresses author intent; registry-side authorization and visibility enforcement are the registry's responsibility, not the CLI's.
 
-### Facet Name Grammar
+### Facet name grammar
 
 A facet identity is one of exactly two forms:
 
@@ -81,74 +128,38 @@ Every slug component (the unscoped name, a scope, and a scoped base name) MUST s
 
 Names are validated, never normalized. Uppercase letters, non-ASCII characters, underscores, dots, spaces, and other characters outside the grammar are rejected rather than rewritten.
 
-| Valid          | Invalid             | Why invalid                          |
-| -------------- | ------------------- | ------------------------------------ |
-| `ab`           | `a`                 | shorter than 2 characters            |
-| `cowsay`       | `Cowsay`            | uppercase letters                    |
-| `admin-tester` | `1abc`              | does not start with a letter         |
-| `apple-b34r`   | `abc-`              | ends with a hyphen                   |
-| `@julian/cowsay` | `abc--def`        | consecutive hyphens                  |
-| `@acme/deploy-tools` | `abc_def`       | underscore is not allowed            |
+**Valid:** `ab`, `cowsay`, `admin-tester`, `apple-b34r`, `@julian/cowsay`, `@acme/deploy-tools`.
+
+**Invalid:**
+
+| Example    | Why invalid                  |
+| ---------- | ---------------------------- |
+| `a`        | shorter than 2 characters    |
+| `Cowsay`   | uppercase letters            |
+| `1abc`     | does not start with a letter |
+| `abc-`     | ends with a hyphen           |
+| `abc--def` | consecutive hyphens          |
+| `abc_def`  | underscore is not allowed    |
 
 The following scoped shapes are rejected: a bare scope (`@scope`), a missing scope (`@/name`), a missing name (`@scope/`), extra path depth (`@scope/name/extra`), and the legacy un-prefixed form (`scope/name`).
 
-## Text Assets
+### Constraints
 
-Text assets are the locally authored content included in the facet.
-
-| Field      | Required | Type                              | Description                                                                  |
-| ---------- | -------- | --------------------------------- | ---------------------------------------------------------------------------- |
-| `skills`   | No       | map of string → skill descriptor  | Skill name → skill descriptor (description, adapter config).                  |
-| `agents`   | No       | map of string → agent descriptor  | Agent name → agent descriptor (description, adapter config).                  |
-| `commands` | No       | map of string → command descriptor| Command name → command descriptor (description, adapter config).             |
-| `facets`   | No       | array of facets entries           | References to other facets (composition). Not yet implemented -- see [Publish Flow](/specification/publish). |
-| `servers`  | No       | map of string → server reference  | MCP server references (source-mode version string or ref-mode `{ image }`). Server support is in development. |
-
-A facet MUST have at least one text asset -- skills, agents, commands, or facets. A manifest with none of these MUST be rejected.
-
-### Skill Descriptor
-
-<ResponseField name="description" type="string" required>
-  Human-readable description of the skill.
-</ResponseField>
-
-<ResponseField name="adapters" type="map of string → adapter config">
-  Adapter name → adapter-specific skill configuration.
-</ResponseField>
-
-The skill's prompt is the content of `skills/<name>/SKILL.md`, resolved by convention at build time -- it is not a manifest field.
-
-### Agent Descriptor
-
-<ResponseField name="description" type="string" required>
-  Human-readable description of the agent.
-</ResponseField>
-
-<ResponseField name="adapters" type="map of string → adapter config">
-  Adapter name → adapter-specific agent configuration.
-</ResponseField>
-
-The agent's prompt is the content of `agents/<name>.md`, resolved by convention at build time -- it is not a manifest field.
-
-The `adapters` section is OPTIONAL. It contains adapter-specific configuration (tool access, permissions, model preferences) keyed by adapter name. Each installed adapter validates its own metadata schema at build time. Unknown adapters produce a warning. Invalid metadata for an installed adapter is a build error.
-
-### Command Descriptor
-
-<ResponseField name="description" type="string" required>
-  Human-readable description of the command.
-</ResponseField>
-
-<ResponseField name="adapters" type="map of string → adapter config">
-  Adapter name → adapter-specific command configuration.
-</ResponseField>
-
-The command's prompt is the content of `commands/<name>.md`, resolved by convention at build time -- it is not a manifest field.
-
-## Schema Constraints
-
-1. The `name` MUST be a valid facet identity (see [Facet Name Grammar](#facet-name-grammar)), and the `version` MUST be a semver string.
+1. The `name` MUST be a valid facet identity (see [Facet name grammar](#facet-name-grammar)), and the `version` MUST be a semver string.
 2. A facet MUST have at least one text asset -- skills, agents, commands, or facets.
 3. The `@` character marks a scope (`@scope/name`) and also separates a name from a version when a facet is referenced elsewhere (`name@version`, `@scope/name@version`).
 4. Consumers MUST tolerate unrecognized fields. Unknown fields MUST be ignored.
 5. If present, `private` MUST be a boolean; non-boolean values are rejected. Omission is not rewritten to `private: false` (see [Privacy](#privacy)).
-6. The manifest MUST NOT be modified by any tooling  -- it is immutable.
+6. The facet manifest MUST NOT be modified by the build, publish, or install pipelines. (The [project manifest](/specification/project-manifest), `facets.json`, follows different rules: the install pipeline writes it as part of the [tri-write](/specification/commit#transactional-tri-write).)
+
+## Text assets
+
+A facet's content is carried by three text asset types: skills, agents, and commands. Each asset is declared in the manifest under its type's map, and its name maps to a file at a conventional path in the source tree. The file's content is the asset's prompt — it is resolved by convention at [build time](/specification/build#steps), never referenced by a manifest field.
+
+- **Skill** — `skills/<name>/SKILL.md`. Each skill lives in its own directory, per the [Agent Skills](https://agentskills.io/specification) convention; the main file MUST be named `SKILL.md`.
+- **Agent** — `agents/<name>.md`. A single markdown file whose content is the agent's system prompt.
+- **Command** — `commands/<name>.md`. A single markdown file whose content is the command's prompt.
+
+YAML front matter in an asset file is optional. When present it MUST be preserved verbatim through the [build](/specification/build#steps); the manifest's `name`, `description`, and any per-adapter extras are merged on top of the author's front matter at install time.
+
+An asset descriptor's `adapters` block is validated at [build time](/specification/build#steps) against each installed adapter's schema: unknown adapters produce a warning, and invalid metadata for an installed adapter is a build error.

@@ -1,0 +1,52 @@
+---
+title: "Project Manifest – facets.json"
+sidebarTitle: Project Manifest
+tag: facets.json
+description: The facets.json schema and entry semantics
+---
+
+The project manifest (`facets.json`) is the file in a consuming project that declares which facets the project depends on. It is the input every install command reads and the declarative record a team commits to version control — a fresh clone plus [`facet install`](/cli/install) reproduces the full asset set.
+
+<Note>
+The project manifest is distinct from the [facet manifest](/specification/manifest) (`facet.json`) — the file *inside a facet* that declares its identity and assets. A consuming project has one `facets.json`; every facet ships its own `facet.json`.
+</Note>
+
+## Example
+
+```json facets.json
+{
+  "facets": {
+    "cowsay": "1.*",
+    "viper-plans": "github:agent-facets/viper-plans#main",
+    "my-local": "./facets/my-local"
+  }
+}
+```
+
+## Fields
+
+<ResponseField name="facets" type="map<name, specifier>" required>
+  One entry per declared facet. The key is the facet name; the value is the source specifier **as the user wrote it**. Entries are added and removed by the install pipeline — or by hand, with `facet install` reconciling the result.
+</ResponseField>
+
+## Entry value semantics
+
+The value's meaning depends on the source kind established when the entry was added (see [Accepted source kinds](/specification/planning#accepted-source-kinds)):
+
+- **Registry** — the value is a bare version specifier (`1.2.3`, `1.*`, `1.2.*`, `*`, `latest`); the facet name lives in the key, and commit reconstructs the full source as `name@specifier`.
+- **Git / GitHub** — the value is a self-contained source string (a git URL or `github:` shorthand, with an optional `#ref`). The ref recorded here is what the user *requested*; the resolved commit lives in the [lockfile](/specification/lockfile).
+- **Local** — the value is a directory path that MUST resolve inside the project tree.
+
+## Validation
+
+Only the shape is validated at load time: `facets` MUST be a map of string to string. Specifier grammar is validated when each entry is parsed during [commit](/specification/commit#parse) — a malformed specifier fails the install, not the load.
+
+## Write rules
+
+- The project manifest MUST NOT be written ahead of the install. A failed operation MUST leave it untouched. → [Installation](/specification/install)
+- What gets written per specifier shape (bare names pin, explicit specifiers are preserved verbatim, reproductions are unchanged) is defined by the [manifest-write policy](/specification/commit#manifest-write-policy).
+- On success it is written atomically alongside `facets.lock` and the install receipt — the [tri-write](/specification/commit#transactional-tri-write).
+
+## Relationship to the lockfile
+
+The project manifest records **intent** (what the user asked for, in the shape they asked for it); the [lockfile](/specification/lockfile) records **resolution** (exact versions, integrity, provenance). Both are version-controlled; the install receipt is not. The two MUST stay consistent — [frozen mode](/specification/commit#frozen-lockfile) checks that consistency bidirectionally before touching anything.

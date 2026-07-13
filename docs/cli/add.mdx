@@ -13,110 +13,18 @@ Adds the named facet(s) to `facets.json` and immediately installs them into ever
 
 If the project has no adapters installed, `facet add` will launch the adapter picker before doing any work (in an interactive terminal). In a non-interactive environment, it exits with an error pointing at `facet adapter install`.
 
-## What it does
-
-<Steps>
-  <Step title="Parse">
-    Validate every source specifier up front. Invalid grammar exits before touching disk.
-  </Step>
-  <Step title="Discover adapters">
-    If none installed: launch the picker (TTY) or fail (non-TTY).
-  </Step>
-  <Step title="Prepare">
-    Read each source's `facet.json` to learn its name. Reject composition (`facets: [...]`). Load the project manifest if it exists.
-  </Step>
-  <Step title="Commit">
-    Delegate to the [install pipeline](/specification/pipeline) with the additions delta. Non-exact specifiers always re-resolve to the newest match. Exact versions with a warm cache skip the download entirely — but creating a new lockfile entry still requires one metadata call to confirm the content against the registry's published integrity. Offline, that confirmation fails closed ("cannot create a lockfile entry without registry confirmation") rather than writing an unconfirmed entry; reproducing an *existing* entry works fully offline.
-  </Step>
-</Steps>
-
-<Tip>
-The manifest, lockfile, and receipt are **never written ahead** of success. On failure, the journal rolls back all materialization and the project is left unchanged.
-</Tip>
-
-## Source grammar
-
-`facet add` accepts these source forms:
-
-<ResponseField name="Registry name" type="viper-plans">
-  Equivalent to `viper-plans@latest`. The resolved version is written back to `facets.json` (default-to-pinned).
-</ResponseField>
-
-<ResponseField name="Registry name with version" type="viper-plans@1.2.3">
-  Exact pin, written verbatim.
-</ResponseField>
-
-<ResponseField name="Registry name with @latest" type="viper-plans@latest">
-  Re-resolves to the newest published version; `latest` is preserved verbatim in `facets.json` (the entry floats). Only a bare name pins.
-</ResponseField>
-
-<ResponseField name="Registry name with wildcard" type="viper-plans@1.* / @1.2.* / @*">
-  Wildcard preserved in `facets.json`; the resolved exact version goes in the lockfile.
-</ResponseField>
-
-<ResponseField name="Scoped registry name" type="@scope/name[@version]">
-  The leading `@` marks the scope; a trailing `@` separates the version (`@scope/name@1.2.3` pins `@scope/name` to `1.2.3`). Versioning and pinning rules are identical to unscoped names.
-</ResponseField>
-
-<ResponseField name="GitHub shorthand" type="github:owner/repo[#ref]">
-  Optional `#ref` (branch, tag, SHA).
-</ResponseField>
-
-<ResponseField name="HTTPS git URL" type="https://host/repo.git[#ref]">
-  Must end in `.git`.
-</ResponseField>
-
-<ResponseField name="SCP-style git URL" type="git@host:owner/repo.git[#ref]">
-  Standard `user@host:path` SSH form.
-</ResponseField>
-
-<ResponseField name="Local path" type="./facets/my-plans">
-  Relative, absolute, or `~`-prefixed. Must resolve inside the project tree. A `file:` prefix is tolerated (stripped, then treated as a local path).
-</ResponseField>
-
-### Forms that are rejected
-
-- **`git+https://...` / `git+ssh://...`** — the `git+` prefix is not supported. Drop it: `https://...git`, `git@host:owner/repo`.
-- **`^1.2.3` / `~1.2.3`** — caret/tilde ranges. Use `1.*` for major-pinned, `1.2.*` for minor-pinned, or `1.2.3` for exact.
-- **`>=1.0.0`, `<2.0.0`, `1.0.0 || 2.0.0`** — comparator and OR ranges. Pick one version.
-- **`1.x` / `1.2.x`** — x-style placeholders. Use `1.*` or `1.2.*` instead.
-
 ## Examples
 
 ```sh
-# Bare name  -- resolves to the latest published version, writes the
-# exact resolved version back to facets.json.
-facet add viper-plans
-
-# Pinned version  -- written verbatim to facets.json.
-facet add viper-plans@1.2.3
-
-# Major-pinned wildcard  -- wildcard preserved, lockfile records the
-# specific resolved version.
-facet add viper-plans@1.*
-
-# Scoped facet  -- the leading @ is the scope; an optional trailing
-# @version pins it (e.g. @acme/deploy-tools@1.2.3).
-facet add @acme/deploy-tools
-
-# GitHub shorthand with a ref.
+facet add viper-plans                    # bare name — pins the resolved version
+facet add viper-plans@1.*                # wildcard — floats within 1.x
+facet add @acme/deploy-tools             # scoped facet
 facet add github:agent-facets/viper-plans#main
-
-# Local path under the project tree.
 facet add ./local-facets/my-plans
-
-# Multiple sources in one command.
-facet add viper-plans rezi planner@2.*
+facet add viper-plans rezi planner@2.*   # multiple sources in one command
 ```
 
-## Re-adding a facet
-
-Running `facet add` against a facet that's already in `facets.json` is supported:
-
-- Same source as before → no-op (lockfile may report `unchanged` or `repaired`).
-- Different version pin → updates the entry; the install summary shows `(was X → Y)`.
-- Bare re-add (no version) → resolves the newest published version and **pins** it in `facets.json`. A bare add always pins to the resolved exact version, even over an existing wildcard spec.
-- Explicit `@latest`/wildcard re-add → re-resolves to the newest match (the lockfile never pins an explicit non-exact add), but the specifier itself is written verbatim and keeps floating.
+Every accepted form — and what each writes to `facets.json` — is in the [source grammar](#source-grammar) below.
 
 ## Flags
 
@@ -131,7 +39,117 @@ Running `facet add` against a facet that's already in `facets.json` is supported
 | `0`  | Add and install succeeded.                                                           |
 | `1`  | Failed (parse error, no adapters in non-TTY, install failure, etc.). No files are modified on failure. |
 
+## What it does
+
+<Steps>
+  <Step title="Parse">
+    Validate every source specifier up front. Invalid grammar exits before touching disk.
+  </Step>
+  <Step title="Discover adapters">
+    If none installed: launch the picker (TTY) or fail (non-TTY).
+  </Step>
+  <Step title="Prepare">
+    Read each source's `facet.json` to learn its name. Sources that declare a non-empty `facets: [...]` array are rejected. Load the project manifest if it exists.
+  </Step>
+  <Step title="Commit">
+    Delegate to the [install pipeline](/specification/install) with the additions delta. Version resolution, integrity verification, and the atomic write follow the [commit phase](/specification/commit) — additions always [re-resolve non-exact specifiers](/specification/commit#resolve), and new lockfile entries require [registry confirmation](/specification/commit#verify) (fails closed offline).
+  </Step>
+</Steps>
+
+<Tip>
+The manifest, lockfile, and receipt are **never written ahead** of success. On failure, the journal rolls back all materialization and the project is left unchanged.
+</Tip>
+
+## Source grammar
+
+`facet add` accepts these source forms (the normative source-kind taxonomy lives in [Planning — Accepted source kinds](/specification/planning#accepted-source-kinds)):
+
+### Registry names
+
+<CodeGroup>
+
+```sh Bare name
+facet add viper-plans
+# equivalent to viper-plans@latest; the resolved version is
+# written back to facets.json (default-to-pinned)
+```
+
+```sh Exact version
+facet add viper-plans@1.2.3
+# exact pin, written verbatim
+```
+
+```sh @latest
+facet add viper-plans@latest
+# re-resolves to the newest published version; "latest" is preserved
+# verbatim in facets.json (the entry floats) — only a bare name pins
+```
+
+```sh Wildcard
+facet add viper-plans@1.*
+# also 1.2.* and *; the wildcard is preserved in facets.json and
+# the resolved exact version goes in the lockfile
+```
+
+```sh Scoped
+facet add @scope/name@1.2.3
+# the leading @ marks the scope; a trailing @ separates the version.
+# versioning and pinning rules are identical to unscoped names
+```
+
+</CodeGroup>
+
+### Git and GitHub sources
+
+<CodeGroup>
+
+```sh GitHub shorthand
+facet add github:owner/repo#ref
+# optional #ref: branch, tag, or SHA
+```
+
+```sh HTTPS git URL
+facet add https://host/repo.git#ref
+# must end in .git; optional #ref
+```
+
+```sh SCP-style git URL
+facet add git@host:owner/repo.git#ref
+# standard user@host:path SSH form; optional #ref
+```
+
+</CodeGroup>
+
+### Local paths
+
+```sh
+facet add ./facets/my-plans
+# relative, absolute, or ~-prefixed; must resolve inside the
+# project tree. A file: prefix is tolerated (stripped, then
+# treated as a local path)
+```
+
+### Forms that are rejected
+
+```sh
+facet add git+https://host/repo.git  # git+ prefix — drop it: https://...git
+facet add viper-plans@^1.2.3         # caret/tilde ranges — use 1.*, 1.2.*, or 1.2.3
+facet add viper-plans@">=1.0.0"      # comparator and OR ranges — pick one version
+facet add viper-plans@1.x            # x-style placeholders — use 1.* or 1.2.*
+```
+
+## Re-adding a facet
+
+Running `facet add` against a facet that's already in `facets.json` is supported:
+
+- Same source as before → no-op (lockfile may report `unchanged` or `repaired`).
+- Different version pin → updates the entry; the install summary shows `(was X → Y)`.
+- Bare re-add (no version) → resolves the newest published version and **pins** it in `facets.json`. A bare add always pins to the resolved exact version, even over an existing wildcard spec.
+- Explicit `@latest`/wildcard re-add → re-resolves to the newest match (the lockfile never pins an explicit non-exact add), but the specifier itself is written verbatim and keeps floating.
+
+What gets written per specifier shape is defined by the [manifest-write policy](/specification/commit#manifest-write-policy).
+
 ## See also
 
-- <code>[facet install](/cli/install)</code>  -- re-runs the install pipeline against the current `facets.json` and lockfile, useful after a fresh `git clone` or to reapply assets after manual edits.
-- <code>[facet adapter install](/cli/adapters/install)</code>  -- install adapters into your machine.
+- [`facet install`](/cli/install)  -- re-runs the install pipeline against the current `facets.json` and lockfile, useful after a fresh `git clone` or to reapply assets after manual edits.
+- [`facet adapter install`](/cli/adapters/install)  -- install adapters into your machine.
