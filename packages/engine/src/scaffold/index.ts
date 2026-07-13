@@ -1,7 +1,6 @@
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { FACET_MANIFEST_FILE } from '@agent-facets/protocol'
-import { KEBAB_CASE } from '../edit/scanner.ts'
 import { jsonFileText } from '../json-file-text.ts'
 
 // --- Types ---
@@ -27,12 +26,10 @@ export const DEFAULT_VERSION = '0.0.0'
 
 // --- Validation ---
 
-export { KEBAB_CASE }
+// Asset-name validation lives in `@agent-facets/protocol`
+// (`validateAssetNameSegment`). Callers import it directly rather than through
+// engine, since engine must not re-export protocol.
 export const SEMVER = /^\d+\.\d+\.\d+$/
-
-export function isValidKebabCase(value: string): boolean {
-  return KEBAB_CASE.test(value)
-}
 
 export function isValidSemVer(value: string): boolean {
   return SEMVER.test(value)

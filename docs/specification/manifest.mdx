@@ -52,7 +52,7 @@ Every top-level field of `facet.json`. The `name` and `version` fields MUST be p
 ### Fields
 
 <ResponseField name="name" type="string" required>
-  Facet identity: an unscoped name (`cowsay`) or a scoped name (`@scope/name`). Validated, never normalized — see [Facet name grammar](#facet-name-grammar). Asset names — skill, command, and agent names alike — are validated independently as local kebab-case identifiers per the [Agent Skills name grammar](https://agentskills.io/specification#name-field) and are never scoped.
+  Facet identity: an unscoped name (`cowsay`) or a scoped name (`@scope/name`). Validated, never normalized — see [Facet name grammar](#facet-name-grammar). Asset names — skill, command, and agent names alike — are validated independently against the [Agent Skills name grammar](https://agentskills.io/specification#name-field): each `/`-separated segment is 1–64 characters of lowercase ASCII letters, digits, and hyphens, must not start or end with a hyphen, and must not contain consecutive hyphens. Slashes separate namespace segments (`viper-plans/planning`); asset names are never scoped with `@`.
 </ResponseField>
 
 <ResponseField name="version" type="string" required>

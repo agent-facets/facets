@@ -1,4 +1,5 @@
-import { type ScaffoldOptions as CreateOptions, isValidKebabCase } from '@agent-facets/engine'
+import type { ScaffoldOptions as CreateOptions } from '@agent-facets/engine'
+import { validateAssetNameSegment } from '@agent-facets/protocol'
 import type { ReactNode } from 'react'
 import { createContext, createElement, useCallback, useContext, useMemo, useState } from 'react'
 
@@ -131,7 +132,7 @@ export function FormStateProvider({ children, initialState }: { children: ReactN
   }, [])
 
   const addAsset = useCallback((section: AssetSectionKey, name: string) => {
-    if (!isValidKebabCase(name)) return
+    if (!validateAssetNameSegment(name).ok) return
     setForm((prev) => {
       const current = prev.assets[section]
       if (current.items.includes(name)) return prev
@@ -170,7 +171,7 @@ export function FormStateProvider({ children, initialState }: { children: ReactN
   }, [])
 
   const renameAsset = useCallback((section: AssetSectionKey, oldName: string, newName: string) => {
-    if (!isValidKebabCase(newName)) return
+    if (!validateAssetNameSegment(newName).ok) return
     setForm((prev) => {
       const current = prev.assets[section]
       if (current.items.includes(newName)) return prev

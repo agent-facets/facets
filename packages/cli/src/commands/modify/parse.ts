@@ -1,5 +1,5 @@
 import type { AssetTarget, FacetMetaFields, FieldMutation, ModifyOp } from '@agent-facets/engine'
-import { isValidKebabCase } from '@agent-facets/engine'
+import { validateAssetNameSegment } from '@agent-facets/protocol'
 import type { CliError } from '../../util/errors.ts'
 
 /**
@@ -108,10 +108,11 @@ export function parseModifyArgs(positionals: string[], flags: Record<string, unk
   }
 
   if (renameTo !== undefined) {
-    if (!isValidKebabCase(renameTo)) {
+    const check = validateAssetNameSegment(renameTo)
+    if (!check.ok) {
       return err(
         `invalid rename target "${renameTo}"`,
-        'asset names must be kebab-case',
+        `asset name ${check.reason}`,
         'pass a name like --rename my-asset',
       )
     }
@@ -119,6 +120,18 @@ export function parseModifyArgs(positionals: string[], flags: Record<string, unk
   }
 
   if (hasAdd) {
+    // Validate the new asset's name at the CLI boundary so `--add` gets the
+    // same clear error as `--rename`. `--update` and `--remove` intentionally
+    // skip this: they operate on existing (possibly legacy non-kebab) names,
+    // which users must still be able to fix or remove.
+    const check = validateAssetNameSegment(name)
+    if (!check.ok) {
+      return err(
+        `invalid ${target} name "${name}"`,
+        `asset name ${check.reason}`,
+        `pass a name like --add ${target === 'skills' ? 'my-skill' : `my-${target.slice(0, -1)}`}`,
+      )
+    }
     return { ok: true, op: { kind: 'add', target: assetTarget, name, mutations } }
   }
 

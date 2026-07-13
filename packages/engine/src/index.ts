@@ -73,7 +73,7 @@ export { applyEditOperations, applyModifyFileOps } from './edit/operations.ts'
 export type { MatchedAsset, MissingAsset, ReconciliationResult } from './edit/reconcile.ts'
 export { reconcile } from './edit/reconcile.ts'
 export type { AssetManifestKey, DiscoveredAsset } from './edit/scanner.ts'
-export { KEBAB_CASE, scanAssets } from './edit/scanner.ts'
+export { scanAssets } from './edit/scanner.ts'
 export type {
   EditContext,
   EditOperation,
@@ -200,7 +200,6 @@ export {
   commandTemplate,
   DEFAULT_VERSION,
   generateScaffoldManifest,
-  isValidKebabCase,
   isValidSemVer,
   previewScaffoldFiles,
   SEMVER,

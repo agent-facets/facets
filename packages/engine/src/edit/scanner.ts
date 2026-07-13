@@ -1,7 +1,5 @@
-/** Kebab-case pattern for valid asset names. */
-export const KEBAB_CASE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/
-
 import type { AssetType } from '@agent-facets/common'
+import { validateAssetNameSegment } from '@agent-facets/protocol'
 
 /**
  * Plural manifest key derived from the canonical singular AssetType.
@@ -34,7 +32,7 @@ export async function scanAssets(rootDir: string): Promise<DiscoveredAsset[]> {
     // match is e.g. 'skills/review/SKILL.md'
     const parts = match.split('/')
     const name = parts[1]
-    if (name && KEBAB_CASE.test(name)) {
+    if (name && validateAssetNameSegment(name).ok) {
       assets.push({ type: 'skills', name, path: match })
     }
   }
@@ -43,7 +41,7 @@ export async function scanAssets(rootDir: string): Promise<DiscoveredAsset[]> {
   const agentGlob = new Bun.Glob('agents/*.md')
   for await (const match of agentGlob.scan({ cwd: rootDir, onlyFiles: true })) {
     const name = match.replace('agents/', '').replace('.md', '')
-    if (KEBAB_CASE.test(name)) {
+    if (validateAssetNameSegment(name).ok) {
       assets.push({ type: 'agents', name, path: match })
     }
   }
@@ -52,7 +50,7 @@ export async function scanAssets(rootDir: string): Promise<DiscoveredAsset[]> {
   const commandGlob = new Bun.Glob('commands/*.md')
   for await (const match of commandGlob.scan({ cwd: rootDir, onlyFiles: true })) {
     const name = match.replace('commands/', '').replace('.md', '')
-    if (KEBAB_CASE.test(name)) {
+    if (validateAssetNameSegment(name).ok) {
       assets.push({ type: 'commands', name, path: match })
     }
   }
