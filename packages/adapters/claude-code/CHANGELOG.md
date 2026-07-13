@@ -1,12 +1,18 @@
 # @agent-facets/adapter-claude-code
 
+## 0.7.0
+
+### Minor Changes
+
+- [#424](https://github.com/agent-facets/facets/pull/424) [`12e7ff6`](https://github.com/agent-facets/facets/commit/12e7ff601a9e88ff42f9c5d45bce8a18263797b1) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Prune empty directories when removing assets and nothing is left in the directory
+
 ## 0.6.1
 
 ### Patch Changes
 
 - [#404](https://github.com/agent-facets/facets/pull/404) [`ba747bd`](https://github.com/agent-facets/facets/commit/ba747bdcf1884ff82e397b21e9897a32eac8055c) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Widen the `typescript` peerDependency range to `^5 || ^6 || ^7` so the
-    package installs cleanly for consumers on TypeScript 7. Consumers on
-    TypeScript 5 or 6 are unaffected.
+  package installs cleanly for consumers on TypeScript 7. Consumers on
+  TypeScript 5 or 6 are unaffected.
 
 ## 0.6.0
 
