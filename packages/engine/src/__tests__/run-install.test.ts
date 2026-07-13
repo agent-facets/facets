@@ -56,6 +56,37 @@ function buildFakeAdapter(name: string): Adapter {
 }
 
 /**
+ * Fake adapter whose skill layout matches the first-party nested shape
+ * (`skills/<name>/SKILL.md`) and passes `pruneBoundary` into the shared
+ * delete helper. Used to exercise install-level empty-directory pruning
+ * end-to-end through `runInstall`. Agents/commands use the flat layout,
+ * mirroring the real Claude Code / OpenCode adapters.
+ */
+function buildNestedFakeAdapter(name: string): Adapter {
+  const baseDir = join(projectRoot, `.${name}`)
+  const relFor = (type: string, n: string): string =>
+    type === 'skill' ? join('skills', n, 'SKILL.md') : join(`${type}s`, `${n}.md`)
+  const path = (type: string, n: string) => ({
+    file: join(baseDir, relFor(type, n)),
+    pruneBoundary: baseDir,
+  })
+  return {
+    name,
+    supportsInstall: true,
+    buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
+    async installAsset(_scope, type, n, content, metadata) {
+      await installAssetFile(path(type, n), content, metadata as Record<string, unknown> | undefined)
+    },
+    async readAsset(_scope, type, n) {
+      return readAssetFile(path(type, n))
+    },
+    async deleteAsset(_scope, type, n) {
+      await deleteAssetFile(path(type, n))
+    },
+  }
+}
+
+/**
  * Adapter that throws on the Nth `installAsset` call. Used to exercise
  * mid-install rollback and partial-write recovery.
  */
@@ -507,6 +538,82 @@ describe('runInstall — asset-level drift across versions', () => {
     expect(second.ok).toBe(true)
     expect(existsSync(join(projectRoot, '.test/skills/planning.md'))).toBe(true)
     expect(existsSync(join(projectRoot, '.test/skills/extras.md'))).toBe(false)
+  })
+})
+
+describe('runInstall — empty skill directory pruning (nested layout)', () => {
+  test('removing a skill deletes its SKILL.md and prunes the now-empty directory', async () => {
+    // First install: facet declares two skills, materialized to the nested
+    // `skills/<name>/SKILL.md` layout the real first-party adapters use.
+    const fixture = buildLocalFixtureWithSkills('viper-plans', ['planning', 'extras'])
+    const relPath = `./${fixture.split('/').pop()}`
+    writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify({ facets: { 'viper-plans': relPath } }))
+    const first = await runInstall({
+      projectRoot,
+      adapters: [buildNestedFakeAdapter('nested')],
+    })
+    expect(first.ok).toBe(true)
+    expect(existsSync(join(projectRoot, '.nested/skills/planning/SKILL.md'))).toBe(true)
+    expect(existsSync(join(projectRoot, '.nested/skills/extras/SKILL.md'))).toBe(true)
+
+    // Drop the `extras` skill from the fixture.
+    rmSync(join(fixture, 'skills/extras'), { recursive: true, force: true })
+    writeFileSync(
+      join(fixture, 'facet.json'),
+      JSON.stringify({
+        name: 'viper-plans',
+        version: '0.2.0',
+        skills: { planning: { description: 'planning skill' } },
+      }),
+    )
+
+    const second = await runInstall({
+      projectRoot,
+      adapters: [buildNestedFakeAdapter('nested')],
+    })
+    expect(second.ok).toBe(true)
+    // SKILL.md is gone AND the now-empty skill directory is pruned.
+    expect(existsSync(join(projectRoot, '.nested/skills/extras/SKILL.md'))).toBe(false)
+    expect(existsSync(join(projectRoot, '.nested/skills/extras'))).toBe(false)
+    // The surviving skill is untouched.
+    expect(existsSync(join(projectRoot, '.nested/skills/planning/SKILL.md'))).toBe(true)
+  })
+
+  test('a skill directory containing an unrelated file is preserved on removal', async () => {
+    const fixture = buildLocalFixtureWithSkills('viper-plans', ['planning', 'extras'])
+    const relPath = `./${fixture.split('/').pop()}`
+    writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify({ facets: { 'viper-plans': relPath } }))
+    const first = await runInstall({
+      projectRoot,
+      adapters: [buildNestedFakeAdapter('nested')],
+    })
+    expect(first.ok).toBe(true)
+
+    // A user drops an unrelated file into the extras skill directory.
+    const stray = join(projectRoot, '.nested/skills/extras/user-notes.md')
+    writeFileSync(stray, 'do not delete me')
+
+    // Drop the `extras` skill from the fixture.
+    rmSync(join(fixture, 'skills/extras'), { recursive: true, force: true })
+    writeFileSync(
+      join(fixture, 'facet.json'),
+      JSON.stringify({
+        name: 'viper-plans',
+        version: '0.2.0',
+        skills: { planning: { description: 'planning skill' } },
+      }),
+    )
+
+    const second = await runInstall({
+      projectRoot,
+      adapters: [buildNestedFakeAdapter('nested')],
+    })
+    expect(second.ok).toBe(true)
+    // The managed SKILL.md is gone, but the directory survives because of
+    // the unrelated file — non-recursive prune refuses to remove it.
+    expect(existsSync(join(projectRoot, '.nested/skills/extras/SKILL.md'))).toBe(false)
+    expect(existsSync(stray)).toBe(true)
+    expect(existsSync(join(projectRoot, '.nested/skills/extras'))).toBe(true)
   })
 })
 

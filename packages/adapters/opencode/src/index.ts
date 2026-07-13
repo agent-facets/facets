@@ -69,7 +69,7 @@ export default defineAdapter({
   },
 
   async deleteAsset(scope, assetType, name) {
-    return deleteAssetFile({ file: resolvePath(scope, assetType, name) })
+    return deleteAssetFile({ file: resolvePath(scope, assetType, name), pruneBoundary: baseDirFor(scope) })
   },
 })
 
