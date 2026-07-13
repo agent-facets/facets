@@ -5,6 +5,38 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-07-13" description="facet search now uses server-side filtering, sorting, and paging" tags={["CLI", "Improvement"]} rss={{
+  title: "facet search now uses server-side filtering, sorting, and paging",
+  description: "facet search forwards your query term to the registry as the ?q= parameter and renders results exactly as the server returns them. The registry now owns relevance ranking, sorting, and paging -- so results reflect the same ordering you see in the web UI, and future improvements to registry search take effect immediately without a CLI upgrade. The old client-side case-insensitive substring filter has been removed."
+}}>
+  ## Server-side search for `facet search`
+
+  `facet search` now forwards your query term to the registry as the
+  `?q=` parameter on the facets endpoint and renders whatever the server
+  returns, in order. The registry -- not the CLI -- owns relevance
+  ranking, sorting, and paging.
+
+  ```sh
+  facet search plan        # sends ?q=plan; server ranks and pages the results
+  facet search             # no term; returns the first page unfiltered
+  ```
+
+  What this means for you:
+
+  - **Results match the web UI.** Ordering is consistent with what
+    [agentfacets.io](https://agentfacets.io) shows, because both surfaces
+    read the same server-ranked list.
+  - **Better matching, no upgrade required.** Improvements to registry
+    search (typo tolerance, ranking, new sort orders) take effect
+    immediately -- the CLI just displays what the server sends.
+  - **Old behavior removed.** The client-side case-insensitive name
+    substring filter is gone. If a term returns no matches on the
+    server, the CLI now shows an empty result instead of falling back to
+    local filtering.
+
+  See the [`facet search`](/cli/search) reference for usage.
+</Update>
+
 <Update label="2026-07-09" description="Agent-friendly CLI: instructions, modify, headless create, build --verify; TypeScript 7 support; trailing newlines on generated JSON" tags={["CLI", "New Feature", "Improvement", "Fix"]} rss={{
   title: "Agent-friendly CLI, TypeScript 7 support, and trailing newlines on generated JSON",
   description: "The facet CLI is now built for AI agents to drive non-interactively: new facet instructions [topic] prints agent-oriented usage guidance (the manifest topic emits the facet.json JSON Schema generated live from the schema definition); new facet modify makes one scriptable, flag-driven edit to a facet; facet create gains headless flags; facet build gains --verify and --json. Also: the public @agent-facets/* packages now declare their typescript peerDependency as ^5 || ^6 || ^7, so they install cleanly on TypeScript 7 projects. And every JSON file the CLI writes -- facets.lock, install receipts, build manifests, scaffolded facet.json, and cache metadata -- now ends with exactly one trailing newline and uses consistent 2-space indentation."
