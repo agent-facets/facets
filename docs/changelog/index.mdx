@@ -5,6 +5,35 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-07-13" description="facet remove now prunes empty adapter directories" tags={["CLI", "Improvement"]} rss={{
+  title: "facet remove now prunes empty adapter directories",
+  description: "Removing a facet now cleans up empty parent directories left behind in each connected adapter. When facet remove (or facet rm) deletes the last asset inside a nested folder -- for example skills/<name>/SKILL.md under Claude Code or OpenCode -- the CLI walks up and removes empty parent directories up to (but not including) the adapter root. Uninstalls leave a tidy tree instead of hollow namespace folders. No flags to set; behavior is automatic."
+}}>
+  ## `facet remove` prunes empty adapter directories
+
+  Removing a facet now cleans up empty parent directories left behind
+  in each connected adapter. When [`facet remove`](/cli/remove) (or
+  `facet rm`) deletes the last asset inside a nested folder -- for
+  example `skills/<name>/SKILL.md` under Claude Code or OpenCode -- the
+  CLI walks up and removes empty parent directories, stopping at (but
+  not including) the adapter's root.
+
+  What this means for you:
+
+  - **Tidier working tree.** Uninstalling a facet no longer leaves
+    behind empty namespace folders that you'd otherwise have to delete
+    by hand.
+  - **No configuration.** The behavior is automatic for the
+    Claude Code and OpenCode adapters -- no flags, no opt-in.
+  - **Bounded to each adapter.** Pruning stops at the adapter's own
+    root, so it can never walk into the rest of your project.
+
+  Ships in `@agent-facets/adapter@0.26.0`,
+  `@agent-facets/adapter-claude-code@0.7.0`, and
+  `@agent-facets/adapter-opencode@0.8.0`. Run
+  [`facet self-update`](/cli/self-update) to pick it up.
+</Update>
+
 <Update label="2026-07-13" description="Server-side search for facet search; asset names now follow the Agent Skills grammar" tags={["CLI", "Improvement", "Breaking"]} rss={{
   title: "Server-side search for facet search; asset names now follow the Agent Skills grammar",
   description: "facet search forwards your query term to the registry as the ?q= parameter and renders results exactly as the server returns them. The registry now owns relevance ranking, sorting, and paging -- so results reflect the same ordering you see in the web UI, and future improvements to registry search take effect immediately without a CLI upgrade. The old client-side case-insensitive substring filter has been removed. Separately: skill, command, and agent names in facet.json are now validated against the Agent Skills name grammar at build and install time. Each /-separated segment must be 1-64 characters of lowercase ASCII letters, digits, and hyphens, with no leading, trailing, or consecutive hyphens. Digit-start names like 2fa are now allowed; non-conforming names like MySkill or foo_bar are now rejected. Namespaced names like viper-plans/planning validate per segment. Error messages now cite the specific grammar rule violated. facet modify --update and --remove still accept legacy names so you can fix or remove assets created under the old, looser rules."
