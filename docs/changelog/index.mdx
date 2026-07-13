@@ -34,7 +34,7 @@ rss: true
   [`facet self-update`](/cli/self-update) to pick it up.
 </Update>
 
-<Update label="2026-07-13" description="Server-side search for facet search; asset names now follow the Agent Skills grammar" tags={["CLI", "Improvement", "Breaking"]} rss={{
+<Update label="2026-07-12" description="Server-side search for facet search; asset names now follow the Agent Skills grammar" tags={["CLI", "Improvement", "Breaking"]} rss={{
   title: "Server-side search for facet search; asset names now follow the Agent Skills grammar",
   description: "facet search forwards your query term to the registry as the ?q= parameter and renders results exactly as the server returns them. The registry now owns relevance ranking, sorting, and paging -- so results reflect the same ordering you see in the web UI, and future improvements to registry search take effect immediately without a CLI upgrade. The old client-side case-insensitive substring filter has been removed. Separately: skill, command, and agent names in facet.json are now validated against the Agent Skills name grammar at build and install time. Each /-separated segment must be 1-64 characters of lowercase ASCII letters, digits, and hyphens, with no leading, trailing, or consecutive hyphens. Digit-start names like 2fa are now allowed; non-conforming names like MySkill or foo_bar are now rejected. Namespaced names like viper-plans/planning validate per segment. Error messages now cite the specific grammar rule violated. facet modify --update and --remove still accept legacy names so you can fix or remove assets created under the old, looser rules."
 }}>
