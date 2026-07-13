@@ -234,6 +234,61 @@ describe('validateAdapterMetadata', () => {
     expect(result.errors).toHaveLength(0)
     expect(result.warnings).toHaveLength(0)
   })
+
+  test('valid command adapter metadata passes', () => {
+    const manifest = {
+      name: 'test',
+      version: '1.0.0',
+      commands: {
+        deploy: {
+          description: 'Deploy command',
+          adapters: {
+            'mock-adapter': { tools: { grep: true } },
+          },
+        },
+      },
+    } as FacetManifest
+    const result = validateAdapterMetadata(manifest, [mockAdapter])
+    expect(result.errors).toHaveLength(0)
+    expect(result.warnings).toHaveLength(0)
+  })
+
+  test('invalid command adapter metadata fails', () => {
+    const manifest = {
+      name: 'test',
+      version: '1.0.0',
+      commands: {
+        deploy: {
+          description: 'Deploy command',
+          adapters: {
+            'rejecting-adapter': { tools: 'not-a-record' },
+          },
+        },
+      },
+    } as FacetManifest
+    const result = validateAdapterMetadata(manifest, [rejectingAdapter])
+    expect(result.errors.length).toBeGreaterThan(0)
+    expect(result.errors[0]?.path).toContain('commands.deploy')
+  })
+
+  test('unknown adapter on a command produces warning', () => {
+    const manifest = {
+      name: 'test',
+      version: '1.0.0',
+      commands: {
+        deploy: {
+          description: 'Deploy command',
+          adapters: {
+            'unknown-adapter': { foo: 'bar' },
+          },
+        },
+      },
+    } as FacetManifest
+    const result = validateAdapterMetadata(manifest, [])
+    expect(result.errors).toHaveLength(0)
+    expect(result.warnings).toHaveLength(1)
+    expect(result.warnings[0]).toContain('unknown-adapter')
+  })
 })
 
 // --- Build pipeline (end-to-end) ---
