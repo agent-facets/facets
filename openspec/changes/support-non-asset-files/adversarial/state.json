@@ -1,0 +1,18 @@
+{
+  "change": "support-non-asset-files",
+  "schema": "spec-driven",
+  "entries": {
+    "proposal": {
+      "artifactId": "proposal",
+      "mainPaths": ["proposal.md"],
+      "adversarialPaths": ["adversarial/artifacts/proposal.md"],
+      "reviewPath": "adversarial/reviews/proposal-review.md",
+      "dependencies": [],
+      "status": "reconciled",
+      "authoredAt": "2026-07-13T17:57:17Z",
+      "comparedAt": "2026-07-13T17:59:26Z",
+      "reconciledAt": "2026-07-13T18:14:00Z",
+      "notes": "Adopted all 7 review findings: added mandatory Non-goals section; explicit manifest declaration as single source of archive membership (syntax deferred to design); full validation boundary (missing/undeclared/unsafe/colliding paths); dropped premature build-manifest assets-map commitment in favor of asset/supplementary distinction; atomic multi-file skill lifecycle with drift-removal receipts; supplementary files prohibited from becoming independently addressable assets; compatibility upgraded from forward-compat note to BREAKING with explicit version boundary + legacy compat tests; Impact extended with security/compat test matrix, both guides, and root README. Partially adopted lockfile.mdx wording (review required, update conditional on design outcome)."
+    }
+  }
+}
