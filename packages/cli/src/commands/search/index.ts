@@ -7,10 +7,12 @@ import { writeCliError } from '../../util/errors.ts'
 import { translateEngineRegistryError } from '../../util/registry-errors.ts'
 
 /**
- * `facet search [term]` — query the registry for facets whose name
- * matches `term` (substring, case-insensitive). With no term, lists
- * every facet the registry returns (capped server-side at LIMIT 200
- * in V0).
+ * `facet search [term]` — query the registry's search endpoint for
+ * facets matching `term`. The term is sent to the registry as the
+ * `?q=` search parameter and the server performs the match; the CLI
+ * renders whatever page the registry returns. With no term, lists the
+ * facets the registry returns for an unfiltered query (the server owns
+ * ordering and paging; this command renders the first page only).
  *
  * Each result shows the canonical name, latest version, author,
  * and a per-asset-type colored count summary in a columnar layout
@@ -53,7 +55,9 @@ export const searchCommand: Command = {
     // "Searching..." line shows while the request is in flight.
     const fetchResults = async (): Promise<SearchResult> => {
       try {
-        const { data, error, response } = await client.GET('/v0/facets', {})
+        const { data, error, response } = await client.GET('/v0/facets', {
+          params: term !== undefined ? { query: { q: term } } : {},
+        })
         const runtimeError = error as unknown
         if (runtimeError !== undefined) {
           writeCliError(

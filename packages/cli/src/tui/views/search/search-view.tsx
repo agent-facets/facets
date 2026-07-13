@@ -71,8 +71,7 @@ export function SearchView({ term, fetch, onComplete }: SearchViewProps) {
     return null
   }
 
-  const all = result.facets
-  const filtered = term !== undefined ? all.filter((f) => f.name.toLowerCase().includes(term.toLowerCase())) : all
+  const filtered = result.facets
 
   // No results at all.
   if (filtered.length === 0) {

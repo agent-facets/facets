@@ -881,6 +881,106 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v0/admin/search/backfill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rebuild OpenSearch indexes from DynamoDB (admin)
+         * @description Full backfill of every search index for this stage prefix from authoritative DynamoDB. Returns per-subject scanned/indexed counts and count parity. A parity failure returns the same body with 500 and a populated `error`.
+         */
+        post: operations["postV0AdminSearchBackfill"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/admin/search/replay-dead-letters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Replay retained search index apply-failures (admin)
+         * @description Re-drives the search-indexer dead-letter partition back through the index path. Each row is re-hydrated from authoritative DynamoDB and high-water upserted (safe to rerun); a row that fails again is left in place and reported.
+         */
+        post: operations["postV0AdminSearchReplayDeadLetters"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/admin/search/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Sampled DDB-vs-index correctness check (admin)
+         * @description Samples `?sample=` documents per subject (default 5, max 100) and diffs each against authoritative DynamoDB, reporting mismatched and missing ids. Any divergence returns the same body with 500 and a populated `error`.
+         */
+        get: operations["getV0AdminSearchVerify"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/admin/search/indexes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List this stage’s search indexes with live health (admin)
+         * @description Current indexes for this stage prefix, each with live doc counts and cluster health from a single _cat/indices call, plus the last backfill/verify run times from the per-prefix meta row.
+         */
+        get: operations["getV0AdminSearchIndexes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/admin/search/teardown": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete this stage’s search indexes (admin)
+         * @description Deletes this stage’s indexes from the shared domain so orphaned preview-stage indexes can be purged without a local script. Only the calling stage’s indexes are touched. Idempotent: an absent index reports `existed: false`.
+         */
+        delete: operations["deleteV0AdminSearchTeardown"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v0/admin/system-controls": {
         parameters: {
             query?: never;
@@ -1562,6 +1662,12 @@ export interface components {
                 requested_slug?: string;
             }[];
         };
+        ValidationErrorBody: {
+            data: unknown;
+            error: unknown[];
+            /** @constant */
+            success: false;
+        };
         AdminUserListResponse: {
             users: {
                 email: string;
@@ -1624,6 +1730,62 @@ export interface components {
             }[];
             oldest_pending_age_ms: number | null;
             pending_count: number;
+        };
+        SearchBackfillResponse: {
+            index_prefix: string;
+            subjects: {
+                count_parity: boolean;
+                errors: string[];
+                index_count: number;
+                indexed: number;
+                scanned: number;
+                subject: string;
+            }[];
+            error?: string;
+        };
+        SearchReplayResponse: {
+            failed: number;
+            replayed: number;
+            results: {
+                event_id: string;
+                /** @enum {unknown} */
+                outcome: "failed" | "lane-absent" | "meta-absent" | "stale-skipped" | "subject-absent" | "upserted";
+                error?: string;
+            }[];
+        };
+        SearchVerifyResponse: {
+            index_prefix: string;
+            subjects: {
+                matched: number;
+                mismatches: {
+                    diverged_fields: string[];
+                    id: string;
+                }[];
+                missing: string[];
+                sampled: number;
+                subject: string;
+            }[];
+            error?: string;
+        };
+        SearchIndexListResponse: {
+            index_prefix: string;
+            indexes: {
+                degraded_reason: string | null;
+                docs: number;
+                /** @enum {unknown} */
+                health: "green" | "red" | "yellow";
+                last_backfilled: string | null;
+                last_verified: string | null;
+                name: string;
+            }[];
+        };
+        SearchTeardownResponse: {
+            index_prefix: string;
+            indexes: {
+                [key: string]: {
+                    existed: boolean;
+                };
+            };
         };
         SystemControlListResponse: {
             controls: {
@@ -2095,7 +2257,11 @@ export interface operations {
     };
     getV0Facets: {
         parameters: {
-            query?: never;
+            query?: {
+                sort?: "name" | "recent" | "relevance";
+                cursor?: string;
+                q?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2109,6 +2275,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SearchResponse"];
+                };
+            };
+            /** @description Invalid query parameters, or a cursor invalid for this search */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorBody"] | components["schemas"]["ApiErrorBody"];
                 };
             };
         };
@@ -3423,7 +3598,9 @@ export interface operations {
     };
     getV0AdminReviewQueue: {
         parameters: {
-            query?: never;
+            query?: {
+                status?: "approved" | "cancelled" | "pending" | "rejected";
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3445,7 +3622,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiErrorBody"];
+                    "application/json": components["schemas"]["ValidationErrorBody"];
                 };
             };
             /** @description Missing or invalid credentials */
@@ -3526,7 +3703,9 @@ export interface operations {
     };
     getV0AdminUsers: {
         parameters: {
-            query?: never;
+            query?: {
+                q?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3542,6 +3721,15 @@ export interface operations {
                     "application/json": components["schemas"]["AdminUserListResponse"];
                 };
             };
+            /** @description Invalid `q` query param */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorBody"];
+                };
+            };
             /** @description Missing or invalid credentials */
             401: {
                 headers: {
@@ -3553,6 +3741,15 @@ export interface operations {
             };
             /** @description Caller is not an admin (or caller is suspended) */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Search is unavailable or not configured */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3707,7 +3904,9 @@ export interface operations {
     };
     getV0AdminOrgs: {
         parameters: {
-            query?: never;
+            query?: {
+                q?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3721,6 +3920,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminOrgListResponse"];
+                };
+            };
+            /** @description Invalid `q` query param */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorBody"];
                 };
             };
             /** @description Missing or invalid credentials */
@@ -3862,6 +4070,135 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    postV0AdminSearchBackfill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Per-subject backfill result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchBackfillResponse"];
+                };
+            };
+            /** @description Backfill ran but count parity failed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchBackfillResponse"];
+                };
+            };
+        };
+    };
+    postV0AdminSearchReplayDeadLetters: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Per-row replay result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchReplayResponse"];
+                };
+            };
+        };
+    };
+    getV0AdminSearchVerify: {
+        parameters: {
+            query?: {
+                sample?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Per-subject sampled-diff result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchVerifyResponse"];
+                };
+            };
+            /** @description Invalid `sample` query param */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorBody"];
+                };
+            };
+            /** @description Verify found DDB-vs-index divergence */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchVerifyResponse"];
+                };
+            };
+        };
+    };
+    getV0AdminSearchIndexes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Indexes with health and last-run times */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchIndexListResponse"];
+                };
+            };
+        };
+    };
+    deleteV0AdminSearchTeardown: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Per-index deletion outcome */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchTeardownResponse"];
+                };
             };
         };
     };
@@ -4404,7 +4741,9 @@ export interface operations {
     };
     getV0SettingsReviewQueue: {
         parameters: {
-            query?: never;
+            query?: {
+                status?: "approved" | "cancelled" | "pending" | "rejected";
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4426,7 +4765,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiErrorBody"];
+                    "application/json": components["schemas"]["ValidationErrorBody"];
                 };
             };
             /** @description Missing or invalid credentials */
@@ -4585,7 +4924,9 @@ export interface operations {
     };
     getV0OrganizationsBySlugLookupUser: {
         parameters: {
-            query?: never;
+            query: {
+                q: string;
+            };
             header?: never;
             path: {
                 slug: string;
@@ -4601,6 +4942,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserSearchResponse"];
+                };
+            };
+            /** @description Missing or invalid `q` query param */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorBody"];
                 };
             };
             /** @description Caller is not an Admin */
