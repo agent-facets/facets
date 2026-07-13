@@ -54,6 +54,17 @@ export type { ResolvedFacetManifest } from './loaders/facet.ts'
 export { FACET_MANIFEST_FILE, resolvePromptsFromMap, validateFacetManifest } from './loaders/facet.ts'
 export { SERVER_MANIFEST_FILE, validateServerManifest } from './loaders/server.ts'
 export { mapArkErrors, parseJson } from './loaders/validate.ts'
+// asset-name grammar (Agent Skills spec) — exported so build validators, the
+// CLI, and the engine's edit/scaffold machinery all validate skill/command/
+// agent names against one canonical grammar. Distinct from facet identity
+// (facet-name.ts): asset names are local, never scoped, and allow digit-start.
+export type { AssetNameResult, AssetNameSegmentResult } from './schemas/asset-name.ts'
+export {
+  parseAssetName,
+  parseAssetNameSegment,
+  validateAssetName,
+  validateAssetNameSegment,
+} from './schemas/asset-name.ts'
 // schemas
 export type { BuildManifest } from './schemas/build-manifest.ts'
 export { BuildManifestSchema } from './schemas/build-manifest.ts'

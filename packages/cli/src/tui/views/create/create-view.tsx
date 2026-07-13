@@ -1,5 +1,5 @@
-import { DEFAULT_VERSION, isValidKebabCase } from '@agent-facets/engine'
-import { parseFacetName, validateFacetName } from '@agent-facets/protocol'
+import { DEFAULT_VERSION } from '@agent-facets/engine'
+import { parseFacetName, validateAssetNameSegment, validateFacetName } from '@agent-facets/protocol'
 import { Box, Text } from 'ink'
 import { useCallback, useEffect } from 'react'
 import type { AssetType } from '../../../commands/create/types'
@@ -152,7 +152,8 @@ export function CreateView({
             dimmed={!assetsReady}
             onEditDescription={onEditDescription}
             validate={(v) => {
-              if (!isValidKebabCase(v)) return 'Must be kebab-case'
+              const check = validateAssetNameSegment(v)
+              if (!check.ok) return `Name ${check.reason}`
               const editing = form.assets[type].editing
               if (form.assets[type].items.some((item) => item === v && item !== editing)) return `"${v}" already exists`
               return undefined

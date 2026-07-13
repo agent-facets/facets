@@ -2,23 +2,35 @@ import { describe, expect, test } from 'bun:test'
 import { mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { isValidKebabCase } from '@agent-facets/engine'
 import type { FacetManifest } from '@agent-facets/protocol'
+import { validateAssetNameSegment } from '@agent-facets/protocol'
 import { writeManifest } from '../edit/manifest-writer.ts'
 import { reconcile } from '../edit/reconcile.ts'
 import type { DiscoveredAsset } from '../edit/scanner.ts'
 import { scanAssets } from '../edit/scanner.ts'
 
-// --- Asset-name grammar (diverges from facet identity grammar) ---
+// --- Asset-name grammar at authoring surfaces (single segment) ---
+//
+// The scanner and other authoring surfaces validate a SINGLE segment via
+// protocol's `validateAssetNameSegment` — namespacing (`/`) is a build/install
+// concern, not something these surfaces accept. The grammar itself is tested
+// exhaustively in protocol's asset-name.test.ts; this block pins the behavior
+// the engine relies on (digit-start accepted; scope markers/slashes rejected).
 
-describe('isValidKebabCase — asset-name grammar', () => {
-  test.each(['cowsay', 'code-review', 'viper-plans', 'x1', 'a'])('accepts kebab asset name %p', (name) => {
-    expect(isValidKebabCase(name)).toBe(true)
+describe('validateAssetNameSegment — authoring-surface grammar', () => {
+  test.each([
+    'cowsay',
+    'code-review',
+    'viper-plans',
+    'x1',
+    'a',
+    '2fa',
+  ])('accepts single-segment asset name %p', (name) => {
+    expect(validateAssetNameSegment(name).ok).toBe(true)
   })
 
-  // Asset names stay local kebab identifiers and are NOT scoped facet
-  // identities: the scope marker `@` and the scope separator `/` are both
-  // rejected, along with uppercase, underscores, and spaces.
+  // Authoring surfaces accept a single segment only: the scope marker `@`, the
+  // segment separator `/`, uppercase, underscores, and spaces are all rejected.
   test.each([
     '@scope',
     '@scope/name',
@@ -27,8 +39,8 @@ describe('isValidKebabCase — asset-name grammar', () => {
     'cow_say',
     'cow say',
     'cow/say',
-  ])('rejects non-kebab asset name %p (e.g. @ and /)', (name) => {
-    expect(isValidKebabCase(name)).toBe(false)
+  ])('rejects non-kebab or multi-segment asset name %p', (name) => {
+    expect(validateAssetNameSegment(name).ok).toBe(false)
   })
 })
 

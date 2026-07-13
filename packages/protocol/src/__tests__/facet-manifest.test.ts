@@ -199,7 +199,9 @@ describe('FacetManifestSchema — invalid manifests', () => {
   })
 
   // Path-traversal gate (F1): asset-name keys are used as filesystem paths in
-  // the install pipeline. Any `..` segment would escape the adapter base dir.
+  // the install pipeline. Any `..` or empty segment would escape or dead-end
+  // the adapter base dir. The Agent Skills grammar rejects these as invalid
+  // segments, so the message names the grammar rather than "path segments".
   test.each([
     ['..', 'skills'],
     ['../escape', 'skills'],
@@ -213,7 +215,34 @@ describe('FacetManifestSchema — invalid manifests', () => {
     const result = FacetManifestSchema(input)
     expect(result).toBeInstanceOf(type.errors)
     const errors = result as InstanceType<typeof type.errors>
-    expect(errors.some((e) => e.message.includes('path segments'))).toBe(true)
+    // The offending key is named, and the grammar reason is surfaced.
+    expect(errors.some((e) => e.message.includes(`"${name}"`))).toBe(true)
+  })
+
+  // Non-kebab names now fail (the deliberate breaking change): the manifest
+  // schema enforces the Agent Skills grammar at build AND install.
+  test.each([
+    ['MySkill', 'skills'],
+    ['foo_bar', 'agents'],
+    ['UPPER', 'commands'],
+    ['has space', 'skills'],
+    ['trailing-', 'agents'],
+    ['-leading', 'commands'],
+    ['double--hyphen', 'skills'],
+  ])('non-kebab asset name %p in %s is rejected', (name, group) => {
+    const input: Record<string, unknown> = { name: 'ok', version: '1.0.0' }
+    input[group] = { [name]: { description: 'x' } }
+    const result = FacetManifestSchema(input)
+    expect(result).toBeInstanceOf(type.errors)
+    const errors = result as InstanceType<typeof type.errors>
+    expect(errors.some((e) => e.message.includes(`"${name}"`))).toBe(true)
+  })
+
+  // Digit-start names are valid per the Agent Skills spec (divergence from the
+  // facet identity slug grammar, which requires a letter start).
+  test('digit-start asset names are valid', () => {
+    const input = { name: 'ok', version: '1.0.0', skills: { '2fa': { description: 'x' } } }
+    expect(FacetManifestSchema(input)).not.toBeInstanceOf(type.errors)
   })
 
   test('deep-nested namespaced asset names (no traversal) stay valid', () => {
@@ -229,9 +258,8 @@ describe('FacetManifestSchema — invalid manifests', () => {
     expect(result).not.toBeInstanceOf(type.errors)
   })
 
-  // Windows-style path-traversal gate: a backslash slips through the
-  // segment-wise `/` split, so we reject it up front. Mirrors the
-  // `validateAssetName` rule enforced for lockfile asset names too.
+  // Windows-style path-traversal gate: a backslash is not in the grammar's
+  // charset, so a segment containing one is rejected up front.
   test.each([
     ['..\\escape', 'skills'],
     ['a\\b', 'agents'],
@@ -242,7 +270,7 @@ describe('FacetManifestSchema — invalid manifests', () => {
     const result = FacetManifestSchema(input)
     expect(result).toBeInstanceOf(type.errors)
     const errors = result as InstanceType<typeof type.errors>
-    expect(errors.some((e) => e.message.includes('backslash'))).toBe(true)
+    expect(errors.some((e) => e.message.includes(`"${name}"`))).toBe(true)
   })
 })
 

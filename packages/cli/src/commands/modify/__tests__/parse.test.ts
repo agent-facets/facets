@@ -33,6 +33,27 @@ describe('parseModifyArgs — legal operations', () => {
     expect(r.op.to).toBe('welcome')
   })
 
+  test('add with a digit-start name is accepted (Agent Skills grammar)', () => {
+    const r = parseModifyArgs(['skill', '2fa'], { add: true })
+    if (!r.ok) expect.unreachable()
+    if (r.op.kind !== 'add') expect.unreachable()
+    expect(r.op.name).toBe('2fa')
+  })
+
+  test('update on a legacy non-kebab name is still allowed', () => {
+    // --update/--remove must keep working on existing non-kebab names so users
+    // can fix or remove them; only --add and --rename validate the new name.
+    const r = parseModifyArgs(['skill', 'Legacy_Name'], { description: 'x' })
+    if (!r.ok) expect.unreachable()
+    expect(r.op.kind).toBe('update')
+  })
+
+  test('remove on a legacy non-kebab name is still allowed', () => {
+    const r = parseModifyArgs(['skill', 'Legacy_Name'], { remove: true })
+    if (!r.ok) expect.unreachable()
+    expect(r.op.kind).toBe('remove')
+  })
+
   test('remove with no mutations', () => {
     const r = parseModifyArgs(['command', 'run'], { remove: true })
     if (!r.ok) expect.unreachable()
@@ -102,6 +123,12 @@ describe('parseModifyArgs — illegal combinations rejected at the boundary', ()
     const r = parseModifyArgs(['skill', 'greet'], { rename: 'Not Kebab' })
     if (r.ok) expect.unreachable()
     expect(r.error.what).toContain('invalid rename target')
+  })
+
+  test('add with an invalid asset name is rejected at the boundary', () => {
+    const r = parseModifyArgs(['skill', 'Not Kebab'], { add: true })
+    if (r.ok) expect.unreachable()
+    expect(r.error.what).toContain('invalid skill name')
   })
 
   test('adapter JSON that is not an object', () => {

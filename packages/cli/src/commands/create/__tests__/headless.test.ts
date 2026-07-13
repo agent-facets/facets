@@ -68,6 +68,19 @@ describe('decideCreate — headless validation', () => {
     expect(d.error.what).toContain('invalid skill name')
   })
 
+  test('digit-start asset name is accepted (Agent Skills grammar)', () => {
+    const d = decideCreate({ name: 'my-facet', skill: ['2fa'] })
+    if (d.mode !== 'headless') expect.unreachable()
+    expect(d.options.skills).toEqual(['2fa'])
+  })
+
+  test('over-long asset name (>64 chars) is an error', () => {
+    const d = decideCreate({ name: 'my-facet', skill: ['a'.repeat(65)] })
+    if (d.mode !== 'error') expect.unreachable()
+    expect(d.error.what).toContain('invalid skill name')
+    expect(d.error.detail).toContain('at most 64')
+  })
+
   test('no assets is an error', () => {
     const d = decideCreate({ name: 'my-facet' })
     if (d.mode !== 'error') expect.unreachable()

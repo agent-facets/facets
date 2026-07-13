@@ -1,5 +1,5 @@
-import { DEFAULT_VERSION, isValidKebabCase, isValidSemVer, type ScaffoldOptions } from '@agent-facets/engine'
-import { validateFacetName } from '@agent-facets/protocol'
+import { DEFAULT_VERSION, isValidSemVer, type ScaffoldOptions } from '@agent-facets/engine'
+import { validateAssetNameSegment, validateFacetName } from '@agent-facets/protocol'
 import type { CliError } from '../../util/errors.ts'
 
 /**
@@ -74,12 +74,13 @@ export function decideCreate(flags: Record<string, unknown>): CreateDecision {
     ['command', commands],
   ] as const) {
     for (const assetName of names) {
-      if (!isValidKebabCase(assetName)) {
+      const check = validateAssetNameSegment(assetName)
+      if (!check.ok) {
         return {
           mode: 'error',
           error: {
             what: `invalid ${group} name "${assetName}"`,
-            detail: 'asset names must be kebab-case (lowercase letters, digits, single hyphens)',
+            detail: `asset name ${check.reason}`,
             fix: `pass a valid name, e.g. --${group} my-${group}`,
           },
         }

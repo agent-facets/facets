@@ -1,5 +1,5 @@
-import { validateAssetName } from '@agent-facets/common'
 import { type } from 'arktype'
+import { validateAssetName } from './asset-name.ts'
 import { validateFacetName } from './facet-name.ts'
 
 // --- Sub-schemas ---
@@ -52,11 +52,16 @@ const ServerReference = type('string').or({ image: 'string' })
  * Structural validation covers field types and shapes. Narrow constraints enforce:
  * 1. At least one text asset (skills, agents, commands, or facets) must be present
  * 2. Selective facets entries must include at least one asset type selection
- * 3. Asset names must be filesystem-safe (validateAssetName)
+ * 3. Asset names must satisfy the Agent Skills grammar (validateAssetName from
+ *    ./asset-name.ts): per `/`-separated segment, 1-64 chars, lowercase
+ *    letters/digits/hyphens, no leading/trailing/consecutive hyphens. This
+ *    grammar subsumes path safety (empty, `.`, `..`, and backslash segments
+ *    all fail), so it replaces the weaker path-only guard for manifest keys.
  * 4. The facet identity `name` must be a valid facet name — an unscoped slug
  *    or a scoped `@scope/name` (validateFacetName). Asset names and facet
- *    identities intentionally diverge: asset names stay local kebab-ish path
- *    identifiers; facet identities may carry a registry scope.
+ *    identities intentionally diverge: asset names stay local kebab segments
+ *    (digit-start allowed, never scoped); facet identities may carry a
+ *    registry scope.
  */
 export const FacetManifestSchema = type({
   name: 'string',
@@ -112,12 +117,15 @@ export const FacetManifestSchema = type({
     }
   }
 
-  // Constraint 3: asset names must be filesystem-safe. Install writes to
-  // join(baseDir, relativePathFor(type, name)) — an unchecked `..` segment or
-  // Windows backslash escapes the adapter base directory. Rejecting here
-  // stops the manifest before any filesystem work begins. The check is
-  // shared with LockfileSchema via `@agent-facets/common` so manifest-time
-  // and lockfile-time inputs get identical treatment.
+  // Constraint 3: asset names must satisfy the Agent Skills grammar (see
+  // ./asset-name.ts). This tightens the previous path-safety-only check: a
+  // manifest declaring `MySkill` or `foo_bar` now fails at build AND install
+  // (this schema validates fetched manifests too). Because the grammar rejects
+  // empty, `.`, `..`, and backslash segments, it also subsumes the filesystem
+  // safety the install pipeline needs when writing join(baseDir,
+  // relativePathFor(type, name)). LockfileSchema intentionally keeps the
+  // weaker `@agent-facets/common` path-safety guard so legacy installs with
+  // non-kebab asset names still load and can be removed.
   const assetNameGroups: [string, Record<string, unknown> | undefined][] = [
     ['skills', data.skills],
     ['agents', data.agents],

@@ -1,13 +1,21 @@
 /**
- * Asset-name validation shared across core (manifest + lockfile schemas) and
- * the adapter SDK (defensive check before filesystem use).
+ * Path-safety guard for asset names used as relative filesystem paths.
  *
- * An asset name is used as a relative filesystem path under the adapter's
- * base directory (e.g. `<baseDir>/skills/<name>/SKILL.md`). Unsafe names can
- * escape the base directory via `..` segments or platform-specific
- * separators. This helper is the single source of truth for what "safe"
- * means so the manifest schema, the lockfile schema, and the adapter I/O
- * helpers agree — manifest-time and lockfile-time inputs get the same guard.
+ * This is the **path-safety** check, NOT the authoring grammar. It rejects
+ * names that could escape an adapter's base directory when used as a path
+ * (e.g. `<baseDir>/skills/<name>/SKILL.md`), but it deliberately permits
+ * non-kebab names like `MySkill` or `foo_bar` — enforcing the Agent Skills
+ * name grammar is a separate, stricter concern that lives in
+ * `@agent-facets/protocol` (`validateAssetName` / `parseAssetName` in
+ * `schemas/asset-name.ts`).
+ *
+ * This guard remains the right tool where the input is a *filesystem path*
+ * rather than an author-declared name: archive-manifest keys and inner-tar
+ * entry names (protocol's integrity validation), cache-audit paths and
+ * receipt asset entries (engine), and lockfile asset names — the lockfile
+ * intentionally stays on path safety so legacy installs with non-kebab names
+ * still load and can be removed. The protocol manifest schema, by contrast,
+ * uses the stricter grammar because manifest keys are author-declared names.
  *
  * Rules (rejects):
  *  - contains a backslash (`\`) — Windows path separator
