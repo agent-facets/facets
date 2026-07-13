@@ -23,7 +23,7 @@
     },
     "packages/adapter": {
       "name": "@agent-facets/adapter",
-      "version": "0.24.1",
+      "version": "0.26.0",
       "dependencies": {
         "yaml": "2.9.0",
       },
@@ -35,7 +35,7 @@
     },
     "packages/adapters/claude-code": {
       "name": "@agent-facets/adapter-claude-code",
-      "version": "0.6.1",
+      "version": "0.7.0",
       "devDependencies": {
         "@agent-facets/adapter": "workspace:*",
         "arktype": "2.2.0",
@@ -56,7 +56,7 @@
     },
     "packages/adapters/opencode": {
       "name": "@agent-facets/adapter-opencode",
-      "version": "0.7.1",
+      "version": "0.8.0",
       "devDependencies": {
         "@agent-facets/adapter": "workspace:*",
         "arktype": "2.2.0",
