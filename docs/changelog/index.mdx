@@ -5,9 +5,9 @@ description: What's new in Agent Facets
 rss: true
 ---
 
-<Update label="2026-07-13" description="facet search now uses server-side filtering, sorting, and paging" tags={["CLI", "Improvement"]} rss={{
-  title: "facet search now uses server-side filtering, sorting, and paging",
-  description: "facet search forwards your query term to the registry as the ?q= parameter and renders results exactly as the server returns them. The registry now owns relevance ranking, sorting, and paging -- so results reflect the same ordering you see in the web UI, and future improvements to registry search take effect immediately without a CLI upgrade. The old client-side case-insensitive substring filter has been removed."
+<Update label="2026-07-13" description="Server-side facet search; asset names now follow the Agent Skills grammar; command adapter metadata is validated at build time" tags={["CLI", "Improvement", "Breaking", "Fix"]} rss={{
+  title: "Server-side facet search; asset names enforce the Agent Skills grammar; command adapter metadata is validated",
+  description: "facet search forwards your query term to the registry as the ?q= parameter and renders results exactly as the server returns them -- the registry now owns relevance ranking, sorting, and paging, so results match the web UI and future search improvements take effect without a CLI upgrade. Breaking: skill, command, and agent names now follow the Agent Skills name grammar everywhere they enter the system -- 1-64 characters of lowercase ASCII letters, digits, and hyphens, no leading/trailing hyphen, no consecutive hyphens. Manifests with non-conforming asset names (uppercase, underscores, over 64 characters) now fail at build and at install; digit-start names like 2fa are now valid. Fix: facet build now validates adapters blocks on commands the same way it validates them on skills and agents -- an installed adapter that rejects the metadata fails the build, and unknown adapters produce the usual warning."
 }}>
   ## Server-side search for `facet search`
 
@@ -35,6 +35,59 @@ rss: true
     local filtering.
 
   See the [`facet search`](/cli/search) reference for usage.
+
+  ## Asset names now follow the Agent Skills grammar
+
+  **Breaking:** skill, command, and agent names are now validated against a
+  single canonical grammar everywhere they enter the system  -- `facet create`
+  (wizard and headless), `facet modify --add` / `--rename`, `facet build`, and
+  `facet install` (fetched manifests are validated too).
+
+  A name segment is:
+
+  - 1 to 64 characters
+  - lowercase ASCII letters, digits, and hyphens
+  - no leading or trailing hyphen
+  - no consecutive hyphens
+
+  Full asset names may carry `/`-separated namespace segments
+  (`viper-plans/planning`), and each segment is validated independently.
+
+  ```text
+  ✔ planning            ✗ Planning            (uppercase)
+  ✔ two-factor          ✗ two_factor          (underscore)
+  ✔ 2fa                 ✗ -leading            (leading hyphen)
+  ✔ viper-plans/plan    ✗ a--b                (consecutive hyphens)
+  ```
+
+  Manifests declaring non-conforming asset names now fail at build **and** at
+  install, instead of passing silently. Digit-start names like `2fa` are now
+  valid  -- this diverges intentionally from the stricter facet-identity slug
+  grammar so common tool names remain expressible.
+
+  `facet modify --update` and `facet modify --remove` still accept legacy
+  non-conforming names, so you can fix or remove an asset that predates the
+  new rules. See the [manifest specification](/specification/manifest) for the
+  full grammar and the [`facet modify`](/cli/authoring/modify) reference for
+  the escape hatches.
+
+  ## `facet build` validates `adapters` blocks on commands
+
+  **Fix:** command descriptors have always been allowed to declare an
+  `adapters` block (symmetric with skills and agents), but the build pipeline
+  only ran adapter-metadata validation over skills and agents  -- command
+  adapter config was silently accepted without being checked.
+
+  `facet build` now validates command `adapters` blocks the same way:
+
+  - An installed adapter that rejects the metadata fails the build, with an
+    error path of `commands.<name>.adapters.<adapter>.<field>` so the
+    offending field is easy to locate.
+  - An unknown adapter on a command produces the usual "metadata will not be
+    validated" warning, matching the existing behavior for skills and agents.
+
+  See the [`facet build`](/cli/authoring/build) reference and [build
+  pipeline](/specification/build#steps) spec.
 </Update>
 
 <Update label="2026-07-09" description="Agent-friendly CLI: instructions, modify, headless create, build --verify; TypeScript 7 support; trailing newlines on generated JSON" tags={["CLI", "New Feature", "Improvement", "Fix"]} rss={{
