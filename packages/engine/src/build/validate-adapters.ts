@@ -40,6 +40,15 @@ export function validateAdapterMetadata(manifest: FacetManifest, adapters: Adapt
     }
   }
 
+  // Check commands
+  if (manifest.commands) {
+    for (const [name, command] of Object.entries(manifest.commands)) {
+      if (command.adapters) {
+        validateAssetAdapters(`commands.${name}`, command.adapters, adapterMap, errors, warnings)
+      }
+    }
+  }
+
   return { errors, warnings }
 }
 
