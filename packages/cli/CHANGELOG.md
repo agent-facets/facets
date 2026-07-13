@@ -1,13 +1,19 @@
 # agent-facets
 
+## 0.24.2
+
+### Patch Changes
+
+- [#414](https://github.com/agent-facets/facets/pull/414) [`f2d1373`](https://github.com/agent-facets/facets/commit/f2d1373aeb569778ecec07a06e6e19116b9cfc4b) Thanks [@eXamadeus](https://github.com/eXamadeus)! - `facet search` now uses proper server-side sorting, not just client-side filtering
+
 ## 0.24.1
 
 ### Patch Changes
 
 - [#403](https://github.com/agent-facets/facets/pull/403) [`4748084`](https://github.com/agent-facets/facets/commit/474808464297919780914940de63229256c8d3b6) Thanks [@eXamadeus](https://github.com/eXamadeus)! - fix: ensure newline is at the end of all generated JSON files
 - [#404](https://github.com/agent-facets/facets/pull/404) [`ba747bd`](https://github.com/agent-facets/facets/commit/ba747bdcf1884ff82e397b21e9897a32eac8055c) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Widen the `typescript` peerDependency range to `^5 || ^6 || ^7` so the
-    package installs cleanly for consumers on TypeScript 7. Consumers on
-    TypeScript 5 or 6 are unaffected.
+  package installs cleanly for consumers on TypeScript 7. Consumers on
+  TypeScript 5 or 6 are unaffected.
 
 ## 0.24.0
 
