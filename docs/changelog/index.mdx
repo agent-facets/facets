@@ -5,6 +5,26 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-07-13" description="facet search uses server-side sorting" tags={["CLI", "Fix"]} rss={{
+  title: "facet search now sorts results server-side",
+  description: "facet search now uses proper server-side sorting from the registry instead of client-side filtering only, so results come back in the registry's canonical ranking order. No flag changes -- your existing facet search invocations return the same results, just correctly ordered."
+}}>
+  ## Fix: `facet search` uses server-side sorting
+
+  [`facet search`](/cli/search) now defers to the registry's server-side
+  sorting for result ordering, instead of applying client-side filtering
+  only. Results come back in the registry's canonical ranking order --
+  the same order the web UI shows -- rather than whatever order the
+  registry happened to stream them in.
+
+  No flag or argument changes. Existing invocations behave the same:
+
+  ```sh
+  facet search plan   # same query, correctly ordered results
+  facet search        # same listing, correctly ordered results
+  ```
+</Update>
+
 <Update label="2026-07-09" description="Agent-friendly CLI: instructions, modify, headless create, build --verify; TypeScript 7 support; trailing newlines on generated JSON" tags={["CLI", "New Feature", "Improvement", "Fix"]} rss={{
   title: "Agent-friendly CLI, TypeScript 7 support, and trailing newlines on generated JSON",
   description: "The facet CLI is now built for AI agents to drive non-interactively: new facet instructions [topic] prints agent-oriented usage guidance (the manifest topic emits the facet.json JSON Schema generated live from the schema definition); new facet modify makes one scriptable, flag-driven edit to a facet; facet create gains headless flags; facet build gains --verify and --json. Also: the public @agent-facets/* packages now declare their typescript peerDependency as ^5 || ^6 || ^7, so they install cleanly on TypeScript 7 projects. And every JSON file the CLI writes -- facets.lock, install receipts, build manifests, scaffolded facet.json, and cache metadata -- now ends with exactly one trailing newline and uses consistent 2-space indentation."
