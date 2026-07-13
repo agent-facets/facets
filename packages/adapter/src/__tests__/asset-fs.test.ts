@@ -122,6 +122,74 @@ describe('deleteAssetFile', () => {
   })
 })
 
+describe('deleteAssetFile — empty-directory pruning', () => {
+  test('prunes the skill folder when it becomes empty after deletion', async () => {
+    const file = join(workDir, 'skills/planning/SKILL.md')
+    await installAssetFile({ file }, '# planning')
+    await deleteAssetFile({ file, pruneBoundary: workDir })
+    expect(existsSync(file)).toBe(false)
+    expect(existsSync(join(workDir, 'skills/planning'))).toBe(false)
+  })
+
+  test('preserves the skill folder when it still contains an unrelated file', async () => {
+    const file = join(workDir, 'skills/planning/SKILL.md')
+    await installAssetFile({ file }, '# planning')
+    const sibling = join(workDir, 'skills/planning/notes.md')
+    writeFileSync(sibling, 'keep me')
+    await deleteAssetFile({ file, pruneBoundary: workDir })
+    expect(existsSync(file)).toBe(false)
+    expect(existsSync(sibling)).toBe(true)
+    expect(existsSync(join(workDir, 'skills/planning'))).toBe(true)
+  })
+
+  test('prunes nested namespace parents when they all become empty', async () => {
+    const file = join(workDir, 'skills/vendor/planning/SKILL.md')
+    await installAssetFile({ file }, '# planning')
+    await deleteAssetFile({ file, pruneBoundary: workDir })
+    expect(existsSync(join(workDir, 'skills/vendor/planning'))).toBe(false)
+    expect(existsSync(join(workDir, 'skills/vendor'))).toBe(false)
+    expect(existsSync(join(workDir, 'skills'))).toBe(false)
+  })
+
+  test('stops pruning at a nested namespace parent that still has a sibling', async () => {
+    const file = join(workDir, 'skills/vendor/planning/SKILL.md')
+    await installAssetFile({ file }, '# planning')
+    const siblingSkill = join(workDir, 'skills/vendor/other/SKILL.md')
+    await installAssetFile({ file: siblingSkill }, '# other')
+    await deleteAssetFile({ file, pruneBoundary: workDir })
+    expect(existsSync(join(workDir, 'skills/vendor/planning'))).toBe(false)
+    expect(existsSync(join(workDir, 'skills/vendor'))).toBe(true)
+    expect(existsSync(siblingSkill)).toBe(true)
+  })
+
+  test('never removes the configured boundary directory itself', async () => {
+    const file = join(workDir, 'agents/reviewer.md')
+    await installAssetFile({ file }, '# reviewer')
+    await deleteAssetFile({ file, pruneBoundary: workDir })
+    // agents/ becomes empty and is pruned, but the boundary (workDir) stays.
+    expect(existsSync(join(workDir, 'agents'))).toBe(false)
+    expect(existsSync(workDir)).toBe(true)
+  })
+
+  test('remains idempotent when the file and parents are already absent', async () => {
+    const file = join(workDir, 'skills/planning/SKILL.md')
+    await installAssetFile({ file }, '# planning')
+    await deleteAssetFile({ file, pruneBoundary: workDir })
+    // Second delete of an already-gone asset + already-pruned dirs.
+    await expect(deleteAssetFile({ file, pruneBoundary: workDir })).resolves.toBe(file)
+    expect(existsSync(join(workDir, 'skills'))).toBe(false)
+  })
+
+  test('does no directory pruning when no boundary is supplied', async () => {
+    const file = join(workDir, 'skills/planning/SKILL.md')
+    await installAssetFile({ file }, '# planning')
+    await deleteAssetFile({ file })
+    expect(existsSync(file)).toBe(false)
+    // Empty directory is left behind — back-compat with boundary-less callers.
+    expect(existsSync(join(workDir, 'skills/planning'))).toBe(true)
+  })
+})
+
 describe('assembleAssetContent / splitAssetContent — round-trip', () => {
   // Inverse-property contract: split(assemble(body, metadata)) === { content: body, metadata }.
   // If this ever drifts, every consumer that compares a write-then-read-

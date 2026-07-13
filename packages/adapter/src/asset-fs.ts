@@ -1,5 +1,5 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { mkdir, readFile, rm, rmdir, writeFile } from 'node:fs/promises'
+import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { splitFrontMatter, validateAssetName } from '@agent-facets/common'
 import { stringify as stringifyYaml } from 'yaml'
 
@@ -40,6 +40,18 @@ import { stringify as stringifyYaml } from 'yaml'
 export interface AssetPath {
   /** Absolute path to the asset file on disk. */
   file: string
+  /**
+   * Absolute path to the adapter-controlled root directory. When set,
+   * `deleteAssetFile` prunes now-empty parent directories of `file`
+   * upward, stopping *before* it would remove `pruneBoundary` itself.
+   * When absent, no directory pruning occurs (back-compat).
+   *
+   * Pruning is best-effort and non-recursive: a directory that still
+   * contains unrelated files is left untouched, and any removal failure
+   * (`ENOTEMPTY`, `ENOENT`, `ENOTDIR`, `EEXIST`, …) simply stops the walk
+   * without failing the delete.
+   */
+  pruneBoundary?: string
 }
 
 /**
@@ -78,11 +90,55 @@ export async function readAssetFile(path: AssetPath): Promise<{ content: string;
  * Delete the asset file at `path.file`. No-op if absent (idempotent by
  * contract — see Adjustment B). Also removes any legacy `.meta.json`
  * sidecar left behind by earlier versions so upgrades reconverge cleanly.
+ *
+ * When `path.pruneBoundary` is set, empty parent directories of the
+ * deleted file are removed upward until (but not including) the boundary
+ * — so nested layouts like `skills/<name>/SKILL.md` don't leave empty
+ * `skills/<name>/` folders behind. See {@link pruneEmptyParents}.
  */
 export async function deleteAssetFile(path: AssetPath): Promise<string> {
   await rm(path.file, { force: true })
   await rm(`${path.file}.meta.json`, { force: true })
+  if (path.pruneBoundary !== undefined) {
+    await pruneEmptyParents(dirname(path.file), path.pruneBoundary)
+  }
   return path.file
+}
+
+/**
+ * Remove empty directories from `startDir` upward, stopping *before*
+ * `boundary` (the boundary itself is never removed) and never climbing
+ * above it. Best-effort: a non-empty directory throws `ENOTEMPTY` from
+ * the non-recursive `rmdir`, which — like any other error — stops the
+ * walk without failing. This is what keeps unrelated sibling files safe
+ * (their directory refuses to be removed) and makes the whole operation
+ * idempotent (an already-absent directory throws `ENOENT` and stops).
+ *
+ * The non-recursive `rmdir` is load-bearing: it can only ever remove a
+ * directory that is genuinely empty, so pruning can never delete a file
+ * the adapter didn't already delete itself.
+ */
+async function pruneEmptyParents(startDir: string, boundary: string): Promise<void> {
+  const stop = resolve(boundary)
+  let current = resolve(startDir)
+  while (current !== stop && isStrictlyInside(current, stop)) {
+    try {
+      await rmdir(current)
+    } catch {
+      return
+    }
+    current = dirname(current)
+  }
+}
+
+/**
+ * True when `child` is a strict descendant of `parent` (not equal to it,
+ * not outside it). Guards the prune walk so it can never escape the
+ * adapter-controlled tree via `..` or an unrelated absolute path.
+ */
+function isStrictlyInside(child: string, parent: string): boolean {
+  const rel = relative(parent, child)
+  return rel.length > 0 && !rel.startsWith('..') && !isAbsolute(rel)
 }
 
 // --- front-matter helpers (exported for adapter-level customization) ---
