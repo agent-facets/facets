@@ -59,11 +59,11 @@ describe('SearchView — rendering', () => {
     expect(f).toContain('found no matches')
   })
 
-  test('no match for term: shows "found no matches" with hint', async () => {
+  test('no match for term: server returns empty, shows "found no matches"', async () => {
     const instance = inkRender(
       createElement(SearchView, {
         term: 'xyz-not-there',
-        fetch: mockFetch([fixtures.facetSummary({ latest_version: '0.1.0' })]),
+        fetch: mockFetch([]),
         onComplete: () => {},
       }),
     )
@@ -118,7 +118,7 @@ describe('SearchView — rendering', () => {
     expect(f).toContain('found 2 matches.')
   })
 
-  test('case-insensitive substring match', async () => {
+  test('renders whatever the server returned (no client-side filtering)', async () => {
     const instance = inkRender(
       createElement(SearchView, {
         term: 'camel',
@@ -253,5 +253,37 @@ describe('searchCommand — error paths', () => {
     const { result, stderr } = await captureStderr(() => searchCommand.run([], {}))
     expect(result).toBe(1)
     expect(stderr).toContain('unexpected shape')
+  })
+})
+
+describe('searchCommand — query parameter', () => {
+  /** Capture the request URL and reply with an empty facet list. */
+  function captureRequestUrl(): { urls: string[] } {
+    const urls: string[] = []
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      urls.push(url)
+      return new Response(JSON.stringify({ facets: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }) as unknown as typeof fetch
+    return { urls }
+  }
+
+  test('sends ?q=<term> when a term is given', async () => {
+    const { urls } = captureRequestUrl()
+    const { result } = await captureStderr(() => searchCommand.run(['cowsay'], {}))
+    expect(result).toBe(0)
+    expect(urls).toHaveLength(1)
+    expect(urls[0]).toContain('q=cowsay')
+  })
+
+  test('omits the q parameter when no term is given', async () => {
+    const { urls } = captureRequestUrl()
+    const { result } = await captureStderr(() => searchCommand.run([], {}))
+    expect(result).toBe(0)
+    expect(urls).toHaveLength(1)
+    expect(urls[0]).not.toContain('q=')
   })
 })
