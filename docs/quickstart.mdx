@@ -28,20 +28,18 @@ By the end of this page you'll have the `facet` CLI installed, a facet added to 
     ```
   </Step>
 
-  <Step title="Connect your AI tool (once per machine)">
-    Install the <Tooltip tip="An adapter is the bridge between facet and a specific AI coding tool — it decides where assets and config land on disk.">adapter</Tooltip> for the tool you use with [`facet adapter install`](/cli/adapters/install):
-
-    ```sh
-    facet adapter install claude-code   # or: opencode, codex
-    ```
-  </Step>
-
   <Step title="Add a facet">
     From your project directory, add a facet by name from the registry with [`facet add`](/cli/add):
 
     ```sh
     facet add cowsay
     ```
+
+    <Note>
+      The first time you run this with no <Tooltip tip="An adapter is the bridge between facet and a specific AI coding tool — it decides where assets and config land on disk.">adapter</Tooltip> installed, `facet add` opens a picker to connect your AI tool (claude-code, opencode, or codex) before installing.
+    </Note>
+
+    Once an adapter is connected, `facet add` installs the facet into your tool:
 
     ```
     cowsay installed. Updated facets via 1 adapter  ✓
@@ -51,12 +49,22 @@ By the end of this page you'll have the `facet` CLI installed, a facet added to 
   </Step>
 
   <Step title="Use it">
-    The facet's commands are now available in your tool. Inside your AI coding tool, run:
+    Run the command inside your agent harness OR from your terminal with Claude Code or OpenCode:
 
-    ```
-    /cowsay hey there
-    /cowchat how's the weather?
-    ```
+    <CodeGroup>
+      ```text Inside an agent harness
+      /cowsay hey there
+      /cowchat how's the weather?
+      ```
+
+      ```sh Claude Code
+      claude -p "/cowsay hey there"
+      ```
+
+      ```sh OpenCode
+      opencode run --command cowsay "hey there"
+      ```
+    </CodeGroup>
 
     That's it — you've installed and used your first facet.
   </Step>
