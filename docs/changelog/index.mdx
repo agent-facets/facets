@@ -5,9 +5,9 @@ description: What's new in Agent Facets
 rss: true
 ---
 
-<Update label="2026-07-13" description="Server-side search for facet search; asset names now follow the Agent Skills grammar" tags={["CLI", "Improvement", "Breaking"]} rss={{
-  title: "Server-side search for facet search; asset names now follow the Agent Skills grammar",
-  description: "facet search forwards your query term to the registry as the ?q= parameter and renders results exactly as the server returns them. The registry now owns relevance ranking, sorting, and paging -- so results reflect the same ordering you see in the web UI, and future improvements to registry search take effect immediately without a CLI upgrade. The old client-side case-insensitive substring filter has been removed. Separately: skill, command, and agent names in facet.json are now validated against the Agent Skills name grammar at build and install time. Each /-separated segment must be 1-64 characters of lowercase ASCII letters, digits, and hyphens, with no leading, trailing, or consecutive hyphens. Digit-start names like 2fa are now allowed; non-conforming names like MySkill or foo_bar are now rejected. Namespaced names like viper-plans/planning validate per segment. Error messages now cite the specific grammar rule violated. facet modify --update and --remove still accept legacy names so you can fix or remove assets created under the old, looser rules."
+<Update label="2026-07-13" description="Server-side search for facet search; asset names now follow the Agent Skills grammar; adapter metadata on commands is now validated at build time; facet remove prunes empty adapter directories" tags={["CLI", "Improvement", "Breaking", "Fix"]} rss={{
+  title: "Server-side search for facet search; Agent Skills name grammar; adapter metadata validation for commands; empty-dir pruning on facet remove",
+  description: "facet search forwards your query term to the registry as the ?q= parameter and renders results exactly as the server returns them. The registry now owns relevance ranking, sorting, and paging -- so results reflect the same ordering you see in the web UI, and future improvements to registry search take effect immediately without a CLI upgrade. The old client-side case-insensitive substring filter has been removed. Separately: skill, command, and agent names in facet.json are now validated against the Agent Skills name grammar at build and install time. Each /-separated segment must be 1-64 characters of lowercase ASCII letters, digits, and hyphens, with no leading, trailing, or consecutive hyphens. Digit-start names like 2fa are now allowed; non-conforming names like MySkill or foo_bar are now rejected. Namespaced names like viper-plans/planning validate per segment. Error messages now cite the specific grammar rule violated. facet modify --update and --remove still accept legacy names so you can fix or remove assets created under the old, looser rules. Also: facet build now validates adapters blocks on command assets the same way it already does for skills and agents -- invalid adapter metadata under commands.<name> fails the build with a commands.<name>.adapters.<adapter>.<field> error path, and unknown adapters produce a warning. And facet remove now prunes empty parent directories inside each adapter's tree after deleting a file (bounded to the adapter root, skipping any directory that still contains user files), so uninstalling a skill no longer leaves an empty skills/<name>/ folder behind."
 }}>
   ## Server-side search for `facet search`
 
@@ -70,6 +70,71 @@ rss: true
   can rename or drop the asset without a chicken-and-egg problem. See
   the [manifest schema](/specification/manifest) and [`facet
   modify`](/cli/authoring/modify) reference.
+
+  ## Adapter metadata on `commands` is now validated at build time
+
+  `facet build` now validates `adapters` blocks on **command** assets the
+  same way it already validates them for skills and agents. Invalid
+  adapter-specific metadata under a command is now a build error;
+  unknown adapters produce the usual warning. Previously, malformed
+  adapter metadata on a command could slip through the build and only
+  surface at install time (or not at all).
+
+  Errors are reported at the same path shape used for skills and
+  agents, so tooling and log scrapers can rely on a single format:
+
+  ```text
+  commands.<name>.adapters.<adapter>.<field>: <reason>
+  ```
+
+  For example, an invalid `tools` value under a command's `opencode`
+  block now fails the build:
+
+  ```json facet.json
+  {
+    "commands": [
+      {
+        "name": "plan",
+        "adapters": {
+          "opencode": {
+            "tools": "grep"
+          }
+        }
+      }
+    ]
+  }
+  ```
+
+  ```text
+  commands.plan.adapters.opencode.tools: expected object, received string
+  ```
+
+  No manifest changes are required for valid facets. See the [build
+  spec](/specification/build#steps) and [manifest
+  schema](/specification/manifest) for the full contract.
+
+  ## `facet remove` prunes empty adapter directories
+
+  When `facet remove` (or any removal flow that goes through the
+  install pipeline) deletes an asset file, the adapter now walks up
+  from the deleted file and removes any parent directories that are
+  left empty. Uninstalling a skill no longer leaves an empty
+  `skills/<name>/` folder behind in your adapter tree.
+
+  Pruning is:
+
+  - **Bounded to the adapter root.** The walk stops at the adapter's
+    materialization root and never touches directories above it.
+  - **Safe.** Any directory that still contains files -- yours or
+    another facet's -- is skipped. Only directories that become empty
+    as a result of the removal are pruned.
+  - **Adapter-driven.** Ships in `@agent-facets/adapter@0.26.0`, and is
+    on by default in `@agent-facets/adapter-claude-code@0.7.0` and
+    `@agent-facets/adapter-opencode@0.8.0`. Adapters that opt in get
+    pruning for free; third-party adapters continue to work unchanged
+    until they adopt the new adapter SDK release.
+
+  See [`facet remove`](/cli/remove) for the command reference.
 </Update>
 
 <Update label="2026-07-09" description="Agent-friendly CLI: instructions, modify, headless create, build --verify; TypeScript 7 support; trailing newlines on generated JSON" tags={["CLI", "New Feature", "Improvement", "Fix"]} rss={{

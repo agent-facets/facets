@@ -48,6 +48,8 @@ facet remove viper-plans rezi
   </Step>
   <Step title="Commit">
     Delegate to the [install pipeline](/specification/install) with the removals delta. Removal is [receipt-driven and offline](/specification/commit#drift-removal); the manifest, lockfile, and receipt are [written together](/specification/commit#transactional-tri-write). Every other facet is left untouched.
+
+    Adapters that support it (including the first-party Claude Code and OpenCode adapters) also prune empty parent directories inside their materialization tree after deleting an asset file  -- bounded to the adapter root, and skipping any directory that still contains user files or another facet's files. Uninstalling a skill no longer leaves an empty `skills/<name>/` folder behind.
   </Step>
   <Step title="On any failure">
     The journal rolls back all changes. Nothing is written ahead of success.
