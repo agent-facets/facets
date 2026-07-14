@@ -54,8 +54,8 @@ What you need before adding, authoring, or publishing facets. If you just want t
     </Note>
   </Step>
 
-  <Step title="Create a registry account + token (only to publish)">
-    Adding public facets needs no account. **Publishing** does: sign up at [agentfacets.io](https://agentfacets.io) and create a <Tooltip tip="A revocable credential you mint in the web UI to authenticate the CLI to the registry.">personal access token (PAT)</Tooltip> in your account settings. Sign in with [`facet login`](/cli/login) and confirm with [`facet whoami`](/cli/whoami):
+  <Step title="Create a registry account + token">
+    Adding public facets needs no account. A token is what unlocks the rest: **publishing** your own facets, plus **accessing private or organization-owned facets** you're authorized to use. Sign up at [agentfacets.io](https://agentfacets.io) and create a <Tooltip tip="A revocable credential you mint in the web UI to authenticate the CLI to the registry.">personal access token (PAT)</Tooltip> in your account settings. Sign in with [`facet login`](/cli/login) and confirm with [`facet whoami`](/cli/whoami):
 
     ```sh
     facet login                     # interactive; stores the token
@@ -70,7 +70,7 @@ What you need before adding, authoring, or publishing facets. If you just want t
 ```sh
 facet --version        # CLI is installed and recent
 facet adapter list     # at least one adapter connected
-facet whoami           # signed in (only needed for publishing)
+facet whoami           # signed in (needed to publish and to reach private facets)
 ```
 
 ## Next steps
