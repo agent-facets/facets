@@ -13,6 +13,18 @@
       "comparedAt": "2026-07-13T17:59:26Z",
       "reconciledAt": "2026-07-13T18:14:00Z",
       "notes": "Adopted all 7 review findings: added mandatory Non-goals section; explicit manifest declaration as single source of archive membership (syntax deferred to design); full validation boundary (missing/undeclared/unsafe/colliding paths); dropped premature build-manifest assets-map commitment in favor of asset/supplementary distinction; atomic multi-file skill lifecycle with drift-removal receipts; supplementary files prohibited from becoming independently addressable assets; compatibility upgraded from forward-compat note to BREAKING with explicit version boundary + legacy compat tests; Impact extended with security/compat test matrix, both guides, and root README. Partially adopted lockfile.mdx wording (review required, update conditional on design outcome)."
+    },
+    "design": {
+      "artifactId": "design",
+      "mainPaths": ["design.md"],
+      "adversarialPaths": ["adversarial/artifacts/design.md"],
+      "reviewPath": "adversarial/reviews/design-review.md",
+      "dependencies": ["proposal"],
+      "status": "reconciled",
+      "authoredAt": "2026-07-13T18:10:26Z",
+      "comparedAt": "2026-07-13T18:19:40Z",
+      "reconciledAt": "2026-07-13T18:41:00Z",
+      "notes": "Adopted all 10 review findings (nothing material rejected; Main's structural base retained per the review itself). Added D3 shared tagged archive-plan derivation as single source of membership/classification; 0.2 build manifest replaces parallel assets+files maps with one all-entry hash map + strict version dispatch; protocol package and adapter SDK each marked as new major releases; D7 grammar expanded with exhaustive path/tar checks (NUL, drive prefixes, Unicode/case-fold aliases, prefix collisions, symlink/hardlink identity, duplicate headers, non-regular entries, dist/ cleanup ordering) + per-class test matrix; D8 adapter contract rewritten to tagged payload unions with atomic stage/commit/rollback skill bundles; D9 receipt rewritten to tagged records with complete owned path sets, legacy tuples refined to empty companion sets (removed the inconsistent one-install-cycle orphan claim), receipt+materialization as one rollback unit; D10 scaffold writes README undeclared during rollout window and edit gains scaffold-or-remove for vanished declarations; Migration Plan reordered consumer-first with cafe as hard gate and irreversibility note; old-builder-ignores-files hazard added to Risks; all three Open Questions closed as decisions."
     }
   }
 }
