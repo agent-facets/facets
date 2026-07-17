@@ -170,6 +170,8 @@ function oneLineFailureSummary(failure: RunInstallFailure): string {
       return 'failed to load facet.json'
     case 'ADAPTER_INSTALL_FAILED':
       return `adapter ${failure.adapter} failed during materialization`
+    case 'ASSET_PATH_COLLISION':
+      return `path collision on ${failure.adapter}`
     default:
       return 'install failed'
   }

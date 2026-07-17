@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import adapter from '../index.ts'
 
 // ---------------------------------------------------------------------------
@@ -364,21 +364,28 @@ describe('codex adapter — project-scope command I/O', () => {
     expect(yaml).not.toContain('allow_implicit_invocation: true')
   })
 
-  test('readAsset round-trips a command body from its SKILL.md', async () => {
+  test('readAsset folds the openai.yaml sidecar back into command metadata', async () => {
     await adapter.installAsset('project', 'command', 'plan', '# body', {
       name: 'plan',
       description: 'plan things',
     })
     const result = await adapter.readAsset('project', 'command', 'plan')
     expect(result.content.trim()).toBe('# body')
-    expect(result.metadata).toEqual({ name: 'plan', description: 'plan things' })
+    // readAsset reconstructs the sidecar-derived keys (interface defaults +
+    // the forced policy) so materialize's compare can see sidecar drift.
+    expect(result.metadata).toEqual({
+      name: 'plan',
+      description: 'plan things',
+      interface: { display_name: 'plan', short_description: 'plan things' },
+      policy: { allow_implicit_invocation: false },
+    })
   })
 
   test('command with sidecar-routed metadata normalizes equal to its round-trip (idempotency)', async () => {
     // TASK-192/193 coupling guard: `interface`/`policy`/`dependencies` are
-    // stripped into the sidecar, so they're absent from readAsset's view.
-    // normalizeForCompare must strip them from the candidate too, or every
-    // re-install reports "repaired".
+    // routed to the sidecar. readAsset folds them back and normalizeForCompare
+    // derives the SAME shape, so a re-install with those keys present compares
+    // equal (idempotent, not "repaired").
     const metadata = {
       name: 'plan',
       description: 'plan things',
@@ -422,6 +429,102 @@ describe('codex adapter — project-scope command I/O', () => {
     expect(existsSync(join(workDir, '.agents/skills/space/agents/openai.yaml'))).toBe(false)
     // ...but the nested skill (and the shared parent dir) survive.
     expect(readFileSync(join(workDir, '.agents/skills/space/spec/SKILL.md'), 'utf8')).toContain('# skill')
+  })
+
+  test('resolvePath maps a skill and a command with the same name to the same path (collision surface)', () => {
+    if (!adapter.resolvePath) expect.unreachable()
+    const skillPath = adapter.resolvePath('project', 'skill', 'plan')
+    const commandPath = adapter.resolvePath('project', 'command', 'plan')
+    // This equality is precisely what the engine's path-collision preflight
+    // uses to refuse the pair before either write (finding 1).
+    expect(commandPath).toBe(skillPath)
+    // An agent named `plan` lives in its own tree — no collision.
+    expect(adapter.resolvePath('project', 'agent', 'plan')).not.toBe(skillPath)
+  })
+
+  test('installing a command sweeps the legacy .agents/commands/<name>.md file', async () => {
+    // Simulate an older adapter version's on-disk output.
+    const legacy = join(workDir, '.agents/commands/plan.md')
+    mkdirSync(dirname(legacy), { recursive: true })
+    writeFileSync(legacy, 'stale command body')
+
+    await adapter.installAsset('project', 'command', 'plan', '# body', { name: 'plan' })
+
+    // New location written, legacy orphan removed.
+    expect(existsSync(join(workDir, '.agents/skills/plan/SKILL.md'))).toBe(true)
+    expect(existsSync(legacy)).toBe(false)
+  })
+
+  test('installing a namespaced command sweeps its namespaced legacy path', async () => {
+    const legacy = join(workDir, '.agents/commands/viper-plans/plan.md')
+    mkdirSync(dirname(legacy), { recursive: true })
+    writeFileSync(legacy, 'stale')
+
+    await adapter.installAsset('project', 'command', 'viper-plans/plan', '# body', { name: 'plan' })
+
+    expect(existsSync(join(workDir, '.agents/skills/viper-plans/plan/SKILL.md'))).toBe(true)
+    expect(existsSync(legacy)).toBe(false)
+  })
+
+  test('deleting a command sweeps the legacy .agents/commands/<name>.md file too', async () => {
+    const legacy = join(workDir, '.agents/commands/plan.md')
+    mkdirSync(dirname(legacy), { recursive: true })
+    writeFileSync(legacy, 'stale')
+    await adapter.installAsset('project', 'command', 'plan', '# body', { name: 'plan' })
+    // installAsset already sweeps; re-create to prove deleteAsset sweeps independently.
+    mkdirSync(dirname(legacy), { recursive: true })
+    writeFileSync(legacy, 'stale again')
+
+    await adapter.deleteAsset('project', 'command', 'plan')
+    expect(existsSync(legacy)).toBe(false)
+  })
+
+  test('sidecar drift is visible to readAsset (so materialize can repair it)', async () => {
+    const metadata = { name: 'plan', description: 'plan things' }
+    await adapter.installAsset('project', 'command', 'plan', '# body', metadata)
+
+    if (!adapter.normalizeForCompare) expect.unreachable()
+    const candidate = adapter.normalizeForCompare('command', '# body', metadata)
+
+    // Before tampering: on-disk read equals the derived candidate → skip.
+    const clean = await adapter.readAsset('project', 'command', 'plan')
+    expect(clean.metadata).toEqual(candidate.metadata)
+
+    // A user flips the sidecar's invocation policy back to implicit.
+    const sidecar = join(workDir, '.agents/skills/plan/agents/openai.yaml')
+    writeFileSync(
+      sidecar,
+      readFileSync(sidecar, 'utf8').replace('allow_implicit_invocation: false', 'allow_implicit_invocation: true'),
+    )
+
+    // readAsset now reflects the drift, so it no longer equals the candidate —
+    // materialize's skip-if-identical will treat this as a repair.
+    const drifted = await adapter.readAsset('project', 'command', 'plan')
+    expect(drifted.metadata).not.toEqual(candidate.metadata)
+  })
+
+  test('deleting a namespaced command prunes the now-empty namespace parent', async () => {
+    await adapter.installAsset('project', 'command', 'viper-plans/plan', '# body', { name: 'plan' })
+    expect(existsSync(join(workDir, '.agents/skills/viper-plans/plan/SKILL.md'))).toBe(true)
+
+    await adapter.deleteAsset('project', 'command', 'viper-plans/plan')
+
+    // The command dir AND the emptied namespace parent are pruned...
+    expect(existsSync(join(workDir, '.agents/skills/viper-plans/plan'))).toBe(false)
+    expect(existsSync(join(workDir, '.agents/skills/viper-plans'))).toBe(false)
+    // ...but never the shared skills root.
+    expect(existsSync(join(workDir, '.agents/skills'))).toBe(true)
+  })
+
+  test('deleting a namespaced command keeps a sibling skill under the shared namespace parent', async () => {
+    await adapter.installAsset('project', 'command', 'viper-plans/plan', '# cmd', { name: 'plan' })
+    await adapter.installAsset('project', 'skill', 'viper-plans/spec', '# skill', { name: 'spec' })
+
+    await adapter.deleteAsset('project', 'command', 'viper-plans/plan')
+
+    // Command gone, but the shared parent survives because the sibling remains.
+    expect(existsSync(join(workDir, '.agents/skills/viper-plans/plan'))).toBe(false)
+    expect(readFileSync(join(workDir, '.agents/skills/viper-plans/spec/SKILL.md'), 'utf8')).toContain('# skill')
   })
 })
 

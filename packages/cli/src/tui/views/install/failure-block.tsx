@@ -313,6 +313,21 @@ export function FailureBlock({ failure }: { failure: RunInstallFailure }): React
           <Text color={THEME.hint}> Run without --frozen-lockfile, or `facet add` to update the lockfile.</Text>
         </Box>
       )
+    case 'ASSET_PATH_COLLISION':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ adapter {failure.adapter}: two assets resolve to the same path
+          </Text>
+          <Text>
+            {' '}
+            {failure.existing.asset.type}:{failure.existing.asset.name} ({failure.existing.facet}) and{' '}
+            {failure.incoming.asset.type}:{failure.incoming.asset.name} ({failure.incoming.facet}) both map to{' '}
+            {failure.path}
+          </Text>
+          <Text color={THEME.hint}> Rename one of the colliding assets so they no longer share a path.</Text>
+        </Box>
+      )
     case 'FROZEN_WITH_DELTA':
       return (
         <Box flexDirection="column" marginTop={1}>

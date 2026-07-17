@@ -220,6 +220,21 @@ export type RunInstallFailure =
       asset: LockfileAssetEntry
       cause: string
     }
+  /**
+   * Two distinct assets resolve to the same on-disk path for one adapter —
+   * e.g. a skill named `plan` and a command named `plan` both landing at
+   * Codex's `.agents/skills/plan/SKILL.md`. Detected before any write (via
+   * the adapter's optional `resolvePath` hook) so the second asset can't
+   * silently clobber the first, and deleting one can't destroy the other.
+   * The user must rename one of the colliding assets.
+   */
+  | {
+      code: 'ASSET_PATH_COLLISION'
+      adapter: string
+      path: string
+      existing: { facet: string; asset: LockfileAssetEntry }
+      incoming: { facet: string; asset: LockfileAssetEntry }
+    }
   | { code: 'FROZEN_WITH_DELTA' }
   /**
    * The install delta contains the same facet name in both `additions`
