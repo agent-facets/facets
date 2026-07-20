@@ -14,7 +14,7 @@
     "types": "tsgo --noEmit",
     "check": "bun turbo check",
     "test:scripts": "bun test scripts/",
-    "lint": "biome check .",
+    "lint": "biome check --error-on-warnings .",
     "format": "biome check --write --unsafe .",
     "seed:cli": "bun scripts/release-cli/seed.ts",
     "seed:adapters": "bun scripts/release/seed-adapters.ts",
