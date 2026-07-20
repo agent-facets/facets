@@ -7,12 +7,14 @@ jobs:
         branches:
           ignore:
             - main
-  - openapi-freshness:
-      # Advisory job: exits 1 when the vendored OpenAPI snapshot is
-      # older than STALENESS_THRESHOLD_DAYS (default 7). Produces a
-      # failed CircleCI status → red X on the PR. Not a blocker
-      # unless added to GitHub's required-checks list.
+  - registry-compatibility:
+      # Compatibility job: regenerates registry types from the LIVE
+      # registry OpenAPI spec and type-checks the monorepo against
+      # them. Fails only when the live schema is unevaluable or the
+      # type check fails — never on snapshot age or generated diffs.
+      # Not a blocker unless added to GitHub's required-checks list.
       context:
+        - turbo-cache
         - github
       filters:
         branches:

@@ -15,14 +15,15 @@ unauthenticated rate limit. With it, the limit is 5,000 req/hour per token.
 
 [mise-tokens]: https://mise.en.dev/dev-tools/github-tokens.html
 
-| Workflow      | Job                | Requires `github` context? |
-|---------------|--------------------|----------------------------|
-| `ci`          | `check`            | yes                        |
-| `ci`          | `main-pipeline`    | yes                        |
-| `release`     | `release`          | yes                        |
-| `release-cli` | `build-cli`        | yes                        |
-| `release-cli` | `publish-platform` | yes                        |
-| `release-cli` | `finalize-cli`     | yes                        |
+| Workflow      | Job                      | Requires `github` context? |
+|---------------|--------------------------|----------------------------|
+| `ci`          | `check`                  | yes                        |
+| `ci`          | `registry-compatibility` | yes                        |
+| `ci`          | `main-pipeline`          | yes                        |
+| `release`     | `release`                | yes                        |
+| `release-cli` | `build-cli`              | yes                        |
+| `release-cli` | `publish-platform`       | yes                        |
+| `release-cli` | `finalize-cli`           | yes                        |
 
 If a future job adds `setup-mise` without attaching the `github` context, it will fail loudly
 on the `Install tools` step with `mise WARN GitHub rate limit exceeded` once CircleCI's IP
@@ -94,7 +95,16 @@ Two packed CircleCI configs, one per pipeline dir.
 
 ### `development/` — CI
 
-PR-time checks. Workflows: `ci` (runs `check` on non-main branches, runs `main-pipeline` on main).
+PR-time checks. Workflows: `ci` (runs `check` and `registry-compatibility` on non-main branches, runs `main-pipeline` on main).
+
+`registry-compatibility` is the live-registry type-compatibility job: it
+fetches the deployed registry's OpenAPI spec (network dependency), regenerates
+the engine's registry types in the ephemeral checkout, and runs
+`bun turbo types` across the whole monorepo (hence the `turbo-cache` context
+in addition to `github`). It fails when the live schema is unevaluable
+(fetch/validate/codegen error) or when any type check fails — never on
+snapshot age or diffs against the committed generated files, which are
+discarded with the checkout.
 
 ### `release/` — CD
 

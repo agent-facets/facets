@@ -152,13 +152,18 @@ Wire errors become structured `RegistryError` values via
 `NOT_FOUND`, `NETWORK_ERROR` (with `attempts` count),
 `REGISTRY_NOT_AVAILABLE`, `UNEXPECTED_ERROR`.
 
-A CircleCI advisory job (`openapi-snapshot-freshness` in
-`.circleci/development/jobs/`) verifies the snapshot's
-`Generated-At` is no more than `STALENESS_THRESHOLD_DAYS` (default
-`7`) old. Stale snapshots produce a failed CircleCI status and a
-red X on the PR; the check is advisory and does not block merge by
-default. Add the job to GitHub branch protection if you want
-hard-block behavior.
+A CircleCI job (`registry-compatibility` in
+`.circleci/development/jobs/`) checks compatibility against the
+**live** registry: it runs `codegen:registry` against the deployed
+registry's OpenAPI spec (a network dependency), regenerates the
+types in the ephemeral CI checkout, and runs `bun turbo types`
+across the full monorepo. It fails when the live schema can't be
+fetched/validated/generated or when any type check fails. Snapshot
+age and diffs against the committed generated files are not failure
+conditions — the regenerated output is discarded with the checkout,
+and the committed snapshot remains authoritative for deterministic
+offline builds. The check does not block merge by default; add the
+job to GitHub branch protection if you want hard-block behavior.
 
 ## Bun runtime
 

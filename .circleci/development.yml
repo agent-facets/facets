@@ -90,15 +90,18 @@ jobs:
           command: bun scripts/release/tag.ts
           name: Tag Release
       - notify-failure
-  openapi-freshness:
+  registry-compatibility:
     docker:
       - image: cimg/base:current
-    resource_class: small
+    resource_class: medium
     steps:
       - setup-mise
       - run:
-          command: bun run --cwd packages/engine codegen:registry --check --strict
-          name: OpenAPI snapshot freshness
+          command: bun run --cwd packages/engine codegen:registry
+          name: Sync live registry OpenAPI spec
+      - run:
+          command: bun turbo types
+          name: Type-check against live registry types
   release:
     docker:
       - image: cimg/base:current
@@ -129,8 +132,9 @@ workflows:
             branches:
               ignore:
                 - main
-      - openapi-freshness:
+      - registry-compatibility:
           context:
+            - turbo-cache
             - github
           filters:
             branches:

@@ -1,0 +1,21 @@
+docker:
+  - image: cimg/base:current
+resource_class: medium
+steps:
+  - setup-mise
+  # Live-registry compatibility check. Fetches the registry's current
+  # OpenAPI spec, regenerates the engine's registry types in this
+  # ephemeral checkout, and type-checks the full monorepo against
+  # them. Fails when the live schema can't be fetched/validated/
+  # generated (unevaluable) or when any type check fails.
+  #
+  # Snapshot age and working-tree diffs are deliberately NOT failure
+  # conditions — the regenerated files are thrown away with the job's
+  # checkout. The committed snapshot stays authoritative for
+  # deterministic offline builds.
+  - run:
+      name: Sync live registry OpenAPI spec
+      command: bun run --cwd packages/engine codegen:registry
+  - run:
+      name: Type-check against live registry types
+      command: bun turbo types
