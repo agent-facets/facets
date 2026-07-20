@@ -1,7 +1,8 @@
 import type { Validated, ValidationError } from '@agent-facets/common'
 import { type } from 'arktype'
 import { type FacetManifest, FacetManifestSchema } from '../schemas/facet-manifest.ts'
-import { mapArkErrors, parseJson } from './validate.ts'
+import { type LegacyFacetManifest, LegacyFacetManifestSchema } from '../schemas/facet-manifest-legacy.ts'
+import { findDuplicateJsonMembers, mapArkErrors, parseJson } from './validate.ts'
 
 export const FACET_MANIFEST_FILE = 'facet.json'
 
@@ -59,7 +60,45 @@ export function validateFacetManifest(bytes: Uint8Array | string): Validated<Fac
     return jsonResult
   }
 
+  // Duplicate object members are rejected before schema validation:
+  // JSON.parse's last-member-wins collapse would otherwise let two parsers
+  // see different declarations in one document (protocol__schemas spec).
+  const duplicates = findDuplicateJsonMembers(text)
+  if (duplicates.length > 0) {
+    return { ok: false, errors: duplicates }
+  }
+
   const validated = FacetManifestSchema(jsonResult.data)
+  if (validated instanceof type.errors) {
+    return { ok: false, errors: mapArkErrors(validated) }
+  }
+
+  return { ok: true, data: validated }
+}
+
+/**
+ * Validates a facet manifest under the frozen legacy `0.1` rules
+ * (multi-segment asset names, no shared skill/command namespace, no
+ * supplementary declarations). Used only when verifying legacy `0.1`
+ * archives during the compatibility window — an invalid current-format
+ * manifest is never reinterpreted under these rules (design D4/D9).
+ */
+export function validateLegacyFacetManifest(bytes: Uint8Array | string): Validated<LegacyFacetManifest> {
+  const text = typeof bytes === 'string' ? bytes : new TextDecoder().decode(bytes)
+
+  const jsonResult = parseJson(text)
+  if (!jsonResult.ok) {
+    return jsonResult
+  }
+
+  // Same duplicate-member rejection as the current validator — parser
+  // collapse is a smuggling vector regardless of format version.
+  const duplicates = findDuplicateJsonMembers(text)
+  if (duplicates.length > 0) {
+    return { ok: false, errors: duplicates }
+  }
+
+  const validated = LegacyFacetManifestSchema(jsonResult.data)
   if (validated instanceof type.errors) {
     return { ok: false, errors: mapArkErrors(validated) }
   }

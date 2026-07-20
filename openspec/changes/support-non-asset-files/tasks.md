@@ -16,25 +16,25 @@
 
 ## 1. Protocol Models and Archive Plan — Research
 
-- [ ] 1.1 Explore: Inspect the current facet, build-manifest, lockfile, and asset-name schemas and identify every current-versus-legacy validation call site
-- [ ] 1.2 Explore: Trace archive membership, path validation, collision detection, and per-entry hashing across protocol and engine build code
-- [ ] 1.3 Explore: Inspect protocol public exports, version constants, fixtures, and schema tests that constrain compatibility
-- [ ] 1.4 Propose: Define the protocol model for exact supplementary declarations, tagged archive-plan entries, version dispatch, and structured validation failures
+- [x] 1.1 Explore: Inspect the current facet, build-manifest, lockfile, and asset-name schemas and identify every current-versus-legacy validation call site
+- [x] 1.2 Explore: Trace archive membership, path validation, collision detection, and per-entry hashing across protocol and engine build code
+- [x] 1.3 Explore: Inspect protocol public exports, version constants, fixtures, and schema tests that constrain compatibility
+- [x] 1.4 Propose: Define the protocol model for exact supplementary declarations, tagged archive-plan entries, version dispatch, and structured validation failures
 
 ## 2. Protocol Models and Archive Plan — Implementation
 
-- [ ] 2.1 Implement: Add top-level and per-skill exact `files` declarations, current single-segment asset-name validation, and the shared skill/command namespace while isolating legacy `0.1` naming behavior
-- [ ] 2.2 Implement: Add one pure archive-plan operation that classifies manifest, primary-asset, skill-companion, and archive-only entries and enforces the complete path-safety and collision grammar, including Windows-portable component rules (reserved device names, forbidden characters, control bytes, trailing dot/space)
-- [ ] 2.3 Implement: Add separate archive-format and lockfile-format constants plus exact versioned build-manifest schemas for legacy `0.1` `assets` and current `0.2` `files`, pinning numeric `facetVersion: 0.2` and the exact `archive: "archive.tar.gz"` literal, and rejecting duplicate JSON object members in facet manifests, build manifests, and lockfiles before schema validation
-- [ ] 2.4 Implement: Add the lockfile `0.2` schema with deterministic per-asset file-integrity records and exact legacy-alpha-`1` versus current-`0.2` dispatch
-- [ ] 2.5 Implement: Curate protocol exports and add focused schema, name, archive-plan, collision, version-dispatch, and lockfile tests for all legal and illegal states
-- [ ] 2.6 Verify: Run the focused protocol typecheck and test suites for schemas and archive planning
+- [x] 2.1 Implement: Add top-level and per-skill exact `files` declarations, current single-segment asset-name validation, and the shared skill/command namespace while isolating legacy `0.1` naming behavior
+- [x] 2.2 Implement: Add one pure archive-plan operation that classifies manifest, primary-asset, skill-companion, and archive-only entries and enforces the complete path-safety and collision grammar, including Windows-portable component rules (reserved device names, forbidden characters, control bytes, trailing dot/space)
+- [x] 2.3 Implement: Add separate archive-format and lockfile-format constants plus exact versioned build-manifest schemas for legacy `0.1` `assets` and current `0.2` `files`, pinning numeric `facetVersion: 0.2` and the exact `archive: "archive.tar.gz"` literal, and rejecting duplicate JSON object members in facet manifests, build manifests, and lockfiles before schema validation
+- [x] 2.4 Implement: Add the lockfile `0.2` schema with deterministic per-asset file-integrity records and exact legacy-alpha-`1` versus current-`0.2` dispatch
+- [x] 2.5 Implement: Curate protocol exports and add focused schema, name, archive-plan, collision, version-dispatch, and lockfile tests for all legal and illegal states
+- [x] 2.6 Verify: Run the focused protocol typecheck and test suites for schemas and archive planning
 
 ## 3. Archive Verification and Consumer Bridge — Research
 
-- [ ] 3.1 Explore: Trace outer/inner tar parsing and identify where duplicate, aliased, unsafe, and non-regular headers can be rejected before path-keyed maps are built
-- [ ] 3.2 Explore: Trace archive verification, cache extraction/auditing, registry download, and engine loading from verified bytes through resolved facet data
-- [ ] 3.3 Explore: Inspect integrity result types and CLI failure rendering for path-specific mismatches, decompression refusal, and unsupported versions
+- [x] 3.1 Explore: Trace outer/inner tar parsing and identify where duplicate, aliased, unsafe, and non-regular headers can be rejected before path-keyed maps are built
+- [x] 3.2 Explore: Trace archive verification, cache extraction/auditing, registry download, and engine loading from verified bytes through resolved facet data
+- [x] 3.3 Explore: Inspect integrity result types and CLI failure rendering for path-specific mismatches, decompression refusal, and unsupported versions
 - [ ] 3.4 Propose: Define the consumer-first bridge approach for strict `0.1`/`0.2` dispatch, tagged verified content, immutable fixtures, and actionable failures without enabling `0.2` production
 
 ## 4. Archive Verification and Consumer Bridge — Implementation

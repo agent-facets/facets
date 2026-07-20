@@ -3,7 +3,7 @@ import { computeContentHash, INNER_ARCHIVE_NAME, parseFacetArchive, parseInnerAr
 import { detectNamingCollisions } from '../build/detect-collisions.ts'
 import { validateContentFiles } from '../build/validate-content.ts'
 import { validateCompactFacets } from '../build/validate-facets.ts'
-import { FACET_MANIFEST_FILE, resolvePromptsFromMap, validateFacetManifest } from '../loaders/facet.ts'
+import { FACET_MANIFEST_FILE, resolvePromptsFromMap, validateLegacyFacetManifest } from '../loaders/facet.ts'
 import type { BuildManifest } from '../schemas/build-manifest.ts'
 import type { FacetManifest } from '../schemas/facet-manifest.ts'
 import { verifyHash } from './verify.ts'
@@ -94,7 +94,10 @@ export interface VerifiedArchive {
  *      Failures surface as one `ValidationError` per asset, rooted at
  *      the in-archive path.
  *   6. Locate the inner archive's `facet.json` entry and validate it
- *      against the facet-manifest schema (via `validateFacetManifest`).
+ *      against the legacy `0.1` facet-manifest schema (via
+ *      `validateLegacyFacetManifest`) — this verifier currently handles
+ *      only legacy `0.1` archives, which retain legacy asset-name and
+ *      namespace rules during the compatibility window (design D9).
  *      Failures surface unchanged, with their `path` re-rooted at
  *      `FACET_MANIFEST_FILE`.
  *   7. Reconstruct a `ResolvedFacetManifest` from the inner-tar entries
@@ -272,7 +275,7 @@ export async function validateFacetArchive(
       ],
     }
   }
-  const facetResult = validateFacetManifest(facetManifestAsset.bytes)
+  const facetResult = validateLegacyFacetManifest(facetManifestAsset.bytes)
   if (!facetResult.ok) {
     return {
       ok: false,
