@@ -213,8 +213,13 @@ export function validateSupplementaryPath(declared: string, declarationSite: str
   return errors
 }
 
-/** Segment-wise collision key: canonical Unicode form + portable case fold. */
-function collisionKey(path: string): string {
+/**
+ * Portable collision key: canonical Unicode form (NFC) + case fold. Two
+ * paths with the same key collide on at least one supported filesystem.
+ * Shared by archive planning and raw tar-header validation so both layers
+ * agree on what "the same path" means.
+ */
+export function portableCollisionKey(path: string): string {
   return path.normalize('NFC').toLowerCase()
 }
 
@@ -339,7 +344,7 @@ export function planArchiveEntries(manifest: ArchivePlanInput): ArchivePlanResul
   const byKey = new Map<string, PlannedPath>()
   const accepted: PlannedPath[] = []
   for (const candidate of planned) {
-    const key = collisionKey(candidate.entry.path)
+    const key = portableCollisionKey(candidate.entry.path)
     const existing = byKey.get(key)
     if (!existing) {
       byKey.set(key, candidate)
@@ -376,11 +381,11 @@ export function planArchiveEntries(manifest: ArchivePlanInput): ArchivePlanResul
   for (const candidate of accepted) {
     const segments = candidate.entry.path.split('/')
     for (let i = 1; i < segments.length; i++) {
-      directoryKeys.set(collisionKey(segments.slice(0, i).join('/')), candidate)
+      directoryKeys.set(portableCollisionKey(segments.slice(0, i).join('/')), candidate)
     }
   }
   for (const candidate of accepted) {
-    const conflict = directoryKeys.get(collisionKey(candidate.entry.path))
+    const conflict = directoryKeys.get(portableCollisionKey(candidate.entry.path))
     if (conflict) {
       errors.push(
         planError(

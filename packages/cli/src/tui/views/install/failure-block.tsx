@@ -99,6 +99,12 @@ export function FailureBlock({ failure }: { failure: RunInstallFailure }): React
             </Text>
           ) : null}
           {failure.error.code === 'NETWORK_ERROR' ? <Text> network: {failure.error.cause}</Text> : null}
+          {failure.error.code === 'UNSUPPORTED_ARCHIVE' ? (
+            <Text>
+              {' '}
+              archive format {failure.error.observed ?? '(unknown)'} is not supported by this CLI — update agent-facets
+            </Text>
+          ) : null}
         </Box>
       )
     case 'CONFIRMATION_UNAVAILABLE':

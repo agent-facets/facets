@@ -301,7 +301,13 @@ describe('cachePutVerified', () => {
       'skills/foo/SKILL.md': '# foo skill',
     })
 
-    const result = cachePutVerified(id, staging, manifest, manifest.integrity, 'p')
+    const result = cachePutVerified(
+      id,
+      staging,
+      { integrity: manifest.integrity, fileHashes: manifest.assets },
+      manifest.integrity,
+      'p',
+    )
 
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
@@ -327,7 +333,13 @@ describe('cachePutVerified', () => {
     const wrongHash = 'sha256:0000000000000000000000000000000000000000000000000000000000000000'
     manifest.assets['facet.json'] = wrongHash
 
-    const result = cachePutVerified(id, staging, manifest, manifest.integrity, 'p')
+    const result = cachePutVerified(
+      id,
+      staging,
+      { integrity: manifest.integrity, fileHashes: manifest.assets },
+      manifest.integrity,
+      'p',
+    )
 
     expect(result.ok).toBe(false)
     if (result.ok) expect.unreachable()
@@ -353,7 +365,13 @@ describe('cachePutVerified', () => {
     manifest.assets['skills/missing/SKILL.md'] =
       'sha256:1111111111111111111111111111111111111111111111111111111111111111'
 
-    const result = cachePutVerified(id, staging, manifest, manifest.integrity, 'p')
+    const result = cachePutVerified(
+      id,
+      staging,
+      { integrity: manifest.integrity, fileHashes: manifest.assets },
+      manifest.integrity,
+      'p',
+    )
 
     expect(result.ok).toBe(false)
     if (result.ok) expect.unreachable()
@@ -374,7 +392,13 @@ describe('cachePutVerified', () => {
     })
     const wrongComputed = computeContentHash('different-archive-bytes')
 
-    const result = cachePutVerified(id, staging, manifest, wrongComputed, 'p')
+    const result = cachePutVerified(
+      id,
+      staging,
+      { integrity: manifest.integrity, fileHashes: manifest.assets },
+      wrongComputed,
+      'p',
+    )
 
     expect(result.ok).toBe(false)
     if (result.ok) expect.unreachable()
@@ -399,7 +423,13 @@ describe('cachePutVerified', () => {
       'facet.json': '{"name":"p","version":"1.0.0"}',
     })
 
-    const result = cachePutVerified(id, staging, manifest, manifest.integrity, 'p')
+    const result = cachePutVerified(
+      id,
+      staging,
+      { integrity: manifest.integrity, fileHashes: manifest.assets },
+      manifest.integrity,
+      'p',
+    )
 
     expect(result.ok).toBe(false)
     if (result.ok) expect.unreachable()
@@ -420,7 +450,13 @@ describe('readCachedIntegrity', () => {
       'skills/foo/SKILL.md': '# foo skill',
     })
 
-    const result = cachePutVerified(id, staging, manifest, manifest.integrity, 'p')
+    const result = cachePutVerified(
+      id,
+      staging,
+      { integrity: manifest.integrity, fileHashes: manifest.assets },
+      manifest.integrity,
+      'p',
+    )
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
 
@@ -623,7 +659,13 @@ describe('cachePutVerified path traversal defense', () => {
       },
     }
 
-    const result = cachePutVerified(id, staging, manifest, manifest.integrity, 'traversal')
+    const result = cachePutVerified(
+      id,
+      staging,
+      { integrity: manifest.integrity, fileHashes: manifest.assets },
+      manifest.integrity,
+      'traversal',
+    )
 
     expect(result.ok).toBe(false)
     if (result.ok) expect.unreachable()
@@ -652,7 +694,13 @@ describe('cachePutVerified path traversal defense', () => {
       },
     }
 
-    const result = cachePutVerified(id, staging, manifest, manifest.integrity, 'abs-path')
+    const result = cachePutVerified(
+      id,
+      staging,
+      { integrity: manifest.integrity, fileHashes: manifest.assets },
+      manifest.integrity,
+      'abs-path',
+    )
 
     expect(result.ok).toBe(false)
     if (result.ok) expect.unreachable()
@@ -662,5 +710,37 @@ describe('cachePutVerified path traversal defense', () => {
     expect(result.integrity.observed).toBe('<unsafe-path>')
 
     rmSync(staging, { recursive: true, force: true })
+  })
+})
+
+describe('computeDirIntegrity — binary-safe recompute', () => {
+  test('recomputes hashes for opaque binary files without UTF-8 corruption', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dir-integrity-bin-'))
+    try {
+      // Bytes that are invalid UTF-8 (0xFF/0xFE never appear in valid UTF-8).
+      // Reading these as 'utf8' replaces them with U+FFFD, so a text-based
+      // recompute would not match the hash of the true bytes.
+      const binary = new Uint8Array([0x00, 0xff, 0xfe, 0x10, 0x80, 0x7f])
+      mkdirSync(join(dir, 'assets'), { recursive: true })
+      writeFileSync(join(dir, 'facet.json'), '{"name":"x","version":"1.0.0"}')
+      writeFileSync(join(dir, 'assets/logo.bin'), binary)
+
+      const result = computeDirIntegrity(dir, ['facet.json', 'assets/logo.bin'])
+      if (!result.ok) expect.unreachable()
+
+      // The per-file hash must equal the hash of the exact raw bytes, not the
+      // UTF-8-decoded string.
+      expect(result.assetHashes['assets/logo.bin']).toBe(computeContentHash(binary))
+
+      // The reconstructed-tar integrity must match a tar assembled from the
+      // exact bytes (what a verified 0.2 archive contains).
+      const entries = [
+        { path: 'assets/logo.bin', content: binary },
+        { path: 'facet.json', content: '{"name":"x","version":"1.0.0"}' },
+      ].sort((a, b) => (a.path < b.path ? -1 : 1))
+      expect(result.integrity).toBe(computeContentHash(assembleTar(entries)))
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

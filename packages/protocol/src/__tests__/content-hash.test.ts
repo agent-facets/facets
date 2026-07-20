@@ -237,15 +237,15 @@ describe('parseFacetArchive', () => {
 
   const innerArchiveBytes = new TextEncoder().encode('fake-inner-tar-bytes')
 
-  test('returns ok=true with validated manifest and inner bytes on a well-formed archive', () => {
+  test('returns ok=true with the version-tagged manifest and inner bytes on a well-formed archive', () => {
     const outer = assembleOuterTar(JSON.stringify(validBuildManifest), innerArchiveBytes)
 
     const result = parseFacetArchive(outer)
 
     if (!result.ok) expect.unreachable()
-    expect(result.data.buildManifest.integrity).toBe(validIntegrity)
-    expect(result.data.buildManifest.archive).toBe('archive.tar.gz')
-    expect(result.data.buildManifest.facetVersion).toBe(0.1)
+    if (result.data.manifest.facetVersion !== 0.1) expect.unreachable()
+    expect(result.data.manifest.manifest.integrity).toBe(validIntegrity)
+    expect(result.data.manifest.manifest.archive).toBe('archive.tar.gz')
     expect(new TextDecoder().decode(result.data.innerArchiveBytes)).toBe('fake-inner-tar-bytes')
   })
 
@@ -256,9 +256,10 @@ describe('parseFacetArchive', () => {
     const result = parseFacetArchive(onlyInner)
 
     if (result.ok) expect.unreachable()
-    expect(result.errors).toHaveLength(1)
-    expect(result.errors[0]?.path).toBe('build-manifest.json')
-    expect(result.errors[0]?.actual).toBe('missing')
+    if (result.failure.code !== 'container') expect.unreachable()
+    expect(result.failure.errors).toHaveLength(1)
+    expect(result.failure.errors[0]?.path).toBe('build-manifest.json')
+    expect(result.failure.errors[0]?.actual).toBe('missing')
   })
 
   test('returns ok=false when archive.tar.gz entry is missing', () => {
@@ -268,9 +269,10 @@ describe('parseFacetArchive', () => {
     const result = parseFacetArchive(onlyManifest)
 
     if (result.ok) expect.unreachable()
-    expect(result.errors).toHaveLength(1)
-    expect(result.errors[0]?.path).toBe('archive.tar.gz')
-    expect(result.errors[0]?.actual).toBe('missing')
+    if (result.failure.code !== 'container') expect.unreachable()
+    expect(result.failure.errors).toHaveLength(1)
+    expect(result.failure.errors[0]?.path).toBe('archive.tar.gz')
+    expect(result.failure.errors[0]?.actual).toBe('missing')
   })
 
   test('returns ok=false when build-manifest.json contains invalid JSON', () => {
@@ -279,23 +281,20 @@ describe('parseFacetArchive', () => {
     const result = parseFacetArchive(outer)
 
     if (result.ok) expect.unreachable()
-    expect(result.errors.length).toBeGreaterThan(0)
-    expect(result.errors[0]?.path).toBe('build-manifest.json')
-    expect(result.errors[0]?.message).toContain('JSON')
+    expect(result.failure.code).toBe('invalid-json')
   })
 
   test('returns ok=false when build-manifest.json fails the schema', () => {
-    // Missing `integrity` and `assets` — schema-invalid.
+    // Missing `integrity` and `assets` — schema-invalid under 0.1.
     const badManifest = { facetVersion: 0.1, archive: 'archive.tar.gz' }
     const outer = assembleOuterTar(JSON.stringify(badManifest), innerArchiveBytes)
 
     const result = parseFacetArchive(outer)
 
     if (result.ok) expect.unreachable()
-    expect(result.errors.length).toBeGreaterThan(0)
-    for (const err of result.errors) {
-      expect(err.path.startsWith('build-manifest.json')).toBe(true)
-    }
+    if (result.failure.code !== 'schema-violation') expect.unreachable()
+    expect(result.failure.facetVersion).toBe(0.1)
+    expect(result.failure.errors.length).toBeGreaterThan(0)
   })
 
   test('returns ok=false when integrity field has wrong format', () => {
@@ -310,21 +309,29 @@ describe('parseFacetArchive', () => {
     const result = parseFacetArchive(outer)
 
     if (result.ok) expect.unreachable()
-    expect(result.errors.length).toBeGreaterThan(0)
-    expect(result.errors.some((e) => e.path.startsWith('build-manifest.json'))).toBe(true)
+    expect(result.failure.code).toBe('schema-violation')
+  })
+
+  test('returns ok=false with structured data on an unsupported facetVersion', () => {
+    const futureManifest = { ...validBuildManifest, facetVersion: 0.3 }
+    const outer = assembleOuterTar(JSON.stringify(futureManifest), innerArchiveBytes)
+
+    const result = parseFacetArchive(outer)
+
+    if (result.ok) expect.unreachable()
+    if (result.failure.code !== 'unsupported-facet-version') expect.unreachable()
+    expect(result.failure.observed).toBe(0.3)
+    expect(result.failure.supported).toEqual([0.1, 0.2])
   })
 
   test('returns ok=false when outer-tar bytes are malformed (oversized header size)', () => {
-    // Without the try/catch in `parseFacetArchive`, this test crashes
-    // the suite with `RangeError: Length out of range of buffer`. With
-    // it, we get the documented `'<archive>'`-rooted error.
+    // The raw-header validator detects the over-claimed size before
+    // nanotar ever parses the buffer.
     const result = parseFacetArchive(buildMalformedTarBuffer())
 
     if (result.ok) expect.unreachable()
-    expect(result.errors).toHaveLength(1)
-    expect(result.errors[0]?.path).toBe('<archive>')
-    expect(result.errors[0]?.actual).toBe('malformed tar bytes')
-    expect(result.errors[0]?.message).toContain('not a valid tar file')
+    if (result.failure.code !== 'container') expect.unreachable()
+    expect(result.failure.errors.length).toBeGreaterThan(0)
   })
 })
 

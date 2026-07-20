@@ -7,6 +7,14 @@ export type {
   IntegrityResult,
   RegistryIntegrityInput,
 } from './types.ts'
-export type { GunzipFn, GunzipResult, VerifiedArchive, VerifiedAsset } from './validate-archive.ts'
-export { validateFacetArchive } from './validate-archive.ts'
+export type {
+  ArchiveVerificationFailure,
+  GunzipFn,
+  GunzipResult,
+  ValidateFacetArchiveResult,
+  VerifiedAsset,
+  VerifiedEntry,
+  VerifiedFacetArchive,
+} from './validate-archive.ts'
+export { listVerifiedFiles, validateFacetArchive, verifiedFileHashes } from './validate-archive.ts'
 export { verifyGitOneCheck, verifyHash, verifyLockfileOneCheck, verifyRegistryThreeCheck } from './verify.ts'

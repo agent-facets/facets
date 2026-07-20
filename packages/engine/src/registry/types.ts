@@ -69,6 +69,10 @@ export interface RegistrySpec {
  *   - `UNEXPECTED_ERROR`: a thrown error that wasn't a recognized
  *     network failure shape. Surfaces honestly rather than being
  *     silently relabeled as a network error (per design D11).
+ *   - `UNSUPPORTED_ARCHIVE`: the downloaded archive declares a
+ *     `facetVersion` this CLI cannot verify. Carries the observed and
+ *     supported versions so the CLI can render upgrade guidance from
+ *     its compatibility table.
  */
 export type RegistryError =
   | { code: 'REGISTRY_REJECTED'; wireCode: string; error: string; fix: string; docsUrl: string }
@@ -76,6 +80,7 @@ export type RegistryError =
   | { code: 'NOT_FOUND'; name: string; spec: string }
   | { code: 'NETWORK_ERROR'; cause: string; attempts: number }
   | { code: 'UNEXPECTED_ERROR'; cause: string }
+  | { code: 'UNSUPPORTED_ARCHIVE'; observed: number | undefined; supported: readonly number[] }
 
 /**
  * Result type for registry operations. Discriminated by `ok`.

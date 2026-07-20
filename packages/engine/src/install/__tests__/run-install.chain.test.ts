@@ -82,7 +82,8 @@ mock.module('../../registry/download.ts', () => ({
       return { ok: false, error: { code: 'NETWORK_ERROR', cause: `no fixture for ${meta.version}`, attempts: 1 } }
     }
     cpSync(fixture, dest, { recursive: true })
-    return { ok: true, value: await manifestFor(fixture) }
+    const manifest = await manifestFor(fixture)
+    return { ok: true, value: { integrity: manifest.integrity, fileHashes: manifest.assets } }
   },
 }))
 
@@ -129,7 +130,13 @@ function seedRegistrySlot(name: string, version: string): { slotPath: string; in
     integrity: computed.integrity,
     assets: computed.assetHashes,
   }
-  const put = cachePutVerified({ kind: 'registry', name, version }, staging, manifest, computed.integrity, name)
+  const put = cachePutVerified(
+    { kind: 'registry', name, version },
+    staging,
+    { integrity: manifest.integrity, fileHashes: manifest.assets },
+    computed.integrity,
+    name,
+  )
   if (!put.ok) throw new Error('test bug: seeding cache slot failed')
   return { slotPath: put.path, integrity: computed.integrity, fixture }
 }

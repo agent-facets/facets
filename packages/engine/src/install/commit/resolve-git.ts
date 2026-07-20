@@ -136,7 +136,15 @@ export async function resolveGitFacet(args: ResolveGitFacetArgs): Promise<Resolv
       // content lives in a durable slot.
       const buildManifest = JSON.parse(buildResult.manifestJson) as BuildManifest
       const cacheId: CacheIdentity = { kind: 'git', name: facetName, version: buildResult.data.version }
-      const putResult = cachePutVerified(cacheId, sourceDir, buildManifest, buildResult.integrity, facetName)
+      const putResult = cachePutVerified(
+        cacheId,
+        sourceDir,
+        // The producer still emits legacy 0.1 manifests during the
+        // consumer bridge, so the per-entry hash map is `assets`.
+        { integrity: buildManifest.integrity, fileHashes: buildManifest.assets },
+        buildResult.integrity,
+        facetName,
+      )
       if (!putResult.ok) {
         if ('corruption' in putResult) {
           return {
