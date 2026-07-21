@@ -1,0 +1,58 @@
+{
+  "change": "add-adapter-api-version-negotiation",
+  "schema": "spec-driven",
+  "entries": {
+    "proposal": {
+      "artifactId": "proposal",
+      "mainPaths": ["proposal.md"],
+      "adversarialPaths": ["adversarial/artifacts/proposal.md"],
+      "reviewPath": "adversarial/reviews/proposal-review.md",
+      "dependencies": [],
+      "status": "reconciled",
+      "authoredAt": "2026-07-21T22:38:45Z",
+      "comparedAt": "2026-07-21T22:39:58Z",
+      "reconciledAt": "2026-07-21T22:43:59Z",
+      "notes": "Adopted exact-equality semantics, no-compatible-release diagnostics, the BREAKING marker, and adapter-list compatibility output; retained the main strategic Why and explicit Git/local handling instead of the incident-led framing."
+    },
+    "design": {
+      "artifactId": "design",
+      "mainPaths": ["design.md"],
+      "adversarialPaths": ["adversarial/artifacts/design.md"],
+      "reviewPath": "adversarial/reviews/design-review.md",
+      "dependencies": ["proposal"],
+      "status": "reconciled",
+      "authoredAt": "2026-07-21T23:20:00Z",
+      "comparedAt": "2026-07-21T23:34:00Z",
+      "reconciledAt": "2026-07-21T23:13:24Z",
+      "notes": "Adopted the full-packument rationale and clarified npm package-integrity provenance; rejected placed-bundle hashing, installedAt, and a Context file inventory as unconsumed or unnecessary scope."
+    },
+    "specs": {
+      "artifactId": "specs",
+      "mainPaths": ["specs/adapter__management/spec.md", "specs/adapter__sdk/spec.md", "specs/installation/spec.md"],
+      "adversarialPaths": [
+        "adversarial/artifacts/specs/adapter__management/spec.md",
+        "adversarial/artifacts/specs/adapter__sdk/spec.md",
+        "adversarial/artifacts/specs/installation/spec.md"
+      ],
+      "reviewPath": "adversarial/reviews/specs-review.md",
+      "dependencies": ["proposal"],
+      "status": "reconciled",
+      "authoredAt": "2026-07-22T00:25:00Z",
+      "comparedAt": "2026-07-22T00:31:00Z",
+      "reconciledAt": "2026-07-22T00:27:05Z",
+      "notes": "Adopted package-version independence, split atomic replacement from provenance, added corrected Git/local provenance, defined broken installations, and added the compatible-operation path; retained facet-removal compatibility gating because deletion invokes adapter methods while remaining cache- and network-independent."
+    },
+    "tasks": {
+      "artifactId": "tasks",
+      "mainPaths": ["tasks.md"],
+      "adversarialPaths": ["adversarial/artifacts/tasks.md"],
+      "reviewPath": "adversarial/reviews/tasks-review.md",
+      "dependencies": ["specs", "design"],
+      "status": "reconciled",
+      "authoredAt": "2026-07-22T00:52:00Z",
+      "comparedAt": "2026-07-22T01:02:00Z",
+      "reconciledAt": "2026-07-22T00:49:32Z",
+      "notes": "Retained the main VIPER structure, fixture migration, install-service detail, rollout, and integrated audit; adopted selective path grounding, split broad install-service and consumer-gate explores, and added explicit latest/dist-tag, conditional exact-metadata equivalence, and no-adapters build coverage."
+    }
+  }
+}
