@@ -80,7 +80,7 @@ Version selectors use the Facet grammar: exact `1.2.3`, major wildcard `1.*`, mi
 
 ## Compatible resolution
 
-Every adapter declares the adapter API contract it was built against, and each CLI release supports an exact set of adapter APIs (currently `0.0`). For npm installs, the CLI reads the package's version metadata (the `facetAdapterApiVersion` field each release publishes) and selects the **highest stable release** that both satisfies your version selector and declares a supported API:
+Every adapter declares the adapter API contract it was built against, and each CLI release supports an exact set of adapter APIs (currently `0.1`, the tagged request/result contract). A CLI that supports only `0.1` treats an adapter still declaring the earlier positional `0.0` as unsupported; an older `0.0` CLI conversely keeps selecting the highest compatible `0.0` release, so the two lines advance independently. For npm installs, the CLI reads the package's version metadata (the `facetAdapterApiVersion` field each release publishes) and selects the **highest stable release** that both satisfies your version selector and declares a supported API:
 
 - A bare name, `*`, or `latest` selects the highest compatible release — independent of npm's `latest` dist-tag.
 - A wildcard selector (`1.*`, `1.2.*`) selects the highest compatible release in the range.

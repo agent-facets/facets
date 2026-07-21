@@ -13,14 +13,15 @@ Lists all installed adapters by inspecting the adapter base directory, `$FACET_D
 
 ```text
 Installed adapters:
-  claude-code  api 0.0      supported
+  claude-code  api 0.1      supported
+  codex        api 0.0      unsupported — reinstall: facet adapter install codex
   opencode     api missing  unsupported — reinstall: facet adapter install opencode
   my-tool      api unknown  broken (bundle failed to load) — reinstall: facet adapter install my-tool
 ```
 
 ## Output columns
 
-- **API** — the adapter's declared adapter API (`api 0.0`), or `api missing` (no declaration — typically a bundle installed before API versioning), `api malformed ("…")` (a declaration that isn't a valid API identifier), or `api unknown` (the bundle could not be read).
+- **API** — the adapter's declared adapter API (`api 0.1`), or `api missing` (no declaration — typically a bundle installed before API versioning), `api malformed ("…")` (a declaration that isn't a valid API identifier), or `api unknown` (the bundle could not be read). An adapter declaring the earlier positional `0.0` is shown as `api 0.0` with an `unsupported` status — rebuild it against a `0.1` SDK release and reinstall.
 - **Status** — `supported` (usable by this CLI), `unsupported — reinstall: <command>` (the adapter's API declaration is missing, malformed, or names an API this CLI does not support), or `broken (<reason>) — reinstall: <command>` (invalid installation metadata, a missing active bundle, or a bundle that failed to load).
 
 Listing stays available when entries are incompatible or broken — run it to find the best available `facet adapter install <specifier>` command next to each failing entry.

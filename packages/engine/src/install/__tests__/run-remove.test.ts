@@ -98,9 +98,29 @@ export default {
   apiVersion: '${ADAPTER_API_VERSION}',
   supportsInstall: true,
   buildAssetMetadata(data) { return { ok: true, data: data || {} } },
-  async installAsset(scope, type, name, content, metadata) { await installAssetFile({ file: path(type, name) }, content, metadata) },
-  async readAsset(scope, type, name) { return readAssetFile({ file: path(type, name) }) },
-  async deleteAsset(scope, type, name) { await deleteAssetFile({ file: path(type, name) }) },
+  async installAsset(req) {
+    const file = path(req.assetType, req.name)
+    await installAssetFile({ file }, req.content, req.metadata)
+    return { ok: true, primaryPath: file }
+  },
+  async readAsset(req) {
+    try {
+      const r = await readAssetFile({ file: path(req.assetType, req.name) })
+      return {
+        ok: true,
+        asset: req.assetType === 'skill'
+          ? { assetType: 'skill', content: r.content, metadata: r.metadata, companions: {} }
+          : { assetType: req.assetType, content: r.content, metadata: r.metadata },
+      }
+    } catch {
+      return { ok: false, failure: { code: 'not-found' } }
+    }
+  },
+  async deleteAsset(req) {
+    const file = path(req.assetType, req.name)
+    await deleteAssetFile({ file })
+    return { ok: true, existed: true, deletedPaths: [file] }
+  },
 }
 `,
   )
@@ -360,6 +380,38 @@ describe('runRemove — adapter compatibility is not bypassed', () => {
 
     // Nothing was deleted: the materialized asset survives and every
     // project file is byte-for-byte unchanged.
+    expect(existsSync(assetPath('test-adapter', 'cowsay'))).toBe(true)
+    expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(before.facets)
+    expect(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')).toBe(before.lock)
+    expect(readFileSync(receiptPath(projectRoot), 'utf8')).toBe(before.receipt)
+  })
+
+  test('a superseded positional 0.0 adapter blocks removal before deleting anything', async () => {
+    // The cutover applies to removal too: a 0.0 adapter is unsupported by
+    // a 0.1-only CLI, so removal fails before any asset deletion or write.
+    await installFacet('cowsay', '0.1.1')
+    expect(existsSync(assetPath('test-adapter', 'cowsay'))).toBe(true)
+    const { receiptPath } = await import('../receipt.ts')
+    const before = {
+      facets: readFileSync(join(projectRoot, 'facets.json'), 'utf8'),
+      lock: readFileSync(join(projectRoot, 'facets.lock'), 'utf8'),
+      receipt: readFileSync(receiptPath(projectRoot), 'utf8'),
+    }
+
+    const result = await runRemove({
+      projectRoot,
+      names: ['cowsay'],
+      adapters: [incompatibleAdapter('legacy-positional', '0.0')],
+    })
+
+    if (result.ok) expect.unreachable()
+    if (result.phase !== 'install') expect.unreachable()
+    if (result.install.failure.code !== 'ADAPTER_INCOMPATIBLE') expect.unreachable()
+    expect(result.install.failure.failures).toEqual([
+      { kind: 'api-unsupported', adapter: 'legacy-positional', found: '0.0', supported: [ADAPTER_API_VERSION] },
+    ])
+
+    // Nothing deleted; every project file byte-for-byte unchanged.
     expect(existsSync(assetPath('test-adapter', 'cowsay'))).toBe(true)
     expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(before.facets)
     expect(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')).toBe(before.lock)

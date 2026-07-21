@@ -41,24 +41,28 @@ export function defineAdapter(definition: AdapterDefinition): Adapter {
 
     buildAssetMetadata: definition.buildAssetMetadata.bind(definition),
 
-    // CRUD stubs — full implementations deferred to install pipeline
+    // CRUD stubs — adapters that omit an operation return a structured
+    // not-implemented failure instead of throwing (errors are values).
     installAsset:
       definition.installAsset?.bind(definition) ??
-      (async () => {
-        throw new Error(`Adapter "${definition.name}" does not implement installAsset`)
-      }),
+      (async () => ({
+        ok: false as const,
+        failure: { code: 'not-implemented' as const, method: 'installAsset' as const },
+      })),
 
     readAsset:
       definition.readAsset?.bind(definition) ??
-      (async () => {
-        throw new Error(`Adapter "${definition.name}" does not implement readAsset`)
-      }),
+      (async () => ({
+        ok: false as const,
+        failure: { code: 'not-implemented' as const, method: 'readAsset' as const },
+      })),
 
     deleteAsset:
       definition.deleteAsset?.bind(definition) ??
-      (async () => {
-        throw new Error(`Adapter "${definition.name}" does not implement deleteAsset`)
-      }),
+      (async () => ({
+        ok: false as const,
+        failure: { code: 'not-implemented' as const, method: 'deleteAsset' as const },
+      })),
   }
 
   return Object.freeze(adapter)

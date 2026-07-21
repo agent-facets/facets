@@ -21,8 +21,8 @@ describe('compatibilityFailureMessage — per-adapter JSON error identity', () =
     // Substring-adjacent names ("code" ⊂ "claude-code") would mispair
     // under any .includes()-based matching; the per-failure renderer must not.
     const failures: AdapterCompatibilityFailure[] = [
-      { kind: 'api-missing', adapter: 'code', supported: ['0.0'] },
-      { kind: 'api-unsupported', adapter: 'claude-code', found: '9.9', supported: ['0.0'] },
+      { kind: 'api-missing', adapter: 'code', supported: ['0.1'] },
+      { kind: 'api-unsupported', adapter: 'claude-code', found: '9.9', supported: ['0.1'] },
     ]
     const rows = failures.map((failure) => ({
       message: compatibilityFailureMessage(failure),
@@ -52,7 +52,7 @@ function noCompatibleReleaseFailure(
         reason: 'no-compatible-release',
         packageName: 'pkg',
         request,
-        supported: ['0.0'],
+        supported: ['0.1'],
         ...(newestConsidered ? { newestConsidered } : {}),
       },
     },
@@ -119,7 +119,7 @@ describe('describeCompatibilityFailure — install target', () => {
       kind: 'api-unsupported',
       adapter: 'future-adapter',
       found: '9.9',
-      supported: ['0.0'],
+      supported: ['0.1'],
     })
     expect(described.fix).toContain('facet adapter install future-adapter')
   })
@@ -129,7 +129,7 @@ describe('describeCompatibilityFailure — install target', () => {
       {
         kind: 'api-missing',
         adapter: '/tmp/facet-adapter-verify-abc123/adapter.mjs',
-        supported: ['0.0'],
+        supported: ['0.1'],
       },
       'my-adapter',
     )
@@ -149,7 +149,7 @@ describe('describeAdapterInstallFailure — nameless bundle verify failure', () 
         bundlePath,
         // Nameless bundle: verification falls back to the bundle path
         // as the adapter identity.
-        failure: { kind: 'api-missing', adapter: bundlePath, supported: ['0.0'] },
+        failure: { kind: 'api-missing', adapter: bundlePath, supported: ['0.1'] },
       },
     }
     const described = describeAdapterInstallFailure(failure)

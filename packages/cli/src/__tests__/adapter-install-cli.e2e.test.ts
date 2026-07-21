@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
 
 /**
  * End-to-end integration tests that spawn the compiled `./dist/facet` binary
@@ -558,7 +559,7 @@ describe('facet adapter list — inspection-backed output', () => {
       const listResult = await runCli(['adapter', 'list'], { FACET_DIR: facetDir })
       expect(listResult.exitCode).toBe(0)
       expect(listResult.stdout).toContain('opencode')
-      expect(listResult.stdout).toContain('api 0.0')
+      expect(listResult.stdout).toContain(`api ${ADAPTER_API_VERSION}`)
       expect(listResult.stdout).toContain('supported')
     } finally {
       await rm(facetDir, { recursive: true, force: true })

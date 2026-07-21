@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ADAPTER_API_VERSION } from '@agent-facets/adapter'
@@ -22,10 +22,8 @@ describe('opencode adapter — identity', () => {
 describe('opencode adapter — buildAssetMetadata', () => {
   test('accepts valid metadata', () => {
     const result = adapter.buildAssetMetadata({ tools: { grep: true, bash: false }, model: 'gpt-4' })
-    expect(result.ok).toBe(true)
-    if (result.ok) {
-      expect(result.data).toEqual({ tools: { grep: true, bash: false }, model: 'gpt-4' })
-    }
+    if (!result.ok) expect.unreachable()
+    expect(result.data).toEqual({ tools: { grep: true, bash: false }, model: 'gpt-4' })
   })
 
   test('accepts empty metadata', () => {
@@ -45,18 +43,14 @@ describe('opencode adapter — buildAssetMetadata', () => {
 
   test('accepts command frontmatter: agent + subtask', () => {
     const result = adapter.buildAssetMetadata({ agent: 'opencode-adversary', subtask: true })
-    expect(result.ok).toBe(true)
-    if (result.ok) {
-      expect(result.data).toEqual({ agent: 'opencode-adversary', subtask: true })
-    }
+    if (!result.ok) expect.unreachable()
+    expect(result.data).toEqual({ agent: 'opencode-adversary', subtask: true })
   })
 
   test('accepts agent frontmatter: mode subagent', () => {
     const result = adapter.buildAssetMetadata({ mode: 'subagent' })
-    expect(result.ok).toBe(true)
-    if (result.ok) {
-      expect(result.data).toEqual({ mode: 'subagent' })
-    }
+    if (!result.ok) expect.unreachable()
+    expect(result.data).toEqual({ mode: 'subagent' })
   })
 
   test('accepts scoped permission block (string shorthand + nested glob object)', () => {
@@ -93,31 +87,68 @@ describe('opencode adapter — project-scope I/O round-trip', () => {
   })
 
   test('skill installs at .opencode/skills/<name>/SKILL.md', async () => {
-    await adapter.installAsset('project', 'skill', 'viper-plans/planning', '# plan', {})
-    const path = join(workDir, '.opencode/skills/viper-plans/planning/SKILL.md')
-    expect(readFileSync(path, 'utf8')).toBe('# plan')
+    const result = await adapter.installAsset({
+      assetType: 'skill',
+      scope: 'project',
+      name: 'planning',
+      content: '# plan',
+      metadata: {},
+      companions: {},
+      ownedCompanionPaths: [],
+    })
+    if (!result.ok) expect.unreachable()
+    expect(readFileSync(join(workDir, '.opencode/skills/planning/SKILL.md'), 'utf8')).toBe('# plan')
+  })
+
+  test('skill installs companions below the skill root', async () => {
+    const result = await adapter.installAsset({
+      assetType: 'skill',
+      scope: 'project',
+      name: 'planning',
+      content: '# plan',
+      metadata: {},
+      companions: { 'scripts/run.ts': new TextEncoder().encode('console.log(1)') },
+      ownedCompanionPaths: [],
+    })
+    if (!result.ok) expect.unreachable()
+    expect(readFileSync(join(workDir, '.opencode/skills/planning/scripts/run.ts'), 'utf8')).toBe('console.log(1)')
   })
 
   test('agent installs at .opencode/agents/<name>.md', async () => {
-    await adapter.installAsset('project', 'agent', 'viper-plans/reviewer', 'agent body', {})
-    const path = join(workDir, '.opencode/agents/viper-plans/reviewer.md')
-    expect(readFileSync(path, 'utf8')).toBe('agent body')
+    const result = await adapter.installAsset({
+      assetType: 'agent',
+      scope: 'project',
+      name: 'reviewer',
+      content: 'agent body',
+      metadata: {},
+    })
+    if (!result.ok) expect.unreachable()
+    expect(readFileSync(join(workDir, '.opencode/agents/reviewer.md'), 'utf8')).toBe('agent body')
   })
 
   test('command installs at .opencode/commands/<name>.md', async () => {
-    await adapter.installAsset('project', 'command', 'viper-plans/plan', 'command body', {})
-    const path = join(workDir, '.opencode/commands/viper-plans/plan.md')
-    expect(readFileSync(path, 'utf8')).toBe('command body')
+    const result = await adapter.installAsset({
+      assetType: 'command',
+      scope: 'project',
+      name: 'plan',
+      content: 'command body',
+      metadata: {},
+    })
+    if (!result.ok) expect.unreachable()
+    expect(readFileSync(join(workDir, '.opencode/commands/plan.md'), 'utf8')).toBe('command body')
   })
 
   test('writes YAML front-matter with name + description + adapter extras', async () => {
-    await adapter.installAsset('project', 'skill', 'viper-plans/planning', '# plan', {
+    await adapter.installAsset({
+      assetType: 'skill',
+      scope: 'project',
       name: 'planning',
-      description: 'plan things',
-      model: 'sonnet',
+      content: '# plan',
+      metadata: { name: 'planning', description: 'plan things', model: 'sonnet' },
+      companions: {},
+      ownedCompanionPaths: [],
     })
-    const path = join(workDir, '.opencode/skills/viper-plans/planning/SKILL.md')
-    const raw = readFileSync(path, 'utf8')
+    const raw = readFileSync(join(workDir, '.opencode/skills/planning/SKILL.md'), 'utf8')
     expect(raw).toContain('name: planning')
     expect(raw).toContain('description: plan things')
     expect(raw).toContain('model: sonnet')
@@ -125,69 +156,129 @@ describe('opencode adapter — project-scope I/O round-trip', () => {
   })
 
   test('agent installs with mode: subagent front-matter and round-trips', async () => {
-    await adapter.installAsset('project', 'agent', 'openspec-adversary/adversary', 'agent body', {
+    await adapter.installAsset({
+      assetType: 'agent',
+      scope: 'project',
       name: 'adversary',
-      description: 'adversary subagent',
-      mode: 'subagent',
+      content: 'agent body',
+      metadata: { name: 'adversary', description: 'adversary subagent', mode: 'subagent' },
     })
-    const path = join(workDir, '.opencode/agents/openspec-adversary/adversary.md')
-    const raw = readFileSync(path, 'utf8')
+    const raw = readFileSync(join(workDir, '.opencode/agents/adversary.md'), 'utf8')
     expect(raw).toContain('mode: subagent')
     expect(raw).toContain('agent body')
 
-    const result = await adapter.readAsset('project', 'agent', 'openspec-adversary/adversary')
-    expect(result.content.trim()).toBe('agent body')
-    expect(result.metadata).toEqual({ name: 'adversary', description: 'adversary subagent', mode: 'subagent' })
+    const result = await adapter.readAsset({ assetType: 'agent', scope: 'project', name: 'adversary' })
+    if (!result.ok) expect.unreachable()
+    expect(result.asset.content.trim()).toBe('agent body')
+    expect(result.asset.metadata).toEqual({ name: 'adversary', description: 'adversary subagent', mode: 'subagent' })
   })
 
   test('command installs with agent + subtask front-matter', async () => {
-    await adapter.installAsset('project', 'command', 'openspec-adversary/run-adversary', 'command body', {
+    await adapter.installAsset({
+      assetType: 'command',
+      scope: 'project',
       name: 'run-adversary',
-      description: 'authoring half',
-      agent: 'opencode-adversary',
-      subtask: true,
+      content: 'command body',
+      metadata: { name: 'run-adversary', description: 'authoring half', agent: 'opencode-adversary', subtask: true },
     })
-    const path = join(workDir, '.opencode/commands/openspec-adversary/run-adversary.md')
-    const raw = readFileSync(path, 'utf8')
+    const raw = readFileSync(join(workDir, '.opencode/commands/run-adversary.md'), 'utf8')
     expect(raw).toContain('agent: opencode-adversary')
     expect(raw).toContain('subtask: true')
     expect(raw).toContain('command body')
   })
 
-  test('readAsset round-trips body and front-matter metadata', async () => {
-    await adapter.installAsset('project', 'skill', 'viper-plans/planning', '# plan', {
+  test('readAsset round-trips skill body, metadata, and owned companions', async () => {
+    await adapter.installAsset({
+      assetType: 'skill',
+      scope: 'project',
       name: 'planning',
-      description: 'plan things',
-      model: 'sonnet',
+      content: '# plan',
+      metadata: { name: 'planning', description: 'plan things', model: 'sonnet' },
+      companions: { 'references/api.md': new TextEncoder().encode('# api') },
+      ownedCompanionPaths: [],
     })
-    const result = await adapter.readAsset('project', 'skill', 'viper-plans/planning')
-    expect(result.content.trim()).toBe('# plan')
-    expect(result.metadata).toEqual({
+    const result = await adapter.readAsset({
+      assetType: 'skill',
+      scope: 'project',
       name: 'planning',
-      description: 'plan things',
-      model: 'sonnet',
+      ownedCompanionPaths: ['references/api.md'],
     })
+    if (!result.ok) expect.unreachable()
+    if (result.asset.assetType !== 'skill') expect.unreachable()
+    expect(result.asset.content.trim()).toBe('# plan')
+    expect(result.asset.metadata).toEqual({ name: 'planning', description: 'plan things', model: 'sonnet' })
+    expect(new TextDecoder().decode(result.asset.companions['references/api.md'])).toBe('# api')
   })
 
-  test('deleteAsset removes the asset file', async () => {
-    await adapter.installAsset('project', 'skill', 'viper-plans/planning', '# plan', {
-      name: 'planning',
-      description: 'plan things',
-    })
-    await adapter.deleteAsset('project', 'skill', 'viper-plans/planning')
-    const filePath = join(workDir, '.opencode/skills/viper-plans/planning/SKILL.md')
-    expect(existsSync(filePath)).toBe(false)
+  test('readAsset returns not-found for a missing asset', async () => {
+    const result = await adapter.readAsset({ assetType: 'command', scope: 'project', name: 'never-installed' })
+    if (result.ok) expect.unreachable()
+    expect(result.failure.code).toBe('not-found')
   })
 
-  test('deleteAsset is a no-op when asset is absent', async () => {
-    await expect(adapter.deleteAsset('project', 'skill', 'never-installed')).resolves.toBeString()
+  test('deleteAsset removes the skill bundle and preserves unowned files', async () => {
+    await adapter.installAsset({
+      assetType: 'skill',
+      scope: 'project',
+      name: 'planning',
+      content: '# plan',
+      metadata: {},
+      companions: { 'references/api.md': new TextEncoder().encode('# api') },
+      ownedCompanionPaths: [],
+    })
+    writeFileSync(join(workDir, '.opencode/skills/planning/notes.txt'), 'user notes')
+    const result = await adapter.deleteAsset({
+      assetType: 'skill',
+      scope: 'project',
+      name: 'planning',
+      ownedCompanionPaths: ['references/api.md'],
+    })
+    if (!result.ok) expect.unreachable()
+    expect(result.existed).toBe(true)
+    expect(existsSync(join(workDir, '.opencode/skills/planning/SKILL.md'))).toBe(false)
+    expect(readFileSync(join(workDir, '.opencode/skills/planning/notes.txt'), 'utf8')).toBe('user notes')
+  })
+
+  test('deleteAsset is success with existed: false when asset is absent', async () => {
+    const result = await adapter.deleteAsset({
+      assetType: 'skill',
+      scope: 'project',
+      name: 'never-installed',
+      ownedCompanionPaths: [],
+    })
+    if (!result.ok) expect.unreachable()
+    expect(result.existed).toBe(false)
+  })
+
+  test('installAsset rejects an escaping owned path without writing anything', async () => {
+    const result = await adapter.installAsset({
+      assetType: 'skill',
+      scope: 'project',
+      name: 'planning',
+      content: '# plan',
+      metadata: {},
+      companions: {},
+      ownedCompanionPaths: ['/etc/passwd'],
+    })
+    if (result.ok) expect.unreachable()
+    expect(result.failure.code).toBe('invalid-companion-path')
+    expect(existsSync(join(workDir, '.opencode/skills/planning/SKILL.md'))).toBe(false)
   })
 
   test('installAsset overwrites unconditionally (idempotent by contract)', async () => {
-    await adapter.installAsset('project', 'skill', 'viper-plans/planning', 'v1', {})
-    await adapter.installAsset('project', 'skill', 'viper-plans/planning', 'v2', {})
-    const path = join(workDir, '.opencode/skills/viper-plans/planning/SKILL.md')
-    expect(readFileSync(path, 'utf8')).toBe('v2')
+    const request = (content: string) =>
+      ({
+        assetType: 'skill',
+        scope: 'project',
+        name: 'planning',
+        content,
+        metadata: {},
+        companions: {},
+        ownedCompanionPaths: [],
+      }) as const
+    await adapter.installAsset(request('v1'))
+    await adapter.installAsset(request('v2'))
+    expect(readFileSync(join(workDir, '.opencode/skills/planning/SKILL.md'), 'utf8')).toBe('v2')
   })
 })
 
@@ -207,14 +298,30 @@ describe('opencode adapter — user-scope base dir', () => {
   })
 
   test('user scope writes under ~/.config/opencode', async () => {
-    await adapter.installAsset('user', 'skill', 'viper-plans/planning', '# plan', {})
-    const path = join(fakeHome, '.config/opencode/skills/viper-plans/planning/SKILL.md')
-    expect(readFileSync(path, 'utf8')).toBe('# plan')
+    const result = await adapter.installAsset({
+      assetType: 'skill',
+      scope: 'user',
+      name: 'planning',
+      content: '# plan',
+      metadata: {},
+      companions: {},
+      ownedCompanionPaths: [],
+    })
+    if (!result.ok) expect.unreachable()
+    expect(readFileSync(join(fakeHome, '.config/opencode/skills/planning/SKILL.md'), 'utf8')).toBe('# plan')
   })
 })
 
 describe('opencode adapter — unsupported scope', () => {
-  test('system scope throws', async () => {
-    await expect(adapter.installAsset('system', 'skill', 'x', 'y', {})).rejects.toThrow(/system scope/)
+  test('system scope returns a structured unsupported-scope failure', async () => {
+    const result = await adapter.installAsset({
+      assetType: 'agent',
+      scope: 'system',
+      name: 'x',
+      content: 'y',
+      metadata: {},
+    })
+    if (result.ok) expect.unreachable()
+    expect(result.failure).toEqual({ code: 'unsupported-scope', scope: 'system' })
   })
 })

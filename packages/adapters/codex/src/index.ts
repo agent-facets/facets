@@ -1,13 +1,23 @@
-import { mkdir, rm } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import {
-  type AssetType,
+  type DeleteAssetRequest,
   defineAdapter,
-  deleteAssetFile,
-  installAssetFile,
-  readAssetFile,
+  deleteSingleFileAsset,
+  deleteSkillBundle,
+  errorMessage,
+  type InstallAssetRequest,
+  type InstallAssetResult,
+  installSingleFileAsset,
+  installSkillBundle,
+  isMissingFileError,
+  type ReadAssetRequest,
+  type ReadAssetResult,
+  readSingleFileAsset,
+  readSkillBundle,
   type Scope,
+  type SkillBundlePaths,
 } from '@agent-facets/adapter'
 import { type } from 'arktype'
 import { parse as parseToml, stringify as stringifyToml } from 'smol-toml'
@@ -76,71 +86,96 @@ export default defineAdapter({
     return { ok: true, data: result as Record<string, unknown> }
   },
 
-  async installAsset(scope, assetType, name, content, metadata) {
-    const path = resolvePath(scope, assetType, name)
-
-    if (assetType === 'agent') {
-      await installAgentToml(path, content, metadata as Record<string, unknown>)
-    } else {
-      await installAssetFile({ file: path }, content, metadata as Record<string, unknown>)
+  async installAsset(request: InstallAssetRequest) {
+    const baseDir = baseDirFor(request.scope, request.assetType)
+    if (baseDir === null) {
+      return { ok: false as const, failure: { code: 'unsupported-scope' as const, scope: request.scope } }
+    }
+    switch (request.assetType) {
+      case 'skill':
+        return installSkillBundle(skillPaths(baseDir, request.name), {
+          content: request.content,
+          metadata: request.metadata as Record<string, unknown>,
+          companions: request.companions,
+          ownedCompanionPaths: request.ownedCompanionPaths,
+        })
+      case 'agent':
+        return installAgentToml(
+          join(baseDir, 'agents', `${request.name}.toml`),
+          request.content,
+          request.metadata as Record<string, unknown>,
+        )
+      case 'command':
+        return installSingleFileAsset(
+          { file: join(baseDir, 'commands', `${request.name}.md`) },
+          request.content,
+          request.metadata as Record<string, unknown>,
+        )
     }
   },
 
-  async readAsset(scope, assetType, name) {
-    const path = resolvePath(scope, assetType, name)
-
-    if (assetType === 'agent') {
-      return readAgentToml(path)
+  async readAsset(request: ReadAssetRequest) {
+    const baseDir = baseDirFor(request.scope, request.assetType)
+    if (baseDir === null) {
+      return { ok: false as const, failure: { code: 'unsupported-scope' as const, scope: request.scope } }
     }
-
-    return readAssetFile({ file: path })
+    switch (request.assetType) {
+      case 'skill':
+        return readSkillBundle(skillPaths(baseDir, request.name), request.ownedCompanionPaths)
+      case 'agent':
+        return readAgentToml(join(baseDir, 'agents', `${request.name}.toml`))
+      case 'command':
+        return readSingleFileAsset({ file: join(baseDir, 'commands', `${request.name}.md`) }, 'command')
+    }
   },
 
-  async deleteAsset(scope, assetType, name) {
-    const path = resolvePath(scope, assetType, name)
-
-    if (assetType === 'agent') {
-      await rm(path, { force: true })
-    } else {
-      await deleteAssetFile({ file: path })
+  async deleteAsset(request: DeleteAssetRequest) {
+    const baseDir = baseDirFor(request.scope, request.assetType)
+    if (baseDir === null) {
+      return { ok: false as const, failure: { code: 'unsupported-scope' as const, scope: request.scope } }
+    }
+    switch (request.assetType) {
+      case 'skill':
+        return deleteSkillBundle(skillPaths(baseDir, request.name), request.ownedCompanionPaths)
+      case 'agent':
+        // Same lifecycle as any single-file asset: idempotent delete with
+        // boundary-guarded empty-directory pruning. Codex previously left
+        // empty agent directories behind; pruning is now consistent.
+        return deleteSingleFileAsset({ file: join(baseDir, 'agents', `${request.name}.toml`), pruneBoundary: baseDir })
+      case 'command':
+        return deleteSingleFileAsset({ file: join(baseDir, 'commands', `${request.name}.md`), pruneBoundary: baseDir })
     }
   },
 })
 
 // --- path resolution ---
 
-function resolvePath(scope: Scope, assetType: AssetType, name: string): string {
-  return join(baseDirFor(scope, assetType), relativePathFor(assetType, name))
-}
-
-function baseDirFor(scope: Scope, assetType: AssetType): string {
+/**
+ * Resolve the base directory for a scope + asset type. Agents live in the
+ * `.codex/` tree; skills and commands live in the `.agents/` tree.
+ * `system` scope is unsupported; returns `null` so callers can produce a
+ * structured `unsupported-scope` failure.
+ */
+function baseDirFor(scope: Scope, assetType: 'skill' | 'agent' | 'command'): string | null {
   const home = process.env.HOME ?? homedir()
 
   switch (scope) {
     case 'user': {
-      // Agents live in ~/.codex/; skills + commands live in ~/.agents/
       if (assetType === 'agent') return join(home, '.codex')
       return join(home, '.agents')
     }
     case 'project': {
-      // Agents live in .codex/; skills + commands live in .agents/
       if (assetType === 'agent') return join(process.cwd(), '.codex')
       return join(process.cwd(), '.agents')
     }
     case 'system':
-      throw new Error('codex adapter: system scope is not supported')
+      return null
   }
 }
 
-function relativePathFor(assetType: AssetType, name: string): string {
-  switch (assetType) {
-    case 'skill':
-      return join('skills', name, 'SKILL.md')
-    case 'agent':
-      return join('agents', `${name}.toml`)
-    case 'command':
-      return join('commands', `${name}.md`)
-  }
+function skillPaths(baseDir: string, name: string): SkillBundlePaths {
+  const root = join(baseDir, 'skills', name)
+  return { root, primaryFile: join(root, 'SKILL.md'), pruneBoundary: baseDir }
 }
 
 // --- TOML agent helpers ---
@@ -153,32 +188,70 @@ function relativePathFor(assetType: AssetType, name: string): string {
  * Mirrors how claude-code / opencode treat content as the body and metadata
  * as the envelope — no content sniffing or format detection.
  */
-async function installAgentToml(filePath: string, content: string, metadata?: Record<string, unknown>): Promise<void> {
-  await mkdir(dirname(filePath), { recursive: true })
-
+async function installAgentToml(
+  filePath: string,
+  content: string,
+  metadata?: Record<string, unknown>,
+): Promise<InstallAssetResult> {
   const doc: Record<string, unknown> = { ...(metadata ?? {}) }
   if (content.trim().length > 0) {
     doc.developer_instructions = content
   }
 
-  await Bun.write(filePath, stringifyToml(doc))
+  try {
+    await mkdir(dirname(filePath), { recursive: true })
+    await Bun.write(filePath, stringifyToml(doc))
+  } catch (err) {
+    return {
+      ok: false,
+      failure: { code: 'io-failed', operation: 'write', path: filePath, message: errorMessage(err) },
+    }
+  }
+  return { ok: true, primaryPath: filePath }
 }
 
 /**
- * Read a Codex agent TOML file. Returns `developer_instructions` as `content`
- * and the remaining top-level keys as `metadata`.
+ * Read a Codex agent TOML file. Returns `developer_instructions` as the
+ * canonical `content` and the remaining top-level keys as `metadata` —
+ * the TOML envelope is Codex's storage encoding, stripped on read so
+ * callers can compare canonical logical content.
  *
- * Throws if the file is missing or contains malformed TOML — mirroring the
- * shared `readAssetFile` helper used for skills and commands, so a missing
- * agent surfaces as a read failure rather than silently returning empty.
+ * A missing file is a structured `not-found`; malformed TOML is `io-failed`.
  */
-async function readAgentToml(filePath: string): Promise<{ content: string; metadata?: Record<string, unknown> }> {
-  const raw = await Bun.file(filePath).text()
-  const parsed = parseToml(raw) as Record<string, unknown>
+async function readAgentToml(filePath: string): Promise<ReadAssetResult> {
+  let raw: string
+  try {
+    raw = await readTextFile(filePath)
+  } catch (err) {
+    if (isMissingFileError(err)) return { ok: false, failure: { code: 'not-found' } }
+    return {
+      ok: false,
+      failure: { code: 'io-failed', operation: 'read', path: filePath, message: errorMessage(err) },
+    }
+  }
+
+  let parsed: Record<string, unknown>
+  try {
+    parsed = parseToml(raw) as Record<string, unknown>
+  } catch (err) {
+    return {
+      ok: false,
+      failure: { code: 'io-failed', operation: 'read', path: filePath, message: errorMessage(err) },
+    }
+  }
 
   const { developer_instructions, ...rest } = parsed
   const content = typeof developer_instructions === 'string' ? developer_instructions : ''
   const metadata = Object.keys(rest).length > 0 ? rest : undefined
 
-  return { content, metadata }
+  return { ok: true, asset: { assetType: 'agent', content, metadata } }
+}
+
+/**
+ * Read a text file, surfacing ENOENT as a thrown errno error. `Bun.file`'s
+ * `.text()` rejects with an ENOENT-coded error for missing files, which
+ * `isMissingFileError` recognizes.
+ */
+async function readTextFile(filePath: string): Promise<string> {
+  return Bun.file(filePath).text()
 }

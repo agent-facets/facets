@@ -1,7 +1,8 @@
-import { mkdir, readFile, rm, rmdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, rmdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { splitFrontMatter, validateAssetName } from '@agent-facets/common'
 import { stringify as stringifyYaml } from 'yaml'
+import type { DeleteAssetResult, InstallAssetResult, ReadAssetResult } from './types.ts'
 
 /**
  * Shared filesystem helpers for adapter install/read/delete.
@@ -117,8 +118,11 @@ export async function deleteAssetFile(path: AssetPath): Promise<string> {
  * The non-recursive `rmdir` is load-bearing: it can only ever remove a
  * directory that is genuinely empty, so pruning can never delete a file
  * the adapter didn't already delete itself.
+ *
+ * Exported for reuse by the skill-bundle helpers; not part of the curated
+ * public API surface (`index.ts`).
  */
-async function pruneEmptyParents(startDir: string, boundary: string): Promise<void> {
+export async function pruneEmptyParents(startDir: string, boundary: string): Promise<void> {
   const stop = resolve(boundary)
   let current = resolve(startDir)
   while (current !== stop && isStrictlyInside(current, stop)) {
@@ -139,6 +143,90 @@ async function pruneEmptyParents(startDir: string, boundary: string): Promise<vo
 function isStrictlyInside(child: string, parent: string): boolean {
   const rel = relative(parent, child)
   return rel.length > 0 && !rel.startsWith('..') && !isAbsolute(rel)
+}
+
+// --- result-shaped single-file operations (agents and commands) ---
+
+/**
+ * Result-shaped install for a single-file asset (agent or command).
+ * Wraps {@link installAssetFile}, converting I/O exceptions into
+ * structured `io-failed` values per the tagged adapter contract.
+ */
+export async function installSingleFileAsset(
+  path: AssetPath,
+  body: string,
+  metadata?: Record<string, unknown>,
+): Promise<InstallAssetResult> {
+  try {
+    const primaryPath = await installAssetFile(path, body, metadata)
+    return { ok: true, primaryPath }
+  } catch (err) {
+    return {
+      ok: false,
+      failure: { code: 'io-failed', operation: 'write', path: path.file, message: errorMessage(err) },
+    }
+  }
+}
+
+/**
+ * Result-shaped read for a single-file asset. A missing file returns a
+ * structured `not-found`; other I/O exceptions become `io-failed`.
+ */
+export async function readSingleFileAsset(path: AssetPath, assetType: 'agent' | 'command'): Promise<ReadAssetResult> {
+  try {
+    const { content, metadata } = await readAssetFile(path)
+    return { ok: true, asset: { assetType, content, metadata } }
+  } catch (err) {
+    if (isMissingFileError(err)) return { ok: false, failure: { code: 'not-found' } }
+    return {
+      ok: false,
+      failure: { code: 'io-failed', operation: 'read', path: path.file, message: errorMessage(err) },
+    }
+  }
+}
+
+/**
+ * Result-shaped delete for a single-file asset. Deleting an absent asset
+ * is success with `existed: false` (idempotent by contract); I/O
+ * exceptions become `io-failed`.
+ */
+export async function deleteSingleFileAsset(path: AssetPath): Promise<DeleteAssetResult> {
+  let existed: boolean
+  try {
+    // Only ENOENT/ENOTDIR mean "the file wasn't there". Any other stat
+    // failure (EACCES, EIO, …) is a genuine I/O error: swallowing it would
+    // report `existed: false` for a file that may have just been deleted,
+    // corrupting the caller's "was anything removed" bookkeeping.
+    existed = await stat(path.file).then(
+      (s) => s.isFile(),
+      (err) => {
+        if (isMissingFileError(err)) return false
+        throw err
+      },
+    )
+    await deleteAssetFile(path)
+  } catch (err) {
+    return {
+      ok: false,
+      failure: { code: 'io-failed', operation: 'delete', path: path.file, message: errorMessage(err) },
+    }
+  }
+  return { ok: true, existed, deletedPaths: existed ? [path.file] : [] }
+}
+
+/** True for ENOENT/ENOTDIR — the "file didn't exist" errno family. */
+export function isMissingFileError(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    ((err as NodeJS.ErrnoException).code === 'ENOENT' || (err as NodeJS.ErrnoException).code === 'ENOTDIR')
+  )
+}
+
+/** Render any thrown value as a message string for `io-failed` failures. */
+export function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
 }
 
 // --- front-matter helpers (exported for adapter-level customization) ---
@@ -197,4 +285,34 @@ export function assertSafeAssetName(name: string): void {
   if (!check.ok) {
     throw new Error(`asset name "${name}" ${check.reason}`)
   }
+}
+
+/** Result of {@link validateContainedRelativePath}. */
+export type ContainedRelativePathResult = { ok: true } | { ok: false; reason: string }
+
+/**
+ * Validate a companion path as relative, canonical, and confined below a
+ * skill root — purely textually, before any filesystem access.
+ *
+ * Rejects: empty paths, absolute paths (POSIX and Windows drive/UNC
+ * forms), backslashes, NUL bytes, and empty, `.`, or `..` segments.
+ * A path passing this check joined onto the skill root cannot resolve
+ * outside it.
+ *
+ * This runs on every supplied companion path — new-bundle keys and
+ * caller-supplied owned paths alike — in install, read, and delete. One
+ * failing path rejects the whole request without touching the filesystem.
+ */
+export function validateContainedRelativePath(path: string): ContainedRelativePathResult {
+  if (path.length === 0) return { ok: false, reason: 'path is empty' }
+  if (path.includes('\0')) return { ok: false, reason: 'path contains a NUL byte' }
+  if (path.includes('\\')) return { ok: false, reason: 'path contains a backslash' }
+  if (path.startsWith('/')) return { ok: false, reason: 'path is absolute' }
+  if (/^[A-Za-z]:/.test(path)) return { ok: false, reason: 'path has a Windows drive prefix' }
+  for (const segment of path.split('/')) {
+    if (segment === '') return { ok: false, reason: 'path has an empty segment' }
+    if (segment === '.') return { ok: false, reason: 'path has a "." segment' }
+    if (segment === '..') return { ok: false, reason: 'path has a ".." segment' }
+  }
+  return { ok: true }
 }

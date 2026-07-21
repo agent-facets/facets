@@ -54,14 +54,28 @@ export default {
   apiVersion: '${ADAPTER_API_VERSION}',
   supportsInstall: true,
   buildAssetMetadata(data) { return { ok: true, data: data || {} } },
-  async installAsset(scope, type, name, content, metadata) {
-    await installAssetFile({ file: path(type, name) }, content, metadata)
+  async installAsset(req) {
+    const file = path(req.assetType, req.name)
+    await installAssetFile({ file }, req.content, req.metadata)
+    return { ok: true, primaryPath: file }
   },
-  async readAsset(scope, type, name) {
-    return readAssetFile({ file: path(type, name) })
+  async readAsset(req) {
+    try {
+      const r = await readAssetFile({ file: path(req.assetType, req.name) })
+      return {
+        ok: true,
+        asset: req.assetType === 'skill'
+          ? { assetType: 'skill', content: r.content, metadata: r.metadata, companions: {} }
+          : { assetType: req.assetType, content: r.content, metadata: r.metadata },
+      }
+    } catch {
+      return { ok: false, failure: { code: 'not-found' } }
+    }
   },
-  async deleteAsset(scope, type, name) {
-    await deleteAssetFile({ file: path(type, name) })
+  async deleteAsset(req) {
+    const file = path(req.assetType, req.name)
+    await deleteAssetFile({ file })
+    return { ok: true, existed: true, deletedPaths: [file] }
   },
 }
 `,
