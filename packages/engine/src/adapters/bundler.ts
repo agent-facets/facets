@@ -30,9 +30,9 @@ const noopCleanup = async (): Promise<void> => {}
  *
  * When the fast path is not available (e.g. a third-party adapter with no
  * prebuilt dist, a local source tree during development, a git install
- * without committed build output), the slow path kicks in: run `bun install`
- * in the source directory and re-bundle the resolved entry point with
- * `Bun.build()`.
+ * without committed build output), the slow path kicks in: bundle the
+ * resolved entry point with `Bun.build()`, installing dependencies first
+ * only if the optimistic build fails (see `rebundleAdapter`).
  *
  * @param sourceDir - Path to the adapter source (must contain package.json)
  * @returns A `BundleResult` with the bundle path and a cleanup function.
@@ -48,14 +48,30 @@ export async function bundleAdapter(sourceDir: string): Promise<BundleResult> {
     return { bundlePath: resolved.path, cleanup: noopCleanup }
   }
 
-  // Slow path: source tree (e.g. unbuilt local adapter). Run `bun install`
-  // and re-bundle with Bun.build().
+  // Slow path: source tree (e.g. unbuilt local adapter). Bundle with
+  // Bun.build(), installing dependencies only if needed.
   return rebundleAdapter(sourceDir, resolved.path)
 }
 
 /**
- * Slow path: install dependencies in `sourceDir` and bundle `entryPoint`
- * into a self-contained .js file.
+ * Slow path: bundle `entryPoint` into a self-contained .js file,
+ * installing dependencies in `sourceDir` only when the optimistic
+ * build fails.
+ *
+ * The build runs FIRST, against whatever dependencies are already on
+ * disk. When the source sits inside an installed workspace — the
+ * monorepo's own adapters during the root postinstall, or any dev
+ * checkout — its dependencies are already present, and the build
+ * succeeds without spawning a package manager. This ordering is
+ * load-bearing: an unconditional `bun install` here resolves the
+ * enclosing workspace root and re-runs its lifecycle scripts, so the
+ * repo's own `postinstall → facet adapter install ./packages/adapters/…
+ * → bun install → postinstall` chain would recurse indefinitely.
+ *
+ * Only when that first build fails (typically a standalone source dir
+ * whose dependencies were never installed — a git clone, an extracted
+ * tarball) does the fallback run `bun install` (frozen first, then
+ * plain) and retry the build exactly once.
  *
  * The bundle output is written to a fresh `mkdtemp` directory (NOT inside
  * `sourceDir`), so local installs from a user's source tree don't leave
@@ -69,61 +85,88 @@ export async function bundleAdapter(sourceDir: string): Promise<BundleResult> {
  * externals, truncated file).
  */
 export async function rebundleAdapter(sourceDir: string, entryPoint: string): Promise<BundleResult> {
-  // Step 1: Install dependencies
+  // Optimistic pass: dependencies may already be on disk.
+  const first = await tryBuild(sourceDir, entryPoint)
+  if (first.ok) {
+    return { bundlePath: first.bundlePath, cleanup: first.cleanup }
+  }
+
+  // Fallback: install dependencies, then retry the build exactly once.
+  installDependencies(sourceDir)
+  const second = await tryBuild(sourceDir, entryPoint)
+  if (second.ok) {
+    return { bundlePath: second.bundlePath, cleanup: second.cleanup }
+  }
+  throw new Error(`Failed to bundle adapter from "${sourceDir}":\n${second.errors}`)
+}
+
+/**
+ * Install dependencies in `sourceDir` with `bun install` — frozen
+ * lockfile first, then a plain retry (covers sources shipped without a
+ * lockfile). Throws when both attempts fail.
+ */
+function installDependencies(sourceDir: string): void {
   const installResult = Bun.spawnSync(['bun', 'install', '--frozen-lockfile'], {
     cwd: sourceDir,
     stdout: 'pipe',
     stderr: 'pipe',
   })
+  if (installResult.exitCode === 0) return
 
-  // If frozen-lockfile fails (no lockfile), try without it
-  if (installResult.exitCode !== 0) {
-    const retryResult = Bun.spawnSync(['bun', 'install'], {
-      cwd: sourceDir,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-    if (retryResult.exitCode !== 0) {
-      throw new Error(`Failed to install dependencies in "${sourceDir}": ${retryResult.stderr.toString().trim()}`)
-    }
+  const retryResult = Bun.spawnSync(['bun', 'install'], {
+    cwd: sourceDir,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  if (retryResult.exitCode !== 0) {
+    throw new Error(`Failed to install dependencies in "${sourceDir}": ${retryResult.stderr.toString().trim()}`)
   }
+}
 
-  // Step 2: Bundle with Bun.build() into a fresh temp directory. Writing
-  // outside of `sourceDir` keeps local installs from polluting the user's
-  // source tree.
+/**
+ * One build attempt into a fresh temp outdir. Failure arms remove their
+ * own outdir.
+ *
+ * The build runs as a `bun build` SUBPROCESS rather than an in-process
+ * `Bun.build()` call: Bun caches failed module resolution per process,
+ * so an optimistic in-process attempt that failed before `bun install`
+ * would keep failing after it even though node_modules now exists. A
+ * subprocess starts with a cold resolver, making the attempt-install-
+ * retry sequence actually observable. (`bun` on PATH is already a slow-
+ * path requirement — the dependency install spawns it too.)
+ */
+async function tryBuild(
+  sourceDir: string,
+  entryPoint: string,
+): Promise<{ ok: true; bundlePath: string; cleanup: () => Promise<void> } | { ok: false; errors: string }> {
+  // Write outside of `sourceDir` so local installs from a user's source
+  // tree don't leave build artifacts behind.
   const outdir = await mkdtemp(join(tmpdir(), 'facet-adapter-build-'))
   const cleanup = async (): Promise<void> => {
     await rm(outdir, { recursive: true, force: true }).catch(() => {})
   }
+  const bundlePath = join(outdir, 'bundle.js')
 
-  let buildResult: Awaited<ReturnType<typeof Bun.build>>
-  try {
-    buildResult = await Bun.build({
-      entrypoints: [entryPoint],
-      outdir,
-      target: 'bun',
-      format: 'esm',
-    })
-  } catch (err) {
-    // If Bun.build itself throws (rare — usually it returns a result with
-    // success: false), make sure we don't leak the outdir.
+  const result = Bun.spawnSync(
+    ['bun', 'build', entryPoint, '--outfile', bundlePath, '--target', 'bun', '--format', 'esm'],
+    {
+      cwd: sourceDir,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  )
+
+  if (result.exitCode !== 0) {
     await cleanup()
-    throw err
+    return { ok: false, errors: result.stderr.toString().trim() }
   }
 
-  if (!buildResult.success) {
+  if (!(await Bun.file(bundlePath).exists())) {
     await cleanup()
-    const errors = buildResult.logs.map((l) => l.message).join('\n')
-    throw new Error(`Failed to bundle adapter from "${sourceDir}":\n${errors}`)
+    return { ok: false, errors: `bun build produced no output for "${sourceDir}"` }
   }
 
-  const outputFile = buildResult.outputs[0]
-  if (!outputFile) {
-    await cleanup()
-    throw new Error(`Bun.build() produced no output for "${sourceDir}"`)
-  }
-
-  return { bundlePath: outputFile.path, cleanup }
+  return { ok: true, bundlePath, cleanup }
 }
 
 /**

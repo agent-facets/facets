@@ -47,12 +47,13 @@
         ".changeset/**",
         "package.json",
         "packages/*/package.json",
-        "packages/adapters/*/package.json"
+        "packages/adapters/*/package.json",
+        "packages/adapter/src/api-version.ts"
       ],
       "outputs": ["$TURBO_ROOT$/test-results/scripts-junit.xml"]
     },
     "//#types": {
-      "inputs": ["scripts/**", "tsconfig.json"]
+      "inputs": ["scripts/**", "tsconfig.json", "packages/adapter/src/api-version.ts"]
     },
     "//#lint": {
       "inputs": [

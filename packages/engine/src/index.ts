@@ -4,6 +4,8 @@
 // of this file as a litmus test for the engine's package boundary.
 
 // adapter machinery
+export type { AdapterCompatibilityFailure, ApiDeclarationClassification } from './adapters/api-compatibility.ts'
+export { classifyApiDeclaration, isWellFormedAdapterApi, SUPPORTED_ADAPTER_APIS } from './adapters/api-compatibility.ts'
 export type { BundleResult, ResolvedEntryPoint } from './adapters/bundler.ts'
 export { bundleAdapter, rebundleAdapter, resolveEntryPoint } from './adapters/bundler.ts'
 export type { FirstPartyAdapter } from './adapters/first-party.ts'
@@ -13,6 +15,7 @@ export type {
   AdapterInstallOptions,
   AdapterInstallResult,
   AdapterInstallStage,
+  LocateAndVerifyResult,
 } from './adapters/install-service.ts'
 export { installAdapter, locateAndVerifyAdapter } from './adapters/install-service.ts'
 export { loadInstalledAdapters } from './adapters/loader.ts'
@@ -24,6 +27,7 @@ export {
   placeAdapter,
   removeAdapter,
 } from './adapters/placement.ts'
+export type { VerifiedAdapter, VerifyAdapterFailure, VerifyAdapterResult } from './adapters/verify.ts'
 export { verifyAdapter } from './adapters/verify.ts'
 // build (engine-side: gzip compression — protocol provides the deterministic
 // tar layout and integrity hash; engine compresses for delivery)

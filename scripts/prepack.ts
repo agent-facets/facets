@@ -2,7 +2,7 @@
  * Prepack entry point — run via `bun <relative-path>/scripts/prepack.ts`
  * from a package directory during `npm publish` or `changeset publish`.
  *
- * Does three things before the tarball is packed:
+ * Does four things before the tarball is packed:
  *   1. Rewrites workspace:* dependencies to concrete versions.
  *   2. Hoists whitelisted fields from `publishConfig` (exports, main,
  *      types, module, bin) to the top-level manifest — mirrors pnpm's
@@ -11,6 +11,11 @@
  *      `workspace:*` references that npm would have stripped from the
  *      tarball anyway. See `lib/prepack.ts#stripDevDependencies` for
  *      the full rationale.
+ *   4. For first-party adapter packages (anything under
+ *      `packages/adapters/`), injects the top-level adapter API metadata
+ *      field so compatibility-aware CLIs can select releases before
+ *      download. Field name and value come from the adapter SDK's
+ *      canonical constants — no literals here.
  *
  * A backup of the original `package.json` is saved so postpack.ts can
  * restore it after packing.
@@ -21,8 +26,17 @@
  * `packages/<name>/` and `packages/adapters/<name>/`).
  */
 
-import { dirname, resolve } from 'node:path'
-import { applyPublishConfig, createDiskResolver, rewriteWorkspaceDeps, stripDevDependencies } from './lib/prepack'
+import { dirname, resolve, sep } from 'node:path'
+// Relative source import (not the package name) so prepack works even when
+// node_modules is absent; api-version.ts is dependency-free by design.
+import { ADAPTER_API_VERSION, ADAPTER_API_VERSION_PACKAGE_FIELD } from '../packages/adapter/src/api-version'
+import {
+  applyPublishConfig,
+  createDiskResolver,
+  injectAdapterApiVersion,
+  rewriteWorkspaceDeps,
+  stripDevDependencies,
+} from './lib/prepack'
 
 const cwd = process.cwd()
 const pkgPath = resolve(cwd, 'package.json')
@@ -59,11 +73,25 @@ async function findMonorepoRoot(start: string): Promise<string> {
 const rootDir = await findMonorepoRoot(cwd)
 const resolver = createDiskResolver(rootDir)
 
+/**
+ * First-party adapter packages are exactly the workspace members under
+ * `packages/adapters/` (mirrors the root workspace glob). Only they
+ * publish the adapter API metadata field.
+ */
+const adaptersDir = resolve(rootDir, 'packages', 'adapters')
+const isFirstPartyAdapter = cwd.startsWith(adaptersDir + sep)
+
 const { pkg: afterDepRewrite, modified: depsModified } = await rewriteWorkspaceDeps(pkg, resolver)
 const { pkg: afterPublishConfig, modified: publishConfigModified } = applyPublishConfig(afterDepRewrite)
-const { pkg: rewritten, modified: devDepsStripped } = stripDevDependencies(afterPublishConfig)
+const { pkg: afterDevDepsStrip, modified: devDepsStripped } = stripDevDependencies(afterPublishConfig)
+const { pkg: rewritten, modified: apiVersionInjected } = isFirstPartyAdapter
+  ? injectAdapterApiVersion(afterDevDepsStrip, {
+      fieldName: ADAPTER_API_VERSION_PACKAGE_FIELD,
+      version: ADAPTER_API_VERSION,
+    })
+  : { pkg: afterDevDepsStrip, modified: false }
 
-const modified = depsModified || publishConfigModified || devDepsStripped
+const modified = depsModified || publishConfigModified || devDepsStripped || apiVersionInjected
 
 if (modified) {
   // Save backup of the original for postpack restore
@@ -75,6 +103,7 @@ if (modified) {
   if (depsModified) changes.push('rewrote workspace:* dependencies to concrete versions')
   if (publishConfigModified) changes.push('hoisted publishConfig fields to top-level')
   if (devDepsStripped) changes.push('stripped devDependencies')
+  if (apiVersionInjected) changes.push(`injected ${ADAPTER_API_VERSION_PACKAGE_FIELD} ${ADAPTER_API_VERSION}`)
   // Diagnostic output goes to stderr so `bun pm pack --quiet` stdout stays
   // parseable by `packAndPublish` (see scripts/lib/npm.ts#extractPackFilename).
   console.error(`prepack: ${changes.join('; ')}`)

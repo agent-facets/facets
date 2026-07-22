@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
-import { deleteAssetFile, installAssetFile, readAssetFile } from '@agent-facets/adapter'
+import { ADAPTER_API_VERSION, deleteAssetFile, installAssetFile, readAssetFile } from '@agent-facets/adapter'
 import type { ResolvedFacetManifest } from '@agent-facets/protocol'
 import { InstallJournal } from '../install/journal.ts'
 import { computeAssetList, materialize } from '../install/materialize.ts'
@@ -29,6 +29,7 @@ function buildRecordingAdapter(name: string): {
   const calls: Array<{ name: string; metadata: unknown }> = []
   const adapter: Adapter = {
     name,
+    apiVersion: ADAPTER_API_VERSION,
     supportsInstall: true,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
     async installAsset(_scope, type, n, content, metadata) {
@@ -85,6 +86,7 @@ function buildSdkAdapter(name: string): {
   })
   const adapter: Adapter = {
     name,
+    apiVersion: ADAPTER_API_VERSION,
     supportsInstall: true,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
     async installAsset(_scope, type, n, content, metadata) {

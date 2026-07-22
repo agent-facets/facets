@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { ADAPTER_API_VERSION } from '@agent-facets/adapter'
 import adapter from '../index.ts'
 
 // ---------------------------------------------------------------------------
@@ -15,6 +16,10 @@ describe('codex adapter — identity', () => {
 
   test('declares install support', () => {
     expect(adapter.supportsInstall).toBe(true)
+  })
+
+  test('declares the canonical adapter API version', () => {
+    expect(adapter.apiVersion).toBe(ADAPTER_API_VERSION)
   })
 })
 

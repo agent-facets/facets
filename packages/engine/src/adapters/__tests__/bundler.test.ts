@@ -200,6 +200,87 @@ describe('resolveEntryPoint', () => {
  * path: it must return a no-op cleanup that doesn't throw and doesn't
  * delete anything in the source tree.
  */
+/**
+ * Slow-path ordering: the build runs BEFORE any `bun install`. A source
+ * tree whose dependencies are already satisfied (an installed workspace,
+ * a zero-dep adapter) must bundle without spawning a package manager —
+ * an unconditional install would re-enter the enclosing workspace's
+ * lifecycle scripts (the repo's own postinstall → adapter install →
+ * bun install recursion). The fallback install must still fire for a
+ * standalone source dir with uninstalled dependencies.
+ *
+ * Both fixtures carry a root `postinstall` script that writes a marker
+ * file, so "did an install run?" is directly observable.
+ */
+describe('rebundleAdapter — build-first, install only on failure', () => {
+  test('source with satisfied deps bundles without running bun install', async () => {
+    const dir = await makeFixture(
+      {
+        name: 'no-install-needed',
+        exports: { '.': './src/index.ts' },
+        scripts: { postinstall: 'bun marker.ts' },
+      },
+      {
+        'src/index.ts': 'export default { name: "no-install-needed" }',
+        'marker.ts': `await Bun.write('install-ran.marker', '1')`,
+      },
+    )
+    try {
+      const result = await bundleAdapter(dir)
+      try {
+        const stats = await stat(result.bundlePath)
+        expect(stats.isFile()).toBe(true)
+        // No package manager ran: the fixture's postinstall never fired.
+        await expect(stat(join(dir, 'install-ran.marker'))).rejects.toThrow()
+      } finally {
+        await result.cleanup()
+      }
+    } finally {
+      await cleanup(dir)
+    }
+  })
+
+  test('source with missing deps installs them and succeeds on retry', async () => {
+    const dir = await makeFixture(
+      {
+        name: 'needs-install',
+        exports: { '.': './src/index.ts' },
+        scripts: { postinstall: 'bun marker.ts' },
+        // file: dependency — installable offline.
+        dependencies: { 'tiny-dep': 'file:./vendor/tiny-dep' },
+      },
+      {
+        'src/index.ts': `import { greeting } from 'tiny-dep'\nexport default { name: greeting }`,
+        'marker.ts': `await Bun.write('install-ran.marker', '1')`,
+        'vendor/tiny-dep/package.json': JSON.stringify({
+          name: 'tiny-dep',
+          version: '1.0.0',
+          main: 'index.js',
+        }),
+        'vendor/tiny-dep/index.js': 'export const greeting = "from-tiny-dep"',
+      },
+    )
+    try {
+      const result = await bundleAdapter(dir)
+      try {
+        const stats = await stat(result.bundlePath)
+        expect(stats.isFile()).toBe(true)
+        // The fallback install DID run (first build failed on the
+        // unresolved import, install linked the file: dep, retry passed).
+        const marker = await stat(join(dir, 'install-ran.marker'))
+        expect(marker.isFile()).toBe(true)
+        // The bundle is self-contained: the dep got inlined.
+        const bundled = await Bun.file(result.bundlePath).text()
+        expect(bundled).toContain('from-tiny-dep')
+      } finally {
+        await result.cleanup()
+      }
+    } finally {
+      await cleanup(dir)
+    }
+  })
+})
+
 describe('bundleAdapter — fast path returns a safe no-op cleanup', () => {
   test('cleanup is callable and resolves without throwing', async () => {
     const dir = await makeFixture(

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import {
   applyPublishConfig,
   createDiskResolver,
+  injectAdapterApiVersion,
   rewriteWorkspaceDeps,
   stripDevDependencies,
   type VersionResolver,
@@ -585,6 +586,67 @@ describe('createDiskResolver', () => {
     await withFakeWorkspace(async (rootDir) => {
       const resolver = createDiskResolver(rootDir)
       expect(await resolver('@fake/nonexistent')).toBeNull()
+    })
+  })
+})
+
+describe('injectAdapterApiVersion', () => {
+  test('adds the field with the given value and reports modified', () => {
+    const pkg = { name: '@my/adapter-x', version: '1.0.0' }
+    const { pkg: result, modified } = injectAdapterApiVersion(pkg, { fieldName: 'someApiField', version: '0.0' })
+
+    expect(modified).toBe(true)
+    expect(result.someApiField).toBe('0.0')
+  })
+
+  test('does not mutate the input manifest', () => {
+    const pkg = { name: '@my/adapter-x', version: '1.0.0' }
+    injectAdapterApiVersion(pkg, { fieldName: 'someApiField', version: '0.0' })
+
+    expect('someApiField' in pkg).toBe(false)
+  })
+
+  test('reports unmodified when the field already has the same value', () => {
+    const pkg = { name: '@my/adapter-x', someApiField: '0.0' }
+    const { pkg: result, modified } = injectAdapterApiVersion(pkg, { fieldName: 'someApiField', version: '0.0' })
+
+    expect(modified).toBe(false)
+    expect(result).toBe(pkg)
+  })
+
+  test('overwrites a stale value and reports modified', () => {
+    const pkg = { name: '@my/adapter-x', someApiField: 'stale' }
+    const { pkg: result, modified } = injectAdapterApiVersion(pkg, { fieldName: 'someApiField', version: '0.0' })
+
+    expect(modified).toBe(true)
+    expect(result.someApiField).toBe('0.0')
+  })
+
+  test('composes with the full prepack transform chain', async () => {
+    const pkg = {
+      name: '@my/adapter-x',
+      version: '2.0.0',
+      dependencies: { '@my/core': 'workspace:*' },
+      devDependencies: { '@my/helper': 'workspace:*' },
+      publishConfig: { exports: { '.': './dist/index.mjs' } },
+    }
+
+    const { pkg: afterDeps } = await rewriteWorkspaceDeps(pkg, mockResolver({ '@my/core': '0.5.0' }))
+    const { pkg: afterPublish } = applyPublishConfig(afterDeps)
+    const { pkg: afterStrip } = stripDevDependencies(afterPublish)
+    const { pkg: result, modified } = injectAdapterApiVersion(afterStrip, {
+      fieldName: 'someApiField',
+      version: '0.0',
+    })
+
+    expect(modified).toBe(true)
+    expect(result).toEqual({
+      name: '@my/adapter-x',
+      version: '2.0.0',
+      dependencies: { '@my/core': '0.5.0' },
+      exports: { '.': './dist/index.mjs' },
+      publishConfig: { exports: { '.': './dist/index.mjs' } },
+      someApiField: '0.0',
     })
   })
 })

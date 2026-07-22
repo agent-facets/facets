@@ -9,7 +9,7 @@ import { type DownloadNpmResult, downloadNpmPackage } from '../sources/adapter/n
 import { type ParseAdapterSpecifierResult, parseAdapterSpecifier } from '../sources/adapter/specifier.ts'
 import { rebundleAdapter, resolveEntryPoint } from './bundler.ts'
 import { placeAdapter } from './placement.ts'
-import { verifyAdapter } from './verify.ts'
+import { type VerifiedAdapter, type VerifyAdapterFailure, verifyAdapter } from './verify.ts'
 
 /**
  * Picker-safe adapter install pipeline (Adjustment Q).
@@ -44,11 +44,13 @@ export interface AdapterInstallOptions {
  *   - `download-failed` — npm registry / git clone / local-path
  *     resolution failed. The `source` discriminator carries the
  *     resolver-specific reason.
- *   - `bundle-failed` / `verify-failed` / `place-failed` — bundler
- *     load, verification, or placement threw. These three still wrap
- *     thrown errors today (their internals weren't part of the #3
- *     scope); the fix here is to surface them as structured failures
- *     to the caller instead of letting them escape the boundary.
+ *   - `bundle-failed` / `place-failed` — bundler load or placement
+ *     threw. These two still wrap thrown errors today; the fix here is
+ *     to surface them as structured failures to the caller instead of
+ *     letting them escape the boundary.
+ *   - `verify-failed` — the produced bundle failed verification. Carries
+ *     the full structured `VerifyAdapterFailure` (including adapter API
+ *     compatibility classifications) for the CLI to render.
  */
 export type AdapterInstallFailure =
   | { kind: 'specifier-invalid'; specifier: string; failure: Extract<ParseAdapterSpecifierResult, { ok: false }> }
@@ -61,7 +63,7 @@ export type AdapterInstallFailure =
         | { kind: 'local'; failure: Extract<ResolveLocalAdapterResult, { ok: false }> }
     }
   | { kind: 'bundle-failed'; specifier: string; cause: string }
-  | { kind: 'verify-failed'; specifier: string; cause: string }
+  | { kind: 'verify-failed'; specifier: string; failure: VerifyAdapterFailure }
   | { kind: 'place-failed'; specifier: string; adapter: string; cause: string }
 
 /**
@@ -128,36 +130,39 @@ export async function installAdapter(
     }
 
     opts.onProgress?.('bundling')
-    let located: { bundlePath: string; adapter: Adapter; cleanup: () => Promise<void> }
+    let located: LocateAndVerifyResult
     try {
       located = await locateAndVerifyAdapter(sourceDir, { onLog: opts.onLog })
     } catch (err) {
-      // bundler internals (`rebundleAdapter`, `verifyAdapter`,
-      // `resolveEntryPoint`) still throw today — converting them is
-      // out of scope for #3. Catch at this boundary so the
-      // `installAdapter` contract stays result-typed even though its
-      // dependencies haven't been converted yet.
+      // bundler internals (`rebundleAdapter`, `resolveEntryPoint`) still
+      // throw today — converting them is a later step. Catch at this
+      // boundary so the `installAdapter` contract stays result-typed
+      // even though its dependencies haven't been converted yet.
       const cause = err instanceof Error ? err.message : String(err)
       return { ok: false, failure: { kind: 'bundle-failed', specifier, cause } }
     }
+    if (!located.ok) {
+      return { ok: false, failure: { kind: 'verify-failed', specifier, failure: located.failure } }
+    }
     bundleCleanup = located.cleanup
+    const adapter = located.verified.adapter
 
-    opts.onProgress?.('verifying', located.adapter.name)
+    opts.onProgress?.('verifying', adapter.name)
     // verification already happened inside locateAndVerifyAdapter; this
     // stage tick just exists for progress symmetry on the picker.
 
-    opts.onProgress?.('placing', located.adapter.name)
+    opts.onProgress?.('placing', adapter.name)
     try {
-      await placeAdapter(located.adapter.name, located.bundlePath)
+      await placeAdapter(adapter.name, located.bundlePath)
     } catch (err) {
       const cause = err instanceof Error ? err.message : String(err)
       return {
         ok: false,
-        failure: { kind: 'place-failed', specifier, adapter: located.adapter.name, cause },
+        failure: { kind: 'place-failed', specifier, adapter: adapter.name, cause },
       }
     }
 
-    return { ok: true, adapter: located.adapter }
+    return { ok: true, adapter }
   } finally {
     if (bundleCleanup) await bundleCleanup()
     if (needsCleanup && sourceDir) {
@@ -169,13 +174,28 @@ export async function installAdapter(
 const noopCleanup = async (): Promise<void> => {}
 
 /**
- * Locates a usable adapter bundle from `sourceDir` and verifies it loads.
+ * Result of `locateAndVerifyAdapter`. On success, `bundlePath` is the
+ * verified bundle ready for placement and `cleanup` removes any build
+ * temp directory (callers MUST invoke it). On failure the function has
+ * already cleaned up its own temp resources.
+ */
+export type LocateAndVerifyResult =
+  | { ok: true; bundlePath: string; verified: VerifiedAdapter; cleanup: () => Promise<void> }
+  | { ok: false; failure: VerifyAdapterFailure }
+
+/**
+ * Locates a usable adapter bundle from `sourceDir` and verifies it loads
+ * and is API-compatible.
  *
  * Tries the fast path first (prebuilt `dist/index.mjs` or whatever the
  * package's `exports`/`main` points at). If the fast-path bundle fails to
- * load — typically because it still has unresolved external imports — falls
- * back to the slow path: `bun install` + `Bun.build()` on the resolved
- * entry point.
+ * *import* — typically because it still has unresolved external imports —
+ * falls back to the slow path: `bun install` + `Bun.build()` on the
+ * resolved entry point. Only `import-failed` is fallback-eligible: a
+ * compatibility contradiction (missing/malformed/unsupported API,
+ * metadata mismatch) or an invalid adapter shape is terminal, because
+ * rebundling the same source cannot fix a declared contract and must
+ * never silently select a different call shape.
  *
  * Fast-path verification is performed by copying the candidate bundle into
  * a freshly-created temp directory and importing it from there. This is
@@ -187,42 +207,61 @@ const noopCleanup = async (): Promise<void> => {}
  */
 export async function locateAndVerifyAdapter(
   sourceDir: string,
-  opts: { onLog?: OnLog } = {},
-): Promise<{ bundlePath: string; adapter: Adapter; cleanup: () => Promise<void> }> {
+  opts: { onLog?: OnLog; expectedApiVersion?: string } = {},
+): Promise<LocateAndVerifyResult> {
   const resolved = await resolveEntryPoint(sourceDir)
+  const verifyOpts = { expectedApiVersion: opts.expectedApiVersion }
 
   if (resolved.kind === 'prebuilt') {
     opts.onLog?.(() => `[verbose]   using prebuilt bundle for ${basename(sourceDir)}`)
-    const verifyResult = await verifyPrebuiltInIsolation(resolved.path)
+    const verifyResult = await verifyPrebuiltInIsolation(resolved.path, verifyOpts)
     if (verifyResult.ok) {
-      return { bundlePath: resolved.path, adapter: verifyResult.adapter, cleanup: noopCleanup }
+      return { ok: true, bundlePath: resolved.path, verified: verifyResult.verified, cleanup: noopCleanup }
+    }
+    const prebuiltFailure = verifyResult.failure
+    if (prebuiltFailure.kind !== 'import-failed') {
+      // Terminal: the prebuilt bundle loaded but contradicts the
+      // contract (or isn't an adapter). No rebundling fallback.
+      return { ok: false, failure: prebuiltFailure }
     }
     opts.onLog?.(
       () =>
-        `[verbose]   prebuilt bundle for ${basename(sourceDir)} did not load cleanly (${verifyResult.message}); rebundling from source`,
+        `[verbose]   prebuilt bundle for ${basename(sourceDir)} did not load cleanly (${prebuiltFailure.cause}); rebundling from source`,
     )
     const sourceEntry = await resolveSourceEntry(sourceDir, resolved.path)
-    const built = await rebundleAdapter(sourceDir, sourceEntry)
-    const adapter = await verifyAdapter(built.bundlePath)
-    return { bundlePath: built.bundlePath, adapter, cleanup: built.cleanup }
+    return verifyBuilt(await rebundleAdapter(sourceDir, sourceEntry), verifyOpts)
   }
 
-  const built = await rebundleAdapter(sourceDir, resolved.path)
-  const adapter = await verifyAdapter(built.bundlePath)
-  return { bundlePath: built.bundlePath, adapter, cleanup: built.cleanup }
+  return verifyBuilt(await rebundleAdapter(sourceDir, resolved.path), verifyOpts)
+}
+
+/** Verify a freshly rebundled adapter; on failure, clean up its temp dir. */
+async function verifyBuilt(
+  built: { bundlePath: string; cleanup: () => Promise<void> },
+  verifyOpts: { expectedApiVersion?: string },
+): Promise<LocateAndVerifyResult> {
+  const result = await verifyAdapter(built.bundlePath, verifyOpts)
+  if (!result.ok) {
+    await built.cleanup()
+    return { ok: false, failure: result.failure }
+  }
+  return { ok: true, bundlePath: built.bundlePath, verified: result.verified, cleanup: built.cleanup }
 }
 
 async function verifyPrebuiltInIsolation(
   prebuiltPath: string,
-): Promise<{ ok: true; adapter: Adapter } | { ok: false; message: string }> {
+  verifyOpts: { expectedApiVersion?: string },
+): Promise<{ ok: true; verified: VerifiedAdapter } | { ok: false; failure: VerifyAdapterFailure }> {
   const isolationDir = await mkdtemp(join(tmpdir(), 'facet-adapter-verify-'))
   try {
     const isolatedPath = join(isolationDir, basename(prebuiltPath))
     await cp(prebuiltPath, isolatedPath)
-    const adapter = await verifyAdapter(isolatedPath)
-    return { ok: true, adapter }
-  } catch (err) {
-    return { ok: false, message: err instanceof Error ? err.message : String(err) }
+    const result = await verifyAdapter(isolatedPath, verifyOpts)
+    if (!result.ok) {
+      // Report the original prebuilt path, not the transient isolation copy.
+      return { ok: false, failure: { ...result.failure, bundlePath: prebuiltPath } }
+    }
+    return { ok: true, verified: result.verified }
   } finally {
     await rm(isolationDir, { recursive: true, force: true }).catch(() => {})
   }
