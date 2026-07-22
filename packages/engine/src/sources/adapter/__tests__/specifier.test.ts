@@ -174,6 +174,11 @@ describe('parseAdapterSpecifier — rejected npm selectors', () => {
     if (result.reason !== 'invalid-npm-selector') expect.unreachable()
     expect(result.error.code).toBe(code as never)
     expect(result.specifier).toBe(specifier)
+    // The rejection SHALL identify the accepted exact, wildcard, and
+    // `latest` forms so the user can self-correct.
+    expect(result.error.fix).toContain('latest')
+    expect(result.error.fix).toContain('1.2.3')
+    expect(result.error.fix).toMatch(/1\.\*|1\.2\.\*/)
   })
 
   test('rejected selector reports the alias-resolved package name', () => {

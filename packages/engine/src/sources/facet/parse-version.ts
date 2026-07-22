@@ -29,26 +29,34 @@ export function parseVersionSpec(input: string): ParseResult<VersionSpec> {
     return err(
       'CARET_RANGE',
       `caret ranges are not supported (got "${input}")`,
-      'use 1.* for major-pinned, 1.2.* for minor-pinned, or 1.2.3 for exact',
+      'use 1.* for major-pinned, 1.2.* for minor-pinned, 1.2.3 for exact, or latest',
     )
   }
   if (input.startsWith('~')) {
     return err(
       'TILDE_RANGE',
       `tilde ranges are not supported (got "${input}")`,
-      'use 1.2.* for minor-pinned or 1.2.3 for exact',
+      'use 1.2.* for minor-pinned, 1.2.3 for exact, or latest',
     )
   }
   if (/^[<>]=?/.test(input)) {
-    return err('COMPARATOR_RANGE', `comparator ranges are not supported (got "${input}")`, 'use 1.* or 1.2.3 instead')
+    return err(
+      'COMPARATOR_RANGE',
+      `comparator ranges are not supported (got "${input}")`,
+      'use 1.*, 1.2.3, or latest instead',
+    )
   }
   if (input.includes('||')) {
-    return err('OR_RANGE', `OR ranges are not supported (got "${input}")`, 'pick one version specifier — 1.* or 1.2.3')
+    return err(
+      'OR_RANGE',
+      `OR ranges are not supported (got "${input}")`,
+      'pick one version specifier — 1.*, 1.2.3, or latest',
+    )
   }
   // Hyphen ranges: `1.0.0 - 2.0.0`. We detect the space-hyphen-space
   // pattern to avoid catching pre-release identifiers like `1.0.0-rc.1`.
   if (/\s-\s/.test(input)) {
-    return err('COMPARATOR_RANGE', `hyphen ranges are not supported (got "${input}")`, 'use 1.* or 1.2.3')
+    return err('COMPARATOR_RANGE', `hyphen ranges are not supported (got "${input}")`, 'use 1.*, 1.2.3, or latest')
   }
 
   // Literal `latest` tag.
@@ -63,7 +71,11 @@ export function parseVersionSpec(input: string): ParseResult<VersionSpec> {
 
   // x-style placeholders: 1.x, 1.2.x, 1.X
   if (/^\d+(?:\.\d+)?\.[xX]$/.test(input) || /^\d+\.[xX]$/.test(input)) {
-    return err('X_RANGE', `x-style ranges are not supported (got "${input}")`, 'use * (e.g., 1.* or 1.2.*) instead')
+    return err(
+      'X_RANGE',
+      `x-style ranges are not supported (got "${input}")`,
+      'use * (e.g., 1.* or 1.2.*), 1.2.3, or latest instead',
+    )
   }
 
   // Major-wildcard: `<major>.*`
