@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import type { FacetsJson, Lockfile } from '@agent-facets/protocol'
+import { type AdapterCompatibilityFailure, compatibilityFailureFor } from '../adapters/api-compatibility.ts'
 import { loadFacetsJson } from '../manifest/project-files.ts'
 import { applyManifestWritePolicy, mergeDeltaIntoManifest } from './commit/delta.ts'
 import { removeDriftedFacets } from './commit/drift-removal.ts'
@@ -97,6 +98,20 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     const conflict = delta.removals.find((r) => additionNames.has(r.facetName))
     if (conflict !== undefined) {
       return failureNoMutation({ code: 'DELTA_CONFLICT', facet: conflict.facetName })
+    }
+
+    // 3c. Adapter API preflight — defense-in-depth behind the
+    //     command-level fail-closed load. Runs on the no-mutation path
+    //     before the per-facet loop, which also precedes any Git/local
+    //     facet build, drift removal, and every materialization write.
+    //     Collects every incompatible adapter, not just the first.
+    const incompatibleAdapters: AdapterCompatibilityFailure[] = []
+    for (const adapter of adapters) {
+      const incompatibility = compatibilityFailureFor(adapter.name, adapter.apiVersion)
+      if (incompatibility !== null) incompatibleAdapters.push(incompatibility)
+    }
+    if (incompatibleAdapters.length > 0) {
+      return failureNoMutation({ code: 'ADAPTER_INCOMPATIBLE', failures: incompatibleAdapters })
     }
 
     // 4. Frozen-lockfile gates. A frozen commit with a non-empty delta is

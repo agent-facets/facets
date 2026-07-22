@@ -175,6 +175,7 @@ describe('adapter install-load-build integration', () => {
       const result = await runBuildPipeline(facetDir, loaded)
       expect(result.ok).toBe(false)
       if (!result.ok) {
+        if (result.kind !== 'validation') expect.unreachable()
         expect(result.errors.some((e) => e.message.includes('integ-test-adapter'))).toBe(true)
       }
     } finally {

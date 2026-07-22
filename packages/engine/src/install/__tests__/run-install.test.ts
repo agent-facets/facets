@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { Adapter } from '@agent-facets/adapter'
 import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
 import type { BuildManifest } from '@agent-facets/protocol'
 
@@ -482,5 +483,61 @@ describe('runInstall — frozen-lockfile mode', () => {
     // Project files are byte-for-byte unchanged (no rewrite, no materialize).
     expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(facetsBefore)
     expect(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')).toBe(lockBefore)
+  })
+})
+
+describe('runInstall — ADAPTER_INCOMPATIBLE preflight', () => {
+  /** Structurally valid adapter with an unsupported API; methods throw loud. */
+  function incompatibleAdapter(name: string, apiVersion: unknown): Adapter {
+    return {
+      name,
+      apiVersion,
+      supportsInstall: true,
+      buildAssetMetadata: () => {
+        throw new Error('contract method invoked despite incompatibility')
+      },
+      async installAsset() {
+        throw new Error('contract method invoked despite incompatibility')
+      },
+      async readAsset() {
+        throw new Error('contract method invoked despite incompatibility')
+      },
+      async deleteAsset() {
+        throw new Error('contract method invoked despite incompatibility')
+      },
+    } as Adapter
+  }
+
+  test('fails on the no-mutation path before any facet processing or write', async () => {
+    // The manifest content is irrelevant: the preflight fires before any
+    // facet is parsed, resolved, or built.
+    const manifestBytes = writeFacets({ 'gate-facet': './some-local-facet' })
+
+    const result = await runInstall({
+      projectRoot,
+      adapters: [incompatibleAdapter('future-adapter', '9.9')],
+    })
+
+    if (result.ok) expect.unreachable()
+    if (result.failure.code !== 'ADAPTER_INCOMPATIBLE') expect.unreachable()
+    expect(result.failure.failures).toEqual([
+      { kind: 'api-unsupported', adapter: 'future-adapter', found: '9.9', supported: [ADAPTER_API_VERSION] },
+    ])
+    expect(result.rollback.kind).toBe('not-needed')
+
+    // No writes: manifest byte-identical, no lockfile created.
+    expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(manifestBytes)
+    expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)
+  })
+
+  test('collects every incompatible adapter', async () => {
+    writeFacets({})
+    const result = await runInstall({
+      projectRoot,
+      adapters: [incompatibleAdapter('undeclared', undefined), incompatibleAdapter('malformed', '0.0.1')],
+    })
+    if (result.ok) expect.unreachable()
+    if (result.failure.code !== 'ADAPTER_INCOMPATIBLE') expect.unreachable()
+    expect(result.failure.failures.map((f) => f.kind)).toEqual(['api-missing', 'api-malformed'])
   })
 })

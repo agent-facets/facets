@@ -14,6 +14,7 @@ import {
   validateCompactFacets,
   validateContentFiles,
 } from '@agent-facets/protocol'
+import { type AdapterCompatibilityFailure, compatibilityFailureFor } from '../adapters/api-compatibility.ts'
 import { jsonFileText } from '../json-file-text.ts'
 import { loadManifest, resolvePrompts } from '../loaders/facet.ts'
 import { buildArtifactFilename } from '../registry/artifact-path.ts'
@@ -38,11 +39,18 @@ export interface BuildResult {
   manifestJson: string
 }
 
-export interface BuildFailure {
-  ok: false
-  errors: ValidationError[]
-  warnings: string[]
-}
+/**
+ * Discriminated build failure:
+ *
+ *   - `validation` — manifest/content/collision/adapter-metadata errors.
+ *   - `adapter-incompatible` — a supplied adapter does not declare a
+ *     CLI-supported API. Detected by a preflight before any pipeline
+ *     stage runs, so no adapter contract method is ever invoked and the
+ *     failure is never conflated with content validation.
+ */
+export type BuildFailure =
+  | { ok: false; kind: 'validation'; errors: ValidationError[]; warnings: string[] }
+  | { ok: false; kind: 'adapter-incompatible'; failures: AdapterCompatibilityFailure[]; warnings: string[] }
 
 /** Stage names emitted by the build pipeline via the onProgress callback. */
 export const BUILD_STAGES = [
@@ -79,13 +87,27 @@ export async function runBuildPipeline(
 ): Promise<BuildResult | BuildFailure> {
   const warnings: string[] = []
 
+  // Stage 0: adapter API preflight — defense-in-depth behind the
+  // command-level fail-closed load. Runs before any stage so an
+  // incompatible adapter can never reach a contract method or be
+  // misreported as a content-validation failure. A build with zero
+  // adapters proceeds normally (unknown adapters warn in stage 5).
+  const incompatible: AdapterCompatibilityFailure[] = []
+  for (const adapter of adapters) {
+    const failure = compatibilityFailureFor(adapter.name, adapter.apiVersion)
+    if (failure !== null) incompatible.push(failure)
+  }
+  if (incompatible.length > 0) {
+    return { ok: false, kind: 'adapter-incompatible', failures: incompatible, warnings }
+  }
+
   // Stage 1: Parse manifest
   onProgress?.({ stage: 'Parsing manifest', status: 'running' })
 
   const loadResult = await loadManifest(rootDir)
   if (!loadResult.ok) {
     onProgress?.({ stage: 'Parsing manifest', status: 'failed' })
-    return { ok: false, errors: loadResult.errors, warnings }
+    return { ok: false, kind: 'validation', errors: loadResult.errors, warnings }
   }
   const manifest = loadResult.data
 
@@ -97,7 +119,7 @@ export async function runBuildPipeline(
   const resolveResult = await resolvePrompts(manifest, rootDir)
   if (!resolveResult.ok) {
     onProgress?.({ stage: 'Resolving prompts', status: 'failed' })
-    return { ok: false, errors: resolveResult.errors, warnings }
+    return { ok: false, kind: 'validation', errors: resolveResult.errors, warnings }
   }
 
   onProgress?.({ stage: 'Resolving prompts', status: 'done' })
@@ -108,7 +130,7 @@ export async function runBuildPipeline(
   const contentErrors = validateContentFiles(resolveResult.data)
   if (contentErrors.length > 0) {
     onProgress?.({ stage: 'Validating assets', status: 'failed' })
-    return { ok: false, errors: contentErrors, warnings }
+    return { ok: false, kind: 'validation', errors: contentErrors, warnings }
   }
 
   onProgress?.({ stage: 'Validating assets', status: 'done' })
@@ -121,7 +143,7 @@ export async function runBuildPipeline(
   const checkErrors = [...collisionErrors, ...facetsErrors]
   if (checkErrors.length > 0) {
     onProgress?.({ stage: 'Checking collisions', status: 'failed' })
-    return { ok: false, errors: checkErrors, warnings }
+    return { ok: false, kind: 'validation', errors: checkErrors, warnings }
   }
 
   onProgress?.({ stage: 'Checking collisions', status: 'done' })
@@ -132,7 +154,12 @@ export async function runBuildPipeline(
   const adapterResult = validateAdapterMetadata(manifest, adapters)
   if (adapterResult.errors.length > 0) {
     onProgress?.({ stage: 'Validating adapters', status: 'failed' })
-    return { ok: false, errors: adapterResult.errors, warnings: [...warnings, ...adapterResult.warnings] }
+    return {
+      ok: false,
+      kind: 'validation',
+      errors: adapterResult.errors,
+      warnings: [...warnings, ...adapterResult.warnings],
+    }
   }
   warnings.push(...adapterResult.warnings)
 

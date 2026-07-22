@@ -1,6 +1,7 @@
 import type { Adapter } from '@agent-facets/adapter'
 import { splitFrontMatter } from '@agent-facets/common'
 import type { LockfileAssetEntry, ResolvedFacetManifest } from '@agent-facets/protocol'
+import { type AdapterCompatibilityFailure, compatibilityFailureFor } from '../adapters/api-compatibility.ts'
 import type { InstallJournal } from './journal.ts'
 import type { OnLog, StageEvent } from './types.ts'
 
@@ -88,6 +89,10 @@ export interface MaterializeCounts {
  *   - `unsupported-adapter` — caller passed an adapter whose
  *     `supportsInstall !== true`. Defense-in-depth beyond the picker
  *     filter; loud failure beats silent no-op.
+ *   - `incompatible-adapter` — caller passed an adapter that does not
+ *     declare a CLI-supported API. Invariant check only: the primary
+ *     gates are the command-level fail-closed load and the runInstall
+ *     preflight; reaching this arm means an upstream gate was bypassed.
  *   - `read-failed` — `adapter.readAsset` threw something other than
  *     ENOENT. ENOENT is the one "file didn't exist" signal we trust;
  *     anything else (EACCES, EIO, EISDIR, adapter bugs) means we don't
@@ -98,6 +103,7 @@ export interface MaterializeCounts {
  */
 export type MaterializeFailure =
   | { kind: 'unsupported-adapter'; adapter: string }
+  | { kind: 'incompatible-adapter'; failure: AdapterCompatibilityFailure }
   | { kind: 'read-failed'; adapter: string; asset: LockfileAssetEntry; cause: string }
   | { kind: 'install-failed'; adapter: string; asset: LockfileAssetEntry; cause: string }
   | { kind: 'delete-failed'; adapter: string; asset: LockfileAssetEntry; cause: string }
@@ -138,6 +144,14 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
     // the picker filter). Fail loud rather than silent no-op.
     if (adapter.supportsInstall !== true) {
       return { ok: false, failure: { kind: 'unsupported-adapter', adapter: adapter.name } }
+    }
+
+    // Invariant check only — the primary compatibility gates run at the
+    // command level and in the runInstall preflight, both before any
+    // materialization write. Reaching this arm means a gate was bypassed.
+    const incompatibility = compatibilityFailureFor(adapter.name, adapter.apiVersion)
+    if (incompatibility !== null) {
+      return { ok: false, failure: { kind: 'incompatible-adapter', failure: incompatibility } }
     }
 
     opts.onLog?.(() => `[verbose]   installing ${opts.facetName}@${opts.manifest.version} → ${adapter.name}`)

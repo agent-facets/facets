@@ -9,7 +9,7 @@ import { render } from 'ink'
 import { createElement } from 'react'
 import type { Command } from '../commands.ts'
 import { BuildView } from '../tui/views/build/build-view.tsx'
-import { describeInstalledAdapterFailure } from '../util/adapter-install-errors.ts'
+import { buildFailureMessages, describeInstalledAdapterFailure } from '../util/adapter-install-errors.ts'
 import { writeCliError } from '../util/errors.ts'
 import { resolveTargetDir } from './resolve-dir.ts'
 
@@ -137,7 +137,10 @@ function printBuildJson(result: BuildResult | BuildFailure, verified: boolean): 
         schemaVersion: BUILD_JSON_SCHEMA_VERSION,
         ok: false,
         verified,
-        errors: result.errors.map((e) => ({ message: e.message, path: e.path })),
+        errors:
+          result.kind === 'validation'
+            ? result.errors.map((e) => ({ message: e.message, path: e.path }))
+            : buildFailureMessages(result).map((message) => ({ message, path: 'adapters' })),
         warnings: result.warnings,
       }
   process.stdout.write(`${JSON.stringify(doc, null, 2)}\n`)
@@ -161,10 +164,11 @@ function printBuildPlain(result: BuildResult | BuildFailure, verified: boolean, 
     }
     return
   }
+  const messages = buildFailureMessages(result)
   process.stderr.write(
-    `✗ ${verified ? 'Verification' : 'Build'} failed — ${result.errors.length} error${result.errors.length !== 1 ? 's' : ''}:\n`,
+    `✗ ${verified ? 'Verification' : 'Build'} failed — ${messages.length} error${messages.length !== 1 ? 's' : ''}:\n`,
   )
-  for (const err of result.errors) {
-    process.stderr.write(`  ${err.message}\n`)
+  for (const message of messages) {
+    process.stderr.write(`  ${message}\n`)
   }
 }

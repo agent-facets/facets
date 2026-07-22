@@ -84,3 +84,23 @@ export type AdapterCompatibilityFailure =
       runtimeDeclared: string
       supported: readonly string[]
     }
+
+/**
+ * Classify a declared value and, when it is not supported, map it to
+ * the compatibility failure for `adapter`. Returns null for supported
+ * declarations. Shared by the build and install defense-in-depth
+ * preflights so classification-to-failure mapping exists once.
+ */
+export function compatibilityFailureFor(adapter: string, declared: unknown): AdapterCompatibilityFailure | null {
+  const classified = classifyApiDeclaration(declared)
+  switch (classified.kind) {
+    case 'supported':
+      return null
+    case 'missing':
+      return { kind: 'api-missing', adapter, supported: SUPPORTED_ADAPTER_APIS }
+    case 'malformed':
+      return { kind: 'api-malformed', adapter, found: classified.found, supported: SUPPORTED_ADAPTER_APIS }
+    case 'unsupported':
+      return { kind: 'api-unsupported', adapter, found: classified.api, supported: SUPPORTED_ADAPTER_APIS }
+  }
+}
