@@ -525,9 +525,13 @@ describe('runInstall — ADAPTER_INCOMPATIBLE preflight', () => {
     ])
     expect(result.rollback.kind).toBe('not-needed')
 
-    // No writes: manifest byte-identical, no lockfile created.
+    // No writes: manifest byte-identical, no lockfile created, no
+    // install receipt written (the receipt only exists after a
+    // successful tri-write).
     expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(manifestBytes)
     expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)
+    const { receiptPath } = await import('../receipt.ts')
+    expect(existsSync(receiptPath(projectRoot))).toBe(false)
   })
 
   test('collects every incompatible adapter', async () => {

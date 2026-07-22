@@ -592,6 +592,25 @@ describe('facet adapter list — inspection-backed output', () => {
       await rm(facetDir, { recursive: true, force: true })
     }
   })
+
+  test('remains usable with a broken entry (invalid receipt) and shows recovery', async () => {
+    const facetDir = await makeFacetDir()
+    try {
+      // Fabricate a managed directory whose installation.json is garbage.
+      const brokenDir = join(adaptersIn(facetDir), 'broken-tool')
+      await mkdir(brokenDir, { recursive: true })
+      await writeFile(join(brokenDir, 'installation.json'), '{not json')
+
+      const listResult = await runCli(['adapter', 'list'], { FACET_DIR: facetDir })
+      expect(listResult.exitCode).toBe(0)
+      expect(listResult.stdout).toContain('broken-tool')
+      expect(listResult.stdout).toContain('api unknown')
+      expect(listResult.stdout).toContain('broken (invalid installation record)')
+      expect(listResult.stdout).toContain('facet adapter install broken-tool')
+    } finally {
+      await rm(facetDir, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('FACET_DIR redirect', () => {
