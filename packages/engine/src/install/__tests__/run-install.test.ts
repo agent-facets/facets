@@ -191,14 +191,14 @@ function readLock(): {
 
 async function install() {
   const loadResult = await loadInstalledAdapters()
-  if (!loadResult.ok) throw new Error('test bug: installed fixture adapters failed to load')
+  if (!loadResult.ok) expect.unreachable('test bug: installed fixture adapters failed to load')
   const adapters = loadResult.adapters
   return runInstall({ projectRoot, adapters: adapters.filter((a) => a.supportsInstall === true) })
 }
 
 async function installFrozen() {
   const loadResult = await loadInstalledAdapters()
-  if (!loadResult.ok) throw new Error('test bug: installed fixture adapters failed to load')
+  if (!loadResult.ok) expect.unreachable('test bug: installed fixture adapters failed to load')
   const adapters = loadResult.adapters
   return runInstall({
     projectRoot,
@@ -240,7 +240,7 @@ describe('runInstall — DELTA_CONFLICT (#23)', () => {
   test('a delta with the same facet in additions and removals fails before any mutation', async () => {
     writeFacets({ cowsay: '0.1.0' })
     const loadResult = await loadInstalledAdapters()
-    if (!loadResult.ok) throw new Error('test bug: installed fixture adapters failed to load')
+    if (!loadResult.ok) expect.unreachable('test bug: installed fixture adapters failed to load')
     const adapters = loadResult.adapters
     const result = await runInstall({
       projectRoot,

@@ -7,9 +7,20 @@ import type {
   InstalledAdapterFailure,
   NpmVersionRequest,
   PlaceAdapterFailure,
+  PlacementWarning,
   RepairSource,
   VerifyAdapterFailure,
 } from '@agent-facets/engine'
+import { quoteShellArg } from './shell-quote.ts'
+
+/**
+ * Single rendering seam for `facet adapter install <target>` commands in
+ * fix lines. Targets are user/source-derived (receipt specifiers, local
+ * paths, package names) and must paste back into a shell safely.
+ */
+function adapterInstallCommand(target: string): string {
+  return `facet adapter install ${quoteShellArg(target)}`
+}
 
 /**
  * Map an `AdapterInstallFailure` to the `{ what, detail, fix }` triple
@@ -37,6 +48,15 @@ export function describeAdapterInstallFailure(failure: AdapterInstallFailure): {
 }
 
 /**
+ * Render one adapter-compatibility failure into a single message line —
+ * the shared source of truth for the plain, TUI, and JSON build outputs.
+ */
+export function compatibilityFailureMessage(compatibility: AdapterCompatibilityFailure): string {
+  const described = describeCompatibilityFailure(compatibility)
+  return `${described.what} — ${described.detail} (fix: ${described.fix})`
+}
+
+/**
  * Flatten a build failure into displayable message lines. Validation
  * failures pass through their error messages; adapter-incompatibility
  * failures render through the shared compatibility prose.
@@ -45,21 +65,27 @@ export function buildFailureMessages(failure: EngineBuildFailure): string[] {
   if (failure.kind === 'validation') {
     return failure.errors.map((error) => error.message)
   }
-  return failure.failures.map((compatibility) => {
-    const described = describeCompatibilityFailure(compatibility)
-    return `${described.what} — ${described.detail} (fix: ${described.fix})`
-  })
+  return failure.failures.map(compatibilityFailureMessage)
+}
+
+/**
+ * Render a post-activation placement warning (best-effort cleanup that
+ * failed after the install already succeeded). Single source of the
+ * warning line for every install path.
+ */
+export function formatPlacementWarning(warning: PlacementWarning): string {
+  return `warning: could not clean up ${warning.path} (${warning.cause})`
 }
 
 /** Render the repair command for an installed-adapter failure. */
 export function repairCommand(repair: RepairSource): string {
   switch (repair.kind) {
     case 'managed':
-      return `facet adapter install ${repair.specifier}`
+      return adapterInstallCommand(repair.specifier)
     case 'first-party-alias':
-      return `facet adapter install ${repair.alias}`
+      return adapterInstallCommand(repair.alias)
     case 'unmanaged-name':
-      return `facet adapter install ${repair.name}`
+      return adapterInstallCommand(repair.name)
   }
 }
 
@@ -134,6 +160,12 @@ function describeBundleFailure(
         detail: `looked in ${failure.sourceDir}`,
         fix: 'point the specifier at an adapter package root',
       }
+    case 'invalid-package-json':
+      return {
+        what: `adapter source for "${specifier}" has an unreadable package.json`,
+        detail: `${failure.cause} (${failure.sourceDir})`,
+        fix: 'fix the JSON in the package.json at the adapter source root',
+      }
     case 'no-entry-point':
       return {
         what: `cannot determine an entry point for adapter "${specifier}"`,
@@ -171,6 +203,12 @@ function describePlaceFailure(
         what: `another install is replacing adapter "${adapter}"`,
         detail: `replacement lock held by pid ${failure.heldByPid} (${failure.lockPath})`,
         fix: 'wait for the other install to finish and retry',
+      }
+    case 'lock-io':
+      return {
+        what: `could not create the replacement lock for adapter "${adapter}"`,
+        detail: `${failure.cause} (${failure.lockPath})`,
+        fix: 'check filesystem permissions under ~/.facet/locks/ and retry',
       }
     case 'stage-failed':
       return {
@@ -213,7 +251,9 @@ function describeVerifyFailure(
         fix: 'rebuild the adapter so its entry point default-exports the defineAdapter() result',
       }
     case 'incompatible':
-      return describeCompatibilityFailure(failure.failure)
+      // Prefer the caller's specifier for the install command: a
+      // nameless bundle's identity is its (transient) bundle path.
+      return describeCompatibilityFailure(failure.failure, specifier)
     case 'invalid-name':
       return {
         what: `adapter "${specifier}" has an invalid or missing name`,
@@ -233,8 +273,17 @@ function describeVerifyFailure(
  * Sole rendering point for the shared adapter-API compatibility failure
  * union. Engine returns structured data; adding a variant forces this
  * switch to update.
+ *
+ * `installTarget` is the value interpolated into rendered install
+ * commands. It defaults to the failure's adapter identity, but callers
+ * that know the user's original install specifier should pass it —
+ * for a nameless bundle the identity falls back to a transient bundle
+ * path, which is useless as a command argument.
  */
-export function describeCompatibilityFailure(failure: AdapterCompatibilityFailure): {
+export function describeCompatibilityFailure(
+  failure: AdapterCompatibilityFailure,
+  installTarget: string = failure.adapter,
+): {
   what: string
   detail: string
   fix: string
@@ -245,19 +294,19 @@ export function describeCompatibilityFailure(failure: AdapterCompatibilityFailur
       return {
         what: `adapter "${failure.adapter}" does not declare an adapter API version`,
         detail: `this CLI supports adapter API ${supported}; undeclared adapters are incompatible`,
-        fix: `install a release built with a current @agent-facets/adapter SDK: facet adapter install ${failure.adapter}`,
+        fix: `install a release built with a current @agent-facets/adapter SDK: ${adapterInstallCommand(installTarget)}`,
       }
     case 'api-malformed':
       return {
         what: `adapter "${failure.adapter}" declares a malformed adapter API version`,
         detail: `found "${failure.found}"; this CLI supports adapter API ${supported}`,
-        fix: `install a release with a valid API declaration: facet adapter install ${failure.adapter}`,
+        fix: `install a release with a valid API declaration: ${adapterInstallCommand(installTarget)}`,
       }
     case 'api-unsupported':
       return {
         what: `adapter "${failure.adapter}" declares unsupported adapter API ${failure.found}`,
         detail: `this CLI supports adapter API ${supported}`,
-        fix: `install a compatible release: facet adapter install ${failure.adapter}`,
+        fix: `install a compatible release: ${adapterInstallCommand(installTarget)}`,
       }
     case 'api-metadata-mismatch':
       return {
@@ -394,10 +443,32 @@ function describeNoCompatibleRelease(failure: {
   return {
     what: `no compatible release of "${failure.packageName}" (${selector})`,
     detail: `this CLI supports adapter API ${supported}; ${newest}`,
-    fix:
-      failure.request.kind === 'exact'
-        ? `that exact version is incompatible; try \`facet adapter install ${failure.packageName}\` for the highest compatible release`
-        : 'the publisher must release a version declaring a supported adapter API',
+    fix: noCompatibleReleaseFix(failure.request, failure.packageName, failure.newestConsidered !== undefined),
+  }
+}
+
+/**
+ * The actionable fix depends first on whether any stable release was
+ * *considered* at all: when `newestConsidered` is absent the request
+ * matched nothing (a version that was never published, or a selector
+ * that matched no stable release), so blaming the publisher's API
+ * declaration — or calling an unpublished exact pin "incompatible" —
+ * would contradict the detail line.
+ */
+function noCompatibleReleaseFix(request: NpmVersionRequest, packageName: string, considered: boolean): string {
+  const bareInstall = adapterInstallCommand(packageName)
+  if (considered) {
+    return request.kind === 'exact'
+      ? `that exact version is incompatible; try \`${bareInstall}\` for the highest compatible release`
+      : 'the publisher must release a version declaring a supported adapter API'
+  }
+  switch (request.kind) {
+    case 'exact':
+      return `version "${request.raw}" was never published as a stable release; try \`${bareInstall}\` for the highest compatible release`
+    case 'selector':
+      return `no stable release matches "${request.raw}"; correct or widen the selector, or try \`${bareInstall}\``
+    case 'implicit':
+      return `"${packageName}" has no stable releases`
   }
 }
 

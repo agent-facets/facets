@@ -128,7 +128,7 @@ async function install(
   } = {},
 ) {
   const loadResult = await loadInstalledAdapters()
-  if (!loadResult.ok) throw new Error('test bug: installed fixture adapters failed to load')
+  if (!loadResult.ok) expect.unreachable('test bug: installed fixture adapters failed to load')
   const adapters = loadResult.adapters
   return runInstall({
     projectRoot,

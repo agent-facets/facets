@@ -1,7 +1,7 @@
 import { cp, mkdir, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { facetAdaptersDir } from '../facet-dir.ts'
-import { acquireAdapterLock } from '../install/lockfile-guard.ts'
+import { type AcquireLockResult, acquireAdapterLock, computeAdapterLockPath } from '../install/lockfile-guard.ts'
 import {
   GENERATIONS_DIR_NAME,
   generationBundlePath,
@@ -101,6 +101,7 @@ export type PlacementWarning = { kind: 'cleanup-failed'; path: string; cause: st
  */
 export type PlaceAdapterFailure =
   | { kind: 'lock-held'; adapter: string; heldByPid: number; lockPath: string }
+  | { kind: 'lock-io'; adapter: string; lockPath: string; code?: string; cause: string }
   | { kind: 'stage-failed'; adapter: string; cause: string }
   | { kind: 'verify-failed'; adapter: string; failure: VerifyAdapterFailure }
   | { kind: 'name-mismatch'; adapter: string; runtimeName: string }
@@ -142,7 +143,25 @@ export async function placeAdapterManaged(
 ): Promise<PlaceAdapterResult> {
   const adapterDir = getAdapterDir(name, baseDir)
 
-  const lockResult = acquireAdapterLock(name)
+  // 1. Acquire the per-adapter replacement lock. Lock-file I/O failures
+  // (unwritable or read-only $FACET_DIR, locks path occupied by a file)
+  // are expected environmental failures — classify them at this boundary
+  // so the documented result contract holds instead of rejecting.
+  let lockResult: AcquireLockResult
+  try {
+    lockResult = acquireAdapterLock(name)
+  } catch (err) {
+    return {
+      ok: false,
+      failure: {
+        kind: 'lock-io',
+        adapter: name,
+        lockPath: computeAdapterLockPath(name),
+        code: (err as NodeJS.ErrnoException | undefined)?.code,
+        cause: err instanceof Error ? err.message : String(err),
+      },
+    }
+  }
   if (!lockResult.ok) {
     return {
       ok: false,

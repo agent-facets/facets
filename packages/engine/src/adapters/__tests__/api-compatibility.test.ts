@@ -62,6 +62,19 @@ describe('classifyApiDeclaration', () => {
     expect(result.kind).toBe('malformed')
   })
 
+  test('classifies a null-prototype object as malformed instead of throwing', () => {
+    expect(classifyApiDeclaration(Object.create(null))).toEqual({ kind: 'malformed', found: '<uncoercible>' })
+  })
+
+  test('classifies an object with a throwing Symbol.toPrimitive as malformed instead of throwing', () => {
+    const hostile = {
+      [Symbol.toPrimitive]() {
+        throw new Error('refuses coercion')
+      },
+    }
+    expect(classifyApiDeclaration(hostile)).toEqual({ kind: 'malformed', found: '<uncoercible>' })
+  })
+
   test('classifies undefined as missing', () => {
     expect(classifyApiDeclaration(undefined)).toEqual({ kind: 'missing' })
   })

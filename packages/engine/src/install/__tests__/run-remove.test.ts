@@ -123,7 +123,7 @@ async function installFacet(name: string, version: string): Promise<void> {
   const parsed = parseFacetSource(`${name}@${version}`)
   if (!parsed.ok) throw new Error(`test bug: unparseable specifier ${name}@${version}`)
   const loadResult = await loadInstalledAdapters()
-  if (!loadResult.ok) throw new Error('test bug: installed fixture adapters failed to load')
+  if (!loadResult.ok) expect.unreachable('test bug: installed fixture adapters failed to load')
   const adapters = loadResult.adapters.filter((a) => a.supportsInstall === true)
   const result = await runAdd({
     projectRoot,
@@ -135,7 +135,7 @@ async function installFacet(name: string, version: string): Promise<void> {
 
 async function remove(names: string[]) {
   const loadResult = await loadInstalledAdapters()
-  if (!loadResult.ok) throw new Error('test bug: installed fixture adapters failed to load')
+  if (!loadResult.ok) expect.unreachable('test bug: installed fixture adapters failed to load')
   const adapters = loadResult.adapters.filter((a) => a.supportsInstall === true)
   return runRemove({ projectRoot, names, adapters })
 }

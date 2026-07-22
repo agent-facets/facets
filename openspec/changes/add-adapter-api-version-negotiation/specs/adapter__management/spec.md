@@ -2,7 +2,7 @@
 
 ### Requirement: npm adapter installs select the highest compatible package version
 
-The system SHALL accept npm adapter package selectors in the exact `MAJOR.MINOR.PATCH`, major-wildcard `MAJOR.*`, minor-wildcard `MAJOR.MINOR.*`, bare wildcard `*`, and `latest` forms. A bare package name or first-party alias SHALL act as an implicit unconstrained selector. For a non-exact request, the system SHALL select the highest stable package version that satisfies the selector and declares an adapter API supported by the current CLI. For an exact request, the system SHALL consider only that package version and SHALL NOT silently substitute another release.
+The system SHALL accept npm adapter package selectors in the exact `MAJOR.MINOR.PATCH`, major-wildcard `MAJOR.*`, minor-wildcard `MAJOR.MINOR.*`, bare wildcard `*`, and `latest` forms. A bare package name or first-party alias SHALL act as an implicit unconstrained selector. For a non-exact request, the system SHALL select the highest stable package version that satisfies the selector and declares an adapter API supported by the current CLI. For an exact request, the system SHALL consider only that package version and SHALL NOT silently substitute another release. The `latest` selector SHALL denote the same unconstrained candidate set as a bare package name or `*`; the system SHALL resolve it to the highest stable version that declares a supported adapter API and SHALL NOT consult the npm `latest` distribution tag during selection.
 
 The npm `latest` distribution tag SHALL continue to advance according to normal publishing policy. Compatibility selection SHALL NOT require moving, pinning, or withholding that tag.
 
@@ -97,7 +97,7 @@ A managed installation SHALL retain its original source specifier, verified adap
 
 ### Requirement: Compatibility failures provide actionable diagnostics
 
-When an adapter cannot be selected, verified, or loaded because its API declaration is missing, malformed, unsupported, or inconsistent with package metadata, the system SHALL return structured failure data. User-facing diagnostics SHALL identify the affected adapter or package, the found declaration when one exists, the adapter APIs supported by the CLI, and an available compatible-install command. Compatibility failures SHALL NOT be reported as “no adapters installed” or as an unknown facet metadata schema.
+When an adapter cannot be selected, verified, or loaded because its API declaration is missing, malformed, unsupported, or inconsistent with package metadata, the system SHALL return structured failure data. User-facing diagnostics SHALL identify the affected adapter or package, the found declaration when one exists, the adapter APIs supported by the CLI, and the best available compatible-install command. When the installation retains original source provenance, that command SHALL use the recorded source. When provenance is unavailable, the command SHALL use the best available identifier — a first-party alias, or otherwise the installed adapter name — and the diagnostic SHALL indicate that the original install source is unavailable. Compatibility failures SHALL NOT be reported as “no adapters installed” or as an unknown facet metadata schema.
 
 #### Scenario: Unsupported installed adapter reports recovery
 
@@ -111,6 +111,13 @@ When an adapter cannot be selected, verified, or loaded because its API declarat
 - **WHEN** more than one installed adapter is incompatible or broken
 - **THEN** loading SHALL fail with all collected adapter failures
 - **AND** each compatibility failure SHALL retain its own repair information
+
+#### Scenario: Installation without provenance reports a best-available repair
+
+- **WHEN** an installed adapter without retained source provenance is found incompatible or broken
+- **AND** its name does not match a first-party alias
+- **THEN** the diagnostic SHALL provide a best-available compatible-install command derived from the installed adapter name
+- **AND** the diagnostic SHALL indicate that the original install source is unavailable
 
 ## MODIFIED Requirements
 
@@ -167,7 +174,7 @@ The system SHALL determine an adapter's name from the adapter object's own name 
 
 ### Requirement: Users can list installed adapters
 
-The system SHALL provide a command to list all adapters currently installed in the adapter directory. The listing SHALL inspect every entry and display its declared adapter API as an exact identifier, `missing`, or `malformed`, together with a `supported`, `unsupported`, or `broken` compatibility status. An entry SHALL be classified as `broken` when its installation metadata is invalid, its bundle cannot be loaded, or its export is not a valid adapter object. A missing, malformed, or unsupported API declaration alone SHALL be classified as API incompatibility rather than `broken`. Listing SHALL remain available when one or more entries are incompatible or broken so the user can identify what needs repair.
+The system SHALL provide a command to list all adapters currently installed in the adapter directory. The listing SHALL inspect every entry and display its declared adapter API as an exact identifier, `missing`, or `malformed`, together with a `supported`, `unsupported`, or `broken` compatibility status. An entry SHALL be classified as `broken` when its installation metadata is invalid, its bundle cannot be loaded, or its export is not a valid adapter object. A missing, malformed, or unsupported API declaration alone SHALL be classified as API incompatibility rather than `broken`. An entry with no installation metadata — a legacy directly placed bundle without an installation receipt — SHALL be inspected as an unmanaged installation and classified from its runtime bundle: `supported` when it declares a supported API, `unsupported` when its API declaration is missing, malformed, or unsupported, and `broken` only when the bundle cannot be loaded or its export is not a valid adapter object. The entry SHALL NOT be classified as `broken` merely because its receipt is absent. Listing SHALL remain available when one or more entries are incompatible or broken so the user can identify what needs repair.
 
 #### Scenario: List with compatible installed adapters
 

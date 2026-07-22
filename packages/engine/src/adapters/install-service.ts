@@ -273,16 +273,22 @@ export async function locateAndVerifyAdapter(
         `[verbose]   prebuilt bundle for ${basename(sourceDir)} did not load cleanly (${prebuiltFailure.cause}); rebundling from source`,
     )
     const sourceEntry = await resolveSourceEntry(sourceDir, prebuiltPath)
-    return verifyBuilt(await rebundleAdapter(sourceDir, sourceEntry), verifyOpts)
+    return verifyBuilt(await rebundleAdapter(sourceDir, sourceEntry), verifyOpts, sourceEntry)
   }
 
-  return verifyBuilt(await rebundleAdapter(sourceDir, resolved.entry.path), verifyOpts)
+  return verifyBuilt(await rebundleAdapter(sourceDir, resolved.entry.path), verifyOpts, resolved.entry.path)
 }
 
-/** Verify a freshly rebundled adapter; on failure, clean up its temp dir. */
+/**
+ * Verify a freshly rebundled adapter; on failure, clean up its temp dir.
+ * `reportPath` is the durable source entry the failure should reference —
+ * the temp outdir bundle is deleted by the cleanup, so reporting it would
+ * point diagnostics at a nonexistent file.
+ */
 async function verifyBuilt(
   built: Awaited<ReturnType<typeof rebundleAdapter>>,
   verifyOpts: { expectedApiVersion?: string },
+  reportPath: string,
 ): Promise<LocateAndVerifyResult> {
   if (!built.ok) {
     return { ok: false, failure: { kind: 'bundle', failure: built.failure } }
@@ -290,7 +296,8 @@ async function verifyBuilt(
   const result = await verifyAdapter(built.bundlePath, verifyOpts)
   if (!result.ok) {
     await built.cleanup()
-    return { ok: false, failure: { kind: 'verify', failure: result.failure } }
+    // Report the source entry, not the just-deleted temp bundle.
+    return { ok: false, failure: { kind: 'verify', failure: { ...result.failure, bundlePath: reportPath } } }
   }
   return { ok: true, bundlePath: built.bundlePath, verified: result.verified, cleanup: built.cleanup }
 }

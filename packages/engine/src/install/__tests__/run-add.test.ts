@@ -120,7 +120,7 @@ async function add(specifier: string) {
   const parsed = parseFacetSource(specifier)
   if (!parsed.ok) throw new Error(`test bug: unparseable specifier ${specifier}`)
   const loadResult = await loadInstalledAdapters()
-  if (!loadResult.ok) throw new Error('test bug: installed fixture adapters failed to load')
+  if (!loadResult.ok) expect.unreachable('test bug: installed fixture adapters failed to load')
   const adapters = loadResult.adapters
   return runAdd({
     projectRoot,

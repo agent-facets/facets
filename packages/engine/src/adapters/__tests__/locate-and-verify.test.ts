@@ -113,6 +113,46 @@ describe('locateAndVerifyAdapter — fallback eligibility', () => {
     }
   })
 
+  test('rebundled verify failure reports the source entry, not the deleted temp bundle', async () => {
+    const dir = await makeFixture({
+      'package.json': JSON.stringify({ name: 'fixture-adapter' }),
+      // Source-only fixture forces the slow path; unsupported API fails verification.
+      'src/index.ts': `export default {
+  name: 'future-adapter',
+  apiVersion: '9.9',
+  buildAssetMetadata: () => ({ ok: true, data: {} }),
+  installAsset: async () => undefined,
+  readAsset: async () => ({ content: '' }),
+  deleteAsset: async () => undefined,
+}`,
+    })
+    try {
+      const result = await locateAndVerifyAdapter(dir)
+      if (result.ok) expect.unreachable()
+      if (result.failure.kind !== 'verify') expect.unreachable()
+      // The reported path is the durable source entry — it still exists.
+      expect(result.failure.failure.bundlePath).toBe(join(dir, 'src/index.ts'))
+      expect(await Bun.file(result.failure.failure.bundlePath).exists()).toBe(true)
+    } finally {
+      await rm(dir, { recursive: true, force: true }).catch(() => {})
+    }
+  }, 30000)
+
+  test('malformed package.json returns a structured bundle failure, not a rejection', async () => {
+    const dir = await makeFixture({
+      'package.json': '{ invalid',
+      'dist/index.mjs': validAdapterModule('unreachable-adapter'),
+    })
+    try {
+      const result = await locateAndVerifyAdapter(dir)
+      if (result.ok) expect.unreachable()
+      if (result.failure.kind !== 'bundle') expect.unreachable()
+      expect(result.failure.failure.kind).toBe('invalid-package-json')
+    } finally {
+      await rm(dir, { recursive: true, force: true }).catch(() => {})
+    }
+  })
+
   test('valid prebuilt bundle verifies on the fast path', async () => {
     const dir = await makeFixture({
       'package.json': JSON.stringify({ name: 'fixture-adapter', exports: './dist/index.mjs' }),

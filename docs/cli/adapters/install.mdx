@@ -89,7 +89,7 @@ Every adapter declares the adapter API contract it was built against, and each C
 
 When no release in the requested set is compatible, the install fails with the newest considered release, its declared (or missing) adapter API, and the APIs this CLI supports.
 
-Git and local sources cannot be version-selected — they are built as supplied and must pass the same runtime compatibility verification before installation.
+Git and local sources don't participate in compatible resolution — the version-selector grammar and highest-compatible-release selection apply only to npm installs. A Git `#ref` still pins exactly what gets built (a tag, branch, or commit), and both Git and local sources are built as supplied and must pass the same runtime compatibility verification before installation.
 
 ## See also
 

@@ -9,7 +9,11 @@ import { render } from 'ink'
 import { createElement } from 'react'
 import type { Command } from '../commands.ts'
 import { BuildView } from '../tui/views/build/build-view.tsx'
-import { buildFailureMessages, describeInstalledAdapterFailure } from '../util/adapter-install-errors.ts'
+import {
+  buildFailureMessages,
+  compatibilityFailureMessage,
+  describeInstalledAdapterFailure,
+} from '../util/adapter-install-errors.ts'
 import { writeCliError } from '../util/errors.ts'
 import { resolveTargetDir } from './resolve-dir.ts'
 
@@ -140,7 +144,10 @@ function printBuildJson(result: BuildResult | BuildFailure, verified: boolean): 
         errors:
           result.kind === 'validation'
             ? result.errors.map((e) => ({ message: e.message, path: e.path }))
-            : buildFailureMessages(result).map((message) => ({ message, path: 'adapters' })),
+            : result.failures.map((failure) => ({
+                message: compatibilityFailureMessage(failure),
+                path: `adapters.${failure.adapter}`,
+              })),
         warnings: result.warnings,
       }
   process.stdout.write(`${JSON.stringify(doc, null, 2)}\n`)

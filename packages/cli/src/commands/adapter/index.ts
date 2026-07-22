@@ -5,7 +5,11 @@ import {
   removeAdapter,
 } from '@agent-facets/engine'
 import type { Command } from '../../commands.ts'
-import { describeAdapterInstallFailure, repairCommand } from '../../util/adapter-install-errors.ts'
+import {
+  describeAdapterInstallFailure,
+  formatPlacementWarning,
+  repairCommand,
+} from '../../util/adapter-install-errors.ts'
 import { writeCliError } from '../../util/errors.ts'
 import { pickAndInstallAdapters } from './pick-and-install.ts'
 
@@ -84,7 +88,7 @@ async function handleInstall(args: string[]): Promise<number> {
   }
   console.log(`Adapter "${result.adapter.name}" installed successfully.`)
   for (const warning of result.warnings) {
-    console.error(`warning: could not clean up ${warning.path} (${warning.cause})`)
+    console.error(formatPlacementWarning(warning))
   }
   return 0
 }

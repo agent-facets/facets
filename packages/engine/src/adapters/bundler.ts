@@ -7,6 +7,8 @@ import { join } from 'node:path'
  * are values, not thrown errors:
  *
  *   - `no-package-json` — `sourceDir` has no package.json.
+ *   - `invalid-package-json` — package.json exists but is not valid
+ *     JSON, or its JSON value is not an object.
  *   - `no-entry-point` — no entry could be resolved; `tried` lists
  *     every location that was checked.
  *   - `install-failed` — `bun install` failed in the source tree.
@@ -15,6 +17,7 @@ import { join } from 'node:path'
  */
 export type BundleFailure =
   | { kind: 'no-package-json'; sourceDir: string }
+  | { kind: 'invalid-package-json'; sourceDir: string; cause: string }
   | { kind: 'no-entry-point'; sourceDir: string; tried: string[] }
   | { kind: 'install-failed'; sourceDir: string; stderr: string }
   | { kind: 'build-failed'; sourceDir: string; errors: string[] }
@@ -218,7 +221,10 @@ export type ResolvedEntryPoint = {
 /** Result of `resolveEntryPoint`. */
 export type ResolveEntryPointResult =
   | { ok: true; entry: ResolvedEntryPoint }
-  | { ok: false; failure: Extract<BundleFailure, { kind: 'no-package-json' | 'no-entry-point' }> }
+  | {
+      ok: false
+      failure: Extract<BundleFailure, { kind: 'no-package-json' | 'invalid-package-json' | 'no-entry-point' }>
+    }
 
 /** Classify a resolved path by its file extension. */
 function classify(path: string): 'prebuilt' | 'source' {
@@ -248,7 +254,28 @@ export async function resolveEntryPoint(sourceDir: string): Promise<ResolveEntry
     return { ok: false, failure: { kind: 'no-package-json', sourceDir } }
   }
 
-  const pkg = (await pkgFile.json()) as {
+  // Malformed JSON is an expected failure of third-party sources — a
+  // value, not a rejection escaping the result contract.
+  let parsed: unknown
+  try {
+    parsed = await pkgFile.json()
+  } catch (err) {
+    return {
+      ok: false,
+      failure: {
+        kind: 'invalid-package-json',
+        sourceDir,
+        cause: err instanceof Error ? err.message : String(err),
+      },
+    }
+  }
+  if (typeof parsed !== 'object' || parsed === null) {
+    return {
+      ok: false,
+      failure: { kind: 'invalid-package-json', sourceDir, cause: 'package.json is not a JSON object' },
+    }
+  }
+  const pkg = parsed as {
     exports?: string | { '.'?: string | { import?: string } }
     main?: string
   }

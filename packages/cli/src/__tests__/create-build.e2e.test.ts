@@ -38,8 +38,9 @@ async function runCli(...args: string[]) {
   // adapters, so inheriting the developer's real ~/.facet (which may
   // hold legacy incompatible bundles) would leak machine state into
   // these tests. An empty temp dir means "no adapters installed", and
-  // builds proceed with unknown-adapter warnings.
-  const facetDir = await mkdtemp(join(tmpdir(), 'facets-create-build-facet-dir-'))
+  // builds proceed with unknown-adapter warnings. Created under `testDir`
+  // so the suite's afterAll cleanup sweeps it — no per-call leak.
+  const facetDir = await mkdtemp(join(testDir, 'facet-dir-'))
   const proc = Bun.spawn([CLI_PATH, ...args], {
     stdout: 'pipe',
     stderr: 'pipe',
