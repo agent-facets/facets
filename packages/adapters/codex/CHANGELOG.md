@@ -1,12 +1,18 @@
 # @agent-facets/adapter-codex
 
+## 0.6.0
+
+### Minor Changes
+
+- [#447](https://github.com/agent-facets/facets/pull/447) [`d6581c6`](https://github.com/agent-facets/facets/commit/d6581c6046e12ca2c785ac9fe686a1967cd40205) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Declare adapter API `0.0` across the adapter toolchain. `defineAdapter()` now stamps a readonly `apiVersion` (`"0.0"`) onto every runtime adapter — the definition type excludes it, so authors cannot supply a conflicting value — and the SDK exports the canonical constants (`ADAPTER_API_VERSION`, `ADAPTER_API_VERSION_PACKAGE_FIELD`) from the new dependency-free `@agent-facets/adapter/api-version` subpath. First-party adapter packages now publish `"facetAdapterApiVersion": "0.0"` in their manifests (injected at pack time from the SDK constants) so compatibility-aware CLIs can select a compatible release from npm metadata before downloading it. The positional adapter method contract itself is unchanged: these releases remain fully consumable by already-published CLIs.
+
 ## 0.5.1
 
 ### Patch Changes
 
 - [#404](https://github.com/agent-facets/facets/pull/404) [`ba747bd`](https://github.com/agent-facets/facets/commit/ba747bdcf1884ff82e397b21e9897a32eac8055c) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Widen the `typescript` peerDependency range to `^5 || ^6 || ^7` so the
-    package installs cleanly for consumers on TypeScript 7. Consumers on
-    TypeScript 5 or 6 are unaffected.
+  package installs cleanly for consumers on TypeScript 7. Consumers on
+  TypeScript 5 or 6 are unaffected.
 
 ## 0.5.0
 
