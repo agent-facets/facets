@@ -34,6 +34,20 @@ Common errors, what causes them, and how to fix them. Each entry mirrors the CLI
     ```
   </Accordion>
 
+  <Accordion title='"adapter incompatible" / "unsupported adapter API" (build, add, install fail before writing)'>
+    **Cause:** every installed adapter declares the adapter API contract it was built against, and each CLI release supports an exact set (currently `0.0`). A bundle installed before API versioning has **no** declaration; other bundles can carry a malformed declaration, declare an API this CLI doesn't support, or disagree with the npm metadata they were selected by. All four cases fail closed: `facet build`, `facet add`, `facet remove`, and `facet install` stop **before** invoking any adapter method or writing project files.
+
+    **Fix:** list your installed adapters to see each one's declared API and status, then run the reinstall command printed next to the incompatible entry:
+
+    ```sh
+    facet adapter list
+    # my-adapter  api missing  unsupported — reinstall: facet adapter install my-adapter
+    facet adapter install my-adapter
+    ```
+
+    Reinstalling selects the newest release compatible with this CLI. See [compatible resolution](/cli/adapters/install#compatible-resolution) for how selection works, and note that [`facet adapter remove`](/cli/adapters/remove) always works regardless of compatibility.
+  </Accordion>
+
   <Accordion title='"not signed in — no registry credential found"'>
     **Cause:** `facet publish` (and `facet whoami`) need a registry credential and none was found.
 

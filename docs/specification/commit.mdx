@@ -23,7 +23,7 @@ Commit is phase 2 of the [install pipeline](/specification/install): a single tr
 
 <Steps>
   <Step title="Load state and gate">
-    The manifest is read, the **install lock** — a per-project advisory lock ensuring only one install operates on a project at a time — is acquired, and the lockfile and receipt are loaded (an invalid receipt is re-bootstrapped from the lockfile; receipt asset entries with crafted names are reported and skipped individually). A delta naming the same facet in both additions and removals MUST be rejected, and the frozen gates run (see [Frozen lockfile](#frozen-lockfile)). Failures here touch nothing — no rollback is needed.
+    The manifest is read, the **install lock** — a per-project advisory lock ensuring only one install operates on a project at a time — is acquired, and the lockfile and receipt are loaded (an invalid receipt is re-bootstrapped from the lockfile; receipt asset entries with crafted names are reported and skipped individually). A delta naming the same facet in both additions and removals MUST be rejected, the selected adapters MUST pass the adapter API compatibility preflight — an installed adapter whose declared adapter API the CLI does not support MUST fail the commit here, before the per-facet loop and therefore before any git/local facet build can invoke adapter metadata methods — and the frozen gates run (see [Frozen lockfile](#frozen-lockfile)). Failures here touch nothing — no rollback is needed.
   </Step>
   <Step title="Merge delta in memory">
     Additions are upserted, removals are deleted — all in memory. The on-disk `facets.json` MUST NOT be written ahead of the install.

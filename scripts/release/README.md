@@ -58,6 +58,27 @@ The `--filter=<pkg>...` scope is critical: an unfiltered `turbo build` fans out 
 
 `publish.ts` checks `pkg.private` before publishing. If a private package's tag triggers the release workflow (e.g., an internal adapter package), the script logs a skip message and exits cleanly. This prevents accidental npm publish attempts for internal packages.
 
+## Adapter API compatibility rollout
+
+The compatibility-aware CLI selects npm adapter releases by their `facetAdapterApiVersion` metadata and refuses to load installed adapters without a supported declaration. That makes release **ordering** load-bearing the first time the supported API set changes (including its introduction): the SDK and first-party adapter releases MUST be live on npm before the CLI release that requires them, or a plain `facet adapter install <alias>` has no compatible candidate.
+
+Checklist (SDK → first-party adapters → CLI):
+
+1. Land the implementation with changesets for `@agent-facets/adapter` and the first-party adapter packages (`@agent-facets/adapter-claude-code`, `@agent-facets/adapter-opencode`, `@agent-facets/adapter-codex`) **only** — no `agent-facets` changeset yet.
+2. Merge that Version Packages PR. Tags are created and the library pipeline publishes the SDK and adapter releases. npm `latest` advances normally — never move, pin, or withhold dist-tags for compatibility purposes; compatibility selection is entirely the CLI's job.
+3. Verify each adapter's packument declares the API before proceeding:
+
+   ```sh
+   npm view @agent-facets/adapter-claude-code facetAdapterApiVersion
+   npm view @agent-facets/adapter-opencode facetAdapterApiVersion
+   npm view @agent-facets/adapter-codex facetAdapterApiVersion
+   ```
+
+4. Only after all three respond with the expected API version, add the `agent-facets` changeset and merge the second Version Packages PR. Its tag triggers the `release-cli` pipeline, which ships the compatibility-aware CLI.
+5. No action is needed for already-published CLIs (the adapter method contract is unchanged). Users of the new CLI with previously installed, undeclared bundles get fail-closed diagnostics and a `facet adapter install <specifier>` reinstall command.
+
+Why two Version-PR cycles: `.changeset/config.json` links `agent-facets`, `@agent-facets/adapter`, and `@agent-facets/protocol`, and a single Version PR creates **all** tags at once — the library and CLI pipelines then run in parallel, racing the CLI release against the adapter publishes. Splitting the changesets into two cycles is what enforces the ordering.
+
 ## Seeding New Library/Adapter Packages
 
 Before a brand-new `@agent-facets/*` package can be published by the tag pipeline, its name must exist on npm so that OIDC trusted publishing can be configured on the package's access page. Run `bun seed:adapters` locally (requires `npm login`) to publish `v0.0.1` placeholders for any non-private workspace packages missing from the registry, then follow the printed instructions to configure each package's trusted publisher. After OIDC is configured, the normal tag-triggered pipeline takes over.
