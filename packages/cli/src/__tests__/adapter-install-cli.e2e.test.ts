@@ -247,6 +247,18 @@ function adaptersIn(facetDir: string): string {
   return join(facetDir, 'adapters')
 }
 
+/**
+ * Resolve the active managed bundle for an installed adapter by reading
+ * its `installation.json` receipt. Managed installs place bundles at
+ * `<name>/generations/<activeGeneration>/adapter.js`; the flat
+ * `<name>/adapter.js` layout is legacy/unmanaged.
+ */
+async function activeManagedBundle(facetDir: string, name: string): Promise<string> {
+  const receiptPath = join(adaptersIn(facetDir), name, 'installation.json')
+  const receipt = (await Bun.file(receiptPath).json()) as { activeGeneration: string }
+  return join(adaptersIn(facetDir), name, 'generations', receipt.activeGeneration, 'adapter.js')
+}
+
 beforeAll(async () => {
   // Verify the compiled binary exists — if it doesn't, the test suite can't
   // run. The turbo config declares test depends on build, but surface a
@@ -269,8 +281,8 @@ describe('facet adapter install — fast path from extracted npm tarball', () =>
       expect(result.stdout).toContain('using prebuilt bundle for')
       expect(result.stdout).toContain('Adapter "opencode" installed successfully.')
 
-      // Adapter should be placed at <facetDir>/adapters/opencode/adapter.js
-      const installedBundle = join(adaptersIn(facetDir), 'opencode', 'adapter.js')
+      // Adapter should be activated via a managed receipt + generation
+      const installedBundle = await activeManagedBundle(facetDir, 'opencode')
       const stats = await stat(installedBundle)
       expect(stats.isFile()).toBe(true)
 
@@ -300,7 +312,7 @@ describe('facet adapter install — slow path from unbuilt local source', () => 
       expect(result.stdout).not.toContain('Using prebuilt bundle...')
       expect(result.stdout).toContain('Adapter "my-unbuilt-adapter" installed successfully.')
 
-      const installedBundle = join(adaptersIn(facetDir), 'my-unbuilt-adapter', 'adapter.js')
+      const installedBundle = await activeManagedBundle(facetDir, 'my-unbuilt-adapter')
       const stats = await stat(installedBundle)
       expect(stats.isFile()).toBe(true)
       expect(stats.size).toBeGreaterThan(0)
@@ -364,7 +376,7 @@ describe('facet adapter install — slow-path fallback after broken prebuilt', (
       const prebuiltLogCount = (result.stdout.match(/using prebuilt bundle for/g) ?? []).length
       expect(prebuiltLogCount).toBe(1)
 
-      const installedBundle = join(adaptersIn(facetDir), 'my-fallback-adapter', 'adapter.js')
+      const installedBundle = await activeManagedBundle(facetDir, 'my-fallback-adapter')
       const stats = await stat(installedBundle)
       expect(stats.isFile()).toBe(true)
       expect(stats.size).toBeGreaterThan(0)
@@ -405,7 +417,7 @@ describe('facet adapter install — externalized prebuilt (PR #142 P1 regression
       // NOT the original dist/index.mjs. We assert by comparing sizes:
       // the rebundled file inlines `fixture-runtime-dep` so it must be
       // strictly larger than the 2-line stub in dist/index.mjs.
-      const installedBundle = join(adaptersIn(facetDir), 'my-externalized-adapter', 'adapter.js')
+      const installedBundle = await activeManagedBundle(facetDir, 'my-externalized-adapter')
       const installedStats = await stat(installedBundle)
       const sourceStats = await stat(join(adapterDir, 'dist/index.mjs'))
       expect(installedStats.size).toBeGreaterThan(sourceStats.size)
@@ -510,6 +522,78 @@ describe('facet adapter install + list + remove — round trip', () => {
   })
 })
 
+describe('facet adapter install — managed replacement', () => {
+  test('reinstalling keeps exactly one active generation and updates the receipt', async () => {
+    const extractedDir = await packOpencode()
+    const facetDir = await makeFacetDir()
+    const env = { FACET_DIR: facetDir }
+    try {
+      const first = await runCli(['adapter', 'install', extractedDir], env)
+      expect(first.exitCode).toBe(0)
+      const firstBundle = await activeManagedBundle(facetDir, 'opencode')
+
+      const second = await runCli(['adapter', 'install', extractedDir], env)
+      expect(second.exitCode).toBe(0)
+      const secondBundle = await activeManagedBundle(facetDir, 'opencode')
+
+      // A fresh generation was activated and the old one was cleaned up.
+      expect(secondBundle).not.toBe(firstBundle)
+      const generations = await readdir(join(adaptersIn(facetDir), 'opencode', 'generations'))
+      expect(generations).toHaveLength(1)
+      await expect(stat(firstBundle)).rejects.toThrow()
+    } finally {
+      await rm(facetDir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('facet adapter list — inspection-backed output', () => {
+  test('renders API and compatibility status for a compatible install', async () => {
+    const extractedDir = await packOpencode()
+    const facetDir = await makeFacetDir()
+    try {
+      const installResult = await runCli(['adapter', 'install', extractedDir], { FACET_DIR: facetDir })
+      expect(installResult.exitCode).toBe(0)
+
+      const listResult = await runCli(['adapter', 'list'], { FACET_DIR: facetDir })
+      expect(listResult.exitCode).toBe(0)
+      expect(listResult.stdout).toContain('opencode')
+      expect(listResult.stdout).toContain('api 0.0')
+      expect(listResult.stdout).toContain('supported')
+    } finally {
+      await rm(facetDir, { recursive: true, force: true })
+    }
+  })
+
+  test('remains usable with an incompatible (undeclared) entry and shows recovery', async () => {
+    const facetDir = await makeFacetDir()
+    try {
+      // Fabricate an unmanaged legacy bundle with no API declaration.
+      const legacyDir = join(adaptersIn(facetDir), 'legacy-tool')
+      await mkdir(legacyDir, { recursive: true })
+      await writeFile(
+        join(legacyDir, 'adapter.js'),
+        `export default {
+  name: 'legacy-tool',
+  buildAssetMetadata: () => ({ ok: true, data: {} }),
+  installAsset: async () => undefined,
+  readAsset: async () => ({ content: '' }),
+  deleteAsset: async () => undefined,
+}`,
+      )
+
+      const listResult = await runCli(['adapter', 'list'], { FACET_DIR: facetDir })
+      expect(listResult.exitCode).toBe(0)
+      expect(listResult.stdout).toContain('legacy-tool')
+      expect(listResult.stdout).toContain('api missing')
+      expect(listResult.stdout).toContain('unsupported')
+      expect(listResult.stdout).toContain('facet adapter install legacy-tool')
+    } finally {
+      await rm(facetDir, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('FACET_DIR redirect', () => {
   test('install writes to the env-var dir, leaving ~/.facet/adapters untouched', async () => {
     const extractedDir = await packOpencode()
@@ -524,7 +608,7 @@ describe('FACET_DIR redirect', () => {
 
       expect(result.exitCode).toBe(0)
 
-      const installedBundle = join(adaptersIn(facetDir), 'opencode', 'adapter.js')
+      const installedBundle = await activeManagedBundle(facetDir, 'opencode')
       const stats = await stat(installedBundle)
       expect(stats.isFile()).toBe(true)
     } finally {

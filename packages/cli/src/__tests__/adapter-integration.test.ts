@@ -97,7 +97,10 @@ describe('adapter install-load-build integration', () => {
       await placeAdapter(verified.name, bundlePath, adapterBaseDir)
 
       // Step 4: Load the adapter back via loadInstalledAdapters with the temp base dir
-      const loaded = await loadInstalledAdapters(adapterBaseDir)
+      // (an unmanaged flat placement — the compatible-unmanaged path)
+      const loadResult = await loadInstalledAdapters(adapterBaseDir)
+      if (!loadResult.ok) expect.unreachable()
+      const loaded = loadResult.adapters
       expect(loaded).toHaveLength(1)
       expect(loaded[0]?.name).toBe('integ-test-adapter')
 
@@ -147,7 +150,9 @@ describe('adapter install-load-build integration', () => {
       const verifyResult = await verifyAdapter(bundlePath)
       if (!verifyResult.ok) expect.unreachable()
       await placeAdapter(verifyResult.verified.adapter.name, bundlePath, adapterBaseDir)
-      const loaded = await loadInstalledAdapters(adapterBaseDir)
+      const loadResult = await loadInstalledAdapters(adapterBaseDir)
+      if (!loadResult.ok) expect.unreachable()
+      const loaded = loadResult.adapters
 
       // Manifest has invalid metadata for the adapter (custom must be a string, not a number)
       await Bun.write(join(facetDir, 'skills/example/SKILL.md'), '# Example skill')

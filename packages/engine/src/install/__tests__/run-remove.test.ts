@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
 
 /**
  * Tests for the `facet remove` orchestrator (`runRemove`).
@@ -92,6 +93,7 @@ import { join } from 'node:path'
 function path(type, name) { return join(process.cwd(), '.${name}', type + 's', name + '.md') }
 export default {
   name: '${name}',
+  apiVersion: '${ADAPTER_API_VERSION}',
   supportsInstall: true,
   buildAssetMetadata(data) { return { ok: true, data: data || {} } },
   async installAsset(scope, type, name, content, metadata) { await installAssetFile({ file: path(type, name) }, content, metadata) },
@@ -120,7 +122,9 @@ async function installFacet(name: string, version: string): Promise<void> {
   registryFixtureDir = buildFixture(fakeHome, name, version)
   const parsed = parseFacetSource(`${name}@${version}`)
   if (!parsed.ok) throw new Error(`test bug: unparseable specifier ${name}@${version}`)
-  const adapters = (await loadInstalledAdapters()).filter((a) => a.supportsInstall === true)
+  const loadResult = await loadInstalledAdapters()
+  if (!loadResult.ok) throw new Error('test bug: installed fixture adapters failed to load')
+  const adapters = loadResult.adapters.filter((a) => a.supportsInstall === true)
   const result = await runAdd({
     projectRoot,
     sources: [{ specifier: `${name}@${version}`, source: parsed.value }],
@@ -130,7 +134,9 @@ async function installFacet(name: string, version: string): Promise<void> {
 }
 
 async function remove(names: string[]) {
-  const adapters = (await loadInstalledAdapters()).filter((a) => a.supportsInstall === true)
+  const loadResult = await loadInstalledAdapters()
+  if (!loadResult.ok) throw new Error('test bug: installed fixture adapters failed to load')
+  const adapters = loadResult.adapters.filter((a) => a.supportsInstall === true)
   return runRemove({ projectRoot, names, adapters })
 }
 

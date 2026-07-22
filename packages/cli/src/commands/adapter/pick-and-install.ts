@@ -8,7 +8,7 @@ import {
 } from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
-import { describeAdapterInstallFailure } from '../../util/adapter-install-errors.ts'
+import { describeAdapterInstallFailure, describeInstalledAdapterFailure } from '../../util/adapter-install-errors.ts'
 import { writeCliError } from '../../util/errors.ts'
 import { InstallPicker } from './install-picker.tsx'
 
@@ -93,6 +93,13 @@ export async function pickAndInstallAdapters(): Promise<PickAndInstallResult> {
   }
 
   // Re-load adapters from disk so callers see the freshly-installed ones.
-  const adapters = await loadInstalledAdapters()
-  return { ok: true, adapters }
+  // Fail closed if any installed entry is incompatible or broken.
+  const loaded = await loadInstalledAdapters()
+  if (!loaded.ok) {
+    for (const failure of loaded.failures) {
+      writeCliError(describeInstalledAdapterFailure(failure))
+    }
+    return { ok: false, reason: 'install-failed' }
+  }
+  return { ok: true, adapters: loaded.adapters }
 }

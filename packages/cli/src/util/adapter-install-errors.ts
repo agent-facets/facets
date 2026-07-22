@@ -2,7 +2,11 @@ import type {
   AdapterCompatibilityFailure,
   AdapterInstallFailure,
   ApiDeclarationClassification,
+  BundleFailure,
+  InstalledAdapterFailure,
   NpmVersionRequest,
+  PlaceAdapterFailure,
+  RepairSource,
   VerifyAdapterFailure,
 } from '@agent-facets/engine'
 
@@ -23,19 +27,63 @@ export function describeAdapterInstallFailure(failure: AdapterInstallFailure): {
     case 'download-failed':
       return describeDownloadFailure(failure.specifier, failure.source)
     case 'bundle-failed':
-      return {
-        what: `failed to bundle adapter "${failure.specifier}"`,
-        detail: failure.cause,
-        fix: 'verify the adapter package builds with `bun build`; ensure all imports resolve',
-      }
+      return describeBundleFailure(failure.specifier, failure.failure)
     case 'verify-failed':
       return describeVerifyFailure(failure.specifier, failure.failure)
     case 'place-failed':
+      return describePlaceFailure(failure.adapter, failure.failure)
+  }
+}
+
+/** Render the repair command for an installed-adapter failure. */
+export function repairCommand(repair: RepairSource): string {
+  switch (repair.kind) {
+    case 'managed':
+      return `facet adapter install ${repair.specifier}`
+    case 'first-party-alias':
+      return `facet adapter install ${repair.alias}`
+    case 'unmanaged-name':
+      return `facet adapter install ${repair.name}`
+  }
+}
+
+/**
+ * Sole rendering point for installed-adapter inspection failures
+ * (incompatible or broken entries surfaced by fail-closed loading and
+ * command preflights). Engine returns structured data; adding a variant
+ * forces this switch to update.
+ */
+export function describeInstalledAdapterFailure(failure: InstalledAdapterFailure): {
+  what: string
+  detail: string
+  fix: string
+} {
+  const repairNote =
+    failure.repair.kind === 'unmanaged-name' ? ' (original install source unavailable; using the adapter name)' : ''
+  const fix = `reinstall a compatible release: ${repairCommand(failure.repair)}${repairNote}`
+
+  if (failure.kind === 'incompatible') {
+    const base = describeCompatibilityFailure(failure.failure)
+    return { what: base.what, detail: base.detail, fix }
+  }
+
+  switch (failure.reason.kind) {
+    case 'invalid-receipt':
       return {
-        what: `failed to place adapter "${failure.adapter}"`,
-        detail: failure.cause,
-        fix: 'check filesystem permissions on ~/.facet/adapters/',
+        what: `installed adapter "${failure.name}" has an invalid installation record`,
+        detail: failure.reason.detail,
+        fix,
       }
+    case 'missing-active-generation':
+      return {
+        what: `installed adapter "${failure.name}" is missing its active bundle`,
+        detail: `generation "${failure.reason.generation}" does not contain adapter.js`,
+        fix,
+      }
+    case 'load-failed': {
+      const base = describeVerifyFailure(failure.name, failure.reason.failure)
+      return { what: base.what, detail: base.detail, fix }
+    }
   }
 }
 
@@ -55,6 +103,78 @@ function describeSpecifierFailure(
         what: `invalid version selector "${failure.selector}" for "${failure.packageName}"`,
         detail: failure.error.what,
         fix: failure.error.fix,
+      }
+  }
+}
+
+function describeBundleFailure(
+  specifier: string,
+  failure: BundleFailure,
+): { what: string; detail: string; fix: string } {
+  switch (failure.kind) {
+    case 'no-package-json':
+      return {
+        what: `adapter source for "${specifier}" has no package.json`,
+        detail: `looked in ${failure.sourceDir}`,
+        fix: 'point the specifier at an adapter package root',
+      }
+    case 'no-entry-point':
+      return {
+        what: `cannot determine an entry point for adapter "${specifier}"`,
+        detail: `tried:\n  - ${failure.tried.join('\n  - ')}`,
+        fix: 'set "exports" or "main" in package.json, or ship a prebuilt dist/index.mjs',
+      }
+    case 'install-failed':
+      return {
+        what: `failed to install dependencies for adapter "${specifier}"`,
+        detail: failure.stderr,
+        fix: 'verify the adapter package installs with `bun install`',
+      }
+    case 'build-failed':
+      return {
+        what: `failed to bundle adapter "${specifier}"`,
+        detail: failure.errors.join('\n'),
+        fix: 'verify the adapter package builds with `bun build`; ensure all imports resolve',
+      }
+    case 'no-output':
+      return {
+        what: `bundling adapter "${specifier}" produced no output`,
+        detail: `Bun.build() succeeded but emitted nothing for ${failure.sourceDir}`,
+        fix: 'this is unexpected; please file a bug',
+      }
+  }
+}
+
+function describePlaceFailure(
+  adapter: string,
+  failure: PlaceAdapterFailure,
+): { what: string; detail: string; fix: string } {
+  switch (failure.kind) {
+    case 'lock-held':
+      return {
+        what: `another install is replacing adapter "${adapter}"`,
+        detail: `replacement lock held by pid ${failure.heldByPid} (${failure.lockPath})`,
+        fix: 'wait for the other install to finish and retry',
+      }
+    case 'stage-failed':
+      return {
+        what: `failed to stage adapter "${adapter}"`,
+        detail: failure.cause,
+        fix: 'check filesystem permissions and free space under ~/.facet/adapters/',
+      }
+    case 'verify-failed':
+      return describeVerifyFailure(adapter, failure.failure)
+    case 'name-mismatch':
+      return {
+        what: `staged adapter for "${adapter}" identifies as "${failure.runtimeName}"`,
+        detail: 'the staged bundle changed identity between verification and activation',
+        fix: 'retry the install; report this if it persists',
+      }
+    case 'receipt-write-failed':
+      return {
+        what: `failed to activate adapter "${adapter}"`,
+        detail: failure.cause,
+        fix: 'check filesystem permissions on ~/.facet/adapters/; the previous installation remains active',
       }
   }
 }
