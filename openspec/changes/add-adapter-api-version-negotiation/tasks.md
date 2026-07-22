@@ -63,52 +63,52 @@
 
 ## 7. Managed Installation and Atomic Activation — Research
 
-- [ ] 7.1 Explore: Inspect `packages/engine/src/adapters/placement.ts`, `packages/engine/src/facet-dir.ts`, `packages/common/src/atomic-write.ts`, and `packages/engine/src/install/lockfile-guard.ts` for placement, directory derivation, atomic writes, advisory locking, and safe-path precedents.
-- [ ] 7.2 Explore: Inspect adapter placement tests and engine/CLI fixtures that fabricate flat installed bundles to define managed, unmanaged, staging, crash-leftover, failure-injection, and cleanup behavior.
-- [ ] 7.3 Propose: Present the versioned installation receipt schema, source-tagged provenance, generation naming and containment rules, per-adapter lock lifecycle, and atomic activation sequence.
+- [x] 7.1 Explore: Inspect `packages/engine/src/adapters/placement.ts`, `packages/engine/src/facet-dir.ts`, `packages/common/src/atomic-write.ts`, and `packages/engine/src/install/lockfile-guard.ts` for placement, directory derivation, atomic writes, advisory locking, and safe-path precedents.
+- [x] 7.2 Explore: Inspect adapter placement tests and engine/CLI fixtures that fabricate flat installed bundles to define managed, unmanaged, staging, crash-leftover, failure-injection, and cleanup behavior.
+- [x] 7.3 Propose: Present the versioned installation receipt schema, source-tagged provenance, generation naming and containment rules, per-adapter lock lifecycle, and atomic activation sequence.
 
 ## 8. Managed Installation and Atomic Activation — Implementation
 
-- [ ] 8.1 Implement: Add validated installation receipt types and I/O for npm, Git, and local provenance without representable cross-source field combinations.
-- [ ] 8.2 Implement: Add safe unique generation paths, containment checks, and a per-adapter replacement lock with stale-owner handling.
-- [ ] 8.3 Implement: Replace direct bundle overwrite with stage, final-path verification, atomic receipt activation, and post-activation cleanup while preserving the prior installation on every pre-activation failure.
-- [ ] 8.4 Implement: Support unmanaged historical `<name>/adapter.js` entries and convert them to the managed layout only after a successful reinstall.
-- [ ] 8.5 Implement: Update adapter removal and directory enumeration to delete complete installations, ignore staging/crash leftovers, and never remove the generation named by the active receipt.
-- [ ] 8.6 Implement: Add tests for each provenance variant, invalid receipts and paths, atomic success, injected failures at every stage, cleanup warnings, stale leftovers, concurrent replacements, and legacy conversion.
-- [ ] 8.7 Verify: Run targeted placement, receipt, lock, and removal suites.
+- [x] 8.1 Implement: Add validated installation receipt types and I/O for npm, Git, and local provenance without representable cross-source field combinations.
+- [x] 8.2 Implement: Add safe unique generation paths, containment checks, and a per-adapter replacement lock with stale-owner handling.
+- [x] 8.3 Implement: Replace direct bundle overwrite with stage, final-path verification, atomic receipt activation, and post-activation cleanup while preserving the prior installation on every pre-activation failure.
+- [x] 8.4 Implement: Support unmanaged historical `<name>/adapter.js` entries and convert them to the managed layout only after a successful reinstall.
+- [x] 8.5 Implement: Update adapter removal and directory enumeration to delete complete installations, ignore staging/crash leftovers, and never remove the generation named by the active receipt.
+- [x] 8.6 Implement: Add tests for each provenance variant, invalid receipts and paths, atomic success, injected failures at every stage, cleanup warnings, stale leftovers, concurrent replacements, and legacy conversion.
+- [x] 8.7 Verify: Run targeted placement, receipt, lock, and removal suites.
 
 ## 9. Installed Inspection and Fail-Closed Loading — Research
 
-- [ ] 9.1 Explore: Inspect `packages/engine/src/adapters/loader.ts`, `packages/cli/src/commands/adapter/index.ts`, and tests that fabricate flat installed bundles to map warn-and-skip loading, list behavior, import caching, and fixture migration.
-- [ ] 9.2 Explore: Inspect `packages/engine/src/adapters/first-party.ts` and unmanaged-name consumers to define provenance-aware repair aliases without inventing unavailable source information.
-- [ ] 9.3 Propose: Present shared managed/unmanaged inspection outcomes, broken-installation failures, repair discriminators, aggregate load results, and fixture migration.
+- [x] 9.1 Explore: Inspect `packages/engine/src/adapters/loader.ts`, `packages/cli/src/commands/adapter/index.ts`, and tests that fabricate flat installed bundles to map warn-and-skip loading, list behavior, import caching, and fixture migration.
+- [x] 9.2 Explore: Inspect `packages/engine/src/adapters/first-party.ts` and unmanaged-name consumers to define provenance-aware repair aliases without inventing unavailable source information.
+- [x] 9.3 Propose: Present shared managed/unmanaged inspection outcomes, broken-installation failures, repair discriminators, aggregate load results, and fixture migration.
 
 ## 10. Installed Inspection and Fail-Closed Loading — Implementation
 
-- [ ] 10.1 Implement: Add one installed-adapter inspector that validates managed receipts, rejects recorded unsupported APIs before import, verifies active runtime declarations, and verifies unmanaged bundles directly.
-- [ ] 10.2 Implement: Classify every directory as compatible, incompatible, or broken with structured failure and repair data, ignoring non-active generations and staging leftovers.
-- [ ] 10.3 Implement: Convert installed loading to a result that returns verified adapters only when every entry succeeds and otherwise aggregates all failures without warning-and-skip behavior.
-- [ ] 10.4 Implement: Expose inspection-backed list data containing adapter name, declared or missing/malformed API, supported/unsupported/broken status, and repair source.
-- [ ] 10.5 Implement: Migrate flat-bundle test fixtures where managed provenance is required while retaining explicit unmanaged compatibility tests.
-- [ ] 10.6 Implement: Add tests for managed and unmanaged success, missing/malformed/unsupported declarations, receipt/runtime mismatch, invalid receipt/import/export failures, aggregate failures, and unique-generation import freshness.
-- [ ] 10.7 Verify: Run targeted inspector, loader, listing-data, and integration suites.
+- [x] 10.1 Implement: Add one installed-adapter inspector that validates managed receipts, rejects recorded unsupported APIs before import, verifies active runtime declarations, and verifies unmanaged bundles directly.
+- [x] 10.2 Implement: Classify every directory as compatible, incompatible, or broken with structured failure and repair data, ignoring non-active generations and staging leftovers.
+- [x] 10.3 Implement: Convert installed loading to a result that returns verified adapters only when every entry succeeds and otherwise aggregates all failures without warning-and-skip behavior.
+- [x] 10.4 Implement: Expose inspection-backed list data containing adapter name, declared or missing/malformed API, supported/unsupported/broken status, and repair source.
+- [x] 10.5 Implement: Migrate flat-bundle test fixtures where managed provenance is required while retaining explicit unmanaged compatibility tests.
+- [x] 10.6 Implement: Add tests for managed and unmanaged success, missing/malformed/unsupported declarations, receipt/runtime mismatch, invalid receipt/import/export failures, aggregate failures, and unique-generation import freshness.
+- [x] 10.7 Verify: Run targeted inspector, loader, listing-data, and integration suites.
 
 ## 11. Adapter Install and Management Commands — Research
 
-- [ ] 11.1 Explore: Inspect `packages/engine/src/adapters/install-service.ts` for stage reporting, source cleanup, prebuilt fallback, and provenance flow.
-- [ ] 11.2 Explore: Inspect `packages/engine/src/adapters/bundler.ts` and its tests for thrown exception boundaries, temporary resources, and cleanup guarantees.
-- [ ] 11.3 Explore: Inspect `packages/cli/src/commands/adapter/`, `packages/cli/src/util/adapter-install-errors.ts`, and adapter command tests for install, picker, list, remove, and result-rendering behavior.
-- [ ] 11.4 Propose: Present the end-to-end install-service result flow and CLI presentation for parse, no-compatible-release, download, verification, activation, cleanup-warning, and recovery outcomes.
+- [x] 11.1 Explore: Inspect `packages/engine/src/adapters/install-service.ts` for stage reporting, source cleanup, prebuilt fallback, and provenance flow.
+- [x] 11.2 Explore: Inspect `packages/engine/src/adapters/bundler.ts` and its tests for thrown exception boundaries, temporary resources, and cleanup guarantees.
+- [x] 11.3 Explore: Inspect `packages/cli/src/commands/adapter/`, `packages/cli/src/util/adapter-install-errors.ts`, and adapter command tests for install, picker, list, remove, and result-rendering behavior.
+- [x] 11.4 Propose: Present the end-to-end install-service result flow and CLI presentation for parse, no-compatible-release, download, verification, activation, cleanup-warning, and recovery outcomes.
 
 ## 12. Adapter Install and Management Commands — Implementation
 
-- [ ] 12.1 Implement: Rework the adapter install service to carry tagged source provenance through resolve, download/build, verification, lock acquisition, and atomic activation using structured results.
-- [ ] 12.2 Implement: Convert expected bundler, verification, placement, and cleanup boundaries into typed failures or warnings without losing temporary-resource cleanup.
-- [ ] 12.3 Implement: Render actionable compatibility and no-compatible-release diagnostics exclusively in the CLI, including found API, supported APIs, and the best available reinstall command.
-- [ ] 12.4 Implement: Update `facet adapter list` to render inspection-backed API and compatibility status while remaining usable for incompatible and broken entries.
-- [ ] 12.5 Implement: Preserve load-free whole-directory behavior for `facet adapter remove` and update picker/install behavior to consume the new list and load results.
-- [ ] 12.6 Implement: Update adapter command unit and end-to-end tests for selectors, managed install/list/remove, replacement preservation, migration, diagnostics, and cleanup warnings.
-- [ ] 12.7 Verify: Run targeted adapter command and CLI end-to-end suites.
+- [x] 12.1 Implement: Rework the adapter install service to carry tagged source provenance through resolve, download/build, verification, lock acquisition, and atomic activation using structured results.
+- [x] 12.2 Implement: Convert expected bundler, verification, placement, and cleanup boundaries into typed failures or warnings without losing temporary-resource cleanup.
+- [x] 12.3 Implement: Render actionable compatibility and no-compatible-release diagnostics exclusively in the CLI, including found API, supported APIs, and the best available reinstall command.
+- [x] 12.4 Implement: Update `facet adapter list` to render inspection-backed API and compatibility status while remaining usable for incompatible and broken entries.
+- [x] 12.5 Implement: Preserve load-free whole-directory behavior for `facet adapter remove` and update picker/install behavior to consume the new list and load results.
+- [x] 12.6 Implement: Update adapter command unit and end-to-end tests for selectors, managed install/list/remove, replacement preservation, migration, diagnostics, and cleanup warnings.
+- [x] 12.7 Verify: Run targeted adapter command and CLI end-to-end suites.
 
 ## 13. Build and Facet-Operation Compatibility Gates — Research
 

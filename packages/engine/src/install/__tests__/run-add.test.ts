@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
 
 /**
  * Tests for the `facet add` orchestrator (`runAdd`).
@@ -93,6 +94,7 @@ import { join } from 'node:path'
 function path(type, name) { return join(process.cwd(), '.${name}', type + 's', name + '.md') }
 export default {
   name: '${name}',
+  apiVersion: '${ADAPTER_API_VERSION}',
   supportsInstall: true,
   buildAssetMetadata(data) { return { ok: true, data: data || {} } },
   async installAsset(scope, type, name, content, metadata) { await installAssetFile({ file: path(type, name) }, content, metadata) },
@@ -117,7 +119,9 @@ function writeFacets(facets: Record<string, string>): string {
 async function add(specifier: string) {
   const parsed = parseFacetSource(specifier)
   if (!parsed.ok) throw new Error(`test bug: unparseable specifier ${specifier}`)
-  const adapters = await loadInstalledAdapters()
+  const loadResult = await loadInstalledAdapters()
+  if (!loadResult.ok) throw new Error('test bug: installed fixture adapters failed to load')
+  const adapters = loadResult.adapters
   return runAdd({
     projectRoot,
     sources: [{ specifier, source: parsed.value }],

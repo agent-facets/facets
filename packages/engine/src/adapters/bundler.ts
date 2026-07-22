@@ -3,19 +3,37 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 /**
+ * Discriminated failure for bundle production. Expected failure modes
+ * are values, not thrown errors:
+ *
+ *   - `no-package-json` — `sourceDir` has no package.json.
+ *   - `no-entry-point` — no entry could be resolved; `tried` lists
+ *     every location that was checked.
+ *   - `install-failed` — `bun install` failed in the source tree.
+ *   - `build-failed` — the build reported errors.
+ *   - `no-output` — the build succeeded but produced no output file.
+ */
+export type BundleFailure =
+  | { kind: 'no-package-json'; sourceDir: string }
+  | { kind: 'no-entry-point'; sourceDir: string; tried: string[] }
+  | { kind: 'install-failed'; sourceDir: string; stderr: string }
+  | { kind: 'build-failed'; sourceDir: string; errors: string[] }
+  | { kind: 'no-output'; sourceDir: string }
+
+/**
  * The result of building (or locating) an adapter bundle. Includes the
  * absolute path to the bundle and a `cleanup` function that removes any
  * temp directory the build created. Callers MUST invoke `cleanup()` after
  * they're done consuming `bundlePath` (typically in a `finally` block).
+ * Failure arms have already cleaned up their own temp resources.
  *
  * The fast path returns a no-op `cleanup` since `bundlePath` points at
  * a file inside the source tree (or inside the source-tree temp dir,
  * which has its own cleanup lifecycle).
  */
-export type BundleResult = {
-  bundlePath: string
-  cleanup: () => Promise<void>
-}
+export type BundleResult =
+  | { ok: true; bundlePath: string; cleanup: () => Promise<void> }
+  | { ok: false; failure: BundleFailure }
 
 /** A no-op cleanup, used when the fast path needs no temp dir. */
 const noopCleanup = async (): Promise<void> => {}
@@ -31,26 +49,26 @@ const noopCleanup = async (): Promise<void> => {}
  * When the fast path is not available (e.g. a third-party adapter with no
  * prebuilt dist, a local source tree during development, a git install
  * without committed build output), the slow path kicks in: bundle the
- * resolved entry point with `Bun.build()`, installing dependencies first
- * only if the optimistic build fails (see `rebundleAdapter`).
+ * resolved entry point, installing dependencies first only if the
+ * optimistic build fails (see `rebundleAdapter`).
  *
  * @param sourceDir - Path to the adapter source (must contain package.json)
- * @returns A `BundleResult` with the bundle path and a cleanup function.
  */
 export async function bundleAdapter(sourceDir: string): Promise<BundleResult> {
   const resolved = await resolveEntryPoint(sourceDir)
+  if (!resolved.ok) return resolved
 
   // Fast path: adapter ships a prebuilt bundle. Return it directly — no
   // install, no build. Verify step will dynamically import() it to confirm
   // it loads without missing externals; if that fails, the caller will fall
   // back to the slow path via `rebundleAdapter`.
-  if (resolved.kind === 'prebuilt') {
-    return { bundlePath: resolved.path, cleanup: noopCleanup }
+  if (resolved.entry.kind === 'prebuilt') {
+    return { ok: true, bundlePath: resolved.entry.path, cleanup: noopCleanup }
   }
 
-  // Slow path: source tree (e.g. unbuilt local adapter). Bundle with
-  // Bun.build(), installing dependencies only if needed.
-  return rebundleAdapter(sourceDir, resolved.path)
+  // Slow path: source tree (e.g. unbuilt local adapter). Bundle, installing
+  // dependencies only if needed.
+  return rebundleAdapter(sourceDir, resolved.entry.path)
 }
 
 /**
@@ -78,7 +96,8 @@ export async function bundleAdapter(sourceDir: string): Promise<BundleResult> {
  * build artifacts behind. Returns the bundle path along with a `cleanup`
  * function that removes the temp directory; callers MUST invoke `cleanup()`
  * after consuming the bundle (typically in a `finally` block) so we don't
- * accumulate `facet-adapter-build-*` dirs in the OS temp directory.
+ * accumulate `facet-adapter-build-*` dirs in the OS temp directory. Every
+ * failure arm removes its own temp directory before returning.
  *
  * Exported separately so callers can also invoke it as a retry fallback
  * when the fast path's prebuilt bundle fails to load (e.g. missing
@@ -88,39 +107,49 @@ export async function rebundleAdapter(sourceDir: string, entryPoint: string): Pr
   // Optimistic pass: dependencies may already be on disk.
   const first = await tryBuild(sourceDir, entryPoint)
   if (first.ok) {
-    return { bundlePath: first.bundlePath, cleanup: first.cleanup }
+    return { ok: true, bundlePath: first.bundlePath, cleanup: first.cleanup }
   }
 
   // Fallback: install dependencies, then retry the build exactly once.
-  installDependencies(sourceDir)
+  const installed = installDependencies(sourceDir)
+  if (!installed.ok) {
+    return { ok: false, failure: installed.failure }
+  }
   const second = await tryBuild(sourceDir, entryPoint)
   if (second.ok) {
-    return { bundlePath: second.bundlePath, cleanup: second.cleanup }
+    return { ok: true, bundlePath: second.bundlePath, cleanup: second.cleanup }
   }
-  throw new Error(`Failed to bundle adapter from "${sourceDir}":\n${second.errors}`)
+  return { ok: false, failure: second.failure }
 }
 
 /**
  * Install dependencies in `sourceDir` with `bun install` — frozen
  * lockfile first, then a plain retry (covers sources shipped without a
- * lockfile). Throws when both attempts fail.
+ * lockfile).
  */
-function installDependencies(sourceDir: string): void {
+function installDependencies(
+  sourceDir: string,
+): { ok: true } | { ok: false; failure: Extract<BundleFailure, { kind: 'install-failed' }> } {
   const installResult = Bun.spawnSync(['bun', 'install', '--frozen-lockfile'], {
     cwd: sourceDir,
     stdout: 'pipe',
     stderr: 'pipe',
   })
-  if (installResult.exitCode === 0) return
+  if (installResult.exitCode === 0) return { ok: true }
 
+  // If frozen-lockfile fails (no lockfile), try without it
   const retryResult = Bun.spawnSync(['bun', 'install'], {
     cwd: sourceDir,
     stdout: 'pipe',
     stderr: 'pipe',
   })
   if (retryResult.exitCode !== 0) {
-    throw new Error(`Failed to install dependencies in "${sourceDir}": ${retryResult.stderr.toString().trim()}`)
+    return {
+      ok: false,
+      failure: { kind: 'install-failed', sourceDir, stderr: retryResult.stderr.toString().trim() },
+    }
   }
+  return { ok: true }
 }
 
 /**
@@ -138,7 +167,10 @@ function installDependencies(sourceDir: string): void {
 async function tryBuild(
   sourceDir: string,
   entryPoint: string,
-): Promise<{ ok: true; bundlePath: string; cleanup: () => Promise<void> } | { ok: false; errors: string }> {
+): Promise<
+  | { ok: true; bundlePath: string; cleanup: () => Promise<void> }
+  | { ok: false; failure: Extract<BundleFailure, { kind: 'build-failed' | 'no-output' }> }
+> {
   // Write outside of `sourceDir` so local installs from a user's source
   // tree don't leave build artifacts behind.
   const outdir = await mkdtemp(join(tmpdir(), 'facet-adapter-build-'))
@@ -158,12 +190,15 @@ async function tryBuild(
 
   if (result.exitCode !== 0) {
     await cleanup()
-    return { ok: false, errors: result.stderr.toString().trim() }
+    return {
+      ok: false,
+      failure: { kind: 'build-failed', sourceDir, errors: [result.stderr.toString().trim()] },
+    }
   }
 
   if (!(await Bun.file(bundlePath).exists())) {
     await cleanup()
-    return { ok: false, errors: `bun build produced no output for "${sourceDir}"` }
+    return { ok: false, failure: { kind: 'no-output', sourceDir } }
   }
 
   return { ok: true, bundlePath, cleanup }
@@ -179,6 +214,11 @@ export type ResolvedEntryPoint = {
   path: string
   kind: 'prebuilt' | 'source'
 }
+
+/** Result of `resolveEntryPoint`. */
+export type ResolveEntryPointResult =
+  | { ok: true; entry: ResolvedEntryPoint }
+  | { ok: false; failure: Extract<BundleFailure, { kind: 'no-package-json' | 'no-entry-point' }> }
 
 /** Classify a resolved path by its file extension. */
 function classify(path: string): 'prebuilt' | 'source' {
@@ -196,16 +236,16 @@ function classify(path: string): 'prebuilt' | 'source' {
  *   5. Disk fallback: `dist/index.mjs`.
  *   6. Disk fallback: `dist/index.js`.
  *   7. Disk fallback: `src/index.ts` (unbuilt local source).
- *   8. Throws, listing every location that was tried.
+ *   8. `no-entry-point` failure listing every location that was tried.
  *
  * Exported for direct unit testing.
  */
-export async function resolveEntryPoint(sourceDir: string): Promise<ResolvedEntryPoint> {
+export async function resolveEntryPoint(sourceDir: string): Promise<ResolveEntryPointResult> {
   const pkgJsonPath = join(sourceDir, 'package.json')
   const pkgFile = Bun.file(pkgJsonPath)
 
   if (!(await pkgFile.exists())) {
-    throw new Error(`No package.json found in "${sourceDir}"`)
+    return { ok: false, failure: { kind: 'no-package-json', sourceDir } }
   }
 
   const pkg = (await pkgFile.json()) as {
@@ -220,7 +260,7 @@ export async function resolveEntryPoint(sourceDir: string): Promise<ResolvedEntr
     const absolute = join(sourceDir, pkg.exports)
     tried.push(`exports: "${pkg.exports}"`)
     if (await Bun.file(absolute).exists()) {
-      return { path: absolute, kind: classify(absolute) }
+      return { ok: true, entry: { path: absolute, kind: classify(absolute) } }
     }
   }
 
@@ -230,7 +270,7 @@ export async function resolveEntryPoint(sourceDir: string): Promise<ResolvedEntr
     const absolute = join(sourceDir, relative)
     tried.push(`exports["."]: "${relative}"`)
     if (await Bun.file(absolute).exists()) {
-      return { path: absolute, kind: classify(absolute) }
+      return { ok: true, entry: { path: absolute, kind: classify(absolute) } }
     }
   }
 
@@ -246,7 +286,7 @@ export async function resolveEntryPoint(sourceDir: string): Promise<ResolvedEntr
     const absolute = join(sourceDir, relative)
     tried.push(`exports["."].import: "${relative}"`)
     if (await Bun.file(absolute).exists()) {
-      return { path: absolute, kind: classify(absolute) }
+      return { ok: true, entry: { path: absolute, kind: classify(absolute) } }
     }
   }
 
@@ -255,7 +295,7 @@ export async function resolveEntryPoint(sourceDir: string): Promise<ResolvedEntr
     const absolute = join(sourceDir, pkg.main)
     tried.push(`main: "${pkg.main}"`)
     if (await Bun.file(absolute).exists()) {
-      return { path: absolute, kind: classify(absolute) }
+      return { ok: true, entry: { path: absolute, kind: classify(absolute) } }
     }
   }
 
@@ -265,13 +305,9 @@ export async function resolveEntryPoint(sourceDir: string): Promise<ResolvedEntr
     const absolute = join(sourceDir, relative)
     tried.push(`disk: "${relative}"`)
     if (await Bun.file(absolute).exists()) {
-      return { path: absolute, kind: classify(absolute) }
+      return { ok: true, entry: { path: absolute, kind: classify(absolute) } }
     }
   }
 
-  throw new Error(
-    `Cannot determine entry point for adapter in "${sourceDir}". ` +
-      `Tried:\n  - ${tried.join('\n  - ')}\n` +
-      `Set "exports" or "main" in package.json, or ship a prebuilt dist/index.mjs.`,
-  )
+  return { ok: false, failure: { kind: 'no-entry-point', sourceDir, tried } }
 }

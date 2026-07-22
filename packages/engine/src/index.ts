@@ -6,10 +6,16 @@
 // adapter machinery
 export type { AdapterCompatibilityFailure, ApiDeclarationClassification } from './adapters/api-compatibility.ts'
 export { classifyApiDeclaration, isWellFormedAdapterApi, SUPPORTED_ADAPTER_APIS } from './adapters/api-compatibility.ts'
-export type { BundleResult, ResolvedEntryPoint } from './adapters/bundler.ts'
+export type { BundleFailure, BundleResult, ResolvedEntryPoint, ResolveEntryPointResult } from './adapters/bundler.ts'
 export { bundleAdapter, rebundleAdapter, resolveEntryPoint } from './adapters/bundler.ts'
 export type { FirstPartyAdapter } from './adapters/first-party.ts'
 export { FIRST_PARTY_ADAPTERS } from './adapters/first-party.ts'
+export type {
+  BrokenReason,
+  InstalledAdapterInspection,
+  RepairSource,
+} from './adapters/inspect.ts'
+export { inspectInstalledAdapter, inspectInstalledAdapters } from './adapters/inspect.ts'
 export type {
   AdapterInstallFailure,
   AdapterInstallOptions,
@@ -18,13 +24,31 @@ export type {
   LocateAndVerifyResult,
 } from './adapters/install-service.ts'
 export { installAdapter, locateAndVerifyAdapter } from './adapters/install-service.ts'
+export type {
+  InstallationReceipt,
+  InstallationSource,
+  ReadReceiptResult,
+} from './adapters/installation.ts'
+export {
+  INSTALLATION_RECEIPT_NAME,
+  isSafeGenerationId,
+  readInstallationReceipt,
+} from './adapters/installation.ts'
+export type { InstalledAdapterFailure, LoadAdaptersResult } from './adapters/loader.ts'
 export { loadInstalledAdapters } from './adapters/loader.ts'
+export type {
+  PlaceAdapterFailure,
+  PlaceAdapterResult,
+  PlacementProvenance,
+  PlacementWarning,
+} from './adapters/placement.ts'
 export {
   getAdapterBaseDir,
   getAdapterBundlePath,
   getAdapterDir,
   listInstalledAdapters,
   placeAdapter,
+  placeAdapterManaged,
   removeAdapter,
 } from './adapters/placement.ts'
 export type { VerifiedAdapter, VerifyAdapterFailure, VerifyAdapterResult } from './adapters/verify.ts'

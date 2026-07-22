@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
 import type { BuildManifest, LockfileFacet } from '@agent-facets/protocol'
 import { LOCKFILE_VERSION } from '@agent-facets/protocol'
 import type { Addition } from '../types.ts'
@@ -145,6 +146,7 @@ import { join } from 'node:path'
 function path(type, name) { return join(process.cwd(), '.${name}', type + 's', name + '.md') }
 export default {
   name: '${name}',
+  apiVersion: '${ADAPTER_API_VERSION}',
   supportsInstall: true,
   buildAssetMetadata(data) { return { ok: true, data: data || {} } },
   async installAsset(scope, type, name, content, metadata) { await installAssetFile({ file: path(type, name) }, content, metadata) },
@@ -191,7 +193,9 @@ function registryAddition(specifier: string): Addition {
 }
 
 async function install(opts: { additions?: Addition[]; frozen?: boolean } = {}) {
-  const adapters = await loadInstalledAdapters()
+  const loadResult = await loadInstalledAdapters()
+  if (!loadResult.ok) throw new Error('test bug: installed fixture adapters failed to load')
+  const adapters = loadResult.adapters
   return runInstall({
     projectRoot,
     adapters: adapters.filter((a) => a.supportsInstall === true),

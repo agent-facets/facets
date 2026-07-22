@@ -9,6 +9,8 @@ import { render } from 'ink'
 import { createElement } from 'react'
 import type { Command } from '../commands.ts'
 import { BuildView } from '../tui/views/build/build-view.tsx'
+import { describeInstalledAdapterFailure } from '../util/adapter-install-errors.ts'
+import { writeCliError } from '../util/errors.ts'
 import { resolveTargetDir } from './resolve-dir.ts'
 
 /** Version tag for the machine-readable `--json` output document. */
@@ -46,12 +48,17 @@ export const buildCommand: Command = {
     const verify = flags.verify === true
     const json = flags.json === true
 
-    // Load installed adapters so their metadata schemas can validate the manifest.
-    // In JSON mode adapter-load warnings would corrupt the JSON document on stdout,
-    // so route them to stderr (which they already use) and keep stdout clean.
-    const adapters = await loadInstalledAdapters(undefined, {
-      onWarn: (line) => console.error(line),
-    })
+    // Load installed adapters so their metadata schemas can validate the
+    // manifest. Loading fails closed: any incompatible or broken installed
+    // adapter stops the build before the pipeline starts.
+    const loaded = await loadInstalledAdapters()
+    if (!loaded.ok) {
+      for (const failure of loaded.failures) {
+        writeCliError(describeInstalledAdapterFailure(failure))
+      }
+      return 1
+    }
+    const adapters = loaded.adapters
 
     // --verify or --json take the plain (non-Ink) path: run the pipeline
     // directly, and only write output when not verifying.

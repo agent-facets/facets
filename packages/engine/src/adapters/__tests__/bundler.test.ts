@@ -34,7 +34,9 @@ describe('resolveEntryPoint', () => {
   test('exports as a string pointing at a prebuilt .mjs', async () => {
     const dir = await makeFixture({ name: 'a', exports: './dist/index.mjs' }, { 'dist/index.mjs': 'export default {}' })
     try {
-      const resolved = await resolveEntryPoint(dir)
+      const result = await resolveEntryPoint(dir)
+      if (!result.ok) expect.unreachable()
+      const resolved = result.entry
       expect(resolved.path).toBe(join(dir, 'dist/index.mjs'))
       expect(resolved.kind).toBe('prebuilt')
     } finally {
@@ -48,7 +50,9 @@ describe('resolveEntryPoint', () => {
       { 'dist/index.mjs': 'export default {}' },
     )
     try {
-      const resolved = await resolveEntryPoint(dir)
+      const result = await resolveEntryPoint(dir)
+      if (!result.ok) expect.unreachable()
+      const resolved = result.entry
       expect(resolved.path).toBe(join(dir, 'dist/index.mjs'))
       expect(resolved.kind).toBe('prebuilt')
     } finally {
@@ -65,7 +69,9 @@ describe('resolveEntryPoint', () => {
       { 'dist/index.mjs': 'export default {}' },
     )
     try {
-      const resolved = await resolveEntryPoint(dir)
+      const result = await resolveEntryPoint(dir)
+      if (!result.ok) expect.unreachable()
+      const resolved = result.entry
       expect(resolved.path).toBe(join(dir, 'dist/index.mjs'))
       expect(resolved.kind).toBe('prebuilt')
     } finally {
@@ -79,7 +85,9 @@ describe('resolveEntryPoint', () => {
       { 'src/index.ts': 'export default {}' },
     )
     try {
-      const resolved = await resolveEntryPoint(dir)
+      const result = await resolveEntryPoint(dir)
+      if (!result.ok) expect.unreachable()
+      const resolved = result.entry
       expect(resolved.path).toBe(join(dir, 'src/index.ts'))
       expect(resolved.kind).toBe('source')
     } finally {
@@ -90,7 +98,9 @@ describe('resolveEntryPoint', () => {
   test('main field only, pointing at prebuilt .mjs', async () => {
     const dir = await makeFixture({ name: 'a', main: './dist/index.mjs' }, { 'dist/index.mjs': 'export default {}' })
     try {
-      const resolved = await resolveEntryPoint(dir)
+      const result = await resolveEntryPoint(dir)
+      if (!result.ok) expect.unreachable()
+      const resolved = result.entry
       expect(resolved.path).toBe(join(dir, 'dist/index.mjs'))
       expect(resolved.kind).toBe('prebuilt')
     } finally {
@@ -101,7 +111,9 @@ describe('resolveEntryPoint', () => {
   test('disk fallback to dist/index.mjs when no exports/main', async () => {
     const dir = await makeFixture({ name: 'a' }, { 'dist/index.mjs': 'export default {}' })
     try {
-      const resolved = await resolveEntryPoint(dir)
+      const result = await resolveEntryPoint(dir)
+      if (!result.ok) expect.unreachable()
+      const resolved = result.entry
       expect(resolved.path).toBe(join(dir, 'dist/index.mjs'))
       expect(resolved.kind).toBe('prebuilt')
     } finally {
@@ -112,7 +124,9 @@ describe('resolveEntryPoint', () => {
   test('disk fallback to dist/index.js when dist/index.mjs missing', async () => {
     const dir = await makeFixture({ name: 'a' }, { 'dist/index.js': 'export default {}' })
     try {
-      const resolved = await resolveEntryPoint(dir)
+      const result = await resolveEntryPoint(dir)
+      if (!result.ok) expect.unreachable()
+      const resolved = result.entry
       expect(resolved.path).toBe(join(dir, 'dist/index.js'))
       expect(resolved.kind).toBe('prebuilt')
     } finally {
@@ -123,7 +137,9 @@ describe('resolveEntryPoint', () => {
   test('disk fallback to src/index.ts is classified as source', async () => {
     const dir = await makeFixture({ name: 'a' }, { 'src/index.ts': 'export default {}' })
     try {
-      const resolved = await resolveEntryPoint(dir)
+      const result = await resolveEntryPoint(dir)
+      if (!result.ok) expect.unreachable()
+      const resolved = result.entry
       expect(resolved.path).toBe(join(dir, 'src/index.ts'))
       expect(resolved.kind).toBe('source')
     } finally {
@@ -139,7 +155,9 @@ describe('resolveEntryPoint', () => {
       { 'src/index.ts': 'export default {}' },
     )
     try {
-      const resolved = await resolveEntryPoint(dir)
+      const result = await resolveEntryPoint(dir)
+      if (!result.ok) expect.unreachable()
+      const resolved = result.entry
       expect(resolved.path).toBe(join(dir, 'src/index.ts'))
       expect(resolved.kind).toBe('source')
     } finally {
@@ -147,21 +165,26 @@ describe('resolveEntryPoint', () => {
     }
   })
 
-  test('throws when no entry point can be found, listing what was tried', async () => {
+  test('fails with no-entry-point when nothing resolves, listing what was tried', async () => {
     const dir = await makeFixture({ name: 'a', exports: './does-not-exist.mjs', main: './also-missing.js' })
     try {
-      await expect(resolveEntryPoint(dir)).rejects.toThrow(
-        /Cannot determine entry point.*does-not-exist.mjs.*also-missing.js.*dist\/index.mjs/s,
-      )
+      const result = await resolveEntryPoint(dir)
+      if (result.ok) expect.unreachable()
+      if (result.failure.kind !== 'no-entry-point') expect.unreachable()
+      expect(result.failure.tried.join('\n')).toContain('does-not-exist.mjs')
+      expect(result.failure.tried.join('\n')).toContain('also-missing.js')
+      expect(result.failure.tried.join('\n')).toContain('dist/index.mjs')
     } finally {
       await cleanup(dir)
     }
   })
 
-  test('throws when package.json is missing', async () => {
+  test('fails with no-package-json when package.json is missing', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'facet-bundler-test-'))
     try {
-      await expect(resolveEntryPoint(dir)).rejects.toThrow(/No package.json found/)
+      const result = await resolveEntryPoint(dir)
+      if (result.ok) expect.unreachable()
+      expect(result.failure.kind).toBe('no-package-json')
     } finally {
       await cleanup(dir)
     }
@@ -180,7 +203,9 @@ describe('resolveEntryPoint', () => {
       },
     )
     try {
-      const resolved = await resolveEntryPoint(dir)
+      const result = await resolveEntryPoint(dir)
+      if (!result.ok) expect.unreachable()
+      const resolved = result.entry
       expect(resolved.path).toBe(join(dir, 'dist/index.mjs'))
     } finally {
       await cleanup(dir)
@@ -188,18 +213,6 @@ describe('resolveEntryPoint', () => {
   })
 })
 
-/**
- * Tests for the BundleResult.cleanup contract introduced in PR #142
- * follow-up: every bundler entry point returns `{ bundlePath, cleanup }`,
- * and callers MUST be able to invoke `cleanup()` safely (whether or not
- * a temp dir was created).
- *
- * The slow-path `rebundleAdapter` cleanup is exercised end-to-end by the
- * adapter-install-cli test suite (which checks that `facet-adapter-build-*`
- * dirs don't accumulate in tmpdir across installs). Here we cover the fast
- * path: it must return a no-op cleanup that doesn't throw and doesn't
- * delete anything in the source tree.
- */
 /**
  * Slow-path ordering: the build runs BEFORE any `bun install`. A source
  * tree whose dependencies are already satisfied (an installed workspace,
@@ -227,6 +240,7 @@ describe('rebundleAdapter — build-first, install only on failure', () => {
     )
     try {
       const result = await bundleAdapter(dir)
+      if (!result.ok) expect.unreachable()
       try {
         const stats = await stat(result.bundlePath)
         expect(stats.isFile()).toBe(true)
@@ -262,6 +276,7 @@ describe('rebundleAdapter — build-first, install only on failure', () => {
     )
     try {
       const result = await bundleAdapter(dir)
+      if (!result.ok) expect.unreachable()
       try {
         const stats = await stat(result.bundlePath)
         expect(stats.isFile()).toBe(true)
@@ -281,6 +296,18 @@ describe('rebundleAdapter — build-first, install only on failure', () => {
   })
 })
 
+/**
+ * Tests for the BundleResult.cleanup contract introduced in PR #142
+ * follow-up: every bundler entry point returns `{ bundlePath, cleanup }`,
+ * and callers MUST be able to invoke `cleanup()` safely (whether or not
+ * a temp dir was created).
+ *
+ * The slow-path `rebundleAdapter` cleanup is exercised end-to-end by the
+ * adapter-install-cli test suite (which checks that `facet-adapter-build-*`
+ * dirs don't accumulate in tmpdir across installs). Here we cover the fast
+ * path: it must return a no-op cleanup that doesn't throw and doesn't
+ * delete anything in the source tree.
+ */
 describe('bundleAdapter — fast path returns a safe no-op cleanup', () => {
   test('cleanup is callable and resolves without throwing', async () => {
     const dir = await makeFixture(
@@ -289,6 +316,7 @@ describe('bundleAdapter — fast path returns a safe no-op cleanup', () => {
     )
     try {
       const result = await bundleAdapter(dir)
+      if (!result.ok) expect.unreachable()
       // Fast path: bundlePath should point AT the source tree's prebuilt
       expect(result.bundlePath).toBe(join(dir, 'dist/index.mjs'))
       // Cleanup must not throw
@@ -309,6 +337,7 @@ describe('bundleAdapter — fast path returns a safe no-op cleanup', () => {
     )
     try {
       const result = await bundleAdapter(dir)
+      if (!result.ok) expect.unreachable()
       await result.cleanup()
       await expect(result.cleanup()).resolves.toBeUndefined()
       await expect(result.cleanup()).resolves.toBeUndefined()

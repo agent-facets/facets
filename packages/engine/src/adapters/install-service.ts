@@ -12,8 +12,9 @@ import {
   resolveNpmAdapter,
 } from '../sources/adapter/npm.ts'
 import { type ParseAdapterSpecifierResult, parseAdapterSpecifier } from '../sources/adapter/specifier.ts'
-import { rebundleAdapter, resolveEntryPoint } from './bundler.ts'
-import { placeAdapter } from './placement.ts'
+import { type BundleFailure, rebundleAdapter, resolveEntryPoint } from './bundler.ts'
+import type { InstallationReceipt, InstallationSource } from './installation.ts'
+import { type PlaceAdapterFailure, type PlacementWarning, placeAdapterManaged } from './placement.ts'
 import { type VerifiedAdapter, type VerifyAdapterFailure, verifyAdapter } from './verify.ts'
 
 /**
@@ -50,13 +51,13 @@ export interface AdapterInstallOptions {
  *     local-path resolution failed. The `source` discriminator carries
  *     the resolver-specific reason (for npm: compatible-release
  *     resolution failures and tarball download/integrity failures).
- *   - `bundle-failed` / `place-failed` — bundler load or placement
- *     threw. These two still wrap thrown errors today; the fix here is
- *     to surface them as structured failures to the caller instead of
- *     letting them escape the boundary.
+ *   - `bundle-failed` — entry resolution, dependency install, or
+ *     bundling failed. Carries the structured `BundleFailure`.
  *   - `verify-failed` — the produced bundle failed verification. Carries
  *     the full structured `VerifyAdapterFailure` (including adapter API
  *     compatibility classifications) for the CLI to render.
+ *   - `place-failed` — managed placement failed (lock, staging,
+ *     staged-path verification, or receipt activation).
  */
 export type AdapterInstallFailure =
   | { kind: 'specifier-invalid'; specifier: string; failure: Extract<ParseAdapterSpecifierResult, { ok: false }> }
@@ -71,16 +72,19 @@ export type AdapterInstallFailure =
         | { kind: 'git'; failure: Extract<CloneAdapterGitResult, { ok: false }> }
         | { kind: 'local'; failure: Extract<ResolveLocalAdapterResult, { ok: false }> }
     }
-  | { kind: 'bundle-failed'; specifier: string; cause: string }
+  | { kind: 'bundle-failed'; specifier: string; failure: BundleFailure }
   | { kind: 'verify-failed'; specifier: string; failure: VerifyAdapterFailure }
-  | { kind: 'place-failed'; specifier: string; adapter: string; cause: string }
+  | { kind: 'place-failed'; specifier: string; adapter: string; failure: PlaceAdapterFailure }
 
 /**
  * Result of `installAdapter`. Discriminated by `ok`. On success the
- * caller gets the loaded `Adapter` instance; on failure, a structured
- * `AdapterInstallFailure` for the CLI to render.
+ * caller gets the loaded `Adapter` instance, the activated installation
+ * receipt, and any post-activation cleanup warnings; on failure, a
+ * structured `AdapterInstallFailure` for the CLI to render.
  */
-export type AdapterInstallResult = { ok: true; adapter: Adapter } | { ok: false; failure: AdapterInstallFailure }
+export type AdapterInstallResult =
+  | { ok: true; adapter: Adapter; receipt: InstallationReceipt; warnings: PlacementWarning[] }
+  | { ok: false; failure: AdapterInstallFailure }
 
 export async function installAdapter(
   specifier: string,
@@ -97,6 +101,8 @@ export async function installAdapter(
   let bundleCleanup: (() => Promise<void>) | undefined
   /** The npm package declaration used for selection, when installing from npm. */
   let expectedApiVersion: string | undefined
+  /** Receipt provenance, minus the verified API (known after verification). */
+  let source: InstallationSource | undefined
 
   try {
     opts.onProgress?.('resolving', specifier)
@@ -120,6 +126,13 @@ export async function installAdapter(
         }
         sourceDir = dl.path
         expectedApiVersion = resolution.release.apiVersion
+        source = {
+          kind: 'npm',
+          specifier,
+          packageName: resolution.release.packageName,
+          version: resolution.release.version,
+          integrity: dl.usedIntegrity,
+        }
         break
       }
       case 'git': {
@@ -132,6 +145,12 @@ export async function installAdapter(
           }
         }
         sourceDir = clone.path
+        source = {
+          kind: 'git',
+          specifier,
+          url: resolved.url,
+          ...(resolved.commitish !== undefined ? { ref: resolved.commitish } : {}),
+        }
         break
       }
       case 'local': {
@@ -144,24 +163,21 @@ export async function installAdapter(
         }
         sourceDir = local.path
         needsCleanup = false // Don't delete user's local directory
+        source = { kind: 'local', specifier, sourcePath: local.path }
         break
       }
     }
 
     opts.onProgress?.('bundling')
-    let located: LocateAndVerifyResult
-    try {
-      located = await locateAndVerifyAdapter(sourceDir, { onLog: opts.onLog, expectedApiVersion })
-    } catch (err) {
-      // bundler internals (`rebundleAdapter`, `resolveEntryPoint`) still
-      // throw today — converting them is a later step. Catch at this
-      // boundary so the `installAdapter` contract stays result-typed
-      // even though its dependencies haven't been converted yet.
-      const cause = err instanceof Error ? err.message : String(err)
-      return { ok: false, failure: { kind: 'bundle-failed', specifier, cause } }
-    }
+    const located = await locateAndVerifyAdapter(sourceDir, { onLog: opts.onLog, expectedApiVersion })
     if (!located.ok) {
-      return { ok: false, failure: { kind: 'verify-failed', specifier, failure: located.failure } }
+      return {
+        ok: false,
+        failure:
+          located.failure.kind === 'bundle'
+            ? { kind: 'bundle-failed', specifier, failure: located.failure.failure }
+            : { kind: 'verify-failed', specifier, failure: located.failure.failure },
+      }
     }
     bundleCleanup = located.cleanup
     const adapter = located.verified.adapter
@@ -171,17 +187,18 @@ export async function installAdapter(
     // stage tick just exists for progress symmetry on the picker.
 
     opts.onProgress?.('placing', adapter.name)
-    try {
-      await placeAdapter(adapter.name, located.bundlePath)
-    } catch (err) {
-      const cause = err instanceof Error ? err.message : String(err)
+    const placed = await placeAdapterManaged(adapter.name, located.bundlePath, {
+      apiVersion: located.verified.apiVersion,
+      source,
+    })
+    if (!placed.ok) {
       return {
         ok: false,
-        failure: { kind: 'place-failed', specifier, adapter: adapter.name, cause },
+        failure: { kind: 'place-failed', specifier, adapter: adapter.name, failure: placed.failure },
       }
     }
 
-    return { ok: true, adapter }
+    return { ok: true, adapter, receipt: placed.receipt, warnings: placed.warnings }
   } finally {
     if (bundleCleanup) await bundleCleanup()
     if (needsCleanup && sourceDir) {
@@ -196,11 +213,15 @@ const noopCleanup = async (): Promise<void> => {}
  * Result of `locateAndVerifyAdapter`. On success, `bundlePath` is the
  * verified bundle ready for placement and `cleanup` removes any build
  * temp directory (callers MUST invoke it). On failure the function has
- * already cleaned up its own temp resources.
+ * already cleaned up its own temp resources; the tagged failure
+ * distinguishes bundle-production failures from verification failures.
  */
 export type LocateAndVerifyResult =
   | { ok: true; bundlePath: string; verified: VerifiedAdapter; cleanup: () => Promise<void> }
-  | { ok: false; failure: VerifyAdapterFailure }
+  | {
+      ok: false
+      failure: { kind: 'bundle'; failure: BundleFailure } | { kind: 'verify'; failure: VerifyAdapterFailure }
+    }
 
 /**
  * Locates a usable adapter bundle from `sourceDir` and verifies it loads
@@ -229,40 +250,47 @@ export async function locateAndVerifyAdapter(
   opts: { onLog?: OnLog; expectedApiVersion?: string } = {},
 ): Promise<LocateAndVerifyResult> {
   const resolved = await resolveEntryPoint(sourceDir)
+  if (!resolved.ok) {
+    return { ok: false, failure: { kind: 'bundle', failure: resolved.failure } }
+  }
   const verifyOpts = { expectedApiVersion: opts.expectedApiVersion }
 
-  if (resolved.kind === 'prebuilt') {
+  if (resolved.entry.kind === 'prebuilt') {
+    const prebuiltPath = resolved.entry.path
     opts.onLog?.(() => `[verbose]   using prebuilt bundle for ${basename(sourceDir)}`)
-    const verifyResult = await verifyPrebuiltInIsolation(resolved.path, verifyOpts)
+    const verifyResult = await verifyPrebuiltInIsolation(prebuiltPath, verifyOpts)
     if (verifyResult.ok) {
-      return { ok: true, bundlePath: resolved.path, verified: verifyResult.verified, cleanup: noopCleanup }
+      return { ok: true, bundlePath: prebuiltPath, verified: verifyResult.verified, cleanup: noopCleanup }
     }
     const prebuiltFailure = verifyResult.failure
     if (prebuiltFailure.kind !== 'import-failed') {
       // Terminal: the prebuilt bundle loaded but contradicts the
       // contract (or isn't an adapter). No rebundling fallback.
-      return { ok: false, failure: prebuiltFailure }
+      return { ok: false, failure: { kind: 'verify', failure: prebuiltFailure } }
     }
     opts.onLog?.(
       () =>
         `[verbose]   prebuilt bundle for ${basename(sourceDir)} did not load cleanly (${prebuiltFailure.cause}); rebundling from source`,
     )
-    const sourceEntry = await resolveSourceEntry(sourceDir, resolved.path)
+    const sourceEntry = await resolveSourceEntry(sourceDir, prebuiltPath)
     return verifyBuilt(await rebundleAdapter(sourceDir, sourceEntry), verifyOpts)
   }
 
-  return verifyBuilt(await rebundleAdapter(sourceDir, resolved.path), verifyOpts)
+  return verifyBuilt(await rebundleAdapter(sourceDir, resolved.entry.path), verifyOpts)
 }
 
 /** Verify a freshly rebundled adapter; on failure, clean up its temp dir. */
 async function verifyBuilt(
-  built: { bundlePath: string; cleanup: () => Promise<void> },
+  built: Awaited<ReturnType<typeof rebundleAdapter>>,
   verifyOpts: { expectedApiVersion?: string },
 ): Promise<LocateAndVerifyResult> {
+  if (!built.ok) {
+    return { ok: false, failure: { kind: 'bundle', failure: built.failure } }
+  }
   const result = await verifyAdapter(built.bundlePath, verifyOpts)
   if (!result.ok) {
     await built.cleanup()
-    return { ok: false, failure: result.failure }
+    return { ok: false, failure: { kind: 'verify', failure: result.failure } }
   }
   return { ok: true, bundlePath: built.bundlePath, verified: result.verified, cleanup: built.cleanup }
 }

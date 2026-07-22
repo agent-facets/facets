@@ -2,6 +2,8 @@ import { loadInstalledAdapters } from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
 import { BuildView } from '../../tui/views/build/build-view.tsx'
+import { describeInstalledAdapterFailure } from '../../util/adapter-install-errors.ts'
+import { writeCliError } from '../../util/errors.ts'
 
 /**
  * Mount `<BuildView>` for the publish command's build/rebuild branch
@@ -22,9 +24,16 @@ import { BuildView } from '../../tui/views/build/build-view.tsx'
  * just propagates the exit code.
  */
 export async function runBuildViewAndCapture(projectRoot: string): Promise<{ ok: boolean }> {
-  const adapters = await loadInstalledAdapters(undefined, {
-    onWarn: (line) => console.error(line),
-  })
+  // Fail closed before mounting the view: incompatible or broken
+  // installed adapters block the publish build entirely.
+  const loaded = await loadInstalledAdapters()
+  if (!loaded.ok) {
+    for (const failure of loaded.failures) {
+      writeCliError(describeInstalledAdapterFailure(failure))
+    }
+    return { ok: false }
+  }
+  const adapters = loaded.adapters
   const state: { failed: boolean } = { failed: false }
   const instance = render(
     createElement(BuildView, {

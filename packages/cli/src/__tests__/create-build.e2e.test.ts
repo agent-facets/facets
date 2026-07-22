@@ -34,10 +34,16 @@ if (!existsSync(CLI_PATH)) {
 }
 
 async function runCli(...args: string[]) {
+  // Hermetic FACET_DIR: `facet build` fail-closed-loads installed
+  // adapters, so inheriting the developer's real ~/.facet (which may
+  // hold legacy incompatible bundles) would leak machine state into
+  // these tests. An empty temp dir means "no adapters installed", and
+  // builds proceed with unknown-adapter warnings.
+  const facetDir = await mkdtemp(join(tmpdir(), 'facets-create-build-facet-dir-'))
   const proc = Bun.spawn([CLI_PATH, ...args], {
     stdout: 'pipe',
     stderr: 'pipe',
-    env: { ...process.env, NO_COLOR: '1' },
+    env: { ...process.env, NO_COLOR: '1', FACET_DIR: facetDir },
   })
   const stdout = await new Response(proc.stdout).text()
   const stderr = await new Response(proc.stderr).text()
