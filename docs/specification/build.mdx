@@ -7,6 +7,8 @@ description: Produce the canonical .facet archive
 
 ## Steps
 
+0. **Adapter compatibility preflight.** Every installed adapter MUST declare an adapter API the CLI supports. An installed adapter with a missing, malformed, or unsupported declaration MUST fail the build here — before manifest metadata validation and before any adapter method is invoked — with diagnostics identifying each incompatible adapter and its reinstall command. This gate applies to *installed* adapters; adapters that are named in the manifest but not installed are handled in step 4.
+
 1. **Parse and validate the manifest.** Read the facet manifest (`facet.json`) and validate it against the [manifest schema](/specification/manifest). Invalid manifests MUST be rejected with a descriptive error. The manifest's `name` MUST be a valid facet identity; the `version` MUST be a semver string; at least one text asset MUST be declared.
 
 2. **Resolve prompts.** Read each declared asset file from its conventional path: `skills/<name>/SKILL.md` for skills, `agents/<name>.md` for agents, `commands/<name>.md` for commands. Missing files are build errors. YAML front matter in content files is permitted and MUST be preserved verbatim in the archive  -- the manifest's `name`, `description`, and any per-adapter extras are merged on top of the author's front matter at install time.

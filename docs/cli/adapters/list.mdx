@@ -9,7 +9,21 @@ description: Lists installed adapters
 facet adapter list
 ```
 
-Lists all installed adapters by scanning the adapter base directory, `$FACET_DIR/adapters/` (see [environment variables](/cli/env) for the `FACET_DIR` layout).
+Lists all installed adapters by inspecting the adapter base directory, `$FACET_DIR/adapters/` (see [environment variables](/cli/env) for the `FACET_DIR` layout). Each entry shows the adapter's declared adapter API and whether this CLI supports it:
+
+```text
+Installed adapters:
+  claude-code  api 0.0      supported
+  opencode     api missing  unsupported — reinstall: facet adapter install opencode
+  my-tool      api unknown  broken (bundle failed to load) — reinstall: facet adapter install my-tool
+```
+
+## Output columns
+
+- **API** — the adapter's declared adapter API (`api 0.0`), or `api missing` (no declaration — typically a bundle installed before API versioning), `api malformed ("…")` (a declaration that isn't a valid API identifier), or `api unknown` (the bundle could not be read).
+- **Status** — `supported` (usable by this CLI), `unsupported — reinstall: <command>` (declares an API this CLI does not support), or `broken (<reason>) — reinstall: <command>` (invalid installation record, missing active bundle, or a bundle that failed to load).
+
+Listing stays available when entries are incompatible or broken — run it to find the exact `facet adapter install <specifier>` command that repairs each entry.
 
 ## Exit codes
 
