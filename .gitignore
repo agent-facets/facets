@@ -9,6 +9,7 @@ mise.local.toml
 .claude/
 .codex/
 .opencode/
+.pr-reviews/
 
 .env
 
