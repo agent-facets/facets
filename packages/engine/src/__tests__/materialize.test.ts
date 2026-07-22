@@ -424,3 +424,47 @@ describe('materialize — adapter-extras cannot override computed identity', () 
     expect(meta.extra).toBe('allowed-extra')
   })
 })
+
+describe('materialize — adapter API invariant check', () => {
+  test('an incompatible adapter fails before any method is invoked', async () => {
+    const manifest: ResolvedFacetManifest = {
+      name: 'viper-plans',
+      version: '0.1.0',
+      skills: { planning: { description: 'planning skill', prompt: '# planning content\n' } },
+    }
+    const incompatible = {
+      name: 'future-adapter',
+      apiVersion: '9.9',
+      supportsInstall: true,
+      buildAssetMetadata: () => {
+        throw new Error('contract method invoked despite incompatibility')
+      },
+      async installAsset() {
+        throw new Error('contract method invoked despite incompatibility')
+      },
+      async readAsset() {
+        throw new Error('contract method invoked despite incompatibility')
+      },
+      async deleteAsset() {
+        throw new Error('contract method invoked despite incompatibility')
+      },
+    } as unknown as Adapter
+
+    const result = await materialize({
+      facetName: 'viper-plans',
+      manifest,
+      adapters: [incompatible],
+      oldAssets: [],
+      newAssets: computeAssetList(manifest),
+      journal: new InstallJournal(),
+    })
+    if (result.ok) expect.unreachable()
+    if (result.failure.kind !== 'incompatible-adapter') expect.unreachable()
+    expect(result.failure.failure).toEqual({
+      kind: 'api-unsupported',
+      adapter: 'future-adapter',
+      found: '9.9',
+      supported: [ADAPTER_API_VERSION],
+    })
+  })
+})

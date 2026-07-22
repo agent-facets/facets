@@ -239,3 +239,35 @@ describe('facet add — manifest snapshot rollback', () => {
     expect(after).toBe(before)
   })
 })
+
+describe('facet add — incompatible installed adapter gate', () => {
+  test('fails with a reinstall hint before any write and never launches the picker', async () => {
+    // Unmanaged legacy bundle with an unsupported API declaration.
+    const dir = join(adaptersDir, 'future-adapter')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(
+      join(dir, 'adapter.js'),
+      `export default {
+  name: 'future-adapter',
+  apiVersion: '9.9',
+  supportsInstall: true,
+  buildAssetMetadata() { throw new Error('contract method invoked despite incompatibility') },
+  async installAsset() { throw new Error('contract method invoked despite incompatibility') },
+  async readAsset() { throw new Error('contract method invoked despite incompatibility') },
+  async deleteAsset() { throw new Error('contract method invoked despite incompatibility') },
+}
+`,
+    )
+    const fixture = buildLocalFixture('viper-plans')
+    const relPath = `./${fixture.split('/').pop()}`
+
+    const { result: code, stderr } = await withTTY(true, () => captureStderr(() => addCommand.run([relPath], {})))
+    expect(code).toBe(1)
+    expect(stderr).toContain('future-adapter')
+    expect(stderr).toContain('facet adapter install future-adapter')
+    expect(stderr).not.toContain('No AI tools are connected yet')
+    // No project files were created.
+    expect(existsSync(join(projectRoot, 'facets.json'))).toBe(false)
+    expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)
+  })
+})

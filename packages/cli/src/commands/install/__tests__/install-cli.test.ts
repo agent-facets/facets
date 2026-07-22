@@ -148,3 +148,40 @@ describe('facet install — CLI error paths', () => {
     expect(stderr).toContain('facet add')
   })
 })
+
+describe('facet install — incompatible installed adapter gate', () => {
+  /** Write an unmanaged legacy bundle with an unsupported API declaration. */
+  function installIncompatibleAdapter(baseDir: string, name: string): void {
+    const dir = join(baseDir, name)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(
+      join(dir, 'adapter.js'),
+      `export default {
+  name: '${name}',
+  apiVersion: '9.9',
+  supportsInstall: true,
+  buildAssetMetadata() { throw new Error('contract method invoked despite incompatibility') },
+  async installAsset() { throw new Error('contract method invoked despite incompatibility') },
+  async readAsset() { throw new Error('contract method invoked despite incompatibility') },
+  async deleteAsset() { throw new Error('contract method invoked despite incompatibility') },
+}
+`,
+    )
+  }
+
+  test('fails with a reinstall hint and never launches the picker', async () => {
+    installIncompatibleAdapter(adaptersDir, 'future-adapter')
+    writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify({ facets: {} }))
+
+    // Even on a TTY (where the zero-adapter picker COULD run), the gate
+    // must report the incompatible adapter instead of launching it.
+    const { result: code, stderr } = await withTTY(true, () => captureStderr(() => installCommand.run([], {})))
+    expect(code).toBe(1)
+    expect(stderr).toContain('future-adapter')
+    expect(stderr).toContain('9.9')
+    expect(stderr).toContain('facet adapter install future-adapter')
+    expect(stderr).not.toContain('No AI tools are connected yet')
+    // Nothing was installed or written.
+    expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)
+  })
+})

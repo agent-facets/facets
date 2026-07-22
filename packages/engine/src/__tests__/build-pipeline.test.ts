@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { defineAdapter } from '@agent-facets/adapter'
+import { ADAPTER_API_VERSION, type Adapter, defineAdapter } from '@agent-facets/adapter'
 import type { FacetManifest } from '@agent-facets/protocol'
 import { computeContentHash, detectNamingCollisions, validateCompactFacets } from '@agent-facets/protocol'
 import dedent from 'dedent'
@@ -352,6 +352,7 @@ describe('runBuildPipeline', () => {
     const result = await runBuildPipeline(dir)
     expect(result.ok).toBe(false)
     if (!result.ok) {
+      if (result.kind !== 'validation') expect.unreachable()
       expect(result.errors[0]?.path).toBe('skills.example')
       expect(result.errors[0]?.message).toContain('skills/example/SKILL.md')
     }
@@ -436,6 +437,7 @@ describe('runBuildPipeline', () => {
     const result = await runBuildPipeline(dir)
     expect(result.ok).toBe(false)
     if (!result.ok) {
+      if (result.kind !== 'validation') expect.unreachable()
       expect(result.errors[0]?.message).toContain('name@version')
     }
   })
@@ -518,6 +520,7 @@ describe('runBuildPipeline', () => {
     const result = await runBuildPipeline(dir, [rejectingAdapter])
     expect(result.ok).toBe(false)
     if (!result.ok) {
+      if (result.kind !== 'validation') expect.unreachable()
       expect(result.errors.length).toBeGreaterThan(0)
       expect(result.errors.some((e) => e.message.includes('rejecting-adapter'))).toBe(true)
     }
@@ -651,6 +654,7 @@ describe('content validation', () => {
     const result = await runBuildPipeline(dir)
     expect(result.ok).toBe(false)
     if (!result.ok) {
+      if (result.kind !== 'validation') expect.unreachable()
       expect(result.errors).toHaveLength(1)
       expect(result.errors[0]?.path).toBe('skills.empty')
       expect(result.errors[0]?.message).toContain('empty')
@@ -674,6 +678,7 @@ describe('content validation', () => {
     const result = await runBuildPipeline(dir)
     expect(result.ok).toBe(false)
     if (!result.ok) {
+      if (result.kind !== 'validation') expect.unreachable()
       expect(result.errors).toHaveLength(1)
       expect(result.errors[0]?.path).toBe('agents.blank')
       expect(result.errors[0]?.message).toContain('empty')
@@ -976,5 +981,85 @@ describe('runBuildPipeline — embedded manifest privacy', () => {
     if (!result.ok) expect.unreachable()
     const embedded = await readEmbeddedManifest(result.archiveBytes)
     expect('private' in embedded).toBe(false)
+  })
+})
+
+// --- Adapter API preflight (defense-in-depth gate) ---
+
+describe('runBuildPipeline — adapter API preflight', () => {
+  /** A structurally valid adapter whose declared API is not supported.
+   *  Contract methods throw so any invocation is loud. */
+  function incompatibleAdapter(name: string, apiVersion: unknown): Adapter {
+    return {
+      name,
+      apiVersion,
+      supportsInstall: true,
+      buildAssetMetadata: () => {
+        throw new Error('contract method invoked despite incompatibility')
+      },
+      async installAsset() {
+        throw new Error('contract method invoked despite incompatibility')
+      },
+      async readAsset() {
+        throw new Error('contract method invoked despite incompatibility')
+      },
+      async deleteAsset() {
+        throw new Error('contract method invoked despite incompatibility')
+      },
+    } as Adapter
+  }
+
+  async function validFixture(name: string): Promise<string> {
+    const dir = await createFixtureDir(name)
+    await Bun.write(join(dir, 'skills/example/SKILL.md'), '# Example skill')
+    await Bun.write(
+      join(dir, 'facet.json'),
+      JSON.stringify({
+        name,
+        version: '1.0.0',
+        skills: { example: { description: 'An example skill', adapters: { 'mock-adapter': {} } } },
+      }),
+    )
+    return dir
+  }
+
+  test('incompatible adapter fails before any stage runs or method is invoked', async () => {
+    const dir = await validFixture('preflight-incompatible')
+    const stages: string[] = []
+    const result = await runBuildPipeline(dir, [incompatibleAdapter('future-adapter', '9.9')], (progress) => {
+      stages.push(progress.stage)
+    })
+    if (result.ok) expect.unreachable()
+    if (result.kind !== 'adapter-incompatible') expect.unreachable()
+    expect(result.failures).toEqual([
+      { kind: 'api-unsupported', adapter: 'future-adapter', found: '9.9', supported: [ADAPTER_API_VERSION] },
+    ])
+    // The preflight fires before stage 1 — no stage ever started.
+    expect(stages).toEqual([])
+  })
+
+  test('multiple incompatible adapters are all collected', async () => {
+    const dir = await validFixture('preflight-multiple')
+    const result = await runBuildPipeline(dir, [
+      incompatibleAdapter('undeclared', undefined),
+      incompatibleAdapter('malformed', '0.0.1'),
+    ])
+    if (result.ok) expect.unreachable()
+    if (result.kind !== 'adapter-incompatible') expect.unreachable()
+    expect(result.failures.map((f) => f.kind)).toEqual(['api-missing', 'api-malformed'])
+  })
+
+  test('build with no adapters proceeds and warns about unknown manifest adapters', async () => {
+    const dir = await validFixture('preflight-no-adapters')
+    const result = await runBuildPipeline(dir, [])
+    if (!result.ok) expect.unreachable()
+    expect(result.warnings.some((w) => w.includes('unknown adapter "mock-adapter"'))).toBe(true)
+  })
+
+  test('compatible SDK-stamped adapter passes the preflight', async () => {
+    const dir = await validFixture('preflight-compatible')
+    const result = await runBuildPipeline(dir, [mockAdapter])
+    if (!result.ok) expect.unreachable()
+    expect(result.warnings).toEqual([])
   })
 })

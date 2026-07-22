@@ -1,6 +1,7 @@
 import type { RunInstallFailure } from '@agent-facets/engine'
 import { Box, Text } from 'ink'
 import type React from 'react'
+import { describeCompatibilityFailure } from '../../../util/adapter-install-errors.ts'
 import { THEME } from '../../theme.ts'
 
 /**
@@ -251,6 +252,26 @@ export function FailureBlock({ failure }: { failure: RunInstallFailure }): React
             ✕ adapter {failure.adapter} does not support install
           </Text>
           <Text> update this adapter or remove it with `facet adapter remove {failure.adapter}`</Text>
+        </Box>
+      )
+    case 'ADAPTER_INCOMPATIBLE':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ incompatible adapter{failure.failures.length !== 1 ? 's' : ''} selected — nothing was installed
+          </Text>
+          {failure.failures.map((compat) => {
+            const described = describeCompatibilityFailure(compat)
+            return (
+              <Box key={compat.adapter} flexDirection="column">
+                <Text> {described.what}</Text>
+                <Text color={THEME.hint}>
+                  {' '}
+                  {described.detail} — {described.fix}
+                </Text>
+              </Box>
+            )
+          })}
         </Box>
       )
     case 'ADAPTER_READ_FAILED':

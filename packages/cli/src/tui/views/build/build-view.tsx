@@ -8,6 +8,7 @@ import {
 } from '@agent-facets/engine'
 import { Box, Text, useApp } from 'ink'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { buildFailureMessages } from '../../../util/adapter-install-errors.ts'
 import type { Stage } from '../../components/stage-row.tsx'
 import { StageRow } from '../../components/stage-row.tsx'
 import { THEME } from '../../theme.ts'
@@ -66,10 +67,17 @@ export function BuildView({
     setWarnings(pipelineResult.warnings)
 
     if (!pipelineResult.ok) {
-      const formatted = pipelineResult.errors.map((e) => e.message)
-      // Find the stage that failed and attach errors to it
-      setStages((prev) => prev.map((s) => (s.status === 'failed' ? { ...s, errors: formatted } : s)))
-      onFailure?.(pipelineResult.errors.length)
+      const formatted = buildFailureMessages(pipelineResult)
+      // Find the stage that failed and attach errors to it. The
+      // adapter-incompatible preflight fails before any stage starts,
+      // so attach its errors to the first stage for display.
+      setStages((prev) => {
+        const anyFailed = prev.some((s) => s.status === 'failed')
+        return prev.map((s, i) =>
+          (anyFailed ? s.status === 'failed' : i === 0) ? { ...s, status: 'failed' as const, errors: formatted } : s,
+        )
+      })
+      onFailure?.(formatted.length)
       // Defer exit so React renders the errors and failed stage status first
       setPendingExit(new Error('Build failed'))
       return
