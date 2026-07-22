@@ -88,7 +88,9 @@ describe('adapter install-load-build integration', () => {
       const bundlePath = await buildTestAdapter(adapterSourceDir, 'integ-test-adapter')
 
       // Step 2: Verify the bundle exports a valid Adapter (exercises the verify module)
-      const verified = await verifyAdapter(bundlePath)
+      const verifyResult = await verifyAdapter(bundlePath)
+      if (!verifyResult.ok) expect.unreachable()
+      const verified = verifyResult.verified.adapter
       expect(verified.name).toBe('integ-test-adapter')
 
       // Step 3: Place the bundle into the temp base directory
@@ -142,8 +144,9 @@ describe('adapter install-load-build integration', () => {
 
     try {
       const bundlePath = await buildTestAdapter(adapterSourceDir, 'integ-test-adapter')
-      const verified = await verifyAdapter(bundlePath)
-      await placeAdapter(verified.name, bundlePath, adapterBaseDir)
+      const verifyResult = await verifyAdapter(bundlePath)
+      if (!verifyResult.ok) expect.unreachable()
+      await placeAdapter(verifyResult.verified.adapter.name, bundlePath, adapterBaseDir)
       const loaded = await loadInstalledAdapters(adapterBaseDir)
 
       // Manifest has invalid metadata for the adapter (custom must be a string, not a number)

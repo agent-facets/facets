@@ -1,12 +1,13 @@
 import { describe, expect, test } from 'bun:test'
+import { ADAPTER_API_VERSION, ADAPTER_API_VERSION_PACKAGE_FIELD } from '../api-version.ts'
 import { defineAdapter } from '../define-adapter.ts'
-import type { Adapter } from '../types.ts'
+import type { AdapterDefinition } from '../types.ts'
 
 /**
  * A minimal valid adapter definition for tests that need a base object.
  * Overrides any individual field by spreading this then assigning.
  */
-function validDefinition(): Adapter {
+function validDefinition(): AdapterDefinition {
   return {
     name: 'test-adapter',
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
@@ -49,6 +50,39 @@ describe('defineAdapter — required field validation', () => {
     // biome-ignore lint/suspicious/noExplicitAny: intentional type hole for runtime validation test
     const def = { ...validDefinition(), buildAssetMetadata: 'not-a-function' as any }
     expect(() => defineAdapter(def)).toThrow(/"buildAssetMetadata" is required/)
+  })
+})
+
+describe('canonical adapter API constants', () => {
+  // The one place tests anchor the spec literals — everywhere else compares
+  // against the exported constants.
+  test('ADAPTER_API_VERSION is 0.0', () => {
+    expect(ADAPTER_API_VERSION).toBe('0.0')
+  })
+
+  test('ADAPTER_API_VERSION_PACKAGE_FIELD is facetAdapterApiVersion', () => {
+    expect(ADAPTER_API_VERSION_PACKAGE_FIELD).toBe('facetAdapterApiVersion')
+  })
+})
+
+describe('defineAdapter — API version stamping', () => {
+  test('stamps the canonical API version onto the returned adapter', () => {
+    const adapter = defineAdapter(validDefinition())
+    expect(adapter.apiVersion).toBe(ADAPTER_API_VERSION)
+  })
+
+  test('the definition type excludes apiVersion', () => {
+    // @ts-expect-error — apiVersion is SDK-owned; authors cannot supply it
+    const definition: Parameters<typeof defineAdapter>[0] = { ...validDefinition(), apiVersion: '9.9' }
+    // Runtime still stamps the canonical value even when the type is bypassed
+    expect(defineAdapter(definition).apiVersion).toBe(ADAPTER_API_VERSION)
+  })
+
+  test('a conflicting runtime apiVersion smuggled past the types is overwritten', () => {
+    // biome-ignore lint/suspicious/noExplicitAny: intentional type hole to prove the stamp wins at runtime
+    const definition = { ...validDefinition(), apiVersion: '1.0' } as any
+    const adapter = defineAdapter(definition)
+    expect(adapter.apiVersion).toBe(ADAPTER_API_VERSION)
   })
 })
 
@@ -107,13 +141,13 @@ describe('defineAdapter — returned adapter shape', () => {
 })
 
 describe('defineAdapter — stub fallbacks for missing asset methods', () => {
-  function buildMinimal(overrides: Partial<Adapter> = {}): Adapter {
+  function buildMinimal(overrides: Partial<AdapterDefinition> = {}): AdapterDefinition {
     const minimal = {
       name: 'stubbed-adapter',
       buildAssetMetadata: (data: unknown) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
       ...overrides,
     }
-    // biome-ignore lint/suspicious/noExplicitAny: intentionally construct a partial Adapter to test stub fallbacks
+    // biome-ignore lint/suspicious/noExplicitAny: intentionally construct a partial definition to test stub fallbacks
     return minimal as any
   }
 

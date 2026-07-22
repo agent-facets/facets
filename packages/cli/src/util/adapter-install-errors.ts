@@ -1,4 +1,4 @@
-import type { AdapterInstallFailure } from '@agent-facets/engine'
+import type { AdapterCompatibilityFailure, AdapterInstallFailure, VerifyAdapterFailure } from '@agent-facets/engine'
 
 /**
  * Map an `AdapterInstallFailure` to the `{ what, detail, fix }` triple
@@ -27,16 +27,85 @@ export function describeAdapterInstallFailure(failure: AdapterInstallFailure): {
         fix: 'verify the adapter package builds with `bun build`; ensure all imports resolve',
       }
     case 'verify-failed':
-      return {
-        what: `failed to verify adapter "${failure.specifier}"`,
-        detail: failure.cause,
-        fix: 'the bundled adapter did not export a valid Adapter; check the SDK version',
-      }
+      return describeVerifyFailure(failure.specifier, failure.failure)
     case 'place-failed':
       return {
         what: `failed to place adapter "${failure.adapter}"`,
         detail: failure.cause,
         fix: 'check filesystem permissions on ~/.facet/adapters/',
+      }
+  }
+}
+
+function describeVerifyFailure(
+  specifier: string,
+  failure: VerifyAdapterFailure,
+): { what: string; detail: string; fix: string } {
+  switch (failure.kind) {
+    case 'import-failed':
+      return {
+        what: `failed to load adapter bundle for "${specifier}"`,
+        detail: failure.cause,
+        fix: 'verify the adapter package builds with `bun build`; ensure all imports resolve',
+      }
+    case 'no-default-export':
+      return {
+        what: `adapter "${specifier}" has no default export`,
+        detail: `the bundle at ${failure.bundlePath} must export default from defineAdapter()`,
+        fix: 'rebuild the adapter so its entry point default-exports the defineAdapter() result',
+      }
+    case 'incompatible':
+      return describeCompatibilityFailure(failure.failure)
+    case 'invalid-name':
+      return {
+        what: `adapter "${specifier}" has an invalid or missing name`,
+        detail: `the bundle at ${failure.bundlePath} must declare a non-empty string name`,
+        fix: 'set a non-empty "name" in the defineAdapter() definition and rebuild',
+      }
+    case 'invalid-shape':
+      return {
+        what: `adapter "${failure.adapter}" does not implement the adapter contract`,
+        detail: failure.detail,
+        fix: 'rebuild the adapter with the @agent-facets/adapter SDK factory (defineAdapter)',
+      }
+  }
+}
+
+/**
+ * Sole rendering point for the shared adapter-API compatibility failure
+ * union. Engine returns structured data; adding a variant forces this
+ * switch to update.
+ */
+export function describeCompatibilityFailure(failure: AdapterCompatibilityFailure): {
+  what: string
+  detail: string
+  fix: string
+} {
+  const supported = failure.supported.join(', ')
+  switch (failure.kind) {
+    case 'api-missing':
+      return {
+        what: `adapter "${failure.adapter}" does not declare an adapter API version`,
+        detail: `this CLI supports adapter API ${supported}; undeclared adapters are incompatible`,
+        fix: `install a release built with a current @agent-facets/adapter SDK: facet adapter install ${failure.adapter}`,
+      }
+    case 'api-malformed':
+      return {
+        what: `adapter "${failure.adapter}" declares a malformed adapter API version`,
+        detail: `found "${failure.found}"; this CLI supports adapter API ${supported}`,
+        fix: `install a release with a valid API declaration: facet adapter install ${failure.adapter}`,
+      }
+    case 'api-unsupported':
+      return {
+        what: `adapter "${failure.adapter}" declares unsupported adapter API ${failure.found}`,
+        detail: `this CLI supports adapter API ${supported}`,
+        fix: `install a compatible release: facet adapter install ${failure.adapter}`,
+      }
+    case 'api-metadata-mismatch':
+      return {
+        what: `adapter "${failure.adapter}" package metadata disagrees with its runtime API declaration`,
+        detail: `package declares ${failure.packageDeclared}, runtime declares ${failure.runtimeDeclared}; supported: ${supported}`,
+        fix: 'this release is inconsistently published; report it to the adapter author and install a different version',
       }
   }
 }

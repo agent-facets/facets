@@ -13,6 +13,22 @@
 
 import { $ } from 'bun'
 
+/**
+ * Re-entrancy guard. Steps 2 and 3 run the in-repo CLI, which can spawn
+ * a nested `bun install` (e.g. the adapter bundler's install-and-retry
+ * fallback). A nested install resolves the workspace root and re-runs
+ * this very script; without the guard that recursion never terminates.
+ * The variable is inherited by every child process, so the nested run
+ * exits immediately and the parent's steps remain the only ones doing
+ * real work.
+ */
+const REENTRY_GUARD = 'FACETS_POSTINSTALL_ACTIVE'
+if (process.env[REENTRY_GUARD] === '1') {
+  console.log('  ↩ nested bun install — dev setup already running in a parent process, skipping')
+  process.exit(0)
+}
+process.env[REENTRY_GUARD] = '1'
+
 type Step = {
   label: string
   run: () => Promise<void>
@@ -25,7 +41,15 @@ const steps: Step[] = [
   },
   {
     label: 'opencode adapter',
-    run: () => $`bun dev adapter install opencode`.quiet().then(() => undefined),
+    // Install from the workspace source, not npm. The in-repo CLI's
+    // adapter API support set advances with the in-repo SDK, so a
+    // published adapter release may lag behind what this checkout
+    // requires (the rollout publishes adapters before the CLI, but the
+    // monorepo's own bootstrap can't depend on that ordering — it would
+    // deadlock the release CI that publishes the first compatible
+    // release). The local path bundles and verifies the same adapter
+    // source this checkout was built against.
+    run: () => $`bun dev adapter install ./packages/adapters/opencode`.quiet().then(() => undefined),
   },
   {
     label: 'facets',

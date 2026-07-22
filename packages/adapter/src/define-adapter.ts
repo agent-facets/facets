@@ -1,10 +1,12 @@
-import type { Adapter } from './types.ts'
+import { ADAPTER_API_VERSION } from './api-version.ts'
+import type { Adapter, AdapterDefinition } from './types.ts'
 
 /**
  * Create an adapter from a definition object.
  *
  * Validates the definition shape and provides stub defaults for optional
- * CRUD methods. Returns a frozen `Adapter` object.
+ * CRUD methods. Returns a frozen `Adapter` object stamped with the SDK's
+ * canonical adapter API version (`ADAPTER_API_VERSION`).
  *
  * @example
  * ```ts
@@ -18,7 +20,7 @@ import type { Adapter } from './types.ts'
  * })
  * ```
  */
-export function defineAdapter(definition: Adapter): Adapter {
+export function defineAdapter(definition: AdapterDefinition): Adapter {
   // Validate required fields
   if (!definition.name || typeof definition.name !== 'string') {
     throw new Error('defineAdapter: "name" is required and must be a non-empty string')
@@ -30,6 +32,10 @@ export function defineAdapter(definition: Adapter): Adapter {
 
   const adapter: Adapter = {
     name: definition.name,
+
+    // SDK-owned: always the canonical value, even if a non-TypeScript
+    // caller sneaks an `apiVersion` past the input type.
+    apiVersion: ADAPTER_API_VERSION,
 
     supportsInstall: definition.supportsInstall,
 
