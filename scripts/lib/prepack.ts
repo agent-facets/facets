@@ -175,6 +175,32 @@ export function stripDevDependencies(pkg: Record<string, unknown>): {
 }
 
 /**
+ * Set an adapter API metadata field on a package manifest.
+ *
+ * Used at pack time to inject the top-level adapter API declaration
+ * (field name and value both come from `@agent-facets/adapter`'s
+ * canonical constants — this helper deliberately takes them as inputs so
+ * it stays pure and literal-free). The caller decides which packages
+ * qualify; this function unconditionally applies the field.
+ *
+ * Returns `{ pkg, modified }`; `modified` is false only when the field is
+ * already present with the same value.
+ */
+export function injectAdapterApiVersion(
+  pkg: Record<string, unknown>,
+  opts: { fieldName: string; version: string },
+): { pkg: Record<string, unknown>; modified: boolean } {
+  if (pkg[opts.fieldName] === opts.version) {
+    return { pkg, modified: false }
+  }
+
+  // Deep-clone so we don't mutate the caller's object
+  const result = JSON.parse(JSON.stringify(pkg)) as Record<string, unknown>
+  result[opts.fieldName] = opts.version
+  return { pkg: result, modified: true }
+}
+
+/**
  * Build a `VersionResolver` that scans workspace packages on disk.
  *
  * Reads the root `package.json` at `rootDir` to discover workspace glob

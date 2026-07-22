@@ -16,34 +16,34 @@
 
 ## 1. SDK Contract and Published Metadata — Research
 
-- [ ] 1.1 Explore: Inspect `packages/adapter/src/types.ts`, `packages/adapter/src/define-adapter.ts`, `packages/adapter/src/index.ts`, and `packages/adapter/src/__tests__/` to map the runtime adapter type, factory, public exports, and unit-test surfaces.
-- [ ] 1.2 Explore: Inspect `packages/adapters/{claude-code,codex,opencode}/` call sites, package builds, and tests to identify compile-time and packed-runtime coverage for the stamped API declaration.
-- [ ] 1.3 Explore: Inspect `scripts/prepack.ts`, `scripts/postpack.ts`, `scripts/lib/prepack.ts`, `scripts/lib/prepack.test.ts`, and `scripts/release/` to identify a literal-free metadata-injection seam and packed-manifest test strategy.
-- [ ] 1.4 Propose: Present the complete SDK and release-tooling approach, including the single source of truth for the API value and metadata field name.
+- [x] 1.1 Explore: Inspect `packages/adapter/src/types.ts`, `packages/adapter/src/define-adapter.ts`, `packages/adapter/src/index.ts`, and `packages/adapter/src/__tests__/` to map the runtime adapter type, factory, public exports, and unit-test surfaces.
+- [x] 1.2 Explore: Inspect `packages/adapters/{claude-code,codex,opencode}/` call sites, package builds, and tests to identify compile-time and packed-runtime coverage for the stamped API declaration.
+- [x] 1.3 Explore: Inspect `scripts/prepack.ts`, `scripts/postpack.ts`, `scripts/lib/prepack.ts`, `scripts/lib/prepack.test.ts`, and `scripts/release/` to identify a literal-free metadata-injection seam and packed-manifest test strategy.
+- [x] 1.4 Propose: Present the complete SDK and release-tooling approach, including the single source of truth for the API value and metadata field name.
 
 ## 2. SDK Contract and Published Metadata — Implementation
 
-- [ ] 2.1 Implement: Add and export the canonical adapter API and package-metadata field-name constants from `@agent-facets/adapter`.
-- [ ] 2.2 Implement: Add the readonly runtime API field, define an author-input type that excludes it, and make the SDK factory stamp the canonical value without changing the positional method contract.
-- [ ] 2.3 Implement: Update SDK and first-party adapter tests to prove stamping, author-input exclusion, and unchanged first-party definitions.
-- [ ] 2.4 Implement: Extend prepack tooling to inject `facetAdapterApiVersion` into first-party adapter manifests from the SDK constants while leaving unrelated packages untouched and restoring source manifests after packing.
-- [ ] 2.5 Implement: Add pure prepack tests and packed-tarball coverage proving every first-party adapter publishes the canonical package field and runtime declaration.
-- [ ] 2.6 Verify: Run the Adapter SDK, first-party adapter, and prepack test suites and verify representative packed manifests.
+- [x] 2.1 Implement: Add and export the canonical adapter API and package-metadata field-name constants from `@agent-facets/adapter`.
+- [x] 2.2 Implement: Add the readonly runtime API field, define an author-input type that excludes it, and make the SDK factory stamp the canonical value without changing the positional method contract.
+- [x] 2.3 Implement: Update SDK and first-party adapter tests to prove stamping, author-input exclusion, and unchanged first-party definitions.
+- [x] 2.4 Implement: Extend prepack tooling to inject `facetAdapterApiVersion` into first-party adapter manifests from the SDK constants while leaving unrelated packages untouched and restoring source manifests after packing.
+- [x] 2.5 Implement: Add pure prepack tests and packed-tarball coverage proving every first-party adapter publishes the canonical package field and runtime declaration.
+- [x] 2.6 Verify: Run the Adapter SDK, first-party adapter, and prepack test suites and verify representative packed manifests.
 
 ## 3. Compatibility Classification and Runtime Verification — Research
 
-- [ ] 3.1 Explore: Inspect `packages/engine/src/adapters/verify.ts`, `packages/engine/src/adapters/bundler.ts`, and `packages/engine/src/adapters/install-service.ts` to enumerate current verification, prebuilt-isolation, rebundling-fallback, and dynamic-import failure boundaries.
-- [ ] 3.2 Explore: Inspect result-union and rendering precedents in `packages/protocol/src/integrity/types.ts`, `packages/engine/src/install/lockfile-io.ts`, `packages/engine/src/install/types.ts`, and `packages/cli/src/util/adapter-install-errors.ts` for carrying compatibility failures without thrown expected errors.
-- [ ] 3.3 Propose: Present the shared compatibility classifier, support-set representation, verified-adapter type, and ordered `VerifyAdapterResult` contract used by all downstream consumers.
+- [x] 3.1 Explore: Inspect `packages/engine/src/adapters/verify.ts`, `packages/engine/src/adapters/bundler.ts`, and `packages/engine/src/adapters/install-service.ts` to enumerate current verification, prebuilt-isolation, rebundling-fallback, and dynamic-import failure boundaries.
+- [x] 3.2 Explore: Inspect result-union and rendering precedents in `packages/protocol/src/integrity/types.ts`, `packages/engine/src/install/lockfile-io.ts`, `packages/engine/src/install/types.ts`, and `packages/cli/src/util/adapter-install-errors.ts` for carrying compatibility failures without thrown expected errors.
+- [x] 3.3 Propose: Present the shared compatibility classifier, support-set representation, verified-adapter type, and ordered `VerifyAdapterResult` contract used by all downstream consumers.
 
 ## 4. Compatibility Classification and Runtime Verification — Implementation
 
-- [ ] 4.1 Implement: Add canonical adapter API syntax validation, the CLI support set derived from the SDK constant, and the shared pure compatibility failure union.
-- [ ] 4.2 Implement: Convert adapter verification to an ordered discriminated result covering import, default export, declaration syntax, support, expected-metadata equality, name, and API `0.0` method shape.
-- [ ] 4.3 Implement: Preserve prebuilt-to-source fallback only for eligible loadability or bundling failures and make compatibility contradictions terminal.
-- [ ] 4.4 Implement: Update engine exports and callers to consume verified adapters and exhaustively handle verification results.
-- [ ] 4.5 Implement: Add tests for every compatibility classification, metadata/runtime disagreement, method non-invocation, fallback eligibility, and supported success path.
-- [ ] 4.6 Verify: Run targeted verifier, bundler, and type-check suites.
+- [x] 4.1 Implement: Add canonical adapter API syntax validation, the CLI support set derived from the SDK constant, and the shared pure compatibility failure union.
+- [x] 4.2 Implement: Convert adapter verification to an ordered discriminated result covering import, default export, declaration syntax, support, expected-metadata equality, name, and API `0.0` method shape.
+- [x] 4.3 Implement: Preserve prebuilt-to-source fallback only for eligible loadability or bundling failures and make compatibility contradictions terminal.
+- [x] 4.4 Implement: Update engine exports and callers to consume verified adapters and exhaustively handle verification results.
+- [x] 4.5 Implement: Add tests for every compatibility classification, metadata/runtime disagreement, method non-invocation, fallback eligibility, and supported success path.
+- [x] 4.6 Verify: Run targeted verifier, bundler, and type-check suites.
 
 ## 5. Adapter Specifiers and npm Compatible Resolution — Research
 

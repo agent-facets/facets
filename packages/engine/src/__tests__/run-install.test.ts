@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
-import { deleteAssetFile, installAssetFile, readAssetFile } from '@agent-facets/adapter'
+import { ADAPTER_API_VERSION, deleteAssetFile, installAssetFile, readAssetFile } from '@agent-facets/adapter'
 import type { BuildManifest, Lockfile } from '@agent-facets/protocol'
 import { computeContentHash } from '@agent-facets/protocol'
 import { type CacheIdentity, cachePath, cachePutVerified, computeDirIntegrity } from '../cache/index.ts'
@@ -37,6 +37,7 @@ function buildFakeAdapter(name: string): Adapter {
   const path = (type: string, n: string) => ({ file: join(baseDir, `${type}s`, `${n}.md`) })
   const adapter: Adapter = {
     name,
+    apiVersion: ADAPTER_API_VERSION,
     supportsInstall: true,
     buildAssetMetadata: (data) => ({
       ok: true,
@@ -72,6 +73,7 @@ function buildNestedFakeAdapter(name: string): Adapter {
   })
   return {
     name,
+    apiVersion: ADAPTER_API_VERSION,
     supportsInstall: true,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
     async installAsset(_scope, type, n, content, metadata) {
@@ -95,6 +97,7 @@ function buildBrokenAdapter(name: string, throwOnCall: number): Adapter {
   const baseDir = join(projectRoot, `.${name}`)
   return {
     name,
+    apiVersion: ADAPTER_API_VERSION,
     supportsInstall: true,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
     async installAsset(_scope, type, n, content) {
@@ -128,6 +131,7 @@ function buildBrokenAdapter(name: string, throwOnCall: number): Adapter {
 function buildBadReadAdapter(name: string): Adapter {
   return {
     name,
+    apiVersion: ADAPTER_API_VERSION,
     supportsInstall: true,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
     async installAsset() {

@@ -11,7 +11,8 @@
     "dist"
   ],
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./api-version": "./src/api-version.ts"
   },
   "scripts": {
     "build": "tsdown",
@@ -35,6 +36,10 @@
       ".": {
         "import": "./dist/index.mjs",
         "types": "./dist/index.d.mts"
+      },
+      "./api-version": {
+        "import": "./dist/api-version.mjs",
+        "types": "./dist/api-version.d.mts"
       }
     }
   }

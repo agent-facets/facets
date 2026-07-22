@@ -1,0 +1,86 @@
+// Subpath import: `api-version` is a dependency-free module, so engine's
+// runtime graph stays free of the full SDK (yaml, asset-fs, common). This
+// also avoids a bun:test-runner cache collision between runtime-loaded SDK
+// sources and in-process `Bun.build` runs over the same files.
+import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
+
+/**
+ * Pure adapter-API compatibility primitives.
+ *
+ * Adapter API versions are discrete contract identifiers compared for
+ * exact equality — never semantic-version ranges. This module owns the
+ * CLI's support set, the canonical syntax rule, and the shared failure
+ * union consumed by npm selection, candidate verification, installed
+ * loading, and build/install preflights. No I/O, no user-facing prose —
+ * CLI renderers map these values to messages.
+ */
+
+/**
+ * The exact adapter APIs this CLI supports. Derived from the SDK's
+ * canonical constant — the `0.0` literal lives only in the SDK. A later
+ * change MAY add further exact identifiers without changing how the SDK
+ * stamps newly built adapters.
+ */
+export const SUPPORTED_ADAPTER_APIS: readonly string[] = [ADAPTER_API_VERSION]
+
+/**
+ * Canonical adapter API syntax: `MAJOR.MINOR` in decimal with no sign,
+ * suffix, build metadata, patch component, or leading zeroes other than
+ * the number zero itself.
+ */
+const ADAPTER_API_SYNTAX = /^(0|[1-9]\d*)\.(0|[1-9]\d*)$/
+
+/** True iff `value` is a syntactically valid adapter API identifier. */
+export function isWellFormedAdapterApi(value: string): boolean {
+  return ADAPTER_API_SYNTAX.test(value)
+}
+
+/**
+ * Classification of a declared adapter API value — from a runtime
+ * `apiVersion` export or a package-metadata field. `undefined` and
+ * `null` classify as missing; any non-string or syntactically invalid
+ * string classifies as malformed.
+ */
+export type ApiDeclarationClassification =
+  | { kind: 'supported'; api: string }
+  | { kind: 'unsupported'; api: string }
+  | { kind: 'malformed'; found: string }
+  | { kind: 'missing' }
+
+/**
+ * Classify a declared adapter API value against the CLI support set.
+ * Pure; shared by npm release filtering and runtime verification so both
+ * sides apply identical rules.
+ */
+export function classifyApiDeclaration(declared: unknown): ApiDeclarationClassification {
+  if (declared === undefined || declared === null) {
+    return { kind: 'missing' }
+  }
+  if (typeof declared !== 'string' || !isWellFormedAdapterApi(declared)) {
+    return { kind: 'malformed', found: typeof declared === 'string' ? declared : String(declared) }
+  }
+  if (!SUPPORTED_ADAPTER_APIS.includes(declared)) {
+    return { kind: 'unsupported', api: declared }
+  }
+  return { kind: 'supported', api: declared }
+}
+
+/**
+ * The shared compatibility failure union.
+ *
+ * `adapter` is the best-known identity at the failure site: the runtime
+ * adapter name when the bundle exposes one, otherwise the npm package
+ * name or bundle path. Every variant carries the CLI support set so
+ * renderers never reach back into this module for it.
+ */
+export type AdapterCompatibilityFailure =
+  | { kind: 'api-missing'; adapter: string; supported: readonly string[] }
+  | { kind: 'api-malformed'; adapter: string; found: string; supported: readonly string[] }
+  | { kind: 'api-unsupported'; adapter: string; found: string; supported: readonly string[] }
+  | {
+      kind: 'api-metadata-mismatch'
+      adapter: string
+      packageDeclared: string
+      runtimeDeclared: string
+      supported: readonly string[]
+    }
