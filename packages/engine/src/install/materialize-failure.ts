@@ -13,6 +13,8 @@ export function materializeFailureToRunInstall(facet: string, failure: Materiali
   switch (failure.kind) {
     case 'unsupported-adapter':
       return { code: 'ADAPTER_UNSUPPORTED', facet, adapter: failure.adapter }
+    case 'incompatible-adapter':
+      return { code: 'ADAPTER_INCOMPATIBLE', failures: [failure.failure] }
     case 'read-failed':
       return {
         code: 'ADAPTER_READ_FAILED',

@@ -1,6 +1,7 @@
 import type { Adapter } from '@agent-facets/adapter'
 import type { ValidationError } from '@agent-facets/common'
 import type { IntegrityFailure, Lockfile, LockfileAssetEntry } from '@agent-facets/protocol'
+import type { AdapterCompatibilityFailure } from '../adapters/api-compatibility.ts'
 import type { RegistryError } from '../registry/index.ts'
 import type { ParseError, Source } from '../sources/facet/types.ts'
 
@@ -192,6 +193,15 @@ export type RunInstallFailure =
    * beyond the picker filter — fail loud rather than silently no-op.
    */
   | { code: 'ADAPTER_UNSUPPORTED'; facet: string; adapter: string }
+  /**
+   * A selected adapter does not declare a CLI-supported adapter API.
+   * Detected by the preflight before the per-facet loop (which precedes
+   * any Git/local facet build, materialization write, or adapter
+   * contract method) — the primary gate is the command-level
+   * fail-closed load; this is defense-in-depth. Carries every
+   * incompatible adapter, not just the first.
+   */
+  | { code: 'ADAPTER_INCOMPATIBLE'; failures: ReadonlyArray<AdapterCompatibilityFailure> }
   /**
    * `adapter.readAsset` threw something other than ENOENT. The asset's
    * pre-install state is unknown, so we abort before writing rather

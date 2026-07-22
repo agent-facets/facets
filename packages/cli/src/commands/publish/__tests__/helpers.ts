@@ -84,11 +84,11 @@ export async function buildFacetFixture(projectRoot: string, opts: FixtureOption
 
   const result = await runBuildPipeline(projectRoot, [])
   if (!result.ok) {
-    throw new Error(
-      `buildFacetFixture: build failed for ${opts.name}@${opts.version}: ${result.errors
-        .map((e) => `${e.path}: ${e.message}`)
-        .join('; ')}`,
-    )
+    const detail =
+      result.kind === 'validation'
+        ? result.errors.map((e) => `${e.path}: ${e.message}`).join('; ')
+        : result.failures.map((f) => `${f.adapter}: ${f.kind}`).join('; ')
+    throw new Error(`buildFacetFixture: build failed for ${opts.name}@${opts.version}: ${detail}`)
   }
   await writeBuildOutput(result, projectRoot)
   const distPath = buildArtifactPath(projectRoot, opts.name, opts.version)

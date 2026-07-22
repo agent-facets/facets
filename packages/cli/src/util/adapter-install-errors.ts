@@ -3,6 +3,7 @@ import type {
   AdapterInstallFailure,
   ApiDeclarationClassification,
   BundleFailure,
+  BuildFailure as EngineBuildFailure,
   InstalledAdapterFailure,
   NpmVersionRequest,
   PlaceAdapterFailure,
@@ -33,6 +34,21 @@ export function describeAdapterInstallFailure(failure: AdapterInstallFailure): {
     case 'place-failed':
       return describePlaceFailure(failure.adapter, failure.failure)
   }
+}
+
+/**
+ * Flatten a build failure into displayable message lines. Validation
+ * failures pass through their error messages; adapter-incompatibility
+ * failures render through the shared compatibility prose.
+ */
+export function buildFailureMessages(failure: EngineBuildFailure): string[] {
+  if (failure.kind === 'validation') {
+    return failure.errors.map((error) => error.message)
+  }
+  return failure.failures.map((compatibility) => {
+    const described = describeCompatibilityFailure(compatibility)
+    return `${described.what} — ${described.detail} (fix: ${described.fix})`
+  })
 }
 
 /** Render the repair command for an installed-adapter failure. */

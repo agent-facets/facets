@@ -1,8 +1,4 @@
-import {
-  type AdapterCompatibilityFailure,
-  classifyApiDeclaration,
-  SUPPORTED_ADAPTER_APIS,
-} from './api-compatibility.ts'
+import { type AdapterCompatibilityFailure, compatibilityFailureFor } from './api-compatibility.ts'
 import { FIRST_PARTY_ADAPTERS } from './first-party.ts'
 import { generationBundlePath, generationDir, readInstallationReceipt } from './installation.ts'
 import { getAdapterBundlePath, getAdapterDir, listInstalledAdapters } from './placement.ts'
@@ -108,15 +104,9 @@ async function inspectManaged(
 
   // Reject a recorded unsupported API before importing anything — a
   // known-incompatible install must not run module initialization.
-  const recorded = classifyApiDeclaration(receipt.apiVersion)
-  if (recorded.kind !== 'supported') {
-    return {
-      kind: 'incompatible',
-      name,
-      managed: true,
-      failure: compatibilityFailureFromClassification(name, recorded),
-      repair,
-    }
+  const recordedFailure = compatibilityFailureFor(name, receipt.apiVersion)
+  if (recordedFailure !== null) {
+    return { kind: 'incompatible', name, managed: true, failure: recordedFailure, repair }
   }
 
   const genDir = generationDir(adapterDir, receipt.activeGeneration)
@@ -174,18 +164,4 @@ async function inspectUnmanaged(name: string, baseDir?: string): Promise<Install
     return { kind: 'incompatible', name, managed: false, failure: verified.failure.failure, repair }
   }
   return { kind: 'broken', name, managed: false, reason: { kind: 'load-failed', failure: verified.failure }, repair }
-}
-
-function compatibilityFailureFromClassification(
-  adapter: string,
-  classification: Exclude<ReturnType<typeof classifyApiDeclaration>, { kind: 'supported' }>,
-): AdapterCompatibilityFailure {
-  switch (classification.kind) {
-    case 'missing':
-      return { kind: 'api-missing', adapter, supported: SUPPORTED_ADAPTER_APIS }
-    case 'malformed':
-      return { kind: 'api-malformed', adapter, found: classification.found, supported: SUPPORTED_ADAPTER_APIS }
-    case 'unsupported':
-      return { kind: 'api-unsupported', adapter, found: classification.api, supported: SUPPORTED_ADAPTER_APIS }
-  }
 }

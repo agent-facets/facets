@@ -56,7 +56,10 @@ export async function resolveLocalFacet(args: ResolveLocalFacetArgs): Promise<Re
   if (!buildResult.ok) {
     return {
       ok: false,
-      failure: { code: 'BUILD_FAILED', facet: facetName, errors: buildResult.errors },
+      failure:
+        buildResult.kind === 'adapter-incompatible'
+          ? { code: 'ADAPTER_INCOMPATIBLE', failures: buildResult.failures }
+          : { code: 'BUILD_FAILED', facet: facetName, errors: buildResult.errors },
     }
   }
 

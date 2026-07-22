@@ -112,21 +112,21 @@
 
 ## 13. Build and Facet-Operation Compatibility Gates — Research
 
-- [ ] 13.1 Explore: Inspect `packages/cli/src/commands/build.ts`, `packages/cli/src/commands/publish/run-build-view.ts`, and `packages/engine/src/build/pipeline.ts` for build loading, failure rendering, and the first adapter method invocation.
-- [ ] 13.2 Explore: Inspect `packages/cli/src/commands/shared/ensure-adapters.ts` and the add, remove, and install command entry points for adapter discovery and zero-adapter-picker behavior.
-- [ ] 13.3 Explore: Inspect `packages/engine/src/install/run-install.ts` and Git/local facet resolvers for no-mutation exits, per-facet-loop ordering, and nested build invocations.
-- [ ] 13.4 Explore: Inspect drift removal, materialization, and CLI/TUI failure renderers for adapter method calls and exhaustive compatibility handling.
-- [ ] 13.5 Propose: Present command-level fail-closed inspection and defense-in-depth build/install preflights that share compatibility data and preserve exhaustive result handling.
+- [x] 13.1 Explore: Inspect `packages/cli/src/commands/build.ts`, `packages/cli/src/commands/publish/run-build-view.ts`, and `packages/engine/src/build/pipeline.ts` for build loading, failure rendering, and the first adapter method invocation.
+- [x] 13.2 Explore: Inspect `packages/cli/src/commands/shared/ensure-adapters.ts` and the add, remove, and install command entry points for adapter discovery and zero-adapter-picker behavior.
+- [x] 13.3 Explore: Inspect `packages/engine/src/install/run-install.ts` and Git/local facet resolvers for no-mutation exits, per-facet-loop ordering, and nested build invocations.
+- [x] 13.4 Explore: Inspect drift removal, materialization, and CLI/TUI failure renderers for adapter method calls and exhaustive compatibility handling.
+- [x] 13.5 Propose: Present command-level fail-closed inspection and defense-in-depth build/install preflights that share compatibility data and preserve exhaustive result handling.
 
 ## 14. Build and Facet-Operation Compatibility Gates — Implementation
 
-- [ ] 14.1 Implement: Gate build and publish-build commands on installed inspection before starting the pipeline, and add a distinct build incompatibility failure before metadata validation.
-- [ ] 14.2 Implement: Add an `ADAPTER_INCOMPATIBLE` install failure variant and route defense-in-depth preflight failures through the no-mutation path before the per-facet loop and any Git/local facet build.
-- [ ] 14.3 Implement: Update add, remove, and install command discovery to report incompatible/broken entries without launching the zero-adapter picker or invoking adapter methods.
-- [ ] 14.4 Implement: Retain materialization compatibility checks only as invariant defense and preserve receipt-driven removal without cache or network access after the compatibility gate passes.
-- [ ] 14.5 Implement: Add exhaustive CLI/TUI rendering for build and install compatibility failures and all collected repair commands.
-- [ ] 14.6 Implement: Add tests proving incompatible adapters block build, publish-build, add, remove, and install before methods or writes; multiple failures aggregate; compatible adapters preserve the normal path; a build with no installed adapters proceeds with unknown-adapter warnings for manifest metadata; and `facet adapter remove` remains available.
-- [ ] 14.7 Verify: Run targeted build, publish, add, remove, install, TUI, and type-check suites.
+- [x] 14.1 Implement: Gate build and publish-build commands on installed inspection before starting the pipeline, and add a distinct build incompatibility failure before metadata validation.
+- [x] 14.2 Implement: Add an `ADAPTER_INCOMPATIBLE` install failure variant and route defense-in-depth preflight failures through the no-mutation path before the per-facet loop and any Git/local facet build.
+- [x] 14.3 Implement: Update add, remove, and install command discovery to report incompatible/broken entries without launching the zero-adapter picker or invoking adapter methods.
+- [x] 14.4 Implement: Retain materialization compatibility checks only as invariant defense and preserve receipt-driven removal without cache or network access after the compatibility gate passes.
+- [x] 14.5 Implement: Add exhaustive CLI/TUI rendering for build and install compatibility failures and all collected repair commands.
+- [x] 14.6 Implement: Add tests proving incompatible adapters block build, publish-build, add, remove, and install before methods or writes; multiple failures aggregate; compatible adapters preserve the normal path; a build with no installed adapters proceeds with unknown-adapter warnings for manifest metadata; and `facet adapter remove` remains available.
+- [x] 14.7 Verify: Run targeted build, publish, add, remove, install, TUI, and type-check suites.
 
 ## 15. Documentation and Rollout — Research
 
