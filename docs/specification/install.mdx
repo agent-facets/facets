@@ -10,7 +10,7 @@ Installation is a single pipeline with two phases. **[Planning](/specification/p
 
 [`facet add`](/cli/add), [`facet remove`](/cli/remove), and [`facet install`](/cli/install) all run this same pipeline — they differ only in the delta they produce.
 
-Before the pipeline runs, every installed adapter's declared adapter API MUST be inspected against the CLI's supported set. An incompatible or broken installed adapter MUST fail the operation before planning begins — before any adapter method is invoked and before any project write — with per-adapter diagnostics and the reinstall command that repairs each entry.
+Before the pipeline runs, **every installed adapter's** declared adapter API MUST be inspected against the CLI's supported set. An incompatible or broken installed adapter MUST fail the operation before planning begins — before any adapter method is invoked and before any project write — with per-adapter diagnostics and the best available reinstall command for each entry. The commit phase then re-checks the adapters selected for the operation as defense-in-depth: the same incompatibility MUST fail at [Load state and gate](/specification/commit), before the per-facet loop and therefore before any Git or local facet build can invoke adapter metadata methods.
 
 Project state MUST NOT be written unless every check passes: a failure anywhere in commit MUST roll back all materialization via the journal and leave the project exactly as it was.
 

@@ -194,7 +194,7 @@ function registryAddition(specifier: string): Addition {
 
 async function install(opts: { additions?: Addition[]; frozen?: boolean } = {}) {
   const loadResult = await loadInstalledAdapters()
-  if (!loadResult.ok) throw new Error('test bug: installed fixture adapters failed to load')
+  if (!loadResult.ok) expect.unreachable('test bug: installed fixture adapters failed to load')
   const adapters = loadResult.adapters
   return runInstall({
     projectRoot,

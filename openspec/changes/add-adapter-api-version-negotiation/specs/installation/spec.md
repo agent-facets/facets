@@ -41,3 +41,47 @@ Facet removal SHALL remain independent of cached facet content and network acces
 - **WHEN** a facet operation detects an incompatible selected adapter
 - **THEN** the system SHALL NOT download or activate a replacement adapter automatically
 - **AND** the failure SHALL direct the user to an explicit adapter install command
+
+## MODIFIED Requirements
+
+### Requirement: Removing a facet uninstalls it
+
+When a user removes a facet from a project, the system SHALL drop the facet from the project manifest, delete the facet's materialized assets from every selected adapter, and update the lockfile and the receipt so neither records the facet — all in a single operation. A user SHALL NOT need to run a separate install step after removing. The asset set to delete SHALL be taken from the receipt, so removal SHALL require neither the cache nor the network. Before deleting any materialized asset, the system SHALL verify that every selected installed adapter loads as a valid adapter and declares an API supported by the CLI. When a selected adapter has a missing, malformed, unsupported, or metadata-inconsistent API declaration, or cannot be loaded as a valid adapter, removal SHALL fail before deleting any materialized asset and SHALL leave the project manifest, lockfile, receipt, and materialized assets unchanged. This compatibility precondition SHALL require neither cache access nor network access; once the adapter incompatibility is repaired, removal SHALL remain able to use the receipt without either resource.
+
+#### Scenario: Removing a declared facet uninstalls it
+
+- **WHEN** a user removes a facet that is declared in the project manifest
+- **AND** every selected installed adapter loads as a valid adapter and declares an API supported by the CLI
+- **THEN** the system SHALL remove the facet's entry from the project manifest
+- **AND** the system SHALL delete every asset the facet contributed from every selected adapter, using the asset set recorded in the receipt
+- **AND** the system SHALL update the lockfile and the receipt so neither records the facet
+- **AND** the operation SHALL complete in a single command invocation
+
+#### Scenario: Other facets are left intact
+
+- **WHEN** a user removes one facet from a project that declares several facets
+- **AND** every selected installed adapter loads as a valid adapter and declares an API supported by the CLI
+- **THEN** the system SHALL leave every other declared facet's manifest entry, lockfile entry, receipt entry, and materialized assets unchanged
+
+#### Scenario: Removing the last facet leaves an empty project
+
+- **WHEN** a user removes the only facet declared in the project
+- **AND** every selected installed adapter loads as a valid adapter and declares an API supported by the CLI
+- **THEN** the system SHALL leave the project manifest declaring no facets
+- **AND** the system SHALL leave a valid lockfile that records no facets
+
+#### Scenario: Removal deletes recorded assets without cache or network
+
+- **WHEN** a user removes a facet whose content is absent from the cache and whose registry is unreachable
+- **AND** every selected installed adapter loads as a valid adapter and declares an API supported by the CLI
+- **THEN** the system SHALL still delete that facet's assets using the asset set recorded in the receipt
+- **AND** removal SHALL succeed without any cache read or network access
+
+#### Scenario: An incompatible adapter blocks removal without weakening offline recovery
+
+- **WHEN** a user removes a facet
+- **AND** a selected installed adapter is incompatible or cannot be loaded as a valid adapter
+- **THEN** removal SHALL fail before deleting any materialized asset
+- **AND** the project manifest, lockfile, receipt, and materialized assets SHALL remain unchanged
+- **AND** the failure SHALL NOT require or result from cache access or network access
+- **AND** after the adapter incompatibility is repaired, removal SHALL remain able to use the receipt without cache or network access

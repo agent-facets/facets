@@ -56,8 +56,20 @@ export function classifyApiDeclaration(declared: unknown): ApiDeclarationClassif
   if (declared === undefined || declared === null) {
     return { kind: 'missing' }
   }
-  if (typeof declared !== 'string' || !isWellFormedAdapterApi(declared)) {
-    return { kind: 'malformed', found: typeof declared === 'string' ? declared : String(declared) }
+  if (typeof declared !== 'string') {
+    // String() throws for null-prototype objects and throwing
+    // Symbol.toPrimitive implementations; the contract says any
+    // non-string classifies as malformed, so coerce defensively.
+    let found: string
+    try {
+      found = String(declared)
+    } catch {
+      found = '<uncoercible>'
+    }
+    return { kind: 'malformed', found }
+  }
+  if (!isWellFormedAdapterApi(declared)) {
+    return { kind: 'malformed', found: declared }
   }
   if (!SUPPORTED_ADAPTER_APIS.includes(declared)) {
     return { kind: 'unsupported', api: declared }
@@ -85,6 +97,29 @@ export type AdapterCompatibilityFailure =
       supported: readonly string[]
     }
 
+/** A classification that is not `supported` — the arms that map to failures. */
+export type IncompatibleClassification = Exclude<ApiDeclarationClassification, { kind: 'supported' }>
+
+/**
+ * Map an already-computed incompatible classification to the
+ * compatibility failure for `adapter`. The single source of the
+ * classification-to-failure mapping — shared by `compatibilityFailureFor`
+ * and runtime verification so the failure shapes exist once.
+ */
+export function failureForClassification(
+  adapter: string,
+  classified: IncompatibleClassification,
+): AdapterCompatibilityFailure {
+  switch (classified.kind) {
+    case 'missing':
+      return { kind: 'api-missing', adapter, supported: SUPPORTED_ADAPTER_APIS }
+    case 'malformed':
+      return { kind: 'api-malformed', adapter, found: classified.found, supported: SUPPORTED_ADAPTER_APIS }
+    case 'unsupported':
+      return { kind: 'api-unsupported', adapter, found: classified.api, supported: SUPPORTED_ADAPTER_APIS }
+  }
+}
+
 /**
  * Classify a declared value and, when it is not supported, map it to
  * the compatibility failure for `adapter`. Returns null for supported
@@ -93,14 +128,8 @@ export type AdapterCompatibilityFailure =
  */
 export function compatibilityFailureFor(adapter: string, declared: unknown): AdapterCompatibilityFailure | null {
   const classified = classifyApiDeclaration(declared)
-  switch (classified.kind) {
-    case 'supported':
-      return null
-    case 'missing':
-      return { kind: 'api-missing', adapter, supported: SUPPORTED_ADAPTER_APIS }
-    case 'malformed':
-      return { kind: 'api-malformed', adapter, found: classified.found, supported: SUPPORTED_ADAPTER_APIS }
-    case 'unsupported':
-      return { kind: 'api-unsupported', adapter, found: classified.api, supported: SUPPORTED_ADAPTER_APIS }
+  if (classified.kind === 'supported') {
+    return null
   }
+  return failureForClassification(adapter, classified)
 }

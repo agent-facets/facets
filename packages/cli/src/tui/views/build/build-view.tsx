@@ -1,4 +1,5 @@
 import type { Adapter } from '@agent-facets/adapter'
+import type { AdapterCompatibilityFailure } from '@agent-facets/engine'
 import {
   BUILD_STAGES,
   type BuildProgress,
@@ -8,7 +9,7 @@ import {
 } from '@agent-facets/engine'
 import { Box, Text, useApp } from 'ink'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { buildFailureMessages } from '../../../util/adapter-install-errors.ts'
+import { buildFailureMessages, describeCompatibilityFailure } from '../../../util/adapter-install-errors.ts'
 import type { Stage } from '../../components/stage-row.tsx'
 import { StageRow } from '../../components/stage-row.tsx'
 import { THEME } from '../../theme.ts'
@@ -39,6 +40,9 @@ export function BuildView({
   const [stages, setStages] = useState<Stage[]>(BUILD_STAGES.map((label) => ({ label, status: 'pending' as const })))
   const [result, setResult] = useState<BuildViewResult | null>(null)
   const [warnings, setWarnings] = useState<string[]>([])
+  // Adapter-incompatibility is a preflight failure that fires before any
+  // build stage runs — rendered as its own block, not attributed to a stage.
+  const [preflightFailures, setPreflightFailures] = useState<AdapterCompatibilityFailure[] | null>(null)
 
   // Deferred exit: set this to an Error to exit after the next render cycle,
   // ensuring error/stage state updates are painted before Ink unmounts.
@@ -67,10 +71,16 @@ export function BuildView({
     setWarnings(pipelineResult.warnings)
 
     if (!pipelineResult.ok) {
+      if (pipelineResult.kind === 'adapter-incompatible') {
+        // Preflight failed before any stage ran — do not mark a build
+        // stage failed; surface a distinct compatibility block instead.
+        setPreflightFailures(pipelineResult.failures)
+        onFailure?.(pipelineResult.failures.length)
+        setPendingExit(new Error('Build failed'))
+        return
+      }
       const formatted = buildFailureMessages(pipelineResult)
-      // Find the stage that failed and attach errors to it. The
-      // adapter-incompatible preflight fails before any stage starts,
-      // so attach its errors to the first stage for display.
+      // Validation failures attach to the stage that actually failed.
       setStages((prev) => {
         const anyFailed = prev.some((s) => s.status === 'failed')
         return prev.map((s, i) =>
@@ -144,6 +154,26 @@ export function BuildView({
               ⚠ {w}
             </Text>
           ))}
+        </Box>
+      )}
+
+      {preflightFailures && (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ incompatible adapter{preflightFailures.length !== 1 ? 's' : ''} — build did not start
+          </Text>
+          {preflightFailures.map((compat) => {
+            const described = describeCompatibilityFailure(compat)
+            return (
+              <Box key={compat.adapter} flexDirection="column">
+                <Text> {described.what}</Text>
+                <Text color={THEME.hint}>
+                  {' '}
+                  {described.detail} — {described.fix}
+                </Text>
+              </Box>
+            )
+          })}
         </Box>
       )}
 

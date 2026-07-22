@@ -259,6 +259,27 @@ describe('placeAdapterManaged — failure injection', () => {
     await expectUntouched(previous)
   })
 
+  test('lock-file I/O failure returns a structured lock-io failure, not a rejection', async () => {
+    const previous = await installGood()
+    // Occupy the locks path with a regular file so lock-directory
+    // creation fails deterministically (no chmod, root-safe).
+    const locksPath = join(facetDir, 'locks')
+    await rm(locksPath, { recursive: true, force: true })
+    await Bun.write(locksPath, 'not a directory')
+    const result = await placeAdapterManaged(
+      'my-adapter',
+      await makeBundle('my-adapter'),
+      { apiVersion: ADAPTER_API_VERSION, source: npmSource },
+      baseDir,
+    )
+    if (result.ok) expect.unreachable()
+    if (result.failure.kind !== 'lock-io') expect.unreachable()
+    expect(result.failure.adapter).toBe('my-adapter')
+    expect(result.failure.lockPath).toContain(locksPath)
+    expect(result.failure.cause).not.toBe('')
+    await expectUntouched(previous)
+  })
+
   test('concurrent replacement is refused while the adapter lock is held', async () => {
     const lock = acquireAdapterLock('my-adapter')
     if (!lock.ok) expect.unreachable()

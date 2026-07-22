@@ -190,6 +190,37 @@ describe('resolveEntryPoint', () => {
     }
   })
 
+  test('fails with invalid-package-json when package.json is malformed JSON', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'facet-bundler-test-'))
+    await Bun.write(join(dir, 'package.json'), '{ not json')
+    try {
+      const result = await resolveEntryPoint(dir)
+      if (result.ok) expect.unreachable()
+      if (result.failure.kind !== 'invalid-package-json') expect.unreachable()
+      expect(result.failure.sourceDir).toBe(dir)
+      expect(result.failure.cause).not.toBe('')
+    } finally {
+      await cleanup(dir)
+    }
+  })
+
+  test.each([
+    ['null'],
+    ['"just a string"'],
+    ['42'],
+  ])('fails with invalid-package-json when package.json is valid but non-object JSON (%s)', async (body) => {
+    const dir = await mkdtemp(join(tmpdir(), 'facet-bundler-test-'))
+    await Bun.write(join(dir, 'package.json'), body)
+    try {
+      const result = await resolveEntryPoint(dir)
+      if (result.ok) expect.unreachable()
+      if (result.failure.kind !== 'invalid-package-json') expect.unreachable()
+      expect(result.failure.cause).toBe('package.json is not a JSON object')
+    } finally {
+      await cleanup(dir)
+    }
+  })
+
   test('prefers exports over main when both are set', async () => {
     const dir = await makeFixture(
       {

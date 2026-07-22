@@ -8,7 +8,11 @@ import {
 } from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
-import { describeAdapterInstallFailure, describeInstalledAdapterFailure } from '../../util/adapter-install-errors.ts'
+import {
+  describeAdapterInstallFailure,
+  describeInstalledAdapterFailure,
+  formatPlacementWarning,
+} from '../../util/adapter-install-errors.ts'
 import { writeCliError } from '../../util/errors.ts'
 import { InstallPicker } from './install-picker.tsx'
 
@@ -90,6 +94,9 @@ export async function pickAndInstallAdapters(): Promise<PickAndInstallResult> {
       return { ok: false, reason: 'install-failed' }
     }
     console.log(`Adapter "${result.adapter.name}" installed successfully.`)
+    for (const warning of result.warnings) {
+      console.error(formatPlacementWarning(warning))
+    }
   }
 
   // Re-load adapters from disk so callers see the freshly-installed ones.

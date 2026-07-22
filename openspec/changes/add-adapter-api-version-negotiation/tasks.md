@@ -147,12 +147,12 @@
 
 - [x] 17.1 Explore: Audit the completed implementation and tests against every reconciled SDK, adapter-management, and installation scenario and every design failure boundary.
 - [x] 17.2 Explore: Inspect for duplicated API literals, metadata field names, alias maps, compatibility classifiers, or user-facing engine messages that violate the single-source-of-truth design.
-- [ ] 17.3 Propose: Present the final gap-closing changes and a verification matrix covering unit, integration, end-to-end, packed-artifact, documentation, and OpenSpec validation.
+- [x] 17.3 Propose: Present the final gap-closing changes and a verification matrix covering unit, integration, end-to-end, packed-artifact, documentation, and OpenSpec validation.
 
 ## 18. Integrated Coverage Audit — Implementation
 
-- [ ] 18.1 Implement: Apply the approved gap-closing tests or corrections found by the coverage and duplication audit.
-- [ ] 18.2 Implement: Run `bun format` and apply any remaining non-formatting corrections required before final verification.
-- [ ] 18.3 Verify: Run the complete `bun check` pipeline and stop on any lint, type, unit, or end-to-end failure.
-- [ ] 18.4 Verify: Run strict OpenSpec validation and check the implementation and documentation against every reconciled requirement and migration constraint.
-- [ ] 18.5 Verify: Run automated representative npm, Git, local, managed, unmanaged, compatible, incompatible, replacement-failure, list, build, and facet-operation flows end to end.
+- [x] 18.1 Implement: Apply the approved gap-closing tests or corrections found by the coverage and duplication audit.
+- [x] 18.2 Implement: Run `bun format` and apply any remaining non-formatting corrections required before final verification.
+- [x] 18.3 Verify: Run the complete `bun check` pipeline and stop on any lint, type, unit, or end-to-end failure.
+- [x] 18.4 Verify: Run strict OpenSpec validation and check the implementation and documentation against every reconciled requirement and migration constraint.
+- [x] 18.5 Verify: Run automated representative npm, Git, local, managed, unmanaged, compatible, incompatible, replacement-failure, list, build, and facet-operation flows end to end.

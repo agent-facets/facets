@@ -65,7 +65,7 @@ const source: InstallationSource = {
 
 async function installManaged(name: string, bundle: string, apiVersion = ADAPTER_API_VERSION): Promise<string> {
   const result = await placeAdapterManaged(name, bundle, { apiVersion, source }, baseDir)
-  if (!result.ok) throw new Error(`test bug: managed install failed (${result.failure.kind})`)
+  if (!result.ok) expect.unreachable(`test bug: managed install failed (${result.failure.kind})`)
   return result.receipt.activeGeneration
 }
 

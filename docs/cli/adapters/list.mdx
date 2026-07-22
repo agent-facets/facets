@@ -21,9 +21,13 @@ Installed adapters:
 ## Output columns
 
 - **API** — the adapter's declared adapter API (`api 0.0`), or `api missing` (no declaration — typically a bundle installed before API versioning), `api malformed ("…")` (a declaration that isn't a valid API identifier), or `api unknown` (the bundle could not be read).
-- **Status** — `supported` (usable by this CLI), `unsupported — reinstall: <command>` (declares an API this CLI does not support), or `broken (<reason>) — reinstall: <command>` (invalid installation record, missing active bundle, or a bundle that failed to load).
+- **Status** — `supported` (usable by this CLI), `unsupported — reinstall: <command>` (the adapter's API declaration is missing, malformed, or names an API this CLI does not support), or `broken (<reason>) — reinstall: <command>` (invalid installation metadata, a missing active bundle, or a bundle that failed to load).
 
-Listing stays available when entries are incompatible or broken — run it to find the exact `facet adapter install <specifier>` command that repairs each entry.
+Listing stays available when entries are incompatible or broken — run it to find the best available `facet adapter install <specifier>` command next to each failing entry.
+
+<Note>
+If an adapter was originally installed with an **exact** npm version, such as `my-adapter@1.2.3`, its printed command preserves that exact pin. Re-running it fails again when that release is incompatible rather than silently upgrading. Drop or change the exact selector — use the bare package name, `@latest`, or a wider selector such as `1.*` — so the CLI can select the highest compatible release. Git and local commands rebuild the same supplied source, so that source must itself be updated when incompatible.
+</Note>
 
 ## Exit codes
 

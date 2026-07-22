@@ -2,6 +2,7 @@ import type { Adapter } from '@agent-facets/adapter'
 import {
   type AdapterCompatibilityFailure,
   classifyApiDeclaration,
+  failureForClassification,
   SUPPORTED_ADAPTER_APIS,
 } from './api-compatibility.ts'
 
@@ -82,46 +83,11 @@ export async function verifyAdapter(
 
   // 3./4. Runtime API declaration: present, well-formed, supported
   const classified = classifyApiDeclaration(adapter.apiVersion)
-  switch (classified.kind) {
-    case 'missing':
-      return {
-        ok: false,
-        failure: {
-          kind: 'incompatible',
-          bundlePath,
-          failure: { kind: 'api-missing', adapter: identity, supported: SUPPORTED_ADAPTER_APIS },
-        },
-      }
-    case 'malformed':
-      return {
-        ok: false,
-        failure: {
-          kind: 'incompatible',
-          bundlePath,
-          failure: {
-            kind: 'api-malformed',
-            adapter: identity,
-            found: classified.found,
-            supported: SUPPORTED_ADAPTER_APIS,
-          },
-        },
-      }
-    case 'unsupported':
-      return {
-        ok: false,
-        failure: {
-          kind: 'incompatible',
-          bundlePath,
-          failure: {
-            kind: 'api-unsupported',
-            adapter: identity,
-            found: classified.api,
-            supported: SUPPORTED_ADAPTER_APIS,
-          },
-        },
-      }
-    case 'supported':
-      break
+  if (classified.kind !== 'supported') {
+    return {
+      ok: false,
+      failure: { kind: 'incompatible', bundlePath, failure: failureForClassification(identity, classified) },
+    }
   }
 
   // 5. npm package declaration must equal the runtime declaration

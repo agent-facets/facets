@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { Adapter } from '@agent-facets/adapter'
 import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
 
 /**
@@ -123,7 +124,7 @@ async function installFacet(name: string, version: string): Promise<void> {
   const parsed = parseFacetSource(`${name}@${version}`)
   if (!parsed.ok) throw new Error(`test bug: unparseable specifier ${name}@${version}`)
   const loadResult = await loadInstalledAdapters()
-  if (!loadResult.ok) throw new Error('test bug: installed fixture adapters failed to load')
+  if (!loadResult.ok) expect.unreachable('test bug: installed fixture adapters failed to load')
   const adapters = loadResult.adapters.filter((a) => a.supportsInstall === true)
   const result = await runAdd({
     projectRoot,
@@ -135,7 +136,7 @@ async function installFacet(name: string, version: string): Promise<void> {
 
 async function remove(names: string[]) {
   const loadResult = await loadInstalledAdapters()
-  if (!loadResult.ok) throw new Error('test bug: installed fixture adapters failed to load')
+  if (!loadResult.ok) expect.unreachable('test bug: installed fixture adapters failed to load')
   const adapters = loadResult.adapters.filter((a) => a.supportsInstall === true)
   return runRemove({ projectRoot, names, adapters })
 }
@@ -307,6 +308,61 @@ describe('prepareRemove — read-only validation', () => {
     expect(result.json.facets.cowsay).toBe('0.1.1')
     // Filtered names contains every requested name (all declared).
     expect(result.names).toEqual(['cowsay'])
+  })
+})
+
+describe('runRemove — adapter compatibility is not bypassed', () => {
+  /** Structurally valid adapter with an unsupported API; methods throw loud. */
+  function incompatibleAdapter(name: string, apiVersion: unknown): Adapter {
+    return {
+      name,
+      apiVersion,
+      supportsInstall: true,
+      buildAssetMetadata: () => {
+        throw new Error('contract method invoked despite incompatibility')
+      },
+      async installAsset() {
+        throw new Error('contract method invoked despite incompatibility')
+      },
+      async readAsset() {
+        throw new Error('contract method invoked despite incompatibility')
+      },
+      async deleteAsset() {
+        throw new Error('contract method invoked despite incompatibility')
+      },
+    } as Adapter
+  }
+
+  test('removal with an incompatible selected adapter fails before deleting anything', async () => {
+    await installFacet('cowsay', '0.1.1')
+    expect(existsSync(assetPath('test-adapter', 'cowsay'))).toBe(true)
+    const { receiptPath } = await import('../receipt.ts')
+    const before = {
+      facets: readFileSync(join(projectRoot, 'facets.json'), 'utf8'),
+      lock: readFileSync(join(projectRoot, 'facets.lock'), 'utf8'),
+      receipt: readFileSync(receiptPath(projectRoot), 'utf8'),
+    }
+
+    const result = await runRemove({
+      projectRoot,
+      names: ['cowsay'],
+      adapters: [incompatibleAdapter('future-adapter', '9.9')],
+    })
+
+    if (result.ok) expect.unreachable()
+    if (result.phase !== 'install') expect.unreachable()
+    if (result.install.failure.code !== 'ADAPTER_INCOMPATIBLE') expect.unreachable()
+    expect(result.install.failure.failures).toEqual([
+      { kind: 'api-unsupported', adapter: 'future-adapter', found: '9.9', supported: [ADAPTER_API_VERSION] },
+    ])
+    expect(result.install.rollback.kind).toBe('not-needed')
+
+    // Nothing was deleted: the materialized asset survives and every
+    // project file is byte-for-byte unchanged.
+    expect(existsSync(assetPath('test-adapter', 'cowsay'))).toBe(true)
+    expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(before.facets)
+    expect(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')).toBe(before.lock)
+    expect(readFileSync(receiptPath(projectRoot), 'utf8')).toBe(before.receipt)
   })
 })
 
