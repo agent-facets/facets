@@ -130,23 +130,23 @@
 
 ## 15. Documentation and Rollout — Research
 
-- [ ] 15.1 Explore: Audit `docs/cli/adapters/install.mdx`, `docs/cli/adapters/list.mdx`, `docs/guides/custom-adapters.mdx`, `docs/guides/troubleshooting.mdx`, `docs/specification/install.mdx`, `docs/specification/commit.mdx`, `docs/specification/build.mdx`, `docs/cli/env.mdx`, and `scripts/README.md` against the implemented behavior.
-- [ ] 15.2 Explore: Recheck the root `README.md`, `scripts/release/`, and affected package manifests for zero-adapter-picker accuracy and SDK → first-party adapters → CLI rollout constraints.
-- [ ] 15.3 Propose: Present the complete documentation update and SDK, first-party adapter, and compatibility-aware CLI rollout plan without manipulating npm dist-tags.
+- [x] 15.1 Explore: Audit `docs/cli/adapters/install.mdx`, `docs/cli/adapters/list.mdx`, `docs/guides/custom-adapters.mdx`, `docs/guides/troubleshooting.mdx`, `docs/specification/install.mdx`, `docs/specification/commit.mdx`, `docs/specification/build.mdx`, `docs/cli/env.mdx`, and `scripts/README.md` against the implemented behavior.
+- [x] 15.2 Explore: Recheck the root `README.md`, `scripts/release/`, and affected package manifests for zero-adapter-picker accuracy and SDK → first-party adapters → CLI rollout constraints.
+- [x] 15.3 Propose: Present the complete documentation update and SDK, first-party adapter, and compatibility-aware CLI rollout plan without manipulating npm dist-tags.
 
 ## 16. Documentation and Rollout — Implementation
 
-- [ ] 16.1 Implement: Update adapter install/list documentation for selector syntax, highest-compatible resolution, incompatibility errors, atomic replacement, managed layout, and recovery.
-- [ ] 16.2 Implement: Update custom-adapter and troubleshooting guides for SDK stamping, `facetAdapterApiVersion`, publishing, rebuilding/reinstalling, and every compatibility classification.
-- [ ] 16.3 Implement: Update install, commit, and build specifications documentation for compatibility gates before adapter methods and materialization.
-- [ ] 16.4 Implement: Update environment and scripts documentation for the receipt/generation layout and first-party prepack metadata injection.
-- [ ] 16.5 Implement: Add the rollout checklist requiring the SDK and new `0.0` first-party adapter releases before the compatibility-aware CLI release while preserving normal npm `latest` advancement.
-- [ ] 16.6 Verify: Run documentation link/content checks and verify all command and layout examples against the implementation.
+- [x] 16.1 Implement: Update adapter install/list documentation for selector syntax, highest-compatible resolution, incompatibility errors, atomic replacement, managed layout, and recovery.
+- [x] 16.2 Implement: Update custom-adapter and troubleshooting guides for SDK stamping, `facetAdapterApiVersion`, publishing, rebuilding/reinstalling, and every compatibility classification.
+- [x] 16.3 Implement: Update install, commit, and build specifications documentation for compatibility gates before adapter methods and materialization.
+- [x] 16.4 Implement: Update environment and scripts documentation for the receipt/generation layout and first-party prepack metadata injection.
+- [x] 16.5 Implement: Add the rollout checklist requiring the SDK and new `0.0` first-party adapter releases before the compatibility-aware CLI release while preserving normal npm `latest` advancement.
+- [x] 16.6 Verify: Run documentation link/content checks and verify all command and layout examples against the implementation.
 
 ## 17. Integrated Coverage Audit — Research
 
-- [ ] 17.1 Explore: Audit the completed implementation and tests against every reconciled SDK, adapter-management, and installation scenario and every design failure boundary.
-- [ ] 17.2 Explore: Inspect for duplicated API literals, metadata field names, alias maps, compatibility classifiers, or user-facing engine messages that violate the single-source-of-truth design.
+- [x] 17.1 Explore: Audit the completed implementation and tests against every reconciled SDK, adapter-management, and installation scenario and every design failure boundary.
+- [x] 17.2 Explore: Inspect for duplicated API literals, metadata field names, alias maps, compatibility classifiers, or user-facing engine messages that violate the single-source-of-truth design.
 - [ ] 17.3 Propose: Present the final gap-closing changes and a verification matrix covering unit, integration, end-to-end, packed-artifact, documentation, and OpenSpec validation.
 
 ## 18. Integrated Coverage Audit — Implementation

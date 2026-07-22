@@ -13,6 +13,37 @@ Installs an adapter from the given specifier. An adapter is a way for the `facet
 
 Run with no specifier to choose from an interactive picker of the first-party adapters (TTY only) — in a non-interactive shell the no-argument form fails with a structured error and exit `1`.
 
+## Built-in adapters
+
+These names resolve to the first-party adapter packages:
+
+- `opencode`  -- OpenCode adapter (`@agent-facets/adapter-opencode`)
+- `claude-code`  -- Claude Code adapter (`@agent-facets/adapter-claude-code`)
+- `codex`  -- Codex adapter (`@agent-facets/adapter-codex`)
+
+<Note>
+A per-install `--target-dir` flag is intentionally not supported: later invocations (such as `facet build`) would have no way to locate adapters placed in non-default locations.
+</Note>
+
+## Exit codes
+
+| Code | Meaning |
+| ---- | ------- |
+| `0`  | Adapter installed |
+| `1`  | Install failed (bad specifier, no compatible release, download/clone failure, invalid adapter export, incompatible adapter API, or the no-argument form in a non-interactive shell) |
+
+## What it does
+
+The install flow stages and verifies a candidate before it ever touches the existing installation:
+
+1. Download (or clone/copy) the source and bundle it into a self-contained `adapter.js` in temporary storage.
+2. Verify the bundle: it must export a valid adapter that declares a supported adapter API. For npm sources the runtime declaration must also match the package metadata used for selection.
+3. Acquire a per-adapter replacement lock, copy the verified bundle into a new generation under `$FACET_DIR/adapters/<name>/generations/<generation-id>/`, and verify it again at its final path.
+4. Atomically activate the new generation by replacing the `installation.json` receipt — the record of the active generation, verified API, and source provenance (specifier, resolved npm package/version, integrity).
+5. Remove the previous generation.
+
+Any failure **before** activation leaves the existing installation untouched — replacement is atomic. A cleanup failure **after** activation is reported as a warning; the new version is already active. See [environment variables](/cli/env) for the `FACET_DIR` layout.
+
 ## Specifier formats
 
 <CodeGroup>
@@ -23,8 +54,10 @@ facet adapter install opencode
 ```
 
 ```sh npm package
-facet adapter install @acme/adapter-custom
-# downloads from the npm registry
+facet adapter install @acme/adapter-custom          # highest compatible release
+facet adapter install @acme/adapter-custom@1.2.3    # exact version — fails if incompatible
+facet adapter install @acme/adapter-custom@1.*      # highest compatible in the range
+facet adapter install opencode@latest               # explicit latest = highest compatible
 ```
 
 ```sh Git URL
@@ -43,28 +76,20 @@ facet adapter install ./path/to/adapter
 Adapter specifiers accept `git+` URLs even though facet sources for [`facet add`](/cli/add) reject them — adapter installs and facet installs follow different source rules.
 </Note>
 
-## Built-in adapters
+Version selectors use the Facet grammar: exact `1.2.3`, major wildcard `1.*`, minor wildcard `1.2.*`, `*`, or `latest`. npm range syntax (`^1.2.3`, `~1.2.3`, comparators, hyphen/OR/x-ranges, prerelease tags) is rejected with an error listing the supported forms.
 
-These names resolve to the first-party adapter packages:
+## Compatible resolution
 
-- `opencode`  -- OpenCode adapter (`@agent-facets/adapter-opencode`)
-- `claude-code`  -- Claude Code adapter (`@agent-facets/adapter-claude-code`)
-- `codex`  -- Codex adapter (`@agent-facets/adapter-codex`)
+Every adapter declares the adapter API contract it was built against, and each CLI release supports an exact set of adapter APIs (currently `0.0`). For npm installs, the CLI reads the package's version metadata (the `facetAdapterApiVersion` field each release publishes) and selects the **highest stable release** that both satisfies your version selector and declares a supported API:
 
-<Note>
-A per-install `--target-dir` flag is intentionally not supported: later invocations (such as `facet build`) would have no way to locate adapters placed in non-default locations.
-</Note>
+- A bare name, `*`, or `latest` selects the highest compatible release — independent of npm's `latest` dist-tag.
+- A wildcard selector (`1.*`, `1.2.*`) selects the highest compatible release in the range.
+- An **exact version** considers only that release: if it is incompatible, the install fails rather than substituting another version.
+- Releases with a missing or malformed declaration are never selected.
 
-## Exit codes
+When no release in the requested set is compatible, the install fails with the newest considered release, its declared (or missing) adapter API, and the APIs this CLI supports.
 
-| Code | Meaning |
-| ---- | ------- |
-| `0`  | Adapter installed |
-| `1`  | Install failed (bad specifier, download/clone failure, invalid adapter export, or the no-argument form in a non-interactive shell) |
-
-## What it does
-
-The install flow downloads the source, bundles it into a self-contained `adapter.js`, verifies it exports a valid adapter, and places it in the adapter base directory: `$FACET_DIR/adapters/<name>/` (see [environment variables](/cli/env) for the `FACET_DIR` layout).
+Git and local sources cannot be version-selected — they are built as supplied and must pass the same runtime compatibility verification before installation.
 
 ## See also
 

@@ -41,7 +41,7 @@ scripts/
 │   ├── notify-failure.ts       # Slack failure notification (on_fail step)
 │   └── test-helpers.ts         # Test utilities (mock helpers, fixtures)
 │
-├── prepack.ts                  # Rewrite workspace:* deps + hoist publishConfig overrides before npm publish
+├── prepack.ts                  # Rewrite workspace:* deps, hoist publishConfig overrides, inject adapter API metadata before npm publish
 ├── postpack.ts                 # Restore package.json after pack
 ├── postinstall.ts              # Quiet `bun install` postinstall (lefthook + adapter + facets)
 └── check-bun-version.ts        # Verify Bun version matches mise.toml
@@ -105,6 +105,10 @@ The contract for marking a package as "workspace-only, never release" has three 
 3. **`prepack` strips `devDependencies` outright** via `stripDevDependencies` in `scripts/lib/prepack.ts` — this is the load-bearing protection that lets published packages keep `workspace:*` devDep references to versionless workspace-only packages (e.g. `@agent-facets/common` in `core` / `adapter` / `cli` devDeps). `bun pm pack` (used by the publish pipeline since PR #206) validates every `workspace:*` specifier — including those in `devDependencies` — and refuses to pack when one is unresolvable. `npm publish` strips devDeps from the tarball regardless, so deleting them at pack time has no effect on the published artifact, and `postpack` restores the original manifest. `DEP_FIELDS` excludes `devDependencies` from rewriting as belt-and-suspenders so the helper stays safe on any input shape. `prepack` and `postpack` write all diagnostic output to stderr (not stdout) so `bun pm pack --quiet`'s stdout stays parseable by `extractPackFilename` — see "Why pack-then-upload?" below.
 
 Together these keep workspace-only packages out of the release pipeline entirely — no tags, no npm publishes, no lingering "unpublished" state, and no prepack failures.
+
+## Adapter API metadata injection
+
+For packages under `packages/adapters/`, `prepack` injects the `facetAdapterApiVersion` field into the packed `package.json` via `injectAdapterApiVersion` in `scripts/lib/prepack.ts`. The field name and value are imported from the Adapter SDK's canonical constants (`packages/adapter/src/api-version.ts`) — the single source of truth; neither string is hardcoded in the scripts. The facet CLI reads this field from the npm registry to select a compatible adapter release **before** downloading it. Non-adapter packages are untouched, and `postpack` restores the source manifest as usual. Packed-tarball coverage lives in `scripts/prepack-adapters.test.ts`.
 
 ### Hard guard: changesets must not bump ignored or unknown packages
 

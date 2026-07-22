@@ -23,6 +23,13 @@ An adapter is a small TypeScript library. You write one file, build it, and inst
 > helpers for front-matter-aware file I/O. `Scope` is `'system' | 'user' |
 > 'project'`; `AssetType` is `'skill' | 'agent' | 'command'`.
 >
+> `defineAdapter()` stamps the adapter API version (`apiVersion`, currently
+> `0.0`) onto the returned adapter — do NOT set it yourself; the input type
+> excludes it. When publishing to npm, the published `package.json` MUST
+> declare `"facetAdapterApiVersion": "0.0"` (the canonical constants live at
+> `@agent-facets/adapter/api-version`) or the CLI will never select the
+> release.
+>
 > Build with `tsdown`/`tsc`, then install:
 >
 > ```sh
@@ -128,6 +135,10 @@ Everything an adapter can implement, from [`@agent-facets/adapter`](https://gith
   A unique id (e.g. `my-tool`). Users install and reference the adapter by this name.
 </ResponseField>
 
+<ResponseField name="apiVersion" type="string">
+  The adapter API contract the adapter was built against — **stamped automatically by `defineAdapter()`** (currently `0.0`). You cannot set it in your definition; the input type excludes it. The CLI refuses to load adapters whose declared API it doesn't support.
+</ResponseField>
+
 <ResponseField name="buildAssetMetadata(data)" type="Validated<AdapterMetadata>" required>
   Validate and enrich the per-asset metadata from a facet's `adapters.<name>` block. Return `{ ok: true, data }` or `{ ok: false, errors }`. Runs during `facet build`, so bad config is caught early.
 </ResponseField>
@@ -204,6 +215,20 @@ facet add cowsay            # installs into every connected adapter, yours inclu
 ```
 
 Check that files landed where your `assetPath` puts them. From here, harden `buildAssetMetadata` with a real schema and flesh out the on-disk layout your tool expects.
+
+`facet adapter list` also shows each adapter's declared adapter API and whether the CLI supports it. If a CLI update ever changes the supported API set, rebuild your adapter against a matching SDK release and reinstall it — the list output prints the exact reinstall command next to any incompatible entry.
+
+## Publish to npm
+
+Installing by bare name (`facet adapter install my-adapter`) resolves through npm, and the CLI selects a release **before downloading it** by reading one required field from your published `package.json`:
+
+```json package.json
+{
+  "facetAdapterApiVersion": "0.0"
+}
+```
+
+Declare the adapter API version your SDK release stamps at runtime (currently `0.0`). The CLI skips releases where this field is missing, malformed, or unsupported — a release without it is never selected, and a field that disagrees with the runtime `apiVersion` stamped by `defineAdapter()` fails verification after download. The canonical values are exported from `@agent-facets/adapter/api-version` (`ADAPTER_API_VERSION` and `ADAPTER_API_VERSION_PACKAGE_FIELD`), so release tooling can inject the field instead of hardcoding it.
 
 ## Share it upstream
 
