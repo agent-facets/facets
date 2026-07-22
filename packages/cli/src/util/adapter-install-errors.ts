@@ -1,4 +1,10 @@
-import type { AdapterCompatibilityFailure, AdapterInstallFailure, VerifyAdapterFailure } from '@agent-facets/engine'
+import type {
+  AdapterCompatibilityFailure,
+  AdapterInstallFailure,
+  ApiDeclarationClassification,
+  NpmVersionRequest,
+  VerifyAdapterFailure,
+} from '@agent-facets/engine'
 
 /**
  * Map an `AdapterInstallFailure` to the `{ what, detail, fix }` triple
@@ -13,11 +19,7 @@ export function describeAdapterInstallFailure(failure: AdapterInstallFailure): {
 } {
   switch (failure.kind) {
     case 'specifier-invalid':
-      return {
-        what: `invalid adapter specifier "${failure.specifier}"`,
-        detail: `git URL must start with https://, http://, ssh://, or git:// — got "${failure.failure.url}"`,
-        fix: 'use a built-in adapter name, npm package, supported git URL, or local path',
-      }
+      return describeSpecifierFailure(failure.specifier, failure.failure)
     case 'download-failed':
       return describeDownloadFailure(failure.specifier, failure.source)
     case 'bundle-failed':
@@ -33,6 +35,26 @@ export function describeAdapterInstallFailure(failure: AdapterInstallFailure): {
         what: `failed to place adapter "${failure.adapter}"`,
         detail: failure.cause,
         fix: 'check filesystem permissions on ~/.facet/adapters/',
+      }
+  }
+}
+
+function describeSpecifierFailure(
+  specifier: string,
+  failure: Extract<AdapterInstallFailure, { kind: 'specifier-invalid' }>['failure'],
+): { what: string; detail: string; fix: string } {
+  switch (failure.reason) {
+    case 'invalid-git-url':
+      return {
+        what: `invalid adapter specifier "${specifier}"`,
+        detail: `git URL must start with https://, http://, ssh://, or git:// — got "${failure.url}"`,
+        fix: 'use a built-in adapter name, npm package, supported git URL, or local path',
+      }
+    case 'invalid-npm-selector':
+      return {
+        what: `invalid version selector "${failure.selector}" for "${failure.packageName}"`,
+        detail: failure.error.what,
+        fix: failure.error.fix,
       }
   }
 }
@@ -149,12 +171,14 @@ function describeNpmFailure(
         detail: failure.statusText,
         fix: failure.status === 404 ? 'verify the package name' : 'retry; this is usually transient',
       }
-    case 'no-tarball-url':
+    case 'metadata-invalid':
       return {
-        what: `npm registry returned no tarball URL for "${failure.packageName}"`,
-        detail: 'the registry response was missing dist.tarball',
+        what: `npm registry returned unusable metadata for "${failure.packageName}"`,
+        detail: failure.detail,
         fix: 'verify the package was published correctly',
       }
+    case 'no-compatible-release':
+      return describeNoCompatibleRelease(failure)
     case 'tarball-network-error':
       return {
         what: `could not download tarball for "${failure.packageName}"`,
@@ -197,6 +221,47 @@ function describeNpmFailure(
         detail: 'this is a tar-slip attempt; refusing to install',
         fix: 'do not install this package; report it to the registry',
       }
+  }
+}
+
+function describeNoCompatibleRelease(failure: {
+  packageName: string
+  request: NpmVersionRequest
+  supported: readonly string[]
+  newestConsidered?: { version: string; declared: ApiDeclarationClassification }
+}): { what: string; detail: string; fix: string } {
+  const selector = failure.request.kind === 'implicit' ? 'any version' : `selector "${failure.request.raw}"`
+  const supported = failure.supported.join(', ')
+
+  let newest: string
+  if (!failure.newestConsidered) {
+    newest = 'no published stable version satisfies the request'
+  } else {
+    const { version, declared } = failure.newestConsidered
+    switch (declared.kind) {
+      case 'missing':
+        newest = `newest considered release ${version} declares no adapter API`
+        break
+      case 'malformed':
+        newest = `newest considered release ${version} declares malformed adapter API "${declared.found}"`
+        break
+      case 'unsupported':
+        newest = `newest considered release ${version} declares unsupported adapter API ${declared.api}`
+        break
+      case 'supported':
+        // Unreachable when resolution failed, but render honestly.
+        newest = `newest considered release ${version} declares adapter API ${declared.api}`
+        break
+    }
+  }
+
+  return {
+    what: `no compatible release of "${failure.packageName}" (${selector})`,
+    detail: `this CLI supports adapter API ${supported}; ${newest}`,
+    fix:
+      failure.request.kind === 'exact'
+        ? `that exact version is incompatible; try \`facet adapter install ${failure.packageName}\` for the highest compatible release`
+        : 'the publisher must release a version declaring a supported adapter API',
   }
 }
 

@@ -6,35 +6,47 @@ describe('parseAdapterSpecifier', () => {
     const result = parseAdapterSpecifier('opencode')
     if (!result.ok) expect.unreachable()
 
-    expect(result.resolved).toEqual({ type: 'npm', packageName: '@agent-facets/adapter-opencode' })
+    expect(result.resolved).toEqual({
+      type: 'npm',
+      packageName: '@agent-facets/adapter-opencode',
+      request: { kind: 'implicit' },
+    })
   })
 
   test('built-in name "claude-code" resolves to npm package', () => {
     const result = parseAdapterSpecifier('claude-code')
     if (!result.ok) expect.unreachable()
 
-    expect(result.resolved).toEqual({ type: 'npm', packageName: '@agent-facets/adapter-claude-code' })
+    expect(result.resolved).toEqual({
+      type: 'npm',
+      packageName: '@agent-facets/adapter-claude-code',
+      request: { kind: 'implicit' },
+    })
   })
 
   test('built-in name "codex" resolves to npm package', () => {
     const result = parseAdapterSpecifier('codex')
     if (!result.ok) expect.unreachable()
 
-    expect(result.resolved).toEqual({ type: 'npm', packageName: '@agent-facets/adapter-codex' })
+    expect(result.resolved).toEqual({
+      type: 'npm',
+      packageName: '@agent-facets/adapter-codex',
+      request: { kind: 'implicit' },
+    })
   })
 
   test('scoped npm package passes through', () => {
     const result = parseAdapterSpecifier('@acme/adapter-custom')
     if (!result.ok) expect.unreachable()
 
-    expect(result.resolved).toEqual({ type: 'npm', packageName: '@acme/adapter-custom' })
+    expect(result.resolved).toEqual({ type: 'npm', packageName: '@acme/adapter-custom', request: { kind: 'implicit' } })
   })
 
   test('unscoped npm package passes through', () => {
     const result = parseAdapterSpecifier('my-adapter')
     if (!result.ok) expect.unreachable()
 
-    expect(result.resolved).toEqual({ type: 'npm', packageName: 'my-adapter' })
+    expect(result.resolved).toEqual({ type: 'npm', packageName: 'my-adapter', request: { kind: 'implicit' } })
   })
 
   test('git+https URL is parsed', () => {

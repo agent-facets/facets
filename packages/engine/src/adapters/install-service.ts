@@ -5,7 +5,12 @@ import type { Adapter } from '@agent-facets/adapter'
 import type { OnLog } from '../install/types.ts'
 import { type CloneAdapterGitResult, cloneAdapterGitRepository } from '../sources/adapter/git.ts'
 import { type ResolveLocalAdapterResult, resolveLocalAdapterPath } from '../sources/adapter/local.ts'
-import { type DownloadNpmResult, downloadNpmPackage } from '../sources/adapter/npm.ts'
+import {
+  type DownloadNpmResult,
+  downloadNpmRelease,
+  type ResolveNpmAdapterResult,
+  resolveNpmAdapter,
+} from '../sources/adapter/npm.ts'
 import { type ParseAdapterSpecifierResult, parseAdapterSpecifier } from '../sources/adapter/specifier.ts'
 import { rebundleAdapter, resolveEntryPoint } from './bundler.ts'
 import { placeAdapter } from './placement.ts'
@@ -41,9 +46,10 @@ export interface AdapterInstallOptions {
  *
  *   - `specifier-invalid` — `parseAdapterSpecifier` rejected the
  *     specifier (e.g. `git+ftp://…` with a disallowed scheme).
- *   - `download-failed` — npm registry / git clone / local-path
- *     resolution failed. The `source` discriminator carries the
- *     resolver-specific reason.
+ *   - `download-failed` — npm resolution/download, git clone, or
+ *     local-path resolution failed. The `source` discriminator carries
+ *     the resolver-specific reason (for npm: compatible-release
+ *     resolution failures and tarball download/integrity failures).
  *   - `bundle-failed` / `place-failed` — bundler load or placement
  *     threw. These two still wrap thrown errors today; the fix here is
  *     to surface them as structured failures to the caller instead of
@@ -58,7 +64,10 @@ export type AdapterInstallFailure =
       kind: 'download-failed'
       specifier: string
       source:
-        | { kind: 'npm'; failure: Extract<DownloadNpmResult, { ok: false }> }
+        | {
+            kind: 'npm'
+            failure: Extract<ResolveNpmAdapterResult, { ok: false }> | Extract<DownloadNpmResult, { ok: false }>
+          }
         | { kind: 'git'; failure: Extract<CloneAdapterGitResult, { ok: false }> }
         | { kind: 'local'; failure: Extract<ResolveLocalAdapterResult, { ok: false }> }
     }
@@ -86,14 +95,23 @@ export async function installAdapter(
   let sourceDir: string | undefined
   let needsCleanup = true
   let bundleCleanup: (() => Promise<void>) | undefined
+  /** The npm package declaration used for selection, when installing from npm. */
+  let expectedApiVersion: string | undefined
 
   try {
     opts.onProgress?.('resolving', specifier)
 
     switch (resolved.type) {
       case 'npm': {
-        opts.onProgress?.('downloading', resolved.packageName)
-        const dl = await downloadNpmPackage(resolved.packageName)
+        const resolution = await resolveNpmAdapter(resolved.packageName, resolved.request)
+        if (!resolution.ok) {
+          return {
+            ok: false,
+            failure: { kind: 'download-failed', specifier, source: { kind: 'npm', failure: resolution } },
+          }
+        }
+        opts.onProgress?.('downloading', `${resolved.packageName}@${resolution.release.version}`)
+        const dl = await downloadNpmRelease(resolution.release)
         if (!dl.ok) {
           return {
             ok: false,
@@ -101,6 +119,7 @@ export async function installAdapter(
           }
         }
         sourceDir = dl.path
+        expectedApiVersion = resolution.release.apiVersion
         break
       }
       case 'git': {
@@ -132,7 +151,7 @@ export async function installAdapter(
     opts.onProgress?.('bundling')
     let located: LocateAndVerifyResult
     try {
-      located = await locateAndVerifyAdapter(sourceDir, { onLog: opts.onLog })
+      located = await locateAndVerifyAdapter(sourceDir, { onLog: opts.onLog, expectedApiVersion })
     } catch (err) {
       // bundler internals (`rebundleAdapter`, `resolveEntryPoint`) still
       // throw today — converting them is a later step. Catch at this
