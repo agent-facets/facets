@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
 import type { BuildManifest } from '@agent-facets/protocol'
 
 /**
@@ -135,6 +136,7 @@ import { join } from 'node:path'
 function path(type, name) { return join(process.cwd(), '.${name}', type + 's', name + '.md') }
 export default {
   name: '${name}',
+  apiVersion: '${ADAPTER_API_VERSION}',
   supportsInstall: true,
   buildAssetMetadata(data) { return { ok: true, data: data || {} } },
   async installAsset(scope, type, name, content, metadata) { await installAssetFile({ file: path(type, name) }, content, metadata) },
@@ -187,12 +189,16 @@ function readLock(): {
 }
 
 async function install() {
-  const adapters = await loadInstalledAdapters()
+  const loadResult = await loadInstalledAdapters()
+  if (!loadResult.ok) throw new Error('test bug: installed fixture adapters failed to load')
+  const adapters = loadResult.adapters
   return runInstall({ projectRoot, adapters: adapters.filter((a) => a.supportsInstall === true) })
 }
 
 async function installFrozen() {
-  const adapters = await loadInstalledAdapters()
+  const loadResult = await loadInstalledAdapters()
+  if (!loadResult.ok) throw new Error('test bug: installed fixture adapters failed to load')
+  const adapters = loadResult.adapters
   return runInstall({
     projectRoot,
     adapters: adapters.filter((a) => a.supportsInstall === true),
@@ -232,7 +238,9 @@ afterEach(() => {
 describe('runInstall — DELTA_CONFLICT (#23)', () => {
   test('a delta with the same facet in additions and removals fails before any mutation', async () => {
     writeFacets({ cowsay: '0.1.0' })
-    const adapters = await loadInstalledAdapters()
+    const loadResult = await loadInstalledAdapters()
+    if (!loadResult.ok) throw new Error('test bug: installed fixture adapters failed to load')
+    const adapters = loadResult.adapters
     const result = await runInstall({
       projectRoot,
       adapters: adapters.filter((a) => a.supportsInstall === true),

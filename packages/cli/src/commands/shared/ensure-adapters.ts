@@ -1,5 +1,6 @@
 import type { Adapter } from '@agent-facets/adapter'
 import { loadInstalledAdapters } from '@agent-facets/engine'
+import { describeInstalledAdapterFailure } from '../../util/adapter-install-errors.ts'
 import { writeCliError } from '../../util/errors.ts'
 import { pickAndInstallAdapters } from '../adapter/pick-and-install.ts'
 
@@ -15,7 +16,17 @@ import { pickAndInstallAdapters } from '../adapter/pick-and-install.ts'
  * is identical for all of them.
  */
 export async function ensureAdapters(): Promise<ReadonlyArray<Adapter> | null> {
-  const adapters = await loadInstalledAdapters()
+  // Fail closed: incompatible or broken installed adapters block the
+  // operation entirely — they must NOT fall through to the zero-adapter
+  // picker, which would misreport them as "no adapters installed".
+  const loaded = await loadInstalledAdapters()
+  if (!loaded.ok) {
+    for (const failure of loaded.failures) {
+      writeCliError(describeInstalledAdapterFailure(failure))
+    }
+    return null
+  }
+  const adapters = loaded.adapters
   const installable = adapters.filter((a) => a.supportsInstall === true)
   if (installable.length > 0) return installable
 

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
 import { captureStderr } from '../../../__tests__/helpers/capture-std.ts'
 import { withTTY } from '../../../__tests__/helpers/with-tty.ts'
 import { addCommand } from '../index.ts'
@@ -44,6 +45,7 @@ function path(type, name) {
 
 export default {
   name: '${name}',
+  apiVersion: '${ADAPTER_API_VERSION}',
   supportsInstall: true,
   buildAssetMetadata(data) { return { ok: true, data: data || {} } },
   async installAsset(scope, type, name, content, metadata) {

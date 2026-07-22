@@ -1,6 +1,11 @@
-import { installAdapter, listInstalledAdapters, removeAdapter } from '@agent-facets/engine'
+import {
+  type InstalledAdapterInspection,
+  inspectInstalledAdapters,
+  installAdapter,
+  removeAdapter,
+} from '@agent-facets/engine'
 import type { Command } from '../../commands.ts'
-import { describeAdapterInstallFailure } from '../../util/adapter-install-errors.ts'
+import { describeAdapterInstallFailure, repairCommand } from '../../util/adapter-install-errors.ts'
 import { writeCliError } from '../../util/errors.ts'
 import { pickAndInstallAdapters } from './pick-and-install.ts'
 
@@ -78,6 +83,9 @@ async function handleInstall(args: string[]): Promise<number> {
     return 1
   }
   console.log(`Adapter "${result.adapter.name}" installed successfully.`)
+  for (const warning of result.warnings) {
+    console.error(`warning: could not clean up ${warning.path} (${warning.cause})`)
+  }
   return 0
 }
 
@@ -100,19 +108,65 @@ async function handleInstallPicker(): Promise<number> {
   return 1
 }
 
-async function handleList(): Promise<number> {
-  const names = await listInstalledAdapters()
+/** The API column for one inspected entry: exact id, missing, malformed, or unknown. */
+function apiColumn(inspection: InstalledAdapterInspection): string {
+  switch (inspection.kind) {
+    case 'compatible':
+      return `api ${inspection.verified.apiVersion}`
+    case 'incompatible':
+      switch (inspection.failure.kind) {
+        case 'api-missing':
+          return 'api missing'
+        case 'api-malformed':
+          return `api malformed ("${inspection.failure.found}")`
+        case 'api-unsupported':
+          return `api ${inspection.failure.found}`
+        case 'api-metadata-mismatch':
+          return `api ${inspection.failure.runtimeDeclared}`
+      }
+      break
+    case 'broken':
+      return inspection.declaredApi !== undefined ? `api ${inspection.declaredApi}` : 'api unknown'
+  }
+}
 
-  if (names.length === 0) {
+/** The status column plus recovery hint for one inspected entry. */
+function statusColumn(inspection: InstalledAdapterInspection): string {
+  switch (inspection.kind) {
+    case 'compatible':
+      return 'supported'
+    case 'incompatible':
+      return `unsupported — reinstall: ${repairCommand(inspection.repair)}`
+    case 'broken': {
+      const why =
+        inspection.reason.kind === 'invalid-receipt'
+          ? 'invalid installation record'
+          : inspection.reason.kind === 'missing-active-generation'
+            ? 'missing active bundle'
+            : 'bundle failed to load'
+      return `broken (${why}) — reinstall: ${repairCommand(inspection.repair)}`
+    }
+  }
+}
+
+async function handleList(): Promise<number> {
+  const inspections = await inspectInstalledAdapters()
+
+  if (inspections.length === 0) {
     console.log('No adapters installed.')
     console.log('')
     console.log('Install one with: facet adapter install <specifier>')
     return 0
   }
 
+  const nameWidth = Math.max(...inspections.map((inspection) => inspection.name.length))
+  const apiWidth = Math.max(...inspections.map((inspection) => apiColumn(inspection).length))
+
   console.log('Installed adapters:')
-  for (const name of names) {
-    console.log(`  ${name}`)
+  for (const inspection of inspections) {
+    const name = inspection.name.padEnd(nameWidth)
+    const api = apiColumn(inspection).padEnd(apiWidth)
+    console.log(`  ${name}  ${api}  ${statusColumn(inspection)}`)
   }
   return 0
 }

@@ -71,8 +71,13 @@ export interface AcquireLockError {
 
 export type AcquireLockResult = { ok: true; lock: InstallLock } | AcquireLockError
 
-export function acquireInstallLock(projectRoot: string): AcquireLockResult {
-  const path = computeLockPath(projectRoot)
+/**
+ * Core advisory-lock primitive shared by the project install lock and
+ * the per-adapter replacement lock: `O_CREAT|O_EXCL` create with the
+ * holder's pid, ESRCH-only stale detection, unlink-then-retry that
+ * preserves the exclusive-create invariant, and an idempotent release.
+ */
+export function acquireLockFile(path: string): AcquireLockResult {
   // Ensure $FACET_DIR/locks/ exists. Lazy — first acquire creates it,
   // subsequent ones reuse it. The directory is intentionally not removed
   // on release; it persists across runs as part of the facet directory
@@ -114,6 +119,27 @@ export function acquireInstallLock(projectRoot: string): AcquireLockResult {
   }
 
   return { ok: false, heldByPid: held ?? -1, path }
+}
+
+export function acquireInstallLock(projectRoot: string): AcquireLockResult {
+  return acquireLockFile(computeLockPath(projectRoot))
+}
+
+/**
+ * Compute the lock path serializing replacement of one adapter:
+ * `$FACET_DIR/locks/adapter-<sanitized-name>-<sha16(name)>.lock`. The
+ * sanitized name is for grep-ability; the hash is the uniqueness
+ * guarantee for names that sanitize identically.
+ */
+export function computeAdapterLockPath(adapterName: string): string {
+  const base = sanitizeBasename(adapterName)
+  const hash = createHash('sha256').update(adapterName).digest('hex').slice(0, 16)
+  return join(facetLocksDir(), `adapter-${base}-${hash}.lock`)
+}
+
+/** Acquire the per-adapter replacement lock for `adapterName`. */
+export function acquireAdapterLock(adapterName: string): AcquireLockResult {
+  return acquireLockFile(computeAdapterLockPath(adapterName))
 }
 
 function makeLock(path: string): InstallLock {

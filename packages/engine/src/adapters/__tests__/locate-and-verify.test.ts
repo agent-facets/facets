@@ -73,8 +73,9 @@ describe('locateAndVerifyAdapter — fallback eligibility', () => {
     try {
       const result = await locateAndVerifyAdapter(dir)
       if (result.ok) expect.unreachable()
-      if (result.failure.kind !== 'incompatible') expect.unreachable()
-      expect(result.failure.failure).toEqual({
+      if (result.failure.kind !== 'verify') expect.unreachable()
+      if (result.failure.failure.kind !== 'incompatible') expect.unreachable()
+      expect(result.failure.failure.failure).toEqual({
         kind: 'api-unsupported',
         adapter: 'future-adapter',
         found: '9.9',
@@ -100,12 +101,13 @@ describe('locateAndVerifyAdapter — fallback eligibility', () => {
     try {
       const result = await locateAndVerifyAdapter(dir)
       if (result.ok) expect.unreachable()
-      if (result.failure.kind !== 'incompatible') expect.unreachable()
-      expect(result.failure.failure.kind).toBe('api-missing')
+      if (result.failure.kind !== 'verify') expect.unreachable()
+      const verifyFailure = result.failure.failure
+      if (verifyFailure.kind !== 'incompatible') expect.unreachable()
+      expect(verifyFailure.failure.kind).toBe('api-missing')
       // The failure identifies the original prebuilt path, not a
       // transient isolation copy.
-      if (result.failure.failure.kind !== 'api-missing') expect.unreachable()
-      expect(result.failure.bundlePath).toBe(join(dir, 'dist/index.mjs'))
+      expect(verifyFailure.bundlePath).toBe(join(dir, 'dist/index.mjs'))
     } finally {
       await rm(dir, { recursive: true, force: true }).catch(() => {})
     }

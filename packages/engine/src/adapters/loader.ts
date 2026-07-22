@@ -1,41 +1,43 @@
 import type { Adapter } from '@agent-facets/adapter'
-import { getAdapterBundlePath, listInstalledAdapters } from './placement.ts'
+import { type InstalledAdapterInspection, inspectInstalledAdapters } from './inspect.ts'
+
+/** An installed entry that cannot be used: incompatible or broken. */
+export type InstalledAdapterFailure = Extract<InstalledAdapterInspection, { kind: 'incompatible' | 'broken' }>
 
 /**
- * Loads all installed adapters by scanning the adapter base directory
- * and dynamically importing each `adapter.js` bundle.
- *
- * @param baseDir - Base directory for installed adapters (defaults to `$FACET_DIR/adapters`,
- *   where `FACET_DIR` defaults to `~/.facet`)
- * @param opts.onWarn - Optional callback for warnings about adapters that
- *   couldn't be loaded (e.g. invalid export, dynamic import failure). The
- *   CLI passes a callback that writes to stderr; tests can pass a no-op
- *   or array collector. When omitted, warnings are silently swallowed
- *   (preferable to a hardcoded `console.error` because callers may want
- *   to route warnings through their own logging infrastructure).
+ * Result of `loadInstalledAdapters`. Loading fails closed: if any
+ * installed adapter is incompatible or broken, the failure arm carries
+ * ALL collected failures and no adapters are returned. This prevents an
+ * incompatible-but-present adapter from being misreported as "no
+ * adapters installed" or as unknown facet metadata.
  */
-export async function loadInstalledAdapters(
-  baseDir?: string,
-  opts: { onWarn?: (line: string) => void } = {},
-): Promise<Adapter[]> {
-  const names = await listInstalledAdapters(baseDir)
-  const adapters: Adapter[] = []
+export type LoadAdaptersResult = { ok: true; adapters: Adapter[] } | { ok: false; failures: InstalledAdapterFailure[] }
 
-  for (const name of names) {
-    const bundlePath = getAdapterBundlePath(name, baseDir)
-    try {
-      const module = (await import(bundlePath)) as { default?: Adapter }
-      if (module.default) {
-        adapters.push(module.default)
-      } else {
-        opts.onWarn?.(`Warning: Installed adapter "${name}" has an invalid export, skipping.`)
-      }
-    } catch (err) {
-      opts.onWarn?.(
-        `Warning: Failed to load installed adapter "${name}": ${err instanceof Error ? err.message : String(err)}`,
-      )
+/**
+ * Loads all installed adapters through shared inspection. Managed
+ * installations are validated against their receipts (recorded
+ * unsupported APIs fail before import); unmanaged legacy bundles are
+ * verified directly. No adapter contract method is invoked before its
+ * compatibility has been established.
+ *
+ * @param baseDir - Base directory for installed adapters (defaults to
+ *   `$FACET_DIR/adapters`, where `FACET_DIR` defaults to `~/.facet`)
+ */
+export async function loadInstalledAdapters(baseDir?: string): Promise<LoadAdaptersResult> {
+  const inspections = await inspectInstalledAdapters(baseDir)
+
+  const failures: InstalledAdapterFailure[] = []
+  const adapters: Adapter[] = []
+  for (const inspection of inspections) {
+    if (inspection.kind === 'compatible') {
+      adapters.push(inspection.verified.adapter)
+    } else {
+      failures.push(inspection)
     }
   }
 
-  return adapters
+  if (failures.length > 0) {
+    return { ok: false, failures }
+  }
+  return { ok: true, adapters }
 }
