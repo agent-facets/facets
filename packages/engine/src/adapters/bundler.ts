@@ -269,7 +269,7 @@ export async function resolveEntryPoint(sourceDir: string): Promise<ResolveEntry
       },
     }
   }
-  if (typeof parsed !== 'object' || parsed === null) {
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     return {
       ok: false,
       failure: { kind: 'invalid-package-json', sourceDir, cause: 'package.json is not a JSON object' },
