@@ -47,19 +47,19 @@
 
 ## 5. Adapter Specifiers and npm Compatible Resolution — Research
 
-- [ ] 5.1 Explore: Inspect `packages/engine/src/sources/adapter/specifier.ts`, `packages/engine/src/adapters/first-party.ts`, `packages/engine/src/sources/facet/parse-version.ts`, and `packages/protocol/src/sources/version-spec.ts` for scoped-name handling, alias duplication, selector parsing, and satisfaction rules.
-- [ ] 5.2 Explore: Inspect `packages/engine/src/sources/adapter/npm.ts` and its fake-registry and hardening tests to map full-packument metadata, integrity verification, extraction, and provenance flow.
-- [ ] 5.3 Propose: Present tagged source request/result types and structured parse, no-compatible-release, metadata, network, integrity, and extraction failures.
+- [x] 5.1 Explore: Inspect `packages/engine/src/sources/adapter/specifier.ts`, `packages/engine/src/adapters/first-party.ts`, `packages/engine/src/sources/facet/parse-version.ts`, and `packages/protocol/src/sources/version-spec.ts` for scoped-name handling, alias duplication, selector parsing, and satisfaction rules.
+- [x] 5.2 Explore: Inspect `packages/engine/src/sources/adapter/npm.ts` and its fake-registry and hardening tests to map full-packument metadata, integrity verification, extraction, and provenance flow.
+- [x] 5.3 Propose: Present tagged source request/result types and structured parse, no-compatible-release, metadata, network, integrity, and extraction failures.
 
 ## 6. Adapter Specifiers and npm Compatible Resolution — Implementation
 
-- [ ] 6.1 Implement: Make the first-party adapter catalog the single source of truth for both picker entries and alias-to-package resolution.
-- [ ] 6.2 Implement: Add tagged npm implicit, exact, wildcard/`latest`, Git, and local specifier variants with correct scoped-package splitting and reused Facet selector grammar.
-- [ ] 6.3 Implement: Return structured parse failures for unsupported npm selector forms while preserving existing Git and local source behavior.
-- [ ] 6.4 Implement: Replace npm `/latest` lookup with full-packument parsing that filters stable versions by selector and supported API, handles exact requests without substitution, and reports the newest considered incompatible release.
-- [ ] 6.5 Implement: Carry the selected package version, declared API, tarball URL, and exact SRI or shasum through download, integrity verification, extraction, and installation provenance.
-- [ ] 6.6 Implement: Add parser and fake-registry tests for scoped names, aliases, all supported selectors—including explicit `latest` selecting the highest compatible release independently of npm's `latest` dist-tag—rejected ranges, compatible selection, exact incompatibility, missing/malformed metadata, prerelease exclusion, and integrity failures; if exact-version metadata optimization is implemented, prove its validation and failure data match the full-packument path.
-- [ ] 6.7 Verify: Run targeted adapter-source and npm hardening suites.
+- [x] 6.1 Implement: Make the first-party adapter catalog the single source of truth for both picker entries and alias-to-package resolution.
+- [x] 6.2 Implement: Add tagged npm implicit, exact, wildcard/`latest`, Git, and local specifier variants with correct scoped-package splitting and reused Facet selector grammar.
+- [x] 6.3 Implement: Return structured parse failures for unsupported npm selector forms while preserving existing Git and local source behavior.
+- [x] 6.4 Implement: Replace npm `/latest` lookup with full-packument parsing that filters stable versions by selector and supported API, handles exact requests without substitution, and reports the newest considered incompatible release.
+- [x] 6.5 Implement: Carry the selected package version, declared API, tarball URL, and exact SRI or shasum through download, integrity verification, extraction, and installation provenance.
+- [x] 6.6 Implement: Add parser and fake-registry tests for scoped names, aliases, all supported selectors—including explicit `latest` selecting the highest compatible release independently of npm's `latest` dist-tag—rejected ranges, compatible selection, exact incompatibility, missing/malformed metadata, prerelease exclusion, and integrity failures; if exact-version metadata optimization is implemented, prove its validation and failure data match the full-packument path.
+- [x] 6.7 Verify: Run targeted adapter-source and npm hardening suites.
 
 ## 7. Managed Installation and Atomic Activation — Research
 

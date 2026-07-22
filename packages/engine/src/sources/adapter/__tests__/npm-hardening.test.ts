@@ -21,12 +21,20 @@ describe('verifyTarballIntegrity — SRI', () => {
     return `${algo}-${createHash(algo).update(input).digest('base64')}`
   }
 
-  test('accepts a correct sha512 integrity', () => {
-    expect(verifyTarballIntegrity('pkg', bytes, sri('sha512', bytes), undefined)).toEqual({ ok: true })
+  test('accepts a correct sha512 integrity and reports the SRI anchor', () => {
+    const anchor = sri('sha512', bytes)
+    expect(verifyTarballIntegrity('pkg', bytes, anchor, undefined)).toEqual({
+      ok: true,
+      usedIntegrity: { kind: 'sri', value: anchor },
+    })
   })
 
-  test('accepts a correct sha256 integrity', () => {
-    expect(verifyTarballIntegrity('pkg', bytes, sri('sha256', bytes), undefined)).toEqual({ ok: true })
+  test('accepts a correct sha256 integrity and reports the SRI anchor', () => {
+    const anchor = sri('sha256', bytes)
+    expect(verifyTarballIntegrity('pkg', bytes, anchor, undefined)).toEqual({
+      ok: true,
+      usedIntegrity: { kind: 'sri', value: anchor },
+    })
   })
 
   test('rejects a mismatched integrity with structured failure', () => {
@@ -44,9 +52,12 @@ describe('verifyTarballIntegrity — SRI', () => {
     expect(result.reason).toBe('integrity-unsupported-algo')
   })
 
-  test('accepts shasum fallback when SRI is absent', () => {
+  test('accepts shasum fallback when SRI is absent and reports the anchor', () => {
     const shasum = createHash('sha1').update(bytes).digest('hex')
-    expect(verifyTarballIntegrity('pkg', bytes, undefined, shasum)).toEqual({ ok: true })
+    expect(verifyTarballIntegrity('pkg', bytes, undefined, shasum)).toEqual({
+      ok: true,
+      usedIntegrity: { kind: 'shasum', value: shasum },
+    })
   })
 
   test('rejects a wrong shasum with structured failure', () => {

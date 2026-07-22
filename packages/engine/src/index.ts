@@ -235,10 +235,22 @@ export { resolveLocalAdapterPath } from './sources/adapter/local.ts'
 export type {
   AssertInsideTempDirResult,
   DownloadNpmResult,
+  NpmResolvedRelease,
+  ResolveNpmAdapterResult,
+  UsedIntegrity,
   VerifyTarballIntegrityResult,
 } from './sources/adapter/npm.ts'
-export { assertInsideTempDir, downloadNpmPackage, verifyTarballIntegrity } from './sources/adapter/npm.ts'
-export type { ParseAdapterSpecifierResult, ResolvedAdapterSpecifier } from './sources/adapter/specifier.ts'
+export {
+  assertInsideTempDir,
+  downloadNpmRelease,
+  resolveNpmAdapter,
+  verifyTarballIntegrity,
+} from './sources/adapter/npm.ts'
+export type {
+  NpmVersionRequest,
+  ParseAdapterSpecifierResult,
+  ResolvedAdapterSpecifier,
+} from './sources/adapter/specifier.ts'
 export { getBuiltinAdapterNames, parseAdapterSpecifier } from './sources/adapter/specifier.ts'
 // facet sources
 export { parseFacetSource } from './sources/facet/parse-source.ts'
