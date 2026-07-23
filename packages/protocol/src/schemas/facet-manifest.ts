@@ -1,13 +1,20 @@
 import { type } from 'arktype'
-import { validateAssetName } from './asset-name.ts'
+import { planArchiveEntries } from '../build/archive-plan.ts'
+import { validateAssetNameSegment } from './asset-name.ts'
 import { validateFacetName } from './facet-name.ts'
 
 // --- Sub-schemas ---
 
-/** Skill descriptor — description is required, prompt resolved from skills/<name>/SKILL.md */
+/**
+ * Skill descriptor — description is required, prompt resolved from
+ * skills/<name>/SKILL.md. `files` declares exact companion paths relative to
+ * the skill directory (design D1); the path grammar, site rules, and
+ * collision freedom are enforced by the archive-plan narrow below.
+ */
 const SkillDescriptor = type({
   description: 'string',
   'adapters?': type.Record('string', 'unknown'),
+  'files?': 'string[]',
 })
 
 /** Agent descriptor — description is required, prompt resolved from agents/<name>.md */
@@ -52,16 +59,26 @@ const ServerReference = type('string').or({ image: 'string' })
  * Structural validation covers field types and shapes. Narrow constraints enforce:
  * 1. At least one text asset (skills, agents, commands, or facets) must be present
  * 2. Selective facets entries must include at least one asset type selection
- * 3. Asset names must satisfy the Agent Skills grammar (validateAssetName from
- *    ./asset-name.ts): per `/`-separated segment, 1-64 chars, lowercase
- *    letters/digits/hyphens, no leading/trailing/consecutive hyphens. This
- *    grammar subsumes path safety (empty, `.`, `..`, and backslash segments
- *    all fail), so it replaces the weaker path-only guard for manifest keys.
+ * 3. Asset names must satisfy the Agent Skills grammar as a SINGLE segment
+ *    (validateAssetNameSegment from ./asset-name.ts): 1-64 chars, lowercase
+ *    letters/digits/hyphens, no leading/trailing/consecutive hyphens, no `/`.
+ *    Slash-namespaced names are legacy-`0.1`-only (LegacyFacetManifestSchema).
+ *    The grammar subsumes path safety (empty, `.`, `..`, and backslash
+ *    segments all fail), so it replaces the weaker path-only guard for
+ *    manifest keys.
  * 4. The facet identity `name` must be a valid facet name — an unscoped slug
  *    or a scoped `@scope/name` (validateFacetName). Asset names and facet
  *    identities intentionally diverge: asset names stay local kebab segments
  *    (digit-start allowed, never scoped); facet identities may carry a
  *    registry scope.
+ * 5. Skills and commands share one logical namespace (design D9): a skill and
+ *    a command must not use the same name. Agents remain separate and may
+ *    share a name with a skill or command.
+ * 6. Supplementary `files` declarations (top-level and per-skill) must satisfy
+ *    the portable path grammar and be collision-free across the whole planned
+ *    archive-entry set — enforced by the shared archive-plan derivation
+ *    (design D3/D7), so a manifest that validates here always yields a valid
+ *    archive plan.
  */
 export const FacetManifestSchema = type({
   name: 'string',
@@ -79,6 +96,11 @@ export const FacetManifestSchema = type({
   'commands?': type.Record('string', CommandDescriptor),
   'facets?': FacetsEntry.array(),
   'servers?': type.Record('string', ServerReference),
+  // Top-level supplementary files: exact repo-relative paths for archive-only
+  // files (README.md, LICENSE, ...). Shipped and hashed, never materialized.
+  // Must not resolve under skills/ — skill companions have exactly one
+  // declaration site (design D1).
+  'files?': 'string[]',
 }).narrow((data, ctx) => {
   // Constraint 0: the facet identity name must be a valid facet name. Either
   // an unscoped slug (`cowsay`) or a scoped `@scope/name` (`@julian/cowsay`).
@@ -117,11 +139,11 @@ export const FacetManifestSchema = type({
     }
   }
 
-  // Constraint 3: asset names must satisfy the Agent Skills grammar (see
-  // ./asset-name.ts). This tightens the previous path-safety-only check: a
-  // manifest declaring `MySkill` or `foo_bar` now fails at build AND install
-  // (this schema validates fetched manifests too). Because the grammar rejects
-  // empty, `.`, `..`, and backslash segments, it also subsumes the filesystem
+  // Constraint 3: asset names must satisfy the Agent Skills grammar as a
+  // single segment (see ./asset-name.ts). Current-format names are never
+  // slash-namespaced — multi-segment parsing is isolated to the legacy `0.1`
+  // schema (facet-manifest-legacy.ts). Because the grammar rejects empty,
+  // `.`, `..`, and backslash segments, it also subsumes the filesystem
   // safety the install pipeline needs when writing join(baseDir,
   // relativePathFor(type, name)). LockfileSchema intentionally keeps the
   // weaker `@agent-facets/common` path-safety guard so legacy installs with
@@ -134,10 +156,36 @@ export const FacetManifestSchema = type({
   for (const [group, record] of assetNameGroups) {
     if (!record) continue
     for (const key of Object.keys(record)) {
-      const check = validateAssetName(key)
+      const check = validateAssetNameSegment(key)
       if (!check.ok) {
         ctx.mustBe(`${group} name "${key}" ${check.reason}`)
       }
+    }
+  }
+
+  // Constraint 5: skills and commands share one logical namespace (design
+  // D9). A facet declaring both skill `review` and command `review` is
+  // invalid; the error identifies both declarations. Agents are a separate
+  // namespace.
+  if (data.skills && data.commands) {
+    for (const name of Object.keys(data.skills)) {
+      if (Object.hasOwn(data.commands, name)) {
+        ctx.mustBe(
+          `skills and commands share one namespace: "${name}" is declared as both skills.${name} and commands.${name}`,
+        )
+      }
+    }
+  }
+
+  // Constraint 6: supplementary declarations must yield a valid archive plan
+  // (design D3/D7): portable path grammar, declaration-site rules, and
+  // collision freedom across the whole planned entry set. Delegating to the
+  // shared derivation keeps this schema and every downstream consumer
+  // (build collection, hashing, verification) agreeing on one grammar.
+  const plan = planArchiveEntries(data)
+  if (!plan.ok) {
+    for (const error of plan.errors) {
+      ctx.mustBe(error.path ? `${error.path}: ${error.message}` : error.message)
     }
   }
 

@@ -4,7 +4,16 @@ import { type } from 'arktype'
 import { createTar, parseTar, type TarFileInput, type TarFileItem } from 'nanotar'
 import { FACET_MANIFEST_FILE, type ResolvedFacetManifest } from '../loaders/facet.ts'
 import { mapArkErrors, parseJson } from '../loaders/validate.ts'
-import { type BuildManifest, BuildManifestSchema } from '../schemas/build-manifest.ts'
+import {
+  BUILD_MANIFEST_NAME,
+  type BuildManifest,
+  BuildManifestSchema,
+  INNER_ARCHIVE_NAME,
+} from '../schemas/build-manifest.ts'
+
+// Outer-tar layout constants are defined beside the build-manifest schemas
+// (which pin them) and re-exported here for assembly/parsing consumers.
+export { BUILD_MANIFEST_NAME, INNER_ARCHIVE_NAME }
 
 export interface ArchiveEntry {
   path: string
@@ -99,12 +108,6 @@ export function assembleTar(entries: ArchiveEntry[]): Uint8Array {
 
   return createTar(files, { attrs: DETERMINISTIC_ATTRS })
 }
-
-/** Fixed name for the inner archive within the outer `.facet` tar. */
-export const INNER_ARCHIVE_NAME = 'archive.tar.gz'
-
-/** Fixed name for the build manifest within the outer `.facet` tar. */
-export const BUILD_MANIFEST_NAME = 'build-manifest.json'
 
 /**
  * Assembles the outer uncompressed tar that forms the `.facet` file.

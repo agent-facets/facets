@@ -358,8 +358,10 @@ describe('runBuildPipeline', () => {
     }
   })
 
-  test('build succeeds with cross-type name sharing', async () => {
-    const dir = await createFixtureDir('cross-type')
+  // Skills and commands share one logical namespace in the current manifest
+  // format (design D9); agents remain a separate namespace.
+  test('build fails when a skill and command share a name', async () => {
+    const dir = await createFixtureDir('cross-type-collision')
     await Bun.write(join(dir, 'skills/review/SKILL.md'), '# Review skill')
     await Bun.write(join(dir, 'commands/review.md'), '# Review command')
     await Bun.write(
@@ -372,6 +374,28 @@ describe('runBuildPipeline', () => {
         },
         commands: {
           review: { description: 'A review command' },
+        },
+      }),
+    )
+
+    const result = await runBuildPipeline(dir)
+    expect(result.ok).toBe(false)
+  })
+
+  test('build succeeds when an agent shares a name with a skill', async () => {
+    const dir = await createFixtureDir('cross-type-agent')
+    await Bun.write(join(dir, 'skills/review/SKILL.md'), '# Review skill')
+    await Bun.write(join(dir, 'agents/review.md'), '# Review agent')
+    await Bun.write(
+      join(dir, 'facet.json'),
+      JSON.stringify({
+        name: 'test-facet',
+        version: '1.0.0',
+        skills: {
+          review: { description: 'A review skill' },
+        },
+        agents: {
+          review: { description: 'A review agent' },
         },
       }),
     )

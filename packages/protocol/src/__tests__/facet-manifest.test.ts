@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { type FacetManifest, FacetManifestSchema } from '@agent-facets/protocol'
+import { type FacetManifest, FacetManifestSchema, LegacyFacetManifestSchema } from '@agent-facets/protocol'
 import { type } from 'arktype'
 
 // --- Valid manifests ---
@@ -245,7 +245,21 @@ describe('FacetManifestSchema — invalid manifests', () => {
     expect(FacetManifestSchema(input)).not.toBeInstanceOf(type.errors)
   })
 
-  test('deep-nested namespaced asset names (no traversal) stay valid', () => {
+  // Current-format names are single-segment only (design D9): slash-namespaced
+  // names are a legacy-0.1 concept, isolated to LegacyFacetManifestSchema.
+  test('slash-namespaced asset names are rejected in the current schema', () => {
+    const input = {
+      name: 'ok',
+      version: '1.0.0',
+      skills: {
+        'viper-plans/planning': { description: 'plan things' },
+      },
+    }
+    const result = FacetManifestSchema(input)
+    expect(result).toBeInstanceOf(type.errors)
+  })
+
+  test('slash-namespaced asset names remain valid under the legacy schema', () => {
     const input = {
       name: 'ok',
       version: '1.0.0',
@@ -254,7 +268,7 @@ describe('FacetManifestSchema — invalid manifests', () => {
         'viper-plans/review/deep': { description: 'deeper' },
       },
     }
-    const result = FacetManifestSchema(input)
+    const result = LegacyFacetManifestSchema(input)
     expect(result).not.toBeInstanceOf(type.errors)
   })
 
@@ -393,5 +407,126 @@ describe('FacetManifestSchema — unknown field tolerance', () => {
     const data = result as Record<string, unknown>
     const agents = data.agents as Record<string, Record<string, unknown>> | undefined
     expect(agents?.reviewer?.model).toBe('claude-sonnet')
+  })
+})
+
+// --- Current-format additions: shared namespace + supplementary files ---
+
+describe('FacetManifestSchema — shared skill/command namespace', () => {
+  test('skill and command with the same name are rejected, identifying both', () => {
+    const input = {
+      name: 'ok',
+      version: '1.0.0',
+      skills: { review: { description: 'x' } },
+      commands: { review: { description: 'y' } },
+    }
+    const result = FacetManifestSchema(input)
+    expect(result).toBeInstanceOf(type.errors)
+    const errors = result as InstanceType<typeof type.errors>
+    expect(errors.some((e) => e.message.includes('skills.review') && e.message.includes('commands.review'))).toBe(true)
+  })
+
+  test('agent may share a name with a skill', () => {
+    const input = {
+      name: 'ok',
+      version: '1.0.0',
+      skills: { review: { description: 'x' } },
+      agents: { review: { description: 'y' } },
+    }
+    expect(FacetManifestSchema(input)).not.toBeInstanceOf(type.errors)
+  })
+
+  test('agent may share a name with a command', () => {
+    const input = {
+      name: 'ok',
+      version: '1.0.0',
+      commands: { review: { description: 'x' } },
+      agents: { review: { description: 'y' } },
+    }
+    expect(FacetManifestSchema(input)).not.toBeInstanceOf(type.errors)
+  })
+
+  test('legacy schema permits skill/command name sharing', () => {
+    const input = {
+      name: 'ok',
+      version: '1.0.0',
+      skills: { review: { description: 'x' } },
+      commands: { review: { description: 'y' } },
+    }
+    expect(LegacyFacetManifestSchema(input)).not.toBeInstanceOf(type.errors)
+  })
+})
+
+describe('FacetManifestSchema — supplementary file declarations', () => {
+  test('top-level and per-skill files declarations are accepted', () => {
+    const input = {
+      name: 'ok',
+      version: '1.0.0',
+      skills: { review: { description: 'x', files: ['references/api.md', 'scripts/run.ts'] } },
+      files: ['README.md', 'LICENSE', 'docs/notes.md'],
+    }
+    expect(FacetManifestSchema(input)).not.toBeInstanceOf(type.errors)
+  })
+
+  test.each([
+    ['../secret'],
+    ['/absolute'],
+    ['C:/secret'],
+    ['docs//guide.md'],
+    ['docs\\guide.md'],
+    ['aux.txt'],
+    ['report.'],
+  ])('unsafe top-level path %j is rejected', (path) => {
+    const input = { name: 'ok', version: '1.0.0', agents: { a: { description: 'x' } }, files: [path] }
+    expect(FacetManifestSchema(input)).toBeInstanceOf(type.errors)
+  })
+
+  test('top-level path under skills/ is rejected toward the owning skill', () => {
+    const input = {
+      name: 'ok',
+      version: '1.0.0',
+      skills: { review: { description: 'x' } },
+      files: ['skills/review/references/api.md'],
+    }
+    const result = FacetManifestSchema(input)
+    expect(result).toBeInstanceOf(type.errors)
+    const errors = result as InstanceType<typeof type.errors>
+    expect(errors.some((e) => e.message.includes("owning skill's files"))).toBe(true)
+  })
+
+  test('skill companion SKILL.md is rejected', () => {
+    const input = {
+      name: 'ok',
+      version: '1.0.0',
+      skills: { review: { description: 'x', files: ['SKILL.md'] } },
+    }
+    expect(FacetManifestSchema(input)).toBeInstanceOf(type.errors)
+  })
+
+  test('root facet.json declaration is rejected; nested basename is fine', () => {
+    const bad = { name: 'ok', version: '1.0.0', agents: { a: { description: 'x' } }, files: ['facet.json'] }
+    expect(FacetManifestSchema(bad)).toBeInstanceOf(type.errors)
+    const good = { name: 'ok', version: '1.0.0', agents: { a: { description: 'x' } }, files: ['fixtures/facet.json'] }
+    expect(FacetManifestSchema(good)).not.toBeInstanceOf(type.errors)
+  })
+
+  test('portable collision between declared paths is rejected', () => {
+    const input = {
+      name: 'ok',
+      version: '1.0.0',
+      agents: { a: { description: 'x' } },
+      files: ['Docs/guide.md', 'docs/guide.md'],
+    }
+    expect(FacetManifestSchema(input)).toBeInstanceOf(type.errors)
+  })
+
+  test('declared path colliding with a primary asset path is rejected', () => {
+    const input = {
+      name: 'ok',
+      version: '1.0.0',
+      agents: { reviewer: { description: 'x' } },
+      files: ['agents/reviewer.md'],
+    }
+    expect(FacetManifestSchema(input)).toBeInstanceOf(type.errors)
   })
 })
