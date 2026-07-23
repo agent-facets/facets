@@ -1,0 +1,70 @@
+{
+  "change": "support-non-asset-files",
+  "schema": "spec-driven",
+  "entries": {
+    "proposal": {
+      "artifactId": "proposal",
+      "mainPaths": ["proposal.md"],
+      "adversarialPaths": ["adversarial/artifacts/proposal.md"],
+      "reviewPath": "adversarial/reviews/proposal-review.md",
+      "dependencies": [],
+      "status": "reconciled",
+      "authoredAt": "2026-07-13T17:57:17Z",
+      "comparedAt": "2026-07-13T17:59:26Z",
+      "reconciledAt": "2026-07-13T18:14:00Z",
+      "notes": "Adopted all 7 review findings: added mandatory Non-goals section; explicit manifest declaration as single source of archive membership (syntax deferred to design); full validation boundary (missing/undeclared/unsafe/colliding paths); dropped premature build-manifest assets-map commitment in favor of asset/supplementary distinction; atomic multi-file skill lifecycle with drift-removal receipts; supplementary files prohibited from becoming independently addressable assets; compatibility upgraded from forward-compat note to BREAKING with explicit version boundary + legacy compat tests; Impact extended with security/compat test matrix, both guides, and root README. Partially adopted lockfile.mdx wording (review required, update conditional on design outcome)."
+    },
+    "design": {
+      "artifactId": "design",
+      "mainPaths": ["design.md"],
+      "adversarialPaths": ["adversarial/artifacts/design.md"],
+      "reviewPath": "adversarial/reviews/design-review.md",
+      "dependencies": ["proposal"],
+      "status": "reconciled",
+      "authoredAt": "2026-07-13T18:10:26Z",
+      "comparedAt": "2026-07-13T18:19:40Z",
+      "reconciledAt": "2026-07-13T18:41:00Z",
+      "notes": "Adopted all 10 review findings (nothing material rejected; Main's structural base retained per the review itself). Added D3 shared tagged archive-plan derivation as single source of membership/classification; 0.2 build manifest replaces parallel assets+files maps with one all-entry hash map + strict version dispatch; protocol package and adapter SDK each ship the breaking change in their next pre-1.0 minor release; D7 grammar expanded with exhaustive path/tar checks (NUL, drive prefixes, Unicode/case-fold aliases, prefix collisions, symlink/hardlink identity, duplicate headers, non-regular entries, dist/ cleanup ordering) + per-class test matrix; D8 adapter contract rewritten to tagged payload unions with atomic stage/commit/rollback skill bundles; D9 receipt rewritten to tagged records with complete owned path sets, legacy tuples refined to empty companion sets (removed the inconsistent one-install-cycle orphan claim), receipt+materialization as one rollback unit; D11 scaffold writes a declared README.md by default and edit gains scaffold-or-remove for vanished declarations; Migration Plan reordered consumer-first with cafe as hard gate and irreversibility note; old-builder-ignores-files hazard added to Risks; all three Open Questions closed as decisions."
+    },
+    "specs": {
+      "artifactId": "specs",
+      "mainPaths": [
+        "specs/adapter__assets/spec.md",
+        "specs/authoring__facets/spec.md",
+        "specs/installation/spec.md",
+        "specs/protocol/spec.md",
+        "specs/protocol__content-hashing/spec.md",
+        "specs/protocol__integrity/spec.md",
+        "specs/protocol__schemas/spec.md"
+      ],
+      "adversarialPaths": [
+        "adversarial/artifacts/specs/adapter__assets/spec.md",
+        "adversarial/artifacts/specs/authoring__facets/spec.md",
+        "adversarial/artifacts/specs/installation/spec.md",
+        "adversarial/artifacts/specs/protocol/spec.md",
+        "adversarial/artifacts/specs/protocol__content-hashing/spec.md",
+        "adversarial/artifacts/specs/protocol__integrity/spec.md",
+        "adversarial/artifacts/specs/protocol__schemas/spec.md"
+      ],
+      "reviewPath": "adversarial/reviews/specs-review.md",
+      "dependencies": ["proposal"],
+      "status": "reconciled",
+      "authoredAt": "2026-07-20T02:29:51Z",
+      "comparedAt": "2026-07-20T02:34:01Z",
+      "reconciledAt": "2026-07-20T02:59:20Z",
+      "notes": "Retained Main as the base across all seven capability specs. Adopted the two archive trust-boundary scenarios, known-versus-unknown upgrade guidance, and fidelity restorations for semantic-version removal, flat build-manifest shape, verifier I/O purity, authoring reconciliation/template/path/summary behavior, receipt isolation/frozen ordering, and adapter request identity. Rejected redundant schema-level and overlapping standalone requirements from the adversarial version. Strict OpenSpec validation passed; all adversarial artifacts and the comparison review were retained."
+    },
+    "tasks": {
+      "artifactId": "tasks",
+      "mainPaths": ["tasks.md"],
+      "adversarialPaths": ["adversarial/artifacts/tasks.md"],
+      "reviewPath": "adversarial/reviews/tasks-review.md",
+      "dependencies": ["specs", "design"],
+      "status": "reconciled",
+      "authoredAt": "2026-07-20T04:29:40Z",
+      "comparedAt": "2026-07-20T04:31:25Z",
+      "reconciledAt": "2026-07-20T14:02:42Z",
+      "notes": "Retained Main as the structural base. Adopted an explicit full-cycle and legacy-0.1 end-to-end test, an inline D7 failure-class matrix, an explicit permanent protocol release-policy obligation through the authoritative delta/spec-sync path, and a final scenario-by-scenario coverage and rollout-order audit. Rejected the adversarial plan's alternative block structure and narrower adapter, documentation, producer-gate, and authoring coverage. Strict OpenSpec validation passed; the adversarial artifact and comparison review were retained."
+    }
+  }
+}
