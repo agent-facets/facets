@@ -59,9 +59,9 @@ export async function resolveFacet(args: ResolveFacetArgs): Promise<ResolveFacet
 
   switch (source.kind) {
     case 'registry':
-      return resolveRegistryFacet({ facetName, source, effectiveLocked, onStage, onLog })
+      return resolveRegistryFacet({ facetName, source, effectiveLocked, frozenLockfile, onStage, onLog })
     case 'git':
-      return resolveGitFacet({ facetName, source, adapters, effectiveLocked, onStage, onLog })
+      return resolveGitFacet({ facetName, source, adapters, effectiveLocked, frozenLockfile, onStage, onLog })
     case 'local':
       return resolveLocalFacet({
         facetName,

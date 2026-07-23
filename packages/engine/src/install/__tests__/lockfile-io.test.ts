@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { CURRENT_LOCKFILE_VERSION, LEGACY_LOCKFILE_VERSION } from '@agent-facets/protocol'
 import { FACETS_LOCK_FILE, loadLockfile, writeLockfile } from '../lockfile-io.ts'
 
 let projectRoot: string
@@ -15,20 +16,52 @@ afterEach(() => {
 })
 
 describe('loadLockfile — empty/missing', () => {
-  test('missing file returns empty lockfile with existed=false', () => {
+  test('missing file returns a current (0.2) empty lockfile with existed=false', () => {
     const result = loadLockfile(projectRoot)
     expect(result.ok).toBe(true)
-    if (result.ok) {
-      expect(result.existed).toBe(false)
-      expect(result.data.facets).toEqual({})
-    }
+    if (!result.ok) expect.unreachable()
+    expect(result.existed).toBe(false)
+    expect(result.data.facets).toEqual({})
+    expect(result.data.lockfileVersion).toBe(CURRENT_LOCKFILE_VERSION)
+    expect(result.version).toBe(CURRENT_LOCKFILE_VERSION)
   })
 })
 
 describe('loadLockfile — round-trip', () => {
-  test('writes and reads back an identical lockfile', () => {
+  test('writes and reads back an identical current (0.2) lockfile', () => {
     const lockfile = {
-      lockfileVersion: 1 as const,
+      lockfileVersion: CURRENT_LOCKFILE_VERSION as typeof CURRENT_LOCKFILE_VERSION,
+      facets: {
+        'viper-plans': {
+          source: {
+            kind: 'git' as const,
+            url: 'github:agent-facets/viper-plans#main',
+            commit: 'abc123def0123456789abc123def0123456789ab',
+          },
+          version: '0.1.0',
+          integrity: 'sha256:deadbeef',
+          assets: [
+            {
+              scope: 'project' as const,
+              type: 'skill' as const,
+              name: 'planning',
+              files: [{ path: 'skills/planning/SKILL.md', integrity: `sha256:${'0'.repeat(64)}` }],
+            },
+          ],
+        },
+      },
+    }
+    writeLockfile(projectRoot, lockfile)
+    const loaded = loadLockfile(projectRoot)
+    expect(loaded.ok).toBe(true)
+    if (!loaded.ok) expect.unreachable()
+    expect(loaded.data).toEqual(lockfile)
+    expect(loaded.version).toBe(CURRENT_LOCKFILE_VERSION)
+  })
+
+  test('loads a legacy-alpha (1) lockfile under the legacy schema during the compatibility window', () => {
+    const legacy = {
+      lockfileVersion: LEGACY_LOCKFILE_VERSION as typeof LEGACY_LOCKFILE_VERSION,
       facets: {
         'viper-plans': {
           source: {
@@ -42,10 +75,12 @@ describe('loadLockfile — round-trip', () => {
         },
       },
     }
-    writeLockfile(projectRoot, lockfile)
+    writeLockfile(projectRoot, legacy)
     const loaded = loadLockfile(projectRoot)
     expect(loaded.ok).toBe(true)
-    if (loaded.ok) expect(loaded.data).toEqual(lockfile)
+    if (!loaded.ok) expect.unreachable()
+    expect(loaded.data).toEqual(legacy)
+    expect(loaded.version).toBe(LEGACY_LOCKFILE_VERSION)
   })
 })
 
@@ -68,25 +103,59 @@ describe('loadLockfile — error paths', () => {
   })
 })
 
-// F9 — forward-compat guard. A lockfile from a future CLI must produce a
-// clear "upgrade the CLI" message, not a generic arktype mismatch.
-describe('loadLockfile — F9 forward-compat guard', () => {
-  test('lockfileVersion > LOCKFILE_VERSION fails with an actionable error', () => {
+// Exact version dispatch (design D10). An unsupported/unknown version must
+// produce an actionable "upgrade the CLI" message, not a generic arktype
+// mismatch — and dispatch is by exact equality, never numeric ordering.
+describe('loadLockfile — exact version dispatch', () => {
+  test('an unsupported lockfileVersion fails with an actionable error', () => {
     writeFileSync(join(projectRoot, FACETS_LOCK_FILE), JSON.stringify({ lockfileVersion: 99, facets: {} }))
     const result = loadLockfile(projectRoot)
     expect(result.ok).toBe(false)
-    if (!result.ok) {
-      expect(result.error).toContain('newer facet CLI')
-      expect(result.error).toContain('lockfileVersion 99')
-      expect(result.error).toContain('Upgrade the CLI')
-    }
+    if (result.ok) expect.unreachable()
+    expect(result.error).toContain('unsupported lockfileVersion')
+    expect(result.error).toContain('99')
+    expect(result.error).toContain('Upgrade the CLI')
   })
 
-  test('lockfileVersion equal to LOCKFILE_VERSION loads normally', () => {
+  test('legacy-alpha version 1 loads under the legacy schema', () => {
     writeFileSync(join(projectRoot, FACETS_LOCK_FILE), JSON.stringify({ lockfileVersion: 1, facets: {} }))
     const result = loadLockfile(projectRoot)
     expect(result.ok).toBe(true)
-    if (result.ok) expect(result.existed).toBe(true)
+    if (!result.ok) expect.unreachable()
+    expect(result.existed).toBe(true)
+    expect(result.version).toBe(LEGACY_LOCKFILE_VERSION)
+  })
+
+  test('current version 0.2 loads under the current schema', () => {
+    writeFileSync(join(projectRoot, FACETS_LOCK_FILE), JSON.stringify({ lockfileVersion: 0.2, facets: {} }))
+    const result = loadLockfile(projectRoot)
+    expect(result.ok).toBe(true)
+    if (!result.ok) expect.unreachable()
+    expect(result.existed).toBe(true)
+    expect(result.version).toBe(CURRENT_LOCKFILE_VERSION)
+  })
+
+  test('a malformed 0.2 lockfile is not reinterpreted as legacy 1', () => {
+    // `files` is required on 0.2 asset entries; omitting it is a 0.2 schema
+    // violation, never a fallback to the legacy identity-only shape.
+    writeFileSync(
+      join(projectRoot, FACETS_LOCK_FILE),
+      JSON.stringify({
+        lockfileVersion: 0.2,
+        facets: {
+          x: {
+            source: { kind: 'registry', registry: 'https://example.com' },
+            version: '1.0.0',
+            integrity: 'sha256:deadbeef',
+            assets: [{ scope: 'project', type: 'skill', name: 'planning' }],
+          },
+        },
+      }),
+    )
+    const result = loadLockfile(projectRoot)
+    expect(result.ok).toBe(false)
+    if (result.ok) expect.unreachable()
+    expect(result.error).toContain('lockfileVersion 0.2')
   })
 })
 

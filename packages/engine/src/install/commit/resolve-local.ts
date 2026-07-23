@@ -4,8 +4,8 @@ import { verifyLockfileOneCheck } from '@agent-facets/protocol'
 import { runBuildPipeline } from '../../build/pipeline.ts'
 import { resolveLocalFacetSource } from '../../sources/facet/resolve-local.ts'
 import type { Source } from '../../sources/facet/types.ts'
-import { computeAssetList } from '../materialize.ts'
 import type { OnLog, StageEvent } from '../types.ts'
+import { buildVerifiedAssetPlan } from '../verified-asset-plan.ts'
 import { buildLockfileSource, loadFacetContent } from './finalize-facet.ts'
 import type { ResolveFacetResult } from './types.ts'
 
@@ -85,16 +85,22 @@ export async function resolveLocalFacet(args: ResolveLocalFacetArgs): Promise<Re
     }
   } else {
     // Non-frozen: local is mutable by design; the user owns the version
-    // and content, and the lockfile follows what's on disk.
+    // and content, and the lockfile follows what's on disk. Per-file
+    // `files[]` records are derived from the built dir so the entry is
+    // recorded at `0.2`.
     const buildSource = buildLockfileSource(facetName, source, undefined)
     if (!buildSource.ok) {
       return { ok: false, failure: buildSource.failure }
+    }
+    const plan = buildVerifiedAssetPlan(content.manifest, local.dir)
+    if (!plan.ok) {
+      return { ok: false, failure: { code: 'BUILD_FAILED', facet: facetName, errors: plan.errors } }
     }
     entry = {
       source: buildSource.source,
       version: buildResult.data.version,
       integrity: buildResult.integrity,
-      assets: computeAssetList(content.resolved),
+      assets: plan.plan.assets,
     }
   }
 

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
 import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
+import { CURRENT_LOCKFILE_VERSION } from '@agent-facets/protocol'
 
 /**
  * Tests for the `facet remove` orchestrator (`runRemove`).
@@ -279,9 +280,11 @@ describe('runRemove — last facet', () => {
 
     expect(Object.keys(readFacets())).toHaveLength(0)
     expect(Object.keys(readLockfileFacets())).toHaveLength(0)
-    // Lockfile is still structurally valid (declares a version).
+    // Lockfile is still structurally valid: a normal install writes the
+    // current (`0.2`) schema. Version dispatch is exact, not ordered, so
+    // `0.2` is the current version even though it is numerically < 1.
     const lock = JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8'))
-    expect(lock.lockfileVersion).toBeGreaterThanOrEqual(1)
+    expect(lock.lockfileVersion).toBe(CURRENT_LOCKFILE_VERSION)
   })
 })
 
