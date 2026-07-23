@@ -99,20 +99,20 @@
 
 ## 10. Current Producer and Build Pipeline — Research
 
-- [ ] 10.1 Explore: Trace source-file loading, build validation stages, archive assembly, output cleanup, and build-result rendering
-- [ ] 10.2 Explore: Inspect source filesystem APIs needed to reject missing files, links, resolved aliases, and non-regular declarations before output mutation
-- [ ] 10.3 Explore: Inspect Changesets and CLI packaging to confirm the complete `0.2` producer may be implemented and merged without publishing `agent-facets`, while protocol, registry, adapter, and final CLI activation remain independently controlled release gates
-- [ ] 10.4 Propose: Define the producer implementation that reuses the archive plan, preserves deterministic bytes, validates before cleanup, emits only current-format output in the unreleased candidate, and requires no long-lived runtime dual-format flag
+- [x] 10.1 Explore: Trace source-file loading, build validation stages, archive assembly, output cleanup, and build-result rendering
+- [x] 10.2 Explore: Inspect source filesystem APIs needed to reject missing files, links, resolved aliases, and non-regular declarations before output mutation
+- [x] 10.3 Explore: Inspect Changesets and CLI packaging to confirm the complete `0.2` producer may be implemented and merged without publishing `agent-facets`, while protocol, registry, adapter, and final CLI activation remain independently controlled release gates
+- [x] 10.4 Propose: Define the producer implementation that reuses the archive plan, preserves deterministic bytes, validates before cleanup, emits only current-format output in the unreleased candidate, and requires no long-lived runtime dual-format flag
 
 ## 11. Current Producer and Build Pipeline — Implementation
 
-- [ ] 11.1 Implement: Load declared supplementary files as exact bytes, validate their resolved regular-file identities, and preserve previous `dist/` output on every input failure
-- [ ] 11.2 Implement: Drive archive collection and all-entry hashing from the shared archive plan, preserving deterministic ordering and opaque binary or empty supplementary content
-- [ ] 11.3 Implement: Switch every build in the unreleased source candidate, including asset-only facets, to flat build-manifest `0.2` output with a complete `files` map while retaining legacy consumer support
-- [ ] 11.4 Implement: Update build results and CLI output to show the emitted format, complete entry listing, integrity, and archive-assembly stage
-- [ ] 11.5 Implement: Add the build failure-class matrix for traversal, absolute/drive/URL prefixes, backslashes, NUL, empty/`.`/`..` segments, Unicode-normalization and portable-case aliases, Windows-reserved device names, forbidden portable characters, trailing dot/space segments, file/directory prefix collisions, symlinks, hard links, duplicate paths, reserved root `facet.json`, conventional-primary-path collisions, missing declarations, undeclared entries, and tampered bytes, plus success tests for top-level files, nested companions, binary/empty bytes, exact manifest-byte hashing, canonical-tar determinism, scoped output paths, and validation-before-cleanup
-- [ ] 11.6 Implement: Add a reproducible candidate archive/interop path that can produce a representative `0.2` artifact for registry stage acceptance without publishing or releasing the CLI
-- [ ] 11.7 Verify: Run focused build pipeline and CLI build tests and inspect representative `0.2` archives for exact deterministic membership while confirming no `agent-facets` release changeset is present
+- [x] 11.1 Implement: Load declared supplementary files as exact bytes, validate their resolved regular-file identities, and preserve previous `dist/` output on every input failure
+- [x] 11.2 Implement: Drive archive collection and all-entry hashing from the shared archive plan, preserving deterministic ordering and opaque binary or empty supplementary content
+- [x] 11.3 Implement: Switch every build in the unreleased source candidate, including asset-only facets, to flat build-manifest `0.2` output with a complete `files` map while retaining legacy consumer support
+- [x] 11.4 Implement: Update build results and CLI output to show the emitted format, complete entry listing, integrity, and archive-assembly stage
+- [x] 11.5 Implement: Add the build failure-class matrix for traversal, absolute/drive/URL prefixes, backslashes, NUL, empty/`.`/`..` segments, Unicode-normalization and portable-case aliases, Windows-reserved device names, forbidden portable characters, trailing dot/space segments, file/directory prefix collisions, symlinks, hard links, duplicate paths, reserved root `facet.json`, conventional-primary-path collisions, missing declarations, undeclared entries, and tampered bytes, plus success tests for top-level files, nested companions, binary/empty bytes, exact manifest-byte hashing, canonical-tar determinism, scoped output paths, and validation-before-cleanup
+- [x] 11.6 Implement: Add a reproducible candidate archive/interop path that can produce a representative `0.2` artifact for registry stage acceptance without publishing or releasing the CLI
+- [x] 11.7 Verify: Run focused build pipeline and CLI build tests and inspect representative `0.2` archives for exact deterministic membership while confirming no `agent-facets` release changeset is present
 
 ## 12. Create and Edit Authoring — Research
 

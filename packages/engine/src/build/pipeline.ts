@@ -4,12 +4,13 @@ import type { ValidationError } from '@agent-facets/common'
 import {
   assembleOuterTar,
   assembleTar,
-  collectArchiveEntries,
   computeAssetHashes,
   computeContentHash,
   detectNamingCollisions,
+  FACET_ARCHIVE_VERSION,
   FACET_MANIFEST_FILE,
   INNER_ARCHIVE_NAME,
+  planArchiveEntries,
   type ResolvedFacetManifest,
   validateCompactFacets,
   validateContentFiles,
@@ -19,6 +20,12 @@ import { jsonFileText } from '../json-file-text.ts'
 import { loadManifest, resolvePrompts } from '../loaders/facet.ts'
 import { buildArtifactFilename } from '../registry/artifact-path.ts'
 import { compressArchive } from './compress.ts'
+import {
+  collectArchiveEntriesFromPlan,
+  type LoadedSupplementaryFile,
+  loadSupplementarySources,
+  supplementarySourceFailureToValidationError,
+} from './load-supplementary-sources.ts'
 import { validateAdapterMetadata } from './validate-adapters.ts'
 
 export interface BuildProgress {
@@ -30,11 +37,20 @@ export interface BuildResult {
   ok: true
   data: ResolvedFacetManifest
   warnings: string[]
+  /** The emitted archive-format version (currently always `0.2`). */
+  facetVersion: number
   /** The complete .facet file bytes (outer uncompressed tar containing manifest + inner archive) */
   archiveBytes: Uint8Array
   integrity: string
   archiveFilename: string
-  assetHashes: Record<string, string>
+  /**
+   * Complete per-entry hash map for every inner-archive entry: `facet.json`,
+   * every primary asset, and every supplementary file (skill companions and
+   * archive-only files). Keyed by canonical inner-archive path. This is the
+   * full `files` map embedded in the `0.2` build manifest, not a
+   * primary-asset-only subset.
+   */
+  fileHashes: Record<string, string>
   /** Serialized build-manifest.json content (for --emit-manifest and test verification) */
   manifestJson: string
 }
@@ -56,6 +72,7 @@ export type BuildFailure =
 export const BUILD_STAGES = [
   'Parsing manifest',
   'Resolving prompts',
+  'Loading files',
   'Validating assets',
   'Checking collisions',
   'Validating adapters',
@@ -124,6 +141,36 @@ export async function runBuildPipeline(
 
   onProgress?.({ stage: 'Resolving prompts', status: 'done' })
 
+  // Stage 2b: Derive the shared archive plan and load every declared
+  // supplementary file's exact bytes, validating its resolved source
+  // identity (regular file, no links, contained in the tree) BEFORE any
+  // output is touched. `planArchiveEntries` re-runs the pure path-grammar
+  // and collision checks the manifest schema already narrowed on; a
+  // validated manifest always yields `ok: true`, so a plan failure here is
+  // defensive. All disk-identity failures preserve previous `dist/` output
+  // because the caller only writes on `ok: true`.
+  onProgress?.({ stage: 'Loading files', status: 'running' })
+
+  const plan = planArchiveEntries(manifest)
+  if (!plan.ok) {
+    onProgress?.({ stage: 'Loading files', status: 'failed' })
+    return { ok: false, kind: 'validation', errors: plan.errors, warnings }
+  }
+
+  const supplementaryResult = await loadSupplementarySources(rootDir, plan.data)
+  if (!supplementaryResult.ok) {
+    onProgress?.({ stage: 'Loading files', status: 'failed' })
+    return {
+      ok: false,
+      kind: 'validation',
+      errors: supplementaryResult.failures.map(supplementarySourceFailureToValidationError),
+      warnings,
+    }
+  }
+  const supplementaryFiles: LoadedSupplementaryFile[] = supplementaryResult.files
+
+  onProgress?.({ stage: 'Loading files', status: 'done' })
+
   // Stage 3: Validate assets (no empty files; author front matter is OK)
   onProgress?.({ stage: 'Validating assets', status: 'running' })
 
@@ -170,19 +217,29 @@ export async function runBuildPipeline(
 
   const resolved = resolveResult.data
   const manifestContent = await Bun.file(join(rootDir, FACET_MANIFEST_FILE)).text()
-  const entries = collectArchiveEntries(resolved, manifestContent)
-  const assetHashes = computeAssetHashes(entries)
+  // Membership and ordering come from the one shared archive plan (design
+  // D3) — the same derivation verification consumes — so producer and
+  // verifier can never disagree about which paths an archive contains. The
+  // plan is pre-sorted, so tar assembly is deterministic.
+  const entries = collectArchiveEntriesFromPlan(plan.data, manifestContent, resolved, supplementaryFiles)
+  const fileHashes = computeAssetHashes(entries)
   const tarBytes = assembleTar(entries)
   const integrity = computeContentHash(tarBytes)
   const innerArchiveBytes = compressArchive(tarBytes)
   const archiveFilename = buildArtifactFilename(resolved.name, resolved.version)
 
-  // Build the build manifest and wrap into the outer tar
+  // Build the current `0.2` build manifest and wrap into the outer tar.
+  // Every build — asset-only or with supplementary files — emits the
+  // current flat shape: `facetVersion: 0.2`, the canonical `archive` name,
+  // `integrity`, and a complete `files` map (manifest + primaries +
+  // supplementary), derived from the shared plan above. `0.1`/`assets`
+  // remains a legacy *consumer* input only; producers never emit it. There
+  // is no runtime flag or conditional dual-format mode.
   const buildManifest = {
-    facetVersion: 0.1,
+    facetVersion: FACET_ARCHIVE_VERSION,
     archive: INNER_ARCHIVE_NAME,
     integrity,
-    assets: assetHashes,
+    files: fileHashes,
   }
   const manifestJson = jsonFileText(buildManifest)
   const archiveBytes = assembleOuterTar(manifestJson, innerArchiveBytes)
@@ -193,10 +250,11 @@ export async function runBuildPipeline(
     ok: true,
     data: resolved,
     warnings,
+    facetVersion: FACET_ARCHIVE_VERSION,
     archiveBytes,
     integrity,
     archiveFilename,
-    assetHashes,
+    fileHashes,
     manifestJson,
   }
 }

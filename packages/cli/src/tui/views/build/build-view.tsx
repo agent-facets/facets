@@ -17,6 +17,8 @@ import { THEME } from '../../theme.ts'
 interface BuildViewResult {
   name: string
   version: string
+  facetVersion: number
+  /** Complete inner-archive entry listing (manifest, primaries, supplementary). */
   files: string[]
   archiveFilename: string
   integrity: string
@@ -98,12 +100,13 @@ export function BuildView({
     try {
       await writeBuildOutput(pipelineResult, rootDir, { emitManifest })
 
-      const files = Object.keys(pipelineResult.assetHashes).sort()
+      const files = Object.keys(pipelineResult.fileHashes).sort()
 
       updateStage('Writing output', { status: 'done' })
       setResult({
         name: pipelineResult.data.name,
         version: pipelineResult.data.version,
+        facetVersion: pipelineResult.facetVersion,
         files,
         archiveFilename: pipelineResult.archiveFilename,
         integrity: pipelineResult.integrity,
@@ -183,13 +186,14 @@ export function BuildView({
             Built successfully → dist/
           </Text>
           <Text> {result.archiveFilename}</Text>
+          <Text color={THEME.hint}> facetVersion {result.facetVersion}</Text>
           <Text color={THEME.hint}> Archive contents:</Text>
           {result.files.map((f) => (
             <Text key={f}> {f}</Text>
           ))}
           <Box marginTop={1}>
             <Text color={THEME.hint}>
-              {result.files.length} asset{result.files.length !== 1 ? 's' : ''} · {result.integrity}
+              {result.files.length} entr{result.files.length !== 1 ? 'ies' : 'y'} · {result.integrity}
             </Text>
           </Box>
           <Box marginTop={1}>

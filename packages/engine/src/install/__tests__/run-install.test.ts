@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
 import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
-import type { BuildManifest } from '@agent-facets/protocol'
+import type { CurrentBuildManifest } from '@agent-facets/protocol'
 
 /**
  * Tests for `runInstall`'s manifest-vs-lockfile reconciliation.
@@ -46,12 +46,13 @@ function describeSpec(spec: { kind: string; major?: number; minor?: number; patc
 }
 
 /** Build the fixture's genuine build manifest — the same artifact a real
- *  registry would serve in the outer tar. */
-async function manifestFor(fixtureDir: string): Promise<BuildManifest> {
+ *  registry would serve in the outer tar. Producers emit the current `0.2`
+ *  flat shape (`files` map). */
+async function manifestFor(fixtureDir: string): Promise<CurrentBuildManifest> {
   const { runBuildPipeline } = await import('../../build/pipeline.ts')
   const built = await runBuildPipeline(fixtureDir, [])
   if (!built.ok) throw new Error('test bug: fixture failed to build')
-  return JSON.parse(built.manifestJson) as BuildManifest
+  return JSON.parse(built.manifestJson) as CurrentBuildManifest
 }
 
 mock.module('../../registry/resolve-metadata.ts', () => ({
@@ -90,7 +91,7 @@ mock.module('../../registry/download.ts', () => ({
     }
     cpSync(fixture, dest, { recursive: true })
     const manifest = await manifestFor(fixture)
-    return { ok: true, value: { integrity: manifest.integrity, fileHashes: manifest.assets } }
+    return { ok: true, value: { integrity: manifest.integrity, fileHashes: manifest.files } }
   },
 }))
 
