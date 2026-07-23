@@ -3,13 +3,22 @@ import { join } from 'node:path'
 import type { FacetsJson, Lockfile, LockfileFacet } from '@agent-facets/protocol'
 import { writeFacetsJson } from '../../manifest/project-files.ts'
 import { FACETS_LOCK_FILE, writeLockfile } from '../lockfile-io.ts'
-import { type Receipt, type ReceiptFacetEntry, receiptPath, writeReceipt } from '../receipt.ts'
+import {
+  ownedPathsForLockedAsset,
+  type Receipt,
+  type ReceiptFacetEntry,
+  receiptPath,
+  writeReceipt,
+} from '../receipt.ts'
 import type { OnLog, RunInstallFailure } from '../types.ts'
 
 /**
- * Derive the new receipt from the entries this run resolved. The
- * receipt records `{ version, assets[] }` per facet — a self-sufficient
- * deletion record for future drift removal.
+ * Derive the new receipt from the entries this run resolved. The receipt
+ * records `{ version, assets[] }` per facet, each asset carrying the owned
+ * inner-archive file paths mirrored from the lockfile — a self-sufficient,
+ * offline-capable deletion record for future drift removal. Paths come from
+ * the `0.2` lockfile asset `files[]`; a legacy identity-only asset seeds its
+ * single conventional primary path.
  */
 export function buildUpdatedReceipt(
   receipt: Receipt,
@@ -19,7 +28,12 @@ export function buildUpdatedReceipt(
   for (const [name, entry] of Object.entries(newFacetEntries)) {
     facets[name] = {
       version: entry.version,
-      assets: entry.assets.map((a) => ({ scope: a.scope, type: a.type, name: a.name })),
+      assets: entry.assets.map((a) => ({
+        scope: a.scope,
+        type: a.type,
+        name: a.name,
+        files: ownedPathsForLockedAsset(a),
+      })),
     }
   }
   return { ...receipt, facets }

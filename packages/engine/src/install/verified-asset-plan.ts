@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { ValidationError } from '@agent-facets/common'
 import { type FacetManifest, planArchiveEntries } from '@agent-facets/protocol'
 import { computeDirIntegrity } from '../cache/index.ts'
@@ -177,4 +179,50 @@ const TYPE_ORDER: Record<VerifiedAsset['type'], number> = { skill: 0, agent: 1, 
 function assetOrder(a: VerifiedAsset, b: VerifiedAsset): number {
   if (a.type !== b.type) return TYPE_ORDER[a.type] - TYPE_ORDER[b.type]
   return a.name < b.name ? -1 : a.name > b.name ? 1 : 0
+}
+
+/**
+ * A canonical map of skill companion paths (relative to the skill root) to
+ * their exact bytes — the shape the adapter skill-install contract's
+ * `companions` field expects. `SKILL.md` (the primary) is NOT included; it is
+ * carried as the request's `content`.
+ */
+export type SkillCompanionBytes = Record<string, Uint8Array>
+
+/**
+ * Read the companion bytes for every skill in a verified asset plan from the
+ * verified directory, keyed by `type:name` asset identity.
+ *
+ * Companion bytes are read verbatim (opaque `Uint8Array`) — never decoded or
+ * front-matter processed. Paths are converted from the plan's full inner-
+ * archive form (`skills/<name>/references/api.md`) to the skill-root-relative
+ * form the adapter contract uses (`references/api.md`). Only skill assets with
+ * companions beyond `SKILL.md` appear in the result; a companion-less skill
+ * maps to an empty companion map.
+ *
+ * `verifiedDir` MUST be the same verified directory the plan was derived from.
+ */
+export function readSkillCompanionBytes(
+  plan: VerifiedAssetPlan,
+  verifiedDir: string,
+): Map<string, SkillCompanionBytes> {
+  const byAsset = new Map<string, SkillCompanionBytes>()
+  for (const asset of plan.assets) {
+    if (asset.type !== 'skill') continue
+    const skillRoot = `skills/${asset.name}/`
+    const primary = `skills/${asset.name}/SKILL.md`
+    const companions: SkillCompanionBytes = {}
+    for (const file of asset.files) {
+      if (file.path === primary) continue
+      // Every skill companion path is derived by `planArchiveEntries` to live
+      // below the skill root, so this prefix strip is total.
+      const relative = file.path.startsWith(skillRoot) ? file.path.slice(skillRoot.length) : file.path
+      companions[relative] = new Uint8Array(readFileSync(join(verifiedDir, file.path)))
+    }
+    // Keyed by the `scope:type:name` identity `materialize` uses to look this
+    // up. Companion bytes only exist for `project`-scoped skills today (the
+    // only scope the plan mints), so the scope prefix is fixed.
+    byAsset.set(`${asset.scope}:skill:${asset.name}`, companions)
+  }
+  return byAsset
 }

@@ -1,4 +1,5 @@
 import type { RegistryError } from '@agent-facets/engine'
+import { archiveCompatibilityGuidance } from './archive-compatibility.ts'
 import type { CliError } from './errors.ts'
 
 /**
@@ -56,16 +57,12 @@ export function translateEngineRegistryError(err: RegistryError): CliError {
         fix: 'try again; if persistent, file a bug',
       }
     case 'UNSUPPORTED_ARCHIVE':
-      // Basic upgrade guidance for now; the full facet-format →
-      // minimum-CLI-release compatibility table lands with the install
-      // failure-rendering work.
-      return {
-        what:
-          err.observed === undefined
-            ? 'this facet uses an archive format this CLI does not recognize'
-            : `this facet uses archive format ${err.observed}, which this CLI does not support`,
-        detail: `supported archive formats: ${err.supported.join(', ')}`,
-        fix: 'update agent-facets with `facet self-update` and try again',
-      }
+      // The single compatibility table names the minimum supporting release
+      // for a known newer format, or advises updating to latest for an
+      // unknown future one (design D4, task 9.8).
+      return archiveCompatibilityGuidance(
+        err.observed === undefined ? undefined : String(err.observed),
+        err.supported.map(String),
+      )
   }
 }

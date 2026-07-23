@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
 import type { BuildManifest } from '@agent-facets/protocol'
-import type { Receipt } from '../receipt.ts'
+import { CURRENT_RECEIPT_VERSION, type Receipt } from '../receipt.ts'
 import type { Addition, StageEvent } from '../types.ts'
 
 /**
@@ -212,7 +212,7 @@ describe('runInstall — frozen orphan-on-pull cleanup', () => {
     const receipt = JSON.parse(readFileSync(receiptFile, 'utf8')) as Receipt
     receipt.facets.ghost = {
       version: '1.0.0',
-      assets: [{ scope: 'project', type: 'skill', name: 'ghostly' }],
+      assets: [{ scope: 'project', type: 'skill', name: 'ghostly', files: ['skills/ghostly/SKILL.md'] }],
     }
     writeReceipt(projectRoot, receipt)
     mkdirSync(join(projectRoot, '.test-adapter/skills'), { recursive: true })
@@ -236,6 +236,35 @@ describe('runInstall — frozen orphan-on-pull cleanup', () => {
     expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(facetsBefore)
     expect(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')).toBe(lockBefore)
   })
+
+  // 9.5: the frozen consistency gate completes before receipt-driven cleanup.
+  // A lockfile ORPHAN (pinned in the lockfile, absent from facets.json) is
+  // surfaced as drift and rejected BEFORE any materialized asset is deleted.
+  test('a frozen lockfile orphan fails before cleanup deletes anything', async () => {
+    await seedInstalledProject() // cowsay in all three files, asset on disk
+
+    // Simulate an orphan: drop cowsay from facets.json only. The lockfile
+    // still pins it — a frozen install must reject this as LOCKFILE_DRIFT
+    // (reason 'orphaned') before the drift-removal loop runs.
+    writeFileSync(join(projectRoot, 'facets.json'), `${JSON.stringify({ facets: {} }, null, 2)}\n`)
+    const assetPath = join(projectRoot, '.test-adapter/skills/planning.md')
+    expect(existsSync(assetPath)).toBe(true)
+    const lockBefore = readFileSync(join(projectRoot, 'facets.lock'), 'utf8')
+    const receiptFile = receiptPath(projectRoot)
+    const receiptBefore = readFileSync(receiptFile, 'utf8')
+
+    metadataOffline = true
+    const result = await install({ frozen: true })
+
+    if (result.ok) expect.unreachable()
+    if (result.failure.code !== 'LOCKFILE_DRIFT') expect.unreachable()
+    expect(result.failure.facets.some((f) => f.name === 'cowsay' && f.reason === 'orphaned')).toBe(true)
+    // No cleanup ran: the materialized asset and both files are untouched.
+    expect(existsSync(assetPath)).toBe(true)
+    expect(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')).toBe(lockBefore)
+    expect(readFileSync(receiptFile, 'utf8')).toBe(receiptBefore)
+    expect(result.rollback.kind).toBe('not-needed')
+  })
 })
 
 // --- W2: per-entry escape handling ----------------------------------------------
@@ -246,14 +275,14 @@ describe('runInstall — receipt escape entries (W2)', () => {
     // crafted escape asset alongside a valid one. The escape is reported
     // and skipped; the valid asset is still cleaned up.
     const receipt: Receipt = {
-      version: 1,
+      version: CURRENT_RECEIPT_VERSION,
       path: realpathSync(projectRoot),
       facets: {
         ghost: {
           version: '1.0.0',
           assets: [
-            { scope: 'project', type: 'skill', name: '../escape' },
-            { scope: 'project', type: 'skill', name: 'ghostly' },
+            { scope: 'project', type: 'skill', name: '../escape', files: ['skills/escape/SKILL.md'] },
+            { scope: 'project', type: 'skill', name: 'ghostly', files: ['skills/ghostly/SKILL.md'] },
           ],
         },
       },

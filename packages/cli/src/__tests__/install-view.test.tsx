@@ -519,6 +519,36 @@ describe('InstallView — integrity failure', () => {
     expect(frame).toContain('No assets were written')
     instance.unmount()
   })
+
+  // 9.8: pre-materialization per-file reconciliation failures render with the
+  // exact drifting path and both hashes.
+  test('renders a per-file reconcile failure with the exact path', async () => {
+    const failure: RunInstallFailure = {
+      code: 'RECONCILE_PER_FILE_INTEGRITY',
+      facet: 'viper-plans',
+      asset: 'skill:planning',
+      path: 'skills/planning/references/api.md',
+      expected: `sha256:${'a'.repeat(64)}`,
+      actual: `sha256:${'b'.repeat(64)}`,
+    }
+    const events: StageEvent[] = [
+      { kind: 'install-start', totalFacets: 1 },
+      { kind: 'facet-start', facet: 'viper-plans', specifier: 'github:a/v' },
+      { kind: 'facet-failure', facet: 'viper-plans', failure },
+    ]
+    const result: RunInstallResult = {
+      ok: false,
+      failure,
+      rollback: { kind: 'not-needed', reason: 'test fixture' },
+    }
+    const instance = render(createElement(InstallView, { mode: 'add', run: makeFakeRun(events, result) }))
+    await settle()
+    const frame = findContentFrame(instance.frames)
+    expect(frame).toContain('file integrity mismatch')
+    expect(frame).toContain('skills/planning/references/api.md')
+    expect(frame).toContain(failure.code === 'RECONCILE_PER_FILE_INTEGRITY' ? failure.expected : '')
+    instance.unmount()
+  })
 })
 
 describe('InstallView — parse error failure', () => {

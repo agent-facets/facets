@@ -5,6 +5,7 @@ import type { InstallJournal } from '../journal.ts'
 import { materialize } from '../materialize.ts'
 import { materializeFailureToRunInstall } from '../materialize-failure.ts'
 import type { FacetOutcome, OnLog, RunInstallFailure, StageEvent } from '../types.ts'
+import { reconcileLockedAgainstPlan } from './reconcile.ts'
 import { resolveFacet } from './resolve-facet.ts'
 
 export interface InstallLoopSuccess {
@@ -69,7 +70,7 @@ export async function installFacets(args: InstallLoopArgs): Promise<InstallLoopR
       return { ok: false, failure: resolveResult.failure }
     }
 
-    const { entry, resolved, serversDeclared } = resolveResult.value
+    const { entry, resolved, plan, companionBytes, serversDeclared } = resolveResult.value
 
     if (serversDeclared.length > 0) {
       serverWarnings.push({ facet: facetName, servers: serversDeclared })
@@ -80,6 +81,20 @@ export async function installFacets(args: InstallLoopArgs): Promise<InstallLoopR
     const previousEntry = previousLockfile.facets[facetName]
     const oldAssets = previousEntry?.assets ?? []
 
+    // Pre-materialization reconciliation (design D10, task 9.3): when a fresh
+    // plan was derived, the previously-locked entry MUST agree with it before
+    // any adapter write. Runs after the adapter-compatibility preflight and
+    // archive-version dispatch (both upstream), and before materialize, so a
+    // mismatch leaves all project, lockfile, receipt, and adapter state
+    // untouched.
+    if (plan !== undefined) {
+      const mismatch = reconcileLockedAgainstPlan(facetName, previousEntry, entry, plan)
+      if (mismatch !== undefined) {
+        onStage({ kind: 'facet-failure', facet: facetName, failure: mismatch })
+        return { ok: false, failure: mismatch }
+      }
+    }
+
     onStage({ kind: 'facet-stage', facet: facetName, stage: 'materialize' })
     const materializeResult = await materialize({
       facetName,
@@ -87,6 +102,7 @@ export async function installFacets(args: InstallLoopArgs): Promise<InstallLoopR
       adapters: [...adapters],
       oldAssets,
       newAssets: entry.assets,
+      companionBytes,
       journal,
       onLog,
       onStage,

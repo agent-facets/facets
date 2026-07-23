@@ -9,7 +9,12 @@ import type { Source } from '../../sources/facet/types.ts'
 import { cloneFailureToRunInstall } from '../clone-failure.ts'
 import { resolveCloneRef } from '../resolve-clone-ref.ts'
 import type { OnLog, StageEvent } from '../types.ts'
-import { buildVerifiedAssetPlan } from '../verified-asset-plan.ts'
+import {
+  buildVerifiedAssetPlan,
+  readSkillCompanionBytes,
+  type SkillCompanionBytes,
+  type VerifiedAssetPlan,
+} from '../verified-asset-plan.ts'
 import { buildLockfileSource, loadFacetContent } from './finalize-facet.ts'
 import { auditedGitCacheLookup } from './git-cache.ts'
 import type { ResolveFacetResult } from './types.ts'
@@ -97,10 +102,13 @@ export async function resolveGitFacet(args: ResolveGitFacetArgs): Promise<Resolv
     if (!content.ok) return content
 
     let entry: LockfileFacet
+    let plan: VerifiedAssetPlan | undefined
+    let companionBytes: Map<string, SkillCompanionBytes> | undefined
     if (auditedCacheHit && effectiveLocked !== undefined) {
       if (frozenLockfile) {
         // Frozen audited hit matching the lockfile: inherit verbatim — a
-        // legacy `1` entry stays legacy and is never rewritten.
+        // legacy `1` entry stays legacy and is never rewritten. No plan is
+        // derived, so reconciliation is skipped for this path.
         entry = {
           source: effectiveLocked.source,
           version: effectiveLocked.version,
@@ -111,15 +119,17 @@ export async function resolveGitFacet(args: ResolveGitFacetArgs): Promise<Resolv
         // Normal audited hit (migration): re-derive per-file `files[]` from
         // the verified slot so a legacy lockfile migrates to `0.2`, keeping
         // the locked identity.
-        const plan = buildVerifiedAssetPlan(content.manifest, sourceDir)
-        if (!plan.ok) {
-          return { ok: false, failure: { code: 'BUILD_FAILED', facet: facetName, errors: plan.errors } }
+        const built = buildVerifiedAssetPlan(content.manifest, sourceDir)
+        if (!built.ok) {
+          return { ok: false, failure: { code: 'BUILD_FAILED', facet: facetName, errors: built.errors } }
         }
+        plan = built.plan
+        companionBytes = readSkillCompanionBytes(built.plan, sourceDir)
         entry = {
           source: effectiveLocked.source,
           version: effectiveLocked.version,
           integrity: effectiveLocked.integrity,
-          assets: plan.plan.assets,
+          assets: built.plan.assets,
         }
       }
     } else {
@@ -190,10 +200,12 @@ export async function resolveGitFacet(args: ResolveGitFacetArgs): Promise<Resolv
       // verbatim, and it never reaches this build branch (an audited hit is
       // required for frozen reproduction; a frozen rebuild would fail the
       // one-check reproduction guard rather than rewrite).
-      const plan = buildVerifiedAssetPlan(content.manifest, sourceDir)
-      if (!plan.ok) {
-        return { ok: false, failure: { code: 'BUILD_FAILED', facet: facetName, errors: plan.errors } }
+      const built = buildVerifiedAssetPlan(content.manifest, sourceDir)
+      if (!built.ok) {
+        return { ok: false, failure: { code: 'BUILD_FAILED', facet: facetName, errors: built.errors } }
       }
+      plan = built.plan
+      companionBytes = readSkillCompanionBytes(built.plan, sourceDir)
       if (effectiveLocked !== undefined) {
         // The build just reproduced the locked integrity; identity is the
         // lockfile's, but `files[]` is (re)derived so a legacy entry migrates.
@@ -201,7 +213,7 @@ export async function resolveGitFacet(args: ResolveGitFacetArgs): Promise<Resolv
           source: effectiveLocked.source,
           version: effectiveLocked.version,
           integrity: effectiveLocked.integrity,
-          assets: plan.plan.assets,
+          assets: built.plan.assets,
         }
       } else {
         const buildSource = buildLockfileSource(facetName, source, clonedCommit)
@@ -212,12 +224,15 @@ export async function resolveGitFacet(args: ResolveGitFacetArgs): Promise<Resolv
           source: buildSource.source,
           version: buildResult.data.version,
           integrity: buildResult.integrity,
-          assets: plan.plan.assets,
+          assets: built.plan.assets,
         }
       }
     }
 
-    return { ok: true, value: { entry, resolved: content.resolved, serversDeclared: content.serversDeclared } }
+    return {
+      ok: true,
+      value: { entry, resolved: content.resolved, plan, companionBytes, serversDeclared: content.serversDeclared },
+    }
   } finally {
     if (cleanup) await cleanup()
   }

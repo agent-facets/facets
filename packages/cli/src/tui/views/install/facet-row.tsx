@@ -170,6 +170,14 @@ function oneLineFailureSummary(failure: RunInstallFailure): string {
       return 'failed to load facet.json'
     case 'ADAPTER_INSTALL_FAILED':
       return `adapter ${failure.adapter} failed during materialization`
+    case 'RECONCILE_FACET_INTEGRITY':
+      return 'lockfile integrity mismatch'
+    case 'RECONCILE_ASSET_IDENTITY':
+      return 'lockfile asset set mismatch'
+    case 'RECONCILE_OWNED_PATH_SET':
+      return `lockfile file set mismatch (${failure.asset})`
+    case 'RECONCILE_PER_FILE_INTEGRITY':
+      return `file integrity mismatch: ${failure.path}`
     default:
       return 'install failed'
   }
