@@ -348,11 +348,14 @@ describe('facet build --verify', () => {
     const result = await runCli('build', dir, '--verify', '--json')
     expect(result.exitCode).toBe(0)
     const doc = JSON.parse(result.stdout)
-    expect(doc.schemaVersion).toBe('1')
+    expect(doc.schemaVersion).toBe('2')
     expect(doc.ok).toBe(true)
     expect(doc.verified).toBe(true)
     expect(doc.name).toBe('verifiable')
-    expect(Array.isArray(doc.assets)).toBe(true)
+    expect(doc.facetVersion).toBe(0.2)
+    // Complete inner-archive entry listing (includes facet.json + primaries).
+    expect(Array.isArray(doc.files)).toBe(true)
+    expect(doc.files).toContain('facet.json')
     expect(existsSync(join(dir, 'dist'))).toBe(false)
   })
 

@@ -319,9 +319,9 @@ describe('runBuildPipeline', () => {
       // Content hashing fields
       expect(result.archiveFilename).toBe('test-facet-1.0.0.facet')
       expect(result.archiveBytes.length).toBeGreaterThan(0)
-      expect(Object.keys(result.assetHashes)).toContain('facet.json')
-      expect(Object.keys(result.assetHashes)).toContain('skills/example/SKILL.md')
-      expect(result.assetHashes['skills/example/SKILL.md']).toMatchInlineSnapshot(
+      expect(Object.keys(result.fileHashes)).toContain('facet.json')
+      expect(Object.keys(result.fileHashes)).toContain('skills/example/SKILL.md')
+      expect(result.fileHashes['skills/example/SKILL.md']).toMatchInlineSnapshot(
         `"sha256:ded8057927e03783371d0d929e4a6e92da66eb9dd164377ad6845a5a1c0cb5ba"`,
       )
       expect(result.integrity).toMatch(/^sha256:[a-f0-9]{64}$/)
@@ -432,7 +432,7 @@ describe('runBuildPipeline', () => {
     expect(result.ok).toBe(true)
     if (result.ok) {
       expect(result.archiveFilename).toBe('multi-facet-2.0.0.facet')
-      const assetPaths = Object.keys(result.assetHashes).sort()
+      const assetPaths = Object.keys(result.fileHashes).sort()
       expect(assetPaths).toEqual([
         'agents/helper.md',
         'commands/deploy.md',
@@ -666,7 +666,7 @@ describe('content validation', () => {
 
     // The asset hash is computed over the verbatim file contents, so the
     // entry exists in the archive's per-asset hash map.
-    expect(result.assetHashes['skills/review/SKILL.md']).toMatch(/^sha256:/)
+    expect(result.fileHashes['skills/review/SKILL.md']).toMatch(/^sha256:/)
   })
 
   test('build fails on empty content file', async () => {
@@ -759,11 +759,14 @@ describe('writeBuildOutput', () => {
     const manifestEntry = outerEntries.find((e) => e.name === 'build-manifest.json')
     if (!manifestEntry) throw new Error('build-manifest.json not found in outer tar')
     const manifest = JSON.parse(manifestEntry.text)
-    expect(manifest.facetVersion).toBe(0.1)
+    // Producers now emit the current `0.2` flat build manifest with a
+    // complete `files` map; `0.1`/`assets` is a legacy consumer input only.
+    expect(manifest.facetVersion).toBe(0.2)
     expect(manifest.archive).toBe('archive.tar.gz')
     expect(manifest.integrity).toMatch(/^sha256:[a-f0-9]{64}$/)
-    expect(manifest.assets['facet.json']).toMatch(/^sha256:[a-f0-9]{64}$/)
-    expect(manifest.assets['skills/example/SKILL.md']).toMatch(/^sha256:[a-f0-9]{64}$/)
+    expect(manifest.assets).toBeUndefined()
+    expect(manifest.files['facet.json']).toMatch(/^sha256:[a-f0-9]{64}$/)
+    expect(manifest.files['skills/example/SKILL.md']).toMatch(/^sha256:[a-f0-9]{64}$/)
 
     // Inner archive contains expected assets
     const innerEntry = outerEntries.find((e) => e.name === 'archive.tar.gz')
@@ -1110,5 +1113,217 @@ describe('runBuildPipeline — adapter API preflight', () => {
     const result = await runBuildPipeline(dir, [mockAdapter])
     if (!result.ok) expect.unreachable()
     expect(result.warnings).toEqual([])
+  })
+})
+
+// --- Producer: 0.2 supplementary files (task 11.5) ---
+//
+// The pure path-grammar/collision failure classes are exhaustively tested in
+// packages/protocol/src/__tests__/archive-plan.test.ts, and the
+// filesystem-identity classes in
+// packages/engine/src/build/__tests__/load-supplementary-sources.test.ts.
+// These pipeline-level tests prove the producer emits the current 0.2 archive
+// with supplementary membership, hashes every entry, stays deterministic, and
+// preserves prior dist/ on input failure.
+
+describe('runBuildPipeline — 0.2 supplementary files', () => {
+  async function writeFacet(dir: string, manifest: Record<string, unknown>): Promise<void> {
+    await Bun.write(join(dir, 'facet.json'), JSON.stringify(manifest))
+  }
+
+  test('archives a top-level README, a nested companion, and binary + empty bytes', async () => {
+    const dir = await createFixtureDir('supp-success')
+    await Bun.write(join(dir, 'skills/review/SKILL.md'), '# review\n')
+    await Bun.write(join(dir, 'README.md'), '# my facet\n')
+    await Bun.write(join(dir, 'skills/review/references/api.md'), 'api docs\n')
+    await Bun.write(join(dir, 'skills/review/assets/logo.bin'), new Uint8Array([0, 1, 2, 255]))
+    await Bun.write(join(dir, 'skills/review/EMPTY'), '')
+    await writeFacet(dir, {
+      name: 'supp',
+      version: '1.0.0',
+      files: ['README.md'],
+      skills: {
+        review: { description: 'r', files: ['references/api.md', 'assets/logo.bin', 'EMPTY'] },
+      },
+    })
+
+    const result = await runBuildPipeline(dir)
+    if (!result.ok) expect.unreachable()
+
+    // Complete file map covers manifest + primary + every supplementary entry.
+    expect(Object.keys(result.fileHashes).sort()).toEqual([
+      'README.md',
+      'facet.json',
+      'skills/review/EMPTY',
+      'skills/review/SKILL.md',
+      'skills/review/assets/logo.bin',
+      'skills/review/references/api.md',
+    ])
+    // Empty file is hashed (SHA-256 of zero bytes).
+    expect(result.fileHashes['skills/review/EMPTY']).toBe(computeContentHash(new Uint8Array(0)))
+    // Binary bytes hashed verbatim.
+    expect(result.fileHashes['skills/review/assets/logo.bin']).toBe(computeContentHash(new Uint8Array([0, 1, 2, 255])))
+    expect(result.facetVersion).toBe(0.2)
+  })
+
+  test('inner archive contains every supplementary entry byte-for-byte', async () => {
+    const dir = await createFixtureDir('supp-inner')
+    await Bun.write(join(dir, 'skills/review/SKILL.md'), '# review\n')
+    const binary = new Uint8Array([9, 8, 7, 0, 255])
+    await Bun.write(join(dir, 'skills/review/logo.bin'), binary)
+    await Bun.write(join(dir, 'README.md'), '# readme\n')
+    await writeFacet(dir, {
+      name: 'supp',
+      version: '1.0.0',
+      files: ['README.md'],
+      skills: { review: { description: 'r', files: ['logo.bin'] } },
+    })
+
+    const result = await runBuildPipeline(dir)
+    if (!result.ok) expect.unreachable()
+
+    const outer = parseTar(result.archiveBytes)
+    const inner = outer.find((e) => e.name === 'archive.tar.gz')
+    if (!inner?.data) throw new Error('inner archive missing')
+    const innerFiles = await parseTarGzip(inner.data)
+    const logo = innerFiles.find((f) => f.name === 'skills/review/logo.bin')
+    expect(logo?.data ? new Uint8Array(logo.data) : undefined).toEqual(binary)
+  })
+
+  test('the embedded facet.json is hashed as its exact source bytes', async () => {
+    const dir = await createFixtureDir('supp-manifest-bytes')
+    await Bun.write(join(dir, 'skills/review/SKILL.md'), '# review\n')
+    // Deliberately non-canonical spacing — the hash must cover these exact bytes.
+    const manifestBytes =
+      '{\n  "name": "supp",\n  "version": "1.0.0",\n  "skills": { "review": { "description": "r" } }\n}\n'
+    await Bun.write(join(dir, 'facet.json'), manifestBytes)
+
+    const result = await runBuildPipeline(dir)
+    if (!result.ok) expect.unreachable()
+    expect(result.fileHashes['facet.json']).toBe(computeContentHash(manifestBytes))
+  })
+
+  test('canonical tar output is byte-identical across two builds', async () => {
+    const build = async (name: string) => {
+      const dir = await createFixtureDir(name)
+      await Bun.write(join(dir, 'skills/review/SKILL.md'), '# review\n')
+      await Bun.write(join(dir, 'README.md'), '# readme\n')
+      await writeFacet(dir, {
+        name: 'supp',
+        version: '1.0.0',
+        files: ['README.md'],
+        skills: { review: { description: 'r' } },
+      })
+      const result = await runBuildPipeline(dir)
+      if (!result.ok) expect.unreachable()
+      return result
+    }
+    const a = await build('supp-determinism-a')
+    const b = await build('supp-determinism-b')
+    expect(a.integrity).toBe(b.integrity)
+    expect(Array.from(a.archiveBytes)).toEqual(Array.from(b.archiveBytes))
+  })
+
+  test('a scoped facet identity writes under a nested dist path', async () => {
+    const dir = await createFixtureDir('supp-scoped')
+    await Bun.write(join(dir, 'skills/review/SKILL.md'), '# review\n')
+    await writeFacet(dir, {
+      name: '@acme/supp',
+      version: '2.0.0',
+      skills: { review: { description: 'r' } },
+    })
+    const result = await runBuildPipeline(dir)
+    if (!result.ok) expect.unreachable()
+    expect(result.archiveFilename).toBe('@acme/supp-2.0.0.facet')
+    await writeBuildOutput(result, dir)
+    expect(await Bun.file(join(dir, 'dist/@acme/supp-2.0.0.facet')).exists()).toBe(true)
+  })
+
+  test('a missing declared supplementary file fails and preserves prior dist output', async () => {
+    const dir = await createFixtureDir('supp-preserve-dist')
+    await Bun.write(join(dir, 'skills/review/SKILL.md'), '# review\n')
+    await writeFacet(dir, {
+      name: 'supp',
+      version: '1.0.0',
+      files: ['README.md'],
+      skills: { review: { description: 'r' } },
+    })
+    // README.md is declared but does NOT exist. Seed a prior dist/ artifact.
+    await Bun.write(join(dir, 'dist/prior.txt'), 'keep me')
+
+    const result = await runBuildPipeline(dir)
+    if (result.ok) expect.unreachable()
+    if (result.kind !== 'validation') expect.unreachable()
+    expect(result.errors.some((e) => e.message.includes('README.md'))).toBe(true)
+    // Prior dist/ output is untouched — writeBuildOutput never ran.
+    expect(await Bun.file(join(dir, 'dist/prior.txt')).text()).toBe('keep me')
+  })
+
+  test('a traversal path in a declaration is rejected at manifest validation, preserving dist', async () => {
+    const dir = await createFixtureDir('supp-traversal')
+    await Bun.write(join(dir, 'skills/review/SKILL.md'), '# review\n')
+    await writeFacet(dir, {
+      name: 'supp',
+      version: '1.0.0',
+      files: ['../secret'],
+      skills: { review: { description: 'r' } },
+    })
+    await Bun.write(join(dir, 'dist/prior.txt'), 'keep me')
+
+    const result = await runBuildPipeline(dir)
+    if (result.ok) expect.unreachable()
+    if (result.kind !== 'validation') expect.unreachable()
+    // The unsafe path is rejected before any output is touched.
+    expect(await Bun.file(join(dir, 'dist/prior.txt')).text()).toBe('keep me')
+  })
+
+  test('a supplementary/primary path collision is rejected at manifest validation', async () => {
+    const dir = await createFixtureDir('supp-collision')
+    await Bun.write(join(dir, 'skills/review/SKILL.md'), '# review\n')
+    await Bun.write(join(dir, 'agents/reviewer.md'), '# reviewer\n')
+    await writeFacet(dir, {
+      name: 'supp',
+      version: '1.0.0',
+      // Declares an archive-only file that collides with the agent primary path.
+      files: ['agents/reviewer.md'],
+      skills: { review: { description: 'r' } },
+      agents: { reviewer: { description: 'a' } },
+    })
+    const result = await runBuildPipeline(dir)
+    if (result.ok) expect.unreachable()
+    expect(result.kind).toBe('validation')
+  })
+
+  test('undeclared source-tree files are never packaged', async () => {
+    const dir = await createFixtureDir('supp-undeclared')
+    await Bun.write(join(dir, 'skills/review/SKILL.md'), '# review\n')
+    // An undeclared stray file next to the manifest.
+    await Bun.write(join(dir, 'notes.txt'), 'private notes')
+    await writeFacet(dir, {
+      name: 'supp',
+      version: '1.0.0',
+      skills: { review: { description: 'r' } },
+    })
+    const result = await runBuildPipeline(dir)
+    if (!result.ok) expect.unreachable()
+    // Only declared entries are in the archive; the stray file is absent.
+    expect(Object.keys(result.fileHashes)).not.toContain('notes.txt')
+  })
+
+  test('an asset-only facet still emits 0.2 with a complete files map', async () => {
+    const dir = await createFixtureDir('supp-asset-only')
+    await Bun.write(join(dir, 'skills/review/SKILL.md'), '# review\n')
+    await writeFacet(dir, {
+      name: 'supp',
+      version: '1.0.0',
+      skills: { review: { description: 'r' } },
+    })
+    const result = await runBuildPipeline(dir)
+    if (!result.ok) expect.unreachable()
+    expect(result.facetVersion).toBe(0.2)
+    expect(Object.keys(result.fileHashes).sort()).toEqual(['facet.json', 'skills/review/SKILL.md'])
+    const manifest = JSON.parse(result.manifestJson)
+    expect(manifest.files).toBeDefined()
+    expect(manifest.assets).toBeUndefined()
   })
 })
