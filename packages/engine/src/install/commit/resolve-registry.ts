@@ -4,11 +4,11 @@ import { describeVersionSpec } from '../../registry/describe.ts'
 import { getRegistryBaseUrl } from '../../registry/index.ts'
 import type { RegistryMetadata } from '../../registry/types.ts'
 import type { Source } from '../../sources/facet/types.ts'
-import { computeAssetList } from '../materialize.ts'
 import type { ConfirmingMiss, LockedMiss, MaterializeVersionInput } from '../materialize-version/index.ts'
 import { materializeVersion } from '../materialize-version/index.ts'
 import { parseLockedVersion } from '../parse-locked-version.ts'
 import type { OnLog, StageEvent } from '../types.ts'
+import { buildVerifiedAssetPlan } from '../verified-asset-plan.ts'
 import { loadFacetContent } from './finalize-facet.ts'
 import { chainFailureToRunInstall, fetchMeta } from './registry-support.ts'
 import type { ResolveFacetResult } from './types.ts'
@@ -25,6 +25,14 @@ export interface ResolveRegistryFacetArgs {
    * confirmation.
    */
   effectiveLocked: LockfileFacet | undefined
+  /**
+   * Frozen-lockfile mode. When true, an inherited (locked-reproduction)
+   * entry is retained verbatim — a legacy `1` entry stays legacy and is
+   * never rewritten. When false, a reproduction re-derives per-file `files[]`
+   * records from the verified slot so a normal install migrates a legacy
+   * lockfile to `0.2`.
+   */
+  frozenLockfile: boolean
   onStage: (event: StageEvent) => void
   onLog: OnLog
 }
@@ -56,7 +64,7 @@ export interface ResolveRegistryFacetArgs {
  * is the hard `CACHE_INTEGRITY_MISMATCH` (never a silent re-download).
  */
 export async function resolveRegistryFacet(args: ResolveRegistryFacetArgs): Promise<ResolveFacetResult> {
-  const { facetName, source, effectiveLocked, onStage, onLog } = args
+  const { facetName, source, effectiveLocked, frozenLockfile, onStage, onLog } = args
 
   onStage({ kind: 'facet-stage', facet: facetName, stage: 'resolve' })
 
@@ -184,25 +192,43 @@ export async function resolveRegistryFacet(args: ResolveRegistryFacetArgs): Prom
   const content = await loadFacetContent(facetName, result.slotPath, onStage)
   if (!content.ok) return content
 
-  const entry: LockfileFacet =
-    effectiveLocked !== undefined
-      ? {
-          // Locked paths inherit the entry verbatim: the chain just
-          // proved the content reproduces it, and the lockfile is the
-          // source of truth — never rewritten on reproduction.
-          source: effectiveLocked.source,
-          version: effectiveLocked.version,
-          integrity: effectiveLocked.integrity,
-          assets: effectiveLocked.assets,
-        }
-      : {
-          // Confirming paths create the entry from the resolved exact
-          // version and the chain's verified integrity.
-          source: { kind: 'registry', registry: getRegistryBaseUrl() },
-          version: exactVersion,
-          integrity: result.integrity,
-          assets: computeAssetList(content.resolved),
-        }
+  let entry: LockfileFacet
+  if (effectiveLocked !== undefined && frozenLockfile) {
+    // Frozen reproduction: inherit the entry verbatim. The chain just
+    // proved the content reproduces the locked integrity, and frozen mode
+    // never rewrites the lockfile — a legacy `1` entry stays legacy.
+    entry = {
+      source: effectiveLocked.source,
+      version: effectiveLocked.version,
+      integrity: effectiveLocked.integrity,
+      assets: effectiveLocked.assets,
+    }
+  } else {
+    // Normal-mode reproduction (migration) and confirming (fresh) paths
+    // both derive per-file `files[]` records from the verified slot, so a
+    // legacy lockfile is migrated to `0.2` and a fresh entry is recorded at
+    // `0.2`. Identity (source/version/integrity) comes from the locked entry
+    // when reproducing, or from the resolved version + chain integrity when
+    // confirming.
+    const plan = buildVerifiedAssetPlan(content.manifest, result.slotPath)
+    if (!plan.ok) {
+      return { ok: false, failure: { code: 'BUILD_FAILED', facet: facetName, errors: plan.errors } }
+    }
+    entry =
+      effectiveLocked !== undefined
+        ? {
+            source: effectiveLocked.source,
+            version: effectiveLocked.version,
+            integrity: effectiveLocked.integrity,
+            assets: plan.plan.assets,
+          }
+        : {
+            source: { kind: 'registry', registry: getRegistryBaseUrl() },
+            version: exactVersion,
+            integrity: result.integrity,
+            assets: plan.plan.assets,
+          }
+  }
 
   return { ok: true, value: { entry, resolved: content.resolved, serversDeclared: content.serversDeclared } }
 }

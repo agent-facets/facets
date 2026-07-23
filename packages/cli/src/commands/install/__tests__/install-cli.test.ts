@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
+import { CURRENT_LOCKFILE_VERSION } from '@agent-facets/protocol'
 import { captureStderr } from '../../../__tests__/helpers/capture-std.ts'
 import { withTTY } from '../../../__tests__/helpers/with-tty.ts'
 import { installCommand } from '../index.ts'
@@ -123,10 +124,19 @@ describe('facet install — CLI happy path', () => {
     const lockPath = join(projectRoot, 'facets.lock')
     expect(existsSync(lockPath)).toBe(true)
     const lockfile = JSON.parse(readFileSync(lockPath, 'utf8'))
-    expect(lockfile.lockfileVersion).toBe(1)
+    // A fresh install writes the current (`0.2`) lockfile schema with
+    // per-materialized-file integrity records inside each asset.
+    expect(lockfile.lockfileVersion).toBe(CURRENT_LOCKFILE_VERSION)
     expect(lockfile.facets['viper-plans']).toMatchObject({
       version: '0.1.0',
-      assets: [{ scope: 'project', type: 'skill', name: 'planning' }],
+      assets: [
+        {
+          scope: 'project',
+          type: 'skill',
+          name: 'planning',
+          files: [{ path: 'skills/planning/SKILL.md', integrity: expect.stringMatching(/^sha256:[a-f0-9]{64}$/) }],
+        },
+      ],
     })
     expect(lockfile.facets['viper-plans'].integrity).toMatch(/^sha256:/)
 

@@ -5,8 +5,10 @@ import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
 import { ADAPTER_API_VERSION, deleteAssetFile, installAssetFile, readAssetFile } from '@agent-facets/adapter'
 import type { BuildManifest, Lockfile } from '@agent-facets/protocol'
-import { computeContentHash } from '@agent-facets/protocol'
+import { CURRENT_LOCKFILE_VERSION, CurrentLockfileSchema, computeContentHash } from '@agent-facets/protocol'
+import { type } from 'arktype'
 import { type CacheIdentity, cachePath, cachePutVerified, computeDirIntegrity } from '../cache/index.ts'
+import { loadLockfile } from '../install/lockfile-io.ts'
 import { runInstall } from '../install/run-install.ts'
 import type { StageEvent } from '../install/types.ts'
 
@@ -293,6 +295,38 @@ describe('runInstall — local source success path', () => {
     if (!result.ok) expect.unreachable()
     expect(result.summary.installed).toBe(1)
     expect(result.lockfile.facets['viper-plans']?.version).toBe('0.1.0')
+  })
+
+  // 9.1/9.2: a fresh normal install records the current (`0.2`) lockfile
+  // with per-materialized-file integrity records derived from the verified
+  // build, not identity-only assets.
+  test('a fresh install writes a 0.2 lockfile with recomputed per-file records', async () => {
+    const local = buildLocalFixture('viper-plans')
+    const relPath = `./${local.split('/').pop()}`
+    writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify({ facets: { 'viper-plans': relPath } }))
+
+    const result = await runInstall({ projectRoot, adapters: [buildFakeAdapter('test')] })
+    expect(result.ok).toBe(true)
+    if (!result.ok) expect.unreachable()
+
+    expect(result.lockfile.lockfileVersion).toBe(CURRENT_LOCKFILE_VERSION)
+
+    // The written lockfile round-trips: reloading it under exact 0.2 dispatch
+    // succeeds (an identity-only 0.2 entry would fail the CurrentLockfile
+    // schema on reload) and reports the current version.
+    const reloaded = loadLockfile(projectRoot)
+    if (!reloaded.ok) expect.unreachable()
+    expect(reloaded.version).toBe(CURRENT_LOCKFILE_VERSION)
+
+    // Validate the written bytes against the current schema and inspect the
+    // per-file records off the validated (current) shape.
+    const written = CurrentLockfileSchema(JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')))
+    if (written instanceof type.errors) expect.unreachable()
+    const asset = written.facets['viper-plans']?.assets.find((a) => a.type === 'skill' && a.name === 'planning')
+    if (asset === undefined) expect.unreachable()
+    expect(asset.files).toEqual([
+      { path: 'skills/planning/SKILL.md', integrity: expect.stringMatching(/^sha256:[a-f0-9]{64}$/) },
+    ])
   })
 })
 
@@ -887,6 +921,22 @@ describe('runInstall — git cache hit short-circuits clone', () => {
       url: `https://github.com/example/${facetName}.git`,
       commit: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     })
+
+    // 9.1/9.2 migration: the seeded lockfile was legacy-alpha `1` with
+    // identity-only assets. A normal (non-frozen) install migrates it to the
+    // current `0.2` schema, re-deriving per-file records from the verified
+    // slot while keeping the locked identity untouched.
+    expect(result.lockfile.lockfileVersion).toBe(CURRENT_LOCKFILE_VERSION)
+    const written = CurrentLockfileSchema(JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')))
+    if (written instanceof type.errors) expect.unreachable()
+    expect(written.facets[facetName]?.assets).toEqual([
+      {
+        scope: 'project',
+        type: 'skill',
+        name: 'planning',
+        files: [{ path: 'skills/planning/SKILL.md', integrity: expect.stringMatching(/^sha256:[a-f0-9]{64}$/) }],
+      },
+    ])
   })
 
   test('returns CACHE_INTEGRITY_MISMATCH when sidecar disagrees with lockfile', async () => {
