@@ -119,6 +119,18 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     //    drift preflight runs before any mutation/journal entry so drift
     //    leaves the project untouched: every manifest facet MUST have a
     //    lockfile entry whose version satisfies its specifier.
+    //
+    //    Frozen consistency BEFORE cleanup (design D10, task 9.5): this gate
+    //    completes — on the no-mutation path — before the receipt-driven
+    //    drift removal at step 6 runs. `detectLockfileDrift` surfaces an
+    //    `orphaned` lockfile entry (pinned in the lockfile, absent from the
+    //    manifest) as drift here, so a frozen install rejecting an orphan
+    //    fails BEFORE cleanup deletes any materialized asset. Without this,
+    //    the drift-removal loop would delete the orphan's assets while the
+    //    frozen lockfile write is skipped, leaving adapter state mutated and
+    //    the stale entry on disk. Receipt-only orphans (present in the
+    //    receipt but not the lockfile) are not lockfile drift and are cleaned
+    //    up normally under frozen — only the receipt is rewritten.
     const merged = mergeDeltaIntoManifest(facetsJson.facets, delta)
     if (frozenLockfile && merged.hasDelta) {
       return failureNoMutation({ code: 'FROZEN_WITH_DELTA' })

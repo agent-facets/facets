@@ -8,7 +8,12 @@ import type { ConfirmingMiss, LockedMiss, MaterializeVersionInput } from '../mat
 import { materializeVersion } from '../materialize-version/index.ts'
 import { parseLockedVersion } from '../parse-locked-version.ts'
 import type { OnLog, StageEvent } from '../types.ts'
-import { buildVerifiedAssetPlan } from '../verified-asset-plan.ts'
+import {
+  buildVerifiedAssetPlan,
+  readSkillCompanionBytes,
+  type SkillCompanionBytes,
+  type VerifiedAssetPlan,
+} from '../verified-asset-plan.ts'
 import { loadFacetContent } from './finalize-facet.ts'
 import { chainFailureToRunInstall, fetchMeta } from './registry-support.ts'
 import type { ResolveFacetResult } from './types.ts'
@@ -193,10 +198,13 @@ export async function resolveRegistryFacet(args: ResolveRegistryFacetArgs): Prom
   if (!content.ok) return content
 
   let entry: LockfileFacet
+  let plan: VerifiedAssetPlan | undefined
+  let companionBytes: Map<string, SkillCompanionBytes> | undefined
   if (effectiveLocked !== undefined && frozenLockfile) {
     // Frozen reproduction: inherit the entry verbatim. The chain just
     // proved the content reproduces the locked integrity, and frozen mode
-    // never rewrites the lockfile — a legacy `1` entry stays legacy.
+    // never rewrites the lockfile — a legacy `1` entry stays legacy. No
+    // plan is derived, so reconciliation is skipped for this path.
     entry = {
       source: effectiveLocked.source,
       version: effectiveLocked.version,
@@ -210,25 +218,30 @@ export async function resolveRegistryFacet(args: ResolveRegistryFacetArgs): Prom
     // `0.2`. Identity (source/version/integrity) comes from the locked entry
     // when reproducing, or from the resolved version + chain integrity when
     // confirming.
-    const plan = buildVerifiedAssetPlan(content.manifest, result.slotPath)
-    if (!plan.ok) {
-      return { ok: false, failure: { code: 'BUILD_FAILED', facet: facetName, errors: plan.errors } }
+    const built = buildVerifiedAssetPlan(content.manifest, result.slotPath)
+    if (!built.ok) {
+      return { ok: false, failure: { code: 'BUILD_FAILED', facet: facetName, errors: built.errors } }
     }
+    plan = built.plan
+    companionBytes = readSkillCompanionBytes(built.plan, result.slotPath)
     entry =
       effectiveLocked !== undefined
         ? {
             source: effectiveLocked.source,
             version: effectiveLocked.version,
             integrity: effectiveLocked.integrity,
-            assets: plan.plan.assets,
+            assets: built.plan.assets,
           }
         : {
             source: { kind: 'registry', registry: getRegistryBaseUrl() },
             version: exactVersion,
             integrity: result.integrity,
-            assets: plan.plan.assets,
+            assets: built.plan.assets,
           }
   }
 
-  return { ok: true, value: { entry, resolved: content.resolved, serversDeclared: content.serversDeclared } }
+  return {
+    ok: true,
+    value: { entry, resolved: content.resolved, plan, companionBytes, serversDeclared: content.serversDeclared },
+  }
 }

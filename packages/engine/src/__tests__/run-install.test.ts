@@ -3,7 +3,15 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
-import { ADAPTER_API_VERSION, deleteAssetFile, installAssetFile, readAssetFile } from '@agent-facets/adapter'
+import {
+  ADAPTER_API_VERSION,
+  deleteAssetFile,
+  deleteSkillBundle,
+  installAssetFile,
+  installSkillBundle,
+  readAssetFile,
+  readSkillBundle,
+} from '@agent-facets/adapter'
 import type { BuildManifest, Lockfile } from '@agent-facets/protocol'
 import { CURRENT_LOCKFILE_VERSION, CurrentLockfileSchema, computeContentHash } from '@agent-facets/protocol'
 import { type } from 'arktype'
@@ -327,6 +335,43 @@ describe('runInstall — local source success path', () => {
     expect(asset.files).toEqual([
       { path: 'skills/planning/SKILL.md', integrity: expect.stringMatching(/^sha256:[a-f0-9]{64}$/) },
     ])
+  })
+
+  // 9.3: pre-materialization reconciliation. A locked per-file hash that no
+  // longer matches the freshly-derived plan aborts before any adapter write
+  // with a path-specific failure.
+  test('a tampered locked per-file hash aborts with RECONCILE_PER_FILE_INTEGRITY', async () => {
+    const local = buildLocalFixture('viper-plans')
+    const relPath = `./${local.split('/').pop()}`
+    writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify({ facets: { 'viper-plans': relPath } }))
+
+    // First install writes a valid 0.2 lockfile.
+    const first = await runInstall({ projectRoot, adapters: [buildFakeAdapter('test')] })
+    if (!first.ok) expect.unreachable()
+
+    // Tamper the locked per-file integrity for the skill's SKILL.md so the
+    // freshly-derived plan disagrees on re-install.
+    const lockPath = join(projectRoot, 'facets.lock')
+    const lock = JSON.parse(readFileSync(lockPath, 'utf8'))
+    const wrong = `sha256:${'1'.repeat(64)}`
+    lock.facets['viper-plans'].assets[0].files[0].integrity = wrong
+    writeFileSync(lockPath, JSON.stringify(lock))
+
+    const second = await runInstall({ projectRoot, adapters: [buildFakeAdapter('test')] })
+    if (second.ok) expect.unreachable()
+    if (second.failure.code !== 'RECONCILE_PER_FILE_INTEGRITY') expect.unreachable()
+    expect(second.failure.facet).toBe('viper-plans')
+    expect(second.failure.asset).toBe('skill:planning')
+    expect(second.failure.path).toBe('skills/planning/SKILL.md')
+    expect(second.failure.expected).toBe(wrong)
+    expect(second.failure.actual).toMatch(/^sha256:[a-f0-9]{64}$/)
+    // Reconciliation runs before materialize, so nothing was written for
+    // this facet: rollback replays an empty journal (zero entries undone).
+    if (second.rollback.kind === 'not-needed') expect.unreachable()
+    expect(second.rollback.entriesUndone).toBe(0)
+    // The tampered lockfile is left unchanged on disk (no tri-write ran).
+    const after = JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8'))
+    expect(after.facets['viper-plans'].assets[0].files[0].integrity).toBe(wrong)
   })
 })
 
@@ -972,5 +1017,265 @@ describe('runInstall — git cache hit short-circuits clone', () => {
     expect(result.failure.slotPath).toBe(slotPath)
     expect(result.failure.cachedIntegrity).toBe(entry.integrity)
     expect(result.failure.lockedIntegrity).toBe(wrongIntegrity)
+  })
+})
+
+// 9.6: real skill-bundle materialization — companions install, skip when
+// identical, and repair per-file drift. Uses the SDK bundle helpers so the
+// companion round-trip goes through the same code every real adapter uses.
+describe('runInstall — multi-file skill materialization', () => {
+  function buildBundleFixture(name: string, version = '0.1.0'): string {
+    const repo = realpathSync(mkdtempSync(join(projectRoot, 'bundle-fixture-')))
+    writeFileSync(
+      join(repo, 'facet.json'),
+      JSON.stringify({
+        name,
+        version,
+        skills: { planning: { description: 'planning skill', files: ['references/api.md', 'assets/logo.bin'] } },
+      }),
+    )
+    mkdirSync(join(repo, 'skills/planning/references'), { recursive: true })
+    mkdirSync(join(repo, 'skills/planning/assets'), { recursive: true })
+    writeFileSync(join(repo, 'skills/planning/SKILL.md'), `# planning ${version}\n`)
+    writeFileSync(join(repo, 'skills/planning/references/api.md'), '# api reference\n')
+    // A binary companion — must survive byte-for-byte.
+    writeFileSync(join(repo, 'skills/planning/assets/logo.bin'), Buffer.from([0, 1, 2, 253, 254, 255]))
+    return repo
+  }
+
+  /** Fake adapter that stores skills as bundles via the SDK helpers. */
+  function buildBundleAdapter(name: string): Adapter {
+    const baseDir = join(projectRoot, `.${name}`)
+    const skillPaths = (n: string) => ({
+      root: join(baseDir, 'skills', n),
+      primaryFile: join(baseDir, 'skills', n, 'SKILL.md'),
+      pruneBoundary: baseDir,
+    })
+    const flatPath = (type: string, n: string) => ({ file: join(baseDir, `${type}s`, `${n}.md`) })
+    return {
+      name,
+      apiVersion: ADAPTER_API_VERSION,
+      supportsInstall: true,
+      buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
+      async installAsset(request) {
+        if (request.assetType === 'skill') {
+          return installSkillBundle(skillPaths(request.name), {
+            content: request.content,
+            metadata: request.metadata as Record<string, unknown> | undefined,
+            companions: request.companions,
+            ownedCompanionPaths: request.ownedCompanionPaths,
+          })
+        }
+        const p = flatPath(request.assetType, request.name)
+        await installAssetFile(p, request.content, request.metadata as Record<string, unknown> | undefined)
+        return { ok: true, primaryPath: p.file }
+      },
+      async readAsset(request) {
+        if (request.assetType === 'skill') {
+          return readSkillBundle(skillPaths(request.name), request.ownedCompanionPaths)
+        }
+        try {
+          const { content, metadata } = await readAssetFile(flatPath(request.assetType, request.name))
+          return { ok: true, asset: { assetType: request.assetType, content, metadata } }
+        } catch {
+          return { ok: false, failure: { code: 'not-found' } }
+        }
+      },
+      async deleteAsset(request) {
+        if (request.assetType === 'skill') {
+          return deleteSkillBundle(skillPaths(request.name), request.ownedCompanionPaths)
+        }
+        const p = flatPath(request.assetType, request.name)
+        await deleteAssetFile(p)
+        return { ok: true, existed: true, deletedPaths: [p.file] }
+      },
+    }
+  }
+
+  test('installs a skill with companions and records their owned paths', async () => {
+    const local = buildBundleFixture('viper-plans')
+    writeFileSync(
+      join(projectRoot, 'facets.json'),
+      JSON.stringify({ facets: { 'viper-plans': `./${local.split('/').pop()}` } }),
+    )
+
+    const result = await runInstall({ projectRoot, adapters: [buildBundleAdapter('bundle')] })
+    if (!result.ok) expect.unreachable()
+
+    // Both companions materialized, binary preserved byte-for-byte.
+    const companionDir = join(projectRoot, '.bundle/skills/planning')
+    expect(readFileSync(join(companionDir, 'references/api.md'), 'utf8')).toBe('# api reference\n')
+    expect([...readFileSync(join(companionDir, 'assets/logo.bin'))]).toEqual([0, 1, 2, 253, 254, 255])
+
+    // The lockfile records all three owned files with recomputed hashes.
+    const written = CurrentLockfileSchema(JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')))
+    if (written instanceof type.errors) expect.unreachable()
+    const asset = written.facets['viper-plans']?.assets[0]
+    expect(asset?.files.map((f) => f.path)).toEqual([
+      'skills/planning/SKILL.md',
+      'skills/planning/assets/logo.bin',
+      'skills/planning/references/api.md',
+    ])
+  })
+
+  test('reinstall skips an unchanged bundle, then repairs a single drifted companion', async () => {
+    const local = buildBundleFixture('viper-plans')
+    writeFileSync(
+      join(projectRoot, 'facets.json'),
+      JSON.stringify({ facets: { 'viper-plans': `./${local.split('/').pop()}` } }),
+    )
+    const adapters = [buildBundleAdapter('bundle')]
+
+    const first = await runInstall({ projectRoot, adapters })
+    if (!first.ok) expect.unreachable()
+    expect(first.summary.totalAssets).toBe(1)
+
+    // Second install with no changes: the whole bundle is identical → skipped.
+    const second = await runInstall({ projectRoot, adapters })
+    if (!second.ok) expect.unreachable()
+    expect(second.summary.totalAssets).toBe(0)
+
+    // Drift a single companion on disk, then reinstall: the bundle is
+    // repaired (one write) and the drifted file is restored from source. The
+    // verbose log names the exact drifted path (path-specific drift, 9.7).
+    const apiPath = join(projectRoot, '.bundle/skills/planning/references/api.md')
+    writeFileSync(apiPath, '# TAMPERED\n')
+    const logs: string[] = []
+    const third = await runInstall({ projectRoot, adapters, onLog: (b) => logs.push(b()) })
+    if (!third.ok) expect.unreachable()
+    expect(third.summary.totalAssets).toBe(1)
+    expect(readFileSync(apiPath, 'utf8')).toBe('# api reference\n')
+    expect(logs.some((l) => l.includes('drift: skills/planning/references/api.md'))).toBe(true)
+  })
+
+  test('an unowned file in the skill directory survives an update', async () => {
+    const local = buildBundleFixture('viper-plans')
+    writeFileSync(
+      join(projectRoot, 'facets.json'),
+      JSON.stringify({ facets: { 'viper-plans': `./${local.split('/').pop()}` } }),
+    )
+    const adapters = [buildBundleAdapter('bundle')]
+
+    const first = await runInstall({ projectRoot, adapters })
+    if (!first.ok) expect.unreachable()
+
+    // A user drops an unowned note into the skill dir.
+    const notePath = join(projectRoot, '.bundle/skills/planning/notes.txt')
+    writeFileSync(notePath, 'my notes\n')
+
+    // Change the primary so a reinstall re-writes the bundle.
+    writeFileSync(join(local, 'skills/planning/SKILL.md'), '# planning edited\n')
+    const second = await runInstall({ projectRoot, adapters })
+    if (!second.ok) expect.unreachable()
+
+    // The unowned note is untouched by the owned-set replacement.
+    expect(readFileSync(notePath, 'utf8')).toBe('my notes\n')
+  })
+
+  // 9.7: offline multi-file cleanup from the receipt. After install, removing
+  // the facet (empty manifest) deletes the primary AND every owned companion
+  // using only the receipt's recorded owned paths — no cache, no network —
+  // while preserving unowned files.
+  test('removal deletes owned companions offline from the receipt, preserving unowned files', async () => {
+    const local = buildBundleFixture('viper-plans')
+    writeFileSync(
+      join(projectRoot, 'facets.json'),
+      JSON.stringify({ facets: { 'viper-plans': `./${local.split('/').pop()}` } }),
+    )
+    const adapters = [buildBundleAdapter('bundle')]
+
+    const first = await runInstall({ projectRoot, adapters })
+    if (!first.ok) expect.unreachable()
+
+    const skillDir = join(projectRoot, '.bundle/skills/planning')
+    const apiPath = join(skillDir, 'references/api.md')
+    const logoPath = join(skillDir, 'assets/logo.bin')
+    const notePath = join(skillDir, 'notes.txt')
+    expect(existsSync(apiPath)).toBe(true)
+    expect(existsSync(logoPath)).toBe(true)
+    // A user file that the receipt does not own.
+    writeFileSync(notePath, 'keep me\n')
+
+    // Delete the source fixture so nothing can be re-derived from it, and
+    // empty the manifest to trigger receipt-driven removal.
+    rmSync(local, { recursive: true, force: true })
+    writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify({ facets: {} }))
+
+    const removed = await runInstall({ projectRoot, adapters })
+    if (!removed.ok) expect.unreachable()
+
+    // Primary + both owned companions removed; the unowned note survives.
+    expect(existsSync(join(skillDir, 'SKILL.md'))).toBe(false)
+    expect(existsSync(apiPath)).toBe(false)
+    expect(existsSync(logoPath)).toBe(false)
+    expect(readFileSync(notePath, 'utf8')).toBe('keep me\n')
+  })
+
+  // 9.9: archive-only supplementary files (e.g. a root README.md) ship in the
+  // verified archive and are pinned by facet integrity, but are NEVER
+  // materialized to an adapter and NEVER recorded as a lockfile asset.
+  test('an archive-only README is verified but never materialized or locked', async () => {
+    const repo = realpathSync(mkdtempSync(join(projectRoot, 'archiveonly-fixture-')))
+    writeFileSync(
+      join(repo, 'facet.json'),
+      JSON.stringify({
+        name: 'viper-plans',
+        version: '0.1.0',
+        skills: { planning: { description: 'planning skill' } },
+        files: ['README.md'],
+      }),
+    )
+    mkdirSync(join(repo, 'skills/planning'), { recursive: true })
+    writeFileSync(join(repo, 'skills/planning/SKILL.md'), '# planning\n')
+    writeFileSync(join(repo, 'README.md'), '# my facet\n')
+    writeFileSync(
+      join(projectRoot, 'facets.json'),
+      JSON.stringify({ facets: { 'viper-plans': `./${repo.split('/').pop()}` } }),
+    )
+
+    const result = await runInstall({ projectRoot, adapters: [buildBundleAdapter('bundle')] })
+    if (!result.ok) expect.unreachable()
+
+    // README is NOT written into the adapter tree anywhere.
+    expect(existsSync(join(projectRoot, '.bundle/README.md'))).toBe(false)
+    expect(existsSync(join(projectRoot, '.bundle/skills/planning/README.md'))).toBe(false)
+
+    // No lockfile asset lists README.md among its files.
+    const written = CurrentLockfileSchema(JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')))
+    if (written instanceof type.errors) expect.unreachable()
+    for (const asset of written.facets['viper-plans']?.assets ?? []) {
+      expect(asset.files.some((f) => f.path === 'README.md')).toBe(false)
+    }
+  })
+
+  // 9.10: interrupted-install convergence. A crash can leave a partial bundle
+  // (primary present, a companion missing). Re-running install compares the
+  // on-disk bundle to the source and repairs it, converging without deleting
+  // any unowned file.
+  test('re-running install converges a partially-materialized bundle without deleting unowned files', async () => {
+    const local = buildBundleFixture('viper-plans')
+    writeFileSync(
+      join(projectRoot, 'facets.json'),
+      JSON.stringify({ facets: { 'viper-plans': `./${local.split('/').pop()}` } }),
+    )
+    const adapters = [buildBundleAdapter('bundle')]
+
+    const first = await runInstall({ projectRoot, adapters })
+    if (!first.ok) expect.unreachable()
+
+    const skillDir = join(projectRoot, '.bundle/skills/planning')
+    // Simulate an interrupted install: a companion is missing on disk, and an
+    // unowned user file is present.
+    rmSync(join(skillDir, 'references/api.md'), { force: true })
+    const notePath = join(skillDir, 'notes.txt')
+    writeFileSync(notePath, 'keep me\n')
+
+    // Re-run converges: the missing companion is restored, the unowned file
+    // survives, and the install reports the bundle as repaired (one write).
+    const second = await runInstall({ projectRoot, adapters })
+    if (!second.ok) expect.unreachable()
+    expect(second.summary.totalAssets).toBe(1)
+    expect(readFileSync(join(skillDir, 'references/api.md'), 'utf8')).toBe('# api reference\n')
+    expect(readFileSync(notePath, 'utf8')).toBe('keep me\n')
   })
 })
