@@ -11,12 +11,7 @@ import {
 } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { validateAssetName } from '@agent-facets/common'
-import type {
-  AssetIntegrityFailure,
-  BuildManifest,
-  FacetIntegrityFailure,
-  IntegrityFailure,
-} from '@agent-facets/protocol'
+import type { AssetIntegrityFailure, FacetIntegrityFailure, IntegrityFailure } from '@agent-facets/protocol'
 import { type ArchiveEntry, assembleTar, computeContentHash } from '@agent-facets/protocol'
 import { type } from 'arktype'
 import { jsonFileText } from '../json-file-text.ts'
@@ -239,7 +234,9 @@ export type CachePutVerifiedResult =
  * Performs two integrity checks before writing:
  *
  *   1. **Per-asset audit**: for every `(path, expectedHash)` in
- *      `buildManifest.assets`, read the file from `sourceDir`,
+ *      `archive.fileHashes` (the version-selected hash map — `assets`
+ *      for legacy `0.1` archives, `files` for current `0.2` archives),
+ *      read the file from `sourceDir`,
  *      recompute SHA-256 via `computeContentHash`, compare. Any
  *      mismatch returns an `AssetIntegrityFailure` with the offending
  *      path. A missing or unreadable asset is reported with
@@ -247,7 +244,7 @@ export type CachePutVerifiedResult =
  *
  *   2. **Top-level compare**: `computedIntegrity` (the caller's
  *      verified hash of the canonical archive bytes) must equal
- *      `buildManifest.integrity` (the manifest's self-declared top-
+ *      `archive.integrity` (the manifest's self-declared top-
  *      level integrity). Mismatch returns a `FacetIntegrityFailure`
  *      with `check: 'C'`. This is the same logical check as the
  *      registry three-check protocol's check C, applied at cache-
@@ -278,12 +275,12 @@ export type CachePutVerifiedResult =
 export function cachePutVerified(
   identity: CacheIdentity,
   sourceDir: string,
-  buildManifest: BuildManifest,
+  archive: { integrity: string; fileHashes: Record<string, string> },
   computedIntegrity: string,
   facet: string,
 ): CachePutVerifiedResult {
   // 1. Per-asset audit.
-  for (const [path, expected] of Object.entries(buildManifest.assets)) {
+  for (const [path, expected] of Object.entries(archive.fileHashes)) {
     const nameCheck = validateAssetName(path)
     if (!nameCheck.ok) {
       const failure: AssetIntegrityFailure = {
@@ -322,12 +319,12 @@ export function cachePutVerified(
   }
 
   // 2. Top-level: caller-computed integrity vs. manifest's claim.
-  if (computedIntegrity !== buildManifest.integrity) {
+  if (computedIntegrity !== archive.integrity) {
     const failure: FacetIntegrityFailure = {
       kind: 'facet',
       facet,
       check: 'C',
-      expected: buildManifest.integrity,
+      expected: archive.integrity,
       observed: computedIntegrity,
     }
     return { ok: false, integrity: failure }
@@ -336,7 +333,7 @@ export function cachePutVerified(
   // 3. Write the stripped sidecar.
   const sidecar: CacheIntegrity = {
     integrity: computedIntegrity,
-    assets: buildManifest.assets,
+    assets: archive.fileHashes,
   }
   writeFileSync(join(sourceDir, CACHE_INTEGRITY_FILE), jsonFileText(sidecar))
 
@@ -411,9 +408,15 @@ export function computeDirIntegrity(dir: string, assetPaths: ReadonlyArray<strin
     if (!nameCheck.ok) {
       return { ok: false, reason: 'unsafe-path', path }
     }
-    let content: string
+    // Read raw bytes, not UTF-8 text. A `0.2` archive may carry opaque
+    // binary supplementary files (e.g. `assets/logo.png`); decoding them as
+    // UTF-8 replaces invalid byte sequences with U+FFFD, so the recomputed
+    // per-file hash and reconstructed-tar integrity would diverge from the
+    // verified archive and reject an otherwise valid package. Hashing and
+    // tar assembly both accept `Uint8Array`, so bytes round-trip exactly.
+    let content: Uint8Array
     try {
-      content = readFileSync(join(dir, path), 'utf8')
+      content = new Uint8Array(readFileSync(join(dir, path)))
     } catch {
       return { ok: false, reason: 'unreadable', path }
     }

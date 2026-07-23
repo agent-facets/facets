@@ -22,7 +22,10 @@ import type { RegistryMetadata, RegistryResult } from '../../registry/types.ts'
 
 // --- Download stub (mutated per-test) --------------------------------------
 
-type DownloadStub = (meta: RegistryMetadata, dest: string) => Promise<RegistryResult<BuildManifest>>
+type DownloadStub = (
+  meta: RegistryMetadata,
+  dest: string,
+) => Promise<RegistryResult<{ integrity: string; fileHashes: Record<string, string> }>>
 let downloadStub: DownloadStub = async () => ({
   ok: false,
   error: { code: 'NETWORK_ERROR', cause: 'no download stub configured', attempts: 1 },
@@ -72,7 +75,13 @@ function seedSlot(name: string, version: string): { slotPath: string; integrity:
   const staging = cacheStagingDir()
   const content = makeContent(staging, name, version)
   const id: CacheIdentity = { kind: 'registry', name, version }
-  const put = cachePutVerified(id, content.dir, content.manifest, content.integrity, name)
+  const put = cachePutVerified(
+    id,
+    content.dir,
+    { integrity: content.manifest.integrity, fileHashes: content.manifest.assets },
+    content.integrity,
+    name,
+  )
   if (!put.ok) throw new Error('test bug: seeding cache slot failed')
   return { slotPath: put.path, integrity: content.integrity }
 }
@@ -81,7 +90,7 @@ function seedSlot(name: string, version: string): { slotPath: string; integrity:
 function stubDownload(content: Content): void {
   downloadStub = async (_meta, dest) => {
     cpSync(content.dir, dest, { recursive: true })
-    return { ok: true, value: content.manifest }
+    return { ok: true, value: { integrity: content.manifest.integrity, fileHashes: content.manifest.assets } }
   }
 }
 

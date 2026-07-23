@@ -786,7 +786,13 @@ function seedCacheSlotForGit(
       'skills/planning/SKILL.md': computeContentHash(skillBody),
     },
   }
-  const result = cachePutVerified(id, staging, manifest, integrity, facetName)
+  const result = cachePutVerified(
+    id,
+    staging,
+    { integrity: manifest.integrity, fileHashes: manifest.assets },
+    integrity,
+    facetName,
+  )
   if (!result.ok) expect.unreachable()
 
   return {

@@ -7,7 +7,7 @@ import {
   resolveCredential,
   uncappedGunzip,
 } from '@agent-facets/engine'
-import { type FacetManifest, validateFacetArchive } from '@agent-facets/protocol'
+import { type ArchiveVerificationFailure, type FacetManifest, validateFacetArchive } from '@agent-facets/protocol'
 import type { Command } from '../../commands.ts'
 import { writeCliError } from '../../util/errors.ts'
 import { translateEngineRegistryError } from '../../util/registry-errors.ts'
@@ -121,7 +121,7 @@ export const publishCommand: Command = {
     if (!verified.ok) {
       writeCliError({
         what: 'built artifact failed verification',
-        detail: verified.errors.map((e) => `${e.path}: ${e.message}`).join('\n'),
+        detail: describeVerificationFailure(verified.failure),
         fix: 'rebuild with `facet build`',
       })
       return 1
@@ -149,6 +149,35 @@ export const publishCommand: Command = {
     process.stdout.write(`Published ${facetManifest.name}@${facetManifest.version}.\n`)
     return 0
   },
+}
+
+/**
+ * Render an archive-verification failure as a multi-line detail block for
+ * the CLI's 3-line error format.
+ */
+function describeVerificationFailure(failure: ArchiveVerificationFailure): string {
+  switch (failure.code) {
+    case 'container':
+    case 'invalid-json':
+    case 'duplicate-members':
+    case 'schema-violation':
+    case 'validation':
+      return failure.errors.map((e) => (e.path ? `${e.path}: ${e.message}` : e.message)).join('\n')
+    case 'decompression':
+      return failure.reason === 'too-large'
+        ? 'inner archive exceeds the allowed decompressed size'
+        : 'inner archive is not valid gzip (corrupt or truncated)'
+    case 'integrity':
+      return `archive integrity mismatch: expected ${failure.failure.expected}, got ${failure.failure.observed}`
+    case 'entry-integrity':
+      return failure.failures.map((f) => `${f.path}: expected ${f.expected}, got ${f.observed}`).join('\n')
+    case 'unsupported-facet-version':
+      return `archive format ${failure.observed ?? '(missing)'} is not supported (supported: ${failure.supported.join(', ')})`
+    default: {
+      const unreachable: never = failure
+      throw new Error(`unreachable verification failure: ${JSON.stringify(unreachable)}`)
+    }
+  }
 }
 
 /**
@@ -198,7 +227,7 @@ async function pickBytesToPublish(
   if (!verifyForDrift.ok) {
     writeCliError({
       what: 'built artifact failed verification',
-      detail: verifyForDrift.errors.map((e) => `${e.path}: ${e.message}`).join('\n'),
+      detail: describeVerificationFailure(verifyForDrift.failure),
       fix: 'rebuild with `facet build`',
     })
     return null

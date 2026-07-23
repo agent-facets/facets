@@ -118,8 +118,8 @@ describe('publishCommand — happy path', () => {
     // through the protocol's archive reader, has a build manifest.
     const parsed = parseFacetArchive(call.body)
     if (!parsed.ok) expect.unreachable()
-    expect(parsed.data.buildManifest.archive).toBe('archive.tar.gz')
-    expect(parsed.data.buildManifest.integrity).toMatch(/^sha256:[a-f0-9]{64}$/)
+    expect(parsed.data.manifest.manifest.archive).toBe('archive.tar.gz')
+    expect(parsed.data.manifest.manifest.integrity).toMatch(/^sha256:[a-f0-9]{64}$/)
     expect(stdout).toContain('Published cowsay@0.1.0')
   })
 })
@@ -156,7 +156,7 @@ describe('publishCommand — missing artifact', () => {
     if (call === undefined) expect.unreachable()
     const parsed = parseFacetArchive(call.body)
     if (!parsed.ok) expect.unreachable()
-    expect(parsed.data.buildManifest.archive).toBe('archive.tar.gz')
+    expect(parsed.data.manifest.manifest.archive).toBe('archive.tar.gz')
   })
 
   test('TTY, user declines build offer: aborts non-zero, no fetch', async () => {
@@ -841,6 +841,6 @@ describe('publishCommand — build/publish parity', () => {
     const diskParsed = parseFacetArchive(onDiskBytes)
     const uploadParsed = parseFacetArchive(call.body)
     if (!diskParsed.ok || !uploadParsed.ok) expect.unreachable()
-    expect(uploadParsed.data.buildManifest).toEqual(diskParsed.data.buildManifest)
+    expect(uploadParsed.data.manifest).toEqual(diskParsed.data.manifest)
   })
 })

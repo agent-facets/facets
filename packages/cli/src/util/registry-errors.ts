@@ -55,5 +55,17 @@ export function translateEngineRegistryError(err: RegistryError): CliError {
         detail: err.cause,
         fix: 'try again; if persistent, file a bug',
       }
+    case 'UNSUPPORTED_ARCHIVE':
+      // Basic upgrade guidance for now; the full facet-format →
+      // minimum-CLI-release compatibility table lands with the install
+      // failure-rendering work.
+      return {
+        what:
+          err.observed === undefined
+            ? 'this facet uses an archive format this CLI does not recognize'
+            : `this facet uses archive format ${err.observed}, which this CLI does not support`,
+        detail: `supported archive formats: ${err.supported.join(', ')}`,
+        fix: 'update agent-facets with `facet self-update` and try again',
+      }
   }
 }

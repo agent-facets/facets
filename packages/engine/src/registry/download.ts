@@ -1,7 +1,12 @@
 import { createHash } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { type BuildManifest, validateFacetArchive } from '@agent-facets/protocol'
+import {
+  type ArchiveVerificationFailure,
+  listVerifiedFiles,
+  validateFacetArchive,
+  verifiedFileHashes,
+} from '@agent-facets/protocol'
 import type { Client } from 'openapi-fetch'
 import { createRegistryClient, translateWireError } from './client.ts'
 import { resolveCredential } from './credentials.ts'
@@ -45,10 +50,47 @@ import type { RegistryMetadata, RegistryResult } from './types.ts'
  *
  * Always returns; never throws.
  */
+/**
+ * The verified-archive summary a successful download returns: the archive's
+ * self-declared integrity and its version-selected per-entry hash map
+ * (`assets` for legacy `0.1`, `files` for current `0.2`). Version-neutral
+ * so cache verification does not branch on archive format.
+ */
+export interface DownloadedArchiveInfo {
+  integrity: string
+  fileHashes: Record<string, string>
+}
+
+/** Render an archive-verification failure as a short diagnostic string. */
+function describeArchiveFailure(failure: ArchiveVerificationFailure): string {
+  switch (failure.code) {
+    case 'container':
+    case 'invalid-json':
+    case 'duplicate-members':
+    case 'schema-violation':
+    case 'validation':
+      return failure.errors.map((e) => e.message).join('; ')
+    case 'decompression':
+      return failure.reason === 'too-large'
+        ? 'inner archive exceeds the allowed decompressed size'
+        : 'inner archive is not valid gzip (corrupt or truncated)'
+    case 'integrity':
+      return `archive integrity mismatch: expected ${failure.failure.expected}, got ${failure.failure.observed}`
+    case 'entry-integrity':
+      return failure.failures.map((f) => `entry ${f.path} hash mismatch`).join('; ')
+    case 'unsupported-facet-version':
+      return `unsupported archive format ${failure.observed ?? '(missing)'}`
+    default: {
+      const unreachable: never = failure
+      throw new Error(`unreachable archive failure: ${JSON.stringify(unreachable)}`)
+    }
+  }
+}
+
 export async function downloadAndExtractFacet(
   meta: RegistryMetadata,
   dest: string,
-): Promise<RegistryResult<BuildManifest>> {
+): Promise<RegistryResult<DownloadedArchiveInfo>> {
   // Reads carry the credential opportunistically (see design D3): the
   // archive-lookup request earns the authenticated rate-limit tier when
   // a credential is available, and proceeds anonymously otherwise.
@@ -131,31 +173,46 @@ export async function downloadAndExtractFacet(
   // build-rule validation. Only verified assets are extracted.
   const archiveResult = await validateFacetArchive(bytes, { gunzip: uncappedGunzip })
   if (!archiveResult.ok) {
-    const msg = archiveResult.errors.map((e) => e.message).join('; ')
+    // An unsupported archive format is a typed failure so the CLI can
+    // render actionable upgrade guidance instead of a generic error.
+    if (archiveResult.failure.code === 'unsupported-facet-version') {
+      return {
+        ok: false,
+        error: {
+          code: 'UNSUPPORTED_ARCHIVE',
+          observed: archiveResult.failure.observed,
+          supported: archiveResult.failure.supported,
+        },
+      }
+    }
     return {
       ok: false,
       error: {
         code: 'NETWORK_ERROR',
-        cause: `archive is not a valid .facet: ${msg}`,
+        cause: `archive is not a valid .facet: ${describeArchiveFailure(archiveResult.failure)}`,
         attempts: 1,
       },
     }
   }
 
-  const { buildManifest, assets } = archiveResult.data
+  const verified = archiveResult.data
 
-  // Extract verified assets to dest. All paths have been validated by
-  // validateFacetArchive (via validateAssetName) so they are safe
-  // relative paths. Extract all-or-nothing: mkdir + write only after
-  // full verification.
+  // Extract every verified file to dest — primary assets and (for 0.2
+  // archives) supplementary files alike. The cache slot is storage, not
+  // materialization: archive-only files in a slot never reach materialize
+  // because engine loaders only read the paths the manifest derives.
+  // All paths were raw-header-validated as canonical relative paths.
   await mkdir(dest, { recursive: true })
-  for (const asset of assets) {
-    const target = join(dest, asset.path)
+  for (const file of listVerifiedFiles(verified)) {
+    const target = join(dest, file.path)
     await mkdir(dirname(target), { recursive: true })
-    await writeFile(target, asset.bytes)
+    await writeFile(target, file.bytes)
   }
 
-  return { ok: true, value: buildManifest }
+  return {
+    ok: true,
+    value: { integrity: verified.buildManifest.integrity, fileHashes: verifiedFileHashes(verified) },
+  }
 }
 
 /**

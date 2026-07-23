@@ -54,7 +54,8 @@ mock.module('../../registry/download.ts', () => ({
       return { ok: false, error: { code: 'NETWORK_ERROR', cause: 'no fixture set', attempts: 1 } }
     }
     cpSync(registryFixtureDir, dest, { recursive: true })
-    return { ok: true, value: await manifestFor(registryFixtureDir) }
+    const manifest = await manifestFor(registryFixtureDir)
+    return { ok: true, value: { integrity: manifest.integrity, fileHashes: manifest.assets } }
   },
 }))
 

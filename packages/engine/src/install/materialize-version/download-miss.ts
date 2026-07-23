@@ -27,9 +27,10 @@ export async function handleMiss(input: LockedMiss | ConfirmingMiss): Promise<Ma
     return { ok: false, code: 'download-failed', error: downloadResult.error }
   }
 
-  // downloadAndExtractFacet returns the build manifest parsed from the
-  // outer tar. The inner archive files are already extracted in stagingDir.
-  const buildManifest = downloadResult.value
+  // downloadAndExtractFacet returns the verified archive's integrity and
+  // its version-selected per-entry hash map. The inner archive files are
+  // already extracted in stagingDir.
+  const archive = downloadResult.value
 
   // Genuinely recompute the canonical integrity from the downloaded
   // bytes (per-asset hashes + canonical-tar hash). The manifest's
@@ -38,14 +39,14 @@ export async function handleMiss(input: LockedMiss | ConfirmingMiss): Promise<Ma
   // against itself and pass unconditionally. The recompute is what
   // gives Check C teeth: tampered content whose manifest still carries
   // the original integrity now fails here.
-  const recomputed = computeDirIntegrity(stagingDir, Object.keys(buildManifest.assets))
+  const recomputed = computeDirIntegrity(stagingDir, Object.keys(archive.fileHashes))
   if (!recomputed.ok) {
     await rm(stagingDir, { recursive: true, force: true }).catch(() => {})
     const failure: AssetIntegrityFailure = {
       kind: 'asset',
       facet: input.facetName,
       path: recomputed.path,
-      expected: buildManifest.assets[recomputed.path] ?? '<unknown>',
+      expected: archive.fileHashes[recomputed.path] ?? '<unknown>',
       observed: '<missing>',
     }
     return { ok: false, code: 'integrity-failed', failure }
@@ -56,7 +57,7 @@ export async function handleMiss(input: LockedMiss | ConfirmingMiss): Promise<Ma
   const threeCheck = verifyRegistryThreeCheck({
     facet: input.facetName,
     expectedIntegrity: input.contentFingerprint,
-    archiveIntegrity: buildManifest.integrity,
+    archiveIntegrity: archive.integrity,
     computedIntegrity,
     lockfileIntegrity: input.kind === 'locked-miss' ? input.lockfileIntegrity : undefined,
   })
@@ -67,7 +68,7 @@ export async function handleMiss(input: LockedMiss | ConfirmingMiss): Promise<Ma
 
   // Write to cache with per-asset audit + sidecar.
   const cacheId: CacheIdentity = { kind: 'registry', name: input.facetName, version: input.version }
-  const putResult = cachePutVerified(cacheId, stagingDir, buildManifest, computedIntegrity, input.facetName)
+  const putResult = cachePutVerified(cacheId, stagingDir, archive, computedIntegrity, input.facetName)
   if (!putResult.ok) {
     // cachePutVerified failed — either corruption or integrity failure.
     // The staging dir may still exist if it was an integrity failure

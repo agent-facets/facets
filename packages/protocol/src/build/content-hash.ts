@@ -1,15 +1,14 @@
 import { createHash } from 'node:crypto'
 import type { ValidationError } from '@agent-facets/common'
-import { type } from 'arktype'
 import { createTar, parseTar, type TarFileInput, type TarFileItem } from 'nanotar'
-import { FACET_MANIFEST_FILE, type ResolvedFacetManifest } from '../loaders/facet.ts'
-import { mapArkErrors, parseJson } from '../loaders/validate.ts'
 import {
-  BUILD_MANIFEST_NAME,
-  type BuildManifest,
-  BuildManifestSchema,
-  INNER_ARCHIVE_NAME,
-} from '../schemas/build-manifest.ts'
+  type BuildManifestParseFailure,
+  type ParsedBuildManifest,
+  parseBuildManifestDocument,
+} from '../loaders/build-manifest.ts'
+import { FACET_MANIFEST_FILE, type ResolvedFacetManifest } from '../loaders/facet.ts'
+import { BUILD_MANIFEST_NAME, INNER_ARCHIVE_NAME } from '../schemas/build-manifest.ts'
+import { validateRawTarEntries } from './tar-headers.ts'
 
 // Outer-tar layout constants are defined beside the build-manifest schemas
 // (which pin them) and re-exported here for assembly/parsing consumers.
@@ -17,7 +16,12 @@ export { BUILD_MANIFEST_NAME, INNER_ARCHIVE_NAME }
 
 export interface ArchiveEntry {
   path: string
-  content: string
+  /**
+   * Entry payload. Primary text assets are strings; supplementary files are
+   * opaque bytes written verbatim (design D6 — binary and empty permitted).
+   * Hashing and tar assembly accept both.
+   */
+  content: string | Uint8Array
 }
 
 /**
@@ -132,112 +136,113 @@ export function assembleOuterTar(manifestJson: string, innerArchiveBytes: Uint8A
 }
 
 /**
+ * Structured failure data for outer-container parsing. Either the container
+ * itself is malformed (`container`: raw-header violations, wrong entry set,
+ * unparseable tar) or the embedded `build-manifest.json` failed versioned
+ * parsing (all `BuildManifestParseFailure` variants pass through, including
+ * the structured `unsupported-facet-version`).
+ */
+export type FacetArchiveParseFailure = { code: 'container'; errors: ValidationError[] } | BuildManifestParseFailure
+
+export type ParseFacetArchiveResult =
+  | { ok: true; data: { manifest: ParsedBuildManifest; innerArchiveBytes: Uint8Array } }
+  | { ok: false; failure: FacetArchiveParseFailure }
+
+/**
  * Reads the bytes of a `.facet` outer-tar archive and returns the embedded
- * build manifest plus the compressed inner archive bytes. Pure — no disk I/O.
+ * build manifest (version-tagged) plus the compressed inner archive bytes.
+ * Pure — no disk I/O.
  *
- * Consumers (e.g., a registry receiving uploaded archives) call this to
- * inspect or verify an artifact without writing it to disk first.
- *
- * Failure modes are part of the contract — the function never throws.
- * It returns `{ ok: false, errors }` when the input is malformed:
- *   - the outer tar bytes are not parseable as a tar archive
- *     (truncated, header size field out of range, etc.)
- *   - `build-manifest.json` entry is missing from the outer tar
- *   - `archive.tar.gz` entry is missing from the outer tar
- *   - the manifest entry is not valid JSON
- *   - the manifest JSON does not satisfy `BuildManifestSchema`
- *
- * Errors are reported as `ValidationError[]` rooted at
- * `'build-manifest.json'` (or `'archive.tar.gz'` for the structural
- * inner-archive failure, or `'<archive>'` for outer-tar parse failures),
- * so callers can disambiguate the failure source without parsing
- * message strings.
+ * The outer container is validated STRICTLY before either entry is
+ * selected (design D5): raw tar headers are checked for duplicate paths,
+ * portable aliases, non-regular entries, and non-canonical names, and the
+ * entry set must be exactly `{build-manifest.json, archive.tar.gz}` — so
+ * parser collapse can never decide which entry is authoritative. The build
+ * manifest is then parsed with exact `facetVersion` dispatch
+ * (`parseBuildManifestDocument`): duplicate JSON members are rejected
+ * before schema validation and unsupported versions return structured
+ * failure data. The function never throws.
  *
  * To verify integrity on success, decompress the returned
  * `result.data.innerArchiveBytes` (e.g. via `node:zlib.gunzipSync`) and
  * pass the resulting tar bytes to `computeContentHash` — the result MUST
- * equal `result.data.buildManifest.integrity`.
+ * equal the parsed manifest's `integrity`.
  */
-export function parseFacetArchive(
-  bytes: Uint8Array,
-):
-  | { ok: true; data: { buildManifest: BuildManifest; innerArchiveBytes: Uint8Array } }
-  | { ok: false; errors: ValidationError[] } {
+export function parseFacetArchive(bytes: Uint8Array): ParseFacetArchiveResult {
+  // Raw-header validation before any selection: duplicates, aliases,
+  // non-regular entries, and non-canonical names are rejected while the
+  // full raw entry list still exists.
+  const rawResult = validateRawTarEntries(bytes, '<archive>')
+  if (!rawResult.ok) {
+    return { ok: false, failure: { code: 'container', errors: rawResult.errors } }
+  }
+
+  // The canonical outer container holds exactly the two required entries.
+  const observed = rawResult.entries.map((e) => e.path)
+  const required = [BUILD_MANIFEST_NAME, INNER_ARCHIVE_NAME]
+  const setErrors: ValidationError[] = []
+  for (const name of required) {
+    if (!observed.includes(name)) {
+      setErrors.push({
+        path: name,
+        message: `Facet archive is missing required entry: ${name}`,
+        expected: 'present in archive',
+        actual: 'missing',
+      })
+    }
+  }
+  for (const name of observed) {
+    if (!required.includes(name)) {
+      setErrors.push({
+        path: name,
+        message: `Facet archive contains an unexpected outer entry: ${name}. The outer container holds exactly ${BUILD_MANIFEST_NAME} and ${INNER_ARCHIVE_NAME}.`,
+        expected: `only ${BUILD_MANIFEST_NAME} and ${INNER_ARCHIVE_NAME}`,
+        actual: 'unexpected entry',
+      })
+    }
+  }
+  if (setErrors.length > 0) {
+    return { ok: false, failure: { code: 'container', errors: setErrors } }
+  }
+
   let entries: TarFileItem[]
   try {
     entries = parseTar(bytes)
   } catch (e) {
-    // `nanotar.parseTar` throws on malformed inputs (e.g. a truncated upload
-    // whose header `size` field points past the end of the buffer surfaces
-    // as `RangeError: Length out of range of buffer`). The contract above
-    // promises this function never throws — translate to the documented
-    // typed failure shape rooted at the synthetic `'<archive>'` path.
+    // Raw-header validation makes this near-unreachable, but nanotar's
+    // throw-on-malformed contract is not ours — translate defensively.
     const message = e instanceof Error ? e.message : String(e)
     return {
       ok: false,
-      errors: [
-        {
-          path: '<archive>',
-          message: `Facet archive is not a valid tar file: ${message}`,
-          expected: 'parseable tar archive',
-          actual: 'malformed tar bytes',
-        },
-      ],
+      failure: {
+        code: 'container',
+        errors: [
+          {
+            path: '<archive>',
+            message: `Facet archive is not a valid tar file: ${message}`,
+            expected: 'parseable tar archive',
+            actual: 'malformed tar bytes',
+          },
+        ],
+      },
     }
   }
-  let manifestEntry: TarFileItem | undefined
-  let innerEntry: TarFileItem | undefined
-  for (const entry of entries) {
-    if (entry.name === BUILD_MANIFEST_NAME) manifestEntry = entry
-    else if (entry.name === INNER_ARCHIVE_NAME) innerEntry = entry
+
+  // Raw validation guarantees uniqueness, so first match is the only match.
+  const manifestEntry = entries.find((entry) => entry.name === BUILD_MANIFEST_NAME)
+  const innerEntry = entries.find((entry) => entry.name === INNER_ARCHIVE_NAME)
+  const manifestBytes = manifestEntry?.data ? new Uint8Array(manifestEntry.data) : new Uint8Array(0)
+  const innerBytes = innerEntry?.data ? new Uint8Array(innerEntry.data) : new Uint8Array(0)
+
+  const manifestText = new TextDecoder().decode(manifestBytes)
+  const manifestResult = parseBuildManifestDocument(manifestText)
+  if (!manifestResult.ok) {
+    return { ok: false, failure: manifestResult.failure }
   }
-  if (!manifestEntry?.data) {
-    return {
-      ok: false,
-      errors: [
-        {
-          path: BUILD_MANIFEST_NAME,
-          message: `Facet archive is missing required entry: ${BUILD_MANIFEST_NAME}`,
-          expected: 'present in archive',
-          actual: 'missing',
-        },
-      ],
-    }
-  }
-  if (!innerEntry?.data) {
-    return {
-      ok: false,
-      errors: [
-        {
-          path: INNER_ARCHIVE_NAME,
-          message: `Facet archive is missing required entry: ${INNER_ARCHIVE_NAME}`,
-          expected: 'present in archive',
-          actual: 'missing',
-        },
-      ],
-    }
-  }
-  const manifestText = new TextDecoder().decode(manifestEntry.data)
-  const jsonResult = parseJson(manifestText)
-  if (!jsonResult.ok) {
-    return {
-      ok: false,
-      errors: jsonResult.errors.map((e) => ({ ...e, path: BUILD_MANIFEST_NAME })),
-    }
-  }
-  const validated = BuildManifestSchema(jsonResult.data)
-  if (validated instanceof type.errors) {
-    return {
-      ok: false,
-      errors: mapArkErrors(validated).map((e) => ({
-        ...e,
-        path: e.path ? `${BUILD_MANIFEST_NAME}.${e.path}` : BUILD_MANIFEST_NAME,
-      })),
-    }
-  }
+
   return {
     ok: true,
-    data: { buildManifest: validated, innerArchiveBytes: new Uint8Array(innerEntry.data) },
+    data: { manifest: manifestResult.data, innerArchiveBytes: innerBytes },
   }
 }
 

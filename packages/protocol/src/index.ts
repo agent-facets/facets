@@ -19,10 +19,10 @@ export type {
   ArchivePlanInput,
   ArchivePlanResult,
 } from './build/archive-plan.ts'
-export { planArchiveEntries, validateSupplementaryPath } from './build/archive-plan.ts'
+export { planArchiveEntries, portableCollisionKey, validateSupplementaryPath } from './build/archive-plan.ts'
 // content hashing + archive format (deterministic tar layout, hash format,
 // constants — all part of the integrity contract)
-export type { ArchiveEntry } from './build/content-hash.ts'
+export type { ArchiveEntry, FacetArchiveParseFailure, ParseFacetArchiveResult } from './build/content-hash.ts'
 export {
   assembleOuterTar,
   assembleTar,
@@ -37,10 +37,21 @@ export {
 } from './build/content-hash.ts'
 // build validators (artifact-rule checks)
 export { detectNamingCollisions } from './build/detect-collisions.ts'
+// strict raw tar-header validation (design D5) — applied to both archive
+// layers before any path-keyed selection.
+export type {
+  RawTarEntry,
+  RawTarError,
+  RawTarErrorCode,
+  RawTarValidationOptions,
+  RawTarValidationResult,
+} from './build/tar-headers.ts'
+export { validateRawTarEntries } from './build/tar-headers.ts'
 export { validateContentFiles } from './build/validate-content.ts'
 export { validateCompactFacets } from './build/validate-facets.ts'
 // integrity
 export type {
+  ArchiveVerificationFailure,
   AssetIntegrityFailure,
   FacetIntegrityCheck,
   FacetIntegrityFailure,
@@ -50,11 +61,15 @@ export type {
   IntegrityFailure,
   IntegrityResult,
   RegistryIntegrityInput,
-  VerifiedArchive,
+  ValidateFacetArchiveResult,
   VerifiedAsset,
+  VerifiedEntry,
+  VerifiedFacetArchive,
 } from './integrity/index.ts'
 export {
+  listVerifiedFiles,
   validateFacetArchive,
+  verifiedFileHashes,
   verifyGitOneCheck,
   verifyHash,
   verifyLockfileOneCheck,

@@ -62,7 +62,8 @@ mock.module('../../registry/download.ts', () => ({
       return { ok: false, error: { code: 'NETWORK_ERROR', cause: `no fixture for ${meta.version}`, attempts: 1 } }
     }
     cpSync(fixture, dest, { recursive: true })
-    return { ok: true, value: await manifestFor(fixture) }
+    const manifest = await manifestFor(fixture)
+    return { ok: true, value: { integrity: manifest.integrity, fileHashes: manifest.assets } }
   },
 }))
 
