@@ -4,6 +4,7 @@
     "cowsay": "1.0.1",
     "@agentfacets/review-openspec-design": "latest",
     "@agentfacets/openspec-adversary": "3.2.1",
-    "@agentfacets/address-pr-feedback": "latest"
+    "@agentfacets/address-pr-feedback": "latest",
+    "graphite": "0.1.0"
   }
 }
