@@ -32,7 +32,7 @@ Canonical terms used throughout the specification. Implementations SHOULD use th
 
 <CardGroup cols={3}>
   <Card title="Skill" icon="sparkles" href="/docs/learn/skills">
-    A directory asset following the Agent Skills format.<br /><br />`skills/<name>/SKILL.md`
+    A directory asset following the Agent Skills format; a `SKILL.md` plus optional companion files.<br /><br />`skills/<name>/SKILL.md`
   </Card>
   <Card title="Agent" icon="bot" href="/docs/learn/agents">
     A single-file agent definition.<br /><br />`agents/<name>.md`
@@ -44,9 +44,13 @@ Canonical terms used throughout the specification. Implementations SHOULD use th
 
 | Term | Definition | Reference |
 | --- | --- | --- |
-| **Asset tuple** | A `(scope, type, name)` triple — the adapter-agnostic identity of a materialized asset. | [Install receipt](/specification/commit#machine-local-install-receipt) |
+| **Asset tuple** | A `(scope, type, name)` triple — the adapter-agnostic identity of a materialized asset. Skill ownership also carries a validated owned-companion path set. | [Install receipt](/specification/commit#machine-local-install-receipt) |
 | **Managed asset** | Installed by a facet; tracked in the lockfile and install receipt. | [`facet edit`](/cli/authoring/edit) |
 | **Unmanaged asset** | In an adapter directory but not connected to any facet: user-created, or kept from an uninstalled facet. | [`facet edit`](/cli/authoring/edit) |
+| **Supplementary file** | A manifest-declared non-asset file shipped in the archive and integrity-protected, but never an independently installable asset. | [Supplementary files](/specification/manifest#supplementary-files) |
+| **Companion file** | A per-skill supplementary file that materializes atomically with its owning skill. | [Supplementary files](/specification/manifest#supplementary-files) |
+| **Archive-only file** | A top-level supplementary file (e.g. `README.md`) that ships in the archive but is never written to disk at install. | [Materialize](/specification/commit#materialize) |
+| **Owned companion path set** | The engine-supplied, containment-validated set of a skill's companion paths handed to the adapter for install, read, and delete. | [Materialize](/specification/commit#materialize) |
 
 ## Identity & versioning
 
@@ -63,8 +67,9 @@ Canonical terms used throughout the specification. Implementations SHOULD use th
 | --- | --- | --- |
 | **Canonical fingerprint** | `content_integrity` — SHA-256 of the uncompressed inner tar; the trust anchor recorded in the lockfile, cache sidecar, and build manifest. | [Two hashes, two domains](/specification/integrity#two-hashes-two-domains) |
 | **Transport hash** | `content_hash` — SHA-256 of the uploaded `.facet` tarball; a download-time transit check only, never persisted. | [Two hashes, two domains](/specification/integrity#two-hashes-two-domains) |
-| **Build manifest** | `build-manifest.json`, embedded in the archive's outer layer; the integrity claim and per-asset hash map. | [Archive format](/specification/archive) |
-| **Cache sidecar** | `cache-integrity.json`, stored alongside cached content; the canonical fingerprint plus per-asset hashes. | [Where hashes live](/specification/integrity#where-hashes-live) |
+| **Build manifest** | `build-manifest.json`, embedded in the archive's outer layer; the integrity claim and the complete per-entry `files` hash map. | [Archive format](/specification/archive) |
+| **Cache sidecar** | `cache-integrity.json`, stored alongside cached content; the canonical fingerprint plus per-entry hashes. | [Where hashes live](/specification/integrity#where-hashes-live) |
+| **Adapter API version** | The identifier for the adapter contract shape (currently `0.1`); classified by exact match, independent of the archive and lockfile versions. | [Custom adapters](/guides/custom-adapters) |
 | **Cache self-audit** | Re-verification of cached content against its sidecar on every materialization; a mismatch evicts the slot. | [Commit — Verify](/specification/commit#verify) |
 | **Integrity confirmation** | The registry metadata check required whenever a lockfile entry is created or replaced; fails offline. | [Registry interactions](/specification/commit#registry-interactions) |
 | **One-check reproduction guard** | The git-source defense: built content must hash to the locked integrity (the tag-move defense). | [Git and local sources](/specification/commit#git-and-local-sources) |
@@ -83,11 +88,11 @@ Canonical terms used throughout the specification. Implementations SHOULD use th
 | **Install lock** | The per-project advisory lock ensuring one install at a time. | [Sequence](/specification/commit#sequence) |
 | **Journal** | The log in which every materialization write records its inverse operation, replayed in reverse on failure. | [Commit](/specification/commit) |
 | **Materialization** | Writing assets from verified content into each selected adapter's storage. | [Materialize](/specification/commit#materialize) |
-| **Install receipt** | The machine-local, per-project record under `$FACET_DIR/receipts/` tracking what this machine has materialized. | [Install receipt](/specification/commit#machine-local-install-receipt) |
+| **Install receipt** | The machine-local, per-project record (schema `0.2`) under `$FACET_DIR/receipts/` mirroring committed asset and per-file ownership for offline removal. | [Install receipt](/specification/commit#machine-local-install-receipt) |
 | **Drift removal** | Deleting assets of facets no longer wanted, computed from the receipt, entirely offline. | [Drift removal](/specification/commit#drift-removal) |
 | **Orphan-on-pull** | The recoverable state where a teammate's removal reaches you via `git pull`; the receipt still remembers. | [Drift removal](/specification/commit#drift-removal) |
 | **Tri-write** | The atomic commit of `facets.json`, `facets.lock`, and the receipt together; failure leaves all three unchanged. | [Transactional tri-write](/specification/commit#transactional-tri-write) |
-| **Lockfile** | `facets.lock` — resolved installation state: tagged source, exact version, integrity, and asset tuples per facet. | [Lockfile](/specification/lockfile) |
+| **Lockfile** | `facets.lock` — resolved installation state: tagged source, exact version, integrity, and per-asset entries with per-file `{ path, integrity }` records. | [Lockfile](/specification/lockfile) |
 | **Cache** | The machine-local content-addressed store for fetched facet payloads under `$FACET_DIR/cache/`. | [`facet install`](/cli/install#cache) |
 
 ## Authoring & publishing

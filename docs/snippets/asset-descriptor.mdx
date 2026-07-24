@@ -9,6 +9,15 @@ export const AssetDescriptor = ({ assetType, promptPath }) => (
       produce a warning; invalid metadata for an installed adapter is a build
       error.
     </ResponseField>
+    {assetType === "skill" && (
+      <ResponseField name="files" type="array of string">
+        Companion files shipped inside the skill directory, as exact paths
+        relative to <code>skills/&lt;name&gt;/</code> (e.g.{" "}
+        <code>references/api.md</code>). They install and remove atomically with
+        the skill and cannot list <code>SKILL.md</code>. See{" "}
+        <a href="/specification/manifest#supplementary-files">Supplementary files</a>.
+      </ResponseField>
+    )}
     <p>
       The {assetType}'s prompt is the content of <code>{promptPath}</code>,
       resolved by convention at build time — it is not a manifest field.

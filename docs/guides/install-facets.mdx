@@ -94,7 +94,7 @@ Your project now has two files  -- commit both to version control so teammates a
 
 **`facets.json`**  -- the project manifest: which facets belong to the project, and at what version. It is the source of truth for your dependencies.
 
-**`facets.lock`**  -- the lockfile: exact resolved versions, <Tooltip headline="Integrity hash" tip="A content hash of a facet's assets, checked on every install so you get exactly the bytes that were published — tampering or corruption fails the install." cta="How integrity works" href="/specification/integrity">integrity hashes</Tooltip>, and asset lists for reproducible installs. It is managed by the CLI; you never hand-edit it.
+**`facets.lock`**  -- the lockfile: exact resolved versions, <Tooltip headline="Integrity hash" tip="A content hash of a facet's contents, checked on every install so you get exactly the bytes that were published — tampering or corruption fails the install." cta="How integrity works" href="/specification/integrity">integrity hashes</Tooltip>, and per-file asset records for reproducible installs. It is managed by the CLI; you never hand-edit it.
 
 <CodeGroup>
 
@@ -109,17 +109,26 @@ Your project now has two files  -- commit both to version control so teammates a
 
 ```json expandable facets.lock
 {
-  "lockfileVersion": 1,
+  "lockfileVersion": 0.2,
   "facets": {
     "cowsay": {
       "source": { "kind": "registry", "registry": "https://api.agentfacets.io" },
       "version": "1.0.0",
       "integrity": "sha256:70fe8f9f0ba1…",
       "assets": [
-        { "scope": "project", "type": "skill", "name": "cowsay-rules" },
-        { "scope": "project", "type": "agent", "name": "cowsay" },
-        { "scope": "project", "type": "command", "name": "cowchat" },
-        { "scope": "project", "type": "command", "name": "cowsay" }
+        {
+          "scope": "project", "type": "skill", "name": "cowsay-rules",
+          "files": [
+            { "path": "skills/cowsay-rules/SKILL.md", "integrity": "sha256:11aa22…" },
+            { "path": "skills/cowsay-rules/references/moods.md", "integrity": "sha256:22bb33…" }
+          ]
+        },
+        { "scope": "project", "type": "agent", "name": "cowsay",
+          "files": [{ "path": "agents/cowsay.md", "integrity": "sha256:33cc44…" }] },
+        { "scope": "project", "type": "command", "name": "cowchat",
+          "files": [{ "path": "commands/cowchat.md", "integrity": "sha256:44dd55…" }] },
+        { "scope": "project", "type": "command", "name": "cowsay",
+          "files": [{ "path": "commands/cowsay.md", "integrity": "sha256:55ee66…" }] }
       ]
     }
   }
@@ -141,12 +150,13 @@ The full schema — every field, the tagged source kinds, and the exact-version 
 ```
 .opencode/
 ├── skills/cowsay-rules/SKILL.md
+├── skills/cowsay-rules/references/moods.md
 ├── agents/cowsay.md
 ├── commands/cowsay.md
 └── commands/cowchat.md
 ```
 
-Other adapters use their own conventional location (Claude Code under `.claude/`, and so on). These files are `project`-scoped  -- the same `scope` you see in the lockfile  -- so they belong to the checkout, not your machine. `facet remove` deletes them again, and `facet install` recreates them from the lockfile after a clone.
+A skill's [companion files](/specification/manifest#supplementary-files) land beside its `SKILL.md`, and a skill installs and removes as one atomic bundle. [Archive-only files](/specification/commit#materialize) — a facet's top-level `README.md` or `LICENSE` — ship in the archive but are **never** written into your adapters. Other adapters use their own conventional location (Claude Code under `.claude/`, and so on). These files are `project`-scoped  -- the same `scope` you see in the lockfile  -- so they belong to the checkout, not your machine. `facet remove` deletes them again — including a skill's owned companions, while preserving any files you added into a skill directory yourself — and `facet install` recreates them from the lockfile after a clone.
 
 ## Reinstall after a git clone
 

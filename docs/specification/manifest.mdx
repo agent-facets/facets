@@ -7,7 +7,7 @@ description: The facet.json schema and name grammar
 
 import { AssetDescriptor } from "/snippets/asset-descriptor.mdx";
 
-The facet manifest (`facet.json`) is the source of truth for a facet's identity and the text assets it contains. This page defines every field in the manifest schema and is the canonical reference for the facet name grammar.
+The facet manifest (`facet.json`) is the source of truth for a facet's identity, the text assets it contains, and the [supplementary files](#supplementary-files) it ships. This page defines every field in the manifest schema and is the canonical reference for both the facet name grammar and the asset name grammar.
 
 <Note>
 The facet manifest is distinct from the [project manifest](/specification/project-manifest) (`facets.json`) — the file in a consuming project that declares which facets are installed. Throughout this page, "the manifest" means the facet manifest.
@@ -52,7 +52,7 @@ Every top-level field of `facet.json`. The `name` and `version` fields MUST be p
 ### Fields
 
 <ResponseField name="name" type="string" required>
-  Facet identity: an unscoped name (`cowsay`) or a scoped name (`@scope/name`). Validated, never normalized — see [Facet name grammar](#facet-name-grammar). Asset names — skill, command, and agent names alike — are validated independently against the [Agent Skills name grammar](https://agentskills.io/specification#name-field): each `/`-separated segment is 1–64 characters of lowercase ASCII letters, digits, and hyphens, must not start or end with a hyphen, and must not contain consecutive hyphens. Slashes separate namespace segments (`viper-plans/planning`); asset names are never scoped with `@`.
+  Facet identity: an unscoped name (`cowsay`) or a scoped name (`@scope/name`). Validated, never normalized — see [Facet name grammar](#facet-name-grammar). This is the facet's own name; the names of the assets it contains follow the separate [asset name grammar](#asset-names).
 </ResponseField>
 
 <ResponseField name="version" type="string" required>
@@ -72,7 +72,7 @@ Every top-level field of `facet.json`. The `name` and `version` fields MUST be p
 </ResponseField>
 
 <ResponseField name="skills" type="map of string → skill descriptor">
-  Skill name → skill descriptor.
+  Skill name → skill descriptor. A skill descriptor MAY declare a `files` array of [companion files](#supplementary-files) shipped inside the skill directory.
   <Expandable title="skill descriptor">
     <AssetDescriptor assetType="skill" promptPath="skills/<name>/SKILL.md" />
   </Expandable>
@@ -90,6 +90,10 @@ Every top-level field of `facet.json`. The `name` and `version` fields MUST be p
   <Expandable title="command descriptor">
     <AssetDescriptor assetType="command" promptPath="commands/<name>.md" />
   </Expandable>
+</ResponseField>
+
+<ResponseField name="files" type="array of string">
+  Top-level [supplementary files](#supplementary-files): exact repo-relative paths to non-asset files that ship in the archive but never materialize (e.g. `README.md`, `LICENSE`, `docs/design.md`). Exact paths only — no globs or patterns. Every path MUST satisfy the [portable path grammar](/specification/archive#content-rules) and MUST NOT resolve under `skills/` (skill companions are declared in their skill's own `files`).
 </ResponseField>
 
 <ResponseField name="facets" type="array of facets entries">
@@ -143,6 +147,18 @@ Names are validated, never normalized. Uppercase letters, non-ASCII characters, 
 
 The following scoped shapes are rejected: a bare scope (`@scope`), a missing scope (`@/name`), a missing name (`@scope/`), extra path depth (`@scope/name/extra`), and the legacy un-prefixed form (`scope/name`).
 
+### Asset names
+
+Asset names — skill, command, and agent names — follow the [Agent Skills name grammar](https://agentskills.io/specification#name-field), interpreted by Facets as a **single ASCII segment**: 1–64 characters of lowercase ASCII letters, digits, and hyphens, not starting or ending with a hyphen and with no consecutive hyphens. Unlike the earlier format, a current-format asset name is a single segment: it MUST NOT contain `/`, so slash-namespaced names like `viper-plans/planning` are no longer valid (use `viper-planning`).
+
+Skills and commands share **one namespace**: within a facet, a skill and a command MUST NOT use the same name. Agents are a separate namespace and may reuse a skill or command name.
+
+A companion file's path may contain `/` for directory depth (`references/api.md`), but those separators are part of the file path, not the skill name — the skill name itself is still a single segment.
+
+<Note>
+Legacy `0.1` archives retain their earlier multi-segment naming during the compatibility window. New manifests use the single-segment grammar above.
+</Note>
+
 ### Constraints
 
 1. The `name` MUST be a valid facet identity (see [Facet name grammar](#facet-name-grammar)), and the `version` MUST be a semver string.
@@ -156,10 +172,27 @@ The following scoped shapes are rejected: a bare scope (`@scope`), a missing sco
 
 A facet's content is carried by three text asset types: skills, agents, and commands. Each asset is declared in the manifest under its type's map, and its name maps to a file at a conventional path in the source tree. The file's content is the asset's prompt — it is resolved by convention at [build time](/specification/build#steps), never referenced by a manifest field.
 
-- **Skill** — `skills/<name>/SKILL.md`. Each skill lives in its own directory, per the [Agent Skills](https://agentskills.io/specification) convention; the main file MUST be named `SKILL.md`.
+- **Skill** — `skills/<name>/SKILL.md`. Each skill lives in its own directory, per the [Agent Skills](https://agentskills.io/specification) convention; the main file MUST be named `SKILL.md`. A skill directory MAY also contain declared [companion files](#supplementary-files) at any safe depth (`references/api.md`, `scripts/run.ts`).
 - **Agent** — `agents/<name>.md`. A single markdown file whose content is the agent's system prompt.
 - **Command** — `commands/<name>.md`. A single markdown file whose content is the command's prompt.
 
-YAML front matter in an asset file is optional. When present it MUST be preserved verbatim through the [build](/specification/build#steps); the manifest's `name`, `description`, and any per-adapter extras are merged on top of the author's front matter at install time.
+A primary asset file (a `SKILL.md`, agent, or command file) MUST NOT contain YAML front matter — the manifest is the single source of asset metadata. Authoring tools strip front matter before writing, and [`facet build`](/specification/build#steps) rejects a primary file that still carries it.
 
 An asset descriptor's `adapters` block is validated at [build time](/specification/build#steps) against each installed adapter's schema: unknown adapters produce a warning, and invalid metadata for an installed adapter is a build error.
+
+## Supplementary files
+
+Beyond its assets, a facet can declare **supplementary files** — non-asset files that ship inside the `.facet` archive and are integrity-protected like everything else, but are not independently installable assets. They have no asset type, no adapter metadata, and no lockfile asset tuple.
+
+There are two declaration sites, and every supplementary archive entry MUST be derivable from one of them (there is no auto-discovery):
+
+- **Top-level `files`** — repo-relative paths at the tree root, declared in the manifest's [`files`](#fields) array. Used for `README.md`, `LICENSE`, development notes, and other project files. These ship but **never materialize**: they are not written to disk at install time.
+- **Per-skill `files`** — paths relative to a skill's directory, declared in that [skill descriptor's](#fields) `files` array. These are the skill's **companion files** (references, scripts, templates). A companion materializes atomically with its owning skill and cannot list `SKILL.md` itself.
+
+Supplementary files are declared as **exact paths only** — no globs or patterns — and each path MUST satisfy the [portable path grammar](/specification/archive#content-rules). A top-level path MUST NOT resolve under `skills/`, so a skill's files have exactly one declaration site. Supplementary bytes are shipped verbatim: binary and empty files are valid, and front matter is never parsed or stripped.
+
+`README.md` and the extensionless `README` are ordinary top-level `files` declarations — there is no README-specific manifest field. Authoring support for them is described in [Create Your First Facet](/guides/create-your-first-facet) and [`facet edit`](/cli/authoring/edit).
+
+<Warning>
+A CLI older than the first `0.2`-producing release tolerates the `files` fields but omits their bytes when it builds, producing a declared-but-empty facet. Build with a current release so declared files actually ship.
+</Warning>

@@ -5,7 +5,7 @@ tag: facets.lock
 description: The facets.lock schema and entry semantics
 ---
 
-The lockfile (`facets.lock`) records resolved installation state: for every declared facet, the exact version, the verified integrity, the provenance it was resolved from, and the assets it contributed. It is the **resolution** counterpart to the [project manifest](/specification/project-manifest)'s **intent** — the manifest records what the user asked for, the lockfile records what that resolved to.
+The lockfile (`facets.lock`) records resolved installation state: for every declared facet, the exact version, the verified integrity, the provenance it was resolved from, and the assets it contributed — each with a per-file integrity record for every materialized file. It is the **resolution** counterpart to the [project manifest](/specification/project-manifest)'s **intent** — the manifest records what the user asked for, the lockfile records what that resolved to.
 
 Both files are version-controlled. The lockfile is written **only** by the install pipeline, as part of the [tri-write](/specification/commit#transactional-tri-write) — never ahead of success, and never by hand. A hand-edited or merge-conflicted lockfile fails validation at load rather than surfacing as a failure deep inside an install.
 
@@ -13,14 +13,21 @@ Both files are version-controlled. The lockfile is written **only** by the insta
 
 ```json expandable facets.lock
 {
-  "lockfileVersion": 1,
+  "lockfileVersion": 0.2,
   "facets": {
     "cowsay": {
       "source": { "kind": "registry", "registry": "https://api.agentfacets.io" },
       "version": "1.2.0",
       "integrity": "sha256:a1b2c3…",
       "assets": [
-        { "scope": "project", "type": "command", "name": "cowsay" }
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "cowsay",
+          "files": [
+            { "path": "commands/cowsay.md", "integrity": "sha256:11aa22…" }
+          ]
+        }
       ]
     },
     "viper-plans": {
@@ -28,7 +35,15 @@ Both files are version-controlled. The lockfile is written **only** by the insta
       "version": "2.0.0",
       "integrity": "sha256:d4e5f6…",
       "assets": [
-        { "scope": "project", "type": "skill", "name": "viper-planning" }
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "viper-planning",
+          "files": [
+            { "path": "skills/viper-planning/SKILL.md", "integrity": "sha256:33cc44…" },
+            { "path": "skills/viper-planning/references/api.md", "integrity": "sha256:55ee66…" }
+          ]
+        }
       ]
     }
   }
@@ -38,7 +53,11 @@ Both files are version-controlled. The lockfile is written **only** by the insta
 ## Fields
 
 <ResponseField name="lockfileVersion" type="number" required>
-  The lockfile schema version, currently `1`. Breaking shape changes MUST bump it; migrations key off this field. An implementation encountering a `lockfileVersion` greater than it supports MUST fail the load rather than guess.
+  The lockfile schema version. The current schema is `0.2`; the numeric `1` names the earlier legacy-alpha schema. Versions are dispatched by **exact match**, never by numeric ordering (`0.2` is numerically less than `1`, so ordering would be wrong): a loader recognizes exactly the versions it supports and fails on any other rather than guessing. A normal install MAY migrate a verified legacy `1` lockfile to `0.2`; a [frozen install](/specification/commit#frozen-lockfile) never rewrites it, and a `0.2` archive requires a `0.2` lockfile in frozen mode. The authoritative version is the `CURRENT_LOCKFILE_VERSION` constant in `@agent-facets/protocol`.
+
+  <Note>
+  Before the future stable lockfile v1 (which reuses the numeric `1`), legacy-alpha-`1` parsing is removed and replaced with delete-and-regenerate guidance for old-shape files.
+  </Note>
 </ResponseField>
 
 <ResponseField name="facets" type="map<name, entry>" required>
@@ -64,12 +83,14 @@ Both files are version-controlled. The lockfile is written **only** by the insta
 </ResponseField>
 
 <ResponseField name="assets" type="array" required>
-  The assets this facet contributed, as `{ scope, type, name }` tuples (`scope`: `system` | `user` | `project`; `type`: `skill` | `agent` | `command`). Names MUST pass asset-name validation — a crafted lockfile cannot smuggle path traversal into adapter I/O. Adapter-agnostic by design: the same asset set is applied to every selected adapter, and no per-adapter fields exist here.
+  The assets this facet contributed. Each entry is `{ scope, type, name, files }` (`scope`: `system` | `user` | `project`; `type`: `skill` | `agent` | `command`). Names MUST pass asset-name validation — a crafted lockfile cannot smuggle path traversal into adapter I/O. Adapter-agnostic by design: the same asset set is applied to every selected adapter, and no per-adapter fields exist here.
+
+  The `files` array records every **materialized** file inside the asset as a deterministically-sorted `{ path, integrity }` record: a skill lists its `SKILL.md` plus each companion; an agent or command lists its single primary file. The integrity is the recomputed [canonical per-entry hash](/specification/integrity#two-hashes-two-domains) of the verified file — never copied from a self-declared value. Archive-only supplementary files (like `README.md`) are **not** materialized and therefore never appear in any asset's `files`; they stay protected by facet-level integrity. Install reconciles these per-file records against recomputed archive hashes before writing and fails with the exact mismatching path.
 </ResponseField>
 
 ## Role in the pipeline
 
 - **Trust anchor.** When the lockfile pins a version, the audited content MUST hash to the locked integrity — a mismatch is a hard failure, never a silent re-download. → [Commit — Verify](/specification/commit#verify)
 - **Lockfile trust for resolution.** Whether a satisfying entry short-circuits version resolution depends on how the facet was requested (addition vs reproduction). → [Commit — Resolve](/specification/commit#resolve)
-- **Drift-proof deletion.** The entry's `assets` array is the OLD asset set; the freshly extracted build manifest is the NEW set; the difference is deleted with no separate bookkeeping. → [Drift removal](/specification/commit#drift-removal)
+- **Drift-proof deletion.** The entry's `assets` array — with its per-file `files` records — is the OLD ownership set; the freshly extracted build manifest is the NEW set; the difference is deleted with no separate bookkeeping. Deletion supplies the validated owned-file set to the adapter, so a skill's companions are removed with it while unowned files are preserved. → [Drift removal](/specification/commit#drift-removal)
 - **Frozen mode.** With `--frozen-lockfile`, the lockfile is the complete, authoritative source of truth and is never written. → [Frozen lockfile](/specification/commit#frozen-lockfile)
