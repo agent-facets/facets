@@ -8,7 +8,7 @@ import { createContext, createElement, useCallback, useContext, useMemo, useStat
  * toggle (`field-private`) uses Tab to flip Public/Private; ↓ still advances,
  * and Shift+Tab still moves backward.
  */
-export const TAB_TOGGLE_FOCUS_IDS: ReadonlySet<string> = new Set(['field-private'])
+export const TAB_TOGGLE_FOCUS_IDS: ReadonlySet<string> = new Set(['field-private', 'field-readme'])
 
 interface FocusOrderState {
   focusedId: string | null

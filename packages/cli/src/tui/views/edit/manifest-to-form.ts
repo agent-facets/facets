@@ -38,6 +38,10 @@ export function manifestToFormState(manifest: FacetManifest): FormState {
     // public UI state. The omission-vs-explicit-false distinction is preserved
     // at the output boundary (`buildManifest`), not carried in the form.
     private: manifest.private === true,
+    // Edit does not use the create-wizard README card (README is handled by the
+    // dedicated edit README panel and manifest preservation). This inert value
+    // satisfies the shared FormState shape without affecting edit output.
+    readme: { enabled: false, draft: { origin: 'seeded', content: '' } },
     assets,
   }
 }

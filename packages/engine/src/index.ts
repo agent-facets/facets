@@ -173,6 +173,9 @@ export {
 // manifest project files (I/O bridge)
 export type { LoadFacetsJsonResult } from './manifest/project-files.ts'
 export { loadFacetsJson, writeFacetsJson } from './manifest/project-files.ts'
+// readme (shared by scaffold + edit)
+export type { ReadmePath } from './readme.ts'
+export { isReadmePath, README_EXTENSIONLESS, README_MD, README_PATHS, readmeTemplate } from './readme.ts'
 // registry
 export type {
   DiscoverArtifactResult,
@@ -222,7 +225,7 @@ export {
   writeCredentialsToken,
 } from './registry/index.ts'
 // scaffold
-export type { ScaffoldOptions } from './scaffold/index.ts'
+export type { ScaffoldOptions, ScaffoldReadme } from './scaffold/index.ts'
 export {
   agentTemplate,
   commandTemplate,
