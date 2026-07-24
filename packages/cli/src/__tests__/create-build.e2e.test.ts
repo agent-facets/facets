@@ -222,6 +222,34 @@ describe('writeScaffold', () => {
     const looseManifest = await Bun.file(join(dir, 'dist/facet.json')).exists()
     expect(looseManifest).toBe(false)
   })
+
+  test('scaffolded project with an enabled README builds successfully', async () => {
+    const dir = await createFixtureDir('scaffold-readme-buildable')
+    const files = await writeScaffold(
+      {
+        name: 'readme-facet',
+        version: DEFAULT_VERSION,
+        description: 'Has a README',
+        skills: ['helper'],
+        agents: [],
+        commands: [],
+        readme: { kind: 'enabled', content: '# readme-facet\n\nHas a README\n' },
+      },
+      dir,
+    )
+    // README is written and declared as a top-level supplementary file.
+    expect(files).toContain('README.md')
+    const manifest = JSON.parse(await Bun.file(join(dir, 'facet.json')).text())
+    expect(manifest.files).toEqual(['README.md'])
+    expect(await Bun.file(join(dir, 'README.md')).text()).toBe('# readme-facet\n\nHas a README\n')
+
+    // The README-bearing project builds without error into a self-contained archive.
+    const result = await runCli('build', dir)
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('Built readme-facet')
+    const distArchive = await Bun.file(join(dir, `dist/readme-facet-${DEFAULT_VERSION}.facet`)).exists()
+    expect(distArchive).toBe(true)
+  })
 })
 
 // --- Headless create (e2e) ---
@@ -252,6 +280,28 @@ describe('facet create — headless', () => {
     const manifest = JSON.parse(await Bun.file(join(dir, 'facet.json')).text())
     expect(manifest.skills.greet).toBeDefined()
     expect(manifest.agents.helper).toBeDefined()
+  })
+
+  test('writes a default README.md and declares it', async () => {
+    const dir = await createFixtureDir('create-headless-readme')
+    const result = await runCli('create', dir, '--name', 'doc-facet', '--description', 'Docs', '--skill', 'greet')
+    expect(result.exitCode).toBe(0)
+
+    // Default-on README is written and declared, matching the interactive default.
+    expect(await Bun.file(join(dir, 'README.md')).exists()).toBe(true)
+    expect(await Bun.file(join(dir, 'README.md')).text()).toBe('# doc-facet\n\nDocs\n')
+    const manifest = JSON.parse(await Bun.file(join(dir, 'facet.json')).text())
+    expect(manifest.files).toEqual(['README.md'])
+  })
+
+  test('--no-readme omits the README file and declaration', async () => {
+    const dir = await createFixtureDir('create-headless-noreadme')
+    const result = await runCli('create', dir, '--name', 'bare-facet', '--skill', 'greet', '--no-readme')
+    expect(result.exitCode).toBe(0)
+
+    expect(await Bun.file(join(dir, 'README.md')).exists()).toBe(false)
+    const manifest = JSON.parse(await Bun.file(join(dir, 'facet.json')).text())
+    expect('files' in manifest).toBe(false)
   })
 
   test('missing --name fails with a clear error', async () => {
