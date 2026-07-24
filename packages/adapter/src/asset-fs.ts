@@ -138,14 +138,11 @@ export function splitAssetContent(raw: string): { content: string; metadata?: Re
  * adapters with *mixed* serialization — e.g. an adapter whose skills use
  * the standard YAML model but whose agents are TOML can compose this for
  * the standard branches of its own `normalizeForCompare`.
+ *
+ * Re-exported from `@agent-facets/common` so the SDK and the engine share
+ * one implementation (same pattern as `splitAssetContent`/`splitFrontMatter`).
  */
-export function normalizeAssetContent(
-  content: string,
-  metadata: Record<string, unknown>,
-): { content: string; metadata: Record<string, unknown> } {
-  const split = splitFrontMatter(content)
-  return { content: split.content, metadata: { ...(split.metadata ?? {}), ...metadata } }
-}
+export { normalizeAssetContent } from '@agent-facets/common'
 
 /**
  * Assert that an asset name is safe to join onto a filesystem path. Throws

@@ -137,8 +137,5 @@ function failureFix(failure: RunInstallFailure, rollback: RollbackOutcome): stri
   if (failure.code === 'LOCKFILE_DRIFT') {
     return "lockfile is out of date; run 'facet install' (without --frozen-lockfile) or 'facet add' to update it"
   }
-  if (failure.code === 'ASSET_PATH_COLLISION') {
-    return `two assets map to ${failure.path} on ${failure.adapter}; rename one so they no longer collide`
-  }
   return "rollback complete; fix the underlying issue and re-run 'facet install'"
 }

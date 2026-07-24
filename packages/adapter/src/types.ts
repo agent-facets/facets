@@ -74,26 +74,6 @@ export interface Adapter {
   ): { content: string; metadata: AdapterMetadata }
 
   /**
-   * Resolve the on-disk path an asset serializes to for the given scope.
-   *
-   * The install pipeline uses this to detect two DISTINCT assets that
-   * collide on a single path — e.g. an adapter (like Codex) that installs
-   * both a skill named `plan` and a command named `plan` under the same
-   * `.agents/skills/plan/SKILL.md`. Without detection, the second write
-   * silently clobbers the first, deleting one asset removes the other's
-   * file, and both re-write ("repair") each other forever. When the
-   * pipeline sees two assets resolve to the same path it fails loud
-   * (`ASSET_PATH_COLLISION`) before any write, rather than corrupting
-   * on-disk state.
-   *
-   * Optional: adapters whose asset types never share a directory tree
-   * (claude-code, opencode) don't need it — the pipeline skips the check
-   * for adapters that don't implement it. Return a stable, absolute path
-   * (two equal-identity assets MUST resolve to equal strings).
-   */
-  resolvePath?(scope: Scope, assetType: AssetType, name: string): string
-
-  /**
    * Delete an asset from the given scope. Returns the absolute path of
    * the deleted asset, if available — used for verbose diagnostic
    * logging. Returning `void` is backward-compatible.

@@ -1,5 +1,5 @@
 import type { Adapter } from '@agent-facets/adapter'
-import { splitFrontMatter } from '@agent-facets/common'
+import { normalizeAssetContent } from '@agent-facets/common'
 import type { LockfileAssetEntry, ResolvedFacetManifest } from '@agent-facets/protocol'
 import type { InstallJournal } from './journal.ts'
 import type { OnLog, StageEvent } from './types.ts'
@@ -183,19 +183,17 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
       //     mapping — required whenever its serialization diverges from
       //     the standard YAML front-matter model (e.g. Codex's TOML
       //     agents, sidecar-routed metadata keys).
-      //   - Otherwise we replay the adapter SDK's default: split any
-      //     author-supplied front matter out of `content` and merge it
-      //     under the caller's `metadata` (caller wins on collisions),
-      //     matching `assembleAssetContent`/`readAssetFile`.
-      //
-      // The default uses `splitFrontMatter` from `common` rather than
-      // the SDK's `normalizeAssetContent` to keep the adapter SDK a
-      // type-only dep of engine: a value import from the SDK pulls
-      // `yaml` into engine's runtime graph and collides with `Bun.build`
-      // when the CLI's adapter integration tests bundle the same source.
+      //   - Otherwise we apply the shared default `normalizeAssetContent`
+      //     from `common`: split any author-supplied front matter out of
+      //     `content` and merge it under the caller's `metadata` (caller
+      //     wins on collisions), matching `assembleAssetContent`/
+      //     `readAssetFile`. It lives in `common` (not value-imported from
+      //     the adapter SDK) so `yaml` stays out of engine's runtime graph,
+      //     which would otherwise collide with `Bun.build` when the CLI's
+      //     adapter integration tests bundle the same source.
       const candidate = adapter.normalizeForCompare
         ? adapter.normalizeForCompare(asset.type, content, metadata)
-        : defaultNormalizeForCompare(content, metadata)
+        : normalizeAssetContent(content, metadata)
       if (
         previous &&
         previous.content === candidate.content &&
@@ -288,20 +286,6 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
   }
 
   return { ok: true, written, skipped, deleted }
-}
-
-/**
- * Engine-local mirror of the adapter SDK's `normalizeAssetContent` — the
- * fallback for adapters that don't implement `normalizeForCompare`. Kept
- * here (built on `common`'s `splitFrontMatter`) instead of value-importing
- * the SDK helper so the adapter SDK stays a type-only dep of engine.
- */
-function defaultNormalizeForCompare(
-  content: string,
-  metadata: Record<string, unknown>,
-): { content: string; metadata: Record<string, unknown> } {
-  const split = splitFrontMatter(content)
-  return { content: split.content, metadata: { ...(split.metadata ?? {}), ...metadata } }
 }
 
 /**

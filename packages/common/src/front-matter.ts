@@ -50,3 +50,25 @@ export function splitFrontMatter(raw: string): {
     return { content: normalized }
   }
 }
+
+/**
+ * The default `normalizeForCompare` behavior: replay the YAML front-matter
+ * split+merge that the adapter SDK's `installAssetFile` performs, yielding the
+ * exact `{ content, metadata }` shape `readAssetFile` returns after a real
+ * install round-trip (author front matter split out of `content`, then merged
+ * under the caller's `metadata`, caller wins on key collisions).
+ *
+ * Lives in `common` — next to `splitFrontMatter`, for the same reason — because
+ * both the adapter SDK (which re-exports it so adapter authors can compose it)
+ * and the engine (which applies it as the pipeline's default compare) need one
+ * shared implementation. A copy in either package would let the default compare
+ * contract drift from the shape the SDK exports, with nothing testing that the
+ * two agree.
+ */
+export function normalizeAssetContent(
+  content: string,
+  metadata: Record<string, unknown>,
+): { content: string; metadata: Record<string, unknown> } {
+  const split = splitFrontMatter(content)
+  return { content: split.content, metadata: { ...(split.metadata ?? {}), ...metadata } }
+}

@@ -36,7 +36,15 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 const CodexMetadataSchema = type({
   'name?': 'string',
   'description?': 'string',
-  'developer_instructions?': 'string',
+  // `developer_instructions` is the TOML slot the adapter writes the prompt
+  // body into — it is NOT author input. Accepting it as a string let an author
+  // set it via `adapters.codex.developer_instructions`, which `readAgentToml`
+  // then strips on read, so the candidate never matched on-disk and the agent
+  // "repaired" on every install. Reject it as a reserved key.
+  'developer_instructions?': type('never').configure({
+    message: 'developer_instructions is reserved — the codex adapter writes the prompt body here itself',
+    expected: 'omitted',
+  }),
   'interface?': 'object',
   'dependencies?': 'object',
   'policy?': 'object',
@@ -114,17 +122,21 @@ export default defineAdapter({
 
   normalizeForCompare(assetType, content, metadata) {
     if (assetType === 'agent') {
-      // TOML agents round-trip verbatim: `content` becomes the
-      // `developer_instructions` field and comes back unchanged — no YAML
-      // front-matter split. Mirroring `installAgentToml`/`readAgentToml`
-      // exactly is what keeps agents whose prompts *contain* a `---`
-      // front-matter block idempotent on re-install (TASK-192): the
-      // default YAML normalization would strip that block from the
-      // candidate and never match the on-disk TOML round-trip.
-      //
-      // Edge: `installAgentToml` omits `developer_instructions` for
-      // whitespace-only content, and `readAgentToml` then yields `''`.
-      return { content: content.trim().length > 0 ? content : '', metadata }
+      // Mirror the install→read round-trip EXACTLY so agents stay idempotent
+      // (TASK-192). `installAgentToml` builds `{ ...metadata }` and, for
+      // non-whitespace content, sets `developer_instructions = content`;
+      // `readAgentToml` extracts that key back into `content` and returns the
+      // rest as metadata. Reproducing both halves here derives the
+      // whitespace-only edge (empty content → `''`) instead of hand-coding it,
+      // and strips a stray `developer_instructions` from the candidate metadata
+      // so it can never re-introduce the repaired-forever loop.
+      const doc: Record<string, unknown> = { ...metadata }
+      if (content.trim().length > 0) doc.developer_instructions = content
+      const { developer_instructions, ...rest } = doc
+      return {
+        content: typeof developer_instructions === 'string' ? developer_instructions : '',
+        metadata: rest,
+      }
     }
 
     if (assetType === 'command') {
@@ -137,17 +149,13 @@ export default defineAdapter({
       // — including the forced `allow_implicit_invocation: false` and the
       // display_name/short_description defaults — is what keeps commands
       // idempotent AND lets skip-if-identical detect sidecar drift.
-      const frontMatter = stripSidecarKeys(metadata)
+      const { frontMatter, sidecar } = partitionCommandMetadata(metadata)
       const base = normalizeAssetContent(content, frontMatter)
-      return { content: base.content, metadata: { ...base.metadata, ...buildCommandSidecarDoc(metadata) } }
+      return { content: base.content, metadata: { ...base.metadata, ...buildCommandSidecarDoc(frontMatter, sidecar) } }
     }
 
     // Skills use the standard YAML front-matter model.
     return normalizeAssetContent(content, metadata)
-  },
-
-  resolvePath(scope, assetType, name) {
-    return resolvePath(scope, assetType, name)
   },
 
   async readAsset(scope, assetType, name) {
@@ -225,23 +233,30 @@ function relativePathFor(assetType: AssetType, name: string): string {
 // --- command-as-skill helpers ---
 
 /** Keys consumed by the `agents/openai.yaml` sidecar; kept out of SKILL.md front-matter. */
-const OPENAI_YAML_KEYS = ['interface', 'dependencies', 'policy'] as const
+const OPENAI_YAML_KEYS = new Set<string>(['interface', 'dependencies', 'policy'])
 
 /**
- * Strip the sidecar-routed keys (and `developer_instructions`, which is an
- * agent-only concept) from a metadata bag, leaving only what belongs in
- * SKILL.md front-matter (`name` / `description` + any author extras). Shared
- * by `installCommandSkill` (what it writes) and `normalizeForCompare` (what
- * it derives), so the two never drift.
+ * Split a command's metadata into the keys that belong in SKILL.md
+ * front-matter versus the keys routed to the `agents/openai.yaml` sidecar.
+ * The reserved `developer_instructions` (an agent-only TOML slot) belongs to
+ * neither and is dropped.
+ *
+ * This is the single source of truth for the front-matter/sidecar boundary,
+ * consumed by `installCommandSkill` (what it writes) and `normalizeForCompare`
+ * (what it predicts) so the two can never drift.
  */
-function stripSidecarKeys(metadata: Record<string, unknown>): Record<string, unknown> {
+function partitionCommandMetadata(metadata: Record<string, unknown>): {
+  frontMatter: Record<string, unknown>
+  sidecar: Record<string, unknown>
+} {
   const frontMatter: Record<string, unknown> = {}
+  const sidecar: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(metadata)) {
-    if (!OPENAI_YAML_KEYS.includes(key as (typeof OPENAI_YAML_KEYS)[number]) && key !== 'developer_instructions') {
-      frontMatter[key] = value
-    }
+    if (key === 'developer_instructions') continue
+    if (OPENAI_YAML_KEYS.has(key)) sidecar[key] = value
+    else frontMatter[key] = value
   }
-  return frontMatter
+  return { frontMatter, sidecar }
 }
 
 /**
@@ -267,14 +282,15 @@ async function installCommandSkill(
   legacyPath: string,
 ): Promise<void> {
   const meta = metadata ?? {}
+  const { frontMatter, sidecar } = partitionCommandMetadata(meta)
 
   // SKILL.md carries only the standard skill front-matter (name/description).
-  // The openai.yaml-only keys are stripped so they don't leak into the body file.
-  await installAssetFile({ file: filePath }, content, stripSidecarKeys(meta))
+  // The openai.yaml-only keys are partitioned out so they don't leak into the body file.
+  await installAssetFile({ file: filePath }, content, frontMatter)
 
   const sidecarPath = join(dirname(filePath), 'agents', 'openai.yaml')
   await mkdir(dirname(sidecarPath), { recursive: true })
-  await Bun.write(sidecarPath, buildCommandYaml(meta))
+  await Bun.write(sidecarPath, buildCommandYaml(frontMatter, sidecar))
 
   // Legacy sweep: earlier adapter versions installed commands at
   // `.agents/commands/<name>.md`, a path Codex never read. Remove it so an
@@ -327,37 +343,40 @@ function legacyCommandPath(scope: Scope, name: string): string {
  * — including key order, which JSON.stringify equality is sensitive to — is
  * what keeps commands idempotent across re-install.
  */
-function buildCommandSidecarDoc(metadata: Record<string, unknown>): Record<string, unknown> {
-  const iface: Record<string, unknown> = { ...(isRecord(metadata.interface) ? metadata.interface : {}) }
-  if (iface.display_name === undefined && typeof metadata.name === 'string' && metadata.name.length > 0) {
-    iface.display_name = metadata.name
+function buildCommandSidecarDoc(
+  frontMatter: Record<string, unknown>,
+  sidecar: Record<string, unknown>,
+): Record<string, unknown> {
+  const iface: Record<string, unknown> = { ...(isRecord(sidecar.interface) ? sidecar.interface : {}) }
+  if (iface.display_name === undefined && typeof frontMatter.name === 'string' && frontMatter.name.length > 0) {
+    iface.display_name = frontMatter.name
   }
   if (
     iface.short_description === undefined &&
-    typeof metadata.description === 'string' &&
-    metadata.description.length > 0
+    typeof frontMatter.description === 'string' &&
+    frontMatter.description.length > 0
   ) {
-    iface.short_description = metadata.description
+    iface.short_description = frontMatter.description
   }
 
   // allow_implicit_invocation is always forced false — a command must never opt
   // back into implicit invocation, even if the author set it true.
   const policy: Record<string, unknown> = {
-    ...(isRecord(metadata.policy) ? metadata.policy : {}),
+    ...(isRecord(sidecar.policy) ? sidecar.policy : {}),
     allow_implicit_invocation: false,
   }
 
   const doc: Record<string, unknown> = {}
   if (Object.keys(iface).length > 0) doc.interface = iface
   doc.policy = policy
-  if (isRecord(metadata.dependencies)) doc.dependencies = metadata.dependencies
+  if (isRecord(sidecar.dependencies)) doc.dependencies = sidecar.dependencies
 
   return doc
 }
 
 /** Serialize the command sidecar doc to the `agents/openai.yaml` file contents. */
-function buildCommandYaml(metadata: Record<string, unknown>): string {
-  return `${stringifyYaml(buildCommandSidecarDoc(metadata)).trimEnd()}\n`
+function buildCommandYaml(frontMatter: Record<string, unknown>, sidecar: Record<string, unknown>): string {
+  return `${stringifyYaml(buildCommandSidecarDoc(frontMatter, sidecar)).trimEnd()}\n`
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

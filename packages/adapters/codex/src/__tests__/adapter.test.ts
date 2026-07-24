@@ -29,16 +29,16 @@ describe('codex adapter — buildAssetMetadata', () => {
   })
 
   test('accepts valid codex agent metadata fields', () => {
+    // `developer_instructions` is NOT author input — it's the reserved TOML slot
+    // the adapter writes the prompt body into (covered by its own reject test).
     const result = adapter.buildAssetMetadata({
       name: 'reviewer',
       description: 'Code review specialist',
-      developer_instructions: 'You are an expert reviewer.',
     })
     if (!result.ok) expect.unreachable()
     expect(result.data).toEqual({
       name: 'reviewer',
       description: 'Code review specialist',
-      developer_instructions: 'You are an expert reviewer.',
     })
   })
 
@@ -58,9 +58,13 @@ describe('codex adapter — buildAssetMetadata', () => {
     expect(result.ok).toBe(false)
   })
 
-  test('rejects invalid developer_instructions type', () => {
-    const result = adapter.buildAssetMetadata({ developer_instructions: 123 })
-    expect(result.ok).toBe(false)
+  test('rejects developer_instructions as a reserved key', () => {
+    // It is the TOML slot the adapter writes the prompt body into, not author
+    // input. Any value — including a string — is rejected with a clear message.
+    const result = adapter.buildAssetMetadata({ developer_instructions: 'boom' })
+    if (result.ok) expect.unreachable()
+    expect(result.errors[0]?.message).toContain('reserved')
+    expect(result.errors[0]?.path).toBe('developer_instructions')
   })
 })
 
@@ -262,6 +266,26 @@ describe('codex adapter — normalizeForCompare', () => {
     expect(candidate.content).toBe('')
   })
 
+  test('agent metadata carrying developer_instructions normalizes equal to its round-trip', async () => {
+    // Guard against the reserved-key repaired-forever loop: even if a stray
+    // `developer_instructions` reaches the candidate metadata, the mirror must
+    // strip it (installAgentToml overwrites it with content; readAgentToml
+    // extracts it out), so candidate ≡ on-disk and the agent is not "repaired".
+    const prompt = 'You are an expert reviewer.\n'
+    const metadata = { name: 'reviewer', developer_instructions: 'stray value' }
+
+    await adapter.installAsset('project', 'agent', 'reviewer', prompt, metadata)
+    const onDisk = await adapter.readAsset('project', 'agent', 'reviewer')
+
+    if (!adapter.normalizeForCompare) expect.unreachable()
+    const candidate = adapter.normalizeForCompare('agent', prompt, metadata)
+
+    expect(onDisk.content).toBe(candidate.content)
+    expect(onDisk.metadata ?? {}).toEqual(candidate.metadata)
+    // The reserved key never survives into the compared metadata.
+    expect(candidate.metadata).not.toHaveProperty('developer_instructions')
+  })
+
   test('skill normalization matches the standard YAML front-matter round-trip', async () => {
     const body = '---\nauthor-key: kept\n---\n# skill body\n'
     const metadata = { name: 'planning', description: 'plan things' }
@@ -431,17 +455,6 @@ describe('codex adapter — project-scope command I/O', () => {
     expect(readFileSync(join(workDir, '.agents/skills/space/spec/SKILL.md'), 'utf8')).toContain('# skill')
   })
 
-  test('resolvePath maps a skill and a command with the same name to the same path (collision surface)', () => {
-    if (!adapter.resolvePath) expect.unreachable()
-    const skillPath = adapter.resolvePath('project', 'skill', 'plan')
-    const commandPath = adapter.resolvePath('project', 'command', 'plan')
-    // This equality is precisely what the engine's path-collision preflight
-    // uses to refuse the pair before either write (finding 1).
-    expect(commandPath).toBe(skillPath)
-    // An agent named `plan` lives in its own tree — no collision.
-    expect(adapter.resolvePath('project', 'agent', 'plan')).not.toBe(skillPath)
-  })
-
   test('installing a command sweeps the legacy .agents/commands/<name>.md file', async () => {
     // Simulate an older adapter version's on-disk output.
     const legacy = join(workDir, '.agents/commands/plan.md')
@@ -501,6 +514,49 @@ describe('codex adapter — project-scope command I/O', () => {
     // materialize's skip-if-identical will treat this as a repair.
     const drifted = await adapter.readAsset('project', 'command', 'plan')
     expect(drifted.metadata).not.toEqual(candidate.metadata)
+  })
+
+  test('a manifest-driven sidecar change is not skipped (Item 1a)', async () => {
+    // A change confined to a sidecar-routed key (here interface.display_name)
+    // must be seen by skip-if-identical: the candidate derived from the NEW
+    // metadata differs from the on-disk read of the OLD install, so materialize
+    // rewrites rather than skipping.
+    const before = { name: 'plan', description: 'plan things', interface: { display_name: 'A' } }
+    await adapter.installAsset('project', 'command', 'plan', '# body', before)
+    const onDisk = await adapter.readAsset('project', 'command', 'plan')
+
+    if (!adapter.normalizeForCompare) expect.unreachable()
+    const after = { name: 'plan', description: 'plan things', interface: { display_name: 'B' } }
+    const candidate = adapter.normalizeForCompare('command', '# body', after)
+
+    // Same body, but the sidecar-routed display_name changed → NOT identical.
+    expect(candidate.metadata).not.toEqual(onDisk.metadata ?? {})
+  })
+
+  test('reinstalling readAsset output restores the authored sidecar (Item 1d — rollback fidelity)', async () => {
+    // The journal's undo replays `installAsset(previous.content, previous.metadata)`
+    // where `previous` is `readAsset`. Because readAsset folds the sidecar back
+    // in, that replay restores the authored interface/dependencies verbatim —
+    // not a defaulted sidecar.
+    const authored = {
+      name: 'plan',
+      description: 'plan things',
+      interface: { display_name: 'Planner', brand_color: '#3B82F6' },
+      dependencies: { tools: [{ type: 'mcp', value: 'docs', url: 'https://example.com/mcp' }] },
+    }
+    await adapter.installAsset('project', 'command', 'plan', '# body', authored)
+    const previous = await adapter.readAsset('project', 'command', 'plan')
+
+    // Simulate an intervening overwrite, then the journal undo.
+    await adapter.installAsset('project', 'command', 'plan', '# other', { name: 'plan' })
+    await adapter.installAsset('project', 'command', 'plan', previous.content, previous.metadata ?? {})
+
+    const sidecar = readFileSync(join(workDir, '.agents/skills/plan/agents/openai.yaml'), 'utf8')
+    expect(sidecar).toContain('display_name: Planner')
+    expect(sidecar).toContain('brand_color: "#3B82F6"')
+    expect(sidecar).toContain('value: docs')
+    // And the invariant still holds after the round-trip.
+    expect(sidecar).toContain('allow_implicit_invocation: false')
   })
 
   test('deleting a namespaced command prunes the now-empty namespace parent', async () => {

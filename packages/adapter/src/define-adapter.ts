@@ -39,11 +39,6 @@ export function defineAdapter(definition: Adapter): Adapter {
     // install pipeline can detect absence and apply its YAML default.
     normalizeForCompare: definition.normalizeForCompare?.bind(definition),
 
-    // Optional — left undefined when absent so the install pipeline skips
-    // the path-collision check for adapters whose asset types never share
-    // a directory tree.
-    resolvePath: definition.resolvePath?.bind(definition),
-
     // CRUD stubs — full implementations deferred to install pipeline
     installAsset:
       definition.installAsset?.bind(definition) ??
