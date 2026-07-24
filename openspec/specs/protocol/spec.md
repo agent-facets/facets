@@ -1,9 +1,7 @@
 ## Purpose
 
 Defines what it means for a system to be facet-compatible. The protocol is the published surface a system claiming compatibility must honor; specific contracts (manifest schemas, integrity verification, front-matter encoding, version-spec grammar, content hashing) are defined in the `protocol__*` sub-specs.
-
 ## Requirements
-
 ### Requirement: A facet-compatible system honors the full set of artifact contracts
 
 A system claiming facet compatibility SHALL validate every facet artifact format it accepts or produces, verify integrity using the published verification algorithm, honor the encoding rules for asset-file front matter, and interpret version specifiers per the published grammar. Partial conformance — honoring some artifact contracts but not others — SHALL NOT be claimed as facet compatibility.
@@ -28,25 +26,37 @@ A system claiming facet compatibility SHALL validate every facet artifact format
 
 ### Requirement: Protocol requirements evolve under semantic-versioning discipline
 
-The protocol's published surface SHALL evolve under semantic versioning. Within a major version, requirements MAY be added, but existing requirements SHALL NOT be removed, made stricter, or changed in any way that would cause a previously-conforming system to become non-conforming. Backward-incompatible changes SHALL only be made in a new major version.
+The protocol's published surface SHALL evolve under semantic versioning. While the published protocol remains pre-1.0, backward-incompatible changes SHALL be released in the next minor version, and patch releases SHALL NOT remove, tighten, or incompatibly change requirements from their minor release. At and after 1.0, backward-incompatible changes SHALL be released only in a new major version. Within any compatible release line, requirements MAY be added only when previously conforming systems remain conforming. Release notes for every breaking release SHALL describe the behavior that previously conformed and is no longer accepted.
 
-#### Scenario: Adding a new optional field within a major version
+#### Scenario: Adding a new optional field is backward-compatible
 
-- **WHEN** a new optional field is added to a manifest schema within a minor or patch release
-- **THEN** systems built against the previous version SHALL continue to be conforming
-- **AND** the new field SHALL NOT be required for conformance until a future major version
+- **WHEN** a new optional field is added to an artifact schema without changing the meaning of existing fields
+- **THEN** systems built against the previous compatible release SHALL continue to be conforming
+- **AND** the new field SHALL NOT be required for conformance until a breaking release
 
-#### Scenario: Tightening a constraint requires a major version bump
+#### Scenario: A pre-1.0 constraint tightening uses a minor release
 
-- **WHEN** a previously-permitted value is rejected by a new requirement (e.g., a previously valid name pattern is narrowed)
-- **THEN** the change SHALL be released only as part of a new major version
-- **AND** the major-version release notes SHALL describe what behavior is no longer accepted
+- **WHEN** a pre-1.0 release rejects a value accepted by the preceding minor release
+- **THEN** the change SHALL be released in the next minor version rather than a patch version
+- **AND** the release notes SHALL describe the value that is no longer accepted
+
+#### Scenario: A post-1.0 constraint tightening uses a major release
+
+- **WHEN** a release at or after 1.0 rejects a value accepted by the preceding major release
+- **THEN** the change SHALL be released only in a new major version
+- **AND** the major-version release notes SHALL describe the value that is no longer accepted
 
 #### Scenario: Removing a requirement is a breaking change
 
-- **WHEN** an existing requirement is removed from the protocol
-- **THEN** the removal SHALL only occur in a new major version
-- **AND** the previous major version SHALL remain available so existing consumers continue to function
+- **WHEN** an existing protocol requirement is removed
+- **THEN** the removal SHALL use the applicable pre-1.0 minor or post-1.0 major breaking-release rule
+- **AND** the previous compatibility level SHALL remain available for existing consumers
+
+#### Scenario: Removing legacy artifact support is breaking
+
+- **WHEN** a release stops accepting an artifact format accepted by the preceding release line
+- **THEN** the removal SHALL be released under the applicable pre-1.0 minor or post-1.0 major breaking-change rule
+- **AND** the preceding release line SHALL remain available for consumers that still require the legacy format
 
 ### Requirement: The published reference implementation conforms to the protocol
 
@@ -85,3 +95,4 @@ A facet-compatible implementation in any programming language SHALL be recognize
 - **WHEN** a TypeScript implementation reimplements the protocol from the published requirements without depending on the reference package
 - **THEN** the implementation SHALL be recognized as facet-compatible if its behavior matches every requirement
 - **AND** artifacts the implementation produces SHALL interoperate with the reference implementation
+

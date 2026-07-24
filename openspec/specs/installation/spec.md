@@ -3,17 +3,48 @@
 The lockfile (`facets.lock`) records the exact resolved state of installed facets so that installations are reproducible across machines and environments. This spec defines what a valid lockfile contains.
 
 The closed-alpha lockfile shape is **adapter-agnostic**: it records what each facet contributes (scope/type/name tuples) and leaves materialization to the installer. The installer applies the same asset set to every selected adapter, so the lockfile never embeds per-adapter state.
-
 ## Requirements
-
 ### Requirement: Lockfile declares a version
 
-The lockfile SHALL include a top-level `lockfileVersion` integer. The CLI SHALL bump this on breaking shape changes and refuse to load lockfiles with a version it does not understand.
+The lockfile SHALL declare `lockfileVersion`. Current lockfiles SHALL use numeric `0.2`. Version selection SHALL use exact equality rather than numeric ordering: numeric `1` SHALL identify only the preceding closed-alpha schema, and numeric `0.2` SHALL identify only the current schema. Missing or unsupported versions SHALL produce structured rejection data.
+
+A normal install MAY migrate a verified legacy numeric-`1` lockfile to `0.2` only after the resolved artifacts satisfy every current integrity check. Frozen installation SHALL retain legacy behavior without rewriting a numeric-`1` lockfile. A current `0.2` archive SHALL require a `0.2` lockfile in frozen mode. Before a future stable lockfile v1 reuses numeric `1`, legacy-alpha support SHALL be removed and old-shape files SHALL receive actionable delete-and-regenerate guidance rather than shape-based reinterpretation.
 
 #### Scenario: Missing lockfile version
 
 - **WHEN** a lockfile omits `lockfileVersion`
 - **THEN** the system SHALL reject the lockfile
+
+#### Scenario: Current lockfile version is accepted
+
+- **WHEN** a lockfile declares numeric `lockfileVersion: 0.2` and satisfies the current schema
+- **THEN** the system SHALL accept it as current
+
+#### Scenario: Legacy alpha version is selected exactly
+
+- **WHEN** a lockfile declares numeric `lockfileVersion: 1`
+- **THEN** the system SHALL interpret it under the previous alpha schema only
+- **AND** it SHALL NOT infer a schema from the remaining shape
+
+#### Scenario: Unsupported lockfile version is rejected
+
+- **WHEN** a lockfile declares an unsupported version
+- **THEN** the system SHALL reject it with structured data identifying the observed and supported versions
+
+#### Scenario: Normal install migrates verified legacy state
+
+- **WHEN** a non-frozen install loads a valid legacy-alpha lockfile and verifies the resolved artifact
+- **THEN** it MAY write an equivalent `0.2` lockfile after successful installation
+
+#### Scenario: Frozen install does not migrate legacy state
+
+- **WHEN** frozen installation uses a valid legacy-alpha lockfile and legacy artifact
+- **THEN** it SHALL retain legacy behavior and SHALL NOT rewrite the lockfile
+
+#### Scenario: Frozen current archive requires current lockfile
+
+- **WHEN** frozen installation encounters a `0.2` archive with a legacy-alpha lockfile
+- **THEN** it SHALL fail without rewriting any state
 
 ### Requirement: Each facet entry records source provenance
 
@@ -62,12 +93,35 @@ Every facet entry SHALL include `version` (from the facet's `facet.json`) and `i
 
 ### Requirement: Each facet entry lists its assets, adapter-agnostically
 
-Every facet entry SHALL include an `assets` array whose members are `{scope, type, name}` tuples. `scope` SHALL be one of `system | user | project`. `type` SHALL be one of `skill | agent | command`. No per-adapter fields live here — the installer applies the asset set to every selected adapter ("same thing per adapter").
+Every current facet entry SHALL include an `assets` array. Each member SHALL record `scope`, `type`, `name`, and a required `files` array sorted deterministically by canonical path. `scope` SHALL be `system`, `user`, or `project`; `type` SHALL be `skill`, `agent`, or `command`. Each file record SHALL contain canonical inner-archive `path` and `sha256:<hex>` `integrity` over canonical archive bytes. The lockfile SHALL contain no adapter-specific fields or adapter-encoded hashes.
 
-#### Scenario: Valid asset tuple
+A skill's file records SHALL include `skills/<name>/SKILL.md` and every declared companion. An agent or command SHALL contain exactly its conventional primary file record. Companions SHALL remain subordinate to their owning skill and SHALL NOT become independent assets or receive their own scopes. Archive-only supplementary files SHALL NOT appear in an asset's files.
 
-- **WHEN** an asset entry has `scope: "user"`, `type: "skill"`, and `name: "planning"`
-- **THEN** the system SHALL accept the entry
+#### Scenario: Valid multi-file skill entry
+
+- **WHEN** a skill named `planning` owns `SKILL.md` and two companions
+- **THEN** its lockfile asset entry SHALL contain three sorted canonical file records with integrity values
+
+#### Scenario: Valid single-file asset entry
+
+- **WHEN** an agent entry has `scope: "user"`, `type: "agent"`, and `name: "reviewer"`
+- **THEN** its `files` array SHALL contain exactly `agents/reviewer.md` and its integrity
+
+#### Scenario: Missing files array is rejected
+
+- **WHEN** a `0.2` asset entry omits `files`
+- **THEN** the system SHALL reject the lockfile
+
+#### Scenario: Companion is not an independent asset
+
+- **WHEN** skill `review` owns companion `references/api.md`
+- **THEN** the companion SHALL appear only in the skill's `files` array
+- **AND** it SHALL NOT appear as another asset entry
+
+#### Scenario: Archive-only path is excluded
+
+- **WHEN** a facet archive contains declared root `README.md`
+- **THEN** no lockfile asset's `files` array SHALL contain `README.md`
 
 #### Scenario: Unknown asset scope
 
@@ -428,46 +482,49 @@ For an explicit add:
 
 ### Requirement: A machine-local record tracks what each project has materialized
 
-The system SHALL maintain a machine-local install record — the **receipt** — of what it has materialized into each project's adapter trees, separate from the lockfile. Because the lockfile is shared and version-controlled, it cannot reliably describe what a particular machine has on disk — a change pulled from version control can remove a lockfile entry while that facet's assets remain materialized in the working copy. The receipt SHALL persist outside the project's version-controlled files and SHALL survive operations that rewrite the lockfile from outside the system. Each project SHALL have its own receipt, identified by the project's canonical on-disk location, so that two distinct projects never share a receipt and concurrent operations in different projects never contend on one. For each materialized facet the receipt SHALL retain enough information — at minimum the asset set it contributed — to remove that facet's assets later without consulting the cache or the network. A project that has no receipt yet SHALL have one created from the current lockfile on the next operation.
+The system SHALL maintain a machine-local receipt describing the asset and file ownership successfully materialized for each project. The receipt SHALL be separate from version-controlled state, identified by canonical project location, and sufficient for offline rollback and removal without cache or network access. Each canonical project location SHALL have its own receipt; two projects SHALL never share one, and concurrent operations in different projects SHALL NOT contend on the same receipt. The receipt SHALL survive lockfile changes made outside the system. Current receipts SHALL use schema version `0.2` and mirror each committed lockfile asset/file ownership set without storing adapter-encoded hashes. A project without a receipt SHALL bootstrap one from its current lockfile. A legacy receipt MAY be refined to primary-only ownership because legacy installation could not materialize companions.
 
-The system SHALL treat the receipt, not the on-disk lockfile, as the description of what is currently materialized when deciding which assets to remove. When a facet is recorded as materialized but is no longer wanted (absent from the manifest and not being added), the system SHALL delete that facet's recorded assets from every selected adapter and SHALL drop the facet from both the lockfile and the receipt. This removal SHALL succeed without any network access and without any cached content, because the receipt itself carries the asset set to delete. In frozen-lockfile mode, this cleanup applies only after the frozen consistency check passes; an orphaned lockfile entry that the consistency check rejects SHALL cause the operation to fail before any cleanup occurs (see the frozen-lockfile requirement).
+The receipt, lockfile, and materialized state SHALL commit together: within one operation, handled failures SHALL roll back all three, and an interruption that prevents rollback SHALL be recoverable by re-running installation, whose per-file integrity reconciliation converges disk, lockfile, and receipt without deleting unowned files. Receipt-driven deletion SHALL pass each skill's validated owned companion path set into the adapter deletion request, so removal after a pulled lockfile drops an entry deletes exactly the recorded owned files without cache or network access. The receipt SHALL determine what is currently materialized when pulled version-control changes remove lockfile entries. In frozen-lockfile mode, receipt-driven cleanup SHALL begin only after the frozen consistency check passes. If that check rejects an orphaned lockfile entry, installation SHALL fail before cleanup changes any materialized state. Receipt data SHALL be treated as untrusted: project identity, record shape, and path containment within the selected adapter's storage SHALL be validated before deletion. Invalid or escaping records SHALL be reported and SHALL NOT cause deletion; files not recorded as owned SHALL never be deleted.
 
-The receipt SHALL be treated as untrusted input. Before acting on a receipt, the system SHALL verify it corresponds to the project being operated on; a receipt that does not (corruption, collision, or tampering) SHALL be ignored and recreated rather than acted upon. When deleting assets named by the receipt, the system SHALL delete only files that resolve to locations inside the project's adapter trees; a recorded path that resolves outside them SHALL NOT be deleted, and the system SHALL report it. A corrupted receipt MAY cause a cleanup to be skipped; it SHALL NOT cause deletion outside the project's adapter trees.
+#### Scenario: Pulled change still cleans up a multi-file skill
 
-#### Scenario: A pulled change that drops a lockfile entry still cleans up its assets
+- **WHEN** version-control changes remove a facet from the manifest and lockfile but the receipt records its skill primary and companions
+- **THEN** install SHALL supply the validated recorded companion paths in the adapter deletion request
+- **AND** delete every recorded owned file from each selected adapter
+- **AND** no network or cache content SHALL be required
 
-- **WHEN** a change pulled from version control removes a facet from both the manifest and the lockfile
-- **AND** that facet's assets were previously materialized on this machine
-- **AND** the user runs install
-- **THEN** the system SHALL detect the facet as materialized but no longer wanted via the receipt
-- **AND** the system SHALL delete that facet's assets from every selected adapter
-- **AND** the system SHALL NOT leave the facet's assets orphaned on disk
+#### Scenario: Interrupted install converges on re-run
+
+- **WHEN** an installation is interrupted after some skill-bundle writes but before lockfile and receipt commit
+- **THEN** re-running installation SHALL compare locked per-file integrity against disk and complete or repair the bundle
+- **AND** the re-run SHALL NOT delete any file not recorded as owned
 
 #### Scenario: Removal needs neither cache nor network
 
-- **WHEN** a user removes a facet whose content is absent from the cache and whose registry is unreachable
-- **THEN** the system SHALL still delete that facet's assets using the asset set recorded in the receipt
-- **AND** the removal SHALL succeed
+- **WHEN** a facet is no longer wanted, its content is not cached, and its registry is unavailable
+- **THEN** the system SHALL remove its recorded files using the receipt
 
-#### Scenario: A project without a receipt bootstraps one
+#### Scenario: Project without a receipt bootstraps one
 
-- **WHEN** the system operates on a project that has a lockfile but no receipt yet
-- **THEN** the system SHALL create the receipt from the current lockfile's entries
-- **AND** subsequent operations SHALL use the receipt as the description of what is materialized
+- **WHEN** a project has a lockfile but no receipt
+- **THEN** the next operation SHALL create a project-specific receipt from current locked ownership
 
-#### Scenario: A receipt naming a path outside the project never causes deletion there
+#### Scenario: Escaping receipt path is not deleted
 
-- **WHEN** the receipt contains an asset path that resolves outside the project's adapter trees (for example via `..` segments, an absolute path elsewhere, or a symlink)
-- **AND** the system would otherwise remove that facet's assets
-- **THEN** the system SHALL NOT delete the escaping path
-- **AND** the system SHALL report the invalid entry
-- **AND** valid asset paths inside the adapter trees SHALL still be processed normally
+- **WHEN** a receipt companion path resolves outside its selected adapter's storage through traversal, an absolute path, or a link
+- **THEN** the system SHALL NOT delete that path
+- **AND** it SHALL report the invalid record while continuing to process valid owned paths safely
 
-#### Scenario: A receipt that does not match its project is ignored, not acted on
+#### Scenario: Mismatched project receipt is ignored
 
-- **WHEN** the system loads a receipt whose recorded project identity does not match the project being operated on
-- **THEN** the system SHALL NOT delete any assets based on that receipt
-- **AND** the system SHALL recreate the receipt from the current lockfile as if none existed
+- **WHEN** a receipt's project identity differs from the active project
+- **THEN** the system SHALL NOT delete anything based on that receipt
+- **AND** it SHALL recreate ownership from the current lockfile
+
+#### Scenario: Unowned file in a skill directory survives cleanup
+
+- **WHEN** a skill directory contains a user file absent from the receipt's ownership records
+- **THEN** skill removal SHALL leave that file unchanged
 
 ### Requirement: Resolved facet content is cached locally
 
@@ -528,39 +585,44 @@ The cache SHALL be addressed by the **fully-qualified exact version** of a facet
 
 ### Requirement: Integrity is verified before any asset is written
 
-The system SHALL verify the integrity of fetched facet content before writing any asset to disk. If verification fails, the system SHALL abort the install, leave the project unchanged, and report the mismatch as a security error.
+The system SHALL verify fetched or locally built facet content before writing any asset. For a current install, it SHALL require exact agreement between the lockfile's facet integrity and recomputed archive integrity; lockfile asset identities and verified materialization identities; each asset's complete locked path set and its verified owned-file set; and each per-file locked integrity, recomputed entry hash, and verified build-manifest hash. Any disagreement SHALL abort before materialization and return structured data identifying the facet, asset, canonical path, expected integrity, and actual integrity when available. Normal resolution SHALL write a replacement lock entry only after all checks succeed; frozen mode SHALL fail without rewriting.
 
-#### Scenario: Registry content fails its declared integrity
+#### Scenario: Registry content fails declared integrity
 
-- **WHEN** the system fetches a facet from the registry
-- **AND** the fetched content's hash does not match the integrity hash declared by the registry
-- **THEN** the system SHALL abort the install
-- **AND** the system SHALL NOT write any asset to any adapter
-- **AND** the system SHALL NOT modify the project manifest or lockfile
-- **AND** the system SHALL print a security error identifying the affected facet, the expected hash, and the observed hash
+- **WHEN** fetched registry content differs from registry-declared integrity
+- **THEN** installation SHALL abort before writing any asset or project state
+- **AND** the failure SHALL identify the facet and expected and observed hashes
 
-#### Scenario: Registry content fails its self-declared content hash
+#### Scenario: Registry content fails self-declared integrity
 
-- **WHEN** the system fetches a facet from the registry
-- **AND** the registry's declared integrity matches the archive
-- **AND** the archive's internal content hash does not match the archive's recomputed content hash
-- **THEN** the system SHALL abort the install
-- **AND** the system SHALL print a security error indicating internal archive corruption
+- **WHEN** registry integrity matches but the archive does not reproduce its self-declared integrity
+- **THEN** installation SHALL abort with structured archive-corruption data
 
-#### Scenario: Cached registry content fails its lockfile integrity
+#### Scenario: Cached content fails locked integrity
 
-- **WHEN** the system installs a registry facet from the cache
-- **AND** the lockfile has an integrity hash for that facet
-- **AND** the cached content's hash does not match the lockfile's integrity
-- **THEN** the system SHALL abort the install
-- **AND** the system SHALL print a security error identifying the affected facet
+- **WHEN** cached content does not reproduce the lockfile's facet integrity
+- **THEN** installation SHALL abort and identify the facet
 
-#### Scenario: Git or local content fails its computed integrity
+#### Scenario: Git or local content fails computed integrity
 
-- **WHEN** the system builds a facet from a git or local source
-- **AND** the built artifact's hash does not match the lockfile's integrity for that facet
-- **THEN** the system SHALL abort the install
-- **AND** the system SHALL print a security error identifying the affected facet
+- **WHEN** a built git or local artifact differs from its locked facet integrity
+- **THEN** installation SHALL abort and identify the facet
+
+#### Scenario: Companion integrity mismatch identifies exact path
+
+- **WHEN** locked `skills/review/references/api.md` differs from the recomputed archive-entry hash
+- **THEN** installation SHALL abort before any write
+- **AND** the failure SHALL contain that path and expected and actual integrity values
+
+#### Scenario: Locked file set mismatch is rejected
+
+- **WHEN** a skill's locked `files` set has a missing or extra path relative to verified owned files
+- **THEN** installation SHALL abort with structured data identifying the differing path
+
+#### Scenario: Frozen mismatch does not rewrite
+
+- **WHEN** any current per-file integrity check fails in frozen mode
+- **THEN** manifest, lockfile, receipt, and adapter state SHALL remain unchanged
 
 ### Requirement: Lockfile-driven install honors the lock only when it satisfies the manifest
 
@@ -802,6 +864,8 @@ The project manifest, the lockfile, and the receipt SHALL be written together as
 
 Before adding, removing, or installing facets, the system SHALL verify that every selected installed adapter declares an API supported by the current CLI. If a selected adapter is missing its declaration, has a malformed or unsupported declaration, conflicts with its recorded package declaration, or cannot be loaded as a valid adapter, the operation SHALL fail before invoking any adapter contract method or writing project or materialized state. The failure SHALL identify every incompatible selected adapter and provide the best available compatible-install command. The system SHALL NOT automatically upgrade or replace an incompatible adapter during a facet operation.
 
+This adapter-compatibility preflight SHALL run before archive-version dispatch and before any per-file integrity reconciliation, so an adapter declaring the superseded positional API `0.0` SHALL cause a `0.1`-only CLI to fail on the adapter — with reinstall guidance — before the archive's `facetVersion` is examined. The adapter API axis and the archive-format axis SHALL be classified independently.
+
 Facet removal SHALL remain independent of cached facet content and network access, but it SHALL still require compatible selected adapters because deleting materialized assets invokes each selected adapter's contract.
 
 #### Scenario: Adding a facet with an incompatible selected adapter changes nothing
@@ -812,6 +876,16 @@ Facet removal SHALL remain independent of cached facet content and network acces
 - **AND** no adapter contract method SHALL be invoked
 - **AND** the project manifest, lockfile, install receipt, and materialized assets SHALL remain unchanged
 - **AND** the error SHALL direct the user to install a compatible adapter
+
+#### Scenario: Positional 0.0 adapter blocks a facet operation before archive dispatch
+
+- **WHEN** a user adds or installs a facet whose archive uses `facetVersion: 0.2`
+- **AND** a selected installed adapter declares the positional API `0.0`
+- **AND** the CLI supports only the tagged-contract API `0.1`
+- **THEN** the operation SHALL fail on the incompatible adapter before the archive version is dispatched
+- **AND** no adapter contract method SHALL be invoked
+- **AND** the project manifest, lockfile, install receipt, and materialized assets SHALL remain unchanged
+- **AND** the error SHALL direct the user to reinstall a compatible adapter
 
 #### Scenario: Installing with several incompatible adapters reports all of them
 
@@ -842,35 +916,38 @@ Facet removal SHALL remain independent of cached facet content and network acces
 
 ### Requirement: Removing a facet uninstalls it
 
-When a user removes a facet from a project, the system SHALL drop the facet from the project manifest, delete the facet's materialized assets from every selected adapter, and update the lockfile and the receipt so neither records the facet — all in a single operation. A user SHALL NOT need to run a separate install step after removing. The asset set to delete SHALL be taken from the receipt, so removal SHALL require neither the cache nor the network. Before deleting any materialized asset, the system SHALL verify that every selected installed adapter loads as a valid adapter and declares an API supported by the CLI. When a selected adapter has a missing, malformed, unsupported, or metadata-inconsistent API declaration, or cannot be loaded as a valid adapter, removal SHALL fail before deleting any materialized asset and SHALL leave the project manifest, lockfile, receipt, and materialized assets unchanged. This compatibility precondition SHALL require neither cache access nor network access; once the adapter incompatibility is repaired, removal SHALL remain able to use the receipt without either resource.
+When a user removes a facet from a project, the system SHALL drop the facet from the project manifest, delete the facet's materialized assets from every selected adapter, and update the lockfile and the receipt so neither records the facet — all in a single operation. A user SHALL NOT need to run a separate install step after removing. The asset set to delete SHALL be taken from the receipt, so removal SHALL require neither the cache nor the network. Skill deletion SHALL supply the validated owned companion path set in the adapter deletion request and SHALL remove the primary and every owned companion atomically while leaving unowned files untouched. Before deleting any materialized asset, the system SHALL verify that every selected installed adapter loads as a valid adapter and declares an API supported by the CLI. When a selected adapter has a missing, malformed, unsupported, or metadata-inconsistent API declaration, or cannot be loaded as a valid adapter, removal SHALL fail before deleting any materialized asset and SHALL leave the project manifest, lockfile, receipt, and materialized assets unchanged. An adapter declaring the superseded positional API `0.0` SHALL be unsupported by a CLI whose supported set is the tagged-contract API `0.1` and SHALL trigger this failure. This compatibility precondition SHALL require neither cache access nor network access; once the adapter incompatibility is repaired, removal SHALL remain able to use the receipt without either resource.
 
 #### Scenario: Removing a declared facet uninstalls it
 
 - **WHEN** a user removes a facet that is declared in the project manifest
 - **AND** every selected installed adapter loads as a valid adapter and declares an API supported by the CLI
-- **THEN** the system SHALL remove the facet's entry from the project manifest
-- **AND** the system SHALL delete every asset the facet contributed from every selected adapter, using the asset set recorded in the receipt
-- **AND** the system SHALL update the lockfile and the receipt so neither records the facet
-- **AND** the operation SHALL complete in a single command invocation
+- **THEN** the system SHALL remove the facet's manifest entry, locked entry, receipt entry, and every recorded materialized file in one command
+
+#### Scenario: Removing multi-file skill preserves unowned content
+
+- **WHEN** a removed facet owns `skills/review/SKILL.md` and `skills/review/references/api.md` but not `skills/review/notes.txt`
+- **AND** every selected installed adapter loads as a valid adapter and declares an API supported by the CLI
+- **THEN** deletion SHALL remove the primary and owned companion
+- **AND** it SHALL preserve `notes.txt`
 
 #### Scenario: Other facets are left intact
 
-- **WHEN** a user removes one facet from a project that declares several facets
+- **WHEN** one facet is removed from a project with several facets
 - **AND** every selected installed adapter loads as a valid adapter and declares an API supported by the CLI
-- **THEN** the system SHALL leave every other declared facet's manifest entry, lockfile entry, receipt entry, and materialized assets unchanged
+- **THEN** every other facet's manifest, lockfile, receipt, and materialized files SHALL remain unchanged
 
 #### Scenario: Removing the last facet leaves an empty project
 
-- **WHEN** a user removes the only facet declared in the project
+- **WHEN** the user removes the only declared facet
 - **AND** every selected installed adapter loads as a valid adapter and declares an API supported by the CLI
-- **THEN** the system SHALL leave the project manifest declaring no facets
-- **AND** the system SHALL leave a valid lockfile that records no facets
+- **THEN** the manifest and lockfile SHALL remain valid and contain no facets
 
 #### Scenario: Removal deletes recorded assets without cache or network
 
 - **WHEN** a user removes a facet whose content is absent from the cache and whose registry is unreachable
 - **AND** every selected installed adapter loads as a valid adapter and declares an API supported by the CLI
-- **THEN** the system SHALL still delete that facet's assets using the asset set recorded in the receipt
+- **THEN** the system SHALL still delete that facet's recorded owned files using the receipt
 - **AND** removal SHALL succeed without any cache read or network access
 
 #### Scenario: An incompatible adapter blocks removal without weakening offline recovery
@@ -927,3 +1004,73 @@ When a remove operation fails for any reason, the manifest, lockfile, and receip
 - **AND** the lockfile on disk SHALL match its pre-operation contents
 - **AND** the receipt on disk SHALL match its pre-operation contents
 - **AND** the system SHALL surface the failure to the user
+
+### Requirement: Archive-only supplementary files are never materialized
+
+Supplementary files outside skill directories SHALL remain available inside the verified facet archive but SHALL NOT be written into any selected adapter. They SHALL NOT receive an asset type, scope, independent lockfile asset entry, or per-file lockfile record. Their bytes SHALL remain protected by facet-level archive integrity.
+
+#### Scenario: Root README is not installed
+
+- **WHEN** a verified facet contains declared root `README.md`
+- **THEN** installation SHALL NOT write that file into any adapter tree
+- **AND** the lockfile SHALL NOT record `README.md` under an asset
+
+#### Scenario: Extra agent-adjacent file is not installed
+
+- **WHEN** a verified facet contains declared archive-only `agents/notes.md`
+- **THEN** installation SHALL materialize no file for that supplementary entry
+
+#### Scenario: Archive-only tampering still blocks installation
+
+- **WHEN** an archive-only supplementary entry has been altered after build
+- **THEN** facet-level integrity verification SHALL fail before any materialized file is written
+
+### Requirement: Drift is detected and reported per locked file
+
+The system SHALL compare every materialized file with its canonical per-file integrity record. Verbatim companion files SHALL be hashed from their installed bytes. When an adapter stores a primary asset in a transformed representation, its read result SHALL provide canonical logical content for comparison. Drift reports SHALL identify the exact locked path rather than only the owning facet or asset.
+
+#### Scenario: Companion drift identifies exact path
+
+- **WHEN** installed `skills/review/references/api.md` differs from its locked canonical bytes
+- **THEN** the system SHALL report that exact path as drifted
+
+#### Scenario: Transformed primary compares canonically
+
+- **WHEN** an adapter stores metadata around a primary asset but returns its canonical logical content
+- **THEN** drift comparison SHALL use the canonical content integrity rather than adapter-specific storage bytes
+
+#### Scenario: Reinstall repairs one drifted file
+
+- **WHEN** one companion in an otherwise unchanged skill bundle has drifted
+- **THEN** reinstall SHALL restore that file from verified content
+- **AND** the user-visible result SHALL identify its exact path
+
+### Requirement: Unsupported archive versions fail with actionable guidance
+
+Installation SHALL accept current `0.2` and valid legacy `0.1` archives during the compatibility window. Any other archive version SHALL return structured failure data containing the observed and supported versions before materialization. A malformed current archive SHALL NOT be reinterpreted as legacy. For a known newer archive format, the user-facing failure SHALL name the minimum release that supports it. For an unknown future format, the failure SHALL advise updating to the latest release without inventing a minimum version.
+
+#### Scenario: Known newer format names its minimum supporting release
+
+- **WHEN** an archive uses a format unsupported by this release but mapped to a known newer release
+- **THEN** installation SHALL fail before materialization
+- **AND** the message SHALL name the minimum supporting release
+- **AND** project, lockfile, receipt, and adapter state SHALL remain unchanged
+
+#### Scenario: Unknown future format advises updating to latest
+
+- **WHEN** an archive uses a format for which no supporting release is known
+- **THEN** installation SHALL fail before materialization
+- **AND** the message SHALL advise updating to the latest release without naming a minimum
+- **AND** project, lockfile, receipt, and adapter state SHALL remain unchanged
+
+#### Scenario: Valid legacy archive remains installable
+
+- **WHEN** a valid `0.1` archive is installed during the compatibility window
+- **THEN** the system SHALL apply the legacy verification and materialization behavior
+
+#### Scenario: Malformed current archive is not retried as legacy
+
+- **WHEN** a `0.2` archive violates the current schema
+- **THEN** installation SHALL fail under the current rules
+- **AND** the system SHALL NOT retry it as `0.1`
+
