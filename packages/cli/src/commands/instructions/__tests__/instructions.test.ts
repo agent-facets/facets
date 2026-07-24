@@ -1,24 +1,86 @@
 import { describe, expect, test } from 'bun:test'
 import { FacetManifestSchema } from '@agent-facets/protocol'
-import { DEFAULT_TOPIC, INSTRUCTION_TOPICS, isInstructionTopic, PROMPTS } from '../../../prompts/index.ts'
+import {
+  DEFAULT_TOPIC,
+  INSTRUCTION_TOPICS,
+  isInstructionTopic,
+  promptFor,
+  renderTopicIndex,
+  TOPICS,
+} from '../../../prompts/index.ts'
 import { instructionsCommand } from '../index.ts'
 
 describe('instruction topics', () => {
-  test('default topic is overview and is present', () => {
+  test('default topic is overview and has a non-empty prompt', () => {
     expect(DEFAULT_TOPIC).toBe('overview')
-    expect(PROMPTS.overview.length).toBeGreaterThan(0)
+    expect(TOPICS.overview.prompt.length).toBeGreaterThan(0)
   })
 
-  test('all four domain topics exist and are non-empty', () => {
+  test('all four domain topics exist with a prompt and a summary', () => {
     expect(INSTRUCTION_TOPICS.sort()).toEqual(['authoring', 'manifest', 'overview', 'usage'])
     for (const topic of INSTRUCTION_TOPICS) {
-      expect(PROMPTS[topic].length).toBeGreaterThan(0)
+      expect(TOPICS[topic].prompt.length).toBeGreaterThan(0)
+      expect(TOPICS[topic].summary.length).toBeGreaterThan(0)
     }
   })
 
   test('isInstructionTopic narrows valid and rejects invalid', () => {
     expect(isInstructionTopic('authoring')).toBe(true)
     expect(isInstructionTopic('nope')).toBe(false)
+  })
+})
+
+describe('topic index', () => {
+  test('renders one line per topic, each with its invocation and summary', () => {
+    const index = renderTopicIndex()
+    expect(index).toContain('Instruction topics')
+    for (const topic of INSTRUCTION_TOPICS) {
+      expect(index).toContain(`facet instructions ${topic}`)
+      expect(index).toContain(TOPICS[topic].summary)
+    }
+  })
+
+  test('overview prompt substitutes the generated index before workflow routing', () => {
+    const overview = promptFor('overview')
+    // The marker must be replaced, not printed literally.
+    expect(overview).not.toContain('{{TOPIC_INDEX}}')
+    // Every topic is listed, and the index precedes the AUTHORING/USING routing.
+    for (const topic of INSTRUCTION_TOPICS) {
+      expect(overview).toContain(`facet instructions ${topic}`)
+    }
+    expect(overview.indexOf('Instruction topics')).toBeLessThan(overview.indexOf('AUTHORING a facet'))
+  })
+
+  test('non-overview prompts are returned verbatim (no marker substitution)', () => {
+    for (const topic of INSTRUCTION_TOPICS) {
+      if (topic === 'overview') continue
+      expect(promptFor(topic)).toBe(TOPICS[topic].prompt)
+    }
+  })
+})
+
+describe('0.29 guidance is present in the prompts', () => {
+  test('authoring covers README default, --no-readme, top-level files, and verify', () => {
+    const authoring = TOPICS.authoring.prompt
+    expect(authoring).toContain('README.md')
+    expect(authoring).toContain('--no-readme')
+    expect(authoring).toContain('"files"')
+    expect(authoring).toContain('facet build --verify')
+  })
+
+  test('manifest documents top-level and per-skill supplementary files', () => {
+    const manifest = TOPICS.manifest.prompt
+    expect(manifest).toContain('files')
+    expect(manifest).toContain('archive-only')
+    expect(manifest).toContain('companion')
+    // The generated-schema marker must be preserved for the append step.
+    expect(manifest).toContain('--- JSON Schema (generated) ---')
+  })
+
+  test('usage covers adapter API 0.1 recovery guidance', () => {
+    const usage = TOPICS.usage.prompt
+    expect(usage).toContain('adapter API 0.1')
+    expect(usage).toContain('facet adapter list')
   })
 })
 

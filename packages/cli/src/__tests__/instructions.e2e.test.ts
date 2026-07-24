@@ -23,16 +23,41 @@ describe('facet instructions', () => {
     expect(result.stdout).toContain('facet instructions authoring')
   })
 
-  test('usage topic leads with the registry', async () => {
+  test('default output opens with a topic index listing every topic', async () => {
+    const result = await runCli('instructions')
+    expect(result.exitCode).toBe(0)
+    const indexAt = result.stdout.indexOf('Instruction topics')
+    expect(indexAt).toBeGreaterThanOrEqual(0)
+    for (const topic of ['overview', 'manifest', 'authoring', 'usage']) {
+      expect(result.stdout).toContain(`facet instructions ${topic}`)
+    }
+    // The index appears before the workflow routing, so an agent sees it first.
+    expect(indexAt).toBeLessThan(result.stdout.indexOf('AUTHORING a facet'))
+    // The injection marker must never leak into the printed output.
+    expect(result.stdout).not.toContain('{{TOPIC_INDEX}}')
+  })
+
+  test('authoring topic covers README and supplementary-file authoring', async () => {
+    const result = await runCli('instructions', 'authoring')
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('--no-readme')
+    expect(result.stdout).toContain('README.md')
+    expect(result.stdout).toContain('facet build --verify')
+  })
+
+  test('usage topic leads with the registry and covers adapter compatibility', async () => {
     const result = await runCli('instructions', 'usage')
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('agentfacets.io')
     expect(result.stdout).toContain('facet add viper-plans')
+    expect(result.stdout).toContain('adapter API 0.1')
+    expect(result.stdout).toContain('facet adapter list')
   })
 
-  test('manifest topic appends the generated JSON Schema', async () => {
+  test('manifest topic documents supplementary files and appends the generated JSON Schema', async () => {
     const result = await runCli('instructions', 'manifest')
     expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('archive-only')
     // The generated JSON Schema follows the "(generated)" marker; the prose
     // above it also contains braces, so split on the marker rather than the
     // first `{`.

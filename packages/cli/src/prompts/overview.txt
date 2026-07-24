@@ -1,8 +1,11 @@
 facet — instructions for AI agents
 
+{{TOPIC_INDEX}}
+
 This CLI manages "facets": portable bundles of skills, agents, and commands
-for AI coding tools. As an agent you will do one of two things with it. Decide
-which, then read the matching topic before acting.
+(plus optional supplementary files like README.md) for AI coding tools. As an
+agent you will do one of two things with it. Decide which, then read the
+matching topic before acting.
 
   AUTHORING a facet  — you are writing or changing a facet (its facet.json and
                        its skill/agent/command files). Run:
@@ -15,9 +18,10 @@ which, then read the matching topic before acting.
 
 The three artifact files
   facet.json   The authoring manifest. Declares a facet's identity (name,
-               version) and its assets (skills, agents, commands) with their
-               descriptions and optional per-adapter config. You edit this when
-               AUTHORING. See: facet instructions manifest
+               version), its assets (skills, agents, commands) with their
+               descriptions and optional per-adapter config, and any
+               supplementary files it ships. You edit this when AUTHORING.
+               See: facet instructions manifest
   facets.json  A consuming project's dependency list: which facets it installs.
                You touch this when USING facets (via `facet add`).
   facets.lock  The install lockfile. Managed by the CLI; do not hand-edit.
@@ -29,8 +33,7 @@ Command index
   facet edit           Interactive editing wizard (TTY only — prefer `modify`).
   facet add            Add a facet to a project and install it.
   facet adapter        Install / list / remove adapter tooling.
-  facet instructions   Print these instructions. Topics: overview (default),
-                       manifest, authoring, usage.
+  facet instructions   Print these instructions (see the topic index above).
 
 Machine-readable output
   `facet create`, `facet modify`, and `facet build` accept `--json` for

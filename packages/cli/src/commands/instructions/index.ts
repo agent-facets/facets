@@ -1,6 +1,6 @@
 import { FacetManifestSchema } from '@agent-facets/protocol'
 import type { Command } from '../../commands.ts'
-import { DEFAULT_TOPIC, INSTRUCTION_TOPICS, isInstructionTopic, PROMPTS } from '../../prompts/index.ts'
+import { DEFAULT_TOPIC, INSTRUCTION_TOPICS, isInstructionTopic, promptFor } from '../../prompts/index.ts'
 import { writeCliError } from '../../util/errors.ts'
 
 /**
@@ -8,7 +8,8 @@ import { writeCliError } from '../../util/errors.ts'
  *
  * This command is FOR AI AGENTS. The prompts are curated workflow guidance
  * (not per-flag help) that tell an autonomous agent how to author and use
- * facets. Topics: overview (default), manifest, authoring, usage.
+ * facets. The overview (default) opens with a generated index of every topic;
+ * topics: overview (default), manifest, authoring, usage.
  */
 export const instructionsCommand: Command = {
   name: 'instructions',
@@ -22,13 +23,14 @@ export const instructionsCommand: Command = {
       writeCliError({
         what: `unknown instructions topic "${topic}"`,
         detail: `valid topics: ${INSTRUCTION_TOPICS.join(', ')}`,
-        fix: 'run: facet instructions [overview|manifest|authoring|usage]',
+        fix: `run: facet instructions [${INSTRUCTION_TOPICS.join('|')}]`,
       })
       return 1
     }
 
-    process.stdout.write(PROMPTS[topic])
-    if (!PROMPTS[topic].endsWith('\n')) process.stdout.write('\n')
+    const prompt = promptFor(topic)
+    process.stdout.write(prompt)
+    if (!prompt.endsWith('\n')) process.stdout.write('\n')
 
     // The manifest topic appends the JSON Schema generated live from the
     // protocol arktype schema — a single source of truth, never hand-copied.

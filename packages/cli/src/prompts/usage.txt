@@ -41,6 +41,15 @@ Adapter tooling — `facet adapter`
     facet adapter list                    List installed adapters.
     facet adapter remove <name>           Remove an installed adapter.
 
+  This CLI supports adapter API 0.1. An adapter that declares an older or
+  unsupported API fails closed before any project files change. If `facet
+  build`, `facet add`, or `facet install` reports an incompatible adapter:
+    1. Run `facet adapter list` to see each adapter's API and status. Failing
+       entries print the exact reinstall command to run.
+    2. Reinstall an unsupported first-party adapter: facet adapter install <name>
+    3. For a CUSTOM adapter, rebuild it against the current
+       @agent-facets/adapter SDK first, then reinstall from that source.
+
   NOTE: This is about installing the adapter TOOLING. Configuring a facet's
   per-asset adapter settings (the `adapters` block in facet.json) is an
   AUTHORING task — see: facet instructions authoring
