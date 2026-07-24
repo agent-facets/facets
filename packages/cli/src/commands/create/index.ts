@@ -53,6 +53,7 @@ export const createCommand: Command = {
     skill: { type: 'array', description: 'Skill to scaffold, repeatable (headless mode)' },
     agent: { type: 'array', description: 'Agent to scaffold, repeatable (headless mode)' },
     command: { type: 'array', description: 'Command to scaffold, repeatable (headless mode)' },
+    readme: { type: 'boolean', description: 'Scaffold a README.md (default on; pass --no-readme to skip)' },
     json: { type: 'boolean', description: 'Emit machine-readable JSON to stdout (headless mode)' },
   },
   run: async (args: string[], flags: Record<string, unknown>): Promise<number> => {

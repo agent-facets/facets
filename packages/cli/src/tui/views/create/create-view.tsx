@@ -20,9 +20,19 @@ const ASSET_LABELS: Record<AssetType, string> = {
 }
 
 function computeFocusIds(form: ReturnType<typeof useFormState>['form']): string[] {
-  // NOTE: `field-private` sits between `field-version` and the asset controls.
-  // This focus list is duplicated in edit-view.tsx; keep both in lockstep.
-  const ids: string[] = ['field-name', 'field-description', 'field-version', 'field-private']
+  // NOTE: `field-private` sits between `field-version` and the asset controls,
+  // followed by the create-only README card (`field-readme`, `readme-edit-btn`).
+  // The identity/privacy prefix mirrors edit-view.tsx; the README card is
+  // create-only (edit routes README through its dedicated panel). Both README
+  // ids are always present so toggling README off never churns the focus set.
+  const ids: string[] = [
+    'field-name',
+    'field-description',
+    'field-version',
+    'field-private',
+    'field-readme',
+    'readme-edit-btn',
+  ]
 
   for (const type of ASSET_TYPES) {
     const section = form.assets[type]
@@ -42,11 +52,13 @@ function computeFocusIds(form: ReturnType<typeof useFormState>['form']): string[
 export function CreateView({
   onSubmit,
   onEditDescription,
+  onEditReadme,
 }: {
   onSubmit: () => void
   onEditDescription?: (section: import('../../context/form-state-context.ts').AssetSectionKey, name: string) => void
+  onEditReadme?: () => void
 }) {
-  const { form, setPrivate } = useFormState()
+  const { form, setPrivate, setReadmeEnabled } = useFormState()
   const { setFocusIds, focus, focusedId } = useFocusOrder()
 
   // Facet identity: an unscoped slug (`my-facet`) or a scoped `@scope/name`
@@ -140,8 +152,28 @@ export function CreateView({
         offLabel="Public"
         onToggle={setPrivate}
         dimmed={!assetsReady}
-        onConfirm={() => focus(`add-${ASSET_TYPES[0]}`)}
+        onConfirm={() => focus('field-readme')}
       />
+
+      <BooleanToggle
+        id="field-readme"
+        label="README"
+        value={form.readme.enabled}
+        onLabel="Enabled"
+        offLabel="Disabled"
+        onToggle={setReadmeEnabled}
+        dimmed={!assetsReady}
+        onConfirm={() => focus('readme-edit-btn')}
+      />
+
+      <Box marginLeft={2}>
+        <Button
+          id="readme-edit-btn"
+          label="[ Edit README ]"
+          disabled={!form.readme.enabled}
+          onPress={() => onEditReadme?.()}
+        />
+      </Box>
 
       {ASSET_TYPES.map((type) => (
         <Box key={type} marginTop={0}>

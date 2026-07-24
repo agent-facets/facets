@@ -13,6 +13,7 @@ function formWith(isPrivate: boolean): FormState {
       version: { value: '0.0.0', status: 'confirmed' },
     },
     private: isPrivate,
+    readme: { enabled: false, draft: { origin: 'seeded', content: '' } },
     assets: {
       skill: { items: ['cowsay'], descriptions: { cowsay: 'A skill' }, editing: undefined, adding: false },
       command: { items: [], descriptions: {}, editing: undefined, adding: false },
@@ -33,6 +34,7 @@ function renderCreate(isPrivate: boolean) {
             skills: ['cowsay'],
             agents: [],
             commands: [],
+            readme: { kind: 'disabled' },
             ...(isPrivate ? { private: true as const } : {}),
           }}
           onConfirm={() => {}}

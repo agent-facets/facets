@@ -116,15 +116,15 @@
 
 ## 12. Create and Edit Authoring — Research
 
-- [ ] 12.1 Explore: Trace scaffold options, manifest generation, templates, previews, and create wizard state/editor round-trips
-- [ ] 12.2 Explore: Trace edit scanner, reconciliation, context, operation, manifest-rewrite, confirmation, and transactional apply types
-- [ ] 12.3 Explore: Inspect create/edit focus management and exhaustive UI switches that must represent two independent README paths and path-bearing reconciliation items
-- [ ] 12.4 Propose: Define tagged README and supplementary-file states, stable reconciliation identities, headless-create behavior, and an exact-path operation preview for the full authoring block
+- [x] 12.1 Explore: Trace scaffold options, manifest generation, templates, previews, and create wizard state/editor round-trips
+- [x] 12.2 Explore: Trace edit scanner, reconciliation, context, operation, manifest-rewrite, confirmation, and transactional apply types
+- [x] 12.3 Explore: Inspect create/edit focus management and exhaustive UI switches that must represent two independent README paths and path-bearing reconciliation items
+- [x] 12.4 Propose: Define tagged README and supplementary-file states, stable reconciliation identities, headless-create behavior, and an exact-path operation preview for the full authoring block
 
 ## 13. Create and Edit Authoring — Implementation
 
-- [ ] 13.1 Implement: Add an editable default `README.md` scaffold option and template that writes the file and top-level declaration atomically without regenerating authored content after identity edits
-- [ ] 13.2 Implement: Add the dedicated create README card/editor flow, optional disable behavior, state snapshotting, and explicit confirmation preview, and align headless create with the documented policy
+- [x] 13.1 Implement: Add an editable default `README.md` scaffold option and template that writes the file and top-level declaration atomically without regenerating authored content after identity edits
+- [x] 13.2 Implement: Add the dedicated create README card/editor flow, optional disable behavior, state snapshotting, and explicit confirmation preview, and align headless create with the documented policy
 - [ ] 13.3 Implement: Extend edit scanning and reconciliation for undeclared skill companions, common root files, and missing declared supplementary files while routing only exact `README.md` and `README` paths to a dedicated panel
 - [ ] 13.4 Implement: Add independent tagged states and actions for both conventional README paths, preserving bytes on adoption and retaining exact paths for scaffold, edit, removal, and declaration changes
 - [ ] 13.5 Implement: Replace string-parsed reconciliation keys with stable structured identities and represent file/declaration operations as tagged variants with no invalid combinations

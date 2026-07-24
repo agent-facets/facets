@@ -44,6 +44,7 @@ async function fixture(name: string): Promise<string> {
       skills: ['greet'],
       agents: ['helper'],
       commands: [],
+      readme: { kind: 'disabled' },
     },
     dir,
   )

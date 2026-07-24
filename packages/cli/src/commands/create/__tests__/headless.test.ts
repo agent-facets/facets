@@ -26,7 +26,25 @@ describe('decideCreate — headless validation', () => {
       skills: ['greet'],
       agents: ['helper'],
       commands: [],
+      // README is on by default, seeded from the (empty) description.
+      readme: { kind: 'enabled', content: '# my-facet\n' },
     })
+  })
+
+  test('README is enabled by default and seeded from identity', () => {
+    const d = decideCreate({ name: 'my-facet', description: 'Neat tools', skill: ['greet'] })
+    if (d.mode !== 'headless') expect.unreachable()
+    expect(d.options.readme).toEqual({ kind: 'enabled', content: '# my-facet\n\nNeat tools\n' })
+  })
+
+  test('--no-readme opts out (readme: false)', () => {
+    const d = decideCreate({ name: 'my-facet', skill: ['greet'], readme: false })
+    if (d.mode !== 'headless') expect.unreachable()
+    expect(d.options.readme).toEqual({ kind: 'disabled' })
+  })
+
+  test('a lone --no-readme does not trigger headless mode', () => {
+    expect(decideCreate({ readme: false }).mode).toBe('wizard')
   })
 
   test('honors version, description, and private', () => {

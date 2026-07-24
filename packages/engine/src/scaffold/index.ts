@@ -1,9 +1,19 @@
-import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { FACET_MANIFEST_FILE } from '@agent-facets/protocol'
+import { applyFsTransaction, type FsMutation } from '../fs-transaction.ts'
 import { jsonFileText } from '../json-file-text.ts'
+import { README_MD } from '../readme.ts'
 
 // --- Types ---
+
+/**
+ * README scaffolding intent, narrowed from the create UI / headless flags. The
+ * enabled arm carries the exact content to write verbatim (seeded or authored);
+ * the engine never regenerates it. Disabled writes no README file or
+ * declaration. Tagged so an "enabled but no content" or "disabled but has
+ * content" state is unrepresentable.
+ */
+export type ScaffoldReadme = { kind: 'enabled'; content: string } | { kind: 'disabled' }
 
 export interface ScaffoldOptions {
   name: string
@@ -18,6 +28,10 @@ export interface ScaffoldOptions {
   skills: string[]
   agents: string[]
   commands: string[]
+  // README scaffolding intent. Required and tagged: callers decide the
+  // default-on policy (interactive/headless create) and hand the engine an
+  // explicit enabled/disabled decision.
+  readme: ScaffoldReadme
 }
 
 // --- Defaults ---
@@ -141,6 +155,12 @@ export function generateScaffoldManifest(opts: ScaffoldOptions): string {
     manifest.commands = commands
   }
 
+  // README is an ordinary top-level supplementary declaration — no
+  // README-specific manifest field. Declared last, after asset sections.
+  if (opts.readme.kind === 'enabled') {
+    manifest.files = [README_MD]
+  }
+
   return jsonFileText(manifest)
 }
 
@@ -148,6 +168,9 @@ export function generateScaffoldManifest(opts: ScaffoldOptions): string {
 
 export function previewScaffoldFiles(opts: ScaffoldOptions): string[] {
   const files: string[] = [FACET_MANIFEST_FILE]
+  if (opts.readme.kind === 'enabled') {
+    files.push(README_MD)
+  }
   for (const skill of opts.skills) {
     files.push(`skills/${skill}/SKILL.md`)
   }
@@ -162,34 +185,65 @@ export function previewScaffoldFiles(opts: ScaffoldOptions): string[] {
 
 // --- Scaffold writing ---
 
-export async function writeScaffold(opts: ScaffoldOptions, targetDir: string): Promise<string[]> {
-  const files: string[] = []
-
-  // Write manifest
-  const manifestPath = join(targetDir, FACET_MANIFEST_FILE)
-  await Bun.write(manifestPath, generateScaffoldManifest(opts))
-  files.push(FACET_MANIFEST_FILE)
-
-  // Write skill files (Agent Skills directory convention: skills/<name>/SKILL.md)
+/**
+ * Derive the exact, ordered set of file mutations for a scaffold. Kept pure so
+ * both `writeScaffold` and its tests can inspect the planned bytes without
+ * touching disk. Order matches `previewScaffoldFiles`.
+ */
+function scaffoldMutations(opts: ScaffoldOptions, targetDir: string): FsMutation[] {
+  const encoder = new TextEncoder()
+  const mutations: FsMutation[] = [
+    {
+      kind: 'write',
+      path: join(targetDir, FACET_MANIFEST_FILE),
+      bytes: encoder.encode(generateScaffoldManifest(opts)),
+    },
+  ]
+  if (opts.readme.kind === 'enabled') {
+    mutations.push({ kind: 'write', path: join(targetDir, README_MD), bytes: encoder.encode(opts.readme.content) })
+  }
+  // Agent Skills directory convention: skills/<name>/SKILL.md
   for (const skill of opts.skills) {
-    await mkdir(join(targetDir, 'skills', skill), { recursive: true })
-    await Bun.write(join(targetDir, `skills/${skill}/SKILL.md`), skillTemplate(skill))
-    files.push(`skills/${skill}/SKILL.md`)
+    mutations.push({
+      kind: 'write',
+      path: join(targetDir, `skills/${skill}/SKILL.md`),
+      bytes: encoder.encode(skillTemplate(skill)),
+    })
   }
-
-  // Write agent files
   for (const agent of opts.agents) {
-    await mkdir(join(targetDir, 'agents'), { recursive: true })
-    await Bun.write(join(targetDir, `agents/${agent}.md`), agentTemplate(agent))
-    files.push(`agents/${agent}.md`)
+    mutations.push({
+      kind: 'write',
+      path: join(targetDir, `agents/${agent}.md`),
+      bytes: encoder.encode(agentTemplate(agent)),
+    })
   }
-
-  // Write command files
   for (const command of opts.commands) {
-    await mkdir(join(targetDir, 'commands'), { recursive: true })
-    await Bun.write(join(targetDir, `commands/${command}.md`), commandTemplate(command))
-    files.push(`commands/${command}.md`)
+    mutations.push({
+      kind: 'write',
+      path: join(targetDir, `commands/${command}.md`),
+      bytes: encoder.encode(commandTemplate(command)),
+    })
   }
+  return mutations
+}
 
-  return files
+/**
+ * Write a scaffold as one atomic transaction: `facet.json`, README (when
+ * enabled), and every starter asset commit together, or the target directory is
+ * left as it was. Returns the list of relative paths written on success.
+ *
+ * A transaction failure here is an environment-level filesystem error with no
+ * caller recovery path (create has nowhere to fall back to), so it is thrown
+ * after rollback rather than returned. The transaction primitive itself is
+ * result-shaped for the edit apply path, which can recover.
+ */
+export async function writeScaffold(opts: ScaffoldOptions, targetDir: string): Promise<string[]> {
+  const result = applyFsTransaction(scaffoldMutations(opts, targetDir))
+  if (!result.ok) {
+    throw new Error(
+      `scaffold write failed at ${result.failedPath}: ${result.reason}` +
+        (result.rollback.ok ? '' : ` (rollback incomplete: ${result.rollback.failedPaths.join(', ')})`),
+    )
+  }
+  return previewScaffoldFiles(opts)
 }

@@ -74,6 +74,7 @@ describe('writeScaffold', () => {
         skills: ['code-review', 'testing-guide'],
         agents: ['reviewer'],
         commands: ['deploy'],
+        readme: { kind: 'disabled' },
       },
       dir,
     )
@@ -122,6 +123,7 @@ describe('writeScaffold', () => {
         skills: ['minimal'],
         agents: [],
         commands: [],
+        readme: { kind: 'disabled' },
       },
       dir,
     )
@@ -148,6 +150,7 @@ describe('writeScaffold', () => {
         skills: ['example'],
         agents: [],
         commands: [],
+        readme: { kind: 'disabled' },
       },
       dir,
     )
@@ -169,6 +172,7 @@ describe('writeScaffold', () => {
         skills: ['cowsay'],
         agents: [],
         commands: [],
+        readme: { kind: 'disabled' },
       },
       dir,
     )
@@ -196,6 +200,7 @@ describe('writeScaffold', () => {
         skills: ['helper'],
         agents: ['assistant'],
         commands: [],
+        readme: { kind: 'disabled' },
       },
       dir,
     )
@@ -329,7 +334,15 @@ describe('facet build --verify', () => {
   async function scaffoldValid(name: string): Promise<string> {
     const dir = await createFixtureDir(name)
     await writeScaffold(
-      { name: 'verifiable', version: DEFAULT_VERSION, description: 'x', skills: ['helper'], agents: [], commands: [] },
+      {
+        name: 'verifiable',
+        version: DEFAULT_VERSION,
+        description: 'x',
+        skills: ['helper'],
+        agents: [],
+        commands: [],
+        readme: { kind: 'disabled' },
+      },
       dir,
     )
     return dir
