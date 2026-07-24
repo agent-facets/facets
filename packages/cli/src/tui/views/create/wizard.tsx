@@ -21,6 +21,15 @@ export interface WizardSnapshot {
   }
 }
 
+/**
+ * An external-editor round-trip request. Tagged so an asset-description edit and
+ * a README-body edit cannot be confused: each arm carries exactly the content
+ * that must be handed to the editor and merged back on return.
+ */
+export type EditorRequest =
+  | { kind: 'asset-description'; section: AssetSectionKey; name: string; content: string }
+  | { kind: 'readme'; content: string }
+
 export interface CreateWizardProps {
   onComplete: (opts: CreateOptions) => void
   onCancel: () => void
@@ -30,7 +39,7 @@ export interface CreateWizardProps {
   buildArg?: string
   snapshot?: WizardSnapshot
   onSnapshot?: (snapshot: WizardSnapshot) => void
-  onRequestEditor?: (section: AssetSectionKey, name: string, description: string) => void
+  onRequestEditor?: (request: EditorRequest) => void
 }
 
 type Phase = 'editing' | 'confirming' | 'done'
@@ -76,10 +85,14 @@ function CreateWizardInner({
   const handleEditDescription = useCallback(
     (section: AssetSectionKey, name: string) => {
       const description = form.assets[section].descriptions[name] ?? ''
-      onRequestEditor?.(section, name, description)
+      onRequestEditor?.({ kind: 'asset-description', section, name, content: description })
     },
     [form, onRequestEditor],
   )
+
+  const handleEditReadme = useCallback(() => {
+    onRequestEditor?.({ kind: 'readme', content: form.readme.draft.content })
+  }, [form, onRequestEditor])
 
   const handleConfirm = useCallback(async () => {
     const opts = toCreateOptions()
@@ -118,6 +131,7 @@ function CreateWizardInner({
         setMode('form-confirmation')
       }}
       onEditDescription={handleEditDescription}
+      onEditReadme={handleEditReadme}
     />
   )
 }

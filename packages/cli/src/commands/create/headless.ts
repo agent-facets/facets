@@ -1,4 +1,4 @@
-import { DEFAULT_VERSION, isValidSemVer, type ScaffoldOptions } from '@agent-facets/engine'
+import { DEFAULT_VERSION, isValidSemVer, readmeTemplate, type ScaffoldOptions } from '@agent-facets/engine'
 import { validateAssetNameSegment, validateFacetName } from '@agent-facets/protocol'
 import type { CliError } from '../../util/errors.ts'
 
@@ -99,6 +99,12 @@ export function decideCreate(flags: Record<string, unknown>): CreateDecision {
     }
   }
 
+  // README is on by default; `--no-readme` (parsed as `readme: false`) opts out.
+  // Headless and interactive create therefore produce the same seeded README by
+  // default, matching design D11's "never diverge by default" policy.
+  const readme: ScaffoldOptions['readme'] =
+    flags.readme === false ? { kind: 'disabled' } : { kind: 'enabled', content: readmeTemplate(name, description) }
+
   const options: ScaffoldOptions = {
     name,
     version,
@@ -106,6 +112,7 @@ export function decideCreate(flags: Record<string, unknown>): CreateDecision {
     skills,
     agents,
     commands,
+    readme,
     ...(flags.private === true ? { private: true as const } : {}),
   }
 
