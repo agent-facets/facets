@@ -15,6 +15,7 @@ import {
   readmeActionOptions,
   readmeFileOperations,
   readmeOptionKindFor,
+  readmeSeedContent,
 } from '../edit/readme-actions.ts'
 import { computeReadmeStates } from '../edit/readme-state.ts'
 import { reconcileSupplementary } from '../edit/reconcile-supplementary.ts'
@@ -114,6 +115,16 @@ describe('computeReadmeStates', () => {
     expect(states.find((s) => s.path === 'README.md')?.state).toBe('present-undeclared')
     expect(states.find((s) => s.path === 'README')?.state).toBe('declared-missing')
   })
+
+  test('both paths present on disk are surfaced independently, neither ignored', () => {
+    // README.md declared, extensionless README present but undeclared.
+    const manifest: FacetManifest = { name: 't', version: '1.0.0', files: ['README.md'] }
+    const states = computeReadmeStates(manifest, { present: { 'README.md': '# md', README: '# plain' } })
+    const md = states.find((s) => s.path === 'README.md')
+    const plain = states.find((s) => s.path === 'README')
+    expect(md).toEqual({ path: 'README.md', state: 'present-declared', content: '# md' })
+    expect(plain).toEqual({ path: 'README', state: 'present-undeclared', content: '# plain' })
+  })
 })
 
 // --- README actions ---
@@ -197,9 +208,47 @@ describe('readme action derivation', () => {
     expect(m.files).toEqual(['README.md'])
   })
 
+  test('edit rewrites bytes and leaves the declaration untouched', () => {
+    const action = readmeActionFor('edit', '# rewritten')
+    const ops = readmeFileOperations({ path: 'README.md', action })
+    expect(ops).toEqual([{ op: 'write-file', path: 'README.md', content: '# rewritten' }])
+    // Declaration already present; edit must not add or drop it.
+    const declared = applyReadmeDeclaration(
+      { name: 't', version: '1.0.0', files: ['README.md'] },
+      { path: 'README.md', action },
+    )
+    expect(declared.files).toEqual(['README.md'])
+  })
+
+  test('none queues nothing and touches no declaration', () => {
+    const ops = readmeFileOperations({ path: 'README.md', action: { kind: 'none' } })
+    expect(ops).toEqual([])
+    const before: FacetManifest = { name: 't', version: '1.0.0', files: ['README.md'] }
+    const after = applyReadmeDeclaration(before, { path: 'README.md', action: { kind: 'none' } })
+    expect(after.files).toEqual(['README.md'])
+  })
+
   test('readmeOptionKindFor round-trips a chosen option', () => {
     expect(readmeOptionKindFor(readmeActionFor('edit', 'x'))).toBe('edit')
     expect(readmeOptionKindFor({ kind: 'none' })).toBeNull()
+  })
+})
+
+describe('readmeSeedContent', () => {
+  test('present states seed from existing bytes (adoption/edit preserves)', () => {
+    expect(readmeSeedContent({ path: 'README.md', state: 'present-declared', content: '# authored' }, 'x', 'y')).toBe(
+      '# authored',
+    )
+    expect(readmeSeedContent({ path: 'README.md', state: 'present-undeclared', content: '# on disk' }, 'x', 'y')).toBe(
+      '# on disk',
+    )
+  })
+
+  test('absent/missing states seed from the identity template, not stale bytes', () => {
+    expect(readmeSeedContent({ path: 'README.md', state: 'absent-undeclared' }, 'my-facet', 'Neat tools')).toBe(
+      '# my-facet\n\nNeat tools\n',
+    )
+    expect(readmeSeedContent({ path: 'README', state: 'declared-missing' }, 'my-facet', '')).toBe('# my-facet\n')
   })
 })
 
@@ -268,6 +317,36 @@ describe('applyEditOperations', () => {
     expect(existsSync(join(dir, 'skills/review/references/api.md'))).toBe(false)
     // Undeclared file survives.
     expect(existsSync(join(dir, 'skills/review/notes.txt'))).toBe(true)
+  })
+
+  test('delete-file removes a supplementary file transactionally (README remove)', async () => {
+    await writeFile('README.md', '# old')
+    const ops: EditOperation[] = [
+      { op: 'write-manifest', manifest: { name: 'test', version: '1.0.0' } },
+      { op: 'delete-file', path: 'README.md' },
+    ]
+    const result = await applyEditOperations(ops, dir)
+    expect(result.ok).toBe(true)
+    expect(existsSync(join(dir, 'README.md'))).toBe(false)
+  })
+
+  test('rolls back a delete-file when a later op fails, restoring the file and manifest', async () => {
+    await writeFile('facet.json', 'ORIGINAL')
+    await writeFile('README.md', '# keep me')
+    // `skills` is a file, so the scaffold-asset write fails after the delete.
+    await writeFile('skills', 'not a dir')
+    const ops: EditOperation[] = [
+      { op: 'write-manifest', manifest },
+      { op: 'delete-file', path: 'README.md' },
+      { op: 'scaffold-asset', assetType: 'skills', name: 'review' },
+    ]
+    const result = await applyEditOperations(ops, dir)
+    expect(result.ok).toBe(false)
+    if (result.ok) expect.unreachable()
+    expect(result.rollbackOk).toBe(true)
+    // The deleted README is restored to its original bytes.
+    expect(readFileSync(join(dir, 'README.md'), 'utf8')).toBe('# keep me')
+    expect(readFileSync(join(dir, 'facet.json'), 'utf8')).toBe('ORIGINAL')
   })
 
   test('rolls back every mutation when one write fails', async () => {

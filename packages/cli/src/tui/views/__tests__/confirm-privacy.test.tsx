@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import type { EditOperation } from '@agent-facets/engine'
 import { render } from 'ink-testing-library'
 import { FocusOrderProvider } from '../../context/focus-order-context.ts'
 import { type FormState, FormStateProvider } from '../../context/form-state-context.ts'
@@ -83,6 +84,38 @@ describe('edit confirmation summary privacy', () => {
   test('shows Private for a private facet', () => {
     const instance = renderEdit(true)
     expect(instance.lastFrame()).toContain('Private')
+    instance.unmount()
+  })
+})
+
+describe('edit confirmation lists queued README operations', () => {
+  function renderEditWithOps(operations: EditOperation[]) {
+    return render(
+      <FocusOrderProvider>
+        <FormStateProvider initialState={formWith(false)}>
+          <EditConfirmView operations={operations} onConfirm={() => {}} onBack={() => {}} />
+        </FormStateProvider>
+      </FocusOrderProvider>,
+    )
+  }
+
+  test('shows the exact README path and verb for a queued write', () => {
+    const instance = renderEditWithOps([
+      { op: 'write-manifest', manifest: { name: 'cowsay', version: '0.0.0', files: ['README.md'] } },
+      { op: 'write-file', path: 'README.md', content: '# cowsay\n' },
+    ])
+    const frame = instance.lastFrame() ?? ''
+    expect(frame).toContain('File changes:')
+    expect(frame).toContain('Write README.md')
+    instance.unmount()
+  })
+
+  test('shows a queued README removal as a delete of the exact path', () => {
+    const instance = renderEditWithOps([
+      { op: 'write-manifest', manifest: { name: 'cowsay', version: '0.0.0' } },
+      { op: 'delete-file', path: 'README' },
+    ])
+    expect(instance.lastFrame() ?? '').toContain('Delete README')
     instance.unmount()
   })
 })

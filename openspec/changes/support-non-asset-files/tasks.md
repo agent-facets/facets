@@ -129,8 +129,8 @@
 - [x] 13.4 Implement: Add independent tagged states and actions for both conventional README paths, preserving bytes on adoption and retaining exact paths for scaffold, edit, removal, and declaration changes
 - [x] 13.5 Implement: Replace string-parsed reconciliation keys with stable structured identities and represent file/declaration operations as tagged variants with no invalid combinations
 - [x] 13.6 Implement: Apply README, companion, and generic supplementary changes transactionally with manifest edits and show every queued exact-path operation before Apply
-- [ ] 13.7 Implement: Add engine, CLI, TUI, integration, and create-build end-to-end tests covering README defaults/disable/edit preservation in interactive and headless creates, both README paths, adoption, missing-file choices, companion discovery, skill deletion preserving undeclared files, confirmation, cancellation, and buildability
-- [ ] 13.8 Verify: Run focused scaffold, edit, create, TUI, integration, and end-to-end tests
+- [x] 13.7 Implement: Add engine, CLI, TUI, integration, and create-build end-to-end tests covering README defaults/disable/edit preservation in interactive and headless creates, both README paths, adoption, missing-file choices, companion discovery, skill deletion preserving undeclared files, confirmation, cancellation, and buildability
+- [x] 13.8 Verify: Run focused scaffold, edit, create, TUI, integration, and end-to-end tests
 
 ## 14. Documentation — Research
 
