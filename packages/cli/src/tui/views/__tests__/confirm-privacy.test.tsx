@@ -49,7 +49,7 @@ function renderEdit(isPrivate: boolean) {
   return render(
     <FocusOrderProvider>
       <FormStateProvider initialState={formWith(isPrivate)}>
-        <EditConfirmView onConfirm={() => {}} onBack={() => {}} />
+        <EditConfirmView operations={[]} onConfirm={() => {}} onBack={() => {}} />
       </FormStateProvider>
     </FocusOrderProvider>,
   )

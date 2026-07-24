@@ -1,4 +1,4 @@
-import type { EditContext, EditOperation, EditResult, ReconciliationResolution } from '@agent-facets/engine'
+import type { EditContext, EditOperation, EditResult } from '@agent-facets/engine'
 import { useApp } from 'ink'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { FocusModeProvider, useFocusMode } from '../../context/focus-mode-context.ts'
@@ -12,7 +12,7 @@ import { EditView } from './edit-view.tsx'
 import { manifestToFormState } from './manifest-to-form.ts'
 import { ReconciliationView } from './reconciliation-view.tsx'
 import { EditSuccessView } from './success-view.tsx'
-import { useEditSession } from './use-edit-session.ts'
+import { type ResolvedItem, useEditSession } from './use-edit-session.ts'
 
 type EditPhase = 'reconciliation' | 'editing' | 'confirmation' | 'done'
 
@@ -20,7 +20,7 @@ export interface EditWizardSnapshot {
   phase: EditPhase
   formState?: FormState
   focusedId?: string | null
-  resolutions: Map<string, ReconciliationResolution>
+  resolutions: Map<string, ResolvedItem>
   selectedItem?: {
     section: AssetSectionKey
     name: string
@@ -58,7 +58,9 @@ function EditWizardInner({
   const initialPhase = snapshot?.phase ?? (hasReconciliation ? 'reconciliation' : 'editing')
   const [phase, setPhase] = useState<EditPhase>(initialPhase)
   const [doneOperations, setDoneOperations] = useState<EditOperation[]>([])
-  const { resolutions, resolve, buildResult } = useEditSession(context)
+  // Seed from the snapshot so resolutions survive external-editor round-trips
+  // (which unmount and remount the wizard).
+  const { resolutions, resolve, buildResult } = useEditSession(context, snapshot?.resolutions)
 
   // Report snapshot to parent for editor round-trips
   useEffect(() => {
@@ -130,8 +132,11 @@ function EditWizardInner({
   }
 
   if (phase === 'confirmation') {
+    const pending = buildResult(form)
+    const operations = pending.outcome === 'applied' ? pending.operations : []
     return (
       <EditConfirmView
+        operations={operations}
         onConfirm={handleConfirm}
         onBack={() => {
           setPhase('editing')
