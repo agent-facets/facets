@@ -3,7 +3,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
-import type { BuildManifest } from '@agent-facets/protocol'
+import type { CurrentBuildManifest } from '@agent-facets/protocol'
 import { CURRENT_RECEIPT_VERSION, type Receipt } from '../receipt.ts'
 import type { Addition, StageEvent } from '../types.ts'
 
@@ -25,11 +25,11 @@ let fixtureForVersion: FixtureForVersion = () => null
 let resolveRequests: Array<{ name: string; version: string }> = []
 let metadataOffline = false
 
-async function manifestFor(fixtureDir: string): Promise<BuildManifest> {
+async function manifestFor(fixtureDir: string): Promise<CurrentBuildManifest> {
   const { runBuildPipeline } = await import('../../build/pipeline.ts')
   const built = await runBuildPipeline(fixtureDir, [])
   if (!built.ok) throw new Error('test bug: fixture failed to build')
-  return JSON.parse(built.manifestJson) as BuildManifest
+  return JSON.parse(built.manifestJson) as CurrentBuildManifest
 }
 
 mock.module('../../registry/resolve-metadata.ts', () => ({
@@ -63,7 +63,7 @@ mock.module('../../registry/download.ts', () => ({
     }
     cpSync(fixture, dest, { recursive: true })
     const manifest = await manifestFor(fixture)
-    return { ok: true, value: { integrity: manifest.integrity, fileHashes: manifest.assets } }
+    return { ok: true, value: { integrity: manifest.integrity, fileHashes: manifest.files } }
   },
 }))
 

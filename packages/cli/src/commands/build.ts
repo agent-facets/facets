@@ -17,8 +17,15 @@ import {
 import { writeCliError } from '../util/errors.ts'
 import { resolveTargetDir } from './resolve-dir.ts'
 
-/** Version tag for the machine-readable `--json` output document. */
-const BUILD_JSON_SCHEMA_VERSION = '1'
+/**
+ * Version tag for the machine-readable `--json` output document.
+ *
+ * `2` replaces the `assets` array (primary-asset paths only) with a complete
+ * `files` array (every inner-archive entry — manifest, primaries, and
+ * supplementary files) and adds `facetVersion`. Consumers pinned to schema
+ * `1` must migrate rather than silently receive a different `assets` set.
+ */
+const BUILD_JSON_SCHEMA_VERSION = '2'
 
 export const buildCommand: Command = {
   name: 'build',
@@ -108,9 +115,8 @@ export const buildCommand: Command = {
       await instance.waitUntilExit()
       // Ink has unmounted — print stdout summary for scroll-back
       const shortHash = integrity.length > 20 ? `${integrity.slice(0, 20)}...` : integrity
-      process.stdout.write(
-        `✓ Built ${buildName} v${buildVersion} → ${displayDir}/dist/ (${artifactCount} assets, ${shortHash})\n`,
-      )
+      const entries = `${artifactCount} entr${artifactCount !== 1 ? 'ies' : 'y'}`
+      process.stdout.write(`✓ Built ${buildName} v${buildVersion} → ${displayDir}/dist/ (${entries}, ${shortHash})\n`)
       return 0
     } catch {
       process.stdout.write(
@@ -133,7 +139,10 @@ function printBuildJson(result: BuildResult | BuildFailure, verified: boolean): 
         verified,
         name: result.data.name,
         version: result.data.version,
-        assets: Object.keys(result.assetHashes).sort(),
+        facetVersion: result.facetVersion,
+        // Complete inner-archive entry listing: facet.json, every primary
+        // asset, and every supplementary file (skill companions + archive-only).
+        files: Object.keys(result.fileHashes).sort(),
         integrity: result.integrity,
         warnings: result.warnings,
       }
@@ -159,14 +168,16 @@ function printBuildPlain(result: BuildResult | BuildFailure, verified: boolean, 
     process.stderr.write(`⚠ ${warning}\n`)
   }
   if (result.ok) {
-    const assetCount = Object.keys(result.assetHashes).length
+    // Count every inner-archive entry, not just primary assets.
+    const entryCount = Object.keys(result.fileHashes).length
+    const entries = `${entryCount} entr${entryCount !== 1 ? 'ies' : 'y'}`
     if (verified) {
       process.stdout.write(
-        `✓ Verified ${result.data.name} v${result.data.version} (${assetCount} asset${assetCount !== 1 ? 's' : ''}, no output written)\n`,
+        `✓ Verified ${result.data.name} v${result.data.version} (facetVersion ${result.facetVersion}, ${entries}, no output written)\n`,
       )
     } else {
       process.stdout.write(
-        `✓ Built ${result.data.name} v${result.data.version} → ${displayDir}/dist/ (${assetCount} asset${assetCount !== 1 ? 's' : ''}, ${result.integrity})\n`,
+        `✓ Built ${result.data.name} v${result.data.version} → ${displayDir}/dist/ (facetVersion ${result.facetVersion}, ${entries}, ${result.integrity})\n`,
       )
     }
     return

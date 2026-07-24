@@ -29,7 +29,7 @@ async function manifestFor(fixtureDir: string) {
   const { runBuildPipeline } = await import('../../build/pipeline.ts')
   const built = await runBuildPipeline(fixtureDir, [])
   if (!built.ok) throw new Error('test bug: fixture failed to build')
-  return JSON.parse(built.manifestJson) as import('@agent-facets/protocol').BuildManifest
+  return JSON.parse(built.manifestJson) as import('@agent-facets/protocol').CurrentBuildManifest
 }
 
 mock.module('../../registry/resolve-metadata.ts', () => ({
@@ -55,7 +55,7 @@ mock.module('../../registry/download.ts', () => ({
     }
     cpSync(registryFixtureDir, dest, { recursive: true })
     const manifest = await manifestFor(registryFixtureDir)
-    return { ok: true, value: { integrity: manifest.integrity, fileHashes: manifest.assets } }
+    return { ok: true, value: { integrity: manifest.integrity, fileHashes: manifest.files } }
   },
 }))
 
