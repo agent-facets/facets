@@ -78,11 +78,15 @@ facet modify agent helper --description "Reviews code"
 
 ### Rename an asset
 
-Renames the manifest key and moves the asset's file (removing the now-empty skill directory, for skills).
+Renames the manifest key and moves the asset's primary file (removing the now-empty skill directory, for skills).
 
 ```sh
 facet modify command run --rename start
 ```
+
+<Note>
+  `facet modify` operates on asset primaries. To adopt, move, or reconcile a skill's [companion files](/specification/manifest#supplementary-files) or top-level supplementary files, use [`facet edit`](/cli/authoring/edit).
+</Note>
 
 ### Remove an asset
 

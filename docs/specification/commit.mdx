@@ -97,7 +97,7 @@ A cache hit is **never taken at face value**. The self-audit always runs on the 
 
 <Steps>
   <Step title="Cache self-audit">
-    Recompute the cached content's hashes (per-asset and canonical archive) against the <SidecarTip>integrity sidecar</SidecarTip> (`cache-integrity.json`) written at populate time. A failure MUST **evict the slot**; the chain is retried exactly once as a download. Tampered content MUST NOT be materialized.
+    Recompute the cached content's hashes (per-entry and canonical archive) against the <SidecarTip>integrity sidecar</SidecarTip> (`cache-integrity.json`) written at populate time. A failure MUST **evict the slot**; the chain is retried exactly once as a download. Tampered content MUST NOT be materialized.
   </Step>
   <Step title="Lockfile comparison">
     When the lockfile pins this version, the audited integrity MUST equal the locked integrity (string comparison). A mismatch MUST fail the commit — the highest-priority check, never a silent re-download.
@@ -126,7 +126,9 @@ flowchart TD
     REG --> PUT["Cache + materialize"]
 ```
 
-On a miss, the downloaded content's canonical fingerprint MUST be **genuinely recomputed** from the extracted bytes (per-asset hashes plus the canonical-archive hash) — never taken from the build manifest's self-declared claim. The recomputed value MUST be verified against the registry's published `content_integrity` and, when the lockfile pins this version, against the locked integrity, before the verified content populates the cache.
+On a miss, the downloaded content's canonical fingerprint MUST be **genuinely recomputed** from the extracted bytes (per-entry hashes plus the canonical-archive hash) — never taken from the build manifest's self-declared claim. The recomputed value MUST be verified against the registry's published `content_integrity` and, when the lockfile pins this version, against the locked integrity, before the verified content populates the cache.
+
+Before any file is written, install also proves a four-way agreement per materialized file: the recomputed archive-entry hash, the [lockfile `0.2`](/specification/lockfile) per-file integrity, the verified build-manifest hash, and the complete owned-file set MUST all agree. A mismatch fails the commit with the exact drifting path. This gate — and, in frozen mode, the bidirectional-consistency gate — completes before any receipt-driven cleanup begins. Archive-only supplementary files (like `README.md`) are verified as archive entries but are **never written to disk**.
 
 #### Git and local sources
 
@@ -138,15 +140,15 @@ Git and local facets are **built from source** during commit rather than downloa
 
 ### Materialize
 
-Materialization writes assets from verified content into each selected adapter's storage. Writes are skip-if-identical — a facet whose lockfile entry is unchanged but whose on-disk assets needed rewriting is reported as *repaired* (the full outcome taxonomy is documented at [`facet install`](/cli/install#outcomes)). Every write MUST journal its inverse operation for rollback.
+Materialization writes assets from verified content into each selected adapter's storage. A skill is written as an **atomic bundle**: its `SKILL.md` and every owned companion file are staged, committed, and rolled back as one all-or-nothing adapter operation carrying the validated owned-file set — the adapter never infers ownership from disk. Writes are skip-if-identical at per-file granularity — a facet whose lockfile entry is unchanged but whose on-disk files needed rewriting is reported as *repaired*, and a single drifted companion is repaired without touching the rest (the full outcome taxonomy is documented at [`facet install`](/cli/install#outcomes)). An interrupted install converges on re-run through the same per-file reconciliation without deleting unowned files. Every write MUST journal its inverse operation for rollback.
 
 ## Lockfile shape
 
-Commit writes `facets.lock` as part of the tri-write: per facet, the tagged source provenance, the exact resolved version, the verified integrity, and the contributed asset tuples. The full schema is specified in [Lockfile](/specification/lockfile).
+Commit writes `facets.lock` as part of the tri-write: per facet, the tagged source provenance, the exact resolved version, the verified integrity, and the contributed assets — each asset carrying a per-file `{ path, integrity }` ownership record. The full schema is specified in [Lockfile](/specification/lockfile).
 
 ## Machine-local install receipt
 
-Receipts are per-project, machine-local records stored outside the project's version-controlled tree ([`$FACET_DIR`](/cli/env)`/receipts/`). They track what has been materialized so drift removal can clean up correctly — even when the lockfile no longer mentions the facet.
+Receipts are per-project, machine-local records (schema `0.2`) stored outside the project's version-controlled tree ([`$FACET_DIR`](/cli/env)`/receipts/`). They mirror the committed lockfile's asset and per-file ownership so drift removal can clean up correctly — including a skill's owned companions — even when the lockfile no longer mentions the facet, and entirely offline. A legacy primary-only receipt is safely refined rather than rejected. The receipt records ownership, not hashes.
 
 <CardGroup cols={2}>
   <Card title="Per-project isolation" icon="folder">
@@ -156,16 +158,16 @@ Receipts are per-project, machine-local records stored outside the project's ver
     The receipt embeds the canonical path. A mismatch on load MUST fail closed — treated as absent and re-bootstrapped from the lockfile.
   </Card>
   <Card title="Untrusted input" icon="shield">
-    Asset entries with crafted names (path traversal, backslashes) are **reported and skipped individually** — the rest of the receipt still loads and is processed.
+    Asset entries and per-file ownership paths with crafted names (path traversal, backslashes) are **reported and skipped individually** — each owned path is containment-validated before use, and the rest of the receipt still loads and is processed.
   </Card>
   <Card title="Contained deletion" icon="box">
-    Deletion goes through adapters using validated **asset tuples** — `(scope, type, name)` triples, the adapter-agnostic identity of a materialized asset — never raw filesystem paths taken from the receipt.
+    Deletion goes through adapters using validated **asset tuples** — `(scope, type, name)` triples, the adapter-agnostic identity of a materialized asset — never raw filesystem paths taken from the receipt. For a skill, the delete request also carries the validated owned-companion path set, so only owned files are removed, unowned files survive, and emptied directories are pruned.
   </Card>
 </CardGroup>
 
 ## Drift removal
 
-After the loop, the receipt is compared against the desired set. Any facet the receipt shows as installed — but that is no longer wanted — has its assets deleted. The comparison runs against the **receipt**, not the on-disk lockfile; this is what makes **orphan-on-pull** recoverable (a facet whose lockfile entry vanished because a teammate removed it and you pulled — the receipt still remembers the local materialization). Lockfile entries missing from a freshly-bootstrapped receipt are caught too. And because the asset tuples to delete come from the receipt itself, removal needs no cache and no network.
+After the loop, the receipt is compared against the desired set. Any facet the receipt shows as installed — but that is no longer wanted — has its assets deleted, including each skill's owned companion files. The comparison runs against the **receipt**, not the on-disk lockfile; this is what makes **orphan-on-pull** recoverable (a facet whose lockfile entry vanished because a teammate removed it and you pulled — the receipt still remembers the local materialization). Lockfile entries missing from a freshly-bootstrapped receipt are caught too. And because the asset tuples and owned-file sets to delete come from the receipt itself, removal needs no cache and no network.
 
 Drift removal runs **before** the tri-write, but its deletions MUST be journaled like every other write — if the commit fails afterward, rollback restores them.
 

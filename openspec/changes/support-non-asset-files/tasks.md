@@ -134,27 +134,27 @@
 
 ## 14. Documentation — Research
 
-- [ ] 14.1 Explore: Audit `docs/` and root `README.md` for archive versions, hash-map shape, manifest naming/declarations, lockfile/receipt semantics, install behavior, adapter contracts, and asset-only wording
-- [ ] 14.2 Explore: Inspect documentation generation and shared snippets so field descriptions and compatibility values are referenced from authoritative schemas or constants rather than duplicated
-- [ ] 14.3 Explore: Inspect the protocol-only, adapter-only, and held CLI release notes and package metadata so documentation describes the actual staged rollout without making package versions a second source of truth
-- [ ] 14.4 Propose: Define the documentation and generated-reference update set, including compatibility warnings, the custom-adapter contract, and the consumer-first protocol → registry → adapter → CLI release sequence
+- [x] 14.1 Explore: Audit `docs/` and root `README.md` for archive versions, hash-map shape, manifest naming/declarations, lockfile/receipt semantics, install behavior, adapter contracts, and asset-only wording
+- [x] 14.2 Explore: Inspect documentation generation and shared snippets so field descriptions and compatibility values are referenced from authoritative schemas or constants rather than duplicated
+- [x] 14.3 Explore: Inspect the protocol-only, adapter-only, and held CLI release notes and package metadata so documentation describes the actual staged rollout without making package versions a second source of truth
+- [x] 14.4 Propose: Define the documentation and generated-reference update set, including compatibility warnings, the custom-adapter contract, and the consumer-first protocol → registry → adapter → CLI release sequence
 
 ## 15. Documentation — Implementation
 
-- [ ] 15.1 Implement: Update archive, build, manifest, integrity, lockfile, commit, install, publish, and terminology documentation for supplementary membership, strict versions, path safety, per-file hashes, atomic skill bundles, and the protocol-first release boundary
-- [ ] 15.2 Implement: Update create, edit, install, troubleshooting, first-facet, install-facets, skills, and custom-adapter guides plus root `README.md` for the README workflow, materialization boundary, upgrade guidance, non-asset files, and adapter API `0.0`→`0.1` migration
-- [ ] 15.3 Implement: Generate or share schema-derived field references where practical, keep one authoritative minimum-version mapping, and link other documentation to it instead of copying values
-- [ ] 15.4 Implement: Add durable release notes identifying the previously accepted archive, lockfile, naming, and adapter behaviors that become incompatible, and retain the approved protocol delta as the authoritative permanent pre-1.0 breaking-minor/post-1.0 breaking-major policy update to be synced during change finalization
-- [ ] 15.5 Verify: Run documentation checks and verify every compatibility and release-order claim against authoritative schemas, constants, package metadata, and the staged Changesets
+- [x] 15.1 Implement: Update archive, build, manifest, integrity, lockfile, commit, install, publish, and terminology documentation for supplementary membership, strict versions, path safety, per-file hashes, atomic skill bundles, and the protocol-first release boundary
+- [x] 15.2 Implement: Update create, edit, install, troubleshooting, first-facet, install-facets, skills, and custom-adapter guides plus root `README.md` for the README workflow, materialization boundary, upgrade guidance, non-asset files, and adapter API `0.0`→`0.1` migration
+- [x] 15.3 Implement: Generate or share schema-derived field references where practical, keep one authoritative minimum-version mapping, and link other documentation to it instead of copying values
+- [x] 15.4 Implement: Add durable release notes identifying the previously accepted archive, lockfile, naming, and adapter behaviors that become incompatible, and retain the approved protocol delta as the authoritative permanent pre-1.0 breaking-minor/post-1.0 breaking-major policy update to be synced during change finalization
+- [x] 15.5 Verify: Run documentation checks and verify every compatibility and release-order claim against authoritative schemas, constants, package metadata, and the staged Changesets
 
 ## 16. Held CLI Release Gate and Final Readiness
 
-- [ ] 16.1 Explore: Audit the completed implementation, package versions, pending Changesets, generated release notes, and release automation to define a minimal held `agent-facets` activation PR with no unintended protocol or adapter publication
-- [ ] 16.2 Propose: Present the exact CLI-only pre-1.0 minor changeset, activation evidence, PR base/stack placement, and merge conditions; the user retains sole authority to merge the held release gate
-- [ ] 16.3 Implement: Create and submit the tiny held CLI release-gate PR containing the `agent-facets` changeset and final release notes, without merging, publishing, or deploying it
-- [ ] 16.4 Verify: Run strict OpenSpec validation, package API/build checks, and the full `bun check` suite, fixing formatter-only findings with `bun format`, then verify implementation coverage scenario-by-scenario across all seven delta specs
-- [ ] 16.5 Verify: Confirm the protocol-only release from Section 5 is published and exposes strict `0.1`/`0.2` verification, tagged results, structured failures, and cross-version helpers from a clean consumer install
-- [ ] 16.6 Verify: Confirm the adapter SDK and all three first-party adapters are published with `facetAdapterApiVersion: 0.1`, while existing `0.0` CLIs retain compatible `0.0` adapter resolution
-- [ ] 16.7 Verify: Confirm the deployed registry pins the released protocol, accepts valid `0.1` and `0.2`, rejects malformed/unsupported archives before persistence, preserves supplementary hashes, and reads only intended primary resources
-- [ ] 16.8 Verify: Build the unreleased candidate CLI, publish a representative `0.2` archive to the stage registry, and verify metadata, archive download, stored-content behavior, and legacy `0.1` retention end to end
+- [x] 16.1 Explore: Audit the completed implementation, package versions, pending Changesets, generated release notes, and release automation to define a minimal held `agent-facets` activation PR with no unintended protocol or adapter publication
+- [x] 16.2 Propose: Present the exact CLI-only pre-1.0 minor changeset, activation evidence, PR base/stack placement, and merge conditions; the user retains sole authority to merge the held release gate
+- [x] 16.3 Implement: Create and submit the tiny held CLI release-gate PR containing the `agent-facets` changeset and final release notes, without merging, publishing, or deploying it
+- [x] 16.4 Verify: Run strict OpenSpec validation, package API/build checks, and the full `bun check` suite, fixing formatter-only findings with `bun format`, then verify implementation coverage scenario-by-scenario across all seven delta specs
+- [x] 16.5 Verify: Confirm the protocol-only release from Section 5 is published and exposes strict `0.1`/`0.2` verification, tagged results, structured failures, and cross-version helpers from a clean consumer install
+- [ ] 16.6 Verify: Confirm the adapter SDK and all three first-party adapters are published with `facetAdapterApiVersion: 0.1`, while existing `0.0` CLIs retain compatible `0.0` adapter resolution — BLOCKED (pending adapter release cycle): adapter changeset still pending, `0.1` not yet published; source proven release-ready (`ADAPTER_API_VERSION = '0.1'` + prepack injection); all three first-party adapters currently publish `0.0` and current `0.0` CLIs resolve them
+- [ ] 16.7 Verify: Confirm the deployed registry pins the released protocol, accepts valid `0.1` and `0.2`, rejects malformed/unsupported archives before persistence, preserves supplementary hashes, and reads only intended primary resources — BLOCKED (pending registry deployment)
+- [ ] 16.8 Verify: Build the unreleased candidate CLI, publish a representative `0.2` archive to the stage registry, and verify metadata, archive download, stored-content behavior, and legacy `0.1` retention end to end — BLOCKED (pending stage registry access)
 - [ ] 16.9 Review: Present the final activation packet and evidence to the user; the held CLI release-gate PR remains unmerged until the user explicitly authorizes the Changesets version-and-publish sequence

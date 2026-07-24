@@ -1,6 +1,6 @@
 # Agent Facets
 
-`facet` is a CLI package manager and toolkit for facets — modular skills, agents, commands, and tools that extend AI coding assistants.
+`facet` is a CLI package manager and toolkit for facets — modular skills, agents, commands, and tools that extend AI coding assistants. Facets can also ship non-asset files — a `README.md`, a `LICENSE`, or skill companion files — that travel inside the archive; only skill companions materialize on disk. See the [docs](https://docs.agentfacets.io) for details.
 
 The official registry for Agent Facets is [agentfacets.io](https://agentfacets.io) where you can publish and share facets.
 

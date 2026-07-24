@@ -7,7 +7,7 @@ describe('archiveCompatibilityGuidance', () => {
     expect(g.what).toContain('archive format 0.2')
     expect(g.detail).toContain('supported archive formats: 0.1')
     // Known format → concrete minimum release, not a bare "update to latest".
-    expect(g.fix).toContain('0.2.0 or later')
+    expect(g.fix).toContain('0.31.0 or later')
   })
 
   test('advises updating to latest for an unknown future format without inventing a minimum', () => {

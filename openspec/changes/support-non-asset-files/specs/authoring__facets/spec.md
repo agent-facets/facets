@@ -338,7 +338,7 @@ All fields SHALL remain editable. Exit confirmation SHALL prevent accidental los
 
 ### Requirement: Authors can build a facet locally for validation and inspection
 
-The system SHALL compile a facet project into a deterministic `.facet` archive after validating the manifest and every source input. It SHALL verify that primary asset files exist, are non-empty, contain no YAML front matter, and resolve from their conventional paths. It SHALL verify that every declared supplementary file exists as a regular file at a safe, collision-free path. It SHALL archive the embedded manifest, every primary asset, and every declared supplementary file, and SHALL record a content hash for every entry. Validation SHALL finish before previous `dist/` output is removed. The build SHALL NOT modify source files and SHALL behave identically in interactive and non-interactive environments.
+The system SHALL compile a facet project into a deterministic `.facet` archive after validating the manifest and every source input. It SHALL verify that primary asset files exist, are non-empty, and resolve from their conventional paths. Author-supplied YAML front matter in a primary asset SHALL be permitted and preserved verbatim in the archive; the manifest remains the source of truth for asset metadata, and front matter is reconciled with the manifest at install time rather than rejected at build. It SHALL verify that every declared supplementary file exists as a regular file at a safe, collision-free path. It SHALL archive the embedded manifest, every primary asset, and every declared supplementary file, and SHALL record a content hash for every entry. Validation SHALL finish before previous `dist/` output is removed. The build SHALL NOT modify source files and SHALL behave identically in interactive and non-interactive environments.
 
 For a scoped facet identity or other slash-containing output name, the system SHALL create required parent directories below `dist/`. On success, the system SHALL display pipeline progress, the emitted archive-format version, complete entry listing, and integrity hash, followed by a persistent summary. On failure, it SHALL identify the failed stage and structured field or path errors and SHALL suggest the editing command when appropriate.
 
@@ -376,10 +376,11 @@ For a scoped facet identity or other slash-containing output name, the system SH
 - **WHEN** a declared asset's conventional primary file is missing
 - **THEN** the system SHALL identify the asset and expected path and write no new output
 
-#### Scenario: Build fails on primary asset front matter
+#### Scenario: Primary asset front matter is preserved in the archive
 
-- **WHEN** a primary asset file contains YAML front matter
-- **THEN** the system SHALL identify that file and require front-matter removal
+- **WHEN** a primary asset file contains author-supplied YAML front matter
+- **THEN** the build SHALL succeed and archive the primary bytes verbatim
+- **AND** the manifest SHALL remain the source of truth for that asset's metadata
 
 #### Scenario: Build fails on empty primary asset
 
@@ -597,64 +598,25 @@ The system SHALL detect missing conventional asset files and missing declared su
 - **WHEN** top-level `files` declares missing `LICENSE`
 - **THEN** edit SHALL offer Scaffold at `LICENSE` or Remove Declaration
 
-### Requirement: Edit parses front matter for defaults and strips it
+### Requirement: Edit confirms asset identity and preserves primary content
 
-The system SHALL parse YAML front matter only from primary asset files encountered during edit. A parsed `name` or `description` SHALL pre-fill the corresponding asset field; otherwise the conventional filename or skill-directory name SHALL provide the default. The author SHALL confirm every asset's name and description. The final author-confirmed asset name SHALL determine that asset's conventional path on disk. Extra fields SHALL be shown and may be converted to platform configuration or dropped. Converted fields SHALL be placed under a selected known platform or a valid custom kebab-case platform name. Confirmed primary content SHALL be written without front matter. Supplementary files, including README, SHALL NOT be parsed or stripped and SHALL retain exact bytes unless explicitly edited.
+The system SHALL require the author to confirm every asset's name and description during edit, defaulting the name to the conventional filename or skill-directory name. The final author-confirmed asset name SHALL determine that asset's conventional path on disk, and confirmed metadata SHALL be written to the manifest, which remains the source of truth. Edit SHALL NOT strip author-supplied front matter from a primary asset file; primary content SHALL be preserved verbatim unless the author explicitly edits it, and manifest metadata is reconciled with any front matter at install time. Supplementary files, including README, SHALL NOT be parsed and SHALL retain exact bytes unless explicitly edited.
 
-#### Scenario: Front matter name pre-fills asset name
+#### Scenario: Missing metadata uses conventional name
 
-- **WHEN** `skills/skill/SKILL.md` contains `name: typescript-best-practices`
-- **THEN** edit SHALL pre-fill that name and require confirmation
+- **WHEN** `skills/code-review/SKILL.md` is reconciled during edit
+- **THEN** edit SHALL default the name to `code-review` and require confirmation
 
-#### Scenario: Missing front matter name uses conventional name
+#### Scenario: Confirmed metadata is written to the manifest
 
-- **WHEN** `skills/code-review/SKILL.md` has no front-matter name
-- **THEN** edit SHALL pre-fill `code-review`
+- **WHEN** the author confirms an asset's name and description
+- **THEN** Apply SHALL persist that metadata in the manifest
+- **AND** the confirmed name SHALL determine the conventional file path
 
-#### Scenario: Front matter description pre-fills description
+#### Scenario: Primary content is preserved verbatim
 
-- **WHEN** a primary file contains a front-matter description
-- **THEN** edit SHALL pre-fill that value and require confirmation
-
-#### Scenario: Extra front matter fields are surfaced
-
-- **WHEN** a primary file contains fields beyond name and description
-- **THEN** edit SHALL offer conversion to platform configuration or removal
-
-#### Scenario: Extra fields convert to known platform configuration
-
-- **WHEN** the author selects a known platform for extra fields
-- **THEN** Apply SHALL place those fields under that platform key
-
-#### Scenario: Extra fields convert to custom platform configuration
-
-- **WHEN** the author selects valid custom platform `cursor`
-- **THEN** Apply SHALL place those fields under `cursor`
-
-#### Scenario: Invalid custom platform is rejected
-
-- **WHEN** the author enters `My Platform` or `CURSOR`
-- **THEN** edit SHALL reject the custom platform name
-
-#### Scenario: Extra fields may be dropped
-
-- **WHEN** the author chooses Drop
-- **THEN** Apply SHALL discard the extra fields
-
-#### Scenario: Primary front matter is stripped
-
-- **WHEN** the author confirms a primary asset that contained front matter
-- **THEN** the persisted primary file SHALL contain only its markdown body
-
-#### Scenario: Malformed front matter is treated as absent
-
-- **WHEN** primary content resembles front matter but cannot be parsed
-- **THEN** edit SHALL process it as content without parsed defaults
-
-#### Scenario: Existing declared primary with front matter is reconciled
-
-- **WHEN** a declared primary asset contains front matter
-- **THEN** edit SHALL show its values and strip them on confirmation
+- **WHEN** an existing primary asset file contains author-supplied front matter and the author does not edit its body
+- **THEN** Apply SHALL preserve the primary file bytes unchanged
 
 #### Scenario: Supplementary front matter-like bytes are preserved
 
@@ -683,7 +645,7 @@ All identity, privacy, asset, README, supplementary-file, and manifest changes S
 
 #### Scenario: Confirmation shows all deltas
 
-- **WHEN** a session includes identity, privacy, asset, README, companion, and front-matter changes
+- **WHEN** a session includes identity, privacy, asset, README, and companion changes
 - **THEN** confirmation SHALL list each change and exact affected path
 
 #### Scenario: README and companion changes wait for Apply
@@ -692,24 +654,25 @@ All identity, privacy, asset, README, supplementary-file, and manifest changes S
 - **THEN** confirmation SHALL list both exact paths
 - **AND** neither disk nor manifest SHALL change before Apply
 
-### Requirement: Content files contain no front matter
+### Requirement: The manifest is the source of truth for primary asset metadata
 
-The manifest SHALL remain the single source of truth for primary asset metadata. Primary skill, agent, and command files on disk and in archives SHALL contain pure markdown without YAML front matter. Create, edit, and build SHALL enforce this rule for primary asset files. Supplementary files SHALL be exempt because they are opaque bytes and may contain any content, including front-matter-like text.
+The manifest SHALL remain the single source of truth for primary skill, agent, and command metadata. Author-supplied YAML front matter in a primary asset file SHALL be permitted: build SHALL preserve it verbatim in the archive, and materialization SHALL reconcile it with the manifest by merging manifest-owned metadata on top of any author front matter (the manifest wins on conflicting keys) before writing the asset to a selected adapter. Scaffolded starter files SHALL contain pure markdown with no front matter. Supplementary files SHALL be opaque bytes and may contain any content, including front-matter-like text, without reconciliation.
 
 #### Scenario: Scaffolded primary files have no front matter
 
 - **WHEN** create or edit scaffolds a primary asset file
 - **THEN** the file SHALL contain markdown without YAML front matter
 
-#### Scenario: Build rejects primary front matter
+#### Scenario: Primary front matter is preserved and reconciled at install
 
-- **WHEN** a primary asset file contains YAML front matter
-- **THEN** the build SHALL fail and identify the file
+- **WHEN** a primary asset file contains author-supplied YAML front matter
+- **THEN** the build SHALL archive those bytes verbatim
+- **AND** materialization SHALL merge manifest-owned metadata on top of the author front matter, with the manifest winning on conflicting keys
 
-#### Scenario: Archive contains clean primary files
+#### Scenario: Archive preserves primary bytes
 
 - **WHEN** a facet is built
-- **THEN** every primary asset entry SHALL contain markdown without YAML front matter
+- **THEN** every primary asset entry SHALL contain the author's exact source bytes
 
 #### Scenario: Supplementary front matter is allowed
 

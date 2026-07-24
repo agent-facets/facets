@@ -23,6 +23,7 @@ facet create ./my-facet \
   --version 0.1.0 \
   --skill greet --agent helper --command run \
   --json                           # headless scaffold, machine-readable result
+facet create ./bare --name bare --skill greet --no-readme  # skip the default README
 ```
 
 ## Flags
@@ -44,7 +45,11 @@ facet create ./my-facet \
 </ResponseField>
 
 <ResponseField name="--skill / --agent / --command" type="repeatable">
-  An asset to scaffold. Repeat per asset; at least one is required in headless mode. Asset names must be kebab-case.
+  An asset to scaffold. Repeat per asset; at least one is required in headless mode. Asset names are single-segment [Agent Skills names](/specification/manifest#asset-names); a skill and command can't share a name.
+</ResponseField>
+
+<ResponseField name="--no-readme" type="boolean">
+  Skip the default `README.md`. `facet create` writes and declares an editable `README.md` (seeded from the name and description) by default; pass `--no-readme` to scaffold without it.
 </ResponseField>
 
 <ResponseField name="--force" type="boolean">
@@ -79,17 +84,19 @@ After scaffolding, validate with [`facet build --verify`](/cli/authoring/build),
 3. **Version**  -- defaults to `0.0.0`.
 4. **Privacy**  -- choose Public (the default) or Private.
 5. **Assets**  -- add skills, agents, and commands by name.
-6. **Confirmation**  -- review the summary  -- and confirm.
+6. **README**  -- enabled by default. The wizard seeds `README.md` from the name and description; open the editor to customize it, or toggle it off. Edited content is preserved even if you change the name or description later.
+7. **Confirmation**  -- review the summary — which lists `README.md` when enabled — and confirm.
 
 ## Generated files
 
 On confirmation, the wizard writes:
 
-- `facet.json`  -- the manifest with named asset descriptors
+- `facet.json`  -- the manifest with named asset descriptors (and `README.md` in top-level `files` when README is enabled)
+- `README.md`  -- editable README, written and declared by default (skip with `--no-readme`)
 - `skills/<name>/SKILL.md`  -- starter skill template (Agent Skills directory convention)
 - `agents/<name>.md`  -- starter agent template
 - `commands/<name>.md`  -- starter command template
 
-Content files are markdown. Optional YAML front matter [survives the build untouched](/specification/build#steps); at install time the manifest's `name`, `description`, and any per-adapter extras are merged on top of whatever the author wrote.
+Content files are markdown. A primary asset file (skill, agent, command) carries **no** YAML front matter — asset metadata lives in the manifest. `README.md` and other [supplementary files](/specification/manifest#supplementary-files) are written verbatim.
 
 After creating the project, use `facet edit` to iterate on your facet, or `facet build` to validate and package it.

@@ -149,8 +149,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get the verified bodies of a scoped facet version's resources
-         * @description Returns the verified body of each skill, agent, and command in the scoped facet version.
+         * Get the verified files of a scoped facet version
+         * @description Returns every verified file in the scoped facet version except the manifest, as a path-sorted list of text content and binary metadata.
          */
         get: operations["getV0FacetsByScopeByNameByVersionContents"];
         put?: never;
@@ -269,8 +269,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get the verified bodies of a version's resources
-         * @description Returns the verified body of each skill, agent, and command in the version. A concrete public version is immutable and identical for every caller, so it is long-cacheable; a private version is `no-store` because each read is authorized at request time, as is a `latest` resolution.
+         * Get the verified files of a version
+         * @description Returns every verified file in the version except the manifest, as a path-sorted list. A text file carries its decoded UTF-8 content; a binary file carries only its fingerprint and byte size. A concrete public version is immutable and identical for every caller, so it is long-cacheable; a private version is `no-store` because each read is authorized at request time, as is a `latest` resolution.
          */
         get: operations["getV0FacetsByNameByVersionContents"];
         put?: never;
@@ -1398,10 +1398,33 @@ export interface components {
         };
         ApiErrorBody: {
             /** @enum {unknown} */
-            code: "E_ACCOUNT_SUSPENDED" | "E_ADMIN_REQUIRED" | "E_ALREADY_MEMBER" | "E_ALREADY_ONBOARDED" | "E_API_KEY_MISSING" | "E_ARCHIVE_DECOMPRESSED_TOO_LARGE" | "E_ARCHIVE_MALFORMED" | "E_CLAIM_ALREADY_PENDING" | "E_CLAIM_PENDING_ELSEWHERE" | "E_CONTENT_INTEGRITY_MISMATCH" | "E_CONTROL_CONCURRENT_MODIFICATION" | "E_CONTROL_INVALID_TARGET" | "E_CONTROL_INVALID_VALUE" | "E_CONTROL_MANAGEMENT_IMMUTABLE" | "E_CONTROL_NOT_FOUND" | "E_CONTROL_RULE_NOT_FOUND" | "E_DRY_RUN_REQUIRED" | "E_FACET_NOT_FOUND" | "E_FACET_NOT_OWNED" | "E_FORBIDDEN" | "E_GLOBAL_FACET_MUST_BE_PUBLIC" | "E_IMPERSONATION_FORBIDDEN" | "E_INTERACTIVE_SESSION_REQUIRED" | "E_INTERNAL" | "E_INVALID_CURSOR" | "E_INVALID_NAME" | "E_INVALID_VERSION" | "E_INVITATION_NOT_FOUND" | "E_LOGOUT_REQUIRES_JWT" | "E_MANIFEST_CONTENT_MISMATCH" | "E_MEMBER_NOT_FOUND" | "E_MIGRATION_ALREADY_COMPLETED" | "E_MIGRATION_BATCH_NOT_FOUND" | "E_MIGRATION_BATCH_RUNNING" | "E_MIGRATION_DEPENDENCY_UNMET" | "E_MIGRATION_NOT_FOUND" | "E_MIGRATION_RUNNING" | "E_NAME_BLOCKED" | "E_ONBOARDING_REQUIRED" | "E_ORG_FORBIDDEN" | "E_ORG_LAST_ADMIN" | "E_ORG_NAME_RESERVED" | "E_ORG_NAME_TAKEN" | "E_ORG_NOT_FOUND" | "E_PREFIX_COLLISION_RETRY_EXHAUSTED" | "E_PRIVATE_FACET_ENTITLEMENT_REQUIRED" | "E_PROFILE_CORRUPT" | "E_QUEUE_FULL" | "E_QUEUE_ITEM_NOT_FOUND" | "E_QUEUE_ITEM_NOT_PENDING" | "E_READ_ONLY" | "E_REGISTRY_UNAVAILABLE" | "E_RESERVATION_EXISTS" | "E_RESERVATION_NOT_FOUND" | "E_REVIEW_ARTIFACT_MISSING" | "E_RUN_NOT_FOUND" | "E_SCOPE_NOT_FOUND" | "E_SCOPE_NOT_OWNED" | "E_TARBALL_CORRUPTED" | "E_TARBALL_TOO_LARGE" | "E_TOKEN_EXPIRED" | "E_TOKEN_NOT_FOUND" | "E_TOKEN_REVOKED" | "E_UNAUTHENTICATED" | "E_UNDECLARED_CONTENT" | "E_USERNAME_TAKEN" | "E_USER_NOT_FOUND" | "E_VERSION_EXISTS" | "E_WRITE_BANNED";
+            code: "E_ACCOUNT_SUSPENDED" | "E_ADMIN_REQUIRED" | "E_ALREADY_MEMBER" | "E_ALREADY_ONBOARDED" | "E_API_KEY_MISSING" | "E_ARCHIVE_DECOMPRESSED_TOO_LARGE" | "E_ARCHIVE_MALFORMED" | "E_ARCHIVE_METADATA_TOO_LARGE" | "E_CLAIM_ALREADY_PENDING" | "E_CLAIM_PENDING_ELSEWHERE" | "E_CONTENT_INTEGRITY_MISMATCH" | "E_CONTROL_CONCURRENT_MODIFICATION" | "E_CONTROL_INVALID_TARGET" | "E_CONTROL_INVALID_VALUE" | "E_CONTROL_MANAGEMENT_IMMUTABLE" | "E_CONTROL_NOT_FOUND" | "E_CONTROL_RULE_NOT_FOUND" | "E_DRY_RUN_REQUIRED" | "E_FACET_NOT_FOUND" | "E_FACET_NOT_OWNED" | "E_FORBIDDEN" | "E_GLOBAL_FACET_MUST_BE_PUBLIC" | "E_IMPERSONATION_FORBIDDEN" | "E_INTERACTIVE_SESSION_REQUIRED" | "E_INTERNAL" | "E_INVALID_CURSOR" | "E_INVALID_NAME" | "E_INVALID_VERSION" | "E_INVITATION_NOT_FOUND" | "E_LOGOUT_REQUIRES_JWT" | "E_MANIFEST_CONTENT_MISMATCH" | "E_MEMBER_NOT_FOUND" | "E_MIGRATION_ALREADY_COMPLETED" | "E_MIGRATION_BATCH_NOT_FOUND" | "E_MIGRATION_BATCH_RUNNING" | "E_MIGRATION_DEPENDENCY_UNMET" | "E_MIGRATION_NOT_FOUND" | "E_MIGRATION_RUNNING" | "E_NAME_BLOCKED" | "E_ONBOARDING_REQUIRED" | "E_ORG_FORBIDDEN" | "E_ORG_LAST_ADMIN" | "E_ORG_NAME_RESERVED" | "E_ORG_NAME_TAKEN" | "E_ORG_NOT_FOUND" | "E_PREFIX_COLLISION_RETRY_EXHAUSTED" | "E_PRIVATE_FACET_ENTITLEMENT_REQUIRED" | "E_PROFILE_CORRUPT" | "E_QUEUE_FULL" | "E_QUEUE_ITEM_NOT_FOUND" | "E_QUEUE_ITEM_NOT_PENDING" | "E_READ_ONLY" | "E_REGISTRY_UNAVAILABLE" | "E_RESERVATION_EXISTS" | "E_RESERVATION_NOT_FOUND" | "E_REVIEW_ARTIFACT_MISSING" | "E_RUN_NOT_FOUND" | "E_SCOPE_NOT_FOUND" | "E_SCOPE_NOT_OWNED" | "E_TARBALL_CORRUPTED" | "E_TARBALL_TOO_LARGE" | "E_TOKEN_EXPIRED" | "E_TOKEN_NOT_FOUND" | "E_TOKEN_REVOKED" | "E_UNAUTHENTICATED" | "E_UNDECLARED_CONTENT" | "E_UNSUPPORTED_FACET_VERSION" | "E_USERNAME_TAKEN" | "E_USER_NOT_FOUND" | "E_VERSION_EXISTS" | "E_WRITE_BANNED";
             docs_url: string;
             error: string;
             fix: string;
+            violations?: ({
+                actual_bytes: number;
+                /** @constant */
+                field: "author";
+                /** @constant */
+                kind: "author_too_large";
+                limit_bytes: number;
+                message: string;
+            } | {
+                actual_bytes: number;
+                /** @constant */
+                field: "description";
+                /** @constant */
+                kind: "description_too_large";
+                limit_bytes: number;
+                message: string;
+            } | {
+                actual_bytes: number;
+                /** @constant */
+                kind: "aggregate_metadata_too_large";
+                limit_bytes: number;
+                message: string;
+            })[];
         };
         VersionListResponse: {
             name: string;
@@ -1434,10 +1457,21 @@ export interface components {
         };
         ContentsResponse: {
             content_integrity: string;
+            files: ({
+                content: string;
+                /** @constant */
+                kind: "text";
+                path: string;
+                sha256: string;
+                size_bytes: number;
+            } | {
+                /** @constant */
+                kind: "binary";
+                path: string;
+                sha256: string;
+                size_bytes: number;
+            })[];
             name: string;
-            resources: {
-                [key: string]: string;
-            };
             version: string;
         };
         ScopeRootResponse: {
@@ -2472,7 +2506,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Verified resource bodies */
+            /** @description Verified files (text content and binary metadata) */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2480,13 +2514,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ContentsResponse"];
                 };
-            };
-            /** @description Not modified (If-None-Match matched the ETag) */
-            304: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
             /** @description Facet or version not found */
             404: {
@@ -2687,7 +2714,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Verified resource bodies */
+            /** @description Verified files (text content and binary metadata) */
             200: {
                 headers: {
                     [name: string]: unknown;

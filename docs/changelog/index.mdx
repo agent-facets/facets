@@ -5,6 +5,94 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-07-23" description="Facets ship non-asset files; archive 0.2, per-file lockfiles, first-class README, and the 0.1 adapter contract" tags={["CLI", "Breaking", "New Feature"]} rss={{
+  title: "Supplementary files, archive 0.2, and first-class README authoring",
+  description: "Facets can now declare and ship non-asset files: skill companion files (references, scripts, templates beside SKILL.md) that install and remove atomically with their skill, and top-level archive-only files like README.md and LICENSE that ship in the archive but never materialize on disk. Declare them with exact paths in the manifest's top-level files array or a skill descriptor's files array. Builds emit the new 0.2 archive format with a complete per-entry hash map; lockfiles move to 0.2 with a per-file integrity record for every materialized file; install reports and repairs drift per file. facet create now writes and declares an editable README.md by default (skip with --no-readme), and facet edit has a dedicated README panel. Consumers still accept legacy 0.1 archives and legacy alpha lockfiles during the compatibility window; the two versions are dispatched by exact match. Asset names are single-segment Agent Skills names -- slash-namespaced names are no longer valid in new manifests -- and skills and commands now share one namespace. The adapter contract advances from positional 0.0 to the tagged 0.1 request/result shape: rebuild and reinstall any adapter that still declares 0.0. Rollout is consumer-first: protocol, then registry, then adapters, then the CLI."
+}}>
+  ## Facets can ship non-asset files
+
+  A facet is no longer just its assets. You can now declare **supplementary
+  files** that travel inside the `.facet` archive and are integrity-protected
+  like everything else:
+
+  - **Skill companions** — files beside a `SKILL.md` (references, scripts,
+    templates). They install and remove **atomically** with their skill, and
+    files you add to a skill directory yourself are preserved on removal.
+  - **Top-level archive-only files** — `README.md`, `LICENSE`, design notes.
+    They ship in the archive but are **never** written to disk at install.
+
+  Declare them with exact paths (no globs) in the manifest's top-level `files`
+  array or a skill descriptor's own `files` array:
+
+  ```json
+  {
+    "skills": {
+      "code-review": {
+        "description": "Code review guidelines",
+        "files": ["references/style-guide.md"]
+      }
+    },
+    "files": ["README.md", "LICENSE"]
+  }
+  ```
+
+  See [Supplementary files](/specification/manifest#supplementary-files).
+
+  ## First-class README authoring
+
+  [`facet create`](/cli/authoring/create) now writes and declares an editable
+  `README.md` by default (skip it with `--no-readme`), and
+  [`facet edit`](/cli/authoring/edit) has a dedicated README panel for
+  creating, adopting, editing, or removing both `README.md` and the
+  extensionless `README`.
+
+  ## **Breaking:** archive `0.2`, per-file lockfiles, and naming
+
+  - **Archive format `0.2`.** Every build now emits `facetVersion: 0.2` with a
+    complete per-entry hash map covering every file, asset or not. Consumers
+    still accept legacy `0.1` archives during the compatibility window; the two
+    are dispatched by **exact** version match, never numeric ordering. An
+    archive whose version your CLI doesn't support fails with upgrade guidance —
+    run [`facet self-update`](/cli/self-update).
+  - **Lockfile `0.2`.** `facets.lock` records a per-file `{ path, integrity }`
+    record for every materialized file inside each asset, and install
+    reconciles them before writing, reporting and repairing drift by exact
+    path. A verified legacy alpha lockfile migrates automatically on a normal
+    install. See [Lockfile](/specification/lockfile).
+  - **Asset names.** Skill, command, and agent names are now single-segment
+    [Agent Skills names](/specification/manifest#asset-names) — slash-namespaced
+    names like `viper-plans/planning` are no longer valid in new manifests (use
+    `viper-planning`). Skills and commands now share one namespace and can't
+    reuse a name.
+  - **Primary files carry no front matter.** Asset metadata lives in the
+    manifest; a `SKILL.md`, agent, or command file with YAML front matter is now
+    a build error. Supplementary files still ship verbatim.
+
+  ## **Breaking:** adapter API `0.0` → `0.1`
+
+  The adapter contract advances from the positional single-file shape (`0.0`)
+  to the tagged multi-file request/result contract (`0.1`) that carries skill
+  companions. A `0.1` CLI treats a positional `0.0` adapter as unsupported and
+  fails closed before any write. Rebuild against a `0.1` SDK and reinstall:
+
+  ```sh
+  facet adapter list                 # shows each adapter's declared API
+  facet adapter install my-adapter   # reinstall the newest compatible release
+  ```
+
+  The archive `facetVersion`, the lockfile version, and the adapter API are
+  three **independent** axes — a consumer classifies each separately. See
+  [Custom adapters](/guides/custom-adapters).
+
+  ## Rollout
+
+  The change ships **consumer-first**: the protocol package publishes dual
+  `0.1`/`0.2` verification, then the registry adopts it, then the adapter SDK
+  and first-party adapters publish `0.1`, and finally the CLI release turns on
+  `0.2` production. Existing `0.0` CLIs keep selecting compatible `0.0` adapters
+  until you update.
+</Update>
+
 <Update label="2026-07-13" description="facet remove now prunes empty adapter directories" tags={["CLI", "Improvement"]} rss={{
   title: "facet remove now prunes empty adapter directories",
   description: "Removing a facet now cleans up empty parent directories left behind in each connected adapter. When facet remove (or facet rm) deletes the last asset inside a nested folder -- for example skills/<name>/SKILL.md under Claude Code or OpenCode -- the CLI walks up and removes empty parent directories up to (but not including) the adapter root. Uninstalls leave a tidy tree instead of hollow namespace folders. No flags to set; behavior is automatic."

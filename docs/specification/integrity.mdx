@@ -20,7 +20,7 @@ Facet archives -- anything published to the facets registry -- participate in th
 
 The registry publishes **two hashes** for each version, serving different purposes:
 
-- **`content_integrity`** (canonical fingerprint) -- SHA-256 of the canonical uncompressed inner tar archive. This is the domain the lockfile, cache sidecar, and build manifest all record. It is the trust anchor for integrity confirmation and lockfile comparison.
+- **`content_integrity`** (canonical fingerprint) -- SHA-256 of the canonical uncompressed inner tar archive. This is the domain the lockfile, cache sidecar, and build manifest all record. It is the trust anchor for integrity confirmation and lockfile comparison. Alongside it, the build manifest records a **per-entry hash for every inner-tar entry** — `facet.json`, each primary asset, and each [supplementary file](/specification/manifest#supplementary-files) — and verification recomputes every one. Integrity therefore covers every file the archive ships, asset or not, including archive-only files like `README.md`.
 - **`content_hash`** (transport hash) -- SHA-256 of the uploaded `.facet` tarball (the gzipped delivery bytes). Used only at download time for a raw-bytes transport check. Never persisted to the lockfile.
 
 These are not interchangeable: gzip is a delivery concern outside the hash contract. The canonical fingerprint cannot be recomputed from the transport bytes without decompressing first.
@@ -39,16 +39,16 @@ These are not interchangeable: gzip is a delivery concern outside the hash contr
     The transport hash (`content_hash`) MUST be verified against the raw downloaded bytes.
   </Step>
   <Step title="Post-extract recompute">
-    The canonical fingerprint MUST be genuinely recomputed from the extracted content (per-asset hashes + canonical-archive hash) — never taken from the build manifest's self-declared claim — and MUST match both the manifest's claim and the registry's published `content_integrity`.
+    The canonical fingerprint MUST be genuinely recomputed from the extracted content (per-entry hashes + canonical-archive hash) — never taken from the build manifest's self-declared claim — and MUST match both the manifest's claim and the registry's published `content_integrity`. An unsupported `facetVersion` produces a structured failure carrying the observed and supported versions, which the CLI renders as upgrade guidance.
   </Step>
   <Step title="Cache write">
-    The canonical fingerprint (`content_integrity`) and per-asset hashes are written to a sidecar alongside the cached content.
+    The canonical fingerprint (`content_integrity`) and per-entry hashes are written to a sidecar alongside the cached content.
   </Step>
   <Step title="Cache hit">
     The cached content MUST be re-hashed against its sidecar (self-audit). Tampered content MUST be evicted and re-fetched.
   </Step>
   <Step title="Lockfile comparison">
-    When the lockfile pins a version, the audited integrity MUST equal the locked integrity.
+    When the lockfile pins a version, the audited integrity MUST equal the locked integrity. Before any file is written, install also reconciles the recomputed archive-entry hash against each [lockfile `0.2` per-file record](/specification/lockfile) and the verified build-manifest hash; a mismatch fails with the exact drifting path.
   </Step>
   <Step title="Integrity confirmation">
     When a lockfile entry is being created or replaced, the audited integrity MUST match the registry's published `content_integrity`. An unreachable registry MUST fail the operation.
@@ -71,15 +71,15 @@ Two variants sit outside this lifecycle: **git installs** MUST verify built cont
 
 <CardGroup cols={2}>
   <Card title="Lockfile" icon="lock" href="/specification/lockfile">
-    Canonical fingerprint (`content_integrity`) per facet.
+    Canonical fingerprint (`content_integrity`) per facet, plus a per-materialized-file `{ path, integrity }` record inside each asset entry.
   </Card>
   <Card title="Cache sidecar" icon="folder" href="/specification/commit#verify">
-    Canonical fingerprint + per-asset hash map (`cache-integrity.json`) per cache slot. Written at cache-populate time; re-verified on every cache hit.
+    Canonical fingerprint + per-entry hash map (`cache-integrity.json`) per cache slot. Written at cache-populate time; re-verified on every cache hit.
   </Card>
   <Card title="Build manifest" icon="file-code" href="/specification/archive">
-    Canonical fingerprint + per-asset hash map. Embedded in the `.facet` archive.
+    Canonical fingerprint + complete `files` hash map (one entry per inner-tar file). Embedded in the `.facet` archive.
   </Card>
   <Card title="Install receipt" icon="receipt" href="/specification/commit#machine-local-install-receipt">
-    Asset tuples per materialized facet (not hashes — used for drift removal).
+    Per-facet asset and owned-file ownership records (not hashes — used for offline drift removal).
   </Card>
 </CardGroup>

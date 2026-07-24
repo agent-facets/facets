@@ -30,10 +30,12 @@ The edit command has two phases:
 
 If the edit command detects drift between the manifest and the files on disk, it enters a reconciliation phase first. Drift includes:
 
-- **New files on disk** not tracked in the manifest  -- choose "Add to manifest" or "Ignore for now"
-- **Missing files** declared in the manifest but absent from disk  -- choose "Scaffold template" or "Remove from manifest"
+- **New assets on disk** not tracked in the manifest  -- choose "Add to manifest" or "Ignore for now"
+- **Undeclared files inside a declared skill directory**  -- adopt them into that skill's [companion `files`](/specification/manifest#supplementary-files), or ignore
+- **Common root files** like `LICENSE`  -- adopt them into the top-level `files`, or ignore
+- **Missing files** declared in the manifest but absent from disk  -- choose "Scaffold template" or "Remove from manifest" (at the exact declared path, for both assets and supplementary files)
 
-YAML front matter in content files is not flagged here  -- it is permitted and [preserved verbatim through the build](/specification/build#steps), then merged with the manifest's `name`, `description`, and any per-adapter extras at install time.
+`README.md` and the extensionless `README` are handled by their own [README panel](#readme-panel), not generic reconciliation, so they never appear twice. Ignored files stay on disk and undeclared.
 
 All reconciliation items must be resolved before proceeding to editing.
 
@@ -43,19 +45,36 @@ After reconciliation (or immediately if no drift), the edit phase allows:
 
 - **Identity editing**  -- modify the facet name, description, and version
 - **Privacy editing**  -- inspect the facet's current visibility intent without opening `facet.json`, and switch between Public and Private.
-- **Asset management**  -- add, remove, or rename skills, agents, and commands
+- **Asset management**  -- add, remove, or rename skills, agents, and commands. Deleting a skill removes its declared companion files too, while any files you added to the skill directory yourself are preserved.
 - **Description editing**  -- press Enter on an asset to edit its name, or press ↓ during name editing to open the description in your terminal editor (`$VISUAL` / `$EDITOR` / `vi`)
 
+A primary asset file carries no YAML front matter — asset metadata lives in the manifest, and edit writes confirmed content without front matter.
+
 All changes are transactional  -- nothing is written to disk until you review and confirm on the confirmation page. Exit at any point with Esc Esc to discard all changes.
+
+### README panel
+
+Both conventional README paths — `README.md` and the extensionless `README` — get a dedicated panel, managed independently. The actions offered depend on each path's current state:
+
+| State | Actions |
+| --- | --- |
+| Present and declared | **Edit** the content, or **Remove** (deletes the file and its declaration) |
+| Present but undeclared | **Adopt** (declare it, bytes untouched), or **Edit and adopt** |
+| Declared but missing | **Scaffold** at that path, or **Remove declaration** |
+| Absent and undeclared | **Create** (defaults to `README.md`) |
+
+Adopt preserves the existing bytes unless you explicitly edit them. Every README operation is queued until Apply, like all other edits.
 
 ## Confirmation
 
 Before applying, a summary shows the final state of your facet  -- identity fields, the privacy intent, and all assets with their descriptions  -- along with a reminder that a privacy change is embedded at build time (rebuild to apply it, and bump the version if it was already published). Choose "Apply" to write changes or "Go back" to continue editing.
 
-On apply, the edit command:
+The confirmation lists every queued file operation with its exact path. On apply, the edit command transactionally:
 - Writes the updated `facet.json`
 - Scaffolds template files for new assets
-- Deletes files for removed assets
+- Deletes files for removed assets (and a removed skill's declared companions)
+- Writes or deletes README files per the [README panel](#readme-panel) choices
+- Scaffolds or removes reconciled supplementary files
 
 ## See also
 

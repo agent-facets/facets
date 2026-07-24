@@ -3,19 +3,15 @@ title: Skills
 description: Reusable knowledge and guidelines
 ---
 
-A skill is a markdown file containing domain-specific instructions, guidelines, or best practices. Skills follow the [Agent Skills](https://agentskills.io/specification) specification. They are the passive knowledge layer of a facet -- text that shapes how an AI assistant approaches a domain without defining a persona or a user-invokable action.
+A skill is a directory bundle — a `SKILL.md` primary plus any declared companion files — containing domain-specific instructions, guidelines, or best practices. Skills follow the [Agent Skills](https://agentskills.io/specification) specification. They are the passive knowledge layer of a facet -- text that shapes how an AI assistant approaches a domain without defining a persona or a user-invokable action.
 
-Each skill lives at `skills/<name>/SKILL.md` and is declared in `facet.json` under the `skills` map. The normative rules — placement, descriptor shape, and the YAML front-matter contract — live at [Text assets](/specification/manifest#text-assets) in the manifest specification.
+Each skill lives in its own directory at `skills/<name>/SKILL.md` and is declared in `facet.json` under the `skills` map. The normative rules — placement, descriptor shape, and the no-front-matter contract — live at [Text assets](/specification/manifest#text-assets) in the manifest specification.
 
 ## Example
 
 A "code-review" skill (`skills/code-review/SKILL.md`):
 
 ```markdown expandable skills/code-review/SKILL.md
----
-description: Code review guidelines for TypeScript projects
----
-
 # Code Review
 
 ## Structure
@@ -39,6 +35,23 @@ description: Code review guidelines for TypeScript projects
 - Use early returns to reduce nesting.
 - Do not comment obvious code.
 ```
+
+## Companion files
+
+A skill can ship more than its `SKILL.md`. Declare **companion files** — references, scripts, templates — in the skill descriptor's `files` array, as exact paths relative to the skill directory:
+
+```json
+{
+  "skills": {
+    "code-review": {
+      "description": "Code review guidelines",
+      "files": ["references/style-guide.md", "scripts/lint.ts"]
+    }
+  }
+}
+```
+
+Companions ship inside the archive and install and remove **atomically** with their skill; files you add to a skill directory yourself are left untouched on removal. They ship as opaque bytes (binary and empty files are fine), the skill name is still a single segment (the `/` in a companion path is directory depth, not part of the name), and a companion can't be `SKILL.md` itself. See [Supplementary files](/specification/manifest#supplementary-files) for the full rules.
 
 ## When to use skills
 
