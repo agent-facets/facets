@@ -1,50 +1,53 @@
 ## Purpose
 
 A facet author writes a facet manifest to declare their facet's identity, text assets, composed facets, and server references. The system validates and loads this manifest so authors get fast, clear feedback when something is wrong, and downstream tools get a reliable typed representation of the manifest.
-
 ## Requirements
-
 ### Requirement: Valid facet manifests are accepted
 
-The system SHALL accept a facet manifest that conforms to the manifest schema. A valid manifest has a name, a version, and at least one text asset (skills, agents, commands, or composed facets). The name SHALL be either an unscoped kebab-case facet identity (`name`) or a scoped facet identity (`@scope/name`). A manifest MAY include an optional top-level `private` boolean; `private: true` declares private publish intent, while `private: false` or omission preserves public-by-default behavior. All three text asset types — skills, agents, and commands — use the same descriptor model: a map of asset name to a descriptor with a required description and optional platform metadata. Descriptors SHALL NOT contain prompt references — prompt content is inferred from the file-path convention. Skills use the Agent Skills directory convention `skills/<name>/SKILL.md`. Agents and commands use the flat file convention `agents/<name>.md` and `commands/<name>.md` respectively. All three descriptor types SHALL require a `description` field. Asset names SHALL remain local kebab-case identifiers and SHALL NOT be scoped facet identities.
+The system SHALL accept a facet manifest that conforms to the manifest schema. A valid manifest has a name, a version, and at least one text asset or composed facet. The name SHALL be either an unscoped kebab-case facet identity or a scoped `@scope/name` identity. A manifest MAY include an optional top-level `private` boolean and supplementary-file declarations. Skills, agents, and commands SHALL use descriptors with required descriptions and optional platform metadata; prompt content SHALL be inferred from conventional paths rather than descriptor references.
+
+Current-format skill, agent, and command names SHALL be single segments of 1–64 lowercase ASCII letters, digits, or hyphens, with no leading, trailing, or consecutive hyphens. Skills SHALL use `skills/<name>/SKILL.md`, agents `agents/<name>.md`, and commands `commands/<name>.md`. Skills and commands SHALL use disjoint names; agents MAY share a name with either.
 
 #### Scenario: Minimal valid manifest with a skill
 
-- **WHEN** an author provides a manifest with a name, version, and a single skill descriptor that includes a description
+- **WHEN** an author provides a name, version, and one valid skill descriptor with a description
 - **THEN** the system SHALL accept the manifest
 
 #### Scenario: Valid manifest with a scoped facet identity
 
-- **WHEN** an author provides a manifest whose `name` is `@julian/cowsay`, with a version and a single skill descriptor that includes a description
+- **WHEN** an author provides name `@julian/cowsay`, a version, and one valid skill descriptor
 - **THEN** the system SHALL accept the manifest
 
 #### Scenario: Manifest with all sections
 
-- **WHEN** an author provides a manifest with identity fields, skill descriptors with descriptions, agent descriptors with descriptions, command descriptors with descriptions, composed facets, and server references
+- **WHEN** an author provides identity fields, skill, agent, and command descriptors, composed facets, server references, and supplementary declarations
 - **THEN** the system SHALL accept the manifest
 
 #### Scenario: Manifest with only composed facets is valid
 
-- **WHEN** an author provides a manifest with `name`, `version`, and a `facets` section but no local skills, agents, or commands
+- **WHEN** an author provides `name`, `version`, and `facets` but no local skills, agents, or commands
 - **THEN** the system SHALL accept the manifest
 
 #### Scenario: Manifest with private publish intent is valid
 
-- **WHEN** an author provides a manifest with `private: true`, valid identity fields, and at least one text asset
-- **THEN** the system SHALL accept the manifest
-- **AND** the loaded manifest data SHALL preserve `private: true`
+- **WHEN** an author provides `private: true`, valid identity fields, and at least one text asset
+- **THEN** the system SHALL accept and preserve `private: true`
 
 #### Scenario: Manifest with explicit public publish intent is valid
 
-- **WHEN** an author provides a manifest with `private: false`, valid identity fields, and at least one text asset
-- **THEN** the system SHALL accept the manifest
-- **AND** the loaded manifest data SHALL preserve `private: false`
+- **WHEN** an author provides `private: false`, valid identity fields, and at least one text asset
+- **THEN** the system SHALL accept and preserve `private: false`
 
-#### Scenario: Manifest with omitted privacy declaration remains public by default
+#### Scenario: Manifest with omitted privacy remains public by default
 
-- **WHEN** an author provides a manifest with no `private` field, valid identity fields, and at least one text asset
+- **WHEN** an author omits `private` from an otherwise valid manifest
 - **THEN** the system SHALL accept the manifest
-- **AND** the loaded manifest data SHALL NOT synthesize a `private` field
+- **AND** loaded data SHALL NOT synthesize `private`
+
+#### Scenario: Valid current-format asset name is accepted
+
+- **WHEN** an author declares assets named `a`, `code-review`, and `review2`
+- **THEN** the system SHALL accept those names
 
 ### Requirement: Invalid facet manifests are rejected with actionable errors
 
@@ -147,239 +150,232 @@ After validation, the system SHALL resolve prompt content for all skills, agents
 
 ### Requirement: Authors can scaffold a new facet project interactively
 
-The system SHALL provide an interactive wizard that guides the author through creating a new facet project. The wizard SHALL collect the following required information:
+The system SHALL provide an interactive wizard that collects a valid facet identity, non-empty description, optional SemVer version defaulting to `0.0.0`, and privacy intent defaulting to public. The author SHALL be able to add, rename, and remove multiple skills, commands, and agents. Asset names SHALL be validated in real time using the current single-segment grammar. Names SHALL be unique within each type; skills and commands SHALL additionally be unique across their shared namespace, while agents MAY share names with skills or commands. The first asset of each type SHOULD suggest the unscoped facet-name segment. At least one asset SHALL be required.
 
-- **Name**: A valid facet identity name. The name SHALL be either an unscoped kebab-case name (`name`) or a scoped name (`@scope/name`). The system SHALL validate the name in real-time and reject invalid input.
-- **Description**: A non-empty description. The system SHALL NOT allow the author to complete the wizard without providing a description.
+The wizard SHALL include a dedicated README step separate from asset management. README creation SHALL be enabled by default but optional. The wizard SHALL seed editable `README.md` content from the facet name and description, permit editing before confirmation, and permit disabling creation. Changing identity fields after README editing SHALL NOT silently regenerate or overwrite the edited content. The confirmation SHALL show privacy, declared assets, and every file to be created, including `README.md` when enabled.
 
-The wizard SHALL also collect optional information:
+All fields SHALL remain editable. Exit confirmation SHALL prevent accidental loss. Upon Apply, the system SHALL atomically create the project manifest and starter files. Skill files SHALL use `skills/<name>/SKILL.md`; agent and command files SHALL use their flat conventional paths. Starter asset files SHALL contain no YAML front matter. Every starter asset file SHALL contain template content that guides the author about what belongs in each section. When README is enabled, Apply SHALL write exact `README.md` content and declare that path in top-level `files`. Private intent SHALL write `private: true`; public intent SHALL omit `private`. The resulting project SHALL be immediately buildable.
 
-- **Version**: A valid SemVer version (N.N.N format). The system SHALL default to `0.0.0`. The author MAY accept the default or change it.
-- **Privacy**: A choice of whether the new facet declares private publish intent. The system SHALL default to public visibility intent. The author MAY accept the public default or choose private.
+#### Scenario: Author scaffolds a scoped project with a named skill
 
-The wizard SHALL also allow the author to manage assets (skills, commands, and agents):
+- **WHEN** the author provides `@julian/cowsay`, description `Cowsay tools`, and skill `cowsay`
+- **THEN** the system SHALL create a manifest named `@julian/cowsay`
+- **AND** create `skills/cowsay/SKILL.md`
 
-- The author SHALL be able to add multiple named assets of any type
-- The author SHALL be able to edit the name of an existing asset
-- The author SHALL be able to remove an existing asset
-- All asset names SHALL be validated as kebab-case in real-time
-- Asset names SHALL be unique within their type — the system SHALL reject duplicates within the same asset type
-- Assets of different types MAY share the same name
-- The first asset added to each type SHOULD default its name to the unscoped name segment of the facet identity as a suggestion
+#### Scenario: Author scaffolds a project with multiple named skills
 
-The wizard SHALL require the author to add at least one **asset** before completing. Name, description, and at least one **asset** are all required.
+- **WHEN** the author provides `viper-plans` and skills `viper-planning` and `viper-execution-rules`
+- **THEN** the manifest SHALL contain both descriptors
+- **AND** both conventional skill files SHALL be created
 
-All fields SHALL remain editable throughout the wizard — the author SHALL be able to go back and change any previously entered value, including privacy.
+#### Scenario: Author accepts the default skill name
 
-Before completing, the wizard SHALL display a confirmation summary showing only the asset types that have entries, the selected privacy intent, and a preview of the files to be created. The author SHALL be able to confirm or go back.
-
-The wizard SHALL provide an exit confirmation mechanism that prevents accidental loss of unsaved work.
-
-Upon confirmation, the system SHALL create a project directory containing a valid manifest and named starter files for each asset the author specified, with each starter file containing template content that guides authors on what belongs in each section. Skill starter files SHALL be created at `skills/<name>/SKILL.md`. Agent and command starter files SHALL be created at `agents/<name>.md` and `commands/<name>.md` respectively. All starter files SHALL contain no YAML front matter.
-
-When the author selects private visibility intent, the generated manifest SHALL contain `private: true`. When the author accepts public visibility intent, the generated manifest SHALL omit `private`.
-
-The scaffolded project SHALL be immediately buildable — running the build command on a freshly scaffolded project SHALL succeed with no errors.
-
-#### Scenario: Author scaffolds a scoped project with named skills
-
-- **WHEN** the author runs the create wizard, provides a name `@julian/cowsay` and description `Cowsay tools`, and adds a skill named `cowsay`
-- **THEN** the system SHALL create a project directory containing a manifest whose `name` is `@julian/cowsay`
-- **AND** a starter file SHALL be created at `skills/cowsay/SKILL.md`
-- **AND** the manifest SHALL reference all starter files correctly
-
-#### Scenario: Author scaffolds a project with named skills
-
-- **WHEN** the author runs the create wizard, provides a name "viper-plans" and description "VIPER planning tools", and adds two skills named "viper-planning" and "viper-execution-rules"
-- **THEN** the system SHALL create a project directory containing a manifest with the provided identity fields and skill descriptors
-- **AND** starter files SHALL be created at `skills/viper-planning/SKILL.md` and `skills/viper-execution-rules/SKILL.md`
-- **AND** the manifest SHALL reference all starter files correctly
-
-#### Scenario: Author scaffolds a minimal project accepting the default skill name
-
-- **WHEN** the author runs the create wizard, provides a name "code-review" and a description, then adds a skill accepting the default name suggestion
-- **THEN** the system SHALL create a project with a skill named "code-review" (matching the facet name)
-- **AND** the starter file SHALL be at `skills/code-review/SKILL.md`
+- **WHEN** the author names the facet `code-review` and accepts the first skill-name suggestion
+- **THEN** the skill SHALL be named `code-review`
+- **AND** its file SHALL be `skills/code-review/SKILL.md`
 
 #### Scenario: Author cannot complete without a description
 
-- **WHEN** the author attempts to complete the wizard without providing a description
-- **THEN** the system SHALL NOT allow completion
-- **AND** the system SHALL indicate that a description is required
+- **WHEN** the author attempts completion without a description
+- **THEN** completion SHALL be blocked with a description-required message
 
 #### Scenario: Scoped facet identity is accepted
 
-- **WHEN** the author enters `@acme/deploy-tools` as the facet name
-- **THEN** the system SHALL accept the name as a valid facet identity
+- **WHEN** the author enters `@acme/deploy-tools`
+- **THEN** the system SHALL accept the facet identity
 
 #### Scenario: Invalid facet identity is rejected
 
-- **WHEN** the author enters `@acme/Deploy_Tools` as the facet name
-- **THEN** the system SHALL indicate the name is invalid
-- **AND** the system SHALL NOT accept the invalid name
+- **WHEN** the author enters `@acme/Deploy_Tools`
+- **THEN** the system SHALL reject the identity and explain the constraint
 
-#### Scenario: Asset names are validated as kebab-case
+#### Scenario: Asset names use the current grammar
 
-- **WHEN** the author enters an asset name containing uppercase letters, spaces, underscores, slashes, or an at sign
-- **THEN** the system SHALL indicate the name is invalid
-- **AND** the system SHALL NOT accept the invalid name
+- **WHEN** the author enters an asset name with uppercase letters, spaces, underscores, slashes, leading or trailing hyphens, consecutive hyphens, or more than 64 characters
+- **THEN** the wizard SHALL reject the name and explain the constraint
 
 #### Scenario: Duplicate asset names within a type are rejected
 
-- **WHEN** the author attempts to add a skill with the same name as an existing skill
-- **THEN** the system SHALL reject the duplicate name
+- **WHEN** the author adds a skill with the same name as an existing skill
+- **THEN** the wizard SHALL reject the duplicate
 
-#### Scenario: Same name across different asset types is allowed
+#### Scenario: Skill and command cannot share a name
 
-- **WHEN** the author adds a skill named "viper-plans" and an agent named "viper-plans"
-- **THEN** the system SHALL accept both assets without error
+- **WHEN** the author adds skill `review` and then command `review`
+- **THEN** the wizard SHALL reject the command name as a shared-namespace collision
+
+#### Scenario: Agent may share a name with a skill
+
+- **WHEN** the author adds skill `review` and agent `review`
+- **THEN** the wizard SHALL accept both
 
 #### Scenario: Author edits an existing asset name
 
-- **WHEN** the author selects an existing asset and changes its name to a valid, unique kebab-case name
-- **THEN** the system SHALL update the asset name
+- **WHEN** the author changes an asset to a valid name free of applicable collisions
+- **THEN** the wizard SHALL update the asset name
 
 #### Scenario: Author removes an asset
 
 - **WHEN** the author removes a previously added asset
-- **THEN** the asset SHALL no longer appear in the wizard or the confirmation summary
+- **THEN** the asset SHALL no longer appear in the wizard or confirmation
 
-#### Scenario: Author exits the wizard with unsaved work
+#### Scenario: Author exits with unsaved work
 
-- **WHEN** the author triggers an exit action during the wizard
-- **THEN** the system SHALL confirm the author's intent to exit
-- **AND** if the author confirms exit, the system SHALL not create any files or directories
+- **WHEN** the author confirms exit before Apply
+- **THEN** no files or directories SHALL be created
 
-#### Scenario: Version field accepts valid SemVer input
+#### Scenario: Version accepts valid SemVer
 
-- **WHEN** the author sets the version to a valid SemVer value (e.g., "1.0.0" or "100.2.1")
-- **THEN** the system SHALL accept the version
+- **WHEN** the author enters `1.0.0` or `100.2.1`
+- **THEN** the wizard SHALL accept the version
 
-#### Scenario: Version field rejects invalid input
+#### Scenario: Version rejects invalid input
 
-- **WHEN** the author enters a version that does not match the N.N.N pattern
-- **THEN** the system SHALL indicate the version is invalid
+- **WHEN** the author enters a value outside the `N.N.N` pattern
+- **THEN** the wizard SHALL identify the version as invalid
 
-#### Scenario: Version defaults to 0.0.0
+#### Scenario: Version defaults to zero
 
-- **WHEN** the author does not change the version field
-- **THEN** the manifest SHALL contain version `0.0.0`
+- **WHEN** the author does not change the version
+- **THEN** the manifest SHALL contain `0.0.0`
 
-#### Scenario: New facet defaults to public visibility intent
+#### Scenario: New facet defaults to public intent
 
-- **WHEN** an author creates a facet interactively and accepts the default privacy choice
-- **THEN** the generated manifest SHALL omit `private`
-- **AND** the confirmation summary SHALL show the facet as public
+- **WHEN** the author accepts the default privacy choice
+- **THEN** the manifest SHALL omit `private`
+- **AND** confirmation SHALL show public intent
 
 #### Scenario: New private facet writes private true
 
-- **WHEN** an author creates a facet interactively and selects private visibility intent
-- **THEN** the generated manifest SHALL contain `private: true`
-- **AND** the confirmation summary SHALL show the facet as private
+- **WHEN** the author selects private intent
+- **THEN** the manifest SHALL contain `private: true`
+- **AND** confirmation SHALL show private intent
 
-#### Scenario: Author selects private then reverts to public before completing
+#### Scenario: Author reverts private choice before completion
 
-- **WHEN** an author creates a facet interactively, selects private visibility intent, and then changes the privacy choice back to public before completing the wizard
-- **THEN** the generated manifest SHALL omit `private`
-- **AND** the confirmation summary SHALL show the facet as public
+- **WHEN** the author selects private and then returns to public before Apply
+- **THEN** the manifest SHALL omit `private`
 
 #### Scenario: Target directory already contains a manifest
 
-- **WHEN** the author runs the create wizard and a manifest already exists in the target directory
-- **THEN** the system SHALL warn the author and ask for confirmation before overwriting
+- **WHEN** a manifest exists in the target directory
+- **THEN** the wizard SHALL warn and require confirmation before overwriting
+
+#### Scenario: README is created by default
+
+- **WHEN** the author accepts the default README choice
+- **THEN** confirmation SHALL list `README.md`
+- **AND** Apply SHALL write `README.md` and add it to top-level `files`
+
+#### Scenario: README may be disabled
+
+- **WHEN** the author disables README creation
+- **THEN** no README file or declaration SHALL be created
+
+#### Scenario: Edited README content is preserved
+
+- **WHEN** the author edits seeded README content and later changes the facet name
+- **THEN** Apply SHALL write the author's edited content without regenerating it
 
 ### Requirement: Authors can build a facet locally for validation and inspection
 
-The system SHALL compile a facet project into a build output directory. The build command SHALL read the manifest, validate it, verify that every declared asset file exists, is non-empty, and contains no YAML front matter, resolve all file-based prompts to their content, run all validation checks, assemble the resolved output into a deterministic compressed archive, compute content hashes, and write the archive and build manifest to a `dist/` directory. The build command SHALL NOT modify the manifest or any content files. The build command SHALL NOT be interactive — it SHALL behave identically in all environments.
+The system SHALL compile a facet project into a deterministic `.facet` archive after validating the manifest and every source input. It SHALL verify that primary asset files exist, are non-empty, and resolve from their conventional paths. Author-supplied YAML front matter in a primary asset SHALL be permitted and preserved verbatim in the archive; the manifest remains the source of truth for asset metadata, and front matter is reconciled with the manifest at install time rather than rejected at build. It SHALL verify that every declared supplementary file exists as a regular file at a safe, collision-free path. It SHALL archive the embedded manifest, every primary asset, and every declared supplementary file, and SHALL record a content hash for every entry. Validation SHALL finish before previous `dist/` output is removed. The build SHALL NOT modify source files and SHALL behave identically in interactive and non-interactive environments.
 
-The build output SHALL contain a compressed archive (`.facet` file) with the manifest and all text asset files with prompts resolved to their final string content, and a build manifest (`build-manifest.json`) recording content hashes. For a scoped facet identity, whose name renders as a nested path under `dist/`, the system SHALL create any required parent directories under `dist/` before writing the built archive. The build-output write boundary SHALL create parent directories for any slash-containing archive path, so the same fix also repairs the pre-existing failure for any nested archive filename.
-
-The build command SHALL render its progress as a step-by-step display, showing each pipeline stage as it completes — including the archive assembly stage. On success, the system SHALL display the archive contents listing and the archive content hash. On failure, the system SHALL indicate which stage failed and display errors with their field paths, and SHALL suggest running the editing command to fix the issues. After the display exits, the system SHALL print a brief plain-text summary to stdout — including the content hash — so it persists in terminal scroll-back.
+For a scoped facet identity or other slash-containing output name, the system SHALL create required parent directories below `dist/`. On success, the system SHALL display pipeline progress, the emitted archive-format version, complete entry listing, and integrity hash, followed by a persistent summary. On failure, it SHALL identify the failed stage and structured field or path errors and SHALL suggest the editing command when appropriate.
 
 #### Scenario: Successful build of a valid facet
 
-- **WHEN** the author runs the build command in a directory with a valid manifest, all referenced files exist, and no files contain front matter
-- **THEN** the system SHALL write a compressed archive and build manifest to `dist/`
-- **AND** the archive SHALL contain the facet manifest and all text asset files with prompts resolved to their string content
-- **AND** the build manifest SHALL contain the archive content hash and per-asset content hashes
-- **AND** the system SHALL display the archive contents and content hash
-- **AND** the system SHALL print a brief success summary to stdout including the content hash
+- **WHEN** a valid facet has all primary and supplementary source files
+- **THEN** the system SHALL write the `.facet` archive and build manifest to `dist/`
+- **AND** the archive SHALL contain the manifest and every declared primary and supplementary entry
+- **AND** the build manifest SHALL record the integrity and a hash for every entry
+- **AND** the display SHALL show the format version, complete entry listing, and integrity
 
 #### Scenario: Successful build of a scoped facet identity
 
-- **WHEN** the author runs the build command for a valid facet whose name is `@julian/cowsay`
-- **THEN** the system SHALL write the built archive under `dist/` without failing on the scoped name separator
-- **AND** the archive SHALL contain `facet.json` at the archive root with `name` set to `@julian/cowsay`
-- **AND** the archive's internal asset paths SHALL continue to be derived from asset names, not from the facet identity
+- **WHEN** the author builds facet `@julian/cowsay`
+- **THEN** the archive SHALL be written below `dist/` without failing on the slash
+- **AND** embedded `facet.json` SHALL preserve the scoped name
 
-#### Scenario: Build-output write boundary creates parent directories for a nested archive path
+#### Scenario: Build output creates nested parent directories
 
-- **WHEN** the build-output write boundary writes an archive whose filename renders as a nested path under `dist/` (for example a scoped `@scope/name` identity, or any other slash-containing archive filename)
-- **THEN** the system SHALL create the required parent directories under `dist/` before writing the archive
-- **AND** the write SHALL NOT fail with a missing-directory error
+- **WHEN** an archive filename renders as a nested path below `dist/`
+- **THEN** the system SHALL create required parent directories before writing
+
+#### Scenario: Build includes supplementary files at canonical paths
+
+- **WHEN** a facet declares top-level `README.md` and skill companion `references/api.md`
+- **THEN** the archive SHALL contain `README.md` and `skills/<name>/references/api.md`
 
 #### Scenario: Build fails on invalid manifest
 
-- **WHEN** the author runs the build command and the manifest fails schema validation
-- **THEN** the system SHALL report the validation errors with field paths
-- **AND** the system SHALL suggest running the editing command to fix the issues
-- **AND** the system SHALL NOT write any output to `dist/`
+- **WHEN** the manifest fails schema validation
+- **THEN** the system SHALL report errors with field paths and write no new output
 
-#### Scenario: Build fails on missing asset file
+#### Scenario: Build fails on missing primary asset
 
-- **WHEN** the author runs the build command and any asset references a file that does not exist
-- **THEN** the system SHALL report which file is missing and which asset references it
-- **AND** the system SHALL suggest running the editing command to fix the issues
-- **AND** the system SHALL NOT write any output to `dist/`
+- **WHEN** a declared asset's conventional primary file is missing
+- **THEN** the system SHALL identify the asset and expected path and write no new output
 
-#### Scenario: Build fails on file containing front matter
+#### Scenario: Primary asset front matter is preserved in the archive
 
-- **WHEN** the author runs the build command and a content file contains YAML front matter
-- **THEN** the system SHALL report which file contains front matter
-- **AND** the system SHALL suggest running the editing command to strip it
-- **AND** the system SHALL NOT write any output to `dist/`
+- **WHEN** a primary asset file contains author-supplied YAML front matter
+- **THEN** the build SHALL succeed and archive the primary bytes verbatim
+- **AND** the manifest SHALL remain the source of truth for that asset's metadata
 
-#### Scenario: Build fails on empty content file
+#### Scenario: Build fails on empty primary asset
 
-- **WHEN** the author runs the build command and a content file referenced by the manifest is empty (zero bytes or only whitespace)
-- **THEN** the system SHALL report which file is empty and which asset references it
-- **AND** the system SHALL suggest running the editing command to add content
-- **AND** the system SHALL NOT write any output to `dist/`
+- **WHEN** a primary asset file is empty or whitespace-only
+- **THEN** the system SHALL identify the file and require content
+
+#### Scenario: Empty supplementary file remains valid
+
+- **WHEN** a declared supplementary file is empty
+- **THEN** the build SHALL NOT fail merely because that file is empty
 
 #### Scenario: Build with no manifest
 
-- **WHEN** the author runs the build command in a directory with no manifest
+- **WHEN** the build runs where no facet manifest exists
 - **THEN** the system SHALL report that no manifest was found
 
-#### Scenario: Build cleans previous output
+#### Scenario: Valid build cleans previous output
 
-- **WHEN** the author runs the build command and a `dist/` directory already exists from a previous build
-- **THEN** the system SHALL remove the previous `dist/` directory before writing new output
+- **WHEN** every source input validates and `dist/` contains a previous build
+- **THEN** the system SHALL remove previous output before writing new output
+
+#### Scenario: Invalid build preserves previous output
+
+- **WHEN** any source input fails validation and `dist/` contains a previous build
+- **THEN** the previous output SHALL remain unchanged
 
 ### Requirement: Build detects naming collisions between local assets
 
-The system SHALL detect when the same name is used by multiple assets within the same asset type. Skills SHALL have unique names within the skills section, agents SHALL have unique names within the agents section, and commands SHALL have unique names within the commands section. Assets of different types MAY share the same name — cross-type collisions SHALL NOT be treated as errors. Intra-type collisions SHALL cause the build to fail with an error identifying the conflicting names and their asset type.
+The system SHALL reject duplicate names within each asset type. It SHALL also reject any name shared by a skill and command because those types occupy one logical namespace. Agents SHALL remain separate and MAY share a name with a skill or command. Collision failures SHALL identify every conflicting declaration.
 
 #### Scenario: Two skills share a name
 
 - **WHEN** a facet declares two skills with the same name
-- **THEN** the build SHALL fail
-- **AND** the error SHALL identify the collision within the skills section
+- **THEN** the build SHALL fail and identify both skill declarations
 
 #### Scenario: Skill and command share a name
 
-- **WHEN** a facet declares a skill and a command with the same name
-- **THEN** the build SHALL succeed with no collision errors
+- **WHEN** a facet declares skill `review` and command `review`
+- **THEN** the build SHALL fail with structured collision data identifying both declarations
 
 #### Scenario: Skill and agent share a name
 
-- **WHEN** a facet declares a skill and an agent with the same name
-- **THEN** the build SHALL succeed with no collision errors
+- **WHEN** a facet declares skill `review` and agent `review`
+- **THEN** the build SHALL succeed without a naming collision
 
-#### Scenario: No collisions across distinct names within each type
+#### Scenario: Command and agent share a name
 
-- **WHEN** a facet declares assets with distinct names within each asset type
-- **THEN** the build SHALL succeed with no collision errors
+- **WHEN** a facet declares command `review` and agent `review`
+- **THEN** the build SHALL succeed without a naming collision
+
+#### Scenario: Distinct applicable names do not collide
+
+- **WHEN** all names are distinct within their applicable namespaces
+- **THEN** the build SHALL succeed without naming-collision errors
 
 ### Requirement: Build validates platform configuration for assets
 
@@ -425,274 +421,246 @@ The system SHALL validate the `facets` section of the manifest for structural co
 
 ### Requirement: Authors can edit a facet project interactively
 
-The system SHALL provide an interactive editing command that serves as the full authoring workbench for facet manifests. The editing command SHALL combine all capabilities of the scaffolding wizard (identity editing, privacy editing, asset creation, asset removal) with automatic reconciliation of disk contents against the manifest. The editing command SHALL scan conventional **asset** directories to detect discrepancies between disk contents and the manifest. If the manifest is invalid, the editing command SHALL display errors and exit. If drift is detected, the editing command SHALL present a reconciliation phase before proceeding to editing.
+The system SHALL provide an interactive authoring workbench for identity, privacy, assets, README, and supplementary-file reconciliation. It SHALL scan conventional asset paths and declared supplementary regions, present detected drift before editing, and reject an invalid source manifest with actionable errors. Asset names SHALL use the current single-segment grammar; skills and commands SHALL be unique across their shared namespace while agents remain separate.
 
-The editing command SHALL display the facet's current privacy intent so the author can inspect it without opening the manifest file, and SHALL allow the author to change between public and private. When the author sets or leaves the facet as private, the written manifest SHALL contain `private: true`. When the author changes a private facet to public, the written manifest SHALL omit `private`. When the author leaves a facet public, the written manifest SHALL preserve whether the source manifest omitted `private` or explicitly contained `private: false`.
+The workbench SHALL display current privacy intent. Setting or retaining private intent SHALL write `private: true`; changing private to public SHALL omit `private`; leaving a public facet unchanged SHALL preserve whether public intent was omitted or explicitly `false`.
 
 #### Scenario: Author edits facet identity fields
 
-- **WHEN** the author runs the edit command on a facet project
-- **THEN** the system SHALL display the current name, description, and version
-- **AND** the author SHALL be able to change any of them
-- **AND** if version is absent, the system SHALL default it to `0.0.0`
+- **WHEN** the author opens a facet for editing
+- **THEN** current name, description, and version SHALL be editable
+- **AND** absent version SHALL default to `0.0.0`
 
 #### Scenario: Author inspects private manifest as private
 
-- **WHEN** the author runs the edit command on a facet whose source manifest contains `private: true`
-- **THEN** the system SHALL show the facet as private
-- **AND** the author SHALL be able to leave it private or switch it to public before applying changes
+- **WHEN** source contains `private: true`
+- **THEN** edit SHALL show private intent and permit switching to public
 
 #### Scenario: Author inspects omitted privacy as public
 
-- **WHEN** the author runs the edit command on a facet whose source manifest omits `private`
-- **THEN** the system SHALL show the facet as public
+- **WHEN** source omits `private`
+- **THEN** edit SHALL show public intent
 
-#### Scenario: Author inspects explicit public false as public
+#### Scenario: Author inspects explicit false as public
 
-- **WHEN** the author runs the edit command on a facet whose source manifest contains `private: false`
-- **THEN** the system SHALL show the facet as public
+- **WHEN** source contains `private: false`
+- **THEN** edit SHALL show public intent
 
-#### Scenario: Edit shows omitted privacy as public and preserves omission
+#### Scenario: Omitted public privacy remains omitted
 
-- **WHEN** an author edits a facet whose source manifest omits `private`
-- **AND** the author leaves the facet public
-- **THEN** the applied manifest SHALL omit `private`
+- **WHEN** public intent was omitted and remains public
+- **THEN** Apply SHALL continue omitting `private`
 
-#### Scenario: Edit preserves explicit public false when left public
+#### Scenario: Explicit public false is preserved
 
-- **WHEN** an author edits a facet whose source manifest contains `private: false`
-- **AND** the author leaves the facet public
-- **THEN** the applied manifest SHALL preserve `private: false`
+- **WHEN** source contains `private: false` and remains public
+- **THEN** Apply SHALL preserve `private: false`
 
-#### Scenario: Edit changes private facet to public omission
+#### Scenario: Private facet changes to public omission
 
-- **WHEN** an author edits a facet whose source manifest contains `private: true`
-- **AND** the author switches the facet to public before applying changes
-- **THEN** the applied manifest SHALL omit `private`
+- **WHEN** the author changes private intent to public
+- **THEN** Apply SHALL omit `private`
 
-#### Scenario: Edit changes public facet to private
+#### Scenario: Public facet changes to private
 
-- **WHEN** an author edits a facet whose source manifest omits `private` or contains `private: false`
-- **AND** the author switches the facet to private before applying changes
-- **THEN** the applied manifest SHALL contain `private: true`
+- **WHEN** the author changes public intent to private
+- **THEN** Apply SHALL write `private: true`
 
-#### Scenario: Author changes a facet identity to a different scope
+#### Scenario: Author changes facet scope
 
-- **WHEN** the author changes a facet's name from `@julian/cowsay` to `@acme/cowsay` during edit
-- **THEN** the system SHALL treat the change as a normal local identity edit
-- **AND** the system SHALL NOT warn specially about changing scopes
+- **WHEN** the author changes `@julian/cowsay` to `@acme/cowsay`
+- **THEN** the system SHALL treat it as a normal local identity edit
 
-#### Scenario: Author creates a new skill from scratch
+#### Scenario: Author creates a new skill
 
-- **WHEN** the author uses the edit command to add a new skill named "code-review"
-- **THEN** the system SHALL create `skills/code-review/SKILL.md` with a starter template
-- **AND** the system SHALL add a skill descriptor to the manifest with the author-provided description
+- **WHEN** the author adds skill `code-review`
+- **THEN** Apply SHALL create `skills/code-review/SKILL.md` and its descriptor
 
-#### Scenario: Author creates a new agent from scratch
+#### Scenario: Author creates a new agent
 
-- **WHEN** the author uses the edit command to add a new agent named "reviewer"
-- **THEN** the system SHALL create `agents/reviewer.md` with a starter template
-- **AND** the system SHALL add an agent descriptor to the manifest with the author-provided description
+- **WHEN** the author adds agent `reviewer`
+- **THEN** Apply SHALL create `agents/reviewer.md` and its descriptor
 
-#### Scenario: Author creates a new command from scratch
+#### Scenario: Author creates a new command
 
-- **WHEN** the author uses the edit command to add a new command named "run-review"
-- **THEN** the system SHALL create `commands/run-review.md` with a starter template
-- **AND** the system SHALL add a command descriptor to the manifest with the author-provided description
+- **WHEN** the author adds command `run-review`
+- **THEN** Apply SHALL create `commands/run-review.md` and its descriptor
 
-#### Scenario: Author deletes an existing asset
+#### Scenario: Author deletes an asset
 
-- **WHEN** the author selects an existing asset for deletion during an edit session
-- **THEN** the system SHALL remove the asset's entry from the manifest
-- **AND** the system SHALL remove the asset's file (or directory, for skills) from disk
+- **WHEN** the author queues an asset deletion
+- **THEN** Apply SHALL remove its descriptor and its conventional primary file
+- **AND** for a skill, Apply SHALL additionally remove only that skill's declared companion files
+- **AND** undeclared files inside the skill directory SHALL remain on disk unchanged
 
 #### Scenario: Asset names are validated during edit
 
-- **WHEN** the author enters an asset name during the edit session
-- **THEN** the system SHALL validate the name as kebab-case
-- **AND** the system SHALL reject names that are not unique within their asset type
+- **WHEN** the author enters an invalid asset name or a skill/command shared-namespace collision
+- **THEN** the workbench SHALL reject the name with an actionable error
 
 ### Requirement: Edit detects new files on disk and offers to add them
 
-The system SHALL scan conventional **asset** directories during edit and detect content files that are not declared in the manifest. Undeclared files SHALL be presented in an all-at-once list with inline action options per item. All items SHALL be resolved before proceeding to editing. For each file the author selects, a description SHALL be required before the addition is accepted. Files the author does not select SHALL remain on disk but SHALL NOT be added to the manifest.
+The system SHALL detect undeclared conventional assets, undeclared files inside declared skill directories, and common root-level supplementary files. It SHALL present all generic discoveries together in one reconciliation phase with per-item actions, and every discovery SHALL be resolved before asset or manifest editing begins. Asset additions SHALL require descriptions; supplementary-file adoptions SHALL not. Skipped files SHALL remain on disk and undeclared. `README.md` and `README` SHALL be excluded from generic reconciliation and shown only in the dedicated README panel.
 
-#### Scenario: New skill directory discovered
+#### Scenario: New skill directory is discovered
 
-- **WHEN** the author runs edit and `skills/code-review/SKILL.md` exists on disk but is not in the manifest
-- **THEN** the system SHALL present "code-review" as an available skill to add
-- **AND** the author SHALL be able to select or skip it
+- **WHEN** `skills/code-review/SKILL.md` exists but is undeclared
+- **THEN** edit SHALL offer skill `code-review` for addition or skip
 
-#### Scenario: New agent file discovered
+#### Scenario: New agent file is discovered
 
-- **WHEN** the author runs edit and `agents/reviewer.md` exists on disk but is not in the manifest
-- **THEN** the system SHALL present "reviewer" as an available agent to add
-- **AND** the author SHALL be able to select or skip it
+- **WHEN** `agents/reviewer.md` exists but is undeclared
+- **THEN** edit SHALL offer agent `reviewer` for addition or skip
 
-#### Scenario: New command file discovered
+#### Scenario: New command file is discovered
 
-- **WHEN** the author runs edit and `commands/start-review.md` exists on disk but is not in the manifest
-- **THEN** the system SHALL present "start-review" as an available command to add
-- **AND** the author SHALL be able to select or skip it
+- **WHEN** `commands/start-review.md` exists but is undeclared
+- **THEN** edit SHALL offer command `start-review` for addition or skip
 
-#### Scenario: Multiple new files discovered
+#### Scenario: Multiple new files are discovered
 
-- **WHEN** the author runs edit and three new files exist across skills, agents, and commands
-- **THEN** the system SHALL present all three as a batch selection list
-- **AND** the author SHALL be able to select any combination
+- **WHEN** three generic discoveries exist
+- **THEN** edit SHALL present all three and permit any combination of actions
 
-#### Scenario: Description is required for each addition
+#### Scenario: Asset addition requires a description
 
-- **WHEN** the author selects a file to add to the manifest
-- **THEN** the system SHALL require the author to provide a description before accepting the addition
+- **WHEN** the author chooses to add a discovered asset
+- **THEN** edit SHALL require a description before accepting it
 
-#### Scenario: Unselected files remain on disk
+#### Scenario: Unselected file remains on disk
 
-- **WHEN** the author skips a discovered file during reconciliation
-- **THEN** the file SHALL remain on disk unchanged
-- **AND** the file SHALL NOT appear in the manifest
+- **WHEN** the author skips a discovery
+- **THEN** its bytes SHALL remain unchanged and no declaration SHALL be added
 
-#### Scenario: Empty files are selectable
+#### Scenario: Empty discovered primary file is selectable
 
-- **WHEN** a discovered file is empty or empty after stripping front matter
-- **THEN** the system SHALL present the file as selectable like any other file
-- **AND** the author SHALL be able to add it to the manifest
+- **WHEN** a discovered conventional asset file is empty
+- **THEN** edit SHALL still allow the author to select and repair it
+
+#### Scenario: Undeclared skill companion is discovered
+
+- **WHEN** declared skill `review` contains undeclared `references/api.md`
+- **THEN** edit SHALL offer to add that relative path to the skill's `files`
+
+#### Scenario: Common root file is discovered
+
+- **WHEN** undeclared root `LICENSE` exists
+- **THEN** generic reconciliation SHALL offer top-level adoption
+
+#### Scenario: README is not duplicated in generic reconciliation
+
+- **WHEN** undeclared root `README.md` exists
+- **THEN** it SHALL appear only in the README panel
 
 ### Requirement: Edit detects missing files and offers scaffold-or-remove
 
-The system SHALL detect manifest entries whose corresponding files no longer exist on disk. For each missing file, the author SHALL be offered two choices: remove the entry from the manifest, or scaffold a new starter template file to restore it.
+The system SHALL detect missing conventional asset files and missing declared supplementary files. For each missing primary asset, it SHALL offer to remove the asset declaration or scaffold its starter file. For each missing supplementary file other than `README.md` or `README`, it SHALL offer to remove the exact declaration or scaffold a replacement at the exact declared path. Conventional README paths SHALL use the dedicated README panel.
 
-#### Scenario: Missing skill file with removal chosen
+#### Scenario: Missing skill primary is removed
 
-- **WHEN** the manifest declares a skill "code-review" but `skills/code-review/SKILL.md` does not exist
-- **AND** the author chooses to remove the entry
-- **THEN** the system SHALL remove the skill descriptor from the manifest
+- **WHEN** skill `code-review` is declared without `skills/code-review/SKILL.md` and the author chooses Remove
+- **THEN** Apply SHALL remove the skill descriptor
 
-#### Scenario: Missing skill file with scaffold chosen
+#### Scenario: Missing skill primary is scaffolded
 
-- **WHEN** the manifest declares a skill "code-review" but `skills/code-review/SKILL.md` does not exist
-- **AND** the author chooses to scaffold a replacement
-- **THEN** the system SHALL create `skills/code-review/SKILL.md` with a starter template
-- **AND** the manifest entry SHALL be preserved
+- **WHEN** skill `code-review` is declared without its primary and the author chooses Scaffold
+- **THEN** Apply SHALL create `skills/code-review/SKILL.md` and preserve the descriptor
 
-#### Scenario: Missing agent file with removal chosen
+#### Scenario: Missing agent primary is removed
 
-- **WHEN** the manifest declares an agent "reviewer" but `agents/reviewer.md` does not exist
-- **AND** the author chooses to remove the entry
-- **THEN** the system SHALL remove the agent descriptor from the manifest
+- **WHEN** agent `reviewer` is declared without `agents/reviewer.md` and the author chooses Remove
+- **THEN** Apply SHALL remove the agent descriptor
 
-### Requirement: Edit parses front matter for defaults and strips it
+#### Scenario: Missing skill companion is reconciled
 
-The system SHALL parse YAML front matter from any file encountered during edit — whether newly discovered or already in the manifest. If front matter contains a `name` field, the name field SHALL be pre-filled with the front matter value. If front matter contains a `description` field, the description field SHALL be pre-filled with the front matter value. If no front matter `name` is present, the filename (or directory name for skills) SHALL be the default. The author SHALL confirm or edit each field — every asset coming out of edit SHALL have an author-confirmed name and description. The final confirmed name SHALL determine the filename on disk. Front matter fields beyond `name` and `description` SHALL be surfaced to the author with their values. The author SHALL choose to either convert them to platform configuration or drop them. If converting, the author SHALL select a platform from the list of known platforms or provide a custom platform name. Custom platform names SHALL be validated as kebab-case. The fields SHALL be placed under that platform key in the manifest as-is. If dropping, the fields SHALL be discarded. Front matter SHALL always be stripped from the file content on confirmation.
+- **WHEN** skill `review` declares missing `references/api.md`
+- **THEN** edit SHALL offer Scaffold at that exact path or Remove Declaration
 
-#### Scenario: Front matter name pre-fills the name field
+#### Scenario: Missing root supplementary file is reconciled
 
-- **WHEN** a file at `skills/skill/SKILL.md` contains front matter with `name: typescript-best-practices`
-- **THEN** the system SHALL pre-fill the name field with "typescript-best-practices"
-- **AND** the author SHALL confirm or edit the name
-- **AND** the final confirmed name SHALL determine the directory name on disk
+- **WHEN** top-level `files` declares missing `LICENSE`
+- **THEN** edit SHALL offer Scaffold at `LICENSE` or Remove Declaration
 
-#### Scenario: No front matter name defaults to filename
+### Requirement: Edit confirms asset identity and preserves primary content
 
-- **WHEN** a file at `skills/code-review/SKILL.md` contains no `name` field in front matter
-- **THEN** the system SHALL pre-fill the name field with "code-review" (from the directory name)
-- **AND** the author SHALL confirm or edit the name
+The system SHALL require the author to confirm every asset's name and description during edit, defaulting the name to the conventional filename or skill-directory name. The final author-confirmed asset name SHALL determine that asset's conventional path on disk, and confirmed metadata SHALL be written to the manifest, which remains the source of truth. Edit SHALL NOT strip author-supplied front matter from a primary asset file; primary content SHALL be preserved verbatim unless the author explicitly edits it, and manifest metadata is reconciled with any front matter at install time. Supplementary files, including README, SHALL NOT be parsed and SHALL retain exact bytes unless explicitly edited.
 
-#### Scenario: Front matter description pre-fills the description field
+#### Scenario: Missing metadata uses conventional name
 
-- **WHEN** a discovered file contains front matter with `description: A collection of TypeScript best practices`
-- **THEN** the system SHALL pre-fill the description field with that value
-- **AND** the author SHALL confirm or edit the description
+- **WHEN** `skills/code-review/SKILL.md` is reconciled during edit
+- **THEN** edit SHALL default the name to `code-review` and require confirmation
 
-#### Scenario: Extra front matter fields are surfaced to the author
+#### Scenario: Confirmed metadata is written to the manifest
 
-- **WHEN** a file contains front matter with fields beyond `name` and `description` (e.g., `allowed-tools`, `compatibility`)
-- **THEN** the system SHALL display the extra fields and their values to the author
-- **AND** the system SHALL offer two choices: convert to platform configuration or drop
+- **WHEN** the author confirms an asset's name and description
+- **THEN** Apply SHALL persist that metadata in the manifest
+- **AND** the confirmed name SHALL determine the conventional file path
 
-#### Scenario: Extra front matter fields converted to platform config with known platform
+#### Scenario: Primary content is preserved verbatim
 
-- **WHEN** the author chooses to convert extra front matter fields to platform configuration
-- **AND** the author selects a known platform from the list (e.g., "opencode")
-- **THEN** the system SHALL place the extra fields under the selected platform key in the manifest
+- **WHEN** an existing primary asset file contains author-supplied front matter and the author does not edit its body
+- **THEN** Apply SHALL preserve the primary file bytes unchanged
 
-#### Scenario: Extra front matter fields converted to platform config with custom platform
+#### Scenario: Supplementary front matter-like bytes are preserved
 
-- **WHEN** the author chooses to convert extra front matter fields to platform configuration
-- **AND** the author types a custom platform name (e.g., "cursor")
-- **THEN** the system SHALL validate the custom platform name as kebab-case
-- **AND** the system SHALL place the extra fields under the custom platform key in the manifest
-
-#### Scenario: Custom platform name is validated as kebab-case
-
-- **WHEN** the author types a custom platform name that is not valid kebab-case (e.g., "My Platform" or "CURSOR")
-- **THEN** the system SHALL reject the name
-- **AND** the system SHALL indicate the name must be kebab-case
-
-#### Scenario: Extra front matter fields dropped
-
-- **WHEN** the author chooses to drop the extra front matter fields
-- **THEN** the extra fields SHALL be discarded
-
-#### Scenario: Front matter is stripped from file content
-
-- **WHEN** the author confirms an addition of a file that contained front matter
-- **THEN** the persisted file SHALL contain only the markdown body with no YAML front matter
-
-#### Scenario: Malformed front matter is treated as absent
-
-- **WHEN** a file contains text that looks like YAML front matter but fails to parse
-- **THEN** the system SHALL treat the file as having no front matter
-- **AND** the file SHALL be processed normally
-
-#### Scenario: Existing manifest file with front matter
-
-- **WHEN** a file already in the manifest contains YAML front matter
-- **THEN** the system SHALL surface the front matter values during edit
-- **AND** front matter SHALL be stripped on confirmation
+- **WHEN** an adopted supplementary file begins with valid YAML front matter
+- **THEN** Apply SHALL preserve those bytes unless the author explicitly edits them
 
 ### Requirement: Edit is transactional with confirmation
 
-All changes during an edit session SHALL be queued — nothing SHALL be written to disk or manifest until the author explicitly confirms. Before confirmation, the system SHALL display a manifest preview showing identity fields (name, description, version), privacy intent, and **asset** sections (name and truncated description per **asset**). The author SHALL be able to confirm ("Apply") or go back to editing. The author SHALL be able to exit at any point before confirmation with no changes applied.
+All identity, privacy, asset, README, supplementary-file, and manifest changes SHALL remain queued until the author selects Apply. Confirmation SHALL show identity, privacy, asset summaries containing each asset's name and truncated description, and every file/declaration operation with its exact path. Apply SHALL commit all queued changes atomically. Exiting before Apply SHALL leave every file and the manifest unchanged.
 
 #### Scenario: Author confirms changes
 
-- **WHEN** the author reviews the confirmation summary and confirms
-- **THEN** all queued changes SHALL be applied atomically to disk and manifest
+- **WHEN** the author selects Apply from confirmation
+- **THEN** all queued disk and manifest changes SHALL commit atomically
 
 #### Scenario: Author exits before confirmation
 
-- **WHEN** the author exits the edit session before confirming
-- **THEN** no files SHALL be created, modified, or deleted
+- **WHEN** the author exits before Apply
+- **THEN** no file SHALL be created, modified, or deleted
 - **AND** the manifest SHALL remain unchanged
 
-#### Scenario: Confirmation summary shows privacy intent
+#### Scenario: Confirmation shows privacy intent
 
-- **WHEN** the author reaches the edit confirmation summary
-- **THEN** the confirmation summary SHALL show the facet's privacy intent alongside the identity fields
+- **WHEN** confirmation is displayed
+- **THEN** it SHALL show privacy alongside identity fields
 
-#### Scenario: Confirmation summary shows all deltas
+#### Scenario: Confirmation shows all deltas
 
-- **WHEN** an edit session includes identity changes, a privacy change, two additions, one deletion, and one front matter strip
-- **THEN** the confirmation summary SHALL list all six changes with their details
+- **WHEN** a session includes identity, privacy, asset, README, and companion changes
+- **THEN** confirmation SHALL list each change and exact affected path
 
-### Requirement: Content files contain no front matter
+#### Scenario: README and companion changes wait for Apply
 
-The manifest SHALL be the single source of truth for asset metadata (name, description, platform configuration). Content files on disk and in the archive SHALL contain pure markdown with zero YAML front matter. The scaffolding command, the editing command, and the build command SHALL all enforce this invariant. Front matter is parsed from incoming files to extract defaults, then stripped. At install time, platform-specific front matter SHALL be reconstructed from the manifest.
+- **WHEN** the author queues `README.md` creation and companion adoption
+- **THEN** confirmation SHALL list both exact paths
+- **AND** neither disk nor manifest SHALL change before Apply
 
-#### Scenario: Scaffolded files have no front matter
+### Requirement: The manifest is the source of truth for primary asset metadata
 
-- **WHEN** the scaffolding or editing command creates a new starter template file
-- **THEN** the file SHALL contain only markdown content with no YAML front matter
+The manifest SHALL remain the single source of truth for primary skill, agent, and command metadata. Author-supplied YAML front matter in a primary asset file SHALL be permitted: build SHALL preserve it verbatim in the archive, and materialization SHALL reconcile it with the manifest by merging manifest-owned metadata on top of any author front matter (the manifest wins on conflicting keys) before writing the asset to a selected adapter. Scaffolded starter files SHALL contain pure markdown with no front matter. Supplementary files SHALL be opaque bytes and may contain any content, including front-matter-like text, without reconciliation.
 
-#### Scenario: Build rejects files with front matter
+#### Scenario: Scaffolded primary files have no front matter
 
-- **WHEN** the build command encounters a content file containing YAML front matter
-- **THEN** the build SHALL fail with an error identifying the file and indicating that front matter must be removed
+- **WHEN** create or edit scaffolds a primary asset file
+- **THEN** the file SHALL contain markdown without YAML front matter
 
-#### Scenario: Archive contains clean files
+#### Scenario: Primary front matter is preserved and reconciled at install
 
-- **WHEN** a facet is built into an archive
-- **THEN** all content files in the archive SHALL contain pure markdown with no YAML front matter
+- **WHEN** a primary asset file contains author-supplied YAML front matter
+- **THEN** the build SHALL archive those bytes verbatim
+- **AND** materialization SHALL merge manifest-owned metadata on top of the author front matter, with the manifest winning on conflicting keys
+
+#### Scenario: Archive preserves primary bytes
+
+- **WHEN** a facet is built
+- **THEN** every primary asset entry SHALL contain the author's exact source bytes
+
+#### Scenario: Supplementary front matter is allowed
+
+- **WHEN** a supplementary file contains front-matter-like text
+- **THEN** the build SHALL preserve it byte-for-byte and SHALL NOT reject it for that content
 
 ### Requirement: Built facet artifacts preserve manifest privacy declarations
 
@@ -721,3 +689,162 @@ Because privacy intent is manifest content embedded in the built artifact, chang
 - **AND** the system SHALL NOT rebuild the facet
 - **AND** the system SHALL NOT publish the facet
 - **AND** the system SHALL NOT contact the registry
+
+### Requirement: Facet manifests declare supplementary files explicitly
+
+Authors SHALL be able to declare supplementary files without representing them as independently installable assets. A top-level `files` array SHALL enumerate exact repository-relative paths for archive-only files and MUST NOT contain paths below `skills/`. Each skill descriptor MAY contain a `files` array of exact paths relative to that skill's directory; those paths MUST resolve below the skill directory and MUST NOT name `SKILL.md`. Omitted or empty arrays SHALL be valid. Glob and pattern declarations SHALL NOT be expanded or accepted.
+
+#### Scenario: Top-level supplementary files are declared
+
+- **WHEN** an author declares top-level `files` as `README.md` and `LICENSE`
+- **THEN** the system SHALL accept both as archive-only supplementary declarations
+
+#### Scenario: Nested skill companions are declared
+
+- **WHEN** skill `review` declares `references/api.md`, `scripts/run.ts`, and `assets/logo.png`
+- **THEN** the system SHALL accept all three paths as companions owned by that skill
+
+#### Scenario: Companion-less skill remains valid
+
+- **WHEN** a skill omits `files` or declares an empty array
+- **THEN** the system SHALL accept the skill as having no companions
+
+#### Scenario: Top-level declaration cannot own a skill companion
+
+- **WHEN** an author places `skills/review/references/api.md` in top-level `files`
+- **THEN** the system SHALL reject the declaration
+- **AND** the error SHALL identify the owning skill's `files` array as the correct declaration site
+
+#### Scenario: Skill declaration cannot name its primary file
+
+- **WHEN** skill `review` declares `SKILL.md` in its `files` array
+- **THEN** the system SHALL reject the declaration
+
+#### Scenario: Patterns are rejected
+
+- **WHEN** an author declares `docs/**` or `references/*.md`
+- **THEN** the system SHALL reject the declaration as not being an exact path
+
+### Requirement: Build validates supplementary file declarations and path safety
+
+Before changing previous build output, the system SHALL validate that every declared supplementary path is non-empty, relative, canonical, and inside its permitted declaration region; resolves through existing parents to a regular file inside the facet root; and does not collide with any primary asset or other inner content-archive entry. Collision checking applies to the inner content archive only; the fixed outer wrapper entry names (`build-manifest.json`, `archive.tar.gz`) remain permitted as inner paths. Paths containing empty, `.` or `..` segments, backslashes, NUL bytes, or absolute, drive, or URL-like prefixes SHALL be rejected. Paths SHALL be portable: segments containing control bytes or `<`, `>`, `:`, `"`, `|`, `?`, `*`, segments equal to a Windows-reserved device name (case-insensitively, with or without an extension), and segments ending in a dot or space SHALL be rejected. Symbolic and hard links SHALL be rejected. The exact root path `facet.json` SHALL be reserved, while that basename MAY appear below another directory. Collisions SHALL include exact duplicates, Unicode-normalization aliases, portable case-fold aliases, resolved-source aliases, and file/directory prefix conflicts. Each failure SHALL be structured data identifying the path and declaration site.
+
+#### Scenario: Missing supplementary file is rejected
+
+- **WHEN** `files` declares `LICENSE` but no such file exists
+- **THEN** the build SHALL fail with structured data identifying `LICENSE`
+
+#### Scenario: Traversal and absolute paths are rejected
+
+- **WHEN** a declaration contains `../secret`, `/secret`, `C:/secret`, or `https://example.com/file`
+- **THEN** the build SHALL fail with structured data identifying the unsafe path
+
+#### Scenario: Backslash and empty segments are rejected
+
+- **WHEN** a declaration contains `docs\guide.md`, `docs//guide.md`, or `docs/./guide.md`
+- **THEN** the build SHALL reject the non-canonical path
+
+#### Scenario: Link source is rejected
+
+- **WHEN** a declared path resolves through a symbolic or hard link
+- **THEN** the build SHALL fail before writing output
+
+#### Scenario: Root manifest path is reserved
+
+- **WHEN** top-level `files` declares the exact path `facet.json`
+- **THEN** the build SHALL reject the declaration
+
+#### Scenario: Manifest basename below a companion directory is permitted
+
+- **WHEN** skill `review` declares `examples/facet.json` and that regular file exists
+- **THEN** the build SHALL accept the declaration
+
+#### Scenario: Primary asset path collision is rejected
+
+- **WHEN** an agent named `reviewer` is declared and top-level `files` also declares `agents/reviewer.md`
+- **THEN** the build SHALL fail with structured collision data identifying both declarations
+
+#### Scenario: Inner path may match an outer archive filename
+
+- **WHEN** top-level `files` declares a regular source file named `build-manifest.json` or `archive.tar.gz`
+- **THEN** the build SHALL accept that inner-archive path
+
+#### Scenario: Portable aliases are rejected
+
+- **WHEN** declarations include paths that differ only by case or Unicode normalization
+- **THEN** the build SHALL fail with structured collision data
+
+#### Scenario: Windows-reserved declaration is rejected
+
+- **WHEN** a declaration contains `references/con`, `aux.txt`, `notes:draft.md`, or a segment ending in a dot or space
+- **THEN** the build SHALL fail with structured data identifying the non-portable segment
+
+#### Scenario: File and directory prefix conflict is rejected
+
+- **WHEN** declarations include both `docs` as a file and `docs/guide.md`
+- **THEN** the build SHALL fail with structured collision data
+
+#### Scenario: Validation failure preserves previous build output
+
+- **WHEN** supplementary-file validation fails and `dist/` contains a previous successful build
+- **THEN** the previous output SHALL remain unchanged
+
+### Requirement: Build ships supplementary files as opaque bytes
+
+The system SHALL read, hash, and archive supplementary files byte-for-byte. Supplementary content SHALL NOT undergo front-matter parsing, line-ending normalization, empty-content validation, or text decoding. Empty and binary supplementary files SHALL be permitted, and every supplementary entry SHALL receive its own content hash.
+
+#### Scenario: Binary companion is preserved
+
+- **WHEN** a skill declares binary file `assets/logo.png`
+- **THEN** the archived entry SHALL be byte-identical to the source file
+
+#### Scenario: Empty supplementary file builds successfully
+
+- **WHEN** a declared supplementary file contains zero bytes
+- **THEN** the build SHALL succeed and record that entry's hash
+
+#### Scenario: Front-matter-like supplementary content is preserved
+
+- **WHEN** a declared supplementary file begins with valid YAML front matter
+- **THEN** the build SHALL archive those bytes unchanged
+
+### Requirement: Edit provides dedicated README authoring
+
+`README.md` SHALL be the preferred conventional facet document, and the exact extensionless root path `README` SHALL also receive first-class support. Both SHALL remain ordinary top-level `files` declarations rather than using a README-specific manifest field. The edit workflow SHALL display them in a dedicated facet-level README panel and SHALL NOT duplicate them in generic file reconciliation.
+
+For each exact path, the panel SHALL offer Edit or Remove when present and declared; Adopt or Edit-and-Adopt when present and undeclared; Scaffold at the same path or Remove Declaration when declared and missing; and Create when absent and undeclared, defaulting to `README.md`. If both paths exist, the system SHALL display and manage both independently. Adopt SHALL preserve existing bytes unless the author explicitly edits them. Remove SHALL queue file deletion and declaration removal together; Scaffold and Create SHALL queue file creation and declaration addition together. No operation SHALL change disk or manifest state before Apply.
+
+#### Scenario: Present declared README can be edited or removed
+
+- **WHEN** `README.md` exists and appears in top-level `files`
+- **THEN** the README panel SHALL offer Edit and Remove
+- **AND** Remove SHALL queue both file deletion and declaration removal
+
+#### Scenario: Present undeclared README is adopted without byte changes
+
+- **WHEN** `README.md` exists but is not declared and the author chooses Adopt
+- **THEN** Apply SHALL add `README.md` to top-level `files`
+- **AND** the existing file bytes SHALL remain unchanged
+
+#### Scenario: Missing extensionless README keeps its path
+
+- **WHEN** top-level `files` declares `README` but the file is missing
+- **THEN** the panel SHALL offer Scaffold at `README` or Remove Declaration
+
+#### Scenario: Create defaults to README dot md
+
+- **WHEN** neither conventional README path exists or is declared
+- **THEN** Create SHALL default to `README.md`
+
+#### Scenario: Both conventional README paths are independent
+
+- **WHEN** both `README.md` and `README` exist
+- **THEN** the panel SHALL display both independently
+- **AND** neither SHALL be ignored or overwritten implicitly
+
+#### Scenario: README operation appears in confirmation
+
+- **WHEN** an author queues a README operation
+- **THEN** the confirmation SHALL identify the exact path and operation
+- **AND** exiting before Apply SHALL leave the file and manifest unchanged
+

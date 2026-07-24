@@ -1,9 +1,7 @@
 ## Purpose
 
 Defines the integrity verification algorithm a facet-compatible system uses before treating an artifact as trusted. Covers the three-check protocol for registry sources, the one-check protocol for git sources, and the structured-failure shape that surfaces verification results.
-
 ## Requirements
-
 ### Requirement: Integrity verification SHALL precede any trust decision
 
 A facet-compatible system SHALL verify a facet artifact's integrity before treating its contents as trusted. Integrity SHALL be verified by checking that the integrity hash declared in the artifact's build manifest equals the hash recomputed from the artifact's actual contents. A system SHALL NOT install, distribute, cache, or otherwise act on an artifact's contents until integrity verification has succeeded.
@@ -88,66 +86,137 @@ When a facet artifact is built locally from a git source, the system SHALL verif
 
 ### Requirement: Integrity failures are structured data
 
-An integrity failure SHALL be returned as structured data identifying the failing check, the expected and observed integrity values, the artifact name, and (where relevant) the asset path. Integrity failures SHALL NOT be returned as opaque error messages or raw exceptions.
+An integrity failure SHALL be returned as structured data identifying the failing check, the expected and observed values when available, the facet name, and the exact canonical entry path when the failure concerns one file. Unsupported archive-format failures SHALL contain the observed version and supported versions. Integrity failures SHALL NOT be returned as opaque messages or raw exceptions.
 
 #### Scenario: A facet-level failure is structured
 
-- **WHEN** any facet-level integrity check fails (lockfile, cache hit, archive-vs-metadata, content-vs-archive, or git lockfile-vs-built)
-- **THEN** the failure SHALL be returned as structured data identifying the check that failed
-- **AND** the failure SHALL include the facet name, the expected integrity value, and the observed integrity value
+- **WHEN** a facet-level integrity check fails
+- **THEN** the failure SHALL identify the check, facet name, expected integrity, and observed integrity
 
-#### Scenario: An asset-level failure is structured
+#### Scenario: A per-entry failure is structured
 
-- **WHEN** a per-asset hash recorded in the build manifest does not match the corresponding asset's locally-computed hash
-- **THEN** the failure SHALL be returned as structured data identifying the asset path
-- **AND** the failure SHALL include the facet name, the asset path, the expected hash, and the observed hash
+- **WHEN** a recorded file hash differs from the recomputed hash of a primary or supplementary entry
+- **THEN** the failure SHALL identify the facet and exact canonical entry path
+- **AND** the failure SHALL include the expected and observed hashes
+
+#### Scenario: Unsupported format failure is structured
+
+- **WHEN** an archive declares an unsupported `facetVersion`
+- **THEN** the failure SHALL contain the observed version and all supported versions
 
 ### Requirement: A single archive-verification operation produces a structured result for any consumer of a built `.facet`
 
-A facet-compatible system SHALL expose, on its protocol surface, a single archive-verification operation that takes the bytes of a built `.facet` and produces a structured result indicating whether the archive is a valid, self-consistent facet artifact. The operation SHALL perform the full chain of checks required to treat the archive as trusted: it SHALL parse the outer container into its two declared entries, decompress the inner archive, verify that the recomputed inner-archive content hash equals the integrity value recorded in the build manifest, verify that the per-asset hashes recorded in the build manifest each equal the actual hash of the corresponding file inside the inner archive, validate the embedded facet manifest against the manifest schema, and apply the artifact content rules (no empty declared assets, no naming collisions within an asset type). The operation SHALL return a structured pass-or-fail result and SHALL NOT throw on any of these failure modes; failures SHALL be surfaced as data the caller can render or branch on.
+A facet-compatible system SHALL expose one archive-verification operation that accepts built `.facet` bytes and returns structured success or failure data without throwing for expected validation failures. The operation SHALL parse the canonical two-entry outer container, select the archive schema by exact `facetVersion`, decompress the inner archive through a caller-supplied decompressor, verify the uncompressed archive integrity, validate the embedded facet manifest, verify manifest-derived archive membership, and verify every per-entry content hash.
 
-The operation SHALL be the single, shared mechanism by which any facet-compatible system verifies a built archive before treating it as trusted. A system SHALL NOT reimplement the verification chain by stringing together lower-level primitives in a way that allows the implementation to drift from the one specified here.
+Valid legacy `0.1` archives SHALL be verified under their exact legacy schema and content rules during the compatibility window. Current `0.2` archives SHALL be verified under current schema and content rules. Any other version SHALL return a structured unsupported-version failure, and a malformed archive SHALL NOT be retried under another version's rules.
 
-Decompression is not part of the protocol surface — the protocol does not perform compression or decompression. The archive-verification operation SHALL accept a caller-supplied decompressor as an input parameter and SHALL use it to decompress the inner archive. The operation SHALL NOT itself decompress, gzip, or perform any ambient input or output. The caller-supplied decompressor SHALL be permitted, but SHALL NOT be required, to enforce a maximum decompressed size; the verification result's failure surface SHALL include a way to report that the decompressor refused to decompress an inner archive whose decompressed size exceeded the caller's allowance.
+Raw entry validation SHALL apply to both archive layers before any path-keyed selection. The outer container's entries SHALL be validated before either required entry is chosen: duplicate outer paths, portable-alias outer paths, and non-regular outer entries SHALL each be structured rejections rather than being collapsed by parser behavior. Before trusting inner entry contents, verification SHALL reject exact duplicate paths, portable-alias paths that collide by Unicode normalization or case folding, non-regular entries including links and directories, and unsafe, non-canonical, or non-portable paths (including Windows-reserved device-name segments, forbidden portable characters, and segments ending in a dot or space). The embedded facet manifest and the build manifest SHALL be rejected when their JSON documents contain duplicate object member names, before schema validation. The expected path set SHALL be derived from the embedded facet manifest's conventional primary paths and exact supplementary declarations rather than from the build manifest. The observed set, expected set, and `0.2` build manifest `files` key set SHALL be exactly equal. Verification SHALL reject both undeclared extra entries and declared-but-missing entries, then recompute and compare the hash of every expected entry.
 
-#### Scenario: A self-consistent built archive verifies as valid
+A successful `0.2` result SHALL distinguish primary assets, companion files grouped with their owning skill, and archive-only supplementary files. Primary assets SHALL be exposed as text eligible for asset processing; supplementary content SHALL remain opaque bytes. Empty-content and front-matter rules SHALL apply to primary assets only. Current asset names and skill/command namespace collisions SHALL be validated under the current manifest rules; legacy archives SHALL retain their legacy naming rules.
 
-- **WHEN** a caller invokes the archive-verification operation with the bytes of a built `.facet` whose build manifest's integrity hash matches the recomputed inner-archive content hash, whose build manifest's per-asset hash map matches every actual per-asset hash inside the inner archive, whose embedded facet manifest is schema-valid, and whose inner content satisfies the artifact content rules
-- **THEN** the operation SHALL produce a successful result
-- **AND** the successful result SHALL carry the parsed build manifest and per-asset information needed by the caller
+The operation SHALL be the shared verification mechanism for consumers before an archive is trusted. Decompression SHALL remain caller-supplied and MAY enforce a caller-selected maximum decompressed size. A decompression refusal SHALL be represented as structured failure data. The operation SHALL NOT perform compression, decompression, or ambient input/output itself; it SHALL use the supplied decompressor for inner-archive decompression.
+
+#### Scenario: A self-consistent current archive verifies as valid
+
+- **WHEN** a caller verifies a `0.2` archive whose manifest declares `README.md` and `skills/review/references/api.md`, whose observed entries and `files` hashes exactly match those declarations, and whose integrity is valid
+- **THEN** the operation SHALL return success
+- **AND** the result SHALL distinguish the primary skill, its companion bytes, and the archive-only README bytes
+
+#### Scenario: A valid legacy archive remains accepted
+
+- **WHEN** a caller verifies a valid `0.1` archive during the compatibility window
+- **THEN** the operation SHALL apply the legacy schema and rules and return success
+
+#### Scenario: An unsupported version is rejected without fallback
+
+- **WHEN** a caller verifies an archive declaring `facetVersion: 0.3`
+- **THEN** the operation SHALL return structured failure data containing `0.3` and the supported versions
+- **AND** the operation SHALL NOT reinterpret the archive as `0.1` or `0.2`
 
 #### Scenario: A tampered inner archive is rejected
 
-- **WHEN** a caller invokes the archive-verification operation with the bytes of a built `.facet` whose inner-archive content has been modified after the build manifest was written, so that the recomputed inner-archive content hash no longer equals the build manifest's recorded integrity value
-- **THEN** the operation SHALL produce a failure result identifying the integrity mismatch as the reason
+- **WHEN** inner-archive bytes no longer reproduce the build manifest's integrity
+- **THEN** the operation SHALL return an integrity-mismatch failure
 - **AND** the operation SHALL NOT throw
 
-#### Scenario: A per-asset hash mismatch is rejected
+#### Scenario: A supplementary-file hash mismatch is rejected
 
-- **WHEN** a caller invokes the archive-verification operation with the bytes of a built `.facet` in which one or more individual asset files inside the inner archive do not hash to the value recorded for that asset in the build manifest's per-asset hash map
-- **THEN** the operation SHALL produce a failure result identifying which assets failed and the expected and observed hashes
+- **WHEN** `skills/review/references/api.md` does not hash to its `files` value
+- **THEN** the failure SHALL identify that exact path and the expected and observed hashes
+
+#### Scenario: Undeclared inner entry is rejected
+
+- **WHEN** a `0.2` inner archive contains `secret.txt` that is not derivable from the embedded manifest
+- **THEN** the operation SHALL return structured failure data identifying `secret.txt` as undeclared
+
+#### Scenario: Build-manifest-only entry cannot expand archive membership
+
+- **WHEN** a `0.2` build manifest records `secret.txt` and the inner archive contains it, but the embedded facet manifest does not derive that path
+- **THEN** verification SHALL reject `secret.txt` as undeclared
+- **AND** the build-manifest record SHALL NOT legitimize the entry
+
+#### Scenario: Declared but missing entry is rejected
+
+- **WHEN** the embedded manifest declares `README.md` but the inner archive omits it
+- **THEN** the operation SHALL return structured failure data identifying `README.md` as missing
+
+#### Scenario: Duplicate inner paths are rejected
+
+- **WHEN** the inner tar contains two entries with the same path
+- **THEN** the operation SHALL reject the archive rather than silently selecting one entry
+
+#### Scenario: Portable alias inner paths are rejected
+
+- **WHEN** an inner tar contains paths that differ in spelling but collide by Unicode normalization or portable case folding
+- **THEN** verification SHALL return structured failure data identifying both aliased paths
+- **AND** it SHALL reject the archive before selecting either entry
+
+#### Scenario: Non-regular inner entry is rejected
+
+- **WHEN** the inner tar contains a symbolic link, hard link, directory, or device entry
+- **THEN** the operation SHALL return a structured content failure
+
+#### Scenario: Invalid embedded facet manifest is rejected
+
+- **WHEN** an archive's embedded `facet.json` does not satisfy the schema for its version
+- **THEN** the operation SHALL return a failure identifying the embedded manifest
+
+#### Scenario: Current content rules distinguish primary and supplementary files
+
+- **WHEN** a `0.2` archive contains an empty primary asset and an empty declared supplementary file
+- **THEN** the operation SHALL reject the empty primary asset
+- **AND** it SHALL NOT reject the supplementary file merely because it is empty
+
+#### Scenario: Current skill and command collision is rejected
+
+- **WHEN** a `0.2` embedded manifest declares both skill `review` and command `review`
+- **THEN** the operation SHALL return a structured naming-collision failure identifying both declarations
+
+#### Scenario: Caller-supplied decompressor refuses to decompress
+
+- **WHEN** the supplied decompressor refuses because the inner archive exceeds the caller's allowance
+- **THEN** the operation SHALL return structured decompression-refusal data
 - **AND** the operation SHALL NOT throw
 
-#### Scenario: An invalid embedded facet manifest is rejected
+#### Scenario: Malformed outer container is rejected
 
-- **WHEN** a caller invokes the archive-verification operation with the bytes of a built `.facet` whose embedded facet manifest does not satisfy the manifest schema
-- **THEN** the operation SHALL produce a failure result identifying the embedded manifest as invalid
+- **WHEN** input bytes cannot be parsed as the canonical two-entry outer container
+- **THEN** the operation SHALL return structured malformed-container data
 - **AND** the operation SHALL NOT throw
 
-#### Scenario: A content rule violation in the inner archive is rejected
+#### Scenario: Duplicate outer entry is rejected
 
-- **WHEN** a caller invokes the archive-verification operation with the bytes of a built `.facet` whose inner content violates the artifact content rules — for example, a declared asset file that is empty, or two assets sharing the same name within an asset type
-- **THEN** the operation SHALL produce a failure result identifying the content violation
-- **AND** the operation SHALL NOT throw
+- **WHEN** the outer tar contains two entries named `build-manifest.json`, or a non-regular entry in place of a required outer entry
+- **THEN** the operation SHALL return structured failure data before selecting either entry
+- **AND** the operation SHALL NOT let parser collapse decide which entry is authoritative
 
-#### Scenario: A caller-supplied decompressor refuses to decompress
+#### Scenario: Duplicate JSON members are rejected
 
-- **WHEN** a caller invokes the archive-verification operation with a decompressor that refuses to decompress an inner archive whose decompressed size exceeds the caller's allowance
-- **THEN** the operation SHALL produce a failure result indicating that the decompressor refused
-- **AND** the operation SHALL NOT throw
+- **WHEN** the embedded `facet.json` or `build-manifest.json` contains the same object member name twice
+- **THEN** the operation SHALL return a structured rejection before schema validation
 
-#### Scenario: A malformed outer container is rejected
+#### Scenario: Non-portable inner path is rejected
 
-- **WHEN** a caller invokes the archive-verification operation with bytes that cannot be parsed as the canonical two-entry outer container
-- **THEN** the operation SHALL produce a failure result identifying the malformed container
-- **AND** the operation SHALL NOT throw
+- **WHEN** a `0.2` inner archive contains an entry whose path includes a Windows-reserved device-name segment such as `references/con`, a forbidden character such as `:`, or a segment ending in a dot or space
+- **THEN** the operation SHALL return structured failure data identifying the non-portable path
+
