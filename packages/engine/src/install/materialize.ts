@@ -1,6 +1,7 @@
 import type {
   Adapter,
   AdapterAssetFailure,
+  CompanionMap,
   DeleteAssetRequest,
   InstallAssetRequest,
   ReadAssetRequest,
@@ -10,6 +11,7 @@ import type { LockfileAssetEntry, ResolvedFacetManifest } from '@agent-facets/pr
 import { type AdapterCompatibilityFailure, compatibilityFailureFor } from '../adapters/api-compatibility.ts'
 import type { InstallJournal } from './journal.ts'
 import type { OnLog, StageEvent } from './types.ts'
+import type { SkillCompanionBytes } from './verified-asset-plan.ts'
 
 /**
  * Compute the NEW asset set a facet contributes at this version. Derived
@@ -65,6 +67,13 @@ export interface MaterializeOptions {
   /** Previous lockfile assets (OLD set); empty array when absent. */
   oldAssets: readonly LockfileAssetEntry[]
   newAssets: readonly LockfileAssetEntry[]
+  /**
+   * Skill companion bytes for the assets being installed, keyed by
+   * `skill:<name>` (from the resolver's verified asset plan). Absent on the
+   * frozen-reproduction path (no fresh plan) and for delete-only calls; a
+   * missing entry or map means "no companions" (single-file behavior).
+   */
+  companionBytes?: Map<string, SkillCompanionBytes>
   journal: InstallJournal
   onLog?: OnLog
   /** Structured progress events for view layers. */
@@ -162,16 +171,28 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
 
     opts.onLog?.(() => `[verbose]   installing ${opts.facetName}@${opts.manifest.version} → ${adapter.name}`)
 
+    // Previous owned companion paths per asset key — the engine-verified set
+    // from the OLD lockfile entry, used both to read the prior bundle and to
+    // tell the adapter which owned paths a replacement may remove.
+    const oldOwnedByKey = new Map<string, string[]>()
+    for (const old of opts.oldAssets) {
+      oldOwnedByKey.set(assetKey(old), ownedCompanionPathsOf(old))
+    }
+
     for (const asset of opts.newAssets) {
       const content = contentFor(opts.manifest, asset)
       const metadata = buildAssetMetadata(opts.manifest, asset, adapter.name)
+      // NEW companion bytes for this skill (empty for companion-less skills
+      // and non-skill assets); PREVIOUS owned paths for safe replacement.
+      const companions = opts.companionBytes?.get(assetKey(asset)) ?? {}
+      const ownedCompanionPaths = oldOwnedByKey.get(assetKey(asset)) ?? []
 
       // Capture original state for rollback (F14). Treating any failure
       // as "didn't exist" would let the journal's delete-undo silently
       // delete a pre-existing asset we never read successfully. Narrow to
       // the structured `not-found` only and surface everything else as
       // `read-failed` — install fails loud before we write anything.
-      const readOutcome = await readPrevious(adapter, asset)
+      const readOutcome = await readPrevious(adapter, asset, ownedCompanionPaths)
       if (!readOutcome.ok) {
         return {
           ok: false,
@@ -204,10 +225,14 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
       // when the CLI's adapter integration tests bundle the same source.
       const candidateSplit = splitFrontMatter(content)
       const mergedCandidateMetadata = { ...(candidateSplit.metadata ?? {}), ...metadata }
+      // Skip only when the primary AND every companion already match on disk.
+      // A single drifted companion (or a changed companion set) forces a
+      // repair through the atomic bundle replacement below.
       if (
         previous &&
         previous.content === candidateSplit.content &&
-        JSON.stringify(previous.metadata ?? {}) === JSON.stringify(mergedCandidateMetadata)
+        JSON.stringify(previous.metadata ?? {}) === JSON.stringify(mergedCandidateMetadata) &&
+        companionsIdentical(previous.companions, companions)
       ) {
         opts.onLog?.(() => `[verbose]     =${asset.type}:${asset.name} (skipped)`)
         skipped++
@@ -216,9 +241,21 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
 
       // Sigil: `+` new asset (didn't exist before), `~` repaired/updated (existed but changed)
       const sigil = previous === null ? '+' : '~'
+
+      // Path-specific drift reporting (design D10, task 9.7): when an existing
+      // bundle is being repaired, name the exact companion paths that differ
+      // (drifted, added, or removed) rather than only the owning asset.
+      if (previous !== null && asset.type === 'skill') {
+        for (const path of driftedCompanionPaths(previous.companions, companions)) {
+          opts.onLog?.(() => `[verbose]     ~${asset.type}:${asset.name} drift: skills/${asset.name}/${path}`)
+        }
+      }
+
       let writtenPath: string | undefined
       try {
-        const result = await adapter.installAsset(installRequestFor(asset, content, metadata))
+        const result = await adapter.installAsset(
+          installRequestFor(asset, content, metadata, companions, ownedCompanionPaths),
+        )
         if (!result.ok) {
           return {
             ok: false,
@@ -245,21 +282,40 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
       opts.onLog?.(() => `[verbose]     ${sigil}${asset.type}:${asset.name}${writtenPath ? ` → ${writtenPath}` : ''}`)
       written++
 
+      // Rollback preimage: restore the COMPLETE prior bundle (primary +
+      // previously-owned companion bytes), or delete a freshly-created asset.
+      // The owned-path set handed to the restore install is the union of the
+      // paths this operation could have written or removed, so the restore
+      // converges the bundle back to its prior state without touching unowned
+      // files. Companion-less skills and single-file assets restore exactly
+      // as before.
+      const restoreOwned = previous ? Object.keys(previous.companions) : ownedCompanionPaths
       opts.journal.record({
         label: `install ${adapter.name}:${asset.type}:${asset.name}`,
         undo: async () => {
           if (previous) {
-            await runUndoInstall(adapter, asset, previous.content, previous.metadata ?? {})
+            await runUndoInstall(
+              adapter,
+              asset,
+              previous.content,
+              previous.metadata ?? {},
+              previous.companions,
+              restoreOwned,
+            )
           } else {
-            await runUndoDelete(adapter, asset)
+            await runUndoDelete(adapter, asset, ownedCompanionPaths)
           }
         },
       })
     }
 
     for (const asset of toDelete) {
+      // The owned companion paths to delete come from the OLD entry — the set
+      // this machine materialized for the asset being removed.
+      const ownedCompanionPaths = oldOwnedByKey.get(assetKey(asset)) ?? ownedCompanionPathsOf(asset)
+
       // Same F14 guard as the install branch above.
-      const readOutcome = await readPrevious(adapter, asset)
+      const readOutcome = await readPrevious(adapter, asset, ownedCompanionPaths)
       if (!readOutcome.ok) {
         return {
           ok: false,
@@ -270,7 +326,7 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
 
       let deletedPath: string | undefined
       try {
-        const result = await adapter.deleteAsset(deleteRequestFor(asset))
+        const result = await adapter.deleteAsset(deleteRequestFor(asset, ownedCompanionPaths))
         if (!result.ok) {
           return {
             ok: false,
@@ -301,7 +357,14 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
         opts.journal.record({
           label: `delete ${adapter.name}:${asset.type}:${asset.name}`,
           undo: async () => {
-            await runUndoInstall(adapter, asset, previous.content, previous.metadata ?? {})
+            await runUndoInstall(
+              adapter,
+              asset,
+              previous.content,
+              previous.metadata ?? {},
+              previous.companions,
+              Object.keys(previous.companions),
+            )
           },
         })
       }
@@ -314,15 +377,45 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
 }
 
 /**
- * Bridge from the engine's identity tuple to the adapter's tagged install
- * request. Skill requests carry an empty companion bundle and an empty
- * owned-path set for now: real companion bytes and lockfile/receipt-derived
- * ownership sets are plumbed through in the per-file integrity work
- * (lockfile 0.2 materialization). Until then this preserves the exact
- * single-file behavior the tagged `0.1` contract inherited from the
- * earlier positional `0.0` contract.
+ * The skill-root-relative companion paths a locked or receipt asset entry
+ * owns — every owned inner-archive path except the primary `SKILL.md`.
+ *
+ * Accepts both owned-path shapes: a lockfile asset's `files: {path,integrity}[]`
+ * and a receipt asset's `files: string[]` (both carry full inner-archive
+ * paths). A legacy identity-only entry has no `files`, so it owns no
+ * companions (single-file behavior). Paths are converted from the full inner-
+ * archive form to the skill-root-relative form the adapter contract uses.
  */
-function installRequestFor(asset: LockfileAssetEntry, content: string, metadata: unknown): InstallAssetRequest {
+export function ownedCompanionPathsOf(asset: LockfileAssetEntry): string[] {
+  if (asset.type !== 'skill') return []
+  const rawFiles = (asset as { files?: ReadonlyArray<string | { path: string }> }).files
+  if (!Array.isArray(rawFiles)) return []
+  const skillRoot = `skills/${asset.name}/`
+  const primary = `skills/${asset.name}/SKILL.md`
+  const owned: string[] = []
+  for (const f of rawFiles) {
+    const path = typeof f === 'string' ? f : f.path
+    if (path === primary) continue
+    owned.push(path.startsWith(skillRoot) ? path.slice(skillRoot.length) : path)
+  }
+  return owned
+}
+
+/**
+ * Bridge from the engine's asset entry to the adapter's tagged install
+ * request. A skill request carries the new companion bundle (verbatim bytes
+ * keyed skill-root-relative) plus the engine-verified set of previously-owned
+ * companion paths, so the adapter replaces exactly the owned paths absent from
+ * the new bundle and never touches unowned files. An empty companion map and
+ * empty owned set reproduce the single-file behavior.
+ */
+function installRequestFor(
+  asset: LockfileAssetEntry,
+  content: string,
+  metadata: unknown,
+  companions: CompanionMap,
+  ownedCompanionPaths: readonly string[],
+): InstallAssetRequest {
   if (asset.type === 'skill') {
     return {
       assetType: 'skill',
@@ -330,43 +423,57 @@ function installRequestFor(asset: LockfileAssetEntry, content: string, metadata:
       name: asset.name,
       content,
       metadata,
-      companions: {},
-      ownedCompanionPaths: [],
+      companions,
+      ownedCompanionPaths,
     }
   }
   return { assetType: asset.type, scope: asset.scope, name: asset.name, content, metadata }
 }
 
-function readRequestFor(asset: LockfileAssetEntry): ReadAssetRequest {
+function readRequestFor(asset: LockfileAssetEntry, ownedCompanionPaths: readonly string[]): ReadAssetRequest {
   if (asset.type === 'skill') {
-    return { assetType: 'skill', scope: asset.scope, name: asset.name, ownedCompanionPaths: [] }
+    return { assetType: 'skill', scope: asset.scope, name: asset.name, ownedCompanionPaths }
   }
   return { assetType: asset.type, scope: asset.scope, name: asset.name }
 }
 
-function deleteRequestFor(asset: LockfileAssetEntry): DeleteAssetRequest {
+function deleteRequestFor(asset: LockfileAssetEntry, ownedCompanionPaths: readonly string[]): DeleteAssetRequest {
   if (asset.type === 'skill') {
-    return { assetType: 'skill', scope: asset.scope, name: asset.name, ownedCompanionPaths: [] }
+    return { assetType: 'skill', scope: asset.scope, name: asset.name, ownedCompanionPaths }
   }
   return { assetType: asset.type, scope: asset.scope, name: asset.name }
+}
+
+/** The captured prior state of an asset — its primary content, metadata, and
+ * (for skills) the bytes of its previously-owned companions. Used for
+ * skip-if-identical comparison and full-bundle rollback preimages. */
+interface PreviousAsset {
+  content: string
+  metadata?: Record<string, unknown>
+  companions: CompanionMap
 }
 
 /**
- * Read an asset's previous state for rollback capture. The structured
- * `not-found` is the one "asset didn't exist" signal we trust — every
- * other failure (and any throw, which is an adapter bug) means `previous`
- * is unknown, so the caller must fail loud instead of assuming absence.
+ * Read an asset's previous state for rollback capture, including its
+ * previously-owned companion bytes for skills. The structured `not-found` is
+ * the one "asset didn't exist" signal we trust — every other failure (and any
+ * throw, which is an adapter bug) means `previous` is unknown, so the caller
+ * must fail loud instead of assuming absence.
+ *
+ * `ownedCompanionPaths` is the engine-verified previously-owned set (from the
+ * lockfile/receipt); the read returns exactly those companions that exist, so
+ * unowned files are never swept into the preimage.
  */
 async function readPrevious(
   adapter: Adapter,
   asset: LockfileAssetEntry,
-): Promise<
-  { ok: true; previous: { content: string; metadata?: Record<string, unknown> } | null } | { ok: false; cause: string }
-> {
+  ownedCompanionPaths: readonly string[],
+): Promise<{ ok: true; previous: PreviousAsset | null } | { ok: false; cause: string }> {
   try {
-    const result = await adapter.readAsset(readRequestFor(asset))
+    const result = await adapter.readAsset(readRequestFor(asset, ownedCompanionPaths))
     if (result.ok) {
-      return { ok: true, previous: { content: result.asset.content, metadata: result.asset.metadata } }
+      const companions = result.asset.assetType === 'skill' ? result.asset.companions : {}
+      return { ok: true, previous: { content: result.asset.content, metadata: result.asset.metadata, companions } }
     }
     if (result.failure.code === 'not-found') return { ok: true, previous: null }
     return { ok: false, cause: describeAssetFailure(result.failure) }
@@ -388,8 +495,12 @@ async function runUndoInstall(
   asset: LockfileAssetEntry,
   content: string,
   metadata: Record<string, unknown>,
+  companions: CompanionMap,
+  ownedCompanionPaths: readonly string[],
 ): Promise<void> {
-  const result = await adapter.installAsset(installRequestFor(asset, content, metadata))
+  const result = await adapter.installAsset(
+    installRequestFor(asset, content, metadata, companions, ownedCompanionPaths),
+  )
   if (!result.ok) {
     throw new Error(
       `undo install ${adapter.name}:${asset.type}:${asset.name} failed: ${describeAssetFailure(result.failure)}`,
@@ -398,13 +509,55 @@ async function runUndoInstall(
 }
 
 /** Inverse delete during rollback. Same throw-on-`{ ok: false }` rule as {@link runUndoInstall}. */
-async function runUndoDelete(adapter: Adapter, asset: LockfileAssetEntry): Promise<void> {
-  const result = await adapter.deleteAsset(deleteRequestFor(asset))
+async function runUndoDelete(
+  adapter: Adapter,
+  asset: LockfileAssetEntry,
+  ownedCompanionPaths: readonly string[],
+): Promise<void> {
+  const result = await adapter.deleteAsset(deleteRequestFor(asset, ownedCompanionPaths))
   if (!result.ok) {
     throw new Error(
       `undo delete ${adapter.name}:${asset.type}:${asset.name} failed: ${describeAssetFailure(result.failure)}`,
     )
   }
+}
+
+/**
+ * Compare two companion maps for byte-exact equality. Used by
+ * skip-if-identical so a drifted or added/removed companion forces a repair
+ * through the atomic bundle replacement.
+ */
+function companionsIdentical(a: CompanionMap, b: CompanionMap): boolean {
+  const aKeys = Object.keys(a)
+  const bKeys = Object.keys(b)
+  if (aKeys.length !== bKeys.length) return false
+  for (const key of aKeys) {
+    if (!bytesEqual(a[key], b[key])) return false
+  }
+  return true
+}
+
+function bytesEqual(a: Uint8Array | undefined, b: Uint8Array | undefined): boolean {
+  if (a === undefined || b === undefined || a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false
+  }
+  return true
+}
+
+/**
+ * The skill-root-relative companion paths that differ between the previously
+ * installed bundle and the new one — drifted (bytes changed), added, or
+ * removed. Sorted for stable, reviewable output. Used for path-specific drift
+ * reporting.
+ */
+function driftedCompanionPaths(previous: CompanionMap, next: CompanionMap): string[] {
+  const paths = new Set<string>([...Object.keys(previous), ...Object.keys(next)])
+  const drifted: string[] = []
+  for (const path of paths) {
+    if (!bytesEqual(previous[path], next[path])) drifted.push(path)
+  }
+  return drifted.sort()
 }
 
 /** Render a structured adapter failure as a one-line cause string. */

@@ -5,7 +5,12 @@ import { runBuildPipeline } from '../../build/pipeline.ts'
 import { resolveLocalFacetSource } from '../../sources/facet/resolve-local.ts'
 import type { Source } from '../../sources/facet/types.ts'
 import type { OnLog, StageEvent } from '../types.ts'
-import { buildVerifiedAssetPlan } from '../verified-asset-plan.ts'
+import {
+  buildVerifiedAssetPlan,
+  readSkillCompanionBytes,
+  type SkillCompanionBytes,
+  type VerifiedAssetPlan,
+} from '../verified-asset-plan.ts'
 import { buildLockfileSource, loadFacetContent } from './finalize-facet.ts'
 import type { ResolveFacetResult } from './types.ts'
 
@@ -64,6 +69,8 @@ export async function resolveLocalFacet(args: ResolveLocalFacetArgs): Promise<Re
   }
 
   let entry: LockfileFacet
+  let plan: VerifiedAssetPlan | undefined
+  let companionBytes: Map<string, SkillCompanionBytes> | undefined
   if (frozenLockfile && effectiveLocked !== undefined) {
     // Frozen reproduction guard. The verifier labels the failure
     // `lockfile` (built-vs-lockfile divergence) — reporting `git` here
@@ -92,17 +99,22 @@ export async function resolveLocalFacet(args: ResolveLocalFacetArgs): Promise<Re
     if (!buildSource.ok) {
       return { ok: false, failure: buildSource.failure }
     }
-    const plan = buildVerifiedAssetPlan(content.manifest, local.dir)
-    if (!plan.ok) {
-      return { ok: false, failure: { code: 'BUILD_FAILED', facet: facetName, errors: plan.errors } }
+    const built = buildVerifiedAssetPlan(content.manifest, local.dir)
+    if (!built.ok) {
+      return { ok: false, failure: { code: 'BUILD_FAILED', facet: facetName, errors: built.errors } }
     }
+    plan = built.plan
+    companionBytes = readSkillCompanionBytes(built.plan, local.dir)
     entry = {
       source: buildSource.source,
       version: buildResult.data.version,
       integrity: buildResult.integrity,
-      assets: plan.plan.assets,
+      assets: built.plan.assets,
     }
   }
 
-  return { ok: true, value: { entry, resolved: content.resolved, serversDeclared: content.serversDeclared } }
+  return {
+    ok: true,
+    value: { entry, resolved: content.resolved, plan, companionBytes, serversDeclared: content.serversDeclared },
+  }
 }

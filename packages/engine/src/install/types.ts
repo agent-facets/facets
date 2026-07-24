@@ -237,6 +237,46 @@ export type RunInstallFailure =
    * produce; the check exists as defense-in-depth.
    */
   | { code: 'DELTA_CONFLICT'; facet: string }
+  /**
+   * Pre-materialization reconciliation (design D10, task 9.3) found the
+   * `0.2` lockfile entry disagreeing with the freshly-derived verified
+   * asset plan. Every variant is path- or identity-specific so the CLI can
+   * name the exact divergence without parsing a message. Reconciliation
+   * runs BEFORE any adapter write, so a mismatch leaves all state
+   * untouched.
+   *
+   *   - `facet-integrity` — the locked facet-level integrity does not equal
+   *     the recomputed archive integrity for this resolved artifact.
+   *   - `asset-identity`  — the locked asset identity set (scope:type:name)
+   *     differs from the verified plan's; `missing` is locked-not-planned,
+   *     `unexpected` is planned-not-locked.
+   *   - `owned-path-set`  — an asset's locked file-path set differs from the
+   *     plan's owned paths for that asset; carries the differing path.
+   *   - `per-file-integrity` — a locked per-file hash does not equal the
+   *     recomputed archive-entry hash for that exact path.
+   */
+  | { code: 'RECONCILE_FACET_INTEGRITY'; facet: string; expected: string; actual: string }
+  | {
+      code: 'RECONCILE_ASSET_IDENTITY'
+      facet: string
+      missing: ReadonlyArray<string>
+      unexpected: ReadonlyArray<string>
+    }
+  | {
+      code: 'RECONCILE_OWNED_PATH_SET'
+      facet: string
+      asset: string
+      missing: ReadonlyArray<string>
+      unexpected: ReadonlyArray<string>
+    }
+  | {
+      code: 'RECONCILE_PER_FILE_INTEGRITY'
+      facet: string
+      asset: string
+      path: string
+      expected: string
+      actual: string
+    }
   | { code: 'ABORTED' }
 
 /**

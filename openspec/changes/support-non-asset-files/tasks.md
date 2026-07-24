@@ -87,15 +87,15 @@
 
 - [x] 9.1 Implement: Replace numeric-order lockfile handling with exact legacy-alpha-`1` and current-`0.2` loading, normal-mode migration, and frozen-mode no-rewrite behavior
 - [x] 9.2 Implement: Derive sorted lockfile asset file records from the verified materialization subset and recomputed entry hashes rather than copying self-declared hash values
-- [ ] 9.3 Implement: Enforce pre-materialization agreement among facet integrity, asset identities, complete owned path sets, recomputed entry hashes, and verified build-manifest hashes with path-specific result variants, running the adapter-compatibility preflight (positional `0.0` rejected by a `{0.1}` CLI) ahead of archive-version dispatch and per-file reconciliation
-- [ ] 9.4 Implement: Introduce receipt `0.2` asset/file ownership, safe legacy refinement, project-isolated bootstrap, and containment validation that treats receipt data as untrusted
-- [ ] 9.5 Implement: Commit lockfile, receipt, and adapter state transactionally and ensure frozen consistency gates complete before receipt-driven cleanup begins
-- [ ] 9.6 Implement: Materialize only primary assets and owned skill companions through tagged adapter requests carrying validated ownership sets from the lockfile and receipt, with per-file skip/repair behavior and rollback journal preimages
-- [ ] 9.7 Implement: Make drift and removal path-specific, preserve unowned files, and support offline multi-file cleanup from receipts without cache or network access
-- [ ] 9.8 Implement: Render lockfile, archive-version, per-file mismatch, adapter-bundle, and receipt failures exhaustively in CLI install output using one compatibility table for known format transitions
-- [ ] 9.9 Implement: Add engine and CLI tests for migration, frozen failures, receipt corruption/isolation, pulled-lockfile cleanup, per-file drift, integrity mismatch, rollback, archive-only withholding, and exact diagnostics
-- [ ] 9.10 Implement: Add a full-cycle end-to-end test that builds and verifies a facet with skill companions and archive-only files, installs it, detects and repairs single-file drift, exercises interrupted-install convergence on re-run without deleting unowned files, and removes it offline from the receipt, then exercises the same install path with an immutable legacy `0.1` archive
-- [ ] 9.11 Verify: Run focused install, materialization, receipt, lockfile, cache, registry, and CLI install tests
+- [x] 9.3 Implement: Enforce pre-materialization agreement among facet integrity, asset identities, complete owned path sets, recomputed entry hashes, and verified build-manifest hashes with path-specific result variants, running the adapter-compatibility preflight (positional `0.0` rejected by a `{0.1}` CLI) ahead of archive-version dispatch and per-file reconciliation
+- [x] 9.4 Implement: Introduce receipt `0.2` asset/file ownership, safe legacy refinement, project-isolated bootstrap, and containment validation that treats receipt data as untrusted
+- [x] 9.5 Implement: Commit lockfile, receipt, and adapter state transactionally and ensure frozen consistency gates complete before receipt-driven cleanup begins
+- [x] 9.6 Implement: Materialize only primary assets and owned skill companions through tagged adapter requests carrying validated ownership sets from the lockfile and receipt, with per-file skip/repair behavior and rollback journal preimages
+- [x] 9.7 Implement: Make drift and removal path-specific, preserve unowned files, and support offline multi-file cleanup from receipts without cache or network access
+- [x] 9.8 Implement: Render lockfile, archive-version, per-file mismatch, adapter-bundle, and receipt failures exhaustively in CLI install output using one compatibility table for known format transitions
+- [x] 9.9 Implement: Add engine and CLI tests for migration, frozen failures, receipt corruption/isolation, pulled-lockfile cleanup, per-file drift, integrity mismatch, rollback, archive-only withholding, and exact diagnostics
+- [x] 9.10 Implement: Add a full-cycle end-to-end test that builds and verifies a facet with skill companions and archive-only files, installs it, detects and repairs single-file drift, exercises interrupted-install convergence on re-run without deleting unowned files, and removes it offline from the receipt, then exercises the same install path with an immutable legacy `0.1` archive
+- [x] 9.11 Verify: Run focused install, materialization, receipt, lockfile, cache, registry, and CLI install tests
 
 ## 10. Current Producer and Build Pipeline — Research
 

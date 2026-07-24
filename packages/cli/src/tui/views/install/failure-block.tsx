@@ -365,6 +365,65 @@ export function FailureBlock({ failure }: { failure: RunInstallFailure }): React
           </Text>
         </Box>
       )
+    case 'RECONCILE_FACET_INTEGRITY':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ lockfile integrity mismatch for {failure.facet}
+          </Text>
+          <Text color={THEME.hint}> expected {failure.expected}</Text>
+          <Text color={THEME.hint}> actual {failure.actual}</Text>
+          <Text color={THEME.hint}>
+            {' '}
+            The lockfile disagrees with the resolved content. Delete facets.lock and re-run.
+          </Text>
+        </Box>
+      )
+    case 'RECONCILE_ASSET_IDENTITY':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ lockfile asset set does not match resolved content for {failure.facet}
+          </Text>
+          {failure.missing.length > 0 && (
+            <Text color={THEME.hint}> locked but not resolved: {failure.missing.join(', ')}</Text>
+          )}
+          {failure.unexpected.length > 0 && (
+            <Text color={THEME.hint}> resolved but not locked: {failure.unexpected.join(', ')}</Text>
+          )}
+          <Text color={THEME.hint}> Delete facets.lock and re-run, or `facet add` to update it.</Text>
+        </Box>
+      )
+    case 'RECONCILE_OWNED_PATH_SET':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ lockfile file set does not match resolved content for {failure.facet} ({failure.asset})
+          </Text>
+          {failure.missing.length > 0 && (
+            <Text color={THEME.hint}> locked but not resolved: {failure.missing.join(', ')}</Text>
+          )}
+          {failure.unexpected.length > 0 && (
+            <Text color={THEME.hint}> resolved but not locked: {failure.unexpected.join(', ')}</Text>
+          )}
+          <Text color={THEME.hint}> Delete facets.lock and re-run, or `facet add` to update it.</Text>
+        </Box>
+      )
+    case 'RECONCILE_PER_FILE_INTEGRITY':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ file integrity mismatch: {failure.path}
+          </Text>
+          <Text color={THEME.hint}>
+            {' '}
+            in {failure.facet} ({failure.asset})
+          </Text>
+          <Text color={THEME.hint}> expected {failure.expected}</Text>
+          <Text color={THEME.hint}> actual {failure.actual}</Text>
+          <Text color={THEME.hint}> Delete facets.lock and re-run, or `facet add` to update it.</Text>
+        </Box>
+      )
     default: {
       // Exhaustiveness guard: any new `RunInstallFailure` variant must
       // get a `case` arm above. Without this, an un-rendered failure
