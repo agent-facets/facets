@@ -1,15 +1,9 @@
 import type { EditContext, EditResult } from '@agent-facets/engine'
+import { readmeActionFor } from '@agent-facets/engine'
 import { render } from 'ink'
-import type { AssetSectionKey } from '../../tui/context/form-state-context.ts'
 import { openInEditorSync } from '../../tui/editor.ts'
-import type { EditWizardSnapshot } from '../../tui/views/edit/wizard.tsx'
+import type { EditEditorRequest, EditWizardSnapshot } from '../../tui/views/edit/wizard.tsx'
 import { EditWizard } from '../../tui/views/edit/wizard.tsx'
-
-interface EditorRequest {
-  section: AssetSectionKey
-  name: string
-  description: string
-}
 
 export interface RunEditWizardOptions {
   /** Apply edit operations to disk. */
@@ -25,7 +19,7 @@ export interface RunEditWizardOptions {
 export async function runEditWizardInk(context: EditContext, options: RunEditWizardOptions): Promise<boolean> {
   let completed = false
   let snapshot: EditWizardSnapshot | undefined
-  let pendingEditor: EditorRequest | null = null
+  let pendingEditor: EditEditorRequest | null = null
   let done = false
 
   while (!done) {
@@ -44,8 +38,8 @@ export async function runEditWizardInk(context: EditContext, options: RunEditWiz
           onSnapshot={(s) => {
             snapshot = s
           }}
-          onRequestEditor={(section, name, description) => {
-            pendingEditor = { section, name, description }
+          onRequestEditor={(request) => {
+            pendingEditor = request
             instance.clear()
             instance.unmount()
           }}
@@ -56,33 +50,56 @@ export async function runEditWizardInk(context: EditContext, options: RunEditWiz
     })
 
     if (pendingEditor) {
-      const req = pendingEditor as EditorRequest
-      const edited = openInEditorSync(req.description, `${req.name}.md`)
-      if (snapshot) {
-        snapshot = {
-          ...snapshot,
-          selectedItem: undefined,
-          formState: snapshot.formState
-            ? {
-                ...snapshot.formState,
-                assets: {
-                  ...snapshot.formState.assets,
-                  [req.section]: {
-                    ...snapshot.formState.assets[req.section],
-                    descriptions: {
-                      ...snapshot.formState.assets[req.section].descriptions,
-                      ...(edited !== null ? { [req.name]: edited.trim() } : {}),
-                    },
-                  },
-                },
-              }
-            : undefined,
-        }
-      }
+      snapshot = applyEditorRoundTrip(pendingEditor, snapshot)
     } else {
       done = true
     }
   }
 
   return completed
+}
+
+/**
+ * Open the external editor for a pending request and fold the result back into
+ * the wizard snapshot so the re-rendered wizard sees the edit. Asset-description
+ * edits update the form; README edits become the chosen tagged action on the
+ * exact path (bytes discarded → no action, so a cancelled editor leaves the
+ * path untouched rather than queuing empty content).
+ */
+function applyEditorRoundTrip(
+  request: EditEditorRequest,
+  snapshot: EditWizardSnapshot | undefined,
+): EditWizardSnapshot | undefined {
+  if (!snapshot) return snapshot
+
+  if (request.kind === 'asset-description') {
+    const edited = openInEditorSync(request.content, `${request.name}.md`)
+    return {
+      ...snapshot,
+      selectedItem: undefined,
+      formState: snapshot.formState
+        ? {
+            ...snapshot.formState,
+            assets: {
+              ...snapshot.formState.assets,
+              [request.section]: {
+                ...snapshot.formState.assets[request.section],
+                descriptions: {
+                  ...snapshot.formState.assets[request.section].descriptions,
+                  ...(edited !== null ? { [request.name]: edited.trim() } : {}),
+                },
+              },
+            },
+          }
+        : undefined,
+    }
+  }
+
+  // README content edit: seed the editor with the request content, then queue
+  // the tagged action for this path. A cancelled editor (null) queues nothing.
+  const edited = openInEditorSync(request.content, request.path)
+  if (edited === null) return { ...snapshot, selectedItem: undefined }
+  const nextReadme = new Map(snapshot.readmeActions)
+  nextReadme.set(request.path, readmeActionFor(request.option.kind, edited))
+  return { ...snapshot, selectedItem: undefined, readmeActions: nextReadme }
 }

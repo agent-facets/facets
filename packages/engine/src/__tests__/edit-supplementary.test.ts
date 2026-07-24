@@ -8,6 +8,15 @@ import { buildEditContext } from '../edit/context.ts'
 import { addSkillCompanion, addTopLevelFile, removeSkillCompanion, removeTopLevelFile } from '../edit/declarations.ts'
 import { previewEditOperations } from '../edit/operation-preview.ts'
 import { applyEditOperations } from '../edit/operations.ts'
+import {
+  applyReadmeDeclaration,
+  README_CREATE_DEFAULT,
+  readmeActionFor,
+  readmeActionOptions,
+  readmeFileOperations,
+  readmeOptionKindFor,
+  readmeSeedContent,
+} from '../edit/readme-actions.ts'
 import { computeReadmeStates } from '../edit/readme-state.ts'
 import { reconcileSupplementary } from '../edit/reconcile-supplementary.ts'
 import { scanCommonRootFiles, scanSkillCompanions } from '../edit/scanner.ts'
@@ -106,6 +115,141 @@ describe('computeReadmeStates', () => {
     expect(states.find((s) => s.path === 'README.md')?.state).toBe('present-undeclared')
     expect(states.find((s) => s.path === 'README')?.state).toBe('declared-missing')
   })
+
+  test('both paths present on disk are surfaced independently, neither ignored', () => {
+    // README.md declared, extensionless README present but undeclared.
+    const manifest: FacetManifest = { name: 't', version: '1.0.0', files: ['README.md'] }
+    const states = computeReadmeStates(manifest, { present: { 'README.md': '# md', README: '# plain' } })
+    const md = states.find((s) => s.path === 'README.md')
+    const plain = states.find((s) => s.path === 'README')
+    expect(md).toEqual({ path: 'README.md', state: 'present-declared', content: '# md' })
+    expect(plain).toEqual({ path: 'README', state: 'present-undeclared', content: '# plain' })
+  })
+})
+
+// --- README actions ---
+
+describe('readmeActionOptions', () => {
+  test('present-declared offers Edit and Remove', () => {
+    const opts = readmeActionOptions({ path: 'README.md', state: 'present-declared', content: '# x' })
+    expect(opts.map((o) => o.kind)).toEqual(['edit', 'remove'])
+    expect(opts.find((o) => o.kind === 'edit')?.requiresEditor).toBe(true)
+    expect(opts.find((o) => o.kind === 'remove')?.requiresEditor).toBe(false)
+  })
+
+  test('present-undeclared offers Adopt and Edit-and-adopt', () => {
+    const opts = readmeActionOptions({ path: 'README.md', state: 'present-undeclared', content: '# x' })
+    expect(opts.map((o) => o.kind)).toEqual(['adopt', 'edit-and-adopt'])
+    expect(opts.find((o) => o.kind === 'adopt')?.requiresEditor).toBe(false)
+  })
+
+  test('declared-missing offers Scaffold and Remove Declaration', () => {
+    const opts = readmeActionOptions({ path: 'README', state: 'declared-missing' })
+    expect(opts.map((o) => o.kind)).toEqual(['scaffold', 'remove-declaration'])
+    expect(opts.find((o) => o.kind === 'scaffold')?.label).toContain('README')
+  })
+
+  test('absent-undeclared offers only Create', () => {
+    const opts = readmeActionOptions({ path: 'README', state: 'absent-undeclared' })
+    expect(opts.map((o) => o.kind)).toEqual(['create'])
+    expect(README_CREATE_DEFAULT).toBe('README.md')
+  })
+})
+
+describe('readme action derivation', () => {
+  test('adopt adds declaration and writes no file (preserves bytes)', () => {
+    const action = readmeActionFor('adopt', '# ignored')
+    const ops = readmeFileOperations({ path: 'README.md', action })
+    expect(ops).toEqual([])
+    const m = applyReadmeDeclaration({ name: 't', version: '1.0.0' }, { path: 'README.md', action })
+    expect(m.files).toEqual(['README.md'])
+  })
+
+  test('edit-and-adopt writes bytes and adds declaration', () => {
+    const action = readmeActionFor('edit-and-adopt', '# edited')
+    const ops = readmeFileOperations({ path: 'README.md', action })
+    expect(ops).toEqual([{ op: 'write-file', path: 'README.md', content: '# edited' }])
+    const m = applyReadmeDeclaration({ name: 't', version: '1.0.0' }, { path: 'README.md', action })
+    expect(m.files).toEqual(['README.md'])
+  })
+
+  test('remove deletes file and drops declaration together', () => {
+    const action = readmeActionFor('remove', '')
+    const ops = readmeFileOperations({ path: 'README.md', action })
+    expect(ops).toEqual([{ op: 'delete-file', path: 'README.md' }])
+    const m = applyReadmeDeclaration(
+      { name: 't', version: '1.0.0', files: ['README.md'] },
+      { path: 'README.md', action },
+    )
+    expect('files' in m).toBe(false)
+  })
+
+  test('scaffold at exact declared path writes bytes; declaration already present stays', () => {
+    const action = readmeActionFor('scaffold', '# t\n')
+    const ops = readmeFileOperations({ path: 'README', action })
+    expect(ops).toEqual([{ op: 'write-file', path: 'README', content: '# t\n' }])
+    const m = applyReadmeDeclaration({ name: 't', version: '1.0.0', files: ['README'] }, { path: 'README', action })
+    expect(m.files).toEqual(['README'])
+  })
+
+  test('remove-declaration drops declaration and writes no file', () => {
+    const action = readmeActionFor('remove-declaration', '')
+    const ops = readmeFileOperations({ path: 'README', action })
+    expect(ops).toEqual([])
+    const m = applyReadmeDeclaration({ name: 't', version: '1.0.0', files: ['README'] }, { path: 'README', action })
+    expect('files' in m).toBe(false)
+  })
+
+  test('create defaults to README.md, writes bytes and declares', () => {
+    const action = readmeActionFor('create', '# new\n')
+    const ops = readmeFileOperations({ path: README_CREATE_DEFAULT, action })
+    expect(ops).toEqual([{ op: 'write-file', path: 'README.md', content: '# new\n' }])
+    const m = applyReadmeDeclaration({ name: 't', version: '1.0.0' }, { path: README_CREATE_DEFAULT, action })
+    expect(m.files).toEqual(['README.md'])
+  })
+
+  test('edit rewrites bytes and leaves the declaration untouched', () => {
+    const action = readmeActionFor('edit', '# rewritten')
+    const ops = readmeFileOperations({ path: 'README.md', action })
+    expect(ops).toEqual([{ op: 'write-file', path: 'README.md', content: '# rewritten' }])
+    // Declaration already present; edit must not add or drop it.
+    const declared = applyReadmeDeclaration(
+      { name: 't', version: '1.0.0', files: ['README.md'] },
+      { path: 'README.md', action },
+    )
+    expect(declared.files).toEqual(['README.md'])
+  })
+
+  test('none queues nothing and touches no declaration', () => {
+    const ops = readmeFileOperations({ path: 'README.md', action: { kind: 'none' } })
+    expect(ops).toEqual([])
+    const before: FacetManifest = { name: 't', version: '1.0.0', files: ['README.md'] }
+    const after = applyReadmeDeclaration(before, { path: 'README.md', action: { kind: 'none' } })
+    expect(after.files).toEqual(['README.md'])
+  })
+
+  test('readmeOptionKindFor round-trips a chosen option', () => {
+    expect(readmeOptionKindFor(readmeActionFor('edit', 'x'))).toBe('edit')
+    expect(readmeOptionKindFor({ kind: 'none' })).toBeNull()
+  })
+})
+
+describe('readmeSeedContent', () => {
+  test('present states seed from existing bytes (adoption/edit preserves)', () => {
+    expect(readmeSeedContent({ path: 'README.md', state: 'present-declared', content: '# authored' }, 'x', 'y')).toBe(
+      '# authored',
+    )
+    expect(readmeSeedContent({ path: 'README.md', state: 'present-undeclared', content: '# on disk' }, 'x', 'y')).toBe(
+      '# on disk',
+    )
+  })
+
+  test('absent/missing states seed from the identity template, not stale bytes', () => {
+    expect(readmeSeedContent({ path: 'README.md', state: 'absent-undeclared' }, 'my-facet', 'Neat tools')).toBe(
+      '# my-facet\n\nNeat tools\n',
+    )
+    expect(readmeSeedContent({ path: 'README', state: 'declared-missing' }, 'my-facet', '')).toBe('# my-facet\n')
+  })
 })
 
 // --- Declaration mutations ---
@@ -173,6 +317,36 @@ describe('applyEditOperations', () => {
     expect(existsSync(join(dir, 'skills/review/references/api.md'))).toBe(false)
     // Undeclared file survives.
     expect(existsSync(join(dir, 'skills/review/notes.txt'))).toBe(true)
+  })
+
+  test('delete-file removes a supplementary file transactionally (README remove)', async () => {
+    await writeFile('README.md', '# old')
+    const ops: EditOperation[] = [
+      { op: 'write-manifest', manifest: { name: 'test', version: '1.0.0' } },
+      { op: 'delete-file', path: 'README.md' },
+    ]
+    const result = await applyEditOperations(ops, dir)
+    expect(result.ok).toBe(true)
+    expect(existsSync(join(dir, 'README.md'))).toBe(false)
+  })
+
+  test('rolls back a delete-file when a later op fails, restoring the file and manifest', async () => {
+    await writeFile('facet.json', 'ORIGINAL')
+    await writeFile('README.md', '# keep me')
+    // `skills` is a file, so the scaffold-asset write fails after the delete.
+    await writeFile('skills', 'not a dir')
+    const ops: EditOperation[] = [
+      { op: 'write-manifest', manifest },
+      { op: 'delete-file', path: 'README.md' },
+      { op: 'scaffold-asset', assetType: 'skills', name: 'review' },
+    ]
+    const result = await applyEditOperations(ops, dir)
+    expect(result.ok).toBe(false)
+    if (result.ok) expect.unreachable()
+    expect(result.rollbackOk).toBe(true)
+    // The deleted README is restored to its original bytes.
+    expect(readFileSync(join(dir, 'README.md'), 'utf8')).toBe('# keep me')
+    expect(readFileSync(join(dir, 'facet.json'), 'utf8')).toBe('ORIGINAL')
   })
 
   test('rolls back every mutation when one write fails', async () => {
