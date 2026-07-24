@@ -64,7 +64,14 @@ function applyMutation(mutation: FsMutation): void {
 function restorePreimage(preimage: Preimage): void {
   if (!preimage.existed) {
     // Path did not exist before the transaction; ensure it does not exist now.
-    rmSync(preimage.path, { force: true })
+    // `force` swallows ENOENT. If the target still cannot exist (e.g. a parent
+    // is not a directory), it is already effectively absent — best-effort
+    // absence restoration never fails the rollback.
+    try {
+      rmSync(preimage.path, { force: true })
+    } catch {
+      // Already absent for all practical purposes.
+    }
     return
   }
   mkdirSync(dirname(preimage.path), { recursive: true })

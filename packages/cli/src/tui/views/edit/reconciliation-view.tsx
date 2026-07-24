@@ -1,47 +1,35 @@
-import type { ReconciliationItem, ReconciliationResolution } from '@agent-facets/engine'
+import {
+  isAdditionItem,
+  optionIndexForResolution,
+  optionLabelsFor,
+  type ReconciliationItem,
+  type ReconciliationResolution,
+  reconciliationItemKey,
+  resolutionForOption,
+} from '@agent-facets/engine'
 import { Box, Text } from 'ink'
 import { useCallback, useEffect, useMemo } from 'react'
 import { Button } from '../../components/button.tsx'
 import { ReconciliationItemRow } from '../../components/reconciliation-item.tsx'
 import { useFocusOrder } from '../../context/focus-order-context.ts'
 import { THEME } from '../../theme.ts'
+import type { ResolvedItem } from './use-edit-session.ts'
 
-/** Maps a reconciliation item to a unique key. */
-function itemKey(item: ReconciliationItem): string {
-  return `${item.kind}:${item.type}:${item.name}`
-}
-
-/** Returns the two action options for a reconciliation item kind. */
-function optionsForKind(kind: ReconciliationItem['kind']): [{ label: string }, { label: string }] {
-  switch (kind) {
-    case 'addition':
-      return [{ label: 'Add to manifest' }, { label: 'Ignore for now' }]
-    case 'missing':
-      return [{ label: 'Scaffold template' }, { label: 'Remove from manifest' }]
-  }
-}
-
-/** Converts a selected option index to a resolution for the given item kind. */
-function indexToResolution(kind: ReconciliationItem['kind'], index: number): ReconciliationResolution {
-  switch (kind) {
-    case 'addition':
-      return index === 0 ? { action: 'add-to-manifest' } : { action: 'ignore' }
-    case 'missing':
-      return index === 0 ? { action: 'scaffold-template' } : { action: 'remove-from-manifest' }
-  }
-}
-
-/** Returns the selected option index for a resolution, or null. */
-function resolutionToIndex(
-  kind: ReconciliationItem['kind'],
-  resolution: ReconciliationResolution | undefined,
-): number | null {
-  if (!resolution) return null
-  switch (kind) {
-    case 'addition':
-      return resolution.action === 'add-to-manifest' ? 0 : resolution.action === 'ignore' ? 1 : null
-    case 'missing':
-      return resolution.action === 'scaffold-template' ? 0 : resolution.action === 'remove-from-manifest' ? 1 : null
+/** Human-readable primary line for a reconciliation item, from structured fields. */
+function itemDescription(item: ReconciliationItem): string {
+  switch (item.kind) {
+    case 'asset-addition':
+      return item.path
+    case 'asset-missing':
+      return `${item.name} (${item.assetType}) — ${item.expectedPath}`
+    case 'companion-addition':
+      return item.path
+    case 'companion-missing':
+      return item.expectedPath
+    case 'root-addition':
+      return item.path
+    case 'root-missing':
+      return item.path
   }
 }
 
@@ -52,21 +40,19 @@ export function ReconciliationView({
   onContinue,
 }: {
   items: ReconciliationItem[]
-  resolutions: Map<string, ReconciliationResolution>
-  onResolve: (key: string, resolution: ReconciliationResolution) => void
+  resolutions: Map<string, ResolvedItem>
+  onResolve: (item: ReconciliationItem, resolution: ReconciliationResolution) => void
   onContinue: () => void
 }) {
   const { setFocusIds, focusedId, focus } = useFocusOrder()
 
-  const allResolved = items.every((item) => resolutions.has(itemKey(item)))
+  const allResolved = items.every((item) => resolutions.has(reconciliationItemKey(item)))
 
-  // Group items by kind
-  const additions = items.filter((i) => i.kind === 'addition')
-  const missing = items.filter((i) => i.kind === 'missing')
+  const additions = items.filter((i) => isAdditionItem(i))
+  const missing = items.filter((i) => !isAdditionItem(i))
 
-  // Build focus order: all items then continue button
   const focusIds = useMemo(() => {
-    const ids = items.map((item) => `recon-${itemKey(item)}`)
+    const ids = items.map((item) => `recon-${reconciliationItemKey(item)}`)
     ids.push('recon-continue')
     return ids
   }, [items])
@@ -80,22 +66,20 @@ export function ReconciliationView({
 
   const handleSelect = useCallback(
     (item: ReconciliationItem, optionIndex: number) => {
-      const key = itemKey(item)
-      const resolution = indexToResolution(item.kind, optionIndex)
-      onResolve(key, resolution)
+      const key = reconciliationItemKey(item)
+      onResolve(item, resolutionForOption(item, optionIndex))
 
-      // Auto-advance to next unresolved item
-      const currentIdx = items.findIndex((i) => itemKey(i) === key)
+      // Auto-advance to the next unresolved item.
+      const currentIdx = items.findIndex((i) => reconciliationItemKey(i) === key)
       for (let i = currentIdx + 1; i < items.length; i++) {
         const nextItem = items[i]
         if (!nextItem) continue
-        const nextKey = itemKey(nextItem)
+        const nextKey = reconciliationItemKey(nextItem)
         if (!resolutions.has(nextKey)) {
           focus(`recon-${nextKey}`)
           return
         }
       }
-      // All resolved — focus continue button
       focus('recon-continue')
     },
     [items, resolutions, onResolve, focus],
@@ -111,16 +95,15 @@ export function ReconciliationView({
           </Text>
         </Box>
         {groupItems.map((item) => {
-          const key = itemKey(item)
-          const description = item.kind === 'missing' ? `${item.name} (${item.type}) — ${item.expectedPath}` : item.path
-
+          const key = reconciliationItemKey(item)
+          const [a, b] = optionLabelsFor(item)
           return (
             <ReconciliationItemRow
               key={key}
               id={`recon-${key}`}
-              description={description}
-              options={optionsForKind(item.kind)}
-              selectedIndex={resolutionToIndex(item.kind, resolutions.get(key))}
+              description={itemDescription(item)}
+              options={[{ label: a }, { label: b }]}
+              selectedIndex={optionIndexForResolution(item, resolutions.get(key)?.resolution)}
               onSelect={(index) => handleSelect(item, index)}
             />
           )

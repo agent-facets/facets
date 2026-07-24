@@ -96,16 +96,34 @@ export type {
 } from './edit/apply-modify.ts'
 export { applyModify, assetPath } from './edit/apply-modify.ts'
 export { buildEditContext } from './edit/context.ts'
+export {
+  addSkillCompanion,
+  addTopLevelFile,
+  removeSkillCompanion,
+  removeTopLevelFile,
+} from './edit/declarations.ts'
 export { writeManifest } from './edit/manifest-writer.ts'
+export type { OperationPreviewLine } from './edit/operation-preview.ts'
+export { previewEditOperations } from './edit/operation-preview.ts'
+export type { EditApplyResult } from './edit/operations.ts'
 export { applyEditOperations, applyModifyFileOps } from './edit/operations.ts'
 export type { MatchedAsset, MissingAsset, ReconciliationResult } from './edit/reconcile.ts'
 export { reconcile } from './edit/reconcile.ts'
+export {
+  isAdditionItem,
+  optionIndexForResolution,
+  optionLabelsFor,
+  reconciliationItemKey,
+  resolutionForOption,
+} from './edit/reconcile-actions.ts'
 export type { AssetManifestKey, DiscoveredAsset } from './edit/scanner.ts'
-export { scanAssets } from './edit/scanner.ts'
+export { COMMON_ROOT_FILES, scanAssets, scanCommonRootFiles, scanSkillCompanions } from './edit/scanner.ts'
 export type {
+  DeclarationSite,
   EditContext,
   EditOperation,
   EditResult,
+  ReadmeFileState,
   ReconciliationItem,
   ReconciliationResolution,
 } from './edit/types.ts'

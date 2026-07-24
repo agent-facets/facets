@@ -1,40 +1,79 @@
 import { mkdir, rename, rmdir, unlink } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import type { FacetManifest } from '@agent-facets/protocol'
+import { FACET_MANIFEST_FILE } from '@agent-facets/protocol'
+import { applyFsTransaction, type FsMutation } from '../fs-transaction.ts'
+import { jsonFileText } from '../json-file-text.ts'
 import { agentTemplate, commandTemplate, skillTemplate } from '../scaffold/index.ts'
 import type { ModifyFileOp } from './apply-modify.ts'
-import { writeManifest } from './manifest-writer.ts'
 import type { AssetManifestKey } from './scanner.ts'
 import type { EditOperation } from './types.ts'
 
+/** Result of a transactional edit apply. Expected failures are data, not throws. */
+export type EditApplyResult = { ok: true } | { ok: false; failedPath: string; reason: string; rollbackOk: boolean }
+
 /**
- * Apply a sequence of edit operations to disk: write the manifest, scaffold
- * new asset templates, and delete files.
+ * Apply a queued edit-operation list to disk as one transaction: the final
+ * manifest, asset scaffolds, asset/companion/file writes and deletions all
+ * commit together, or the project is left as it was. Ordering the manifest
+ * write alongside the file mutations in one transaction removes the old hazard
+ * where a manifest could be written before a failing scaffold.
  */
-export async function applyEditOperations(
-  manifest: FacetManifest,
-  operations: EditOperation[],
-  rootDir: string,
-): Promise<void> {
+export async function applyEditOperations(operations: EditOperation[], rootDir: string): Promise<EditApplyResult> {
+  const encoder = new TextEncoder()
+  const mutations: FsMutation[] = []
+
   for (const op of operations) {
     switch (op.op) {
       case 'write-manifest':
-        await writeManifest(manifest, rootDir)
+        mutations.push({
+          kind: 'write',
+          path: join(rootDir, FACET_MANIFEST_FILE),
+          bytes: encoder.encode(jsonFileText(op.manifest)),
+        })
         break
-      case 'scaffold':
-        await scaffoldAsset(rootDir, op.type, op.name)
+      case 'scaffold-asset': {
+        const { path, content } = assetScaffoldTarget(rootDir, op.assetType, op.name)
+        mutations.push({ kind: 'write', path, bytes: encoder.encode(content) })
+        break
+      }
+      case 'delete-asset': {
+        mutations.push({ kind: 'delete', path: assetPrimaryPath(rootDir, op.assetType, op.name) })
+        for (const companion of op.companionPaths) {
+          mutations.push({ kind: 'delete', path: join(rootDir, companion) })
+        }
+        break
+      }
+      case 'write-file':
+        mutations.push({ kind: 'write', path: join(rootDir, op.path), bytes: encoder.encode(op.content) })
         break
       case 'delete-file':
-        await deleteAsset(rootDir, op.type, op.name)
+        mutations.push({ kind: 'delete', path: join(rootDir, op.path) })
         break
     }
   }
+
+  const result = applyFsTransaction(mutations)
+  if (result.ok) return { ok: true }
+  return { ok: false, failedPath: result.failedPath, reason: result.reason, rollbackOk: result.rollback.ok }
+}
+
+/** Conventional primary path for an asset (absolute). */
+function assetPrimaryPath(rootDir: string, type: AssetManifestKey, name: string): string {
+  return type === 'skills' ? join(rootDir, 'skills', name, 'SKILL.md') : join(rootDir, type, `${name}.md`)
+}
+
+/** Conventional primary path + starter template for a scaffolded asset. */
+function assetScaffoldTarget(rootDir: string, type: AssetManifestKey, name: string): { path: string; content: string } {
+  if (type === 'skills') return { path: join(rootDir, 'skills', name, 'SKILL.md'), content: skillTemplate(name) }
+  if (type === 'agents') return { path: join(rootDir, 'agents', `${name}.md`), content: agentTemplate(name) }
+  return { path: join(rootDir, 'commands', `${name}.md`), content: commandTemplate(name) }
 }
 
 /**
  * Apply the filesystem side effects computed by `applyModify` (scaffold new
  * asset templates, delete removed assets, move renamed asset files). The
- * manifest itself is written separately by the caller.
+ * manifest itself is written separately by the caller. This is the flag-driven
+ * `facet add`/`facet modify` path, distinct from the interactive edit apply.
  */
 export async function applyModifyFileOps(rootDir: string, fileOps: ModifyFileOp[]): Promise<void> {
   for (const op of fileOps) {

@@ -1,4 +1,5 @@
 import { ASSET_TYPE_COLORS } from '@agent-facets/brand'
+import { type EditOperation, previewEditOperations } from '@agent-facets/engine'
 import { Box, Text } from 'ink'
 import { useEffect } from 'react'
 import { truncateDescription } from '../../components/asset-description.tsx'
@@ -15,9 +16,18 @@ const ASSET_LABELS: Record<AssetSectionKey, string> = {
   agent: 'Agents',
 }
 
-export function EditConfirmView({ onConfirm, onBack }: { onConfirm: () => void; onBack: () => void }) {
+export function EditConfirmView({
+  operations,
+  onConfirm,
+  onBack,
+}: {
+  operations: EditOperation[]
+  onConfirm: () => void
+  onBack: () => void
+}) {
   const { form } = useFormState()
   const { setFocusIds, focus, focusedId } = useFocusOrder()
+  const opLines = previewEditOperations(operations)
 
   useEffect(() => {
     setFocusIds(['edit-apply-btn', 'edit-back-btn'])
@@ -77,6 +87,25 @@ export function EditConfirmView({ onConfirm, onBack }: { onConfirm: () => void; 
           </Box>
         )
       })}
+
+      <Box flexDirection="column" marginTop={1}>
+        <Text bold color={THEME.success}>
+          File changes:
+        </Text>
+        {opLines.length === 0 ? (
+          <Box marginLeft={2}>
+            <Text dimColor>(manifest only)</Text>
+          </Box>
+        ) : (
+          opLines.map((line) => (
+            <Box key={`${line.verb}:${line.path}`} marginLeft={2}>
+              <Text color={THEME.hint}>
+                {line.verb} {line.path}
+              </Text>
+            </Box>
+          ))
+        )}
+      </Box>
 
       <Box marginTop={1} gap={2}>
         <Button
