@@ -228,6 +228,27 @@
         }
       ]
     },
+    "graphite": {
+      "source": {
+        "kind": "registry",
+        "registry": "https://api.agentfacets.io"
+      },
+      "version": "0.1.0",
+      "integrity": "sha256:b179a91169fd8b82050b3306b50197749552789cb6f91c5a50cb2ef18d4ce550",
+      "assets": [
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "using-graphite",
+          "files": [
+            {
+              "path": "skills/using-graphite/SKILL.md",
+              "integrity": "sha256:d6fdc7020a0c2e583b1e2c60c5508def4120848f666d8aa9011bd0ea17804f2e"
+            }
+          ]
+        }
+      ]
+    },
     "viper-plans": {
       "source": {
         "kind": "registry",
