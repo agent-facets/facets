@@ -149,12 +149,12 @@
 
 ## 16. Held CLI Release Gate and Final Readiness
 
-- [ ] 16.1 Explore: Audit the completed implementation, package versions, pending Changesets, generated release notes, and release automation to define a minimal held `agent-facets` activation PR with no unintended protocol or adapter publication
-- [ ] 16.2 Propose: Present the exact CLI-only pre-1.0 minor changeset, activation evidence, PR base/stack placement, and merge conditions; the user retains sole authority to merge the held release gate
-- [ ] 16.3 Implement: Create and submit the tiny held CLI release-gate PR containing the `agent-facets` changeset and final release notes, without merging, publishing, or deploying it
-- [ ] 16.4 Verify: Run strict OpenSpec validation, package API/build checks, and the full `bun check` suite, fixing formatter-only findings with `bun format`, then verify implementation coverage scenario-by-scenario across all seven delta specs
-- [ ] 16.5 Verify: Confirm the protocol-only release from Section 5 is published and exposes strict `0.1`/`0.2` verification, tagged results, structured failures, and cross-version helpers from a clean consumer install
-- [ ] 16.6 Verify: Confirm the adapter SDK and all three first-party adapters are published with `facetAdapterApiVersion: 0.1`, while existing `0.0` CLIs retain compatible `0.0` adapter resolution
-- [ ] 16.7 Verify: Confirm the deployed registry pins the released protocol, accepts valid `0.1` and `0.2`, rejects malformed/unsupported archives before persistence, preserves supplementary hashes, and reads only intended primary resources
-- [ ] 16.8 Verify: Build the unreleased candidate CLI, publish a representative `0.2` archive to the stage registry, and verify metadata, archive download, stored-content behavior, and legacy `0.1` retention end to end
+- [x] 16.1 Explore: Audit the completed implementation, package versions, pending Changesets, generated release notes, and release automation to define a minimal held `agent-facets` activation PR with no unintended protocol or adapter publication
+- [x] 16.2 Propose: Present the exact CLI-only pre-1.0 minor changeset, activation evidence, PR base/stack placement, and merge conditions; the user retains sole authority to merge the held release gate
+- [x] 16.3 Implement: Create and submit the tiny held CLI release-gate PR containing the `agent-facets` changeset and final release notes, without merging, publishing, or deploying it
+- [x] 16.4 Verify: Run strict OpenSpec validation, package API/build checks, and the full `bun check` suite, fixing formatter-only findings with `bun format`, then verify implementation coverage scenario-by-scenario across all seven delta specs
+- [x] 16.5 Verify: Confirm the protocol-only release from Section 5 is published and exposes strict `0.1`/`0.2` verification, tagged results, structured failures, and cross-version helpers from a clean consumer install
+- [ ] 16.6 Verify: Confirm the adapter SDK and all three first-party adapters are published with `facetAdapterApiVersion: 0.1`, while existing `0.0` CLIs retain compatible `0.0` adapter resolution — BLOCKED (pending adapter release cycle): adapter changeset still pending, `0.1` not yet published; source proven release-ready (`ADAPTER_API_VERSION = '0.1'` + prepack injection); all three first-party adapters currently publish `0.0` and current `0.0` CLIs resolve them
+- [ ] 16.7 Verify: Confirm the deployed registry pins the released protocol, accepts valid `0.1` and `0.2`, rejects malformed/unsupported archives before persistence, preserves supplementary hashes, and reads only intended primary resources — BLOCKED (pending registry deployment)
+- [ ] 16.8 Verify: Build the unreleased candidate CLI, publish a representative `0.2` archive to the stage registry, and verify metadata, archive download, stored-content behavior, and legacy `0.1` retention end to end — BLOCKED (pending stage registry access)
 - [ ] 16.9 Review: Present the final activation packet and evidence to the user; the held CLI release-gate PR remains unmerged until the user explicitly authorizes the Changesets version-and-publish sequence
