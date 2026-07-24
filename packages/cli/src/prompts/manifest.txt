@@ -1,15 +1,16 @@
 facet — manifest (facet.json) structure for AI agents
 
 facet.json is the authoring manifest for a facet. It declares the facet's
-identity and its assets. Minimal example:
+identity, its assets, and any supplementary files it ships. Example:
 
   {
     "name": "my-facet",
     "version": "0.1.0",
     "description": "What this facet does",
-    "skills":   { "greet":  { "description": "Greets the user" } },
+    "skills":   { "greet":  { "description": "Greets the user", "files": ["references/api.md"] } },
     "agents":   { "helper": { "description": "Reviews code" } },
-    "commands": { "run":    { "description": "Runs the task" } }
+    "commands": { "run":    { "description": "Runs the task" } },
+    "files":    ["README.md", "LICENSE"]
   }
 
 Field notes
@@ -19,16 +20,34 @@ Field notes
   description Optional facet description.
   private    Optional. `true` declares private publish intent. Omit for public.
   skills / agents / commands
-             Maps of kebab-case asset name to a descriptor. Each descriptor
-             has a required `description` and an optional `adapters` object
-             (per-adapter config passed through at install time — see
-             `facet instructions authoring`).
+             Maps of asset name to a descriptor. Each descriptor has a required
+             `description` and an optional `adapters` object (per-adapter config
+             passed through at install time — see `facet instructions
+             authoring`). A skill descriptor may also carry a `files` array of
+             companion paths (see below).
+  files      Optional. Top-level supplementary files: an array of EXACT
+             repo-relative paths (no globs) to non-asset files like README.md
+             or LICENSE. They ship in the archive and are integrity-protected,
+             but are NEVER written to disk at install (archive-only). A path
+             must not resolve under skills/.
   facets     Optional. Compose other facets (advanced).
   servers    Optional. Declare MCP servers (advanced).
 
+Supplementary files (README, LICENSE, skill companions)
+  - Top-level `files`: archive-only, never materialized on install.
+  - A skill's `files`: companions relative to the skill directory; they
+    materialize and are removed atomically with the skill and cannot list
+    SKILL.md itself.
+  - Supplementary files are NOT assets: they do not count toward the
+    "at least one asset" rule below, and they carry no description or adapters.
+
 Business rules the JSON Schema below cannot express
   - A facet must declare at least one asset (skill, agent, command, or facet).
-  - Asset names must be kebab-case and filesystem-safe (no "..", no slashes).
+    Supplementary `files` alone do not satisfy this.
+  - Asset names must be a single segment (1-64 chars, lowercase
+    letters/digits/hyphens, no leading/trailing/consecutive hyphens, no slash).
+  - A skill and a command must not share a name (agents are separate).
+  - Supplementary `files` paths must be exact, portable, and collision-free.
   - `name` must be a valid facet identity as described above.
 Run `facet build --verify` to check all of these against a real facet.
 

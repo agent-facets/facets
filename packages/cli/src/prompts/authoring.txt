@@ -6,10 +6,12 @@ non-interactively. Do NOT use `facet edit` (it is an interactive TTY wizard);
 use `facet modify` or edit files directly, then verify.
 
 Asset file layout (relative to the facet root)
-  skills/<name>/SKILL.md    A skill.
+  skills/<name>/SKILL.md    A skill (may ship companion files beside it).
   agents/<name>.md          An agent.
-  commands/<name>.md        A command.
-Asset names are kebab-case (lowercase letters, digits, single hyphens).
+  commands/<name>.md         A command.
+Asset names are a single segment: 1-64 chars, lowercase letters/digits/hyphens,
+no leading/trailing/consecutive hyphens, and no slashes. A skill and a command
+must NOT share a name (agents are a separate namespace).
 
 1) SCAFFOLD a new facet — `facet create`
    Pass headless flags to skip the interactive wizard:
@@ -21,6 +23,8 @@ Asset names are kebab-case (lowercase letters, digits, single hyphens).
    Repeat --skill / --agent / --command for multiple assets. Use --private to
    mark the facet private, --force to overwrite an existing facet.json, and
    --json for structured output. At least one asset is required.
+   By default `facet create` also writes and declares an editable README.md
+   (seeded from the name and description). Pass --no-readme to skip it.
 
 2) CHANGE an existing facet — `facet modify`
    Grammar: facet modify <target> <name> [directory] [flags]
@@ -43,8 +47,31 @@ Asset names are kebab-case (lowercase letters, digits, single hyphens).
    - --description and adapter flags may accompany --add or --rename, or stand
      alone. --remove takes no other field flags.
    - Add --json for a structured change summary.
+   - `facet modify` manages asset primaries only. It does NOT manage
+     supplementary files (README.md, LICENSE, skill companions) — handle those
+     by editing facet.json directly (see step 3).
 
-3) ADAPTER CONFIG — per-asset, per-adapter settings
+3) SUPPLEMENTARY FILES — README.md and other non-asset files
+   A facet may ship non-asset files that are integrity-protected but are not
+   installable assets. They are declared as EXACT paths (no globs). There are
+   two declaration sites:
+   - Top-level `files` (an array on the manifest): repo-relative paths like
+     README.md or LICENSE. These ship in the archive but are NEVER written to
+     disk at install time (archive-only).
+   - A skill descriptor's `files` (an array on that skill): paths relative to
+     the skill directory. These are companions — they materialize and are
+     removed atomically with their owning skill. A companion cannot be
+     SKILL.md itself. A top-level path must NOT resolve under skills/.
+
+   To add or manage a README on an EXISTING facet, non-interactively:
+     1. Write or edit the file (e.g. README.md) at the facet root.
+     2. Declare its exact path in the manifest's top-level `files` array, e.g.
+          "files": ["README.md"]
+     3. Verify: facet build --verify
+   Both README.md and the extensionless README are ordinary top-level `files`
+   entries — there is no README-specific manifest field.
+
+4) ADAPTER CONFIG — per-asset, per-adapter settings
    Each skill/agent/command may carry an `adapters` block in facet.json: a map
    of adapter name to a free-form config object that the CLI passes through to
    that adapter at install time. Set it with a name-embedded flag whose value
@@ -66,7 +93,7 @@ Asset names are kebab-case (lowercase letters, digits, single hyphens).
      }
    Hand-edits round-trip safely; the CLI preserves unknown descriptor fields.
 
-4) VERIFY — always validate after changes
+5) VERIFY — always validate after changes
    Run the full build pipeline WITHOUT writing any output:
      facet build --verify
    Add --json for a machine-readable result (ok, errors, warnings). A clean
