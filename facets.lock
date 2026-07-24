@@ -1,5 +1,5 @@
 {
-  "lockfileVersion": 1,
+  "lockfileVersion": 0.2,
   "facets": {
     "@agentfacets/address-pr-feedback": {
       "source": {
@@ -12,17 +12,35 @@
         {
           "scope": "project",
           "type": "skill",
-          "name": "address-pr-feedback-rules"
+          "name": "address-pr-feedback-rules",
+          "files": [
+            {
+              "path": "skills/address-pr-feedback-rules/SKILL.md",
+              "integrity": "sha256:28f2b98176327d8fea6377f93ef1ed75e00ada1a6040a0fd192a3e0bcf1c3980"
+            }
+          ]
         },
         {
           "scope": "project",
           "type": "agent",
-          "name": "address-pr-feedback"
+          "name": "address-pr-feedback",
+          "files": [
+            {
+              "path": "agents/address-pr-feedback.md",
+              "integrity": "sha256:8d13a6281e9ed9860d68d97beb76ed833bce6c9a12e38569780939db482b4c03"
+            }
+          ]
         },
         {
           "scope": "project",
           "type": "command",
-          "name": "address-pr-feedback"
+          "name": "address-pr-feedback",
+          "files": [
+            {
+              "path": "commands/address-pr-feedback.md",
+              "integrity": "sha256:1bc6f00927594ea4dcc245ae8f5140fe1ebc304376bf53a524ec3e1f21cce203"
+            }
+          ]
         }
       ]
     },
@@ -37,42 +55,90 @@
         {
           "scope": "project",
           "type": "skill",
-          "name": "openspec-adversary-author"
+          "name": "openspec-adversary-author",
+          "files": [
+            {
+              "path": "skills/openspec-adversary-author/SKILL.md",
+              "integrity": "sha256:b292f75ec1c3e8d72c10552951a285e61212ca849d8d6ab122c5c68427916980"
+            }
+          ]
         },
         {
           "scope": "project",
           "type": "skill",
-          "name": "openspec-adversary-compare"
+          "name": "openspec-adversary-compare",
+          "files": [
+            {
+              "path": "skills/openspec-adversary-compare/SKILL.md",
+              "integrity": "sha256:62cc709a34cf777fff7778036f2a1a264bdb7d129b6f3ab6c151eb0201d99ba1"
+            }
+          ]
         },
         {
           "scope": "project",
           "type": "skill",
-          "name": "openspec-adversary-reconcile"
+          "name": "openspec-adversary-reconcile",
+          "files": [
+            {
+              "path": "skills/openspec-adversary-reconcile/SKILL.md",
+              "integrity": "sha256:d8c612e6a05e9e08be643de455d880631f12a84c64095c628bfb08b31a78c343"
+            }
+          ]
         },
         {
           "scope": "project",
           "type": "skill",
-          "name": "openspec-adversary-run"
+          "name": "openspec-adversary-run",
+          "files": [
+            {
+              "path": "skills/openspec-adversary-run/SKILL.md",
+              "integrity": "sha256:67124c58eeda707a4e8deaabb4453cb034332b1f67a65111082121398ca8d063"
+            }
+          ]
         },
         {
           "scope": "project",
           "type": "agent",
-          "name": "openspec-adversary"
+          "name": "openspec-adversary",
+          "files": [
+            {
+              "path": "agents/openspec-adversary.md",
+              "integrity": "sha256:e0cc15244e9303ade3b1c66047ca0cefe574ead40b77ee0c482efd61aac979d1"
+            }
+          ]
         },
         {
           "scope": "project",
           "type": "command",
-          "name": "reconcile-adversary"
+          "name": "reconcile-adversary",
+          "files": [
+            {
+              "path": "commands/reconcile-adversary.md",
+              "integrity": "sha256:bb81dce97f2c2734cc5b2a460a1f4fd3358409157ff52d1df7cd4bb432784bbc"
+            }
+          ]
         },
         {
           "scope": "project",
           "type": "command",
-          "name": "run-adversary"
+          "name": "run-adversary",
+          "files": [
+            {
+              "path": "commands/run-adversary.md",
+              "integrity": "sha256:405a35ab34f4e7126c09e2362c86f2f15301d5595a29cd7017083fdbdc53036c"
+            }
+          ]
         },
         {
           "scope": "project",
           "type": "command",
-          "name": "run-inline-adversary"
+          "name": "run-inline-adversary",
+          "files": [
+            {
+              "path": "commands/run-inline-adversary.md",
+              "integrity": "sha256:fbfe404f9d45ca974bcce172fd877d15238e676a510978564e90aa2c1c5492a4"
+            }
+          ]
         }
       ]
     },
@@ -87,12 +153,24 @@
         {
           "scope": "project",
           "type": "skill",
-          "name": "openspec-design-review-rules"
+          "name": "openspec-design-review-rules",
+          "files": [
+            {
+              "path": "skills/openspec-design-review-rules/SKILL.md",
+              "integrity": "sha256:bcf817e5513782cedc32add43391fc7149e882639d28b6e4c33447197bee7de3"
+            }
+          ]
         },
         {
           "scope": "project",
           "type": "command",
-          "name": "review-openspec-design"
+          "name": "review-openspec-design",
+          "files": [
+            {
+              "path": "commands/review-openspec-design.md",
+              "integrity": "sha256:09fd9332d8959c6c5f955083791478d6b2346f9610f20b09ebd6528704bd77ab"
+            }
+          ]
         }
       ]
     },
@@ -107,22 +185,46 @@
         {
           "scope": "project",
           "type": "skill",
-          "name": "cowsay-rules"
+          "name": "cowsay-rules",
+          "files": [
+            {
+              "path": "skills/cowsay-rules/SKILL.md",
+              "integrity": "sha256:1160ade3622a3d45114c3cf6d9fccb0e565b880ac9728886ae69e6766bde5092"
+            }
+          ]
         },
         {
           "scope": "project",
           "type": "agent",
-          "name": "cowsay"
+          "name": "cowsay",
+          "files": [
+            {
+              "path": "agents/cowsay.md",
+              "integrity": "sha256:61190c64c8b6f925718c6d27fa21c2ee1af7299fb00eeb21c65201cb0fec0b6d"
+            }
+          ]
         },
         {
           "scope": "project",
           "type": "command",
-          "name": "cowchat"
+          "name": "cowchat",
+          "files": [
+            {
+              "path": "commands/cowchat.md",
+              "integrity": "sha256:2cc1f8723c1ac12eabaeeb56ff0f95cc4d22d5cb687bfc40f7015244ffcc0231"
+            }
+          ]
         },
         {
           "scope": "project",
           "type": "command",
-          "name": "cowsay"
+          "name": "cowsay",
+          "files": [
+            {
+              "path": "commands/cowsay.md",
+              "integrity": "sha256:dfb51935425ff8efade68abc246b35f366aa62ac44b242210035b88f397ec6fe"
+            }
+          ]
         }
       ]
     },
@@ -137,27 +239,57 @@
         {
           "scope": "project",
           "type": "skill",
-          "name": "viper-execution-rules"
+          "name": "viper-execution-rules",
+          "files": [
+            {
+              "path": "skills/viper-execution-rules/SKILL.md",
+              "integrity": "sha256:13cd22a370049d60e5b3b367c34797e2c3d00c64bd5110f6979740751667b4e3"
+            }
+          ]
         },
         {
           "scope": "project",
           "type": "skill",
-          "name": "viper-planning"
+          "name": "viper-planning",
+          "files": [
+            {
+              "path": "skills/viper-planning/SKILL.md",
+              "integrity": "sha256:68dbfd63d3a1d058642fcfa8772e7bba7e8d43624784ecf1e64b52179761ec90"
+            }
+          ]
         },
         {
           "scope": "project",
           "type": "command",
-          "name": "viper-continue"
+          "name": "viper-continue",
+          "files": [
+            {
+              "path": "commands/viper-continue.md",
+              "integrity": "sha256:c18e84a503bf98f8f153e9af33c1007ad01de46a9ff9b289a2b5f7072c9a51bf"
+            }
+          ]
         },
         {
           "scope": "project",
           "type": "command",
-          "name": "viper-plan"
+          "name": "viper-plan",
+          "files": [
+            {
+              "path": "commands/viper-plan.md",
+              "integrity": "sha256:594a642ae65fa75d0881e6ace749a65706ef55aecbe72aba17c0f9fca7c7bc56"
+            }
+          ]
         },
         {
           "scope": "project",
           "type": "command",
-          "name": "viper-run"
+          "name": "viper-run",
+          "files": [
+            {
+              "path": "commands/viper-run.md",
+              "integrity": "sha256:bfff09006b1e319e441ccc46c0b10d5079ee2c9e35231cf64e9931b606cde983"
+            }
+          ]
         }
       ]
     }
