@@ -1,5 +1,6 @@
 import type { AssetType } from '@agent-facets/common'
 import { validateAssetNameSegment } from '@agent-facets/protocol'
+import { isReadmePath } from '../readme.ts'
 
 /**
  * Plural manifest key derived from the canonical singular AssetType.
@@ -13,6 +14,21 @@ export interface DiscoveredAsset {
   /** Relative path from the facet root (e.g., 'skills/review/SKILL.md') */
   path: string
 }
+
+/**
+ * Common root-level supplementary files the edit scanner offers to adopt when
+ * present but undeclared. Deliberately a small curated set — arbitrary stray
+ * files are not surfaced (design D11 "SHOULD detect other common root files").
+ * README paths are excluded here and routed to the dedicated README panel.
+ */
+export const COMMON_ROOT_FILES: readonly string[] = [
+  'LICENSE',
+  'LICENSE.md',
+  'LICENSE.txt',
+  'CHANGELOG.md',
+  'CONTRIBUTING.md',
+  'DEVELOPMENT.md',
+] as const
 
 /**
  * Scans a facet directory for content files and returns discovered assets.
@@ -56,4 +72,36 @@ export async function scanAssets(rootDir: string): Promise<DiscoveredAsset[]> {
   }
 
   return assets.sort((a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name))
+}
+
+/**
+ * Scan all regular files beneath a declared skill's directory, excluding the
+ * primary `SKILL.md`, and return their paths relative to the skill directory
+ * (e.g. `references/api.md`). Used to detect undeclared companions and to
+ * confirm declared companions exist on disk.
+ */
+export async function scanSkillCompanions(rootDir: string, skill: string): Promise<string[]> {
+  const glob = new Bun.Glob(`skills/${skill}/**/*`)
+  const rels: string[] = []
+  const prefix = `skills/${skill}/`
+  for await (const match of glob.scan({ cwd: rootDir, onlyFiles: true })) {
+    if (!match.startsWith(prefix)) continue
+    const rel = match.slice(prefix.length)
+    if (rel === 'SKILL.md') continue
+    rels.push(rel)
+  }
+  return rels.sort()
+}
+
+/**
+ * Return the subset of `COMMON_ROOT_FILES` present as regular files at the
+ * project root. README paths are never included.
+ */
+export async function scanCommonRootFiles(rootDir: string): Promise<string[]> {
+  const present: string[] = []
+  for (const name of COMMON_ROOT_FILES) {
+    if (isReadmePath(name)) continue
+    if (await Bun.file(`${rootDir}/${name}`).exists()) present.push(name)
+  }
+  return present
 }

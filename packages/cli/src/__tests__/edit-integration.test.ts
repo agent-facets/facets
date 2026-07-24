@@ -33,9 +33,9 @@ describe('edit integration', () => {
     const result = await buildEditContext(dir)
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
-    const additions = result.context.reconciliationItems.filter((i) => i.kind === 'addition')
+    const additions = result.context.reconciliationItems.filter((i) => i.kind === 'asset-addition')
     expect(additions).toHaveLength(1)
-    expect(additions[0]?.name).toBe('new-one')
+    expect(additions[0]?.kind === 'asset-addition' && additions[0].name).toBe('new-one')
   })
 
   test('buildEditContext detects missing files in manifest', async () => {
@@ -55,9 +55,9 @@ describe('edit integration', () => {
     const result = await buildEditContext(dir)
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
-    const missing = result.context.reconciliationItems.filter((i) => i.kind === 'missing')
+    const missing = result.context.reconciliationItems.filter((i) => i.kind === 'asset-missing')
     expect(missing).toHaveLength(1)
-    expect(missing[0]?.name).toBe('gone')
+    expect(missing[0]?.kind === 'asset-missing' && missing[0].name).toBe('gone')
   })
 
   test('buildEditContext does NOT flag matched files that contain front matter', async () => {
@@ -97,9 +97,13 @@ describe('edit integration', () => {
       version: '1.0.0',
       skills: { helper: { description: 'A helper skill' } },
     }
-    const operations: EditOperation[] = [{ op: 'write-manifest' }, { op: 'scaffold', type: 'skills', name: 'helper' }]
+    const operations: EditOperation[] = [
+      { op: 'write-manifest', manifest },
+      { op: 'scaffold-asset', assetType: 'skills', name: 'helper' },
+    ]
 
-    await applyOperations(manifest, operations, dir)
+    const applied = await applyOperations(operations, dir)
+    expect(applied.ok).toBe(true)
 
     const manifestExists = await Bun.file(join(dir, 'facet.json')).exists()
     expect(manifestExists).toBe(true)
@@ -114,9 +118,13 @@ describe('edit integration', () => {
     await Bun.write(join(dir, 'skills/old/SKILL.md'), '# Old skill')
 
     const manifest = { name: 'test', version: '1.0.0', skills: { remaining: { description: 'Remaining' } } }
-    const operations: EditOperation[] = [{ op: 'write-manifest' }, { op: 'delete-file', type: 'skills', name: 'old' }]
+    const operations: EditOperation[] = [
+      { op: 'write-manifest', manifest },
+      { op: 'delete-asset', assetType: 'skills', name: 'old', companionPaths: [] },
+    ]
 
-    await applyOperations(manifest, operations, dir)
+    const applied = await applyOperations(operations, dir)
+    expect(applied.ok).toBe(true)
 
     const deleted = await Bun.file(join(dir, 'skills/old/SKILL.md')).exists()
     expect(deleted).toBe(false)
@@ -129,9 +137,13 @@ describe('edit integration', () => {
       version: '1.0.0',
       skills: { example: { description: 'An example skill' } },
     }
-    const operations: EditOperation[] = [{ op: 'write-manifest' }, { op: 'scaffold', type: 'skills', name: 'example' }]
+    const operations: EditOperation[] = [
+      { op: 'write-manifest', manifest },
+      { op: 'scaffold-asset', assetType: 'skills', name: 'example' },
+    ]
 
-    await applyOperations(manifest, operations, dir)
+    const applied = await applyOperations(operations, dir)
+    expect(applied.ok).toBe(true)
 
     const buildResult = await runBuildPipeline(dir)
     expect(buildResult.ok).toBe(true)

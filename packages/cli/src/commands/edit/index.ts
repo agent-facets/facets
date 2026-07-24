@@ -24,10 +24,23 @@ export const editCommand: Command = {
     if (!loaded.ok) return loaded.exitCode
 
     const buildArg = args[0] ? ` ${displayDir}` : ''
+    let applyError: string | null = null
     const completed = await runEditWizardInk(loaded.context, {
-      onApply: (result) => applyEditOperations(result.manifest, result.operations, rootDir),
+      onApply: async (result) => {
+        const applied = await applyEditOperations(result.operations, rootDir)
+        if (!applied.ok) {
+          applyError = `Failed to apply changes at ${applied.failedPath}: ${applied.reason}${
+            applied.rollbackOk ? ' (rolled back)' : ' (rollback incomplete)'
+          }`
+        }
+      },
       buildArg,
     })
+
+    if (applyError) {
+      console.error(applyError)
+      return 1
+    }
 
     if (!completed) {
       console.log('\nCancelled — no changes applied.')
