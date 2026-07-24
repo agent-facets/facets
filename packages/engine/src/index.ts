@@ -107,6 +107,16 @@ export type { OperationPreviewLine } from './edit/operation-preview.ts'
 export { previewEditOperations } from './edit/operation-preview.ts'
 export type { EditApplyResult } from './edit/operations.ts'
 export { applyEditOperations, applyModifyFileOps } from './edit/operations.ts'
+export type { ReadmeAction, ReadmeActionOption, ReadmeResolution } from './edit/readme-actions.ts'
+export {
+  applyReadmeDeclaration,
+  README_CREATE_DEFAULT,
+  readmeActionFor,
+  readmeActionOptions,
+  readmeFileOperations,
+  readmeOptionKindFor,
+  readmeSeedContent,
+} from './edit/readme-actions.ts'
 export type { MatchedAsset, MissingAsset, ReconciliationResult } from './edit/reconcile.ts'
 export { reconcile } from './edit/reconcile.ts'
 export {
