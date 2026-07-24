@@ -1,5 +1,5 @@
 import { DEFAULT_VERSION } from '@agent-facets/engine'
-import { validateAssetNameSegment, validateFacetName } from '@agent-facets/protocol'
+import { validateFacetName } from '@agent-facets/protocol'
 import { Box, Text } from 'ink'
 import { useCallback, useEffect } from 'react'
 import { AssetSection } from '../../components/asset-section.tsx'
@@ -10,6 +10,7 @@ import { useFocusOrder } from '../../context/focus-order-context.ts'
 import type { AssetSectionKey } from '../../context/form-state-context.ts'
 import { useFormState } from '../../context/form-state-context.ts'
 import { THEME } from '../../theme.ts'
+import { validateAssetNameInWizard } from '../validate-asset-name.ts'
 
 const ASSET_TYPES: AssetSectionKey[] = ['skill', 'command', 'agent']
 const ASSET_LABELS: Record<AssetSectionKey, string> = {
@@ -125,13 +126,7 @@ export function EditView({
             section={type}
             label={ASSET_LABELS[type]}
             onEditDescription={onEditDescription}
-            validate={(v) => {
-              const check = validateAssetNameSegment(v)
-              if (!check.ok) return `Name ${check.reason}`
-              const editing = form.assets[type].editing
-              if (form.assets[type].items.some((item) => item === v && item !== editing)) return `"${v}" already exists`
-              return undefined
-            }}
+            validate={(v) => validateAssetNameInWizard(type, v, form.assets)}
           />
         </Box>
       ))}

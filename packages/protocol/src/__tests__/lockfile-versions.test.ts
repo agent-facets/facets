@@ -76,6 +76,22 @@ describe('CurrentLockfileSchema', () => {
     expect(CurrentLockfileSchema(currentLockfile)).not.toBeInstanceOf(type.errors)
   })
 
+  test('accepts single-file agent and command entries listing exactly their primary path', () => {
+    const agent = {
+      scope: 'user',
+      type: 'agent',
+      name: 'reviewer',
+      files: [{ path: 'agents/reviewer.md', integrity: HASH }],
+    }
+    const command = {
+      scope: 'project',
+      type: 'command',
+      name: 'review',
+      files: [{ path: 'commands/review.md', integrity: HASH }],
+    }
+    expect(CurrentLockfileSchema(withAssets([agent, command]))).not.toBeInstanceOf(type.errors)
+  })
+
   function withAssets(assets: unknown[]): unknown {
     return {
       lockfileVersion: 0.2,

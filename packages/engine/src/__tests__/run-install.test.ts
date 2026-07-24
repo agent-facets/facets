@@ -373,6 +373,38 @@ describe('runInstall — local source success path', () => {
     const after = JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8'))
     expect(after.facets['viper-plans'].assets[0].files[0].integrity).toBe(wrong)
   })
+
+  test('a locked owned-path set that differs from the plan aborts with RECONCILE_OWNED_PATH_SET', async () => {
+    const local = buildLocalFixture('viper-plans')
+    const relPath = `./${local.split('/').pop()}`
+    writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify({ facets: { 'viper-plans': relPath } }))
+
+    // First install writes a valid 0.2 lockfile.
+    const first = await runInstall({ projectRoot, adapters: [buildFakeAdapter('test')] })
+    if (!first.ok) expect.unreachable()
+
+    // Inject an extra owned-file record into the locked skill entry so the
+    // locked path set has a path the freshly-derived plan does not own.
+    const lockPath = join(projectRoot, 'facets.lock')
+    const lock = JSON.parse(readFileSync(lockPath, 'utf8'))
+    lock.facets['viper-plans'].assets[0].files.push({
+      path: 'skills/planning/references/ghost.md',
+      integrity: `sha256:${'2'.repeat(64)}`,
+    })
+    writeFileSync(lockPath, JSON.stringify(lock))
+
+    const second = await runInstall({ projectRoot, adapters: [buildFakeAdapter('test')] })
+    if (second.ok) expect.unreachable()
+    if (second.failure.code !== 'RECONCILE_OWNED_PATH_SET') expect.unreachable()
+    expect(second.failure.facet).toBe('viper-plans')
+    expect(second.failure.asset).toBe('skill:planning')
+    // The extra locked path is reported as missing from the plan.
+    expect(second.failure.missing).toContain('skills/planning/references/ghost.md')
+    expect(second.failure.unexpected).toEqual([])
+    // Reconciliation runs before materialize, so nothing was written.
+    if (second.rollback.kind === 'not-needed') expect.unreachable()
+    expect(second.rollback.entriesUndone).toBe(0)
+  })
 })
 
 describe('runInstall — registry source surfaces REGISTRY_ERROR on resolution failure', () => {

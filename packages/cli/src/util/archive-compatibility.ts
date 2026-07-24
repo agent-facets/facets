@@ -28,10 +28,10 @@
  * formats precisely as they are added.
  */
 const MINIMUM_RELEASE_FOR_FORMAT: Readonly<Record<string, string>> = {
-  // The first release that emits/consumes the `0.2` archive format. Present so
-  // the mapping mechanism is exercised and documented; a CLI that supports
-  // `0.2` will not itself render `0.2` as unsupported.
-  '0.2': '0.2.0',
+  // The first `agent-facets` release that emits/consumes the `0.2` archive
+  // format. A CLI that supports `0.2` never renders `0.2` as unsupported; this
+  // entry is what an *older* pre-`0.2` CLI is told to update to.
+  '0.2': '0.31.0',
 }
 
 export interface ArchiveCompatibilityGuidance {

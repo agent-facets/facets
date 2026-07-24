@@ -1,5 +1,5 @@
 import { DEFAULT_VERSION } from '@agent-facets/engine'
-import { parseFacetName, validateAssetNameSegment, validateFacetName } from '@agent-facets/protocol'
+import { parseFacetName, validateFacetName } from '@agent-facets/protocol'
 import { Box, Text } from 'ink'
 import { useCallback, useEffect } from 'react'
 import type { AssetType } from '../../../commands/create/types'
@@ -10,6 +10,7 @@ import { EditableField } from '../../components/editable-field.tsx'
 import { useFocusOrder } from '../../context/focus-order-context.ts'
 import { useFormState } from '../../context/form-state-context.ts'
 import { WizardLayout } from '../../layouts/wizard-layout.tsx'
+import { validateAssetNameInWizard } from '../validate-asset-name.ts'
 
 const ASSET_TYPES: AssetType[] = ['skill', 'command', 'agent']
 
@@ -183,13 +184,7 @@ export function CreateView({
             defaultName={form.assets[type].items.length === 0 ? defaultAssetName : undefined}
             dimmed={!assetsReady}
             onEditDescription={onEditDescription}
-            validate={(v) => {
-              const check = validateAssetNameSegment(v)
-              if (!check.ok) return `Name ${check.reason}`
-              const editing = form.assets[type].editing
-              if (form.assets[type].items.some((item) => item === v && item !== editing)) return `"${v}" already exists`
-              return undefined
-            }}
+            validate={(v) => validateAssetNameInWizard(type, v, form.assets)}
           />
         </Box>
       ))}
