@@ -1,11 +1,16 @@
 import {
   addSkillCompanion,
   addTopLevelFile,
+  applyReadmeDeclaration,
   type EditContext,
   type EditOperation,
   type EditResult,
+  type ReadmeAction,
+  type ReadmePath,
+  type ReadmeResolution,
   type ReconciliationItem,
   type ReconciliationResolution,
+  readmeFileOperations,
   reconciliationItemKey,
   removeSkillCompanion,
   removeTopLevelFile,
@@ -102,14 +107,33 @@ function applySupplementaryDeltas(manifest: FacetManifest, resolved: ResolvedIte
   return next
 }
 
+/**
+ * Apply queued README declaration deltas to the manifest. README file bytes
+ * travel as separate `write-file`/`delete-file` operations (see
+ * `buildOperations`); only the top-level `files` declaration is mutated here.
+ */
+function applyReadmeDeltas(manifest: FacetManifest, readme: ReadmeResolution[]): FacetManifest {
+  let next = manifest
+  for (const resolution of readme) {
+    next = applyReadmeDeclaration(next, resolution)
+  }
+  return next
+}
+
 /** Builds the queued operation list from resolutions + form asset changes. */
 function buildOperations(
   context: EditContext,
   form: FormState,
   resolved: ResolvedItem[],
+  readme: ReadmeResolution[],
   finalManifest: FacetManifest,
 ): EditOperation[] {
   const operations: EditOperation[] = [{ op: 'write-manifest', manifest: finalManifest }]
+
+  // README file writes/deletes queued from the dedicated panel.
+  for (const resolution of readme) {
+    operations.push(...readmeFileOperations(resolution))
+  }
 
   // Supplementary + asset scaffolds driven by reconciliation resolutions.
   for (const { item, resolution } of resolved) {
@@ -160,8 +184,15 @@ function buildOperations(
   return operations
 }
 
-export function useEditSession(context: EditContext, initialResolutions?: Map<string, ResolvedItem>) {
+export function useEditSession(
+  context: EditContext,
+  initialResolutions?: Map<string, ResolvedItem>,
+  initialReadme?: Map<ReadmePath, ReadmeAction>,
+) {
   const [resolutions, setResolutions] = useState<Map<string, ResolvedItem>>(() => new Map(initialResolutions))
+  // README actions are keyed by their exact conventional path; each of the two
+  // paths is managed independently (design D11), never merged into one choice.
+  const [readmeActions, setReadmeActions] = useState<Map<ReadmePath, ReadmeAction>>(() => new Map(initialReadme))
 
   const resolve = useCallback((item: ReconciliationItem, resolution: ReconciliationResolution) => {
     setResolutions((prev) => {
@@ -171,15 +202,28 @@ export function useEditSession(context: EditContext, initialResolutions?: Map<st
     })
   }, [])
 
+  const resolveReadme = useCallback((path: ReadmePath, action: ReadmeAction) => {
+    setReadmeActions((prev) => {
+      const next = new Map(prev)
+      next.set(path, action)
+      return next
+    })
+  }, [])
+
   const buildResult = useCallback(
     (form: FormState): EditResult => {
       const resolved = Array.from(resolutions.values())
-      const finalManifest = applySupplementaryDeltas(buildManifest(context.manifest, form), resolved)
-      const operations = buildOperations(context, form, resolved, finalManifest)
+      // Only non-`none` README actions produce declaration/file changes.
+      const readme: ReadmeResolution[] = Array.from(readmeActions.entries())
+        .filter(([, action]) => action.kind !== 'none')
+        .map(([path, action]) => ({ path, action }))
+      const withSupplementary = applySupplementaryDeltas(buildManifest(context.manifest, form), resolved)
+      const finalManifest = applyReadmeDeltas(withSupplementary, readme)
+      const operations = buildOperations(context, form, resolved, readme, finalManifest)
       return { outcome: 'applied', operations }
     },
-    [context, resolutions],
+    [context, resolutions, readmeActions],
   )
 
-  return { resolutions, resolve, buildResult }
+  return { resolutions, resolve, readmeActions, resolveReadme, buildResult }
 }

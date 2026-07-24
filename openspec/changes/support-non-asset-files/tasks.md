@@ -126,7 +126,7 @@
 - [x] 13.1 Implement: Add an editable default `README.md` scaffold option and template that writes the file and top-level declaration atomically without regenerating authored content after identity edits
 - [x] 13.2 Implement: Add the dedicated create README card/editor flow, optional disable behavior, state snapshotting, and explicit confirmation preview, and align headless create with the documented policy
 - [x] 13.3 Implement: Extend edit scanning and reconciliation for undeclared skill companions, common root files, and missing declared supplementary files while routing only exact `README.md` and `README` paths to a dedicated panel
-- [ ] 13.4 Implement: Add independent tagged states and actions for both conventional README paths, preserving bytes on adoption and retaining exact paths for scaffold, edit, removal, and declaration changes
+- [x] 13.4 Implement: Add independent tagged states and actions for both conventional README paths, preserving bytes on adoption and retaining exact paths for scaffold, edit, removal, and declaration changes
 - [x] 13.5 Implement: Replace string-parsed reconciliation keys with stable structured identities and represent file/declaration operations as tagged variants with no invalid combinations
 - [x] 13.6 Implement: Apply README, companion, and generic supplementary changes transactionally with manifest edits and show every queued exact-path operation before Apply
 - [ ] 13.7 Implement: Add engine, CLI, TUI, integration, and create-build end-to-end tests covering README defaults/disable/edit preservation in interactive and headless creates, both README paths, adoption, missing-file choices, companion discovery, skill deletion preserving undeclared files, confirmation, cancellation, and buildability
