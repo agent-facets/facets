@@ -48,6 +48,18 @@ Common errors, what causes them, and how to fix them. Each entry mirrors the CLI
     Reinstalling selects the newest release compatible with this CLI. See [compatible resolution](/cli/adapters/install#compatible-resolution) for how selection works, and note that [`facet adapter remove`](/cli/adapters/remove) always works regardless of compatibility.
   </Accordion>
 
+  <Accordion title='"unsupported archive format" on install'>
+    **Cause:** the facet's archive uses a [`facetVersion`](/specification/archive) your CLI doesn't support. A newer facet may use a format published after your CLI; a corrupt or unknown archive fails the same way. The adapter API, archive `facetVersion`, and lockfile version are [independent axes](/specification/install) — this is the archive axis.
+
+    **Fix:** update the CLI with [`facet self-update`](/cli/self-update). The error names the minimum supporting release when the format is known; when it isn't, update to the latest.
+  </Accordion>
+
+  <Accordion title='"integrity mismatch" / companion drift on install'>
+    **Cause:** a materialized file no longer matches the [per-file integrity](/specification/lockfile) recorded in `facets.lock` — a file was edited or corrupted on disk, or the cache was tampered with. Install reconciles every file (including each skill companion) before writing and reports the exact drifting path.
+
+    **Fix:** re-run [`facet install`](/cli/install) — it repairs a drifted file in place (reported as *repaired*) without touching files you added yourself. If a registry facet fails to reconcile against its lockfile integrity, the download is rejected rather than silently replaced; confirm the lockfile matches what you expect.
+  </Accordion>
+
   <Accordion title='"not signed in — no registry credential found"'>
     **Cause:** `facet publish` (and `facet whoami`) need a registry credential and none was found.
 

@@ -15,7 +15,7 @@ Errors returned by the registry MUST be rendered verbatim  -- implementations sh
 
 ## What the author uploads
 
-The CLI uploads the complete built `.facet` archive  -- the same self-contained two-layer artifact `facet build` produced. The outer tar contains the `build-manifest.json` (recording the integrity hash and per-asset hashes) and the gzipped inner archive (carrying the embedded `facet.json` and every declared asset). No part of the archive is re-derived at upload time: the bytes on disk are the bytes on the wire.
+The CLI uploads the complete built `.facet` archive  -- the same self-contained two-layer artifact `facet build` produced. The outer tar contains the `build-manifest.json` (recording the integrity hash and the complete per-entry [`files`](/specification/archive) hash map) and the gzipped inner archive (carrying the embedded `facet.json`, every declared asset, and every declared supplementary file). No part of the archive is re-derived at upload time: the bytes on disk are the bytes on the wire.
 
 The `name` and `version` used to address the upload come from the verified artifact's embedded manifest, not from a separate parse of the source-tree `facet.json`. This matters when the user explicitly chooses to ship a drifted artifact under its own embedded identity (see [identity drift](#when-the-built-artifact-has-drifted-from-source)).
 
@@ -23,7 +23,7 @@ The manifest's [`private`](/specification/manifest#privacy) declaration is part 
 
 ## What the registry does
 
-1. **Verify the upload.** The registry runs the same archive-verification operation `facet publish` ran locally: parse the outer container, decompress the inner archive (within the registry's size policy), verify the integrity hash, verify each per-asset hash, validate the embedded manifest, and apply the [artifact content rules](/specification/archive#content-rules). A verification failure rejects the publish.
+1. **Verify the upload.** The registry runs the same archive-verification operation `facet publish` ran locally: dispatch on the archive `facetVersion` (accepting both the current `0.2` and legacy `0.1` during the compatibility window), parse the outer container, decompress the inner archive (within the registry's size policy), verify the integrity hash, verify each per-entry hash, validate the embedded manifest, and apply the [artifact content rules](/specification/archive#content-rules) — including the expanded supplementary-file membership. A verification failure rejects the publish. The registry is a separate implementation of this specification and adopts the same relaxed rules.
 
 2. **Store the artifact.** The verified bytes are stored under `(name, version)`. The registry records both the canonical fingerprint (`content_integrity`) and the transport hash (`content_hash`). Consumers verify both at different stages (see [Integrity Model](/specification/integrity)).
 
@@ -68,7 +68,7 @@ The prompt choreography for both drift classes is documented at [`facet publish`
 | Reads        | Source tree (`facet.json` + asset files)                   | Built archive in `dist/`                                                                       |
 | Produces     | `dist/<name>-<version>.facet`                              | No on-disk output                                                                              |
 | Network      | None                                                       | One POST to the registry                                                                       |
-| Verification | Build-time validators (schema, content rules, collisions)  | Full archive verification (integrity hash, per-asset hashes, embedded manifest, content rules) |
+| Verification | Build-time validators (schema, content rules, collisions)  | Full archive verification (integrity hash, per-entry hashes, embedded manifest, content rules) |
 
 Neither step mutates the manifest. An invalid input fails the respective step — publish fails with a verification error and never contacts the registry.
 

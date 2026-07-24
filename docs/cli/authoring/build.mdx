@@ -34,7 +34,7 @@ Validates and builds the facet in the specified directory (defaults to the curre
 
 ## What it does
 
-`facet build` runs the validation-and-assembly pipeline defined in the [Build specification](/specification/build): parse and validate the manifest, resolve prompts from their conventional paths, validate content, validate adapter metadata, and assemble the deterministic two-layer archive.
+`facet build` runs the validation-and-assembly pipeline defined in the [Build specification](/specification/build): parse and validate the manifest, resolve prompts from their conventional paths, resolve and validate declared [supplementary files](/specification/manifest#supplementary-files), validate content, validate adapter metadata, and assemble the deterministic two-layer archive. Validation happens **before** any `dist/` cleanup, so a build that fails leaves your previous output intact. Build output shows the emitted archive-format version, the complete entry listing (assets and supplementary files), and the integrity hash.
 
 On success, the build writes `dist/<name>-<version>.facet` — the single distributable artifact, with the build manifest embedded inside it (see [Archive format](/specification/archive)). `dist/` is purged first, so it contains exactly one `.facet` after a successful build. For a scoped identity the name's `/` renders as a nested path: `@acme/cowsay` at `1.0.0` lands at `dist/@acme/cowsay-1.0.0.facet`.
 
