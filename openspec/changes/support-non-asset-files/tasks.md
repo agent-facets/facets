@@ -78,15 +78,15 @@
 
 ## 8. Lockfile, Receipt, and Materialization — Research
 
-- [ ] 8.1 Explore: Trace lockfile loading/writing and every place resolved entries are inherited, minted, compared, or carried forward
-- [ ] 8.2 Explore: Trace receipt loading, bootstrapping, project isolation, drift removal, tri-write commit, and rollback ordering
-- [ ] 8.3 Explore: Trace materialization, skip-if-identical behavior, journaling, deletion, drift reporting, and archive-to-adapter data flow
-- [ ] 8.4 Propose: Define the migration and transaction approach for per-file integrity, untrusted receipt ownership, atomic skill bundles, normal legacy migration, and frozen legacy behavior
+- [x] 8.1 Explore: Trace lockfile loading/writing and every place resolved entries are inherited, minted, compared, or carried forward
+- [x] 8.2 Explore: Trace receipt loading, bootstrapping, project isolation, drift removal, tri-write commit, and rollback ordering
+- [x] 8.3 Explore: Trace materialization, skip-if-identical behavior, journaling, deletion, drift reporting, and archive-to-adapter data flow
+- [x] 8.4 Propose: Define the migration and transaction approach for per-file integrity, untrusted receipt ownership, atomic skill bundles, normal legacy migration, and frozen legacy behavior
 
 ## 9. Lockfile, Receipt, and Materialization — Implementation
 
-- [ ] 9.1 Implement: Replace numeric-order lockfile handling with exact legacy-alpha-`1` and current-`0.2` loading, normal-mode migration, and frozen-mode no-rewrite behavior
-- [ ] 9.2 Implement: Derive sorted lockfile asset file records from the verified materialization subset and recomputed entry hashes rather than copying self-declared hash values
+- [x] 9.1 Implement: Replace numeric-order lockfile handling with exact legacy-alpha-`1` and current-`0.2` loading, normal-mode migration, and frozen-mode no-rewrite behavior
+- [x] 9.2 Implement: Derive sorted lockfile asset file records from the verified materialization subset and recomputed entry hashes rather than copying self-declared hash values
 - [ ] 9.3 Implement: Enforce pre-materialization agreement among facet integrity, asset identities, complete owned path sets, recomputed entry hashes, and verified build-manifest hashes with path-specific result variants, running the adapter-compatibility preflight (positional `0.0` rejected by a `{0.1}` CLI) ahead of archive-version dispatch and per-file reconciliation
 - [ ] 9.4 Implement: Introduce receipt `0.2` asset/file ownership, safe legacy refinement, project-isolated bootstrap, and containment validation that treats receipt data as untrusted
 - [ ] 9.5 Implement: Commit lockfile, receipt, and adapter state transactionally and ensure frozen consistency gates complete before receipt-driven cleanup begins

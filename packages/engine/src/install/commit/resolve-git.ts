@@ -7,9 +7,9 @@ import { type CacheIdentity, cachePutVerified } from '../../cache/index.ts'
 import { cloneFacetGitSource } from '../../sources/facet/resolve-git.ts'
 import type { Source } from '../../sources/facet/types.ts'
 import { cloneFailureToRunInstall } from '../clone-failure.ts'
-import { computeAssetList } from '../materialize.ts'
 import { resolveCloneRef } from '../resolve-clone-ref.ts'
 import type { OnLog, StageEvent } from '../types.ts'
+import { buildVerifiedAssetPlan } from '../verified-asset-plan.ts'
 import { buildLockfileSource, loadFacetContent } from './finalize-facet.ts'
 import { auditedGitCacheLookup } from './git-cache.ts'
 import type { ResolveFacetResult } from './types.ts'
@@ -20,6 +20,8 @@ export interface ResolveGitFacetArgs {
   adapters: ReadonlyArray<Adapter>
   /** See `ResolveRegistryFacetArgs.effectiveLocked`. */
   effectiveLocked: LockfileFacet | undefined
+  /** See `ResolveRegistryFacetArgs.frozenLockfile`. */
+  frozenLockfile: boolean
   onStage: (event: StageEvent) => void
   onLog: OnLog
 }
@@ -42,7 +44,7 @@ export interface ResolveGitFacetArgs {
  * integrity confirmation does not apply (design non-goal).
  */
 export async function resolveGitFacet(args: ResolveGitFacetArgs): Promise<ResolveFacetResult> {
-  const { facetName, source, effectiveLocked, onStage, onLog } = args
+  const { facetName, source, effectiveLocked, frozenLockfile, onStage, onLog } = args
 
   onStage({ kind: 'facet-stage', facet: facetName, stage: 'resolve' })
 
@@ -96,12 +98,29 @@ export async function resolveGitFacet(args: ResolveGitFacetArgs): Promise<Resolv
 
     let entry: LockfileFacet
     if (auditedCacheHit && effectiveLocked !== undefined) {
-      // Audited hit matching the lockfile: inherit the entry verbatim.
-      entry = {
-        source: effectiveLocked.source,
-        version: effectiveLocked.version,
-        integrity: effectiveLocked.integrity,
-        assets: effectiveLocked.assets,
+      if (frozenLockfile) {
+        // Frozen audited hit matching the lockfile: inherit verbatim — a
+        // legacy `1` entry stays legacy and is never rewritten.
+        entry = {
+          source: effectiveLocked.source,
+          version: effectiveLocked.version,
+          integrity: effectiveLocked.integrity,
+          assets: effectiveLocked.assets,
+        }
+      } else {
+        // Normal audited hit (migration): re-derive per-file `files[]` from
+        // the verified slot so a legacy lockfile migrates to `0.2`, keeping
+        // the locked identity.
+        const plan = buildVerifiedAssetPlan(content.manifest, sourceDir)
+        if (!plan.ok) {
+          return { ok: false, failure: { code: 'BUILD_FAILED', facet: facetName, errors: plan.errors } }
+        }
+        entry = {
+          source: effectiveLocked.source,
+          version: effectiveLocked.version,
+          integrity: effectiveLocked.integrity,
+          assets: plan.plan.assets,
+        }
       }
     } else {
       onStage({ kind: 'facet-stage', facet: facetName, stage: 'build' })
@@ -164,14 +183,25 @@ export async function resolveGitFacet(args: ResolveGitFacetArgs): Promise<Resolv
       cleanup = undefined
       onLog(() => `[verbose]   cached ${facetName}@${buildResult.data.version} from clone`)
 
+      // The verified content lives in the durable cache slot (`sourceDir`
+      // was reassigned to `putResult.path` above), so per-file `files[]`
+      // records are derived from there on both the reproduction (migration)
+      // and fresh paths. Frozen reproduction is the only path that inherits
+      // verbatim, and it never reaches this build branch (an audited hit is
+      // required for frozen reproduction; a frozen rebuild would fail the
+      // one-check reproduction guard rather than rewrite).
+      const plan = buildVerifiedAssetPlan(content.manifest, sourceDir)
+      if (!plan.ok) {
+        return { ok: false, failure: { code: 'BUILD_FAILED', facet: facetName, errors: plan.errors } }
+      }
       if (effectiveLocked !== undefined) {
-        // The build just reproduced the locked integrity; the lockfile
-        // is the source of truth, so the entry is inherited verbatim.
+        // The build just reproduced the locked integrity; identity is the
+        // lockfile's, but `files[]` is (re)derived so a legacy entry migrates.
         entry = {
           source: effectiveLocked.source,
           version: effectiveLocked.version,
           integrity: effectiveLocked.integrity,
-          assets: effectiveLocked.assets,
+          assets: plan.plan.assets,
         }
       } else {
         const buildSource = buildLockfileSource(facetName, source, clonedCommit)
@@ -182,7 +212,7 @@ export async function resolveGitFacet(args: ResolveGitFacetArgs): Promise<Resolv
           source: buildSource.source,
           version: buildResult.data.version,
           integrity: buildResult.integrity,
-          assets: computeAssetList(content.resolved),
+          assets: plan.plan.assets,
         }
       }
     }

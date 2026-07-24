@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import type { FacetsJson, Lockfile } from '@agent-facets/protocol'
+import { CURRENT_LOCKFILE_VERSION, type FacetsJson, type Lockfile } from '@agent-facets/protocol'
 import { type AdapterCompatibilityFailure, compatibilityFailureFor } from '../adapters/api-compatibility.ts'
 import { loadFacetsJson } from '../manifest/project-files.ts'
 import { applyManifestWritePolicy, mergeDeltaIntoManifest } from './commit/delta.ts'
@@ -173,8 +173,16 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     // 7. Transactional tri-write: manifest + lockfile + receipt (receipt
     //    only under frozen). The manifest-write policy (bare → pin,
     //    explicit → verbatim) is applied just before the write.
+    //
+    //    Version migration (design D10): a normal install always writes the
+    //    current (`0.2`) schema, migrating a legacy-alpha `1` lockfile after
+    //    every resolved artifact has passed verification. Frozen mode never
+    //    rewrites the lockfile (see `commitProjectFiles`), so it retains the
+    //    version the file was loaded under — a `0.2` archive against a legacy
+    //    lockfile is rejected by the frozen drift gate above, not silently
+    //    upgraded here.
     const newLockfile: Lockfile = {
-      lockfileVersion: previousLockfile.lockfileVersion,
+      lockfileVersion: frozenLockfile ? lockfileResult.version : CURRENT_LOCKFILE_VERSION,
       facets: newFacetEntries,
     }
     const newReceipt = buildUpdatedReceipt(receipt, newFacetEntries)

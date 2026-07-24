@@ -1,4 +1,4 @@
-import type { LockfileSource, ResolvedFacetManifest } from '@agent-facets/protocol'
+import type { FacetManifest, LockfileSource, ResolvedFacetManifest } from '@agent-facets/protocol'
 import { loadManifest, resolvePrompts } from '../../loaders/facet.ts'
 import { getRegistryBaseUrl } from '../../registry/index.ts'
 import type { Source } from '../../sources/facet/types.ts'
@@ -7,10 +7,17 @@ import type { RunInstallFailure, StageEvent } from '../types.ts'
 /**
  * Result of loading and validating a facet's content from a resolved
  * source directory. On success carries the prompt-resolved manifest
- * (what `materialize` consumes) and the facet's server declarations.
+ * (what `materialize` consumes), the validated raw manifest (what the
+ * verified-asset-plan derivation consumes for archive classification), and
+ * the facet's server declarations.
  */
 export type LoadFacetContentResult =
-  | { ok: true; resolved: ResolvedFacetManifest; serversDeclared: ReadonlyArray<string> }
+  | {
+      ok: true
+      manifest: FacetManifest
+      resolved: ResolvedFacetManifest
+      serversDeclared: ReadonlyArray<string>
+    }
   | { ok: false; failure: RunInstallFailure }
 
 /**
@@ -63,7 +70,7 @@ export async function loadFacetContent(
     }
   }
 
-  return { ok: true, resolved: resolved.data, serversDeclared }
+  return { ok: true, manifest: rawManifest.data, resolved: resolved.data, serversDeclared }
 }
 
 /**
