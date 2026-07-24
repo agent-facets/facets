@@ -12,13 +12,13 @@ function validDefinition(): AdapterDefinition {
     name: 'test-adapter',
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
     async installAsset() {
-      return undefined
+      return { ok: true, primaryPath: '/tmp/test' }
     },
     async readAsset() {
-      return { content: 'test' }
+      return { ok: true, asset: { assetType: 'agent', content: 'test' } }
     },
     async deleteAsset() {
-      return undefined
+      return { ok: true, existed: true, deletedPaths: ['/tmp/test'] }
     },
   }
 }
@@ -56,8 +56,8 @@ describe('defineAdapter — required field validation', () => {
 describe('canonical adapter API constants', () => {
   // The one place tests anchor the spec literals — everywhere else compares
   // against the exported constants.
-  test('ADAPTER_API_VERSION is 0.0', () => {
-    expect(ADAPTER_API_VERSION).toBe('0.0')
+  test('ADAPTER_API_VERSION is 0.1', () => {
+    expect(ADAPTER_API_VERSION).toBe('0.1')
   })
 
   test('ADAPTER_API_VERSION_PACKAGE_FIELD is facetAdapterApiVersion', () => {
@@ -95,10 +95,8 @@ describe('defineAdapter — returned adapter shape', () => {
   test('buildAssetMetadata is callable after creation', () => {
     const adapter = defineAdapter(validDefinition())
     const result = adapter.buildAssetMetadata({ foo: 'bar' })
-    expect(result.ok).toBe(true)
-    if (result.ok) {
-      expect(result.data).toEqual({ foo: 'bar' })
-    }
+    if (!result.ok) expect.unreachable()
+    expect(result.data).toEqual({ foo: 'bar' })
   })
 
   test('returns a frozen object', () => {
@@ -107,7 +105,8 @@ describe('defineAdapter — returned adapter shape', () => {
   })
 
   test('buildAssetMetadata is bound to the definition (preserves "this")', () => {
-    const definition = {
+    const definition: AdapterDefinition & { defaultValue: string } = {
+      ...validDefinition(),
       name: 'bound-adapter',
       defaultValue: 'from-definition',
       buildAssetMetadata(this: { defaultValue: string }, _data: unknown) {
@@ -117,15 +116,6 @@ describe('defineAdapter — returned adapter shape', () => {
           data: { defaulted: this.defaultValue },
         }
       },
-      async installAsset() {
-        return undefined
-      },
-      async readAsset() {
-        return { content: 'test' }
-      },
-      async deleteAsset() {
-        return undefined
-      },
     }
     const adapter = defineAdapter(definition)
 
@@ -133,10 +123,8 @@ describe('defineAdapter — returned adapter shape', () => {
     // `this` would be undefined and the call would throw.
     const buildMeta = adapter.buildAssetMetadata
     const result = buildMeta({})
-    expect(result.ok).toBe(true)
-    if (result.ok) {
-      expect(result.data).toEqual({ defaulted: 'from-definition' })
-    }
+    if (!result.ok) expect.unreachable()
+    expect(result.data).toEqual({ defaulted: 'from-definition' })
   })
 })
 
@@ -151,26 +139,31 @@ describe('defineAdapter — stub fallbacks for missing asset methods', () => {
     return minimal as any
   }
 
-  test('installAsset falls back to a throw-on-call stub when omitted', async () => {
+  test('installAsset falls back to a structured not-implemented result when omitted', async () => {
     const adapter = defineAdapter(buildMinimal())
-    await expect(adapter.installAsset('project', 'skill', 'foo', 'content', {})).rejects.toThrow(
-      /does not implement installAsset/,
-    )
+    const result = await adapter.installAsset({
+      assetType: 'agent',
+      scope: 'project',
+      name: 'foo',
+      content: 'content',
+      metadata: {},
+    })
+    if (result.ok) expect.unreachable()
+    expect(result.failure).toEqual({ code: 'not-implemented', method: 'installAsset' })
   })
 
-  test('readAsset falls back to a throw-on-call stub when omitted', async () => {
+  test('readAsset falls back to a structured not-implemented result when omitted', async () => {
     const adapter = defineAdapter(buildMinimal())
-    await expect(adapter.readAsset('project', 'skill', 'foo')).rejects.toThrow(/does not implement readAsset/)
+    const result = await adapter.readAsset({ assetType: 'agent', scope: 'project', name: 'foo' })
+    if (result.ok) expect.unreachable()
+    expect(result.failure).toEqual({ code: 'not-implemented', method: 'readAsset' })
   })
 
-  test('deleteAsset falls back to a throw-on-call stub when omitted', async () => {
+  test('deleteAsset falls back to a structured not-implemented result when omitted', async () => {
     const adapter = defineAdapter(buildMinimal())
-    await expect(adapter.deleteAsset('project', 'skill', 'foo')).rejects.toThrow(/does not implement deleteAsset/)
-  })
-
-  test('stub error message includes the adapter name', async () => {
-    const adapter = defineAdapter(buildMinimal({ name: 'my-custom-adapter' }))
-    await expect(adapter.installAsset('project', 'skill', 'foo', 'content', {})).rejects.toThrow(/"my-custom-adapter"/)
+    const result = await adapter.deleteAsset({ assetType: 'agent', scope: 'project', name: 'foo' })
+    if (result.ok) expect.unreachable()
+    expect(result.failure).toEqual({ code: 'not-implemented', method: 'deleteAsset' })
   })
 
   test('provided asset methods are used instead of the stub fallback', async () => {
@@ -183,25 +176,26 @@ describe('defineAdapter — stub fallbacks for missing asset methods', () => {
       buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
       async installAsset() {
         installCalled = true
-        return undefined
+        return { ok: true, primaryPath: '/tmp/foo' }
       },
       async readAsset() {
         readCalled = true
-        return { content: 'real-content' }
+        return { ok: true, asset: { assetType: 'command', content: 'real-content' } }
       },
       async deleteAsset() {
         deleteCalled = true
-        return undefined
+        return { ok: true, existed: false, deletedPaths: [] }
       },
     })
 
-    await adapter.installAsset('project', 'skill', 'foo', 'content', {})
-    const read = await adapter.readAsset('project', 'skill', 'foo')
-    await adapter.deleteAsset('project', 'skill', 'foo')
+    await adapter.installAsset({ assetType: 'command', scope: 'project', name: 'foo', content: 'c', metadata: {} })
+    const read = await adapter.readAsset({ assetType: 'command', scope: 'project', name: 'foo' })
+    await adapter.deleteAsset({ assetType: 'command', scope: 'project', name: 'foo' })
 
     expect(installCalled).toBe(true)
     expect(readCalled).toBe(true)
     expect(deleteCalled).toBe(true)
-    expect(read.content).toBe('real-content')
+    if (!read.ok) expect.unreachable()
+    expect(read.asset.content).toBe('real-content')
   })
 })

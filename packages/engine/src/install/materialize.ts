@@ -1,4 +1,10 @@
-import type { Adapter } from '@agent-facets/adapter'
+import type {
+  Adapter,
+  AdapterAssetFailure,
+  DeleteAssetRequest,
+  InstallAssetRequest,
+  ReadAssetRequest,
+} from '@agent-facets/adapter'
 import { splitFrontMatter } from '@agent-facets/common'
 import type { LockfileAssetEntry, ResolvedFacetManifest } from '@agent-facets/protocol'
 import { type AdapterCompatibilityFailure, compatibilityFailureFor } from '../adapters/api-compatibility.ts'
@@ -93,13 +99,13 @@ export interface MaterializeCounts {
  *     declare a CLI-supported API. Invariant check only: the primary
  *     gates are the command-level fail-closed load and the runInstall
  *     preflight; reaching this arm means an upstream gate was bypassed.
- *   - `read-failed` — `adapter.readAsset` threw something other than
- *     ENOENT. ENOENT is the one "file didn't exist" signal we trust;
- *     anything else (EACCES, EIO, EISDIR, adapter bugs) means we don't
- *     know whether the asset existed, so the journal must not record
- *     a delete-undo based on an assumption of absence.
- *   - `install-failed` — `adapter.installAsset` threw.
- *   - `delete-failed` — `adapter.deleteAsset` threw.
+ *   - `read-failed` — `adapter.readAsset` returned a failure other than
+ *     `not-found` (or threw, which is an adapter bug). `not-found` is
+ *     the one "asset didn't exist" signal we trust; anything else means
+ *     we don't know whether the asset existed, so the journal must not
+ *     record a delete-undo based on an assumption of absence.
+ *   - `install-failed` — `adapter.installAsset` returned a failure or threw.
+ *   - `delete-failed` — `adapter.deleteAsset` returned a failure or threw.
  */
 export type MaterializeFailure =
   | { kind: 'unsupported-adapter'; adapter: string }
@@ -160,29 +166,19 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
       const content = contentFor(opts.manifest, asset)
       const metadata = buildAssetMetadata(opts.manifest, asset, adapter.name)
 
-      // Capture original state for rollback (F14). A bare catch would treat
-      // permission errors, I/O failures, and adapter bugs as "didn't exist",
-      // so the journal's delete-undo could silently delete a pre-existing
-      // asset we never read successfully. Narrow to ENOENT only and surface
-      // everything else as a structured `read-failed` — install fails loud
-      // before we write anything.
-      let previous: { content: string; metadata?: Record<string, unknown> } | null = null
-      try {
-        previous = await adapter.readAsset(asset.scope, asset.type, asset.name)
-      } catch (err) {
-        if (!isFileMissingError(err)) {
-          return {
-            ok: false,
-            failure: {
-              kind: 'read-failed',
-              adapter: adapter.name,
-              asset,
-              cause: err instanceof Error ? err.message : String(err),
-            },
-          }
+      // Capture original state for rollback (F14). Treating any failure
+      // as "didn't exist" would let the journal's delete-undo silently
+      // delete a pre-existing asset we never read successfully. Narrow to
+      // the structured `not-found` only and surface everything else as
+      // `read-failed` — install fails loud before we write anything.
+      const readOutcome = await readPrevious(adapter, asset)
+      if (!readOutcome.ok) {
+        return {
+          ok: false,
+          failure: { kind: 'read-failed', adapter: adapter.name, asset, cause: readOutcome.cause },
         }
-        previous = null
       }
+      const previous = readOutcome.previous
 
       // Skip-if-identical: when the on-disk content + metadata already
       // matches what we would write, no work is needed and no journal
@@ -222,7 +218,19 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
       const sigil = previous === null ? '+' : '~'
       let writtenPath: string | undefined
       try {
-        writtenPath = await adapter.installAsset(asset.scope, asset.type, asset.name, content, metadata)
+        const result = await adapter.installAsset(installRequestFor(asset, content, metadata))
+        if (!result.ok) {
+          return {
+            ok: false,
+            failure: {
+              kind: 'install-failed',
+              adapter: adapter.name,
+              asset,
+              cause: describeAssetFailure(result.failure),
+            },
+          }
+        }
+        writtenPath = result.primaryPath
       } catch (err) {
         return {
           ok: false,
@@ -241,9 +249,9 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
         label: `install ${adapter.name}:${asset.type}:${asset.name}`,
         undo: async () => {
           if (previous) {
-            await adapter.installAsset(asset.scope, asset.type, asset.name, previous.content, previous.metadata ?? {})
+            await runUndoInstall(adapter, asset, previous.content, previous.metadata ?? {})
           } else {
-            await adapter.deleteAsset(asset.scope, asset.type, asset.name)
+            await runUndoDelete(adapter, asset)
           }
         },
       })
@@ -251,27 +259,30 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
 
     for (const asset of toDelete) {
       // Same F14 guard as the install branch above.
-      let previous: { content: string; metadata?: Record<string, unknown> } | null = null
-      try {
-        previous = await adapter.readAsset(asset.scope, asset.type, asset.name)
-      } catch (err) {
-        if (!isFileMissingError(err)) {
-          return {
-            ok: false,
-            failure: {
-              kind: 'read-failed',
-              adapter: adapter.name,
-              asset,
-              cause: err instanceof Error ? err.message : String(err),
-            },
-          }
+      const readOutcome = await readPrevious(adapter, asset)
+      if (!readOutcome.ok) {
+        return {
+          ok: false,
+          failure: { kind: 'read-failed', adapter: adapter.name, asset, cause: readOutcome.cause },
         }
-        previous = null
       }
+      const previous = readOutcome.previous
 
       let deletedPath: string | undefined
       try {
-        deletedPath = await adapter.deleteAsset(asset.scope, asset.type, asset.name)
+        const result = await adapter.deleteAsset(deleteRequestFor(asset))
+        if (!result.ok) {
+          return {
+            ok: false,
+            failure: {
+              kind: 'delete-failed',
+              adapter: adapter.name,
+              asset,
+              cause: describeAssetFailure(result.failure),
+            },
+          }
+        }
+        deletedPath = result.deletedPaths[0]
       } catch (err) {
         return {
           ok: false,
@@ -290,7 +301,7 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
         opts.journal.record({
           label: `delete ${adapter.name}:${asset.type}:${asset.name}`,
           undo: async () => {
-            await adapter.installAsset(asset.scope, asset.type, asset.name, previous.content, previous.metadata ?? {})
+            await runUndoInstall(adapter, asset, previous.content, previous.metadata ?? {})
           },
         })
       }
@@ -303,14 +314,113 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
 }
 
 /**
- * ENOENT is the one "file didn't exist" signal we trust. Everything else —
- * EACCES, EIO, EISDIR, adapter bugs — means `previous` is unknown and the
- * journal must not record a delete-undo based on an assumption of absence.
+ * Bridge from the engine's identity tuple to the adapter's tagged install
+ * request. Skill requests carry an empty companion bundle and an empty
+ * owned-path set for now: real companion bytes and lockfile/receipt-derived
+ * ownership sets are plumbed through in the per-file integrity work
+ * (lockfile 0.2 materialization). Until then this preserves the exact
+ * single-file behavior the tagged `0.1` contract inherited from the
+ * earlier positional `0.0` contract.
  */
-function isFileMissingError(err: unknown): boolean {
-  if (typeof err !== 'object' || err === null) return false
-  const code = (err as { code?: unknown }).code
-  return code === 'ENOENT'
+function installRequestFor(asset: LockfileAssetEntry, content: string, metadata: unknown): InstallAssetRequest {
+  if (asset.type === 'skill') {
+    return {
+      assetType: 'skill',
+      scope: asset.scope,
+      name: asset.name,
+      content,
+      metadata,
+      companions: {},
+      ownedCompanionPaths: [],
+    }
+  }
+  return { assetType: asset.type, scope: asset.scope, name: asset.name, content, metadata }
+}
+
+function readRequestFor(asset: LockfileAssetEntry): ReadAssetRequest {
+  if (asset.type === 'skill') {
+    return { assetType: 'skill', scope: asset.scope, name: asset.name, ownedCompanionPaths: [] }
+  }
+  return { assetType: asset.type, scope: asset.scope, name: asset.name }
+}
+
+function deleteRequestFor(asset: LockfileAssetEntry): DeleteAssetRequest {
+  if (asset.type === 'skill') {
+    return { assetType: 'skill', scope: asset.scope, name: asset.name, ownedCompanionPaths: [] }
+  }
+  return { assetType: asset.type, scope: asset.scope, name: asset.name }
+}
+
+/**
+ * Read an asset's previous state for rollback capture. The structured
+ * `not-found` is the one "asset didn't exist" signal we trust — every
+ * other failure (and any throw, which is an adapter bug) means `previous`
+ * is unknown, so the caller must fail loud instead of assuming absence.
+ */
+async function readPrevious(
+  adapter: Adapter,
+  asset: LockfileAssetEntry,
+): Promise<
+  { ok: true; previous: { content: string; metadata?: Record<string, unknown> } | null } | { ok: false; cause: string }
+> {
+  try {
+    const result = await adapter.readAsset(readRequestFor(asset))
+    if (result.ok) {
+      return { ok: true, previous: { content: result.asset.content, metadata: result.asset.metadata } }
+    }
+    if (result.failure.code === 'not-found') return { ok: true, previous: null }
+    return { ok: false, cause: describeAssetFailure(result.failure) }
+  } catch (err) {
+    return { ok: false, cause: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+/**
+ * Run an inverse install during rollback. The adapter contract returns
+ * structured failures rather than throwing, but the journal counts an undo
+ * as failed only when it *throws*. So a `{ ok: false }` inverse op — which
+ * leaves on-disk state un-restored — must be surfaced as a throw here, or
+ * `InstallJournal.rollback()` would report a clean rollback while an asset
+ * was never restored. A thrown adapter bug propagates unchanged.
+ */
+async function runUndoInstall(
+  adapter: Adapter,
+  asset: LockfileAssetEntry,
+  content: string,
+  metadata: Record<string, unknown>,
+): Promise<void> {
+  const result = await adapter.installAsset(installRequestFor(asset, content, metadata))
+  if (!result.ok) {
+    throw new Error(
+      `undo install ${adapter.name}:${asset.type}:${asset.name} failed: ${describeAssetFailure(result.failure)}`,
+    )
+  }
+}
+
+/** Inverse delete during rollback. Same throw-on-`{ ok: false }` rule as {@link runUndoInstall}. */
+async function runUndoDelete(adapter: Adapter, asset: LockfileAssetEntry): Promise<void> {
+  const result = await adapter.deleteAsset(deleteRequestFor(asset))
+  if (!result.ok) {
+    throw new Error(
+      `undo delete ${adapter.name}:${asset.type}:${asset.name} failed: ${describeAssetFailure(result.failure)}`,
+    )
+  }
+}
+
+/** Render a structured adapter failure as a one-line cause string. */
+function describeAssetFailure(failure: AdapterAssetFailure): string {
+  switch (failure.code) {
+    case 'not-found':
+      return 'asset not found'
+    case 'invalid-companion-path':
+      return `invalid companion path "${failure.path}": ${failure.reason}`
+    case 'unsupported-scope':
+      return `scope "${failure.scope}" is not supported by this adapter`
+    case 'not-implemented':
+      return `adapter does not implement ${failure.method}`
+    case 'io-failed':
+      return `${failure.operation} failed${failure.path ? ` at ${failure.path}` : ''}: ${failure.message}`
+  }
 }
 
 function contentFor(manifest: ResolvedFacetManifest, asset: LockfileAssetEntry): string {

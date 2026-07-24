@@ -32,36 +32,46 @@ function buildRecordingAdapter(name: string): {
     apiVersion: ADAPTER_API_VERSION,
     supportsInstall: true,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
-    async installAsset(_scope, type, n, content, metadata) {
-      calls.push({ name: n, metadata })
-      const file = join(projectRoot, `.${name}`, `${type}s`, `${n}.md`)
-      mkdirSync(join(projectRoot, `.${name}`, `${type}s`), { recursive: true })
+    async installAsset(request) {
+      calls.push({ name: request.name, metadata: request.metadata })
+      const file = join(projectRoot, `.${name}`, `${request.assetType}s`, `${request.name}.md`)
+      mkdirSync(join(projectRoot, `.${name}`, `${request.assetType}s`), { recursive: true })
       // Persist content + metadata as a composite so readAsset can
       // round-trip them, exercising the materialize skip-if-identical
       // compare path.
-      const blob = JSON.stringify({ content, metadata: metadata ?? {} })
+      const blob = JSON.stringify({ content: request.content, metadata: request.metadata ?? {} })
       writeFileSync(file, blob)
+      return { ok: true, primaryPath: file }
     },
-    async readAsset(_scope, type, n) {
-      const file = join(projectRoot, `.${name}`, `${type}s`, `${n}.md`)
+    async readAsset(request) {
+      const file = join(projectRoot, `.${name}`, `${request.assetType}s`, `${request.name}.md`)
       if (!existsSync(file)) {
-        const err: NodeJS.ErrnoException = new Error('ENOENT')
-        err.code = 'ENOENT'
-        throw err
+        return { ok: false, failure: { code: 'not-found' } }
       }
       const blob = readFileSync(file, 'utf8')
+      let content = blob
+      let metadata: Record<string, unknown> | undefined
       try {
         const parsed = JSON.parse(blob) as { content: string; metadata?: Record<string, unknown> }
-        return { content: parsed.content, metadata: parsed.metadata }
+        content = parsed.content
+        metadata = parsed.metadata
       } catch {
         // Hand-edited file (e.g., the "user edit" test); return raw bytes
         // so the compare path observes the drift.
-        return { content: blob }
+      }
+      return {
+        ok: true,
+        asset:
+          request.assetType === 'skill'
+            ? { assetType: 'skill', content, metadata, companions: {} }
+            : { assetType: request.assetType, content, metadata },
       }
     },
-    async deleteAsset(_scope, type, n) {
-      const file = join(projectRoot, `.${name}`, `${type}s`, `${n}.md`)
-      if (existsSync(file)) rmSync(file)
+    async deleteAsset(request) {
+      const file = join(projectRoot, `.${name}`, `${request.assetType}s`, `${request.name}.md`)
+      const existed = existsSync(file)
+      if (existed) rmSync(file)
+      return { ok: true, existed, deletedPaths: existed ? [file] : [] }
     },
   }
   return { adapter, calls }
@@ -89,15 +99,30 @@ function buildSdkAdapter(name: string): {
     apiVersion: ADAPTER_API_VERSION,
     supportsInstall: true,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
-    async installAsset(_scope, type, n, content, metadata) {
+    async installAsset(request) {
       installCalls++
-      await installAssetFile(path(type, n), content, metadata as Record<string, unknown> | undefined)
+      const p = path(request.assetType, request.name)
+      await installAssetFile(p, request.content, request.metadata as Record<string, unknown> | undefined)
+      return { ok: true, primaryPath: p.file }
     },
-    async readAsset(_scope, type, n) {
-      return readAssetFile(path(type, n))
+    async readAsset(request) {
+      try {
+        const { content, metadata } = await readAssetFile(path(request.assetType, request.name))
+        return {
+          ok: true,
+          asset:
+            request.assetType === 'skill'
+              ? { assetType: 'skill', content, metadata, companions: {} }
+              : { assetType: request.assetType, content, metadata },
+        }
+      } catch {
+        return { ok: false, failure: { code: 'not-found' } }
+      }
     },
-    async deleteAsset(_scope, type, n) {
-      await deleteAssetFile(path(type, n))
+    async deleteAsset(request) {
+      const p = path(request.assetType, request.name)
+      await deleteAssetFile(p)
+      return { ok: true, existed: true, deletedPaths: [p.file] }
     },
   }
   return {
@@ -466,5 +491,165 @@ describe('materialize — adapter API invariant check', () => {
       found: '9.9',
       supported: [ADAPTER_API_VERSION],
     })
+  })
+
+  test('a superseded positional 0.0 adapter fails before any method is invoked', async () => {
+    const manifest: ResolvedFacetManifest = {
+      name: 'viper-plans',
+      version: '0.1.0',
+      skills: { planning: { description: 'planning skill', prompt: '# planning content\n' } },
+    }
+    // A bundle built against the earlier positional contract declares 0.0.
+    // A 0.1-only CLI must reject it before invoking any contract method,
+    // exactly as it would any other unsupported API.
+    const positional = {
+      name: 'legacy-positional',
+      apiVersion: '0.0',
+      supportsInstall: true,
+      buildAssetMetadata: () => {
+        throw new Error('contract method invoked despite incompatibility')
+      },
+      async installAsset() {
+        throw new Error('contract method invoked despite incompatibility')
+      },
+      async readAsset() {
+        throw new Error('contract method invoked despite incompatibility')
+      },
+      async deleteAsset() {
+        throw new Error('contract method invoked despite incompatibility')
+      },
+    } as unknown as Adapter
+
+    const result = await materialize({
+      facetName: 'viper-plans',
+      manifest,
+      adapters: [positional],
+      oldAssets: [],
+      newAssets: computeAssetList(manifest),
+      journal: new InstallJournal(),
+    })
+    if (result.ok) expect.unreachable()
+    if (result.failure.kind !== 'incompatible-adapter') expect.unreachable()
+    expect(result.failure.failure).toEqual({
+      kind: 'api-unsupported',
+      adapter: 'legacy-positional',
+      found: '0.0',
+      supported: [ADAPTER_API_VERSION],
+    })
+  })
+})
+
+describe('materialize — journal undo surfaces structured adapter failures', () => {
+  test('a failed inverse op is counted by journal.rollback (not silently swallowed)', async () => {
+    // Two-asset facet: the first install succeeds and records a delete-undo;
+    // the second install fails, so materialize returns `install-failed`. When
+    // the caller rolls back, the first asset's inverse delete returns a
+    // structured `{ ok: false }`. Before the fix, the undo closure ignored
+    // `result.ok`, so the journal reported a clean rollback while the asset
+    // was never removed. Now the undo throws, and the journal counts it.
+    const manifest: ResolvedFacetManifest = {
+      name: 'viper-plans',
+      version: '0.1.0',
+      skills: {
+        alpha: { description: 'a', prompt: '# a\n' },
+        beta: { description: 'b', prompt: '# b\n' },
+      },
+    }
+
+    let installCount = 0
+    const adapter: Adapter = {
+      name: 'flaky',
+      apiVersion: ADAPTER_API_VERSION,
+      supportsInstall: true,
+      buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
+      async installAsset(request) {
+        installCount++
+        // First forward install (alpha) succeeds; second forward install
+        // (beta) fails, triggering rollback of alpha.
+        if (installCount === 2) {
+          return { ok: false, failure: { code: 'io-failed', operation: 'write', path: request.name, message: 'boom' } }
+        }
+        return { ok: true, primaryPath: join(projectRoot, `${request.name}.md`) }
+      },
+      async readAsset() {
+        // No previous state — both assets are new, so the recorded undo is a
+        // delete.
+        return { ok: false, failure: { code: 'not-found' } }
+      },
+      async deleteAsset() {
+        // The inverse of a new-asset install. Fail it to prove the undo is
+        // counted rather than swallowed.
+        return { ok: false, failure: { code: 'io-failed', operation: 'delete', path: 'alpha', message: 'cannot undo' } }
+      },
+    }
+
+    const journal = new InstallJournal()
+    const newAssets = computeAssetList(manifest)
+    const result = await materialize({
+      facetName: 'viper-plans',
+      manifest,
+      adapters: [adapter],
+      oldAssets: [],
+      newAssets,
+      journal,
+    })
+    if (result.ok) expect.unreachable()
+    expect(result.failure.kind).toBe('install-failed')
+
+    // The successful alpha install left one delete-undo on the journal.
+    expect(journal.size()).toBe(1)
+    const rollback = await journal.rollback()
+    expect(rollback.failures).toBe(1)
+    expect(rollback.ok).toBe(false)
+  })
+
+  test('a successful inverse op replays cleanly', async () => {
+    const manifest: ResolvedFacetManifest = {
+      name: 'viper-plans',
+      version: '0.1.0',
+      skills: {
+        alpha: { description: 'a', prompt: '# a\n' },
+        beta: { description: 'b', prompt: '# b\n' },
+      },
+    }
+
+    let installCount = 0
+    const deleted: string[] = []
+    const adapter: Adapter = {
+      name: 'flaky',
+      apiVersion: ADAPTER_API_VERSION,
+      supportsInstall: true,
+      buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
+      async installAsset(request) {
+        installCount++
+        if (installCount === 2) {
+          return { ok: false, failure: { code: 'io-failed', operation: 'write', path: request.name, message: 'boom' } }
+        }
+        return { ok: true, primaryPath: join(projectRoot, `${request.name}.md`) }
+      },
+      async readAsset() {
+        return { ok: false, failure: { code: 'not-found' } }
+      },
+      async deleteAsset(request) {
+        deleted.push(request.name)
+        return { ok: true, existed: true, deletedPaths: [join(projectRoot, `${request.name}.md`)] }
+      },
+    }
+
+    const journal = new InstallJournal()
+    const result = await materialize({
+      facetName: 'viper-plans',
+      manifest,
+      adapters: [adapter],
+      oldAssets: [],
+      newAssets: computeAssetList(manifest),
+      journal,
+    })
+    if (result.ok) expect.unreachable()
+
+    const rollback = await journal.rollback()
+    expect(rollback.failures).toBe(0)
+    expect(rollback.ok).toBe(true)
+    expect(deleted).toContain('alpha')
   })
 })

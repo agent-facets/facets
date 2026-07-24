@@ -102,6 +102,23 @@ describe('verifyAdapter — ordered checks', () => {
     })
   })
 
+  test('4: superseded positional 0.0 declaration fails as api-unsupported', async () => {
+    // The exact cutover: a bundle built against the earlier positional
+    // contract declares 0.0, which is well-formed but unsupported by a
+    // 0.1-only CLI. It must fail closed before any contract method.
+    await withBundle(adapterSource(`  name: 'legacy-positional', apiVersion: '0.0',`), async (path) => {
+      const result = await verifyAdapter(path)
+      if (result.ok) expect.unreachable()
+      if (result.failure.kind !== 'incompatible') expect.unreachable()
+      expect(result.failure.failure).toEqual({
+        kind: 'api-unsupported',
+        adapter: 'legacy-positional',
+        found: '0.0',
+        supported: [ADAPTER_API_VERSION],
+      })
+    })
+  })
+
   test('4 precedes 5: unsupported runtime declaration wins over metadata equality', async () => {
     // Even when npm metadata agrees with the runtime declaration, an
     // unsupported API is classified as unsupported, not as a mismatch.
@@ -114,14 +131,19 @@ describe('verifyAdapter — ordered checks', () => {
   })
 
   test('5: package/runtime disagreement fails as api-metadata-mismatch', async () => {
+    // Runtime declares the supported API (so the support check passes),
+    // but the npm package metadata claims a different well-formed token —
+    // the mismatch check (5) fires. Use a high token that is neither the
+    // supported API nor the superseded 0.0, so this stays a mismatch
+    // rather than collapsing into the unsupported-runtime path.
     await withBundle(adapterSource(`  name: 'split-brain', apiVersion: '${ADAPTER_API_VERSION}',`), async (path) => {
-      const result = await verifyAdapter(path, { expectedApiVersion: '0.1' })
+      const result = await verifyAdapter(path, { expectedApiVersion: '9.9' })
       if (result.ok) expect.unreachable()
       if (result.failure.kind !== 'incompatible') expect.unreachable()
       expect(result.failure.failure).toEqual({
         kind: 'api-metadata-mismatch',
         adapter: 'split-brain',
-        packageDeclared: '0.1',
+        packageDeclared: '9.9',
         runtimeDeclared: ADAPTER_API_VERSION,
         supported: [ADAPTER_API_VERSION],
       })

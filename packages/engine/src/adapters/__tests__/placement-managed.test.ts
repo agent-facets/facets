@@ -214,12 +214,13 @@ describe('placeAdapterManaged — failure injection', () => {
 
   test('metadata/runtime disagreement at the staged path is terminal', async () => {
     const previous = await installGood()
-    // Runtime declares the supported API but provenance claims 0.1 —
-    // the staged re-verification must reject the contradiction.
+    // Runtime declares the supported API but provenance claims the
+    // superseded 0.0 — the staged re-verification must reject the
+    // contradiction (0.0 is unsupported, so support check fires first).
     const result = await placeAdapterManaged(
       'my-adapter',
       await makeBundle('my-adapter'),
-      { apiVersion: '0.1', source: npmSource },
+      { apiVersion: '0.0', source: npmSource },
       baseDir,
     )
     if (result.ok) expect.unreachable()

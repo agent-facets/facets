@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ADAPTER_API_VERSION } from '@agent-facets/adapter'
@@ -25,13 +25,11 @@ describe('claude-code adapter — buildAssetMetadata', () => {
       tools: { Bash: true, Read: false },
       permissions: { allow: true },
     })
-    expect(result.ok).toBe(true)
-    if (result.ok) {
-      expect(result.data).toEqual({
-        tools: { Bash: true, Read: false },
-        permissions: { allow: true },
-      })
-    }
+    if (!result.ok) expect.unreachable()
+    expect(result.data).toEqual({
+      tools: { Bash: true, Read: false },
+      permissions: { allow: true },
+    })
   })
 
   test('accepts empty metadata', () => {
@@ -66,71 +64,195 @@ describe('claude-code adapter — project-scope I/O round-trip', () => {
   })
 
   test('skill installs at .claude/skills/<name>/SKILL.md', async () => {
-    await adapter.installAsset('project', 'skill', 'viper-plans/planning', '# plan', {})
-    const path = join(workDir, '.claude/skills/viper-plans/planning/SKILL.md')
+    const result = await adapter.installAsset({
+      assetType: 'skill',
+      scope: 'project',
+      name: 'planning',
+      content: '# plan',
+      metadata: {},
+      companions: {},
+      ownedCompanionPaths: [],
+    })
+    if (!result.ok) expect.unreachable()
+    const path = join(workDir, '.claude/skills/planning/SKILL.md')
+    // macOS tmpdir may resolve through /private — compare the suffix
+    expect(result.primaryPath.endsWith('.claude/skills/planning/SKILL.md')).toBe(true)
     expect(readFileSync(path, 'utf8')).toBe('# plan')
   })
 
+  test('skill installs companions below the skill root with verbatim bytes', async () => {
+    const result = await adapter.installAsset({
+      assetType: 'skill',
+      scope: 'project',
+      name: 'planning',
+      content: '# plan',
+      metadata: {},
+      companions: { 'references/api.md': new TextEncoder().encode('# api') },
+      ownedCompanionPaths: [],
+    })
+    if (!result.ok) expect.unreachable()
+    const companion = join(workDir, '.claude/skills/planning/references/api.md')
+    expect(readFileSync(companion, 'utf8')).toBe('# api')
+  })
+
   test('agent installs at .claude/agents/<name>.md', async () => {
-    await adapter.installAsset('project', 'agent', 'viper-plans/reviewer', 'agent body', {})
-    const path = join(workDir, '.claude/agents/viper-plans/reviewer.md')
-    expect(readFileSync(path, 'utf8')).toBe('agent body')
+    const result = await adapter.installAsset({
+      assetType: 'agent',
+      scope: 'project',
+      name: 'reviewer',
+      content: 'agent body',
+      metadata: {},
+    })
+    if (!result.ok) expect.unreachable()
+    expect(readFileSync(join(workDir, '.claude/agents/reviewer.md'), 'utf8')).toBe('agent body')
   })
 
   test('command installs at .claude/commands/<name>.md', async () => {
-    await adapter.installAsset('project', 'command', 'viper-plans/plan', 'command body', {})
-    const path = join(workDir, '.claude/commands/viper-plans/plan.md')
-    expect(readFileSync(path, 'utf8')).toBe('command body')
+    const result = await adapter.installAsset({
+      assetType: 'command',
+      scope: 'project',
+      name: 'plan',
+      content: 'command body',
+      metadata: {},
+    })
+    if (!result.ok) expect.unreachable()
+    expect(readFileSync(join(workDir, '.claude/commands/plan.md'), 'utf8')).toBe('command body')
   })
 
-  test('writes YAML front-matter with name + description + adapter extras', async () => {
-    await adapter.installAsset('project', 'skill', 'viper-plans/planning', '# plan', {
+  test('writes YAML front-matter with name + description + adapter extras on the primary only', async () => {
+    await adapter.installAsset({
+      assetType: 'skill',
+      scope: 'project',
       name: 'planning',
-      description: 'plan things',
-      tools: { Bash: true },
+      content: '# plan',
+      metadata: { name: 'planning', description: 'plan things', tools: { Bash: true } },
+      companions: { 'notes.md': new TextEncoder().encode('companion body') },
+      ownedCompanionPaths: [],
     })
-    const path = join(workDir, '.claude/skills/viper-plans/planning/SKILL.md')
-    const raw = readFileSync(path, 'utf8')
+    const raw = readFileSync(join(workDir, '.claude/skills/planning/SKILL.md'), 'utf8')
     expect(raw).toContain('name: planning')
     expect(raw).toContain('description: plan things')
     expect(raw).toContain('Bash: true')
     expect(raw).toContain('# plan')
+    // Companion bytes are verbatim — no front-matter injected
+    expect(readFileSync(join(workDir, '.claude/skills/planning/notes.md'), 'utf8')).toBe('companion body')
   })
 
-  test('readAsset round-trips body and front-matter metadata', async () => {
-    await adapter.installAsset('project', 'skill', 'viper-plans/planning', '# plan', {
+  test('readAsset round-trips body, metadata, and requested owned companions', async () => {
+    await adapter.installAsset({
+      assetType: 'skill',
+      scope: 'project',
       name: 'planning',
-      description: 'plan things',
-      tools: { Bash: true },
+      content: '# plan',
+      metadata: { name: 'planning', description: 'plan things' },
+      companions: { 'references/api.md': new TextEncoder().encode('# api') },
+      ownedCompanionPaths: [],
     })
-    const result = await adapter.readAsset('project', 'skill', 'viper-plans/planning')
-    expect(result.content.trim()).toBe('# plan')
-    expect(result.metadata).toEqual({
+    const result = await adapter.readAsset({
+      assetType: 'skill',
+      scope: 'project',
       name: 'planning',
-      description: 'plan things',
-      tools: { Bash: true },
+      ownedCompanionPaths: ['references/api.md'],
     })
+    if (!result.ok) expect.unreachable()
+    if (result.asset.assetType !== 'skill') expect.unreachable()
+    expect(result.asset.content.trim()).toBe('# plan')
+    expect(result.asset.metadata).toEqual({ name: 'planning', description: 'plan things' })
+    expect(new TextDecoder().decode(result.asset.companions['references/api.md'])).toBe('# api')
   })
 
-  test('deleteAsset removes the asset file', async () => {
-    await adapter.installAsset('project', 'skill', 'viper-plans/planning', '# plan', {
+  test('readAsset never sweeps unowned files into the result', async () => {
+    await adapter.installAsset({
+      assetType: 'skill',
+      scope: 'project',
       name: 'planning',
-      description: 'plan things',
+      content: '# plan',
+      metadata: {},
+      companions: {},
+      ownedCompanionPaths: [],
     })
-    await adapter.deleteAsset('project', 'skill', 'viper-plans/planning')
-    const filePath = join(workDir, '.claude/skills/viper-plans/planning/SKILL.md')
-    expect(existsSync(filePath)).toBe(false)
+    writeFileSync(join(workDir, '.claude/skills/planning/notes.txt'), 'user notes')
+    const result = await adapter.readAsset({
+      assetType: 'skill',
+      scope: 'project',
+      name: 'planning',
+      ownedCompanionPaths: [],
+    })
+    if (!result.ok) expect.unreachable()
+    if (result.asset.assetType !== 'skill') expect.unreachable()
+    expect(result.asset.companions).toEqual({})
   })
 
-  test('deleteAsset is a no-op when asset is absent', async () => {
-    await expect(adapter.deleteAsset('project', 'skill', 'never-installed')).resolves.toBeString()
+  test('readAsset returns not-found for a missing asset', async () => {
+    const result = await adapter.readAsset({ assetType: 'agent', scope: 'project', name: 'never-installed' })
+    if (result.ok) expect.unreachable()
+    expect(result.failure.code).toBe('not-found')
+  })
+
+  test('deleteAsset removes the skill bundle and preserves unowned files', async () => {
+    await adapter.installAsset({
+      assetType: 'skill',
+      scope: 'project',
+      name: 'planning',
+      content: '# plan',
+      metadata: {},
+      companions: { 'references/api.md': new TextEncoder().encode('# api') },
+      ownedCompanionPaths: [],
+    })
+    writeFileSync(join(workDir, '.claude/skills/planning/notes.txt'), 'user notes')
+    const result = await adapter.deleteAsset({
+      assetType: 'skill',
+      scope: 'project',
+      name: 'planning',
+      ownedCompanionPaths: ['references/api.md'],
+    })
+    if (!result.ok) expect.unreachable()
+    expect(result.existed).toBe(true)
+    expect(existsSync(join(workDir, '.claude/skills/planning/SKILL.md'))).toBe(false)
+    expect(existsSync(join(workDir, '.claude/skills/planning/references'))).toBe(false)
+    expect(readFileSync(join(workDir, '.claude/skills/planning/notes.txt'), 'utf8')).toBe('user notes')
+  })
+
+  test('deleteAsset is success with existed: false when asset is absent', async () => {
+    const result = await adapter.deleteAsset({
+      assetType: 'skill',
+      scope: 'project',
+      name: 'never-installed',
+      ownedCompanionPaths: [],
+    })
+    if (!result.ok) expect.unreachable()
+    expect(result.existed).toBe(false)
+  })
+
+  test('installAsset rejects an escaping companion path without writing anything', async () => {
+    const result = await adapter.installAsset({
+      assetType: 'skill',
+      scope: 'project',
+      name: 'planning',
+      content: '# plan',
+      metadata: {},
+      companions: { '../../escape.md': new TextEncoder().encode('x') },
+      ownedCompanionPaths: [],
+    })
+    if (result.ok) expect.unreachable()
+    expect(result.failure.code).toBe('invalid-companion-path')
+    expect(existsSync(join(workDir, '.claude/skills/planning/SKILL.md'))).toBe(false)
   })
 
   test('installAsset overwrites unconditionally (idempotent by contract)', async () => {
-    await adapter.installAsset('project', 'skill', 'viper-plans/planning', 'v1', {})
-    await adapter.installAsset('project', 'skill', 'viper-plans/planning', 'v2', {})
-    const path = join(workDir, '.claude/skills/viper-plans/planning/SKILL.md')
-    expect(readFileSync(path, 'utf8')).toBe('v2')
+    const request = (content: string) =>
+      ({
+        assetType: 'skill',
+        scope: 'project',
+        name: 'planning',
+        content,
+        metadata: {},
+        companions: {},
+        ownedCompanionPaths: [],
+      }) as const
+    await adapter.installAsset(request('v1'))
+    await adapter.installAsset(request('v2'))
+    expect(readFileSync(join(workDir, '.claude/skills/planning/SKILL.md'), 'utf8')).toBe('v2')
   })
 })
 
@@ -150,14 +272,30 @@ describe('claude-code adapter — user-scope base dir', () => {
   })
 
   test('user scope writes under ~/.claude', async () => {
-    await adapter.installAsset('user', 'skill', 'viper-plans/planning', '# plan', {})
-    const path = join(fakeHome, '.claude/skills/viper-plans/planning/SKILL.md')
-    expect(readFileSync(path, 'utf8')).toBe('# plan')
+    const result = await adapter.installAsset({
+      assetType: 'skill',
+      scope: 'user',
+      name: 'planning',
+      content: '# plan',
+      metadata: {},
+      companions: {},
+      ownedCompanionPaths: [],
+    })
+    if (!result.ok) expect.unreachable()
+    expect(readFileSync(join(fakeHome, '.claude/skills/planning/SKILL.md'), 'utf8')).toBe('# plan')
   })
 })
 
 describe('claude-code adapter — unsupported scope', () => {
-  test('system scope throws', async () => {
-    await expect(adapter.installAsset('system', 'skill', 'x', 'y', {})).rejects.toThrow(/system scope/)
+  test('system scope returns a structured unsupported-scope failure', async () => {
+    const result = await adapter.installAsset({
+      assetType: 'agent',
+      scope: 'system',
+      name: 'x',
+      content: 'y',
+      metadata: {},
+    })
+    if (result.ok) expect.unreachable()
+    expect(result.failure).toEqual({ code: 'unsupported-scope', scope: 'system' })
   })
 })

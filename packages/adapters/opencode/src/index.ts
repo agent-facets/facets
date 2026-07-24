@@ -1,12 +1,18 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import {
-  type AssetType,
+  type DeleteAssetRequest,
   defineAdapter,
-  deleteAssetFile,
-  installAssetFile,
-  readAssetFile,
+  deleteSingleFileAsset,
+  deleteSkillBundle,
+  type InstallAssetRequest,
+  installSingleFileAsset,
+  installSkillBundle,
+  type ReadAssetRequest,
+  readSingleFileAsset,
+  readSkillBundle,
   type Scope,
+  type SkillBundlePaths,
 } from '@agent-facets/adapter'
 import { type } from 'arktype'
 
@@ -60,37 +66,82 @@ export default defineAdapter({
     return { ok: true, data: result as Record<string, unknown> }
   },
 
-  async installAsset(scope, assetType, name, content, metadata) {
-    return installAssetFile({ file: resolvePath(scope, assetType, name) }, content, metadata as Record<string, unknown>)
+  async installAsset(request: InstallAssetRequest) {
+    const baseDir = baseDirFor(request.scope)
+    if (baseDir === null) {
+      return { ok: false as const, failure: { code: 'unsupported-scope' as const, scope: request.scope } }
+    }
+    switch (request.assetType) {
+      case 'skill':
+        return installSkillBundle(skillPaths(baseDir, request.name), {
+          content: request.content,
+          metadata: request.metadata as Record<string, unknown>,
+          companions: request.companions,
+          ownedCompanionPaths: request.ownedCompanionPaths,
+        })
+      case 'agent':
+        return installSingleFileAsset(
+          { file: join(baseDir, 'agents', `${request.name}.md`) },
+          request.content,
+          request.metadata as Record<string, unknown>,
+        )
+      case 'command':
+        return installSingleFileAsset(
+          { file: join(baseDir, 'commands', `${request.name}.md`) },
+          request.content,
+          request.metadata as Record<string, unknown>,
+        )
+    }
   },
 
-  async readAsset(scope, assetType, name) {
-    return readAssetFile({ file: resolvePath(scope, assetType, name) })
+  async readAsset(request: ReadAssetRequest) {
+    const baseDir = baseDirFor(request.scope)
+    if (baseDir === null) {
+      return { ok: false as const, failure: { code: 'unsupported-scope' as const, scope: request.scope } }
+    }
+    switch (request.assetType) {
+      case 'skill':
+        return readSkillBundle(skillPaths(baseDir, request.name), request.ownedCompanionPaths)
+      case 'agent':
+        return readSingleFileAsset({ file: join(baseDir, 'agents', `${request.name}.md`) }, 'agent')
+      case 'command':
+        return readSingleFileAsset({ file: join(baseDir, 'commands', `${request.name}.md`) }, 'command')
+    }
   },
 
-  async deleteAsset(scope, assetType, name) {
-    return deleteAssetFile({ file: resolvePath(scope, assetType, name), pruneBoundary: baseDirFor(scope) })
+  async deleteAsset(request: DeleteAssetRequest) {
+    const baseDir = baseDirFor(request.scope)
+    if (baseDir === null) {
+      return { ok: false as const, failure: { code: 'unsupported-scope' as const, scope: request.scope } }
+    }
+    switch (request.assetType) {
+      case 'skill':
+        return deleteSkillBundle(skillPaths(baseDir, request.name), request.ownedCompanionPaths)
+      case 'agent':
+        return deleteSingleFileAsset({ file: join(baseDir, 'agents', `${request.name}.md`), pruneBoundary: baseDir })
+      case 'command':
+        return deleteSingleFileAsset({ file: join(baseDir, 'commands', `${request.name}.md`), pruneBoundary: baseDir })
+    }
   },
 })
 
 /**
- * Resolve the absolute path for an asset under OpenCode's conventional layout.
+ * OpenCode's conventional layout:
  *
- *   user scope    → ~/.config/opencode
+ *   user scope    → ~/.config/opencode (or $XDG_CONFIG_HOME/opencode)
  *   project scope → <cwd>/.opencode
  *
- *   skill   → skills/<name>/SKILL.md
+ *   skill   → skills/<name>/SKILL.md (+ companions below skills/<name>/)
  *   agent   → agents/<name>.md
  *   command → commands/<name>.md
  *
  * `<name>` may contain forward slashes for facet-namespacing (e.g.,
  * `viper-plans/planning` → `skills/viper-plans/planning/SKILL.md`).
+ *
+ * `system` scope is unsupported; returns `null` so callers can produce a
+ * structured `unsupported-scope` failure.
  */
-function resolvePath(scope: Scope, assetType: AssetType, name: string): string {
-  return join(baseDirFor(scope), relativePathFor(assetType, name))
-}
-
-function baseDirFor(scope: Scope): string {
+function baseDirFor(scope: Scope): string | null {
   switch (scope) {
     case 'user': {
       const xdg = process.env.XDG_CONFIG_HOME
@@ -101,17 +152,11 @@ function baseDirFor(scope: Scope): string {
     case 'project':
       return join(process.cwd(), '.opencode')
     case 'system':
-      throw new Error('opencode adapter: system scope is not supported')
+      return null
   }
 }
 
-function relativePathFor(assetType: AssetType, name: string): string {
-  switch (assetType) {
-    case 'skill':
-      return join('skills', name, 'SKILL.md')
-    case 'agent':
-      return join('agents', `${name}.md`)
-    case 'command':
-      return join('commands', `${name}.md`)
-  }
+function skillPaths(baseDir: string, name: string): SkillBundlePaths {
+  const root = join(baseDir, 'skills', name)
+  return { root, primaryFile: join(root, 'SKILL.md'), pruneBoundary: baseDir }
 }

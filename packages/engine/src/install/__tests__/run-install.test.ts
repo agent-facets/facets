@@ -141,9 +141,29 @@ export default {
   apiVersion: '${ADAPTER_API_VERSION}',
   supportsInstall: true,
   buildAssetMetadata(data) { return { ok: true, data: data || {} } },
-  async installAsset(scope, type, name, content, metadata) { await installAssetFile({ file: path(type, name) }, content, metadata) },
-  async readAsset(scope, type, name) { return readAssetFile({ file: path(type, name) }) },
-  async deleteAsset(scope, type, name) { await deleteAssetFile({ file: path(type, name) }) },
+  async installAsset(req) {
+    const file = path(req.assetType, req.name)
+    await installAssetFile({ file }, req.content, req.metadata)
+    return { ok: true, primaryPath: file }
+  },
+  async readAsset(req) {
+    try {
+      const r = await readAssetFile({ file: path(req.assetType, req.name) })
+      return {
+        ok: true,
+        asset: req.assetType === 'skill'
+          ? { assetType: 'skill', content: r.content, metadata: r.metadata, companions: {} }
+          : { assetType: req.assetType, content: r.content, metadata: r.metadata },
+      }
+    } catch {
+      return { ok: false, failure: { code: 'not-found' } }
+    }
+  },
+  async deleteAsset(req) {
+    const file = path(req.assetType, req.name)
+    await deleteAssetFile({ file })
+    return { ok: true, existed: true, deletedPaths: [file] }
+  },
 }
 `,
   )
@@ -544,5 +564,23 @@ describe('runInstall — ADAPTER_INCOMPATIBLE preflight', () => {
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'ADAPTER_INCOMPATIBLE') expect.unreachable()
     expect(result.failure.failures.map((f) => f.kind)).toEqual(['api-missing', 'api-malformed'])
+  })
+
+  test('a superseded positional 0.0 adapter fails the preflight before any write', async () => {
+    // The exact cutover: an adapter built against the earlier positional
+    // contract declares 0.0. A 0.1-only CLI rejects it at the preflight,
+    // before any facet processing or state mutation.
+    const manifestBytes = writeFacets({ 'gate-facet': './some-local-facet' })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [incompatibleAdapter('legacy-positional', '0.0')],
+    })
+    if (result.ok) expect.unreachable()
+    if (result.failure.code !== 'ADAPTER_INCOMPATIBLE') expect.unreachable()
+    expect(result.failure.failures).toEqual([
+      { kind: 'api-unsupported', adapter: 'legacy-positional', found: '0.0', supported: [ADAPTER_API_VERSION] },
+    ])
+    expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(manifestBytes)
+    expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)
   })
 })

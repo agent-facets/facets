@@ -12,10 +12,16 @@
 
 /**
  * The adapter API contract identifier this SDK stamps into every adapter
- * returned by `defineAdapter()`. Identifies the current positional adapter
- * method contract.
+ * returned by `defineAdapter()`. Identifies the current tagged
+ * request/result adapter method contract.
+ *
+ * This supersedes the earlier positional method contract, which was
+ * identified by `0.0`. A CLI that supports only `0.1` classifies a `0.0`
+ * adapter as well-formed but unsupported and fails closed — the exact-token
+ * compatibility machinery cannot inspect method signatures, so the contract
+ * change is signalled by this identifier, never inferred.
  */
-export const ADAPTER_API_VERSION = '0.0' as const
+export const ADAPTER_API_VERSION = '0.1' as const
 
 /**
  * The top-level `package.json` field where a published npm adapter release

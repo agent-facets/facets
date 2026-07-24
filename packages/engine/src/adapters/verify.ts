@@ -24,7 +24,7 @@ export interface VerifiedAdapter {
  *   3./4./5. `incompatible` — the runtime API declaration is missing,
  *      malformed, unsupported, or disagrees with the npm package
  *      declaration used for selection.
- *   6. `invalid-name` / `invalid-shape` — the API `0.0` object is
+ *   6. `invalid-name` / `invalid-shape` — the verified adapter object is
  *      missing its name or a required method.
  *
  * A compatibility contradiction is classified before any adapter
@@ -40,15 +40,15 @@ export type VerifyAdapterFailure =
 /** Result of `verifyAdapter`. Discriminated by `ok`; never throws for expected failures. */
 export type VerifyAdapterResult = { ok: true; verified: VerifiedAdapter } | { ok: false; failure: VerifyAdapterFailure }
 
-/** The API `0.0` contract methods every adapter object must expose. */
+/** The contract methods every supported adapter object must expose. */
 const REQUIRED_METHODS = ['buildAssetMetadata', 'installAsset', 'readAsset', 'deleteAsset'] as const
 
 /**
  * Verifies that a built adapter.js file exports a valid, compatible
  * Adapter object. Dynamically imports the file and checks, in order:
  * importability, default export, runtime API declaration syntax, CLI
- * support, optional npm-metadata equality, then the `0.0` name and
- * method shape.
+ * support, optional npm-metadata equality, then the supported adapter's
+ * name and method shape.
  *
  * Importing an ESM bundle necessarily runs its top-level initialization;
  * no adapter *contract method* is invoked here.

@@ -16,19 +16,27 @@ An adapter is a small TypeScript library. You write one file, build it, and inst
 > - `buildAssetMetadata(data)` (required) — validate/enrich per-asset
 >   manifest metadata; return `Validated<AdapterMetadata>`.
 > - `supportsInstall: true` + `installAsset` / `readAsset` / `deleteAsset` —
->   the filesystem I/O that materializes assets. Without these the adapter
->   is metadata-only and hidden from the install picker.
+>   the filesystem I/O that materializes assets. Each takes a single request
+>   object **tagged by `assetType`** and returns a discriminated result
+>   (`{ ok: true, … }` or `{ ok: false, failure }`) — expected failures are
+>   values, never thrown. Without these the adapter is metadata-only and
+>   hidden from the install picker.
 >
-> Use the SDK's `installAssetFile` / `readAssetFile` / `deleteAssetFile`
-> helpers for front-matter-aware file I/O. `Scope` is `'system' | 'user' |
-> 'project'`; `AssetType` is `'skill' | 'agent' | 'command'`.
+> Use the SDK's skill-bundle helpers (`installSkillBundle` /
+> `readSkillBundle` / `deleteSkillBundle`) for the multi-file skill variant,
+> and the single-file helpers (`installSingleFileAsset` /
+> `readSingleFileAsset` / `deleteSingleFileAsset`) for agents and commands.
+> `Scope` is `'system' | 'user' | 'project'`; `AssetType` is
+> `'skill' | 'agent' | 'command'`.
 >
 > `defineAdapter()` stamps the adapter API version (`apiVersion`, currently
-> `0.0`) onto the returned adapter — do NOT set it yourself; the input type
-> excludes it. When publishing to npm, the published `package.json` MUST
-> declare `"facetAdapterApiVersion": "0.0"` (the canonical constants live at
-> `@agent-facets/adapter/api-version`) or the CLI will never select the
-> release.
+> `0.1`) onto the returned adapter — do NOT set it yourself; the input type
+> excludes it. `0.1` identifies the tagged request/result method contract;
+> the earlier positional contract (`0.0`) is unsupported by a `0.1` CLI and
+> must be migrated. When publishing to npm, the published `package.json`
+> MUST declare `"facetAdapterApiVersion": "0.1"` (the canonical constants
+> live at `@agent-facets/adapter/api-version`) or the CLI will never select
+> the release.
 >
 > Build with `tsdown`/`tsc`, then install:
 >
@@ -69,25 +77,33 @@ The SDK is a leaf library with no heavy dependencies  -- `@agent-facets/common` 
 
 <Step title="Write the adapter">
 
-Create `src/index.ts` and default-export a [`defineAdapter`](https://github.com/agent-facets/facets/tree/main/packages/adapter) call. Here is a minimal, working adapter that writes each asset to `~/.my-tool/<type>s/<name>.md`:
+Create `src/index.ts` and default-export a [`defineAdapter`](https://github.com/agent-facets/facets/tree/main/packages/adapter) call. Each I/O method takes a single request **tagged by `assetType`** and returns a discriminated result. Skills are multi-file bundles (a primary `SKILL.md` plus companion files); agents and commands are single files. The SDK's bundle and single-file helpers do the heavy lifting:
 
 ```ts expandable src/index.ts
 import {
   defineAdapter,
-  installAssetFile,
-  readAssetFile,
-  deleteAssetFile,
-  type Scope,
-  type AssetType,
+  installSkillBundle,
+  readSkillBundle,
+  deleteSkillBundle,
+  installSingleFileAsset,
+  readSingleFileAsset,
+  deleteSingleFileAsset,
+  type InstallAssetRequest,
+  type ReadAssetRequest,
+  type DeleteAssetRequest,
+  type SkillBundlePaths,
   type Validated,
   type AdapterMetadata,
 } from '@agent-facets/adapter'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-// Where an asset of a given type lives on disk for this tool.
-function assetPath(assetType: AssetType, name: string): { file: string } {
-  return { file: join(homedir(), '.my-tool', `${assetType}s`, `${name}.md`) }
+const baseDir = join(homedir(), '.my-tool')
+
+// A skill lives in its own directory: skills/<name>/SKILL.md (+ companions).
+function skillPaths(name: string): SkillBundlePaths {
+  const root = join(baseDir, 'skills', name)
+  return { root, primaryFile: join(root, 'SKILL.md'), pruneBoundary: baseDir }
 }
 
 export default defineAdapter({
@@ -102,25 +118,59 @@ export default defineAdapter({
     return { ok: true, data: meta }
   },
 
-  // Write the asset. `content` is the asset body; `metadata` becomes
-  // YAML front-matter. installAssetFile handles the front-matter assembly,
-  // directory creation, and idempotent overwrite for you.
-  async installAsset(scope: Scope, assetType: AssetType, name: string, content: string, metadata: unknown) {
-    return installAssetFile(assetPath(assetType, name), content, metadata as AdapterMetadata)
+  // Branch on request.assetType. Skills carry a companion byte map plus the
+  // engine-verified owned-companion path set; the bundle helper stages,
+  // rolls back, and prunes atomically. Agents and commands are single files.
+  async installAsset(request: InstallAssetRequest) {
+    switch (request.assetType) {
+      case 'skill':
+        return installSkillBundle(skillPaths(request.name), {
+          content: request.content,
+          metadata: request.metadata as Record<string, unknown>,
+          companions: request.companions,
+          ownedCompanionPaths: request.ownedCompanionPaths,
+        })
+      case 'agent':
+        return installSingleFileAsset(
+          { file: join(baseDir, 'agents', `${request.name}.md`) },
+          request.content,
+          request.metadata as Record<string, unknown>,
+        )
+      case 'command':
+        return installSingleFileAsset(
+          { file: join(baseDir, 'commands', `${request.name}.md`) },
+          request.content,
+          request.metadata as Record<string, unknown>,
+        )
+    }
   },
 
-  async readAsset(scope: Scope, assetType: AssetType, name: string) {
-    return readAssetFile(assetPath(assetType, name))
+  async readAsset(request: ReadAssetRequest) {
+    switch (request.assetType) {
+      case 'skill':
+        return readSkillBundle(skillPaths(request.name), request.ownedCompanionPaths)
+      case 'agent':
+        return readSingleFileAsset({ file: join(baseDir, 'agents', `${request.name}.md`) }, 'agent')
+      case 'command':
+        return readSingleFileAsset({ file: join(baseDir, 'commands', `${request.name}.md`) }, 'command')
+    }
   },
 
-  async deleteAsset(scope: Scope, assetType: AssetType, name: string) {
-    return deleteAssetFile(assetPath(assetType, name))
+  async deleteAsset(request: DeleteAssetRequest) {
+    switch (request.assetType) {
+      case 'skill':
+        return deleteSkillBundle(skillPaths(request.name), request.ownedCompanionPaths)
+      case 'agent':
+        return deleteSingleFileAsset({ file: join(baseDir, 'agents', `${request.name}.md`), pruneBoundary: baseDir })
+      case 'command':
+        return deleteSingleFileAsset({ file: join(baseDir, 'commands', `${request.name}.md`), pruneBoundary: baseDir })
+    }
   },
 })
 ```
 
 <Note>
-  `installAssetFile`, `readAssetFile`, and `deleteAssetFile` are SDK helpers that manage YAML front-matter, create parent directories, and stay byte-stable across a write→read round-trip. Use them instead of hand-rolling file I/O so re-installs don't report phantom drift.
+  The bundle helpers (`installSkillBundle` / `readSkillBundle` / `deleteSkillBundle`) and single-file helpers (`installSingleFileAsset` / …) manage YAML front-matter, directory creation, atomic staging with rollback, and byte-stable round-trips. Skill helpers only ever touch the primary file plus the caller-supplied owned companion paths, so unowned user files are never read, deleted, or swept into a result. Use them instead of hand-rolling file I/O so re-installs don't report phantom drift.
 </Note>
 
 </Step>
@@ -136,7 +186,7 @@ Everything an adapter can implement, from [`@agent-facets/adapter`](https://gith
 </ResponseField>
 
 <ResponseField name="apiVersion" type="string">
-  The adapter API contract the adapter was built against — **stamped automatically by `defineAdapter()`** (currently `0.0`). You cannot set it in your definition; the input type excludes it. The CLI refuses to load adapters whose declared API it doesn't support.
+  The adapter API contract the adapter was built against — **stamped automatically by `defineAdapter()`** (currently `0.1`, the tagged request/result contract). You cannot set it in your definition; the input type excludes it. The CLI refuses to load adapters whose declared API it doesn't support, so an adapter built against the earlier positional contract (`0.0`) must be rebuilt against a `0.1` SDK release and reinstalled.
 </ResponseField>
 
 <ResponseField name="buildAssetMetadata(data)" type="Validated<AdapterMetadata>" required>
@@ -147,19 +197,19 @@ Everything an adapter can implement, from [`@agent-facets/adapter`](https://gith
   Set to `true` only when all three I/O methods below are implemented. It makes the adapter selectable in the install picker; a metadata-only adapter omits it and stays hidden.
 </ResponseField>
 
-<ResponseField name="installAsset(scope, assetType, name, content, metadata)" type="Promise<string | undefined>">
-  Write the asset to disk. Return the absolute path (for verbose logs) or `undefined`.
+<ResponseField name="installAsset(request: InstallAssetRequest)" type="Promise<InstallAssetResult>">
+  Install (or replace) an asset. `request` is tagged by `assetType`: the `skill` variant carries `content`, `metadata`, a `companions` byte map, and the engine-verified `ownedCompanionPaths`; `agent`/`command` variants carry `content` and `metadata` only. Return `{ ok: true, primaryPath }` or `{ ok: false, failure }`.
 </ResponseField>
 
-<ResponseField name="readAsset(scope, assetType, name)" type="Promise<{ content, metadata }>">
-  Read an asset back from disk.
+<ResponseField name="readAsset(request: ReadAssetRequest)" type="Promise<ReadAssetResult>">
+  Read an asset back. The `skill` variant carries `ownedCompanionPaths` (read exactly those, never enumerate the directory). Return `{ ok: true, asset }` or `{ ok: false, failure }` (`failure.code === 'not-found'` when absent).
 </ResponseField>
 
-<ResponseField name="deleteAsset(scope, assetType, name)" type="Promise<string | undefined>">
-  Remove an asset. Return its path or `undefined`.
+<ResponseField name="deleteAsset(request: DeleteAssetRequest)" type="Promise<DeleteAssetResult>">
+  Remove an asset. The `skill` variant carries `ownedCompanionPaths`; deletion removes the primary plus exactly those, preserving unowned files. Return `{ ok: true, existed, deletedPaths }` or `{ ok: false, failure }`.
 </ResponseField>
 
-Two shared argument types run through the I/O methods: `scope` is `'system'`, `'user'`, or `'project'` (decide your on-disk layout per scope), and `assetType` is `'skill'`, `'agent'`, or `'command'`.
+Every request carries `scope` (`'system'`, `'user'`, or `'project'` — decide your on-disk layout per scope) and `name`, tagged by `assetType` (`'skill'`, `'agent'`, or `'command'`). Expected failures are structured values (`not-found`, `invalid-companion-path`, `unsupported-scope`, `not-implemented`, `io-failed`), never thrown errors.
 
 <Tip>
   You can ship a **metadata-only** adapter: implement just `name` and `buildAssetMetadata`, and omit `supportsInstall`. It validates manifest config during builds without materializing anything  -- useful while you're still figuring out a tool's on-disk layout.
@@ -224,15 +274,15 @@ Installing by bare name (`facet adapter install my-adapter`) resolves through np
 
 ```json package.json
 {
-  "facetAdapterApiVersion": "0.0"
+  "facetAdapterApiVersion": "0.1"
 }
 ```
 
-Declare the adapter API version your SDK release stamps at runtime (currently `0.0`). The CLI skips releases where this field is missing, malformed, or unsupported — a release without it is never selected, and a field that disagrees with the runtime `apiVersion` stamped by `defineAdapter()` fails verification after download. The canonical values are exported from `@agent-facets/adapter/api-version` (`ADAPTER_API_VERSION` and `ADAPTER_API_VERSION_PACKAGE_FIELD`), so release tooling can inject the field instead of hardcoding it.
+Declare the adapter API version your SDK release stamps at runtime (currently `0.1`). The CLI skips releases where this field is missing, malformed, or unsupported — a release without it is never selected, and a field that disagrees with the runtime `apiVersion` stamped by `defineAdapter()` fails verification after download. A CLI that supports only `0.1` skips releases still declaring the earlier positional `0.0`, and an older `0.0` CLI conversely keeps selecting your highest compatible `0.0` release — so publish your `0.1` release before requiring a `0.1`-only CLI. The canonical values are exported from `@agent-facets/adapter/api-version` (`ADAPTER_API_VERSION` and `ADAPTER_API_VERSION_PACKAGE_FIELD`), so release tooling can inject the field instead of hardcoding it.
 
 ## Share it upstream
 
-Built an adapter for a major AI coding assistant? Contributions are welcome. If your adapter targets a widely used tool, open a pull request on the [`facets repository`](https://github.com/agent-facets/facets) to share it upstream as a first-party adapter.
+Built an adapter for a major AI coding assistant? Contributions are welcome. If your adapter targets a widely used tool, open a pull request on the [facets repository](https://github.com/agent-facets/facets) to share it upstream as a first-party adapter.
 
 A first-party adapter is installable by name (`facet adapter install <name>`) via the CLI, so everyone using that tool benefits.
 

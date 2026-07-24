@@ -17,9 +17,9 @@ import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
 
 /**
  * The exact adapter APIs this CLI supports. Derived from the SDK's
- * canonical constant — the `0.0` literal lives only in the SDK. A later
- * change MAY add further exact identifiers without changing how the SDK
- * stamps newly built adapters.
+ * canonical constant — the current API literal lives only in the SDK. A
+ * later change MAY add further exact identifiers without changing how the
+ * SDK stamps newly built adapters.
  */
 export const SUPPORTED_ADAPTER_APIS: readonly string[] = [ADAPTER_API_VERSION]
 

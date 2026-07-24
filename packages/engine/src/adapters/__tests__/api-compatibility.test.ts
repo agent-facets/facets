@@ -42,13 +42,14 @@ describe('classifyApiDeclaration', () => {
     expect(classifyApiDeclaration(ADAPTER_API_VERSION)).toEqual({ kind: 'supported', api: ADAPTER_API_VERSION })
   })
 
-  test.each(['9.9', '1.0', '0.1'])('classifies well-formed but unknown %s as unsupported', (value) => {
+  test.each(['9.9', '1.0', '0.0'])('classifies well-formed but unknown %s as unsupported', (value) => {
     expect(classifyApiDeclaration(value)).toEqual({ kind: 'unsupported', api: value })
   })
 
-  test('numeric proximity to a supported identifier does not make it supported', () => {
-    // '0.1' is numerically adjacent to '0.0' but is a different contract.
-    const result = classifyApiDeclaration('0.1')
+  test('the superseded positional identifier 0.0 is unsupported by a 0.1-only CLI', () => {
+    // '0.0' is numerically adjacent to '0.1' but names the earlier
+    // positional contract — a different, unsupported wire contract.
+    const result = classifyApiDeclaration('0.0')
     expect(result.kind).toBe('unsupported')
   })
 

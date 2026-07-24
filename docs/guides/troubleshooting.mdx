@@ -35,7 +35,7 @@ Common errors, what causes them, and how to fix them. Each entry mirrors the CLI
   </Accordion>
 
   <Accordion title='"adapter incompatible" / "unsupported adapter API" (build, add, remove, install fail before writing)'>
-    **Cause:** every installed adapter declares the adapter API contract it was built against, and each CLI release supports an exact set (currently `0.0`). A bundle installed before API versioning has **no** declaration; other bundles can carry a malformed declaration, declare an API this CLI doesn't support, or disagree with the npm metadata they were selected by. All four cases fail closed: `facet build`, `facet add`, `facet remove`, and `facet install` stop **before** invoking any adapter method or writing project files.
+    **Cause:** every installed adapter declares the adapter API contract it was built against, and each CLI release supports an exact set (currently `0.1`, the tagged request/result contract). A bundle installed before API versioning has **no** declaration; a bundle built against the earlier positional contract declares `0.0`, which a `0.1` CLI treats as unsupported; other bundles can carry a malformed declaration, declare an API this CLI doesn't support, or disagree with the npm metadata they were selected by. All these cases fail closed: `facet build`, `facet add`, `facet remove`, and `facet install` stop **before** invoking any adapter method or writing project files.
 
     **Fix:** list your installed adapters to see each one's declared API and status, then run the reinstall command printed next to the incompatible entry:
 

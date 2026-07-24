@@ -140,13 +140,13 @@ const mockAdapter = defineAdapter({
   name: 'mock-adapter',
   buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
   async installAsset() {
-    return undefined
+    return { ok: true as const, primaryPath: '/dev/null' }
   },
   async readAsset() {
-    return { content: 'Your asset sir...' }
+    return { ok: true as const, asset: { assetType: 'command' as const, content: 'Your asset sir...' } }
   },
   async deleteAsset() {
-    return undefined
+    return { ok: true as const, existed: false, deletedPaths: [] }
   },
 })
 
@@ -158,13 +158,13 @@ const rejectingAdapter = defineAdapter({
     errors: [{ path: 'tools', message: 'Invalid tools config', expected: 'Record<string, boolean>', actual: 'string' }],
   }),
   async installAsset() {
-    return undefined
+    return { ok: true as const, primaryPath: '/dev/null' }
   },
   async readAsset() {
-    return { content: 'Your asset sir...' }
+    return { ok: true as const, asset: { assetType: 'command' as const, content: 'Your asset sir...' } }
   },
   async deleteAsset() {
-    return undefined
+    return { ok: true as const, existed: false, deletedPaths: [] }
   },
 })
 
@@ -490,11 +490,15 @@ describe('runBuildPipeline', () => {
     const mockAdapter = defineAdapter({
       name: 'mock-adapter',
       buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
-      async installAsset(_scope, _assetType, _name, _content, _metadata) {},
-      async readAsset(_scope, _assetType, _name) {
-        return { content: 'Your asset sir...' }
+      async installAsset() {
+        return { ok: true as const, primaryPath: '/dev/null' }
       },
-      async deleteAsset(_scope, _assetType, _name) {},
+      async readAsset() {
+        return { ok: true as const, asset: { assetType: 'command' as const, content: 'Your asset sir...' } }
+      },
+      async deleteAsset() {
+        return { ok: true as const, existed: false, deletedPaths: [] }
+      },
     })
 
     const result = await runBuildPipeline(dir, [mockAdapter])
@@ -534,11 +538,15 @@ describe('runBuildPipeline', () => {
           },
         ],
       }),
-      async installAsset(_scope, _assetType, _name, _content, _metadata) {},
-      async readAsset(_scope, _assetType, _name) {
-        return { content: 'Your asset sir...' }
+      async installAsset() {
+        return { ok: true as const, primaryPath: '/dev/null' }
       },
-      async deleteAsset(_scope, _assetType, _name) {},
+      async readAsset() {
+        return { ok: true as const, asset: { assetType: 'command' as const, content: 'Your asset sir...' } }
+      },
+      async deleteAsset() {
+        return { ok: true as const, existed: false, deletedPaths: [] }
+      },
     })
 
     const result = await runBuildPipeline(dir, [rejectingAdapter])
@@ -606,13 +614,13 @@ describe('runBuildPipeline', () => {
         return { ok: true, data: enrichedData }
       },
       async installAsset() {
-        return undefined
+        return { ok: true as const, primaryPath: '/dev/null' }
       },
       async readAsset() {
-        return { content: 'Your asset sir...' }
+        return { ok: true as const, asset: { assetType: 'command' as const, content: 'Your asset sir...' } }
       },
       async deleteAsset() {
-        return undefined
+        return { ok: true as const, existed: false, deletedPaths: [] }
       },
     })
 
@@ -1071,6 +1079,23 @@ describe('runBuildPipeline — adapter API preflight', () => {
     if (result.ok) expect.unreachable()
     if (result.kind !== 'adapter-incompatible') expect.unreachable()
     expect(result.failures.map((f) => f.kind)).toEqual(['api-missing', 'api-malformed'])
+  })
+
+  test('a superseded positional 0.0 adapter fails the preflight before any stage', async () => {
+    // A bundle built against the earlier positional contract declares 0.0,
+    // which a 0.1-only CLI treats as unsupported. The build fails at the
+    // preflight before stage 1 and before any contract method is invoked.
+    const dir = await validFixture('preflight-positional')
+    const stages: string[] = []
+    const result = await runBuildPipeline(dir, [incompatibleAdapter('legacy-positional', '0.0')], (progress) => {
+      stages.push(progress.stage)
+    })
+    if (result.ok) expect.unreachable()
+    if (result.kind !== 'adapter-incompatible') expect.unreachable()
+    expect(result.failures).toEqual([
+      { kind: 'api-unsupported', adapter: 'legacy-positional', found: '0.0', supported: [ADAPTER_API_VERSION] },
+    ])
+    expect(stages).toEqual([])
   })
 
   test('build with no adapters proceeds and warns about unknown manifest adapters', async () => {

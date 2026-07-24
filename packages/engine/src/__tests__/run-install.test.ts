@@ -43,14 +43,29 @@ function buildFakeAdapter(name: string): Adapter {
       ok: true,
       data: (data ?? {}) as Record<string, unknown>,
     }),
-    async installAsset(_scope, type, n, content, metadata) {
-      await installAssetFile(path(type, n), content, metadata as Record<string, unknown> | undefined)
+    async installAsset(request) {
+      const p = path(request.assetType, request.name)
+      await installAssetFile(p, request.content, request.metadata as Record<string, unknown> | undefined)
+      return { ok: true, primaryPath: p.file }
     },
-    async readAsset(_scope, type, n) {
-      return readAssetFile(path(type, n))
+    async readAsset(request) {
+      try {
+        const { content, metadata } = await readAssetFile(path(request.assetType, request.name))
+        return {
+          ok: true,
+          asset:
+            request.assetType === 'skill'
+              ? { assetType: 'skill', content, metadata, companions: {} }
+              : { assetType: request.assetType, content, metadata },
+        }
+      } catch {
+        return { ok: false, failure: { code: 'not-found' } }
+      }
     },
-    async deleteAsset(_scope, type, n) {
-      await deleteAssetFile(path(type, n))
+    async deleteAsset(request) {
+      const p = path(request.assetType, request.name)
+      await deleteAssetFile(p)
+      return { ok: true, existed: true, deletedPaths: [p.file] }
     },
   }
   return adapter
@@ -76,14 +91,29 @@ function buildNestedFakeAdapter(name: string): Adapter {
     apiVersion: ADAPTER_API_VERSION,
     supportsInstall: true,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
-    async installAsset(_scope, type, n, content, metadata) {
-      await installAssetFile(path(type, n), content, metadata as Record<string, unknown> | undefined)
+    async installAsset(request) {
+      const p = path(request.assetType, request.name)
+      await installAssetFile(p, request.content, request.metadata as Record<string, unknown> | undefined)
+      return { ok: true, primaryPath: p.file }
     },
-    async readAsset(_scope, type, n) {
-      return readAssetFile(path(type, n))
+    async readAsset(request) {
+      try {
+        const { content, metadata } = await readAssetFile(path(request.assetType, request.name))
+        return {
+          ok: true,
+          asset:
+            request.assetType === 'skill'
+              ? { assetType: 'skill', content, metadata, companions: {} }
+              : { assetType: request.assetType, content, metadata },
+        }
+      } catch {
+        return { ok: false, failure: { code: 'not-found' } }
+      }
     },
-    async deleteAsset(_scope, type, n) {
-      await deleteAssetFile(path(type, n))
+    async deleteAsset(request) {
+      const p = path(request.assetType, request.name)
+      await deleteAssetFile(p)
+      return { ok: true, existed: true, deletedPaths: [p.file] }
     },
   }
 }
@@ -100,25 +130,33 @@ function buildBrokenAdapter(name: string, throwOnCall: number): Adapter {
     apiVersion: ADAPTER_API_VERSION,
     supportsInstall: true,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
-    async installAsset(_scope, type, n, content) {
+    async installAsset(request) {
       calls += 1
       if (calls >= throwOnCall) throw new Error(`${name}: boom on call ${calls}`)
-      const file = join(baseDir, `${type}s`, `${n}.md`)
-      mkdirSync(join(baseDir, `${type}s`), { recursive: true })
-      writeFileSync(file, content)
+      const file = join(baseDir, `${request.assetType}s`, `${request.name}.md`)
+      mkdirSync(join(baseDir, `${request.assetType}s`), { recursive: true })
+      writeFileSync(file, request.content)
+      return { ok: true, primaryPath: file }
     },
-    async readAsset(_scope, type, n) {
-      const file = join(baseDir, `${type}s`, `${n}.md`)
+    async readAsset(request) {
+      const file = join(baseDir, `${request.assetType}s`, `${request.name}.md`)
       if (!existsSync(file)) {
-        const err: NodeJS.ErrnoException = new Error('ENOENT')
-        err.code = 'ENOENT'
-        throw err
+        return { ok: false, failure: { code: 'not-found' } }
       }
-      return { content: readFileSync(file, 'utf8') }
+      const content = readFileSync(file, 'utf8')
+      return {
+        ok: true,
+        asset:
+          request.assetType === 'skill'
+            ? { assetType: 'skill', content, companions: {} }
+            : { assetType: request.assetType, content },
+      }
     },
-    async deleteAsset(_scope, type, n) {
-      const file = join(baseDir, `${type}s`, `${n}.md`)
-      if (existsSync(file)) rmSync(file)
+    async deleteAsset(request) {
+      const file = join(baseDir, `${request.assetType}s`, `${request.name}.md`)
+      const existed = existsSync(file)
+      if (existed) rmSync(file)
+      return { ok: true, existed, deletedPaths: existed ? [file] : [] }
     },
   } as Adapter
 }
@@ -135,15 +173,16 @@ function buildBadReadAdapter(name: string): Adapter {
     supportsInstall: true,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
     async installAsset() {
-      throw new Error('should not be reached: readAsset threw first')
+      throw new Error('should not be reached: readAsset failed first')
     },
     async readAsset() {
-      const err: NodeJS.ErrnoException = new Error('EACCES: permission denied')
-      err.code = 'EACCES'
-      throw err
+      return {
+        ok: false,
+        failure: { code: 'io-failed', operation: 'read', message: 'EACCES: permission denied' },
+      }
     },
     async deleteAsset() {
-      return undefined
+      return { ok: true, existed: false, deletedPaths: [] }
     },
   } as Adapter
 }

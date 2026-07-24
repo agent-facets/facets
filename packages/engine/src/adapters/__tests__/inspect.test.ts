@@ -112,7 +112,10 @@ describe('inspectInstalledAdapter — managed', () => {
     await mkdir(genDir, { recursive: true })
     await Bun.write(
       join(genDir, 'adapter.js'),
-      await Bun.file(await makeBundle('my-adapter', { apiVersion: '0.1' })).text(),
+      // '0.0' is the superseded positional contract: well-formed but
+      // unsupported by a 0.1-only CLI, so support check (which precedes
+      // metadata equality) classifies it api-unsupported.
+      await Bun.file(await makeBundle('my-adapter', { apiVersion: '0.0' })).text(),
     )
     await Bun.write(
       join(baseDir, 'my-adapter', INSTALLATION_RECEIPT_NAME),

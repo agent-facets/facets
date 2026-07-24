@@ -8,11 +8,181 @@ import type { AdapterApiVersion } from './api-version.ts'
 export type AdapterMetadata = Record<string, unknown>
 
 /**
+ * Canonical map of skill companion paths to opaque bytes.
+ *
+ * Keys are paths **relative to the skill root** (e.g. `references/api.md`),
+ * using forward slashes. Values are exact bytes, stored verbatim — no
+ * front-matter or metadata transformation ever applies to companions.
+ * An empty map is legal and is how a companion-less skill is expressed.
+ */
+export type CompanionMap = Record<string, Uint8Array>
+
+/**
+ * Install request, tagged by asset type.
+ *
+ * The skill variant is the only one that can carry companion files:
+ * `companions` is the complete new bundle beyond `SKILL.md`, and
+ * `ownedCompanionPaths` is the caller-verified set of companion paths a
+ * previous install owned (from the caller's lockfile/receipt records).
+ * Replacement removes exactly the owned paths absent from the new bundle;
+ * unowned files are never touched. Adapters never persist ownership or
+ * infer it from disk — ownership data arrives on every request.
+ *
+ * Agent and command variants structurally cannot carry companions or
+ * ownership sets, and no variant exists for archive-only supplementary
+ * files (they never reach adapters).
+ */
+export type InstallAssetRequest =
+  | {
+      readonly assetType: 'skill'
+      readonly scope: Scope
+      readonly name: string
+      /** Primary `SKILL.md` text (front-matter transformation applies here only). */
+      readonly content: string
+      readonly metadata: unknown
+      /** New companion bundle, paths relative to the skill root. `{}` is legal. */
+      readonly companions: CompanionMap
+      /** Caller-verified previously-owned companion paths. `[]` is legal. */
+      readonly ownedCompanionPaths: readonly string[]
+    }
+  | {
+      readonly assetType: 'agent'
+      readonly scope: Scope
+      readonly name: string
+      readonly content: string
+      readonly metadata: unknown
+    }
+  | {
+      readonly assetType: 'command'
+      readonly scope: Scope
+      readonly name: string
+      readonly content: string
+      readonly metadata: unknown
+    }
+
+/**
+ * Read request, tagged by asset type.
+ *
+ * A skill read carries the caller-verified owned companion path set to
+ * return. The adapter must not enumerate the skill directory — it reads
+ * exactly the requested owned paths, so unowned files can never be swept
+ * into a read result.
+ */
+export type ReadAssetRequest =
+  | {
+      readonly assetType: 'skill'
+      readonly scope: Scope
+      readonly name: string
+      /** Owned companion paths whose bytes should be returned. `[]` is legal. */
+      readonly ownedCompanionPaths: readonly string[]
+    }
+  | { readonly assetType: 'agent'; readonly scope: Scope; readonly name: string }
+  | { readonly assetType: 'command'; readonly scope: Scope; readonly name: string }
+
+/**
+ * Delete request, tagged by asset type.
+ *
+ * A skill delete carries the caller-verified owned companion path set;
+ * the adapter removes the primary plus exactly those paths as one atomic
+ * operation, preserving every other file and pruning only directories
+ * left empty by owned-file removal.
+ */
+export type DeleteAssetRequest =
+  | {
+      readonly assetType: 'skill'
+      readonly scope: Scope
+      readonly name: string
+      /** Owned companion paths to delete alongside the primary. `[]` is legal. */
+      readonly ownedCompanionPaths: readonly string[]
+    }
+  | { readonly assetType: 'agent'; readonly scope: Scope; readonly name: string }
+  | { readonly assetType: 'command'; readonly scope: Scope; readonly name: string }
+
+/**
+ * Structured failure data for adapter asset operations.
+ *
+ * Expected failures are values, not thrown errors — the caller branches
+ * on `code`. Adapters convert their internal I/O exceptions into
+ * `io-failed`; anything thrown past this boundary is a programmer bug.
+ */
+export type AdapterAssetFailure =
+  /** The requested asset does not exist at that scope. */
+  | { readonly code: 'not-found' }
+  /**
+   * A supplied companion path (new or owned) is malformed or escapes the
+   * skill root. Detected before any filesystem access; the whole request
+   * is rejected without reading, writing, or deleting anything.
+   */
+  | { readonly code: 'invalid-companion-path'; readonly path: string; readonly reason: string }
+  /** The adapter does not support the requested scope. */
+  | { readonly code: 'unsupported-scope'; readonly scope: Scope }
+  /** The adapter does not implement this operation. */
+  | { readonly code: 'not-implemented'; readonly method: 'installAsset' | 'readAsset' | 'deleteAsset' }
+  /** A filesystem operation failed. `operation: 'rollback'` means the
+   * failure occurred while restoring the prior bundle after another
+   * failure — the bundle may be partial and needs re-install to converge. */
+  | {
+      readonly code: 'io-failed'
+      readonly operation: 'read' | 'write' | 'delete' | 'rollback'
+      readonly path?: string
+      readonly message: string
+    }
+
+/** Result of an install operation. */
+export type InstallAssetResult =
+  | {
+      readonly ok: true
+      /** Absolute path of the written primary file — used for verbose logging. */
+      readonly primaryPath: string
+    }
+  | { readonly ok: false; readonly failure: AdapterAssetFailure }
+
+/**
+ * A successfully read asset, tagged by type. The skill variant carries the
+ * bytes of exactly the owned companion paths that were requested and exist.
+ * `content` is canonical logical primary content: adapter-specific storage
+ * encoding (front-matter wrapping, TOML fields, …) is stripped so callers
+ * can compare it with portable integrity records.
+ */
+export type ReadAsset =
+  | {
+      readonly assetType: 'skill'
+      readonly content: string
+      readonly metadata?: AdapterMetadata
+      readonly companions: CompanionMap
+    }
+  | { readonly assetType: 'agent'; readonly content: string; readonly metadata?: AdapterMetadata }
+  | { readonly assetType: 'command'; readonly content: string; readonly metadata?: AdapterMetadata }
+
+/** Result of a read operation. */
+export type ReadAssetResult =
+  | { readonly ok: true; readonly asset: ReadAsset }
+  | { readonly ok: false; readonly failure: AdapterAssetFailure }
+
+/** Result of a delete operation. */
+export type DeleteAssetResult =
+  | {
+      readonly ok: true
+      /** False when the asset did not exist (delete is idempotent — that is success). */
+      readonly existed: boolean
+      /** Absolute paths of every file removed — used for verbose logging. */
+      readonly deletedPaths: readonly string[]
+    }
+  | { readonly ok: false; readonly failure: AdapterAssetFailure }
+
+/**
  * The full adapter contract. Returned by `defineAdapter()`.
  *
  * An adapter is an AI coding tool (OpenCode, Claude Code, Codex, etc.)
  * that wraps around an LLM. The adapter is a full abstraction layer
  * over its tool's storage and configuration.
+ *
+ * All three asset operations take tagged requests and return tagged
+ * results. A skill install is one all-or-nothing operation over the
+ * complete bundle: the new primary and companions all commit (with
+ * previously-owned paths absent from the new bundle removed), or the
+ * prior bundle remains intact. Recovery from an interrupted process is
+ * the caller's idempotent re-install, so operations must be convergent.
  */
 export interface Adapter {
   /** Unique adapter name (e.g., "opencode", "claude-code", "codex") */
@@ -43,29 +213,14 @@ export interface Adapter {
    */
   buildAssetMetadata(data: unknown): Validated<AdapterMetadata>
 
-  /**
-   * Install an asset at the given scope. Returns the absolute path the
-   * asset was written to, if available — used for verbose diagnostic
-   * logging. Returning `void` is backward-compatible (older adapters
-   * that don't return a path still satisfy the contract).
-   */
-  installAsset(
-    scope: Scope,
-    assetType: AssetType,
-    name: string,
-    content: string,
-    metadata: unknown,
-  ): Promise<string | undefined>
+  /** Install (or replace) an asset. See {@link InstallAssetRequest}. */
+  installAsset(request: InstallAssetRequest): Promise<InstallAssetResult>
 
-  /** Read an asset's content from the given scope */
-  readAsset(scope: Scope, assetType: AssetType, name: string): Promise<{ content: string; metadata?: AdapterMetadata }>
+  /** Read an asset's canonical content. See {@link ReadAssetRequest}. */
+  readAsset(request: ReadAssetRequest): Promise<ReadAssetResult>
 
-  /**
-   * Delete an asset from the given scope. Returns the absolute path of
-   * the deleted asset, if available — used for verbose diagnostic
-   * logging. Returning `void` is backward-compatible.
-   */
-  deleteAsset(scope: Scope, assetType: AssetType, name: string): Promise<string | undefined>
+  /** Delete an asset. See {@link DeleteAssetRequest}. */
+  deleteAsset(request: DeleteAssetRequest): Promise<DeleteAssetResult>
 }
 
 /**
