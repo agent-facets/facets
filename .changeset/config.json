@@ -3,7 +3,7 @@
   "changelog": ["@changesets/changelog-github", { "repo": "agent-facets/facets" }],
   "commit": false,
   "fixed": [],
-  "linked": [["agent-facets", "@agent-facets/adapter", "@agent-facets/protocol"]],
+  "linked": [],
   "ignore": ["@agent-facets/engine", "@agent-facets/common"],
   "access": "public",
   "baseBranch": "main",
