@@ -254,8 +254,8 @@
         "kind": "registry",
         "registry": "https://api.agentfacets.io"
       },
-      "version": "1.2.0",
-      "integrity": "sha256:5c0cad2c96b3ce57c7c8a79bd482302622d9e44f121514fb2987e3043dc6cf50",
+      "version": "1.2.1",
+      "integrity": "sha256:cb6f0be50bf57cdaaa664eb24fd69e486490b2ff1228a96b00fbc9addc1990a0",
       "assets": [
         {
           "scope": "project",
@@ -264,7 +264,7 @@
           "files": [
             {
               "path": "skills/viper-execution-rules/SKILL.md",
-              "integrity": "sha256:13cd22a370049d60e5b3b367c34797e2c3d00c64bd5110f6979740751667b4e3"
+              "integrity": "sha256:6b70bed17556faf5e131b2771c6475db23e93d26a39197ef21e143509545514f"
             }
           ]
         },
@@ -275,7 +275,7 @@
           "files": [
             {
               "path": "skills/viper-planning/SKILL.md",
-              "integrity": "sha256:68dbfd63d3a1d058642fcfa8772e7bba7e8d43624784ecf1e64b52179761ec90"
+              "integrity": "sha256:cf326cb73bad44540fadd11f4c985b3f8634f734db7c8f87f9e8230bf895284c"
             }
           ]
         },
