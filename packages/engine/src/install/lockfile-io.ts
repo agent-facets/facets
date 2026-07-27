@@ -4,6 +4,8 @@ import { atomicWriteFileSync } from '@agent-facets/common'
 import {
   CURRENT_LOCKFILE_VERSION,
   type LEGACY_LOCKFILE_VERSION,
+  type LOCKFILE_VERSION_0_2,
+  type LOCKFILE_VERSION_0_3,
   type Lockfile,
   type LockfileParseFailure,
   parseLockfileDocument,
@@ -16,13 +18,14 @@ import { jsonFileText } from '../json-file-text.ts'
  * so the orchestrator only deals with validated Lockfile values.
  *
  * Version dispatch is EXACT (design D10): `loadLockfile` delegates to
- * protocol's `parseLockfileDocument`, which selects the legacy-alpha `1`
- * schema or the current `0.2` schema by exact equality — never numeric
- * ordering. A future/unknown version is a structured
- * `unsupported-lockfile-version` rejection, and a malformed `0.2` lockfile
- * is never reinterpreted as legacy `1`. The loaded version is surfaced on
- * the result so the orchestrator can migrate a legacy lockfile to `0.2`
- * in normal mode while retaining it verbatim in frozen mode.
+ * protocol's `parseLockfileDocument`, which selects the legacy-alpha `1`,
+ * `0.2`, or `0.3` schema by exact equality — never numeric ordering, under
+ * which `0.3 < 0.2 < 1` would rank the newest schema oldest. A
+ * future/unknown version is a structured `unsupported-lockfile-version`
+ * rejection, and a malformed document is never reinterpreted under another
+ * version. The loaded version is surfaced on the result so the orchestrator
+ * can migrate an earlier lockfile forward in normal mode while retaining it
+ * verbatim in frozen mode.
  *
  * F4 note — closed-alpha posture: every persisted facet entry carries an
  * `integrity` field, but `loadLockfile` does NOT re-verify it against a
@@ -35,11 +38,19 @@ export const FACETS_LOCK_FILE = 'facets.lock'
 
 /**
  * The exact schema version a lockfile was loaded under. Legacy `1` carries
- * identity-only asset entries; current `0.2` carries per-materialized-file
- * integrity records. The orchestrator dispatches migration behavior on this
- * discriminant rather than re-parsing the version out of `data`.
+ * identity-only asset entries; `0.2` adds per-materialized-file integrity
+ * records; `0.3` adds a required materialization disposition per asset. The
+ * orchestrator dispatches migration behavior on this discriminant rather
+ * than re-parsing the version out of `data`.
+ *
+ * This enumerates what can be READ. What a normal install writes is
+ * `CURRENT_LOCKFILE_VERSION`, which still points at `0.2` until the writer
+ * cutover.
  */
-export type LoadedLockfileVersion = typeof LEGACY_LOCKFILE_VERSION | typeof CURRENT_LOCKFILE_VERSION
+export type LoadedLockfileVersion =
+  | typeof LEGACY_LOCKFILE_VERSION
+  | typeof LOCKFILE_VERSION_0_2
+  | typeof LOCKFILE_VERSION_0_3
 
 export type LoadLockfileResult =
   | { ok: true; data: Lockfile; existed: boolean; version: LoadedLockfileVersion }

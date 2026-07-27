@@ -16,20 +16,20 @@
 
 ## 1. Protocol Identity and Schema Contracts — Research
 
-- [ ] 1.1 Explore: Inspect the existing asset-name validators, portable collision normalization, shared skill/command validation, and canonical authored-path derivation in `packages/protocol` and `packages/common`.
-- [ ] 1.2 Explore: Inspect the project-manifest, lockfile, and build-manifest schemas/loaders and their exact-dispatch, duplicate-member, fixture, and public-export test patterns.
-- [ ] 1.3 Explore: Inspect protocol package release metadata and all downstream consumers of project-manifest and lockfile types/constants so compatibility shims and the `0.3` writer flip are sequenced safely.
-- [ ] 1.4 Propose: Define the protocol implementation approach for one namespace mapping, tagged dispositions, legacy/current manifest dispatch, lockfile `0.3`, canonical identity helpers, and a deterministic planner without duplicating existing sources of truth.
+- [x] 1.1 Explore: Inspect the existing asset-name validators, portable collision normalization, shared skill/command validation, and canonical authored-path derivation in `packages/protocol` and `packages/common`.
+- [x] 1.2 Explore: Inspect the project-manifest, lockfile, and build-manifest schemas/loaders and their exact-dispatch, duplicate-member, fixture, and public-export test patterns.
+- [x] 1.3 Explore: Inspect protocol package release metadata and all downstream consumers of project-manifest and lockfile types/constants so compatibility shims and the `0.3` writer flip are sequenced safely.
+- [x] 1.4 Propose: Define the protocol implementation approach for one namespace mapping, tagged dispositions, legacy/current manifest dispatch, lockfile `0.3`, canonical identity helpers, and a deterministic planner without duplicating existing sources of truth.
 
 ## 2. Protocol Identity and Schema Contracts — Implementation
 
-- [ ] 2.1 Implement: Add the shared materialization namespace, collision-key, adapter-key, and canonical authored-path helpers; refactor existing facet/build collision validation to consume the shared rules; add focused namespace and portability tests.
-- [ ] 2.2 Implement: Add the three-arm `MaterializationDisposition` schema/type and derive project-override and materialized-only variants; enforce the single-segment alias grammar and rejection of stray or missing alias fields; add scenario-complete tests.
-- [ ] 2.3 Implement: Implement legacy-unversioned and exact `manifestVersion: 0.1` schemas in `packages/protocol/src/schemas/project-manifest.ts` plus a project-manifest loader that rejects duplicate members before exact version dispatch and never falls back by shape; cover compact/expanded entries, typed override maps, invalid aliases, unsupported versions, and empty-expanded-entry rejection.
-- [ ] 2.4 Implement: Add lockfile `0.3` with required dispositions while preserving exact readers for `1` and `0.2`; factor shared file-record validation, keep authored names/paths for aliases and omissions, and test malformed-current no-fallback behavior.
-- [ ] 2.5 Implement: Implement the pure deterministic materialization planner as a discriminated result union, reporting every ordered collision group and supporting scope separation, shared skill/command names, aliases, omissions, name transfers, swaps, temporary draft conflicts, and declaration-order independence.
-- [ ] 2.6 Implement: Export the new protocol contracts through the curated public surface and update protocol release notes/metadata according to repository conventions without changing archive or adapter API versions.
-- [ ] 2.7 Verify: Run the protocol unit tests, typecheck, and public-surface/build checks; confirm the new schema and planner scenario suites pass.
+- [x] 2.1 Implement: Add the shared materialization namespace, collision-key, adapter-key, and canonical authored-path helpers; refactor existing facet/build collision validation to consume the shared rules; add focused namespace and portability tests.
+- [x] 2.2 Implement: Add the three-arm `MaterializationDisposition` schema/type and derive project-override and materialized-only variants; enforce the single-segment alias grammar and rejection of stray or missing alias fields; add scenario-complete tests.
+- [x] 2.3 Implement: Implement legacy-unversioned and exact `manifestVersion: 0.1` schemas in `packages/protocol/src/schemas/project-manifest.ts` plus a project-manifest loader that rejects duplicate members before exact version dispatch and never falls back by shape; cover compact/expanded entries, typed override maps, invalid aliases, unsupported versions, and empty-expanded-entry rejection.
+- [x] 2.4 Implement: Add lockfile `0.3` with required dispositions while preserving exact readers for `1` and `0.2`; factor shared file-record validation, keep authored names/paths for aliases and omissions, and test malformed-current no-fallback behavior.
+- [x] 2.5 Implement: Implement the pure deterministic materialization planner as a discriminated result union, reporting every ordered collision group and supporting scope separation, shared skill/command names, aliases, omissions, name transfers, swaps, temporary draft conflicts, and declaration-order independence.
+- [x] 2.6 Implement: Export the new protocol contracts through the curated public surface and update protocol release notes/metadata according to repository conventions without changing archive or adapter API versions.
+- [x] 2.7 Verify: Run the protocol unit tests, typecheck, and public-surface/build checks; confirm the new schema and planner scenario suites pass.
 
 ## 3. Project Manifest Intent and Migration — Research
 

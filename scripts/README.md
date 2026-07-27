@@ -41,11 +41,43 @@ scripts/
 │   ├── notify-failure.ts       # Slack failure notification (on_fail step)
 │   └── test-helpers.ts         # Test utilities (mock helpers, fixtures)
 │
+├── smoke/                      # Manual, run-on-demand smoke checks
+│   └── protocol-node.mjs       # Load @agent-facets/protocol's built bundle on plain Node
+│
 ├── prepack.ts                  # Rewrite workspace:* deps, hoist publishConfig overrides, inject adapter API metadata before npm publish
 ├── postpack.ts                 # Restore package.json after pack
 ├── postinstall.ts              # Quiet `bun install` postinstall (lefthook + adapter + facets)
 └── check-bun-version.ts        # Verify Bun version matches mise.toml
 ```
+
+## Smoke checks
+
+`scripts/smoke/protocol-node.mjs` loads `@agent-facets/protocol`'s **built**
+bundle (`packages/protocol/dist/index.mjs`) on plain Node and exercises a
+representative slice of the public surface. It is the only thing that
+verifies the published artifact imports and runs with no Bun present — the
+package's whole reason for being separate from `engine`.
+
+It is **manual and not wired into `bun check` or CI.** It is not a
+`*.test.*` file, so `bun test scripts/` does not discover it. Run it by hand
+after changing protocol's public surface:
+
+```sh
+bun run --cwd packages/protocol build
+node scripts/smoke/protocol-node.mjs
+```
+
+To prove Node-only operation with no Bun on `$PATH`:
+
+```sh
+PATH="$(echo $PATH | tr ':' '\n' | grep -v bun | tr '\n' ':')" \
+  node scripts/smoke/protocol-node.mjs
+```
+
+Because nothing enforces it, the script must be updated by hand alongside
+public-surface changes. Protocol has no automated export-surface test; the
+adapter packages' `dist.e2e.test.ts` is the precedent for closing that gap
+if it becomes worth doing.
 
 ## Two Pipelines
 

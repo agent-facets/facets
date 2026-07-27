@@ -1,4 +1,11 @@
 import type { AssetType, ValidationError } from '@agent-facets/common'
+import {
+  ASSET_DIRECTORY,
+  canonicalPrimaryPath,
+  portableCollisionKey,
+  SKILL_PRIMARY_FILE,
+  skillRootPath,
+} from '../materialization/identity.ts'
 
 /**
  * Archive plan — the single shared derivation of archive membership and
@@ -213,16 +220,6 @@ export function validateSupplementaryPath(declared: string, declarationSite: str
   return errors
 }
 
-/**
- * Portable collision key: canonical Unicode form (NFC) + case fold. Two
- * paths with the same key collide on at least one supported filesystem.
- * Shared by archive planning and raw tar-header validation so both layers
- * agree on what "the same path" means.
- */
-export function portableCollisionKey(path: string): string {
-  return path.normalize('NFC').toLowerCase()
-}
-
 interface PlannedPath {
   entry: ArchivePlanEntry
   /** Where this path was declared, for error attribution. */
@@ -243,28 +240,21 @@ export function planArchiveEntries(manifest: ArchivePlanInput): ArchivePlanResul
   const errors: ArchivePlanError[] = []
   const planned: PlannedPath[] = [{ entry: { kind: 'manifest', path: MANIFEST_PATH }, declarationSite: '' }]
 
-  // 1. Conventional primary-asset paths, derived from manifest keys.
-  if (manifest.skills) {
-    for (const name of Object.keys(manifest.skills)) {
+  // 1. Conventional primary-asset paths, derived from manifest keys. Both
+  //    the path and the declaration site come from the shared authored-path
+  //    derivation so this module cannot drift from the identity helpers the
+  //    lockfile, receipt, and materialization planner use.
+  const assetGroups: [AssetType, Record<string, unknown> | undefined][] = [
+    ['skill', manifest.skills],
+    ['agent', manifest.agents],
+    ['command', manifest.commands],
+  ]
+  for (const [assetType, record] of assetGroups) {
+    if (!record) continue
+    for (const name of Object.keys(record)) {
       planned.push({
-        entry: { kind: 'primary-asset', path: `skills/${name}/SKILL.md`, assetType: 'skill', name },
-        declarationSite: `skills.${name}`,
-      })
-    }
-  }
-  if (manifest.agents) {
-    for (const name of Object.keys(manifest.agents)) {
-      planned.push({
-        entry: { kind: 'primary-asset', path: `agents/${name}.md`, assetType: 'agent', name },
-        declarationSite: `agents.${name}`,
-      })
-    }
-  }
-  if (manifest.commands) {
-    for (const name of Object.keys(manifest.commands)) {
-      planned.push({
-        entry: { kind: 'primary-asset', path: `commands/${name}.md`, assetType: 'command', name },
-        declarationSite: `commands.${name}`,
+        entry: { kind: 'primary-asset', path: canonicalPrimaryPath(assetType, name), assetType, name },
+        declarationSite: `${ASSET_DIRECTORY[assetType]}.${name}`,
       })
     }
   }
@@ -273,27 +263,27 @@ export function planArchiveEntries(manifest: ArchivePlanInput): ArchivePlanResul
   if (manifest.skills) {
     for (const [skillName, skill] of Object.entries(manifest.skills)) {
       if (!skill.files) continue
-      const site = `skills.${skillName}.files`
+      const site = `${ASSET_DIRECTORY.skill}.${skillName}.files`
       for (const declared of skill.files) {
         const pathErrors = validateSupplementaryPath(declared, site)
         if (pathErrors.length > 0) {
           errors.push(...pathErrors)
           continue
         }
-        if (declared === 'SKILL.md') {
+        if (declared === SKILL_PRIMARY_FILE) {
           errors.push(
             planError(
               'site-skill-companion-is-primary',
               site,
               declared,
-              `Skill "${skillName}" declares "SKILL.md" as a companion file. SKILL.md is the skill's primary file and is always included.`,
-              'companion paths other than SKILL.md',
+              `Skill "${skillName}" declares "${SKILL_PRIMARY_FILE}" as a companion file. ${SKILL_PRIMARY_FILE} is the skill's primary file and is always included.`,
+              `companion paths other than ${SKILL_PRIMARY_FILE}`,
             ),
           )
           continue
         }
         planned.push({
-          entry: { kind: 'skill-companion', path: `skills/${skillName}/${declared}`, skill: skillName },
+          entry: { kind: 'skill-companion', path: `${skillRootPath(skillName)}${declared}`, skill: skillName },
           declarationSite: site,
         })
       }
@@ -321,14 +311,14 @@ export function planArchiveEntries(manifest: ArchivePlanInput): ArchivePlanResul
         )
         continue
       }
-      if (declared.split('/')[0] === 'skills') {
+      if (declared.split('/')[0] === ASSET_DIRECTORY.skill) {
         errors.push(
           planError(
             'site-top-level-under-skills',
             site,
             declared,
-            `Top-level files must not resolve under skills/. Declare "${declared}" in the owning skill's files array instead.`,
-            'top-level paths outside skills/',
+            `Top-level files must not resolve under ${ASSET_DIRECTORY.skill}/. Declare "${declared}" in the owning skill's files array instead.`,
+            `top-level paths outside ${ASSET_DIRECTORY.skill}/`,
           ),
         )
         continue

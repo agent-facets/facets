@@ -1,5 +1,5 @@
 import type { ValidationError } from '@agent-facets/common'
-import { portableCollisionKey } from './archive-plan.ts'
+import { portableCollisionKey } from '../materialization/identity.ts'
 
 /**
  * Strict raw tar-header validation (design D5).

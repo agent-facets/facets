@@ -1,5 +1,6 @@
 import { validateAssetName } from '@agent-facets/common'
 import { type } from 'arktype'
+import { MaterializationDispositionSchema } from './materialization.ts'
 
 /**
  * The legacy alpha lockfile schema version. Numeric `1` identifies ONLY the
@@ -11,15 +12,42 @@ import { type } from 'arktype'
 export const LEGACY_LOCKFILE_VERSION = 1
 
 /**
- * The current lockfile schema version. Distinct constant from
- * `FACET_ARCHIVE_VERSION` (see ./build-manifest.ts): both currently equal
- * `0.2`, but that is release alignment, not a permanent invariant — archive
- * and resolution formats may evolve independently (design D10).
+ * The `0.2` lockfile schema: per-materialized-file integrity records, no
+ * materialization dispositions. Every asset is understood as materialized
+ * under its authored name.
  */
-export const CURRENT_LOCKFILE_VERSION = 0.2
+export const LOCKFILE_VERSION_0_2 = 0.2
 
-/** Every lockfile schema version this implementation can read. */
-export const SUPPORTED_LOCKFILE_VERSIONS: readonly number[] = [LEGACY_LOCKFILE_VERSION, CURRENT_LOCKFILE_VERSION]
+/**
+ * The `0.3` lockfile schema: adds a REQUIRED materialization disposition to
+ * every asset so aliased and omitted assets are representable. Authored
+ * names, canonical paths, and integrity values are unchanged from `0.2`.
+ */
+export const LOCKFILE_VERSION_0_3 = 0.3
+
+/**
+ * The version a normal install WRITES. Distinct constant from
+ * `FACET_ARCHIVE_VERSION` (see ./build-manifest.ts): archive and resolution
+ * formats evolve independently (design D10).
+ *
+ * Deliberately an alias rather than a literal. Readers for `0.3` ship ahead
+ * of writers — the consumer-first policy the `0.2` rollout used — so this
+ * stays at `0.2` until every effective-ownership and CLI path can produce a
+ * correct `0.3` document. Flipping the writer is then a one-line change
+ * here rather than an edit at each of the writer call sites, which is what
+ * makes the cutover reviewable as a single atomic decision.
+ */
+export const CURRENT_LOCKFILE_VERSION = LOCKFILE_VERSION_0_2
+
+/**
+ * Every lockfile schema version this implementation can READ. Broader than
+ * what it writes: `0.3` is readable as soon as its schema exists.
+ */
+export const SUPPORTED_LOCKFILE_VERSIONS: readonly number[] = [
+  LEGACY_LOCKFILE_VERSION,
+  LOCKFILE_VERSION_0_2,
+  LOCKFILE_VERSION_0_3,
+]
 
 /**
  * Current lockfile schema version. Bump on breaking shape changes.
@@ -148,53 +176,103 @@ const LockfileAssetFileRecord = type({
 })
 
 /**
- * A current (`0.2`) asset entry: adapter-agnostic identity plus a required,
+ * The asset-entry rules shared by every version that carries per-file
+ * records (`0.2` and `0.3`). Factored out so the two schemas cannot drift:
+ * a change to path safety or sort order applies to both by construction.
+ *
+ * Returns the `ctx.mustBe` message on failure, or `undefined` on success —
+ * a message rather than a boolean so each caller reports the specific rule
+ * that was violated.
+ *
+ * Enforces: the shared asset-name guard, at least one file record, path
+ * safety for every record, and strict lexicographic ordering by path. The
+ * ordering comparison is strict (`>`), so it forbids duplicate paths with
+ * the same predicate that keeps lockfile diffs stable.
+ */
+function checkAssetEntry(name: string, files: ReadonlyArray<{ path: string }>): string | undefined {
+  const check = validateAssetName(name)
+  if (!check.ok) {
+    return `asset name "${name}" ${check.reason}`
+  }
+  if (files.length === 0) {
+    return 'an asset entry with at least one materialized file record'
+  }
+  for (let i = 0; i < files.length; i++) {
+    const record = files[i] as { path: string }
+    const pathCheck = validateAssetName(record.path)
+    if (!pathCheck.ok) {
+      return `file path "${record.path}" ${pathCheck.reason}`
+    }
+    if (i > 0) {
+      const previous = (files[i - 1] as { path: string }).path
+      if (!(record.path > previous)) {
+        return `file records sorted by path: "${record.path}" must sort after "${previous}" with no duplicates`
+      }
+    }
+  }
+  return undefined
+}
+
+/**
+ * A `0.2` asset entry: adapter-agnostic identity plus a required,
  * deterministically sorted `files` array covering every materialized file —
  * `skills/<name>/SKILL.md` plus declared companions for skills, exactly the
  * conventional primary path for agents and commands. Archive-only
  * supplementary files never appear here (facet-level integrity pins them).
  *
- * The narrow enforces: the shared asset-name guard (as in the legacy asset
- * shape), path safety for every file record, and strict lexicographic
- * ordering by path (which also forbids duplicate paths) so lockfile diffs
- * stay stable and reviewable.
+ * Carries no materialization disposition: every `0.2` asset is understood
+ * as materialized under its authored name. Dispositions are recognized only
+ * in `0.3`.
  */
-const CurrentLockfileAsset = type({
+const Lockfile02Asset = type({
   scope: "'system' | 'user' | 'project'",
   type: "'skill' | 'agent' | 'command'",
   name: 'string',
   files: LockfileAssetFileRecord.array(),
 }).narrow((data, ctx) => {
-  const check = validateAssetName(data.name)
-  if (!check.ok) {
-    return ctx.mustBe(`asset name "${data.name}" ${check.reason}`)
-  }
-  if (data.files.length === 0) {
-    return ctx.mustBe('an asset entry with at least one materialized file record')
-  }
-  for (let i = 0; i < data.files.length; i++) {
-    const record = data.files[i] as (typeof data.files)[number]
-    const pathCheck = validateAssetName(record.path)
-    if (!pathCheck.ok) {
-      return ctx.mustBe(`file path "${record.path}" ${pathCheck.reason}`)
-    }
-    if (i > 0) {
-      const previous = (data.files[i - 1] as (typeof data.files)[number]).path
-      if (!(record.path > previous)) {
-        return ctx.mustBe(
-          `file records sorted by path: "${record.path}" must sort after "${previous}" with no duplicates`,
-        )
-      }
-    }
-  }
-  return true
+  const error = checkAssetEntry(data.name, data.files)
+  return error === undefined ? true : ctx.mustBe(error)
 })
 
-const CurrentLockfileFacetEntry = type({
+/**
+ * A `0.3` asset entry: the `0.2` shape plus a REQUIRED materialization
+ * disposition.
+ *
+ * `name` remains the AUTHORED name and `files` remain canonical authored
+ * inner-archive paths even when the asset is aliased — those are the
+ * identities integrity is anchored to, so aliasing must not perturb them.
+ * An omitted asset stays listed with its complete authored file records:
+ * the lockfile records the resolved asset set and must be comparable
+ * against project intent, so dropping omitted assets would make an omission
+ * indistinguishable from a facet that never published the asset. Only the
+ * machine-local receipt excludes what is not materialized.
+ *
+ * The disposition admits all three arms, including `omitted` — unlike the
+ * receipt, which admits only the two that put bytes on disk.
+ */
+const Lockfile03Asset = type({
+  scope: "'system' | 'user' | 'project'",
+  type: "'skill' | 'agent' | 'command'",
+  name: 'string',
+  materialization: MaterializationDispositionSchema,
+  files: LockfileAssetFileRecord.array(),
+}).narrow((data, ctx) => {
+  const error = checkAssetEntry(data.name, data.files)
+  return error === undefined ? true : ctx.mustBe(error)
+})
+
+const Lockfile02FacetEntry = type({
   source: LockfileSource,
   version: LockedVersion,
   integrity: 'string',
-  assets: CurrentLockfileAsset.array(),
+  assets: Lockfile02Asset.array(),
+})
+
+const Lockfile03FacetEntry = type({
+  source: LockfileSource,
+  version: LockedVersion,
+  integrity: 'string',
+  assets: Lockfile03Asset.array(),
 })
 
 // --- Versioned lockfile schemas (exact version dispatch, design D10) ---
@@ -214,22 +292,58 @@ export const LegacyLockfileSchema = type({
 export type LegacyLockfile = typeof LegacyLockfileSchema.infer
 
 /**
- * Current (`0.2`) lockfile schema: exact numeric `lockfileVersion: 0.2` and
- * per-materialized-file integrity records inside every asset entry.
+ * `0.2` lockfile schema: exact numeric `lockfileVersion: 0.2` and
+ * per-materialized-file integrity records inside every asset entry. No
+ * materialization dispositions — every asset is authored-materialized.
  */
-export const CurrentLockfileSchema = type({
-  lockfileVersion: type.unit(CURRENT_LOCKFILE_VERSION),
-  facets: type.Record('string', CurrentLockfileFacetEntry),
+export const Lockfile02Schema = type({
+  lockfileVersion: type.unit(LOCKFILE_VERSION_0_2),
+  facets: type.Record('string', Lockfile02FacetEntry),
 })
 
-/** Inferred TypeScript type for a validated current (`0.2`) lockfile */
+/** Inferred TypeScript type for a validated `0.2` lockfile */
+export type Lockfile02 = typeof Lockfile02Schema.infer
+
+/** Inferred type for a facet entry inside a `0.2` lockfile */
+export type Lockfile02Facet = typeof Lockfile02FacetEntry.infer
+
+/** Inferred type for a `0.2` asset entry with its file-integrity records */
+export type Lockfile02AssetEntry = typeof Lockfile02Asset.infer
+
+/**
+ * `0.3` lockfile schema: exact numeric `lockfileVersion: 0.3`, the `0.2`
+ * per-file integrity records, and a required materialization disposition on
+ * every asset.
+ */
+export const Lockfile03Schema = type({
+  lockfileVersion: type.unit(LOCKFILE_VERSION_0_3),
+  facets: type.Record('string', Lockfile03FacetEntry),
+})
+
+/** Inferred TypeScript type for a validated `0.3` lockfile */
+export type Lockfile03 = typeof Lockfile03Schema.infer
+
+/** Inferred type for a facet entry inside a `0.3` lockfile */
+export type Lockfile03Facet = typeof Lockfile03FacetEntry.infer
+
+/** Inferred type for a `0.3` asset entry with its materialization disposition */
+export type Lockfile03AssetEntry = typeof Lockfile03Asset.infer
+
+/**
+ * The schema a normal install WRITES, tracking
+ * {@link CURRENT_LOCKFILE_VERSION}. An alias, so the writer cutover is one
+ * edit at the constant rather than a rename across every call site.
+ */
+export const CurrentLockfileSchema = Lockfile02Schema
+
+/** Inferred TypeScript type for a validated current lockfile */
 export type CurrentLockfile = typeof CurrentLockfileSchema.infer
 
-/** Inferred type for a current facet entry inside a `0.2` lockfile */
-export type CurrentLockfileFacet = typeof CurrentLockfileFacetEntry.infer
+/** Inferred type for a facet entry inside a current lockfile */
+export type CurrentLockfileFacet = Lockfile02Facet
 
 /** Inferred type for a current asset entry with its file-integrity records */
-export type CurrentLockfileAssetEntry = typeof CurrentLockfileAsset.infer
+export type CurrentLockfileAssetEntry = Lockfile02AssetEntry
 
 /** Inferred type for one materialized-file integrity record */
 export type LockfileFileRecord = typeof LockfileAssetFileRecord.infer

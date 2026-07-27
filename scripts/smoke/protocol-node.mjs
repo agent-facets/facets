@@ -9,8 +9,11 @@
  *   - assembleTar producing deterministic bytes
  *   - parseFacetArchive round-trip on a freshly-assembled outer tar
  *   - parseBuildManifestDocument / parseLockfileDocument exact version dispatch
+ *   - parseProjectManifestDocument exact manifestVersion dispatch
  *   - validateRawTarEntries raw-header validation
  *   - planArchiveEntries membership/classification
+ *   - materialization identity, namespaces, dispositions, and planMaterialization
+ *   - lockfile 0.3 dispositions with no cross-version fallback
  *   - validateFacetArchive end-to-end on a 0.2 archive (async, node:zlib gunzip)
  *   - listVerifiedFiles / verifiedFileHashes uniform views
  *
@@ -28,17 +31,26 @@ import { strict as assert } from 'node:assert'
 import { gunzipSync, gzipSync } from 'node:zlib'
 
 import {
+  adapterKey,
   assembleOuterTar,
   assembleTar,
+  canonicalPrimaryPath,
   collectArchiveEntries,
+  collisionKey,
   computeAssetHashes,
   computeContentHash,
   detectNamingCollisions,
+  Lockfile03Schema,
   listVerifiedFiles,
+  MaterializationDispositionSchema,
+  materializationNamespace,
+  ProjectAssetOverrideSchema,
   parseBuildManifestDocument,
   parseFacetArchive,
   parseLockfileDocument,
+  parseProjectManifestDocument,
   planArchiveEntries,
+  planMaterialization,
   resolvePromptsFromMap,
   validateFacetArchive,
   validateFacetManifest,
@@ -359,6 +371,167 @@ await checkAsync('rejects a tampered 0.2 archive with a structured integrity fai
     ['integrity', 'entry-integrity', 'validation'].includes(result.failure.code),
     `unexpected failure code: ${result.failure.code}`,
   )
+})
+
+console.log('=== materialization identity + namespaces ===')
+
+check('skills and commands share a namespace; agents do not', () => {
+  assert.equal(materializationNamespace('skill'), 'skill-command')
+  assert.equal(materializationNamespace('command'), 'skill-command')
+  assert.equal(materializationNamespace('agent'), 'agent')
+})
+
+check('collisionKey folds namespace and name; adapterKey does not', () => {
+  // Logical: a skill and a command named `deploy` cannot coexist.
+  assert.equal(collisionKey('project', 'skill', 'deploy'), collisionKey('project', 'command', 'deploy'))
+  // Concrete: they are nonetheless two different files.
+  assert.notEqual(adapterKey('project', 'skill', 'deploy'), adapterKey('project', 'command', 'deploy'))
+  // Portability: case-variant names resolve to one file on some volumes.
+  assert.equal(collisionKey('project', 'skill', 'Review'), collisionKey('project', 'skill', 'review'))
+})
+
+check('canonicalPrimaryPath derives authored archive paths', () => {
+  assert.equal(canonicalPrimaryPath('skill', 'review'), 'skills/review/SKILL.md')
+  assert.equal(canonicalPrimaryPath('agent', 'reviewer'), 'agents/reviewer.md')
+  assert.equal(canonicalPrimaryPath('command', 'deploy'), 'commands/deploy.md')
+})
+
+console.log('=== materialization dispositions ===')
+
+check('the three disposition arms validate and illegal combinations are rejected', () => {
+  assert(!(MaterializationDispositionSchema({ kind: 'authored' }) instanceof Error))
+  assert(!(MaterializationDispositionSchema({ kind: 'aliased', as: 'vendor-review' }) instanceof Error))
+  assert(!(MaterializationDispositionSchema({ kind: 'omitted' }) instanceof Error))
+  // An alias with no target, a stray target, and a non-grammar alias all fail.
+  assert(MaterializationDispositionSchema({ kind: 'aliased' })?.summary)
+  assert(MaterializationDispositionSchema({ kind: 'omitted', as: 'x' })?.summary)
+  assert(MaterializationDispositionSchema({ kind: 'aliased', as: 'Review' })?.summary)
+})
+
+check('a project override cannot spell authored materialization explicitly', () => {
+  assert(!(ProjectAssetOverrideSchema({ kind: 'omitted' }) instanceof Error))
+  assert(ProjectAssetOverrideSchema({ kind: 'authored' })?.summary)
+})
+
+console.log('=== planMaterialization (pure collision planning) ===')
+
+check('reports every collision group in one pass without choosing a winner', () => {
+  const result = planMaterialization([
+    { facet: 'a', assets: [{ scope: 'project', type: 'skill', name: 'review' }] },
+    { facet: 'b', assets: [{ scope: 'project', type: 'skill', name: 'review' }] },
+    { facet: 'c', assets: [{ scope: 'project', type: 'command', name: 'deploy' }] },
+    { facet: 'd', assets: [{ scope: 'project', type: 'skill', name: 'deploy' }] },
+  ])
+  assert.equal(result.ok, false)
+  assert.equal(result.reason, 'collision')
+  assert.equal(result.groups.length, 2)
+})
+
+check('aliases and omissions produce a collision-free plan', () => {
+  const result = planMaterialization([
+    { facet: 'a', assets: [{ scope: 'project', type: 'skill', name: 'review' }] },
+    {
+      facet: 'b',
+      assets: [{ scope: 'project', type: 'skill', name: 'review' }],
+      overrides: { skills: { review: { kind: 'aliased', as: 'vendor-review' } } },
+    },
+  ])
+  assert.equal(result.ok, true)
+  assert.deepEqual(result.plan.materialized.map((a) => a.effectiveName).sort(), ['review', 'vendor-review'])
+})
+
+check('the plan does not depend on declaration order', () => {
+  const contributions = [
+    { facet: 'zeta', assets: [{ scope: 'project', type: 'skill', name: 'a' }] },
+    { facet: 'alpha', assets: [{ scope: 'project', type: 'agent', name: 'b' }] },
+  ]
+  const forward = planMaterialization(contributions)
+  const reversed = planMaterialization([...contributions].reverse())
+  assert.deepEqual(forward, reversed)
+})
+
+console.log('=== parseProjectManifestDocument (exact manifestVersion dispatch) ===')
+
+check('an unversioned compact document is read as legacy', () => {
+  const result = parseProjectManifestDocument(JSON.stringify({ facets: { a: '1.*' } }))
+  assert.equal(result.ok, true)
+  assert.equal(result.data.manifestVersion, 'legacy-unversioned')
+})
+
+check('a 0.1 document carries expanded entries with typed overrides', () => {
+  const doc = {
+    manifestVersion: 0.1,
+    facets: {
+      b: { source: 'github:example/b#main', materialization: { commands: { deploy: { kind: 'omitted' } } } },
+    },
+  }
+  const result = parseProjectManifestDocument(JSON.stringify(doc))
+  assert.equal(result.ok, true)
+  assert.equal(result.data.manifestVersion, 0.1)
+})
+
+check('an expanded entry in an unversioned document is rejected, not promoted', () => {
+  const doc = { facets: { b: { source: 'github:example/b', materialization: {} } } }
+  const result = parseProjectManifestDocument(JSON.stringify(doc))
+  assert.equal(result.ok, false)
+  assert.equal(result.failure.code, 'schema-violation')
+  assert.equal(result.failure.manifestVersion, 'legacy-unversioned')
+})
+
+check('an unsupported manifestVersion is a structured failure', () => {
+  const result = parseProjectManifestDocument(JSON.stringify({ manifestVersion: 0.2, facets: {} }))
+  assert.equal(result.ok, false)
+  assert.equal(result.failure.code, 'unsupported-manifest-version')
+  assert.equal(result.failure.observed, 0.2)
+})
+
+console.log('=== lockfile 0.3 (dispositions, exact dispatch) ===')
+
+const lockfile03Doc = {
+  lockfileVersion: 0.3,
+  facets: {
+    cowsay: {
+      source: { kind: 'registry', registry: 'https://cafe.example' },
+      version: '1.0.0',
+      integrity: `sha256:${'b'.repeat(64)}`,
+      assets: [
+        {
+          scope: 'project',
+          type: 'skill',
+          name: 'review',
+          materialization: { kind: 'aliased', as: 'vendor-review' },
+          files: [{ path: 'skills/review/SKILL.md', integrity: `sha256:${'b'.repeat(64)}` }],
+        },
+      ],
+    },
+  },
+}
+
+check('a 0.3 lockfile keeps authored identity while recording the alias', () => {
+  const result = parseLockfileDocument(JSON.stringify(lockfile03Doc))
+  assert.equal(result.ok, true)
+  assert.equal(result.data.lockfileVersion, 0.3)
+  const asset = result.data.lockfile.facets.cowsay.assets[0]
+  assert.equal(asset.name, 'review')
+  assert.equal(asset.files[0].path, 'skills/review/SKILL.md')
+  assert.deepEqual(asset.materialization, { kind: 'aliased', as: 'vendor-review' })
+})
+
+check('a 0.3 asset without a disposition is rejected', () => {
+  const { materialization: _dropped, ...noDisposition } = lockfile03Doc.facets.cowsay.assets[0]
+  const doc = { ...lockfile03Doc, facets: { cowsay: { ...lockfile03Doc.facets.cowsay, assets: [noDisposition] } } }
+  assert(Lockfile03Schema(doc)?.summary)
+})
+
+check('a malformed 0.3 document is never reinterpreted as 0.2', () => {
+  // Valid 0.2 assets (no dispositions) claiming 0.3 must fail AS 0.3.
+  const asset = { ...lockfile03Doc.facets.cowsay.assets[0] }
+  delete asset.materialization
+  const doc = { ...lockfile03Doc, facets: { cowsay: { ...lockfile03Doc.facets.cowsay, assets: [asset] } } }
+  const result = parseLockfileDocument(JSON.stringify(doc))
+  assert.equal(result.ok, false)
+  assert.equal(result.failure.code, 'schema-violation')
+  assert.equal(result.failure.lockfileVersion, 0.3)
 })
 
 console.log('')

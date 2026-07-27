@@ -1,12 +1,15 @@
 import type { ValidationError } from '@agent-facets/common'
 import { type } from 'arktype'
 import {
-  CURRENT_LOCKFILE_VERSION,
-  type CurrentLockfile,
-  CurrentLockfileSchema,
   LEGACY_LOCKFILE_VERSION,
   type LegacyLockfile,
   LegacyLockfileSchema,
+  LOCKFILE_VERSION_0_2,
+  LOCKFILE_VERSION_0_3,
+  type Lockfile02,
+  Lockfile02Schema,
+  type Lockfile03,
+  Lockfile03Schema,
   SUPPORTED_LOCKFILE_VERSIONS,
 } from '../schemas/lockfile.ts'
 import { findDuplicateJsonMembers, mapArkErrors, parseJson } from './validate.ts'
@@ -32,7 +35,8 @@ export type LockfileParseFailure =
  */
 export type ParsedLockfile =
   | { lockfileVersion: typeof LEGACY_LOCKFILE_VERSION; lockfile: LegacyLockfile }
-  | { lockfileVersion: typeof CURRENT_LOCKFILE_VERSION; lockfile: CurrentLockfile }
+  | { lockfileVersion: typeof LOCKFILE_VERSION_0_2; lockfile: Lockfile02 }
+  | { lockfileVersion: typeof LOCKFILE_VERSION_0_3; lockfile: Lockfile03 }
 
 export type ParseLockfileResult = { ok: true; data: ParsedLockfile } | { ok: false; failure: LockfileParseFailure }
 
@@ -43,14 +47,18 @@ export type ParseLockfileResult = { ok: true; data: ParsedLockfile } | { ok: fal
  *   1. JSON parse (syntax errors are structured failures).
  *   2. Reject duplicate object member names before schema validation.
  *   3. Dispatch on `lockfileVersion` by EXACT equality, never numeric
- *      ordering — legacy numeric `1` selects only the previous alpha
- *      schema, numeric `0.2` selects the current schema, anything else is a
- *      structured unsupported-version failure carrying the observed and
- *      supported versions.
+ *      ordering — numeric `1` selects only the legacy alpha schema, `0.2`
+ *      selects only the `0.2` schema, `0.3` selects only the `0.3` schema,
+ *      and anything else is a structured unsupported-version failure
+ *      carrying the observed and supported versions.
+ *
+ * Exact equality matters more here than anywhere else in the codebase:
+ * `0.3 < 0.2 < 1` numerically, so any ordered comparison would rank the
+ * newest schema as the oldest.
  *
  * There is NO fallback or shape-sniffing between versions: a malformed
- * `0.2` lockfile fails as a `0.2` schema violation and is never
- * reinterpreted as legacy alpha `1`.
+ * `0.3` lockfile fails as a `0.3` schema violation and is never
+ * reinterpreted as `0.2` or as legacy alpha `1`.
  */
 export function parseLockfileDocument(bytes: Uint8Array | string): ParseLockfileResult {
   const text = typeof bytes === 'string' ? bytes : new TextDecoder().decode(bytes)
@@ -85,19 +93,34 @@ export function parseLockfileDocument(bytes: Uint8Array | string): ParseLockfile
     return { ok: true, data: { lockfileVersion: LEGACY_LOCKFILE_VERSION, lockfile: validated } }
   }
 
-  if (observedVersion === CURRENT_LOCKFILE_VERSION) {
-    const validated = CurrentLockfileSchema(jsonResult.data)
+  if (observedVersion === LOCKFILE_VERSION_0_2) {
+    const validated = Lockfile02Schema(jsonResult.data)
     if (validated instanceof type.errors) {
       return {
         ok: false,
         failure: {
           code: 'schema-violation',
-          lockfileVersion: CURRENT_LOCKFILE_VERSION,
+          lockfileVersion: LOCKFILE_VERSION_0_2,
           errors: mapArkErrors(validated),
         },
       }
     }
-    return { ok: true, data: { lockfileVersion: CURRENT_LOCKFILE_VERSION, lockfile: validated } }
+    return { ok: true, data: { lockfileVersion: LOCKFILE_VERSION_0_2, lockfile: validated } }
+  }
+
+  if (observedVersion === LOCKFILE_VERSION_0_3) {
+    const validated = Lockfile03Schema(jsonResult.data)
+    if (validated instanceof type.errors) {
+      return {
+        ok: false,
+        failure: {
+          code: 'schema-violation',
+          lockfileVersion: LOCKFILE_VERSION_0_3,
+          errors: mapArkErrors(validated),
+        },
+      }
+    }
+    return { ok: true, data: { lockfileVersion: LOCKFILE_VERSION_0_3, lockfile: validated } }
   }
 
   return {
