@@ -1,4 +1,4 @@
-import type { LockfileFacet } from '@agent-facets/protocol'
+import type { CurrentLockfileFacet } from '@agent-facets/protocol'
 import type { NormalizedFacetEntry } from '../../manifest/mutations.ts'
 import { describeVersionSpec } from '../../registry/describe.ts'
 import type { Addition, InstallDelta } from '../types.ts'
@@ -79,7 +79,7 @@ export function mergeDeltaIntoManifest(
 export function applyManifestWritePolicy(
   desiredFacets: Record<string, NormalizedFacetEntry>,
   additions: ReadonlyArray<Addition>,
-  newFacetEntries: Readonly<Record<string, LockfileFacet>>,
+  newFacetEntries: Readonly<Record<string, CurrentLockfileFacet>>,
 ): void {
   for (const addition of additions) {
     const lockEntry = newFacetEntries[addition.facetName]

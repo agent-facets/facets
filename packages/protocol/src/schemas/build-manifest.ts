@@ -4,9 +4,9 @@ import { type } from 'arktype'
 
 /**
  * The current archive format version written into every new build manifest.
- * Distinct from `LOCKFILE_VERSION` (see ./lockfile.ts): both currently equal
- * `0.2`, but that is release alignment, not a permanent invariant — archive
- * and resolution formats may evolve independently (design D10).
+ * Distinct from `CURRENT_LOCKFILE_VERSION` (see ./lockfile.ts): archive and
+ * resolution formats carry independent version axes and may evolve
+ * separately, even when their numbers happen to coincide (design D10).
  */
 export const FACET_ARCHIVE_VERSION = 0.2
 

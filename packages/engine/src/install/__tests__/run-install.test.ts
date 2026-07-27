@@ -98,7 +98,7 @@ mock.module('../../registry/download.ts', () => ({
 const { runInstall } = await import('../run-install.ts')
 const { loadInstalledAdapters } = await import('../../adapters/loader.ts')
 const { runBuildPipeline } = await import('../../build/pipeline.ts')
-const { LOCKFILE_VERSION } = await import('@agent-facets/protocol')
+const { LEGACY_LOCKFILE_VERSION } = await import('@agent-facets/protocol')
 
 /** Build a fixture and return the genuine content-hash the install pipeline
  *  would compute for it — so a satisfying lock entry can carry a real
@@ -200,7 +200,7 @@ function writeLock(facets: Record<string, { source: string; version: string; int
       assets: [{ scope: 'user', type: 'skill', name: 'planning' }],
     }
   }
-  const bytes = `${JSON.stringify({ lockfileVersion: LOCKFILE_VERSION, facets: entries }, null, 2)}\n`
+  const bytes = `${JSON.stringify({ lockfileVersion: LEGACY_LOCKFILE_VERSION, facets: entries }, null, 2)}\n`
   writeFileSync(join(projectRoot, 'facets.lock'), bytes)
   return bytes
 }

@@ -1,4 +1,4 @@
-import type { LockfileFacet } from '@agent-facets/protocol'
+import type { SupportedLockfileFacet } from '@agent-facets/protocol'
 import { satisfies } from '@agent-facets/protocol'
 import type { Source } from '../../sources/facet/types.ts'
 import { parseLockedVersion } from '../parse-locked-version.ts'
@@ -36,10 +36,10 @@ import { sourceMatchesLockedSource } from '../source-matches.ts'
  * Pure function — exported for unit testing.
  */
 export function resolveEffectiveLocked(args: {
-  locked: LockfileFacet | undefined
+  locked: SupportedLockfileFacet | undefined
   source: Source
   isExplicitAddition: boolean
-}): LockfileFacet | undefined {
+}): SupportedLockfileFacet | undefined {
   const { locked, source, isExplicitAddition } = args
 
   if (isExplicitAddition && source.kind === 'registry' && source.version.kind !== 'exact') {

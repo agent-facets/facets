@@ -12,7 +12,7 @@ import {
   readAssetFile,
   readSkillBundle,
 } from '@agent-facets/adapter'
-import type { BuildManifest, Lockfile } from '@agent-facets/protocol'
+import type { BuildManifest, LegacyLockfile } from '@agent-facets/protocol'
 import { CURRENT_LOCKFILE_VERSION, CurrentLockfileSchema, computeContentHash } from '@agent-facets/protocol'
 import { type } from 'arktype'
 import { type CacheIdentity, cachePath, cachePutVerified, computeDirIntegrity } from '../cache/index.ts'
@@ -324,7 +324,7 @@ describe('runInstall — local source success path', () => {
     // schema on reload) and reports the current version.
     const reloaded = loadLockfile(projectRoot)
     if (!reloaded.ok) expect.unreachable()
-    expect(reloaded.version).toBe(CURRENT_LOCKFILE_VERSION)
+    expect(reloaded.parsed.lockfileVersion).toBe(CURRENT_LOCKFILE_VERSION)
 
     // Validate the written bytes against the current schema and inspect the
     // per-file records off the validated (current) shape.
@@ -365,10 +365,9 @@ describe('runInstall — local source success path', () => {
     expect(second.failure.path).toBe('skills/planning/SKILL.md')
     expect(second.failure.expected).toBe(wrong)
     expect(second.failure.actual).toMatch(/^sha256:[a-f0-9]{64}$/)
-    // Reconciliation runs before materialize, so nothing was written for
-    // this facet: rollback replays an empty journal (zero entries undone).
-    if (second.rollback.kind === 'not-needed') expect.unreachable()
-    expect(second.rollback.entriesUndone).toBe(0)
+    // Reconciliation runs during resolve, before the journal is even
+    // created, so there is nothing to roll back — not an empty replay.
+    expect(second.rollback.kind).toBe('not-needed')
     // The tampered lockfile is left unchanged on disk (no tri-write ran).
     const after = JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8'))
     expect(after.facets['viper-plans'].assets[0].files[0].integrity).toBe(wrong)
@@ -401,9 +400,9 @@ describe('runInstall — local source success path', () => {
     // The extra locked path is reported as missing from the plan.
     expect(second.failure.missing).toContain('skills/planning/references/ghost.md')
     expect(second.failure.unexpected).toEqual([])
-    // Reconciliation runs before materialize, so nothing was written.
-    if (second.rollback.kind === 'not-needed') expect.unreachable()
-    expect(second.rollback.entriesUndone).toBe(0)
+    // Reconciliation runs during resolve, before the journal is even
+    // created, so there is nothing to roll back — not an empty replay.
+    expect(second.rollback.kind).toBe('not-needed')
   })
 })
 
@@ -790,7 +789,7 @@ describe('runInstall — rollback on adapter throw', () => {
     expect(existsSync(join(projectRoot, '.broken/skills/planning.md'))).toBe(false)
     expect(existsSync(join(projectRoot, '.broken/skills/other.md'))).toBe(false)
 
-    // Lockfile must NOT have been written on failure.
+    // LegacyLockfile must NOT have been written on failure.
     expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)
   })
 
@@ -902,7 +901,7 @@ describe('runInstall — F14: non-ENOENT read error aborts before any journal re
 function seedCacheSlotForGit(
   facetName: string,
   version: string,
-): { entry: Lockfile['facets'][string]; slotPath: string } {
+): { entry: LegacyLockfile['facets'][string]; slotPath: string } {
   const id: CacheIdentity = { kind: 'git', name: facetName, version }
   const slotPath = cachePath(id)
 
@@ -970,7 +969,7 @@ describe('runInstall — git cache hit short-circuits clone', () => {
     // is eligible. The URL points at an unreachable host — if anything tries
     // to clone, the test will hang/fail. The cache hit must short-circuit
     // before cloning.
-    const lockfile: Lockfile = {
+    const lockfile: LegacyLockfile = {
       lockfileVersion: 1,
       facets: { [facetName]: entry },
     }
@@ -987,7 +986,7 @@ describe('runInstall — git cache hit short-circuits clone', () => {
 
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
-    // Lockfile is sticky on locked entries: the trusted-cache-hit path
+    // LegacyLockfile is sticky on locked entries: the trusted-cache-hit path
     // skips the build pipeline and inherits locked.* verbatim. Output
     // integrity must equal input integrity exactly.
     expect(result.lockfile.facets[facetName]?.version).toBe(version)
@@ -1001,8 +1000,10 @@ describe('runInstall — git cache hit short-circuits clone', () => {
 
     // 9.1/9.2 migration: the seeded lockfile was legacy-alpha `1` with
     // identity-only assets. A normal (non-frozen) install migrates it to the
-    // current `0.2` schema, re-deriving per-file records from the verified
-    // slot while keeping the locked identity untouched.
+    // current schema, re-deriving per-file records from the verified slot
+    // while keeping the locked identity untouched. Assets that carry no
+    // project override migrate to the `authored` disposition — the only
+    // meaning a pre-`0.3` entry could have had.
     expect(result.lockfile.lockfileVersion).toBe(CURRENT_LOCKFILE_VERSION)
     const written = CurrentLockfileSchema(JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')))
     if (written instanceof type.errors) expect.unreachable()
@@ -1011,6 +1012,7 @@ describe('runInstall — git cache hit short-circuits clone', () => {
         scope: 'project',
         type: 'skill',
         name: 'planning',
+        materialization: { kind: 'authored' },
         files: [{ path: 'skills/planning/SKILL.md', integrity: expect.stringMatching(/^sha256:[a-f0-9]{64}$/) }],
       },
     ])
@@ -1024,7 +1026,7 @@ describe('runInstall — git cache hit short-circuits clone', () => {
     // Forge a lockfile entry with a different integrity than what the
     // cache sidecar recorded. Cache says X, lockfile demands Y.
     const wrongIntegrity = 'sha256:0000000000000000000000000000000000000000000000000000000000000000'
-    const lockfile: Lockfile = {
+    const lockfile: LegacyLockfile = {
       lockfileVersion: 1,
       facets: { [facetName]: { ...entry, integrity: wrongIntegrity } },
     }
@@ -1309,5 +1311,57 @@ describe('runInstall — multi-file skill materialization', () => {
     expect(second.summary.totalAssets).toBe(1)
     expect(readFileSync(join(skillDir, 'references/api.md'), 'utf8')).toBe('# api reference\n')
     expect(readFileSync(notePath, 'utf8')).toBe('keep me\n')
+  })
+
+  // Frozen reproduction must be a no-op on an already-correct bundle. When a
+  // resolver could return identity without content, the absent companion map
+  // was indistinguishable from "this skill has no companions", so the bundle
+  // replacement removed every owned companion and still reported success.
+  test('a frozen install leaves an already-correct skill bundle intact', async () => {
+    const local = buildBundleFixture('viper-plans')
+    writeFileSync(
+      join(projectRoot, 'facets.json'),
+      JSON.stringify({ facets: { 'viper-plans': `./${local.split('/').pop()}` } }),
+    )
+    const adapters = [buildBundleAdapter('bundle')]
+
+    const first = await runInstall({ projectRoot, adapters })
+    if (!first.ok) expect.unreachable()
+    const lockBefore = readFileSync(join(projectRoot, 'facets.lock'), 'utf8')
+
+    const frozen = await runInstall({ projectRoot, adapters, frozenLockfile: true })
+    if (!frozen.ok) expect.unreachable()
+
+    // Nothing written, and every companion survives.
+    expect(frozen.summary.totalAssets).toBe(0)
+    expect(frozen.perFacet).toEqual([{ kind: 'unchanged', name: 'viper-plans', version: '0.1.0' }])
+    const skillDir = join(projectRoot, '.bundle/skills/planning')
+    expect(readFileSync(join(skillDir, 'references/api.md'), 'utf8')).toBe('# api reference\n')
+    expect([...readFileSync(join(skillDir, 'assets/logo.bin'))]).toEqual([0, 1, 2, 253, 254, 255])
+    // Frozen never rewrites the lockfile.
+    expect(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')).toBe(lockBefore)
+  })
+
+  test('a frozen install repairs a drifted companion from verified bytes', async () => {
+    const local = buildBundleFixture('viper-plans')
+    writeFileSync(
+      join(projectRoot, 'facets.json'),
+      JSON.stringify({ facets: { 'viper-plans': `./${local.split('/').pop()}` } }),
+    )
+    const adapters = [buildBundleAdapter('bundle')]
+
+    const first = await runInstall({ projectRoot, adapters })
+    if (!first.ok) expect.unreachable()
+
+    const skillDir = join(projectRoot, '.bundle/skills/planning')
+    rmSync(join(skillDir, 'references/api.md'), { force: true })
+
+    // Frozen mode constrains the locked set, not materialized state: it still
+    // converges disk, which is only possible because the resolved record
+    // carries the companion bytes to restore from.
+    const frozen = await runInstall({ projectRoot, adapters, frozenLockfile: true })
+    if (!frozen.ok) expect.unreachable()
+    expect(frozen.perFacet).toEqual([{ kind: 'repaired', name: 'viper-plans', version: '0.1.0' }])
+    expect(readFileSync(join(skillDir, 'references/api.md'), 'utf8')).toBe('# api reference\n')
   })
 })

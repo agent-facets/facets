@@ -18,7 +18,7 @@
 
 - [x] 1.1 Explore: Inspect the existing asset-name validators, portable collision normalization, shared skill/command validation, and canonical authored-path derivation in `packages/protocol` and `packages/common`.
 - [x] 1.2 Explore: Inspect the project-manifest, lockfile, and build-manifest schemas/loaders and their exact-dispatch, duplicate-member, fixture, and public-export test patterns.
-- [x] 1.3 Explore: Inspect protocol package release metadata and all downstream consumers of project-manifest and lockfile types/constants so compatibility shims and the `0.3` writer flip are sequenced safely.
+- [x] 1.3 Explore: Inspect protocol package release metadata and all downstream consumers of project-manifest and lockfile types/constants so explicit legacy readers, removal of permissive compatibility exports, and the single-delivery `0.3` writer transition are defined safely.
 - [x] 1.4 Propose: Define the protocol implementation approach for one namespace mapping, tagged dispositions, legacy/current manifest dispatch, lockfile `0.3`, canonical identity helpers, and a deterministic planner without duplicating existing sources of truth.
 
 ## 2. Protocol Identity and Schema Contracts — Implementation
@@ -47,19 +47,20 @@
 
 ## 5. Resolve and Compose Pipeline — Research
 
-- [ ] 5.1 Explore: Trace the current interleaved install loop, source-specific resolvers, verified authored plans, integrity reconciliation, journal lifecycle, lock scope, outcome classification, stage events, and structured failure unions.
-- [ ] 5.2 Explore: Trace adapter preflight and every pre-materialization failure path to establish which failures must precede collision resolution and which paths must guarantee no mutation.
-- [ ] 5.3 Propose: Define the resolve-all, compose, resolver-callback, and apply handoff types so fresh versus inherited content and resolved versus colliding plans cannot represent illegal mixed states.
+- [x] 5.1 Explore: Trace the current interleaved install loop, source-specific resolvers, verified authored plans, integrity reconciliation, journal lifecycle, lock scope, outcome classification, stage events, and structured failure unions.
+- [x] 5.2 Explore: Trace adapter preflight and every pre-materialization failure path to establish which failures must precede collision resolution and which paths must guarantee no mutation.
+- [x] 5.3 Propose: Define the resolve-all, compose, resolver-callback, and apply handoff types so verified authored content, loaded legacy state, current persisted state, and resolved versus colliding plans cannot represent illegal mixed states.
 
 ## 6. Resolve and Compose Pipeline — Implementation
 
-- [ ] 6.1 Implement: Replace parallel optional resolved-facet fields with a tagged fresh/inherited union and extract deterministic resolve-all behavior that retains authored plans/bytes without invoking adapters.
-- [ ] 6.2 Implement: Implement Compose over the complete desired set: apply persisted overrides, report stale overrides, derive effective identities, call the protocol planner, and produce lockfile dispositions, retained adapter keys, and effective ownership only for collision-free results.
-- [ ] 6.3 Implement: Add the optional typed collision-resolver callback and structured collision, invalid-resolution, and cancellation results/events; frozen mode and calls without a resolver must return every group without prompting or mutation.
-- [ ] 6.4 Implement: Refactor `runInstall` into preflight, resolve-all, compose, apply, and commit boundaries; keep the project lock across resolution, create the journal only after Compose succeeds, and final-validate callback choices without reopening the resolver.
-- [ ] 6.5 Implement: Update reuse and outcome classification so disposition-only changes at unchanged versions are `updated`, disk-only drift remains `repaired`, and source/integrity failures still retain deterministic ordering.
-- [ ] 6.6 Implement: Add tests for no adapter calls during resolve/compose, all-group collision failures, adapter/integrity precedence, resolver success, invalid callback output, cancellation, stale-override retention on failure, and successful transactional pruning.
-- [ ] 6.7 Verify: Run targeted resolve, compose, callback, run-install, add, remove, and outcome-classification tests plus engine typechecking.
+- [x] 6.1 Implement: Extract deterministic resolve-all behavior in which every resolved facet retains its verified authored plan and companion bytes regardless of source, cache warmth, or frozen mode; remove the inherited-content arm and invoke no adapter I/O methods during Resolve or Compose.
+- [x] 6.2 Implement: Remove the deprecated unpinned lockfile schema/types/constants, preserve exact `1`, `0.2`, and `0.3` readers through version-specific and derived supported-format unions, narrow every engine consumer to its actual read/write/identity contract, add receipt `0.3` with exact `1`/`0.2` refinement, and move both current writer constants directly to `0.3`.
+- [ ] 6.3 Implement: Implement Compose over the complete desired set as the sole constructor of current lockfile entries and effective receipt intent: apply persisted overrides, report stale overrides, derive effective identities, call the protocol planner, and produce dispositions, retained adapter keys, and effective ownership only for collision-free results.
+- [ ] 6.4 Implement: Add the optional typed collision-resolver callback and structured collision, invalid-resolution, and cancellation results/events; frozen mode and calls without a resolver must return every group without prompting or mutation.
+- [ ] 6.5 Implement: Refactor `runInstall` into preflight, resolve-all, compose, apply, and commit boundaries; keep the project lock across resolution, create the journal only after Compose succeeds, and final-validate callback choices without reopening the resolver.
+- [ ] 6.6 Implement: Update reuse and outcome classification so disposition-only changes at unchanged versions are `updated`, disk-only drift remains `repaired`, and source/integrity failures still retain deterministic ordering.
+- [ ] 6.7 Implement: Add tests for no adapter I/O calls during resolve/compose, cache-independent frozen verification, frozen companion retention/repair, exact legacy/current refinement, all-group collision failures, adapter/integrity precedence, resolver success, invalid callback output, cancellation, stale-override retention on failure, and successful transactional pruning.
+- [ ] 6.8 Verify: Run targeted resolve, compose, callback, run-install, add, remove, and outcome-classification tests plus engine typechecking.
 
 ## 7. Effective Ownership, Receipts, and Frozen Reproduction — Research
 
@@ -69,13 +70,12 @@
 
 ## 8. Effective Ownership, Receipts, and Frozen Reproduction — Implementation
 
-- [ ] 8.1 Implement: Add receipt `0.3` with authored identity, authored owned paths, and authored/aliased disposition; refine receipt `1` and `0.2` to authored, filter omitted lockfile assets during bootstrap, and retain all untrusted-path/project-isolation safeguards.
-- [ ] 8.2 Implement: Replace per-facet deletion planning with a global effective-adapter-key apply pass that aggregates historical claims, retains identities claimed by any desired asset, deletes obsolete identities once, and safely handles cross-facet ownership transfer.
-- [ ] 8.3 Implement: Materialize non-omitted assets under effective names while keeping content lookup, integrity, descriptions, metadata, and companion extraction authored; ensure generated front matter and adapter read/install/delete requests use the effective name.
-- [ ] 8.4 Implement: Make alias changes delete old ownership and write new ownership transactionally, make omission toggles remove/restore complete bundles, preserve unowned files, and cover journal rollback after partial global apply.
-- [ ] 8.5 Implement: Extend frozen gates for manifest version, locked dispositions, stale overrides, unresolved effective collisions, and legacy lockfiles that cannot represent intent while preserving exact-version downloads, no registry confirmation, and receipt-only cleanup.
-- [ ] 8.6 Implement: Add receipt, ownership-transfer, duplicate-claim, companion-cleanup, alias/omit drift, offline removal, frozen, integrity, and rollback tests covering all retained legacy safeguards.
-- [ ] 8.7 Verify: Run targeted materialization/apply, receipt, removal, frozen-drift, integrity, and journal tests plus engine typechecking.
+- [ ] 8.1 Implement: Replace per-facet deletion planning with a global effective-adapter-key apply pass that aggregates historical claims, retains identities claimed by any desired asset, deletes obsolete identities once, and safely handles cross-facet ownership transfer.
+- [ ] 8.2 Implement: Materialize non-omitted assets under effective names while keeping content lookup, integrity, descriptions, metadata, and companion extraction authored; ensure generated front matter and adapter read/install/delete requests use the effective name.
+- [ ] 8.3 Implement: Make alias changes delete old ownership and write new ownership transactionally, make omission toggles remove/restore complete bundles, preserve unowned files, and cover journal rollback after partial global apply.
+- [ ] 8.4 Implement: Extend frozen gates for manifest version, locked dispositions, stale overrides, unresolved effective collisions, and legacy lockfiles that cannot represent intent while preserving exact-version downloads, no registry confirmation, and receipt-only cleanup.
+- [ ] 8.5 Implement: Add receipt, ownership-transfer, duplicate-claim, companion-cleanup, alias/omit drift, offline removal, frozen, integrity, and rollback tests covering all retained legacy safeguards.
+- [ ] 8.6 Verify: Run targeted materialization/apply, receipt, removal, frozen-drift, integrity, and journal tests plus engine typechecking.
 
 ## 9. CLI Collision Resolution Experience — Research
 
@@ -110,14 +110,14 @@
 - [ ] 12.6 Implement: Add the newest-first changelog entry for the breaking manifest/lockfile/receipt formats and collision workflow, including required RSS metadata and links, without rewriting historical entries; leave README unchanged unless final behavior invalidates the reviewed quickstart.
 - [ ] 12.7 Verify: Run documentation formatting/link checks and stale-text searches for lockfile/receipt `0.2`, three-version-axis claims, string-only manifests, and the interleaved install loop.
 
-## 13. Migration Rollout and Cross-Layer Validation — Research
+## 13. Migration and Cross-Layer Validation — Research
 
-- [ ] 13.1 Explore: Audit all protocol, engine, CLI, adapter, fixture, and documentation tests affected by the manifest/lockfile/receipt version changes and identify any remaining permissive legacy types or alias-unaware helpers that could drop dispositions.
-- [ ] 13.2 Propose: Define the final rollout gate that enables current `0.3` writers only after protocol, engine, CLI, migration, rollback, adapter, and documentation behavior is green together.
+- [ ] 13.1 Explore: Audit all protocol, engine, CLI, adapter, fixture, and documentation tests affected by the manifest/lockfile/receipt version changes and identify any remaining permissive types, obsolete compatibility exports, or alias-unaware helpers that could drop dispositions.
+- [ ] 13.2 Propose: Define the final cross-layer migration validation matrix and any residual corrections required before the single release is implementation-ready.
 
-## 14. Migration Rollout and Cross-Layer Validation — Implementation
+## 14. Migration and Cross-Layer Validation — Implementation
 
-- [ ] 14.1 Implement: Remove or narrow permissive manifest/lockfile compatibility paths that could silently drop expanded entries or dispositions while retaining explicit legacy `1`, `0.2`, and unversioned readers.
-- [ ] 14.2 Implement: Enable unconditional non-frozen lockfile/receipt `0.3` writes and transactional project-manifest `0.1` migration only after all effective-ownership and CLI paths are wired; verify frozen operations retain loaded manifest/lockfile versions and write only safe machine-local receipt state.
+- [ ] 14.1 Implement: Remove any residual permissive or obsolete compatibility path found by the final audit while retaining only the explicit legacy `1`, `0.2`, and unversioned readers required by the specification.
+- [ ] 14.2 Implement: Verify unconditional non-frozen lockfile/receipt `0.3` writes and transactional project-manifest `0.1` migration hold across every command, and that frozen operations retain loaded manifest/lockfile versions and write only safe machine-local receipt state.
 - [ ] 14.3 Implement: Add cross-package migration fixtures and tests for resolution-free upgrades, alias/omit projects, downgrade fail-closed behavior, failed-write restoration, teammate/CI reproduction, and removing all overrides without format downgrade.
 - [ ] 14.4 Verify: Run `bun check` for the complete repository and resolve every test, type, lint, formatting, e2e, documentation, and build failure before marking the change implementation-ready.

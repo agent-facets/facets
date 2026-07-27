@@ -3,8 +3,8 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
-import type { BuildManifest, CurrentBuildManifest, LockfileFacet } from '@agent-facets/protocol'
-import { LOCKFILE_VERSION } from '@agent-facets/protocol'
+import type { BuildManifest, CurrentBuildManifest, LegacyLockfileFacet } from '@agent-facets/protocol'
+import { LEGACY_LOCKFILE_VERSION } from '@agent-facets/protocol'
 import type { Addition } from '../types.ts'
 
 /**
@@ -191,7 +191,7 @@ function writeFacets(facets: Record<string, string>): string {
 }
 
 function writeLock(facets: Record<string, { version: string; integrity: string }>): string {
-  const entries: Record<string, LockfileFacet> = {}
+  const entries: Record<string, LegacyLockfileFacet> = {}
   for (const [name, e] of Object.entries(facets)) {
     entries[name] = {
       source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
@@ -200,7 +200,7 @@ function writeLock(facets: Record<string, { version: string; integrity: string }
       assets: [{ scope: 'user', type: 'skill', name: 'planning' }],
     }
   }
-  const bytes = `${JSON.stringify({ lockfileVersion: LOCKFILE_VERSION, facets: entries }, null, 2)}\n`
+  const bytes = `${JSON.stringify({ lockfileVersion: LEGACY_LOCKFILE_VERSION, facets: entries }, null, 2)}\n`
   writeFileSync(join(projectRoot, 'facets.lock'), bytes)
   return bytes
 }

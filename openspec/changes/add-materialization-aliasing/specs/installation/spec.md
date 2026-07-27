@@ -349,6 +349,13 @@ The receipt, lockfile, and materialized state SHALL commit together: within one 
 - **WHEN** a lockfile asset is omitted
 - **THEN** receipt bootstrap SHALL NOT record it as materialized
 
+#### Scenario: Earlier receipts refine directly to current state
+
+- **WHEN** the system loads receipt version `1` or `0.2`
+- **THEN** it SHALL refine each asset to authored materialization in the in-memory current `0.3` receipt shape
+- **AND** version `1` SHALL refine to primary-only ownership while `0.2` SHALL retain its complete owned-path set
+- **AND** the next successful receipt write SHALL emit `0.3`, never an intermediate writer format
+
 #### Scenario: Escaping receipt path is not deleted
 
 - **WHEN** a receipt companion path resolves outside its selected adapter's storage through traversal, an absolute path, or a link
@@ -440,6 +447,18 @@ Frozen mode constrains the locked set, not the machine's materialized state: ass
 - **WHEN** cached content differs from locked integrity
 - **THEN** the system SHALL fail with an integrity error before materialization
 - **AND** it SHALL leave the manifest, lockfile, receipt, and adapter state unchanged
+
+#### Scenario: Frozen verification is independent of cache warmth
+
+- **WHEN** two frozen installs reproduce the same locked facet with warm and cold caches respectively
+- **THEN** both SHALL derive and reconcile the same complete verified authored plan
+- **AND** both SHALL retain the same authored companion bytes for Apply
+
+#### Scenario: Frozen reproduction preserves companions
+
+- **WHEN** a frozen install reproduces a skill whose primary and companions already match verified content
+- **THEN** it SHALL treat the complete bundle as unchanged
+- **AND** absence of a separately inherited companion map SHALL NOT be interpreted as an intentionally empty bundle or cause any companion deletion
 
 #### Scenario: Frozen mode cleans receipt-only orphan
 

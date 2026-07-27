@@ -7,6 +7,19 @@ import { ADAPTER_API_VERSION, deleteAssetFile, installAssetFile, readAssetFile }
 import type { ResolvedFacetManifest } from '@agent-facets/protocol'
 import { InstallJournal } from '../install/journal.ts'
 import { computeAssetList, materialize } from '../install/materialize.ts'
+import type { AssetIdentity, MaterializedAssetOwnership } from '../install/types.ts'
+
+/**
+ * Previous ownership for assets whose authored layout is the conventional
+ * one — the shape a caller normalizes from a locked entry before handing it
+ * to `materialize`.
+ */
+function ownershipOf(assets: readonly AssetIdentity[]): MaterializedAssetOwnership[] {
+  return assets.map((asset) => ({
+    ...asset,
+    ownedPaths: [asset.type === 'skill' ? `skills/${asset.name}/SKILL.md` : `${asset.type}s/${asset.name}.md`],
+  }))
+}
 
 let projectRoot: string
 
@@ -170,7 +183,7 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
       facetName: 'viper-plans',
       manifest,
       adapters: [fixture.adapter],
-      oldAssets: newAssets,
+      oldAssets: ownershipOf(newAssets),
       newAssets,
       journal: new InstallJournal(),
     })
@@ -226,7 +239,7 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
       facetName: 'viper-plans',
       manifest,
       adapters: [fixture.adapter],
-      oldAssets: newAssets,
+      oldAssets: ownershipOf(newAssets),
       newAssets,
       journal: new InstallJournal(),
     })
@@ -267,7 +280,7 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
       facetName: 'viper-plans',
       manifest,
       adapters: [fixture.adapter],
-      oldAssets: newAssets,
+      oldAssets: ownershipOf(newAssets),
       newAssets,
       journal: new InstallJournal(),
     })
@@ -306,7 +319,7 @@ describe('materialize — skip-if-identical', () => {
       facetName: 'viper-plans',
       manifest,
       adapters: [adapter],
-      oldAssets: newAssets,
+      oldAssets: ownershipOf(newAssets),
       newAssets,
       journal: new InstallJournal(),
     })
@@ -345,7 +358,7 @@ describe('materialize — skip-if-identical', () => {
       facetName: 'viper-plans',
       manifest,
       adapters: [adapter],
-      oldAssets: newAssets,
+      oldAssets: ownershipOf(newAssets),
       newAssets,
       journal: new InstallJournal(),
     })
@@ -393,7 +406,7 @@ describe('materialize — skip-if-identical', () => {
       facetName: 'viper-plans',
       manifest: manifestB,
       adapters: [adapter],
-      oldAssets: newAssets,
+      oldAssets: ownershipOf(newAssets),
       newAssets,
       journal: new InstallJournal(),
     })

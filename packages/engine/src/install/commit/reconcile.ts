@@ -1,4 +1,4 @@
-import type { LockfileFacet } from '@agent-facets/protocol'
+import type { SupportedLockfileFacet } from '@agent-facets/protocol'
 import type { RunInstallFailure } from '../types.ts'
 import type { VerifiedAssetPlan } from '../verified-asset-plan.ts'
 
@@ -42,8 +42,8 @@ import type { VerifiedAssetPlan } from '../verified-asset-plan.ts'
  */
 export function reconcileLockedAgainstPlan(
   facet: string,
-  previous: LockfileFacet | undefined,
-  current: LockfileFacet,
+  previous: SupportedLockfileFacet | undefined,
+  currentIntegrity: string,
   plan: VerifiedAssetPlan,
 ): RunInstallFailure | undefined {
   if (previous === undefined) return undefined
@@ -51,7 +51,7 @@ export function reconcileLockedAgainstPlan(
   // Reproduction gate: only reconcile when the SAME artifact is being
   // reproduced. A different integrity is a legitimate update/edit, where the
   // locked entry is expected to change and the fresh plan is the new truth.
-  if (current.integrity !== previous.integrity) return undefined
+  if (currentIntegrity !== previous.integrity) return undefined
 
   // Migration gate: a legacy (`1`) entry carries identity-only assets under
   // the previous system's conventions (e.g. a different default scope). Its

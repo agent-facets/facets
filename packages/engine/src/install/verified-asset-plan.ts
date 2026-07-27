@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ValidationError } from '@agent-facets/common'
-import { type FacetManifest, planArchiveEntries } from '@agent-facets/protocol'
+import { type CurrentLockfileAssetEntry, type FacetManifest, planArchiveEntries } from '@agent-facets/protocol'
 import { computeDirIntegrity } from '../cache/index.ts'
 
 /**
@@ -179,6 +179,21 @@ const TYPE_ORDER: Record<VerifiedAsset['type'], number> = { skill: 0, agent: 1, 
 function assetOrder(a: VerifiedAsset, b: VerifiedAsset): number {
   if (a.type !== b.type) return TYPE_ORDER[a.type] - TYPE_ORDER[b.type]
   return a.name < b.name ? -1 : a.name > b.name ? 1 : 0
+}
+
+/**
+ * Turn an authored plan's assets into current lockfile asset entries,
+ * defaulting every disposition to `authored`.
+ *
+ * A verified plan describes what the PUBLISHER shipped, so it carries no
+ * disposition — that is project intent, and it is resolved during Compose,
+ * which overwrites these defaults with the planner's decisions. This
+ * function exists so the resolvers emit a well-typed current entry rather
+ * than a `0.2`-shaped one that only type-checks because the surrounding
+ * lockfile type is unpinned.
+ */
+export function authoredAssetEntries(plan: VerifiedAssetPlan): CurrentLockfileAssetEntry[] {
+  return plan.assets.map((asset) => ({ ...asset, materialization: { kind: 'authored' as const } }))
 }
 
 /**

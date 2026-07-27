@@ -133,9 +133,11 @@ Lockfile `0.3` SHALL retain `name` as the authored name and add a required `mate
 
 Exact version dispatch SHALL recognize legacy alpha `1`, previous `0.2`, and current `0.3`; it SHALL NOT infer a version from shape. Normal installation can losslessly refine every older asset to `{ kind: "authored" }` and write `0.3` after verification. Frozen installation SHALL NOT migrate.
 
+Protocol SHALL expose the three exact versioned schemas/types and a closed supported-format union derived from them. The deprecated unpinned numeric-version schema and identity-only `Lockfile` / `LockfileFacet` / `LockfileAssetEntry` compatibility aliases SHALL be removed in this change, together with their legacy current-version constant. Engine consumers SHALL choose an exact current writer type, the supported reader union, an explicit legacy fixture type, or a narrower asset-identity type according to their real contract; no permissive bridge type remains to launder fields between versions.
+
 Every successful non-frozen install SHALL write lockfile `0.3`, even when the project has no materialization overrides. This follows the existing migration policy, keeps one canonical current writer schema, and prevents format oscillation. The compatibility cost is deliberate: the first successful normal install with a supporting CLI makes the lockfile unreadable to older CLIs even for a resolution-free project.
 
-Receipt `0.3` SHALL record authored `name`, authored owned-file paths, and a `MaterializedDisposition` for each asset actually present on disk. Omitted assets SHALL be absent from the receipt. This makes an “omitted but materialized” receipt state unrepresentable while retaining both names needed for offline deletion. Receipt `1` and `0.2` assets refine to authored materialization during load.
+Receipt `0.3` SHALL record authored `name`, authored owned-file paths, and a `MaterializedDisposition` for each asset actually present on disk. Omitted assets SHALL be absent from the receipt. This makes an “omitted but materialized” receipt state unrepresentable while retaining both names needed for offline deletion. Receipt `1` and `0.2` assets refine to authored materialization during load. The current receipt writer SHALL move directly to `0.3` in the same delivery as the lockfile writer; lockfile `0.3` plus receipt `0.2` is not a supported intermediate product state.
 
 Archive, build-manifest, and adapter API versions do not change. Archive bytes and adapter request shapes remain unchanged.
 
@@ -190,7 +192,9 @@ For each desired facet, in deterministic order:
 7. **Reconcile locked state:** compare previous authored lock state with the verified plan.
 8. **Accumulate:** retain the complete resolved record for Compose.
 
-No adapter method SHALL be invoked during Resolve all. The resolved record SHALL use a tagged union for “fresh verified plan with companion bytes” versus “inherited locked entry,” replacing the current parallel optional fields.
+No adapter I/O method — `readAsset`, `installAsset`, or `deleteAsset` — SHALL be invoked during Resolve all or Compose. Adapter metadata validation (`buildAssetMetadata`) remains part of building a Git or local facet: it is pure, performs no I/O, and receives only the opaque per-asset adapter configuration, never an asset name, so it cannot observe an authored name that aliasing would have changed.
+
+Every resolved record SHALL retain its complete verified authored plan and companion bytes, regardless of source kind, cache warmth, or frozen mode. Whether the loaded lockfile is retained is a separate set-level persistence decision; it SHALL NOT remove content required by Apply. This separation makes frozen warm-cache and cold-cache verification equivalent and prevents an absent companion map from being interpreted as an intentionally empty replacement bundle. Resolve SHALL NOT construct a provisional current lockfile entry with an authored disposition: Compose is the sole constructor of current entries after project intent is known.
 
 #### Phase 3: Compose
 
@@ -312,12 +316,14 @@ Changing an alias becomes delete-old plus write-new; changing to omitted deletes
 
 ## Migration Plan
 
-1. Add protocol namespace/disposition types, legacy-unversioned and current-version-`0.1` project-manifest schemas with exact dispatch, lockfile `0.3` schemas, and the pure planner. Existing lockfile `1` and `0.2` readers remain available.
+The numbered steps below are implementation and review checkpoints inside one delivery, not deployment phases. No intentionally transitional writer state, permissive compatibility API, or stale “current” version is supported between them. The merged release SHALL expose only the final model.
+
+1. Add protocol namespace/disposition types, legacy-unversioned and current-version-`0.1` project-manifest schemas with exact dispatch, lockfile `0.3` schemas, and the pure planner. Existing lockfile `1` and `0.2` readers remain available through explicit versioned schemas and a closed supported-format union; the deprecated unpinned `LockfileSchema`, `Lockfile`, `LockfileFacet`, `LockfileAssetEntry`, and `LOCKFILE_VERSION` compatibility surface is removed.
 2. Normalize legacy and current compact/expanded project entries at the engine load boundary. Update every project-manifest mutation and writer—`manifest/mutations.ts`, `manifest/project-files.ts`, `install/commit/delta.ts`, and `install/commit/tri-write.ts`—to preserve expanded entries, write `manifestVersion: 0.1`, and canonicalize empty expanded entries. Add exact-dispatch, migration, frozen-retention, preservation, add, update, install, remove, and `facet list` read-tolerance coverage.
-3. Add receipt `0.3` and lossless `1`/`0.2` refinement to authored materialization. Omitted lockfile assets are filtered when bootstrapping a receipt.
-4. Refactor installation into resolve/compose/apply and add global effective-ownership planning before enabling any writer to emit `0.3`.
+3. Add receipt `0.3` and lossless `1`/`0.2` refinement to authored materialization. Omitted lockfile assets are filtered when bootstrapping a receipt. Lockfile and receipt current-writer constants move directly to `0.3`; there is no supported lockfile-`0.3`/receipt-`0.2` intermediate state.
+4. Refactor installation into resolve/compose/apply and add global effective-ownership planning. Resolve always retains complete verified authored content; Compose alone constructs current lockfile entries and effective materialization intent; Commit alone serializes final `0.3` lockfile and receipt state.
 5. Add structured engine failures and the CLI phase-machine resolver. Non-interactive and frozen paths remain fully usable without the callback and fail closed on unresolved groups.
-6. Enable `0.3` writes only after protocol, engine, CLI, migration, rollback, and adapter tests pass together. A successful normal install performs lockfile and receipt migration in the existing transaction; a failed install writes no migrated state.
+6. Validate protocol, engine, CLI, migration, rollback, adapter, and documentation behavior together as one release. A successful normal install performs lockfile and receipt migration in the existing transaction; a failed install writes no migrated state. This is a correctness gate for the complete delivery, not a staged writer rollout.
 
 Downgrading is fail-closed: an old CLI rejects an expanded manifest value, and a CLI that accepts only `0.2` rejects a `0.3` lockfile. Because every successful normal install migrates forward, removing all overrides and reinstalling SHALL NOT downgrade the lockfile to `0.2`. Restoring `0.2` requires an explicit compatibility rollback after all aliased or omitted assets have been reconciled to authored materialization—for example, restoring the pre-migration lockfile from version control. Deleting only the new lockfile while aliased state remains on disk is not safe.
 

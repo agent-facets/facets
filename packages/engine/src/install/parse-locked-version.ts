@@ -2,7 +2,7 @@ import { regex } from 'arkregex'
 
 /**
  * Pre-compiled M.N.P matcher for `parseLockedVersion`. The pattern is
- * the same shape narrowed by `LockfileSchema.version` — schema and
+ * the same shape narrowed by the lockfile schemas' `version` narrow — schema and
  * parser stay aligned by deliberate convention; if you widen one, widen
  * the other. `arkregex` types the captures so destructuring is
  * cast-free; the runtime `RegExp` instance behaves identically to a
@@ -18,7 +18,7 @@ const LOCKED_VERSION_RE = regex('^(\\d+)\\.(\\d+)\\.(\\d+)$')
  * Parse a `LockfileFacet.version` string into an exact `VersionSpec` for
  * the registry resolver. Lockfile versions are always concrete `M.N.P`
  * by contract (the lockfile schema narrows the field to exactly that
- * shape — see `LockfileSchema.version` in protocol). This function is
+ * shape — see the lockfile schemas' `version` narrow in protocol). This function is
  * the engine-side counterpart that turns the validated string into the
  * structured form the registry resolver consumes.
  *
@@ -42,7 +42,7 @@ export function parseLockedVersion(version: string): {
 } {
   const match = LOCKED_VERSION_RE.exec(version)
   if (match === null) {
-    // The schema narrow regex (`LockfileSchema.version`) has the same
+    // The schema narrow regex (the lockfile schemas' `version` narrow) has the same
     // shape as `LOCKED_VERSION_RE`. A null here means schema and parser
     // regex have drifted apart — programmer bug, not user input.
     throw new Error(`internal: lockfile schema accepted "${version}" but parseLockedVersion regex rejected it`)

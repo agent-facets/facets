@@ -1,12 +1,13 @@
 import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Lockfile, LockfileFacet } from '@agent-facets/protocol'
+import { type CurrentLockfile, type CurrentLockfileFacet, isMaterialized } from '@agent-facets/protocol'
 import { applyDesiredFacets, type ManifestDocument, type NormalizedFacetEntry } from '../../manifest/mutations.ts'
 import { writeProjectManifest } from '../../manifest/project-files.ts'
 import { FACETS_LOCK_FILE, writeLockfile } from '../lockfile-io.ts'
 import {
   ownedPathsForLockedAsset,
   type Receipt,
+  type ReceiptAsset,
   type ReceiptFacetEntry,
   receiptPath,
   writeReceipt,
@@ -18,29 +19,53 @@ import type { OnLog, RunInstallFailure } from '../types.ts'
  * records `{ version, assets[] }` per facet, each asset carrying the owned
  * inner-archive file paths mirrored from the lockfile — a self-sufficient,
  * offline-capable deletion record for future drift removal. Paths come from
- * the `0.2` lockfile asset `files[]`; a legacy identity-only asset seeds its
- * single conventional primary path.
+ * the current lockfile asset's `files[]`; the receipt mirrors the paths and
+ * never the hashes.
  */
 export function buildUpdatedReceipt(
   receipt: Receipt,
-  newFacetEntries: Readonly<Record<string, LockfileFacet>>,
+  newFacetEntries: Readonly<Record<string, CurrentLockfileFacet>>,
 ): Receipt {
   const facets: Record<string, ReceiptFacetEntry> = {}
   for (const [name, entry] of Object.entries(newFacetEntries)) {
-    facets[name] = {
-      version: entry.version,
-      assets: entry.assets.map((a) => ({
-        scope: a.scope,
-        type: a.type,
-        name: a.name,
-        files: ownedPathsForLockedAsset(a),
-      })),
+    // Omitted assets are recorded in the lockfile (which describes the
+    // resolved SET) but never in the receipt (which describes what is on
+    // disk). Including them would claim ownership of unwritten files.
+    const assets: ReceiptAsset[] = []
+    for (const asset of entry.assets) {
+      if (!isMaterialized(asset.materialization)) continue
+      assets.push({
+        scope: asset.scope,
+        type: asset.type,
+        name: asset.name,
+        materialization: asset.materialization,
+        files: ownedPathsForLockedAsset(asset),
+      })
     }
+    facets[name] = { version: entry.version, assets }
   }
   return { ...receipt, facets }
 }
 
 export type TriWriteResult = { ok: true } | { ok: false; failure: RunInstallFailure }
+
+/**
+ * What this commit does to the locked set (`facets.json` + `facets.lock`).
+ *
+ *   - `write` — a normal install. Both files are rewritten, and the
+ *     lockfile is always the CURRENT schema: this is where a legacy or
+ *     `0.2` document migrates forward, after every resolved artifact has
+ *     passed verification.
+ *   - `retain` — frozen mode. Neither file is touched, so the lockfile on
+ *     disk keeps whatever version it was loaded under.
+ *
+ * Frozen carries no lockfile value at all, rather than a value flagged
+ * "don't write me". Previously the caller synthesized one with the loaded
+ * version and possibly-legacy inherited entries purely to satisfy the
+ * parameter, producing a document that could not have been written and was
+ * never meant to be.
+ */
+export type LockedSetCommit = { kind: 'write'; newLockfile: CurrentLockfile } | { kind: 'retain' }
 
 export interface TriWriteArgs {
   projectRoot: string
@@ -50,9 +75,8 @@ export interface TriWriteArgs {
    */
   manifestDocument: ManifestDocument
   desiredFacets: Readonly<Record<string, NormalizedFacetEntry>>
-  newLockfile: Lockfile
+  lockedSet: LockedSetCommit
   newReceipt: Receipt
-  frozenLockfile: boolean
   onLog?: OnLog
 }
 
@@ -75,9 +99,9 @@ export interface TriWriteArgs {
  * `LOCKFILE_WRITE_FAILED` so the caller can roll back materialization.
  */
 export function commitProjectFiles(args: TriWriteArgs): TriWriteResult {
-  const { projectRoot, frozenLockfile, newReceipt } = args
+  const { projectRoot, lockedSet, newReceipt } = args
 
-  if (frozenLockfile) {
+  if (lockedSet.kind === 'retain') {
     try {
       writeReceipt(projectRoot, newReceipt)
       args.onLog?.(() => `[verbose]   wrote receipt (${receiptPath(projectRoot)}) [frozen]`)
@@ -115,7 +139,7 @@ export function commitProjectFiles(args: TriWriteArgs): TriWriteResult {
     {
       file: 'lockfile',
       path: join(projectRoot, FACETS_LOCK_FILE),
-      fn: () => writeLockfile(projectRoot, args.newLockfile),
+      fn: () => writeLockfile(projectRoot, lockedSet.newLockfile),
     },
     {
       file: 'receipt',

@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import type { LockfileAssetEntry } from '@agent-facets/protocol'
+import type { LegacyLockfileAssetEntry } from '@agent-facets/protocol'
 import { materializeFailureToRunInstall } from '../materialize-failure.ts'
 
-const asset: LockfileAssetEntry = { scope: 'user', type: 'skill', name: 'planning' }
+const asset: LegacyLockfileAssetEntry = { scope: 'user', type: 'skill', name: 'planning' }
 
 describe('materializeFailureToRunInstall', () => {
   test('unsupported-adapter → ADAPTER_UNSUPPORTED', () => {

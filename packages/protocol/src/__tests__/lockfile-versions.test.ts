@@ -85,11 +85,17 @@ describe('lockfile version constants', () => {
     expect(LOCKFILE_VERSION_0_3 < LEGACY_LOCKFILE_VERSION).toBe(true)
   })
 
-  // Readers for 0.3 ship ahead of the writer. Until the cutover, a normal
-  // install still writes 0.2 even though it can read 0.3.
-  test('the written version trails the newest readable version', () => {
-    expect(CURRENT_LOCKFILE_VERSION).toBe(LOCKFILE_VERSION_0_2)
-    expect(SUPPORTED_LOCKFILE_VERSIONS).toContain(LOCKFILE_VERSION_0_3)
+  // A normal install writes the newest schema. Readers stay broader so
+  // earlier documents still load and migrate; that breadth is a property of
+  // the format, not a staged writer rollout.
+  test('the written version is the newest readable version', () => {
+    expect(CURRENT_LOCKFILE_VERSION).toBe(LOCKFILE_VERSION_0_3)
+    expect(SUPPORTED_LOCKFILE_VERSIONS).toContain(CURRENT_LOCKFILE_VERSION)
+  })
+
+  test('every earlier readable version remains readable', () => {
+    expect(SUPPORTED_LOCKFILE_VERSIONS).toContain(LEGACY_LOCKFILE_VERSION)
+    expect(SUPPORTED_LOCKFILE_VERSIONS).toContain(LOCKFILE_VERSION_0_2)
   })
 })
 
@@ -105,8 +111,12 @@ describe('LegacyLockfileSchema', () => {
 })
 
 describe('CurrentLockfileSchema', () => {
-  test('accepts a 0.2 lockfile with sorted per-file integrity records', () => {
-    expect(CurrentLockfileSchema(currentLockfile)).not.toBeInstanceOf(type.errors)
+  test('accepts a 0.3 lockfile with sorted per-file integrity records', () => {
+    expect(CurrentLockfileSchema(lockfile03)).not.toBeInstanceOf(type.errors)
+  })
+
+  test('rejects the 0.2 shape, which carries no materialization disposition', () => {
+    expect(CurrentLockfileSchema(currentLockfile)).toBeInstanceOf(type.errors)
   })
 
   test('accepts single-file agent and command entries listing exactly their primary path', () => {
@@ -114,12 +124,14 @@ describe('CurrentLockfileSchema', () => {
       scope: 'user',
       type: 'agent',
       name: 'reviewer',
+      materialization: { kind: 'authored' },
       files: [{ path: 'agents/reviewer.md', integrity: HASH }],
     }
     const command = {
       scope: 'project',
       type: 'command',
       name: 'review',
+      materialization: { kind: 'aliased', as: 'audit' },
       files: [{ path: 'commands/review.md', integrity: HASH }],
     }
     expect(CurrentLockfileSchema(withAssets([agent, command]))).not.toBeInstanceOf(type.errors)
@@ -127,7 +139,7 @@ describe('CurrentLockfileSchema', () => {
 
   function withAssets(assets: unknown[]): unknown {
     return {
-      lockfileVersion: 0.2,
+      lockfileVersion: 0.3,
       facets: {
         cowsay: {
           source: { kind: 'local', path: '../cowsay' },

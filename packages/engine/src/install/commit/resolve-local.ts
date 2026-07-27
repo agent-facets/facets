@@ -1,16 +1,11 @@
 import type { Adapter } from '@agent-facets/adapter'
-import type { LockfileFacet } from '@agent-facets/protocol'
+import type { LockfileSource, SupportedLockfileFacet } from '@agent-facets/protocol'
 import { verifyLockfileOneCheck } from '@agent-facets/protocol'
 import { runBuildPipeline } from '../../build/pipeline.ts'
 import { resolveLocalFacetSource } from '../../sources/facet/resolve-local.ts'
 import type { Source } from '../../sources/facet/types.ts'
 import type { OnLog, StageEvent } from '../types.ts'
-import {
-  buildVerifiedAssetPlan,
-  readSkillCompanionBytes,
-  type SkillCompanionBytes,
-  type VerifiedAssetPlan,
-} from '../verified-asset-plan.ts'
+import { buildVerifiedAssetPlan, readSkillCompanionBytes } from '../verified-asset-plan.ts'
 import { buildLockfileSource, loadFacetContent } from './finalize-facet.ts'
 import type { ResolveFacetResult } from './types.ts'
 
@@ -20,7 +15,7 @@ export interface ResolveLocalFacetArgs {
   projectRoot: string
   adapters: ReadonlyArray<Adapter>
   /** See `ResolveRegistryFacetArgs.effectiveLocked`. */
-  effectiveLocked: LockfileFacet | undefined
+  effectiveLocked: SupportedLockfileFacet | undefined
   /**
    * Frozen-lockfile mode. Local sources are mutable by design, so a
    * normal install rebuilds from disk and overwrites the entry. But
@@ -68,9 +63,7 @@ export async function resolveLocalFacet(args: ResolveLocalFacetArgs): Promise<Re
     }
   }
 
-  let entry: LockfileFacet
-  let plan: VerifiedAssetPlan | undefined
-  let companionBytes: Map<string, SkillCompanionBytes> | undefined
+  let identity: { source: LockfileSource; version: string; integrity: string }
   if (frozenLockfile && effectiveLocked !== undefined) {
     // Frozen reproduction guard. The verifier labels the failure
     // `lockfile` (built-vs-lockfile divergence) — reporting `git` here
@@ -83,38 +76,42 @@ export async function resolveLocalFacet(args: ResolveLocalFacetArgs): Promise<Re
     if (!guard.ok) {
       return { ok: false, failure: { code: 'INTEGRITY_FAILURE', failure: guard.failure } }
     }
-    // Frozen never rewrites a local entry.
-    entry = {
+    // Frozen keeps the locked identity; the build above already proved the
+    // on-disk content reproduces it.
+    identity = {
       source: effectiveLocked.source,
       version: effectiveLocked.version,
       integrity: effectiveLocked.integrity,
-      assets: effectiveLocked.assets,
     }
   } else {
-    // Non-frozen: local is mutable by design; the user owns the version
-    // and content, and the lockfile follows what's on disk. Per-file
-    // `files[]` records are derived from the built dir so the entry is
-    // recorded at `0.2`.
+    // Non-frozen: local is mutable by design; the user owns the version and
+    // content, and the lockfile follows what's on disk.
     const buildSource = buildLockfileSource(facetName, source, undefined)
     if (!buildSource.ok) {
       return { ok: false, failure: buildSource.failure }
     }
-    const built = buildVerifiedAssetPlan(content.manifest, local.dir)
-    if (!built.ok) {
-      return { ok: false, failure: { code: 'BUILD_FAILED', facet: facetName, errors: built.errors } }
-    }
-    plan = built.plan
-    companionBytes = readSkillCompanionBytes(built.plan, local.dir)
-    entry = {
+    identity = {
       source: buildSource.source,
       version: buildResult.data.version,
       integrity: buildResult.integrity,
-      assets: built.plan.assets,
     }
+  }
+
+  // Derived on both paths: the built directory is the verified content in
+  // either mode, so Apply and reconciliation see the same inputs regardless.
+  const built = buildVerifiedAssetPlan(content.manifest, local.dir)
+  if (!built.ok) {
+    return { ok: false, failure: { code: 'BUILD_FAILED', facet: facetName, errors: built.errors } }
   }
 
   return {
     ok: true,
-    value: { entry, resolved: content.resolved, plan, companionBytes, serversDeclared: content.serversDeclared },
+    value: {
+      ...identity,
+      resolved: content.resolved,
+      plan: built.plan,
+      companionBytes: readSkillCompanionBytes(built.plan, local.dir),
+      serversDeclared: content.serversDeclared,
+    },
   }
 }

@@ -148,7 +148,7 @@ export const FacetManifestSchema = type({
   // schema (facet-manifest-legacy.ts). Because the grammar rejects empty,
   // `.`, `..`, and backslash segments, it also subsumes the filesystem
   // safety the install pipeline needs when writing join(baseDir,
-  // relativePathFor(type, name)). LockfileSchema intentionally keeps the
+  // relativePathFor(type, name)). The lockfile schemas intentionally keep the
   // weaker `@agent-facets/common` path-safety guard so legacy installs with
   // non-kebab asset names still load and can be removed.
   const assetGroups: [AssetType, Record<string, unknown> | undefined][] = [

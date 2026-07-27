@@ -119,6 +119,8 @@ The shape of a lockfile (`facets.lock`) SHALL be published as a normative schema
 
 Version dispatch SHALL use exact equality. Numeric `1` SHALL identify only the earliest alpha schema, numeric `0.2` SHALL identify only the preceding schema, and numeric `0.3` SHALL identify only the current schema. A malformed document SHALL NOT be retried under another version, and an unsupported version SHALL be rejected with structured observed and supported values. Project-manifest, lockfile, archive, and adapter-contract versions SHALL be interpreted independently. Duplicate lockfile members SHALL be rejected before schema validation.
 
+The published API SHALL expose each supported lockfile version through its exact schema and type plus a closed union derived from those exact readers. It SHALL NOT expose an unpinned numeric-version schema or identity-only compatibility type as a substitute for the supported union: such a type would admit mixed states whose declared version and asset shape disagree. Current writer types SHALL describe only `0.3`.
+
 The published source provenance SHALL remain tagged by source kind: registry records the registry origin, git records the repository URL and required resolved commit, and local records the resolved path. A source missing a required field SHALL NOT satisfy the schema; a source MAY carry unrecognized keys.
 
 Every `0.3` asset entry SHALL record `scope`, `type`, authored `name`, a required materialization disposition, and a required `files` array sorted by canonical path. Each file record SHALL contain exactly the canonical inner-archive path derived from the authored name and its `sha256:<hex>` integrity. Aliased and omitted dispositions SHALL NOT change those paths or hashes. An omitted asset SHALL remain in the lockfile with all authored file records. Skill companions SHALL remain subordinate records, and archive-only supplementary files SHALL NOT appear in an asset's files.
@@ -208,6 +210,12 @@ Every `0.2` asset entry SHALL retain its preceding `{ scope, type, name, files }
 
 - **WHEN** a lockfile declares `lockfileVersion: 0.3` but violates the current schema
 - **THEN** it SHALL be rejected without fallback to `0.2` or `1`
+
+#### Scenario: Supported aggregate remains version-discriminated
+
+- **WHEN** a protocol consumer accepts any supported lockfile
+- **THEN** its declared version SHALL discriminate the corresponding legacy `1`, previous `0.2`, or current `0.3` payload
+- **AND** a `0.3` version paired with identity-only or disposition-less assets SHALL NOT be representable as validated supported state
 
 #### Scenario: Unsupported version is structured
 

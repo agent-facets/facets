@@ -1,9 +1,40 @@
 import type { Adapter } from '@agent-facets/adapter'
-import type { ValidationError } from '@agent-facets/common'
-import type { IntegrityFailure, Lockfile, LockfileAssetEntry } from '@agent-facets/protocol'
+import type { AssetType, Scope, ValidationError } from '@agent-facets/common'
+import type { IntegrityFailure, SupportedLockfile } from '@agent-facets/protocol'
 import type { AdapterCompatibilityFailure } from '../adapters/api-compatibility.ts'
 import type { RegistryError } from '../registry/index.ts'
 import type { ParseError, Source } from '../sources/facet/types.ts'
+
+/**
+ * The adapter-agnostic identity of a single asset: the triple that names it
+ * for read, install, and delete.
+ *
+ * Distinct from any lockfile asset entry on purpose. Materialization,
+ * journal entries, and progress events need only the identity, and typing
+ * them against a lockfile entry implied they cared about per-file records or
+ * dispositions — which in turn invited reading those fields off a value
+ * whose version was no longer known.
+ */
+export interface AssetIdentity {
+  scope: Scope
+  type: AssetType
+  name: string
+}
+
+/**
+ * An asset previously materialized on this machine: its identity plus every
+ * inner-archive path it owns, primary included.
+ *
+ * Callers normalize into this shape before handing it to materialization.
+ * Previous ownership can arrive from a lockfile entry (`{ path, integrity }`
+ * records, or none at all on a legacy entry) or from the receipt (bare path
+ * strings), and materialization used to accept whichever it was given and
+ * probe for `files` structurally. Normalizing at the boundary means the
+ * shape question is answered once, by the code that knows the answer.
+ */
+export interface MaterializedAssetOwnership extends AssetIdentity {
+  ownedPaths: readonly string[]
+}
 
 /**
  * Per-facet outcome reported in the result. View layers render one
@@ -83,8 +114,8 @@ export type StageEvent =
    */
   | { kind: 'receipt-invalid-asset'; facet: string; asset: string; reason: string }
   | { kind: 'adapter-complete'; facet: string; adapter: string }
-  | { kind: 'asset-installed'; facet: string; adapter: string; asset: LockfileAssetEntry }
-  | { kind: 'asset-deleted'; facet: string; adapter: string; asset: LockfileAssetEntry }
+  | { kind: 'asset-installed'; facet: string; adapter: string; asset: AssetIdentity }
+  | { kind: 'asset-deleted'; facet: string; adapter: string; asset: AssetIdentity }
   | { kind: 'lockfile-write'; path: string }
   | { kind: 'install-complete'; outcome: 'success' | 'failure' | 'aborted' }
 
@@ -223,7 +254,7 @@ export type RunInstallFailure =
       code: 'ADAPTER_READ_FAILED'
       facet: string
       adapter: string
-      asset: LockfileAssetEntry
+      asset: AssetIdentity
       cause: string
     }
   /** `adapter.installAsset` threw. */
@@ -231,7 +262,7 @@ export type RunInstallFailure =
       code: 'ADAPTER_INSTALL_FAILED'
       facet: string
       adapter: string
-      asset: LockfileAssetEntry
+      asset: AssetIdentity
       cause: string
     }
   /** `adapter.deleteAsset` threw during drift removal. */
@@ -239,7 +270,7 @@ export type RunInstallFailure =
       code: 'ADAPTER_DELETE_FAILED'
       facet: string
       adapter: string
-      asset: LockfileAssetEntry
+      asset: AssetIdentity
       cause: string
     }
   | { code: 'FROZEN_WITH_DELTA' }
@@ -330,7 +361,7 @@ export type RollbackOutcome =
 export type RunInstallResult =
   | {
       ok: true
-      lockfile: Lockfile
+      lockfile: SupportedLockfile
       summary: InstallSummary
       perFacet: ReadonlyArray<FacetOutcome>
       serverWarnings: ReadonlyArray<{ facet: string; servers: ReadonlyArray<string> }>

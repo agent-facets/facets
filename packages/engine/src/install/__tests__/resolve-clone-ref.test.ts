@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import type { LockfileFacet } from '@agent-facets/protocol'
+import type { LegacyLockfileFacet } from '@agent-facets/protocol'
 import { resolveCloneRef } from '../resolve-clone-ref.ts'
 
 const COMMIT = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 
-const lockedGit: LockfileFacet = {
+const lockedGit: LegacyLockfileFacet = {
   source: { kind: 'git', url: 'github:agent-facets/viper-plans#main', commit: COMMIT },
   version: '0.1.0',
   integrity: 'sha256:0000000000000000000000000000000000000000000000000000000000000000',
@@ -13,7 +13,7 @@ const lockedGit: LockfileFacet = {
 
 // A locked non-git source (registry/local) carries no commit, so the
 // helper falls back to the manifest ref — same path as a fresh add.
-const lockedRegistry: LockfileFacet = {
+const lockedRegistry: LegacyLockfileFacet = {
   source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
   version: '0.1.0',
   integrity: 'sha256:0000000000000000000000000000000000000000000000000000000000000000',
