@@ -3,6 +3,7 @@ import { CURRENT_LOCKFILE_VERSION } from '@agent-facets/protocol'
 import { type AdapterCompatibilityFailure, compatibilityFailureFor } from '../adapters/api-compatibility.ts'
 import type { NormalizedProjectManifest } from '../manifest/mutations.ts'
 import { describeManifestFailure, loadProjectManifest } from '../manifest/project-files.ts'
+import { compose } from './commit/compose.ts'
 import { applyManifestWritePolicy, mergeDeltaIntoManifest } from './commit/delta.ts'
 import { removeDriftedFacets } from './commit/drift-removal.ts'
 import { installFacets } from './commit/install-loop.ts'
@@ -29,7 +30,7 @@ import type { InstallDelta, RunInstallFailure, RunInstallOptions, RunInstallResu
  * `result.failure`; rollback status via `result.rollback`.
  */
 export async function runInstall(opts: RunInstallOptions): Promise<RunInstallResult> {
-  const { projectRoot, adapters, signal } = opts
+  const { projectRoot, adapters, signal, resolveCollisions } = opts
   const delta: InstallDelta = opts.delta ?? { additions: [], removals: [] }
   const onStage = opts.onStage ?? noopStage
   const onLog = opts.onLog ?? noopLog
@@ -175,13 +176,29 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     }
     const { resolved, serverWarnings } = resolution.value
 
-    // 6. The first mutation is now imminent, so the rollback ledger opens
+    // 6. Compose the global plan. Still no journal and still nothing
+    //    written: a collision, an invalid alias, or a cancelled resolution
+    //    leaves the project exactly as it was.
+    const composed = await compose({
+      resolved,
+      desiredFacets: merged.desiredFacets,
+      frozenLockfile,
+      resolveCollisions,
+      onStage,
+    })
+    if (!composed.ok) {
+      return failureNoMutation(composed.failure)
+    }
+    const plan = composed.plan
+
+    // 7. The first mutation is now imminent, so the rollback ledger opens
     //    here. Every entry it accumulates corresponds to a write that
     //    actually happened.
     const journal = new InstallJournal()
 
     const loop = await installFacets({
       resolved,
+      plan,
       adapters,
       journal,
       signal,
@@ -193,7 +210,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     }
     const { newFacetEntries, perFacet, totalAssets } = loop.value
 
-    // 7. Receipt-driven drift removal.
+    // 8. Receipt-driven drift removal.
     const drift = await removeDriftedFacets({
       desiredFacets: merged.desiredFacets,
       receipt,
@@ -213,7 +230,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       return await rollbackAndFail(journal, { code: 'ABORTED' }, onLog)
     }
 
-    // 7. Transactional tri-write: manifest + lockfile + receipt (receipt
+    // 9. Transactional tri-write: manifest + lockfile + receipt (receipt
     //    only under frozen). The manifest-write policy (bare → pin,
     //    explicit → verbatim) is applied just before the write.
     //

@@ -28,14 +28,18 @@ let originalFacetDir: string | undefined
 let adaptersDir: string
 
 /** A local facet fixture inside the project tree, with one skill. */
+/**
+ * A single-skill local facet whose skill is named after the facet, so
+ * installing several fixtures together does not collide on one asset name.
+ */
 function buildFixture(name: string, version: string): string {
   const dir = join(projectRoot, 'vendor', name)
-  mkdirSync(join(dir, 'skills/planning'), { recursive: true })
+  mkdirSync(join(dir, `skills/${name}-planning`), { recursive: true })
   writeFileSync(
     join(dir, 'facet.json'),
-    JSON.stringify({ name, version, skills: { planning: { description: 'planning skill' } } }),
+    JSON.stringify({ name, version, skills: { [`${name}-planning`]: { description: 'planning skill' } } }),
   )
-  writeFileSync(join(dir, 'skills/planning/SKILL.md'), `# planning ${version}\n`)
+  writeFileSync(join(dir, `skills/${name}-planning/SKILL.md`), `# planning ${version}\n`)
   return `./vendor/${name}`
 }
 
@@ -217,7 +221,7 @@ describe('malformed manifests fail before any mutation', () => {
     const a = buildFixture('alpha', '1.0.0')
     const before = writeManifest(
       JSON.stringify({
-        facets: { alpha: { source: a, materialization: { skills: { planning: { kind: 'omitted' } } } } },
+        facets: { alpha: { source: a, materialization: { skills: { 'alpha-planning': { kind: 'omitted' } } } } },
       }),
     )
 
@@ -236,7 +240,10 @@ describe('expanded entries survive unrelated operations', () => {
         {
           manifestVersion: 0.1,
           facets: {
-            alpha: { source: a, materialization: { skills: { planning: { kind: 'aliased', as: 'alpha-planning' } } } },
+            alpha: {
+              source: a,
+              materialization: { skills: { 'alpha-planning': { kind: 'aliased', as: 'vendor-planning' } } },
+            },
             beta: b,
           },
         },
@@ -255,7 +262,7 @@ describe('expanded entries survive unrelated operations', () => {
 
     expect(parseManifest().facets.alpha).toEqual({
       source: a,
-      materialization: { skills: { planning: { kind: 'aliased', as: 'alpha-planning' } } },
+      materialization: { skills: { 'alpha-planning': { kind: 'aliased', as: 'vendor-planning' } } },
     })
   })
 
@@ -270,9 +277,9 @@ describe('expanded entries survive unrelated operations', () => {
 
     const written = parseManifest()
     expect(written.facets.beta).toBeUndefined()
-    expect(written.facets.alpha.materialization.skills.planning).toEqual({
+    expect(written.facets.alpha.materialization.skills['alpha-planning']).toEqual({
       kind: 'aliased',
-      as: 'alpha-planning',
+      as: 'vendor-planning',
     })
   })
 
@@ -289,7 +296,7 @@ describe('expanded entries survive unrelated operations', () => {
 
     expect(parseManifest().facets.alpha).toEqual({
       source: a,
-      materialization: { skills: { planning: { kind: 'aliased', as: 'alpha-planning' } } },
+      materialization: { skills: { 'alpha-planning': { kind: 'aliased', as: 'vendor-planning' } } },
     })
   })
 })

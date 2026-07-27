@@ -439,6 +439,71 @@ export function FailureBlock({ failure }: { failure: RunInstallFailure }): React
           <Text color={THEME.hint}> Delete facets.lock and re-run, or `facet add` to update it.</Text>
         </Box>
       )
+    case 'MATERIALIZATION_COLLISION':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ two or more facets want the same name
+          </Text>
+          {failure.groups.map((group) => (
+            <Box key={`${group.scope}:${group.namespace}:${group.effectiveName}`} flexDirection="column">
+              <Text>
+                {' '}
+                {group.namespace} “{group.effectiveName}” is claimed by:
+              </Text>
+              {group.members.map((member) => (
+                <Text key={`${member.facet}:${member.type}:${member.authoredName}`} color={THEME.hint}>
+                  {'   '}
+                  {member.facet} ({member.type} {member.authoredName})
+                </Text>
+              ))}
+            </Box>
+          ))}
+          <Text color={THEME.hint}> Nothing was changed. Record a choice per asset in facets.json, then re-run.</Text>
+        </Box>
+      )
+    case 'MATERIALIZATION_ALIAS_INVALID':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ invalid materialization alias
+          </Text>
+          {failure.problems.map((problem) => (
+            <Text key={`${problem.facet}:${problem.alias}`} color={THEME.hint}>
+              {' '}
+              {problem.facet}: “{problem.alias}” {problem.reason}
+            </Text>
+          ))}
+        </Box>
+      )
+    case 'MATERIALIZATION_RESOLUTION_INVALID':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ the chosen names still conflict
+          </Text>
+          {failure.problems.map((problem) => (
+            <Text key={`${problem.facet}:${problem.alias}`} color={THEME.hint}>
+              {' '}
+              {problem.facet}: “{problem.alias}” {problem.reason}
+            </Text>
+          ))}
+          {failure.groups.map((group) => (
+            <Text key={`${group.scope}:${group.namespace}:${group.effectiveName}`} color={THEME.hint}>
+              {' '}
+              {group.namespace} “{group.effectiveName}” is still claimed by{' '}
+              {group.members.map((m) => m.facet).join(', ')}
+            </Text>
+          ))}
+          <Text color={THEME.hint}> Nothing was changed.</Text>
+        </Box>
+      )
+    case 'MATERIALIZATION_CANCELLED':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.hint}>Cancelled. Nothing was changed.</Text>
+        </Box>
+      )
     default: {
       // Exhaustiveness guard: any new `RunInstallFailure` variant must
       // get a `case` arm above. Without this, an un-rendered failure
