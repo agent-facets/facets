@@ -79,6 +79,12 @@ When changesets are merged to `main`, CI will automatically open a version PR. M
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for more details.
 
+### Code Review
+
+We use [Greptile](https://www.greptile.com/) to review code changes in this repo. They generously provide OSS projects with free reviews.
+
+[![Greptile: The War on Bugs](https://www.greptile.com/badge.svg)](https://www.greptile.com/?utm_source=oss_badge&utm_medium=readme&utm_campaign=greptile_for_open_source)
+
 ## License
 
 [MIT](LICENSE)
