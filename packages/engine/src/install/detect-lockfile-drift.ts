@@ -1,5 +1,6 @@
-import type { FacetsJson, Lockfile } from '@agent-facets/protocol'
+import type { Lockfile } from '@agent-facets/protocol'
 import { satisfies } from '@agent-facets/protocol'
+import type { NormalizedFacetEntry } from '../manifest/mutations.ts'
 import { parseFacetSource } from '../sources/facet/parse-source.ts'
 import { parseVersionSpec } from '../sources/facet/parse-version.ts'
 import { parseLockedVersion } from './parse-locked-version.ts'
@@ -13,12 +14,13 @@ import type { LockfileDriftEntry } from './types.ts'
  * satisfied by the locked version; git/local entries need only exist.
  */
 export function detectLockfileDrift(
-  facetsJson: FacetsJson,
+  facets: Readonly<Record<string, NormalizedFacetEntry>>,
   previousLockfile: Lockfile,
   lockfileExisted: boolean,
 ): LockfileDriftEntry[] {
   const drift: LockfileDriftEntry[] = []
-  for (const [name, specifier] of Object.entries(facetsJson.facets)) {
+  for (const [name, entry] of Object.entries(facets)) {
+    const specifier = entry.source
     if (!lockfileExisted) {
       drift.push({ name, reason: 'missing-lockfile', manifestSpec: specifier })
       continue
@@ -64,7 +66,7 @@ export function detectLockfileDrift(
   // when a lockfile exists (a missing lockfile is already reported above).
   if (lockfileExisted) {
     for (const [name, locked] of Object.entries(previousLockfile.facets)) {
-      if (facetsJson.facets[name] === undefined) {
+      if (facets[name] === undefined) {
         drift.push({ name, reason: 'orphaned', lockedVersion: locked.version })
       }
     }

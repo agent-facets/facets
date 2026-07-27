@@ -1,7 +1,8 @@
 import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { FacetsJson, Lockfile, LockfileFacet } from '@agent-facets/protocol'
-import { writeFacetsJson } from '../../manifest/project-files.ts'
+import type { Lockfile, LockfileFacet } from '@agent-facets/protocol'
+import { applyDesiredFacets, type ManifestDocument, type NormalizedFacetEntry } from '../../manifest/mutations.ts'
+import { writeProjectManifest } from '../../manifest/project-files.ts'
 import { FACETS_LOCK_FILE, writeLockfile } from '../lockfile-io.ts'
 import {
   ownedPathsForLockedAsset,
@@ -43,8 +44,12 @@ export type TriWriteResult = { ok: true } | { ok: false; failure: RunInstallFail
 
 export interface TriWriteArgs {
   projectRoot: string
-  facetsJson: FacetsJson
-  desiredFacets: Readonly<Record<string, string>>
+  /**
+   * The live comment-preserving manifest document. Mutated in place here —
+   * never rebuilt — so comments survive the write.
+   */
+  manifestDocument: ManifestDocument
+  desiredFacets: Readonly<Record<string, NormalizedFacetEntry>>
   newLockfile: Lockfile
   newReceipt: Receipt
   frozenLockfile: boolean
@@ -99,8 +104,12 @@ export function commitProjectFiles(args: TriWriteArgs): TriWriteResult {
       file: 'manifest',
       path: join(projectRoot, 'facets.json'),
       fn: () => {
-        const newManifest: FacetsJson = { ...args.facetsJson, facets: { ...args.desiredFacets } }
-        writeFacetsJson(projectRoot, newManifest)
+        // In-place mutation, not reconstruction: comment-json keeps comment
+        // metadata on non-enumerable symbols that an object spread would
+        // silently drop. This also stamps the current `manifestVersion`,
+        // migrating a legacy document as part of the same transaction.
+        applyDesiredFacets(args.manifestDocument, args.desiredFacets)
+        writeProjectManifest(projectRoot, args.manifestDocument)
       },
     },
     {

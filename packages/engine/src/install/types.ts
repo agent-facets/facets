@@ -120,6 +120,18 @@ export type LockfileDriftEntry =
 export type RunInstallFailure =
   | { code: 'FACETS_JSON_NOT_FOUND'; path: string }
   | { code: 'FACETS_JSON_INVALID'; path: string; error: string }
+  /**
+   * The manifest declares a `manifestVersion` this CLI cannot read. Kept
+   * distinct from `FACETS_JSON_INVALID` because the remedy is different —
+   * upgrade the CLI, rather than fix the document — and because the observed
+   * and supported versions must reach the view as data, not prose.
+   */
+  | {
+      code: 'FACETS_JSON_UNSUPPORTED_VERSION'
+      path: string
+      observed: number | undefined
+      supported: readonly number[]
+    }
   | { code: 'LOCKFILE_INVALID'; path: string; error: string }
   | { code: 'LOCKFILE_WRITE_FAILED'; path: string; cause: string }
   | { code: 'LOCK_HELD'; path: string; heldByPid: number }

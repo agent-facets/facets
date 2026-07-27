@@ -1,5 +1,6 @@
 import type { Adapter } from '@agent-facets/adapter'
 import type { Lockfile } from '@agent-facets/protocol'
+import type { NormalizedFacetEntry } from '../../manifest/mutations.ts'
 import type { InstallJournal } from '../journal.ts'
 import { materialize } from '../materialize.ts'
 import { materializeFailureToRunInstall } from '../materialize-failure.ts'
@@ -16,7 +17,7 @@ export interface DriftRemovalSuccess {
 export type DriftRemovalResult = { ok: true; value: DriftRemovalSuccess } | { ok: false; failure: RunInstallFailure }
 
 export interface DriftRemovalArgs {
-  desiredFacets: Readonly<Record<string, string>>
+  desiredFacets: Readonly<Record<string, NormalizedFacetEntry>>
   receipt: Receipt
   previousLockfile: Lockfile
   adapters: ReadonlyArray<Adapter>

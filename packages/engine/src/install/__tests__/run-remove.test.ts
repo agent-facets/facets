@@ -329,7 +329,7 @@ describe('prepareRemove — read-only validation', () => {
     const result = prepareRemove({ projectRoot, names: ['cowsay'] })
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
-    expect(result.json.facets.cowsay).toBe('0.1.1')
+    expect(result.manifest.facets.cowsay?.source).toBe('0.1.1')
     // Filtered names contains every requested name (all declared).
     expect(result.names).toEqual(['cowsay'])
   })

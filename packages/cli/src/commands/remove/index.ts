@@ -61,7 +61,7 @@ export const removeCommand: Command = {
     // adapters — avoids a misleading "no adapters installed" error when the
     // user removes a facet that was never declared.
     if (prepared.names.length === 0) {
-      const facetCount = Object.keys(prepared.json.facets).length
+      const facetCount = Object.keys(prepared.manifest.facets).length
       const elapsed = `${((performance.now() - startTime) / 1000).toFixed(2)}s`
       const instance = render(
         createElement(

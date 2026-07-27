@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { FACETS_LOCK_FILE, loadFacetsJson, loadLockfile } from '@agent-facets/engine'
+import { describeManifestFailure, FACETS_LOCK_FILE, loadLockfile, loadProjectManifest } from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
 import type { Command } from '../../commands.ts'
@@ -49,17 +49,22 @@ export const listCommand: Command = {
       return 0
     }
 
-    const facetsJsonResult = loadFacetsJson(projectRoot)
-    if (!facetsJsonResult.ok) {
+    const manifestResult = loadProjectManifest(projectRoot)
+    if (!manifestResult.ok) {
+      const unsupported =
+        manifestResult.reason === 'invalid' && manifestResult.failure.code === 'unsupported-manifest-version'
       writeCliError({
-        what: 'facets.json is malformed',
-        detail: facetsJsonResult.error,
-        fix: 'fix the JSON syntax or schema errors and try again',
+        what: unsupported ? 'facets.json declares an unsupported manifestVersion' : 'facets.json is malformed',
+        detail:
+          manifestResult.reason === 'read' ? manifestResult.error : describeManifestFailure(manifestResult.failure),
+        fix: unsupported
+          ? 'upgrade the CLI to a version that understands this manifest'
+          : 'fix the JSON syntax or schema errors and try again',
       })
       return 1
     }
 
-    const declared = Object.entries(facetsJsonResult.data.facets)
+    const declared = Object.entries(manifestResult.manifest.facets)
     if (declared.length === 0) {
       process.stdout.write(
         [
@@ -85,9 +90,12 @@ export const listCommand: Command = {
       )
     }
 
-    const rows = declared.map(([name, source]) => {
+    // The normalized entry exposes `source` uniformly, so a compact and an
+    // expanded entry render identically — a facet with materialization
+    // overrides is not a different kind of dependency.
+    const rows = declared.map(([name, entry]) => {
       const lockEntry = lockfile?.facets[name]
-      const value = lockEntry !== undefined ? lockEntry.version : source
+      const value = lockEntry !== undefined ? lockEntry.version : entry.source
       return { name, value }
     })
 

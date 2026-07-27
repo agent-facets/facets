@@ -35,6 +35,21 @@ export function FailureBlock({ failure }: { failure: RunInstallFailure }): React
           <Text> {failure.error}</Text>
         </Box>
       )
+    case 'FACETS_JSON_UNSUPPORTED_VERSION':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ facets.json declares an unsupported manifestVersion
+          </Text>
+          <Text color={THEME.hint}> {failure.path}</Text>
+          <Text>
+            {' '}
+            found {failure.observed ?? 'a non-numeric value'}; this CLI supports {failure.supported.join(', ')} and
+            unversioned manifests
+          </Text>
+          <Text color={THEME.hint}> Upgrade the CLI to a version that understands this manifest.</Text>
+        </Box>
+      )
     case 'LOCKFILE_INVALID':
       return (
         <Box flexDirection="column" marginTop={1}>

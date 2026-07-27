@@ -33,17 +33,17 @@
 
 ## 3. Project Manifest Intent and Migration — Research
 
-- [ ] 3.1 Explore: Trace every `facets.json` reader, mutation, empty-document producer, source update, delta merge, serializer, and tri-write path across engine and CLI, including comment-preserving behavior and `facet list`.
-- [ ] 3.2 Explore: Trace frozen and normal migration boundaries for legacy unversioned manifests and identify where unsupported versions, expanded legacy entries, source updates, empty override collapse, and stale overrides are handled transactionally.
-- [ ] 3.3 Propose: Define the normalized in-memory manifest shape and write policy that preserve comments, untouched expanded entries, and overrides while keeping the protocol schema as the source of truth.
+- [x] 3.1 Explore: Trace every `facets.json` reader, mutation, empty-document producer, source update, delta merge, serializer, and tri-write path across engine and CLI, including comment-preserving behavior and `facet list`.
+- [x] 3.2 Explore: Trace frozen and normal migration boundaries for legacy unversioned manifests and identify where unsupported versions, expanded legacy entries, source updates, empty override collapse, and stale overrides are handled transactionally.
+- [x] 3.3 Propose: Define the normalized in-memory manifest shape and write policy that preserve comments, untouched expanded entries, and overrides while keeping the protocol schema as the source of truth.
 
 ## 4. Project Manifest Intent and Migration — Implementation
 
-- [ ] 4.1 Implement: Route engine project-manifest loading through the protocol loader and normalize legacy/current compact and expanded entries without losing comment metadata or structured version failures.
-- [ ] 4.2 Implement: Update `packages/engine/src/manifest/mutations.ts`, `manifest/project-files.ts`, `install/commit/delta.ts`, and `install/commit/tri-write.ts` so source changes preserve overrides, empty expanded entries collapse canonically, and successful non-frozen commits write `manifestVersion: 0.1`.
-- [ ] 4.3 Implement: Add transactional tests proving successful legacy migration preserves every entry, failed operations leave prior manifest bytes unchanged, frozen operations retain legacy bytes, duplicate members fail before mutation, and unrelated add/update/remove operations preserve expanded entries.
-- [ ] 4.4 Implement: Update `facet list` and any other read-only consumers to obtain a facet source from either compact or expanded entries; add legacy/current read-tolerance tests.
-- [ ] 4.5 Verify: Run targeted engine manifest, add, remove, list, frozen, and tri-write tests plus engine typechecking.
+- [x] 4.1 Implement: Route engine project-manifest loading through the protocol loader and normalize legacy/current compact and expanded entries without losing comment metadata or structured version failures.
+- [x] 4.2 Implement: Update `packages/engine/src/manifest/mutations.ts`, `manifest/project-files.ts`, `install/commit/delta.ts`, and `install/commit/tri-write.ts` so source changes preserve overrides, empty expanded entries collapse canonically, and successful non-frozen commits write `manifestVersion: 0.1`.
+- [x] 4.3 Implement: Add transactional tests proving successful legacy migration preserves every entry, failed operations leave prior manifest bytes unchanged, frozen operations retain legacy bytes, duplicate members fail before mutation, and unrelated add/update/remove operations preserve expanded entries.
+- [x] 4.4 Implement: Update `facet list` and any other read-only consumers to obtain a facet source from either compact or expanded entries; add legacy/current read-tolerance tests.
+- [x] 4.5 Verify: Run targeted engine manifest, add, remove, list, frozen, and tri-write tests plus engine typechecking.
 
 ## 5. Resolve and Compose Pipeline — Research
 
