@@ -7,56 +7,12 @@ import type {
   ReadAssetRequest,
 } from '@agent-facets/adapter'
 import { splitFrontMatter } from '@agent-facets/common'
-import type { ResolvedFacetManifest } from '@agent-facets/protocol'
+import { type MaterializedAsset, type ResolvedFacetManifest, skillRootPath } from '@agent-facets/protocol'
 import { type AdapterCompatibilityFailure, compatibilityFailureFor } from '../adapters/api-compatibility.ts'
+import { ownedCompanionPathsFor, type PreviousOwnership } from './commit/ownership.ts'
 import type { InstallJournal } from './journal.ts'
-import type { AssetIdentity, MaterializedAssetOwnership, OnLog, StageEvent } from './types.ts'
-import type { SkillCompanionBytes } from './verified-asset-plan.ts'
-
-/**
- * Compute the NEW asset set a facet contributes at this version. Derived
- * from the resolved build-time manifest (prompts already loaded).
- *
- * Default scope is `project`: facets live alongside a project's code, so
- * their assets should land in the project's adapter tree (e.g.
- * `<cwd>/.claude/skills/...`) rather than a user-wide location. Per-asset
- * scope overrides in the manifest are a roadmap item.
- *
- * The ordering (skills → agents → commands, alphabetical within each type)
- * is deterministic so lockfile diffs are stable across runs.
- */
-export function computeAssetList(manifest: ResolvedFacetManifest): AssetIdentity[] {
-  const assets: AssetIdentity[] = []
-
-  for (const name of Object.keys(manifest.skills ?? {}).sort()) {
-    assets.push({ scope: 'project', type: 'skill', name })
-  }
-  for (const name of Object.keys(manifest.agents ?? {}).sort()) {
-    assets.push({ scope: 'project', type: 'agent', name })
-  }
-  for (const name of Object.keys(manifest.commands ?? {}).sort()) {
-    assets.push({ scope: 'project', type: 'command', name })
-  }
-
-  return assets
-}
-
-/**
- * Diff OLD vs NEW asset sets. Returns the entries present in OLD but not in
- * NEW — those must be deleted from every adapter so on-disk state converges
- * with the freshly-installed version (drift-proof behavior).
- */
-export function diffAssetsForDeletion(
-  oldAssets: readonly MaterializedAssetOwnership[],
-  newAssets: readonly AssetIdentity[],
-): MaterializedAssetOwnership[] {
-  const newKeys = new Set(newAssets.map(assetKey))
-  return oldAssets.filter((asset) => !newKeys.has(assetKey(asset)))
-}
-
-function assetKey(asset: AssetIdentity): string {
-  return `${asset.scope}:${asset.type}:${asset.name}`
-}
+import type { AssetIdentity, OnLog, StageEvent } from './types.ts'
+import { authoredCompanionKey, type SkillCompanionBytes } from './verified-asset-plan.ts'
 
 export interface MaterializeOptions {
   /** Facet name — used to tag per-adapter progress events. */
@@ -65,18 +21,24 @@ export interface MaterializeOptions {
   /** Adapters already filtered to those with supportsInstall === true. */
   adapters: Adapter[]
   /**
-   * What this machine previously materialized for the facet (OLD set),
-   * already normalized to identity plus owned inner-archive paths. Empty
-   * array when nothing was materialized before.
+   * The assets to write, carrying both identities: the authored name that
+   * anchors content, description, adapter extras, and companion bytes, and
+   * the effective name the adapter is addressed with.
+   *
+   * Omitted assets never appear here — composition excluded them.
    */
-  oldAssets: readonly MaterializedAssetOwnership[]
-  /** The authored identities to materialize now (NEW set). */
-  newAssets: readonly AssetIdentity[]
+  newAssets: readonly MaterializedAsset[]
   /**
-   * Skill companion bytes for the assets being installed, keyed by
-   * `skill:<name>` (from the resolver's verified asset plan). Absent on the
-   * frozen-reproduction path (no fresh plan) and for delete-only calls; a
-   * missing entry or map means "no companions" (single-file behavior).
+   * The global previous-ownership index, keyed by effective adapter identity.
+   * Supplies the owned companion paths a replacement write may remove, which
+   * is a property of the identity being overwritten rather than of the facet
+   * doing the overwriting.
+   */
+  previousOwnership: ReadonlyMap<string, PreviousOwnership>
+  /**
+   * Skill companion bytes for the assets being installed, keyed by AUTHORED
+   * identity (from the resolver's verified asset plan). A missing entry or
+   * map means "no companions" (single-file behavior).
    */
   companionBytes?: Map<string, SkillCompanionBytes>
   journal: InstallJournal
@@ -96,8 +58,6 @@ export interface MaterializeCounts {
   written: number
   /** Assets skipped because content + metadata matched on disk. */
   skipped: number
-  /** Assets deleted (drift removal within this facet). */
-  deleted: number
 }
 
 /**
@@ -154,10 +114,8 @@ export type MaterializeResult = ({ ok: true } & MaterializeCounts) | { ok: false
  * `RunInstallFailure`.
  */
 export async function materialize(opts: MaterializeOptions): Promise<MaterializeResult> {
-  const toDelete = diffAssetsForDeletion(opts.oldAssets, opts.newAssets)
   let written = 0
   let skipped = 0
-  let deleted = 0
 
   for (const adapter of opts.adapters) {
     // Adjustment S — runtime supportsInstall check (defense-in-depth beyond
@@ -176,32 +134,28 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
 
     opts.onLog?.(() => `[verbose]   installing ${opts.facetName}@${opts.manifest.version} → ${adapter.name}`)
 
-    // Previous owned companion paths per asset key — the engine-verified set
-    // from the OLD lockfile entry, used both to read the prior bundle and to
-    // tell the adapter which owned paths a replacement may remove.
-    const oldOwnedByKey = new Map<string, string[]>()
-    for (const old of opts.oldAssets) {
-      oldOwnedByKey.set(assetKey(old), ownedCompanionPathsOf(old))
-    }
-
     for (const asset of opts.newAssets) {
+      const target = adapterTargetFor(asset)
       const content = contentFor(opts.manifest, asset)
       const metadata = buildAssetMetadata(opts.manifest, asset, adapter.name)
-      // NEW companion bytes for this skill (empty for companion-less skills
-      // and non-skill assets); PREVIOUS owned paths for safe replacement.
-      const companions = opts.companionBytes?.get(assetKey(asset)) ?? {}
-      const ownedCompanionPaths = oldOwnedByKey.get(assetKey(asset)) ?? []
+      // NEW companion bytes for this skill, keyed by AUTHORED identity (empty
+      // for companion-less skills and non-skill assets); PREVIOUS owned paths
+      // keyed by EFFECTIVE identity, so taking a name over from another facet
+      // cleans up that facet's leftovers.
+      const companions =
+        opts.companionBytes?.get(authoredCompanionKey(asset.scope, asset.type, asset.authoredName)) ?? {}
+      const ownedCompanionPaths = ownedCompanionPathsFor(opts.previousOwnership, asset)
 
       // Capture original state for rollback (F14). Treating any failure
       // as "didn't exist" would let the journal's delete-undo silently
       // delete a pre-existing asset we never read successfully. Narrow to
       // the structured `not-found` only and surface everything else as
       // `read-failed` — install fails loud before we write anything.
-      const readOutcome = await readPrevious(adapter, asset, ownedCompanionPaths)
+      const readOutcome = await readPrevious(adapter, target, ownedCompanionPaths)
       if (!readOutcome.ok) {
         return {
           ok: false,
-          failure: { kind: 'read-failed', adapter: adapter.name, asset, cause: readOutcome.cause },
+          failure: { kind: 'read-failed', adapter: adapter.name, asset: target, cause: readOutcome.cause },
         }
       }
       const previous = readOutcome.previous
@@ -239,7 +193,7 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
         JSON.stringify(previous.metadata ?? {}) === JSON.stringify(mergedCandidateMetadata) &&
         companionsIdentical(previous.companions, companions)
       ) {
-        opts.onLog?.(() => `[verbose]     =${asset.type}:${asset.name} (skipped)`)
+        opts.onLog?.(() => `[verbose]     =${describeTarget(asset)} (skipped)`)
         skipped++
         continue
       }
@@ -249,17 +203,20 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
 
       // Path-specific drift reporting (design D10, task 9.7): when an existing
       // bundle is being repaired, name the exact companion paths that differ
-      // (drifted, added, or removed) rather than only the owning asset.
+      // (drifted, added, or removed) rather than only the owning asset. The
+      // path is the one on disk, so it is rooted at the EFFECTIVE name.
       if (previous !== null && asset.type === 'skill') {
         for (const path of driftedCompanionPaths(previous.companions, companions)) {
-          opts.onLog?.(() => `[verbose]     ~${asset.type}:${asset.name} drift: skills/${asset.name}/${path}`)
+          opts.onLog?.(
+            () => `[verbose]     ~${describeTarget(asset)} drift: ${skillRootPath(asset.effectiveName)}${path}`,
+          )
         }
       }
 
       let writtenPath: string | undefined
       try {
         const result = await adapter.installAsset(
-          installRequestFor(asset, content, metadata, companions, ownedCompanionPaths),
+          installRequestFor(target, content, metadata, companions, ownedCompanionPaths),
         )
         if (!result.ok) {
           return {
@@ -267,7 +224,7 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
             failure: {
               kind: 'install-failed',
               adapter: adapter.name,
-              asset,
+              asset: target,
               cause: describeAssetFailure(result.failure),
             },
           }
@@ -279,12 +236,12 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
           failure: {
             kind: 'install-failed',
             adapter: adapter.name,
-            asset,
+            asset: target,
             cause: err instanceof Error ? err.message : String(err),
           },
         }
       }
-      opts.onLog?.(() => `[verbose]     ${sigil}${asset.type}:${asset.name}${writtenPath ? ` → ${writtenPath}` : ''}`)
+      opts.onLog?.(() => `[verbose]     ${sigil}${describeTarget(asset)}${writtenPath ? ` → ${writtenPath}` : ''}`)
       written++
 
       // Rollback preimage: restore the COMPLETE prior bundle (primary +
@@ -296,75 +253,156 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
       // as before.
       const restoreOwned = previous ? Object.keys(previous.companions) : ownedCompanionPaths
       opts.journal.record({
-        label: `install ${adapter.name}:${asset.type}:${asset.name}`,
+        label: `install ${adapter.name}:${target.type}:${target.name}`,
         undo: async () => {
           if (previous) {
             await runUndoInstall(
               adapter,
-              asset,
+              target,
               previous.content,
               previous.metadata ?? {},
               previous.companions,
               restoreOwned,
             )
           } else {
-            await runUndoDelete(adapter, asset, ownedCompanionPaths)
+            await runUndoDelete(adapter, target, ownedCompanionPaths)
           }
         },
       })
     }
 
-    for (const asset of toDelete) {
-      // The owned companion paths to delete come from the OLD entry — the set
-      // this machine materialized for the asset being removed.
-      const ownedCompanionPaths = oldOwnedByKey.get(assetKey(asset)) ?? ownedCompanionPathsOf(asset)
+    opts.onStage?.({ kind: 'adapter-complete', facet: opts.facetName, adapter: adapter.name })
+  }
 
-      // Same F14 guard as the install branch above.
-      const readOutcome = await readPrevious(adapter, asset, ownedCompanionPaths)
+  return { ok: true, written, skipped }
+}
+
+/**
+ * The adapter-facing identity of a planned asset: its EFFECTIVE name.
+ *
+ * Every adapter request, journal label, and failure report addresses the file
+ * on disk, which is named by the project's disposition — not by the
+ * publisher. Content, description, adapter extras, companion bytes, and
+ * integrity all stay authored and are looked up from `asset.authoredName`
+ * directly, so the two domains never share a variable.
+ */
+function adapterTargetFor(asset: MaterializedAsset): AssetIdentity {
+  return { scope: asset.scope, type: asset.type, name: asset.effectiveName }
+}
+
+/** `type:name`, naming the alias when there is one. */
+function describeTarget(asset: MaterializedAsset): string {
+  return asset.authoredName === asset.effectiveName
+    ? `${asset.type}:${asset.authoredName}`
+    : `${asset.type}:${asset.authoredName} → ${asset.effectiveName}`
+}
+
+export interface DeleteObsoleteOptions {
+  /** Adapters already filtered to those with supportsInstall === true. */
+  adapters: Adapter[]
+  /**
+   * Effective identities to delete, already proven unclaimed by the desired
+   * set. See {@link obsoleteOwnership}.
+   */
+  obsolete: readonly PreviousOwnership[]
+  journal: InstallJournal
+  onLog?: OnLog
+}
+
+export type DeleteObsoleteResult =
+  | { ok: true; deleted: number }
+  | { ok: false; failure: MaterializeFailure; facets: readonly string[] }
+
+/**
+ * Delete every obsolete effective identity, once per adapter.
+ *
+ * This is a GLOBAL pass, and it must run before any write. Deletion used to
+ * be planned per facet, which made two spec-required outcomes unreachable:
+ *
+ *   - **Ownership transfer.** Facet A gives up `deploy`, facet B claims it.
+ *     Per-facet deletion ran A's cleanup independently of B's write, so
+ *     whichever came second won — and in facet-name order, that was often the
+ *     delete, destroying content B had just written.
+ *   - **Duplicate historical claims.** Two facets recorded ownership of one
+ *     identity, producing two deletes of the same file. The second either
+ *     no-ops or, worse, removes a survivor.
+ *
+ * Keying by effective adapter identity collapses both: an identity is deleted
+ * at most once, and only when nothing desired claims it.
+ */
+export async function deleteObsoleteAssets(opts: DeleteObsoleteOptions): Promise<DeleteObsoleteResult> {
+  let deleted = 0
+
+  for (const adapter of opts.adapters) {
+    if (adapter.supportsInstall !== true) {
+      return { ok: false, failure: { kind: 'unsupported-adapter', adapter: adapter.name }, facets: [] }
+    }
+    const incompatibility = compatibilityFailureFor(adapter.name, adapter.apiVersion)
+    if (incompatibility !== null) {
+      return { ok: false, failure: { kind: 'incompatible-adapter', failure: incompatibility }, facets: [] }
+    }
+
+    for (const ownership of opts.obsolete) {
+      const target: AssetIdentity = {
+        scope: ownership.scope,
+        type: ownership.type,
+        name: ownership.effectiveName,
+      }
+      const ownedCompanionPaths = ownership.ownedCompanionPaths
+
+      // Same F14 guard as the write pass: only a structured `not-found` is
+      // trusted as "absent", because a journal entry recorded on a guess
+      // would restore an asset that never existed.
+      const readOutcome = await readPrevious(adapter, target, ownedCompanionPaths)
       if (!readOutcome.ok) {
         return {
           ok: false,
-          failure: { kind: 'read-failed', adapter: adapter.name, asset, cause: readOutcome.cause },
+          failure: { kind: 'read-failed', adapter: adapter.name, asset: target, cause: readOutcome.cause },
+          facets: ownership.facets,
         }
       }
       const previous = readOutcome.previous
 
       let deletedPath: string | undefined
       try {
-        const result = await adapter.deleteAsset(deleteRequestFor(asset, ownedCompanionPaths))
+        const result = await adapter.deleteAsset(deleteRequestFor(target, ownedCompanionPaths))
         if (!result.ok) {
           return {
             ok: false,
             failure: {
               kind: 'delete-failed',
               adapter: adapter.name,
-              asset,
+              asset: target,
               cause: describeAssetFailure(result.failure),
             },
+            facets: ownership.facets,
           }
         }
         deletedPath = result.deletedPaths[0]
+        // Count what actually existed rather than what was planned: a
+        // receipt entry for an already-removed file is not a removal.
+        if (result.existed) deleted++
       } catch (err) {
         return {
           ok: false,
           failure: {
             kind: 'delete-failed',
             adapter: adapter.name,
-            asset,
+            asset: target,
             cause: err instanceof Error ? err.message : String(err),
           },
+          facets: ownership.facets,
         }
       }
-      opts.onLog?.(() => `[verbose]     -${asset.type}:${asset.name}${deletedPath ? ` → ${deletedPath}` : ''}`)
-      deleted++
+      opts.onLog?.(() => `[verbose]     -${target.type}:${target.name}${deletedPath ? ` → ${deletedPath}` : ''}`)
 
       if (previous) {
         opts.journal.record({
-          label: `delete ${adapter.name}:${asset.type}:${asset.name}`,
+          label: `delete ${adapter.name}:${target.type}:${target.name}`,
           undo: async () => {
             await runUndoInstall(
               adapter,
-              asset,
+              target,
               previous.content,
               previous.metadata ?? {},
               previous.companions,
@@ -374,33 +412,9 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
         })
       }
     }
-
-    opts.onStage?.({ kind: 'adapter-complete', facet: opts.facetName, adapter: adapter.name })
   }
 
-  return { ok: true, written, skipped, deleted }
-}
-
-/**
- * The skill-root-relative companion paths a locked or receipt asset entry
- * owns — every owned inner-archive path except the primary `SKILL.md`.
- *
- * Accepts both owned-path shapes: a lockfile asset's `files: {path,integrity}[]`
- * and a receipt asset's `files: string[]` (both carry full inner-archive
- * paths). A legacy identity-only entry has no `files`, so it owns no
- * companions (single-file behavior). Paths are converted from the full inner-
- * archive form to the skill-root-relative form the adapter contract uses.
- */
-export function ownedCompanionPathsOf(asset: MaterializedAssetOwnership): string[] {
-  if (asset.type !== 'skill') return []
-  const skillRoot = `skills/${asset.name}/`
-  const primary = `skills/${asset.name}/SKILL.md`
-  const owned: string[] = []
-  for (const path of asset.ownedPaths) {
-    if (path === primary) continue
-    owned.push(path.startsWith(skillRoot) ? path.slice(skillRoot.length) : path)
-  }
-  return owned
+  return { ok: true, deleted }
 }
 
 /**
@@ -578,31 +592,44 @@ function describeAssetFailure(failure: AdapterAssetFailure): string {
   }
 }
 
-function contentFor(manifest: ResolvedFacetManifest, asset: AssetIdentity): string {
-  if (asset.type === 'skill') return manifest.skills?.[asset.name]?.prompt ?? ''
-  if (asset.type === 'agent') return manifest.agents?.[asset.name]?.prompt ?? ''
-  return manifest.commands?.[asset.name]?.prompt ?? ''
+/**
+ * One asset's declaration in the resolved facet manifest, looked up by its
+ * AUTHORED name.
+ *
+ * Every authored-domain read goes through here so the three of them cannot
+ * disagree about which key to use. Aliasing deliberately cannot reach this
+ * function: an alias changes where an asset lands, never what a publisher
+ * declared, so the manifest is only ever indexed by the authored name.
+ *
+ * The plan being materialized was derived from this same manifest by
+ * `buildVerifiedAssetPlan`, so a miss cannot happen for a well-formed record.
+ * Absence therefore degrades to empty content rather than inventing a failure
+ * mode the pipeline cannot produce.
+ */
+function declarationFor(
+  manifest: ResolvedFacetManifest,
+  asset: MaterializedAsset,
+): { prompt?: string; description?: string; adapters?: Record<string, unknown> } | undefined {
+  switch (asset.type) {
+    case 'skill':
+      return manifest.skills?.[asset.authoredName]
+    case 'agent':
+      return manifest.agents?.[asset.authoredName]
+    case 'command':
+      return manifest.commands?.[asset.authoredName]
+  }
 }
 
-function descriptionFor(manifest: ResolvedFacetManifest, asset: AssetIdentity): string {
-  if (asset.type === 'skill') return manifest.skills?.[asset.name]?.description ?? ''
-  if (asset.type === 'agent') return manifest.agents?.[asset.name]?.description ?? ''
-  return manifest.commands?.[asset.name]?.description ?? ''
+function contentFor(manifest: ResolvedFacetManifest, asset: MaterializedAsset): string {
+  return declarationFor(manifest, asset)?.prompt ?? ''
 }
 
 function adapterExtrasFor(
   manifest: ResolvedFacetManifest,
-  asset: AssetIdentity,
+  asset: MaterializedAsset,
   adapterName: string,
 ): Record<string, unknown> | undefined {
-  const adapters =
-    asset.type === 'skill'
-      ? manifest.skills?.[asset.name]?.adapters
-      : asset.type === 'agent'
-        ? manifest.agents?.[asset.name]?.adapters
-        : manifest.commands?.[asset.name]?.adapters
-  if (!adapters) return undefined
-  const entry = adapters[adapterName]
+  const entry = declarationFor(manifest, asset)?.adapters?.[adapterName]
   if (entry && typeof entry === 'object') return entry as Record<string, unknown>
   return undefined
 }
@@ -610,19 +637,25 @@ function adapterExtrasFor(
 /**
  * Build the front-matter metadata bag the adapter writes at the top of the
  * installed file. Every asset type gets `name` + `description` as the
- * required minimum (per user ask); adapter-specific extras from the
- * manifest's `adapters.<name>` block are merged underneath so computed
+ * required minimum; adapter-specific extras from the manifest's
+ * `adapters.<name>` block are merged underneath so computed
  * `name`/`description` always win — a facet cannot override the asset
  * identity via its adapter-extras block (F2 guard).
+ *
+ * `name` is the EFFECTIVE name. Front matter labels the file on disk, and
+ * agents resolve assets by the name they are invoked with; writing the
+ * authored name into an aliased file would hand the tool an identity that
+ * does not exist at that location. `description` stays authored — it is
+ * content, and aliasing does not rewrite content.
  */
 function buildAssetMetadata(
   manifest: ResolvedFacetManifest,
-  asset: AssetIdentity,
+  asset: MaterializedAsset,
   adapterName: string,
 ): Record<string, unknown> {
   return {
     ...(adapterExtrasFor(manifest, asset, adapterName) ?? {}),
-    name: asset.name,
-    description: descriptionFor(manifest, asset),
+    name: asset.effectiveName,
+    description: declarationFor(manifest, asset)?.description ?? '',
   }
 }

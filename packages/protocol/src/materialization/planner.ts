@@ -6,7 +6,14 @@ import type {
   ProjectAssetOverride,
 } from '../schemas/materialization.ts'
 import type { FacetMaterializationOverrides } from '../schemas/project-manifest.ts'
-import { ASSET_DIRECTORY, adapterKey, collisionKey, compareAssetTypes, portableCollisionKey } from './identity.ts'
+import {
+  ASSET_DIRECTORY,
+  ASSET_TYPES,
+  adapterKey,
+  collisionKey,
+  compareAssetTypes,
+  portableCollisionKey,
+} from './identity.ts'
 import { type MaterializationNamespace, materializationNamespace } from './namespace.ts'
 
 /**
@@ -170,20 +177,20 @@ function compareStrings(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0
 }
 
-/** The override map for one asset type, if the facet declared any. */
-function overridesFor(
+/**
+ * The override map for one asset type, if the facet declared any.
+ *
+ * Exported because every consumer that reads or rewrites project intent —
+ * the planner here, the engine's commit phase, a failure renderer — needs
+ * the same type-to-group mapping, and {@link ASSET_DIRECTORY} is its single
+ * source of truth. A local `switch` in each of them is one edit away from
+ * disagreeing about which field an override lives under.
+ */
+export function overridesForType(
   overrides: FacetMaterializationOverrides | undefined,
   type: AssetType,
 ): Record<string, ProjectAssetOverride> | undefined {
-  if (overrides === undefined) return undefined
-  switch (type) {
-    case 'skill':
-      return overrides.skills
-    case 'agent':
-      return overrides.agents
-    case 'command':
-      return overrides.commands
-  }
+  return overrides?.[ASSET_DIRECTORY[type]]
 }
 
 /**
@@ -224,7 +231,7 @@ export function planMaterialization(contributions: readonly FacetContribution[])
     // 2/3. Resolve each authored asset's disposition.
     const matchedOverrideKeys = new Set<string>()
     for (const asset of orderedAssets) {
-      const override = overridesFor(contribution.overrides, asset.type)?.[asset.name]
+      const override = overridesForType(contribution.overrides, asset.type)?.[asset.name]
       matchedOverrideKeys.add(`${asset.type}\u0000${asset.name}`)
 
       const disposition: MaterializationDisposition = override ?? { kind: 'authored' }
@@ -268,8 +275,8 @@ export function planMaterialization(contributions: readonly FacetContribution[])
 
     // 2 (cont). An override that matched no authored asset is stale. Ordered
     // by type then authored name so the report is stable.
-    for (const type of ['skill', 'agent', 'command'] as const) {
-      const record = overridesFor(contribution.overrides, type)
+    for (const type of ASSET_TYPES) {
+      const record = overridesForType(contribution.overrides, type)
       if (record === undefined) continue
       for (const authoredName of Object.keys(record).sort(compareStrings)) {
         if (matchedOverrideKeys.has(`${type}\u0000${authoredName}`)) continue

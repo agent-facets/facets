@@ -123,6 +123,7 @@ export { findDuplicateJsonMembers, mapArkErrors, parseJson } from './loaders/val
 export {
   ASSET_DIRECTORY,
   ASSET_TYPE_ORDER,
+  ASSET_TYPES,
   adapterKey,
   canonicalPrimaryPath,
   collisionKey,
@@ -157,7 +158,7 @@ export type {
   PlannedAsset,
   StaleOverride,
 } from './materialization/planner.ts'
-export { overrideGroupKey, planMaterialization } from './materialization/planner.ts'
+export { overrideGroupKey, overridesForType, planMaterialization } from './materialization/planner.ts'
 // asset-name grammar (Agent Skills spec) — exported so build validators, the
 // CLI, and the engine's edit/scaffold machinery all validate skill/command/
 // agent names against one canonical grammar. Distinct from facet identity

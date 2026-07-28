@@ -64,18 +64,18 @@
 
 ## 7. Effective Ownership, Receipts, and Frozen Reproduction — Research
 
-- [ ] 7.1 Explore: Trace materialization, drift removal, receipt bootstrap/validation, companion ownership, journal replay, and adapter request construction to distinguish authored identity from effective adapter identity at every read/write/delete boundary.
-- [ ] 7.2 Explore: Trace receipt and lockfile version dispatch plus every frozen consistency check, including legacy formats, local/git provenance, orphan cleanup, and current no-network/no-registry-confirmation guarantees.
-- [ ] 7.3 Propose: Define the global two-pass apply and migration approach for ownership transfer, duplicate historical claims, alias changes, omissions, frozen materialization drift, and rollback safety.
+- [x] 7.1 Explore: Trace materialization, drift removal, receipt bootstrap/validation, companion ownership, journal replay, and adapter request construction to distinguish authored identity from effective adapter identity at every read/write/delete boundary.
+- [x] 7.2 Explore: Trace receipt and lockfile version dispatch plus every frozen consistency check, including legacy formats, local/git provenance, orphan cleanup, and current no-network/no-registry-confirmation guarantees.
+- [x] 7.3 Propose: Define the global two-pass apply and migration approach for ownership transfer, duplicate historical claims, alias changes, omissions, frozen materialization drift, and rollback safety.
 
 ## 8. Effective Ownership, Receipts, and Frozen Reproduction — Implementation
 
-- [ ] 8.1 Implement: Replace per-facet deletion planning with a global effective-adapter-key apply pass that aggregates historical claims, retains identities claimed by any desired asset, deletes obsolete identities once, and safely handles cross-facet ownership transfer.
-- [ ] 8.2 Implement: Materialize non-omitted assets under effective names while keeping content lookup, integrity, descriptions, metadata, and companion extraction authored; ensure generated front matter and adapter read/install/delete requests use the effective name.
-- [ ] 8.3 Implement: Make alias changes delete old ownership and write new ownership transactionally, make omission toggles remove/restore complete bundles, preserve unowned files, and cover journal rollback after partial global apply.
-- [ ] 8.4 Implement: Extend frozen gates for manifest version, locked dispositions, stale overrides, unresolved effective collisions, and legacy lockfiles that cannot represent intent while preserving exact-version downloads, no registry confirmation, and receipt-only cleanup.
-- [ ] 8.5 Implement: Add receipt, ownership-transfer, duplicate-claim, companion-cleanup, alias/omit drift, offline removal, frozen, integrity, and rollback tests covering all retained legacy safeguards.
-- [ ] 8.6 Verify: Run targeted materialization/apply, receipt, removal, frozen-drift, integrity, and journal tests plus engine typechecking.
+- [x] 8.1 Implement: Replace per-facet deletion planning with a global effective-adapter-key apply pass that aggregates historical claims, retains identities claimed by any desired asset, deletes obsolete identities once, and safely handles cross-facet ownership transfer.
+- [x] 8.2 Implement: Materialize non-omitted assets under effective names while keeping content lookup, integrity, descriptions, metadata, and companion extraction authored; ensure generated front matter and adapter read/install/delete requests use the effective name.
+- [x] 8.3 Implement: Make alias changes delete old ownership and write new ownership transactionally, make omission toggles remove/restore complete bundles, preserve unowned files, and cover journal rollback after partial global apply.
+- [x] 8.4 Implement: Extend frozen gates for manifest version, locked dispositions, stale overrides, unresolved effective collisions, and legacy lockfiles that cannot represent intent while preserving exact-version downloads, no registry confirmation, and receipt-only cleanup.
+- [x] 8.5 Implement: Add receipt, ownership-transfer, duplicate-claim, companion-cleanup, alias/omit drift, offline removal, frozen, integrity, and rollback tests covering all retained legacy safeguards.
+- [x] 8.6 Verify: Run targeted materialization/apply, receipt, removal, frozen-drift, integrity, and journal tests plus engine typechecking.
 
 ## 9. CLI Collision Resolution Experience — Research
 

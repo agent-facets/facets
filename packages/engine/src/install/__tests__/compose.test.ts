@@ -356,6 +356,133 @@ describe('compose — persisted intent', () => {
   })
 })
 
+describe('compose — persisting and pruning intent', () => {
+  test('a resolver’s accepted choices are written to facets.json', async () => {
+    const a = fixture('alpha', 'review')
+    const b = fixture('beta', 'review')
+    writeManifest({ facets: { alpha: a, beta: b } })
+    const { adapter } = recordingAdapter('rec')
+
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      resolveCollisions: async (): Promise<CollisionResolution> => ({
+        kind: 'resolved',
+        overrides: { beta: { skills: { review: { kind: 'aliased', as: 'beta-review' } } } },
+      }),
+    })
+    if (!result.ok) expect.unreachable()
+
+    // Without this, the choice would live only in the lockfile: a teammate
+    // cloning the repo would be prompted again for a decision already made.
+    const manifest = JSON.parse(readManifest())
+    expect(manifest.manifestVersion).toBe(0.1)
+    expect(manifest.facets.beta).toEqual({
+      source: b,
+      materialization: { skills: { review: { kind: 'aliased', as: 'beta-review' } } },
+    })
+    // The facet that kept its authored name stays compact — an override is
+    // recorded only when it says something the default does not.
+    expect(manifest.facets.alpha).toBe(a)
+
+    // Re-running with no resolver reproduces the same set from the manifest.
+    let reprompted = false
+    const again = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      resolveCollisions: async (): Promise<CollisionResolution> => {
+        reprompted = true
+        return { kind: 'cancelled' }
+      },
+    })
+    expect(again.ok).toBe(true)
+    expect(reprompted).toBe(false)
+  })
+
+  test('a successful install prunes a stale override and reports it', async () => {
+    const a = fixture('alpha', 'review')
+    writeManifest({
+      manifestVersion: 0.1,
+      facets: {
+        alpha: {
+          source: a,
+          materialization: {
+            skills: { review: { kind: 'aliased', as: 'kept' }, gone: { kind: 'omitted' } },
+          },
+        },
+      },
+    })
+    const { adapter } = recordingAdapter('rec')
+
+    const events: StageEvent[] = []
+    const result = await runInstall({ projectRoot, adapters: [adapter], onStage: (e) => events.push(e) })
+    if (!result.ok) expect.unreachable()
+
+    // The override naming a nonexistent asset is gone; the live one remains.
+    const manifest = JSON.parse(readManifest())
+    expect(manifest.facets.alpha.materialization).toEqual({
+      skills: { review: { kind: 'aliased', as: 'kept' } },
+    })
+
+    // Reported as a first-class event, not a verbose-only log line: the file
+    // the user committed has changed.
+    const prunes = events.filter((e) => e.kind === 'stale-override-pruned')
+    expect(prunes).toEqual([
+      { kind: 'stale-override-pruned', facet: 'alpha', assetType: 'skill', authoredName: 'gone' },
+    ])
+  })
+
+  test('pruning the last override collapses the entry back to a compact string', async () => {
+    const a = fixture('alpha', 'review')
+    writeManifest({
+      manifestVersion: 0.1,
+      facets: { alpha: { source: a, materialization: { skills: { gone: { kind: 'omitted' } } } } },
+    })
+    const { adapter } = recordingAdapter('rec')
+
+    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+
+    // An expanded entry exists only to carry overrides. An empty one would be
+    // a second spelling of the compact form.
+    const manifest = JSON.parse(readManifest())
+    expect(manifest.facets.alpha).toBe(a)
+  })
+
+  test('a failed install leaves a stale override on disk', async () => {
+    const a = fixture('alpha', 'review')
+    const before = writeManifest({
+      manifestVersion: 0.1,
+      facets: { alpha: { source: a, materialization: { skills: { gone: { kind: 'omitted' } } } } },
+    })
+
+    const failing: Adapter = {
+      name: 'failing',
+      apiVersion: ADAPTER_API_VERSION,
+      supportsInstall: true,
+      buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
+      async installAsset() {
+        return { ok: false, failure: { code: 'io-failed', operation: 'write', message: 'disk on fire' } }
+      },
+      async readAsset() {
+        return { ok: false, failure: { code: 'not-found' } }
+      },
+      async deleteAsset() {
+        return { ok: true, existed: false, deletedPaths: [] }
+      },
+    }
+
+    const events: StageEvent[] = []
+    const result = await runInstall({ projectRoot, adapters: [failing], onStage: (e) => events.push(e) })
+    if (result.ok) expect.unreachable()
+    expect(result.failure.code).toBe('ADAPTER_INSTALL_FAILED')
+
+    // The prune is part of the transaction, so a failure keeps the override —
+    // otherwise a transient adapter error would quietly delete durable intent.
+    expect(readManifest()).toBe(before)
+    expect(events.some((e) => e.kind === 'stale-override-pruned')).toBe(false)
+  })
+})
+
 describe('compose — no adapter I/O before the plan exists', () => {
   test('resolution and composition invoke no adapter read, install, or delete', async () => {
     // Four facets, all resolvable, none colliding. The resolver callback is
