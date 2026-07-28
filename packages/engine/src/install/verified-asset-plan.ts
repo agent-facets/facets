@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { AssetType, Scope, ValidationError } from '@agent-facets/common'
-import { type CurrentLockfileAssetEntry, type FacetManifest, planArchiveEntries } from '@agent-facets/protocol'
+import { canonicalPrimaryPath, type FacetManifest, planArchiveEntries, skillRootPath } from '@agent-facets/protocol'
 import { computeDirIntegrity } from '../cache/index.ts'
 
 /**
@@ -182,21 +182,6 @@ function assetOrder(a: VerifiedAsset, b: VerifiedAsset): number {
 }
 
 /**
- * Turn an authored plan's assets into current lockfile asset entries,
- * defaulting every disposition to `authored`.
- *
- * A verified plan describes what the PUBLISHER shipped, so it carries no
- * disposition — that is project intent, and it is resolved during Compose,
- * which overwrites these defaults with the planner's decisions. This
- * function exists so the resolvers emit a well-typed current entry rather
- * than a `0.2`-shaped one that only type-checks because the surrounding
- * lockfile type is unpinned.
- */
-export function authoredAssetEntries(plan: VerifiedAssetPlan): CurrentLockfileAssetEntry[] {
-  return plan.assets.map((asset) => ({ ...asset, materialization: { kind: 'authored' as const } }))
-}
-
-/**
  * A canonical map of skill companion paths (relative to the skill root) to
  * their exact bytes — the shape the adapter skill-install contract's
  * `companions` field expects. `SKILL.md` (the primary) is NOT included; it is
@@ -239,8 +224,10 @@ export function readSkillCompanionBytes(
   const byAsset = new Map<string, SkillCompanionBytes>()
   for (const asset of plan.assets) {
     if (asset.type !== 'skill') continue
-    const skillRoot = `skills/${asset.name}/`
-    const primary = `skills/${asset.name}/SKILL.md`
+    // Authored domain: the plan describes what the publisher shipped, and
+    // these are the canonical archive paths integrity is anchored to.
+    const skillRoot = skillRootPath(asset.name)
+    const primary = canonicalPrimaryPath('skill', asset.name)
     const companions: SkillCompanionBytes = {}
     for (const file of asset.files) {
       if (file.path === primary) continue

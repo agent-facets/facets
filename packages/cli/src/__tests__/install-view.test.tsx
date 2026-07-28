@@ -7,6 +7,7 @@ import type {
   RunInstallResult,
   StageEvent,
 } from '@agent-facets/engine'
+import { assetIdentity } from '@agent-facets/engine'
 import type { FacetContribution, IntegrityFailure } from '@agent-facets/protocol'
 import { planMaterialization } from '@agent-facets/protocol'
 import { render } from 'ink-testing-library'
@@ -628,7 +629,7 @@ describe('InstallView — partial rollback failure surfaces', () => {
       code: 'ADAPTER_INSTALL_FAILED',
       facet: 'viper-plans',
       adapter: 'opencode',
-      asset: { scope: 'project', type: 'skill', name: 'planning' },
+      asset: assetIdentity('project', 'skill', 'planning'),
       cause: 'disk full',
     }
     const events: StageEvent[] = [

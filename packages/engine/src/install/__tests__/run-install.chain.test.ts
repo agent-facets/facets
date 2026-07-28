@@ -3,7 +3,12 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
-import type { BuildManifest, CurrentBuildManifest, LegacyLockfileFacet } from '@agent-facets/protocol'
+import type {
+  BuildManifest,
+  CurrentBuildManifest,
+  LegacyLockfileFacet,
+  ProjectFacetEntry,
+} from '@agent-facets/protocol'
 import { LEGACY_LOCKFILE_VERSION } from '@agent-facets/protocol'
 import type { Addition } from '../types.ts'
 
@@ -184,7 +189,7 @@ export default {
   )
 }
 
-function writeFacets(facets: Record<string, string>): string {
+function writeFacets(facets: Record<string, ProjectFacetEntry>): string {
   const bytes = `${JSON.stringify({ facets }, null, 2)}\n`
   writeFileSync(join(projectRoot, 'facets.json'), bytes)
   return bytes
@@ -209,7 +214,12 @@ function readLock(): { facets: Record<string, { version: string; integrity: stri
   return JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8'))
 }
 
-function readFacets(): Record<string, string> {
+/**
+ * A facets.json entry is `string | { source, materialization }`. Typing
+ * these helpers as a flat string map made the expanded form unrepresentable,
+ * so a suite using them could not cover aliasing even if it wanted to.
+ */
+function readFacets(): Record<string, ProjectFacetEntry> {
   return JSON.parse(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).facets
 }
 

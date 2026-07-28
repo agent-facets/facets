@@ -1,22 +1,13 @@
-import type { CurrentLockfileFacet, MaterializationDisposition, SupportedLockfileFacet } from '@agent-facets/protocol'
+import {
+  type CurrentLockfileFacet,
+  lockedDispositionOf,
+  type SupportedLockfileFacet,
+  sameDisposition,
+} from '@agent-facets/protocol'
 import type { FacetOutcome } from './types.ts'
 
 function identityKey(asset: { scope: string; type: string; name: string }): string {
   return `${asset.scope}\u0000${asset.type}\u0000${asset.name}`
-}
-
-/**
- * The disposition a locked asset records. Versions predating dispositions
- * meant authored materialization — the only thing they could have meant —
- * so they compare equal to an explicit `authored` rather than to "unknown".
- */
-function dispositionOf(asset: SupportedLockfileFacet['assets'][number]): MaterializationDisposition {
-  return 'materialization' in asset ? asset.materialization : { kind: 'authored' }
-}
-
-function sameDisposition(a: MaterializationDisposition, b: MaterializationDisposition): boolean {
-  if (a.kind !== b.kind) return false
-  return a.kind === 'aliased' && b.kind === 'aliased' ? a.as === b.as : true
 }
 
 /**
@@ -28,7 +19,7 @@ function sameDisposition(a: MaterializationDisposition, b: MaterializationDispos
  * both entries are compared.
  */
 function dispositionsChanged(previous: SupportedLockfileFacet, current: CurrentLockfileFacet): boolean {
-  const before = new Map(previous.assets.map((asset) => [identityKey(asset), dispositionOf(asset)]))
+  const before = new Map(previous.assets.map((asset) => [identityKey(asset), lockedDispositionOf(asset)]))
   for (const asset of current.assets) {
     const prior = before.get(identityKey(asset))
     if (prior === undefined) continue

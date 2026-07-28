@@ -84,6 +84,21 @@ describe('loadProjectManifest', () => {
     expect(result.failure.supported).toEqual([0.1])
   })
 
+  // JSON has one number type and no coercion at the dispatch boundary, so
+  // the string "0.1" is a different value from the number 0.1. Accepting it
+  // would mean shape-sniffing the document, which is what exact dispatch
+  // exists to avoid. Protocol pins this; the engine loader must surface it
+  // as the same actionable failure rather than a generic parse error.
+  test('a string manifestVersion is unsupported, not silently coerced', () => {
+    writeFileSync(join(projectRoot, 'facets.json'), '{"manifestVersion":"0.1","facets":{}}')
+    const result = loadProjectManifest(projectRoot)
+    if (result.ok) expect.unreachable()
+    if (result.reason !== 'invalid') expect.unreachable()
+    if (result.failure.code !== 'unsupported-manifest-version') expect.unreachable()
+    expect(result.failure.observed).toBeUndefined()
+    expect(result.failure.supported).toEqual([0.1])
+  })
+
   test('an expanded entry in an unversioned manifest is rejected, not promoted', () => {
     writeFileSync(
       join(projectRoot, 'facets.json'),

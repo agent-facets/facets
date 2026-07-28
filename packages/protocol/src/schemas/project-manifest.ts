@@ -160,27 +160,3 @@ export function facetEntrySource(entry: ProjectFacetEntry): string {
 export function facetEntryOverrides(entry: ProjectFacetEntry): FacetMaterializationOverrides | undefined {
   return typeof entry === 'string' ? undefined : entry.materialization
 }
-
-// --- Transitional permissive schema ---
-
-/**
- * Schema for facets.json — the project-level manifest declaring which
- * facets the project depends on.
- *
- * The map value is the source specifier as the user wrote it (git-ref,
- * git+, file:, or shortcut form). Validation of specifier grammar happens
- * at install time in parse-source; the schema only guarantees the shape.
- *
- * @deprecated Transitional: this permissive shape (no version field,
- * string-only entries) predates exact version dispatch and cannot represent
- * materialization overrides. Engine migrates to
- * `parseProjectManifestDocument` / `LegacyProjectManifestSchema` /
- * `CurrentProjectManifestSchema` in the project-manifest migration block,
- * after which this export is removed.
- */
-export const FacetsJsonSchema = type({
-  facets: type.Record('string', 'string'),
-})
-
-/** Inferred TypeScript type for a validated facets.json */
-export type FacetsJson = typeof FacetsJsonSchema.infer

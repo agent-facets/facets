@@ -102,7 +102,7 @@ export type {
   SupportedLockfileFacet,
   SupportedLockfileVersion,
 } from './loaders/lockfile.ts'
-export { parseLockfileDocument } from './loaders/lockfile.ts'
+export { lockedDispositionOf, parseLockfileDocument } from './loaders/lockfile.ts'
 // versioned project-manifest parsing (exact manifestVersion dispatch —
 // legacy unversioned vs current `0.1`, no shape-sniffing, duplicate members
 // rejected before dispatch)
@@ -240,6 +240,7 @@ export {
   MaterializedDispositionSchema,
   materializedNameOf,
   ProjectAssetOverrideSchema,
+  sameDisposition,
 } from './schemas/materialization.ts'
 // project manifest (`facets.json`) — versioned schemas plus the accessors
 // read-only consumers use so a compact and an expanded entry are never
@@ -247,14 +248,12 @@ export {
 export type {
   CurrentProjectManifest,
   FacetMaterializationOverrides,
-  FacetsJson,
   LegacyProjectManifest,
   ProjectFacetEntry,
 } from './schemas/project-manifest.ts'
 export {
   CURRENT_PROJECT_MANIFEST_VERSION,
   CurrentProjectManifestSchema,
-  FacetsJsonSchema,
   facetEntryOverrides,
   facetEntrySource,
   LEGACY_PROJECT_MANIFEST_VERSION,

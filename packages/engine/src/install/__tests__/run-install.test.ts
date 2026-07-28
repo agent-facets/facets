@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
 import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
-import type { CurrentBuildManifest } from '@agent-facets/protocol'
+import type { CurrentBuildManifest, ProjectFacetEntry } from '@agent-facets/protocol'
 
 /**
  * Tests for `runInstall`'s manifest-vs-lockfile reconciliation.
@@ -170,7 +170,12 @@ export default {
   )
 }
 
-function writeFacets(facets: Record<string, string>): string {
+/**
+ * A facets.json entry is `string | { source, materialization }`. Typing
+ * these helpers as a flat string map made the expanded form unrepresentable,
+ * so a suite using them could not cover aliasing even if it wanted to.
+ */
+function writeFacets(facets: Record<string, ProjectFacetEntry>): string {
   const bytes = `${JSON.stringify({ facets }, null, 2)}\n`
   writeFileSync(join(projectRoot, 'facets.json'), bytes)
   return bytes

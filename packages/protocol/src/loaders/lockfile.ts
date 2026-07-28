@@ -12,6 +12,7 @@ import {
   Lockfile03Schema,
   SUPPORTED_LOCKFILE_VERSIONS,
 } from '../schemas/lockfile.ts'
+import type { MaterializationDisposition } from '../schemas/materialization.ts'
 import { findDuplicateJsonMembers, mapArkErrors, parseJson } from './validate.ts'
 
 /**
@@ -157,4 +158,22 @@ export function parseLockfileDocument(bytes: Uint8Array | string): ParseLockfile
       supported: SUPPORTED_LOCKFILE_VERSIONS,
     },
   }
+}
+
+/**
+ * The materialization disposition a locked asset records.
+ *
+ * Only a `0.3` entry carries one. Versions predating dispositions could
+ * only ever have meant authored materialization, so they refine to an
+ * explicit `authored` rather than to "unknown" — which is what lets a
+ * project on an older lockfile compare equal to one that records the
+ * default, instead of reporting drift on every asset.
+ *
+ * Published here rather than restated per consumer: outcome
+ * classification, frozen drift detection, and receipt construction each
+ * need this refinement, and three copies of it would drift the day a
+ * later version makes the field optional again.
+ */
+export function lockedDispositionOf(asset: SupportedLockfileAssetEntry): MaterializationDisposition {
+  return 'materialization' in asset ? asset.materialization : { kind: 'authored' }
 }
