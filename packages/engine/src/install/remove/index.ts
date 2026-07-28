@@ -1,4 +1,5 @@
 import type { Adapter } from '@agent-facets/adapter'
+import type { CollisionResolver } from '../commit/compose.ts'
 import { runInstall } from '../run-install.ts'
 import type { OnLog, Removal, RunInstallResult, StageEvent } from '../types.ts'
 import { prepareRemove, type RemovePrepareFailure, type RemovePrepareResult } from './prepare.ts'
@@ -16,6 +17,15 @@ export interface RunRemoveOptions {
   onStage?: (event: StageEvent) => void
   onLog?: OnLog
   signal?: AbortSignal
+  /**
+   * Interactive collision resolver, forwarded to `runInstall`.
+   *
+   * Removal only shrinks the desired set, so it cannot introduce a new
+   * collision — but it CAN surface one that was already recorded and
+   * never resolved. Forwarding keeps that recoverable instead of
+   * dead-ending the user in a command that can only report.
+   */
+  resolveCollisions?: CollisionResolver
 }
 
 /**
@@ -67,6 +77,7 @@ export async function runRemove(opts: RunRemoveOptions): Promise<RunRemoveResult
     ...(onStage ? { onStage } : {}),
     ...(onLog ? { onLog } : {}),
     ...(signal ? { signal } : {}),
+    ...(opts.resolveCollisions ? { resolveCollisions: opts.resolveCollisions } : {}),
   })
 
   if (!install.ok) {

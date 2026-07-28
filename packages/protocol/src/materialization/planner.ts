@@ -353,7 +353,13 @@ export function planMaterialization(contributions: readonly FacetContribution[])
  * `skills`, `agents`, or `commands`. Exposed so failure renderers can point
  * a user at the exact `facets.json` location to edit without restating the
  * type-to-group mapping.
+ *
+ * The literal return type is load-bearing: callers that BUILD an override
+ * map (rather than just printing a location) index
+ * {@link FacetMaterializationOverrides} with it, and a widened `string`
+ * would force those call sites into a cast that the type system could no
+ * longer check against the schema.
  */
-export function overrideGroupKey(type: AssetType): string {
+export function overrideGroupKey(type: AssetType): (typeof ASSET_DIRECTORY)[AssetType] {
   return ASSET_DIRECTORY[type]
 }

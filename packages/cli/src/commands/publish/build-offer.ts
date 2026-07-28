@@ -9,9 +9,9 @@ import { SelectPrompt } from '../../tui/components/select-prompt.tsx'
  * branch and one for the source-drift branch — over the same
  * `ConfirmPrompt` machinery the rest of the CLI uses for y/n questions.
  *
- * Caller MUST gate on `process.stdout.isTTY` before calling either of
- * these. The mount is unconditional: in a non-TTY context Ink would
- * still try to attach to stdin and the behavior is undefined.
+ * Caller MUST gate on `canPromptInteractively()` before calling either
+ * of these. The mount is unconditional: without a raw-mode-capable stdin
+ * Ink throws rather than degrading.
  *
  * Returns the user's boolean answer; the Ink unmount yields a clean
  * stdin state so a follow-up `<BuildView>` mount on the "yes" branch
@@ -101,8 +101,8 @@ export type IdentityDriftDecision = 'build-new' | 'ship-existing' | 'cancel'
  * Renders via the arrow-key `SelectPrompt` to match the
  * single-select pattern already used elsewhere in the CLI.
  *
- * Caller MUST gate on `process.stdout.isTTY` before calling this — the
- * mount is unconditional.
+ * Caller MUST gate on `canPromptInteractively()` before calling this —
+ * the mount is unconditional.
  */
 export async function askIdentityDriftDecision(
   sourceIdentity: { name: string; version: string },

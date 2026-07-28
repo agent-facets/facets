@@ -1,10 +1,13 @@
-import { type RollbackOutcome, type RunInstallFailure, type RunInstallResult, runInstall } from '@agent-facets/engine'
+import { type RunInstallFailure, type RunInstallResult, runInstall } from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
 import type { Command } from '../../commands.ts'
 import { InstallView } from '../../tui/views/install/install-view.tsx'
+import { writeMaterializationDetail } from '../../util/collision-report.ts'
 import { writeCliError } from '../../util/errors.ts'
+import { canPromptInteractively } from '../../util/interactive.ts'
 import { ensureAdapters } from '../shared/ensure-adapters.ts'
+import { installFailureFix } from '../shared/install-failure.ts'
 
 /**
  * `facet install` — bring the project on disk into agreement with
@@ -50,23 +53,34 @@ export const installCommand: Command = {
     // Wire SIGINT to an AbortController so core never installs a
     // process-global signal handler. The view's deferred-exit pattern
     // ensures the rollback render lands before unmount.
+    //
+    // The copy is deliberately vague about rollback: an interrupt during
+    // resolution has nothing to undo, and promising a rollback that never
+    // happened sends people looking for damage that isn't there. The
+    // structured result says what actually occurred.
     const controller = new AbortController()
     const sigintHandler = () => {
-      process.stderr.write('\nInterrupted. Rolling back...\n')
+      process.stderr.write('\nInterrupted. Stopping safely...\n')
       controller.abort()
     }
     process.on('SIGINT', sigintHandler)
+
+    // Frozen mode reproduces recorded intent, so it must never collect a
+    // new decision — not even from a human sitting at a terminal.
+    const mayPrompt = !frozenLockfile && canPromptInteractively()
 
     let captured: RunInstallResult | undefined
     const instance = render(
       createElement(InstallView, {
         mode: 'install',
-        run: async (onStage, onLog) => {
+        signal: controller.signal,
+        run: async (onStage, onLog, resolveCollisions) => {
           const result = await runInstall({
             projectRoot,
             adapters,
             onStage,
             ...(verbose && onLog ? { onLog } : {}),
+            ...(mayPrompt ? { resolveCollisions } : {}),
             signal: controller.signal,
             frozenLockfile,
           })
@@ -81,6 +95,11 @@ export const installCommand: Command = {
           if (!('prepareFailure' in r) && !('removePrepareFailure' in r)) captured = r
         },
       }),
+      // Ctrl-C must reach the collision workspace, which is the only
+      // thing that can settle the engine's pending resolver call and let
+      // it release the project lock. Ink's built-in handler would exit
+      // the render without ever settling that promise.
+      { exitOnCtrlC: false },
     )
 
     try {
@@ -106,10 +125,16 @@ export const installCommand: Command = {
       // The view rendered the structured failure block on stdout. Emit
       // the canonical CLI error block on stderr so scripts and existing
       // tests that grep stderr for 'install failed' continue to work.
+      //
+      // A collision needs more than three lines to act on, and the
+      // contexts that produce one without a prompt are exactly the ones
+      // where stdout is discarded — so the full report goes to stderr
+      // first, leaving `fix:` as the last line.
+      writeMaterializationDetail(captured.failure)
       writeCliError({
         what: 'install failed',
         detail: failureDetail(captured.failure),
-        fix: failureFix(captured.failure, captured.rollback),
+        fix: installFailureFix(captured.failure, captured.rollback, 'install'),
       })
       return 1
     }
@@ -125,17 +150,4 @@ export const installCommand: Command = {
  */
 function failureDetail(failure: RunInstallFailure): string {
   return `code=${failure.code}`
-}
-
-function failureFix(failure: RunInstallFailure, rollback: RollbackOutcome): string {
-  if (rollback.kind === 'partial-failure') {
-    return `partial state on disk after ${rollback.failures} rollback failure(s); re-run 'facet install' to attempt reconciliation`
-  }
-  if (failure.code === 'ABORTED') {
-    return 'rollback complete; project state unchanged'
-  }
-  if (failure.code === 'LOCKFILE_DRIFT') {
-    return "lockfile is out of date; run 'facet install' (without --frozen-lockfile) or 'facet add' to update it"
-  }
-  return "rollback complete; fix the underlying issue and re-run 'facet install'"
 }

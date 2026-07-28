@@ -2,6 +2,7 @@ import type { LockfileDriftEntry, RunInstallFailure } from '@agent-facets/engine
 import { Box, Text } from 'ink'
 import type React from 'react'
 import { describeCompatibilityFailure } from '../../../util/adapter-install-errors.ts'
+import { describeNamespace, manifestLocation } from '../../../util/collision-report.ts'
 import { THEME } from '../../theme.ts'
 
 /** How a materialization disposition reads in a one-line drift report. */
@@ -491,17 +492,28 @@ export function FailureBlock({ failure }: { failure: RunInstallFailure }): React
             <Box key={`${group.scope}:${group.namespace}:${group.effectiveName}`} flexDirection="column">
               <Text>
                 {' '}
-                {group.namespace} “{group.effectiveName}” is claimed by:
+                {describeNamespace(group.namespace, group.scope)} — “{group.effectiveName}” is claimed by:
               </Text>
               {group.members.map((member) => (
-                <Text key={`${member.facet}:${member.type}:${member.authoredName}`} color={THEME.hint}>
-                  {'   '}
-                  {member.facet} ({member.type} {member.authoredName})
-                </Text>
+                <Box key={`${member.facet}:${member.type}:${member.authoredName}`} flexDirection="column">
+                  <Text color={THEME.hint}>
+                    {'   '}
+                    {member.facet} ({member.type} {member.authoredName})
+                  </Text>
+                  {/* The exact edit site, derived from the published
+                      group mapping so it cannot drift from the schema. */}
+                  <Text color={THEME.hint}>
+                    {'     '}
+                    {manifestLocation(member.facet, member.type, member.authoredName)}
+                  </Text>
+                </Box>
               ))}
             </Box>
           ))}
-          <Text color={THEME.hint}> Nothing was changed. Record a choice per asset in facets.json, then re-run.</Text>
+          <Text color={THEME.hint}>
+            {' '}
+            Nothing was changed. Record an alias or omission per asset in facets.json, then re-run.
+          </Text>
         </Box>
       )
     case 'MATERIALIZATION_ALIAS_INVALID':

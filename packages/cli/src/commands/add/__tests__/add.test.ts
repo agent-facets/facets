@@ -291,3 +291,36 @@ describe('facet add — incompatible installed adapter gate', () => {
     expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)
   })
 })
+
+describe('facet add — collision with an already-installed facet', () => {
+  test('reports both claimants and leaves the manifest untouched', async () => {
+    installFakeAdapter(adaptersDir, 'test-adapter')
+    const installed = buildLocalFixture('alpha', '0.1.0', 'planning')
+    writeFileSync(
+      join(projectRoot, 'facets.json'),
+      JSON.stringify({ facets: { alpha: `./${installed.split('/').pop()}` } }),
+    )
+    expect(await withTTY(false, () => addCommand.run([`./${installed.split('/').pop()}`], {}))).toBe(0)
+
+    // A second facet publishing the same skill name.
+    const incoming = buildLocalFixture('beta', '0.1.0', 'planning')
+    const manifestBefore = readFileSync(join(projectRoot, 'facets.json'), 'utf8')
+    const lockBefore = readFileSync(join(projectRoot, 'facets.lock'), 'utf8')
+
+    const { result: code, stderr } = await withTTY(false, () =>
+      captureStderr(() => addCommand.run([`./${incoming.split('/').pop()}`], {})),
+    )
+
+    expect(code).toBe(1)
+    expect(stderr).toContain('add failed')
+    expect(stderr).toContain('code=MATERIALIZATION_COLLISION')
+    // The already-installed claimant is named too: the fix may well be
+    // to alias the one that was there first.
+    expect(stderr).toContain('facets["alpha"].materialization.skills["planning"]')
+    expect(stderr).toContain('facets["beta"].materialization.skills["planning"]')
+
+    // `add` writes nothing ahead of install, so a refused add is a no-op.
+    expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(manifestBefore)
+    expect(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')).toBe(lockBefore)
+  })
+})

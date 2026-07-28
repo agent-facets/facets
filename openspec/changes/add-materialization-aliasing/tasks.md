@@ -79,19 +79,19 @@
 
 ## 9. CLI Collision Resolution Experience — Research
 
-- [ ] 9.1 Explore: Inspect `packages/cli/src/tui/views/install/`, existing overview/focused-item editors, focus/navigation hooks, inline input validation, cancellation handling, semantic colors/icons, and Ink test helpers.
-- [ ] 9.2 Explore: Inspect add/install/remove command wiring, stdin/stdout TTY and raw-mode capability checks, SIGINT behavior, install stage events, exhaustive failure rendering, stderr formatting, and final summary construction.
-- [ ] 9.3 Propose: Define the single-mount progress-to-workspace phase machine, global draft state, accessible status vocabulary, linked-conflict navigation, resolver bridge, and non-interactive error presentation.
+- [x] 9.1 Explore: Inspect `packages/cli/src/tui/views/install/`, existing overview/focused-item editors, focus/navigation hooks, inline input validation, cancellation handling, semantic colors/icons, and Ink test helpers.
+- [x] 9.2 Explore: Inspect add/install/remove command wiring, stdin/stdout TTY and raw-mode capability checks, SIGINT behavior, install stage events, exhaustive failure rendering, stderr formatting, and final summary construction.
+- [x] 9.3 Propose: Define the single-mount progress-to-workspace phase machine, global draft state, accessible status vocabulary, linked-conflict navigation, resolver bridge, and non-interactive error presentation.
 
 ## 10. CLI Collision Resolution Experience — Implementation
 
-- [ ] 10.1 Implement: Add one shared interactive-capability check for stdin/stdout/raw-mode support and an accessible unresolved/draft-conflict/resolved presentation whose labels or icons remain distinguishable without color.
-- [ ] 10.2 Implement: Implement the global collision draft and focused resolution workspace under `packages/cli/src/tui/views/install/`, with an all-groups overview, Keep/Alias/Omit controls, validated alias input, linked conflict navigation, and confirmation only when every item is resolved.
-- [ ] 10.3 Implement: Integrate the workspace into the existing `InstallView` mount as progress → resolution → progress → result, wire the typed engine callback only for interactive non-frozen commands, and make cancellation/SIGINT return a cancellation value with accurate no-change messaging.
-- [ ] 10.4 Implement: Render non-interactive collision failures to stderr with every group and claimant, exact expanded `facets.json` locations, parseable alias/omit snippets, no generated winner, a non-zero exit, and an explicit no-mutation statement.
-- [ ] 10.5 Implement: Render stale-override pruning without `--verbose`, frozen stale-override drift, the visible collision-checking stage, disposition-only updates, authored-to-effective alias summaries, and omitted assets without counting them as materialized.
-- [ ] 10.6 Implement: Add status/draft/component keyboard tests, InstallView phase/cancellation tests, stderr formatter tests, command tests, and collision e2e coverage for interactive, non-interactive, frozen, and adapter-precedence behavior.
-- [ ] 10.7 Verify: Run CLI unit tests, typechecking, build-dependent e2e tests, and adapter conformance tests using aliased names.
+- [x] 10.1 Implement: Add one shared interactive-capability check for stdin/stdout/raw-mode support and an accessible unresolved/draft-conflict/resolved presentation whose labels or icons remain distinguishable without color.
+- [x] 10.2 Implement: Implement the global collision draft and focused resolution workspace under `packages/cli/src/tui/views/install/`, with an all-groups overview, Keep/Alias/Omit controls, validated alias input, linked conflict navigation, and confirmation only when every item is resolved.
+- [x] 10.3 Implement: Integrate the workspace into the existing `InstallView` mount as progress → resolution → progress → result, wire the typed engine callback only for interactive non-frozen commands, and make cancellation/SIGINT return a cancellation value with accurate no-change messaging.
+- [x] 10.4 Implement: Render non-interactive collision failures to stderr with every group and claimant, exact expanded `facets.json` locations, parseable alias/omit snippets, no generated winner, a non-zero exit, and an explicit no-mutation statement.
+- [x] 10.5 Implement: Render stale-override pruning without `--verbose`, frozen stale-override drift, the visible collision-checking stage, disposition-only updates, authored-to-effective alias summaries, and omitted assets without counting them as materialized.
+- [x] 10.6 Implement: Add status/draft/component keyboard tests, InstallView phase/cancellation tests, stderr formatter tests, command tests, and collision e2e coverage for interactive, non-interactive, frozen, and adapter-precedence behavior.
+- [x] 10.7 Verify: Run CLI unit tests, typechecking, build-dependent e2e tests, and adapter conformance tests using aliased names.
 
 ## 11. User and Specification Documentation — Research
 

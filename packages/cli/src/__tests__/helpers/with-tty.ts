@@ -1,27 +1,73 @@
 /**
- * Test helper that forces `process.stdout.isTTY` to a specific value
- * for the duration of a block, then restores it.
+ * Force the process to look fully interactive (or fully non-interactive)
+ * for the duration of a block, then restore every property it touched.
  *
- * Why this exists: production code in the CLI (e.g. the adapter picker
- * gate, the "no adapters installed" hint copy) branches on
- * `process.stdout.isTTY`. Tests that exercise either branch must NOT
- * inherit the runner's TTY-ness — otherwise a test labelled
- * "non-TTY" will spuriously hang or pass depending on whether
- * `bun test` was launched from a real terminal vs a CI subprocess.
+ * Why this exists: production code branches on whether a real human is
+ * attached — the adapter picker, the login prompt, the publish build
+ * offer, the collision workspace. A test that inherits the runner's own
+ * terminal state is not testing a branch, it is testing where `bun test`
+ * happened to be launched from.
  *
- * Tests should always wrap TTY-sensitive assertions in `withTTY(true,
- * ...)` or `withTTY(false, ...)` to make the intent and the
- * environment explicit.
+ * Why it sets four things rather than `stdout.isTTY` alone: that is the
+ * complete input to `isInteractive` in `util/interactive.ts`. An earlier
+ * version of this helper set only stdout, which meant a test could assert
+ * "the interactive path runs" while the real interactive path — the one
+ * that calls `stdin.setRawMode` — would have thrown for a user with a
+ * piped stdin. The helper now expresses the same four facts the
+ * production check reads, so the two cannot drift apart.
  *
- * The property is restored in a `finally` block so a thrown assertion
- * doesn't leak the override into the next test.
+ * Everything is restored in `finally`, including deleting env vars that
+ * were absent to begin with, so a thrown assertion cannot leak state into
+ * the next test.
  */
+const CI_VARS = ['CI', 'CONTINUOUS_INTEGRATION'] as const
+
 export async function withTTY<T>(value: boolean, fn: () => Promise<T> | T): Promise<T> {
-  const original = process.stdout.isTTY
-  Object.defineProperty(process.stdout, 'isTTY', { value, configurable: true, writable: true })
+  const originalStdin = process.stdin.isTTY
+  const originalStdout = process.stdout.isTTY
+  const originalSetRawMode = process.stdin.setRawMode
+  const hadSetRawMode = 'setRawMode' in process.stdin
+  const originalCi = CI_VARS.map((name) => [name, process.env[name]] as const)
+
+  setTTY(process.stdin, value)
+  setTTY(process.stdout, value)
+
+  if (value) {
+    // A TTY stdin always has `setRawMode`. Supplying a no-op keeps Ink's
+    // raw-mode path from throwing on the runner's real (piped) stdin.
+    if (typeof process.stdin.setRawMode !== 'function') {
+      Object.defineProperty(process.stdin, 'setRawMode', {
+        value: () => process.stdin,
+        configurable: true,
+        writable: true,
+      })
+    }
+    // CI is non-interactive by definition, so an interactive test must
+    // not silently become a non-interactive one on a build machine.
+    for (const name of CI_VARS) delete process.env[name]
+  }
+
   try {
     return await fn()
   } finally {
-    Object.defineProperty(process.stdout, 'isTTY', { value: original, configurable: true, writable: true })
+    setTTY(process.stdin, originalStdin)
+    setTTY(process.stdout, originalStdout)
+    if (hadSetRawMode) {
+      Object.defineProperty(process.stdin, 'setRawMode', {
+        value: originalSetRawMode,
+        configurable: true,
+        writable: true,
+      })
+    } else {
+      Reflect.deleteProperty(process.stdin, 'setRawMode')
+    }
+    for (const [name, original] of originalCi) {
+      if (original === undefined) delete process.env[name]
+      else process.env[name] = original
+    }
   }
+}
+
+function setTTY(stream: NodeJS.ReadStream | NodeJS.WriteStream, value: boolean | undefined): void {
+  Object.defineProperty(stream, 'isTTY', { value, configurable: true, writable: true })
 }
