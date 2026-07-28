@@ -15,8 +15,8 @@ Shows all facets declared in `facets.json` for the current project. No network c
 
 | Code | Meaning |
 | ---- | ------- |
-| `0`  | Listed successfully — including an empty project or no `facets.json` at all (a hint is printed). |
-| `1`  | Malformed `facets.json`. |
+| `0`  | Listed successfully — including an empty project or no `facets.json` at all (a hint is printed). A malformed `facets.lock` is a warning, not a failure: the listing falls back to source specifiers. |
+| `1`  | Positional arguments were given, `facets.json` is malformed, or its `manifestVersion` is one this CLI does not understand (upgrade the CLI). |
 
 ## What it does
 
@@ -28,9 +28,13 @@ Shows all facets declared in `facets.json` for the current project. No network c
     When a lockfile exists, resolved versions from the [lockfile](/specification/lockfile) are displayed instead of the raw manifest specifier.
   </Step>
   <Step title="Display entries">
-    Each facet is listed with its name and resolved version (or source specifier if not yet installed).
+    Each facet is listed with its name and resolved version (or source specifier if not yet installed). Entries carrying [materialization overrides](/specification/materialization#recording-intent) show their source the same way a plain entry does.
   </Step>
 </Steps>
+
+<Note>
+`facet list` reports declared facets and versions only. It does not yet show which assets a facet aliases or omits — read the `materialization` blocks in `facets.json`, or the per-asset dispositions in `facets.lock`, for that.
+</Note>
 
 ## See also
 

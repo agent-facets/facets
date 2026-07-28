@@ -1,0 +1,161 @@
+---
+title: "Materialization"
+description: How authored assets become files on disk
+---
+
+Materialization is the rule that turns the assets facets publish into the files a tool actually reads. It sits inside [Commit](/specification/commit#compose), between verification and the first write.
+
+Most of the time it is invisible: a facet publishes a skill named `planning`, and a file named `planning` appears. It becomes visible the moment two facets publish the same name, or a project decides it wants a published asset under a different name — or not at all.
+
+<Info>
+Materialization decides **names**, never **content**. Every archive path, every integrity hash, and every byte of an asset is fixed by its publisher and unaffected by anything on this page.
+</Info>
+
+## Two identities
+
+Every asset has two names, and conflating them is the mistake this model exists to prevent.
+
+<ResponseField name="authored name" type="fixed by the publisher">
+  The name declared in the facet's [`facet.json`](/specification/manifest). It fixes the asset's canonical paths inside the [archive](/specification/archive) — `skills/<authored>/SKILL.md`, `agents/<authored>.md`, `commands/<authored>.md` — and therefore every [integrity](/specification/integrity) value recorded for it. It is what the [lockfile](/specification/lockfile) stores. Aliasing and omission never change it.
+</ResponseField>
+
+<ResponseField name="effective name" type="chosen by the project">
+  The name the asset is materialized under: the file an [adapter](/specification/terminology#core-concepts) reads, writes, and deletes. It equals the authored name unless the consuming project aliased it.
+</ResponseField>
+
+An aliased skill therefore lives on disk under its **effective** name while its recorded file paths remain **authored**:
+
+```
+facet.json          skills/planning/SKILL.md      (authored — anchors integrity)
+facets.lock         skills/planning/SKILL.md      (authored)
+on disk             skills/team-planning/SKILL.md (effective)
+```
+
+Front matter follows the same split: the `name` field written into a materialized asset is the **effective** name, while `description` stays as the publisher wrote it. Renaming an asset does not rewrite it.
+
+## Dispositions
+
+A project resolves each authored asset to exactly one of three outcomes.
+
+<ResponseField name="authored" type="the default">
+  Materialize under the publisher's name. Expressed by recording **nothing** — the absence of an override *is* the authored disposition. An explicit `authored` override in [`facets.json`](/specification/project-manifest) MUST be rejected, so that one state has exactly one spelling.
+</ResponseField>
+
+<ResponseField name="aliased" type="{ kind: 'aliased', as }">
+  Materialize under a different effective name. `as` is required and MUST satisfy the single-segment [asset-name grammar](/specification/manifest#asset-names). An invalid alias MUST be rejected, never normalized or sanitized — silently rewriting a chosen name would make the materialized identity unpredictable.
+</ResponseField>
+
+<ResponseField name="omitted" type="{ kind: 'omitted' }">
+  Do not materialize this asset, or any file it owns. The asset is still resolved, still verified, and still recorded in the lockfile — it simply never reaches an adapter.
+</ResponseField>
+
+Two narrower forms are derived from these three arms:
+
+- A **project override** admits only `aliased` and `omitted`, because `authored` is the absence of an override.
+- A **materialized disposition** — what the [install receipt](/specification/commit#machine-local-install-receipt) records for an asset present on disk — admits only `authored` and `aliased`, because an omitted asset is not on disk. "Omitted but present" is unrepresentable rather than merely invalid.
+
+<Note>
+An omitted asset stays listed in the lockfile with its complete authored file records. Dropping it would make an omission indistinguishable from a facet that never published the asset at all.
+</Note>
+
+## Recording intent
+
+Dispositions live in [`facets.json`](/specification/project-manifest) as durable project intent, keyed by asset type and then by **authored** name:
+
+```json facets.json
+{
+  "manifestVersion": 0.1,
+  "facets": {
+    "team-tools": {
+      "source": "1.*",
+      "materialization": {
+        "skills": {
+          "planning": { "kind": "aliased", "as": "team-planning" },
+          "scratch": { "kind": "omitted" }
+        }
+      }
+    }
+  }
+}
+```
+
+Overrides are keyed by authored name because that is the only stable identifier — an alias is the thing being declared, so it cannot also be the key.
+
+Intent is durable. It survives a failed install, a re-add, and a change of source: changing *where* a facet comes from is not a statement about *how* its assets should be named. It is discarded only when the facet is removed, or when the asset it names disappears (see [Stale overrides](#stale-overrides)).
+
+<Tip>
+You rarely write this block by hand. [`facet add`](/cli/add) and [`facet install`](/cli/install) open an interactive resolver when they hit a collision and write your choices here. Hand-editing is the path for CI, where nothing can prompt.
+</Tip>
+
+## Namespaces
+
+Two assets may share a name freely across namespaces, but never within one.
+
+- **`skill-command`** — skills and commands compete for the same names, because they materialize into a single flat command surface in the tools facets target.
+- **`agent`** — agents occupy their own namespace.
+
+So a skill `deploy` and a command `deploy` collide, while an agent `deploy` coexists with both. This is the same rule a single facet's [`facet.json`](/specification/manifest#constraints) is validated against; materialization applies it across every facet in the project at once.
+
+## Collisions
+
+Two assets collide when their **collision keys** are equal:
+
+```
+collisionKey = (scope, namespace, portable effective name)
+```
+
+Three properties of that key matter:
+
+- It uses the **effective** name, so aliasing can both cause and cure a collision.
+- It folds asset type into its **namespace**, giving the rule above.
+- It folds the name **portably** — Unicode NFC, then case — so two assets differing only by case or normalization collide rather than silently overwriting each other on a case-insensitive volume.
+
+A collision key is a *logical* identity and MUST NOT be handed to an adapter. The addressable identity is `(scope, type, effective name)`, keyed by asset type rather than namespace and by the verbatim effective name rather than a folded one: a skill `deploy` and a command `deploy` are two different files even though they may not legally coexist.
+
+### When collisions are detected
+
+Detection is **global and pre-write**. Every facet in the desired set is resolved and verified first; only then is the complete effective set checked, before any adapter is asked to write anything.
+
+```mermaid
+flowchart LR
+    RESOLVE["Resolve all<br/>every facet fetched + verified"]
+    PLAN["Plan materialization<br/>overrides applied, effective set checked"]
+    APPLY["Apply<br/>delete obsolete, then write"]
+    RESOLVE --> PLAN
+    PLAN -->|collision-free| APPLY
+    PLAN -->|collisions| STOP["Stop<br/>nothing written"]
+```
+
+This ordering is the reason the whole desired set must exist before the first write: a per-facet loop cannot detect that facet A and facet Z want the same name until it has already materialized A.
+
+When the effective set does collide, the result carries **every** group with **every** claimant — never a truncated report, and never a generated winner. A tool that picked a winner would silently discard someone's asset.
+
+## Planning rules
+
+Materialization planning is a **single pass**, not a fixed-point resolver. Overrides are applied once against authored identity, then the resulting effective set is checked once. Four consequences follow, and all four are normative:
+
+- **Alias swaps are legal.** If `A` aliases to `B` and `B` aliases to `A`, both land. Neither observes the other's result, because there is no second pass.
+- **Duplicate alias targets fail.** Two assets aliased to the same name collide like any other pair.
+- **A name freed by an omission is available.** Omitting one claimant removes it from the effective set entirely.
+- **Order does not matter.** The result never depends on the order facets were declared in.
+
+Determinism is a contract: every output list is sorted — by scope, then asset type in canonical order (`skill`, `agent`, `command`), then name by code unit. Identical inputs produce identical bytes, so lockfile diffs stay reviewable. Sorting is deliberately not locale-aware; locale-sensitive collation would make output depend on the machine's environment.
+
+## Stale overrides
+
+An override naming an asset the resolved facet version no longer contains is **stale** — typically because you upgraded a facet and the publisher renamed or dropped that asset.
+
+A stale override is reported, not fatal. Because intent is durable, it survives a failed operation and is pruned only as part of a successful commit — at which point the CLI tells you what it dropped. Under [`--frozen-lockfile`](/specification/commit#frozen-lockfile) the same report is blocking drift instead: frozen mode has no transaction to prune in, and silently ignoring recorded intent would defeat the flag's purpose.
+
+## What aliasing does not change
+
+Aliasing renames; it does not rewrite. Everything in this list is anchored to the **authored** name and is byte-identical whether or not an asset is aliased:
+
+- Canonical inner-archive paths, and therefore the archive's per-entry hashes.
+- The facet's canonical fingerprint (`content_integrity`).
+- The lockfile's `name` and `files` records for the asset.
+- The asset's content and its `description`.
+
+<Warning>
+Because integrity is anchored to authored paths, an alias can never be used to smuggle different content under a familiar name. Verification happens before materialization and never sees the effective name.
+</Warning>

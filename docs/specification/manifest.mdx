@@ -7,10 +7,10 @@ description: The facet.json schema and name grammar
 
 import { AssetDescriptor } from "/snippets/asset-descriptor.mdx";
 
-The facet manifest (`facet.json`) is the source of truth for a facet's identity, the text assets it contains, and the [supplementary files](#supplementary-files) it ships. This page defines every field in the manifest schema and is the canonical reference for both the facet name grammar and the asset name grammar.
+The facet manifest (`facet.json`) is the source of truth for a facet's identity, the text assets it contains, and the [supplementary files](#supplementary-files) it ships. The names it declares are **authored** names: they fix every archive path and integrity value, and a consuming project may materialize an asset under a different name without changing any of that. This page defines every field in the manifest schema and is the canonical reference for both the facet name grammar and the asset name grammar.
 
 <Note>
-The facet manifest is distinct from the [project manifest](/specification/project-manifest) (`facets.json`) — the file in a consuming project that declares which facets are installed. Throughout this page, "the manifest" means the facet manifest.
+The facet manifest is distinct from the [project manifest](/specification/project-manifest) (`facets.json`) — the file in a consuming project that declares which facets are installed, and how it wants their assets named. Throughout this page, "the manifest" means the facet manifest.
 </Note>
 
 For conceptual guides to each asset type, see [Skills](/docs/learn/skills), [Commands](/docs/learn/commands), and [Agents](/docs/learn/agents).
@@ -153,6 +153,8 @@ Asset names — skill, command, and agent names — follow the [Agent Skills nam
 
 Skills and commands share **one namespace**: within a facet, a skill and a command MUST NOT use the same name. Agents are a separate namespace and may reuse a skill or command name.
 
+The manifest is validated against this rule within a single facet. The same rule is applied again **across every facet in a project** at install time, over the names assets are actually materialized under — see [Namespaces](/specification/materialization#namespaces).
+
 A companion file's path may contain `/` for directory depth (`references/api.md`), but those separators are part of the file path, not the skill name — the skill name itself is still a single segment.
 
 <Note>
@@ -176,7 +178,11 @@ A facet's content is carried by three text asset types: skills, agents, and comm
 - **Agent** — `agents/<name>.md`. A single markdown file whose content is the agent's system prompt.
 - **Command** — `commands/<name>.md`. A single markdown file whose content is the command's prompt.
 
-A primary asset file (a `SKILL.md`, agent, or command file) MUST NOT contain YAML front matter — the manifest is the single source of asset metadata. Authoring tools strip front matter before writing, and [`facet build`](/specification/build#steps) rejects a primary file that still carries it.
+A primary asset file (a `SKILL.md`, agent, or command file) MAY carry author-supplied YAML front matter. It ships verbatim in the archive and is reconciled with the manifest only at install time: materialization merges the manifest's `name` and `description`, plus any per-adapter extras, on top of whatever the author wrote. The manifest always wins, so a facet cannot override its own asset identity through front matter.
+
+<Note>
+The `name` written at install time is the asset's **effective** name — the one the consuming project chose. `description` stays as the publisher wrote it. See [Two identities](/specification/materialization#two-identities).
+</Note>
 
 An asset descriptor's `adapters` block is validated at [build time](/specification/build#steps) against each installed adapter's schema: unknown adapters produce a warning, and invalid metadata for an installed adapter is a build error.
 

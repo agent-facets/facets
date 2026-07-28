@@ -95,20 +95,32 @@
 
 ## 11. User and Specification Documentation — Research
 
-- [ ] 11.1 Explore: Re-audit `docs/specification/project-manifest.mdx`, `lockfile.mdx`, `install.mdx`, `planning.mdx`, `commit.mdx`, `manifest.mdx`, `integrity.mdx`, and `terminology.mdx` against the implemented schemas and phase boundaries, preserving existing inbound anchors.
-- [ ] 11.2 Explore: Re-audit `docs/cli/add.mdx`, `install.mdx`, `instructions.mdx`, `remove.mdx`, and `list.mdx` plus `docs/guides/install-facets.mdx`, `custom-adapters.mdx`, and `troubleshooting.mdx` against final CLI output and recovery behavior.
-- [ ] 11.3 Explore: Inspect `docs/changelog/index.mdx`, documentation conventions, navigation/link requirements, and root `README.md`; confirm whether the reviewed README quickstart remains accurate.
-- [ ] 11.4 Propose: Define one non-duplicative documentation update plan covering schema references, install behavior, CLI workflows, guides, recovery, changelog, links, and the README disposition.
+- [x] 11.1 Explore: Re-audit `docs/specification/project-manifest.mdx`, `lockfile.mdx`, `install.mdx`, `planning.mdx`, `commit.mdx`, `manifest.mdx`, `integrity.mdx`, and `terminology.mdx` against the implemented schemas and phase boundaries, preserving existing inbound anchors.
+- [x] 11.2 Explore: Re-audit `docs/cli/add.mdx`, `install.mdx`, `instructions.mdx`, `remove.mdx`, and `list.mdx` plus `docs/guides/install-facets.mdx`, `custom-adapters.mdx`, and `troubleshooting.mdx` against final CLI output and recovery behavior.
+- [x] 11.3 Explore: Inspect `docs/changelog/index.mdx`, documentation conventions, navigation/link requirements, and root `README.md`; confirm whether the reviewed README quickstart remains accurate.
+- [x] 11.4 Propose: Define one non-duplicative documentation update plan covering schema references, install behavior, CLI workflows, guides, recovery, changelog, links, and the README disposition.
 
 ## 12. User and Specification Documentation — Implementation
 
-- [ ] 12.1 Implement: Update `docs/specification/project-manifest.mdx` for `manifestVersion: 0.1`, exact dispatch, legacy migration, compact/expanded entries, typed overrides, preservation/collapse rules, duplicate rejection, and frozen behavior.
-- [ ] 12.2 Implement: Update `docs/specification/lockfile.mdx` for lockfile `0.3`, required dispositions, authored paths, omitted records, exact legacy dispatch, migration policy, and receipt/effective-ownership implications.
-- [ ] 12.3 Implement: Update install pipeline documentation in `docs/specification/install.mdx`, `planning.mdx`, `commit.mdx`, `manifest.mdx`, `integrity.mdx`, and `terminology.mdx` for authored/effective identities, Resolve-all/Compose/Apply, global ownership, frozen behavior, and the four independent version axes while preserving existing anchors.
-- [ ] 12.4 Implement: Update `docs/cli/add.mdx`, `docs/cli/install.mdx`, and `docs/guides/install-facets.mdx` with the interactive resolution workflow, red/yellow/green status model with non-color cues, persisted examples, non-interactive/frozen behavior, cancellation, summaries, and resulting on-disk layout.
-- [ ] 12.5 Implement: Update `docs/cli/instructions.mdx`, `remove.mdx`, `list.mdx`, `docs/guides/custom-adapters.mdx`, and `troubleshooting.mdx` for manual CI intent, effective adapter names, expanded-entry reading, ownership-safe removal, unsupported versions, stale overrides, and recovery.
-- [ ] 12.6 Implement: Add the newest-first changelog entry for the breaking manifest/lockfile/receipt formats and collision workflow, including required RSS metadata and links, without rewriting historical entries; leave README unchanged unless final behavior invalidates the reviewed quickstart.
-- [ ] 12.7 Verify: Run documentation formatting/link checks and stale-text searches for lockfile/receipt `0.2`, three-version-axis claims, string-only manifests, and the interleaved install loop.
+> Approved plan additions from 11.4, beyond the original file list: (a) a new
+> `docs/specification/materialization.mdx` owning the identity/disposition model,
+> registered in the `Installation` nav group, so the model is stated once rather
+> than restated on nine pages; (b) correcting the `facet instructions` prompt
+> source, which currently tells agents `facets.json` is a flat string map and
+> should not be hand-edited — both false, and the second steers agents away from
+> the only non-TTY remedy; (c) fixing four pre-existing `README.md` defects found
+> during the audit. `facet list` cannot show aliased or omitted assets; that gap
+> is documented, not closed, in this change.
+
+- [x] 12.0 Implement: Add `docs/specification/materialization.mdx` defining authored vs. effective identity, the three dispositions, the override schema, collision/adapter keys and portable folding, the skill-command namespace rule, and the planner's determinism guarantees; register it in the `Installation` nav group in `docs/docs.json`.
+- [x] 12.1 Implement: Update `docs/specification/project-manifest.mdx` for `manifestVersion: 0.1`, exact dispatch, legacy migration, compact/expanded entries, typed overrides, preservation/collapse rules, duplicate rejection, and frozen behavior.
+- [x] 12.2 Implement: Update `docs/specification/lockfile.mdx` for lockfile `0.3`, required dispositions, authored paths, omitted records, exact legacy dispatch, migration policy, and receipt/effective-ownership implications.
+- [x] 12.3 Implement: Update install pipeline documentation in `docs/specification/install.mdx`, `planning.mdx`, `commit.mdx`, `manifest.mdx`, `integrity.mdx`, and `terminology.mdx` for authored/effective identities, Resolve-all/Compose/Apply, global ownership, frozen behavior, and the four independent version axes while preserving existing anchors.
+- [x] 12.4 Implement: Update `docs/cli/add.mdx`, `docs/cli/install.mdx`, and `docs/guides/install-facets.mdx` with the interactive resolution workflow, red/yellow/green status model with non-color cues, persisted examples, non-interactive/frozen behavior, cancellation, summaries, and resulting on-disk layout.
+- [x] 12.5 Implement: Update `docs/cli/instructions.mdx`, `remove.mdx`, `list.mdx`, `docs/guides/custom-adapters.mdx`, and `troubleshooting.mdx` for manual CI intent, effective adapter names, expanded-entry reading, ownership-safe removal, unsupported versions, stale overrides, and recovery.
+- [x] 12.5a Implement: Correct the `facet instructions` prompt source (`packages/cli/src/prompts/`) so emitted agent guidance describes compact and expanded `facets.json` entries and the hand-edit recovery path for collisions, and add tests asserting that guidance.
+- [x] 12.6 Implement: Add the newest-first changelog entry for the breaking manifest/lockfile/receipt formats and collision workflow, including required RSS metadata and links, without rewriting historical entries; leave README's quickstart unchanged, and repair the four pre-existing README defects found in 11.3 (three dead relative links, stale bare-name resolution claim).
+- [x] 12.7 Verify: Run documentation formatting/link checks and stale-text searches for lockfile/receipt `0.2`, three-version-axis claims, string-only manifests, and the interleaved install loop.
 
 ## 13. Migration and Cross-Layer Validation — Research
 

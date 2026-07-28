@@ -84,6 +84,52 @@ describe('0.29 guidance is present in the prompts', () => {
   })
 })
 
+describe('materialization guidance is present in the prompts', () => {
+  // An agent that believes facets.json is a flat name -> string map will
+  // silently destroy any recorded alias or omission the moment it rewrites
+  // the file. The prompt is the only thing standing between that belief and
+  // a user's project, so assert it teaches both entry forms.
+  test('usage documents the expanded facets.json entry form', () => {
+    const usage = TOPICS.usage.prompt
+    expect(usage).toContain('manifestVersion')
+    expect(usage).toContain('"materialization"')
+    expect(usage).toContain('handle BOTH forms')
+  })
+
+  test('usage teaches the non-TTY collision remedy', () => {
+    const usage = TOPICS.usage.prompt
+    expect(usage).toContain('"kind": "aliased"')
+    expect(usage).toContain('"kind": "omitted"')
+    // Recording an explicit authored disposition is rejected by the schema,
+    // so the prompt must not present it as an option.
+    expect(usage).toContain('Do NOT write')
+    expect(usage).toContain('"skills", "agents", and "commands"')
+  })
+
+  test('usage does not claim facets.json is a flat string map', () => {
+    expect(TOPICS.usage.prompt).not.toContain('map of facet name to source specifier')
+  })
+
+  test('usage does not steer agents away from the only non-TTY remedy', () => {
+    // Hand-editing facets.json is the sole way to record an alias without a
+    // TTY -- there is no --as or --omit flag on any command.
+    expect(TOPICS.usage.prompt).not.toContain('You generally do not hand-edit it')
+  })
+
+  test('authoring warns that authored names may not land verbatim', () => {
+    const authoring = TOPICS.authoring.prompt
+    expect(authoring).toContain('AUTHORED name')
+    expect(authoring).toContain('omit it entirely')
+  })
+
+  test('overview command index covers the project-management commands', () => {
+    const overview = TOPICS.overview.prompt
+    for (const command of ['facet install', 'facet remove', 'facet list', 'facet publish']) {
+      expect(overview).toContain(command)
+    }
+  })
+})
+
 describe('manifest schema generation', () => {
   test('toJsonSchema with the predicate fallback does not throw and drops the predicate', () => {
     let schema: unknown

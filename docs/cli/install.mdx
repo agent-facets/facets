@@ -22,7 +22,11 @@ Reads `facets.json`, fetches and materializes every facet declared there, and wr
 <ResponseField name="--frozen-lockfile" type="boolean">
   Treat the lockfile as the source of truth; fail on any manifest/lockfile drift.
 
-  Setting this flag makes the **lockfile authoritative**: no re-resolution, no lockfile writes, and every facet — including local sources — must reproduce its locked integrity. The full preflight and behavior matrix are in the [Frozen lockfile specification](/specification/commit#frozen-lockfile).
+  Setting this flag makes the **lockfile authoritative**: no re-resolution, no lockfile writes, and every facet — including local sources — must reproduce its locked integrity. It also requires the lockfile's recorded [materialization](/specification/materialization) intent to match `facets.json` exactly. The full preflight and behavior matrix are in the [Frozen lockfile specification](/specification/commit#frozen-lockfile).
+
+  Frozen mode **never prompts**, even in a fully interactive terminal. It reproduces recorded intent, so it must not collect a new decision. A name collision under `--frozen-lockfile` is reported and fails.
+
+  A lockfile older than `0.3` cannot record a materialization disposition. If `facets.json` declares any override against one, the frozen install fails rather than silently ignoring it — run one non-frozen `facet install` to migrate the lockfile.
 
   <Tip>
   Use this in CI to guarantee `facets.json` and `facets.lock` are in agreement. Mirrors `--frozen-lockfile` from `npm` and `bun`.
@@ -34,21 +38,23 @@ Reads `facets.json`, fetches and materializes every facet declared there, and wr
 | Code | Meaning                                                              |
 | ---- | -------------------------------------------------------------------- |
 | `0`  | Install succeeded (including no-op when nothing has changed).        |
-| `1`  | Install failed. The view renders the structured failure inline; stderr carries an `install failed code=...` line for log-grepping. |
+| `1`  | Install failed. The view renders the structured failure inline; stderr carries a three-line block — `error:`, `code=...` for log-grepping, and a `fix:` action. A [name collision](#name-collisions) prints its full report above that block, so `fix:` stays the last line. |
 
 ## What it does
 
 <Steps>
   <Step title="Validate the project">
-    `facets.json` must exist; at least one adapter must be installed (the picker auto-launches on a TTY if none are).
+    `facets.json` must exist, and at least one **install-capable** adapter must be installed. If none are, the picker launches when the terminal can prompt; otherwise the command exits pointing at [`facet adapter install`](/cli/adapters/install). Installed-but-incompatible adapters fail here rather than falling through to the picker.
   </Step>
   <Step title="Run the install pipeline">
-    Runs the [install pipeline](/specification/install) with an empty delta: acquire the install lock, resolve each declared facet ([honoring satisfying lockfile pins](/specification/commit#resolve)), [verify integrity](/specification/commit#verify), materialize assets into every adapter, [remove drift](/specification/commit#drift-removal), and [write manifest + lockfile + receipt atomically](/specification/commit#transactional-tri-write).
+    Runs the [install pipeline](/specification/install) with an empty delta: acquire the install lock, resolve and [verify](/specification/commit#verify) *every* declared facet ([honoring satisfying lockfile pins](/specification/commit#resolve)), [compose one global plan](/specification/commit#compose) checking for name collisions, then [remove drift](/specification/commit#drift-removal) and materialize assets into every adapter, and finally [write manifest + lockfile + receipt atomically](/specification/commit#transactional-tri-write).
+
+    Deletion runs before any write, which is what lets an asset name move from one facet to another in a single install.
   </Step>
 </Steps>
 
 <Note>
-Every facet is verified before any asset is written; any integrity mismatch aborts the install with the project unchanged. The full semantics — lockfile trust, staleness, the verification chain — live in the [Commit specification](/specification/commit) and the [Integrity Model](/specification/integrity).
+Every facet is verified, and the whole plan composed, before any asset is written. An integrity mismatch, a name collision, or a cancelled resolution all abort with the project **byte-identical** — not rolled back, but never touched. The full semantics — lockfile trust, staleness, the verification chain — live in the [Commit specification](/specification/commit) and the [Integrity Model](/specification/integrity).
 </Note>
 
 ## Outcomes
@@ -59,16 +65,18 @@ The summary line classifies each facet by what happened on disk:
   Facet was not in the previous lockfile.
 </ResponseField>
 
-<ResponseField name="updated" type="version change">
+<ResponseField name="updated" type="state change">
   Facet was in the lockfile at a different version  -- including when a stale entry was re-resolved to match the manifest. The summary shows `(was X → Y)`.
+
+  Also reported when the version is unchanged but its [materialization](/specification/materialization) is not: aliasing or omitting an asset changes what is on disk and what the lockfile records, so it is an update rather than a no-op. It is not a *repair* either — nothing drifted, the project changed its mind.
 </ResponseField>
 
 <ResponseField name="repaired" type="self-heal">
-  Same lockfile entry, but at least one adapter file was missing or had drifted from the lockfile content. Restored.
+  Same version and same materialization intent, but at least one adapter file was missing or had drifted from the lockfile content. Restored. A skill is repaired by replacing its whole bundle atomically, so a single drifted companion pulls the primary with it.
 </ResponseField>
 
 <ResponseField name="unchanged" type="no-op">
-  Same lockfile entry, every asset already in its desired state. Nothing was written.
+  Same version, same materialization intent, every asset already in its desired state. Nothing was written.
 </ResponseField>
 
 <ResponseField name="removed" type="cleanup">
@@ -76,6 +84,48 @@ The summary line classifies each facet by what happened on disk:
 </ResponseField>
 
 If you delete a materialized asset by hand and re-run `facet install`, the affected facet shows up as `repaired`.
+
+Below the counts, the summary names every asset whose materialized name differs from its authored one — the one thing you cannot infer from the file tree:
+
+```
+  1 updated · 1 asset written
+  + 1 skill
+  viper-plans skill planning → team-planning
+  cowsay command scratch — omitted
+```
+
+Omitted assets are not counted as written.
+
+## Name collisions
+
+Two facets cannot materialize an asset under the same name. Skills and commands share one namespace; agents have their own — see [Namespaces](/specification/materialization#namespaces).
+
+Collisions are detected **globally, before anything is written**, so the install stops with the project untouched.
+
+**In an interactive terminal**, the install pauses and opens a resolver. Each contested asset gets one of three outcomes:
+
+| Key | Choice | Result |
+| --- | --- | --- |
+| `Keep` | keep the authored name | records nothing |
+| `Alias` | materialize under a name you type | `{ "kind": "aliased", "as": "..." }` |
+| `Omit` | do not materialize it at all | `{ "kind": "omitted" }` |
+
+Move with `↑↓`, pick with `←→`, apply with `Enter`, and `Esc` to go back. Arrow keys only move the cursor — nothing is applied until you press `Enter`. Each claimant shows a status that pairs an icon with a word, so it stays readable without color: `✕ unresolved`, `⚠ conflict` (your own edit created this one), `✓ resolved`. Confirmation unlocks only when every group is resolved.
+
+Your choices are written into `facets.json` as durable intent, so the next install runs without prompting:
+
+```json facets.json
+"viper-plans": {
+  "source": "1.*",
+  "materialization": {
+    "skills": { "planning": { "kind": "aliased", "as": "team-planning" } }
+  }
+}
+```
+
+`Esc` or `Ctrl-C` cancels the whole install. Nothing was written, and re-running lets you make the choices again.
+
+**Without a terminal** — CI, piped output, or `--frozen-lockfile` — nothing is prompted. Every group and every claimant is printed to stderr with the exact `facets.json` location to edit and copy-pasteable alias and omit snippets. No winner is chosen and no alias is invented for you: the placeholder is literally `choose-a-name`. The report ends by stating that `facets.json`, `facets.lock`, the receipt, and your materialized assets were **not** changed.
 
 ## Cache
 

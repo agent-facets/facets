@@ -9,7 +9,7 @@ description: Remove one or more facets from the project
 facet remove <facet> [more facets...]
 ```
 
-Removes one or more facets from `facets.json`, deletes their assets from every connected adapter, and rewrites `facets.lock` without them  -- in a single command. The inverse of [`facet add`](/cli/add). Aliased as `facet rm`.
+Removes one or more facets from `facets.json`, deletes the assets they still own from every connected adapter, and rewrites `facets.lock` without them  -- in a single command. The inverse of [`facet add`](/cli/add). Aliased as `facet rm`.
 
 ## Examples
 
@@ -35,7 +35,7 @@ facet remove viper-plans rezi
 | Code | Meaning                                                                              |
 | ---- | ------------------------------------------------------------------------------------ |
 | `0`  | Removal succeeded, or all requested names were already absent from `facets.json` (no-op). |
-| `1`  | Failed (no names given, install failure, etc.). No files are modified on failure. |
+| `1`  | Failed — no names given, no `facets.json`, an unresolved [name collision](/cli/install#name-collisions), or an install failure. Nothing is modified unless the failure happened mid-write, in which case the journal rolls it back. |
 
 ## What it does
 
@@ -47,12 +47,20 @@ facet remove viper-plans rezi
     Names not in `facets.json` are silently ignored. If every name is absent, the command exits successfully with no changes.
   </Step>
   <Step title="Commit">
-    Delegate to the [install pipeline](/specification/install) with the removals delta. Removal is [receipt-driven and offline](/specification/commit#drift-removal); the manifest, lockfile, and receipt are [written together](/specification/commit#transactional-tri-write). Every other facet is left untouched.
+    Delegate to the [install pipeline](/specification/install) with the removals delta. Removal is [receipt-driven and offline](/specification/commit#drift-removal); the manifest, lockfile, and receipt are [written together](/specification/commit#transactional-tri-write).
+
+    Deletion is keyed by the name each asset was **materialized** under, not by the facet that owned it. A name another declared facet still claims is kept, so removing a facet never deletes an asset that has since transferred to a different one. Assets you [omitted](/specification/materialization#dispositions) were never written, so there is nothing to delete for them.
   </Step>
   <Step title="On any failure">
     The journal rolls back all changes. Nothing is written ahead of success.
   </Step>
 </Steps>
+
+Removing a facet discards the materialization overrides recorded for it. Overrides on the facets that remain are durable and are **not** reverted, even if the removal frees the name they were working around — undoing them is a decision, so it stays yours. Delete the `materialization` block from `facets.json` and re-run [`facet install`](/cli/install) to go back to published names.
+
+<Note>
+Removal runs the full install pipeline, so it can surface a name collision that was already recorded and never resolved. In a terminal you get the same resolver [`facet install`](/cli/install#name-collisions) uses; in CI it fails with the report.
+</Note>
 
 ## See also
 

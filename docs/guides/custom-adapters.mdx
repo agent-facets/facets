@@ -52,7 +52,11 @@ An adapter is a small TypeScript library. You write one file, build it, and inst
 
 ## How an adapter fits in
 
-When you run `facet install`, the CLI reads each facet's assets and hands them to every installed adapter. The adapter decides **where** on disk each asset goes and **how** it's formatted, so the target tool picks it up. That's the entire job: translate a facet asset into files your tool understands.
+When you run `facet install`, the CLI resolves each facet's assets and hands the ones the project wants materialized to every installed adapter. The adapter decides **where** on disk each asset goes and **how** it's formatted, so the target tool picks it up. That's the entire job: translate a facet asset into files your tool understands.
+
+<Warning>
+`request.name` is the asset's **effective** name — the name the consuming project chose, which is not necessarily the one the publisher declared. A project can [alias](/specification/materialization) any asset, so the same published skill may arrive as `planning` in one project and `team-planning` in another. Address the file by `request.name` and never re-derive it from a facet's manifest. Assets the project [omitted](/specification/materialization#dispositions) are never passed to you at all — their absence is a choice, not a bug.
+</Warning>
 
 An adapter implements a small contract from the SDK. Two methods matter most:
 
@@ -100,7 +104,7 @@ import { join } from 'node:path'
 
 const baseDir = join(homedir(), '.my-tool')
 
-// A skill lives in its own directory: skills/<name>/SKILL.md (+ companions).
+// A skill lives in its own directory: skills/<effective name>/SKILL.md (+ companions).
 function skillPaths(name: string): SkillBundlePaths {
   const root = join(baseDir, 'skills', name)
   return { root, primaryFile: join(root, 'SKILL.md'), pruneBoundary: baseDir }
@@ -110,8 +114,8 @@ export default defineAdapter({
   name: 'my-tool',
   supportsInstall: true,
 
-  // Validate + enrich the author's `adapters.my-tool` block. Return the
-  // metadata you want written as front-matter, or errors if it's invalid.
+  // Validate the author's `adapters.my-tool` block at build time.
+  // Returns errors if it's invalid; the CLI writes front matter itself.
   buildAssetMetadata(data: unknown): Validated<AdapterMetadata> {
     // Trivial pass-through; use arktype/zod here for a real schema.
     const meta = (data ?? {}) as AdapterMetadata
@@ -202,14 +206,14 @@ Everything an adapter can implement, from [`@agent-facets/adapter`](https://gith
 </ResponseField>
 
 <ResponseField name="readAsset(request: ReadAssetRequest)" type="Promise<ReadAssetResult>">
-  Read an asset back. The `skill` variant carries `ownedCompanionPaths` (read exactly those, never enumerate the directory). Return `{ ok: true, asset }` or `{ ok: false, failure }` (`failure.code === 'not-found'` when absent).
+  Read an asset back. The `skill` variant carries `ownedCompanionPaths` (read exactly those, never enumerate the directory). Your `readAsset` must be a byte-stable inverse of `installAsset` — the engine compares what it reads back against what it would write to decide whether a facet is unchanged, so any asymmetry reports phantom drift on every install. Return `{ ok: true, asset }` or `{ ok: false, failure }` (`failure.code === 'not-found'` when absent).
 </ResponseField>
 
 <ResponseField name="deleteAsset(request: DeleteAssetRequest)" type="Promise<DeleteAssetResult>">
-  Remove an asset. The `skill` variant carries `ownedCompanionPaths`; deletion removes the primary plus exactly those, preserving unowned files. Return `{ ok: true, existed, deletedPaths }` or `{ ok: false, failure }`.
+  Remove an asset. The `skill` variant carries `ownedCompanionPaths`; deletion removes the primary plus exactly those, preserving unowned files. That set is the union of every past claim on this name, so it may include files a *different* facet left behind when the name changed hands. Deletes run before writes in a single install, so expect to be asked to delete and then re-create the same name. Return `{ ok: true, existed, deletedPaths }` or `{ ok: false, failure }`.
 </ResponseField>
 
-Every request carries `scope` (`'system'`, `'user'`, or `'project'` — decide your on-disk layout per scope) and `name`, tagged by `assetType` (`'skill'`, `'agent'`, or `'command'`). Expected failures are structured values (`not-found`, `invalid-companion-path`, `unsupported-scope`, `not-implemented`, `io-failed`), never thrown errors.
+Every request carries `scope` (`'system'`, `'user'`, or `'project'` — decide your on-disk layout per scope) and `name`, tagged by `assetType` (`'skill'`, `'agent'`, or `'command'`). `name` is always the effective name (see above); by the time a request reaches you the effective set is guaranteed collision-free, so you never have to arbitrate between two assets wanting one path. Expected failures are structured values (`not-found`, `invalid-companion-path`, `unsupported-scope`, `not-implemented`, `io-failed`), never thrown errors.
 
 <Tip>
   You can ship a **metadata-only** adapter: implement just `name` and `buildAssetMetadata`, and omit `supportsInstall`. It validates manifest config during builds without materializing anything  -- useful while you're still figuring out a tool's on-disk layout.
@@ -264,7 +268,7 @@ facet adapter list          # your adapter should appear
 facet add cowsay            # installs into every connected adapter, yours included
 ```
 
-Check that files landed where your `assetPath` puts them. From here, harden `buildAssetMetadata` with a real schema and flesh out the on-disk layout your tool expects.
+Check that files landed where your path helpers put them. From here, harden `buildAssetMetadata` with a real schema and flesh out the on-disk layout your tool expects.
 
 `facet adapter list` also shows each adapter's declared adapter API and whether the CLI supports it. If a CLI update ever changes the supported API set, rebuild your adapter against a matching SDK release and reinstall it — the list output prints the exact reinstall command next to any incompatible entry.
 

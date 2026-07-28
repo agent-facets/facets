@@ -48,7 +48,7 @@ These are not interchangeable: gzip is a delivery concern outside the hash contr
     The cached content MUST be re-hashed against its sidecar (self-audit). Tampered content MUST be evicted and re-fetched.
   </Step>
   <Step title="Lockfile comparison">
-    When the lockfile pins a version, the audited integrity MUST equal the locked integrity. Before any file is written, install also reconciles the recomputed archive-entry hash against each [lockfile `0.2` per-file record](/specification/lockfile) and the verified build-manifest hash; a mismatch fails with the exact drifting path.
+    When the lockfile pins a version, the audited integrity MUST equal the locked integrity. **On reproduction** — when the facet resolves to the integrity already locked — install additionally reconciles the recomputed archive-entry hash against each [lockfile per-file record](/specification/lockfile) and the verified build-manifest hash before any file is written; a mismatch fails with the exact drifting path. A legitimate change resolves to a different integrity and has nothing to reconcile against.
   </Step>
   <Step title="Integrity confirmation">
     When a lockfile entry is being created or replaced, the audited integrity MUST match the registry's published `content_integrity`. An unreachable registry MUST fail the operation.
@@ -58,7 +58,11 @@ These are not interchangeable: gzip is a delivery concern outside the hash contr
   </Step>
 </Steps>
 
-Two variants sit outside this lifecycle: **git installs** MUST verify built content against the lockfile integrity (the [one-check reproduction guard](/specification/commit#git-and-local-sources)), and **frozen installs** MUST require every facet — including local sources — to reproduce its locked integrity. The pipeline mechanics for all of these live in [Commit — Verify](/specification/commit#verify).
+Two variants sit outside this lifecycle, and they are distinct checks rather than one: **git installs** MUST verify built content against the lockfile integrity (the [one-check reproduction guard](/specification/commit#git-and-local-sources)), and **frozen installs** MUST require every facet — including local sources — to reproduce its locked integrity. Each reports under its own check label, so a frozen local-source failure is never mislabeled as a git failure. The pipeline mechanics for all of these live in [Commit — Verify](/specification/commit#verify).
+
+<Note>
+Integrity is entirely **authored-domain** and, in fact, name-agnostic. Archive paths and every hash derive from the name the publisher declared, so [aliasing an asset](/specification/materialization) changes nothing here — and an alias can never be used to smuggle different content under a familiar name. An **omitted** asset is fully verified too: verification covers the resolved set, not the subset written to disk.
+</Note>
 
 ### What it guarantees
 
@@ -71,7 +75,7 @@ Two variants sit outside this lifecycle: **git installs** MUST verify built cont
 
 <CardGroup cols={2}>
   <Card title="Lockfile" icon="lock" href="/specification/lockfile">
-    Canonical fingerprint (`content_integrity`) per facet, plus a per-materialized-file `{ path, integrity }` record inside each asset entry.
+    Canonical fingerprint (`content_integrity`) per facet, plus a `{ path, integrity }` record per authored file inside each asset entry — present even for an omitted asset, which materializes nothing.
   </Card>
   <Card title="Cache sidecar" icon="folder" href="/specification/commit#verify">
     Canonical fingerprint + per-entry hash map (`cache-integrity.json`) per cache slot. Written at cache-populate time; re-verified on every cache hit.
@@ -80,6 +84,6 @@ Two variants sit outside this lifecycle: **git installs** MUST verify built cont
     Canonical fingerprint + complete `files` hash map (one entry per inner-tar file). Embedded in the `.facet` archive.
   </Card>
   <Card title="Install receipt" icon="receipt" href="/specification/commit#machine-local-install-receipt">
-    Per-facet asset and owned-file ownership records (not hashes — used for offline drift removal).
+    Per-asset authored identity, owned authored paths, and the disposition each asset was materialized under (not hashes — used for offline drift removal). Omitted assets never appear.
   </Card>
 </CardGroup>

@@ -30,7 +30,7 @@ facet install
 facet self-update
 ```
 
-The public registry index (used by `facet add <name>` without a source) is open-beta — see [docs.agentfacets.io/roadmap](https://docs.agentfacets.io/roadmap). Today, bare-name resolution errors out against the stub; use `github:owner/repo`, an `https://...git` URL, an SCP-style git URL, or a local path.
+The public registry is open-beta — see [docs.agentfacets.io/roadmap](https://docs.agentfacets.io/roadmap). A bare name (`facet add cowsay`) resolves against it; you can also install from `github:owner/repo`, an `https://...git` URL, an SCP-style git URL, or a local path.
 
 Please see https://docs.agentfacets.io for detailed guidance and documentation for the `facet` CLI tool.
 
@@ -38,11 +38,11 @@ Please see https://docs.agentfacets.io for detailed guidance and documentation f
 
 | Package                                   | NPM                       | Description                                                          |
 |-------------------------------------------|---------------------------|----------------------------------------------------------------------|
-| [CLI](packages/cli/README.md)             | `agent-facets`            | CLI tool for managing facets                                         |
+| [CLI](packages/cli/AGENTS.md)             | `agent-facets`            | CLI tool for managing facets                                         |
 | [Protocol](packages/protocol/AGENTS.md)   | `@agent-facets/protocol`  | TypeScript reference implementation of the facet artifact spec — Node-native, public, consumed by registries and other third-party tools |
-| [Brand](packages/brand/README.md)         | `@agent-facets/brand`     | Agent Facets branding and styles                                     |
+| [Brand](packages/brand)                   | `@agent-facets/brand`     | Agent Facets branding and styles                                     |
 
-> The legacy `@agent-facets/core` package was split into `@agent-facets/protocol` (the published spec implementation) and `@agent-facets/engine` (Bun-native CLI machinery, private to this monorepo). The `@agent-facets/core` package is no longer published; it is frozen at v0.9.1 on npm. New consumers MUST use `@agent-facets/protocol`. See `docs/docs/contributing/architecture.md` for the full layer description.
+> The legacy `@agent-facets/core` package was split into `@agent-facets/protocol` (the published spec implementation) and `@agent-facets/engine` (Bun-native CLI machinery, private to this monorepo). The `@agent-facets/core` package is no longer published; it is frozen at v0.9.1 on npm. New consumers MUST use `@agent-facets/protocol`. See [`AGENTS.md`](AGENTS.md) for the full layer description.
 
 ## Development
 

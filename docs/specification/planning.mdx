@@ -5,7 +5,7 @@ description: Build the install delta
 
 import { DeltaTip } from "/snippets/glossary.jsx";
 
-Planning is phase 1 of the [install pipeline](/specification/install): turn a command into a <DeltaTip>delta</DeltaTip>. It is thin by design — all resolution, verification, and mutation belong to [Commit](/specification/commit).
+Planning is phase 1 of the [install pipeline](/specification/install): turn a command into a <DeltaTip>delta</DeltaTip>. It is thin by design — all resolution, verification, composition, and mutation belong to [Commit](/specification/commit).
 
 <Info>
     Planning performs **no version resolution, no lockfile lookups, no project mutation, and takes no install lock.**
@@ -44,7 +44,7 @@ The specifier is passed through untouched. Plan does not decide what version a w
 
 **`facet add`** resolves each source's facet name and builds the additions list. For registry sources the name comes from the specifier itself. For git and local sources the name lives in the source's `facet.json`, so preparation MAY **clone the repository or read the local path** to discover it. Still no version resolution and no project writes.
 
-**`facet remove`** is read-only validation: it loads the manifest and filters the requested names against the facets it actually declares, producing the removals list.
+**`facet remove`** is read-only validation: it loads the manifest and filters the requested names against the facets it actually declares, producing the removals list. A missing `facets.json` is a hard failure; a name the manifest does not declare is silently ignored.
 
 **`facet install`** has no preparation at all — an empty delta. The commit phase reproduces the declared set.
 
@@ -55,6 +55,10 @@ Each addition specifier is parsed into one of three tagged source kinds before c
 - **`registry`** — `name@range`. A registry facet: `cowsay`, `cowsay@1.*`, `cowsay@latest`. The default when no other shape matches.
 - **`git`** — a full git URL (`https://…`, `git@…`) with an optional `#ref` (branch, tag, or commit). The shorthand `github:owner/repo#ref` is accepted and normalizes to this kind.
 - **`local`** — a directory path, resolved relative to the project.
+
+<Note>
+The delta carries **no materialization intent**. An addition is `{ name, specifier, source }` and nothing more: how a project wants an asset named is durable intent read from `facets.json` during [Compose](/specification/commit#compose), never something a command plans. This is also why planning cannot detect a name collision — a `facet add` that will collide is caught in Compose, after every facet has been fetched and verified.
+</Note>
 
 <Note>
 Caret, tilde, and comparator ranges (`^1.2.0`, `~1.2.0`, `>=1.2.0`) MUST be rejected. Only exact versions, bounded wildcards (`1.*`, `1.2.*`), the open wildcard (`*`), and `latest` are accepted. The user-facing grammar, including every accepted and rejected shape, is documented at [`facet add`](/cli/add#source-grammar).
