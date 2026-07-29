@@ -404,6 +404,53 @@ describe('runRemove — a surviving facet is unavailable', () => {
     expect(existsSync(assetPath('test-adapter', 'planner'))).toBe(true)
     expect(existsSync(assetPath('test-adapter', 'vendor-planner'))).toBe(false)
   })
+
+  test.each([
+    ['corrupt', 'not json{'],
+    ['path-mismatch', JSON.stringify({ version: 0.3, path: '/some/other/project', facets: {} })],
+  ])('a pulled alias is not refined when the receipt is %s', async (_reason, body) => {
+    const { receiptPath } = await import('../receipt.ts')
+    await installFacet('cowsay', '0.1.1')
+    await installFacet('planner', '0.2.0')
+
+    const manifest = JSON.parse(readFileSync(join(projectRoot, 'facets.json'), 'utf8'))
+    manifest.facets.planner = {
+      source: manifest.facets.planner,
+      materialization: { skills: { planner: { kind: 'aliased', as: 'vendor-planner' } } },
+    }
+    writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify(manifest, null, 2))
+    const lock = readLock()
+    for (const asset of (lock.facets.planner?.assets ?? []) as Array<Record<string, unknown>>) {
+      asset.materialization = { kind: 'aliased', as: 'vendor-planner' }
+    }
+    writeFileSync(join(projectRoot, 'facets.lock'), JSON.stringify(lock, null, 2))
+    writeFileSync(receiptPath(projectRoot), body)
+    goOffline()
+
+    const result = await remove(['cowsay'])
+
+    expect(result.ok).toBe(false)
+    if (result.ok) expect.unreachable()
+    if (result.phase !== 'install') expect.unreachable()
+    expect(existsSync(assetPath('test-adapter', 'planner'))).toBe(true)
+    expect(existsSync(assetPath('test-adapter', 'vendor-planner'))).toBe(false)
+  })
+
+  test('an absent receipt still removes offline', async () => {
+    const { receiptPath } = await import('../receipt.ts')
+    await installFacet('cowsay', '0.1.1')
+    await installFacet('planner', '0.2.0')
+    const survivorAsset = assetPath('test-adapter', 'planner')
+    const survivorBefore = readFileSync(survivorAsset, 'utf8')
+    rmSync(receiptPath(projectRoot), { force: true })
+    goOffline()
+
+    const result = await remove(['cowsay'])
+
+    expect(result.ok).toBe(true)
+    expect(existsSync(assetPath('test-adapter', 'cowsay'))).toBe(false)
+    expect(readFileSync(survivorAsset, 'utf8')).toBe(survivorBefore)
+  })
 })
 
 describe('runRemove — undeclared facet', () => {

@@ -206,6 +206,15 @@ export type LoadReceiptResult =
   | { ok: true; receipt: Receipt; invalidEntries: ReadonlyArray<InvalidReceiptAsset> }
   | { ok: false; reason: 'missing' | 'corrupt' | 'path-mismatch' }
 
+/** Receipt provenance for paths that need local evidence rather than a lockfile projection. */
+export type ProjectReceiptState =
+  /** Read from this machine's receipt file, and free to contradict the lockfile. */
+  | { kind: 'loaded'; receipt: Receipt; invalidEntries: ReadonlyArray<InvalidReceiptAsset> }
+  /** No receipt file exists, so the lockfile is the only account there has ever been. */
+  | { kind: 'missing'; receipt: Receipt }
+  /** A receipt file exists and could not be read; `fallback` is a lockfile projection. */
+  | { kind: 'invalid'; fallback: Receipt; reason: 'corrupt' | 'path-mismatch' }
+
 // ---------------------------------------------------------------------------
 // Path computation
 // ---------------------------------------------------------------------------
@@ -478,6 +487,21 @@ export function bootstrapReceipt(projectDir: string, lockfile: SupportedLockfile
   }
 
   return { version: CURRENT_RECEIPT_VERSION, path: canonical, facets }
+}
+
+/**
+ * Load the receipt, tagged with the licence its records carry.
+ *
+ * Every arm supplies a usable receipt, because ownership reconciliation has
+ * always accepted the lockfile as its fallback. The tag only says whether the
+ * records may additionally be trusted as evidence about this machine.
+ */
+export function resolveProjectReceipt(projectDir: string, lockfile: SupportedLockfile): ProjectReceiptState {
+  const result = loadReceipt(projectDir)
+  if (result.ok) return { kind: 'loaded', receipt: result.receipt, invalidEntries: result.invalidEntries }
+  const projected = bootstrapReceipt(projectDir, lockfile)
+  if (result.reason === 'missing') return { kind: 'missing', receipt: projected }
+  return { kind: 'invalid', fallback: projected, reason: result.reason }
 }
 
 /**

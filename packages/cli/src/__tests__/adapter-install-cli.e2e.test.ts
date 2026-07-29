@@ -1,9 +1,9 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
-import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
+import { CLI_PATH, spawnCli } from './helpers/cli-process.ts'
 
 /**
  * End-to-end integration tests that spawn the compiled `./dist/facet` binary
@@ -21,39 +21,9 @@ import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
  * so the user's real `~/.facet/adapters/` is never touched.
  */
 
-const CLI_PATH = resolve(import.meta.dir, '../../dist/facet')
 const REPO_ROOT = resolve(import.meta.dir, '../../../..')
 
-if (!existsSync(CLI_PATH)) {
-  throw new Error(
-    `[e2e] dist/facet not found at ${CLI_PATH}.\n` +
-      `Build the CLI first:\n` +
-      `  bun run --cwd packages/cli build\n` +
-      `Or run the full check pipeline:\n` +
-      `  bun check`,
-  )
-}
-
-type ExecResult = {
-  stdout: string
-  stderr: string
-  exitCode: number
-}
-
-/**
- * Spawn the compiled CLI with the given args and an optional env override.
- * Always merges onto the current `process.env` so PATH / HOME stay intact.
- */
-async function runCli(args: string[], env?: Record<string, string>): Promise<ExecResult> {
-  const proc = Bun.spawn([CLI_PATH, ...args], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-    env: { ...process.env, ...env },
-  })
-  const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()])
-  const exitCode = await proc.exited
-  return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode }
-}
+const runCli = (args: string[], env?: Record<string, string>) => spawnCli(args, { env })
 
 /**
  * Pack the opencode adapter once per test run and extract the tarball.

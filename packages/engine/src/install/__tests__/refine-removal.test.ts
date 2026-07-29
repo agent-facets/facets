@@ -8,6 +8,7 @@ import {
 import type { NormalizedFacetEntry } from '../../manifest/mutations.ts'
 import {
   CURRENT_RECEIPT_VERSION,
+  type ProjectReceiptState,
   type Receipt,
   type ReceiptFacetEntry,
   receiptEntryForLockedFacet,
@@ -109,6 +110,10 @@ function receiptFor(lockfile: SupportedLockfile, opts: { without?: string } = {}
   return { version: CURRENT_RECEIPT_VERSION, path: '/tmp/project', facets: record(facets) }
 }
 
+function loaded(receipt: Receipt): ProjectReceiptState {
+  return { kind: 'loaded', receipt, invalidEntries: [] }
+}
+
 function desiredOnly(names: readonly string[]): Record<string, NormalizedFacetEntry> {
   return record(names.map((name) => [name, { source: `./vendor/${name}`, overrides: undefined }]))
 }
@@ -133,7 +138,7 @@ describe('refineRemoval — survivor keys that collide with Object.prototype', (
       desiredFacets,
       previousLockfile,
       lockfileExisted: true,
-      receipt: receiptFor(previousLockfile),
+      receiptState: loaded(receiptFor(previousLockfile)),
     })
 
     if (result.kind !== 'refined') expect.unreachable()
@@ -176,7 +181,7 @@ describe('refineRemoval — survivor keys that collide with Object.prototype', (
       desiredFacets: withOverrides,
       previousLockfile: locked,
       lockfileExisted: true,
-      receipt: receiptFor(locked),
+      receiptState: loaded(receiptFor(locked)),
     })
 
     if (result.kind !== 'refined') expect.unreachable()
@@ -200,7 +205,7 @@ describe('refineRemoval — survivor keys that collide with Object.prototype', (
       desiredFacets: scoped,
       previousLockfile: locked,
       lockfileExisted: true,
-      receipt: receiptFor(locked),
+      receiptState: loaded(receiptFor(locked)),
     })
 
     if (result.kind !== 'refined') expect.unreachable()
@@ -224,7 +229,7 @@ describe('refineRemoval — an identity inherited from a dropped entry', () => {
       desiredFacets,
       previousLockfile,
       lockfileExisted: true,
-      receipt: receiptFor(previousLockfile),
+      receiptState: loaded(receiptFor(previousLockfile)),
     })
   }
 
@@ -268,6 +273,34 @@ describe('refineRemoval — an identity inherited from a dropped entry', () => {
 
     if (result.kind !== 'not-applicable') expect.unreachable()
     expect(result.reason.code).toBe('retained-identity-contested')
+  })
+
+  test('a dropped claim differing only by case contends', () => {
+    const result = refine(
+      lockfileOf([
+        ['keep', entryWith([{ name: 'shared' }])],
+        ['gone', entryWith([{ name: 'Shared' }])],
+      ]),
+    )
+
+    if (result.kind !== 'not-applicable') expect.unreachable()
+    if (result.reason.code !== 'retained-identity-contested') expect.unreachable()
+    expect(result.reason.effectiveName).toBe('Shared')
+    expect(result.reason.contestedBy).toEqual(['gone'])
+  })
+
+  test('a dropped claim differing only by Unicode normalization contends', () => {
+    const result = refine(
+      lockfileOf([
+        ['keep', entryWith([{ name: 'caf\u00e9' }])],
+        ['gone', entryWith([{ name: 'cafe\u0301' }])],
+      ]),
+    )
+
+    if (result.kind !== 'not-applicable') expect.unreachable()
+    if (result.reason.code !== 'retained-identity-contested') expect.unreachable()
+    expect(result.reason.effectiveName).toBe('cafe\u0301')
+    expect(result.reason.contestedBy).toEqual(['gone'])
   })
 
   test('an omitted asset on a dropped entry never contends', () => {
@@ -321,7 +354,7 @@ describe('refineRemoval — the receipt must witness every survivor', () => {
   ])
 
   function refine(receipt: Receipt) {
-    return refineRemoval({ desiredFacets, previousLockfile, lockfileExisted: true, receipt })
+    return refineRemoval({ desiredFacets, previousLockfile, lockfileExisted: true, receiptState: loaded(receipt) })
   }
 
   /** The agreeing receipt, for a test to disturb in exactly one way. */
@@ -410,7 +443,7 @@ describe('refineRemoval — the receipt must witness every survivor', () => {
       desiredFacets: omitting,
       previousLockfile: lockfile,
       lockfileExisted: true,
-      receipt: receiptFor(lockfile),
+      receiptState: loaded(receiptFor(lockfile)),
     })
 
     if (result.kind !== 'refined') expect.unreachable()
@@ -437,5 +470,40 @@ describe('refineRemoval — the receipt must witness every survivor', () => {
     // index — which is what makes the delete pass able to clean it up.
     expect(result.refinement.receiptFacets.keep?.assets.map((a) => a.name)).toEqual(['review'])
     expect([...result.refinement.previousOwnership.values()].some((o) => o.effectiveName === 'legacy')).toBe(true)
+  })
+})
+
+describe('refineRemoval — a receipt that could not be read', () => {
+  const desiredFacets = record<NormalizedFacetEntry>([
+    ['keep', { source: './vendor/keep', overrides: { skills: { review: { kind: 'aliased', as: 'vendor-review' } } } }],
+  ])
+  const previousLockfile = lockfileOf([
+    ['keep', entryWith([{ name: 'review', materialization: { kind: 'aliased', as: 'vendor-review' } }])],
+    ['gone', entryWith([{ name: 'dropped' }])],
+  ])
+
+  test.each(['corrupt', 'path-mismatch'] as const)('does not refine when the receipt is %s', (reason) => {
+    const result = refineRemoval({
+      desiredFacets,
+      previousLockfile,
+      lockfileExisted: true,
+      receiptState: { kind: 'invalid', fallback: receiptFor(previousLockfile), reason },
+    })
+
+    if (result.kind !== 'not-applicable') expect.unreachable()
+    if (result.reason.code !== 'receipt-unwitnessable') expect.unreachable()
+    expect(result.reason.reason).toBe(reason)
+  })
+
+  test('still refines when no receipt file ever existed', () => {
+    const result = refineRemoval({
+      desiredFacets,
+      previousLockfile,
+      lockfileExisted: true,
+      receiptState: { kind: 'missing', receipt: receiptFor(previousLockfile) },
+    })
+
+    if (result.kind !== 'refined') expect.unreachable()
+    expect(result.refinement.receiptFacets.keep?.assets.map((a) => a.name)).toEqual(['review'])
   })
 })

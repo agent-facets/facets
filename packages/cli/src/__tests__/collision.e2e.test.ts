@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
-import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
+import { join } from 'node:path'
+import { spawnCli } from './helpers/cli-process.ts'
+import { installFakeAdapter } from './helpers/fake-adapter.ts'
 
 /**
  * End-to-end coverage for cross-facet name collisions, driving the
@@ -17,37 +18,12 @@ import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
  * an error.
  */
 
-const CLI_PATH = resolve(import.meta.dir, '../../dist/facet')
-
-if (!existsSync(CLI_PATH)) {
-  throw new Error(
-    `[e2e] dist/facet not found at ${CLI_PATH}.\n` +
-      `Build the CLI first:\n` +
-      `  bun run --cwd packages/cli build\n` +
-      `Or run the full check pipeline:\n` +
-      `  bun check`,
-  )
-}
-
-type ExecResult = { stdout: string; stderr: string; exitCode: number }
-
 let projectRoot: string
 let fakeHome: string
 let adaptersDir: string
 
-async function runCli(args: string[]): Promise<ExecResult> {
-  const proc = Bun.spawn([CLI_PATH, ...args], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-    // Closed stdin: nothing can answer a prompt, so a command that tried
-    // to open one would hang here rather than fail.
-    stdin: 'ignore',
-    cwd: projectRoot,
-    env: { ...process.env, HOME: fakeHome, FACET_DIR: join(fakeHome, '.facet') },
-  })
-  const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()])
-  return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode: await proc.exited }
-}
+const runCli = (args: string[]) =>
+  spawnCli(args, { cwd: projectRoot, env: { HOME: fakeHome, FACET_DIR: join(fakeHome, '.facet') } })
 
 /**
  * A facet contributing one skill.
@@ -68,57 +44,6 @@ function buildFixture(name: string, skill: string): string {
   return `./${repo.split('/').pop()}`
 }
 
-/**
- * A dependency-free adapter bundle.
- *
- * The in-process command tests import the real `@agent-facets/adapter`
- * helpers, but a bundle written into a temp directory and loaded by the
- * compiled binary has no workspace `node_modules` to resolve them from.
- * Since these tests are about which assets get written under which
- * names — not about front-matter assembly, which the adapter suite
- * covers — plain `node:fs` is the honest dependency here.
- */
-function installFakeAdapter(name: string): void {
-  const dir = join(adaptersDir, name)
-  mkdirSync(dir, { recursive: true })
-  writeFileSync(
-    join(dir, 'adapter.js'),
-    `
-import { mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-
-function path(type, name) { return join(process.cwd(), '.${name}', type + 's', name + '.md') }
-
-export default {
-  name: '${name}',
-  apiVersion: '${ADAPTER_API_VERSION}',
-  supportsInstall: true,
-  buildAssetMetadata(data) { return { ok: true, data: data || {} } },
-  async installAsset(req) {
-    const file = path(req.assetType, req.name)
-    mkdirSync(dirname(file), { recursive: true })
-    writeFileSync(file, req.content)
-    return { ok: true, primaryPath: file }
-  },
-  async readAsset(req) {
-    const file = path(req.assetType, req.name)
-    if (!existsSync(file)) return { ok: false, failure: { code: 'not-found' } }
-    const content = readFileSync(file, 'utf8')
-    return { ok: true, asset: req.assetType === 'skill'
-      ? { assetType: 'skill', content, metadata: {}, companions: {} }
-      : { assetType: req.assetType, content, metadata: {} } }
-  },
-  async deleteAsset(req) {
-    const file = path(req.assetType, req.name)
-    const existed = existsSync(file)
-    rmSync(file, { force: true })
-    return { ok: true, existed, deletedPaths: existed ? [file] : [] }
-  },
-}
-`,
-  )
-}
-
 function writeManifest(value: unknown): void {
   writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify(value, null, 2))
 }
@@ -137,7 +62,7 @@ afterEach(() => {
 
 describe('collisions — non-interactive install', () => {
   test('fails with the full report, a non-zero exit, and no writes', async () => {
-    installFakeAdapter('test-adapter')
+    installFakeAdapter(adaptersDir, 'test-adapter')
     const alpha = buildFixture('alpha', 'planning')
     const beta = buildFixture('beta', 'planning')
     writeManifest({ facets: { alpha, beta } })
@@ -165,7 +90,7 @@ describe('collisions — non-interactive install', () => {
   })
 
   test('recorded intent installs both assets without any prompt', async () => {
-    installFakeAdapter('test-adapter')
+    installFakeAdapter(adaptersDir, 'test-adapter')
     const alpha = buildFixture('alpha', 'planning')
     const beta = buildFixture('beta', 'planning')
     writeManifest({
@@ -184,7 +109,7 @@ describe('collisions — non-interactive install', () => {
   })
 
   test('an omitted asset is never written but stays in the lockfile', async () => {
-    installFakeAdapter('test-adapter')
+    installFakeAdapter(adaptersDir, 'test-adapter')
     const alpha = buildFixture('alpha', 'planning')
     const beta = buildFixture('beta', 'planning')
     writeManifest({
@@ -212,7 +137,7 @@ describe('collisions — non-interactive install', () => {
 
 describe('collisions — frozen install', () => {
   test('reports rather than prompting, and writes nothing', async () => {
-    installFakeAdapter('test-adapter')
+    installFakeAdapter(adaptersDir, 'test-adapter')
     const alpha = buildFixture('alpha', 'planning')
     const beta = buildFixture('beta', 'planning')
     writeManifest({ facets: { alpha, beta } })

@@ -22,7 +22,7 @@ import { ownEntry, ownRecord } from '../own-entry.ts'
 import {
   materializedDispositionOf,
   ownedPathsForLockedAsset,
-  type Receipt,
+  type ProjectReceiptState,
   type ReceiptAsset,
   type ReceiptFacetEntry,
   receiptEntryForLockedFacet,
@@ -59,8 +59,9 @@ import type { FacetOutcome, LockfileDriftEntry } from '../types.ts'
  * When the local state cannot answer the question — a survivor was never
  * locked, its locked entry no longer satisfies the manifest, the locked set
  * still collides, an identity a survivor keeps was also claimed by something
- * this removal drops, the receipt disagrees with a survivor's locked entry,
- * or the manifest declares intent the lockfile does not yet record — this
+ * this removal drops, the receipt cannot be read at all, the receipt
+ * disagrees with a survivor's locked entry, or the manifest declares intent
+ * the lockfile does not yet record — this
  * returns `not-applicable` and the caller runs the ordinary pipeline. That is
  * deliberate: those cases genuinely require resolution, and failing instead
  * would break removals that work today for reasons unrelated to the facet
@@ -106,6 +107,8 @@ export type RefineNotApplicable =
       survivor: string
       contestedBy: readonly string[]
     }
+  /** An unreadable receipt cannot witness local state. */
+  | { code: 'receipt-unwitnessable'; reason: 'corrupt' | 'path-mismatch' }
   /**
    * The machine-local receipt does not witness what a survivor's locked entry
    * describes. Believing the lockfile would rewrite this machine's ownership
@@ -154,13 +157,17 @@ export interface RefineRemovalArgs {
   previousLockfile: SupportedLockfile
   lockfileExisted: boolean
   /** This machine's record of what it materialized. The authority on disk state. */
-  receipt: Receipt
+  receiptState: ProjectReceiptState
 }
 
 export function refineRemoval(args: RefineRemovalArgs): RefineRemovalResult {
-  const { desiredFacets, previousLockfile, lockfileExisted, receipt } = args
+  const { desiredFacets, previousLockfile, lockfileExisted, receiptState } = args
 
   if (!lockfileExisted) return { kind: 'not-applicable', reason: { code: 'no-lockfile' } }
+  if (receiptState.kind === 'invalid') {
+    return { kind: 'not-applicable', reason: { code: 'receipt-unwitnessable', reason: receiptState.reason } }
+  }
+  const receipt = receiptState.receipt
 
   // Collect the surviving entries up front. Doing it here rather than during
   // the rebuild means every later step holds a real entry, so there is no

@@ -1,24 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { existsSync } from 'node:fs'
-import { resolve } from 'node:path'
-
-const CLI_PATH = resolve(import.meta.dir, '../../dist/facet')
-
-if (!existsSync(CLI_PATH)) {
-  throw new Error(
-    `[e2e] dist/facet not found at ${CLI_PATH}.\n` +
-      `Build the CLI first:\n` +
-      `  bun run --cwd packages/cli build\n` +
-      `Or run the full check pipeline:\n` +
-      `  bun check`,
-  )
-}
-
-interface ExecResult {
-  stdout: string
-  stderr: string
-  exitCode: number
-}
+import { CLI_PATH, spawnCli } from './helpers/cli-process.ts'
 
 /**
  * Run the compiled CLI binary with the given args. Forces dev-mode so
@@ -27,21 +8,8 @@ interface ExecResult {
  * behavior we can assert against in CI without a real registry, real
  * `~/.facet/bin`, or real package managers.
  */
-async function runCli(args: string[], env: Record<string, string> = {}): Promise<ExecResult> {
-  const proc = Bun.spawn([CLI_PATH, ...args], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-    env: {
-      ...process.env,
-      // FACET_BIN_OVERRIDE set ⇒ detection returns 'local-dev', short-circuiting
-      // before any network / subprocess work.
-      FACET_BIN_OVERRIDE: CLI_PATH,
-      ...env,
-    },
-  })
-  const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()])
-  const exitCode = await proc.exited
-  return { stdout, stderr, exitCode }
+function runCli(args: string[], env: Record<string, string> = {}) {
+  return spawnCli(args, { env: { FACET_BIN_OVERRIDE: CLI_PATH, ...env }, trim: false })
 }
 
 describe('self-update — e2e', () => {

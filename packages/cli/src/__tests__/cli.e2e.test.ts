@@ -1,18 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { spawnCli } from './helpers/cli-process.ts'
 
-const CLI_PATH = resolve(import.meta.dir, '../../dist/facet')
-
-if (!existsSync(CLI_PATH)) {
-  throw new Error(
-    `[e2e] dist/facet not found at ${CLI_PATH}.\n` +
-      `Build the CLI first:\n` +
-      `  bun run --cwd packages/cli build\n` +
-      `Or run the full check pipeline:\n` +
-      `  bun check`,
-  )
-}
 // Commands wired to real implementations — these appear in `facet --help`.
 // `self-update` shows in help with `self-upgrade` as a comma-joined alias on
 // the same line; we assert the canonical name only here, and the alias
@@ -37,21 +26,7 @@ const IMPLEMENTED_COMMAND_NAMES = [
 // the global help listing (Adjustment K).
 const STUB_COMMAND_NAMES = ['info', 'upgrade']
 
-type ExecResult = {
-  stdout: string
-  stderr: string
-  exitCode: number
-}
-
-async function runCli(...args: string[]): Promise<ExecResult> {
-  const proc = Bun.spawn([CLI_PATH, ...args], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()])
-  const exitCode = await proc.exited
-  return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode }
-}
+const runCli = (...args: string[]) => spawnCli(args)
 
 // --- Help ---
 

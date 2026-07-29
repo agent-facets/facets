@@ -14,6 +14,7 @@ import {
   type Receipt,
   type ReceiptAsset,
   receiptPath,
+  resolveProjectReceipt,
   writeReceipt,
 } from '../receipt.ts'
 
@@ -624,6 +625,52 @@ describe('bootstrapReceipt', () => {
 
     expect(Object.hasOwn(receipt.facets, '__proto__')).toBe(true)
     expect(Object.keys(receipt.facets)).toEqual(['__proto__'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// resolveProjectReceipt
+// ---------------------------------------------------------------------------
+
+describe('resolveProjectReceipt', () => {
+  const lockfile: SupportedLockfile = { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} }
+
+  function writeRawReceipt(body: string): void {
+    mkdirSync(join(facetDir, 'receipts'), { recursive: true })
+    writeFileSync(receiptPath(projectDir), body)
+  }
+
+  test('tags a readable receipt as loaded', () => {
+    writeReceipt(projectDir, {
+      version: CURRENT_RECEIPT_VERSION,
+      path: realpathSync(projectDir),
+      facets: { cowsay: { version: '0.0.1', assets: [skillAsset('cowsay')] } },
+    })
+
+    const state = resolveProjectReceipt(projectDir, lockfile)
+
+    if (state.kind !== 'loaded') expect.unreachable()
+    expect(state.receipt.facets.cowsay?.assets).toHaveLength(1)
+    expect(state.invalidEntries).toEqual([])
+  })
+
+  test('tags an absent receipt as missing', () => {
+    expect(resolveProjectReceipt(projectDir, lockfile).kind).toBe('missing')
+  })
+
+  test.each([
+    ['corrupt', 'not json{'],
+    ['path-mismatch', JSON.stringify({ version: CURRENT_RECEIPT_VERSION, path: '/some/other/project', facets: {} })],
+  ] as const)('tags a %s receipt as invalid', (reason, body) => {
+    writeRawReceipt(body)
+
+    const state = resolveProjectReceipt(projectDir, lockfile)
+
+    if (state.kind !== 'invalid') expect.unreachable()
+    expect(state.reason).toBe(reason)
+    // Reconciliation still needs a receipt to diff against, so the projection
+    // is supplied — under a name no witness check can consume.
+    expect(state.fallback.path).toBe(realpathSync(projectDir))
   })
 })
 

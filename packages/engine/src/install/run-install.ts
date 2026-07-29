@@ -18,7 +18,7 @@ import { FACETS_LOCK_FILE, loadLockfile } from './lockfile-io.ts'
 import { deleteObsoleteAssets } from './materialize.ts'
 import { materializeFailureToRunInstall } from './materialize-failure.ts'
 import { ownEntry } from './own-entry.ts'
-import { bootstrapReceipt, loadReceipt, type Receipt } from './receipt.ts'
+import { type Receipt, resolveProjectReceipt } from './receipt.ts'
 import { refineRemoval } from './remove/refine.ts'
 import { rollbackAndFail, summarize } from './run-install-support.ts'
 import type { InstallDelta, RunInstallFailure, RunInstallOptions, RunInstallResult, StageEvent } from './types.ts'
@@ -124,10 +124,10 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     // Load (or bootstrap) the machine-local receipt. Invalid asset
     // entries (escape paths) are reported and skipped — the rest of
     // the receipt is still processed (W2 / design D6).
-    const receiptResult = loadReceipt(projectRoot)
-    const receipt: Receipt = receiptResult.ok ? receiptResult.receipt : bootstrapReceipt(projectRoot, previousLockfile)
-    if (receiptResult.ok) {
-      for (const invalid of receiptResult.invalidEntries) {
+    const receiptState = resolveProjectReceipt(projectRoot, previousLockfile)
+    const receipt: Receipt = receiptState.kind === 'invalid' ? receiptState.fallback : receiptState.receipt
+    if (receiptState.kind === 'loaded') {
+      for (const invalid of receiptState.invalidEntries) {
         onLog(() => `[warn] receipt asset entry rejected for ${invalid.facet}: "${invalid.asset}" (${invalid.reason})`)
         onStage({ kind: 'receipt-invalid-asset', ...invalid })
       }
@@ -225,7 +225,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
             desiredFacets: merged.desiredFacets,
             previousLockfile,
             lockfileExisted: lockfileResult.existed,
-            receipt,
+            receiptState,
           })
         : null
     if (refinement !== null && refinement.kind === 'not-applicable') {
