@@ -7,5 +7,6 @@
     "@agentfacets/address-pr-feedback": "latest",
     "graphite": "0.1.0",
     "worktrunk": "0.1.0"
-  }
+  },
+  "manifestVersion": 0.1
 }

@@ -6,8 +6,8 @@
         "kind": "registry",
         "registry": "https://api.agentfacets.io"
       },
-      "version": "1.0.0",
-      "integrity": "sha256:ed944fd6249d1eb4b1050d6ba1b8bc212136222c2ab2c498032eed2abf0e2360",
+      "version": "2.0.5",
+      "integrity": "sha256:4086e7797583194ddfd51e1724bb9ab2100c482122bcea891d232639bed70bd3",
       "assets": [
         {
           "scope": "project",
@@ -147,8 +147,8 @@
         "kind": "registry",
         "registry": "https://api.agentfacets.io"
       },
-      "version": "1.0.0",
-      "integrity": "sha256:d9905f6076c5c454e9d563980eda52c5a9ceb9e761003f9c454e362cd56efd61",
+      "version": "2.3.0",
+      "integrity": "sha256:cca17795ad5e8091a2e16ef498087511494e125ab9212d880800ddc370fdb431",
       "assets": [
         {
           "scope": "project",
