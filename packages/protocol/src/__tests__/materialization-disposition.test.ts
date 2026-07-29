@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  cloneDisposition,
   isMaterialized,
   type MaterializationDisposition,
   MaterializationDispositionSchema,
@@ -136,5 +137,32 @@ describe('isMaterialized', () => {
     const disposition: MaterializationDisposition = { kind: 'aliased', as: 'vendor-review' }
     if (!isMaterialized(disposition)) expect.unreachable()
     expect(materializedNameOf('review', disposition)).toBe('vendor-review')
+  })
+})
+
+describe('cloneDisposition', () => {
+  test.each([
+    { kind: 'authored' } as const,
+    { kind: 'aliased', as: 'vendor-review' } as const,
+    { kind: 'omitted' } as const,
+  ])('copies %p by value, not by reference', (disposition) => {
+    const copy = cloneDisposition(disposition)
+    expect(copy).toEqual(disposition)
+    expect(copy).not.toBe(disposition)
+  })
+
+  test('the copy is independent of the original', () => {
+    const original = { kind: 'aliased' as const, as: 'foo' }
+    const copy = cloneDisposition(original)
+    original.as = 'bar'
+    expect(copy).toEqual({ kind: 'aliased', as: 'foo' })
+  })
+
+  // A structural deep clone would happily copy whatever it was handed. This
+  // one is arm-aware, so a stray key on an arm that cannot carry it does not
+  // ride along into a value the schema would reject.
+  test('a stray key is not carried into the copy', () => {
+    const strayed = { kind: 'omitted', as: 'vendor-review' } as unknown as MaterializationDisposition
+    expect(cloneDisposition(strayed)).toEqual({ kind: 'omitted' })
   })
 })

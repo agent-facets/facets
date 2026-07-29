@@ -30,10 +30,12 @@ import {
   MaterializedDispositionSchema,
   type SupportedLockfile,
   type SupportedLockfileAssetEntry,
+  type SupportedLockfileFacet,
 } from '@agent-facets/protocol'
 import { type } from 'arktype'
 import { facetReceiptsDir } from '../facet-dir.ts'
 import { jsonFileText } from '../json-file-text.ts'
+import { ownRecord } from './own-entry.ts'
 import type { AssetIdentity } from './types.ts'
 
 // ---------------------------------------------------------------------------
@@ -320,7 +322,7 @@ export function loadReceipt(projectDir: string): LoadReceiptResult {
     const validated = Receipt02Schema(parsed)
     if (validated instanceof type.errors) return { ok: false, reason: 'corrupt' }
     embeddedPath = validated.path
-    rawFacets = {}
+    rawFacets = ownRecord()
     for (const [name, entry] of Object.entries(validated.facets)) {
       rawFacets[name] = {
         version: entry.version,
@@ -331,7 +333,7 @@ export function loadReceipt(projectDir: string): LoadReceiptResult {
     const validated = LegacyReceiptSchema(parsed)
     if (validated instanceof type.errors) return { ok: false, reason: 'corrupt' }
     embeddedPath = validated.path
-    rawFacets = {}
+    rawFacets = ownRecord()
     for (const [name, entry] of Object.entries(validated.facets)) {
       rawFacets[name] = {
         version: entry.version,
@@ -356,8 +358,12 @@ export function loadReceipt(projectDir: string): LoadReceiptResult {
   // untrusted. A crafted name or a path that could traverse outside the
   // adapter's storage drops the whole asset record (reported, never
   // deleted), while the facet's remaining valid entries still load (D6).
+  // Null-prototype throughout: a receipt facet key is an arbitrary string
+  // from a file on disk, and dropping a `__proto__`-named facet here would
+  // erase an ownership claim silently — the one outcome D6 rules out, since
+  // the assets it covers would then never be deleted OR re-tracked.
   const invalidEntries: InvalidReceiptAsset[] = []
-  const facets: Record<string, ReceiptFacetEntry> = {}
+  const facets: Record<string, ReceiptFacetEntry> = ownRecord()
   for (const [facetName, entry] of Object.entries(rawFacets)) {
     const validAssets: ReceiptAsset[] = []
     for (const asset of entry.assets) {
@@ -440,8 +446,8 @@ export function writeReceipt(projectDir: string, receipt: Receipt): void {
  * The disposition a locked asset was materialized under, or `undefined`
  * when it was not materialized at all.
  *
- * Only a `0.3` entry records a disposition; earlier versions predate the
- * concept and refine to authored. `undefined` means the asset is omitted —
+ * Only a `0.3` entry records a disposition; `0.2` predates the concept and
+ * refines to authored. `undefined` means the asset is omitted —
  * it belongs in the lockfile, which records the resolved asset SET, but not
  * in the receipt, which records what is on disk.
  */
@@ -456,9 +462,8 @@ export function materializedDispositionOf(asset: SupportedLockfileAssetEntry): M
  * validation (path mismatch, corruption).
  *
  * Seeds from the lockfile's entries — records what *should* be on disk.
- * Owned file paths come from a `0.2`/`0.3` lockfile asset's `files[]`; a
- * legacy identity-only asset seeds the single conventional primary path
- * (legacy could not materialize companions). Omitted assets are excluded:
+ * Owned file paths come from the lockfile asset's `files[]`, which every
+ * supported version carries. Omitted assets are excluded:
  * bootstrapping from them would claim ownership of files that were never
  * written, and the next removal pass would try to delete them. Assets
  * orphaned before this change shipped are unrecoverable (explicit non-goal
@@ -466,42 +471,57 @@ export function materializedDispositionOf(asset: SupportedLockfileAssetEntry): M
  */
 export function bootstrapReceipt(projectDir: string, lockfile: SupportedLockfile): Receipt {
   const canonical = realpathSync(projectDir)
-  const facets: Record<string, ReceiptFacetEntry> = {}
+  const facets: Record<string, ReceiptFacetEntry> = ownRecord()
 
   for (const [name, entry] of Object.entries(lockfile.facets)) {
-    const assets: ReceiptAsset[] = []
-    for (const asset of entry.assets) {
-      const materialization = materializedDispositionOf(asset)
-      if (materialization === undefined) continue
-      assets.push({
-        scope: asset.scope,
-        type: asset.type,
-        name: asset.name,
-        materialization,
-        files: ownedPathsForLockedAsset(asset),
-      })
-    }
-    facets[name] = { version: entry.version, assets }
+    facets[name] = receiptEntryForLockedFacet(entry)
   }
 
   return { version: CURRENT_RECEIPT_VERSION, path: canonical, facets }
 }
 
 /**
+ * The receipt entry a locked facet entry implies: every asset the lockfile
+ * says was materialized, with the paths it says that asset owns.
+ *
+ * This is a CLAIM derived from shared state, not an observation of this
+ * machine — so it is correct exactly where the lockfile is the only thing
+ * that can answer: bootstrapping a project with no receipt at all, and
+ * recording a facet whose assets this run just wrote from that very entry.
+ * A path that writes nothing must NOT use it to describe a facet the receipt
+ * already covers; carrying the receipt's own record forward is the only
+ * truthful option there (see `buildUpdatedReceipt`).
+ *
+ * Omitted assets are excluded: the lockfile records the resolved SET, the
+ * receipt records what is on disk, and an omitted asset was never written.
+ */
+export function receiptEntryForLockedFacet(entry: SupportedLockfileFacet): ReceiptFacetEntry {
+  const assets: ReceiptAsset[] = []
+  for (const asset of entry.assets) {
+    const materialization = materializedDispositionOf(asset)
+    if (materialization === undefined) continue
+    assets.push({
+      scope: asset.scope,
+      type: asset.type,
+      name: asset.name,
+      materialization,
+      files: ownedPathsForLockedAsset(asset),
+    })
+  }
+  return { version: entry.version, assets }
+}
+
+/**
  * Owned inner-archive paths for a locked asset.
  *
- * A `0.2` or `0.3` asset carries a `files[]` array of `{ path, integrity }`
- * and the receipt mirrors the paths (never the hashes). A legacy `1` asset
- * is identity-only, so the single conventional primary path is used —
- * legacy installs could not materialize companions, which is what makes
- * that refinement lossless rather than a guess.
- *
- * The `files` check is a discriminated narrow over the supported-version
- * union, not a structural probe: legacy is the one arm without the field.
+ * Every supported locked asset (`0.2` and `0.3`) carries a non-empty
+ * `files[]` array of `{ path, integrity }` — the schema requires it — and
+ * the receipt mirrors the paths, never the hashes. There is no
+ * primary-only fallback here any more: the only identity-only lockfile
+ * shape was the withdrawn `1`, which no longer loads. (Receipt version `1`
+ * still refines to primary-only ownership; that is a separate format on a
+ * separate axis, handled where receipts are loaded.)
  */
 export function ownedPathsForLockedAsset(asset: SupportedLockfileAssetEntry): string[] {
-  if ('files' in asset && asset.files.length > 0) {
-    return asset.files.map((f) => f.path)
-  }
-  return [canonicalPrimaryPath(asset.type, asset.name)]
+  return asset.files.map((f) => f.path)
 }

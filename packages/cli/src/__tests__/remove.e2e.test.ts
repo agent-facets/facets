@@ -100,8 +100,26 @@ describe('facet remove — validates before adapter discovery', () => {
     rmSync(fakeHome, { recursive: true, force: true })
   })
 
-  test('removing an undeclared facet prints no-op summary without discovering adapters', async () => {
-    // Valid manifest that declares one facet — but NOT the one we remove.
+  test('an unreadable manifest fails before adapter discovery', async () => {
+    // The ordering this phase exists to guarantee: a manifest problem is
+    // reported as a manifest problem, not as "no adapters installed".
+    writeFileSync(join(projectRoot, 'facets.json'), '{ not json')
+
+    const result = await runCli(['remove', 'ghost'], {
+      cwd: projectRoot,
+      env: { HOME: fakeHome, FACET_DIR: join(fakeHome, '.facet') },
+    })
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('facets.json')
+    expect(result.stderr).not.toContain('no adapters installed')
+  })
+
+  test('an undeclared name still reaches adapter discovery', async () => {
+    // Whether a requested name is declared is decided by the commit, under
+    // the project lock — so the CLI cannot skip discovery on the strength of
+    // a pre-lock read. In a non-interactive shell with no adapters, that
+    // means this fails rather than reporting a no-op it never verified.
     const before = `${JSON.stringify({ facets: { cowsay: '0.1.1' } }, null, 2)}\n`
     writeFileSync(join(projectRoot, 'facets.json'), before)
 
@@ -110,15 +128,9 @@ describe('facet remove — validates before adapter discovery', () => {
       env: { HOME: fakeHome, FACET_DIR: join(fakeHome, '.facet') },
     })
 
-    expect(result.exitCode).toBe(0)
-    // No-op summary printed — the one declared facet is counted.
-    expect(result.stdout).toContain('Checked 1 facet')
-    expect(result.stdout).toContain('no changes')
-    // No error output — undeclared facets are silently ignored, and
-    // adapter discovery is skipped entirely (no "no adapters installed").
-    expect(result.stderr).not.toContain('not declared')
-    expect(result.stderr).not.toContain('no adapters installed')
-    // Nothing was removed: the manifest is byte-for-byte unchanged.
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('no adapters installed')
+    // Still nothing removed: the manifest is byte-for-byte unchanged.
     expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(before)
   })
 })

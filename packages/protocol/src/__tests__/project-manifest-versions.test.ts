@@ -136,6 +136,24 @@ describe('CurrentProjectManifestSchema — typed override maps', () => {
     expect(CurrentProjectManifestSchema(expanded({ servers: { db: { kind: 'omitted' } } }))).toBeInstanceOf(type.errors)
   })
 
+  // The test above passed for the wrong reason before undeclared groups were
+  // rejected: with no recognized group present, the "at least one override"
+  // narrow failed instead. A misspelling BESIDE a valid group is the case
+  // that actually silently discarded intent.
+  test('rejects an unknown group declared alongside a valid one', () => {
+    const input = expanded({
+      skills: { review: { kind: 'omitted' } },
+      skillz: { deploy: { kind: 'omitted' } },
+    })
+    expect(CurrentProjectManifestSchema(input)).toBeInstanceOf(type.errors)
+  })
+
+  test('an empty override object is still rejected for its own reason', () => {
+    // Distinct from the undeclared-group rejection: this one has no groups
+    // at all, so an expanded entry is a second spelling of the compact form.
+    expect(CurrentProjectManifestSchema(expanded({}))).toBeInstanceOf(type.errors)
+  })
+
   test.each(['Review', 'review/code', '-review', 'double--hyphen', ''])('rejects invalid alias %p', (alias) => {
     const input = expanded({ skills: { review: { kind: 'aliased', as: alias } } })
     expect(CurrentProjectManifestSchema(input)).toBeInstanceOf(type.errors)

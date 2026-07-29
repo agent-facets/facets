@@ -21,9 +21,9 @@ import { materializationNamespace } from './namespace.ts'
 /**
  * Canonical asset-type ordering for deterministic output.
  *
- * Every ordered artifact — lockfile asset lists, collision groups, planner
- * results — sorts by this order and then by name, so identical inputs
- * always produce byte-identical output and diffs stay reviewable.
+ * Every ordered artifact that groups by asset type — lockfile asset lists,
+ * collision groups, planner results — sorts by this order and then by name,
+ * so a diff reflects a real change rather than a reshuffle.
  */
 export const ASSET_TYPE_ORDER: Readonly<Record<AssetType, number>> = {
   skill: 0,

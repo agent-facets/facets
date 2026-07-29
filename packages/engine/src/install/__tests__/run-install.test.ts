@@ -98,15 +98,30 @@ mock.module('../../registry/download.ts', () => ({
 const { runInstall } = await import('../run-install.ts')
 const { loadInstalledAdapters } = await import('../../adapters/loader.ts')
 const { runBuildPipeline } = await import('../../build/pipeline.ts')
-const { LEGACY_LOCKFILE_VERSION } = await import('@agent-facets/protocol')
+const { LOCKFILE_VERSION_0_2 } = await import('@agent-facets/protocol')
 
 /** Build a fixture and return the genuine content-hash the install pipeline
  *  would compute for it — so a satisfying lock entry can carry a real
  *  integrity that passes the tag-move guard. */
-async function realIntegrity(fixtureDir: string): Promise<string> {
+async function _realIntegrity(fixtureDir: string): Promise<string> {
   const built = await runBuildPipeline(fixtureDir, [])
   if (!built.ok) throw new Error('test bug: fixture failed to build')
   return built.integrity
+}
+
+/**
+ * The facet integrity AND the per-file hash of the fixture's one skill.
+ *
+ * A lock entry whose facet integrity matches the resolved artifact is a
+ * REPRODUCTION, so per-file reconciliation runs against it. Seeding a stub
+ * file hash there would fail that check for the wrong reason.
+ */
+async function realRecords(fixtureDir: string): Promise<{ integrity: string; skillIntegrity: string }> {
+  const built = await runBuildPipeline(fixtureDir, [])
+  if (!built.ok) expect.unreachable('test bug: fixture failed to build')
+  const skillIntegrity = built.fileHashes['skills/planning/SKILL.md']
+  if (skillIntegrity === undefined) expect.unreachable('test bug: fixture has no planning skill')
+  return { integrity: built.integrity, skillIntegrity }
 }
 
 let projectRoot: string
@@ -194,18 +209,32 @@ function taggedSource(source: string, commit?: string): unknown {
   return { kind: 'registry', registry: 'https://api.agentfacets.io' }
 }
 
-/** Seed a lockfile entry. `integrity` defaults to the stub the download path uses. */
-function writeLock(facets: Record<string, { source: string; version: string; integrity?: string }>): string {
+/**
+ * Seed a `0.2` lockfile entry. `integrity` defaults to the stub the download
+ * path uses; `skillIntegrity` only matters when `integrity` is REAL, because
+ * per-file reconciliation runs exactly when the resolved artifact reproduces
+ * the locked one.
+ */
+function writeLock(
+  facets: Record<string, { source: string; version: string; integrity?: string; skillIntegrity?: string }>,
+): string {
   const entries: Record<string, unknown> = {}
   for (const [name, e] of Object.entries(facets)) {
     entries[name] = {
       source: taggedSource(e.source),
       version: e.version,
       integrity: e.integrity ?? 'sha256:stub',
-      assets: [{ scope: 'user', type: 'skill', name: 'planning' }],
+      assets: [
+        {
+          scope: 'project',
+          type: 'skill',
+          name: 'planning',
+          files: [{ path: 'skills/planning/SKILL.md', integrity: e.skillIntegrity ?? `sha256:${'0'.repeat(64)}` }],
+        },
+      ],
     }
   }
-  const bytes = `${JSON.stringify({ lockfileVersion: LEGACY_LOCKFILE_VERSION, facets: entries }, null, 2)}\n`
+  const bytes = `${JSON.stringify({ lockfileVersion: LOCKFILE_VERSION_0_2, facets: entries }, null, 2)}\n`
   writeFileSync(join(projectRoot, 'facets.lock'), bytes)
   return bytes
 }
@@ -291,6 +320,43 @@ describe('runInstall — DELTA_CONFLICT (#23)', () => {
   })
 })
 
+describe('runInstall — a facet named after an Object.prototype member', () => {
+  // `constructor` passes the facet-name grammar, so it is an ordinary name a
+  // registry could serve. The lockfile map inherits it: an indexed read on a
+  // project with no such entry returned `Object` itself rather than
+  // `undefined`, so the facet resolved as though a locked entry anchored it
+  // — one with no `version` and no `source`. `parseLockedVersion` then threw
+  // straight out of `runInstall`, which promises to RETURN failures.
+  //
+  // No hand-edited file and no unusual lockfile is needed to reach this; it
+  // needs only the name.
+  test('resolves as a fresh install rather than throwing', async () => {
+    fixtureForVersion = (v) => (v === '0.1.0' ? buildFixture(fakeHome, 'constructor', '0.1.0') : null)
+    writeFacets({ constructor: '0.1.0' })
+
+    const result = await install()
+
+    if (!result.ok) expect.unreachable('a facet named `constructor` should install like any other')
+    expect(result.summary.installed).toBe(1)
+    expect(Object.hasOwn(readLock().facets, 'constructor')).toBe(true)
+  })
+
+  // The same read, one commit later: an entry that IS present must still be
+  // honored, so the guard cannot have been "always treat it as absent".
+  test('honors a locked entry that genuinely exists', async () => {
+    const fixture = buildFixture(fakeHome, 'constructor', '0.1.0')
+    fixtureForVersion = (v) => (v === '0.1.0' ? fixture : null)
+    writeFacets({ constructor: '0.1.0' })
+    if (!(await install()).ok) expect.unreachable('test bug: seeding install failed')
+
+    resolveRequests = []
+    const second = await install()
+
+    if (!second.ok) expect.unreachable()
+    expect(second.summary.unchanged).toBe(1)
+  })
+})
+
 describe('runInstall — exact manifest pin differing from the lockfile', () => {
   test('re-resolves to the manifest version and reports updated', async () => {
     // Fixtures exist for both versions; the lock pins 0.1.1, manifest bumps to 0.1.2.
@@ -341,8 +407,9 @@ describe('runInstall — wildcard manifest vs lockfile', () => {
     const fixture = buildFixture(fakeHome, 'cowsay', '1.2.3')
     fixtureForVersion = (v) => (v === '1.2.3' ? fixture : null)
     writeFacets({ cowsay: '1.*' })
-    // Real integrity so the satisfying-lock tag-move guard passes.
-    writeLock({ cowsay: { source: '1.*', version: '1.2.3', integrity: await realIntegrity(fixture) } })
+    // Real integrity so the satisfying-lock tag-move guard passes, and real
+    // per-file records so reproduction reconciliation agrees with the plan.
+    writeLock({ cowsay: { source: '1.*', version: '1.2.3', ...(await realRecords(fixture)) } })
 
     const result = await install()
     if (!result.ok) expect.unreachable()
@@ -381,7 +448,7 @@ describe('runInstall — frozen-lockfile mode', () => {
     fixtureForVersion = (v) => (v === '0.1.1' ? fixture : null)
     writeFacets({ cowsay: '0.1.1' })
     const lockBefore = writeLock({
-      cowsay: { source: '0.1.1', version: '0.1.1', integrity: await realIntegrity(fixture) },
+      cowsay: { source: '0.1.1', version: '0.1.1', ...(await realRecords(fixture)) },
     })
 
     const result = await installFrozen()

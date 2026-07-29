@@ -1,4 +1,12 @@
 /**
+ * The environment variables `isInteractive` treats as evidence of CI.
+ *
+ * Declared above the block that documents `withTTY`, because it was sitting
+ * between that block and the function it describes.
+ */
+const CI_VARS = ['CI', 'CONTINUOUS_INTEGRATION'] as const
+
+/**
  * Force the process to look fully interactive (or fully non-interactive)
  * for the duration of a block, then restore every property it touched.
  *
@@ -20,8 +28,6 @@
  * were absent to begin with, so a thrown assertion cannot leak state into
  * the next test.
  */
-const CI_VARS = ['CI', 'CONTINUOUS_INTEGRATION'] as const
-
 export async function withTTY<T>(value: boolean, fn: () => Promise<T> | T): Promise<T> {
   const originalStdin = process.stdin.isTTY
   const originalStdout = process.stdout.isTTY

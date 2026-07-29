@@ -1,5 +1,5 @@
 import type { AssetType } from '@agent-facets/common'
-import { validateAssetNameSegment } from '@agent-facets/protocol'
+import { compareCodeUnits, validateAssetNameSegment } from '@agent-facets/protocol'
 import { isReadmePath } from '../readme.ts'
 
 /**
@@ -38,6 +38,9 @@ export const COMMON_ROOT_FILES: readonly string[] = [
  * Commands use the flat convention: `commands/<name>.md`
  *
  * Only assets with valid kebab-case names are returned.
+ *
+ * Ordered by code unit. This order reaches `facet.json`, so it must not
+ * depend on the machine's locale or ICU data.
  */
 export async function scanAssets(rootDir: string): Promise<DiscoveredAsset[]> {
   const assets: DiscoveredAsset[] = []
@@ -71,7 +74,7 @@ export async function scanAssets(rootDir: string): Promise<DiscoveredAsset[]> {
     }
   }
 
-  return assets.sort((a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name))
+  return assets.sort((a, b) => compareCodeUnits(a.type, b.type) || compareCodeUnits(a.name, b.name))
 }
 
 /**

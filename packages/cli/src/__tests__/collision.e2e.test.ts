@@ -49,6 +49,14 @@ async function runCli(args: string[]): Promise<ExecResult> {
   return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode: await proc.exited }
 }
 
+/**
+ * A facet contributing one skill.
+ *
+ * The body names the FACET, not just the skill. Two facets colliding on one
+ * skill name previously wrote byte-identical content, so a test asserting the
+ * surviving file existed could not tell an omitted write from an overwriting
+ * one — which is the exact bug omission is supposed to prevent.
+ */
 function buildFixture(name: string, skill: string): string {
   const repo = realpathSync(mkdtempSync(join(projectRoot, 'fixture-')))
   writeFileSync(
@@ -56,7 +64,7 @@ function buildFixture(name: string, skill: string): string {
     JSON.stringify({ name, version: '0.1.0', skills: { [skill]: { description: `${skill} skill` } } }),
   )
   mkdirSync(join(repo, `skills/${skill}`), { recursive: true })
-  writeFileSync(join(repo, `skills/${skill}/SKILL.md`), `# ${skill}\n`)
+  writeFileSync(join(repo, `skills/${skill}/SKILL.md`), `# ${skill}\n\nowned by ${name}\n`)
   return `./${repo.split('/').pop()}`
 }
 
@@ -190,7 +198,13 @@ describe('collisions — non-interactive install', () => {
     const result = await runCli(['install'])
 
     expect(result.exitCode).toBe(0)
-    expect(existsSync(join(projectRoot, '.test-adapter/skills/planning.md'))).toBe(true)
+    const written = join(projectRoot, '.test-adapter/skills/planning.md')
+    expect(existsSync(written)).toBe(true)
+    // The surviving file belongs to alpha. Asserting only that it EXISTS
+    // could not distinguish "beta was omitted" from "beta overwrote alpha".
+    const content = readFileSync(written, 'utf8')
+    expect(content).toContain('owned by alpha')
+    expect(content).not.toContain('owned by beta')
     const lockfile = JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8'))
     expect(lockfile.facets.beta.assets[0].materialization).toEqual({ kind: 'omitted' })
   })

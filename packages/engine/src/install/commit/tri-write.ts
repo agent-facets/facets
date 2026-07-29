@@ -1,48 +1,57 @@
 import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { type CurrentLockfile, type CurrentLockfileFacet, isMaterialized } from '@agent-facets/protocol'
+import type { CurrentLockfile, CurrentLockfileFacet } from '@agent-facets/protocol'
 import { applyDesiredFacets, type ManifestDocument, type NormalizedFacetEntry } from '../../manifest/mutations.ts'
 import { writeProjectManifest } from '../../manifest/project-files.ts'
 import { FACETS_LOCK_FILE, writeLockfile } from '../lockfile-io.ts'
+import { ownRecord } from '../own-entry.ts'
 import {
-  ownedPathsForLockedAsset,
   type Receipt,
-  type ReceiptAsset,
   type ReceiptFacetEntry,
+  receiptEntryForLockedFacet,
   receiptPath,
   writeReceipt,
 } from '../receipt.ts'
 import type { OnLog, RunInstallFailure } from '../types.ts'
 
 /**
- * Derive the new receipt from the entries this run resolved. The receipt
- * records `{ version, assets[] }` per facet, each asset carrying the owned
- * inner-archive file paths mirrored from the lockfile — a self-sufficient,
- * offline-capable deletion record for future drift removal. Paths come from
- * the current lockfile asset's `files[]`; the receipt mirrors the paths and
- * never the hashes.
+ * What this run knows about the assets now on disk — the only input from
+ * which a new receipt may be derived.
+ *
+ *   - `written` — this run materialized these facets from these very lockfile
+ *     entries, so the entries describe what it just wrote. Deriving the
+ *     receipt from them is an observation, not a guess.
+ *   - `carried-forward` — this run wrote nothing. The receipt entries were
+ *     already witnessed against local state (see `refineRemoval`) and are
+ *     committed verbatim.
+ *
+ * Tagged rather than "a map of lockfile entries, and separately a promise
+ * that they were written": a path that materializes nothing could otherwise
+ * hand over entries it never applied, and the receipt would then claim an
+ * effective identity no file on this machine has. Ownership reconciliation
+ * trusts the receipt, so that claim is not a cosmetic inaccuracy — it strands
+ * the real file permanently.
  */
-export function buildUpdatedReceipt(
-  receipt: Receipt,
-  newFacetEntries: Readonly<Record<string, CurrentLockfileFacet>>,
-): Receipt {
-  const facets: Record<string, ReceiptFacetEntry> = {}
-  for (const [name, entry] of Object.entries(newFacetEntries)) {
-    // Omitted assets are recorded in the lockfile (which describes the
-    // resolved SET) but never in the receipt (which describes what is on
-    // disk). Including them would claim ownership of unwritten files.
-    const assets: ReceiptAsset[] = []
-    for (const asset of entry.assets) {
-      if (!isMaterialized(asset.materialization)) continue
-      assets.push({
-        scope: asset.scope,
-        type: asset.type,
-        name: asset.name,
-        materialization: asset.materialization,
-        files: ownedPathsForLockedAsset(asset),
-      })
+export type MaterializedReceiptState =
+  | { kind: 'written'; facetEntries: Readonly<Record<string, CurrentLockfileFacet>> }
+  | { kind: 'carried-forward'; facets: Readonly<Record<string, ReceiptFacetEntry>> }
+
+/**
+ * Derive the new receipt from what this run actually put on disk. The receipt
+ * records `{ version, assets[] }` per facet, each asset carrying the owned
+ * inner-archive file paths — a self-sufficient, offline-capable deletion
+ * record for future drift removal. It mirrors paths, never hashes.
+ */
+export function buildUpdatedReceipt(receipt: Receipt, state: MaterializedReceiptState): Receipt {
+  const facets: Record<string, ReceiptFacetEntry> = ownRecord()
+  if (state.kind === 'carried-forward') {
+    for (const [name, entry] of Object.entries(state.facets)) {
+      facets[name] = entry
     }
-    facets[name] = { version: entry.version, assets }
+    return { ...receipt, facets }
+  }
+  for (const [name, entry] of Object.entries(state.facetEntries)) {
+    facets[name] = receiptEntryForLockedFacet(entry)
   }
   return { ...receipt, facets }
 }
@@ -53,17 +62,18 @@ export type TriWriteResult = { ok: true } | { ok: false; failure: RunInstallFail
  * What this commit does to the locked set (`facets.json` + `facets.lock`).
  *
  *   - `write` — a normal install. Both files are rewritten, and the
- *     lockfile is always the CURRENT schema: this is where a legacy or
- *     `0.2` document migrates forward, after every resolved artifact has
- *     passed verification.
+ *     lockfile is always the CURRENT schema: this is where a `0.2` document
+ *     migrates forward, after every artifact this run resolved has passed
+ *     verification — or, on the removal-only refinement path, after the
+ *     surviving entries have been carried forward from local state without
+ *     being re-resolved at all.
  *   - `retain` — frozen mode. Neither file is touched, so the lockfile on
  *     disk keeps whatever version it was loaded under.
  *
  * Frozen carries no lockfile value at all, rather than a value flagged
  * "don't write me". Previously the caller synthesized one with the loaded
- * version and possibly-legacy inherited entries purely to satisfy the
- * parameter, producing a document that could not have been written and was
- * never meant to be.
+ * version and inherited entries purely to satisfy the parameter, producing
+ * a document that could not have been written and was never meant to be.
  */
 export type LockedSetCommit = { kind: 'write'; newLockfile: CurrentLockfile } | { kind: 'retain' }
 

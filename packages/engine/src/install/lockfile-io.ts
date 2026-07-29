@@ -4,22 +4,24 @@ import { atomicWriteFileSync } from '@agent-facets/common'
 import {
   CURRENT_LOCKFILE_VERSION,
   type CurrentLockfile,
+  compareCodeUnits,
   type LockfileParseFailure,
   type ParsedLockfile,
   parseLockfileDocument,
   SUPPORTED_LOCKFILE_VERSIONS,
 } from '@agent-facets/protocol'
 import { jsonFileText } from '../json-file-text.ts'
+import { ownRecord } from './own-entry.ts'
 
 /**
  * Bytes-level I/O for facets.lock. Keeps JSON parse/serialize in one place
  * so the orchestrator only deals with validated lockfile values.
  *
  * Version dispatch is EXACT (design D10): `loadLockfile` delegates to
- * protocol's `parseLockfileDocument`, which selects the legacy-alpha `1`,
- * `0.2`, or `0.3` schema by exact equality — never numeric ordering, under
- * which `0.3 < 0.2 < 1` would rank the newest schema oldest. A
- * future/unknown version is a structured `unsupported-lockfile-version`
+ * protocol's `parseLockfileDocument`, which selects the `0.2` or `0.3`
+ * schema by exact equality — a version number names a schema, not a
+ * position in a sequence. A future, unknown, or withdrawn version (the
+ * closed-alpha `1`) is a structured `unsupported-lockfile-version`
  * rejection, and a malformed document is never reinterpreted under another
  * version.
  *
@@ -36,6 +38,18 @@ import { jsonFileText } from '../json-file-text.ts'
  */
 
 export const FACETS_LOCK_FILE = 'facets.lock'
+
+/**
+ * The withdrawn closed-alpha lockfile version. Protocol no longer names it —
+ * it is not a schema this CLI can read — but the failure renderer still has
+ * to recognize it by exact value to give the right recovery advice.
+ *
+ * It is safe to delete because this CLI knows the format it names was
+ * withdrawn, not because the number is small: `1` sorts above every supported
+ * version while naming the oldest shape. Any other unrecognized number could
+ * belong to a schema a teammate's newer CLI writes.
+ */
+const WITHDRAWN_ALPHA_LOCKFILE_VERSION = 1
 
 /**
  * The outcome of loading a project's lockfile.
@@ -96,7 +110,15 @@ function describeLockfileFailure(failure: LockfileParseFailure): string {
       return (
         `${FACETS_LOCK_FILE} declares an unsupported lockfileVersion ` +
         `(${failure.observed ?? 'missing'}, this CLI supports ${SUPPORTED_LOCKFILE_VERSIONS.join(', ')}). ` +
-        `Upgrade the CLI, or delete ${FACETS_LOCK_FILE} to regenerate.`
+        // A known-withdrawn version and an unrecognized one need opposite
+        // remedies. A withdrawn format is safe to regenerate; an unrecognized
+        // number may name a schema a newer CLI writes, and deleting that
+        // would discard a teammate's resolutions. The two are told apart by
+        // recognizing the withdrawn value exactly, never by comparing
+        // magnitudes.
+        (failure.observed === WITHDRAWN_ALPHA_LOCKFILE_VERSION
+          ? `That format predates the current lockfile schema and is no longer read. Delete ${FACETS_LOCK_FILE} and re-run the install to regenerate it.`
+          : `Upgrade the CLI, or delete ${FACETS_LOCK_FILE} to regenerate.`)
       )
     case 'schema-violation':
       return `${FACETS_LOCK_FILE} is invalid (lockfileVersion ${failure.lockfileVersion}): ${summarizeErrors(failure.errors)}`
@@ -114,19 +136,32 @@ function summarizeErrors(errors: ReadonlyArray<{ message: string }>): string {
  * reproduced, but never re-emitted: a normal install migrates forward, and
  * a frozen install leaves the file alone entirely rather than rewriting it.
  *
- * Top-level facet keys are sorted alphabetically so the output is
- * deterministic regardless of the insertion order the in-memory map was
- * built in — add/remove/add produces byte-identical output when the
- * resolved set is the same. (Same rationale as the per-facet asset sort in
- * `materialize.ts`.)
+ * Top-level facet keys are sorted with {@link compareCodeUnits} so the output
+ * is deterministic regardless of the insertion order the in-memory map was
+ * built in — add/remove/add produces byte-identical output when the resolved
+ * set is the same. Code-unit rather than locale ordering is what makes that
+ * true across machines: `localeCompare` gives `@` and `/` variable weight, so
+ * two developers with different ICU data could commit the same resolved set
+ * with scoped facet names in different orders. (Same comparator as the
+ * planner's reports, so a set cannot round-trip through them and come back
+ * reordered.)
+ *
+ * Only `facets` is replaced. Rebuilding the document from its two known
+ * fields would have discarded any unrecognized top-level field the caller
+ * carried forward, which is the opposite of the preservation the format
+ * promises — the caller's `preserveLockfileExtensions` would have done its
+ * work only for the writer to undo it.
  */
 export function writeLockfile(projectRoot: string, lockfile: CurrentLockfile): void {
   const path = join(projectRoot, FACETS_LOCK_FILE)
-  const sortedFacets: CurrentLockfile['facets'] = {}
-  for (const [key, entry] of Object.entries(lockfile.facets).sort(([a], [b]) => a.localeCompare(b))) {
+  // Null-prototype: re-materializing the map is the last place a facet can
+  // silently disappear on its way to disk, and `__proto__` is a legal key of
+  // the schema's `Record<string, …>`.
+  const sortedFacets: CurrentLockfile['facets'] = ownRecord()
+  for (const [key, entry] of Object.entries(lockfile.facets).sort(([a], [b]) => compareCodeUnits(a, b))) {
     sortedFacets[key] = entry
   }
-  const canonical: CurrentLockfile = { lockfileVersion: lockfile.lockfileVersion, facets: sortedFacets }
+  const canonical: CurrentLockfile = { ...lockfile, facets: sortedFacets }
   atomicWriteFileSync(path, jsonFileText(canonical))
 }
 

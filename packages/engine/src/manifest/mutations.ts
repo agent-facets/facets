@@ -1,9 +1,12 @@
 import {
+  ASSET_DIRECTORY,
+  ASSET_TYPES,
   CURRENT_PROJECT_MANIFEST_VERSION,
   type FacetMaterializationOverrides,
   facetEntryOverrides,
   facetEntrySource,
   type LEGACY_PROJECT_MANIFEST_VERSION,
+  type ProjectAssetOverride,
   type ProjectManifestParseFailure,
   parseProjectManifestDocument,
 } from '@agent-facets/protocol'
@@ -185,7 +188,15 @@ export function parseProjectManifest(raw: string): ParseProjectManifestResult {
     }
   }
 
-  const facets: Record<string, NormalizedFacetEntry> = {}
+  // Null-prototype, because a facet key is an arbitrary string from a
+  // user-authored file. Assigning an own `__proto__` key into an ordinary
+  // `{}` invokes the inherited setter instead of creating a property, so the
+  // declaration silently vanished — and a vanished facet reads as REMOVED,
+  // which would delete its locked assets and commit a manifest without it.
+  // It now survives to ordinary facet-name validation, which rejects it as a
+  // name mismatch. Reading such a key back is equally unsafe, which is what
+  // {@link ownEntry} is for at the consuming sites.
+  const facets: Record<string, NormalizedFacetEntry> = Object.create(null)
   for (const [name, entry] of Object.entries(validated.data.manifest.facets)) {
     facets[name] = { source: facetEntrySource(entry), overrides: facetEntryOverrides(entry) }
   }
@@ -221,14 +232,18 @@ export function emptyProjectManifest(): NormalizedProjectManifest {
   }
 }
 
+/**
+ * The manifest override groups, in canonical asset-type order.
+ *
+ * Derived from the published asset-type list rather than written out, so a
+ * new asset type cannot gain a group that this module then fails to iterate.
+ */
+const OVERRIDE_GROUPS = ASSET_TYPES.map((type) => ASSET_DIRECTORY[type])
+
 /** How many overrides an entry declares across every asset type. */
 export function countOverrides(overrides: FacetMaterializationOverrides | undefined): number {
   if (overrides === undefined) return 0
-  return (
-    Object.keys(overrides.skills ?? {}).length +
-    Object.keys(overrides.agents ?? {}).length +
-    Object.keys(overrides.commands ?? {}).length
-  )
+  return OVERRIDE_GROUPS.reduce((total, group) => total + Object.keys(overrides[group] ?? {}).length, 0)
 }
 
 /**
@@ -267,26 +282,134 @@ export function applyDesiredFacets(
 
 /** Write one entry in canonical form, touching the document as little as possible. */
 function writeEntry(facets: Record<string, unknown>, name: string, entry: NormalizedFacetEntry): void {
-  const existing = facets[name]
+  const existing = ownNode(facets, name)
+  // Narrowed here rather than inferred from `countOverrides(...) !== 0`, so
+  // the expanded branch below holds a value the type system agrees exists.
+  const overrides = entry.overrides
 
-  if (countOverrides(entry.overrides) === 0) {
+  if (overrides === undefined || countOverrides(overrides) === 0) {
     // Canonical compact form. Skip the assignment when it is already correct
     // so a facet the operation did not touch keeps its comments verbatim.
     if (existing !== entry.source) {
-      facets[name] = entry.source
+      defineNode(facets, name, entry.source)
     }
     return
   }
 
-  if (typeof existing === 'object' && existing !== null && !Array.isArray(existing)) {
+  if (isPlainObject(existing)) {
     // Mutate the existing expanded entry so its own comments survive.
     const expanded = existing as { source?: unknown; materialization?: unknown }
     if (expanded.source !== entry.source) {
       expanded.source = entry.source
     }
-    expanded.materialization = entry.overrides
+    reconcileOverrides(expanded, overrides)
     return
   }
 
-  facets[name] = { source: entry.source, materialization: entry.overrides }
+  defineNode(facets, name, { source: entry.source, materialization: overrides })
+}
+
+/**
+ * Bring an expanded entry's `materialization` block in line with the desired
+ * overrides, touching as little of the live document as possible.
+ *
+ * Reassigning the whole subtree was correct in every observable way except
+ * one: comment-json keeps comment metadata on Symbol-keyed properties of the
+ * object being replaced, so a note explaining WHY an asset was aliased died
+ * on the next routine `facet install` — even when the intent had not changed
+ * at all. Comparing by value rather than by identity is what makes the
+ * unchanged case a true no-op: `finalizeMaterializationIntent` rebuilds the
+ * desired override map on every run, so the two objects are never the same
+ * object even when they say the same thing.
+ *
+ * Unrecognized keys inside the block are deliberately left alone; only the
+ * groups the schema defines are reconciled.
+ */
+function reconcileOverrides(expanded: { materialization?: unknown }, desired: FacetMaterializationOverrides): void {
+  if (!isPlainObject(expanded.materialization)) {
+    expanded.materialization = desired
+    return
+  }
+  const document = expanded.materialization as Record<string, unknown>
+
+  for (const group of OVERRIDE_GROUPS) {
+    const desiredGroup = desired[group]
+    if (desiredGroup === undefined || Object.keys(desiredGroup).length === 0) {
+      // The canonical form of "no overrides of this type" is an absent group,
+      // not an empty object.
+      if (Object.hasOwn(document, group)) delete document[group]
+      continue
+    }
+    const existingGroup = document[group]
+    if (!isPlainObject(existingGroup)) {
+      document[group] = desiredGroup
+      continue
+    }
+    const groupDocument = existingGroup as Record<string, unknown>
+    for (const authoredName of Object.keys(groupDocument)) {
+      // A dropped override takes its own comment with it, which is right:
+      // the note described a decision that no longer exists.
+      if (!Object.hasOwn(desiredGroup, authoredName)) delete groupDocument[authoredName]
+    }
+    for (const [authoredName, disposition] of Object.entries(desiredGroup)) {
+      writeDisposition(groupDocument, authoredName, disposition)
+    }
+  }
+}
+
+/**
+ * Write one override in place. An unchanged disposition is not written at
+ * all; a changed one updates only the fields that differ, so a comment
+ * attached to the override survives an alias being retargeted.
+ */
+function writeDisposition(
+  groupDocument: Record<string, unknown>,
+  authoredName: string,
+  desired: ProjectAssetOverride,
+): void {
+  const current = ownNode(groupDocument, authoredName)
+  if (!isPlainObject(current)) {
+    defineNode(groupDocument, authoredName, desired)
+    return
+  }
+  const document = current as Record<string, unknown>
+  if (document.kind === desired.kind) {
+    if (desired.kind === 'aliased') {
+      if (document.as !== desired.as) document.as = desired.as
+      return
+    }
+    // An `omitted` arm carries no effective name; a stray one would be
+    // rejected by the schema on the next read.
+    if (Object.hasOwn(document, 'as')) delete document.as
+    return
+  }
+  document.kind = desired.kind
+  if (desired.kind === 'aliased') document.as = desired.as
+  else if (Object.hasOwn(document, 'as')) delete document.as
+}
+
+/** A live comment-json object node, as opposed to an array or a primitive. */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Own-property read of a live document node. The node cannot be swapped for a
+ * null-prototype copy — comment-json hangs comment metadata off it — so the
+ * guard goes on the access. Without it a `__proto__` key reads back as
+ * `Object.prototype`, which {@link isPlainObject} accepts, and the update-in-
+ * place branch then writes onto the prototype.
+ */
+function ownNode(node: Record<string, unknown>, key: string): unknown {
+  return Object.hasOwn(node, key) ? node[key] : undefined
+}
+
+/**
+ * Own-property write into a live document node. Assignment for `__proto__`
+ * invokes the inherited setter and creates no own key, so the facet or
+ * override vanishes from the serialized document while its assets stay on
+ * disk. The descriptor matches what an assignment would have produced.
+ */
+function defineNode(node: Record<string, unknown>, key: string, value: unknown): void {
+  Object.defineProperty(node, key, { value, enumerable: true, writable: true, configurable: true })
 }

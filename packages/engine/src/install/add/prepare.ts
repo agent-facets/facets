@@ -1,5 +1,5 @@
 import type { NormalizedProjectManifest } from '../../manifest/mutations.ts'
-import { describeManifestFailure, loadProjectManifest } from '../../manifest/project-files.ts'
+import { loadProjectManifest, type ManifestLoadFailure, manifestLoadFailure } from '../../manifest/project-files.ts'
 import type { Source } from '../../sources/facet/types.ts'
 import type { Addition, OnLog } from '../types.ts'
 import { type ResolveNameFailure, resolveFacetName } from './resolve-name.ts'
@@ -16,7 +16,7 @@ export interface AddSource {
   source: Source
 }
 
-export type AddPrepareFailure = ResolveNameFailure | { reason: 'manifest-read'; error: string }
+export type AddPrepareFailure = ResolveNameFailure | ManifestLoadFailure
 
 export type PrepareAddResult =
   | { ok: true; additions: ReadonlyArray<Addition>; manifest: NormalizedProjectManifest; existed: boolean }
@@ -44,13 +44,7 @@ export async function prepareAdd(
   // 1. Load the manifest (or note it doesn't exist yet).
   const loaded = loadProjectManifest(projectRoot)
   if (!loaded.ok) {
-    return {
-      ok: false,
-      failure: {
-        reason: 'manifest-read',
-        error: loaded.reason === 'read' ? loaded.error : describeManifestFailure(loaded.failure),
-      },
-    }
+    return { ok: false, failure: manifestLoadFailure(projectRoot, loaded) }
   }
 
   // 2. Resolve names for every source.

@@ -11,8 +11,15 @@ export interface RunAddOptions {
   projectRoot: string
   sources: ReadonlyArray<AddSource>
   adapters: ReadonlyArray<Adapter>
-  /** Pre-validated state from {@link prepareAdd}. When provided, skips
-   *  name resolution and manifest loading (the expensive part). */
+  /**
+   * Pre-validated state from {@link prepareAdd}. When provided, skips
+   * name resolution and manifest loading (the expensive part).
+   *
+   * Its `manifest` is ADVISORY ONLY — it was read outside the project lock,
+   * so it may already be stale. Only `additions` is forwarded to the commit;
+   * threading the snapshot into `runInstall` would reintroduce the
+   * pre-lock-read race the lock ordering exists to close.
+   */
   prepared?: Extract<PrepareAddResult, { ok: true }>
   onStage?: (event: StageEvent) => void
   onLog?: OnLog

@@ -1,11 +1,18 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { describeManifestFailure, FACETS_LOCK_FILE, loadLockfile, loadProjectManifest } from '@agent-facets/engine'
+import {
+  FACETS_JSON_FILE,
+  FACETS_LOCK_FILE,
+  loadLockfile,
+  loadProjectManifest,
+  manifestLoadFailure,
+} from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
 import type { Command } from '../../commands.ts'
 import { ListView } from '../../tui/views/list/list-view.tsx'
 import { writeCliError } from '../../util/errors.ts'
+import { unsupportedManifestVersionError } from '../../util/unsupported-manifest-version.ts'
 
 /**
  * `facet list` — show the facets installed in the current project.
@@ -33,7 +40,7 @@ export const listCommand: Command = {
     }
 
     const projectRoot = process.cwd()
-    const facetsJsonPath = join(projectRoot, 'facets.json')
+    const facetsJsonPath = join(projectRoot, FACETS_JSON_FILE)
 
     if (!existsSync(facetsJsonPath)) {
       // "Forward-compatible" hint per the work plan: `facet init` doesn't
@@ -51,15 +58,20 @@ export const listCommand: Command = {
 
     const manifestResult = loadProjectManifest(projectRoot)
     if (!manifestResult.ok) {
-      const unsupported =
-        manifestResult.reason === 'invalid' && manifestResult.failure.code === 'unsupported-manifest-version'
+      // Classified by engine and worded by the CLI. `list` used to carry its
+      // own third phrasing of the unsupported-version case, and printed
+      // engine's sentence as the detail while every other command printed the
+      // CLI's. The two-arm result is also what keeps "repair the file" off a
+      // manifest that is not wrong.
+      const loadFailure = manifestLoadFailure(projectRoot, manifestResult)
+      if (loadFailure.reason === 'manifest-unsupported-version') {
+        writeCliError(unsupportedManifestVersionError(loadFailure))
+        return 1
+      }
       writeCliError({
-        what: unsupported ? 'facets.json declares an unsupported manifestVersion' : 'facets.json is malformed',
-        detail:
-          manifestResult.reason === 'read' ? manifestResult.error : describeManifestFailure(manifestResult.failure),
-        fix: unsupported
-          ? 'upgrade the CLI to a version that understands this manifest'
-          : 'fix the JSON syntax or schema errors and try again',
+        what: 'facets.json is malformed',
+        detail: loadFailure.error,
+        fix: 'fix the JSON syntax or schema errors and try again',
       })
       return 1
     }

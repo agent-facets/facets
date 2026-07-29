@@ -6,9 +6,11 @@ The closed-alpha lockfile shape is **adapter-agnostic**: it records what each fa
 ## Requirements
 ### Requirement: Lockfile declares a version
 
-The lockfile SHALL declare `lockfileVersion`. Current lockfiles SHALL use numeric `0.3`. Version selection SHALL use exact equality rather than numeric ordering: numeric `1` SHALL identify only the preceding closed-alpha schema, numeric `0.2` SHALL identify only the preceding schema, and numeric `0.3` SHALL identify only the current schema. Shape inference and cross-version fallback SHALL NOT occur. Missing or unsupported versions SHALL produce structured rejection data.
+The lockfile SHALL declare `lockfileVersion`. Current lockfiles SHALL use numeric `0.3`. Version selection SHALL use exact equality rather than numeric ordering: numeric `0.2` SHALL identify only the preceding schema, and numeric `0.3` SHALL identify only the current schema. Shape inference and cross-version fallback SHALL NOT occur. Missing or unsupported versions SHALL produce structured rejection data.
 
-Every successful non-frozen install SHALL write `0.3`, including when no materialization overrides exist. A verified numeric-`1` or `0.2` lockfile SHALL be migrated only after every resolved artifact satisfies every current integrity check, with each earlier asset refined to authored materialization. Removing all overrides SHALL NOT downgrade the lockfile. Frozen installation SHALL retain legacy behavior without rewriting a numeric-`1` or `0.2` lockfile and SHALL fail if its schema cannot represent the project manifest's materialization intent. A current `0.2` archive SHALL require a `0.2`-or-current lockfile in frozen mode. Before a future stable lockfile v1 reuses numeric `1`, legacy-alpha support SHALL be removed and old-shape files SHALL receive actionable delete-and-regenerate guidance rather than shape-based reinterpretation.
+Numeric `1` SHALL NOT be readable. It named a withdrawn closed-alpha shape and is reserved for a future stable v1, so a lockfile declaring it SHALL be rejected as an unsupported version, and the rejection SHALL offer actionable delete-and-regenerate guidance rather than reinterpreting the document from its remaining shape.
+
+Every successful non-frozen install SHALL write `0.3`, including when no materialization overrides exist. A verified `0.2` lockfile SHALL be migrated only after every resolved artifact satisfies every current integrity check, with each earlier asset refined to authored materialization. A removal-only operation SHALL be exempt from that verification precondition, because it refines surviving entries structurally without fetching or reverifying them. Removing all overrides SHALL NOT downgrade the lockfile. Frozen installation SHALL NOT rewrite a `0.2` lockfile and SHALL fail if that schema cannot represent the project manifest's materialization intent.
 
 #### Scenario: Missing lockfile version
 
@@ -26,11 +28,12 @@ Every successful non-frozen install SHALL write `0.3`, including when no materia
 - **THEN** the system SHALL interpret it only under the preceding schema
 - **AND** each asset SHALL be understood as authored materialization
 
-#### Scenario: Legacy alpha version is selected exactly
+#### Scenario: Withdrawn alpha version is rejected with recovery guidance
 
 - **WHEN** a lockfile declares numeric `lockfileVersion: 1`
-- **THEN** the system SHALL interpret it under the earliest alpha schema only
+- **THEN** the system SHALL reject it as an unsupported version
 - **AND** it SHALL NOT infer a schema from the remaining shape
+- **AND** the failure SHALL tell the user to delete the lockfile and regenerate it with a normal install
 
 #### Scenario: Unsupported lockfile version is rejected
 
@@ -39,7 +42,7 @@ Every successful non-frozen install SHALL write `0.3`, including when no materia
 
 #### Scenario: Normal install migrates verified earlier state
 
-- **WHEN** a non-frozen install loads a valid `1` or `0.2` lockfile and verifies every resolved artifact
+- **WHEN** a non-frozen install loads a valid `0.2` lockfile and verifies every resolved artifact
 - **THEN** it SHALL write equivalent `0.3` state after successful installation
 
 #### Scenario: Resolution-free project still migrates
@@ -49,19 +52,19 @@ Every successful non-frozen install SHALL write `0.3`, including when no materia
 
 #### Scenario: Frozen install does not migrate
 
-- **WHEN** frozen installation uses a supported earlier lockfile whose consistency check passes
+- **WHEN** frozen installation uses a `0.2` lockfile whose consistency check passes
 - **THEN** it SHALL NOT rewrite the lockfile
 
 #### Scenario: Frozen install fails when resolutions require the current format
 
-- **WHEN** frozen installation uses a numeric-`1` or `0.2` lockfile
+- **WHEN** frozen installation uses a `0.2` lockfile
 - **AND** the project manifest records materialization intent that format cannot represent
 - **THEN** the operation SHALL fail without rewriting any state
 
-#### Scenario: Frozen current archive requires a compatible lockfile
+#### Scenario: Frozen install rejects a withdrawn alpha lockfile
 
-- **WHEN** frozen installation encounters a current `0.2` archive with a numeric-`1` lockfile
-- **THEN** it SHALL fail without rewriting any state
+- **WHEN** frozen installation encounters a lockfile declaring numeric `lockfileVersion: 1`
+- **THEN** it SHALL fail on the unsupported version without rewriting any state
 
 ### Requirement: Each facet entry records source provenance
 
@@ -114,6 +117,8 @@ Every current facet entry SHALL include an `assets` array. Each member SHALL rec
 
 The disposition SHALL state authored, aliased with a valid effective name, or omitted. Omitted assets SHALL remain listed with every authored file record. A skill's file records SHALL include `skills/<name>/SKILL.md` and every declared companion. An agent or command SHALL contain exactly its conventional primary file record. Skill companions SHALL remain subordinate to their owning skill, follow its disposition, and SHALL NOT become independent assets or receive their own scopes. Archive-only supplementary files SHALL NOT appear in an asset's files.
 
+Every file record SHALL be derived from its own asset's authored type and name, not merely be a safe, sorted, non-duplicate path. An agent or command entry SHALL contain exactly one record at its canonical primary path; every record in a skill entry SHALL lie beneath that skill's authored root and SHALL include its canonical primary file. A record that no derivation from the owning asset's authored identity could produce SHALL be rejected, so ownership and integrity are never associated with an unrelated archive file. These rules SHALL apply to both `0.2` and `0.3` entries.
+
 #### Scenario: Valid multi-file skill entry
 
 - **WHEN** a skill owns `SKILL.md` and two companions
@@ -156,6 +161,12 @@ The disposition SHALL state authored, aliased with a valid effective name, or om
 - **WHEN** an archive contains root `README.md`
 - **THEN** no asset's files SHALL contain it
 
+#### Scenario: File record unrelated to its asset is rejected
+
+- **WHEN** a command entry records a safe, sorted file record whose path is not that command's canonical primary path
+- **THEN** the system SHALL reject the lockfile
+- **AND** the rejection SHALL apply equally to a `0.2` and a `0.3` entry
+
 #### Scenario: Unknown asset scope
 
 - **WHEN** an asset scope is `global`
@@ -179,11 +190,24 @@ A project that declares no facets in `facets.json` SHALL produce a valid lockfil
 
 The system SHALL accept lockfiles containing fields not defined in the current schema. Unrecognized fields SHALL be preserved, not stripped or rejected.
 
+Preservation SHALL survive reconstruction, not only loading. When the system rewrites a lockfile, it SHALL carry forward the unrecognized fields of the top-level document, of every facet entry it still records, of a retained facet's source when the source kind is unchanged, of every asset entry matched by authored scope, type, and name, and of every file record matched by path. Where a schema-defined field and an unrecognized field share a name, the schema-defined value SHALL win. Unrecognized fields belonging to a facet, asset, or file record the new state no longer contains SHALL be dropped with it.
+
 #### Scenario: Unknown field in lockfile
 
 - **WHEN** a lockfile contains a field not defined in the schema (e.g., `generatedAt: "2026-04-18"`)
 - **THEN** the system SHALL accept the lockfile
 - **AND** the field SHALL be present in the loaded result
+
+#### Scenario: Unknown fields survive migration to the current version
+
+- **WHEN** a non-frozen install migrates a `0.2` lockfile carrying unrecognized fields at the document, facet, source, asset, and file-record levels
+- **THEN** the committed `0.3` lockfile SHALL still contain every one of those fields
+- **AND** the same preservation SHALL hold when the loaded lockfile is already `0.3`
+
+#### Scenario: Removed state takes its unknown fields with it
+
+- **WHEN** a rewrite no longer records a facet that carried an unrecognized field
+- **THEN** that field SHALL NOT appear in the rewritten lockfile
 
 ### Requirement: Adding a facet installs it
 
@@ -570,6 +594,40 @@ The receipt, lockfile, and materialized state SHALL commit together: within one 
 
 - **WHEN** a skill directory contains a file absent from receipt ownership
 - **THEN** skill removal SHALL leave it unchanged
+
+### Requirement: Mutable project state is read under the project lock
+
+The system SHALL acquire the project's install lock before reading any mutable project state that a commit is derived from, including the project manifest, the lockfile, and the receipt. Reading such state before the lock is held SHALL NOT occur, because a concurrent operation may commit between the read and the write, and the later operation would then overwrite that commit from a snapshot taken before it existed.
+
+Contention for the lock SHALL be the only failure the system can report before acquiring it. Every other failure — an absent, malformed, or unsupported-version manifest included — SHALL be reported after the lock is held and before any mutation, so a caller can distinguish "another operation owns this project" from "this project's state is unusable".
+
+Advisory reads performed outside the lock for presentation, such as validating that the project manifest can be read before adapters are discovered, SHALL NOT be reused as the basis of a commit. In particular, the set of facets a removal operates on SHALL be decided from state read under the lock, not from a pre-lock validation of the requested names. An advisory read SHALL NOT decide an operation's outcome even when that outcome commits nothing: a removal whose requested names all appear undeclared SHALL still proceed to the commit, where the manifest read under the lock decides whether anything is removed.
+
+#### Scenario: Lock contention is reported before project state is examined
+
+- **WHEN** an install runs against a project whose install lock is already held
+- **AND** the project manifest is absent, malformed, or declares an unsupported version
+- **THEN** the system SHALL report the lock contention
+- **AND** the system SHALL NOT report the manifest problem in its place
+
+#### Scenario: A concurrent commit is not overwritten
+
+- **WHEN** another operation commits new project state after this operation begins but before this operation acquires the lock
+- **THEN** this operation SHALL derive its commit from the state committed by that operation
+- **AND** the earlier snapshot SHALL NOT be written back over it
+
+#### Scenario: A facet declared after validation is still removed
+
+- **WHEN** a removal request names a facet that is not declared when the request is validated, but is declared when the lock is acquired
+- **THEN** the system SHALL remove that facet
+- **AND** a requested name that is undeclared under the lock SHALL remain a silent no-op
+
+#### Scenario: An entirely undeclared removal request still reaches the commit
+
+- **WHEN** every name in a removal request is undeclared at pre-lock validation
+- **AND** one of those names is declared by a concurrent commit before the lock is acquired
+- **THEN** the system SHALL remove that facet
+- **AND** the operation SHALL NOT report a no-op decided before the lock was held
 
 ### Requirement: Resolved facet content is cached locally
 
@@ -988,6 +1046,18 @@ Facet removal SHALL remain independent of cached facet content and network acces
 
 When a user removes a facet from a project, the system SHALL drop the facet from the project manifest, reconcile its effective materialized ownership across every selected adapter, and update the lockfile and receipt so neither records the facet—all in a single operation. A user SHALL NOT need to run a separate install step after removing. The ownership to reconcile SHALL be taken from the receipt, so removal SHALL require neither cache nor network access. The system SHALL delete a recorded effective adapter identity only when no desired asset retains it, SHALL delete each obsolete identity once, and SHALL aggregate historical duplicate claims so a surviving desired asset is never deleted. Skill deletion SHALL supply the validated authored companion ownership in the adapter deletion request and SHALL remove the primary and every obsolete owned companion atomically while leaving unowned files untouched.
 
+A non-frozen removal-only operation SHALL NOT fetch, rebuild, or reverify a surviving facet whose locked entry already answers the operation. It SHALL instead refine the surviving locked entries structurally from local state: it SHALL confirm locally that every survivor has a locked entry still matching its manifest source and specifier, SHALL plan over the surviving locked asset set so an already-recorded collision among the facets that stay is still reported, SHALL carry each surviving entry's source, version, integrity, file records, and unrecognized fields forward unchanged, and SHALL attach each surviving asset's recorded disposition — refining an entry that predates dispositions to authored materialization. Refinement is lossless, so it SHALL be permitted for every supported lockfile version, and the resulting lockfile SHALL be written at the current version. A frozen operation SHALL NOT refine, because it SHALL NOT rewrite the lockfile at all. Surviving materialized assets SHALL NOT be rewritten or deleted, and lockfile entries for facets the manifest no longer declares SHALL be dropped.
+
+Because the lockfile is shared state and the receipt is machine-local, a refinement SHALL confirm that this machine's receipt witnesses every survivor before writing: for a survivor the receipt records, its recorded version, its materialized assets, each such asset's materialization disposition, and each such asset's owned file set SHALL agree with the locked entry. A survivor the receipt does not record at all SHALL remain eligible, because an absent record is a bootstrap gap rather than a disagreement, and the locked entry answers for it as it does elsewhere. The committed receipt SHALL carry the witnessed records forward rather than re-derive them from the locked entries, so an operation that materializes nothing SHALL NOT record an effective identity it did not write. Assets the receipt records but the surviving locked entries no longer list SHALL be dropped from the committed receipt while remaining subject to ownership reconciliation.
+
+A refinement SHALL also confirm that every effective identity a survivor retains was previously claimed only by that survivor. Identity comparison SHALL fold asset type into its materialization namespace and fold names portably, so a claim differing only by asset type within one namespace, by case, or by Unicode normalization is still recognized as the same identity. An identity that no surviving facet retains SHALL NOT block refinement, because ownership reconciliation removes it.
+
+A removal-only operation SHALL observe cancellation before it deletes any materialized asset and again after deletion completes and before the manifest, lockfile, and receipt are written. A cancellation observed before deletion SHALL leave every file untouched and SHALL report that no mutation occurred; a cancellation observed after deletion SHALL roll the deletions back and report that outcome. Cancellation SHALL NOT be observed after the commit, which is the operation's transaction boundary.
+
+Whether an operation is removal-only SHALL be decided from the requested change, not from how many requested names the project still declares. A removal request whose names are all already absent SHALL therefore remain eligible for refinement rather than requiring resolution of every unrelated declared facet.
+
+Refinement SHALL apply only when local state answers the operation completely. When a survivor has no locked entry, its locked entry no longer matches its manifest source or specifier, the surviving locked set does not plan cleanly, an identity a survivor retains was also claimed by a facet the operation drops, this machine's receipt disagrees with a survivor's locked entry, or the manifest declares materialization intent the lockfile does not record, the system SHALL fall back to ordinary resolution rather than guessing: those cases require content this machine may not have, and each of them would otherwise be resolved by writing an asset, which removal does not do.
+
 Before deleting any materialized asset, the system SHALL verify that every selected installed adapter loads as a valid adapter and declares an API supported by the CLI. When a selected adapter has a missing, malformed, unsupported, or metadata-inconsistent API declaration, or cannot be loaded as a valid adapter, removal SHALL fail before deleting any materialized asset and SHALL leave the project manifest, lockfile, receipt, and materialized assets unchanged. An adapter declaring the superseded positional API `0.0` SHALL be unsupported by a CLI whose supported set is the tagged-contract API `0.1` and SHALL trigger this failure. This compatibility precondition SHALL require neither cache access nor network access; once the adapter incompatibility is repaired, removal SHALL remain able to use the receipt without either resource.
 
 #### Scenario: Removing a declared facet uninstalls it
@@ -1028,6 +1098,69 @@ Before deleting any materialized asset, the system SHALL verify that every selec
 - **AND** every selected installed adapter loads as a valid adapter and declares an API supported by the CLI
 - **THEN** receipt ownership SHALL allow removal without any cache read or network access
 
+#### Scenario: Removal succeeds when a surviving facet is unavailable
+
+- **WHEN** a multi-facet project removes one facet
+- **AND** a surviving facet's content is uncached and its registry unreachable
+- **THEN** removal SHALL succeed without fetching, rebuilding, or reverifying that survivor
+- **AND** the committed lockfile SHALL declare the current version
+- **AND** the survivor's recorded source, version, integrity, file records, and unrecognized fields SHALL be unchanged
+- **AND** the survivor's materialized assets SHALL be untouched
+
+#### Scenario: Removing an already-absent facet stays offline
+
+- **WHEN** every requested removal names a facet the project no longer declares
+- **AND** a surviving facet's content is uncached and its registry unreachable
+- **THEN** removal SHALL succeed without fetching, rebuilding, or reverifying that survivor
+- **AND** the project manifest SHALL be unchanged
+
+#### Scenario: Unrecorded survivor intent is not applied by a removal
+
+- **WHEN** a removal-only operation finds a surviving facet whose declared materialization intent its locked entry does not record
+- **THEN** the system SHALL NOT record that intent without materializing it
+- **AND** the operation SHALL fall back to ordinary resolution instead of refining
+
+#### Scenario: A survivor the receipt does not witness is not refined
+
+- **WHEN** a removal-only operation finds a surviving facet whose locked entry records a materialization this machine's receipt does not record
+- **THEN** the operation SHALL fall back to ordinary resolution instead of refining
+- **AND** the committed receipt SHALL NOT claim an identity this machine did not materialize
+
+#### Scenario: A survivor absent from the receipt is still refined
+
+- **WHEN** a removal-only operation finds a surviving facet the receipt does not record at all
+- **THEN** the operation SHALL treat the locked entry as answering for it
+- **AND** the removal SHALL complete without fetching, rebuilding, or reverifying that survivor
+
+#### Scenario: An identity a removed facet also claimed is rematerialized
+
+- **WHEN** a removal drops a facet that claimed the same effective identity a surviving facet retains
+- **THEN** the operation SHALL fall back to ordinary resolution instead of refining
+- **AND** the retained identity SHALL end the operation containing the surviving facet's content
+
+#### Scenario: An identity contested only by removed facets does not block refinement
+
+- **WHEN** the facets a removal drops contested an effective identity no surviving facet retains
+- **THEN** the operation SHALL still refine
+- **AND** it SHALL delete that identity without fetching, rebuilding, or reverifying any survivor
+
+#### Scenario: A removal cancelled before deletion changes nothing
+
+- **WHEN** a removal-only operation is cancelled before it deletes any materialized asset
+- **THEN** the manifest, lockfile, receipt, and materialized assets SHALL remain unchanged
+- **AND** the failure SHALL report that no rollback was needed
+
+#### Scenario: A removal cancelled after deletion is rolled back
+
+- **WHEN** a removal-only operation is cancelled after deleting materialized assets and before committing
+- **THEN** the system SHALL restore the deleted assets
+- **AND** the manifest, lockfile, and receipt SHALL remain unchanged
+
+#### Scenario: Survivor unrecognized fields survive an offline removal
+
+- **WHEN** a removal-only operation refines a lockfile whose surviving entry carries an unrecognized field
+- **THEN** the committed lockfile SHALL still contain that field
+
 #### Scenario: Incompatible adapter blocks removal
 
 - **WHEN** a selected installed adapter is incompatible or cannot be loaded as a valid adapter
@@ -1055,7 +1188,7 @@ When a user removes more than one facet in a single invocation, the system SHALL
 
 ### Requirement: Removing an undeclared facet is a silent no-op
 
-When a user removes a facet that is not declared in the project manifest, the system SHALL silently ignore the name. The project manifest, lockfile, receipt, and adapter state SHALL remain unchanged for that name. When every requested name is undeclared, the system SHALL exit successfully and SHALL report that no changes were made.
+When a user removes a facet that is not declared in the project manifest, the system SHALL silently ignore the name. The project manifest, lockfile, receipt, and adapter state SHALL remain unchanged for that name. When every requested name is undeclared under the project lock, the operation SHALL succeed and SHALL report that no changes were made. That determination SHALL be made by the commit, under the lock — never by a pre-lock read — so a request whose names all appear undeclared SHALL still satisfy the operation's ordinary preconditions, including adapter availability.
 
 #### Scenario: Removing a facet that is not declared
 

@@ -117,3 +117,32 @@ export function sameDisposition(a: MaterializationDisposition, b: Materializatio
   if (a.kind !== b.kind) return false
   return a.kind === 'aliased' && b.kind === 'aliased' ? a.as === b.as : true
 }
+
+/**
+ * An independent copy of a disposition, preserving its arm.
+ *
+ * Producers that hand a disposition back to a caller must not hand back the
+ * caller's own object: mutating an override after planning would otherwise
+ * retroactively change a result that was computed from its old value,
+ * leaving (for example) an alias target that disagrees with the effective
+ * name and adapter key derived from it.
+ *
+ * Arm-aware rather than a structural deep clone, and overloaded rather than
+ * generic, so the narrower input types survive the round trip — cloning a
+ * `ProjectAssetOverride` cannot widen it into something that might be
+ * `authored`. The `switch` is exhaustive, so a fourth arm fails to compile
+ * here rather than silently copying nothing.
+ */
+export function cloneDisposition(disposition: ProjectAssetOverride): ProjectAssetOverride
+export function cloneDisposition(disposition: MaterializedDisposition): MaterializedDisposition
+export function cloneDisposition(disposition: MaterializationDisposition): MaterializationDisposition
+export function cloneDisposition(disposition: MaterializationDisposition): MaterializationDisposition {
+  switch (disposition.kind) {
+    case 'authored':
+      return { kind: 'authored' }
+    case 'aliased':
+      return { kind: 'aliased', as: disposition.as }
+    case 'omitted':
+      return { kind: 'omitted' }
+  }
+}

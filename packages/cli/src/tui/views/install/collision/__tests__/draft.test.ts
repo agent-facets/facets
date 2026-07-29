@@ -41,6 +41,7 @@ function statusOf(model: WorkspaceModel, facet: string, authoredName: string): s
 }
 
 const TWO_WAY = [skill('alpha', 'review'), skill('beta', 'review')]
+const THREE = [skill('alpha', 'review'), skill('beta', 'review'), skill('gamma', 'audit')]
 
 describe('collision draft — initial state', () => {
   test('an inherited collision is unresolved, not a draft conflict', () => {
@@ -136,8 +137,6 @@ describe('collision draft — resolving', () => {
 })
 
 describe('collision draft — conflicts the user creates', () => {
-  const THREE = [skill('alpha', 'review'), skill('beta', 'review'), skill('gamma', 'audit')]
-
   test('aliasing onto an uninvolved asset pulls that asset into the workspace', () => {
     const request = requestFor(THREE)
     let draft = createDraft(request)
@@ -227,6 +226,26 @@ describe('collision draft — grouping', () => {
     expect(model.groups.map((g) => g.origin)).toEqual(['deploy', 'review'])
   })
 
+  // A preserved singleton belongs to no original group and contests nothing,
+  // so both heading sources are empty. Falling back to the members' own names
+  // is what keeps the row from rendering as a blank bold line.
+  test('a preserved singleton group has a non-empty title', () => {
+    const request = requestFor(THREE)
+    let draft = createDraft(request)
+    const alpha = memberOf(evaluateDraft(request, draft), 'alpha', 'review')
+
+    draft = reviseDraft(request, draft, alpha, { kind: 'aliased', as: 'audit' })
+    draft = reviseDraft(request, draft, alpha, { kind: 'aliased', as: 'alpha-review' })
+    const model = evaluateDraft(request, draft)
+
+    const singleton = model.groups.find((group) => group.members.some((member) => member.facet === 'gamma'))
+    if (singleton === undefined) expect.unreachable()
+    expect(singleton.origin).toBe('')
+    expect(singleton.contested).toEqual([])
+    expect(singleton.title).toBe('audit')
+    for (const group of model.groups) expect(group.title.length).toBeGreaterThan(0)
+  })
+
   test('merging two collisions with one alias produces one decision surface', () => {
     const request = requestFor([skill('alpha', 'review', 'deploy'), skill('beta', 'review', 'deploy')])
     let draft = createDraft(request)
@@ -239,6 +258,141 @@ describe('collision draft — grouping', () => {
     // would hide part of the problem from whoever is solving it.
     expect(model.groups).toHaveLength(1)
     expect(model.groups[0]?.members).toHaveLength(4)
+  })
+})
+
+// `evaluateDraft` has a defensive branch for a draft holding an unparseable
+// alias: the workspace commits one only after the same validator accepts it,
+// and the engine rejects a bad persisted alias before opening a resolver. It
+// exists so such a draft explains itself instead of showing a green row
+// beside a disabled confirm button — which is only true if it works.
+describe('collision draft — a draft holding an invalid alias', () => {
+  test('marks the claimant unresolved with the published reason', () => {
+    const request = requestFor(THREE)
+    let draft = createDraft(request)
+    const alpha = memberOf(evaluateDraft(request, draft), 'alpha', 'review')
+
+    draft = reviseDraft(request, draft, alpha, { kind: 'aliased', as: 'Review' })
+    const model = evaluateDraft(request, draft)
+
+    const member = memberOf(model, 'alpha', 'review')
+    expect(member.aliasError).not.toBeNull()
+    expect(member.status).toBe('unresolved')
+    expect(model.confirmable).toBe(false)
+  })
+})
+
+/**
+ * The draft's two name-keyed maps are keyed by strings from `facets.json`:
+ * the outer one by facet name, the inner one by authored asset name.
+ * `constructor` is legal in both grammars, and `__proto__` is legal as an
+ * override key. Reading either from a plain object returns an inherited
+ * value; WRITING `__proto__` into one records nothing at all and swaps the
+ * map's prototype instead — so the choice the user just made disappeared and
+ * the empty-group check deleted the group along with it.
+ *
+ * Fixtures are built with `JSON.parse`, never object literals: a literal
+ * `{ __proto__: x }` sets the prototype and creates no member, so it would
+ * test the bug rather than the fix.
+ */
+describe('collision draft — names that collide with Object.prototype', () => {
+  const PROTO = '__proto__'
+  const CTOR = 'constructor'
+
+  test('an alias for an asset named __proto__ is recorded and resolves the group', () => {
+    const request = requestFor([skill('alpha', PROTO), skill('beta', PROTO)])
+    let draft = createDraft(request)
+    const alpha = memberOf(evaluateDraft(request, draft), 'alpha', PROTO)
+
+    draft = reviseDraft(request, draft, alpha, { kind: 'aliased', as: 'alpha-proto' })
+    const model = evaluateDraft(request, draft)
+
+    expect(model.confirmable).toBe(true)
+    expect(memberOf(model, 'alpha', PROTO).effectiveName).toBe('alpha-proto')
+
+    const skills = draft.overrides.alpha?.skills ?? {}
+    expect(Object.hasOwn(skills, PROTO)).toBe(true)
+    expect(skills[PROTO]).toEqual({ kind: 'aliased', as: 'alpha-proto' })
+  })
+
+  test('re-aliasing that asset replaces the choice rather than losing it', () => {
+    const request = requestFor([skill('alpha', PROTO), skill('beta', PROTO)])
+    let draft = createDraft(request)
+    const alpha = memberOf(evaluateDraft(request, draft), 'alpha', PROTO)
+
+    draft = reviseDraft(request, draft, alpha, { kind: 'aliased', as: 'first' })
+    draft = reviseDraft(request, draft, alpha, { kind: 'omitted' })
+
+    const skills = draft.overrides.alpha?.skills ?? {}
+    expect(Object.keys(skills)).toEqual([PROTO])
+    expect(skills[PROTO]).toEqual({ kind: 'omitted' })
+  })
+
+  test("Keep removes that asset's override and collapses the empty group", () => {
+    const request = requestFor([skill('alpha', PROTO), skill('beta', PROTO)])
+    let draft = createDraft(request)
+    const alpha = memberOf(evaluateDraft(request, draft), 'alpha', PROTO)
+
+    draft = reviseDraft(request, draft, alpha, { kind: 'aliased', as: 'alpha-proto' })
+    draft = reviseDraft(request, draft, alpha, { kind: 'authored' })
+
+    expect(draft.overrides.alpha).toBeUndefined()
+  })
+
+  test('a facet named __proto__ keeps its seeded overrides as an own key', () => {
+    const overrides = JSON.parse('{"skills":{"audit":{"kind":"aliased","as":"vendor-audit"}}}')
+    const request = requestFor([...TWO_WAY, { ...skill(PROTO, 'audit'), overrides }])
+    const draft = createDraft(request)
+
+    expect(Object.hasOwn(draft.overrides, PROTO)).toBe(true)
+    expect(Object.keys(draft.overrides)).toContain(PROTO)
+    expect(draft.overrides[PROTO]).toEqual(overrides)
+  })
+
+  test('no draft operation mutates Object.prototype', () => {
+    const request = requestFor([skill('alpha', PROTO), skill(PROTO, PROTO)])
+    let draft = createDraft(request)
+    const alpha = memberOf(evaluateDraft(request, draft), 'alpha', PROTO)
+    draft = reviseDraft(request, draft, alpha, { kind: 'aliased', as: 'alpha-proto' })
+
+    expect(Object.getPrototypeOf(draft.overrides)).toBeNull()
+    expect(Object.keys(Object.prototype)).toEqual([])
+    expect(({} as Record<string, unknown>).skills).toBeUndefined()
+  })
+
+  // The other direction: the fix must not start ignoring a name that is
+  // genuinely legal and genuinely present.
+  test('a facet named constructor with no override plans as authored', () => {
+    const request = requestFor([skill(CTOR, 'review'), skill('beta', 'review')])
+    const model = evaluateDraft(request, createDraft(request))
+
+    const member = memberOf(model, CTOR, 'review')
+    expect(member.effectiveName).toBe('review')
+    expect(member.status).toBe('unresolved')
+  })
+
+  test('a facet named constructor keeps an override it really has', () => {
+    const overrides = JSON.parse('{"skills":{"review":{"kind":"aliased","as":"vendor-review"}}}')
+    const request = requestFor([
+      { ...skill(CTOR, 'review'), overrides },
+      skill('beta', 'review'),
+      skill('gamma', 'vendor-review'),
+    ])
+    const model = evaluateDraft(request, createDraft(request))
+
+    expect(memberOf(model, CTOR, 'review').effectiveName).toBe('vendor-review')
+  })
+
+  test('an alias for an asset named constructor round-trips', () => {
+    const request = requestFor([skill('alpha', CTOR), skill('beta', CTOR)])
+    let draft = createDraft(request)
+    const alpha = memberOf(evaluateDraft(request, draft), 'alpha', CTOR)
+
+    draft = reviseDraft(request, draft, alpha, { kind: 'aliased', as: 'alpha-ctor' })
+    expect(evaluateDraft(request, draft).confirmable).toBe(true)
+
+    draft = reviseDraft(request, draft, alpha, { kind: 'authored' })
+    expect(draft.overrides.alpha).toBeUndefined()
   })
 })
 

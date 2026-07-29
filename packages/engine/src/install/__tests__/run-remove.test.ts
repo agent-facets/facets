@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
 import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
-import { CURRENT_LOCKFILE_VERSION, type ProjectFacetEntry } from '@agent-facets/protocol'
+import { CURRENT_LOCKFILE_VERSION, LOCKFILE_VERSION_0_2, type ProjectFacetEntry } from '@agent-facets/protocol'
 
 /**
  * Tests for the `facet remove` orchestrator (`runRemove`).
@@ -254,6 +254,158 @@ describe('runRemove — multi-facet removal', () => {
   })
 })
 
+// The published contract says removal needs neither cache nor network. That
+// only ever held for the facet being REMOVED: routing removal through the
+// normal pipeline re-resolved every survivor, so an unrelated facet being
+// uncached and unreachable failed the whole operation.
+describe('runRemove — a surviving facet is unavailable', () => {
+  /** Empty the content cache and make every registry request fail. */
+  function goOffline(): void {
+    rmSync(join(fakeHome, '.facet/cache'), { recursive: true, force: true })
+    registryFixtureDir = null
+  }
+
+  function readLock(): { lockfileVersion: number; facets: Record<string, Record<string, unknown>> } {
+    return JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8'))
+  }
+
+  /** Rewrite the lockfile as `0.2` — no dispositions — in place. */
+  function downgradeLockfileTo02(): void {
+    const lock = readLock()
+    lock.lockfileVersion = LOCKFILE_VERSION_0_2
+    for (const facet of Object.values(lock.facets)) {
+      for (const asset of facet.assets as Array<Record<string, unknown>>) delete asset.materialization
+    }
+    writeFileSync(join(projectRoot, 'facets.lock'), JSON.stringify(lock, null, 2))
+  }
+
+  test.each([
+    ['0.3', () => {}],
+    ['0.2', downgradeLockfileTo02],
+  ])('removes one facet offline while a %s-locked survivor is unavailable', async (_version, prepare) => {
+    await installFacet('cowsay', '0.1.1')
+    await installFacet('planner', '0.2.0')
+    const survivorAsset = assetPath('test-adapter', 'planner')
+    const survivorBefore = readFileSync(survivorAsset, 'utf8')
+    prepare()
+    const lockedSurvivor = readLock().facets.planner
+    goOffline()
+
+    const result = await remove(['cowsay'])
+    expect(result.ok).toBe(true)
+    if (!result.ok) expect.unreachable()
+
+    // The removal completed without the survivor's content being available.
+    expect(readFacets().cowsay).toBeUndefined()
+    expect(existsSync(assetPath('test-adapter', 'cowsay'))).toBe(false)
+
+    // The survivor is untouched on disk and carried forward verbatim.
+    expect(readFileSync(survivorAsset, 'utf8')).toBe(survivorBefore)
+    const migrated = readLock()
+    expect(migrated.lockfileVersion).toBe(CURRENT_LOCKFILE_VERSION)
+    const survivor = migrated.facets.planner
+    if (survivor === undefined || lockedSurvivor === undefined) expect.unreachable()
+    expect(survivor.source).toEqual(lockedSurvivor.source)
+    expect(survivor.version).toEqual(lockedSurvivor.version)
+    expect(survivor.integrity).toEqual(lockedSurvivor.integrity)
+    const assetsOf = (entry: Record<string, unknown>) => entry.assets as Array<Record<string, unknown>>
+    expect(assetsOf(survivor).map((a) => a.files)).toEqual(assetsOf(lockedSurvivor).map((a) => a.files))
+    // A `0.2` survivor refines to the only disposition it could have meant.
+    for (const asset of assetsOf(survivor)) expect(asset.materialization).toEqual({ kind: 'authored' })
+  })
+
+  // The state a concurrent removal leaves behind. Routing on how many
+  // requested names still exist meant this request was not "removal-only" at
+  // all, so it fell through to the resolve path and tried to re-fetch every
+  // unrelated facet in the project — to do nothing.
+  test('an all-absent removal stays offline', async () => {
+    await installFacet('cowsay', '0.1.1')
+    await installFacet('planner', '0.2.0')
+    const before = readFileSync(join(projectRoot, 'facets.json'), 'utf8')
+    const survivorBefore = readFileSync(assetPath('test-adapter', 'planner'), 'utf8')
+    goOffline()
+
+    const result = await remove(['never-installed'])
+
+    expect(result.ok).toBe(true)
+    expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(before)
+    expect(readFileSync(assetPath('test-adapter', 'planner'), 'utf8')).toBe(survivorBefore)
+    expect(Object.keys(readLock().facets).sort()).toEqual(['cowsay', 'planner'])
+  })
+
+  test('carries a survivor unrecognized field through the offline removal', async () => {
+    await installFacet('cowsay', '0.1.1')
+    await installFacet('planner', '0.2.0')
+    const lock = readLock()
+    const planner = lock.facets.planner
+    if (planner === undefined) expect.unreachable()
+    planner.futureField = 'keep me'
+    writeFileSync(join(projectRoot, 'facets.lock'), JSON.stringify(lock, null, 2))
+    goOffline()
+
+    expect((await remove(['cowsay'])).ok).toBe(true)
+
+    expect(readLock().facets.planner?.futureField).toBe('keep me')
+  })
+
+  // Removal must not silently become an install. When a survivor declares
+  // intent the lockfile does not record, honoring it means WRITING assets, so
+  // the ordinary pipeline has to run — and offline, that fails rather than
+  // pretending the alias was applied.
+  test('a survivor with unrecorded alias intent does not refine', async () => {
+    await installFacet('cowsay', '0.1.1')
+    await installFacet('planner', '0.2.0')
+    const manifest = JSON.parse(readFileSync(join(projectRoot, 'facets.json'), 'utf8'))
+    manifest.facets.planner = {
+      source: manifest.facets.planner,
+      materialization: { skills: { planner: { kind: 'aliased', as: 'vendor-planner' } } },
+    }
+    writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify(manifest, null, 2))
+    goOffline()
+
+    const result = await remove(['cowsay'])
+    expect(result.ok).toBe(false)
+    if (result.ok) expect.unreachable()
+    if (result.phase !== 'install') expect.unreachable()
+    // It failed trying to RESOLVE the survivor, which is the honest outcome:
+    // the alias cannot be materialized without the facet's content.
+    expect(existsSync(assetPath('test-adapter', 'planner'))).toBe(true)
+  })
+
+  // Same rule from the other side: the manifest and lockfile can agree with
+  // each other and still disagree with THIS machine, because a pull updates
+  // both without touching a single materialized file.
+  test('a survivor the receipt does not witness does not refine', async () => {
+    await installFacet('cowsay', '0.1.1')
+    await installFacet('planner', '0.2.0')
+
+    // A teammate's alias, pulled into both shared files. This machine still
+    // has `planner` on disk under its authored name.
+    const manifest = JSON.parse(readFileSync(join(projectRoot, 'facets.json'), 'utf8'))
+    manifest.facets.planner = {
+      source: manifest.facets.planner,
+      materialization: { skills: { planner: { kind: 'aliased', as: 'vendor-planner' } } },
+    }
+    writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify(manifest, null, 2))
+    const lock = readLock()
+    for (const asset of (lock.facets.planner?.assets ?? []) as Array<Record<string, unknown>>) {
+      asset.materialization = { kind: 'aliased', as: 'vendor-planner' }
+    }
+    writeFileSync(join(projectRoot, 'facets.lock'), JSON.stringify(lock, null, 2))
+    goOffline()
+
+    const result = await remove(['cowsay'])
+
+    // Refining would have committed a receipt claiming `vendor-planner` while
+    // the authored bundle sat on disk, owned by nothing.
+    expect(result.ok).toBe(false)
+    if (result.ok) expect.unreachable()
+    if (result.phase !== 'install') expect.unreachable()
+    expect(existsSync(assetPath('test-adapter', 'planner'))).toBe(true)
+    expect(existsSync(assetPath('test-adapter', 'vendor-planner'))).toBe(false)
+  })
+})
+
 describe('runRemove — undeclared facet', () => {
   test('removing only undeclared facets succeeds as a no-op', async () => {
     await installFacet('cowsay', '0.1.1')
@@ -285,39 +437,37 @@ describe('runRemove — last facet', () => {
 
     expect(Object.keys(readFacets())).toHaveLength(0)
     expect(Object.keys(readLockfileFacets())).toHaveLength(0)
-    // Lockfile is still structurally valid: a normal install writes the
-    // current (`0.2`) schema. Version dispatch is exact, not ordered, so
-    // `0.2` is the current version even though it is numerically < 1.
+    // Lockfile is still structurally valid: a normal install always writes
+    // the current schema, whatever it was read at.
     const lock = JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8'))
     expect(lock.lockfileVersion).toBe(CURRENT_LOCKFILE_VERSION)
   })
 })
 
 describe('prepareRemove — read-only validation', () => {
-  test('filters out undeclared names without mutating disk', async () => {
+  test('an undeclared name passes validation without mutating disk', async () => {
     await installFacet('cowsay', '0.1.1')
     const beforeFacets = readFileSync(join(projectRoot, 'facets.json'), 'utf8')
     const beforeLock = readFileSync(join(projectRoot, 'facets.lock'), 'utf8')
 
     const result = prepareRemove({ projectRoot, names: ['ghost'] })
-    expect(result.ok).toBe(true)
-    if (!result.ok) expect.unreachable()
-    // ghost is absent — filtered out; names list is empty.
-    expect(result.names).toEqual([])
 
+    // Whether `ghost` is declared is not this phase's question — the commit
+    // answers it under the lock. All this reports is that the manifest reads.
+    expect(result.ok).toBe(true)
     // Pure validation: nothing on disk changed.
     expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(beforeFacets)
     expect(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')).toBe(beforeLock)
   })
 
-  test('filters absent names and keeps only declared ones', async () => {
+  test('a readable manifest carries no project state forward', async () => {
     await installFacet('cowsay', '0.1.1')
 
     const result = prepareRemove({ projectRoot, names: ['cowsay', 'ghost', 'phantom'] })
-    expect(result.ok).toBe(true)
-    if (!result.ok) expect.unreachable()
-    // Only cowsay is declared; ghost and phantom are filtered out.
-    expect(result.names).toEqual(['cowsay'])
+
+    // Success is exactly `{ ok: true }`. A caller cannot decide an outcome
+    // from a pre-lock snapshot it was never handed.
+    expect(result).toEqual({ ok: true })
   })
 
   test('returns manifest-read when no facets.json exists', () => {
@@ -326,17 +476,6 @@ describe('prepareRemove — read-only validation', () => {
     expect(result.ok).toBe(false)
     if (result.ok) expect.unreachable()
     expect(result.failure.reason).toBe('manifest-read')
-  })
-
-  test('returns the parsed manifest and filtered names when every name is declared', async () => {
-    await installFacet('cowsay', '0.1.1')
-
-    const result = prepareRemove({ projectRoot, names: ['cowsay'] })
-    expect(result.ok).toBe(true)
-    if (!result.ok) expect.unreachable()
-    expect(result.manifest.facets.cowsay?.source).toBe('0.1.1')
-    // Filtered names contains every requested name (all declared).
-    expect(result.names).toEqual(['cowsay'])
   })
 })
 

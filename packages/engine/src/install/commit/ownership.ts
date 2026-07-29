@@ -7,6 +7,7 @@ import {
   type SupportedLockfile,
   skillRootPath,
 } from '@agent-facets/protocol'
+import { ownEntry } from '../own-entry.ts'
 import { materializedDispositionOf, ownedPathsForLockedAsset, type Receipt } from '../receipt.ts'
 
 /**
@@ -127,7 +128,7 @@ export function buildPreviousOwnership(
   }
 
   for (const [facet, entry] of Object.entries(previousLockfile.facets)) {
-    if (receipt.facets[facet] !== undefined) continue
+    if (ownEntry(receipt.facets, facet) !== undefined) continue
     for (const asset of entry.assets) {
       const disposition = materializedDispositionOf(asset)
       if (disposition === undefined) continue

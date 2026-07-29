@@ -12,8 +12,13 @@ import {
   readAssetFile,
   readSkillBundle,
 } from '@agent-facets/adapter'
-import type { BuildManifest, LegacyLockfile } from '@agent-facets/protocol'
-import { CURRENT_LOCKFILE_VERSION, CurrentLockfileSchema, computeContentHash } from '@agent-facets/protocol'
+import type { BuildManifest, Lockfile02 } from '@agent-facets/protocol'
+import {
+  CURRENT_LOCKFILE_VERSION,
+  CurrentLockfileSchema,
+  computeContentHash,
+  LOCKFILE_VERSION_0_2,
+} from '@agent-facets/protocol'
 import { type } from 'arktype'
 import { type CacheIdentity, cachePath, cachePutVerified, computeDirIntegrity } from '../cache/index.ts'
 import { loadLockfile } from '../install/lockfile-io.ts'
@@ -662,6 +667,11 @@ describe('runInstall — abort signal', () => {
     expect(result.ok).toBe(false)
     if (result.ok) expect.unreachable()
     expect(result.failure.code).toBe('ABORTED')
+    // The CLI decides what to tell the user about disk state from THIS, not
+    // from the failure code: an abort before Apply left nothing behind, one
+    // during Apply was rolled back. Asserting only the code let the two
+    // become indistinguishable to every reader downstream.
+    expect(result.rollback.kind).toBe('not-needed')
   })
 })
 
@@ -796,7 +806,7 @@ describe('runInstall — rollback on adapter throw', () => {
     expect(existsSync(join(projectRoot, '.broken/skills/planning.md'))).toBe(false)
     expect(existsSync(join(projectRoot, '.broken/skills/other.md'))).toBe(false)
 
-    // LegacyLockfile must NOT have been written on failure.
+    // No lockfile must have been written on failure.
     expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)
   })
 
@@ -908,7 +918,7 @@ describe('runInstall — F14: non-ENOENT read error aborts before any journal re
 function seedCacheSlotForGit(
   facetName: string,
   version: string,
-): { entry: LegacyLockfile['facets'][string]; slotPath: string } {
+): { entry: Lockfile02['facets'][string]; slotPath: string } {
   const id: CacheIdentity = { kind: 'git', name: facetName, version }
   const slotPath = cachePath(id)
 
@@ -960,7 +970,17 @@ function seedCacheSlotForGit(
       },
       version,
       integrity,
-      assets: [{ scope: 'project', type: 'skill', name: 'planning' }],
+      assets: [
+        {
+          scope: 'project',
+          type: 'skill',
+          name: 'planning',
+          // The genuine per-file hash: a locked entry whose facet integrity
+          // matches the resolved artifact is a reproduction, so per-file
+          // reconciliation runs against these records.
+          files: [{ path: 'skills/planning/SKILL.md', integrity: computeContentHash(skillBody) }],
+        },
+      ],
     },
     slotPath,
   }
@@ -976,8 +996,8 @@ describe('runInstall — git cache hit short-circuits clone', () => {
     // is eligible. The URL points at an unreachable host — if anything tries
     // to clone, the test will hang/fail. The cache hit must short-circuit
     // before cloning.
-    const lockfile: LegacyLockfile = {
-      lockfileVersion: 1,
+    const lockfile: Lockfile02 = {
+      lockfileVersion: LOCKFILE_VERSION_0_2,
       facets: { [facetName]: entry },
     }
     writeFileSync(
@@ -993,9 +1013,9 @@ describe('runInstall — git cache hit short-circuits clone', () => {
 
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
-    // LegacyLockfile is sticky on locked entries: the trusted-cache-hit path
-    // skips the build pipeline and inherits locked.* verbatim. Output
-    // integrity must equal input integrity exactly.
+    // The locked entry is sticky: the trusted-cache-hit path skips the build
+    // pipeline and inherits locked.* verbatim. Output integrity must equal
+    // input integrity exactly.
     expect(result.lockfile.facets[facetName]?.version).toBe(version)
     expect(result.lockfile.facets[facetName]?.integrity).toBe(entry.integrity)
     // The git provenance — url + resolved commit — survives verbatim.
@@ -1005,12 +1025,12 @@ describe('runInstall — git cache hit short-circuits clone', () => {
       commit: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     })
 
-    // 9.1/9.2 migration: the seeded lockfile was legacy-alpha `1` with
-    // identity-only assets. A normal (non-frozen) install migrates it to the
-    // current schema, re-deriving per-file records from the verified slot
-    // while keeping the locked identity untouched. Assets that carry no
-    // project override migrate to the `authored` disposition — the only
-    // meaning a pre-`0.3` entry could have had.
+    // Migration: the seeded lockfile was `0.2`, which records per-file
+    // integrity but no disposition. A normal (non-frozen) install migrates it
+    // to the current schema, keeping the locked identity and file records
+    // untouched. Assets that carry no project override migrate to the
+    // `authored` disposition — the only meaning a `0.2` entry could have
+    // had.
     expect(result.lockfile.lockfileVersion).toBe(CURRENT_LOCKFILE_VERSION)
     const written = CurrentLockfileSchema(JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')))
     if (written instanceof type.errors) expect.unreachable()
@@ -1033,8 +1053,8 @@ describe('runInstall — git cache hit short-circuits clone', () => {
     // Forge a lockfile entry with a different integrity than what the
     // cache sidecar recorded. Cache says X, lockfile demands Y.
     const wrongIntegrity = 'sha256:0000000000000000000000000000000000000000000000000000000000000000'
-    const lockfile: LegacyLockfile = {
-      lockfileVersion: 1,
+    const lockfile: Lockfile02 = {
+      lockfileVersion: LOCKFILE_VERSION_0_2,
       facets: { [facetName]: { ...entry, integrity: wrongIntegrity } },
     }
     // Manifest source matches the locked source so the cache-hit path runs;

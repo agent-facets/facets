@@ -10,6 +10,7 @@ import type {
 } from '@agent-facets/protocol'
 import { planMaterialization } from '@agent-facets/protocol'
 import type { NormalizedFacetEntry } from '../../manifest/mutations.ts'
+import { ownEntry, ownRecord } from '../own-entry.ts'
 import type { RunInstallFailure, StageEvent } from '../types.ts'
 import type { ResolvedFacetRecord } from './resolve-all.ts'
 
@@ -18,11 +19,14 @@ import type { ResolvedFacetRecord } from './resolve-all.ts'
  * project's persisted intent into either one collision-free global plan or
  * the complete list of collisions blocking it.
  *
- * This is the ONLY place current lockfile entries are constructed. Resolution
- * deliberately produces no entry and no disposition: a disposition is project
- * intent, resolution has not consulted it, and a provisional `authored`
- * stamped during resolution would be indistinguishable from a real decision
- * once it reached the writer.
+ * This is the ONLY place current lockfile entries are constructed FROM
+ * RESOLVED STATE. Resolution deliberately produces no entry and no
+ * disposition: a disposition is project intent, resolution has not consulted
+ * it, and a provisional `authored` stamped during resolution would be
+ * indistinguishable from a real decision once it reached the writer. (The
+ * removal-only refinement in `install/remove/refine.ts` also builds entries,
+ * but by carrying locked ones forward — it never derives one from a
+ * resolution.)
  *
  * Nothing here writes. There is no journal, no adapter call, and no project
  * file touched — enforced by the argument type, which offers none of them.
@@ -104,7 +108,7 @@ function contributionsOf(args: ComposeArgs): FacetContribution[] {
       type: asset.type,
       name: asset.name,
     })),
-    overrides: args.desiredFacets[record.facet]?.overrides,
+    overrides: ownEntry(args.desiredFacets, record.facet)?.overrides,
   }))
 }
 
@@ -121,7 +125,9 @@ function lockfileEntriesFor(
   resolved: readonly ResolvedFacetRecord[],
   dispositions: ReadonlyMap<string, MaterializationDisposition>,
 ): Record<string, CurrentLockfileFacet> {
-  const entries: Record<string, CurrentLockfileFacet> = {}
+  // Null-prototype, like every other facet-keyed map: the key is a name from
+  // a user-authored file, and assignment for `__proto__` creates no own key.
+  const entries: Record<string, CurrentLockfileFacet> = ownRecord()
   for (const record of resolved) {
     const assets: CurrentLockfileAssetEntry[] = record.plan.assets.map((asset) => ({
       scope: asset.scope,
@@ -161,7 +167,7 @@ function planWith(
   | { ok: false; reason: 'invalid-alias'; problems: readonly { facet: string; alias: string; reason: string }[] } {
   const withOverrides = contributions.map((contribution) => ({
     ...contribution,
-    overrides: overrides[contribution.facet],
+    overrides: ownEntry(overrides, contribution.facet),
   }))
   const result = planMaterialization(withOverrides)
   if (!result.ok) {
@@ -196,7 +202,11 @@ export async function compose(args: ComposeArgs): Promise<ComposeResult> {
   onStage({ kind: 'collision-check' })
 
   const contributions = contributionsOf(args)
-  const loadedOverrides: Record<string, FacetMaterializationOverrides> = {}
+  // Null-prototype: the keys are facet names from `facets.json`, and this is
+  // where the map the resolver later edits and returns is born. A facet named
+  // `__proto__` assigned into a plain `{}` would vanish here rather than in
+  // the CLI, one hop from where anyone would look for it.
+  const loadedOverrides = ownRecord<FacetMaterializationOverrides>()
   for (const [facet, entry] of Object.entries(desiredFacets)) {
     if (entry.overrides !== undefined) loadedOverrides[facet] = entry.overrides
   }

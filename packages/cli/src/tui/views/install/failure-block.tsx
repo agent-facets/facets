@@ -1,9 +1,11 @@
-import type { LockfileDriftEntry, RunInstallFailure } from '@agent-facets/engine'
+import type { LockfileDriftEntry, RollbackOutcome, RunInstallFailure, RunInstallResult } from '@agent-facets/engine'
 import { Box, Text } from 'ink'
 import type React from 'react'
 import { describeCompatibilityFailure } from '../../../util/adapter-install-errors.ts'
 import { describeNamespace, manifestLocation } from '../../../util/collision-report.ts'
+import { diskStateSentence } from '../../../util/install-outcome.ts'
 import { THEME } from '../../theme.ts'
+import { UnsupportedManifestVersionBlock } from './unsupported-version-block.tsx'
 
 /** How a materialization disposition reads in a one-line drift report. */
 function describeDisposition(disposition: { kind: string; as?: string }): string {
@@ -57,16 +59,54 @@ function describeDrift(entry: LockfileDriftEntry): string {
 }
 
 /**
- * Renders the structured failure detail at the bottom of the install
- * view. Each failure variant gets its own format so callers can see
- * exactly what went wrong without parsing message strings.
+ * Renders a failed install: what went wrong, then what it left on disk.
+ *
+ * Takes the whole failed result rather than the failure alone, because the
+ * two halves are only meaningful together. Splitting them let this block
+ * assert "Rolled back to pre-install state" under an abort that happened
+ * before anything was written — the rollback outcome is the only thing that
+ * knows, and it lived on the value the block was not given. A separate
+ * optional `rollback` prop would have kept that state representable; the
+ * failed result always carries both.
+ */
+export function FailureBlock({ result }: { result: Extract<RunInstallResult, { ok: false }> }): React.JSX.Element {
+  return (
+    <>
+      {failureDetail(result.failure)}
+      <RollbackNote rollback={result.rollback} />
+    </>
+  )
+}
+
+/**
+ * What the run left on disk. Rendered once, for every failure code, from the
+ * same helper the stderr `fix:` line uses — so the two surfaces cannot
+ * disagree, and no failure arm has to remember to say it.
+ */
+function RollbackNote({ rollback }: { rollback: RollbackOutcome }): React.JSX.Element {
+  if (rollback.kind === 'partial-failure') {
+    return (
+      <Box flexDirection="column" marginTop={1}>
+        <Text color={THEME.warning}>⚠ {diskStateSentence(rollback)}</Text>
+        <Text color={THEME.hint}> Some adapter writes could not be undone. Inspect the project tree.</Text>
+      </Box>
+    )
+  }
+  return <Text color={THEME.hint}> {diskStateSentence(rollback)}</Text>
+}
+
+/**
+ * The structured detail for one failure variant. Each gets its own format so
+ * callers can see exactly what went wrong without parsing message strings.
+ *
+ * No arm states what is on disk — {@link RollbackNote} owns that.
  *
  * The explicit return type + `assertNever` default arm makes any new
  * `RunInstallFailure` variant a type error here at compile time, so we
  * can't ship a failure code with no rendering (which previously left
  * users staring at a blank failure block).
  */
-export function FailureBlock({ failure }: { failure: RunInstallFailure }): React.JSX.Element {
+function failureDetail(failure: RunInstallFailure): React.JSX.Element {
   switch (failure.code) {
     case 'FACETS_JSON_NOT_FOUND':
       return (
@@ -88,20 +128,7 @@ export function FailureBlock({ failure }: { failure: RunInstallFailure }): React
         </Box>
       )
     case 'FACETS_JSON_UNSUPPORTED_VERSION':
-      return (
-        <Box flexDirection="column" marginTop={1}>
-          <Text color={THEME.warning} bold>
-            ✕ facets.json declares an unsupported manifestVersion
-          </Text>
-          <Text color={THEME.hint}> {failure.path}</Text>
-          <Text>
-            {' '}
-            found {failure.observed ?? 'a non-numeric value'}; this CLI supports {failure.supported.join(', ')} and
-            unversioned manifests
-          </Text>
-          <Text color={THEME.hint}> Upgrade the CLI to a version that understands this manifest.</Text>
-        </Box>
-      )
+      return <UnsupportedManifestVersionBlock detail={failure} />
     case 'LOCKFILE_INVALID':
       return (
         <Box flexDirection="column" marginTop={1}>
@@ -120,7 +147,7 @@ export function FailureBlock({ failure }: { failure: RunInstallFailure }): React
           </Text>
           <Text color={THEME.hint}> {failure.path}</Text>
           <Text> {failure.cause}</Text>
-          <Text color={THEME.hint}> Assets were rolled back. Fix the underlying I/O issue and retry.</Text>
+          <Text color={THEME.hint}> Fix the underlying I/O issue and retry.</Text>
         </Box>
       )
     case 'LOCK_HELD':
@@ -203,7 +230,6 @@ export function FailureBlock({ failure }: { failure: RunInstallFailure }): React
           )}
           <Text> expected: {failure.failure.expected}</Text>
           <Text> observed: {failure.failure.observed}</Text>
-          <Text color={THEME.hint}> No assets were written. Project state is unchanged.</Text>
         </Box>
       )
     case 'CACHE_INTEGRITY_MISMATCH':
@@ -380,7 +406,6 @@ export function FailureBlock({ failure }: { failure: RunInstallFailure }): React
           <Text color={THEME.warning} bold>
             ✕ install aborted
           </Text>
-          <Text color={THEME.hint}> Rolled back to pre-install state.</Text>
         </Box>
       )
     case 'LOCKFILE_DRIFT':
@@ -510,10 +535,7 @@ export function FailureBlock({ failure }: { failure: RunInstallFailure }): React
               ))}
             </Box>
           ))}
-          <Text color={THEME.hint}>
-            {' '}
-            Nothing was changed. Record an alias or omission per asset in facets.json, then re-run.
-          </Text>
+          <Text color={THEME.hint}> Record an alias or omission per asset in facets.json, then re-run.</Text>
         </Box>
       )
     case 'MATERIALIZATION_ALIAS_INVALID':
@@ -545,17 +567,19 @@ export function FailureBlock({ failure }: { failure: RunInstallFailure }): React
           {failure.groups.map((group) => (
             <Text key={`${group.scope}:${group.namespace}:${group.effectiveName}`} color={THEME.hint}>
               {' '}
-              {group.namespace} “{group.effectiveName}” is still claimed by{' '}
+              {/* Humanized, like the collision arm above: the raw
+                  discriminant (`skill-command`) is an internal name, and it
+                  drops the scope entirely. */}
+              {describeNamespace(group.namespace, group.scope)} “{group.effectiveName}” is still claimed by{' '}
               {group.members.map((m) => m.facet).join(', ')}
             </Text>
           ))}
-          <Text color={THEME.hint}> Nothing was changed.</Text>
         </Box>
       )
     case 'MATERIALIZATION_CANCELLED':
       return (
         <Box flexDirection="column" marginTop={1}>
-          <Text color={THEME.hint}>Cancelled. Nothing was changed.</Text>
+          <Text color={THEME.hint}>Cancelled.</Text>
         </Box>
       )
     default: {

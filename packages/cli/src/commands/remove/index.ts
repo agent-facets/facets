@@ -1,14 +1,14 @@
 import { prepareRemove, type RemovePrepareFailure, type RunRemoveResult, runRemove } from '@agent-facets/engine'
-import { Box, render, Text } from 'ink'
+import { render } from 'ink'
 import { createElement } from 'react'
 import type { Command } from '../../commands.ts'
-import { THEME } from '../../tui/theme.ts'
 import { InstallView } from '../../tui/views/install/install-view.tsx'
 import { writeMaterializationDetail } from '../../util/collision-report.ts'
-import { writeCliError } from '../../util/errors.ts'
+import { type CliError, writeCliError } from '../../util/errors.ts'
 import { canPromptInteractively } from '../../util/interactive.ts'
+import { unsupportedManifestVersionError } from '../../util/unsupported-manifest-version.ts'
 import { ensureAdapters } from '../shared/ensure-adapters.ts'
-import { installFailureFix } from '../shared/install-failure.ts'
+import { installFailureDetail, installFailureFix } from '../shared/install-failure.ts'
 
 /**
  * `facet remove <facet> [more facets...]` — removes one or more facets
@@ -41,53 +41,29 @@ export const removeCommand: Command = {
       return 1
     }
 
-    const startTime = performance.now()
     const verbose = flags.verbose === true
 
     const names = args
     const projectRoot = process.cwd()
 
-    // Validate the manifest + names BEFORE discovering adapters. An
-    // undeclared facet or missing manifest must fail with the facet error
-    // and leave the project untouched — never launching the adapter picker
-    // or reporting "no adapters installed" (the contract per the CLI spec's
-    // "Remove reports an undeclared facet clearly"). The validated result is
-    // threaded into `runRemove` so validation runs exactly once.
+    // Validate that `facets.json` can be read BEFORE discovering adapters, so
+    // a missing or unsupported manifest fails with the facet error rather
+    // than "no adapters installed" (the contract per the CLI spec's "Remove
+    // reports an undeclared facet clearly"). That is all this read decides:
+    // it deliberately learns nothing about WHICH names are declared, because
+    // anything it learned would be a pre-lock snapshot, and acting on one is
+    // how a facet declared by a concurrent add survives the removal that
+    // asked for it.
     const prepared = prepareRemove({ projectRoot, names })
     if (!prepared.ok) {
       writePrepareError(prepared.failure)
       return 1
     }
 
-    // If every requested name was absent from facets.json, there is nothing
-    // to remove. Print the no-op summary and exit without discovering
-    // adapters — avoids a misleading "no adapters installed" error when the
-    // user removes a facet that was never declared.
-    if (prepared.names.length === 0) {
-      const facetCount = Object.keys(prepared.manifest.facets).length
-      const elapsed = `${((performance.now() - startTime) / 1000).toFixed(2)}s`
-      const instance = render(
-        createElement(
-          Box,
-          null,
-          createElement(
-            Text,
-            null,
-            'Checked ',
-            createElement(Text, { color: THEME.success }, facetCount),
-            ` facet${facetCount === 1 ? '' : 's'} `,
-            createElement(Text, { color: THEME.hint }, '(no changes)'),
-            ' ',
-            createElement(Text, { color: THEME.hint }, `[${elapsed}]`),
-          ),
-        ),
-      )
-      instance.unmount()
-      return 0
-    }
-
     // Discover or pick adapters. Drift-removal calls `deleteAsset` on each
-    // selected adapter, so removal needs installable adapters just like add.
+    // selected adapter, so removal needs installable adapters just like add —
+    // including when every requested name LOOKED absent a moment ago, because
+    // only the commit, under the lock, can know whether it still is.
     const adapters = await ensureAdapters()
     if (adapters === null) {
       // ensureAdapters already wrote the appropriate CLI error.
@@ -171,7 +147,7 @@ export const removeCommand: Command = {
     writeMaterializationDetail(captured.install.failure)
     writeCliError({
       what: 'remove failed',
-      detail: `code=${captured.install.failure.code}`,
+      detail: installFailureDetail(captured.install.failure),
       fix: installFailureFix(captured.install.failure, captured.install.rollback, 'remove'),
     })
     return 1
@@ -182,15 +158,24 @@ export const removeCommand: Command = {
  * Map a `RemovePrepareFailure` (engine) to the canonical CLI error block
  * on stderr. The view already rendered a richer block on stdout; this
  * keeps stderr grep-friendly and gives each failure a precise fix line.
+ *
+ * Returns the error rather than writing it, so the `switch` has to produce a
+ * value and an unhandled variant becomes a compile error instead of silently
+ * printing nothing.
  */
-function writePrepareError(failure: RemovePrepareFailure): void {
+export function removePrepareCliError(failure: RemovePrepareFailure): CliError {
   switch (failure.reason) {
     case 'manifest-read':
-      writeCliError({
+      return {
         what: 'could not read facets.json',
         detail: failure.error,
         fix: 'run this command inside a project with a valid facets.json',
-      })
-      return
+      }
+    case 'manifest-unsupported-version':
+      return unsupportedManifestVersionError(failure)
   }
+}
+
+function writePrepareError(failure: RemovePrepareFailure): void {
+  writeCliError(removePrepareCliError(failure))
 }

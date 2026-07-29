@@ -1,43 +1,40 @@
-import { FACETS_JSON_FILE, type NormalizedProjectManifest } from '../../manifest/mutations.ts'
-import { describeManifestFailure, loadProjectManifest } from '../../manifest/project-files.ts'
+import { FACETS_JSON_FILE } from '../../manifest/mutations.ts'
+import { loadProjectManifest, type ManifestLoadFailure, manifestLoadFailure } from '../../manifest/project-files.ts'
 
 /**
  * Structured failure for the pre-install phase of `runRemove`.
  */
-export type RemovePrepareFailure = { reason: 'manifest-read'; error: string }
+export type RemovePrepareFailure = ManifestLoadFailure
 
 /**
  * Result of {@link prepareRemove}: the read-only validation phase.
- * On success carries the filtered names of facets to remove.
+ *
+ * Success carries NOTHING. The manifest it read is a snapshot from before the
+ * install lock was taken, so every fact derived from it — which names are
+ * declared, how many facets exist — is already potentially stale by the time
+ * a caller could act on it. Returning those facts made it possible to decide
+ * an outcome from them, which is exactly what the lock ordering exists to
+ * prevent; not returning them makes that decision unrepresentable.
  */
-export type RemovePrepareResult =
-  | { ok: true; manifest: NormalizedProjectManifest; names: ReadonlyArray<string> }
-  | { ok: false; failure: RemovePrepareFailure }
+export type RemovePrepareResult = { ok: true } | { ok: false; failure: RemovePrepareFailure }
 
 /**
- * Read-only validation phase. Loads `facets.json`, filters names to those
- * actually declared (silently ignoring absent names).
+ * Read-only validation phase: can this project's `facets.json` be read at all?
  *
- * Extracted from `runRemove` so the CLI can run it before discovering
- * adapters. Performs no mutation. Never throws.
+ * Extracted from `runRemove` so the CLI can report an unreadable or
+ * unsupported manifest with the facet-shaped error, before adapter discovery
+ * turns it into an adapter-shaped one. Performs no mutation. Never throws.
  */
 export function prepareRemove(opts: { projectRoot: string; names: ReadonlyArray<string> }): RemovePrepareResult {
-  const { projectRoot, names } = opts
+  const { projectRoot } = opts
 
   const loaded = loadProjectManifest(projectRoot)
   if (!loaded.ok) {
-    return {
-      ok: false,
-      failure: {
-        reason: 'manifest-read',
-        error: loaded.reason === 'read' ? loaded.error : describeManifestFailure(loaded.failure),
-      },
-    }
+    return { ok: false, failure: manifestLoadFailure(projectRoot, loaded) }
   }
   if (!loaded.existed) {
     return { ok: false, failure: { reason: 'manifest-read', error: `no ${FACETS_JSON_FILE} found` } }
   }
 
-  const present = names.filter((name) => Object.hasOwn(loaded.manifest.facets, name))
-  return { ok: true, manifest: loaded.manifest, names: present }
+  return { ok: true }
 }

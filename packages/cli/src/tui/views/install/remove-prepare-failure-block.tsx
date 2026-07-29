@@ -2,6 +2,7 @@ import type { RemovePrepareFailure } from '@agent-facets/engine'
 import { Box, Text } from 'ink'
 import type React from 'react'
 import { THEME } from '../../theme.ts'
+import { UnsupportedManifestVersionBlock } from './unsupported-version-block.tsx'
 
 /**
  * Renders the structured failure detail for the `remove` flow's
@@ -15,8 +16,7 @@ import { THEME } from '../../theme.ts'
  * {@link AddPrepareFailureBlock}.
  */
 export function RemovePrepareFailureBlock({ failure }: { failure: RemovePrepareFailure }): React.JSX.Element {
-  const { reason } = failure
-  switch (reason) {
+  switch (failure.reason) {
     case 'manifest-read':
       return (
         <Box flexDirection="column" marginTop={1}>
@@ -26,8 +26,10 @@ export function RemovePrepareFailureBlock({ failure }: { failure: RemovePrepareF
           <Text> {failure.error}</Text>
         </Box>
       )
+    case 'manifest-unsupported-version':
+      return <UnsupportedManifestVersionBlock detail={failure} />
     default: {
-      const _exhaustive: never = reason
+      const _exhaustive: never = failure
       return _exhaustive
     }
   }

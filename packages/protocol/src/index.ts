@@ -91,8 +91,8 @@ export {
   validateFacetManifest,
   validateLegacyFacetManifest,
 } from './loaders/facet.ts'
-// versioned lockfile parsing (exact lockfileVersion dispatch — legacy alpha
-// `1` vs current `0.2`, no numeric ordering, no shape-sniffing)
+// versioned lockfile parsing (exact lockfileVersion dispatch — `0.2` vs
+// current `0.3`, no numeric ordering, no shape-sniffing)
 export type {
   LockfileParseFailure,
   ParsedLockfile,
@@ -102,7 +102,7 @@ export type {
   SupportedLockfileFacet,
   SupportedLockfileVersion,
 } from './loaders/lockfile.ts'
-export { lockedDispositionOf, parseLockfileDocument } from './loaders/lockfile.ts'
+export { lockedDispositionOf, parseLockfileDocument, preserveLockfileExtensions } from './loaders/lockfile.ts'
 // versioned project-manifest parsing (exact manifestVersion dispatch —
 // legacy unversioned vs current `0.1`, no shape-sniffing, duplicate members
 // rejected before dispatch)
@@ -158,7 +158,11 @@ export type {
   PlannedAsset,
   StaleOverride,
 } from './materialization/planner.ts'
-export { overrideGroupKey, overridesForType, planMaterialization } from './materialization/planner.ts'
+export { overrideFor, overrideGroupKey, overridesForType, planMaterialization } from './materialization/planner.ts'
+// deterministic ordering — one comparator for every artifact and report whose
+// order is part of its contract, so planner output, the removal-refinement
+// rebuild, and the lockfile writer cannot disagree.
+export { compareCodeUnits } from './ordering.ts'
 // asset-name grammar (Agent Skills spec) — exported so build validators, the
 // CLI, and the engine's edit/scaffold machinery all validate skill/command/
 // agent names against one canonical grammar. Distinct from facet identity
@@ -193,18 +197,15 @@ export { LegacyFacetManifestSchema } from './schemas/facet-manifest-legacy.ts'
 // ownership) validate scopes with the same grammar.
 export type { FacetName, FacetNameResult, SlugResult } from './schemas/facet-name.ts'
 export { parseFacetName, parseSlug, validateFacetName } from './schemas/facet-name.ts'
-// lockfile schemas — one per exact format version (legacy alpha `1`, `0.2`,
-// `0.3`), plus `Current*` aliases tracking whichever version a normal
-// install writes. Readers stay broader than the writer; the `Supported*`
-// aggregate (exported with the loader) is derived from those exact readers,
-// never hand-written.
+// lockfile schemas — one per exact format version (`0.2`, `0.3`), plus
+// `Current*` aliases tracking whichever version a normal install writes.
+// Readers stay broader than the writer; the `Supported*` aggregate
+// (exported with the loader) is derived from those exact readers, never
+// hand-written.
 export type {
   CurrentLockfile,
   CurrentLockfileAssetEntry,
   CurrentLockfileFacet,
-  LegacyLockfile,
-  LegacyLockfileAssetEntry,
-  LegacyLockfileFacet,
   Lockfile02,
   Lockfile02AssetEntry,
   Lockfile02Facet,
@@ -217,8 +218,6 @@ export type {
 export {
   CURRENT_LOCKFILE_VERSION,
   CurrentLockfileSchema,
-  LEGACY_LOCKFILE_VERSION,
-  LegacyLockfileSchema,
   LOCKFILE_VERSION_0_2,
   LOCKFILE_VERSION_0_3,
   Lockfile02Schema,
@@ -235,6 +234,7 @@ export type {
   ProjectAssetOverride,
 } from './schemas/materialization.ts'
 export {
+  cloneDisposition,
   isMaterialized,
   MaterializationDispositionSchema,
   MaterializedDispositionSchema,

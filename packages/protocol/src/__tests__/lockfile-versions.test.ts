@@ -2,8 +2,6 @@ import { describe, expect, test } from 'bun:test'
 import {
   CURRENT_LOCKFILE_VERSION,
   CurrentLockfileSchema,
-  LEGACY_LOCKFILE_VERSION,
-  LegacyLockfileSchema,
   LOCKFILE_VERSION_0_2,
   LOCKFILE_VERSION_0_3,
   Lockfile02Schema,
@@ -15,7 +13,11 @@ import { type } from 'arktype'
 
 const HASH = `sha256:${'b'.repeat(64)}`
 
-const legacyLockfile = {
+/**
+ * The withdrawn closed-alpha shape: identity-only assets under numeric `1`.
+ * Kept as a fixture precisely because it must NOT parse any more.
+ */
+const withdrawnAlphaLockfile = {
   lockfileVersion: 1,
   facets: {
     cowsay: {
@@ -27,7 +29,7 @@ const legacyLockfile = {
   },
 }
 
-const currentSkillAsset = {
+const skill02Asset = {
   scope: 'project',
   type: 'skill',
   name: 'review',
@@ -38,7 +40,7 @@ const currentSkillAsset = {
   ],
 }
 
-const currentLockfile = {
+const lockfile02 = {
   lockfileVersion: 0.2,
   facets: {
     cowsay: {
@@ -46,7 +48,7 @@ const currentLockfile = {
       version: '1.0.0',
       integrity: HASH,
       assets: [
-        currentSkillAsset,
+        skill02Asset,
         { scope: 'project', type: 'agent', name: 'reviewer', files: [{ path: 'agents/reviewer.md', integrity: HASH }] },
       ],
     },
@@ -54,7 +56,7 @@ const currentLockfile = {
 }
 
 const skill03Asset = {
-  ...currentSkillAsset,
+  ...skill02Asset,
   materialization: { kind: 'authored' },
 }
 
@@ -72,41 +74,31 @@ const lockfile03 = {
 
 describe('lockfile version constants', () => {
   test('constants are pinned and every readable version is supported', () => {
-    expect(LEGACY_LOCKFILE_VERSION).toBe(1)
     expect(LOCKFILE_VERSION_0_2).toBe(0.2)
     expect(LOCKFILE_VERSION_0_3).toBe(0.3)
-    expect(SUPPORTED_LOCKFILE_VERSIONS).toEqual([1, 0.2, 0.3])
+    expect(SUPPORTED_LOCKFILE_VERSIONS).toEqual([0.2, 0.3])
   })
 
-  test('dispatch is exact, not ordered', () => {
-    // Numerically 0.2 < 0.3 < 1, so any ordered comparison would rank the
-    // newest schema as the oldest. Only exact equality is correct.
-    expect(LOCKFILE_VERSION_0_2 < LEGACY_LOCKFILE_VERSION).toBe(true)
-    expect(LOCKFILE_VERSION_0_3 < LEGACY_LOCKFILE_VERSION).toBe(true)
+  // The withdrawn alpha `1` sorts ABOVE both supported versions while naming
+  // the oldest shape, which is the clearest demonstration that a version
+  // number is a label rather than a position — and why dispatch compares for
+  // equality. The number stays reserved for the eventual stable v1.
+  test('the withdrawn alpha version is not supported', () => {
+    expect(SUPPORTED_LOCKFILE_VERSIONS).not.toContain(1)
+    expect(LOCKFILE_VERSION_0_2 < 1).toBe(true)
+    expect(LOCKFILE_VERSION_0_3 < 1).toBe(true)
   })
 
-  // A normal install writes the newest schema. Readers stay broader so
+  // A normal install writes the current schema. Readers stay broader so
   // earlier documents still load and migrate; that breadth is a property of
   // the format, not a staged writer rollout.
-  test('the written version is the newest readable version', () => {
+  test('the written version is the current schema and is itself readable', () => {
     expect(CURRENT_LOCKFILE_VERSION).toBe(LOCKFILE_VERSION_0_3)
     expect(SUPPORTED_LOCKFILE_VERSIONS).toContain(CURRENT_LOCKFILE_VERSION)
   })
 
-  test('every earlier readable version remains readable', () => {
-    expect(SUPPORTED_LOCKFILE_VERSIONS).toContain(LEGACY_LOCKFILE_VERSION)
+  test('the earlier readable version remains readable', () => {
     expect(SUPPORTED_LOCKFILE_VERSIONS).toContain(LOCKFILE_VERSION_0_2)
-  })
-})
-
-describe('LegacyLockfileSchema', () => {
-  test('accepts the legacy alpha shape pinned to version 1', () => {
-    expect(LegacyLockfileSchema(legacyLockfile)).not.toBeInstanceOf(type.errors)
-  })
-
-  test('rejects any other version number', () => {
-    expect(LegacyLockfileSchema({ ...legacyLockfile, lockfileVersion: 0.2 })).toBeInstanceOf(type.errors)
-    expect(LegacyLockfileSchema({ ...legacyLockfile, lockfileVersion: 2 })).toBeInstanceOf(type.errors)
   })
 })
 
@@ -116,7 +108,7 @@ describe('CurrentLockfileSchema', () => {
   })
 
   test('rejects the 0.2 shape, which carries no materialization disposition', () => {
-    expect(CurrentLockfileSchema(currentLockfile)).toBeInstanceOf(type.errors)
+    expect(CurrentLockfileSchema(lockfile02)).toBeInstanceOf(type.errors)
   })
 
   test('accepts single-file agent and command entries listing exactly their primary path', () => {
@@ -165,7 +157,7 @@ describe('CurrentLockfileSchema', () => {
 
   test('rejects unsorted file records', () => {
     const unsorted = {
-      ...currentSkillAsset,
+      ...skill02Asset,
       files: [
         { path: 'skills/review/scripts/run.ts', integrity: HASH },
         { path: 'skills/review/SKILL.md', integrity: HASH },
@@ -176,7 +168,7 @@ describe('CurrentLockfileSchema', () => {
 
   test('rejects duplicate file paths', () => {
     const duplicated = {
-      ...currentSkillAsset,
+      ...skill02Asset,
       files: [
         { path: 'skills/review/SKILL.md', integrity: HASH },
         { path: 'skills/review/SKILL.md', integrity: HASH },
@@ -186,25 +178,27 @@ describe('CurrentLockfileSchema', () => {
   })
 
   test('rejects traversal in file paths', () => {
-    const evil = { ...currentSkillAsset, files: [{ path: '../escape.md', integrity: HASH }] }
+    const evil = { ...skill02Asset, files: [{ path: '../escape.md', integrity: HASH }] }
     expect(CurrentLockfileSchema(withAssets([evil]))).toBeInstanceOf(type.errors)
   })
 
   test('rejects malformed integrity values', () => {
-    const bad = { ...currentSkillAsset, files: [{ path: 'skills/review/SKILL.md', integrity: 'md5:nope' }] }
+    const bad = { ...skill02Asset, files: [{ path: 'skills/review/SKILL.md', integrity: 'md5:nope' }] }
     expect(CurrentLockfileSchema(withAssets([bad]))).toBeInstanceOf(type.errors)
   })
 })
 
 describe('parseLockfileDocument — exact version dispatch', () => {
-  test('parses a legacy alpha 1 document', () => {
-    const result = parseLockfileDocument(JSON.stringify(legacyLockfile))
-    if (!result.ok) expect.unreachable()
-    expect(result.data.lockfileVersion).toBe(1)
+  test('a withdrawn alpha 1 document is rejected as unsupported', () => {
+    const result = parseLockfileDocument(JSON.stringify(withdrawnAlphaLockfile))
+    if (result.ok) expect.unreachable()
+    if (result.failure.code !== 'unsupported-lockfile-version') expect.unreachable()
+    expect(result.failure.observed).toBe(1)
+    expect(result.failure.supported).toEqual([0.2, 0.3])
   })
 
-  test('parses a current 0.2 document', () => {
-    const result = parseLockfileDocument(JSON.stringify(currentLockfile))
+  test('parses a 0.2 document', () => {
+    const result = parseLockfileDocument(JSON.stringify(lockfile02))
     if (!result.ok) expect.unreachable()
     expect(result.data.lockfileVersion).toBe(0.2)
     if (result.data.lockfileVersion !== 0.2) expect.unreachable()
@@ -212,32 +206,31 @@ describe('parseLockfileDocument — exact version dispatch', () => {
     expect(asset?.files[0]?.path).toBe('skills/review/SKILL.md')
   })
 
-  test('legacy shape claiming 0.2 fails as 0.2 — no shape-sniffing', () => {
-    const result = parseLockfileDocument(JSON.stringify({ ...legacyLockfile, lockfileVersion: 0.2 }))
+  test('identity-only shape claiming 0.2 fails as 0.2 — no shape-sniffing', () => {
+    const result = parseLockfileDocument(JSON.stringify({ ...withdrawnAlphaLockfile, lockfileVersion: 0.2 }))
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'schema-violation') expect.unreachable()
     expect(result.failure.lockfileVersion).toBe(0.2)
   })
 
-  test('current shape claiming 1 is interpreted only under legacy rules', () => {
-    // Legacy tolerates unknown fields (spec: unrecognized keys are allowed),
-    // so per-file records ride along as unrecognized extension data — the
-    // document is a legacy lockfile, never a current one.
-    const result = parseLockfileDocument(JSON.stringify({ ...currentLockfile, lockfileVersion: 1 }))
-    if (!result.ok) expect.unreachable()
-    expect(result.data.lockfileVersion).toBe(1)
+  test('a perfectly valid 0.2 body claiming 1 is still rejected', () => {
+    // Nothing about the body is wrong; the declared version is what makes it
+    // unreadable. Resurrecting it by shape is exactly what dispatch forbids.
+    const result = parseLockfileDocument(JSON.stringify({ ...lockfile02, lockfileVersion: 1 }))
+    if (result.ok) expect.unreachable()
+    expect(result.failure.code).toBe('unsupported-lockfile-version')
   })
 
   test('unsupported version is a structured failure', () => {
-    const result = parseLockfileDocument(JSON.stringify({ ...legacyLockfile, lockfileVersion: 3 }))
+    const result = parseLockfileDocument(JSON.stringify({ ...withdrawnAlphaLockfile, lockfileVersion: 3 }))
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'unsupported-lockfile-version') expect.unreachable()
     expect(result.failure.observed).toBe(3)
-    expect(result.failure.supported).toEqual([1, 0.2, 0.3])
+    expect(result.failure.supported).toEqual([0.2, 0.3])
   })
 
   test('duplicate JSON members are rejected before schema validation', () => {
-    const text = '{"lockfileVersion":1,"lockfileVersion":1,"facets":{}}'
+    const text = '{"lockfileVersion":0.2,"lockfileVersion":0.2,"facets":{}}'
     const result = parseLockfileDocument(text)
     if (result.ok) expect.unreachable()
     expect(result.failure.code).toBe('duplicate-members')
@@ -261,7 +254,7 @@ describe('parseLockfileDocument — exact version dispatch', () => {
   test('a malformed 0.3 document fails as 0.3 and is never retried as 0.2', () => {
     // A valid 0.2 asset claiming 0.3: it has no disposition, which 0.3
     // requires. It must fail AS 0.3 rather than silently reading as 0.2.
-    const result = parseLockfileDocument(JSON.stringify({ ...currentLockfile, lockfileVersion: 0.3 }))
+    const result = parseLockfileDocument(JSON.stringify({ ...lockfile02, lockfileVersion: 0.3 }))
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'schema-violation') expect.unreachable()
     expect(result.failure.lockfileVersion).toBe(LOCKFILE_VERSION_0_3)
@@ -275,10 +268,10 @@ describe('parseLockfileDocument — exact version dispatch', () => {
     expect(result.data.lockfileVersion).toBe(LOCKFILE_VERSION_0_2)
   })
 
-  test('a 0.3 shape claiming 1 is read only under legacy rules', () => {
+  test('a 0.3 shape claiming 1 is rejected rather than downgraded', () => {
     const result = parseLockfileDocument(JSON.stringify({ ...lockfile03, lockfileVersion: 1 }))
-    if (!result.ok) expect.unreachable()
-    expect(result.data.lockfileVersion).toBe(LEGACY_LOCKFILE_VERSION)
+    if (result.ok) expect.unreachable()
+    expect(result.failure.code).toBe('unsupported-lockfile-version')
   })
 })
 
@@ -384,6 +377,161 @@ describe('Lockfile03Schema', () => {
 
   test('0.2 and 0.3 reject each other by version pin', () => {
     expect(Lockfile02Schema(lockfile03)).toBeInstanceOf(type.errors)
-    expect(Lockfile03Schema(currentLockfile)).toBeInstanceOf(type.errors)
+    expect(Lockfile03Schema(lockfile02)).toBeInstanceOf(type.errors)
+  })
+})
+
+// A safe, sorted, unique path is not enough: a file record has to belong to
+// the asset carrying it. These run against BOTH supported schemas because
+// the rule lives on the shared refinement, and a version that skipped it
+// would let ownership and integrity be pointed at an unrelated file.
+describe('lockfile file records must belong to their asset', () => {
+  function wrap(version: number, assets: unknown[]): unknown {
+    return {
+      lockfileVersion: version,
+      facets: {
+        cowsay: {
+          source: { kind: 'local', path: '../cowsay' },
+          version: '1.0.0',
+          integrity: HASH,
+          assets,
+        },
+      },
+    }
+  }
+
+  /** The same asset shaped for whichever version is under test. */
+  function assetFor(version: number, asset: Record<string, unknown>): Record<string, unknown> {
+    return version === LOCKFILE_VERSION_0_3 ? { ...asset, materialization: { kind: 'authored' } } : asset
+  }
+
+  function validate(version: number, asset: Record<string, unknown>): unknown {
+    const schema = version === LOCKFILE_VERSION_0_3 ? Lockfile03Schema : Lockfile02Schema
+    return schema(wrap(version, [assetFor(version, asset)]))
+  }
+
+  const VERSIONS = [LOCKFILE_VERSION_0_2, LOCKFILE_VERSION_0_3]
+
+  test.each(VERSIONS)('accepts canonical records for every asset type (%p)', (version) => {
+    expect(
+      validate(version, {
+        scope: 'project',
+        type: 'command',
+        name: 'deploy',
+        files: [{ path: 'commands/deploy.md', integrity: HASH }],
+      }),
+    ).not.toBeInstanceOf(type.errors)
+    expect(
+      validate(version, {
+        scope: 'project',
+        type: 'agent',
+        name: 'reviewer',
+        files: [{ path: 'agents/reviewer.md', integrity: HASH }],
+      }),
+    ).not.toBeInstanceOf(type.errors)
+    expect(
+      validate(version, {
+        scope: 'project',
+        type: 'skill',
+        name: 'review',
+        files: [
+          { path: 'skills/review/SKILL.md', integrity: HASH },
+          { path: 'skills/review/references/api.md', integrity: HASH },
+        ],
+      }),
+    ).not.toBeInstanceOf(type.errors)
+  })
+
+  test.each(VERSIONS)('rejects a command claiming an unrelated file (%p)', (version) => {
+    expect(
+      validate(version, {
+        scope: 'project',
+        type: 'command',
+        name: 'deploy',
+        files: [{ path: 'README.md', integrity: HASH }],
+      }),
+    ).toBeInstanceOf(type.errors)
+  })
+
+  test.each(VERSIONS)('rejects a single-file asset carrying a second record (%p)', (version) => {
+    expect(
+      validate(version, {
+        scope: 'project',
+        type: 'agent',
+        name: 'reviewer',
+        files: [
+          { path: 'agents/reviewer.md', integrity: HASH },
+          { path: 'agents/reviewer.notes.md', integrity: HASH },
+        ],
+      }),
+    ).toBeInstanceOf(type.errors)
+  })
+
+  test.each(VERSIONS)("rejects a command recorded under another command's path (%p)", (version) => {
+    expect(
+      validate(version, {
+        scope: 'project',
+        type: 'command',
+        name: 'deploy',
+        files: [{ path: 'commands/release.md', integrity: HASH }],
+      }),
+    ).toBeInstanceOf(type.errors)
+  })
+
+  test.each(VERSIONS)('rejects a skill companion outside its authored root (%p)', (version) => {
+    expect(
+      validate(version, {
+        scope: 'project',
+        type: 'skill',
+        name: 'review',
+        files: [
+          { path: 'skills/other/notes.md', integrity: HASH },
+          { path: 'skills/review/SKILL.md', integrity: HASH },
+        ],
+      }),
+    ).toBeInstanceOf(type.errors)
+  })
+
+  test.each(VERSIONS)('rejects a skill with companions but no canonical primary (%p)', (version) => {
+    expect(
+      validate(version, {
+        scope: 'project',
+        type: 'skill',
+        name: 'review',
+        files: [{ path: 'skills/review/references/api.md', integrity: HASH }],
+      }),
+    ).toBeInstanceOf(type.errors)
+  })
+
+  // An aliased asset's records stay anchored to its AUTHORED name, so the
+  // ownership check must read the authored name and never the alias.
+  test('an aliased 0.3 skill still owns its authored paths', () => {
+    expect(
+      Lockfile03Schema(
+        wrap(LOCKFILE_VERSION_0_3, [
+          {
+            scope: 'project',
+            type: 'skill',
+            name: 'review',
+            materialization: { kind: 'aliased', as: 'vendor-review' },
+            files: [{ path: 'skills/review/SKILL.md', integrity: HASH }],
+          },
+        ]),
+      ),
+    ).not.toBeInstanceOf(type.errors)
+
+    expect(
+      Lockfile03Schema(
+        wrap(LOCKFILE_VERSION_0_3, [
+          {
+            scope: 'project',
+            type: 'skill',
+            name: 'review',
+            materialization: { kind: 'aliased', as: 'vendor-review' },
+            files: [{ path: 'skills/vendor-review/SKILL.md', integrity: HASH }],
+          },
+        ]),
+      ),
+    ).toBeInstanceOf(type.errors)
   })
 })

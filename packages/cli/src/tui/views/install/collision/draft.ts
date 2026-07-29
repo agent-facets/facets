@@ -1,5 +1,6 @@
 import type { AssetType, Scope } from '@agent-facets/common'
 import type { CollisionResolutionRequest } from '@agent-facets/engine'
+import { ownEntry, ownRecord } from '@agent-facets/engine'
 import type {
   CollisionGroup,
   FacetMaterializationOverrides,
@@ -7,8 +8,10 @@ import type {
   StaleOverride,
 } from '@agent-facets/protocol'
 import {
+  compareCodeUnits,
   isMaterialized,
   materializedNameOf,
+  overrideFor,
   overrideGroupKey,
   planMaterialization,
   validateAssetNameSegment,
@@ -88,6 +91,17 @@ export interface ClaimantModel extends ClaimantRef {
 
 export interface DisplayGroup {
   key: string
+  /**
+   * What to call this group on screen. Always non-empty.
+   *
+   * Computed here rather than at each render site because the obvious
+   * expression — contested names, falling back to origin — has a real hole: a
+   * claimant dragged in by an alias and then released keeps its row (the
+   * workspace only grows) but belongs to no original group and contests
+   * nothing, leaving both sources empty. Two views spelled that fallback
+   * independently, so both rendered a blank heading above "(1 asset)".
+   */
+  title: string
   /** The name(s) that first brought these claimants together. */
   origin: string
   /** Names contested right now. Empty once the group is resolved. */
@@ -109,7 +123,10 @@ export interface WorkspaceModel {
 
 /** Seed a draft from the overrides the project already has. */
 export function createDraft(request: CollisionResolutionRequest): CollisionDraft {
-  const overrides: Record<string, FacetMaterializationOverrides> = {}
+  // Null-prototype, because the keys are facet names straight out of
+  // `facets.json`. A facet named `__proto__` assigned into a plain `{}`
+  // creates no own key and replaces the map's prototype instead.
+  const overrides = ownRecord<FacetMaterializationOverrides>()
   for (const contribution of request.contributions) {
     if (contribution.overrides !== undefined) overrides[contribution.facet] = contribution.overrides
   }
@@ -201,9 +218,11 @@ export function evaluateDraft(request: CollisionResolutionRequest, draft: Collis
         return name === undefined ? [] : [name]
       }),
     )
+    const origin = component.origin.join(', ')
     return {
       key: component.key,
-      origin: component.origin.join(', '),
+      title: titleFor(contested, origin, members),
+      origin,
       contested,
       status: worstStatus(members.map((member) => member.status)),
       members,
@@ -224,12 +243,26 @@ export function draftOverrides(draft: CollisionDraft): Readonly<Record<string, F
 
 /** The current choice for one claimant. */
 export function choiceFor(draft: CollisionDraft, ref: ClaimantRef): MaterializationDisposition {
-  return overrideFor(draft.overrides, ref) ?? { kind: 'authored' }
+  return draftOverrideFor(draft.overrides, ref) ?? { kind: 'authored' }
 }
 
 // ---------------------------------------------------------------------------
 // internals
 // ---------------------------------------------------------------------------
+
+/**
+ * The heading for one group: what is contested now, else what brought these
+ * claimants together, else what they are.
+ *
+ * The last fallback is the one that matters. A preserved singleton has no
+ * contest and no original group, and a group whose heading is the empty
+ * string reads as a rendering bug rather than as a row the user resolved.
+ */
+function titleFor(contested: readonly string[], origin: string, members: readonly ClaimantModel[]): string {
+  if (contested.length > 0) return contested.join(', ')
+  if (origin.length > 0) return origin
+  return unique(members.map((member) => member.effectiveName ?? member.authoredName)).join(', ')
+}
 
 function modelFor(
   ref: ClaimantRef,
@@ -361,10 +394,10 @@ function groupClaimants(
   return [...byRoot.entries()]
     .map(([root, members]) => ({
       key: root,
-      origin: [...(foldedOrigins.get(root) ?? new Set<string>())].sort(compareStrings),
+      origin: [...(foldedOrigins.get(root) ?? new Set<string>())].sort(compareCodeUnits),
       members,
     }))
-    .sort((a, b) => compareStrings(a.origin.join(', '), b.origin.join(', ')) || compareStrings(a.key, b.key))
+    .sort((a, b) => compareCodeUnits(a.origin.join(', '), b.origin.join(', ')) || compareCodeUnits(a.key, b.key))
 }
 
 function claimantsOf(groups: readonly CollisionGroup[]): Map<string, ClaimantRef> {
@@ -389,26 +422,47 @@ function contributionsWith(
 ) {
   return request.contributions.map((contribution) => ({
     ...contribution,
-    overrides: overrides[contribution.facet],
+    // Own-property read for the same reason `draftOverrideFor` uses one: a
+    // facet named `constructor` would otherwise hand the planner `Object`.
+    overrides: ownEntry(overrides, contribution.facet),
   }))
 }
 
-function overrideFor(
+/**
+ * The draft's current choice for one claimant.
+ *
+ * Both lookups are own-property reads, via {@link ownEntry} and the published
+ * {@link overrideFor}: facet names and asset names are ordinary strings, so an
+ * indexed read for `constructor` or `__proto__` would return an inherited
+ * value where the type promises a disposition or `undefined`.
+ */
+function draftOverrideFor(
   overrides: Readonly<Record<string, FacetMaterializationOverrides>>,
   ref: ClaimantRef,
 ): MaterializationDisposition | undefined {
-  return overrides[ref.facet]?.[overrideGroupKey(ref.type)]?.[ref.authoredName]
+  return overrideFor(ownEntry(overrides, ref.facet), ref.type, ref.authoredName)
 }
 
+/**
+ * The draft with one claimant's choice recorded, as a fresh map.
+ *
+ * Every copy is null-prototyped and every lookup is an own read, because both
+ * levels are keyed by names from `facets.json`: the facet map by facet name,
+ * the asset map by authored asset name. Only the middle level — `skills` /
+ * `agents` / `commands` — is a closed literal union and therefore safe to
+ * index directly. Writing `assets[name] = disposition` into a plain object for
+ * an asset named `__proto__` recorded nothing, and the empty-group check below
+ * then deleted the group the user had just edited.
+ */
 function withOverride(
   overrides: Readonly<Record<string, FacetMaterializationOverrides>>,
   ref: ClaimantRef,
   disposition: MaterializationDisposition,
 ): Record<string, FacetMaterializationOverrides> {
   const group = overrideGroupKey(ref.type)
-  const next: Record<string, FacetMaterializationOverrides> = { ...overrides }
-  const facet: FacetMaterializationOverrides = { ...(next[ref.facet] ?? {}) }
-  const assets = { ...(facet[group] ?? {}) }
+  const next = ownRecord(overrides)
+  const facet: FacetMaterializationOverrides = { ...ownEntry(next, ref.facet) }
+  const assets = ownRecord(facet[group])
 
   if (disposition.kind === 'authored') {
     delete assets[ref.authoredName]
@@ -450,16 +504,14 @@ function scopeOf(
 
 function compareClaimants(a: ClaimantModel, b: ClaimantModel): number {
   return (
-    compareStrings(a.facet, b.facet) || compareStrings(a.type, b.type) || compareStrings(a.authoredName, b.authoredName)
+    compareCodeUnits(a.facet, b.facet) ||
+    compareCodeUnits(a.type, b.type) ||
+    compareCodeUnits(a.authoredName, b.authoredName)
   )
 }
 
-function compareStrings(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0
-}
-
 function unique(values: readonly string[]): string[] {
-  return [...new Set(values)].sort(compareStrings)
+  return [...new Set(values)].sort(compareCodeUnits)
 }
 
 /** Validate an alias exactly as the planner will. */

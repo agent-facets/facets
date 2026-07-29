@@ -2,6 +2,7 @@ import type { Adapter } from '@agent-facets/adapter'
 import type { SupportedLockfile } from '@agent-facets/protocol'
 import { parseFacetSource } from '../../sources/facet/parse-source.ts'
 import { parseVersionSpec } from '../../sources/facet/parse-version.ts'
+import { ownEntry } from '../own-entry.ts'
 import type { OnLog, StageEvent } from '../types.ts'
 import { resolveEffectiveLocked } from './effective-locked.ts'
 import { resolveGitFacet } from './resolve-git.ts'
@@ -50,9 +51,13 @@ export async function resolveFacet(args: ResolveFacetArgs): Promise<ResolveFacet
   const source = parsed.value
 
   // The structural discriminator + staleness rules live in one place;
-  // a cleared entry makes the facet resolve like a fresh add.
+  // a cleared entry makes the facet resolve like a fresh add. Read own-only:
+  // `constructor` is a legal facet name, and an indexed read of it on a
+  // lockfile without that entry returns `Object` — not "absent", so the facet
+  // resolves as anchored to an entry with no version, and `parseLockedVersion`
+  // throws out of a function that promises to return failures.
   const effectiveLocked = resolveEffectiveLocked({
-    locked: args.previousLockfile.facets[facetName],
+    locked: ownEntry(args.previousLockfile.facets, facetName),
     source,
     isExplicitAddition: args.isExplicitAddition,
   })

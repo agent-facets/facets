@@ -125,10 +125,39 @@ describe('formatCollisionReport', () => {
     }
     // Both claimants get exactly the same two options, so nothing in the
     // text implies which one should yield.
-    const alphaOffers = report.split('\n').filter((l) => l.includes('alpha') && l.includes('kind')).length
-    const betaOffers = report.split('\n').filter((l) => l.includes('beta') && l.includes('kind')).length
-    expect(alphaOffers).toBe(betaOffers)
+    //
+    // The snippets sit on their own `alias:` / `omit:` lines BELOW the
+    // claimant's `• <facet>:` line, so no single line contains both the facet
+    // name and `"kind"`. Counting lines that contain both made each side zero
+    // and the assertion vacuously true; slicing each claimant's own section
+    // is what actually compares the two.
+    const sections = claimantSections(report)
+    expect(Object.keys(sections).sort()).toEqual(['alpha', 'beta'])
+    for (const [facet, section] of Object.entries(sections)) {
+      expect(section.filter((line) => line.includes('"kind": "aliased"'))).toHaveLength(1)
+      expect(section.filter((line) => line.includes('"kind": "omitted"'))).toHaveLength(1)
+      expect(facet).toBeTruthy()
+    }
   })
+
+  /** Split the report into each claimant's own block of lines. */
+  function claimantSections(report: string): Record<string, string[]> {
+    const sections: Record<string, string[]> = {}
+    let current: string[] | null = null
+    for (const line of report.split('\n')) {
+      const claimant = /^\s*• ([^:]+):/.exec(line)
+      if (claimant?.[1] !== undefined) {
+        current = []
+        sections[claimant[1]] = current
+        continue
+      }
+      // A claimant's block ends at the next claimant or the next unindented
+      // paragraph.
+      if (current !== null && line.trim().length === 0) current = null
+      else current?.push(line)
+    }
+    return sections
+  }
 
   test('states that nothing was changed', () => {
     const report = formatCollisionReport(TWO_WAY, [])

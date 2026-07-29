@@ -44,10 +44,15 @@ entry whose last override is removed collapses back to a compact string, and
 **BREAKING: `facets.lock` moves to `0.3` and the receipt to `0.3`.** Every
 lockfile asset entry carries a required `materialization` disposition; omitted
 assets stay listed with their complete authored file records. `name` and `files`
-remain authored even when aliased, so integrity is unaffected. Legacy `1` and
-`0.2` lockfiles remain readable and are migrated by any non-frozen install.
-A frozen install fails with `materialization-unrepresentable` when the manifest
-declares overrides against a pre-`0.3` lockfile.
+remain authored even when aliased, so integrity is unaffected. A `0.2` lockfile
+remains readable and is migrated by any non-frozen install. A frozen install
+fails with `materialization-unrepresentable` when the manifest declares
+overrides against a `0.2` lockfile.
+
+**BREAKING: a `facets.lock` declaring the closed-alpha `1` no longer loads.**
+It fails as an unsupported version and tells you to delete the file and re-run
+`facet install`, which regenerates and re-verifies it. The number `1` is
+reserved for the eventual stable v1 schema.
 
 **The install pipeline is now Resolve-all → Compose → Apply.** The previous
 interleaved per-facet loop could not detect a collision between the first and
@@ -75,3 +80,30 @@ from double-deleting.
   rebuilding.
 - `facet instructions` now teaches agents both `facets.json` entry forms and the
   hand-edit path for resolving a collision without a TTY.
+- `facet remove` never fetches a facet it is keeping. Removing one facet from a
+  project whose other facets are uncached and whose registry is unreachable now
+  succeeds: surviving lockfile entries are carried forward from local state
+  rather than re-resolved, and their materialized files are left untouched. That
+  offline path is taken only when local state genuinely answers for every
+  survivor — the machine's install receipt has to agree with the lockfile about
+  each survivor's version, dispositions, and owned files, and no name a survivor
+  keeps may have been claimed by a facet being removed. Otherwise the ordinary
+  pipeline runs, which is what actually moves the files. Ctrl-C is honored on
+  that path too: before anything is deleted nothing is written, and after
+  deletion the deletes are rolled back rather than committed.
+- **BREAKING: `facet remove` now connects an adapter even when every name you
+  gave it looks undeclared.** Whether a name is declared is decided by the
+  commit, under the project lock — a pre-lock read can be stale, and acting on
+  one let a facet added by a concurrent process survive the removal that asked
+  for it. `facet remove ghost` in a project with no adapter therefore opens the
+  picker in a terminal and exits non-zero in CI, instead of printing a no-op
+  summary it never verified. An unreadable `facets.json` is still reported as a
+  manifest problem, before any adapter is discovered.
+- `facet add` and `facet remove` report an unsupported `manifestVersion` the way
+  `facet install` already did — naming the version found and the versions
+  supported, and telling you to upgrade — instead of describing it as a
+  malformed manifest.
+- Failure guidance is accurate about what happened on disk: an interrupted
+  install that rolled writes back says the project was restored rather than
+  claiming nothing was written, and the invalid-alias fix names the command to
+  re-run.

@@ -98,6 +98,23 @@ describe('CollisionWorkspace — overview', () => {
     expect(resolutions).toEqual([{ kind: 'cancelled' }])
     app.unmount()
   })
+
+  test('ctrl-c cancels while the alias editor is open', async () => {
+    // The navigation handler is disabled during an edit and the editor
+    // handles only Enter and Escape, so this interrupt previously reached
+    // nothing: the engine kept awaiting the resolver while holding the
+    // project lock, and the install hung instead of exiting.
+    const { app, resolutions } = mount(TWO_WAY)
+    await nextTick()
+    await press(app, KEY.enter, KEY.right, KEY.enter)
+    // The editor really is open.
+    expect(app.lastFrame() ?? '').toContain('type a name')
+
+    await press(app, KEY.ctrlC)
+
+    expect(resolutions).toEqual([{ kind: 'cancelled' }])
+    app.unmount()
+  })
 })
 
 describe('CollisionWorkspace — resolving a group', () => {
@@ -183,6 +200,64 @@ describe('CollisionWorkspace — resolving a group', () => {
     expect(frame).not.toContain('zzz')
     // Still the group view, still on Keep.
     expect(frame).toContain('(Keep)')
+    app.unmount()
+  })
+})
+
+describe('CollisionWorkspace — focus across a group split', () => {
+  test('stays on the claimant the user was looking at', async () => {
+    // Alias alpha onto gamma's name to merge the groups, move down onto
+    // gamma, then withdraw the alias so the merge splits again. Selecting
+    // the group by a separate anchor used to follow alpha, substitute the
+    // group's first member for the now-absent focus, and keep the old
+    // highlight — so the next Enter applied a choice to the wrong claimant.
+    const { app, resolutions } = mount([skill('alpha', 'review'), skill('beta', 'review'), skill('gamma', 'audit')])
+    await nextTick()
+
+    await press(app, KEY.enter, KEY.right, KEY.enter)
+    await press(app, ...'\u007f'.repeat(10).split(''))
+    await press(app, ...'audit'.split(''))
+    await press(app, KEY.enter)
+
+    // Move onto gamma, the claimant the alias dragged in.
+    await press(app, KEY.down, KEY.down)
+    expect(app.lastFrame() ?? '').toContain('gamma')
+
+    // Withdraw the alias from alpha's side by omitting gamma instead: put
+    // gamma on Omit, which resolves the contest and splits the component.
+    await press(app, KEY.right, KEY.right, KEY.enter)
+
+    // The view still shows gamma, and the choice landed on gamma.
+    await press(app, KEY.escape, KEY.down, KEY.down, KEY.enter)
+    const resolution = resolutions.at(-1)
+    if (resolution?.kind !== 'resolved') expect.unreachable()
+    expect(resolution.overrides.gamma).toEqual({ skills: { audit: { kind: 'omitted' } } })
+    app.unmount()
+  })
+
+  test('a preserved singleton group still has a heading', async () => {
+    // `gamma` is dragged in by an alias and then released. It belongs to no
+    // original group and contests nothing, so both heading sources are
+    // empty — which rendered a blank bold line above "(1 asset)".
+    const { app } = mount([skill('alpha', 'review'), skill('beta', 'review'), skill('gamma', 'audit')])
+    await nextTick()
+
+    await press(app, KEY.enter, KEY.right, KEY.enter)
+    await press(app, ...'\u007f'.repeat(10).split(''))
+    await press(app, ...'audit'.split(''))
+    await press(app, KEY.enter)
+    // Retarget the alias, releasing gamma.
+    await press(app, KEY.enter)
+    await press(app, ...'\u007f'.repeat(10).split(''))
+    await press(app, ...'alpha-review'.split(''))
+    await press(app, KEY.enter)
+    await press(app, KEY.escape)
+
+    const frame = app.lastFrame() ?? ''
+    expect(frame).toContain('audit')
+    expect(frame).toContain('(1 asset)')
+    // No heading line that is just the status tag followed by the count.
+    expect(frame).not.toMatch(/resolved\s+\(1 asset\)/)
     app.unmount()
   })
 })

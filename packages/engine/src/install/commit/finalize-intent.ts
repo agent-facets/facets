@@ -3,11 +3,13 @@ import {
   ASSET_DIRECTORY,
   ASSET_TYPES,
   type FacetMaterializationOverrides,
+  overrideFor,
   overridesForType,
   type ProjectAssetOverride,
   type StaleOverride,
 } from '@agent-facets/protocol'
 import type { NormalizedFacetEntry } from '../../manifest/mutations.ts'
+import { ownEntry, ownRecord } from '../own-entry.ts'
 
 /**
  * Finalize the project's materialization intent for the commit.
@@ -63,10 +65,13 @@ function pruneFacetOverrides(
   for (const type of ASSET_TYPES) {
     const record = overridesForType(overrides, type)
     if (record === undefined) continue
-    const survivors: Record<string, ProjectAssetOverride> = {}
+    // Null-prototype: keyed by authored asset name, which `constructor` and
+    // `__proto__` are both legal values of. A survivor written into a plain
+    // object under the latter would be dropped from the manifest silently.
+    const survivors = ownRecord<ProjectAssetOverride>()
     let survivorCount = 0
     for (const authoredName of Object.keys(record)) {
-      const disposition = record[authoredName]
+      const disposition = overrideFor(overrides, type, authoredName)
       if (disposition === undefined) continue
       if (stale.has(staleKey(facet, type, authoredName))) {
         pruned.push({ facet, type, authoredName })
@@ -104,7 +109,7 @@ export function finalizeMaterializationIntent(
   const pruned: PrunedOverride[] = []
 
   for (const [facet, entry] of Object.entries(desiredFacets)) {
-    const overrides = accepted[facet]
+    const overrides = ownEntry(accepted, facet)
     entry.overrides = overrides === undefined ? undefined : pruneFacetOverrides(facet, overrides, stale, pruned)
   }
 

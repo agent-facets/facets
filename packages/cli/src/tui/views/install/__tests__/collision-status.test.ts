@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { COLLISION_STATUS, type CollisionStatus, describeStatus } from '../collision-status.ts'
 
-const ALL: CollisionStatus[] = ['unresolved', 'draft-conflict', 'resolved']
+// Derived from the presentation map rather than written out, so a fourth
+// state is covered the moment it exists — a hand-written list would leave the
+// new state silently untested, which is the failure mode these tests exist to
+// prevent.
+const ALL = Object.keys(COLLISION_STATUS) as CollisionStatus[]
 
 describe('collision status presentation', () => {
   test('every state has a distinct icon', () => {

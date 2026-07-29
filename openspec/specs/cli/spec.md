@@ -309,18 +309,22 @@ The system SHALL register an `install` command that brings the project on disk i
 
 The `add` and `install` commands SHALL present progress through a single shared rendering. A user watching either command SHALL see the same shape of output: a per-facet section that names each facet, indicates its current stage, and shows whether it succeeded, failed, or is in progress, followed by a final summary that lists each affected facet on its own line.
 
+Collision checking SHALL be rendered as one global phase covering the complete desired set, entered after every facet is resolved and before any materialization, rather than as a per-facet stage. Every `add` or `install` operation SHALL make that phase visible whether it affects one facet or many, because it is evaluated once over all of them; a rendering that showed it for a single-facet run and omitted it for a multi-facet run would misdescribe when the check happens.
+
 When interactive materialization choices are required, the same command view SHALL transition from progress to the collision overview and focused resolution workspace, then return to progress after confirmation. It SHALL indicate that installation is awaiting collision resolution. A materialization-disposition change at an unchanged facet version SHALL be reported as an update; repair of disk-only drift SHALL remain reported as a repair. When materialization dispositions affect the result, the final summary SHALL show every aliased asset's authored name together with its effective materialized name and SHALL identify every omitted asset as omitted.
 
 #### Scenario: Single-facet operation shows per-facet detail
 
 - **WHEN** a user runs `add` or `install` with exactly one facet to install or update
-- **THEN** the rendered view SHALL show the facet's name and its current stage as it progresses through fetch, verification, build, collision checking, and materialization
+- **THEN** the rendered view SHALL show the facet's name and its current stage as it progresses through fetch, verification, build, and materialization
+- **AND** the view SHALL show the global collision-check phase between resolution and materialization
 - **AND** on completion the view SHALL show a one-line summary of the facet's resolved version
 
 #### Scenario: Multi-facet operation shows aggregate progress
 
 - **WHEN** a user runs `add` or `install` with multiple facets to install or update
 - **THEN** the rendered view SHALL show progress for each facet
+- **AND** the view SHALL show the same single global collision-check phase it shows for a single-facet operation
 - **AND** on completion the view SHALL show one summary line per affected facet identifying the action and resolved version
 
 #### Scenario: No-op install renders an empty summary
@@ -701,12 +705,29 @@ The `remove` command SHALL present progress through the same shared rendering us
 
 When `remove` is given a name that is not declared in the project, the system SHALL silently ignore it. When every requested name is undeclared, the rendered view SHALL report that no changes were made and the process SHALL exit with code 0.
 
+Whether a requested name is declared SHALL be decided by the commit, under the project lock. The CLI SHALL NOT skip any step of the ordinary removal flow on the strength of a pre-lock read, and SHALL therefore discover adapters for every removal request, including one whose names all appear undeclared. Adapter discovery for `remove` SHALL follow the same contract as the commands that add and install facets: a project with no installable adapter SHALL prompt for one in an interactive terminal and SHALL fail with a non-zero exit code in a non-interactive environment. The CLI SHALL still validate that the project manifest can be read before discovering adapters, so an absent, malformed, or unsupported-version manifest is reported as such rather than as a missing adapter.
+
 #### Scenario: Removing only undeclared names shows no-op summary
 
 - **WHEN** a user runs `remove` with one or more names that are not declared in the project manifest
 - **AND** no requested name is declared
+- **AND** the project has at least one installable adapter
 - **THEN** the rendered view SHALL show a summary indicating no changes
 - **AND** the process SHALL exit with code 0
+
+#### Scenario: Removing only undeclared names still requires an adapter
+
+- **WHEN** a user runs `remove` in a non-interactive environment with names that are all undeclared
+- **AND** the project has no installable adapter
+- **THEN** the system SHALL report that no adapters are installed
+- **AND** the process SHALL exit with a non-zero code
+- **AND** the project manifest, lockfile, receipt, and adapter state SHALL remain unchanged
+
+#### Scenario: An unreadable manifest is reported before adapter discovery
+
+- **WHEN** a user runs `remove` in a project whose manifest is absent, malformed, or declares an unsupported version
+- **THEN** the system SHALL report the manifest problem
+- **AND** the system SHALL NOT report a missing adapter in its place
 
 #### Scenario: Mix of declared and undeclared names removes the declared ones
 
@@ -810,23 +831,25 @@ Alias input SHALL be validated with the published asset-name rules and SHALL dis
 
 ### Requirement: Cancelling collision resolution leaves the project unchanged
 
-Users SHALL be able to cancel the collision workspace, including by interrupting the command. Cancellation SHALL end the operation without persisting draft choices or changing the project manifest, lockfile, receipt, or materialized assets.
+Users SHALL be able to cancel the collision workspace, including by interrupting the command. Cancellation SHALL end the operation without persisting draft choices or changing the project manifest, lockfile, receipt, or materialized assets. A cancelled operation is an unperformed one rather than a completed one, so the command SHALL exit with a non-zero code and SHALL NOT report success.
 
 #### Scenario: User cancels from the workspace
 
 - **WHEN** a user cancels before confirming a collision-free draft
 - **THEN** the command SHALL end without applying any draft choice
+- **AND** the command SHALL exit with a non-zero code
 - **AND** project and adapter state SHALL remain unchanged
 
 #### Scenario: User interrupts resolution
 
 - **WHEN** a user sends an interrupt while the collision workspace is open
 - **THEN** the command SHALL end without displaying a successful install summary
+- **AND** the command SHALL exit with a non-zero code
 - **AND** project and adapter state SHALL remain unchanged
 
 ### Requirement: Non-interactive collision failures are complete and actionable
 
-When `add` or `install` cannot interactively resolve an unresolved collision, the system SHALL write an error to stderr, exit with a non-zero code, and identify every collision group and claimant. For each claimant, the error SHALL identify the facet, scope, type, authored name, and current effective name, and SHALL point to the corresponding expanded `facets.json` entry that can record an alias or omission.
+When a facet operation cannot interactively resolve an unresolved collision, the system SHALL write an error to stderr, exit with a non-zero code, and identify every collision group and claimant. This SHALL hold for every command that can reach collision resolution, including `remove` when a removal falls back to ordinary resolution. For each claimant, the error SHALL identify the facet, scope, type, authored name, and current effective name, and SHALL point to the corresponding expanded `facets.json` entry that can record an alias or omission.
 
 The error SHALL include syntactically valid alias and omission examples. It SHALL NOT select a winner, invent an alias, or present a generated complete resolution as authoritative. It SHALL state that no project or materialized state was changed.
 

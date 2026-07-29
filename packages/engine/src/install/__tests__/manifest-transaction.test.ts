@@ -11,6 +11,7 @@ import {
 import { loadInstalledAdapters } from '../../adapters/loader.ts'
 import { parseFacetSource } from '../../sources/facet/parse-source.ts'
 import { runAdd } from '../add/index.ts'
+import { acquireInstallLock } from '../lockfile-guard.ts'
 import { CURRENT_RECEIPT_VERSION, receiptPath } from '../receipt.ts'
 import { runRemove } from '../remove/index.ts'
 import { runInstall } from '../run-install.ts'
@@ -104,7 +105,7 @@ async function adapters() {
 
 async function add(specifier: string) {
   const parsed = parseFacetSource(specifier)
-  if (!parsed.ok) throw new Error(`test bug: unparseable specifier ${specifier}`)
+  if (!parsed.ok) expect.unreachable(`test bug: unparseable specifier ${specifier}`)
   return runAdd({ projectRoot, sources: [{ specifier, source: parsed.value }], adapters: await adapters() })
 }
 
@@ -148,6 +149,67 @@ afterEach(() => {
   else process.env.FACET_DIR = originalFacetDir
   rmSync(projectRoot, { recursive: true, force: true })
   rmSync(fakeHome, { recursive: true, force: true })
+})
+
+// Reading mutable project state BEFORE taking the project lock leaves a
+// window in which another operation can commit; this one would then write its
+// pre-lock snapshot over that commit. The failure code is the cheapest proof
+// of ordering available: if the manifest is read first, a malformed manifest
+// is reported even though another process owns the project.
+describe('project state is read under the install lock', () => {
+  test.each([
+    ['malformed', '{ this is not json'],
+    ['unsupported version', JSON.stringify({ manifestVersion: 0.9, facets: {} })],
+  ])('lock contention outranks a %s manifest', async (_label, manifestText) => {
+    const before = writeManifest(manifestText)
+    const held = acquireInstallLock(projectRoot)
+    if (!held.ok) expect.unreachable()
+
+    try {
+      const result = await install()
+      if (result.ok) expect.unreachable()
+      expect(result.failure.code).toBe('LOCK_HELD')
+    } finally {
+      await held.lock.release()
+    }
+
+    expect(readManifest()).toBe(before)
+  })
+
+  test('lock contention outranks a missing manifest', async () => {
+    const held = acquireInstallLock(projectRoot)
+    if (!held.ok) expect.unreachable()
+
+    try {
+      const result = await install()
+      if (result.ok) expect.unreachable()
+      expect(result.failure.code).toBe('LOCK_HELD')
+    } finally {
+      await held.lock.release()
+    }
+  })
+})
+
+// A facet key is an arbitrary string. Dropping an own `__proto__` during
+// normalization made the facet read as REMOVED, which would delete its locked
+// assets and commit a manifest without it — a silent data loss. It must reach
+// ordinary name validation and fail there instead.
+describe('a facet key colliding with Object.prototype', () => {
+  test('fails name validation instead of vanishing', async () => {
+    const a = buildFixture('alpha', '1.0.0')
+    // Written as text: `{ __proto__: … }` in JS source sets the prototype
+    // rather than creating a member.
+    const before = writeManifest(`{"manifestVersion":0.1,"facets":{"__proto__":${JSON.stringify(a)}}}`)
+
+    const result = await install()
+    if (result.ok) expect.unreachable()
+    expect(result.failure.code).toBe('MANIFEST_NAME_MISMATCH')
+
+    // Nothing was written, and in particular the declaration was not quietly
+    // dropped from the document.
+    expect(readManifest()).toBe(before)
+    expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)
+  })
 })
 
 describe('legacy migration is transactional', () => {
@@ -469,6 +531,44 @@ describe('migration and reproduction across formats', () => {
       expect(facet.assets.length).toBeGreaterThan(0)
       for (const asset of facet.assets) expect(asset.materialization).toEqual({ kind: 'authored' })
     }
+  })
+
+  // The spec has always said unrecognized lockfile fields are preserved, but
+  // only LOADING honored it: a normal install rebuilds entries from resolved
+  // state, so every rewrite — including the mandatory migration — dropped
+  // them. This drives the real pipeline rather than the pure helper, because
+  // that is exactly the gap the helper alone would not have closed.
+  test('unrecognized lockfile fields survive a real 0.2 to 0.3 migration', async () => {
+    const a = buildFixture('alpha', '1.0.0')
+    expect((await add(a)).ok).toBe(true)
+
+    const lock = readLock()
+    lock.lockfileVersion = LOCKFILE_VERSION_0_2
+    lock.documentNote = 'document-level'
+    for (const facet of Object.values(lock.facets) as Array<Record<string, unknown>>) {
+      facet.facetNote = 'facet-level'
+      ;(facet.source as Record<string, unknown>).sourceNote = 'source-level'
+      for (const asset of facet.assets as Array<Record<string, unknown>>) {
+        delete asset.materialization
+        asset.assetNote = 'asset-level'
+        for (const file of asset.files as Array<Record<string, unknown>>) file.fileNote = 'file-level'
+      }
+    }
+    writeFileSync(lockPath(), JSON.stringify(lock, null, 2))
+
+    expect((await install()).ok).toBe(true)
+
+    const migrated = readLock()
+    expect(migrated.lockfileVersion).toBe(CURRENT_LOCKFILE_VERSION)
+    expect(migrated.documentNote).toBe('document-level')
+    const facet = Object.values(migrated.facets)[0] as Record<string, unknown>
+    expect(facet.facetNote).toBe('facet-level')
+    expect((facet.source as Record<string, unknown>).sourceNote).toBe('source-level')
+    const asset = (facet.assets as Array<Record<string, unknown>>)[0]
+    if (asset === undefined) expect.unreachable()
+    expect(asset.assetNote).toBe('asset-level')
+    expect(asset.materialization).toEqual({ kind: 'authored' })
+    expect((asset.files as Array<Record<string, unknown>>)[0]?.fileNote).toBe('file-level')
   })
 
   test('removing the last override collapses the entry without downgrading manifestVersion', async () => {

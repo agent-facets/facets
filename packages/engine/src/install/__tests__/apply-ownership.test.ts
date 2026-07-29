@@ -644,3 +644,232 @@ describe('apply — frozen reproduction of recorded intent', () => {
     expect(result.rollback.kind).toBe('not-needed')
   })
 })
+
+/**
+ * The removal-only refinement path, where nothing is written.
+ *
+ * That is safe exactly when local state already agrees about every surviving
+ * asset. When it does not, refining would commit a receipt describing files
+ * this machine does not have — and because ownership reconciliation trusts
+ * the receipt, the real file becomes unreachable forever. Each case below
+ * must therefore fall back to the ordinary pipeline, which puts the
+ * survivor's bytes where the record says they are.
+ */
+describe('remove — refinement only when local state agrees', () => {
+  function readLock(): { lockfileVersion: number; facets: Record<string, Record<string, unknown>> } {
+    return JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8'))
+  }
+
+  function writeLock(lock: unknown): void {
+    writeFileSync(join(projectRoot, 'facets.lock'), `${JSON.stringify(lock, null, 2)}\n`)
+  }
+
+  /** Record an alias in the lockfile without materializing it — a pulled edit. */
+  function recordAliasInLockfile(facet: string, authoredName: string, as: string): void {
+    const lock = readLock()
+    const entry = lock.facets[facet]
+    if (entry === undefined) expect.unreachable()
+    for (const asset of entry.assets as Array<Record<string, unknown>>) {
+      if (asset.name === authoredName) asset.materialization = { kind: 'aliased', as }
+    }
+    writeLock(lock)
+  }
+
+  async function removeAlpha(adapter: Adapter) {
+    return await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      delta: { additions: [], removals: [{ facetName: 'alpha' }] },
+    })
+  }
+
+  test('a survivor alias this machine never wrote is materialized, not just recorded', async () => {
+    const a = skillFixture('alpha', 'review')
+    const b = skillFixture('beta', 'other')
+    writeManifest({ facets: { alpha: a, beta: b } })
+    const { adapter, io } = recordingAdapter()
+    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+
+    // A teammate aliased `beta`'s skill and committed both files. This machine
+    // pulled them but never ran an install, so `skills/other/` is still what
+    // is actually on disk.
+    recordAliasInLockfile('beta', 'other', 'vendor-other')
+    writeManifest({
+      manifestVersion: 0.1,
+      facets: {
+        alpha: a,
+        beta: { source: b, materialization: { skills: { other: { kind: 'aliased', as: 'vendor-other' } } } },
+      },
+    })
+
+    io.length = 0
+    const result = await removeAlpha(adapter)
+    if (!result.ok) expect.unreachable()
+
+    // The write pass ran: refinement would have committed the alias while
+    // leaving the authored bundle on disk, unclaimed and undeletable.
+    expect(io).toContain('install:skill:vendor-other')
+    expect(readFileSync(join(skillRoot('vendor-other'), 'SKILL.md'), 'utf8')).toContain('# other from beta')
+    expect(existsSync(skillRoot('other'))).toBe(false)
+
+    const receipt = readReceipt()
+    expect(receipt.facets.alpha).toBeUndefined()
+    expect(receipt.facets.beta?.assets[0]?.materialization).toEqual({ kind: 'aliased', as: 'vendor-other' })
+  })
+
+  test('an identity a removed facet also claimed gets the survivor content', async () => {
+    const a = skillFixture('alpha', 'review')
+    const b = skillFixture('beta', 'other')
+    writeManifest({ facets: { alpha: a, beta: b } })
+    const { adapter, io } = recordingAdapter()
+    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    expect(readFileSync(join(skillRoot('review'), 'SKILL.md'), 'utf8')).toContain('# review from alpha')
+
+    // `beta` now claims exactly the name `alpha` materialized. The bytes at
+    // that identity are alpha's, and alpha is the facet being removed.
+    recordAliasInLockfile('beta', 'other', 'review')
+    writeManifest({
+      manifestVersion: 0.1,
+      facets: {
+        alpha: a,
+        beta: { source: b, materialization: { skills: { other: { kind: 'aliased', as: 'review' } } } },
+      },
+    })
+
+    io.length = 0
+    const result = await removeAlpha(adapter)
+    if (!result.ok) expect.unreachable()
+
+    // Refining would have kept the identity (a survivor claims it), written
+    // nothing, and committed a receipt attributing alpha's bytes to beta.
+    expect(io).toContain('install:skill:review')
+    expect(readFileSync(join(skillRoot('review'), 'SKILL.md'), 'utf8')).toContain('# other from beta')
+    expect(readReceipt().facets.alpha).toBeUndefined()
+  })
+
+  test('an uncontested, witnessed removal still writes nothing', async () => {
+    const a = skillFixture('alpha', 'review')
+    const b = skillFixture('beta', 'other', { companions: { 'refs/api.md': '# api\n' } })
+    writeManifest({ facets: { alpha: a, beta: b } })
+    const { adapter, io } = recordingAdapter()
+    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    const survivorBefore = readFileSync(join(skillRoot('other'), 'refs/api.md'), 'utf8')
+
+    io.length = 0
+    const result = await removeAlpha(adapter)
+    if (!result.ok) expect.unreachable()
+
+    // The offline guarantee: only the removed identity is touched at all, and
+    // nothing is written. (The read is the delete pass snapshotting it for
+    // rollback.)
+    expect(io).toEqual(['read:skill:review', 'delete:skill:review'])
+    expect(readFileSync(join(skillRoot('other'), 'refs/api.md'), 'utf8')).toBe(survivorBefore)
+    expect(existsSync(skillRoot('review'))).toBe(false)
+    expect(readReceipt().facets.beta?.assets[0]?.files).toEqual(['skills/other/SKILL.md', 'skills/other/refs/api.md'])
+  })
+})
+
+/**
+ * Cancellation on the refined removal path.
+ *
+ * `RunInstallOptions.signal` promises to stop at the next safe checkpoint and
+ * roll back. This branch accepted the signal and never read it, so Ctrl-C
+ * still deleted assets and committed the manifest, lockfile, and receipt.
+ */
+describe('remove — cancellation on the refined path', () => {
+  function projectFiles(): { manifest: string; lock: string } {
+    return {
+      manifest: readFileSync(join(projectRoot, 'facets.json'), 'utf8'),
+      lock: readFileSync(join(projectRoot, 'facets.lock'), 'utf8'),
+    }
+  }
+
+  async function seedTwoFacets(adapter: Adapter): Promise<void> {
+    const a = skillFixture('alpha', 'review', { companions: { 'refs/api.md': '# api\n' } })
+    const b = skillFixture('beta', 'other')
+    writeManifest({ facets: { alpha: a, beta: b } })
+    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+  }
+
+  test('a pre-aborted removal deletes nothing and reports no mutation', async () => {
+    const { adapter, io } = recordingAdapter()
+    await seedTwoFacets(adapter)
+    const before = projectFiles()
+    const controller = new AbortController()
+    controller.abort()
+
+    io.length = 0
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      delta: { additions: [], removals: [{ facetName: 'alpha' }] },
+      signal: controller.signal,
+    })
+
+    if (result.ok) expect.unreachable()
+    expect(result.failure.code).toBe('ABORTED')
+    // Nothing was written, so the CLI must not tell the user anything was
+    // restored — that distinction comes from here, not from the code.
+    expect(result.rollback.kind).toBe('not-needed')
+    expect(io).toEqual([])
+    expect(existsSync(join(skillRoot('review'), 'SKILL.md'))).toBe(true)
+    expect(projectFiles()).toEqual(before)
+    expect(readReceipt().facets.alpha).toBeDefined()
+  })
+
+  test('an abort during the delete pass rolls the deleted bundle back', async () => {
+    const { adapter, io } = recordingAdapter()
+    await seedTwoFacets(adapter)
+    const before = projectFiles()
+    const controller = new AbortController()
+
+    // Ctrl-C lands while the delete pass is running: the delete succeeds, and
+    // the checkpoint after it is what turns that into a rollback instead of a
+    // commit.
+    const abortingAdapter: Adapter = {
+      ...adapter,
+      deleteAsset: async (request) => {
+        const result = await adapter.deleteAsset?.(request)
+        controller.abort()
+        if (result === undefined) expect.unreachable()
+        return result
+      },
+    }
+
+    io.length = 0
+    const result = await runInstall({
+      projectRoot,
+      adapters: [abortingAdapter],
+      delta: { additions: [], removals: [{ facetName: 'alpha' }] },
+      signal: controller.signal,
+    })
+
+    if (result.ok) expect.unreachable()
+    expect(result.failure.code).toBe('ABORTED')
+    if (result.rollback.kind !== 'succeeded') expect.unreachable()
+    expect(result.rollback.entriesUndone).toBeGreaterThan(0)
+
+    // The bundle the delete pass removed is back, companion included, and the
+    // project files were never committed.
+    expect(readFileSync(join(skillRoot('review'), 'refs/api.md'), 'utf8')).toBe('# api\n')
+    expect(projectFiles()).toEqual(before)
+    expect(readReceipt().facets.alpha).toBeDefined()
+  })
+
+  test('an un-aborted removal on the same path still commits', async () => {
+    const { adapter } = recordingAdapter()
+    await seedTwoFacets(adapter)
+    const controller = new AbortController()
+
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      delta: { additions: [], removals: [{ facetName: 'alpha' }] },
+      signal: controller.signal,
+    })
+
+    if (!result.ok) expect.unreachable()
+    expect(existsSync(skillRoot('review'))).toBe(false)
+    expect(readReceipt().facets.alpha).toBeUndefined()
+  })
+})
