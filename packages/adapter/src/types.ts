@@ -23,7 +23,8 @@ export type CompanionMap = Record<string, Uint8Array>
  * The skill variant is the only one that can carry companion files:
  * `companions` is the complete new bundle beyond `SKILL.md`, and
  * `ownedCompanionPaths` is the caller-verified set of companion paths a
- * previous install owned (from the caller's lockfile/receipt records).
+ * previous install owned, taken from the caller's own record of what it
+ * materialized — never from shared, version-controlled project state.
  * Replacement removes exactly the owned paths absent from the new bundle;
  * unowned files are never touched. Adapters never persist ownership or
  * infer it from disk — ownership data arrives on every request.

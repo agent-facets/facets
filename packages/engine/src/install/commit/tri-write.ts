@@ -65,7 +65,7 @@ export type TriWriteResult = { ok: true } | { ok: false; failure: RunInstallFail
  *     lockfile is always the CURRENT schema: this is where a `0.2` document
  *     migrates forward, after every artifact this run resolved has passed
  *     verification — or, on the removal-only refinement path, after the
- *     surviving entries have been carried forward from local state without
+ *     remaining entries have been carried forward from local state without
  *     being re-resolved at all.
  *   - `retain` — frozen mode. Neither file is touched, so the lockfile on
  *     disk keeps whatever version it was loaded under.

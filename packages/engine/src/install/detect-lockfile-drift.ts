@@ -17,7 +17,7 @@ import type { LockfileDriftEntry } from './types.ts'
  * Two callers ask the same question for different reasons: the frozen
  * pre-flight, which must fail when the lockfile no longer reproduces the
  * manifest, and the removal-only refinement, which may skip resolution only
- * while every survivor is still answered by its locked entry.
+ * while every remaining facet is still answered by its locked entry.
  */
 export function detectLockfileDrift(
   facets: Readonly<Record<string, NormalizedFacetEntry>>,

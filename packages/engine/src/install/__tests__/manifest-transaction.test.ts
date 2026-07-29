@@ -414,7 +414,7 @@ describe('comments survive the real install pipeline', () => {
     expect(parseManifest().facets.beta).toBe(b)
   })
 
-  test('a remove preserves comments on surviving entries', async () => {
+  test('a remove preserves comments on the remaining entries', async () => {
     const a = buildFixture('alpha', '1.0.0')
     const b = buildFixture('beta', '2.0.0')
     writeManifest(`{

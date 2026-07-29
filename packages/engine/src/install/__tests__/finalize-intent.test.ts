@@ -10,7 +10,7 @@ import { finalizeMaterializationIntent } from '../commit/finalize-intent.ts'
  *
  * Both maps here are keyed by user-controlled names — facet names on the
  * outside, authored asset names on the inside — so both are read and rebuilt
- * with own-property semantics. A survivor lost to the prototype setter would
+ * with own-property semantics. A retained override lost to the prototype setter would
  * be silently dropped from `facets.json` while the asset it describes stays
  * on disk under the aliased name nothing records any more.
  */

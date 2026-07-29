@@ -260,6 +260,68 @@ describe('InstallView — drift removal', () => {
     expect(frame).toContain('1 removed')
     instance.unmount()
   })
+
+  // "removed" with the files still on disk is the one summary a user cannot
+  // check against the file tree, so the reason has to be on screen.
+  test('says the files were kept when a removal was untracked', async () => {
+    const events: StageEvent[] = [
+      { kind: 'install-start', totalFacets: 0 },
+      { kind: 'install-complete', outcome: 'success' },
+    ]
+    const result: RunInstallResult = {
+      ok: true,
+      lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
+      summary: {
+        installed: 0,
+        updated: 0,
+        repaired: 0,
+        unchanged: 0,
+        removed: 1,
+        totalAssets: 0,
+        removedAssets: 0,
+      },
+      perFacet: [{ kind: 'removed-untracked', name: 'orphan', oldVersion: '1.0.0' }],
+      serverWarnings: [],
+    }
+    const instance = render(createElement(InstallView, { mode: 'remove', run: makeFakeRun(events, result) }))
+    await settle()
+    const frame = findContentFrame(instance.frames)
+    // Still named as removed — the declaration did go away.
+    expect(frame).toContain('orphan')
+    // Ink wraps at the test terminal width, so assert on wrap-safe fragments.
+    expect(frame).toContain('left in place')
+    expect(frame).toContain('facet install')
+    instance.unmount()
+  })
+
+  test('warns when the receipt exists but cannot be used', async () => {
+    const events: StageEvent[] = [
+      { kind: 'install-start', totalFacets: 0 },
+      { kind: 'receipt-unavailable', reason: 'corrupt' },
+      { kind: 'install-complete', outcome: 'success' },
+    ]
+    const result: RunInstallResult = {
+      ok: true,
+      lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
+      summary: {
+        installed: 0,
+        updated: 0,
+        repaired: 0,
+        unchanged: 0,
+        removed: 0,
+        totalAssets: 0,
+        removedAssets: 0,
+      },
+      perFacet: [],
+      serverWarnings: [],
+    }
+    const instance = render(createElement(InstallView, { mode: 'install', run: makeFakeRun(events, result) }))
+    await settle()
+    const frame = findContentFrame(instance.frames)
+    expect(frame).toContain('unreadable')
+    expect(frame).toContain('nothing already on disk is tracked')
+    instance.unmount()
+  })
 })
 
 describe('InstallView — marketing aesthetic on `add`', () => {

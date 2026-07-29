@@ -144,6 +144,7 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
   const [phase, setPhase] = useState<ViewPhase>({ kind: 'progress' })
   const [checkingCollisions, setCheckingCollisions] = useState(false)
   const [prunedOverrides, setPrunedOverrides] = useState<PrunedOverride[]>([])
+  const [receiptUnavailable, setReceiptUnavailable] = useState<'corrupt' | 'path-mismatch' | null>(null)
   const [elapsedMs, setElapsedMs] = useState(0)
   const startedRef = useRef(false)
   const startTimeRef = useRef(Date.now())
@@ -228,6 +229,9 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
           if (existing.includes(event.adapter)) return prev
           return { ...prev, [event.facet]: [...existing, event.adapter] }
         })
+        return
+      case 'receipt-unavailable':
+        setReceiptUnavailable(event.reason)
         return
       case 'asset-installed':
       case 'asset-deleted':
@@ -440,6 +444,19 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
         </Box>
       )}
 
+      {/* A receipt that exists but cannot be used silently changes what this
+          run is allowed to delete: nothing. Surfaced without --verbose,
+          because the consequence outlives the command. */}
+      {receiptUnavailable !== null && (
+        <Box flexDirection="column" marginLeft={2}>
+          <Text color={THEME.caution}>
+            ⚠ this project’s install receipt is{' '}
+            {receiptUnavailable === 'corrupt' ? 'unreadable' : 'recorded against a different project'} — nothing already
+            on disk is tracked, so nothing will be cleaned up. This run records only what it writes.
+          </Text>
+        </Box>
+      )}
+
       {result?.ok && (
         <SuccessSummary
           result={result}
@@ -488,7 +505,13 @@ function SuccessSummary({
   const bundleVizNode = formatColoredBundleViz(counts)
   const notes = materializationNotes(result)
 
-  const removedNames = result.perFacet.filter((o) => o.kind === 'removed').map((o) => o.name)
+  const removedNames = result.perFacet
+    .filter((o) => o.kind === 'removed' || o.kind === 'removed-untracked')
+    .map((o) => o.name)
+  // Dropped from the project's files while their assets stayed on disk. Worth
+  // its own line: the headline says "removed", and for these the files are
+  // still there because nothing proved this machine installed them.
+  const untrackedNames = result.perFacet.filter((o) => o.kind === 'removed-untracked').map((o) => o.name)
 
   const actionLabel =
     mode === 'add'
@@ -537,6 +560,12 @@ function SuccessSummary({
             )}
           </Text>
         ))}
+        {untrackedNames.length > 0 && (
+          <Text color={THEME.caution}>
+            {untrackedNames.join(', ')} — files left in place; this machine has no install receipt for{' '}
+            {untrackedNames.length === 1 ? 'it' : 'them'}. Run `facet install` before removing to take ownership.
+          </Text>
+        )}
       </Box>
       <Text>
         {timerVerb} <Text color={THEME.success}>{timerCount}</Text> facet

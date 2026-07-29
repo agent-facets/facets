@@ -13,7 +13,10 @@ export function summarize(
     updated: count('updated'),
     repaired: count('repaired'),
     unchanged: count('unchanged'),
-    removed: count('removed'),
+    // Both kinds dropped a declaration, which is what this count means. How
+    // many ASSETS left disk is `removedAssets`, and for an untracked removal
+    // that is zero — the two numbers disagreeing is the signal, not a bug.
+    removed: count('removed') + count('removed-untracked'),
     totalAssets,
     removedAssets,
   }

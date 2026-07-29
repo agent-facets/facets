@@ -139,6 +139,8 @@ Materialization planning is a **single pass**, not a fixed-point resolver. Overr
 - **A name freed by an omission is available.** Omitting one claimant removes it from the effective set entirely.
 - **Order does not matter.** The result never depends on the order facets were declared in.
 
+A name that **every** claimant aliases away from is freed the same way an omission frees one: nothing in the effective set claims it. If a previous install had materialized it, [drift removal](/specification/commit#drift-removal) deletes it in the same operation — before either alias is written — and each alias is written with its own facet's authored content.
+
 Determinism is a contract, and what it guarantees is **independence from declaration order**. Reordering the facets in `facets.json`, or the assets a facet declares, never changes the disposition an asset receives, whether a collision is detected, or which effective set is materialized. The same inputs plan to the same answer however they were enumerated — which is why no claimant can win a collision by being listed first.
 
 Collision reports are additionally stable for presentation: groups, and the claimants within a group, come back in a fixed order, so the same unresolved conflict reads identically on every machine and on every rerun. That ordering is deliberately not locale-aware; locale-sensitive collation would make output depend on the machine's environment.

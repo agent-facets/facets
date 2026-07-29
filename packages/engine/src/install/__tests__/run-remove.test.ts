@@ -256,9 +256,9 @@ describe('runRemove — multi-facet removal', () => {
 
 // The published contract says removal needs neither cache nor network. That
 // only ever held for the facet being REMOVED: routing removal through the
-// normal pipeline re-resolved every survivor, so an unrelated facet being
+// normal pipeline re-resolved every remaining facet, so an unrelated facet being
 // uncached and unreachable failed the whole operation.
-describe('runRemove — a surviving facet is unavailable', () => {
+describe('runRemove — a remaining facet is unavailable', () => {
   /** Empty the content cache and make every registry request fail. */
   function goOffline(): void {
     rmSync(join(fakeHome, '.facet/cache'), { recursive: true, force: true })
@@ -282,36 +282,36 @@ describe('runRemove — a surviving facet is unavailable', () => {
   test.each([
     ['0.3', () => {}],
     ['0.2', downgradeLockfileTo02],
-  ])('removes one facet offline while a %s-locked survivor is unavailable', async (_version, prepare) => {
+  ])('removes one facet offline while a %s-locked remaining facet is unavailable', async (_version, prepare) => {
     await installFacet('cowsay', '0.1.1')
     await installFacet('planner', '0.2.0')
-    const survivorAsset = assetPath('test-adapter', 'planner')
-    const survivorBefore = readFileSync(survivorAsset, 'utf8')
+    const remainingAsset = assetPath('test-adapter', 'planner')
+    const remainingBefore = readFileSync(remainingAsset, 'utf8')
     prepare()
-    const lockedSurvivor = readLock().facets.planner
+    const lockedRemaining = readLock().facets.planner
     goOffline()
 
     const result = await remove(['cowsay'])
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
 
-    // The removal completed without the survivor's content being available.
+    // The removal completed without the remaining content being available.
     expect(readFacets().cowsay).toBeUndefined()
     expect(existsSync(assetPath('test-adapter', 'cowsay'))).toBe(false)
 
-    // The survivor is untouched on disk and carried forward verbatim.
-    expect(readFileSync(survivorAsset, 'utf8')).toBe(survivorBefore)
+    // The remaining facet is untouched on disk and carried forward verbatim.
+    expect(readFileSync(remainingAsset, 'utf8')).toBe(remainingBefore)
     const migrated = readLock()
     expect(migrated.lockfileVersion).toBe(CURRENT_LOCKFILE_VERSION)
-    const survivor = migrated.facets.planner
-    if (survivor === undefined || lockedSurvivor === undefined) expect.unreachable()
-    expect(survivor.source).toEqual(lockedSurvivor.source)
-    expect(survivor.version).toEqual(lockedSurvivor.version)
-    expect(survivor.integrity).toEqual(lockedSurvivor.integrity)
+    const remaining = migrated.facets.planner
+    if (remaining === undefined || lockedRemaining === undefined) expect.unreachable()
+    expect(remaining.source).toEqual(lockedRemaining.source)
+    expect(remaining.version).toEqual(lockedRemaining.version)
+    expect(remaining.integrity).toEqual(lockedRemaining.integrity)
     const assetsOf = (entry: Record<string, unknown>) => entry.assets as Array<Record<string, unknown>>
-    expect(assetsOf(survivor).map((a) => a.files)).toEqual(assetsOf(lockedSurvivor).map((a) => a.files))
-    // A `0.2` survivor refines to the only disposition it could have meant.
-    for (const asset of assetsOf(survivor)) expect(asset.materialization).toEqual({ kind: 'authored' })
+    expect(assetsOf(remaining).map((a) => a.files)).toEqual(assetsOf(lockedRemaining).map((a) => a.files))
+    // A `0.2` entry refines to the only disposition it could have meant.
+    for (const asset of assetsOf(remaining)) expect(asset.materialization).toEqual({ kind: 'authored' })
   })
 
   // The state a concurrent removal leaves behind. Routing on how many
@@ -322,18 +322,18 @@ describe('runRemove — a surviving facet is unavailable', () => {
     await installFacet('cowsay', '0.1.1')
     await installFacet('planner', '0.2.0')
     const before = readFileSync(join(projectRoot, 'facets.json'), 'utf8')
-    const survivorBefore = readFileSync(assetPath('test-adapter', 'planner'), 'utf8')
+    const remainingBefore = readFileSync(assetPath('test-adapter', 'planner'), 'utf8')
     goOffline()
 
     const result = await remove(['never-installed'])
 
     expect(result.ok).toBe(true)
     expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(before)
-    expect(readFileSync(assetPath('test-adapter', 'planner'), 'utf8')).toBe(survivorBefore)
+    expect(readFileSync(assetPath('test-adapter', 'planner'), 'utf8')).toBe(remainingBefore)
     expect(Object.keys(readLock().facets).sort()).toEqual(['cowsay', 'planner'])
   })
 
-  test('carries a survivor unrecognized field through the offline removal', async () => {
+  test('carries a remaining unrecognized field through the offline removal', async () => {
     await installFacet('cowsay', '0.1.1')
     await installFacet('planner', '0.2.0')
     const lock = readLock()
@@ -348,11 +348,11 @@ describe('runRemove — a surviving facet is unavailable', () => {
     expect(readLock().facets.planner?.futureField).toBe('keep me')
   })
 
-  // Removal must not silently become an install. When a survivor declares
+  // Removal must not silently become an install. When a remaining facet declares
   // intent the lockfile does not record, honoring it means WRITING assets, so
   // the ordinary pipeline has to run — and offline, that fails rather than
   // pretending the alias was applied.
-  test('a survivor with unrecorded alias intent does not refine', async () => {
+  test('a remaining facet with unrecorded alias intent does not refine', async () => {
     await installFacet('cowsay', '0.1.1')
     await installFacet('planner', '0.2.0')
     const manifest = JSON.parse(readFileSync(join(projectRoot, 'facets.json'), 'utf8'))
@@ -367,7 +367,7 @@ describe('runRemove — a surviving facet is unavailable', () => {
     expect(result.ok).toBe(false)
     if (result.ok) expect.unreachable()
     if (result.phase !== 'install') expect.unreachable()
-    // It failed trying to RESOLVE the survivor, which is the honest outcome:
+    // It failed trying to RESOLVE the remaining facet, which is the honest outcome:
     // the alias cannot be materialized without the facet's content.
     expect(existsSync(assetPath('test-adapter', 'planner'))).toBe(true)
   })
@@ -375,7 +375,7 @@ describe('runRemove — a surviving facet is unavailable', () => {
   // Same rule from the other side: the manifest and lockfile can agree with
   // each other and still disagree with THIS machine, because a pull updates
   // both without touching a single materialized file.
-  test('a survivor the receipt does not witness does not refine', async () => {
+  test('a remaining facet the receipt does not witness does not refine', async () => {
     await installFacet('cowsay', '0.1.1')
     await installFacet('planner', '0.2.0')
 
@@ -436,20 +436,60 @@ describe('runRemove — a surviving facet is unavailable', () => {
     expect(existsSync(assetPath('test-adapter', 'vendor-planner'))).toBe(false)
   })
 
-  test('an absent receipt still removes offline', async () => {
+  // The offline guarantee is a property of TRACKED state, not of removal. With
+  // no receipt, nothing on this machine is witnessed: the facets that stay
+  // must be materialized before their identities can be claimed, and that
+  // needs resolution. Deleting on lockfile evidence alone is the alternative,
+  // and it destroys files this machine cannot prove it wrote.
+  test('an absent receipt cannot remove offline, and deletes nothing', async () => {
     const { receiptPath } = await import('../receipt.ts')
     await installFacet('cowsay', '0.1.1')
     await installFacet('planner', '0.2.0')
-    const survivorAsset = assetPath('test-adapter', 'planner')
-    const survivorBefore = readFileSync(survivorAsset, 'utf8')
+    const remainingAsset = assetPath('test-adapter', 'planner')
+    const remainingBefore = readFileSync(remainingAsset, 'utf8')
     rmSync(receiptPath(projectRoot), { force: true })
     goOffline()
 
     const result = await remove(['cowsay'])
 
+    expect(result.ok).toBe(false)
+    if (result.ok) expect.unreachable()
+    if (result.phase !== 'install') expect.unreachable()
+    // Untracked assets are left exactly where they are — including the one
+    // belonging to the facet the user asked to remove.
+    expect(readFileSync(remainingAsset, 'utf8')).toBe(remainingBefore)
+    expect(existsSync(assetPath('test-adapter', 'cowsay'))).toBe(true)
+  })
+
+  // The other half of the same rule: needing resolution is not the same as
+  // failing. With content still reachable, the removal runs the ordinary
+  // pipeline, materializes the remaining desired state, and claims only that.
+  test('an absent receipt still removes when content is reachable', async () => {
+    const { receiptPath } = await import('../receipt.ts')
+    await installFacet('cowsay', '0.1.1')
+    await installFacet('planner', '0.2.0')
+    rmSync(receiptPath(projectRoot), { force: true })
+
+    const result = await remove(['cowsay'])
+
     expect(result.ok).toBe(true)
-    expect(existsSync(assetPath('test-adapter', 'cowsay'))).toBe(false)
-    expect(readFileSync(survivorAsset, 'utf8')).toBe(survivorBefore)
+    if (!result.ok) expect.unreachable()
+    // The declaration is gone from both shared files...
+    expect(readFacets().cowsay).toBeUndefined()
+    expect(readLockfileFacets().cowsay).toBeUndefined()
+    // ...but its asset was untracked, so it stays on disk and is reported as
+    // such rather than as a deletion that never happened.
+    expect(existsSync(assetPath('test-adapter', 'cowsay'))).toBe(true)
+    expect(result.install.perFacet).toContainEqual({
+      kind: 'removed-untracked',
+      name: 'cowsay',
+      oldVersion: '0.1.1',
+    })
+    expect(result.install.summary.removedAssets).toBe(0)
+    // The facet that stays was rewritten, and is tracked from now on.
+    expect(existsSync(assetPath('test-adapter', 'planner'))).toBe(true)
+    const receipt = JSON.parse(readFileSync(receiptPath(projectRoot), 'utf8'))
+    expect(Object.keys(receipt.facets)).toEqual(['planner'])
   })
 })
 

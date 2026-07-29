@@ -1,12 +1,12 @@
 import type { SupportedLockfile } from '@agent-facets/protocol'
 import type { NormalizedFacetEntry } from '../../manifest/mutations.ts'
 import { ownEntry } from '../own-entry.ts'
-import type { Receipt } from '../receipt.ts'
+import type { ProjectReceiptState } from '../receipt.ts'
 import type { FacetOutcome } from '../types.ts'
 
 export interface DriftRemovalArgs {
   desiredFacets: Readonly<Record<string, NormalizedFacetEntry>>
-  receipt: Receipt
+  receiptState: ProjectReceiptState
   previousLockfile: SupportedLockfile
 }
 
@@ -22,22 +22,34 @@ export interface DriftRemovalArgs {
  *
  * The comparison is against the RECEIPT first, never only the on-disk
  * lockfile: that is what makes orphan-on-pull recoverable, because a `git
- * pull` can drop a lockfile entry but cannot touch machine-local state. A
- * lockfile-only entry is still caught, for the case where a receipt exists but
- * predates the entry.
+ * pull` can drop a lockfile entry but cannot touch machine-local state.
+ *
+ * A lockfile-only entry is still reported, because dropping a facet the
+ * project declared IS a change — but as `removed-untracked`, because it is a
+ * change to the project's records only. It confers no ownership, so nothing on
+ * disk is deleted on its behalf; that decision belongs entirely to
+ * `buildPreviousOwnership`, which reads the receipt and nothing else. Which of
+ * the two outcomes a facet gets is therefore the same question as whether it
+ * appears in that index.
  */
 export function removedFacetOutcomes(args: DriftRemovalArgs): FacetOutcome[] {
-  const { desiredFacets, receipt, previousLockfile } = args
+  const { desiredFacets, receiptState, previousLockfile } = args
+  const tracked = receiptState.kind === 'loaded' ? receiptState.receipt.facets : undefined
 
-  const unwantedFromReceipt = Object.keys(receipt.facets).filter((name) => ownEntry(desiredFacets, name) === undefined)
+  const unwantedFromReceipt =
+    tracked === undefined ? [] : Object.keys(tracked).filter((name) => ownEntry(desiredFacets, name) === undefined)
   const unwantedFromLockfile = Object.keys(previousLockfile.facets).filter(
-    (name) => ownEntry(desiredFacets, name) === undefined && ownEntry(receipt.facets, name) === undefined,
+    (name) =>
+      ownEntry(desiredFacets, name) === undefined && (tracked === undefined || ownEntry(tracked, name) === undefined),
   )
-  const unwantedNames = [...new Set([...unwantedFromReceipt, ...unwantedFromLockfile])].sort()
 
-  return unwantedNames.map((name) => ({
-    kind: 'removed' as const,
-    name,
-    oldVersion: ownEntry(receipt.facets, name)?.version ?? ownEntry(previousLockfile.facets, name)?.version ?? '0.0.0',
-  }))
+  return [...new Set([...unwantedFromReceipt, ...unwantedFromLockfile])].sort().map((name) => {
+    const recorded = tracked === undefined ? undefined : ownEntry(tracked, name)
+    const locked = ownEntry(previousLockfile.facets, name)
+    return {
+      kind: recorded === undefined ? ('removed-untracked' as const) : ('removed' as const),
+      name,
+      oldVersion: recorded?.version ?? locked?.version ?? '0.0.0',
+    }
+  })
 }

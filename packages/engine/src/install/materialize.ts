@@ -325,7 +325,7 @@ export type DeleteObsoleteResult =
  *     delete, destroying content B had just written.
  *   - **Duplicate historical claims.** Two facets recorded ownership of one
  *     identity, producing two deletes of the same file. The second either
- *     no-ops or, worse, removes a survivor.
+ *     no-ops or, worse, removes a file the desired set still wants.
  *
  * Keying by effective adapter identity collapses both: an identity is deleted
  * at most once, and only when nothing desired claims it.
@@ -472,9 +472,10 @@ interface PreviousAsset {
  * throw, which is an adapter bug) means `previous` is unknown, so the caller
  * must fail loud instead of assuming absence.
  *
- * `ownedCompanionPaths` is the engine-verified previously-owned set (from the
- * lockfile/receipt); the read returns exactly those companions that exist, so
- * unowned files are never swept into the preimage.
+ * `ownedCompanionPaths` is the engine-verified previously-owned set, which
+ * comes from the install receipt and nothing else; the read returns exactly
+ * those companions that exist, so unowned files are never swept into the
+ * preimage.
  */
 async function readPrevious(
   adapter: Adapter,

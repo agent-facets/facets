@@ -3,16 +3,17 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Lockfile02, SupportedLockfile } from '@agent-facets/protocol'
-import { CURRENT_LOCKFILE_VERSION, LOCKFILE_VERSION_0_2 } from '@agent-facets/protocol'
+import { buildPreviousOwnership } from '../commit/ownership.ts'
 import { buildUpdatedReceipt } from '../commit/tri-write.ts'
 import {
-  bootstrapReceipt,
   CURRENT_RECEIPT_VERSION,
   LEGACY_RECEIPT_VERSION,
   loadReceipt,
   RECEIPT_VERSION_0_2,
   type Receipt,
   type ReceiptAsset,
+  receiptBaseFor,
+  receiptEntryForLockedFacet,
   receiptPath,
   resolveProjectReceipt,
   writeReceipt,
@@ -444,187 +445,90 @@ describe('writeReceipt', () => {
 })
 
 // ---------------------------------------------------------------------------
-// bootstrapReceipt
+// receiptEntryForLockedFacet
 // ---------------------------------------------------------------------------
 
-describe('bootstrapReceipt', () => {
-  test('creates a current receipt from a 0.2 lockfile', () => {
-    const lockfile: Lockfile02 = {
-      lockfileVersion: LOCKFILE_VERSION_0_2,
-      facets: {
-        cowsay: {
-          source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
-          version: '0.0.1',
-          integrity: 'sha256:abc',
-          assets: [
-            {
-              scope: 'project',
-              type: 'skill',
-              name: 'cowsay',
-              files: [{ path: 'skills/cowsay/SKILL.md', integrity: `sha256:${'0'.repeat(64)}` }],
-            },
-            {
-              scope: 'project',
-              type: 'command',
-              name: 'moo',
-              files: [{ path: 'commands/moo.md', integrity: `sha256:${'1'.repeat(64)}` }],
-            },
+/**
+ * The lockfile-entry → receipt-entry projection, which only the `written`
+ * commit arm may use: those entries describe assets the run just materialized,
+ * so reading ownership off them is an observation rather than a claim.
+ */
+describe('receiptEntryForLockedFacet', () => {
+  test('mirrors owned paths and refines a 0.2 entry to authored', () => {
+    const entry: Lockfile02['facets'][string] = {
+      source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
+      version: '0.0.1',
+      integrity: 'sha256:abc',
+      assets: [
+        {
+          scope: 'project',
+          type: 'skill',
+          name: 'cowsay',
+          files: [
+            { path: 'skills/cowsay/SKILL.md', integrity: `sha256:${'0'.repeat(64)}` },
+            { path: 'skills/cowsay/references/art.md', integrity: `sha256:${'1'.repeat(64)}` },
           ],
         },
-      },
+        {
+          scope: 'project',
+          type: 'command',
+          name: 'moo',
+          files: [{ path: 'commands/moo.md', integrity: `sha256:${'1'.repeat(64)}` }],
+        },
+      ],
     }
-    const receipt = bootstrapReceipt(projectDir, lockfile)
-    expect(receipt.version).toBe(CURRENT_RECEIPT_VERSION)
-    expect(receipt.path).toBe(realpathSync(projectDir))
-    expect(receipt.facets.cowsay?.version).toBe('0.0.1')
-    // Ownership comes from the entry's own `files`, which every supported
-    // lockfile version carries.
-    expect(receipt.facets.cowsay?.assets).toEqual([skillAsset('cowsay'), commandAsset('moo')])
-  })
 
-  test('mirrors owned companion paths from a 0.2 lockfile and refines to authored', () => {
-    // Pinned to 0.2 explicitly. This fixture previously claimed the CURRENT
-    // version while carrying disposition-less assets — a document no reader
-    // would accept — and only compiled through an `as unknown as` cast.
-    const lockfile: Lockfile02 = {
-      lockfileVersion: LOCKFILE_VERSION_0_2,
-      facets: {
-        cowsay: {
-          source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
-          version: '0.0.1',
-          integrity: 'sha256:abc',
-          assets: [
-            {
-              scope: 'project',
-              type: 'skill',
-              name: 'cowsay',
-              files: [
-                { path: 'skills/cowsay/SKILL.md', integrity: `sha256:${'0'.repeat(64)}` },
-                { path: 'skills/cowsay/references/art.md', integrity: `sha256:${'1'.repeat(64)}` },
-              ],
-            },
-          ],
-        },
-      },
-    }
-    const receipt = bootstrapReceipt(projectDir, lockfile)
-    // Receipt mirrors the owned PATHS (no hashes).
-    expect(receipt.facets.cowsay?.assets[0]?.files).toEqual([
-      'skills/cowsay/SKILL.md',
-      'skills/cowsay/references/art.md',
-    ])
+    const projected = receiptEntryForLockedFacet(entry)
+
+    expect(projected.version).toBe('0.0.1')
+    // Paths are mirrored; the hashes are not part of what a receipt records.
+    expect(projected.assets[0]?.files).toEqual(['skills/cowsay/SKILL.md', 'skills/cowsay/references/art.md'])
     // A pre-disposition entry can only have meant authored materialization.
-    expect(receipt.facets.cowsay?.assets[0]?.materialization).toEqual({ kind: 'authored' })
+    expect(projected.assets[0]?.materialization).toEqual({ kind: 'authored' })
+    expect(projected.assets[1]).toEqual(commandAsset('moo'))
+    // Provenance belongs to the lockfile, never the receipt.
+    expect('source' in projected).toBe(false)
+    expect('integrity' in projected).toBe(false)
   })
 
-  test('carries dispositions through from a current lockfile and excludes omitted assets', () => {
-    const files = [{ path: 'skills/cowsay/SKILL.md', integrity: `sha256:${'0'.repeat(64)}` }]
-    const lockfile: SupportedLockfile = {
-      lockfileVersion: CURRENT_LOCKFILE_VERSION,
-      facets: {
-        cowsay: {
-          source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
-          version: '0.0.1',
-          integrity: 'sha256:abc',
-          assets: [
-            { scope: 'project', type: 'skill', name: 'cowsay', materialization: { kind: 'authored' }, files },
-            {
-              scope: 'project',
-              type: 'command',
-              name: 'moo',
-              materialization: { kind: 'aliased', as: 'cow-moo' },
-              files: [{ path: 'commands/moo.md', integrity: `sha256:${'1'.repeat(64)}` }],
-            },
-            {
-              scope: 'project',
-              type: 'agent',
-              name: 'herder',
-              materialization: { kind: 'omitted' },
-              files: [{ path: 'agents/herder.md', integrity: `sha256:${'2'.repeat(64)}` }],
-            },
-          ],
+  test('carries dispositions through and excludes omitted assets', () => {
+    const entry: SupportedLockfile['facets'][string] = {
+      source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
+      version: '0.0.1',
+      integrity: 'sha256:abc',
+      assets: [
+        {
+          scope: 'project',
+          type: 'skill',
+          name: 'cowsay',
+          materialization: { kind: 'authored' },
+          files: [{ path: 'skills/cowsay/SKILL.md', integrity: `sha256:${'0'.repeat(64)}` }],
         },
-      },
-    }
-    const receipt = bootstrapReceipt(projectDir, lockfile)
-    // The omitted agent is absent: the lockfile records the resolved SET,
-    // the receipt records only what is on disk. Bootstrapping from an
-    // omitted asset would claim ownership of files never written.
-    expect(receipt.facets.cowsay?.assets.map((a) => a.name)).toEqual(['cowsay', 'moo'])
-    expect(receipt.facets.cowsay?.assets[1]?.materialization).toEqual({ kind: 'aliased', as: 'cow-moo' })
-    // Authored paths are preserved even under an alias.
-    expect(receipt.facets.cowsay?.assets[1]?.files).toEqual(['commands/moo.md'])
-  })
-
-  test('empty lockfile produces empty receipt', () => {
-    const lockfile: SupportedLockfile = {
-      lockfileVersion: CURRENT_LOCKFILE_VERSION,
-      facets: {},
-    }
-    const receipt = bootstrapReceipt(projectDir, lockfile)
-    expect(Object.keys(receipt.facets)).toHaveLength(0)
-  })
-
-  test('strips source and integrity from lockfile entries', () => {
-    const lockfile: Lockfile02 = {
-      lockfileVersion: LOCKFILE_VERSION_0_2,
-      facets: {
-        cowsay: {
-          source: { kind: 'git', url: 'https://github.com/test/cowsay', commit: 'abc12345' },
-          version: '0.0.1',
-          integrity: 'sha256:abc',
-          assets: [
-            {
-              scope: 'project',
-              type: 'skill',
-              name: 'cowsay',
-              files: [{ path: 'skills/cowsay/SKILL.md', integrity: `sha256:${'0'.repeat(64)}` }],
-            },
-          ],
+        {
+          scope: 'project',
+          type: 'command',
+          name: 'moo',
+          materialization: { kind: 'aliased', as: 'cow-moo' },
+          files: [{ path: 'commands/moo.md', integrity: `sha256:${'1'.repeat(64)}` }],
         },
-      },
-    }
-    const receipt = bootstrapReceipt(projectDir, lockfile)
-    // Receipt entries should not carry source or integrity.
-    const entry = receipt.facets.cowsay
-    expect(entry).toBeDefined()
-    if (!entry) expect.unreachable()
-    expect('source' in entry).toBe(false)
-    expect('integrity' in entry).toBe(false)
-    expect(entry.version).toBe('0.0.1')
-    expect(entry.assets).toHaveLength(1)
-  })
-
-  // A dropped receipt facet is not a cosmetic loss: `buildPreviousOwnership`
-  // never sees the claim, so those materialized assets are neither deleted
-  // nor re-tracked. Assignment for this key creates no own member, so the
-  // entry vanished silently — the one outcome D6 rules out.
-  test('a facet named __proto__ becomes an own key', () => {
-    const lockfile = JSON.parse(
-      JSON.stringify({
-        lockfileVersion: LOCKFILE_VERSION_0_2,
-        facets: {
-          PLACEHOLDER: {
-            source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
-            version: '0.0.1',
-            integrity: 'sha256:abc',
-            assets: [
-              {
-                scope: 'project',
-                type: 'skill',
-                name: 'cowsay',
-                files: [{ path: 'skills/cowsay/SKILL.md', integrity: `sha256:${'0'.repeat(64)}` }],
-              },
-            ],
-          },
+        {
+          scope: 'project',
+          type: 'agent',
+          name: 'herder',
+          materialization: { kind: 'omitted' },
+          files: [{ path: 'agents/herder.md', integrity: `sha256:${'2'.repeat(64)}` }],
         },
-      }).replace('"PLACEHOLDER"', '"__proto__"'),
-    ) as Lockfile02
+      ],
+    }
 
-    const receipt = bootstrapReceipt(projectDir, lockfile)
+    const projected = receiptEntryForLockedFacet(entry)
 
-    expect(Object.hasOwn(receipt.facets, '__proto__')).toBe(true)
-    expect(Object.keys(receipt.facets)).toEqual(['__proto__'])
+    // The omitted agent is absent: the lockfile records the resolved SET, the
+    // receipt records what is on disk, and an omitted asset was never written.
+    expect(projected.assets.map((a) => a.name)).toEqual(['cowsay', 'moo'])
+    expect(projected.assets[1]?.materialization).toEqual({ kind: 'aliased', as: 'cow-moo' })
+    // Owned paths stay anchored to the authored archive layout under an alias.
+    expect(projected.assets[1]?.files).toEqual(['commands/moo.md'])
   })
 })
 
@@ -633,8 +537,6 @@ describe('bootstrapReceipt', () => {
 // ---------------------------------------------------------------------------
 
 describe('resolveProjectReceipt', () => {
-  const lockfile: SupportedLockfile = { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} }
-
   function writeRawReceipt(body: string): void {
     mkdirSync(join(facetDir, 'receipts'), { recursive: true })
     writeFileSync(receiptPath(projectDir), body)
@@ -647,30 +549,48 @@ describe('resolveProjectReceipt', () => {
       facets: { cowsay: { version: '0.0.1', assets: [skillAsset('cowsay')] } },
     })
 
-    const state = resolveProjectReceipt(projectDir, lockfile)
+    const state = resolveProjectReceipt(projectDir)
 
     if (state.kind !== 'loaded') expect.unreachable()
     expect(state.receipt.facets.cowsay?.assets).toHaveLength(1)
     expect(state.invalidEntries).toEqual([])
   })
 
-  test('tags an absent receipt as missing', () => {
-    expect(resolveProjectReceipt(projectDir, lockfile).kind).toBe('missing')
-  })
-
+  // Every unusable state proves the same thing — nothing. The reason exists to
+  // tell the user which one happened, not to grade how much ownership it
+  // confers. The arm carries no receipt at all, so there is no field an
+  // ownership claim could hide in.
   test.each([
+    ['missing', undefined],
     ['corrupt', 'not json{'],
     ['path-mismatch', JSON.stringify({ version: CURRENT_RECEIPT_VERSION, path: '/some/other/project', facets: {} })],
-  ] as const)('tags a %s receipt as invalid', (reason, body) => {
-    writeRawReceipt(body)
+  ] as const)('reports a %s receipt as unavailable with no claims', (reason, body) => {
+    if (body !== undefined) writeRawReceipt(body)
 
-    const state = resolveProjectReceipt(projectDir, lockfile)
+    const state = resolveProjectReceipt(projectDir)
 
-    if (state.kind !== 'invalid') expect.unreachable()
+    if (state.kind !== 'unavailable') expect.unreachable()
     expect(state.reason).toBe(reason)
-    // Reconciliation still needs a receipt to diff against, so the projection
-    // is supplied — under a name no witness check can consume.
-    expect(state.fallback.path).toBe(realpathSync(projectDir))
+    expect(state.projectPath).toBe(realpathSync(projectDir))
+    // The commit's base is derived, and claims nothing.
+    expect(receiptBaseFor(state).facets).toEqual({})
+    expect(receiptBaseFor(state).path).toBe(realpathSync(projectDir))
+    // And it authorizes no deletion.
+    expect(buildPreviousOwnership(state).size).toBe(0)
+  })
+
+  test('a loaded receipt is its own base, and its claims authorize deletion', () => {
+    writeReceipt(projectDir, {
+      version: CURRENT_RECEIPT_VERSION,
+      path: realpathSync(projectDir),
+      facets: { cowsay: { version: '0.0.1', assets: [skillAsset('cowsay')] } },
+    })
+
+    const state = resolveProjectReceipt(projectDir)
+
+    if (state.kind !== 'loaded') expect.unreachable()
+    expect(receiptBaseFor(state)).toBe(state.receipt)
+    expect([...buildPreviousOwnership(state).values()].map((o) => o.effectiveName)).toEqual(['cowsay'])
   })
 })
 

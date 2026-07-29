@@ -11,7 +11,10 @@
  * The filename is `<basename>-<hash>.json` where `<hash>` is the first
  * 12 hex characters of `sha256(realpath(projectDir))`. The receipt
  * embeds the canonical project path for self-identification — a
- * mismatch on load fails closed (treated as absent, re-bootstrapped).
+ * mismatch on load fails closed, and a receipt that fails to load in
+ * any way witnesses NOTHING rather than being projected from the
+ * lockfile: the lockfile is shared state and cannot witness this
+ * machine.
  *
  * Assets are stored as semantic tuples `{ scope, type, name }` — the
  * same adapter-agnostic shape as the lockfile. Deletion goes through
@@ -28,7 +31,6 @@ import {
   lockedDispositionOf,
   type MaterializedDisposition,
   MaterializedDispositionSchema,
-  type SupportedLockfile,
   type SupportedLockfileAssetEntry,
   type SupportedLockfileFacet,
 } from '@agent-facets/protocol'
@@ -206,14 +208,33 @@ export type LoadReceiptResult =
   | { ok: true; receipt: Receipt; invalidEntries: ReadonlyArray<InvalidReceiptAsset> }
   | { ok: false; reason: 'missing' | 'corrupt' | 'path-mismatch' }
 
-/** Receipt provenance for paths that need local evidence rather than a lockfile projection. */
+/** Why this machine has no usable account of what it materialized. */
+export type ReceiptUnavailableReason = 'missing' | 'corrupt' | 'path-mismatch'
+
+/**
+ * What this machine can prove it materialized.
+ *
+ * Two states, because there are only two answers: either a receipt file was
+ * read and its validated claims ARE this machine's account of disk, or there
+ * is no usable account and the proven ownership set is empty. The reasons an
+ * account can be unusable differ in what to tell the user, never in how much
+ * ownership they confer — a missing receipt and a corrupt one both prove
+ * nothing, and the lockfile cannot stand in for either, because it is shared
+ * state that a `git pull` rewrites without touching a single file on disk.
+ *
+ * The `unavailable` arm carries NO `Receipt`, deliberately. Every claim in a
+ * receipt is a licence to delete, so a state that means "no claims" must not
+ * be able to hold any: an empty-by-convention `Receipt` here would put the
+ * whole guarantee on one constructor remembering to leave a field empty.
+ * `canonicalProjectPath` is all the arm needs, because the only other use for
+ * a receipt value is as the base a commit builds its NEW record on — and that
+ * base is derived at commit time from the path (see `emptyReceiptFor`).
+ */
 export type ProjectReceiptState =
   /** Read from this machine's receipt file, and free to contradict the lockfile. */
   | { kind: 'loaded'; receipt: Receipt; invalidEntries: ReadonlyArray<InvalidReceiptAsset> }
-  /** No receipt file exists, so the lockfile is the only account there has ever been. */
-  | { kind: 'missing'; receipt: Receipt }
-  /** A receipt file exists and could not be read; `fallback` is a lockfile projection. */
-  | { kind: 'invalid'; fallback: Receipt; reason: 'corrupt' | 'path-mismatch' }
+  /** No trustworthy local account. Proven ownership is empty by construction. */
+  | { kind: 'unavailable'; reason: ReceiptUnavailableReason; projectPath: string }
 
 // ---------------------------------------------------------------------------
 // Path computation
@@ -280,8 +301,8 @@ export function loadReceipt(projectDir: string): LoadReceiptResult {
     filePath = receiptPath(projectDir)
   } catch {
     // realpathSync throws when the path doesn't exist or is otherwise
-    // unresolvable (dangling symlink, permission denied). Treat the
-    // same as a missing receipt — the caller will bootstrap a fresh one.
+    // unresolvable (dangling symlink, permission denied). Nothing can be
+    // witnessed without a canonical path to witness it against.
     return { ok: false, reason: 'corrupt' }
   }
 
@@ -448,7 +469,7 @@ export function writeReceipt(projectDir: string, receipt: Receipt): void {
 }
 
 // ---------------------------------------------------------------------------
-// Bootstrap
+// Resolution
 // ---------------------------------------------------------------------------
 
 /**
@@ -466,42 +487,49 @@ export function materializedDispositionOf(asset: SupportedLockfileAssetEntry): M
 }
 
 /**
- * Create a fresh current receipt from a lockfile. Used when no receipt
- * exists (first operation on the project) or when the existing receipt fails
- * validation (path mismatch, corruption).
+ * Load this machine's account of what it materialized.
  *
- * Seeds from the lockfile's entries — records what *should* be on disk.
- * Owned file paths come from the lockfile asset's `files[]`, which every
- * supported version carries. Omitted assets are excluded:
- * bootstrapping from them would claim ownership of files that were never
- * written, and the next removal pass would try to delete them. Assets
- * orphaned before this change shipped are unrecoverable (explicit non-goal
- * in the proposal).
+ * A receipt that does not load confers no ownership, and this returns no
+ * receipt value at all in that case. Projecting the lockfile here instead
+ * would let shared state authorize deletion of files this machine has no
+ * evidence it wrote.
+ *
+ * Never throws: an unresolvable project path is reported as `corrupt`, the
+ * same as an unreadable file, because both leave nothing to witness with.
  */
-export function bootstrapReceipt(projectDir: string, lockfile: SupportedLockfile): Receipt {
-  const canonical = realpathSync(projectDir)
-  const facets: Record<string, ReceiptFacetEntry> = ownRecord()
-
-  for (const [name, entry] of Object.entries(lockfile.facets)) {
-    facets[name] = receiptEntryForLockedFacet(entry)
-  }
-
-  return { version: CURRENT_RECEIPT_VERSION, path: canonical, facets }
+export function resolveProjectReceipt(projectDir: string): ProjectReceiptState {
+  const result = loadReceipt(projectDir)
+  if (result.ok) return { kind: 'loaded', receipt: result.receipt, invalidEntries: result.invalidEntries }
+  return { kind: 'unavailable', reason: result.reason, projectPath: bestEffortPath(projectDir) }
 }
 
 /**
- * Load the receipt, tagged with the licence its records carry.
- *
- * Every arm supplies a usable receipt, because ownership reconciliation has
- * always accepted the lockfile as its fallback. The tag only says whether the
- * records may additionally be trusted as evidence about this machine.
+ * The base a commit builds its new receipt on when there was no readable one.
+ * Claims nothing: this run's writes are the only thing that may fill it.
  */
-export function resolveProjectReceipt(projectDir: string, lockfile: SupportedLockfile): ProjectReceiptState {
-  const result = loadReceipt(projectDir)
-  if (result.ok) return { kind: 'loaded', receipt: result.receipt, invalidEntries: result.invalidEntries }
-  const projected = bootstrapReceipt(projectDir, lockfile)
-  if (result.reason === 'missing') return { kind: 'missing', receipt: projected }
-  return { kind: 'invalid', fallback: projected, reason: result.reason }
+export function emptyReceiptFor(projectPath: string): Receipt {
+  return { version: CURRENT_RECEIPT_VERSION, path: projectPath, facets: ownRecord() }
+}
+
+/**
+ * The receipt base for whatever provenance a run has — the loaded record, or
+ * an empty one. Never an ownership claim in the `unavailable` case.
+ */
+export function receiptBaseFor(state: ProjectReceiptState): Receipt {
+  return state.kind === 'loaded' ? state.receipt : emptyReceiptFor(state.projectPath)
+}
+
+/**
+ * Best-effort canonical path. An unresolvable project directory is already the
+ * `corrupt` case, and `writeReceipt` normalizes the field again before it
+ * reaches disk, so the un-canonicalized fallback never persists.
+ */
+function bestEffortPath(projectDir: string): string {
+  try {
+    return realpathSync(projectDir)
+  } catch {
+    return projectDir
+  }
 }
 
 /**
@@ -509,12 +537,11 @@ export function resolveProjectReceipt(projectDir: string, lockfile: SupportedLoc
  * says was materialized, with the paths it says that asset owns.
  *
  * This is a CLAIM derived from shared state, not an observation of this
- * machine — so it is correct exactly where the lockfile is the only thing
- * that can answer: bootstrapping a project with no receipt at all, and
- * recording a facet whose assets this run just wrote from that very entry.
- * A path that writes nothing must NOT use it to describe a facet the receipt
- * already covers; carrying the receipt's own record forward is the only
- * truthful option there (see `buildUpdatedReceipt`).
+ * machine, so there is exactly ONE place it is true: recording a facet whose
+ * assets this run just wrote from that very entry (`buildUpdatedReceipt`'s
+ * `written` arm). Any other caller would be asserting ownership of files it
+ * has no evidence for — the deletion authority that this receipt then hands
+ * to the next run.
  *
  * Omitted assets are excluded: the lockfile records the resolved SET, the
  * receipt records what is on disk, and an omitted asset was never written.
