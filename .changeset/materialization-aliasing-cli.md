@@ -85,12 +85,13 @@ from double-deleting.
   succeeds: surviving lockfile entries are carried forward from local state
   rather than re-resolved, and their materialized files are left untouched. That
   offline path is taken only when local state genuinely answers for every
-   survivor — the machine's install receipt has to be readable and agree with the
-   lockfile about each survivor's version, dispositions, and owned files, and no
-   name a survivor keeps may have been claimed by a facet being removed. Otherwise the ordinary
-  pipeline runs, which is what actually moves the files. Ctrl-C is honored on
-  that path too: before anything is deleted nothing is written, and after
-  deletion the deletes are rolled back rather than committed.
+  survivor — a present machine install receipt has to be readable and agree
+  with the lockfile about each survivor's version, dispositions, and owned
+  files, and no name a survivor keeps may have been claimed by a facet being
+  removed. Otherwise, the ordinary pipeline runs, which is what actually moves
+  the files. Ctrl-C is honored on that path too: before anything is deleted
+  nothing is written, and after deletion the deletes are rolled back rather than
+  committed.
 - **BREAKING: `facet remove` now connects an adapter even when every name you
   gave it looks undeclared.** Whether a name is declared is decided by the
   commit, under the project lock — a pre-lock read can be stale, and acting on
