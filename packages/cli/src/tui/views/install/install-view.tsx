@@ -15,7 +15,7 @@ import { ProgressBar } from '../../components/progress-bar.tsx'
 import { ASSET_TYPE_COLORS, THEME } from '../../theme.ts'
 import { AddPrepareFailureBlock } from './add-prepare-failure-block.tsx'
 import { CollisionWorkspace } from './collision/workspace.tsx'
-import { type FacetState, STAGE_LABELS } from './facet-row.tsx'
+import { type FacetState, STAGE_LABELS } from './facet-state.ts'
 import { FailureBlock } from './failure-block.tsx'
 import { RemovePrepareFailureBlock } from './remove-prepare-failure-block.tsx'
 
@@ -97,16 +97,18 @@ interface ServerWarning {
   servers: ReadonlyArray<string>
 }
 
-interface DriftRemoval {
-  facet: string
-  oldVersion: string
-}
-
 /** A materialization choice dropped because its asset no longer exists. */
 interface PrunedOverride {
   facet: string
   assetType: AssetType
   authoredName: string
+}
+
+/** A receipt claim that failed validation and can no longer be acted on. */
+interface RejectedReceiptEntry {
+  facet: string
+  asset: string
+  reason: string
 }
 
 /**
@@ -138,13 +140,16 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
   const [facetOrder, setFacetOrder] = useState<string[]>([])
   const [facets, setFacets] = useState<Record<string, FacetState>>({})
   const [serverWarnings, setServerWarnings] = useState<ServerWarning[]>([])
-  const [_driftRemovals, setDriftRemovals] = useState<DriftRemoval[]>([])
+
   /** Per-facet adapter completions: facetName → list of adapter names done. */
   const [adaptersByFacet, setAdaptersByFacet] = useState<Record<string, string[]>>({})
   const [phase, setPhase] = useState<ViewPhase>({ kind: 'progress' })
   const [checkingCollisions, setCheckingCollisions] = useState(false)
   const [prunedOverrides, setPrunedOverrides] = useState<PrunedOverride[]>([])
   const [receiptUnavailable, setReceiptUnavailable] = useState<'corrupt' | 'path-mismatch' | null>(null)
+  const [receiptUnpersisted, setReceiptUnpersisted] = useState<string | null>(null)
+  const [removalResolutionReason, setRemovalResolutionReason] = useState<string | null>(null)
+  const [rejectedReceiptEntries, setRejectedReceiptEntries] = useState<RejectedReceiptEntry[]>([])
   const [elapsedMs, setElapsedMs] = useState(0)
   const startedRef = useRef(false)
   const startTimeRef = useRef(Date.now())
@@ -220,9 +225,6 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
       case 'server-warning':
         setServerWarnings((prev) => [...prev, { facet: event.facet, servers: event.servers }])
         return
-      case 'drift-removal':
-        setDriftRemovals((prev) => [...prev, { facet: event.facet, oldVersion: event.oldVersion }])
-        return
       case 'adapter-complete':
         setAdaptersByFacet((prev) => {
           const existing = prev[event.facet] ?? []
@@ -233,13 +235,28 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
       case 'receipt-unavailable':
         setReceiptUnavailable(event.reason)
         return
+      case 'receipt-unpersisted':
+        setReceiptUnpersisted(event.cause)
+        return
+      case 'removal-resolution-required':
+        // Only interesting if the run then fails — see the render below.
+        setRemovalResolutionReason(event.reason)
+        return
+      case 'receipt-invalid-asset':
+        // A claim this machine can no longer act on. The files it covered
+        // stay on disk and no longer have anything that could clean them up,
+        // which is not something a user can deduce from a summary that says
+        // the facet was removed.
+        setRejectedReceiptEntries((prev) => [...prev, { facet: event.facet, asset: event.asset, reason: event.reason }])
+        return
+      case 'drift-removal':
       case 'asset-installed':
       case 'asset-deleted':
       case 'lockfile-write':
-      case 'receipt-invalid-asset':
       case 'install-complete':
-        // No per-event UI for these; the final result render (or the
-        // verbose log, for rejected receipt entries) covers them.
+        // No per-event UI for these; the final result render covers them.
+        // A drift removal in particular is already named in the summary,
+        // where it can also say whether anything was actually cleaned up.
         return
       default: {
         // Exhaustiveness guard. Without it a newly added stage event
@@ -457,6 +474,30 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
         </Box>
       )}
 
+      {/* A rejected claim is a cleanup that will never happen: the files it
+          covered stay on disk, and nothing is left that could remove them. */}
+      {rejectedReceiptEntries.length > 0 && (
+        <Box flexDirection="column" marginLeft={2}>
+          {rejectedReceiptEntries.map((entry) => (
+            <Text key={`${entry.facet}:${entry.asset}`} color={THEME.caution}>
+              ⚠ this project’s install receipt records “{entry.asset}” in {entry.facet} unusably ({entry.reason}) — that
+              asset’s files are left in place and will not be cleaned up.
+            </Text>
+          ))}
+        </Box>
+      )}
+
+      {/* Frozen mode wrote assets it could not record. It succeeded — the
+          locked set is intact — but nothing now knows those files are ours. */}
+      {receiptUnpersisted !== null && (
+        <Box flexDirection="column" marginLeft={2}>
+          <Text color={THEME.caution}>
+            ⚠ this project’s install receipt could not be written ({receiptUnpersisted}) — the assets this run wrote are
+            untracked, so a later removal will leave them in place.
+          </Text>
+        </Box>
+      )}
+
       {result?.ok && (
         <SuccessSummary
           result={result}
@@ -470,6 +511,16 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
       {/* The partial-rollback note used to live here as well, restating what
           the failure block already claimed. `FailureBlock` now renders the
           disk state once, for every failure code, from the shared helper. */}
+      {/* A removal that fell back to resolution fails while naming a facet
+          the user is KEEPING. Say why it was fetching that facet at all. */}
+      {result && !result.ok && removalResolutionReason !== null && (
+        <Box flexDirection="column" marginLeft={2}>
+          <Text color={THEME.hint}>
+            This removal could not be answered from local state ({removalResolutionReason}), so it had to resolve the
+            facets you are keeping — which is the step that failed. Nothing was deleted.
+          </Text>
+        </Box>
+      )}
       {result && isInstallFailure(result) && <FailureBlock result={result} />}
     </Box>
   )
@@ -560,10 +611,14 @@ function SuccessSummary({
             )}
           </Text>
         ))}
+        {/* The remedy has to be one the user can still act on. By the time
+            this prints, the facet is already out of `facets.json`, so
+            `facet install` has nothing left to take ownership of. */}
         {untrackedNames.length > 0 && (
           <Text color={THEME.caution}>
-            {untrackedNames.join(', ')} — files left in place; this machine has no install receipt for{' '}
-            {untrackedNames.length === 1 ? 'it' : 'them'}. Run `facet install` before removing to take ownership.
+            {untrackedNames.join(', ')} — project records removed, but{' '}
+            {untrackedNames.length === 1 ? 'its files were' : 'their files were'} left in place because this machine had
+            no install receipt for {untrackedNames.length === 1 ? 'it' : 'them'}. Remove the retained files manually.
           </Text>
         )}
       </Box>

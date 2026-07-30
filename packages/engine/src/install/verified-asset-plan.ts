@@ -189,6 +189,11 @@ function assetOrder(a: VerifiedAsset, b: VerifiedAsset): number {
  */
 export type SkillCompanionBytes = Record<string, Uint8Array>
 
+/** Companion bytes for every skill in a plan, or why they could not be read. */
+export type ReadSkillCompanionBytesResult =
+  | { ok: true; companions: Map<string, SkillCompanionBytes> }
+  | { ok: false; errors: ValidationError[] }
+
 /**
  * The key skill companion bytes are stored and retrieved under.
  *
@@ -216,11 +221,11 @@ export function authoredCompanionKey(scope: Scope, type: AssetType, authoredName
  * maps to an empty companion map.
  *
  * `verifiedDir` MUST be the same verified directory the plan was derived from.
+ *
+ * Result-shaped for the same reason `buildVerifiedAssetPlan` is: a file that
+ * cannot be read is a failure the caller reports, not a throw.
  */
-export function readSkillCompanionBytes(
-  plan: VerifiedAssetPlan,
-  verifiedDir: string,
-): Map<string, SkillCompanionBytes> {
+export function readSkillCompanionBytes(plan: VerifiedAssetPlan, verifiedDir: string): ReadSkillCompanionBytesResult {
   const byAsset = new Map<string, SkillCompanionBytes>()
   for (const asset of plan.assets) {
     if (asset.type !== 'skill') continue
@@ -234,9 +239,31 @@ export function readSkillCompanionBytes(
       // Every skill companion path is derived by `planArchiveEntries` to live
       // below the skill root, so this prefix strip is total.
       const relative = file.path.startsWith(skillRoot) ? file.path.slice(skillRoot.length) : file.path
-      companions[relative] = new Uint8Array(readFileSync(join(verifiedDir, file.path)))
+      // The plan hashed this file moments ago, so it was readable then — but
+      // "was readable" is not "is readable": the verified directory is an
+      // ordinary directory that another process can still change underneath a
+      // running install. A read that fails here is an I/O outcome, reported
+      // like any other, not an exception thrown out of a pipeline whose
+      // contract is to return.
+      let bytes: Buffer
+      try {
+        bytes = readFileSync(join(verifiedDir, file.path))
+      } catch (error) {
+        return {
+          ok: false,
+          errors: [
+            {
+              path: file.path,
+              message: `verified companion file could not be read: ${error instanceof Error ? error.message : String(error)}`,
+              expected: 'a readable file',
+              actual: 'unreadable',
+            },
+          ],
+        }
+      }
+      companions[relative] = new Uint8Array(bytes)
     }
     byAsset.set(authoredCompanionKey(asset.scope, asset.type, asset.name), companions)
   }
-  return byAsset
+  return { ok: true, companions: byAsset }
 }

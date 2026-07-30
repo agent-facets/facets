@@ -164,6 +164,12 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
       // matches what we would write, no work is needed and no journal
       // entry is recorded (there's nothing to undo).
       //
+      // The identity is still recorded as owned afterwards, including when
+      // nothing on disk was tracked before. Ownership follows from having
+      // RECONCILED the identity to the desired state, and a byte-for-byte
+      // comparison establishes that as conclusively as a write does —
+      // rewriting identical bytes would prove nothing the comparison has not.
+      //
       // The candidate (`content`, `metadata`) we hand to `installAsset`
       // is NOT what lands on disk byte-for-byte. The adapter SDK's
       // `assembleAssetContent` splits any author-supplied front matter
@@ -246,12 +252,16 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
 
       // Rollback preimage: restore the COMPLETE prior bundle (primary +
       // previously-owned companion bytes), or delete a freshly-created asset.
-      // The owned-path set handed to the restore install is the union of the
-      // paths this operation could have written or removed, so the restore
-      // converges the bundle back to its prior state without touching unowned
-      // files. Companion-less skills and single-file assets restore exactly
-      // as before.
-      const restoreOwned = previous ? Object.keys(previous.companions) : ownedCompanionPaths
+      //
+      // The owned set handed to the inverse op is the union of every path this
+      // write could have touched: the paths it was allowed to REMOVE (the
+      // receipt's owned set) and the paths it actually WROTE (the new
+      // companions). The second half is load-bearing. An undo that named only
+      // the prior owned set would restore the old primary while leaving every
+      // companion this operation added on disk — stranded beside a bundle that
+      // no longer references them, and permanently untracked, because a failed
+      // transaction commits no receipt to claim them by.
+      const touchedOwned = unionPaths(ownedCompanionPaths, Object.keys(companions))
       opts.journal.record({
         label: `install ${adapter.name}:${target.type}:${target.name}`,
         undo: async () => {
@@ -262,10 +272,10 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
               previous.content,
               previous.metadata ?? {},
               previous.companions,
-              restoreOwned,
+              touchedOwned,
             )
           } else {
-            await runUndoDelete(adapter, target, ownedCompanionPaths)
+            await runUndoDelete(adapter, target, touchedOwned)
           }
         },
       })
@@ -533,6 +543,11 @@ async function runUndoDelete(
       `undo delete ${adapter.name}:${asset.type}:${asset.name} failed: ${describeAssetFailure(result.failure)}`,
     )
   }
+}
+
+/** Deduplicated, deterministically ordered union of two owned-path sets. */
+function unionPaths(a: readonly string[], b: readonly string[]): string[] {
+  return [...new Set([...a, ...b])].sort()
 }
 
 /**

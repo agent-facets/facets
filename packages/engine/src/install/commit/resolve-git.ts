@@ -206,6 +206,10 @@ export async function resolveGitFacet(args: ResolveGitFacetArgs): Promise<Resolv
     if (!built.ok) {
       return { ok: false, failure: { code: 'BUILD_FAILED', facet: facetName, errors: built.errors } }
     }
+    const companionBytes = readSkillCompanionBytes(built.plan, sourceDir)
+    if (!companionBytes.ok) {
+      return { ok: false, failure: { code: 'BUILD_FAILED', facet: facetName, errors: companionBytes.errors } }
+    }
 
     return {
       ok: true,
@@ -213,7 +217,7 @@ export async function resolveGitFacet(args: ResolveGitFacetArgs): Promise<Resolv
         ...identity,
         resolved: content.resolved,
         plan: built.plan,
-        companionBytes: readSkillCompanionBytes(built.plan, sourceDir),
+        companionBytes: companionBytes.companions,
         serversDeclared: content.serversDeclared,
       },
     }

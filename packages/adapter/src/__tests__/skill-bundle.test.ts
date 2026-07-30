@@ -296,6 +296,23 @@ describe('deleteSkillBundle', () => {
     expect(await exists(join(p.root, 'references/api.md'))).toBe(false)
   })
 
+  test('preserves an adjacent .meta.json file', async () => {
+    // Nothing in this SDK has ever written a `<primary>.meta.json`: metadata
+    // lives in the primary's own front matter. A file with that name belongs
+    // to whoever put it there, and is unowned like any other.
+    const p = paths()
+    await installSkillBundle(p, { content: '# Review', companions: {}, ownedCompanionPaths: [] })
+    const neighbor = `${p.primaryFile}.meta.json`
+    await writeFile(neighbor, '{"mine":true}')
+
+    const result = await deleteSkillBundle(p, [])
+    if (!result.ok) expect.unreachable()
+
+    expect(await exists(p.primaryFile)).toBe(false)
+    expect(result.deletedPaths).not.toContain(neighbor)
+    expect(await readFile(neighbor, 'utf8')).toBe('{"mine":true}')
+  })
+
   test('deleting a non-existent skill is success with existed: false', async () => {
     const result = await deleteSkillBundle(paths('missing'), [])
     if (!result.ok) expect.unreachable()

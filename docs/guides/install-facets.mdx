@@ -163,7 +163,7 @@ Note this facet ships an agent `cowsay` **and** a command `cowsay`. That is lega
 └── commands/cowchat.md
 ```
 
-A skill's [companion files](/specification/manifest#supplementary-files) land beside its `SKILL.md`, and a skill installs and removes as one atomic bundle. [Archive-only files](/specification/commit#materialize) — a facet's top-level `README.md` or `LICENSE` — ship in the archive but are **never** written into your adapters. Other adapters use their own conventional location (Claude Code under `.claude/`, and so on). These files are `project`-scoped  -- the same `scope` you see in the lockfile  -- so they belong to the checkout, not your machine. `facet remove` deletes them again — including a skill's owned companions, while preserving any files you added into a skill directory yourself — and `facet install` recreates them from the lockfile after a clone.
+A skill's [companion files](/specification/manifest#supplementary-files) land beside its `SKILL.md`, and a skill installs and removes as one atomic bundle. [Archive-only files](/specification/commit#materialize) — a facet's top-level `README.md` or `LICENSE` — ship in the archive but are **never** written into your adapters. Other adapters use their own conventional location (Claude Code under `.claude/`, and so on). These files are `project`-scoped  -- the same `scope` you see in the lockfile  -- so they belong to the checkout, not your machine. `facet remove` deletes them again — including a skill's owned companions, while preserving any files you added into a skill directory yourself — and `facet install` recreates them from the lockfile after a clone. Deletion is driven by your machine's [install receipt](/specification/commit#machine-local-install-receipt): files this machine never installed are left in place rather than removed on the lockfile's word.
 
 ## Two facets, one name
 
@@ -256,10 +256,10 @@ Re-adding at a new version updates both `facets.json` and the lockfile. A dedica
 
 ```sh
 facet remove viper-plans          # aliased: facet rm
-facet remove viper-plans rezi     # several at once (all-or-nothing)
+facet remove viper-plans rezi     # several at once, in one transaction
 ```
 
-[`facet remove`](/cli/remove) takes a facet out of `facets.json`, deletes its assets from every connected adapter, and rewrites the lockfile without it. If any named facet isn't declared, the command fails and changes nothing.
+[`facet remove`](/cli/remove) takes a facet out of `facets.json`, deletes the assets it still owns from every connected adapter, and rewrites the lockfile without it. Several removals commit together or not at all. A name that isn't declared is ignored rather than fatal, so re-running a removal is safe and a command whose names are all already gone succeeds as a no-op.
 
 **Manage adapters:**
 

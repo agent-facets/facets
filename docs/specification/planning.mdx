@@ -44,7 +44,7 @@ The specifier is passed through untouched. Plan does not decide what version a w
 
 **`facet add`** resolves each source's facet name and builds the additions list. For registry sources the name comes from the specifier itself. For git and local sources the name lives in the source's `facet.json`, so preparation MAY **clone the repository or read the local path** to discover it. Still no version resolution and no project writes.
 
-**`facet remove`** is read-only validation: it loads the manifest and filters the requested names against the facets it actually declares, producing the removals list. A missing `facets.json` is a hard failure; a name the manifest does not declare is silently ignored.
+**`facet remove`** is read-only validation, and validates one thing: that `facets.json` can be read at all. A missing or invalid manifest is a hard failure. Every requested name goes into the removals list unfiltered — **which names are actually declared is decided by commit, under the project lock**. A pre-lock read is a snapshot that a concurrent `facet add` can invalidate, and filtering against it once let a facet added a moment later survive the removal that asked for it. A name that is still absent under the lock removes nothing.
 
 **`facet install`** has no preparation at all — an empty delta. The commit phase reproduces the declared set.
 

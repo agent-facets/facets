@@ -62,8 +62,9 @@ byte-identical with no rollback needed. Apply deletes obsolete assets in one
 global pass keyed by effective adapter identity *before* writing, which makes
 ownership transfer between facets correct and stops a duplicate historical claim
 from double-deleting. Aliasing every claimant in a collision group is fully
-supported: the authored identity they all move away from is deleted before any
-alias is written, and each alias receives its own facet's authored content.
+supported: if your receipt tracks the authored identity they all move away from,
+it is deleted before any alias is written, and each alias receives its own
+facet's authored content.
 
 **BREAKING: only your machine's install receipt authorizes deletion.**
 `facets.lock` is shared, version-controlled state — it says what *should* be
@@ -75,19 +76,31 @@ state authorizes **writes**, and the receipt authorizes **deletions**.
 
 In practice:
 
-- An install still writes every desired asset, overwriting an unmanaged file
-  that happens to occupy the same name. Only after that write does the file
-  become tracked, and only then can a later operation delete it.
-- Files this CLI has no record of writing are never deleted. Pull a teammate's
-  `facets.lock` onto a machine that never ran an install, then `facet remove`
-  the facet: `facets.json` and `facets.lock` drop it, and the files on disk stay
-  exactly where they are. The summary says so rather than reporting a deletion
-  that did not happen. Run `facet install` first if you want the CLI to take
-  ownership of them.
+- An install still materializes every desired asset, overwriting an unmanaged
+  file that happens to occupy the same name. When what is already there matches
+  the desired content, metadata, and companions byte for byte, it is adopted
+  without a rewrite — the comparison proves the same thing the write would. The
+  file is tracked from then on, and only then can a later operation delete it.
+- Files this CLI has no record of materializing are never deleted. Pull a
+  teammate's `facets.lock` onto a machine that never ran an install, then
+  `facet remove` the facet: `facets.json` and `facets.lock` drop it, and the
+  files on disk stay exactly where they are. The summary says so rather than
+  reporting a deletion that did not happen; those files are then yours to remove
+  by hand.
+- Ownership is recorded per project, not per adapter. The receipt names
+  `(scope, type, name)` — the same shape the lockfile uses — and that record
+  governs every adapter you have connected. Connecting an adapter is what hands
+  Facets management of those identities inside it.
 - A receipt that exists but cannot be used — unreadable, or recorded against a
   different project — is now reported instead of being silently replaced by a
   lockfile projection. Nothing already on disk is tracked in that state, so
-  nothing is cleaned up, and the run records only what it writes.
+  nothing is cleaned up, and the run records only what it materializes. A single
+  receipt entry that fails validation is reported the same way, and the files it
+  covered are left in place.
+- Under `--frozen-lockfile`, an install that materializes assets but cannot
+  write the receipt still succeeds — the locked set it reproduced is intact —
+  and now says that the assets it wrote are untracked, instead of reporting a
+  clean success.
 - The offline guarantee for `facet remove` is a property of tracked state, not
   of removal. See the `facet remove` entry below for what happens without it.
 
@@ -112,14 +125,18 @@ In practice:
   project whose other facets are uncached and whose registry is unreachable now
   succeeds: the remaining lockfile entries are carried forward from local state
   rather than re-resolved, and their materialized files are left untouched. That
-  offline path is taken only when your machine's receipt genuinely accounts for
-  every facet you are keeping — it has to load, record each of them, and agree
-  with the lockfile about version, dispositions, and owned files, and no name a
-  kept facet holds may have been claimed by a facet being removed. Otherwise,
-  the ordinary pipeline runs, which is what actually moves the files — it
-  materializes the state you are keeping and only then records ownership of it.
-  With the content reachable that succeeds; fully offline it fails, rather than
-  deleting files nothing proves this machine wrote. Ctrl-C is honored on that
+  offline path is taken only when local state answers the operation completely:
+  there is a lockfile, every facet you are keeping is locked and undrifted, the
+  kept set plans cleanly, the manifest declares no intent the lockfile does not
+  record, no name a kept facet holds was claimed by a facet being removed, and
+  your machine's receipt genuinely accounts for every facet you are keeping —
+  loading, recording each of them, and agreeing with the lockfile about version,
+  dispositions, and owned files. Otherwise the ordinary pipeline runs, which is
+  what actually moves the files — it materializes the state you are keeping and
+  only then records ownership of it. With the content reachable that succeeds;
+  fully offline it fails, rather than deleting files nothing proves this machine
+  wrote, and the failure says which gate sent it down that path so an error
+  naming a facet you are *keeping* is not a mystery. Ctrl-C is honored on that
   path too: before anything is deleted nothing is written, and after deletion
   the deletes are rolled back rather than committed.
 - **BREAKING: `facet remove` now connects an adapter even when every name you
@@ -128,8 +145,10 @@ In practice:
   one let a facet added by a concurrent process survive the removal that asked
   for it. `facet remove ghost` in a project with no adapter therefore opens the
   picker in a terminal and exits non-zero in CI, instead of printing a no-op
-  summary it never verified. An unreadable `facets.json` is still reported as a
-  manifest problem, before any adapter is discovered.
+  summary it never verified. Names that really are absent under the lock are
+  still ignored, so a removal whose names are all gone still succeeds. An
+  unreadable `facets.json` is still reported as a manifest problem, before any
+  adapter is discovered.
 - `facet add` and `facet remove` report an unsupported `manifestVersion` the way
   `facet install` already did — naming the version found and the versions
   supported, and telling you to upgrade — instead of describing it as a

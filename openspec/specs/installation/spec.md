@@ -280,7 +280,7 @@ When a user adds a facet to a project that has no selected adapter, the system S
 - **THEN** the system SHALL exit with a non-zero status without modifying the project
 - **AND** the error SHALL direct the user to run interactive adapter selection
 
-### Requirement: Specifier syntax is restricted to four version forms
+### Requirement: Specifier syntax is restricted to five version forms
 
 When a user specifies a version, the system SHALL accept only one of five forms: an exact version, a major-pinned wildcard, a minor-pinned wildcard, a bare wildcard, or the literal tag `latest`. Any other range syntax SHALL be rejected with a clear error pointing the user at the supported form.
 
@@ -539,9 +539,11 @@ For an explicit add:
 
 ### Requirement: A machine-local record tracks what each project has materialized
 
-The system SHALL maintain a machine-local receipt describing the asset and file ownership successfully materialized for each project. The receipt SHALL be separate from version-controlled state, identified by canonical project location, and sufficient for offline rollback and removal without cache or network access. Each canonical project location SHALL have its own receipt; two projects SHALL never share one, and concurrent operations in different projects SHALL NOT contend on the same receipt. The receipt SHALL survive lockfile changes made outside the system. Current receipts SHALL use schema version `0.3` and record only assets actually materialized, with authored identity, authored owned-file paths, and the authored-or-aliased materialization disposition needed to address the effective adapter identity, without storing adapter-encoded hashes. Omitted assets SHALL NOT appear. Receipt `1` and `0.2` assets SHALL refine losslessly to authored materialization. A legacy receipt that predates companion ownership MAY be refined to primary-only ownership because legacy installation could not materialize companions.
+The system SHALL maintain a machine-local receipt describing the asset and file ownership successfully materialized for each project. The receipt SHALL be separate from version-controlled state, identified by canonical project location, and sufficient to delete the assets it records without cache or network access. Each canonical project location SHALL have its own receipt; two projects SHALL never share one, and concurrent operations in different projects SHALL NOT contend on the same receipt. The receipt SHALL survive lockfile changes made outside the system. Current receipts SHALL use schema version `0.3` and record only assets actually materialized, with authored identity, authored owned-file paths, and the authored-or-aliased materialization disposition needed to address the effective adapter identity, without storing adapter-encoded hashes. Omitted assets SHALL NOT appear. Receipt `1` and `0.2` assets SHALL refine losslessly to authored materialization. A legacy receipt that predates companion ownership MAY be refined to primary-only ownership because legacy installation could not materialize companions.
 
-The receipt SHALL be the sole authority for materialized ownership. A receipt that cannot be loaded — absent, corrupt, or path-mismatched — SHALL confer no ownership, and the system SHALL NOT derive ownership from the lockfile in its place, because the lockfile is shared, version-controlled state that describes intended rather than local materialization. A corrupt or path-mismatched receipt SHALL be reported, because it silently withdraws deletion authority the project previously had; an absent receipt SHALL NOT be, being the ordinary first-operation state. An asset the receipt records SHALL be a **tracked materialization**; an asset on disk that no receipt record covers SHALL be an **untracked materialization**. Desired project state SHALL authorize writes and tracked ownership SHALL authorize deletion: the system SHALL write every desired effective adapter identity, overwriting an untracked file already occupying one and recording it as tracked thereafter, and SHALL leave untracked files at identities the desired state does not name untouched.
+The receipt SHALL be the sole authority for materialized ownership. A receipt that cannot be loaded — absent, corrupt, or path-mismatched — SHALL confer no ownership, and the system SHALL NOT derive ownership from the lockfile in its place, because the lockfile is shared, version-controlled state that describes intended rather than local materialization. A corrupt or path-mismatched receipt SHALL be reported, because it silently withdraws deletion authority the project previously had; an absent receipt SHALL NOT be, being the ordinary first-operation state. An asset the receipt records SHALL be a **tracked materialization**; an asset on disk that no receipt record covers SHALL be an **untracked materialization**. Desired project state SHALL authorize writes and tracked ownership SHALL authorize deletion: the system SHALL reconcile every desired effective adapter identity, overwriting an untracked file already occupying one and recording it as tracked thereafter, and SHALL leave untracked files at identities the desired state does not name untouched. Reconciling an identity SHALL mean either writing it or verifying that its rendered content, metadata, and owned companion set already match byte for byte; a verified match SHALL be recorded as tracked without a redundant write, because the operation established the same fact either way.
+
+Receipt ownership SHALL be adapter-agnostic project ownership. A recorded identity SHALL be managed in every selected adapter, and selecting an adapter SHALL delegate management of the identities the project's receipt records within that adapter's storage. The system SHALL NOT record ownership per adapter, and SHALL NOT require separate evidence per adapter before reconciling or deleting a recorded identity.
 
 The receipt, lockfile, and materialized state SHALL commit together: within one operation, handled failures SHALL roll back all three, and an interruption that prevents rollback SHALL be recoverable by re-running installation, whose per-file integrity reconciliation converges disk, lockfile, and receipt without deleting unowned files. Receipt-driven deletion SHALL aggregate duplicate historical claims by effective adapter identity, delete each obsolete identity at most once, and pass each skill's validated authored companion ownership into the adapter deletion request so removal after a pulled lockfile drops an entry deletes exactly the recorded owned files without cache or network access. The receipt SHALL determine what is currently materialized when pulled version-control changes remove lockfile entries. In frozen-lockfile mode, receipt-driven cleanup SHALL begin only after the frozen consistency check passes. If that check rejects an orphaned lockfile entry, installation SHALL fail before cleanup changes any materialized state. Receipt data SHALL be treated as untrusted: project identity, record shape, and path containment within the selected adapter's storage SHALL be validated before deletion. Invalid or escaping records SHALL be reported and SHALL NOT cause deletion; files not recorded as owned SHALL never be deleted.
 
@@ -558,18 +560,19 @@ The receipt, lockfile, and materialized state SHALL commit together: within one 
 - **THEN** re-running SHALL compare locked per-file integrity against disk and complete or repair the bundle
 - **AND** the re-run SHALL NOT delete any file not recorded as owned
 
-#### Scenario: Removal needs neither cache nor network
+#### Scenario: Deleting a tracked asset needs neither cache nor network
 
 - **WHEN** an unwanted facet is uncached and its registry unavailable
 - **AND** the receipt records its materialization
-- **THEN** the system SHALL remove recorded files using the receipt
+- **THEN** the system SHALL delete the recorded files using the receipt alone
+- **AND** whether the surrounding operation completes offline SHALL depend on the remaining desired state, not on this deletion
 
 #### Scenario: Project without a receipt owns nothing yet
 
 - **WHEN** a project has a lockfile but no receipt
 - **THEN** the next operation SHALL treat every materialization as untracked
 - **AND** it SHALL NOT delete any file on the strength of a lockfile entry alone
-- **AND** it SHALL record ownership only for the identities it writes
+- **AND** it SHALL record ownership only for the identities it reconciles
 
 #### Scenario: Omitted asset is excluded from receipt
 
@@ -581,6 +584,19 @@ The receipt, lockfile, and materialized state SHALL commit together: within one 
 - **WHEN** an untracked file already occupies an effective adapter identity the desired state names
 - **THEN** installation SHALL write the desired content to that identity
 - **AND** the committed receipt SHALL record that identity as tracked
+
+#### Scenario: Untracked file already matching the desired state is adopted
+
+- **WHEN** an untracked file at a desired effective adapter identity already matches the desired rendered content, metadata, and owned companion set byte for byte
+- **THEN** installation SHALL NOT rewrite it
+- **AND** the committed receipt SHALL record that identity as tracked
+
+#### Scenario: Selecting an adapter delegates management of recorded identities
+
+- **WHEN** an adapter is selected after a project already recorded ownership of an effective adapter identity
+- **AND** that adapter's storage already contains a file at the same identity
+- **THEN** reconciliation SHALL manage that identity in the newly selected adapter
+- **AND** deletion of that identity SHALL apply to every selected adapter, because ownership is recorded per project rather than per adapter
 
 #### Scenario: Untracked file outside the desired state is left alone
 
@@ -1069,7 +1085,7 @@ Facet removal of tracked materialization SHALL remain independent of cached face
 
 ### Requirement: Removing a facet uninstalls it
 
-When a user removes a facet from a project, the system SHALL drop the facet from the project manifest, reconcile its effective materialized ownership across every selected adapter, and update the lockfile and receipt so neither records the facet—all in a single operation. A user SHALL NOT need to run a separate install step after removing. The ownership to reconcile SHALL be taken from the receipt alone, so removal SHALL require neither cache nor network access when the facet's materialization is tracked, and SHALL delete nothing on disk when it is untracked. The system SHALL delete a recorded effective adapter identity only when no desired asset retains it, SHALL delete each obsolete identity once, and SHALL aggregate historical duplicate claims so a retained desired asset is never deleted. Skill deletion SHALL supply the validated authored companion ownership in the adapter deletion request and SHALL remove the primary and every obsolete owned companion atomically while leaving unowned files untouched.
+When a user removes a facet from a project, the system SHALL drop the facet from the project manifest, reconcile its effective materialized ownership across every selected adapter, and update the lockfile and receipt so neither records the facet—all in a single operation. A user SHALL NOT need to run a separate install step after removing. The ownership to reconcile SHALL be taken from the receipt alone, so deleting a tracked materialization SHALL require neither cache nor network access, and an untracked one SHALL delete nothing on disk. Whether the command as a whole completes without cache or network access SHALL additionally depend on the remaining desired state being fully tracked, per the refinement rules below. The system SHALL delete a recorded effective adapter identity only when no desired asset retains it, SHALL delete each obsolete identity once, and SHALL aggregate historical duplicate claims so a retained desired asset is never deleted. Skill deletion SHALL supply the validated authored companion ownership in the adapter deletion request and SHALL remove the primary and every obsolete owned companion atomically while leaving unowned files untouched.
 
 A non-frozen removal-only operation SHALL NOT fetch, rebuild, or reverify a remaining facet whose locked entry already answers the operation. It SHALL instead refine the remaining locked entries structurally from local state: it SHALL confirm locally that every remaining facet has a locked entry still matching its manifest source and specifier, SHALL plan over the remaining locked asset set so an already-recorded collision among the facets that stay is still reported, SHALL carry each remaining entry's source, version, integrity, file records, and unrecognized fields forward unchanged, and SHALL attach each remaining asset's recorded disposition — refining an entry that predates dispositions to authored materialization. Refinement is lossless, so it SHALL be permitted for every supported lockfile version, and the resulting lockfile SHALL be written at the current version. A frozen operation SHALL NOT refine, because it SHALL NOT rewrite the lockfile at all. Remaining materialized assets SHALL NOT be rewritten or deleted, and lockfile entries for facets the manifest no longer declares SHALL be dropped.
 
@@ -1081,9 +1097,9 @@ A removal-only operation SHALL observe cancellation before it deletes any materi
 
 Whether an operation is removal-only SHALL be decided from the requested change, not from how many requested names the project still declares. A removal request whose names are all already absent SHALL therefore remain eligible for refinement rather than requiring resolution of every unrelated declared facet.
 
-Refinement SHALL apply only when local state answers the operation completely. The system SHALL fall back to ordinary resolution rather than guessing when any of the following holds: a remaining facet has no locked entry; its locked entry no longer matches its manifest source or specifier; the remaining locked set does not plan cleanly; an identity a remaining facet retains was also claimed by a facet the operation drops; this machine's receipt cannot be loaded; this machine's receipt does not record a remaining facet; this machine's receipt disagrees with a remaining facet's locked entry; or the manifest declares materialization intent the lockfile does not record. Each of those cases requires content this machine may not have, and each would otherwise be resolved by writing an asset, which removal does not do. The offline guarantee therefore covers fully tracked, witnessed state; a removal whose remaining desired state is untracked SHALL require resolution and SHALL fail rather than delete untracked files when that resolution is unavailable.
+Refinement SHALL apply only when local state answers the operation completely. The system SHALL fall back to ordinary resolution rather than guessing when any of the following holds: the project has no lockfile at all; a remaining facet has no locked entry; its locked entry no longer matches its manifest source or specifier; the remaining locked set does not plan cleanly; an identity a remaining facet retains was also claimed by a facet the operation drops; this machine's receipt cannot be loaded; this machine's receipt does not record a remaining facet; this machine's receipt disagrees with a remaining facet's locked entry; or the manifest declares materialization intent the lockfile does not record. Each of those cases requires content this machine may not have, and each would otherwise be resolved by writing an asset, which removal does not do. The offline guarantee therefore covers fully tracked, witnessed state; a removal whose remaining desired state is untracked SHALL require resolution and SHALL fail rather than delete untracked files when that resolution is unavailable.
 
-Before deleting any materialized asset, the system SHALL verify that every selected installed adapter loads as a valid adapter and declares an API supported by the CLI. When a selected adapter has a missing, malformed, unsupported, or metadata-inconsistent API declaration, or cannot be loaded as a valid adapter, removal SHALL fail before deleting any materialized asset and SHALL leave the project manifest, lockfile, receipt, and materialized assets unchanged. An adapter declaring the superseded positional API `0.0` SHALL be unsupported by a CLI whose supported set is the tagged-contract API `0.1` and SHALL trigger this failure. This compatibility precondition SHALL require neither cache access nor network access; once the adapter incompatibility is repaired, a removal whose remaining materialization is tracked SHALL remain able to use the receipt without either resource.
+Before deleting any materialized asset, the system SHALL verify that every selected installed adapter loads as a valid adapter and declares an API supported by the CLI. When a selected adapter has a missing, malformed, unsupported, or metadata-inconsistent API declaration, or cannot be loaded as a valid adapter, removal SHALL fail before deleting any materialized asset and SHALL leave the project manifest, lockfile, receipt, and materialized assets unchanged. An adapter declaring the superseded positional API `0.0` SHALL be unsupported by a CLI whose supported set is the tagged-contract API `0.1` and SHALL trigger this failure. This compatibility precondition SHALL require neither cache access nor network access; once the adapter incompatibility is repaired, a removal whose remaining materializations are all tracked SHALL remain able to use the receipt without either resource.
 
 #### Scenario: Removing a declared facet uninstalls it
 
@@ -1519,13 +1535,20 @@ Changing an alias SHALL delete the old effective identity and write the new one 
 - **THEN** the identity SHALL NOT be deleted
 - **AND** companions absent from the retained ownership SHALL be removed
 
-#### Scenario: Every claimant aliased away vacates the authored identity
+#### Scenario: Both claimants aliased away vacate the authored identity
 
-- **WHEN** a tracked facet is materialized under an authored name, another facet contributes the same authored name, and the accepted resolution assigns every claimant a distinct alias
-- **THEN** the vacated effective identity SHALL be deleted before any alias is written
+- **WHEN** a tracked facet is materialized under an authored name, one other facet contributes the same authored name, and the accepted resolution assigns each of the two a distinct alias
+- **THEN** the vacated effective identity SHALL be deleted before either alias is written
 - **AND** each alias SHALL contain its own facet's authored content
 - **AND** the committed receipt SHALL record both aliased identities and SHALL NOT record the vacated one
 - **AND** the disposition-only change SHALL be reported as updated while the newly contributing facet is reported as installed
+
+#### Scenario: An authored identity no claimant retains is vacated only when tracked
+
+- **WHEN** every claimant of an authored name is aliased or omitted, so no desired asset retains that effective identity
+- **AND** the receipt records that identity
+- **THEN** it SHALL be deleted before any alias is written
+- **AND** WHEN no receipt record covers it, it SHALL be left in place as an untracked materialization
 
 #### Scenario: A lockfile-only claim authorizes no deletion
 

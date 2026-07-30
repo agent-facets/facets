@@ -161,6 +161,25 @@ export type StageEvent =
    */
   | { kind: 'receipt-unavailable'; reason: 'corrupt' | 'path-mismatch' }
   /**
+   * Assets were materialized, but the receipt recording them could not be
+   * written. Only a frozen run reaches this: it has no locked set to roll
+   * back, so it reports success while everything it just wrote stays
+   * untracked. Surfaced without `--verbose` for the same reason
+   * `receipt-unavailable` is — a silent success that quietly gives up
+   * deletion authority is the one outcome a user cannot deduce later.
+   */
+  | { kind: 'receipt-unpersisted'; cause: string }
+  /**
+   * A removal could not be answered from local state and fell back to
+   * ordinary resolution. `reason` is the gate that refused, verbatim.
+   *
+   * Carried so a failure downstream can be explained. A removal that has to
+   * resolve will name an unrelated facet — one the user is KEEPING — in its
+   * error, and without this the connection between "I asked to remove X" and
+   * "fetching Y failed" is invisible.
+   */
+  | { kind: 'removal-resolution-required'; reason: string }
+  /**
    * A materialization override was dropped because the resolved facet version
    * no longer contains the asset it named.
    *

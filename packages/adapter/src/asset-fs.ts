@@ -89,8 +89,9 @@ export async function readAssetFile(path: AssetPath): Promise<{ content: string;
 
 /**
  * Delete the asset file at `path.file`. No-op if absent (idempotent by
- * contract — see Adjustment B). Also removes any legacy `.meta.json`
- * sidecar left behind by earlier versions so upgrades reconverge cleanly.
+ * contract — see Adjustment B). Deletes exactly that file: metadata has
+ * always lived in the file's own front matter, so there is no second file
+ * belonging to an asset and nothing adjacent to sweep up.
  *
  * When `path.pruneBoundary` is set, empty parent directories of the
  * deleted file are removed upward until (but not including) the boundary
@@ -99,7 +100,6 @@ export async function readAssetFile(path: AssetPath): Promise<{ content: string;
  */
 export async function deleteAssetFile(path: AssetPath): Promise<string> {
   await rm(path.file, { force: true })
-  await rm(`${path.file}.meta.json`, { force: true })
   if (path.pruneBoundary !== undefined) {
     await pruneEmptyParents(dirname(path.file), path.pruneBoundary)
   }
