@@ -147,6 +147,15 @@ export {
   resolveFacetDir,
 } from './facet-dir.ts'
 // install machinery
+// The collision-resolver contract. Exported because the interactive
+// workspace lives in the CLI (TTY detection and prompting are display
+// concerns) while the rule it must satisfy lives here: return complete
+// project overrides, or cancel. Nothing else crosses the boundary.
+export type {
+  CollisionResolution,
+  CollisionResolutionRequest,
+  CollisionResolver,
+} from './install/commit/compose.ts'
 export type { JournalEntry, JournalRollbackOptions, JournalRollbackResult } from './install/journal.ts'
 export { InstallJournal } from './install/journal.ts'
 export type { AcquireLockError, AcquireLockResult, InstallLock } from './install/lockfile-guard.ts'

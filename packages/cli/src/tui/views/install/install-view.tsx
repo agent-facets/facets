@@ -1,9 +1,20 @@
-import type { AddPrepareFailure, RemovePrepareFailure, RunInstallResult, StageEvent } from '@agent-facets/engine'
+import type { AssetType } from '@agent-facets/common'
+import type {
+  AddPrepareFailure,
+  CollisionResolution,
+  CollisionResolutionRequest,
+  CollisionResolver,
+  RemovePrepareFailure,
+  RunInstallResult,
+  StageEvent,
+} from '@agent-facets/engine'
+import { LOCKFILE_VERSION_0_3 } from '@agent-facets/protocol'
 import { Box, Text, useApp, useStderr } from 'ink'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ProgressBar } from '../../components/progress-bar.tsx'
 import { ASSET_TYPE_COLORS, THEME } from '../../theme.ts'
 import { AddPrepareFailureBlock } from './add-prepare-failure-block.tsx'
+import { CollisionWorkspace } from './collision/workspace.tsx'
 import { type FacetState, STAGE_LABELS } from './facet-row.tsx'
 import { FailureBlock } from './failure-block.tsx'
 import { RemovePrepareFailureBlock } from './remove-prepare-failure-block.tsx'
@@ -23,14 +34,25 @@ export type InstallViewResult =
 
 export interface InstallViewProps {
   /**
-   * Driver: caller supplies `runInstall`-equivalent closure that takes
-   * an `onStage` callback and an optional `onLog` callback, and returns
-   * the result. The view runs it once on mount and surfaces its events /
-   * outcome. When verbose output is enabled, the caller should thread
-   * `onLog` into the engine call; the view routes it through Ink's
-   * stderr writer so it doesn't race the progress bar repaint.
+   * Driver: caller supplies a `runInstall`-equivalent closure that takes
+   * an `onStage` callback, an optional `onLog` callback, and a collision
+   * resolver, and returns the result. The view runs it once on mount and
+   * surfaces its events / outcome. When verbose output is enabled, the
+   * caller should thread `onLog` into the engine call; the view routes it
+   * through Ink's stderr writer so it doesn't race the progress bar
+   * repaint.
+   *
+   * The resolver is OFFERED, not imposed. The view can always drive a
+   * workspace — it owns the mount — but only the command knows whether
+   * this invocation may prompt at all (an interactive terminal, and not
+   * frozen mode). So the command decides whether to forward it to the
+   * engine; a resolver that is never passed on is simply never called.
    */
-  run: (onStage: (event: StageEvent) => void, onLog?: (build: () => string) => void) => Promise<InstallViewResult>
+  run: (
+    onStage: (event: StageEvent) => void,
+    onLog: ((build: () => string) => void) | undefined,
+    resolveCollisions: CollisionResolver,
+  ) => Promise<InstallViewResult>
   /**
    * Header copy hint. `'add'` renders "Adding facets..."; `'install'`
    * renders "Installing facets..."; `'remove'` renders "Removing
@@ -42,6 +64,13 @@ export interface InstallViewProps {
    * the caller capture the result for exit-code mapping.
    */
   onComplete?: (result: InstallViewResult) => void
+  /**
+   * The command's interrupt signal. Watched only to settle a pending
+   * collision prompt: an interrupt raised while the engine is blocked on
+   * the resolver would otherwise leave the promise unsettled forever,
+   * holding the project lock with nothing left to release it.
+   */
+  signal?: AbortSignal
 }
 
 /** Type guard: a driver result that is an add prepare-phase failure. */
@@ -73,7 +102,36 @@ interface DriftRemoval {
   oldVersion: string
 }
 
-export function InstallView({ run, mode, onComplete }: InstallViewProps) {
+/** A materialization choice dropped because its asset no longer exists. */
+interface PrunedOverride {
+  facet: string
+  assetType: AssetType
+  authoredName: string
+}
+
+/**
+ * What the single Ink mount is currently showing.
+ *
+ * Tagged rather than a set of booleans because the resolution phase
+ * carries data nothing else does — the request being answered and the
+ * function that answers it — and those must not be reachable while the
+ * view is drawing progress or a result. Before this, "am I finished?"
+ * was `result === null` and "what do I tell Ink?" was a second
+ * `exitState`; the two could disagree.
+ */
+type ViewPhase =
+  | { kind: 'progress' }
+  | {
+      kind: 'resolution'
+      request: CollisionResolutionRequest
+      /** Settles the engine's pending call. Idempotent. */
+      settle: (resolution: CollisionResolution) => void
+    }
+  | { kind: 'result'; result: InstallViewResult }
+  /** The driver threw rather than returning a structured failure. */
+  | { kind: 'crashed'; error: Error }
+
+export function InstallView({ run, mode, onComplete, signal }: InstallViewProps) {
   const { exit } = useApp()
   const { write: writeToStderr } = useStderr()
   const [totalFacets, setTotalFacets] = useState(0)
@@ -83,18 +141,33 @@ export function InstallView({ run, mode, onComplete }: InstallViewProps) {
   const [_driftRemovals, setDriftRemovals] = useState<DriftRemoval[]>([])
   /** Per-facet adapter completions: facetName → list of adapter names done. */
   const [adaptersByFacet, setAdaptersByFacet] = useState<Record<string, string[]>>({})
-  const [result, setResult] = useState<InstallViewResult | null>(null)
+  const [phase, setPhase] = useState<ViewPhase>({ kind: 'progress' })
+  const [checkingCollisions, setCheckingCollisions] = useState(false)
+  const [prunedOverrides, setPrunedOverrides] = useState<PrunedOverride[]>([])
   const [elapsedMs, setElapsedMs] = useState(0)
-  const [exitState, setExitState] = useState<
-    { kind: 'idle' } | { kind: 'success' } | { kind: 'failure'; error: Error }
-  >({ kind: 'idle' })
   const startedRef = useRef(false)
   const startTimeRef = useRef(Date.now())
+
+  const result = phase.kind === 'result' ? phase.result : null
 
   const onStage = useCallback((event: StageEvent) => {
     switch (event.kind) {
       case 'install-start':
         setTotalFacets(event.totalFacets)
+        return
+      case 'collision-check':
+        // Composition happens between the last fetch and the first write.
+        // On a large project it is the one step with no per-facet event,
+        // so without this it reads as a stall.
+        setCheckingCollisions(true)
+        return
+      case 'stale-override-pruned':
+        // A silent change to what `facets.json` says. It has to be
+        // visible without `--verbose`, so it is state, not a log line.
+        setPrunedOverrides((prev) => [
+          ...prev,
+          { facet: event.facet, assetType: event.assetType, authoredName: event.authoredName },
+        ])
         return
       case 'facet-start':
         setFacetOrder((prev) => (prev.includes(event.facet) ? prev : [...prev, event.facet]))
@@ -110,6 +183,7 @@ export function InstallView({ run, mode, onComplete }: InstallViewProps) {
         }))
         return
       case 'facet-stage':
+        setCheckingCollisions(false)
         setFacets((prev) => {
           const existing = prev[event.facet]
           if (!existing) return prev
@@ -159,11 +233,17 @@ export function InstallView({ run, mode, onComplete }: InstallViewProps) {
       case 'asset-deleted':
       case 'lockfile-write':
       case 'receipt-invalid-asset':
-      case 'collision-check':
       case 'install-complete':
         // No per-event UI for these; the final result render (or the
         // verbose log, for rejected receipt entries) covers them.
         return
+      default: {
+        // Exhaustiveness guard. Without it a newly added stage event
+        // compiles as silently ignored — which is exactly how
+        // `stale-override-pruned` reached the view unrendered.
+        const _exhaustive: never = event
+        return _exhaustive
+      }
     }
   }, [])
 
@@ -181,33 +261,73 @@ export function InstallView({ run, mode, onComplete }: InstallViewProps) {
     [writeToStderr],
   )
 
+  /**
+   * Hand the engine a way to ask the user, without leaving this mount.
+   *
+   * The engine is holding the project lock and awaiting this promise, so
+   * the promise MUST settle on every path — confirm, cancel, Ctrl-C, or
+   * an interrupt. `settled` guards that it settles exactly once: a second
+   * resolve would be ignored by the promise but would also flip the view
+   * back to progress a second time, out from under whatever came next.
+   */
+  const resolveCollisions = useCallback<CollisionResolver>((request) => {
+    return new Promise<CollisionResolution>((resolve) => {
+      let settled = false
+      const settle = (resolution: CollisionResolution) => {
+        if (settled) return
+        settled = true
+        setCheckingCollisions(false)
+        setPhase({ kind: 'progress' })
+        resolve(resolution)
+      }
+      setPhase({ kind: 'resolution', request, settle })
+    })
+  }, [])
+
   const start = useCallback(async () => {
     if (startedRef.current) return
     startedRef.current = true
     try {
-      const r = await run(onStage, onLog)
+      const r = await run(onStage, onLog, resolveCollisions)
       setElapsedMs(Date.now() - startTimeRef.current)
-      setResult(r)
       onComplete?.(r)
       // Defer exit so React paints the result state before Ink unmounts.
-      setExitState(r.ok ? { kind: 'success' } : { kind: 'failure', error: new Error('Install failed') })
+      setPhase({ kind: 'result', result: r })
     } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error))
-      setExitState({ kind: 'failure', error: err })
+      setPhase({ kind: 'crashed', error: error instanceof Error ? error : new Error(String(error)) })
     }
-  }, [run, onStage, onLog, onComplete])
+  }, [run, onStage, onLog, onComplete, resolveCollisions])
 
   useEffect(() => {
-    if (exitState.kind === 'success') {
-      exit()
+    if (phase.kind === 'result') {
+      if (phase.result.ok) exit()
+      else exit(new Error('Install failed'))
       return
     }
-    if (exitState.kind === 'failure') {
-      exit(exitState.error)
+    if (phase.kind === 'crashed') {
+      exit(phase.error)
       return
     }
     void start()
-  }, [exitState, exit, start])
+  }, [phase, exit, start])
+
+  /**
+   * An interrupt while the workspace is open cancels the prompt rather
+   * than killing the process. The engine then returns a structured
+   * cancellation, unwinds, and releases the lock through its own
+   * `finally` — which a hard exit here would have skipped.
+   */
+  useEffect(() => {
+    if (signal === undefined || phase.kind !== 'resolution') return
+    const { settle } = phase
+    const onAbort = () => settle({ kind: 'cancelled' })
+    if (signal.aborted) {
+      onAbort()
+      return
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    return () => signal.removeEventListener('abort', onAbort)
+  }, [signal, phase])
 
   const headerLabel = mode === 'add' ? 'Adding facets:' : mode === 'remove' ? 'Removing facets:' : 'Installing facets:'
 
@@ -253,6 +373,13 @@ export function InstallView({ run, mode, onComplete }: InstallViewProps) {
   // Stage label for the progress bar line.
   const stageLabel = currentFacet ? (currentFacet.stage ? STAGE_LABELS[currentFacet.stage] : 'starting') : null
 
+  // The workspace owns the screen while it is open: mixing a live
+  // progress bar into a form the user is typing into repaints under the
+  // cursor. Progress resumes, in this same mount, once it closes.
+  if (phase.kind === 'resolution') {
+    return <CollisionWorkspace request={phase.request} onComplete={phase.settle} />
+  }
+
   return (
     <Box flexDirection="column">
       {result === null && (
@@ -263,7 +390,9 @@ export function InstallView({ run, mode, onComplete }: InstallViewProps) {
 
       {result === null && (
         <Box flexDirection="column" marginLeft={2}>
-          {currentFacetInfo ? (
+          {checkingCollisions ? (
+            <Text color={THEME.hint}>Checking for name collisions across all facets</Text>
+          ) : currentFacetInfo ? (
             <Text>
               {currentFacetInfo}
               {stageLabel && <Text color={THEME.hint}> · {stageLabel}</Text>}
@@ -295,6 +424,17 @@ export function InstallView({ run, mode, onComplete }: InstallViewProps) {
             <Text key={w.facet} color={THEME.warning}>
               ⚠ {w.facet}: {w.servers.length} server{w.servers.length === 1 ? '' : 's'} declared ({w.servers.join(', ')}
               ) — server installation not yet supported, skipping.
+            </Text>
+          ))}
+        </Box>
+      )}
+
+      {prunedOverrides.length > 0 && (
+        <Box flexDirection="column" marginLeft={2}>
+          {prunedOverrides.map((pruned) => (
+            <Text key={`${pruned.facet}:${pruned.assetType}:${pruned.authoredName}`} color={THEME.caution}>
+              ⚠ dropped the materialization choice for {pruned.assetType} “{pruned.authoredName}” in {pruned.facet} —
+              this version no longer contains that asset.
             </Text>
           ))}
         </Box>
@@ -353,6 +493,7 @@ function SuccessSummary({
   const touched = touchedFacetNames(result)
   const counts = countAssetsByType(result)
   const bundleVizNode = formatColoredBundleViz(counts)
+  const notes = materializationNotes(result)
 
   const removedNames = result.perFacet.filter((o) => o.kind === 'removed').map((o) => o.name)
 
@@ -386,6 +527,23 @@ function SuccessSummary({
       <Box flexDirection="column" marginLeft={2}>
         <Text color={THEME.hint}>{summaryLine(summary)}</Text>
         {bundleVizNode}
+        {/* Aliases and omissions are the one thing a user cannot infer
+            from the file tree: an asset is missing, or present under a
+            name they did not publish. Naming both sides makes the
+            outcome checkable. */}
+        {notes.map((note) => (
+          <Text key={`${note.facet}:${note.type}:${note.authoredName}`} color={THEME.hint}>
+            {note.facet} {note.type} {note.authoredName}
+            {note.effectiveName === null ? (
+              <Text color={THEME.caution}> — omitted</Text>
+            ) : (
+              <Text>
+                {' → '}
+                <Text color={THEME.success}>{note.effectiveName}</Text>
+              </Text>
+            )}
+          </Text>
+        ))}
       </Box>
       <Text>
         {timerVerb} <Text color={THEME.success}>{timerCount}</Text> facet
@@ -402,12 +560,57 @@ interface AssetCounts {
   command: number
 }
 
+/**
+ * How one asset was materialized, for the summary.
+ *
+ * `effectiveName: null` means omitted. Only a current lockfile records
+ * dispositions at all; a legacy one is authored by definition, which is
+ * why this is derived from the lockfile rather than carried separately.
+ */
+interface MaterializationNote {
+  facet: string
+  type: AssetType
+  authoredName: string
+  effectiveName: string | null
+}
+
+function materializationNotes(result: RunInstallResult & { ok: true }): MaterializationNote[] {
+  // Legacy lockfiles cannot express an alias or an omission, so there is
+  // nothing to report — not "nothing happened", but "this format has no
+  // opinion". Frozen mode returns the lockfile it read, so this branch is
+  // reachable in normal use, not just during migration.
+  if (result.lockfile.lockfileVersion !== LOCKFILE_VERSION_0_3) return []
+
+  const notes: MaterializationNote[] = []
+  for (const [facet, entry] of Object.entries(result.lockfile.facets)) {
+    for (const asset of entry.assets) {
+      if (asset.materialization.kind === 'authored') continue
+      notes.push({
+        facet,
+        type: asset.type,
+        authoredName: asset.name,
+        effectiveName: asset.materialization.kind === 'aliased' ? asset.materialization.as : null,
+      })
+    }
+  }
+  return notes
+}
+
 function countAssetsByType(result: RunInstallResult & { ok: true }): AssetCounts {
   const counts: AssetCounts = { skill: 0, agent: 0, command: 0 }
+  const omitted = new Set(
+    materializationNotes(result)
+      .filter((note) => note.effectiveName === null)
+      .map((note) => `${note.facet}\u0000${note.type}\u0000${note.authoredName}`),
+  )
   for (const name of touchedFacetNames(result)) {
     const facet = result.lockfile.facets[name]
     if (facet === undefined) continue
     for (const asset of facet.assets) {
+      // An omitted asset stays in the lockfile — it is part of the
+      // resolved set — but nothing was written for it, so counting it
+      // here would claim a file that does not exist on disk.
+      if (omitted.has(`${name}\u0000${asset.type}\u0000${asset.name}`)) continue
       counts[asset.type]++
     }
   }

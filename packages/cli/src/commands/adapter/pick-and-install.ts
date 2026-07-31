@@ -14,6 +14,7 @@ import {
   formatPlacementWarning,
 } from '../../util/adapter-install-errors.ts'
 import { writeCliError } from '../../util/errors.ts'
+import { canPromptInteractively } from '../../util/interactive.ts'
 import { InstallPicker } from './install-picker.tsx'
 
 /**
@@ -44,7 +45,7 @@ export type PickAndInstallResult =
  * reclaim raw mode cleanly.
  */
 export async function pickAndInstallAdapters(): Promise<PickAndInstallResult> {
-  if (!process.stdout.isTTY) {
+  if (!canPromptInteractively()) {
     return { ok: false, reason: 'non-tty' }
   }
 

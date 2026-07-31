@@ -4,8 +4,11 @@ import { createElement } from 'react'
 import type { Command } from '../../commands.ts'
 import { THEME } from '../../tui/theme.ts'
 import { InstallView } from '../../tui/views/install/install-view.tsx'
+import { writeMaterializationDetail } from '../../util/collision-report.ts'
 import { writeCliError } from '../../util/errors.ts'
+import { canPromptInteractively } from '../../util/interactive.ts'
 import { ensureAdapters } from '../shared/ensure-adapters.ts'
+import { installFailureFix } from '../shared/install-failure.ts'
 
 /**
  * `facet remove <facet> [more facets...]` — removes one or more facets
@@ -96,16 +99,19 @@ export const removeCommand: Command = {
     // ensures the rollback render lands before unmount.
     const controller = new AbortController()
     const sigintHandler = () => {
-      process.stderr.write('\nInterrupted. Rolling back...\n')
+      process.stderr.write('\nInterrupted. Stopping safely...\n')
       controller.abort()
     }
     process.on('SIGINT', sigintHandler)
+
+    const mayPrompt = canPromptInteractively()
 
     let captured: RunRemoveResult | undefined
     const instance = render(
       createElement(InstallView, {
         mode: 'remove',
-        run: async (onStage, onLog) => {
+        signal: controller.signal,
+        run: async (onStage, onLog, resolveCollisions) => {
           const result = await runRemove({
             projectRoot,
             names,
@@ -113,6 +119,7 @@ export const removeCommand: Command = {
             prepared,
             onStage,
             ...(verbose && onLog ? { onLog } : {}),
+            ...(mayPrompt ? { resolveCollisions } : {}),
             signal: controller.signal,
           })
           captured = result
@@ -130,6 +137,9 @@ export const removeCommand: Command = {
           void r
         },
       }),
+      // See `install`: Ctrl-C has to reach the workspace so the engine's
+      // pending resolver call is settled and the lock released.
+      { exitOnCtrlC: false },
     )
 
     try {
@@ -158,15 +168,11 @@ export const removeCommand: Command = {
 
     // Install-phase failure. The delta-based flow never writes the manifest
     // ahead of install — the journal rollback handles asset cleanup.
-    const rollback = captured.install.rollback
-    const partialFailureCount = rollback.kind === 'partial-failure' ? rollback.failures : 0
+    writeMaterializationDetail(captured.install.failure)
     writeCliError({
       what: 'remove failed',
       detail: `code=${captured.install.failure.code}`,
-      fix:
-        partialFailureCount > 0
-          ? "partial rollback: some state may remain. Inspect and clean manually before re-running 'facet remove'."
-          : "rollback complete; project state unchanged. Fix the underlying issue and re-run 'facet remove'.",
+      fix: installFailureFix(captured.install.failure, captured.install.rollback, 'remove'),
     })
     return 1
   },

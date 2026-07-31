@@ -1,4 +1,5 @@
 import type { Adapter } from '@agent-facets/adapter'
+import type { CollisionResolver } from '../commit/compose.ts'
 import { runInstall } from '../run-install.ts'
 import type { OnLog, RunInstallResult, StageEvent } from '../types.ts'
 import { type AddPrepareFailure, type AddSource, type PrepareAddResult, prepareAdd } from './prepare.ts'
@@ -16,6 +17,15 @@ export interface RunAddOptions {
   onStage?: (event: StageEvent) => void
   onLog?: OnLog
   signal?: AbortSignal
+  /**
+   * Interactive collision resolver, forwarded to `runInstall`.
+   *
+   * `add` is the command most likely to introduce a collision — it is
+   * the one that brings a new facet into the set — so omitting this
+   * would leave the interactive path unreachable exactly where it is
+   * most needed.
+   */
+  resolveCollisions?: CollisionResolver
 }
 
 /**
@@ -62,6 +72,7 @@ export async function runAdd(opts: RunAddOptions): Promise<RunAddResult> {
     ...(onStage ? { onStage } : {}),
     ...(onLog ? { onLog } : {}),
     ...(signal ? { signal } : {}),
+    ...(opts.resolveCollisions ? { resolveCollisions: opts.resolveCollisions } : {}),
   })
 
   if (!install.ok) {

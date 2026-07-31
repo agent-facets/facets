@@ -10,8 +10,11 @@ import { render } from 'ink'
 import { createElement } from 'react'
 import type { Command } from '../../commands.ts'
 import { InstallView } from '../../tui/views/install/install-view.tsx'
+import { writeMaterializationDetail } from '../../util/collision-report.ts'
 import { writeCliError } from '../../util/errors.ts'
+import { canPromptInteractively } from '../../util/interactive.ts'
 import { ensureAdapters } from '../shared/ensure-adapters.ts'
+import { installFailureFix } from '../shared/install-failure.ts'
 
 /**
  * `facet add <source> [more sources...]` — adds one or more facets to
@@ -72,22 +75,26 @@ export const addCommand: Command = {
     // ensures the rollback render lands before unmount.
     const controller = new AbortController()
     const sigintHandler = () => {
-      process.stderr.write('\nInterrupted. Rolling back...\n')
+      process.stderr.write('\nInterrupted. Stopping safely...\n')
       controller.abort()
     }
     process.on('SIGINT', sigintHandler)
+
+    const mayPrompt = canPromptInteractively()
 
     let captured: RunAddResult | undefined
     const instance = render(
       createElement(InstallView, {
         mode: 'add',
-        run: async (onStage, onLog) => {
+        signal: controller.signal,
+        run: async (onStage, onLog, resolveCollisions) => {
           const result = await runAdd({
             projectRoot,
             sources,
             adapters,
             onStage,
             ...(verbose && onLog ? { onLog } : {}),
+            ...(mayPrompt ? { resolveCollisions } : {}),
             signal: controller.signal,
           })
           captured = result
@@ -105,6 +112,9 @@ export const addCommand: Command = {
           void r
         },
       }),
+      // See `install`: Ctrl-C has to reach the workspace so the engine's
+      // pending resolver call is settled and the lock released.
+      { exitOnCtrlC: false },
     )
 
     try {
@@ -133,17 +143,12 @@ export const addCommand: Command = {
 
     // Install-phase failure. The delta-based flow never writes the manifest
     // ahead of install, so there's nothing to restore — the journal rollback
-    // handles asset cleanup. Branch the guidance on whether the rollback
-    // was partial.
-    const rollback = captured.install.rollback
-    const partialFailureCount = rollback.kind === 'partial-failure' ? rollback.failures : 0
+    // handles asset cleanup.
+    writeMaterializationDetail(captured.install.failure)
     writeCliError({
       what: 'add failed',
       detail: `code=${captured.install.failure.code}`,
-      fix:
-        partialFailureCount > 0
-          ? "partial rollback: some state may remain. Inspect and clean manually before re-running 'facet add'."
-          : "rollback complete; project state unchanged. Fix the underlying issue and re-run 'facet add'.",
+      fix: installFailureFix(captured.install.failure, captured.install.rollback, 'add'),
     })
     return 1
   },

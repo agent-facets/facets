@@ -15,6 +15,13 @@ export const THEME = {
   // Semantic aliases (can diverge from brand later)
   success: BRAND.green,
   warning: BRAND.coral,
+  /**
+   * The middle rung of a three-state scale, between `warning` (something
+   * is wrong) and `success` (it isn't). Distinct from `warning` because a
+   * red/amber/green status set needs three colors, and coral against
+   * green alone cannot express "not yet settled".
+   */
+  caution: ACCENTS_DARK.amber,
   focus: ACCENTS_DARK.pink,
 
   // Text — structural

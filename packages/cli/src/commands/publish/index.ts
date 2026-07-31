@@ -10,6 +10,7 @@ import {
 import { type ArchiveVerificationFailure, type FacetManifest, validateFacetArchive } from '@agent-facets/protocol'
 import type { Command } from '../../commands.ts'
 import { writeCliError } from '../../util/errors.ts'
+import { canPromptInteractively } from '../../util/interactive.ts'
 import { translateEngineRegistryError } from '../../util/registry-errors.ts'
 import { resolveTargetDir } from '../resolve-dir.ts'
 import { askIdentityDriftDecision, askToBuildMissing, askToRebuildDrifted } from './build-offer.ts'
@@ -203,7 +204,7 @@ async function pickBytesToPublish(
 ): Promise<Uint8Array | null> {
   // === No artifact present ===
   if (discovery.state === 'none') {
-    if (!process.stdout.isTTY) {
+    if (!canPromptInteractively()) {
       writeCliError({
         what: 'no built artifact in dist/',
         fix: 'run `facet build` first, then `facet publish`',
@@ -244,7 +245,7 @@ async function pickBytesToPublish(
   const isIdentityDrift = drift.reason === 'name' || drift.reason === 'version'
 
   // Non-interactive: warn to stderr, ship existing.
-  if (!process.stdout.isTTY) {
+  if (!canPromptInteractively()) {
     const summary = isIdentityDrift
       ? `built artifact is ${embedded.name}@${embedded.version}; source is ${sourceManifest.name}@${sourceManifest.version}`
       : `built artifact is out of date (manifest content differs from source)`

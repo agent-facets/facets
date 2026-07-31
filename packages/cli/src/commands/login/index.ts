@@ -4,6 +4,7 @@ import { createElement } from 'react'
 import type { Command } from '../../commands.ts'
 import { LoginMenu } from '../../tui/components/login-menu.tsx'
 import { writeCliError } from '../../util/errors.ts'
+import { canPromptInteractively } from '../../util/interactive.ts'
 import { translateEngineRegistryError } from '../../util/registry-errors.ts'
 
 /**
@@ -22,7 +23,7 @@ export const loginCommand: Command = {
   implemented: true,
   run: async (_args, _flags) => {
     // The menu and masked prompt require an interactive terminal.
-    if (!process.stdout.isTTY) {
+    if (!canPromptInteractively()) {
       writeCliError({
         what: 'facet login requires an interactive terminal',
         detail: 'this is a non-interactive environment; the sign-in prompt cannot run here',

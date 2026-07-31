@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'bun:test'
-import type { RunInstallFailure, RunInstallResult, StageEvent } from '@agent-facets/engine'
-import type { IntegrityFailure } from '@agent-facets/protocol'
+import type {
+  CollisionResolution,
+  CollisionResolutionRequest,
+  CollisionResolver,
+  RunInstallFailure,
+  RunInstallResult,
+  StageEvent,
+} from '@agent-facets/engine'
+import type { FacetContribution, IntegrityFailure } from '@agent-facets/protocol'
+import { planMaterialization } from '@agent-facets/protocol'
 import { render } from 'ink-testing-library'
 import { createElement } from 'react'
 import { InstallView } from '../tui/views/install/install-view.tsx'
@@ -715,6 +723,288 @@ describe('InstallView — frozen-lockfile drift', () => {
     expect(frame).toContain('in lockfile but not in facets.json (locked 4.5.6)')
     expect(frame).toContain('source changed: locked github:agent-facets/planner')
     expect(frame).toContain('without --frozen-lockfile')
+    instance.unmount()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Collision resolution: the workspace phase inside the same Ink mount
+// ---------------------------------------------------------------------------
+
+const KEY = { down: '\u001B[B', right: '\u001B[C', enter: '\r', escape: '\u001B' } as const
+
+function collisionRequest(): CollisionResolutionRequest {
+  const contributions: FacetContribution[] = [
+    { facet: 'alpha', assets: [{ scope: 'project', type: 'skill', name: 'review' }] },
+    { facet: 'beta', assets: [{ scope: 'project', type: 'skill', name: 'review' }] },
+  ]
+  const planned = planMaterialization(contributions)
+  if (planned.ok || planned.reason !== 'collision') expect.unreachable()
+  return { groups: planned.groups, contributions, staleOverrides: [] }
+}
+
+const CANCELLED_RESULT: RunInstallResult = {
+  ok: false,
+  failure: { code: 'MATERIALIZATION_CANCELLED' },
+  rollback: { kind: 'not-needed', reason: 'no journal was created' },
+}
+
+/**
+ * A driver that behaves like the engine around a collision: emit
+ * progress, block on the resolver, then continue or fail based on what
+ * came back. Records the resolution so tests can assert on the exact
+ * value the engine would have received.
+ */
+function makeResolvingRun(
+  request: CollisionResolutionRequest,
+  onResolution: (resolution: CollisionResolution) => void,
+  resolvedResult: RunInstallResult = successResultSingle,
+) {
+  return async (
+    onStage: (e: StageEvent) => void,
+    _onLog: ((build: () => string) => void) | undefined,
+    resolveCollisions: CollisionResolver,
+  ): Promise<RunInstallResult> => {
+    onStage({ kind: 'install-start', totalFacets: 2 })
+    onStage({ kind: 'collision-check' })
+    const resolution = await resolveCollisions(request)
+    onResolution(resolution)
+    if (resolution.kind === 'cancelled') return CANCELLED_RESULT
+    onStage({ kind: 'facet-start', facet: 'alpha', specifier: './alpha' })
+    onStage({ kind: 'facet-stage', facet: 'alpha', stage: 'materialize' })
+    return resolvedResult
+  }
+}
+
+async function tick(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 25))
+}
+
+describe('InstallView — collision phase machine', () => {
+  test('the collision check is a visible stage, not a stall', async () => {
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'install',
+        run: async (onStage) => {
+          onStage({ kind: 'install-start', totalFacets: 2 })
+          onStage({ kind: 'collision-check' })
+          await tick()
+          return successResultSingle
+        },
+      }),
+    )
+    await tick()
+    expect(instance.lastFrame() ?? '').toContain('Checking for name collisions')
+    await settle()
+    instance.unmount()
+  })
+
+  test('progress gives way to the workspace and comes back, in one mount', async () => {
+    const resolutions: CollisionResolution[] = []
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'install',
+        run: makeResolvingRun(collisionRequest(), (r) => resolutions.push(r)),
+      }),
+    )
+    await tick()
+
+    // Phase 2: the workspace has the screen.
+    expect(instance.lastFrame() ?? '').toContain('Installation is paused')
+
+    // Resolve by omitting both claimants, then confirm.
+    for (const key of [
+      KEY.enter,
+      KEY.right,
+      KEY.right,
+      KEY.enter,
+      KEY.down,
+      KEY.right,
+      KEY.right,
+      KEY.enter,
+      KEY.escape,
+      KEY.down,
+      KEY.enter,
+    ]) {
+      instance.stdin.write(key)
+      await tick()
+    }
+
+    expect(resolutions).toHaveLength(1)
+    expect(resolutions[0]?.kind).toBe('resolved')
+
+    // Phase 3 and 4: progress resumed and the result rendered — no
+    // second Ink renderer, so the whole run is one continuous frame
+    // stream.
+    await settle()
+    const frame = findContentFrame(instance.frames)
+    expect(frame).toContain('Install complete.')
+    expect(frame).toContain('1 installed')
+    instance.unmount()
+  })
+
+  test('cancelling shows the cancellation block and no success summary', async () => {
+    const resolutions: CollisionResolution[] = []
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'install',
+        run: makeResolvingRun(collisionRequest(), (r) => resolutions.push(r)),
+      }),
+    )
+    await tick()
+    instance.stdin.write(KEY.escape)
+    await settle()
+
+    expect(resolutions).toEqual([{ kind: 'cancelled' }])
+    const frame = findContentFrame(instance.frames)
+    expect(frame).toContain('Cancelled')
+    expect(frame).toContain('Nothing was changed')
+    expect(frame).not.toContain('Install complete.')
+    instance.unmount()
+  })
+
+  test('an interrupt while the workspace is open settles the pending prompt', async () => {
+    // The engine is holding the project lock and awaiting this promise.
+    // If an interrupt left it unsettled, the lock would never be
+    // released and the process would hang instead of exiting.
+    const controller = new AbortController()
+    const resolutions: CollisionResolution[] = []
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'install',
+        signal: controller.signal,
+        run: makeResolvingRun(collisionRequest(), (r) => resolutions.push(r)),
+      }),
+    )
+    await tick()
+    expect(instance.lastFrame() ?? '').toContain('Installation is paused')
+
+    controller.abort()
+    await settle()
+
+    expect(resolutions).toEqual([{ kind: 'cancelled' }])
+    instance.unmount()
+  })
+})
+
+describe('InstallView — materialization reporting', () => {
+  const lockfileWithDispositions: RunInstallResult = {
+    ok: true,
+    lockfile: {
+      lockfileVersion: 0.3,
+      facets: {
+        alpha: {
+          source: { kind: 'local', path: './alpha' },
+          version: '1.0.0',
+          integrity: 'sha256:aaaa',
+          assets: [
+            {
+              scope: 'project',
+              type: 'skill',
+              name: 'review',
+              materialization: { kind: 'aliased', as: 'vendor-review' },
+              files: [{ path: 'skills/review/SKILL.md', integrity: 'sha256:bbbb' }],
+            },
+            {
+              scope: 'project',
+              type: 'command',
+              name: 'deploy',
+              materialization: { kind: 'omitted' },
+              files: [{ path: 'commands/deploy.md', integrity: 'sha256:cccc' }],
+            },
+          ],
+        },
+      },
+    },
+    summary: { installed: 1, updated: 0, repaired: 0, unchanged: 0, removed: 0, totalAssets: 1, removedAssets: 0 },
+    perFacet: [{ kind: 'installed', name: 'alpha', version: '1.0.0' }],
+    serverWarnings: [],
+  }
+
+  test('shows the authored name beside the effective name, and marks omissions', async () => {
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'install',
+        run: makeFakeRun([{ kind: 'install-start', totalFacets: 1 }], lockfileWithDispositions),
+      }),
+    )
+    await settle()
+
+    const frame = findContentFrame(instance.frames)
+    expect(frame).toContain('review')
+    expect(frame).toContain('vendor-review')
+    expect(frame).toContain('deploy')
+    expect(frame).toContain('omitted')
+    instance.unmount()
+  })
+
+  test('an omitted asset is not counted as materialized', async () => {
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'install',
+        run: makeFakeRun([{ kind: 'install-start', totalFacets: 1 }], lockfileWithDispositions),
+      }),
+    )
+    await settle()
+
+    // The omitted command stays in the lockfile — it is part of the
+    // resolved set — but claiming it in the bundle would advertise a
+    // file that was never written.
+    const frame = findContentFrame(instance.frames)
+    expect(frame).toContain('1 skill')
+    expect(frame).not.toContain('1 command')
+    instance.unmount()
+  })
+
+  test('a pruned stale override is reported without --verbose', async () => {
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'install',
+        run: makeFakeRun(
+          [
+            { kind: 'install-start', totalFacets: 1 },
+            { kind: 'stale-override-pruned', facet: 'alpha', assetType: 'skill', authoredName: 'gone' },
+          ],
+          successResultSingle,
+        ),
+      }),
+    )
+    await settle()
+
+    // No `onLog` was supplied — this has to be visible anyway, because
+    // it silently changed what facets.json says.
+    const frame = findContentFrame(instance.frames)
+    expect(frame).toContain('gone')
+    expect(frame).toContain('alpha')
+    expect(frame).toContain('no longer contains')
+    instance.unmount()
+  })
+})
+
+describe('InstallView — disposition-only change', () => {
+  test('is summarised as an update, without a version-to-itself arrow', async () => {
+    // The facet did not move; its materialization did. Reporting a
+    // repair would claim the disk had drifted, and printing
+    // "was 1.0.0 → 1.0.0" would read as a bug in the version resolver.
+    const result: RunInstallResult = {
+      ok: true,
+      lockfile: { lockfileVersion: 1, facets: {} },
+      summary: { installed: 0, updated: 1, repaired: 0, unchanged: 0, removed: 0, totalAssets: 1, removedAssets: 0 },
+      perFacet: [{ kind: 'updated', name: 'alpha', oldVersion: '1.0.0', newVersion: '1.0.0' }],
+      serverWarnings: [],
+    }
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'install',
+        run: makeFakeRun([{ kind: 'install-start', totalFacets: 1 }], result),
+      }),
+    )
+    await settle()
+
+    const frame = findContentFrame(instance.frames)
+    expect(frame).toContain('1 updated')
+    expect(frame).not.toContain('repaired')
+    expect(frame).not.toContain('1.0.0 → 1.0.0')
     instance.unmount()
   })
 })
