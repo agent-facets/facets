@@ -1,5 +1,6 @@
 import type { Adapter } from '@agent-facets/adapter'
 import type { Lockfile, LockfileFacet } from '@agent-facets/protocol'
+import type { NormalizedFacetEntry } from '../../manifest/mutations.ts'
 import { classifyOutcome } from '../classify-outcome.ts'
 import type { InstallJournal } from '../journal.ts'
 import { materialize } from '../materialize.ts'
@@ -20,7 +21,7 @@ export interface InstallLoopSuccess {
 export type InstallLoopResult = { ok: true; value: InstallLoopSuccess } | { ok: false; failure: RunInstallFailure }
 
 export interface InstallLoopArgs {
-  desiredFacets: Readonly<Record<string, string>>
+  desiredFacets: Readonly<Record<string, NormalizedFacetEntry>>
   additionNames: ReadonlySet<string>
   previousLockfile: Lockfile
   projectRoot: string
@@ -48,7 +49,8 @@ export async function installFacets(args: InstallLoopArgs): Promise<InstallLoopR
   const serverWarnings: { facet: string; servers: ReadonlyArray<string> }[] = []
   let totalAssets = 0
 
-  for (const [facetName, specifier] of Object.entries(desiredFacets)) {
+  for (const [facetName, desired] of Object.entries(desiredFacets)) {
+    const specifier = desired.source
     if (signal?.aborted) {
       return { ok: false, failure: { code: 'ABORTED' } }
     }

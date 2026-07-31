@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { upsertFacetInManifest } from '../mutations.ts'
-import { loadFacetsJson, writeFacetsJson } from '../project-files.ts'
+import { applyDesiredFacets, emptyProjectManifest, type NormalizedFacetEntry } from '../mutations.ts'
+import { loadProjectManifest, writeProjectManifest } from '../project-files.ts'
 
 let projectRoot: string
 
@@ -15,71 +15,208 @@ afterEach(() => {
   rmSync(projectRoot, { recursive: true, force: true })
 })
 
-describe('loadFacetsJson', () => {
-  test('returns an empty skeleton when facets.json is absent', () => {
-    const result = loadFacetsJson(projectRoot)
-    expect(result.ok).toBe(true)
-    if (result.ok) {
-      expect(result.existed).toBe(false)
-      expect(result.data).toEqual({ facets: {} })
-    }
+const entry = (source: string): NormalizedFacetEntry => ({ source, overrides: undefined })
+
+const read = (): string => readFileSync(join(projectRoot, 'facets.json'), 'utf8')
+
+describe('loadProjectManifest', () => {
+  test('returns an empty current-version skeleton when facets.json is absent', () => {
+    const result = loadProjectManifest(projectRoot)
+    if (!result.ok) expect.unreachable()
+    expect(result.existed).toBe(false)
+    expect(result.manifest.facets).toEqual({})
+    // A manifest this system creates is never legacy.
+    expect(result.manifest.document.manifestVersion).toBe(0.1)
   })
 
-  test('reads and validates an existing facets.json', () => {
+  test('reads and normalizes a legacy unversioned manifest', () => {
     writeFileSync(join(projectRoot, 'facets.json'), '{"facets":{"v":"github:a/b#main"}}')
-    const result = loadFacetsJson(projectRoot)
-    expect(result.ok).toBe(true)
-    if (result.ok) {
-      expect(result.existed).toBe(true)
-      expect(result.data.facets.v).toBe('github:a/b#main')
-    }
+    const result = loadProjectManifest(projectRoot)
+    if (!result.ok) expect.unreachable()
+    expect(result.existed).toBe(true)
+    expect(result.manifest.loadedVersion).toBe('legacy-unversioned')
+    expect(result.manifest.facets.v).toEqual({ source: 'github:a/b#main', overrides: undefined })
   })
 
-  test('returns an error on malformed JSON', () => {
+  test('reads a current manifest with an expanded entry', () => {
+    writeFileSync(
+      join(projectRoot, 'facets.json'),
+      JSON.stringify({
+        manifestVersion: 0.1,
+        facets: {
+          a: '1.*',
+          b: { source: 'github:a/b#main', materialization: { skills: { review: { kind: 'omitted' } } } },
+        },
+      }),
+    )
+    const result = loadProjectManifest(projectRoot)
+    if (!result.ok) expect.unreachable()
+    expect(result.manifest.loadedVersion).toBe(0.1)
+    expect(result.manifest.facets.a).toEqual({ source: '1.*', overrides: undefined })
+    expect(result.manifest.facets.b?.source).toBe('github:a/b#main')
+    expect(result.manifest.facets.b?.overrides?.skills?.review).toEqual({ kind: 'omitted' })
+  })
+
+  test('returns a structured failure on malformed JSON', () => {
     writeFileSync(join(projectRoot, 'facets.json'), '{not json')
-    const result = loadFacetsJson(projectRoot)
-    expect(result.ok).toBe(false)
+    const result = loadProjectManifest(projectRoot)
+    if (result.ok) expect.unreachable()
+    if (result.reason !== 'invalid') expect.unreachable()
+    expect(result.failure.code).toBe('invalid-json')
   })
 
-  test('returns an error on shape mismatch', () => {
+  test('returns a structured failure on shape mismatch', () => {
     writeFileSync(join(projectRoot, 'facets.json'), '{"other":{}}')
-    const result = loadFacetsJson(projectRoot)
-    expect(result.ok).toBe(false)
+    const result = loadProjectManifest(projectRoot)
+    if (result.ok) expect.unreachable()
+    expect(result.reason).toBe('invalid')
+  })
+
+  // An unsupported version must reach the caller as data, not prose: the
+  // remedy (upgrade the CLI) differs from a malformed document's.
+  test('an unsupported manifestVersion carries the observed and supported versions', () => {
+    writeFileSync(join(projectRoot, 'facets.json'), '{"manifestVersion":0.2,"facets":{}}')
+    const result = loadProjectManifest(projectRoot)
+    if (result.ok) expect.unreachable()
+    if (result.reason !== 'invalid') expect.unreachable()
+    if (result.failure.code !== 'unsupported-manifest-version') expect.unreachable()
+    expect(result.failure.observed).toBe(0.2)
+    expect(result.failure.supported).toEqual([0.1])
+  })
+
+  test('an expanded entry in an unversioned manifest is rejected, not promoted', () => {
+    writeFileSync(
+      join(projectRoot, 'facets.json'),
+      '{"facets":{"b":{"source":"github:a/b","materialization":{"skills":{"x":{"kind":"omitted"}}}}}}',
+    )
+    const result = loadProjectManifest(projectRoot)
+    if (result.ok) expect.unreachable()
+    if (result.reason !== 'invalid') expect.unreachable()
+    if (result.failure.code !== 'schema-violation') expect.unreachable()
+    expect(result.failure.manifestVersion).toBe('legacy-unversioned')
+  })
+
+  test('duplicate members are rejected', () => {
+    writeFileSync(join(projectRoot, 'facets.json'), '{"facets":{"a":"1.*"},"facets":{"b":"2.*"}}')
+    const result = loadProjectManifest(projectRoot)
+    if (result.ok) expect.unreachable()
+    if (result.reason !== 'invalid') expect.unreachable()
+    expect(result.failure.code).toBe('duplicate-members')
+  })
+
+  // Comments are a supported input form and must not defeat validation.
+  test('a commented manifest still validates and normalizes', () => {
+    writeFileSync(
+      join(projectRoot, 'facets.json'),
+      `{
+  // a note
+  "facets": {
+    // about alpha
+    "alpha": "github:a/alpha#main"
+  }
+}`,
+    )
+    const result = loadProjectManifest(projectRoot)
+    if (!result.ok) expect.unreachable()
+    expect(result.manifest.facets.alpha?.source).toBe('github:a/alpha#main')
+  })
+
+  // Comment stripping preserves member structure, so a duplicate hidden in a
+  // commented document is still caught rather than silently last-wins.
+  test('duplicate members are caught even in a commented manifest', () => {
+    writeFileSync(
+      join(projectRoot, 'facets.json'),
+      `{
+  // a note
+  "facets": { "a": "1.*" },
+  "facets": { "b": "2.*" }
+}`,
+    )
+    const result = loadProjectManifest(projectRoot)
+    if (result.ok) expect.unreachable()
+    if (result.reason !== 'invalid') expect.unreachable()
+    expect(result.failure.code).toBe('duplicate-members')
+  })
+
+  // A comment must not be mistaken for document structure.
+  test('a key mentioned only inside a comment is not a duplicate', () => {
+    writeFileSync(
+      join(projectRoot, 'facets.json'),
+      `{
+  "facets": {
+    // "alpha": "old-value",
+    "alpha": "github:a/alpha#main"
+  }
+}`,
+    )
+    const result = loadProjectManifest(projectRoot)
+    if (!result.ok) expect.unreachable()
+    expect(result.manifest.facets.alpha?.source).toBe('github:a/alpha#main')
   })
 })
 
-describe('writeFacetsJson', () => {
+describe('writeProjectManifest', () => {
   test('writes valid JSON with 2-space indentation', () => {
-    writeFacetsJson(projectRoot, { facets: { v: 'github:a/b#main' } })
-    const raw = readFileSync(join(projectRoot, 'facets.json'), 'utf8')
-    const reparsed = JSON.parse(raw)
-    expect(reparsed).toEqual({ facets: { v: 'github:a/b#main' } })
+    const manifest = emptyProjectManifest()
+    applyDesiredFacets(manifest.document, { v: entry('github:a/b#main') })
+    writeProjectManifest(projectRoot, manifest.document)
+    const raw = read()
+    expect(JSON.parse(raw)).toEqual({ manifestVersion: 0.1, facets: { v: 'github:a/b#main' } })
     expect(raw).toContain('  "facets"')
   })
 
   test('does not leave the .tmp file around on success', () => {
-    writeFacetsJson(projectRoot, { facets: {} })
+    writeProjectManifest(projectRoot, emptyProjectManifest().document)
     expect(existsSync(join(projectRoot, 'facets.json.tmp'))).toBe(false)
   })
 
-  test('round-trips through load + upsert + write preserving comments', () => {
+  // The regression this guards: the install pipeline used to rebuild the
+  // document with object spreads, which silently dropped comment-json's
+  // non-enumerable comment symbols.
+  test('round-trips through load + apply + write preserving comments', () => {
     writeFileSync(
       join(projectRoot, 'facets.json'),
       `{
   // keep me
   "facets": {
+    // about alpha
     "alpha": "github:a/alpha#main"
   }
 }`,
     )
-    const loaded = loadFacetsJson(projectRoot)
-    expect(loaded.ok).toBe(true)
-    if (loaded.ok) {
-      upsertFacetInManifest(loaded.data, 'beta', 'github:b/beta#main')
-      writeFacetsJson(projectRoot, loaded.data)
-    }
-    const raw = readFileSync(join(projectRoot, 'facets.json'), 'utf8')
+    const loaded = loadProjectManifest(projectRoot)
+    if (!loaded.ok) expect.unreachable()
+    applyDesiredFacets(loaded.manifest.document, {
+      alpha: entry('github:a/alpha#main'),
+      beta: entry('github:b/beta#main'),
+    })
+    writeProjectManifest(projectRoot, loaded.manifest.document)
+
+    const raw = read()
     expect(raw).toContain('keep me')
+    expect(raw).toContain('about alpha')
     expect(raw).toContain('beta')
+  })
+
+  test('a comment on a removed entry disappears with it, siblings survive', () => {
+    writeFileSync(
+      join(projectRoot, 'facets.json'),
+      `{
+  "facets": {
+    // about alpha
+    "alpha": "github:a/alpha#main",
+    // about beta
+    "beta": "github:b/beta#main"
+  }
+}`,
+    )
+    const loaded = loadProjectManifest(projectRoot)
+    if (!loaded.ok) expect.unreachable()
+    applyDesiredFacets(loaded.manifest.document, { alpha: entry('github:a/alpha#main') })
+    writeProjectManifest(projectRoot, loaded.manifest.document)
+
+    const raw = read()
+    expect(raw).toContain('about alpha')
+    expect(raw).not.toContain('"beta"')
   })
 })

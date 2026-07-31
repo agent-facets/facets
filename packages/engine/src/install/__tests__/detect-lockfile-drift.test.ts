@@ -1,9 +1,12 @@
 import { describe, expect, test } from 'bun:test'
-import type { FacetsJson, Lockfile, LockfileFacet, LockfileSource } from '@agent-facets/protocol'
+import type { Lockfile, LockfileFacet, LockfileSource } from '@agent-facets/protocol'
 import { LOCKFILE_VERSION } from '@agent-facets/protocol'
+import type { NormalizedFacetEntry } from '../../manifest/mutations.ts'
 import { detectLockfileDrift } from '../detect-lockfile-drift.ts'
 
-const manifest = (facets: Record<string, string>): FacetsJson => ({ facets })
+/** Build the normalized facet map from a plain name → specifier record. */
+const manifest = (facets: Record<string, string>): Record<string, NormalizedFacetEntry> =>
+  Object.fromEntries(Object.entries(facets).map(([name, source]) => [name, { source, overrides: undefined }]))
 
 /** Convert an OLD flat `source` string into the NEW tagged lockfile source. */
 const taggedSource = (source: string): LockfileSource => {

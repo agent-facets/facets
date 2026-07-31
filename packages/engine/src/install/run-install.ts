@@ -1,7 +1,8 @@
 import { join } from 'node:path'
-import { CURRENT_LOCKFILE_VERSION, type FacetsJson, type Lockfile } from '@agent-facets/protocol'
+import { CURRENT_LOCKFILE_VERSION, type Lockfile } from '@agent-facets/protocol'
 import { type AdapterCompatibilityFailure, compatibilityFailureFor } from '../adapters/api-compatibility.ts'
-import { loadFacetsJson } from '../manifest/project-files.ts'
+import type { NormalizedProjectManifest } from '../manifest/mutations.ts'
+import { describeManifestFailure, loadProjectManifest } from '../manifest/project-files.ts'
 import { applyManifestWritePolicy, mergeDeltaIntoManifest } from './commit/delta.ts'
 import { removeDriftedFacets } from './commit/drift-removal.ts'
 import { installFacets } from './commit/install-loop.ts'
@@ -38,21 +39,29 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
   //    created as part of the transactional write. Without a delta, a
   //    missing manifest is still a hard error (plain `facet install` with
   //    nothing to install).
-  const facetsJsonResult = loadFacetsJson(projectRoot)
-  if (!facetsJsonResult.ok) {
+  const manifestResult = loadProjectManifest(projectRoot)
+  if (!manifestResult.ok) {
+    if (manifestResult.reason === 'invalid' && manifestResult.failure.code === 'unsupported-manifest-version') {
+      return failureWithoutRollback({
+        code: 'FACETS_JSON_UNSUPPORTED_VERSION',
+        path: join(projectRoot, 'facets.json'),
+        observed: manifestResult.failure.observed,
+        supported: manifestResult.failure.supported,
+      })
+    }
     return failureWithoutRollback({
       code: 'FACETS_JSON_INVALID',
       path: join(projectRoot, 'facets.json'),
-      error: facetsJsonResult.error,
+      error: manifestResult.reason === 'read' ? manifestResult.error : describeManifestFailure(manifestResult.failure),
     })
   }
-  if (!facetsJsonResult.existed && delta.additions.length === 0) {
+  if (!manifestResult.existed && delta.additions.length === 0) {
     return failureWithoutRollback({
       code: 'FACETS_JSON_NOT_FOUND',
       path: join(projectRoot, 'facets.json'),
     })
   }
-  const facetsJson: FacetsJson = facetsJsonResult.existed ? facetsJsonResult.data : { facets: {} }
+  const projectManifest: NormalizedProjectManifest = manifestResult.manifest
 
   // 2. Acquire install lock.
   const lockResult = acquireInstallLock(projectRoot)
@@ -131,12 +140,12 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     //    the stale entry on disk. Receipt-only orphans (present in the
     //    receipt but not the lockfile) are not lockfile drift and are cleaned
     //    up normally under frozen — only the receipt is rewritten.
-    const merged = mergeDeltaIntoManifest(facetsJson.facets, delta)
+    const merged = mergeDeltaIntoManifest(projectManifest.facets, delta)
     if (frozenLockfile && merged.hasDelta) {
       return failureNoMutation({ code: 'FROZEN_WITH_DELTA' })
     }
     if (frozenLockfile) {
-      const drift = detectLockfileDrift(facetsJson, previousLockfile, lockfileResult.existed)
+      const drift = detectLockfileDrift(projectManifest.facets, previousLockfile, lockfileResult.existed)
       if (drift.length > 0) {
         return failureNoMutation({ code: 'LOCKFILE_DRIFT', facets: drift })
       }
@@ -203,7 +212,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     }
     const written = commitProjectFiles({
       projectRoot,
-      facetsJson,
+      manifestDocument: projectManifest.document,
       desiredFacets: merged.desiredFacets,
       newLockfile,
       newReceipt,

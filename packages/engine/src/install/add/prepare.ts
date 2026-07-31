@@ -1,5 +1,5 @@
-import type { FacetsJson } from '@agent-facets/protocol'
-import { loadFacetsJson } from '../../manifest/project-files.ts'
+import type { NormalizedProjectManifest } from '../../manifest/mutations.ts'
+import { describeManifestFailure, loadProjectManifest } from '../../manifest/project-files.ts'
 import type { Source } from '../../sources/facet/types.ts'
 import type { Addition, OnLog } from '../types.ts'
 import { type ResolveNameFailure, resolveFacetName } from './resolve-name.ts'
@@ -19,7 +19,7 @@ export interface AddSource {
 export type AddPrepareFailure = ResolveNameFailure | { reason: 'manifest-read'; error: string }
 
 export type PrepareAddResult =
-  | { ok: true; additions: ReadonlyArray<Addition>; json: FacetsJson; existed: boolean }
+  | { ok: true; additions: ReadonlyArray<Addition>; manifest: NormalizedProjectManifest; existed: boolean }
   | { ok: false; failure: AddPrepareFailure }
 
 /**
@@ -42,11 +42,16 @@ export async function prepareAdd(
   onLog?: OnLog,
 ): Promise<PrepareAddResult> {
   // 1. Load the manifest (or note it doesn't exist yet).
-  const loaded = loadFacetsJson(projectRoot)
+  const loaded = loadProjectManifest(projectRoot)
   if (!loaded.ok) {
-    return { ok: false, failure: { reason: 'manifest-read', error: loaded.error } }
+    return {
+      ok: false,
+      failure: {
+        reason: 'manifest-read',
+        error: loaded.reason === 'read' ? loaded.error : describeManifestFailure(loaded.failure),
+      },
+    }
   }
-  const json: FacetsJson = loaded.existed ? loaded.data : { facets: {} }
 
   // 2. Resolve names for every source.
   const additions: Addition[] = []
@@ -62,5 +67,5 @@ export async function prepareAdd(
     })
   }
 
-  return { ok: true, additions, json, existed: loaded.existed }
+  return { ok: true, additions, manifest: loaded.manifest, existed: loaded.existed }
 }

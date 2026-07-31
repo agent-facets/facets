@@ -1,4 +1,5 @@
 import type { LockfileFacet } from '@agent-facets/protocol'
+import type { NormalizedFacetEntry } from '../../manifest/mutations.ts'
 import { describeVersionSpec } from '../../registry/describe.ts'
 import type { Addition, InstallDelta } from '../types.ts'
 
@@ -7,8 +8,8 @@ import type { Addition, InstallDelta } from '../types.ts'
  * delta — the commit phase's working "desired set".
  */
 export interface MergedDelta {
-  /** Manifest map (name → specifier) with additions upserted and removals deleted. */
-  desiredFacets: Record<string, string>
+  /** Normalized entries with additions upserted and removals deleted. */
+  desiredFacets: Record<string, NormalizedFacetEntry>
   /** Names arriving through `delta.additions` — the structural discriminator's input channel. */
   additionNames: ReadonlySet<string>
   hasDelta: boolean
@@ -23,13 +24,27 @@ export interface MergedDelta {
  * values are stored specifier-shaped (e.g. `1.2.3`, `latest`) so
  * `resolveFacet` can parse them; the final manifest value is computed
  * by `applyManifestWritePolicy` after resolution succeeds.
+ *
+ * Re-adding or updating a facet changes only its SOURCE. Materialization
+ * overrides are durable project intent, so an existing entry's overrides are
+ * carried through untouched — changing where a facet comes from is not a
+ * statement about how its assets should be named.
  */
-export function mergeDeltaIntoManifest(facets: Readonly<Record<string, string>>, delta: InstallDelta): MergedDelta {
-  const desiredFacets: Record<string, string> = { ...facets }
+export function mergeDeltaIntoManifest(
+  facets: Readonly<Record<string, NormalizedFacetEntry>>,
+  delta: InstallDelta,
+): MergedDelta {
+  const desiredFacets: Record<string, NormalizedFacetEntry> = {}
+  for (const [name, entry] of Object.entries(facets)) {
+    desiredFacets[name] = { source: entry.source, overrides: entry.overrides }
+  }
   for (const addition of delta.additions) {
-    const manifestValue =
+    const source =
       addition.source.kind === 'registry' ? describeVersionSpec(addition.source.version) : addition.specifier
-    desiredFacets[addition.facetName] = manifestValue
+    desiredFacets[addition.facetName] = {
+      source,
+      overrides: desiredFacets[addition.facetName]?.overrides,
+    }
   }
   for (const removal of delta.removals) {
     delete desiredFacets[removal.facetName]
@@ -62,7 +77,7 @@ export function mergeDeltaIntoManifest(facets: Readonly<Record<string, string>>,
  * Mutates `desiredFacets` in place.
  */
 export function applyManifestWritePolicy(
-  desiredFacets: Record<string, string>,
+  desiredFacets: Record<string, NormalizedFacetEntry>,
   additions: ReadonlyArray<Addition>,
   newFacetEntries: Readonly<Record<string, LockfileFacet>>,
 ): void {
@@ -74,7 +89,12 @@ export function applyManifestWritePolicy(
       addition.source.version.kind === 'latest' &&
       addition.specifier === addition.facetName
     if (isBareAdd) {
-      desiredFacets[addition.facetName] = lockEntry.version
+      const entry = desiredFacets[addition.facetName]
+      if (entry !== undefined) {
+        // Pin the source only. Overrides are untouched for the same reason
+        // they survive a source update.
+        entry.source = lockEntry.version
+      }
     }
   }
 }

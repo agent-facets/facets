@@ -189,18 +189,25 @@ export type {
 // avoid two import paths for the same value.
 export { loadManifest, resolvePrompts } from './loaders/facet.ts'
 export { loadServerManifest } from './loaders/server.ts'
-// manifest mutations
+// project manifest — the normalized view the install pipeline reasons about,
+// plus the comment-preserving document that is the only thing serialized.
+export type {
+  LoadedManifestVersion,
+  ManifestDocument,
+  NormalizedFacetEntry,
+  NormalizedProjectManifest,
+} from './manifest/mutations.ts'
 export {
-  emptyFacetsJson,
+  applyDesiredFacets,
+  countOverrides,
+  emptyProjectManifest,
   FACETS_JSON_FILE,
-  parseFacetsJson,
-  removeFacetFromManifest,
-  serializeFacetsJson,
-  upsertFacetInManifest,
+  parseProjectManifest,
+  serializeProjectManifest,
 } from './manifest/mutations.ts'
 // manifest project files (I/O bridge)
-export type { LoadFacetsJsonResult } from './manifest/project-files.ts'
-export { loadFacetsJson, writeFacetsJson } from './manifest/project-files.ts'
+export type { LoadProjectManifestResult } from './manifest/project-files.ts'
+export { describeManifestFailure, loadProjectManifest, writeProjectManifest } from './manifest/project-files.ts'
 // readme (shared by scaffold + edit)
 export type { ReadmePath } from './readme.ts'
 export { isReadmePath, README_EXTENSIONLESS, README_MD, README_PATHS, readmeTemplate } from './readme.ts'
