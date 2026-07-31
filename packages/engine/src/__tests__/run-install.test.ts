@@ -22,18 +22,25 @@ import type { StageEvent } from '../install/types.ts'
 
 let projectRoot: string
 
-function buildLocalFixture(name: string, version = '0.1.0'): string {
+/**
+ * A single-skill local facet. The skill name defaults to `planning`, but a
+ * test installing more than one fixture must give each a distinct skill:
+ * two facets claiming one name is a genuine cross-facet collision, and the
+ * install now refuses it instead of letting one silently overwrite the
+ * other.
+ */
+function buildLocalFixture(name: string, version = '0.1.0', skill = 'planning'): string {
   const repo = realpathSync(mkdtempSync(join(projectRoot, 'local-fixture-')))
   writeFileSync(
     join(repo, 'facet.json'),
     JSON.stringify({
       name,
       version,
-      skills: { planning: { description: 'planning skill' } },
+      skills: { [skill]: { description: `${skill} skill` } },
     }),
   )
-  mkdirSync(join(repo, 'skills/planning'), { recursive: true })
-  writeFileSync(join(repo, 'skills/planning/SKILL.md'), `# planning ${version}\n`)
+  mkdirSync(join(repo, `skills/${skill}`), { recursive: true })
+  writeFileSync(join(repo, `skills/${skill}/SKILL.md`), `# ${skill} ${version}\n`)
   return repo
 }
 
@@ -525,7 +532,7 @@ describe('runInstall — server warnings', () => {
 describe('runInstall — drift removal', () => {
   test('facets in lockfile but not facets.json are removed', async () => {
     const local = buildLocalFixture('keeper')
-    const orphan = buildLocalFixture('orphan')
+    const orphan = buildLocalFixture('orphan', '0.1.0', 'orphan-planning')
 
     // First install: both facets.
     writeFileSync(

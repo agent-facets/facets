@@ -14,18 +14,24 @@ let originalHome: string | undefined
 let adaptersDir: string
 let originalFacetDir: string | undefined
 
-function buildLocalFixture(name: string, version = '0.1.0'): string {
+/**
+ * A single-skill local facet. The skill name defaults to `planning`; tests
+ * that add more than one fixture must give each a distinct skill, because
+ * two facets claiming one name is a real cross-facet collision that the
+ * install now refuses rather than silently resolving by write order.
+ */
+function buildLocalFixture(name: string, version = '0.1.0', skill = 'planning'): string {
   const repo = realpathSync(mkdtempSync(join(projectRoot, 'fixture-')))
   writeFileSync(
     join(repo, 'facet.json'),
     JSON.stringify({
       name,
       version,
-      skills: { planning: { description: 'planning skill' } },
+      skills: { [skill]: { description: `${skill} skill` } },
     }),
   )
-  mkdirSync(join(repo, 'skills/planning'), { recursive: true })
-  writeFileSync(join(repo, 'skills/planning/SKILL.md'), `# planning ${version}\n`)
+  mkdirSync(join(repo, `skills/${skill}`), { recursive: true })
+  writeFileSync(join(repo, `skills/${skill}/SKILL.md`), `# ${skill} ${version}\n`)
   return repo
 }
 
@@ -134,7 +140,7 @@ describe('facet add — happy path', () => {
   test('multi-source: two facets are added in one command', async () => {
     installFakeAdapter(adaptersDir, 'test-adapter')
     const a = buildLocalFixture('alpha')
-    const b = buildLocalFixture('beta')
+    const b = buildLocalFixture('beta', '0.1.0', 'beta-planning')
     const relA = `./${a.split('/').pop()}`
     const relB = `./${b.split('/').pop()}`
 

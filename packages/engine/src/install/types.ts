@@ -1,9 +1,10 @@
 import type { Adapter } from '@agent-facets/adapter'
 import type { AssetType, Scope, ValidationError } from '@agent-facets/common'
-import type { IntegrityFailure, SupportedLockfile } from '@agent-facets/protocol'
+import type { CollisionGroup, IntegrityFailure, StaleOverride, SupportedLockfile } from '@agent-facets/protocol'
 import type { AdapterCompatibilityFailure } from '../adapters/api-compatibility.ts'
 import type { RegistryError } from '../registry/index.ts'
 import type { ParseError, Source } from '../sources/facet/types.ts'
+import type { CollisionResolver } from './commit/compose.ts'
 
 /**
  * The adapter-agnostic identity of a single asset: the triple that names it
@@ -101,6 +102,12 @@ export type OnLog = (build: () => string) => void
  */
 export type StageEvent =
   | { kind: 'install-start'; totalFacets: number }
+  /**
+   * Composition is checking the complete desired set for cross-facet
+   * collisions. Emitted once, between resolution and the first write, so the
+   * step is visible rather than appearing as a stall.
+   */
+  | { kind: 'collision-check' }
   | { kind: 'facet-start'; facet: string; specifier: string }
   | { kind: 'facet-stage'; facet: string; stage: FacetStage }
   | { kind: 'facet-success'; facet: string; outcome: FacetOutcome }
@@ -320,6 +327,40 @@ export type RunInstallFailure =
       expected: string
       actual: string
     }
+  /**
+   * A persisted or resolver-supplied alias does not satisfy the asset-name
+   * grammar. Distinct from a collision: the input cannot be interpreted at
+   * all, so no effective set — and therefore no collision report — can be
+   * derived from it.
+   */
+  | { code: 'MATERIALIZATION_ALIAS_INVALID'; problems: ReadonlyArray<{ facet: string; alias: string; reason: string }> }
+  /**
+   * Two or more assets claim one logical materialized identity and nothing
+   * resolved it: frozen mode (which reproduces recorded intent and never
+   * collects new decisions) or a non-interactive command with no resolver.
+   *
+   * Carries EVERY group, not the first — a user marched through repeated
+   * attempts to discover one conflict at a time learns nothing about the
+   * shape of the problem. Stale overrides ride along because they are a
+   * diagnostic about intent, orthogonal to whether the set collides.
+   */
+  | {
+      code: 'MATERIALIZATION_COLLISION'
+      groups: ReadonlyArray<CollisionGroup>
+      staleOverrides: ReadonlyArray<StaleOverride>
+    }
+  /**
+   * An interactive resolver returned choices that still do not compose. The
+   * resolver is not reopened automatically; the operation fails with what
+   * the final validation found.
+   */
+  | {
+      code: 'MATERIALIZATION_RESOLUTION_INVALID'
+      groups: ReadonlyArray<CollisionGroup>
+      problems: ReadonlyArray<{ facet: string; alias: string; reason: string }>
+    }
+  /** The user dismissed collision resolution. No state was mutated. */
+  | { code: 'MATERIALIZATION_CANCELLED' }
   | { code: 'ABORTED' }
 
 /**
@@ -450,4 +491,13 @@ export interface RunInstallOptions {
   onLog?: OnLog
   signal?: AbortSignal
   frozenLockfile?: boolean
+  /**
+   * Optional interactive collision resolver.
+   *
+   * Omitted by every non-interactive caller, which is what makes
+   * "fail with the complete report" the default rather than a special case.
+   * Frozen mode ignores it: reproducing recorded intent must never collect
+   * new decisions.
+   */
+  resolveCollisions?: CollisionResolver
 }
