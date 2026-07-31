@@ -131,7 +131,12 @@
           },
           {
             "group": "Installation",
-            "pages": ["specification/install", "specification/planning", "specification/commit"]
+            "pages": [
+              "specification/install",
+              "specification/planning",
+              "specification/commit",
+              "specification/materialization"
+            ]
           },
           {
             "group": "Authoring",

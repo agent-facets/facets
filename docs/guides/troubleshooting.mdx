@@ -57,7 +57,54 @@ Common errors, what causes them, and how to fix them. Each entry mirrors the CLI
   <Accordion title='"integrity mismatch" / companion drift on install'>
     **Cause:** a materialized file no longer matches the [per-file integrity](/specification/lockfile) recorded in `facets.lock` — a file was edited or corrupted on disk, or the cache was tampered with. Install reconciles every file (including each skill companion) before writing and reports the exact drifting path.
 
-    **Fix:** re-run [`facet install`](/cli/install) — it repairs a drifted file in place (reported as *repaired*) without touching files you added yourself. If a registry facet fails to reconcile against its lockfile integrity, the download is rejected rather than silently replaced; confirm the lockfile matches what you expect.
+    **Fix:** re-run [`facet install`](/cli/install) — it repairs a drifted file in place (reported as *repaired*) without touching files you added yourself. If a registry facet fails to reconcile against its lockfile integrity, the download is rejected rather than silently replaced; confirm the lockfile matches what you expect. A `RECONCILE_*` failure is different: the archive itself disagrees with the lockfile, so re-running will not fix it — delete `facets.lock` and re-run, or [`facet add`](/cli/add) the facet to update the entry.
+  </Accordion>
+
+  <Accordion title='"two or more facets want the same name"'>
+    **Cause:** two installed facets each publish an asset that would materialize under the same name. Skills and commands share one namespace, so a skill and a command can collide too. Nothing is written — the check runs before any file is touched.
+
+    **Fix:** in a terminal, [`facet install`](/cli/install#name-collisions) pauses and lets you keep, rename, or omit each one. In CI it fails and prints every claimant with the exact `facets.json` edit; make that edit locally, commit it, and CI will never see the collision again:
+
+    ```json facets.json
+    "team-tools": {
+      "source": "1.*",
+      "materialization": {
+        "skills": { "planning": { "kind": "aliased", "as": "team-planning" } }
+      }
+    }
+    ```
+
+    Only *one* claimant needs to change — the names just have to differ from each other. See [Materialization](/specification/materialization).
+  </Accordion>
+
+  <Accordion title='"invalid materialization alias"'>
+    **Cause:** an `as` value in a `materialization` block does not satisfy the [asset-name grammar](/specification/manifest#asset-names): 1–64 characters of lowercase letters, digits, and hyphens, no leading or trailing hyphen, no consecutive hyphens, and no `/`.
+
+    **Fix:** correct the alias in `facets.json` and re-run. Aliases are never auto-corrected — silently rewriting your chosen name would make the result unpredictable.
+  </Accordion>
+
+  <Accordion title='"lockfile cannot record materialization overrides" (frozen install)'>
+    **Cause:** `facets.json` declares an alias or omission, but `facets.lock` predates lockfile `0.3` and has no field to record it. [`--frozen-lockfile`](/cli/install) refuses rather than silently ignoring your intent.
+
+    **Fix:** run one plain `facet install` (without the flag) to migrate the lockfile to `0.3`, then commit it. CI will pass from then on.
+  </Accordion>
+
+  <Accordion title='"facets.json says X, lockfile says Y" (frozen install)'>
+    **Cause:** you changed an alias or omission in `facets.json` but never ran a normal install, so `facets.lock` still records the old disposition. Under [`--frozen-lockfile`](/cli/install) that is drift, exactly like an unrecorded version bump.
+
+    **Fix:** run `facet install` without the flag, then commit the updated `facets.lock`.
+  </Accordion>
+
+  <Accordion title='A materialization choice was dropped, or is rejected in CI'>
+    **Cause:** an override names an asset the resolved facet version no longer contains — usually the publisher renamed or removed it in an upgrade. A normal install prunes the stale override and tells you which one; a frozen install treats it as blocking drift, because it has no transaction in which to prune.
+
+    **Fix:** nothing, if you saw the pruning notice — it is already resolved and `facets.json` was updated. In CI, run `facet install` locally without `--frozen-lockfile` and commit the pruned manifest.
+  </Accordion>
+
+  <Accordion title='"facets.json declares an unsupported manifestVersion"'>
+    **Cause:** the manifest was written by a newer CLI. Versions are matched exactly, never by ordering, so a newer format is refused rather than guessed at.
+
+    **Fix:** update with [`facet self-update`](/cli/self-update). A manifest with **no** `manifestVersion` is not affected — that is the legacy format, and it is still read and migrated on the next successful install.
   </Accordion>
 
   <Accordion title='"not signed in — no registry credential found"'>

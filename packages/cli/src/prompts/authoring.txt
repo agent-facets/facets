@@ -13,6 +13,14 @@ Asset names are a single segment: 1-64 chars, lowercase letters/digits/hyphens,
 no leading/trailing/consecutive hyphens, and no slashes. A skill and a command
 must NOT share a name (agents are a separate namespace).
 
+The name you declare is the AUTHORED name. It fixes the asset's archive paths
+and every integrity hash, and it is what facets.lock records. A consuming
+project may install the asset under a different name, or omit it entirely, if
+it collides with another facet — so do not assume your names land verbatim on
+a user's disk. Nothing about authoring changes because of this; pick names that
+are unlikely to collide (a distinctive prefix helps) and you make it a non-issue
+for your users.
+
 1) SCAFFOLD a new facet — `facet create`
    Pass headless flags to skip the interactive wizard:
      facet create ./my-facet \

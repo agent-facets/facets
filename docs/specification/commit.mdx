@@ -5,7 +5,9 @@ description: Verify, materialize, write — atomically
 
 import { DeltaTip, InstallReceiptTip, CanonicalFingerprintTip, SidecarTip } from "/snippets/glossary.jsx";
 
-Commit is phase 2 of the [install pipeline](/specification/install): a single transaction that applies the <DeltaTip>delta</DeltaTip> from [Planning](/specification/planning). Its inputs are the on-disk `facets.json`, `facets.lock`, the <InstallReceiptTip>install receipt</InstallReceiptTip>, and the delta. It is never partial: a failure anywhere MUST roll back all materialization via the **journal** — a log in which every materialization write records its inverse operation, replayed in reverse on failure — and leave the project exactly as it was.
+Commit is phase 2 of the [install pipeline](/specification/install): a single transaction that applies the <DeltaTip>delta</DeltaTip> from [Planning](/specification/planning). Its inputs are the on-disk `facets.json` — including the [materialization](/specification/materialization) intent it records — `facets.lock`, the <InstallReceiptTip>install receipt</InstallReceiptTip>, and the delta.
+
+It is never partial. Commit runs in three phases, and the boundary between the second and third is where mutation begins: everything up to and including [Compose](#compose) is read-only, so a failure there leaves the project byte-identical without needing to undo anything. From the first write onward, every write records its inverse in the **journal**, and a failure MUST replay it in reverse to leave the project exactly as it was.
 
 <CardGroup cols={3}>
   <Card title="Verify" icon="shield-check">
@@ -23,16 +25,23 @@ Commit is phase 2 of the [install pipeline](/specification/install): a single tr
 
 <Steps>
   <Step title="Load state and gate">
-    The manifest is read, the **install lock** — a per-project advisory lock ensuring only one install operates on a project at a time — is acquired, and the lockfile and receipt are loaded (an invalid receipt is re-bootstrapped from the lockfile; receipt asset entries with crafted names are reported and skipped individually). A delta naming the same facet in both additions and removals MUST be rejected, the adapters selected for this operation MUST pass the adapter API compatibility preflight — a defense-in-depth re-check behind the command-level gate that already rejected any incompatible installed adapter before planning; a selected adapter whose declared adapter API the CLI does not support MUST fail the commit here, before the per-facet loop and therefore before any Git or local facet build can invoke adapter metadata methods — and the frozen gates run (see [Frozen lockfile](#frozen-lockfile)). Failures here touch nothing — no rollback is needed.
+    The manifest is read and the **install lock** — a per-project advisory lock ensuring only one install operates on a project at a time — is acquired. A frozen operation carrying a non-empty delta is rejected here, before the lockfile is even read, so `facet add --frozen-lockfile` against a corrupt lockfile reports the operation it cannot perform rather than a file it never needed to open.
+
+    The lockfile and receipt are then loaded (an invalid receipt is re-bootstrapped from the lockfile; receipt asset entries with crafted names are reported and skipped individually). A delta naming the same facet in both additions and removals MUST be rejected, and the adapters selected for this operation MUST pass the adapter API compatibility preflight — a defense-in-depth re-check behind the command-level gate that already rejected any incompatible installed adapter before planning. Every incompatible adapter is collected, not just the first. A selected adapter whose declared adapter API the CLI does not support MUST fail the commit here, before any Git or local facet build can invoke adapter metadata methods. Failures here touch nothing — no rollback is needed.
   </Step>
   <Step title="Merge delta in memory">
-    Additions are upserted, removals are deleted — all in memory. The on-disk `facets.json` MUST NOT be written ahead of the install.
+    Additions are upserted, removals are deleted — all in memory. The on-disk `facets.json` MUST NOT be written ahead of the install. Re-adding a facet preserves any materialization overrides already recorded for it: changing where a facet comes from is not a statement about how its assets should be named.
+
+    The frozen gates then run against the merged result (see [Frozen lockfile](#frozen-lockfile)).
   </Step>
-  <Step title="Per-facet loop">
-    Each facet in the **desired set** — the manifest's facets after the delta is merged in memory — passes four sub-stages: [parse → resolve → verify → materialize](#the-per-facet-loop). The loop stops at the first failure.
+  <Step title="Phase A — Resolve all">
+    Every facet in the **desired set** — the manifest's facets after the delta is merged in memory — is [parsed, resolved, and verified](#the-three-phases), in a deterministic order. Nothing is written. The phase stops at the first failure.
   </Step>
-  <Step title="Drift removal">
-    The receipt is compared against the desired set: any facet still on disk but no longer wanted has its assets deleted — entirely offline.
+  <Step title="Phase B — Compose">
+    The complete set of verified contributions, plus the project's recorded intent, becomes either one collision-free plan or the complete list of [collisions](#compose) blocking it. Still nothing written.
+  </Step>
+  <Step title="Phase C — Apply">
+    The journal opens. Obsolete assets are deleted in one global pass, then every desired asset is [materialized](#materialize) under its effective name. Deleting first is what lets a name move between facets safely.
   </Step>
   <Step title="Transactional tri-write">
     The [manifest-write policy](#manifest-write-policy) is applied just before the write, then `facets.json`, `facets.lock`, and the receipt are written together. A failure anywhere rolls back all materialization and leaves all three files unchanged.
@@ -55,9 +64,25 @@ These combine independently: a facet may need any combination, or none. The cach
 Registry versions are immutable — the bytes for a published `name@version` never change. Integrity confirmation and lockfile comparison enforce this invariant **client-side** rather than assuming it.
 </Info>
 
-## The per-facet loop
+## The three phases
 
-Every facet in the desired set passes the same four sub-stages, in order. The loop is interleaved — facet A is resolved and materialized before facet B starts — and stops at the first failure.
+Commit is **not** an interleaved per-facet loop. Every facet is fully resolved and verified before any facet is materialized, because cross-facet collision detection needs the complete desired asset set to exist before the first adapter write — which is impossible while facet N is materialized before facet N+1 is fetched.
+
+```mermaid
+flowchart LR
+    subgraph A["Phase A — Resolve all (read-only)"]
+        P["Parse"] --> R["Resolve"] --> V["Verify"]
+    end
+    subgraph B["Phase B — Compose (read-only)"]
+        C["Plan materialization"]
+    end
+    subgraph C2["Phase C — Apply (journaled)"]
+        D["Delete obsolete"] --> M["Materialize"]
+    end
+    A --> B --> C2
+```
+
+Facets are processed in a deterministic order — sorted by name, not manifest key order — because which facet fails first is user-visible.
 
 ### Parse
 
@@ -128,7 +153,9 @@ flowchart TD
 
 On a miss, the downloaded content's canonical fingerprint MUST be **genuinely recomputed** from the extracted bytes (per-entry hashes plus the canonical-archive hash) — never taken from the build manifest's self-declared claim. The recomputed value MUST be verified against the registry's published `content_integrity` and, when the lockfile pins this version, against the locked integrity, before the verified content populates the cache.
 
-Before any file is written, install also proves a four-way agreement per materialized file: the recomputed archive-entry hash, the [lockfile `0.2`](/specification/lockfile) per-file integrity, the verified build-manifest hash, and the complete owned-file set MUST all agree. A mismatch fails the commit with the exact drifting path. This gate — and, in frozen mode, the bidirectional-consistency gate — completes before any receipt-driven cleanup begins. Archive-only supplementary files (like `README.md`) are verified as archive entries but are **never written to disk**.
+**On reproduction**, install also proves a four-way agreement per file: the recomputed archive-entry hash, the [lockfile](/specification/lockfile) per-file integrity, the verified build-manifest hash, and the complete owned-file set MUST all agree. A mismatch fails the commit with the exact drifting path.
+
+This reconciliation applies only when the facet resolves to the integrity already locked. A legitimate change — a new version, an edited local facet, a removed asset — resolves to a *different* integrity, so there is nothing to reconcile against. It is also skipped for a legacy identity-only lockfile entry, which records no per-file hashes, and in frozen mode, where the drift preflight substitutes for it. Archive-only supplementary files (like `README.md`) are verified as archive entries but are **never written to disk**.
 
 #### Git and local sources
 
@@ -138,17 +165,37 @@ Git and local facets are **built from source** during commit rather than downloa
 
 **Local** — trust-by-path: the source is containment-checked, rebuilt from disk on every install, and the lockfile follows what is on disk (no integrity confirmation, no caching). The exception is frozen mode, which promises bit-for-bit reproduction: the built content MUST hash to the locked integrity or the install fails, and the entry is never rewritten.
 
+### Compose
+
+Compose turns the complete set of verified authored contributions, plus the project's persisted intent, into either one collision-free global plan or the complete list of collisions blocking it. **Nothing here writes.**
+
+This is the only place current lockfile entries are constructed. Resolution deliberately produces no disposition, so a provisional `authored` can never masquerade as a real decision.
+
+Compose applies the [materialization planner](/specification/materialization#planning-rules) — the same pure rule the CLI uses to recompute status while you edit a collision interactively. Three outcomes are possible:
+
+- **Collision-free** — the plan proceeds to Apply.
+- **Invalid alias** — an override's alias does not satisfy the asset-name grammar. No effective set can be derived from it, so no collision report is possible either; the commit fails.
+- **Collisions** — two or more assets claim one logical identity. Every group and every claimant is reported, never truncated and never resolved by picking a winner.
+
+When a collision is found, an interactive caller MAY be offered the chance to resolve it. The resolver returns **overrides, not a winner** — exactly the durable intent a user could have written by hand — and its answer is re-planned as defense in depth before being accepted. There is no automatic retry loop: a resolver that returns a still-colliding answer fails the commit rather than being re-invoked. Cancelling produces a distinct outcome, not an error, because nothing has been written.
+
+A frozen or non-interactive commit MUST report rather than resolve. Frozen mode reproduces recorded intent, so it must never collect a new decision — not even from a human sitting at a terminal.
+
 ### Materialize
 
-Materialization writes assets from verified content into each selected adapter's storage. A skill is written as an **atomic bundle**: its `SKILL.md` and every owned companion file are staged, committed, and rolled back as one all-or-nothing adapter operation carrying the validated owned-file set — the adapter never infers ownership from disk. Writes are skip-if-identical at per-file granularity — a facet whose lockfile entry is unchanged but whose on-disk files needed rewriting is reported as *repaired*, and a single drifted companion is repaired without touching the rest (the full outcome taxonomy is documented at [`facet install`](/cli/install#outcomes)). An interrupted install converges on re-run through the same per-file reconciliation without deleting unowned files. Every write MUST journal its inverse operation for rollback.
+Materialization writes assets from verified content into each selected adapter's storage, under each asset's **effective** name. Every adapter request, journal label, and failure report addresses the file on disk, which is named by the project's disposition — not by the publisher. Content lookup, canonical paths, and integrity stay anchored to the authored name; see [Two identities](/specification/materialization#two-identities). An omitted asset never reaches an adapter at all.
+
+A skill is written as an **atomic bundle**: its `SKILL.md` and every owned companion file are staged, committed, and rolled back as one all-or-nothing adapter operation carrying the validated owned-file set — the adapter never infers ownership from disk. Writes are skip-if-identical **per asset**: the write is skipped only when the primary *and* every companion already match on disk, so a single drifted companion (or a changed companion set) forces a repair through the same atomic bundle replacement. A facet whose lockfile entry is unchanged but whose on-disk files needed rewriting is reported as *repaired* (the full outcome taxonomy is documented at [`facet install`](/cli/install#outcomes)). An interrupted install converges on re-run without deleting unowned files. Every write MUST journal its inverse operation for rollback.
 
 ## Lockfile shape
 
-Commit writes `facets.lock` as part of the tri-write: per facet, the tagged source provenance, the exact resolved version, the verified integrity, and the contributed assets — each asset carrying a per-file `{ path, integrity }` ownership record. The full schema is specified in [Lockfile](/specification/lockfile).
+Commit writes `facets.lock` as part of the tri-write: per facet, the tagged source provenance, the exact resolved version, the verified integrity, and the contributed assets — each asset carrying its resolved materialization disposition and a per-file `{ path, integrity }` ownership record. Omitted assets are listed too: the lockfile records the resolved asset **set**, not the on-disk set. The full schema is specified in [Lockfile](/specification/lockfile).
 
 ## Machine-local install receipt
 
-Receipts are per-project, machine-local records (schema `0.2`) stored outside the project's version-controlled tree ([`$FACET_DIR`](/cli/env)`/receipts/`). They mirror the committed lockfile's asset and per-file ownership so drift removal can clean up correctly — including a skill's owned companions — even when the lockfile no longer mentions the facet, and entirely offline. A legacy primary-only receipt is safely refined rather than rejected. The receipt records ownership, not hashes.
+Receipts are per-project, machine-local records (schema `0.3`) stored outside the project's version-controlled tree ([`$FACET_DIR`](/cli/env)`/receipts/`). They record, for each asset actually present on disk, its authored identity, the authored inner-archive paths it owns, and the disposition it was materialized under — both names are needed to delete an aliased asset offline. Omitted assets never appear.
+
+This lets drift removal clean up correctly — including a skill's owned companions — even when the lockfile no longer mentions the facet, and entirely offline. A legacy primary-only receipt is safely refined rather than rejected, and a pre-`0.3` receipt reads as `authored`. The receipt records ownership, not hashes, and carries its own version axis independent of the lockfile's.
 
 <CardGroup cols={2}>
   <Card title="Per-project isolation" icon="folder">
@@ -161,21 +208,29 @@ Receipts are per-project, machine-local records (schema `0.2`) stored outside th
     Asset entries and per-file ownership paths with crafted names (path traversal, backslashes) are **reported and skipped individually** — each owned path is containment-validated before use, and the rest of the receipt still loads and is processed.
   </Card>
   <Card title="Contained deletion" icon="box">
-    Deletion goes through adapters using validated **asset tuples** — `(scope, type, name)` triples, the adapter-agnostic identity of a materialized asset — never raw filesystem paths taken from the receipt. For a skill, the delete request also carries the validated owned-companion path set, so only owned files are removed, unowned files survive, and emptied directories are pruned.
+    Deletion goes through adapters using validated **asset tuples** — `(scope, type, effective name)` triples, the addressable identity of a materialized asset — never raw filesystem paths taken from the receipt. For a skill, the delete request also carries the validated owned-companion path set, so only owned files are removed, unowned files survive, and emptied directories are pruned.
   </Card>
 </CardGroup>
 
 ## Drift removal
 
-After the loop, the receipt is compared against the desired set. Any facet the receipt shows as installed — but that is no longer wanted — has its assets deleted, including each skill's owned companion files. The comparison runs against the **receipt**, not the on-disk lockfile; this is what makes **orphan-on-pull** recoverable (a facet whose lockfile entry vanished because a teammate removed it and you pulled — the receipt still remembers the local materialization). Lockfile entries missing from a freshly-bootstrapped receipt are caught too. And because the asset tuples and owned-file sets to delete come from the receipt itself, removal needs no cache and no network.
+Drift removal is a **single global pass keyed by effective identity**, and it runs at the start of Apply — *before* any asset is written, not after.
 
-Drift removal runs **before** the tri-write, but its deletions MUST be journaled like every other write — if the commit fails afterward, rollback restores them.
+The receipt supplies the previous ownership set, with the lockfile as a fallback for facets the receipt does not mention. Every historical claim on one effective identity is unioned, and each claim's owned companion paths are stripped using its **own** authored name, because an aliased skill's recorded paths are authored while its bundle lives under the effective name. The desired set is the composed plan's effective identities. The difference is deleted.
+
+The question asked is *"is this effective identity still claimed by any desired asset?"* — not *"is this facet still wanted?"* An identity is retained even when the facet that used to own it is gone, which is what makes **ownership transfer** work: facet A gives up the name `deploy`, facet B claims it, and B's file survives. A per-facet decision would have deleted it.
+
+Deleting before writing is load-bearing for the same reason. If writes came first, transferring a name would write B's asset and then delete it as part of cleaning up A.
+
+The comparison runs against the **receipt**, not the on-disk lockfile; this is what makes **orphan-on-pull** recoverable (a facet whose lockfile entry vanished because a teammate removed it and you pulled — the receipt still remembers the local materialization). Lockfile entries missing from a freshly-bootstrapped receipt are caught too. And because the asset tuples and owned-file sets to delete come from the receipt itself, removal needs no cache and no network.
+
+Deletions MUST be journaled like every other write — if the commit fails afterward, rollback restores them.
 
 ```mermaid
 flowchart TD
-    REC["Each facet in receipt"] --> W{"Still wanted?"}
-    W -->|yes| KEEP["Materialize as above"]
-    W -->|no| DROP["Delete its assets offline"]
+    PREV["Every effective identity<br/>previously owned"] --> W{"Claimed by any<br/>desired asset?"}
+    W -->|yes| KEEP["Retain — possibly<br/>under a new owner"]
+    W -->|no| DROP["Delete offline<br/>(primary + owned companions)"]
     DROP --> RM["Drop from lockfile + receipt"]
 ```
 
@@ -202,8 +257,9 @@ sequenceDiagram
     participant Commit as commit()
     participant FS as filesystem
     Commit->>Commit: merge delta in memory
-    Commit->>Commit: parse + resolve + verify + materialize each facet
-    Commit->>Commit: drift removal via receipt
+    Commit->>Commit: Phase A — parse + resolve + verify every facet
+    Commit->>Commit: Phase B — compose the global plan
+    Commit->>Commit: Phase C — delete obsolete, then materialize
     alt all succeeded
         Commit->>FS: write facets.json + facets.lock + receipt
     else failed
@@ -221,7 +277,25 @@ Frozen mode (the [`--frozen-lockfile`](/cli/install#param-frozen-lockfile) flag)
 A frozen commit with a non-empty delta (any addition or removal) MUST be rejected immediately. Only a plain `facet install` can run frozen.
 </Warning>
 
-The system MUST check bidirectional consistency before touching anything: every manifest facet MUST have a satisfying lockfile entry, the lockfile MUST NOT pin anything the manifest dropped, and git/local sources MUST match their locked provenance.
+Five gates run before anything is touched, and all of them run **before any network access** — a frozen install can refuse without fetching a byte:
+
+<Steps>
+  <Step title="Coverage">
+    Every manifest facet MUST have a satisfying lockfile entry, the lockfile MUST NOT pin anything the manifest dropped, and git/local sources MUST match their locked provenance.
+  </Step>
+  <Step title="Format capability">
+    A lockfile older than `0.3` cannot record a disposition. If the manifest declares any materialization override against one, the install MUST fail rather than silently ignore the intent. The fix is one non-frozen install to migrate the lockfile.
+  </Step>
+  <Step title="Materialization plan over the locked set">
+    The [planner](/specification/materialization#planning-rules) runs against the lockfile's recorded assets, so a collision or invalid alias in recorded state is reported before anything is downloaded. Frozen mode never prompts to resolve it.
+  </Step>
+  <Step title="Stale intent">
+    An override naming an asset the locked version does not contain is blocking drift. A normal install prunes it inside the transaction; frozen mode has no transaction to prune in.
+  </Step>
+  <Step title="Intent vs. recorded disposition">
+    For every locked asset, what `facets.json` asks for MUST equal what `facets.lock` records. Editing an alias without re-running a normal install is drift, exactly like editing a version.
+  </Step>
+</Steps>
 
 | Behavior                         | Frozen mode                                          |
 |----------------------------------|------------------------------------------------------|
@@ -231,6 +305,9 @@ The system MUST check bidirectional consistency before touching anything: every 
 | Archive resolution               | Allowed (downloading locked content is reproduction) |
 | Bidirectional consistency        | Required (manifest ↔ lockfile)                       |
 | Integrity before materialization | Required for every facet (including local sources)   |
+| Collision resolution             | Never prompted — reported                            |
+| Materialization drift            | Rejected (manifest intent ↔ locked disposition)      |
+| Stale overrides                  | Rejected, not pruned                                 |
 | Drift removal                    | Runs; receipt is rewritten                           |
 | Lockfile write                   | Never                                                |
 | Manifest write                   | Never                                                |

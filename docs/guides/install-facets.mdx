@@ -90,9 +90,9 @@ A bare name is pinned to its resolved version in `facets.json`; a wildcard like 
 
 ## What `facet add` writes
 
-Your project now has two files  -- commit both to version control so teammates and CI resolve identical versions.
+Your project now has two version-controlled files  -- commit both so teammates and CI resolve identical versions. (A third, the machine-local install receipt, lives outside your project and is not committed.)
 
-**`facets.json`**  -- the project manifest: which facets belong to the project, and at what version. It is the source of truth for your dependencies.
+**`facets.json`**  -- the project manifest: which facets belong to the project, at what version, and how you want their assets named. It is the source of truth for your dependencies.
 
 **`facets.lock`**  -- the lockfile: exact resolved versions, <Tooltip headline="Integrity hash" tip="A content hash of a facet's contents, checked on every install so you get exactly the bytes that were published — tampering or corruption fails the install." cta="How integrity works" href="/specification/integrity">integrity hashes</Tooltip>, and per-file asset records for reproducible installs. It is managed by the CLI; you never hand-edit it.
 
@@ -100,6 +100,7 @@ Your project now has two files  -- commit both to version control so teammates a
 
 ```json facets.json
 {
+  "manifestVersion": 0.1,
   "facets": {
     "cowsay": "1.*",
     "viper-plans": "1.0.0"
@@ -109,7 +110,7 @@ Your project now has two files  -- commit both to version control so teammates a
 
 ```json expandable facets.lock
 {
-  "lockfileVersion": 0.2,
+  "lockfileVersion": 0.3,
   "facets": {
     "cowsay": {
       "source": { "kind": "registry", "registry": "https://api.agentfacets.io" },
@@ -118,16 +119,20 @@ Your project now has two files  -- commit both to version control so teammates a
       "assets": [
         {
           "scope": "project", "type": "skill", "name": "cowsay-rules",
+          "materialization": { "kind": "authored" },
           "files": [
             { "path": "skills/cowsay-rules/SKILL.md", "integrity": "sha256:11aa22…" },
             { "path": "skills/cowsay-rules/references/moods.md", "integrity": "sha256:22bb33…" }
           ]
         },
         { "scope": "project", "type": "agent", "name": "cowsay",
+          "materialization": { "kind": "authored" },
           "files": [{ "path": "agents/cowsay.md", "integrity": "sha256:33cc44…" }] },
         { "scope": "project", "type": "command", "name": "cowchat",
+          "materialization": { "kind": "authored" },
           "files": [{ "path": "commands/cowchat.md", "integrity": "sha256:44dd55…" }] },
         { "scope": "project", "type": "command", "name": "cowsay",
+          "materialization": { "kind": "authored" },
           "files": [{ "path": "commands/cowsay.md", "integrity": "sha256:55ee66…" }] }
       ]
     }
@@ -139,13 +144,15 @@ Your project now has two files  -- commit both to version control so teammates a
 
 The full schema — every field, the tagged source kinds, and the exact-version rules — is specified in [Lockfile](/specification/lockfile).
 
+Note this facet ships an agent `cowsay` **and** a command `cowsay`. That is legal: skills and commands share one namespace, and agents have their own. What is *not* legal is two facets claiming the same name in the same namespace — see [Two facets, one name](#two-facets-one-name).
+
 <Note>
   The lockfile honors the manifest. A pinned entry is reused as long as it still satisfies `facets.json`; when you bump a version or widen a wildcard, `facet install` [re-resolves](/specification/commit#resolve) and updates the lock.
 </Note>
 
 ## Where assets land
 
-`facet add` also writes each asset into every connected adapter's **project-local** directory, so your tool picks them up immediately. With the `opencode` adapter, adding `cowsay` writes:
+`facet add` writes each materialized asset into every connected adapter's **project-local** directory, so your tool picks them up immediately. With the `opencode` adapter, adding `cowsay` writes:
 
 ```
 .opencode/
@@ -158,6 +165,61 @@ The full schema — every field, the tagged source kinds, and the exact-version 
 
 A skill's [companion files](/specification/manifest#supplementary-files) land beside its `SKILL.md`, and a skill installs and removes as one atomic bundle. [Archive-only files](/specification/commit#materialize) — a facet's top-level `README.md` or `LICENSE` — ship in the archive but are **never** written into your adapters. Other adapters use their own conventional location (Claude Code under `.claude/`, and so on). These files are `project`-scoped  -- the same `scope` you see in the lockfile  -- so they belong to the checkout, not your machine. `facet remove` deletes them again — including a skill's owned companions, while preserving any files you added into a skill directory yourself — and `facet install` recreates them from the lockfile after a clone.
 
+## Two facets, one name
+
+Sooner or later two facets will publish an asset with the same name. Facets cannot know about each other, so your project decides.
+
+Adding a second facet whose skill is also called `planning` pauses the install:
+
+```
+Installation is paused: two or more facets want the same name.
+1 group · 1 still to resolve · nothing has been written yet
+
+  project skills and commands — "planning"
+    ✕ unresolved   viper-plans  skill planning
+    ✕ unresolved   team-tools   skill planning
+```
+
+Press `Enter` on the group to open it, then give each one an outcome:
+
+- **Keep** — leave it under the published name.
+- **Alias** — type a different name for it.
+- **Omit** — do not install it at all.
+
+Move with `↑↓`, highlight a choice with `←→`, and press `Enter` to apply it. They only have to differ from each other, so aliasing *one* of them is enough. Once every group shows `✓ resolved`, confirm and the install continues.
+
+Your decision is saved to `facets.json`, so it happens once:
+
+```json facets.json
+{
+  "manifestVersion": 0.1,
+  "facets": {
+    "viper-plans": "1.0.0",
+    "team-tools": {
+      "source": "1.*",
+      "materialization": {
+        "skills": { "planning": { "kind": "aliased", "as": "team-planning" } }
+      }
+    }
+  }
+}
+```
+
+Both skills now install, and your teammates get the same layout from the same manifest:
+
+```
+.opencode/skills/planning/SKILL.md
+.opencode/skills/team-planning/SKILL.md
+```
+
+<Note>
+Aliasing renames the file, not the facet. `team-tools` is still `team-tools`, its published skill is still `planning`, and every integrity hash is unchanged — which is why an alias can never smuggle different content in under a familiar name. See [Materialization](/specification/materialization).
+</Note>
+
+<Warning>
+CI cannot prompt. If a collision reaches an automated run, the install fails and prints every claimant with the exact `facets.json` edit to make. Resolve collisions locally and commit `facets.json` so CI never sees one.
+</Warning>
+
 ## Reinstall after a git clone
 
 When you clone a project that already has `facets.json` and `facets.lock`, materialize into your adapters with:
@@ -169,7 +231,7 @@ facet install
 [`facet install`](/cli/install) fetches and installs every declared facet at the exact versions in the lockfile  -- so you get precisely what is pinned.
 
 <Tip>
-  For CI, add `--frozen-lockfile`. It never re-resolves or writes the lockfile and **fails** if `facets.json` and `facets.lock` disagree  -- catching a forgotten `facet add` or a hand-edited manifest instead of silently mutating the lock.
+  For CI, add `--frozen-lockfile`. It never re-resolves or writes the lockfile and **fails** if `facets.json` and `facets.lock` disagree  -- catching a forgotten `facet add` or a hand-edited manifest instead of silently mutating the lock. That includes disagreement about asset names: a recorded alias you changed by hand but never installed is drift, exactly like a changed version. Frozen mode also never prompts, so an unresolved name collision fails rather than waiting for input.
 </Tip>
 
 ## Manage what's installed

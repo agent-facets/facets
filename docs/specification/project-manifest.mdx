@@ -5,7 +5,7 @@ tag: facets.json
 description: The facets.json schema and entry semantics
 ---
 
-The project manifest (`facets.json`) is the file in a consuming project that declares which facets the project depends on. It is the input every install command reads and the declarative record a team commits to version control — a fresh clone plus [`facet install`](/cli/install) reproduces the full asset set.
+The project manifest (`facets.json`) is the file in a consuming project that declares which facets the project depends on, and how it wants their assets materialized. It is the input every install command reads and the declarative record a team commits to version control — a fresh clone plus [`facet install`](/cli/install) reproduces the full asset set.
 
 <Note>
 The project manifest is distinct from the [facet manifest](/specification/manifest) (`facet.json`) — the file *inside a facet* that declares its identity and assets. A consuming project has one `facets.json`; every facet ships its own `facet.json`.
@@ -15,38 +15,89 @@ The project manifest is distinct from the [facet manifest](/specification/manife
 
 ```json facets.json
 {
+  "manifestVersion": 0.1,
   "facets": {
     "cowsay": "1.*",
     "viper-plans": "github:agent-facets/viper-plans#main",
-    "my-local": "./facets/my-local"
+    "my-local": "./facets/my-local",
+    "team-tools": {
+      "source": "1.*",
+      "materialization": {
+        "skills": { "planning": { "kind": "aliased", "as": "team-planning" } }
+      }
+    }
   }
 }
 ```
 
 ## Fields
 
-<ResponseField name="facets" type="map<name, specifier>" required>
-  One entry per declared facet. The key is the facet name; the value is the source specifier **as the user wrote it**. Entries are added and removed by the install pipeline — or by hand, with `facet install` reconciling the result.
+<ResponseField name="manifestVersion" type="number" required>
+  The manifest schema version. The current version is `0.1`. A document that omits this field is a **legacy unversioned** manifest and is still read; see [Validation](#validation).
+
+  This axis is independent of the archive, lockfile, and adapter API versions — four separate compatibility axes that happen to share release trains.
+</ResponseField>
+
+<ResponseField name="facets" type="map<name, entry>" required>
+  One entry per declared facet. The key is the facet name. The value is either a **compact** source specifier string or an **expanded** object. Entries are added and removed by the install pipeline — or by hand, with `facet install` reconciling the result.
 </ResponseField>
 
 ## Entry value semantics
 
-The value's meaning depends on the source kind established when the entry was added (see [Accepted source kinds](/specification/planning#accepted-source-kinds)):
+An entry takes one of two forms. Both express the same source; the expanded form additionally carries the project's [materialization](/specification/materialization) intent.
 
-- **Registry** — the value is a bare version specifier (`1.2.3`, `1.*`, `1.2.*`, `*`, `latest`); the facet name lives in the key, and commit reconstructs the full source as `name@specifier`.
-- **Git / GitHub** — the value is a self-contained source string (a git URL or `github:` shorthand, with an optional `#ref`). The ref recorded here is what the user *requested*; the resolved commit lives in the [lockfile](/specification/lockfile).
-- **Local** — the value is a directory path that MUST resolve inside the project tree.
+<ResponseField name="compact" type="string">
+  The source specifier **as the user wrote it**. This is the canonical form for a facet with no materialization overrides.
+</ResponseField>
+
+<ResponseField name="expanded" type="{ source, materialization }">
+  `source` carries the same specifier string the compact form would. `materialization` records per-asset [dispositions](/specification/materialization#dispositions), grouped by asset type (`skills`, `agents`, `commands`) and keyed by **authored** asset name. It MUST declare at least one override — an expanded entry with none is invalid, because the compact form already expresses that.
+</ResponseField>
+
+A consumer reading `facets.json` MUST handle both forms. Treating the value as a string is the failure mode this schema is shaped to make obvious rather than silent.
+
+Whichever form the entry takes, the specifier's meaning depends on the source kind established when the entry was added (see [Accepted source kinds](/specification/planning#accepted-source-kinds)):
+
+- **Registry** — a bare version specifier (`1.2.3`, `1.*`, `1.2.*`, `*`, `latest`); the facet name lives in the key, and commit reconstructs the full source as `name@specifier`.
+- **Git / GitHub** — a self-contained source string (a git URL or `github:` shorthand, with an optional `#ref`). The ref recorded here is what the user *requested*; the resolved commit lives in the [lockfile](/specification/lockfile).
+- **Local** — a directory path that MUST resolve inside the project tree.
 
 ## Validation
 
-Only the shape is validated at load time: `facets` MUST be a map of string to string. Specifier grammar is validated when each entry is parsed during [commit](/specification/commit#parse) — a malformed specifier fails the install, not the load.
+**Version dispatch is by exact equality, never by shape.** A document is classified before its schema is chosen:
+
+- `manifestVersion` **absent** → legacy unversioned. Every entry value MUST be a string; an expanded entry here is rejected, not promoted.
+- `manifestVersion` **exactly** the number `0.1` → current schema. The string `"0.1"` is not the number `0.1` and MUST be rejected.
+- Anything else → an `unsupported manifestVersion` failure naming the observed and supported versions.
+
+There is no cross-version fallback. A `0.1` document that violates the current schema MUST NOT be retried as legacy — that would let a typo downgrade a manifest silently.
+
+**Duplicate JSON members are rejected before dispatch.** Two entries with the same key would otherwise collapse by last-member-wins, which could discard one of two conflicting materialization decisions for the same asset.
+
+Beyond shape, the load validates what it can prove locally:
+
+- Override **keys** are checked for path safety, so a project can address a legacy multi-segment authored name.
+- Alias **values** are checked against the current single-segment [asset-name grammar](/specification/manifest#asset-names) and are rejected rather than normalized.
+- An `{ "kind": "authored" }` override is rejected. Authored materialization is expressed by the absence of an override, and one state MUST have exactly one spelling.
+
+Specifier grammar is *not* validated at load. It is validated when each entry is parsed during [commit](/specification/commit#parse) — a malformed specifier fails the install, not the load.
 
 ## Write rules
 
 - The project manifest MUST NOT be written ahead of the install. A failed operation MUST leave it untouched. → [Installation](/specification/install)
+- Every successful non-frozen write stamps the current `manifestVersion`, migrating a legacy document **inside the same transaction** that writes the lockfile and receipt. There is no separate migration step and no standalone upgrade command.
 - What gets written per specifier shape (bare names pin, explicit specifiers are preserved verbatim, reproductions are unchanged) is defined by the [manifest-write policy](/specification/commit#manifest-write-policy).
+- Entry form follows content: an entry that has overrides is written expanded; an entry whose last override is removed **collapses back to a compact string**. An existing expanded entry is mutated in place.
+- Comments survive. `facets.json` may carry `//` and `/* */` comments; writes mutate the document in place rather than re-serializing it, so hand-written annotations are preserved.
+- [Stale overrides](/specification/materialization#stale-overrides) are pruned as part of a successful commit, and reported afterwards.
 - On success it is written atomically alongside `facets.lock` and the install receipt — the [tri-write](/specification/commit#transactional-tri-write).
+
+<Note>
+Frozen mode never writes the manifest. A legacy document therefore stays legacy under [`--frozen-lockfile`](/specification/commit#frozen-lockfile), and stale overrides are neither pruned nor reported — they are blocking drift instead.
+</Note>
 
 ## Relationship to the lockfile
 
-The project manifest records **intent** (what the user asked for, in the shape they asked for it); the [lockfile](/specification/lockfile) records **resolution** (exact versions, integrity, provenance). Both are version-controlled; the install receipt is not. The two MUST stay consistent — [frozen mode](/specification/commit#frozen-lockfile) checks that consistency bidirectionally before touching anything.
+The project manifest records **intent** (what the user asked for, in the shape they asked for it, and how they want it named); the [lockfile](/specification/lockfile) records **resolution** (exact versions, integrity, provenance, and the disposition each asset was resolved to). Both are version-controlled; the install receipt is not.
+
+The two MUST stay consistent — [frozen mode](/specification/commit#frozen-lockfile) checks that consistency bidirectionally before touching anything, including whether the lockfile's format can express the intent the manifest declares.

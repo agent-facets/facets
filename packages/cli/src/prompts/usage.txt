@@ -30,9 +30,55 @@ Add a facet to a project — `facet add`
     facet add ./path/to/facet            A local facet directory in the project.
 
 The project files
-  facets.json – Your dependency list: a map of facet name to source specifier.
-                `facet add` maintains it. You generally do not hand-edit it.
+  facets.json – Your dependency list. `facet add` and `facet remove` maintain
+                it; hand-edit it only to record materialization choices (below).
+                It carries a "manifestVersion" the CLI stamps for you.
+
+                Each entry is EITHER a source specifier string OR an object:
+                  "facets": {
+                    "cowsay": "1.*",
+                    "team-tools": {
+                      "source": "1.*",
+                      "materialization": { ... }
+                    }
+                  }
+                When reading or rewriting facets.json, handle BOTH forms. A
+                tool that assumes every value is a string will destroy any
+                recorded materialization choices.
+
   facets.lock – The install lockfile, managed by the CLI. Do not hand-edit.
+
+Name collisions — when two facets want the same name
+  Two facets cannot install an asset under the same name. Skills and commands
+  share one namespace; agents have their own. The install detects this before
+  writing anything and stops.
+
+  Without a TTY (CI, or any automated run) nothing is prompted: the command
+  exits non-zero and prints every claimant with the exact facets.json edit.
+  Resolve it by recording a choice per asset, keyed by the AUTHORED name:
+
+    "team-tools": {
+      "source": "1.*",
+      "materialization": {
+        "skills": {
+          "planning": { "kind": "aliased", "as": "team-planning" },
+          "scratch":  { "kind": "omitted" }
+        }
+      }
+    }
+
+  Group keys are "skills", "agents", and "commands". Only two kinds are legal
+  here: "aliased" (requires "as") and "omitted". Do NOT write
+  { "kind": "authored" } — installing under the published name is expressed by
+  recording NO override at all, and an explicit "authored" is rejected.
+
+  An alias must satisfy the asset-name grammar: 1-64 chars, lowercase letters,
+  digits and hyphens, no leading/trailing hyphen, no consecutive hyphens, no
+  slash. Invalid aliases are rejected, never auto-corrected.
+
+  Only one claimant has to change — the names just have to differ. Re-run
+  `facet install` after editing. There is no CLI flag for this; the resolver
+  UI (TTY only) and hand-editing facets.json are the two ways to record it.
 
 Adapter tooling — `facet adapter`
   Adapters teach facets how to target a specific AI coding tool. Installing an

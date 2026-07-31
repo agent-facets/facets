@@ -12,7 +12,7 @@ Canonical terms used throughout the specification. Implementations SHOULD use th
     A named, versioned collection of text assets defined by a manifest. What the author creates, what gets published, and what gets installed.
   </Card>
   <Card title="Project manifest" icon="files" href="/specification/project-manifest">
-      `facets.json` — the file in a consuming project that declares which facets are installed. Distinct from the facet manifest.
+      `facets.json` — the versioned file in a consuming project that declares which facets are installed and how it wants their assets materialized. Distinct from the facet manifest.
     </Card>
   <Card title="Facet manifest" icon="file-code" href="/specification/manifest">
     `facet.json` — the source of truth for a facet's identity and the text assets it contains.
@@ -44,13 +44,15 @@ Canonical terms used throughout the specification. Implementations SHOULD use th
 
 | Term | Definition | Reference |
 | --- | --- | --- |
-| **Asset tuple** | A `(scope, type, name)` triple — the adapter-agnostic identity of a materialized asset. Skill ownership also carries a validated owned-companion path set. | [Install receipt](/specification/commit#machine-local-install-receipt) |
+| **Asset tuple** | A `(scope, type, effective name)` triple — the addressable identity an adapter reads, writes, or deletes. Skill ownership also carries a validated owned-companion path set. | [Install receipt](/specification/commit#machine-local-install-receipt) |
+| **Authored name** | The name the publisher declared. Fixes the asset's canonical archive paths and every integrity value; aliasing never changes it. | [Two identities](/specification/materialization#two-identities) |
+| **Effective name** | The name an asset is materialized under. Equals the authored name unless the project aliased it. | [Two identities](/specification/materialization#two-identities) |
 | **Managed asset** | Installed by a facet; tracked in the lockfile and install receipt. | [`facet edit`](/cli/authoring/edit) |
 | **Unmanaged asset** | In an adapter directory but not connected to any facet: user-created, or kept from an uninstalled facet. | [`facet edit`](/cli/authoring/edit) |
 | **Supplementary file** | A manifest-declared non-asset file shipped in the archive and integrity-protected, but never an independently installable asset. | [Supplementary files](/specification/manifest#supplementary-files) |
 | **Companion file** | A per-skill supplementary file that materializes atomically with its owning skill. | [Supplementary files](/specification/manifest#supplementary-files) |
 | **Archive-only file** | A top-level supplementary file (e.g. `README.md`) that ships in the archive but is never written to disk at install. | [Materialize](/specification/commit#materialize) |
-| **Owned companion path set** | The engine-supplied, containment-validated set of a skill's companion paths handed to the adapter for install, read, and delete. | [Materialize](/specification/commit#materialize) |
+| **Owned companion path set** | The engine-supplied, containment-validated set of a skill's companion paths handed to the adapter for install, read, and delete. Unioned across every historical claim on one effective identity, so a name taken over from another facet still cleans up that facet's leftovers. | [Materialize](/specification/commit#materialize) |
 
 ## Identity & versioning
 
@@ -69,11 +71,11 @@ Canonical terms used throughout the specification. Implementations SHOULD use th
 | **Transport hash** | `content_hash` — SHA-256 of the uploaded `.facet` tarball; a download-time transit check only, never persisted. | [Two hashes, two domains](/specification/integrity#two-hashes-two-domains) |
 | **Build manifest** | `build-manifest.json`, embedded in the archive's outer layer; the integrity claim and the complete per-entry `files` hash map. | [Archive format](/specification/archive) |
 | **Cache sidecar** | `cache-integrity.json`, stored alongside cached content; the canonical fingerprint plus per-entry hashes. | [Where hashes live](/specification/integrity#where-hashes-live) |
-| **Adapter API version** | The identifier for the adapter contract shape (currently `0.1`); classified by exact match, independent of the archive and lockfile versions. | [Custom adapters](/guides/custom-adapters) |
+| **Adapter API version** | The identifier for the adapter contract shape (currently `0.1`); classified by exact match. One of four independent version axes, alongside the archive `facetVersion`, the project manifest version, and the lockfile version. | [Custom adapters](/guides/custom-adapters) |
 | **Cache self-audit** | Re-verification of cached content against its sidecar on every materialization; a mismatch evicts the slot. | [Commit — Verify](/specification/commit#verify) |
 | **Integrity confirmation** | The registry metadata check required whenever a lockfile entry is created or replaced; fails offline. | [Registry interactions](/specification/commit#registry-interactions) |
-| **One-check reproduction guard** | The git-source defense: built content must hash to the locked integrity (the tag-move defense). | [Git and local sources](/specification/commit#git-and-local-sources) |
-| **Frozen mode** | `--frozen-lockfile` — the lockfile is the complete, authoritative source of truth; every facet must reproduce its locked integrity. | [Frozen lockfile](/specification/commit#frozen-lockfile) |
+| **One-check reproduction guard** | The single-anchor defense used where no registry confirmation applies: built content must hash to the locked integrity. Reported under a `git` check for git sources (the tag-move defense) and a `lockfile` check elsewhere, e.g. a frozen local source. | [Git and local sources](/specification/commit#git-and-local-sources) |
+| **Frozen mode** | `--frozen-lockfile` — the lockfile is the complete, authoritative source of truth; every facet must reproduce its locked integrity, and its recorded materialization intent must match the manifest exactly. Never prompts. | [Frozen lockfile](/specification/commit#frozen-lockfile) |
 
 ## Install pipeline
 
@@ -81,18 +83,26 @@ Canonical terms used throughout the specification. Implementations SHOULD use th
 | --- | --- | --- |
 | **Install pipeline** | The two-phase flow every install command runs: planning, then commit. | [Installation](/specification/install) |
 | **Planning** | Phase 1: turn a command into a delta; no resolution, no lockfile reads, no writes. | [Planning](/specification/planning) |
-| **Commit** | Phase 2: the transaction that resolves, verifies, materializes, and writes atomically. | [Commit](/specification/commit) |
+| **Commit** | Phase 2: the transaction that resolves, composes, materializes, and writes atomically. | [Commit](/specification/commit) |
+| **Resolve-all / Compose / Apply** | Commit's three phases. The first two are read-only; the journal opens at Apply. | [The three phases](/specification/commit#the-three-phases) |
 | **Delta** | Additions (the user's specifier verbatim) plus removals (bare names); `facet install` produces an empty delta. | [The delta](/specification/planning#the-delta) |
 | **Addition / reproduction** | The structural discriminator: non-exact additions never trust the lockfile for version resolution; reproductions and exact additions do. | [The delta](/specification/planning#the-delta) |
 | **Desired set** | The manifest's facets after the delta is merged in memory. | [Sequence](/specification/commit#sequence) |
 | **Install lock** | The per-project advisory lock ensuring one install at a time. | [Sequence](/specification/commit#sequence) |
 | **Journal** | The log in which every materialization write records its inverse operation, replayed in reverse on failure. | [Commit](/specification/commit) |
-| **Materialization** | Writing assets from verified content into each selected adapter's storage. | [Materialize](/specification/commit#materialize) |
-| **Install receipt** | The machine-local, per-project record (schema `0.2`) under `$FACET_DIR/receipts/` mirroring committed asset and per-file ownership for offline removal. | [Install receipt](/specification/commit#machine-local-install-receipt) |
-| **Drift removal** | Deleting assets of facets no longer wanted, computed from the receipt, entirely offline. | [Drift removal](/specification/commit#drift-removal) |
+| **Materialization** | Deciding each asset's effective identity, then writing the result into each selected adapter's storage. | [Materialization](/specification/materialization) |
+| **Disposition** | How a project materializes one authored asset: `authored`, `aliased`, or `omitted`. | [Dispositions](/specification/materialization#dispositions) |
+| **Materialization override** | A project's recorded `aliased` or `omitted` intent for one authored asset, stored in `facets.json`. Authored is the absence of an override. | [Recording intent](/specification/materialization#recording-intent) |
+| **Materialization namespace** | The logical space asset types compete for names in: skills and commands share one, agents have their own. | [Namespaces](/specification/materialization#namespaces) |
+| **Collision group** | Two or more assets claiming one logical identity `(scope, namespace, folded effective name)`. | [Collisions](/specification/materialization#collisions) |
+| **Claimant** | One member of a collision group — the facet, asset, and disposition that arrived at the contested name. | [Collisions](/specification/materialization#collisions) |
+| **Stale override** | An override naming an asset the resolved version no longer contains. Pruned on a successful commit; blocking drift under frozen mode. | [Stale overrides](/specification/materialization#stale-overrides) |
+| **Ownership transfer** | A name moving between facets across one install. Deletion is keyed by effective identity, so the new owner's file survives. | [Drift removal](/specification/commit#drift-removal) |
+| **Install receipt** | The machine-local, per-project record (schema `0.3`) under `$FACET_DIR/receipts/` recording asset ownership, owned authored paths, and each asset's disposition for offline removal. Omitted assets never appear. | [Install receipt](/specification/commit#machine-local-install-receipt) |
+| **Drift removal** | Deleting every effective identity no longer claimed by any desired asset, computed from the receipt, entirely offline. Runs before any write. | [Drift removal](/specification/commit#drift-removal) |
 | **Orphan-on-pull** | The recoverable state where a teammate's removal reaches you via `git pull`; the receipt still remembers. | [Drift removal](/specification/commit#drift-removal) |
 | **Tri-write** | The atomic commit of `facets.json`, `facets.lock`, and the receipt together; failure leaves all three unchanged. | [Transactional tri-write](/specification/commit#transactional-tri-write) |
-| **Lockfile** | `facets.lock` — resolved installation state: tagged source, exact version, integrity, and per-asset entries with per-file `{ path, integrity }` records. | [Lockfile](/specification/lockfile) |
+| **Lockfile** | `facets.lock` — resolved installation state: tagged source, exact version, integrity, and per-asset entries carrying a disposition plus per-file `{ path, integrity }` records. | [Lockfile](/specification/lockfile) |
 | **Cache** | The machine-local content-addressed store for fetched facet payloads under `$FACET_DIR/cache/`. | [`facet install`](/cli/install#cache) |
 
 ## Authoring & publishing

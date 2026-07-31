@@ -5,6 +5,161 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-07-27" description="Resolve name collisions between facets; manifest 0.1, lockfile 0.3, and asset aliasing" tags={["CLI", "Breaking", "New Feature"]} rss={{
+  title: "Asset aliasing, omission, and cross-facet collision resolution",
+  description: "Two facets can now publish an asset with the same name without one of them losing. facet add and facet install detect every cross-facet name collision before writing anything, and in a terminal they pause and let you keep, rename, or omit each contested asset. Your choices are saved into facets.json as a materialization block and replayed on every later install, so it happens once and your teammates get the same layout. Without a terminal -- CI, or piped output -- nothing is prompted: the install fails and prints every claimant with the exact facets.json edit to make, choosing no winner and inventing no name. Aliasing renames only the file on disk; archive paths, integrity hashes, and the lockfile keep the publisher's authored name, so an alias can never smuggle different content under a familiar name. Omitted assets are still resolved, verified, and recorded, they are simply not written. Breaking: facets.json now carries manifestVersion 0.1 and entries may be objects instead of strings, so any tool that reads it must handle both forms; facets.lock moves to 0.3 with a required materialization disposition on every asset. Both migrate automatically on the next successful install. A frozen install against a pre-0.3 lockfile fails if the manifest declares overrides -- run one normal install first. Commit is now three phases, Resolve-all then Compose then Apply, so nothing is written until the whole plan is known to be collision-free."
+}}>
+  ## Two facets, one name
+
+  Facets are published independently, so sooner or later two of them
+  ship an asset with the same name. Until now the second one quietly
+  overwrote the first. Now [`facet add`](/cli/add) and
+  [`facet install`](/cli/install) detect every collision across the
+  whole project **before writing anything**, and stop.
+
+  In a terminal, the install pauses and hands you the decision:
+
+  ```
+  Installation is paused: two or more facets want the same name.
+  1 group · 1 still to resolve · nothing has been written yet
+
+    project skills and commands — "planning"
+      ✕ unresolved   viper-plans  skill planning
+      ✕ unresolved   team-tools   skill planning
+  ```
+
+  Give each contested asset one of three outcomes -- **Keep** it under
+  the published name, **Alias** it to a name you choose, or **Omit** it
+  entirely. Only one of them has to change; the names just have to
+  differ from each other.
+
+  What this means for you:
+
+  - **Nothing is written until you decide.** A collision leaves
+    `facets.json`, `facets.lock`, the receipt, and your materialized
+    assets byte-identical. Cancelling with `Esc` is not an error state.
+  - **You decide once.** Your choices are saved into `facets.json`, so
+    the next install -- and every teammate's, and CI's -- replays them
+    without prompting.
+  - **No tool picks a winner.** Not the CLI, not the registry, not the
+    facet authors. A silent winner means a silently discarded asset.
+
+  ## Alias or omit any asset
+
+  The same mechanism works without a collision. A facet entry can carry
+  a `materialization` block naming, per asset, what you want:
+
+  ```json facets.json
+  "team-tools": {
+    "source": "1.*",
+    "materialization": {
+      "skills": {
+        "planning": { "kind": "aliased", "as": "team-planning" },
+        "scratch": { "kind": "omitted" }
+      }
+    }
+  }
+  ```
+
+  - **Aliasing renames the file, nothing else.** Archive paths,
+    per-file integrity, and the lockfile all keep the publisher's
+    **authored** name. That is what makes an alias safe: it can never
+    be used to smuggle different content in under a familiar name.
+  - **Omitted assets are still verified.** They are resolved, hashed,
+    and recorded in the lockfile -- they are just never written to
+    disk. Dropping them from the lockfile would make an omission
+    indistinguishable from a facet that never published the asset.
+  - **Skills and commands share one namespace**, agents have their
+    own. A skill `deploy` and a command `deploy` collide; an agent
+    `deploy` coexists with both.
+
+  See [Materialization](/specification/materialization) for the full
+  model.
+
+  ## **Breaking:** `facets.json` entries may be objects
+
+  `facets.json` now carries a `manifestVersion` (currently `0.1`), and
+  a facet entry is **either** a source string **or** an object with
+  `source` and `materialization`:
+
+  ```json facets.json
+  {
+    "manifestVersion": 0.1,
+    "facets": {
+      "cowsay": "1.*",
+      "team-tools": { "source": "1.*", "materialization": { "skills": { "planning": { "kind": "aliased", "as": "team-planning" } } } }
+    }
+  }
+  ```
+
+  **If you have tooling that reads `facets.json`, it must handle both
+  forms.** Code that assumes every value is a string will render an
+  expanded entry as `[object Object]` -- or, worse, destroy a recorded
+  alias when it rewrites the file.
+
+  A manifest with no `manifestVersion` is still read as the legacy
+  format and is migrated in place on the next successful install. There
+  is no separate migration command and nothing to run.
+
+  ## **Breaking:** lockfile `0.3`
+
+  Every asset entry in `facets.lock` now carries a required
+  `materialization` disposition -- `authored`, `aliased`, or `omitted`.
+  Versions `1` and `0.2` remain readable and are migrated to `0.3` by
+  any normal install.
+
+  ```json facets.lock
+  {
+    "scope": "project", "type": "skill", "name": "planning",
+    "materialization": { "kind": "aliased", "as": "team-planning" },
+    "files": [{ "path": "skills/planning/SKILL.md", "integrity": "sha256:…" }]
+  }
+  ```
+
+  Note `name` and `files` keep the authored name even when aliased.
+  Versions are matched exactly, never by ordering -- `0.3` is
+  numerically *less* than `0.2`, so comparison would rank the newest
+  schema as the oldest.
+
+  **In CI:** a [`--frozen-lockfile`](/cli/install) install fails if
+  `facets.json` declares any materialization override while
+  `facets.lock` predates `0.3`, since the older format has no field to
+  record it. Run one normal `facet install` locally and commit the
+  migrated lockfile. Frozen mode also treats a changed alias as drift,
+  exactly like a changed version, and never prompts.
+
+  ## The install pipeline resolves everything before writing anything
+
+  Commit used to be an interleaved loop -- resolve facet A, write it,
+  then start facet B. Detecting that A and Z want the same name is
+  impossible that way, because A is already on disk.
+
+  It now runs in three phases: **Resolve-all**, **Compose**, then
+  **Apply**. The first two are read-only, which is why a collision, an
+  invalid alias, or a cancelled resolution leaves the project untouched
+  rather than rolled back. Deletion also moved to the start of Apply,
+  before any write, so an asset name can transfer from one facet to
+  another in a single install without the new owner's file being
+  deleted behind it.
+
+  Two smaller consequences you may notice:
+
+  - **Disposition changes report as `updated`.** Aliasing an asset at
+    an unchanged version is a real change to what is on disk, not a
+    no-op and not a repair.
+  - **Stale choices are pruned and reported.** If you upgrade a facet
+    and the publisher removed an asset you had aliased, the override is
+    dropped on a successful install and the CLI tells you which one.
+
+  ## Adapter authors
+
+  The adapter contract is unchanged -- no rebuild, no version bump. But
+  `request.name` has always been, and now visibly is, the **effective**
+  name: the name the consuming project chose. Address files by
+  `request.name` and never re-derive a path from a facet's manifest.
+  See [Custom adapters](/guides/custom-adapters).
+</Update>
+
 <Update label="2026-07-23" description="Facets ship non-asset files; archive 0.2, per-file lockfiles, first-class README, and the 0.1 adapter contract" tags={["CLI", "Breaking", "New Feature"]} rss={{
   title: "Supplementary files, archive 0.2, and first-class README authoring",
   description: "Facets can now declare and ship non-asset files: skill companion files (references, scripts, templates beside SKILL.md) that install and remove atomically with their skill, and top-level archive-only files like README.md and LICENSE that ship in the archive but never materialize on disk. Declare them with exact paths in the manifest's top-level files array or a skill descriptor's files array. Builds emit the new 0.2 archive format with a complete per-entry hash map; lockfiles move to 0.2 with a per-file integrity record for every materialized file; install reports and repairs drift per file. facet create now writes and declares an editable README.md by default (skip with --no-readme), and facet edit has a dedicated README panel. Consumers still accept legacy 0.1 archives and legacy alpha lockfiles during the compatibility window; the two versions are dispatched by exact match. Asset names are single-segment Agent Skills names -- slash-namespaced names are no longer valid in new manifests -- and skills and commands now share one namespace. The adapter contract advances from positional 0.0 to the tagged 0.1 request/result shape: rebuild and reinstall any adapter that still declares 0.0. Rollout is consumer-first: protocol, then registry, then adapters, then the CLI."

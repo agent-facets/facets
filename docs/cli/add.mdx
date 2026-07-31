@@ -11,7 +11,7 @@ facet add <source> [more sources...]
 
 Adds the named facet(s) to `facets.json` and immediately installs them into every connected adapter. There is no separate "install after add" step  -- `facet add` is the single command for bringing a new facet into a project.
 
-If the project has no adapters installed, `facet add` will launch the adapter picker before doing any work (in an interactive terminal). In a non-interactive environment, it exits with an error pointing at `facet adapter install`.
+Every source specifier is validated first. If the project then has no adapters installed, `facet add` launches the adapter picker — but only when the terminal can prompt. Otherwise it exits with an error pointing at `facet adapter install`.
 
 ## Examples
 
@@ -37,7 +37,7 @@ Every accepted form — and what each writes to `facets.json` — is in the [sou
 | Code | Meaning                                                                              |
 | ---- | ------------------------------------------------------------------------------------ |
 | `0`  | Add and install succeeded.                                                           |
-| `1`  | Failed (parse error, no adapters in non-TTY, install failure, etc.). No files are modified on failure. |
+| `1`  | Failed — parse error, no usable adapter, an unresolved [name collision](/cli/install#name-collisions), a cancelled resolution, or an install failure. Nothing is written unless the failure happened mid-write, in which case the journal rolls it back. |
 
 ## What it does
 
@@ -46,18 +46,20 @@ Every accepted form — and what each writes to `facets.json` — is in the [sou
     Validate every source specifier up front. Invalid grammar exits before touching disk.
   </Step>
   <Step title="Discover adapters">
-    If none installed: launch the picker (TTY) or fail (non-TTY).
+    If none installed: launch the picker when the terminal can prompt, or fail with recovery guidance when it cannot.
   </Step>
   <Step title="Prepare">
     Read each source's `facet.json` to learn its name. Sources that declare a non-empty `facets: [...]` array are rejected. Load the project manifest if it exists.
   </Step>
   <Step title="Commit">
-    Delegate to the [install pipeline](/specification/install) with the additions delta. Version resolution, integrity verification, and the atomic write follow the [commit phase](/specification/commit) — additions always [re-resolve non-exact specifiers](/specification/commit#resolve), and new lockfile entries require [registry confirmation](/specification/commit#verify) (fails closed offline).
+    Delegate to the [install pipeline](/specification/install) with the additions delta. Version resolution, integrity verification, [global collision detection](/specification/commit#compose), and the atomic write follow the [commit phase](/specification/commit) — additions always [re-resolve non-exact specifiers](/specification/commit#resolve), and new lockfile entries require [registry confirmation](/specification/commit#verify) (fails closed offline).
+
+    Adding a facet is the most common way to hit a name collision: the new facet may want a name an installed facet already uses. See [Name collisions](/cli/install#name-collisions) for how that is resolved and what gets recorded.
   </Step>
 </Steps>
 
 <Tip>
-The manifest, lockfile, and receipt are **never written ahead** of success. On failure, the journal rolls back all materialization and the project is left unchanged.
+The manifest, lockfile, and receipt are **never written ahead** of success. A failure before the first write — including an unresolved collision — leaves the project byte-identical with nothing to undo; a failure after it rolls back through the journal.
 </Tip>
 
 ## Source grammar
@@ -142,10 +144,12 @@ facet add viper-plans@1.x            # x-style placeholders — use 1.* or 1.2.*
 
 Running `facet add` against a facet that's already in `facets.json` is supported:
 
-- Same source as before → no-op (lockfile may report `unchanged` or `repaired`).
+- Same source as before → no-op (lockfile may report `unchanged` or `repaired`). If you have since aliased or omitted one of its assets, it reports `updated` instead — the version did not move, but its materialization did.
 - Different version pin → updates the entry; the install summary shows `(was X → Y)`.
 - Bare re-add (no version) → resolves the newest published version and **pins** it in `facets.json`. A bare add always pins to the resolved exact version, even over an existing wildcard spec.
 - Explicit `@latest`/wildcard re-add → re-resolves to the newest match (the lockfile never pins an explicit non-exact add), but the specifier itself is written verbatim and keeps floating.
+
+In every case, any [materialization overrides](/specification/materialization#recording-intent) already recorded for the facet are preserved. Changing where a facet comes from is not a statement about how its assets should be named. An override naming an asset the new version no longer contains is dropped, and the install tells you which one.
 
 What gets written per specifier shape is defined by the [manifest-write policy](/specification/commit#manifest-write-policy).
 
