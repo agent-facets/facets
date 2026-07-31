@@ -48,6 +48,17 @@ function findContentFrame(frames: ReadonlyArray<string | undefined>): string {
 }
 
 /**
+ * Collapse a frame's whitespace so an assertion can name a phrase without
+ * knowing where Ink wrapped it. A rendered sentence breaks at whatever column
+ * the terminal width lands on, so `toContain('no longer tracked')` is really
+ * an assertion about line width — it fails the moment the copy before it
+ * changes length, which says nothing about the behavior under test.
+ */
+function unwrapped(frame: string): string {
+  return frame.replace(/\s+/g, ' ')
+}
+
+/**
  * Build a fake `run` driver that emits a canned event sequence and
  * resolves to a canned result. Lets each test exercise a specific
  * render path of `<InstallView />` without spinning up `runInstall`.
@@ -399,6 +410,78 @@ describe('InstallView — drift removal', () => {
     const frame = findContentFrame(instance.frames)
     expect(frame).toContain('could not be written')
     expect(frame).toContain('untracked')
+    instance.unmount()
+  })
+
+  test('warns when a bundle was left behind because its primary was missing', async () => {
+    // The summary says the facet was removed; these files are still there.
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'remove',
+        run: makeFakeRun(
+          [
+            { kind: 'install-start', totalFacets: 0 },
+            {
+              kind: 'obsolete-bundle-retained',
+              adapter: 'claude-code',
+              scope: 'project',
+              assetName: 'review',
+              facets: ['alpha'],
+              companionPaths: ['refs/api.md'],
+            },
+            { kind: 'install-complete', outcome: 'success' },
+          ],
+          emptySuccess(),
+        ),
+      }),
+    )
+    await settle()
+    const frame = unwrapped(findContentFrame(instance.frames))
+    expect(frame).toContain('review')
+    expect(frame).toContain('refs/api.md')
+    expect(frame).toContain('no longer tracked')
+    instance.unmount()
+  })
+
+  test('names the scope of each retained bundle so same-named ones stay distinguishable', async () => {
+    // One adapter resolves a different directory per scope, so these are two
+    // separate piles of files to clean up. Without the scope the two warnings
+    // are the same sentence twice, pointing at an unspecified skill root.
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'remove',
+        run: makeFakeRun(
+          [
+            { kind: 'install-start', totalFacets: 0 },
+            {
+              kind: 'obsolete-bundle-retained',
+              adapter: 'claude-code',
+              scope: 'project',
+              assetName: 'review',
+              facets: ['alpha'],
+              companionPaths: ['refs/project.md'],
+            },
+            {
+              kind: 'obsolete-bundle-retained',
+              adapter: 'claude-code',
+              scope: 'user',
+              assetName: 'review',
+              facets: ['alpha'],
+              companionPaths: ['refs/user.md'],
+            },
+            { kind: 'install-complete', outcome: 'success' },
+          ],
+          emptySuccess(),
+        ),
+      }),
+    )
+    await settle()
+    const frame = unwrapped(findContentFrame(instance.frames))
+    expect(frame).toContain('project scope')
+    expect(frame).toContain('user scope')
+    // Both rows rendered — a scope-free React key would have collapsed them.
+    expect(frame).toContain('refs/project.md')
+    expect(frame).toContain('refs/user.md')
     instance.unmount()
   })
 })

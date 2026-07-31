@@ -180,6 +180,30 @@ export type StageEvent =
    */
   | { kind: 'removal-resolution-required'; reason: string }
   /**
+   * An obsolete skill bundle was left on disk because its primary file was
+   * already missing, so the recorded companion bytes could not be captured for
+   * rollback. The claim is dropped from the receipt regardless, which makes
+   * whatever remains untracked — the one thing the user cannot deduce from a
+   * command that otherwise reports a successful removal.
+   *
+   * Emitted only after the transaction commits: until then the removal is not
+   * real, and the files are still tracked.
+   *
+   * `scope` is load-bearing, not decoration: an adapter resolves a different
+   * directory per scope, so without it `companionPaths` — which are relative
+   * to a skill root — name a location the user cannot find. Two same-named
+   * bundles retained in different scopes are also two distinct warnings, and
+   * a scope-free event collapses them into one indistinguishable pair.
+   */
+  | {
+      kind: 'obsolete-bundle-retained'
+      adapter: string
+      scope: Scope
+      assetName: string
+      facets: ReadonlyArray<string>
+      companionPaths: ReadonlyArray<string>
+    }
+  /**
    * A materialization override was dropped because the resolved facet version
    * no longer contains the asset it named.
    *
