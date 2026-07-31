@@ -1,0 +1,46 @@
+{
+  "change": "add-materialization-aliasing",
+  "schema": "spec-driven",
+  "entries": {
+    "proposal": {
+      "artifactId": "proposal",
+      "mainPaths": ["proposal.md"],
+      "adversarialPaths": ["adversarial/artifacts/proposal.md"],
+      "reviewPath": "adversarial/reviews/proposal-review.md",
+      "dependencies": [],
+      "status": "reconciled",
+      "authoredAt": "2026-07-26T21:00:32Z",
+      "comparedAt": "2026-07-26T21:04:00Z",
+      "reconciledAt": "2026-07-26T21:08:31Z",
+      "notes": "Adopted concrete correctness-failure framing, explicit collision checks across every install path including frozen reproduction, exactly-one per-asset resolutions, and facet-identity renaming as a non-goal. Retained the main proposal's three-capability contract and existing impact analysis."
+    },
+    "design": {
+      "artifactId": "design",
+      "mainPaths": ["design.md"],
+      "adversarialPaths": ["adversarial/artifacts/design.md"],
+      "reviewPath": "adversarial/reviews/design-review.md",
+      "dependencies": ["proposal"],
+      "status": "reconciled",
+      "authoredAt": "2026-07-26T21:45:00Z",
+      "comparedAt": "2026-07-26T21:58:00Z",
+      "reconciledAt": "2026-07-26T21:58:01Z",
+      "notes": "Retained the main design's tagged dispositions, omitted lockfile assets, global ownership model, portable keys, and eager companion bytes. Adopted an explicit unconditional 0.3 migration decision with the version-preserving alternative rejected, structured stale-override events, non-interactive manifest-edit guidance without generated winners, no resolution flags, actual facets.json writer preservation coverage, and the shared remove path. Rejected the facet edit preservation claim because that subsystem writes facet.json rather than facets.json."
+    },
+    "specs": {
+      "artifactId": "specs",
+      "mainPaths": ["specs/cli/spec.md", "specs/installation/spec.md", "specs/protocol__schemas/spec.md"],
+      "adversarialPaths": [
+        "adversarial/artifacts/specs/cli/spec.md",
+        "adversarial/artifacts/specs/installation/spec.md",
+        "adversarial/artifacts/specs/protocol__schemas/spec.md"
+      ],
+      "reviewPath": "adversarial/reviews/specs-review.md",
+      "dependencies": ["proposal"],
+      "status": "reconciled",
+      "authoredAt": "2026-07-26T23:59:00Z",
+      "comparedAt": "2026-07-27T00:14:00Z",
+      "reconciledAt": "2026-07-26T23:21:56Z",
+      "notes": "Retained the main collision, ownership, tagged-disposition, manifest, and CLI models. Restored full permanent normative behavior across modified installation and protocol lockfile requirements; adopted frozen legacy-format failure coverage, migration entry preservation, authored-to-effective and omitted summary output, and clearer collision-checking terminology. Rejected the adversary's weaker optional alias-or-omission representation."
+    }
+  }
+}
