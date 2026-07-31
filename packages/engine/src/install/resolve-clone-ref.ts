@@ -1,4 +1,4 @@
-import type { LockfileFacet } from '@agent-facets/protocol'
+import type { SupportedLockfileFacet } from '@agent-facets/protocol'
 
 /**
  * Resolve which git commitish to clone for a facet on a cache miss.
@@ -19,7 +19,7 @@ import type { LockfileFacet } from '@agent-facets/protocol'
  * Pure function — exported for unit testing.
  */
 export function resolveCloneRef(
-  locked: LockfileFacet | undefined,
+  locked: SupportedLockfileFacet | undefined,
   manifestRef: string | undefined,
 ): string | undefined {
   if (locked?.source.kind === 'git') {

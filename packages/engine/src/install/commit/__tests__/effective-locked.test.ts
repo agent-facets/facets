@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { LockfileFacet } from '@agent-facets/protocol'
+import type { LegacyLockfileFacet } from '@agent-facets/protocol'
 import { parseFacetSource } from '../../../sources/facet/parse-source.ts'
 import { resolveCloneRef } from '../../resolve-clone-ref.ts'
 import { resolveEffectiveLocked } from '../effective-locked.ts'
@@ -7,14 +7,14 @@ import { resolveEffectiveLocked } from '../effective-locked.ts'
 const LOCKED_GIT_URL = 'https://github.com/example/old.git#stable'
 const LOCKED_GIT_COMMIT = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 
-const lockedGitEntry: LockfileFacet = {
+const lockedGitEntry: LegacyLockfileFacet = {
   source: { kind: 'git', url: LOCKED_GIT_URL, commit: LOCKED_GIT_COMMIT },
   version: '0.1.0',
   integrity: 'sha256:0000000000000000000000000000000000000000000000000000000000000000',
   assets: [{ scope: 'project', type: 'skill', name: 'planning' }],
 }
 
-const lockedRegistryEntry: LockfileFacet = {
+const lockedRegistryEntry: LegacyLockfileFacet = {
   source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
   version: '0.4.0',
   integrity: 'sha256:0000000000000000000000000000000000000000000000000000000000000000',
@@ -56,7 +56,7 @@ describe('resolveEffectiveLocked — changed git source', () => {
     // Manifest uses `github:` shorthand; the lock stores the canonical
     // `https://...git` URL a fresh install wrote. These must be treated as
     // the same source — not stale — so the locked commit is reused.
-    const lockedEntry: LockfileFacet = {
+    const lockedEntry: LegacyLockfileFacet = {
       ...lockedGitEntry,
       source: { kind: 'git', url: 'https://github.com/agent-facets/planner.git', commit: LOCKED_GIT_COMMIT },
     }

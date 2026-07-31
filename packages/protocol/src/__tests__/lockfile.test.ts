@@ -1,13 +1,20 @@
 import { describe, expect, test } from 'bun:test'
-import { LOCKFILE_VERSION, type Lockfile, LockfileSchema } from '@agent-facets/protocol'
+import { LEGACY_LOCKFILE_VERSION, type LegacyLockfile, LegacyLockfileSchema } from '@agent-facets/protocol'
 import { type } from 'arktype'
+
+// Rules exercised here — source provenance, asset-name safety, locked-version
+// grammar, unknown-field tolerance — live on schema nodes SHARED by every
+// lockfile version. Legacy `1` is the vehicle because it is the narrowest
+// schema that contains all of them: it adds neither per-file records nor
+// dispositions, so a failure here is unambiguously a shared-rule failure.
+// Version-specific behavior is covered in `lockfile-versions.test.ts`.
 
 // --- Valid lockfiles ---
 
-describe('LockfileSchema — valid lockfiles', () => {
+describe('LegacyLockfileSchema — valid lockfiles', () => {
   test('git-source facet with assets', () => {
     const input = {
-      lockfileVersion: LOCKFILE_VERSION,
+      lockfileVersion: LEGACY_LOCKFILE_VERSION,
       facets: {
         'viper-plans': {
           source: {
@@ -24,9 +31,9 @@ describe('LockfileSchema — valid lockfiles', () => {
         },
       },
     }
-    const result = LockfileSchema(input)
+    const result = LegacyLockfileSchema(input)
     expect(result).not.toBeInstanceOf(type.errors)
-    const data = result as Lockfile
+    const data = result as LegacyLockfile
     expect(data.facets['viper-plans']?.version).toBe('0.1.0')
     expect(data.facets['viper-plans']?.assets).toHaveLength(2)
     expect(data.facets['viper-plans']?.assets[0]).toEqual({
@@ -38,7 +45,7 @@ describe('LockfileSchema — valid lockfiles', () => {
 
   test('local-source facet records a path', () => {
     const input = {
-      lockfileVersion: LOCKFILE_VERSION,
+      lockfileVersion: LEGACY_LOCKFILE_VERSION,
       facets: {
         'local-plans': {
           source: { kind: 'local', path: 'file:./facets/local-plans' },
@@ -48,9 +55,9 @@ describe('LockfileSchema — valid lockfiles', () => {
         },
       },
     }
-    const result = LockfileSchema(input)
+    const result = LegacyLockfileSchema(input)
     expect(result).not.toBeInstanceOf(type.errors)
-    const data = result as Lockfile
+    const data = result as LegacyLockfile
     const source = data.facets['local-plans']?.source
     if (source?.kind !== 'local') expect.unreachable()
     expect(source.path).toBe('file:./facets/local-plans')
@@ -58,7 +65,7 @@ describe('LockfileSchema — valid lockfiles', () => {
 
   test('registry-source facet records the registry origin and no version specifier', () => {
     const input = {
-      lockfileVersion: LOCKFILE_VERSION,
+      lockfileVersion: LEGACY_LOCKFILE_VERSION,
       facets: {
         cowsay: {
           source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
@@ -68,9 +75,9 @@ describe('LockfileSchema — valid lockfiles', () => {
         },
       },
     }
-    const result = LockfileSchema(input)
+    const result = LegacyLockfileSchema(input)
     expect(result).not.toBeInstanceOf(type.errors)
-    const data = result as Lockfile
+    const data = result as LegacyLockfile
     const source = data.facets.cowsay?.source
     if (source?.kind !== 'registry') expect.unreachable()
     expect(source.registry).toBe('https://api.agentfacets.io')
@@ -78,18 +85,18 @@ describe('LockfileSchema — valid lockfiles', () => {
 
   test('lockfile with zero facets is valid', () => {
     const input = {
-      lockfileVersion: LOCKFILE_VERSION,
+      lockfileVersion: LEGACY_LOCKFILE_VERSION,
       facets: {},
     }
-    const result = LockfileSchema(input)
+    const result = LegacyLockfileSchema(input)
     expect(result).not.toBeInstanceOf(type.errors)
-    const data = result as Lockfile
+    const data = result as LegacyLockfile
     expect(Object.keys(data.facets)).toHaveLength(0)
   })
 
   test('facet with zero assets is valid', () => {
     const input = {
-      lockfileVersion: LOCKFILE_VERSION,
+      lockfileVersion: LEGACY_LOCKFILE_VERSION,
       facets: {
         'empty-facet': {
           source: {
@@ -103,13 +110,13 @@ describe('LockfileSchema — valid lockfiles', () => {
         },
       },
     }
-    const result = LockfileSchema(input)
+    const result = LegacyLockfileSchema(input)
     expect(result).not.toBeInstanceOf(type.errors)
   })
 
   test('all asset scopes and types are accepted', () => {
     const input = {
-      lockfileVersion: LOCKFILE_VERSION,
+      lockfileVersion: LEGACY_LOCKFILE_VERSION,
       facets: {
         'mixed-facet': {
           source: { kind: 'git', url: 'github:a/b', commit: 'abcabcabcabcabcabcabcabcabcabcabcabcabca' },
@@ -123,25 +130,25 @@ describe('LockfileSchema — valid lockfiles', () => {
         },
       },
     }
-    const result = LockfileSchema(input)
+    const result = LegacyLockfileSchema(input)
     expect(result).not.toBeInstanceOf(type.errors)
   })
 })
 
 // --- Invalid lockfiles ---
 
-describe('LockfileSchema — invalid lockfiles', () => {
+describe('LegacyLockfileSchema — invalid lockfiles', () => {
   test('missing lockfileVersion is rejected', () => {
     const input = {
       facets: {},
     }
-    const result = LockfileSchema(input)
+    const result = LegacyLockfileSchema(input)
     expect(result).toBeInstanceOf(type.errors)
   })
 
   test('missing integrity on facet entry is rejected', () => {
     const input = {
-      lockfileVersion: LOCKFILE_VERSION,
+      lockfileVersion: LEGACY_LOCKFILE_VERSION,
       facets: {
         'viper-plans': {
           source: { kind: 'git', url: 'github:a/b', commit: 'abcabcabcabcabcabcabcabcabcabcabcabcabca' },
@@ -150,13 +157,13 @@ describe('LockfileSchema — invalid lockfiles', () => {
         },
       },
     }
-    const result = LockfileSchema(input)
+    const result = LegacyLockfileSchema(input)
     expect(result).toBeInstanceOf(type.errors)
   })
 
   test('unknown asset scope is rejected', () => {
     const input = {
-      lockfileVersion: LOCKFILE_VERSION,
+      lockfileVersion: LEGACY_LOCKFILE_VERSION,
       facets: {
         'viper-plans': {
           source: { kind: 'git', url: 'github:a/b', commit: 'abcabcabcabcabcabcabcabcabcabcabcabcabca' },
@@ -166,13 +173,13 @@ describe('LockfileSchema — invalid lockfiles', () => {
         },
       },
     }
-    const result = LockfileSchema(input)
+    const result = LegacyLockfileSchema(input)
     expect(result).toBeInstanceOf(type.errors)
   })
 
   test('unknown asset type is rejected', () => {
     const input = {
-      lockfileVersion: LOCKFILE_VERSION,
+      lockfileVersion: LEGACY_LOCKFILE_VERSION,
       facets: {
         'viper-plans': {
           source: { kind: 'git', url: 'github:a/b', commit: 'abcabcabcabcabcabcabcabcabcabcabcabcabca' },
@@ -182,13 +189,13 @@ describe('LockfileSchema — invalid lockfiles', () => {
         },
       },
     }
-    const result = LockfileSchema(input)
+    const result = LegacyLockfileSchema(input)
     expect(result).toBeInstanceOf(type.errors)
   })
 
   test('missing assets array is rejected', () => {
     const input = {
-      lockfileVersion: LOCKFILE_VERSION,
+      lockfileVersion: LEGACY_LOCKFILE_VERSION,
       facets: {
         'viper-plans': {
           source: { kind: 'git', url: 'github:a/b', commit: 'abcabcabcabcabcabcabcabcabcabcabcabcabca' },
@@ -197,7 +204,7 @@ describe('LockfileSchema — invalid lockfiles', () => {
         },
       },
     }
-    const result = LockfileSchema(input)
+    const result = LegacyLockfileSchema(input)
     expect(result).toBeInstanceOf(type.errors)
   })
 
@@ -207,7 +214,7 @@ describe('LockfileSchema — invalid lockfiles', () => {
   // install-time deletion.
   test.each(['../escape', 'a/../b', './dotdir', 'a//b', '..\\escape', 'a\\b'])('asset name %p is rejected', (name) => {
     const input = {
-      lockfileVersion: LOCKFILE_VERSION,
+      lockfileVersion: LEGACY_LOCKFILE_VERSION,
       facets: {
         pwn: {
           source: { kind: 'git', url: 'github:a/b', commit: 'abcabcabcabcabcabcabcabcabcabcabcabcabca' },
@@ -217,7 +224,7 @@ describe('LockfileSchema — invalid lockfiles', () => {
         },
       },
     }
-    const result = LockfileSchema(input)
+    const result = LegacyLockfileSchema(input)
     expect(result).toBeInstanceOf(type.errors)
   })
 
@@ -239,7 +246,7 @@ describe('LockfileSchema — invalid lockfiles', () => {
     ' 1.2.3',
   ])('version %p is rejected', (version) => {
     const input = {
-      lockfileVersion: LOCKFILE_VERSION,
+      lockfileVersion: LEGACY_LOCKFILE_VERSION,
       facets: {
         'bad-version': {
           source: { kind: 'git', url: 'github:a/b', commit: 'abcabcabcabcabcabcabcabcabcabcabcabcabca' },
@@ -249,7 +256,7 @@ describe('LockfileSchema — invalid lockfiles', () => {
         },
       },
     }
-    const result = LockfileSchema(input)
+    const result = LegacyLockfileSchema(input)
     expect(result).toBeInstanceOf(type.errors)
   })
 
@@ -259,7 +266,7 @@ describe('LockfileSchema — invalid lockfiles', () => {
   // missing-or-malformed required fields are rejected.)
   test('git source without a commit is rejected', () => {
     const input = {
-      lockfileVersion: LOCKFILE_VERSION,
+      lockfileVersion: LEGACY_LOCKFILE_VERSION,
       facets: {
         'viper-plans': {
           source: { kind: 'git', url: 'github:a/b' },
@@ -269,7 +276,7 @@ describe('LockfileSchema — invalid lockfiles', () => {
         },
       },
     }
-    const result = LockfileSchema(input)
+    const result = LegacyLockfileSchema(input)
     expect(result).toBeInstanceOf(type.errors)
   })
 
@@ -287,7 +294,7 @@ describe('LockfileSchema — invalid lockfiles', () => {
     'sha256:abc',
   ])('git commit %p is rejected', (commit) => {
     const input = {
-      lockfileVersion: LOCKFILE_VERSION,
+      lockfileVersion: LEGACY_LOCKFILE_VERSION,
       facets: {
         'bad-commit': {
           source: { kind: 'git', url: 'github:a/b', commit },
@@ -297,7 +304,7 @@ describe('LockfileSchema — invalid lockfiles', () => {
         },
       },
     }
-    const result = LockfileSchema(input)
+    const result = LegacyLockfileSchema(input)
     expect(result).toBeInstanceOf(type.errors)
   })
 
@@ -311,7 +318,7 @@ describe('LockfileSchema — invalid lockfiles', () => {
     'abc123def0123456789abc123def0123456789abc',
   ])('git commit %p is accepted', (commit) => {
     const input = {
-      lockfileVersion: LOCKFILE_VERSION,
+      lockfileVersion: LEGACY_LOCKFILE_VERSION,
       facets: {
         'good-commit': {
           source: { kind: 'git', url: 'github:a/b', commit },
@@ -321,13 +328,13 @@ describe('LockfileSchema — invalid lockfiles', () => {
         },
       },
     }
-    const result = LockfileSchema(input)
+    const result = LegacyLockfileSchema(input)
     expect(result).not.toBeInstanceOf(type.errors)
   })
 
   test('source with an unrecognized kind is rejected', () => {
     const input = {
-      lockfileVersion: LOCKFILE_VERSION,
+      lockfileVersion: LEGACY_LOCKFILE_VERSION,
       facets: {
         'viper-plans': {
           source: { kind: 'ftp', url: 'ftp://x/y' },
@@ -337,23 +344,23 @@ describe('LockfileSchema — invalid lockfiles', () => {
         },
       },
     }
-    const result = LockfileSchema(input)
+    const result = LegacyLockfileSchema(input)
     expect(result).toBeInstanceOf(type.errors)
   })
 })
 
 // --- Unknown field pass-through ---
 
-describe('LockfileSchema — unknown field tolerance', () => {
+describe('LegacyLockfileSchema — unknown field tolerance', () => {
   test('unknown top-level field is preserved', () => {
     const input = {
-      lockfileVersion: LOCKFILE_VERSION,
+      lockfileVersion: LEGACY_LOCKFILE_VERSION,
       facets: {},
       generatedAt: '2026-04-18',
     }
-    const result = LockfileSchema(input)
+    const result = LegacyLockfileSchema(input)
     expect(result).not.toBeInstanceOf(type.errors)
-    const data = result as Lockfile & { generatedAt: string }
+    const data = result as LegacyLockfile & { generatedAt: string }
     expect(data.generatedAt).toBe('2026-04-18')
   })
 
@@ -364,7 +371,7 @@ describe('LockfileSchema — unknown field tolerance', () => {
   // test pins it so it can't silently regress to strict rejection.)
   test('a source carrying extra unrecognized keys is accepted', () => {
     const input = {
-      lockfileVersion: LOCKFILE_VERSION,
+      lockfileVersion: LEGACY_LOCKFILE_VERSION,
       facets: {
         cowsay: {
           source: { kind: 'registry', registry: 'https://api.agentfacets.io', futureField: 'whatever' },
@@ -374,9 +381,9 @@ describe('LockfileSchema — unknown field tolerance', () => {
         },
       },
     }
-    const result = LockfileSchema(input)
+    const result = LegacyLockfileSchema(input)
     expect(result).not.toBeInstanceOf(type.errors)
-    const data = result as Lockfile
+    const data = result as LegacyLockfile
     const source = data.facets.cowsay?.source
     if (source?.kind !== 'registry') expect.unreachable()
     expect(source.registry).toBe('https://api.agentfacets.io')

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CURRENT_LOCKFILE_VERSION, LEGACY_LOCKFILE_VERSION } from '@agent-facets/protocol'
+import { CURRENT_LOCKFILE_VERSION, LEGACY_LOCKFILE_VERSION, LOCKFILE_VERSION_0_2 } from '@agent-facets/protocol'
 import { FACETS_LOCK_FILE, loadLockfile, writeLockfile } from '../lockfile-io.ts'
 
 let projectRoot: string
@@ -21,9 +21,9 @@ describe('loadLockfile — empty/missing', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
     expect(result.existed).toBe(false)
-    expect(result.data.facets).toEqual({})
-    expect(result.data.lockfileVersion).toBe(CURRENT_LOCKFILE_VERSION)
-    expect(result.version).toBe(CURRENT_LOCKFILE_VERSION)
+    expect(result.parsed.lockfile.facets).toEqual({})
+    expect(result.parsed.lockfile.lockfileVersion).toBe(CURRENT_LOCKFILE_VERSION)
+    expect(result.parsed.lockfileVersion).toBe(CURRENT_LOCKFILE_VERSION)
   })
 })
 
@@ -45,6 +45,7 @@ describe('loadLockfile — round-trip', () => {
               scope: 'project' as const,
               type: 'skill' as const,
               name: 'planning',
+              materialization: { kind: 'authored' as const },
               files: [{ path: 'skills/planning/SKILL.md', integrity: `sha256:${'0'.repeat(64)}` }],
             },
           ],
@@ -55,8 +56,8 @@ describe('loadLockfile — round-trip', () => {
     const loaded = loadLockfile(projectRoot)
     expect(loaded.ok).toBe(true)
     if (!loaded.ok) expect.unreachable()
-    expect(loaded.data).toEqual(lockfile)
-    expect(loaded.version).toBe(CURRENT_LOCKFILE_VERSION)
+    expect(loaded.parsed.lockfile).toEqual(lockfile)
+    expect(loaded.parsed.lockfileVersion).toBe(CURRENT_LOCKFILE_VERSION)
   })
 
   test('loads a legacy-alpha (1) lockfile under the legacy schema during the compatibility window', () => {
@@ -75,12 +76,15 @@ describe('loadLockfile — round-trip', () => {
         },
       },
     }
-    writeLockfile(projectRoot, legacy)
+    // Seeded as raw bytes, not through `writeLockfile`: the writer only
+    // emits the current schema by design, so a legacy document can only
+    // arrive from disk. That is exactly the case under test.
+    writeFileSync(join(projectRoot, FACETS_LOCK_FILE), JSON.stringify(legacy, null, 2))
     const loaded = loadLockfile(projectRoot)
     expect(loaded.ok).toBe(true)
     if (!loaded.ok) expect.unreachable()
-    expect(loaded.data).toEqual(legacy)
-    expect(loaded.version).toBe(LEGACY_LOCKFILE_VERSION)
+    expect(loaded.parsed.lockfile).toEqual(legacy)
+    expect(loaded.parsed.lockfileVersion).toBe(LEGACY_LOCKFILE_VERSION)
   })
 })
 
@@ -123,16 +127,26 @@ describe('loadLockfile — exact version dispatch', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
     expect(result.existed).toBe(true)
-    expect(result.version).toBe(LEGACY_LOCKFILE_VERSION)
+    expect(result.parsed.lockfileVersion).toBe(LEGACY_LOCKFILE_VERSION)
   })
 
-  test('current version 0.2 loads under the current schema', () => {
+  test('version 0.2 loads under the 0.2 schema, not the current one', () => {
     writeFileSync(join(projectRoot, FACETS_LOCK_FILE), JSON.stringify({ lockfileVersion: 0.2, facets: {} }))
     const result = loadLockfile(projectRoot)
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
     expect(result.existed).toBe(true)
-    expect(result.version).toBe(CURRENT_LOCKFILE_VERSION)
+    expect(result.parsed.lockfileVersion).toBe(LOCKFILE_VERSION_0_2)
+    expect(result.parsed.lockfileVersion).not.toBe(CURRENT_LOCKFILE_VERSION)
+  })
+
+  test('current version 0.3 loads under the current schema', () => {
+    writeFileSync(join(projectRoot, FACETS_LOCK_FILE), JSON.stringify({ lockfileVersion: 0.3, facets: {} }))
+    const result = loadLockfile(projectRoot)
+    expect(result.ok).toBe(true)
+    if (!result.ok) expect.unreachable()
+    expect(result.existed).toBe(true)
+    expect(result.parsed.lockfileVersion).toBe(CURRENT_LOCKFILE_VERSION)
   })
 
   test('a malformed 0.2 lockfile is not reinterpreted as legacy 1', () => {
@@ -167,12 +181,20 @@ describe('writeLockfile — key ordering', () => {
     source: { kind: 'git' as const, url: 'github:test/test#main', commit: 'a'.repeat(40) },
     version,
     integrity: 'sha256:0000',
-    assets: [{ scope: 'project' as const, type: 'skill' as const, name: 'x' }],
+    assets: [
+      {
+        scope: 'project' as const,
+        type: 'skill' as const,
+        name: 'x',
+        materialization: { kind: 'authored' as const },
+        files: [{ path: 'skills/x/SKILL.md', integrity: `sha256:${'0'.repeat(64)}` }],
+      },
+    ],
   })
 
   test('sorts top-level facet keys alphabetically', () => {
     const lockfile = {
-      lockfileVersion: 1 as const,
+      lockfileVersion: CURRENT_LOCKFILE_VERSION as typeof CURRENT_LOCKFILE_VERSION,
       facets: { zeta: entry('0.3.0'), alpha: entry('0.1.0'), mu: entry('0.2.0') },
     }
     writeLockfile(projectRoot, lockfile)
@@ -184,7 +206,7 @@ describe('writeLockfile — key ordering', () => {
   test('idempotent across remove+re-add reordering', () => {
     // Simulate original order: a, b, c
     const original = {
-      lockfileVersion: 1 as const,
+      lockfileVersion: CURRENT_LOCKFILE_VERSION as typeof CURRENT_LOCKFILE_VERSION,
       facets: { a: entry('0.1.0'), b: entry('0.2.0'), c: entry('0.3.0') },
     }
     writeLockfile(projectRoot, original)
@@ -192,7 +214,7 @@ describe('writeLockfile — key ordering', () => {
 
     // Simulate remove b then re-add b (b moves to end of insertion order)
     const reordered = {
-      lockfileVersion: 1 as const,
+      lockfileVersion: CURRENT_LOCKFILE_VERSION as typeof CURRENT_LOCKFILE_VERSION,
       facets: { a: entry('0.1.0'), c: entry('0.3.0'), b: entry('0.2.0') },
     }
     writeLockfile(projectRoot, reordered)
@@ -203,14 +225,14 @@ describe('writeLockfile — key ordering', () => {
 
   test('sorted output round-trips through loadLockfile', () => {
     const lockfile = {
-      lockfileVersion: 1 as const,
+      lockfileVersion: CURRENT_LOCKFILE_VERSION as typeof CURRENT_LOCKFILE_VERSION,
       facets: { zeta: entry('0.3.0'), alpha: entry('0.1.0') },
     }
     writeLockfile(projectRoot, lockfile)
     const result = loadLockfile(projectRoot)
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
-    expect(result.data.facets.alpha).toEqual(lockfile.facets.alpha)
-    expect(result.data.facets.zeta).toEqual(lockfile.facets.zeta)
+    expect(result.parsed.lockfile.facets.alpha).toEqual(lockfile.facets.alpha)
+    expect(result.parsed.lockfile.facets.zeta).toEqual(lockfile.facets.zeta)
   })
 })

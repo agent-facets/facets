@@ -1,16 +1,17 @@
 import { join } from 'node:path'
-import { CURRENT_LOCKFILE_VERSION, type Lockfile } from '@agent-facets/protocol'
+import { CURRENT_LOCKFILE_VERSION } from '@agent-facets/protocol'
 import { type AdapterCompatibilityFailure, compatibilityFailureFor } from '../adapters/api-compatibility.ts'
 import type { NormalizedProjectManifest } from '../manifest/mutations.ts'
 import { describeManifestFailure, loadProjectManifest } from '../manifest/project-files.ts'
 import { applyManifestWritePolicy, mergeDeltaIntoManifest } from './commit/delta.ts'
 import { removeDriftedFacets } from './commit/drift-removal.ts'
 import { installFacets } from './commit/install-loop.ts'
-import { buildUpdatedReceipt, commitProjectFiles } from './commit/tri-write.ts'
+import { resolveAll } from './commit/resolve-all.ts'
+import { buildUpdatedReceipt, commitProjectFiles, type LockedSetCommit } from './commit/tri-write.ts'
 import { detectLockfileDrift } from './detect-lockfile-drift.ts'
 import { InstallJournal } from './journal.ts'
 import { acquireInstallLock } from './lockfile-guard.ts'
-import { emptyLockfile, FACETS_LOCK_FILE, loadLockfile } from './lockfile-io.ts'
+import { FACETS_LOCK_FILE, loadLockfile } from './lockfile-io.ts'
 import { bootstrapReceipt, loadReceipt, type Receipt } from './receipt.ts'
 import { rollbackAndFail, summarize } from './run-install-support.ts'
 import type { InstallDelta, RunInstallFailure, RunInstallOptions, RunInstallResult, StageEvent } from './types.ts'
@@ -74,8 +75,6 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
   }
   const installLock = lockResult.lock
 
-  const journal = new InstallJournal()
-
   try {
     // 3. Load existing lockfile (or skeleton).
     const lockfileResult = loadLockfile(projectRoot)
@@ -86,7 +85,10 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
         error: lockfileResult.error,
       })
     }
-    const previousLockfile = lockfileResult.existed ? lockfileResult.data : emptyLockfile()
+    // The loaded document, at whatever version it was written. Both arms
+    // carry a validated lockfile; the `existed` tag only distinguishes "read
+    // from disk" from "bootstrapped empty at the current version".
+    const previousLockfile = lockfileResult.parsed.lockfile
 
     // Load (or bootstrap) the machine-local receipt. Invalid asset
     // entries (escape paths) are reported and skipped — the rest of
@@ -153,14 +155,34 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
 
     onStage({ kind: 'install-start', totalFacets: Object.keys(merged.desiredFacets).length })
 
-    // 5. Per-facet install loop.
-    const loop = await installFacets({
+    // 5. Resolve every desired facet. Nothing is written during this phase,
+    //    so a failure here still leaves the project untouched — which is
+    //    why it reports through the no-mutation helper and why no journal
+    //    exists yet.
+    const resolution = await resolveAll({
       desiredFacets: merged.desiredFacets,
       additionNames: merged.additionNames,
       previousLockfile,
       projectRoot,
       adapters,
       frozenLockfile,
+      signal,
+      onStage,
+      onLog,
+    })
+    if (!resolution.ok) {
+      return failureNoMutation(resolution.failure)
+    }
+    const { resolved, serverWarnings } = resolution.value
+
+    // 6. The first mutation is now imminent, so the rollback ledger opens
+    //    here. Every entry it accumulates corresponds to a write that
+    //    actually happened.
+    const journal = new InstallJournal()
+
+    const loop = await installFacets({
+      resolved,
+      adapters,
       journal,
       signal,
       onStage,
@@ -169,9 +191,9 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     if (!loop.ok) {
       return await rollbackAndFail(journal, loop.failure, onLog)
     }
-    const { newFacetEntries, perFacet, serverWarnings, totalAssets } = loop.value
+    const { newFacetEntries, perFacet, totalAssets } = loop.value
 
-    // 6. Receipt-driven drift removal.
+    // 7. Receipt-driven drift removal.
     const drift = await removeDriftedFacets({
       desiredFacets: merged.desiredFacets,
       receipt,
@@ -196,16 +218,14 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     //    explicit → verbatim) is applied just before the write.
     //
     //    Version migration (design D10): a normal install always writes the
-    //    current (`0.2`) schema, migrating a legacy-alpha `1` lockfile after
+    //    current schema, migrating a legacy-alpha `1` or `0.2` lockfile after
     //    every resolved artifact has passed verification. Frozen mode never
-    //    rewrites the lockfile (see `commitProjectFiles`), so it retains the
-    //    version the file was loaded under — a `0.2` archive against a legacy
-    //    lockfile is rejected by the frozen drift gate above, not silently
-    //    upgraded here.
-    const newLockfile: Lockfile = {
-      lockfileVersion: frozenLockfile ? lockfileResult.version : CURRENT_LOCKFILE_VERSION,
-      facets: newFacetEntries,
-    }
+    //    rewrites the lockfile, so it retains the version the file was loaded
+    //    under — a newer archive against a legacy lockfile is rejected by the
+    //    frozen drift gate above, not silently upgraded here.
+    const lockedSet: LockedSetCommit = frozenLockfile
+      ? { kind: 'retain' }
+      : { kind: 'write', newLockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: newFacetEntries } }
     const newReceipt = buildUpdatedReceipt(receipt, newFacetEntries)
     if (!frozenLockfile && merged.hasDelta) {
       applyManifestWritePolicy(merged.desiredFacets, delta.additions, newFacetEntries)
@@ -214,9 +234,8 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       projectRoot,
       manifestDocument: projectManifest.document,
       desiredFacets: merged.desiredFacets,
-      newLockfile,
+      lockedSet,
       newReceipt,
-      frozenLockfile,
       onLog,
     })
     if (!written.ok) {
@@ -230,7 +249,10 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
 
     return {
       ok: true,
-      lockfile: newLockfile,
+      // Frozen retained the file on disk, so the previous lockfile IS the
+      // current one — reporting the composed set would claim a write that
+      // never happened.
+      lockfile: lockedSet.kind === 'write' ? lockedSet.newLockfile : previousLockfile,
       summary: summarize(perFacet, totalAssets, drift.value.removedAssets),
       perFacet,
       serverWarnings,

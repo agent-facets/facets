@@ -3,11 +3,9 @@ import { join } from 'node:path'
 import { atomicWriteFileSync } from '@agent-facets/common'
 import {
   CURRENT_LOCKFILE_VERSION,
-  type LEGACY_LOCKFILE_VERSION,
-  type LOCKFILE_VERSION_0_2,
-  type LOCKFILE_VERSION_0_3,
-  type Lockfile,
+  type CurrentLockfile,
   type LockfileParseFailure,
+  type ParsedLockfile,
   parseLockfileDocument,
   SUPPORTED_LOCKFILE_VERSIONS,
 } from '@agent-facets/protocol'
@@ -15,7 +13,7 @@ import { jsonFileText } from '../json-file-text.ts'
 
 /**
  * Bytes-level I/O for facets.lock. Keeps JSON parse/serialize in one place
- * so the orchestrator only deals with validated Lockfile values.
+ * so the orchestrator only deals with validated lockfile values.
  *
  * Version dispatch is EXACT (design D10): `loadLockfile` delegates to
  * protocol's `parseLockfileDocument`, which selects the legacy-alpha `1`,
@@ -23,9 +21,12 @@ import { jsonFileText } from '../json-file-text.ts'
  * which `0.3 < 0.2 < 1` would rank the newest schema oldest. A
  * future/unknown version is a structured `unsupported-lockfile-version`
  * rejection, and a malformed document is never reinterpreted under another
- * version. The loaded version is surfaced on the result so the orchestrator
- * can migrate an earlier lockfile forward in normal mode while retaining it
- * verbatim in frozen mode.
+ * version.
+ *
+ * The parsed result is carried through as protocol's tagged
+ * `ParsedLockfile`, so the declared version and the document shape cannot
+ * drift apart. Consumers that need per-file records or dispositions
+ * discriminate on that tag; they never probe the shape.
  *
  * F4 note — closed-alpha posture: every persisted facet entry carries an
  * `integrity` field, but `loadLockfile` does NOT re-verify it against a
@@ -37,31 +38,30 @@ import { jsonFileText } from '../json-file-text.ts'
 export const FACETS_LOCK_FILE = 'facets.lock'
 
 /**
- * The exact schema version a lockfile was loaded under. Legacy `1` carries
- * identity-only asset entries; `0.2` adds per-materialized-file integrity
- * records; `0.3` adds a required materialization disposition per asset. The
- * orchestrator dispatches migration behavior on this discriminant rather
- * than re-parsing the version out of `data`.
+ * The outcome of loading a project's lockfile.
  *
- * This enumerates what can be READ. What a normal install writes is
- * `CURRENT_LOCKFILE_VERSION`, which still points at `0.2` until the writer
- * cutover.
+ * `existed: false` is typed as the CURRENT version because that arm is
+ * produced by {@link emptyLockfile}, not read from disk — a new project
+ * never starts on an earlier schema. The `existed: true` arm carries
+ * whatever version was actually on disk.
  */
-export type LoadedLockfileVersion =
-  | typeof LEGACY_LOCKFILE_VERSION
-  | typeof LOCKFILE_VERSION_0_2
-  | typeof LOCKFILE_VERSION_0_3
-
 export type LoadLockfileResult =
-  | { ok: true; data: Lockfile; existed: boolean; version: LoadedLockfileVersion }
+  | {
+      ok: true
+      existed: false
+      parsed: { lockfileVersion: typeof CURRENT_LOCKFILE_VERSION; lockfile: CurrentLockfile }
+    }
+  | { ok: true; existed: true; parsed: ParsedLockfile }
   | { ok: false; error: string }
 
 export function loadLockfile(projectRoot: string): LoadLockfileResult {
   const path = join(projectRoot, FACETS_LOCK_FILE)
   if (!existsSync(path)) {
-    // A missing lockfile bootstraps the current (`0.2`) empty shape — new
-    // projects never start on the legacy schema.
-    return { ok: true, data: emptyLockfile(), existed: false, version: CURRENT_LOCKFILE_VERSION }
+    return {
+      ok: true,
+      existed: false,
+      parsed: { lockfileVersion: CURRENT_LOCKFILE_VERSION, lockfile: emptyLockfile() },
+    }
   }
   let raw: string
   try {
@@ -78,17 +78,7 @@ export function loadLockfile(projectRoot: string): LoadLockfileResult {
     return { ok: false, error: describeLockfileFailure(parsed.failure) }
   }
 
-  // `CurrentLockfile` asset entries are a structural superset of the
-  // permissive `Lockfile` (identity fields plus `files`), so a current
-  // document reads correctly through the still-legacy downstream install
-  // paths; the per-file records are threaded through explicitly by the
-  // lockfile `0.2` materialization work.
-  return {
-    ok: true,
-    data: parsed.data.lockfile as Lockfile,
-    existed: true,
-    version: parsed.data.lockfileVersion,
-  }
+  return { ok: true, existed: true, parsed: parsed.data }
 }
 
 /**
@@ -118,27 +108,33 @@ function summarizeErrors(errors: ReadonlyArray<{ message: string }>): string {
 }
 
 /**
- * Serialize and write `facets.lock` atomically. Top-level facet keys are
- * sorted alphabetically so the output is deterministic regardless of the
- * insertion order the in-memory map was built in — add/remove/add produces
- * byte-identical output when the resolved set is the same. (Same rationale
- * as the per-facet asset sort in `materialize.ts`.)
+ * Serialize and write `facets.lock` atomically.
+ *
+ * Accepts only a CURRENT lockfile. An earlier document can be read and
+ * reproduced, but never re-emitted: a normal install migrates forward, and
+ * a frozen install leaves the file alone entirely rather than rewriting it.
+ *
+ * Top-level facet keys are sorted alphabetically so the output is
+ * deterministic regardless of the insertion order the in-memory map was
+ * built in — add/remove/add produces byte-identical output when the
+ * resolved set is the same. (Same rationale as the per-facet asset sort in
+ * `materialize.ts`.)
  */
-export function writeLockfile(projectRoot: string, lockfile: Lockfile): void {
+export function writeLockfile(projectRoot: string, lockfile: CurrentLockfile): void {
   const path = join(projectRoot, FACETS_LOCK_FILE)
-  const sortedFacets: Lockfile['facets'] = {}
+  const sortedFacets: CurrentLockfile['facets'] = {}
   for (const [key, entry] of Object.entries(lockfile.facets).sort(([a], [b]) => a.localeCompare(b))) {
     sortedFacets[key] = entry
   }
-  const canonical: Lockfile = { lockfileVersion: lockfile.lockfileVersion, facets: sortedFacets }
+  const canonical: CurrentLockfile = { lockfileVersion: lockfile.lockfileVersion, facets: sortedFacets }
   atomicWriteFileSync(path, jsonFileText(canonical))
 }
 
 /**
- * Bootstrap an empty lockfile at the current (`0.2`) schema version. New
- * projects and fresh normal installs start current; legacy `1` is only ever
- * an input format read from disk.
+ * Bootstrap an empty lockfile at the current schema version. New projects
+ * and fresh normal installs start current; earlier versions are only ever
+ * input formats read from disk.
  */
-export function emptyLockfile(): Lockfile {
+export function emptyLockfile(): CurrentLockfile {
   return { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} }
 }

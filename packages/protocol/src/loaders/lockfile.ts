@@ -38,6 +38,32 @@ export type ParsedLockfile =
   | { lockfileVersion: typeof LOCKFILE_VERSION_0_2; lockfile: Lockfile02 }
   | { lockfileVersion: typeof LOCKFILE_VERSION_0_3; lockfile: Lockfile03 }
 
+/**
+ * The exact set of lockfile versions this implementation can READ. Derived
+ * from {@link ParsedLockfile} rather than restated, so a new reader cannot
+ * be added without the tag set following it.
+ */
+export type SupportedLockfileVersion = ParsedLockfile['lockfileVersion']
+
+/**
+ * Any lockfile document this implementation accepts.
+ *
+ * Deliberately a projection of {@link ParsedLockfile}, not a hand-written
+ * permissive shape: a type with an unpinned numeric version and
+ * lowest-common-denominator assets would admit documents whose declared
+ * version and asset shape disagree — a `0.3` version carrying identity-only
+ * assets, say — which no reader would ever produce. Consumers that need
+ * `files` or `materialization` must discriminate on the version tag from
+ * {@link ParsedLockfile} rather than probing the shape.
+ */
+export type SupportedLockfile = ParsedLockfile['lockfile']
+
+/** Any facet entry inside a supported lockfile, across every read version. */
+export type SupportedLockfileFacet = SupportedLockfile['facets'][string]
+
+/** Any asset entry inside a supported lockfile, across every read version. */
+export type SupportedLockfileAssetEntry = SupportedLockfileFacet['assets'][number]
+
 export type ParseLockfileResult = { ok: true; data: ParsedLockfile } | { ok: false; failure: LockfileParseFailure }
 
 /**

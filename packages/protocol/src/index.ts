@@ -93,7 +93,15 @@ export {
 } from './loaders/facet.ts'
 // versioned lockfile parsing (exact lockfileVersion dispatch — legacy alpha
 // `1` vs current `0.2`, no numeric ordering, no shape-sniffing)
-export type { LockfileParseFailure, ParsedLockfile, ParseLockfileResult } from './loaders/lockfile.ts'
+export type {
+  LockfileParseFailure,
+  ParsedLockfile,
+  ParseLockfileResult,
+  SupportedLockfile,
+  SupportedLockfileAssetEntry,
+  SupportedLockfileFacet,
+  SupportedLockfileVersion,
+} from './loaders/lockfile.ts'
 export { parseLockfileDocument } from './loaders/lockfile.ts'
 // versioned project-manifest parsing (exact manifestVersion dispatch —
 // legacy unversioned vs current `0.1`, no shape-sniffing, duplicate members
@@ -186,21 +194,22 @@ export type { FacetName, FacetNameResult, SlugResult } from './schemas/facet-nam
 export { parseFacetName, parseSlug, validateFacetName } from './schemas/facet-name.ts'
 // lockfile schemas — one per exact format version (legacy alpha `1`, `0.2`,
 // `0.3`), plus `Current*` aliases tracking whichever version a normal
-// install writes. Readers for `0.3` ship ahead of the writer flip.
+// install writes. Readers stay broader than the writer; the `Supported*`
+// aggregate (exported with the loader) is derived from those exact readers,
+// never hand-written.
 export type {
   CurrentLockfile,
   CurrentLockfileAssetEntry,
   CurrentLockfileFacet,
   LegacyLockfile,
-  Lockfile,
+  LegacyLockfileAssetEntry,
+  LegacyLockfileFacet,
   Lockfile02,
   Lockfile02AssetEntry,
   Lockfile02Facet,
   Lockfile03,
   Lockfile03AssetEntry,
   Lockfile03Facet,
-  LockfileAssetEntry,
-  LockfileFacet,
   LockfileFileRecord,
   LockfileSource,
 } from './schemas/lockfile.ts'
@@ -209,12 +218,10 @@ export {
   CurrentLockfileSchema,
   LEGACY_LOCKFILE_VERSION,
   LegacyLockfileSchema,
-  LOCKFILE_VERSION,
   LOCKFILE_VERSION_0_2,
   LOCKFILE_VERSION_0_3,
   Lockfile02Schema,
   Lockfile03Schema,
-  LockfileSchema,
   SUPPORTED_LOCKFILE_VERSIONS,
 } from './schemas/lockfile.ts'
 // materialization dispositions — the three-arm tagged shape (authored /

@@ -1,4 +1,4 @@
-import type { LockfileFacet } from '@agent-facets/protocol'
+import type { SupportedLockfileFacet } from '@agent-facets/protocol'
 import { auditCacheSlot, type CacheIdentity, cacheGet, evictCacheSlot, readCachedIntegrity } from '../../cache/index.ts'
 import type { OnLog, RunInstallFailure } from '../types.ts'
 
@@ -24,7 +24,11 @@ export type GitCacheLookup =
  * audit (tampered bytes, missing/invalid sidecar) evicts the slot and
  * degrades to a miss (re-clone).
  */
-export function auditedGitCacheLookup(facetName: string, effectiveLocked: LockfileFacet, onLog: OnLog): GitCacheLookup {
+export function auditedGitCacheLookup(
+  facetName: string,
+  effectiveLocked: SupportedLockfileFacet,
+  onLog: OnLog,
+): GitCacheLookup {
   const cacheId: CacheIdentity = { kind: 'git', name: facetName, version: effectiveLocked.version }
   const lookup = cacheGet(cacheId)
   if (!lookup.hit) return { kind: 'miss' }

@@ -30,14 +30,18 @@ export const LOCKFILE_VERSION_0_3 = 0.3
  * `FACET_ARCHIVE_VERSION` (see ./build-manifest.ts): archive and resolution
  * formats evolve independently (design D10).
  *
- * Deliberately an alias rather than a literal. Readers for `0.3` ship ahead
- * of writers — the consumer-first policy the `0.2` rollout used — so this
- * stays at `0.2` until every effective-ownership and CLI path can produce a
- * correct `0.3` document. Flipping the writer is then a one-line change
- * here rather than an edit at each of the writer call sites, which is what
- * makes the cutover reviewable as a single atomic decision.
+ * Deliberately an alias rather than a literal, so the writer version is
+ * named once and every write site inherits it.
+ *
+ * Readers stay broader than the writer ({@link SUPPORTED_LOCKFILE_VERSIONS}),
+ * but that is a compatibility property of the format, not a staged rollout:
+ * this package, the engine, and the CLI compile into a single artifact from
+ * a single commit, so no build can ever contain a `0.3` writer alongside a
+ * `0.2`-only reader. Cross-version safety for a teammate on an older CLI
+ * comes from that CLI failing closed on an unrecognized version, which is
+ * true the moment the format ships.
  */
-export const CURRENT_LOCKFILE_VERSION = LOCKFILE_VERSION_0_2
+export const CURRENT_LOCKFILE_VERSION = LOCKFILE_VERSION_0_3
 
 /**
  * Every lockfile schema version this implementation can READ. Broader than
@@ -48,18 +52,6 @@ export const SUPPORTED_LOCKFILE_VERSIONS: readonly number[] = [
   LOCKFILE_VERSION_0_2,
   LOCKFILE_VERSION_0_3,
 ]
-
-/**
- * Current lockfile schema version. Bump on breaking shape changes.
- * Forward-compat migrations key off this field.
- *
- * @deprecated Transitional: engine's pre-`0.2` loader still keys its
- * newer-version guard and empty-lockfile bootstrap off this constant. It
- * migrates to exact dispatch via `parseLockfileDocument` (with
- * `LEGACY_LOCKFILE_VERSION` / `CURRENT_LOCKFILE_VERSION`) in the lockfile
- * migration block of the `0.2` rollout, after which this export is removed.
- */
-export const LOCKFILE_VERSION = LEGACY_LOCKFILE_VERSION
 
 /**
  * A single asset contributed by a facet at this resolved version.
@@ -334,47 +326,28 @@ export type Lockfile03AssetEntry = typeof Lockfile03Asset.infer
  * {@link CURRENT_LOCKFILE_VERSION}. An alias, so the writer cutover is one
  * edit at the constant rather than a rename across every call site.
  */
-export const CurrentLockfileSchema = Lockfile02Schema
+export const CurrentLockfileSchema = Lockfile03Schema
 
 /** Inferred TypeScript type for a validated current lockfile */
 export type CurrentLockfile = typeof CurrentLockfileSchema.infer
 
 /** Inferred type for a facet entry inside a current lockfile */
-export type CurrentLockfileFacet = Lockfile02Facet
+export type CurrentLockfileFacet = Lockfile03Facet
 
-/** Inferred type for a current asset entry with its file-integrity records */
-export type CurrentLockfileAssetEntry = Lockfile02AssetEntry
+/** Inferred type for a current asset entry with its materialization disposition */
+export type CurrentLockfileAssetEntry = Lockfile03AssetEntry
 
 /** Inferred type for one materialized-file integrity record */
 export type LockfileFileRecord = typeof LockfileAssetFileRecord.infer
 
+/** Inferred type for a facet entry inside a legacy alpha (`1`) lockfile */
+export type LegacyLockfileFacet = typeof LockfileFacetEntry.infer
+
 /**
- * Schema for facets.lock — the adapter-agnostic lockfile recording
- * resolved facet installation state.
- *
- * Drift-proof deletion: OLD asset set comes from `facets[name].assets`;
- * NEW comes from the freshly-extracted artifact's build-manifest;
- * `to-delete` = OLD \ NEW. No separate cache required.
- *
- * @deprecated Transitional: this permissive shape (unpinned
- * `lockfileVersion`, identity-only assets) predates exact version dispatch.
- * Engine's loader migrates to `parseLockfileDocument` /
- * `LegacyLockfileSchema` / `CurrentLockfileSchema` in the lockfile
- * migration block of the `0.2` rollout, after which this export is removed.
+ * Inferred type for a legacy alpha (`1`) asset entry: identity only, with
+ * neither per-file integrity records nor a materialization disposition.
  */
-export const LockfileSchema = type({
-  lockfileVersion: 'number',
-  facets: type.Record('string', LockfileFacetEntry),
-})
-
-/** Inferred TypeScript type for a validated lockfile */
-export type Lockfile = typeof LockfileSchema.infer
-
-/** Inferred type for a single facet entry inside a lockfile */
-export type LockfileFacet = typeof LockfileFacetEntry.infer
+export type LegacyLockfileAssetEntry = typeof LockfileAsset.infer
 
 /** Inferred type for a locked facet's tagged source provenance */
 export type LockfileSource = typeof LockfileSource.infer
-
-/** Inferred type for a single asset entry in the lockfile */
-export type LockfileAssetEntry = typeof LockfileAsset.infer

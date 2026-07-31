@@ -2,30 +2,51 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Lockfile } from '@agent-facets/protocol'
-import { CURRENT_LOCKFILE_VERSION, LEGACY_LOCKFILE_VERSION } from '@agent-facets/protocol'
+import type { LegacyLockfile, Lockfile02, SupportedLockfile } from '@agent-facets/protocol'
+import { CURRENT_LOCKFILE_VERSION, LEGACY_LOCKFILE_VERSION, LOCKFILE_VERSION_0_2 } from '@agent-facets/protocol'
 import {
   bootstrapReceipt,
   CURRENT_RECEIPT_VERSION,
+  LEGACY_RECEIPT_VERSION,
   loadReceipt,
+  RECEIPT_VERSION_0_2,
   type Receipt,
+  type ReceiptAsset,
   receiptPath,
   writeReceipt,
 } from '../receipt.ts'
 
-/** A current (0.2) receipt skill asset owning exactly its SKILL.md. */
-function skillAsset(name: string): { scope: 'project'; type: 'skill'; name: string; files: string[] } {
-  return { scope: 'project', type: 'skill', name, files: [`skills/${name}/SKILL.md`] }
+/** An authored-materialization skill asset owning exactly its SKILL.md. */
+function skillAsset(name: string): ReceiptAsset {
+  return {
+    scope: 'project',
+    type: 'skill',
+    name,
+    materialization: { kind: 'authored' },
+    files: [`skills/${name}/SKILL.md`],
+  }
 }
 
-/** A current (0.2) receipt agent asset owning exactly its primary file. */
-function agentAsset(name: string): { scope: 'project'; type: 'agent'; name: string; files: string[] } {
-  return { scope: 'project', type: 'agent', name, files: [`agents/${name}.md`] }
+/** An authored-materialization agent asset owning exactly its primary file. */
+function agentAsset(name: string): ReceiptAsset {
+  return {
+    scope: 'project',
+    type: 'agent',
+    name,
+    materialization: { kind: 'authored' },
+    files: [`agents/${name}.md`],
+  }
 }
 
-/** A current (0.2) receipt command asset owning exactly its primary file. */
-function commandAsset(name: string): { scope: 'project'; type: 'command'; name: string; files: string[] } {
-  return { scope: 'project', type: 'command', name, files: [`commands/${name}.md`] }
+/** An authored-materialization command asset owning exactly its primary file. */
+function commandAsset(name: string): ReceiptAsset {
+  return {
+    scope: 'project',
+    type: 'command',
+    name,
+    materialization: { kind: 'authored' },
+    files: [`commands/${name}.md`],
+  }
 }
 
 let facetDir: string
@@ -166,7 +187,13 @@ describe('loadReceipt', () => {
         cowsay: {
           version: '0.0.1',
           assets: [
-            { scope: 'project', type: 'skill', name: 'cowsay', files: ['skills/cowsay/../../escape.md'] },
+            {
+              scope: 'project',
+              type: 'skill',
+              name: 'cowsay',
+              materialization: { kind: 'authored' },
+              files: ['skills/cowsay/../../escape.md'],
+            },
             skillAsset('safe'),
           ],
         },
@@ -188,7 +215,7 @@ describe('loadReceipt', () => {
     // identity-only receipt is refined to the single conventional primary
     // path per asset and loads as current.
     const legacy = {
-      version: LEGACY_LOCKFILE_VERSION,
+      version: LEGACY_RECEIPT_VERSION,
       path: realpathSync(projectDir),
       facets: {
         cowsay: {
@@ -207,6 +234,105 @@ describe('loadReceipt', () => {
     if (!result.ok) expect.unreachable()
     expect(result.receipt.version).toBe(CURRENT_RECEIPT_VERSION)
     expect(result.receipt.facets.cowsay?.assets).toEqual([skillAsset('cowsay'), commandAsset('moo')])
+  })
+
+  test('refines a 0.2 receipt to authored, retaining its complete ownership', () => {
+    // A 0.2 receipt already records exact owned paths — including companions
+    // — so refinement adds only the disposition. Losing those paths would
+    // silently downgrade offline removal to primary-only.
+    const receipt02 = {
+      version: RECEIPT_VERSION_0_2,
+      path: realpathSync(projectDir),
+      facets: {
+        cowsay: {
+          version: '0.0.1',
+          assets: [
+            {
+              scope: 'project',
+              type: 'skill',
+              name: 'cowsay',
+              files: ['skills/cowsay/SKILL.md', 'skills/cowsay/references/art.md'],
+            },
+          ],
+        },
+      },
+    }
+    const path = receiptPath(projectDir)
+    mkdirSync(join(facetDir, 'receipts'), { recursive: true })
+    writeFileSync(path, JSON.stringify(receipt02))
+    const result = loadReceipt(projectDir)
+    if (!result.ok) expect.unreachable()
+    expect(result.receipt.version).toBe(CURRENT_RECEIPT_VERSION)
+    expect(result.receipt.facets.cowsay?.assets[0]?.materialization).toEqual({ kind: 'authored' })
+    expect(result.receipt.facets.cowsay?.assets[0]?.files).toEqual([
+      'skills/cowsay/SKILL.md',
+      'skills/cowsay/references/art.md',
+    ])
+  })
+
+  test('a current receipt round-trips an aliased disposition', () => {
+    const receipt: Receipt = {
+      version: CURRENT_RECEIPT_VERSION,
+      path: realpathSync(projectDir),
+      facets: {
+        cowsay: {
+          version: '0.0.1',
+          assets: [
+            {
+              scope: 'project',
+              type: 'skill',
+              name: 'cowsay',
+              materialization: { kind: 'aliased', as: 'vendor-cowsay' },
+              files: ['skills/cowsay/SKILL.md'],
+            },
+          ],
+        },
+      },
+    }
+    const path = receiptPath(projectDir)
+    mkdirSync(join(facetDir, 'receipts'), { recursive: true })
+    writeFileSync(path, JSON.stringify(receipt))
+    const result = loadReceipt(projectDir)
+    if (!result.ok) expect.unreachable()
+    // Both names survive: authored anchors ownership and canonical paths,
+    // the alias is what the adapter must be asked to delete.
+    expect(result.receipt.facets.cowsay?.assets[0]?.name).toBe('cowsay')
+    expect(result.receipt.facets.cowsay?.assets[0]?.materialization).toEqual({
+      kind: 'aliased',
+      as: 'vendor-cowsay',
+    })
+    expect(result.receipt.facets.cowsay?.assets[0]?.files).toEqual(['skills/cowsay/SKILL.md'])
+  })
+
+  test('a receipt recording an omitted asset is corrupt, not silently accepted', () => {
+    // The current schema admits only the two arms that put bytes on disk, so
+    // "omitted but materialized" cannot be represented at all.
+    const path = receiptPath(projectDir)
+    mkdirSync(join(facetDir, 'receipts'), { recursive: true })
+    writeFileSync(
+      path,
+      JSON.stringify({
+        version: CURRENT_RECEIPT_VERSION,
+        path: realpathSync(projectDir),
+        facets: {
+          cowsay: {
+            version: '0.0.1',
+            assets: [
+              {
+                scope: 'project',
+                type: 'skill',
+                name: 'cowsay',
+                materialization: { kind: 'omitted' },
+                files: ['skills/cowsay/SKILL.md'],
+              },
+            ],
+          },
+        },
+      }),
+    )
+    const result = loadReceipt(projectDir)
+    if (result.ok) expect.unreachable()
+    expect(result.reason).toBe('corrupt')
   })
 
   test('a fully valid receipt reports no invalid entries', () => {
@@ -321,7 +447,7 @@ describe('writeReceipt', () => {
 
 describe('bootstrapReceipt', () => {
   test('creates a current (0.2) receipt from a legacy lockfile, primary-only', () => {
-    const lockfile: Lockfile = {
+    const lockfile: LegacyLockfile = {
       lockfileVersion: LEGACY_LOCKFILE_VERSION,
       facets: {
         cowsay: {
@@ -343,9 +469,12 @@ describe('bootstrapReceipt', () => {
     expect(receipt.facets.cowsay?.assets).toEqual([skillAsset('cowsay'), commandAsset('moo')])
   })
 
-  test('mirrors owned companion paths from a 0.2 lockfile', () => {
-    const lockfile: Lockfile = {
-      lockfileVersion: CURRENT_LOCKFILE_VERSION,
+  test('mirrors owned companion paths from a 0.2 lockfile and refines to authored', () => {
+    // Pinned to 0.2 explicitly. This fixture previously claimed the CURRENT
+    // version while carrying disposition-less assets — a document no reader
+    // would accept — and only compiled through an `as unknown as` cast.
+    const lockfile: Lockfile02 = {
+      lockfileVersion: LOCKFILE_VERSION_0_2,
       facets: {
         cowsay: {
           source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
@@ -361,7 +490,7 @@ describe('bootstrapReceipt', () => {
                 { path: 'skills/cowsay/references/art.md', integrity: `sha256:${'1'.repeat(64)}` },
               ],
             },
-          ] as unknown as Lockfile['facets'][string]['assets'],
+          ],
         },
       },
     }
@@ -371,10 +500,51 @@ describe('bootstrapReceipt', () => {
       'skills/cowsay/SKILL.md',
       'skills/cowsay/references/art.md',
     ])
+    // A pre-disposition entry can only have meant authored materialization.
+    expect(receipt.facets.cowsay?.assets[0]?.materialization).toEqual({ kind: 'authored' })
+  })
+
+  test('carries dispositions through from a current lockfile and excludes omitted assets', () => {
+    const files = [{ path: 'skills/cowsay/SKILL.md', integrity: `sha256:${'0'.repeat(64)}` }]
+    const lockfile: SupportedLockfile = {
+      lockfileVersion: CURRENT_LOCKFILE_VERSION,
+      facets: {
+        cowsay: {
+          source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
+          version: '0.0.1',
+          integrity: 'sha256:abc',
+          assets: [
+            { scope: 'project', type: 'skill', name: 'cowsay', materialization: { kind: 'authored' }, files },
+            {
+              scope: 'project',
+              type: 'command',
+              name: 'moo',
+              materialization: { kind: 'aliased', as: 'cow-moo' },
+              files: [{ path: 'commands/moo.md', integrity: `sha256:${'1'.repeat(64)}` }],
+            },
+            {
+              scope: 'project',
+              type: 'agent',
+              name: 'herder',
+              materialization: { kind: 'omitted' },
+              files: [{ path: 'agents/herder.md', integrity: `sha256:${'2'.repeat(64)}` }],
+            },
+          ],
+        },
+      },
+    }
+    const receipt = bootstrapReceipt(projectDir, lockfile)
+    // The omitted agent is absent: the lockfile records the resolved SET,
+    // the receipt records only what is on disk. Bootstrapping from an
+    // omitted asset would claim ownership of files never written.
+    expect(receipt.facets.cowsay?.assets.map((a) => a.name)).toEqual(['cowsay', 'moo'])
+    expect(receipt.facets.cowsay?.assets[1]?.materialization).toEqual({ kind: 'aliased', as: 'cow-moo' })
+    // Authored paths are preserved even under an alias.
+    expect(receipt.facets.cowsay?.assets[1]?.files).toEqual(['commands/moo.md'])
   })
 
   test('empty lockfile produces empty receipt', () => {
-    const lockfile: Lockfile = {
+    const lockfile: SupportedLockfile = {
       lockfileVersion: CURRENT_LOCKFILE_VERSION,
       facets: {},
     }
@@ -383,7 +553,7 @@ describe('bootstrapReceipt', () => {
   })
 
   test('strips source and integrity from lockfile entries', () => {
-    const lockfile: Lockfile = {
+    const lockfile: LegacyLockfile = {
       lockfileVersion: LEGACY_LOCKFILE_VERSION,
       facets: {
         cowsay: {

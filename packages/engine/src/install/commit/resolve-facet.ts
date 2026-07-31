@@ -1,5 +1,5 @@
 import type { Adapter } from '@agent-facets/adapter'
-import type { Lockfile } from '@agent-facets/protocol'
+import type { SupportedLockfile } from '@agent-facets/protocol'
 import { parseFacetSource } from '../../sources/facet/parse-source.ts'
 import { parseVersionSpec } from '../../sources/facet/parse-version.ts'
 import type { OnLog, StageEvent } from '../types.ts'
@@ -14,7 +14,7 @@ export interface ResolveFacetArgs {
   specifier: string
   projectRoot: string
   adapters: ReadonlyArray<Adapter>
-  previousLockfile: Lockfile
+  previousLockfile: SupportedLockfile
   isExplicitAddition: boolean
   frozenLockfile: boolean
   onStage: (event: StageEvent) => void
@@ -59,9 +59,14 @@ export async function resolveFacet(args: ResolveFacetArgs): Promise<ResolveFacet
 
   switch (source.kind) {
     case 'registry':
-      return resolveRegistryFacet({ facetName, source, effectiveLocked, frozenLockfile, onStage, onLog })
+      // Registry and git resolution do not vary by frozen mode: both always
+      // verify resolved content against the locked integrity when a locked
+      // entry anchors the facet. Only local sources gain an extra
+      // reproduction guard under frozen, because a local tree is mutable by
+      // design and a normal install lets the lockfile follow disk.
+      return resolveRegistryFacet({ facetName, source, effectiveLocked, onStage, onLog })
     case 'git':
-      return resolveGitFacet({ facetName, source, adapters, effectiveLocked, frozenLockfile, onStage, onLog })
+      return resolveGitFacet({ facetName, source, adapters, effectiveLocked, onStage, onLog })
     case 'local':
       return resolveLocalFacet({
         facetName,

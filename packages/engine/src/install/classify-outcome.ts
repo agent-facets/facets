@@ -1,4 +1,4 @@
-import type { LockfileFacet } from '@agent-facets/protocol'
+import type { SupportedLockfileFacet } from '@agent-facets/protocol'
 import type { FacetOutcome } from './types.ts'
 
 /**
@@ -11,23 +11,23 @@ import type { FacetOutcome } from './types.ts'
  */
 export function classifyOutcome(
   name: string,
-  previous: LockfileFacet | undefined,
-  current: LockfileFacet,
+  previous: SupportedLockfileFacet | undefined,
+  currentVersion: string,
   assetsWritten: number,
 ): FacetOutcome {
   if (previous === undefined) {
-    return { kind: 'installed', name, version: current.version }
+    return { kind: 'installed', name, version: currentVersion }
   }
-  if (previous.version !== current.version) {
+  if (previous.version !== currentVersion) {
     return {
       kind: 'updated',
       name,
       oldVersion: previous.version,
-      newVersion: current.version,
+      newVersion: currentVersion,
     }
   }
   if (assetsWritten > 0) {
-    return { kind: 'repaired', name, version: current.version }
+    return { kind: 'repaired', name, version: currentVersion }
   }
-  return { kind: 'unchanged', name, version: current.version }
+  return { kind: 'unchanged', name, version: currentVersion }
 }

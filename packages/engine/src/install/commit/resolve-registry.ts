@@ -1,4 +1,4 @@
-import type { LockfileFacet } from '@agent-facets/protocol'
+import type { SupportedLockfileFacet } from '@agent-facets/protocol'
 import { cacheGet } from '../../cache/index.ts'
 import { describeVersionSpec } from '../../registry/describe.ts'
 import { getRegistryBaseUrl } from '../../registry/index.ts'
@@ -8,12 +8,7 @@ import type { ConfirmingMiss, LockedMiss, MaterializeVersionInput } from '../mat
 import { materializeVersion } from '../materialize-version/index.ts'
 import { parseLockedVersion } from '../parse-locked-version.ts'
 import type { OnLog, StageEvent } from '../types.ts'
-import {
-  buildVerifiedAssetPlan,
-  readSkillCompanionBytes,
-  type SkillCompanionBytes,
-  type VerifiedAssetPlan,
-} from '../verified-asset-plan.ts'
+import { buildVerifiedAssetPlan, readSkillCompanionBytes } from '../verified-asset-plan.ts'
 import { loadFacetContent } from './finalize-facet.ts'
 import { chainFailureToRunInstall, fetchMeta } from './registry-support.ts'
 import type { ResolveFacetResult } from './types.ts'
@@ -29,15 +24,7 @@ export interface ResolveRegistryFacetArgs {
    * entry is being created — which requires same-operation registry
    * confirmation.
    */
-  effectiveLocked: LockfileFacet | undefined
-  /**
-   * Frozen-lockfile mode. When true, an inherited (locked-reproduction)
-   * entry is retained verbatim — a legacy `1` entry stays legacy and is
-   * never rewritten. When false, a reproduction re-derives per-file `files[]`
-   * records from the verified slot so a normal install migrates a legacy
-   * lockfile to `0.2`.
-   */
-  frozenLockfile: boolean
+  effectiveLocked: SupportedLockfileFacet | undefined
   onStage: (event: StageEvent) => void
   onLog: OnLog
 }
@@ -69,7 +56,7 @@ export interface ResolveRegistryFacetArgs {
  * is the hard `CACHE_INTEGRITY_MISMATCH` (never a silent re-download).
  */
 export async function resolveRegistryFacet(args: ResolveRegistryFacetArgs): Promise<ResolveFacetResult> {
-  const { facetName, source, effectiveLocked, frozenLockfile, onStage, onLog } = args
+  const { facetName, source, effectiveLocked, onStage, onLog } = args
 
   onStage({ kind: 'facet-stage', facet: facetName, stage: 'resolve' })
 
@@ -197,51 +184,39 @@ export async function resolveRegistryFacet(args: ResolveRegistryFacetArgs): Prom
   const content = await loadFacetContent(facetName, result.slotPath, onStage)
   if (!content.ok) return content
 
-  let entry: LockfileFacet
-  let plan: VerifiedAssetPlan | undefined
-  let companionBytes: Map<string, SkillCompanionBytes> | undefined
-  if (effectiveLocked !== undefined && frozenLockfile) {
-    // Frozen reproduction: inherit the entry verbatim. The chain just
-    // proved the content reproduces the locked integrity, and frozen mode
-    // never rewrites the lockfile — a legacy `1` entry stays legacy. No
-    // plan is derived, so reconciliation is skipped for this path.
-    entry = {
-      source: effectiveLocked.source,
-      version: effectiveLocked.version,
-      integrity: effectiveLocked.integrity,
-      assets: effectiveLocked.assets,
-    }
-  } else {
-    // Normal-mode reproduction (migration) and confirming (fresh) paths
-    // both derive per-file `files[]` records from the verified slot, so a
-    // legacy lockfile is migrated to `0.2` and a fresh entry is recorded at
-    // `0.2`. Identity (source/version/integrity) comes from the locked entry
-    // when reproducing, or from the resolved version + chain integrity when
-    // confirming.
-    const built = buildVerifiedAssetPlan(content.manifest, result.slotPath)
-    if (!built.ok) {
-      return { ok: false, failure: { code: 'BUILD_FAILED', facet: facetName, errors: built.errors } }
-    }
-    plan = built.plan
-    companionBytes = readSkillCompanionBytes(built.plan, result.slotPath)
-    entry =
-      effectiveLocked !== undefined
-        ? {
-            source: effectiveLocked.source,
-            version: effectiveLocked.version,
-            integrity: effectiveLocked.integrity,
-            assets: built.plan.assets,
-          }
-        : {
-            source: { kind: 'registry', registry: getRegistryBaseUrl() },
-            version: exactVersion,
-            integrity: result.integrity,
-            assets: built.plan.assets,
-          }
+  // Content is derived on every path, including frozen reproduction. The
+  // chain has already proved the slot reproduces the locked integrity; the
+  // plan and companion bytes read from it are what Apply installs and what
+  // reconciliation checks, so withholding them under frozen mode would make
+  // verification and bundle safety depend on the mode rather than the bytes.
+  const built = buildVerifiedAssetPlan(content.manifest, result.slotPath)
+  if (!built.ok) {
+    return { ok: false, failure: { code: 'BUILD_FAILED', facet: facetName, errors: built.errors } }
   }
+
+  // Identity comes from the locked entry when reproducing, or from the
+  // resolved version plus chain integrity when confirming a fresh add.
+  const identity =
+    effectiveLocked !== undefined
+      ? {
+          source: effectiveLocked.source,
+          version: effectiveLocked.version,
+          integrity: effectiveLocked.integrity,
+        }
+      : {
+          source: { kind: 'registry' as const, registry: getRegistryBaseUrl() },
+          version: exactVersion,
+          integrity: result.integrity,
+        }
 
   return {
     ok: true,
-    value: { entry, resolved: content.resolved, plan, companionBytes, serversDeclared: content.serversDeclared },
+    value: {
+      ...identity,
+      resolved: content.resolved,
+      plan: built.plan,
+      companionBytes: readSkillCompanionBytes(built.plan, result.slotPath),
+      serversDeclared: content.serversDeclared,
+    },
   }
 }

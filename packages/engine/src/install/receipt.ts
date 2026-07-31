@@ -22,10 +22,17 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { atomicWriteFileSync, validateAssetName } from '@agent-facets/common'
-import type { Lockfile, LockfileAssetEntry } from '@agent-facets/protocol'
+import {
+  isMaterialized,
+  type MaterializedDisposition,
+  MaterializedDispositionSchema,
+  type SupportedLockfile,
+  type SupportedLockfileAssetEntry,
+} from '@agent-facets/protocol'
 import { type } from 'arktype'
 import { facetReceiptsDir } from '../facet-dir.ts'
 import { jsonFileText } from '../json-file-text.ts'
+import type { AssetIdentity } from './types.ts'
 
 // ---------------------------------------------------------------------------
 // Versions (exact dispatch, mirroring the lockfile — design D10)
@@ -40,30 +47,47 @@ import { jsonFileText } from '../json-file-text.ts'
 export const LEGACY_RECEIPT_VERSION = 1
 
 /**
- * The current receipt schema version. Current receipts mirror each committed
- * lockfile asset/file ownership set: every asset records the exact inner-
- * archive paths this machine materialized for it, so offline removal deletes
- * exactly the owned files. The receipt stores paths only — never adapter-
- * encoded hashes (design D10).
+ * The preceding receipt schema version. Numeric `0.2` identifies ONLY the
+ * shape with owned-file records but no materialization disposition: every
+ * asset in a `0.2` receipt was materialized under its authored name.
  */
-export const CURRENT_RECEIPT_VERSION = 0.2
+export const RECEIPT_VERSION_0_2 = 0.2
+
+/**
+ * The current receipt schema version.
+ *
+ * A current receipt records, for each asset actually present on disk: its
+ * AUTHORED identity, the AUTHORED inner-archive paths it owns, and the
+ * disposition under which it was materialized. Both names are needed for
+ * offline deletion — the authored name anchors ownership and canonical
+ * paths, the effective name is what the adapter must be asked to delete —
+ * and neither can be derived from the other once a project aliases an
+ * asset. The receipt stores paths only, never adapter-encoded hashes.
+ *
+ * Omitted assets never appear: a disposition here admits only the two arms
+ * that put bytes on disk, which makes "omitted but materialized"
+ * unrepresentable rather than merely unlikely.
+ */
+export const CURRENT_RECEIPT_VERSION = 0.3
 
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
 
 /**
- * A current (`0.2`) receipt asset record: adapter-agnostic identity plus the
- * complete set of owned inner-archive file paths. A skill owns
- * `skills/<name>/SKILL.md` plus every materialized companion; an agent or
- * command owns exactly its single conventional primary file. Companion paths
- * are the engine-supplied `ownedCompanionPaths` handed to the adapter delete
- * request, so offline multi-file cleanup is exact.
+ * A current (`0.3`) receipt asset record: authored identity, the complete
+ * set of owned authored inner-archive file paths, and the materialization
+ * disposition. A skill owns `skills/<name>/SKILL.md` plus every materialized
+ * companion; an agent or command owns exactly its single conventional
+ * primary file. Companion paths are the engine-supplied
+ * `ownedCompanionPaths` handed to the adapter delete request, so offline
+ * multi-file cleanup is exact.
  */
 const CurrentReceiptAssetSchema = type({
   scope: "'system' | 'user' | 'project'",
   type: "'skill' | 'agent' | 'command'",
   name: 'string',
+  materialization: MaterializedDispositionSchema,
   files: 'string[]',
 })
 
@@ -76,6 +100,28 @@ const CurrentReceiptSchema = type({
   version: type.unit(CURRENT_RECEIPT_VERSION),
   path: 'string',
   facets: type.Record('string', CurrentReceiptFacetEntrySchema),
+})
+
+/**
+ * Preceding (`0.2`) receipt: owned-file records, no disposition. Every asset
+ * is understood as materialized under its authored name.
+ */
+const Receipt02AssetSchema = type({
+  scope: "'system' | 'user' | 'project'",
+  type: "'skill' | 'agent' | 'command'",
+  name: 'string',
+  files: 'string[]',
+})
+
+const Receipt02FacetEntrySchema = type({
+  version: 'string',
+  assets: Receipt02AssetSchema.array(),
+})
+
+const Receipt02Schema = type({
+  version: type.unit(RECEIPT_VERSION_0_2),
+  path: 'string',
+  facets: type.Record('string', Receipt02FacetEntrySchema),
 })
 
 /** Legacy (`1`) receipt: identity-only asset tuples, no owned-file records. */
@@ -102,11 +148,18 @@ const LegacyReceiptSchema = type({
 
 /**
  * A current receipt asset record with its owned inner-archive file paths.
- * Extends the adapter-agnostic identity so existing identity-only consumers
- * (which read `scope`/`type`/`name`) keep working while offline removal reads
- * `files` for exact owned-path deletion.
+ *
+ * Built on the engine's own asset identity, not a lockfile asset type: the
+ * receipt is machine-local state with its own schema and its own version
+ * axis, and inheriting a lockfile shape made it look like the two evolve
+ * together. They do not.
  */
-export interface ReceiptAsset extends LockfileAssetEntry {
+export interface ReceiptAsset extends AssetIdentity {
+  /**
+   * How this asset was materialized. Only the two arms that write bytes are
+   * admissible — an omitted asset is absent from the receipt entirely.
+   */
+  materialization: MaterializedDisposition
   files: string[]
 }
 
@@ -228,15 +281,22 @@ export function loadReceipt(projectDir: string): LoadReceiptResult {
     return { ok: false, reason: 'corrupt' }
   }
 
-  // Exact version dispatch (design D10): a current `0.2` receipt carries
-  // owned-file records; a legacy `1` receipt is identity-only and is refined
-  // to primary-only ownership (legacy installs could not materialize
-  // companions). Any other/absent version is corrupt — the shape is never
-  // sniffed to guess a schema.
+  // Exact version dispatch (design D10), mirroring the lockfile. Any
+  // other/absent version is corrupt — the shape is never sniffed to guess a
+  // schema. Each earlier version refines losslessly into the current shape:
+  //
+  //   `1`   — identity only. Refined to primary-only ownership, which is
+  //           exact rather than a guess: legacy installs could not
+  //           materialize companions, so there were none to record.
+  //   `0.2` — complete ownership, no disposition. Refined to authored
+  //           materialization, the only meaning a pre-disposition receipt
+  //           could have had.
   const observedVersion =
     typeof parsed === 'object' && parsed !== null && 'version' in parsed
       ? (parsed as { version?: unknown }).version
       : undefined
+
+  const authored = { kind: 'authored' } as const
 
   let embeddedPath: string
   let rawFacets: Record<string, { version: string; assets: ReadonlyArray<RawReceiptAsset> }>
@@ -245,17 +305,26 @@ export function loadReceipt(projectDir: string): LoadReceiptResult {
     if (validated instanceof type.errors) return { ok: false, reason: 'corrupt' }
     embeddedPath = validated.path
     rawFacets = validated.facets
-  } else if (observedVersion === LEGACY_RECEIPT_VERSION) {
-    const validated = LegacyReceiptSchema(parsed)
+  } else if (observedVersion === RECEIPT_VERSION_0_2) {
+    const validated = Receipt02Schema(parsed)
     if (validated instanceof type.errors) return { ok: false, reason: 'corrupt' }
     embeddedPath = validated.path
-    // Refine legacy identity-only assets to primary-only owned-file sets:
-    // the single conventional primary path per asset, no companions.
     rawFacets = {}
     for (const [name, entry] of Object.entries(validated.facets)) {
       rawFacets[name] = {
         version: entry.version,
-        assets: entry.assets.map((a) => ({ ...a, files: [primaryPathFor(a)] })),
+        assets: entry.assets.map((a) => ({ ...a, materialization: authored })),
+      }
+    }
+  } else if (observedVersion === LEGACY_RECEIPT_VERSION) {
+    const validated = LegacyReceiptSchema(parsed)
+    if (validated instanceof type.errors) return { ok: false, reason: 'corrupt' }
+    embeddedPath = validated.path
+    rawFacets = {}
+    for (const [name, entry] of Object.entries(validated.facets)) {
+      rawFacets[name] = {
+        version: entry.version,
+        assets: entry.assets.map((a) => ({ ...a, materialization: authored, files: [primaryPathFor(a)] })),
       }
     }
   } else {
@@ -298,7 +367,13 @@ export function loadReceipt(projectDir: string): LoadReceiptResult {
         })
         continue
       }
-      validAssets.push({ scope: asset.scope, type: asset.type, name: asset.name, files: [...asset.files] })
+      validAssets.push({
+        scope: asset.scope,
+        type: asset.type,
+        name: asset.name,
+        materialization: asset.materialization,
+        files: [...asset.files],
+      })
     }
     facets[facetName] = { version: entry.version, assets: validAssets }
   }
@@ -315,6 +390,7 @@ interface RawReceiptAsset {
   scope: 'system' | 'user' | 'project'
   type: 'skill' | 'agent' | 'command'
   name: string
+  materialization: MaterializedDisposition
   files: ReadonlyArray<string>
 }
 
@@ -358,45 +434,71 @@ export function writeReceipt(projectDir: string, receipt: Receipt): void {
 // ---------------------------------------------------------------------------
 
 /**
- * Create a fresh current (`0.2`) receipt from a lockfile. Used when no
- * receipt exists (first operation on the project) or when the existing
- * receipt fails validation (path mismatch, corruption).
+ * The disposition a locked asset was materialized under, or `undefined`
+ * when it was not materialized at all.
+ *
+ * Only a `0.3` entry records a disposition; earlier versions predate the
+ * concept and refine to authored. `undefined` means the asset is omitted —
+ * it belongs in the lockfile, which records the resolved asset SET, but not
+ * in the receipt, which records what is on disk.
+ */
+function materializedDispositionOf(asset: SupportedLockfileAssetEntry): MaterializedDisposition | undefined {
+  if (!('materialization' in asset)) return { kind: 'authored' }
+  return isMaterialized(asset.materialization) ? asset.materialization : undefined
+}
+
+/**
+ * Create a fresh current receipt from a lockfile. Used when no receipt
+ * exists (first operation on the project) or when the existing receipt fails
+ * validation (path mismatch, corruption).
  *
  * Seeds from the lockfile's entries — records what *should* be on disk.
- * Owned file paths come from a `0.2` lockfile asset's `files[]`; a legacy
- * (identity-only) lockfile asset seeds the single conventional primary path
- * (legacy could not materialize companions). Assets orphaned before this
- * change shipped are unrecoverable (explicit non-goal in the proposal).
+ * Owned file paths come from a `0.2`/`0.3` lockfile asset's `files[]`; a
+ * legacy identity-only asset seeds the single conventional primary path
+ * (legacy could not materialize companions). Omitted assets are excluded:
+ * bootstrapping from them would claim ownership of files that were never
+ * written, and the next removal pass would try to delete them. Assets
+ * orphaned before this change shipped are unrecoverable (explicit non-goal
+ * in the proposal).
  */
-export function bootstrapReceipt(projectDir: string, lockfile: Lockfile): Receipt {
+export function bootstrapReceipt(projectDir: string, lockfile: SupportedLockfile): Receipt {
   const canonical = realpathSync(projectDir)
   const facets: Record<string, ReceiptFacetEntry> = {}
 
   for (const [name, entry] of Object.entries(lockfile.facets)) {
-    facets[name] = {
-      version: entry.version,
-      assets: entry.assets.map((a) => ({
-        scope: a.scope,
-        type: a.type,
-        name: a.name,
-        files: ownedPathsForLockedAsset(a),
-      })),
+    const assets: ReceiptAsset[] = []
+    for (const asset of entry.assets) {
+      const materialization = materializedDispositionOf(asset)
+      if (materialization === undefined) continue
+      assets.push({
+        scope: asset.scope,
+        type: asset.type,
+        name: asset.name,
+        materialization,
+        files: ownedPathsForLockedAsset(asset),
+      })
     }
+    facets[name] = { version: entry.version, assets }
   }
 
   return { version: CURRENT_RECEIPT_VERSION, path: canonical, facets }
 }
 
 /**
- * Owned inner-archive paths for a locked asset. A `0.2` asset carries a
- * `files[]` array of `{ path, integrity }`; the receipt mirrors the paths
- * (no hashes). A legacy identity-only asset has no `files`, so the single
- * conventional primary path is used.
+ * Owned inner-archive paths for a locked asset.
+ *
+ * A `0.2` or `0.3` asset carries a `files[]` array of `{ path, integrity }`
+ * and the receipt mirrors the paths (never the hashes). A legacy `1` asset
+ * is identity-only, so the single conventional primary path is used —
+ * legacy installs could not materialize companions, which is what makes
+ * that refinement lossless rather than a guess.
+ *
+ * The `files` check is a discriminated narrow over the supported-version
+ * union, not a structural probe: legacy is the one arm without the field.
  */
-export function ownedPathsForLockedAsset(asset: LockfileAssetEntry): string[] {
-  const files = (asset as { files?: ReadonlyArray<{ path: string }> }).files
-  if (Array.isArray(files) && files.length > 0) {
-    return files.map((f) => f.path)
+export function ownedPathsForLockedAsset(asset: SupportedLockfileAssetEntry): string[] {
+  if ('files' in asset && asset.files.length > 0) {
+    return asset.files.map((f) => f.path)
   }
   return [primaryPathFor(asset)]
 }

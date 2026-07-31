@@ -7,10 +7,10 @@ import type {
   ReadAssetRequest,
 } from '@agent-facets/adapter'
 import { splitFrontMatter } from '@agent-facets/common'
-import type { LockfileAssetEntry, ResolvedFacetManifest } from '@agent-facets/protocol'
+import type { ResolvedFacetManifest } from '@agent-facets/protocol'
 import { type AdapterCompatibilityFailure, compatibilityFailureFor } from '../adapters/api-compatibility.ts'
 import type { InstallJournal } from './journal.ts'
-import type { OnLog, StageEvent } from './types.ts'
+import type { AssetIdentity, MaterializedAssetOwnership, OnLog, StageEvent } from './types.ts'
 import type { SkillCompanionBytes } from './verified-asset-plan.ts'
 
 /**
@@ -25,8 +25,8 @@ import type { SkillCompanionBytes } from './verified-asset-plan.ts'
  * The ordering (skills → agents → commands, alphabetical within each type)
  * is deterministic so lockfile diffs are stable across runs.
  */
-export function computeAssetList(manifest: ResolvedFacetManifest): LockfileAssetEntry[] {
-  const assets: LockfileAssetEntry[] = []
+export function computeAssetList(manifest: ResolvedFacetManifest): AssetIdentity[] {
+  const assets: AssetIdentity[] = []
 
   for (const name of Object.keys(manifest.skills ?? {}).sort()) {
     assets.push({ scope: 'project', type: 'skill', name })
@@ -47,14 +47,14 @@ export function computeAssetList(manifest: ResolvedFacetManifest): LockfileAsset
  * with the freshly-installed version (drift-proof behavior).
  */
 export function diffAssetsForDeletion(
-  oldAssets: readonly LockfileAssetEntry[],
-  newAssets: readonly LockfileAssetEntry[],
-): LockfileAssetEntry[] {
+  oldAssets: readonly MaterializedAssetOwnership[],
+  newAssets: readonly AssetIdentity[],
+): MaterializedAssetOwnership[] {
   const newKeys = new Set(newAssets.map(assetKey))
   return oldAssets.filter((asset) => !newKeys.has(assetKey(asset)))
 }
 
-function assetKey(asset: LockfileAssetEntry): string {
+function assetKey(asset: AssetIdentity): string {
   return `${asset.scope}:${asset.type}:${asset.name}`
 }
 
@@ -64,9 +64,14 @@ export interface MaterializeOptions {
   manifest: ResolvedFacetManifest
   /** Adapters already filtered to those with supportsInstall === true. */
   adapters: Adapter[]
-  /** Previous lockfile assets (OLD set); empty array when absent. */
-  oldAssets: readonly LockfileAssetEntry[]
-  newAssets: readonly LockfileAssetEntry[]
+  /**
+   * What this machine previously materialized for the facet (OLD set),
+   * already normalized to identity plus owned inner-archive paths. Empty
+   * array when nothing was materialized before.
+   */
+  oldAssets: readonly MaterializedAssetOwnership[]
+  /** The authored identities to materialize now (NEW set). */
+  newAssets: readonly AssetIdentity[]
   /**
    * Skill companion bytes for the assets being installed, keyed by
    * `skill:<name>` (from the resolver's verified asset plan). Absent on the
@@ -119,9 +124,9 @@ export interface MaterializeCounts {
 export type MaterializeFailure =
   | { kind: 'unsupported-adapter'; adapter: string }
   | { kind: 'incompatible-adapter'; failure: AdapterCompatibilityFailure }
-  | { kind: 'read-failed'; adapter: string; asset: LockfileAssetEntry; cause: string }
-  | { kind: 'install-failed'; adapter: string; asset: LockfileAssetEntry; cause: string }
-  | { kind: 'delete-failed'; adapter: string; asset: LockfileAssetEntry; cause: string }
+  | { kind: 'read-failed'; adapter: string; asset: AssetIdentity; cause: string }
+  | { kind: 'install-failed'; adapter: string; asset: AssetIdentity; cause: string }
+  | { kind: 'delete-failed'; adapter: string; asset: AssetIdentity; cause: string }
 
 /**
  * Result of one `materialize` call. Errors are values, not control
@@ -386,15 +391,12 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
  * companions (single-file behavior). Paths are converted from the full inner-
  * archive form to the skill-root-relative form the adapter contract uses.
  */
-export function ownedCompanionPathsOf(asset: LockfileAssetEntry): string[] {
+export function ownedCompanionPathsOf(asset: MaterializedAssetOwnership): string[] {
   if (asset.type !== 'skill') return []
-  const rawFiles = (asset as { files?: ReadonlyArray<string | { path: string }> }).files
-  if (!Array.isArray(rawFiles)) return []
   const skillRoot = `skills/${asset.name}/`
   const primary = `skills/${asset.name}/SKILL.md`
   const owned: string[] = []
-  for (const f of rawFiles) {
-    const path = typeof f === 'string' ? f : f.path
+  for (const path of asset.ownedPaths) {
     if (path === primary) continue
     owned.push(path.startsWith(skillRoot) ? path.slice(skillRoot.length) : path)
   }
@@ -410,7 +412,7 @@ export function ownedCompanionPathsOf(asset: LockfileAssetEntry): string[] {
  * empty owned set reproduce the single-file behavior.
  */
 function installRequestFor(
-  asset: LockfileAssetEntry,
+  asset: AssetIdentity,
   content: string,
   metadata: unknown,
   companions: CompanionMap,
@@ -430,14 +432,14 @@ function installRequestFor(
   return { assetType: asset.type, scope: asset.scope, name: asset.name, content, metadata }
 }
 
-function readRequestFor(asset: LockfileAssetEntry, ownedCompanionPaths: readonly string[]): ReadAssetRequest {
+function readRequestFor(asset: AssetIdentity, ownedCompanionPaths: readonly string[]): ReadAssetRequest {
   if (asset.type === 'skill') {
     return { assetType: 'skill', scope: asset.scope, name: asset.name, ownedCompanionPaths }
   }
   return { assetType: asset.type, scope: asset.scope, name: asset.name }
 }
 
-function deleteRequestFor(asset: LockfileAssetEntry, ownedCompanionPaths: readonly string[]): DeleteAssetRequest {
+function deleteRequestFor(asset: AssetIdentity, ownedCompanionPaths: readonly string[]): DeleteAssetRequest {
   if (asset.type === 'skill') {
     return { assetType: 'skill', scope: asset.scope, name: asset.name, ownedCompanionPaths }
   }
@@ -466,7 +468,7 @@ interface PreviousAsset {
  */
 async function readPrevious(
   adapter: Adapter,
-  asset: LockfileAssetEntry,
+  asset: AssetIdentity,
   ownedCompanionPaths: readonly string[],
 ): Promise<{ ok: true; previous: PreviousAsset | null } | { ok: false; cause: string }> {
   try {
@@ -492,7 +494,7 @@ async function readPrevious(
  */
 async function runUndoInstall(
   adapter: Adapter,
-  asset: LockfileAssetEntry,
+  asset: AssetIdentity,
   content: string,
   metadata: Record<string, unknown>,
   companions: CompanionMap,
@@ -511,7 +513,7 @@ async function runUndoInstall(
 /** Inverse delete during rollback. Same throw-on-`{ ok: false }` rule as {@link runUndoInstall}. */
 async function runUndoDelete(
   adapter: Adapter,
-  asset: LockfileAssetEntry,
+  asset: AssetIdentity,
   ownedCompanionPaths: readonly string[],
 ): Promise<void> {
   const result = await adapter.deleteAsset(deleteRequestFor(asset, ownedCompanionPaths))
@@ -576,13 +578,13 @@ function describeAssetFailure(failure: AdapterAssetFailure): string {
   }
 }
 
-function contentFor(manifest: ResolvedFacetManifest, asset: LockfileAssetEntry): string {
+function contentFor(manifest: ResolvedFacetManifest, asset: AssetIdentity): string {
   if (asset.type === 'skill') return manifest.skills?.[asset.name]?.prompt ?? ''
   if (asset.type === 'agent') return manifest.agents?.[asset.name]?.prompt ?? ''
   return manifest.commands?.[asset.name]?.prompt ?? ''
 }
 
-function descriptionFor(manifest: ResolvedFacetManifest, asset: LockfileAssetEntry): string {
+function descriptionFor(manifest: ResolvedFacetManifest, asset: AssetIdentity): string {
   if (asset.type === 'skill') return manifest.skills?.[asset.name]?.description ?? ''
   if (asset.type === 'agent') return manifest.agents?.[asset.name]?.description ?? ''
   return manifest.commands?.[asset.name]?.description ?? ''
@@ -590,7 +592,7 @@ function descriptionFor(manifest: ResolvedFacetManifest, asset: LockfileAssetEnt
 
 function adapterExtrasFor(
   manifest: ResolvedFacetManifest,
-  asset: LockfileAssetEntry,
+  asset: AssetIdentity,
   adapterName: string,
 ): Record<string, unknown> | undefined {
   const adapters =
@@ -615,7 +617,7 @@ function adapterExtrasFor(
  */
 function buildAssetMetadata(
   manifest: ResolvedFacetManifest,
-  asset: LockfileAssetEntry,
+  asset: AssetIdentity,
   adapterName: string,
 ): Record<string, unknown> {
   return {

@@ -81,7 +81,9 @@ export const listCommand: Command = {
     // specifier so the user can tell at a glance which entries need
     // `facet install` to materialize.
     const lockfileResult = loadLockfile(projectRoot)
-    const lockfile = lockfileResult.ok && lockfileResult.existed ? lockfileResult.data : undefined
+    // Reading only `version`, which every supported lockfile version carries,
+    // so no per-version dispatch is needed here.
+    const lockfile = lockfileResult.ok && lockfileResult.existed ? lockfileResult.parsed.lockfile : undefined
     if (!lockfileResult.ok) {
       // Surface lockfile damage but don't block the listing — degrade to
       // showing source specifiers only.

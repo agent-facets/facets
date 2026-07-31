@@ -1,4 +1,4 @@
-import type { Lockfile } from '@agent-facets/protocol'
+import type { SupportedLockfile } from '@agent-facets/protocol'
 import { satisfies } from '@agent-facets/protocol'
 import type { NormalizedFacetEntry } from '../manifest/mutations.ts'
 import { parseFacetSource } from '../sources/facet/parse-source.ts'
@@ -15,7 +15,7 @@ import type { LockfileDriftEntry } from './types.ts'
  */
 export function detectLockfileDrift(
   facets: Readonly<Record<string, NormalizedFacetEntry>>,
-  previousLockfile: Lockfile,
+  previousLockfile: SupportedLockfile,
   lockfileExisted: boolean,
 ): LockfileDriftEntry[] {
   const drift: LockfileDriftEntry[] = []
