@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { EditOperation } from '@agent-facets/engine'
 import { render } from 'ink-testing-library'
+import { visibleTerminalText } from '../../../__tests__/helpers/terminal-output.ts'
 import { FocusOrderProvider } from '../../context/focus-order-context.ts'
 import { type FormState, FormStateProvider } from '../../context/form-state-context.ts'
 import { ConfirmView } from '../create/confirm-view.tsx'
@@ -59,7 +60,7 @@ function renderEdit(isPrivate: boolean) {
 describe('create confirmation summary privacy', () => {
   test('shows Public for a public facet', () => {
     const instance = renderCreate(false)
-    const frame = instance.lastFrame() ?? ''
+    const frame = visibleTerminalText(instance.lastFrame() ?? '')
     expect(frame).toContain('Privacy:')
     expect(frame).toContain('Public')
     instance.unmount()
@@ -67,7 +68,7 @@ describe('create confirmation summary privacy', () => {
 
   test('shows Private for a private facet', () => {
     const instance = renderCreate(true)
-    expect(instance.lastFrame()).toContain('Private')
+    expect(visibleTerminalText(instance.lastFrame() ?? '')).toContain('Private')
     instance.unmount()
   })
 })
@@ -75,7 +76,7 @@ describe('create confirmation summary privacy', () => {
 describe('edit confirmation summary privacy', () => {
   test('shows Public for a public facet', () => {
     const instance = renderEdit(false)
-    const frame = instance.lastFrame() ?? ''
+    const frame = visibleTerminalText(instance.lastFrame() ?? '')
     expect(frame).toContain('Privacy:')
     expect(frame).toContain('Public')
     instance.unmount()
@@ -83,7 +84,7 @@ describe('edit confirmation summary privacy', () => {
 
   test('shows Private for a private facet', () => {
     const instance = renderEdit(true)
-    expect(instance.lastFrame()).toContain('Private')
+    expect(visibleTerminalText(instance.lastFrame() ?? '')).toContain('Private')
     instance.unmount()
   })
 })
@@ -104,7 +105,7 @@ describe('edit confirmation lists queued README operations', () => {
       { op: 'write-manifest', manifest: { name: 'cowsay', version: '0.0.0', files: ['README.md'] } },
       { op: 'write-file', path: 'README.md', content: '# cowsay\n' },
     ])
-    const frame = instance.lastFrame() ?? ''
+    const frame = visibleTerminalText(instance.lastFrame() ?? '')
     expect(frame).toContain('File changes:')
     expect(frame).toContain('Write README.md')
     instance.unmount()
@@ -115,7 +116,7 @@ describe('edit confirmation lists queued README operations', () => {
       { op: 'write-manifest', manifest: { name: 'cowsay', version: '0.0.0' } },
       { op: 'delete-file', path: 'README' },
     ])
-    expect(instance.lastFrame() ?? '').toContain('Delete README')
+    expect(visibleTerminalText(instance.lastFrame() ?? '')).toContain('Delete README')
     instance.unmount()
   })
 })

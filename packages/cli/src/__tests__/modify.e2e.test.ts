@@ -16,7 +16,7 @@ afterAll(async () => {
   await rm(testDir, { recursive: true, force: true })
 })
 
-const runCli = (...args: string[]) => spawnCli(args, { env: { NO_COLOR: '1' } })
+const runCli = (...args: string[]) => spawnCli(args)
 
 /**
  * Scaffold a fresh facet in its own dir and return the path. Includes a skill

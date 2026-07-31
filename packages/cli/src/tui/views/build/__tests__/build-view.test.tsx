@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
 import { render } from 'ink-testing-library'
 import { createElement } from 'react'
+import { contentFrame, visibleContentFrame } from '../../../../__tests__/helpers/terminal-output.ts'
 import { BuildView } from '../build-view.tsx'
 
 /**
@@ -15,14 +16,6 @@ import { BuildView } from '../build-view.tsx'
 
 function settle(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 50))
-}
-
-function findContentFrame(frames: ReadonlyArray<string | undefined>): string {
-  for (let i = frames.length - 1; i >= 0; i--) {
-    const frame = frames[i]
-    if (frame !== undefined && frame.trim().length > 0) return frame
-  }
-  throw new Error(`no content frame found among ${frames.length} captured frames`)
 }
 
 /** An adapter whose runtime API declaration is unsupported. */
@@ -54,13 +47,18 @@ describe('BuildView — adapter preflight rendering', () => {
         }),
       )
       await settle()
-      const frame = findContentFrame(frames)
+      const frame = visibleContentFrame(frames)
       // Distinct preflight block, not a stage failure.
       expect(frame).toContain('incompatible adapter')
       expect(frame).toContain('build did not start')
       expect(frame).toContain('future-adapter')
-      // "Parsing manifest" must not be marked failed (✕).
-      const parsingLine = frame.split('\n').find((l) => l.includes('Parsing manifest')) ?? ''
+      // "Parsing manifest" must not be marked failed (✕). This one is about
+      // layout — which row the mark sits on — so it reads the frame with its
+      // rows intact rather than the unwrapped prose.
+      const parsingLine =
+        contentFrame(frames)
+          .split('\n')
+          .find((l) => l.includes('Parsing manifest')) ?? ''
       expect(parsingLine).not.toContain('✕')
       expect(failureCount).toBe(1)
     } finally {

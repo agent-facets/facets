@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { render } from 'ink-testing-library'
+import { visibleTerminalText } from '../../../__tests__/helpers/terminal-output.ts'
 import { FocusOrderProvider } from '../../context/focus-order-context.ts'
 import { BooleanToggle } from '../boolean-toggle.tsx'
 
@@ -37,23 +38,23 @@ function renderToggle(props: {
 describe('BooleanToggle — rendering', () => {
   test('shows Public when value is false', () => {
     const instance = renderToggle({ value: false })
-    expect(instance.lastFrame()).toContain('Public')
+    expect(visibleTerminalText(instance.lastFrame() ?? '')).toContain('Public')
     instance.unmount()
   })
 
   test('shows Private when value is true', () => {
     const instance = renderToggle({ value: true })
-    expect(instance.lastFrame()).toContain('Private')
+    expect(visibleTerminalText(instance.lastFrame() ?? '')).toContain('Private')
     instance.unmount()
   })
 
   test('shows key hints only when focused', () => {
     const focused = renderToggle({ value: false, focused: true })
-    expect(focused.lastFrame()).toContain('to toggle')
+    expect(visibleTerminalText(focused.lastFrame() ?? '')).toContain('to toggle')
     focused.unmount()
 
     const blurred = renderToggle({ value: false, focused: false })
-    expect(blurred.lastFrame()).not.toContain('to toggle')
+    expect(visibleTerminalText(blurred.lastFrame() ?? '')).not.toContain('to toggle')
     blurred.unmount()
   })
 })

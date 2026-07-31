@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { render } from 'ink-testing-library'
 import { createElement } from 'react'
+import { visibleTerminalText } from '../../../__tests__/helpers/terminal-output.ts'
 import { LoginMenu } from '../login-menu.tsx'
 
 const KEY_ENTER = '\r'
@@ -17,7 +18,7 @@ function afterEsc(): Promise<void> {
 describe('LoginMenu — menu phase', () => {
   test('shows both options with the browser option marked coming soon', () => {
     const instance = render(createElement(LoginMenu, { onSubmitToken: () => {}, onCancel: () => {} }))
-    const frame = instance.lastFrame() ?? ''
+    const frame = visibleTerminalText(instance.lastFrame() ?? '')
     expect(frame).toContain('Paste a personal access token')
     expect(frame).toContain('Sign in via browser')
     expect(frame).toContain('coming soon')
@@ -46,7 +47,7 @@ describe('LoginMenu — token phase', () => {
     const instance = render(createElement(LoginMenu, { onSubmitToken: () => {}, onCancel: () => {} }))
     instance.stdin.write(KEY_ENTER)
     await nextTick()
-    expect(instance.lastFrame()).toContain('Paste your personal access token')
+    expect(visibleTerminalText(instance.lastFrame() ?? '')).toContain('Paste your personal access token')
     instance.unmount()
   })
 
@@ -64,7 +65,7 @@ describe('LoginMenu — token phase', () => {
     await nextTick()
     instance.stdin.write('fct_pub_abc')
     await nextTick()
-    const frame = instance.lastFrame() ?? ''
+    const frame = visibleTerminalText(instance.lastFrame() ?? '')
     // The raw token must not appear; masked asterisks render instead.
     expect(frame).not.toContain('fct_pub_abc')
     expect(frame).toContain('*')
@@ -82,7 +83,7 @@ describe('LoginMenu — token phase', () => {
         onCancel: () => {},
       }),
     )
-    const frame = instance.lastFrame() ?? ''
+    const frame = visibleTerminalText(instance.lastFrame() ?? '')
     expect(frame).toContain('invalid token — try again')
     expect(frame).toContain('Paste your personal access token')
     instance.unmount()

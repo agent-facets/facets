@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { spawnCli } from './helpers/cli-process.ts'
 
-const runCli = (...args: string[]) => spawnCli(args, { env: { NO_COLOR: '1' } })
+const runCli = (...args: string[]) => spawnCli(args)
 
 describe('facet instructions', () => {
   test('default topic prints the overview and points at authoring', async () => {

@@ -3,6 +3,7 @@ import { fixtures, type WirePackageListItem } from '@agent-facets/engine'
 import { render as inkRender } from 'ink-testing-library'
 import { createElement } from 'react'
 import { captureStderr } from '../../../__tests__/helpers/capture-std.ts'
+import { contentFrame, visibleContentFrame, visibleTerminalText } from '../../../__tests__/helpers/terminal-output.ts'
 import { type SearchResult, SearchView } from '../../../tui/views/search/search-view.tsx'
 import { searchCommand } from '../index.ts'
 
@@ -27,13 +28,9 @@ function mockFetch(items: WirePackageListItem[]): () => Promise<SearchResult> {
 /** Wait for async effects to settle. */
 const settle = () => new Promise((r) => setTimeout(r, 100))
 
-/** Find the last non-empty frame. */
+/** The visible text of the last frame that rendered anything. */
 function lastContentFrame(instance: ReturnType<typeof inkRender>): string {
-  const frames = [...instance.frames].reverse()
-  for (const f of frames) {
-    if (f.trim().length > 0) return f
-  }
-  return instance.lastFrame() ?? ''
+  return visibleContentFrame(instance.frames)
 }
 
 describe('SearchView — rendering', () => {
@@ -45,7 +42,7 @@ describe('SearchView — rendering', () => {
         onComplete: () => {},
       }),
     )
-    const f = instance.lastFrame() ?? ''
+    const f = visibleTerminalText(instance.lastFrame() ?? '')
     expect(f).toContain("Searching registry for 'cowsay'")
     instance.unmount()
   })
@@ -203,7 +200,10 @@ describe('SearchView — D10: assetCounts rendering', () => {
     const f = lastContentFrame(instance)
     expect(f).toContain('empty')
     expect(f).toContain('v1.0.0')
-    expect(f).not.toMatch(/\d+\s+(agent|command|server|skill)/)
+    // A count and its noun render on one row, so this reads the frame with
+    // its rows intact — unwrapped, `\s+` would span two rows and could match
+    // text that never appeared together.
+    expect(contentFrame(instance.frames)).not.toMatch(/\d+\s+(agent|command|server|skill)/)
   })
 })
 

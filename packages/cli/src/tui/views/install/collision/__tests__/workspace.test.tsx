@@ -4,6 +4,7 @@ import type { FacetContribution } from '@agent-facets/protocol'
 import { planMaterialization } from '@agent-facets/protocol'
 import { render } from 'ink-testing-library'
 import { createElement } from 'react'
+import { stripTerminalControls, visibleTerminalText } from '../../../../../__tests__/helpers/terminal-output.ts'
 import { CollisionWorkspace } from '../workspace.tsx'
 
 const KEY = {
@@ -57,7 +58,7 @@ describe('CollisionWorkspace — overview', () => {
     const { app } = mount([skill('alpha', 'review', 'deploy'), skill('beta', 'review', 'deploy')])
     await nextTick()
 
-    const frame = app.lastFrame() ?? ''
+    const frame = visibleTerminalText(app.lastFrame() ?? '')
     expect(frame).toContain('review')
     expect(frame).toContain('deploy')
     expect(frame).toContain('alpha')
@@ -70,7 +71,7 @@ describe('CollisionWorkspace — overview', () => {
     const { app, resolutions } = mount(TWO_WAY)
     await nextTick()
 
-    expect(app.lastFrame() ?? '').toContain('resolve every group first')
+    expect(visibleTerminalText(app.lastFrame() ?? '')).toContain('resolve every group first')
 
     // Walk to the confirm row and press it anyway.
     await press(app, KEY.down, KEY.enter)
@@ -108,7 +109,7 @@ describe('CollisionWorkspace — overview', () => {
     await nextTick()
     await press(app, KEY.enter, KEY.right, KEY.enter)
     // The editor really is open.
-    expect(app.lastFrame() ?? '').toContain('type a name')
+    expect(visibleTerminalText(app.lastFrame() ?? '')).toContain('type a name')
 
     await press(app, KEY.ctrlC)
 
@@ -125,7 +126,7 @@ describe('CollisionWorkspace — resolving a group', () => {
     // Open the group, then put both claimants on Omit. Arrows only
     // move the cursor; Enter applies.
     await press(app, KEY.enter, KEY.right, KEY.right, KEY.enter, KEY.down, KEY.right, KEY.right, KEY.enter)
-    expect(app.lastFrame() ?? '').toContain('not materialized')
+    expect(visibleTerminalText(app.lastFrame() ?? '')).toContain('not materialized')
 
     // Back to the overview, onto the confirm row, submit.
     await press(app, KEY.escape, KEY.down, KEY.enter)
@@ -145,8 +146,7 @@ describe('CollisionWorkspace — resolving a group', () => {
 
     // An alias is not a decision until it has a name, so nothing is
     // recorded until the editor is submitted.
-    expect(app.lastFrame() ?? '').toContain('Enter')
-    expect(app.lastFrame() ?? '').toContain('apply')
+    expect(visibleTerminalText(app.lastFrame() ?? '')).toContain('Enter apply')
     app.unmount()
   })
 
@@ -157,12 +157,12 @@ describe('CollisionWorkspace — resolving a group', () => {
 
     // Clear the seeded value and type something illegal.
     await press(app, ...'\u007f'.repeat(10).split(''), 'R')
-    const frame = app.lastFrame() ?? ''
+    const frame = visibleTerminalText(app.lastFrame() ?? '')
     expect(frame.toLowerCase()).toContain('lowercase')
 
     // Enter is inert while invalid.
     await press(app, KEY.enter)
-    expect(app.lastFrame() ?? '').toContain('lowercase')
+    expect(visibleTerminalText(app.lastFrame() ?? '')).toContain('lowercase')
     expect(resolutions).toHaveLength(0)
     app.unmount()
   })
@@ -176,7 +176,7 @@ describe('CollisionWorkspace — resolving a group', () => {
     await press(app, ...'vendor-review'.split(''))
     await press(app, KEY.enter)
 
-    expect(app.lastFrame() ?? '').toContain('vendor-review')
+    expect(visibleTerminalText(app.lastFrame() ?? '')).toContain('vendor-review')
 
     await press(app, KEY.escape, KEY.down, KEY.enter)
 
@@ -196,7 +196,7 @@ describe('CollisionWorkspace — resolving a group', () => {
     await press(app, ...'zzz'.split(''))
     await press(app, KEY.escape)
 
-    const frame = app.lastFrame() ?? ''
+    const frame = visibleTerminalText(app.lastFrame() ?? '')
     expect(frame).not.toContain('zzz')
     // Still the group view, still on Keep.
     expect(frame).toContain('(Keep)')
@@ -221,7 +221,7 @@ describe('CollisionWorkspace — focus across a group split', () => {
 
     // Move onto gamma, the claimant the alias dragged in.
     await press(app, KEY.down, KEY.down)
-    expect(app.lastFrame() ?? '').toContain('gamma')
+    expect(visibleTerminalText(app.lastFrame() ?? '')).toContain('gamma')
 
     // Withdraw the alias from alpha's side by omitting gamma instead: put
     // gamma on Omit, which resolves the contest and splits the component.
@@ -253,11 +253,14 @@ describe('CollisionWorkspace — focus across a group split', () => {
     await press(app, KEY.enter)
     await press(app, KEY.escape)
 
-    const frame = app.lastFrame() ?? ''
-    expect(frame).toContain('audit')
-    expect(frame).toContain('(1 asset)')
+    expect(visibleTerminalText(app.lastFrame() ?? '')).toContain('audit')
+    // The heading is one row, so this reads the frame with its rows intact:
+    // unwrapped, `\s+` would bridge the heading and the count on the row
+    // below and report a blank heading that never rendered.
+    const rows = stripTerminalControls(app.lastFrame() ?? '')
+    expect(rows).toContain('(1 asset)')
     // No heading line that is just the status tag followed by the count.
-    expect(frame).not.toMatch(/resolved\s+\(1 asset\)/)
+    expect(rows).not.toMatch(/resolved\s+\(1 asset\)/)
     app.unmount()
   })
 })
@@ -272,7 +275,7 @@ describe('CollisionWorkspace — conflicts the user creates', () => {
     await press(app, ...'audit'.split(''))
     await press(app, KEY.enter)
 
-    const frame = app.lastFrame() ?? ''
+    const frame = visibleTerminalText(app.lastFrame() ?? '')
     // The dragged-in asset is now on screen, in the same group, so the
     // user can fix either side without hunting for the other.
     expect(frame).toContain('gamma')
