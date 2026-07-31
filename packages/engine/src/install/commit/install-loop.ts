@@ -1,12 +1,12 @@
 import type { Adapter } from '@agent-facets/adapter'
-import type { CurrentLockfileFacet } from '@agent-facets/protocol'
+import type { CurrentLockfileFacet, MaterializedAsset } from '@agent-facets/protocol'
 import { classifyOutcome } from '../classify-outcome.ts'
 import type { InstallJournal } from '../journal.ts'
 import { materialize } from '../materialize.ts'
 import { materializeFailureToRunInstall } from '../materialize-failure.ts'
-import { ownedPathsForLockedAsset } from '../receipt.ts'
-import type { AssetIdentity, FacetOutcome, OnLog, RunInstallFailure, StageEvent } from '../types.ts'
+import type { FacetOutcome, OnLog, RunInstallFailure, StageEvent } from '../types.ts'
 import type { ComposedPlan } from './compose.ts'
+import type { PreviousOwnership } from './ownership.ts'
 import type { ResolvedFacetRecord } from './resolve-all.ts'
 
 export interface InstallLoopSuccess {
@@ -24,6 +24,12 @@ export interface InstallLoopArgs {
   resolved: readonly ResolvedFacetRecord[]
   /** The collision-free global plan. See {@link compose}. */
   plan: ComposedPlan
+  /**
+   * The global previous-ownership index, keyed by effective adapter identity.
+   * Obsolete identities have already been deleted; what remains here tells
+   * each write which owned companion paths its replacement may remove.
+   */
+  previousOwnership: ReadonlyMap<string, PreviousOwnership>
   adapters: ReadonlyArray<Adapter>
   journal: InstallJournal
   signal?: AbortSignal
@@ -44,7 +50,7 @@ export interface InstallLoopArgs {
  * only reports; it never unwinds.
  */
 export async function installFacets(args: InstallLoopArgs): Promise<InstallLoopResult> {
-  const { resolved, plan, adapters, journal, signal, onStage, onLog } = args
+  const { resolved, plan, previousOwnership, adapters, journal, signal, onStage, onLog } = args
 
   // Entries come from Compose, which is where dispositions were decided.
   // Apply reports what it wrote; it does not re-derive what should be locked.
@@ -52,14 +58,19 @@ export async function installFacets(args: InstallLoopArgs): Promise<InstallLoopR
   const perFacet: FacetOutcome[] = []
   let totalAssets = 0
 
-  // Authored identities to write, per facet. Omitted assets are absent: they
-  // remain in the lockfile (the resolved SET) but are never materialized.
-  const materializedByFacet = new Map<string, AssetIdentity[]>()
+  // Assets to write, per facet, carrying both identities. Omitted assets are
+  // absent: they remain in the lockfile (the resolved SET) but are never
+  // materialized.
+  //
+  // Writes are safe to group by facet because the plan guarantees every
+  // effective identity is unique — two facets can no longer target the same
+  // file, so no ordering between them can decide a winner. Deletion had no
+  // such guarantee, which is why it moved to a global pass that already ran.
+  const materializedByFacet = new Map<string, MaterializedAsset[]>()
   for (const asset of plan.materialized) {
     const list = materializedByFacet.get(asset.facet)
-    const identity = { scope: asset.scope, type: asset.type, name: asset.authoredName }
-    if (list) list.push(identity)
-    else materializedByFacet.set(asset.facet, [identity])
+    if (list) list.push(asset)
+    else materializedByFacet.set(asset.facet, [asset])
   }
 
   for (const record of resolved) {
@@ -68,23 +79,13 @@ export async function installFacets(args: InstallLoopArgs): Promise<InstallLoopR
       return { ok: false, failure: { code: 'ABORTED' } }
     }
 
-    // Previous ownership comes from the locked entry, normalized here: only
-    // this call site knows the entry is a lockfile asset rather than a
-    // receipt record, so it is the right place to answer that question.
-    const oldAssets = (previousEntry?.assets ?? []).map((asset) => ({
-      scope: asset.scope,
-      type: asset.type,
-      name: asset.name,
-      ownedPaths: ownedPathsForLockedAsset(asset),
-    }))
-
     onStage({ kind: 'facet-stage', facet: facetName, stage: 'materialize' })
     const materializeResult = await materialize({
       facetName,
       manifest: record.resolved,
       adapters: [...adapters],
-      oldAssets,
       newAssets: materializedByFacet.get(facetName) ?? [],
+      previousOwnership,
       companionBytes: record.companionBytes,
       journal,
       onLog,

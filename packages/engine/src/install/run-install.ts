@@ -5,14 +5,18 @@ import type { NormalizedProjectManifest } from '../manifest/mutations.ts'
 import { describeManifestFailure, loadProjectManifest } from '../manifest/project-files.ts'
 import { compose } from './commit/compose.ts'
 import { applyManifestWritePolicy, mergeDeltaIntoManifest } from './commit/delta.ts'
-import { removeDriftedFacets } from './commit/drift-removal.ts'
+import { removedFacetOutcomes } from './commit/drift-removal.ts'
+import { finalizeMaterializationIntent } from './commit/finalize-intent.ts'
 import { installFacets } from './commit/install-loop.ts'
+import { buildPreviousOwnership, obsoleteOwnership } from './commit/ownership.ts'
 import { resolveAll } from './commit/resolve-all.ts'
 import { buildUpdatedReceipt, commitProjectFiles, type LockedSetCommit } from './commit/tri-write.ts'
-import { detectLockfileDrift } from './detect-lockfile-drift.ts'
+import { checkFrozenConsistency } from './frozen-gates.ts'
 import { InstallJournal } from './journal.ts'
 import { acquireInstallLock } from './lockfile-guard.ts'
 import { FACETS_LOCK_FILE, loadLockfile } from './lockfile-io.ts'
+import { deleteObsoleteAssets } from './materialize.ts'
+import { materializeFailureToRunInstall } from './materialize-failure.ts'
 import { bootstrapReceipt, loadReceipt, type Receipt } from './receipt.ts'
 import { rollbackAndFail, summarize } from './run-install-support.ts'
 import type { InstallDelta, RunInstallFailure, RunInstallOptions, RunInstallResult, StageEvent } from './types.ts'
@@ -77,7 +81,17 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
   const installLock = lockResult.lock
 
   try {
-    // 3. Load existing lockfile (or skeleton).
+    // 3. Frozen mode can never carry a delta: adding or removing a facet
+    //    changes the locked set by definition. Checked before the lockfile is
+    //    even read, so `facet add --frozen-lockfile` against a corrupt
+    //    lockfile reports the operation it cannot perform rather than a file
+    //    it never needed to open.
+    const hasDelta = delta.additions.length > 0 || delta.removals.length > 0
+    if (frozenLockfile && hasDelta) {
+      return failureNoMutation({ code: 'FROZEN_WITH_DELTA' })
+    }
+
+    // 4. Load existing lockfile (or skeleton).
     const lockfileResult = loadLockfile(projectRoot)
     if (!lockfileResult.ok) {
       return failureNoMutation({
@@ -144,13 +158,15 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     //    receipt but not the lockfile) are not lockfile drift and are cleaned
     //    up normally under frozen — only the receipt is rewritten.
     const merged = mergeDeltaIntoManifest(projectManifest.facets, delta)
-    if (frozenLockfile && merged.hasDelta) {
-      return failureNoMutation({ code: 'FROZEN_WITH_DELTA' })
-    }
     if (frozenLockfile) {
-      const drift = detectLockfileDrift(projectManifest.facets, previousLockfile, lockfileResult.existed)
-      if (drift.length > 0) {
-        return failureNoMutation({ code: 'LOCKFILE_DRIFT', facets: drift })
+      const inconsistent = checkFrozenConsistency({
+        facets: projectManifest.facets,
+        previousLockfile,
+        lockfileVersion: lockfileResult.parsed.lockfileVersion,
+        lockfileExisted: lockfileResult.existed,
+      })
+      if (inconsistent !== null) {
+        return failureNoMutation(inconsistent)
       }
     }
 
@@ -196,9 +212,50 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     //    actually happened.
     const journal = new InstallJournal()
 
+    // 7a. Index what this machine already has, keyed by EFFECTIVE adapter
+    //     identity rather than by facet. Both halves of Apply read it: the
+    //     delete pass to find identities nothing wants any more, the write
+    //     pass to learn which owned companion paths a replacement may remove.
+    const previousOwnership = buildPreviousOwnership(receipt, previousLockfile)
+
+    // 7b. Facets being dropped, for the summary. Computed before the delete
+    //     pass so the progress events precede the work they describe; the
+    //     deletion itself is global, not per facet.
+    const removedOutcomes = removedFacetOutcomes({
+      desiredFacets: merged.desiredFacets,
+      receipt,
+      previousLockfile,
+    })
+    for (const outcome of removedOutcomes) {
+      if (outcome.kind !== 'removed') continue
+      onStage({ kind: 'drift-removal', facet: outcome.name, oldVersion: outcome.oldVersion })
+    }
+
+    // 8. Apply, pass 1: delete every obsolete effective identity, once.
+    //    Deletes precede writes globally so a name transferring between
+    //    facets is never deleted after its new owner has written it, and an
+    //    identity still claimed by any desired asset is retained outright.
+    const obsolete = obsoleteOwnership(previousOwnership, plan.materialized)
+    const deletion = await deleteObsoleteAssets({
+      adapters: [...adapters],
+      obsolete,
+      journal,
+      onLog,
+    })
+    if (!deletion.ok) {
+      const failure = materializeFailureToRunInstall(deletion.facets[0] ?? '', deletion.failure)
+      return await rollbackAndFail(journal, failure, onLog)
+    }
+
+    if (signal?.aborted) {
+      return await rollbackAndFail(journal, { code: 'ABORTED' }, onLog)
+    }
+
+    // 9. Apply, pass 2: write every desired asset under its effective name.
     const loop = await installFacets({
       resolved,
       plan,
+      previousOwnership,
       adapters,
       journal,
       signal,
@@ -209,22 +266,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       return await rollbackAndFail(journal, loop.failure, onLog)
     }
     const { newFacetEntries, perFacet, totalAssets } = loop.value
-
-    // 8. Receipt-driven drift removal.
-    const drift = await removeDriftedFacets({
-      desiredFacets: merged.desiredFacets,
-      receipt,
-      previousLockfile,
-      adapters,
-      journal,
-      signal,
-      onStage,
-      onLog,
-    })
-    if (!drift.ok) {
-      return await rollbackAndFail(journal, drift.failure, onLog)
-    }
-    perFacet.push(...drift.value.outcomes)
+    perFacet.push(...removedOutcomes)
 
     if (signal?.aborted) {
       return await rollbackAndFail(journal, { code: 'ABORTED' }, onLog)
@@ -247,6 +289,16 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     if (!frozenLockfile && merged.hasDelta) {
       applyManifestWritePolicy(merged.desiredFacets, delta.additions, newFacetEntries)
     }
+
+    // Finalize project intent. This is where a resolver's accepted choices
+    // become durable and where a stale override is dropped — both in memory,
+    // both reaching disk only through the write below. Frozen mode never
+    // rewrites the manifest, so it neither persists nor prunes: a stale
+    // override under frozen is drift, reported by the gate above.
+    const pruned = frozenLockfile
+      ? []
+      : finalizeMaterializationIntent(merged.desiredFacets, plan.overrides, plan.staleOverrides)
+
     const written = commitProjectFiles({
       projectRoot,
       manifestDocument: projectManifest.document,
@@ -262,6 +314,17 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       onStage({ kind: 'lockfile-write', path: join(projectRoot, FACETS_LOCK_FILE) })
     }
 
+    // Reported only now: before the write, the prune had not happened, and a
+    // failed transaction leaves every override on disk untouched.
+    for (const entry of pruned) {
+      onStage({
+        kind: 'stale-override-pruned',
+        facet: entry.facet,
+        assetType: entry.type,
+        authoredName: entry.authoredName,
+      })
+    }
+
     onStage({ kind: 'install-complete', outcome: 'success' })
 
     return {
@@ -270,7 +333,9 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       // current one — reporting the composed set would claim a write that
       // never happened.
       lockfile: lockedSet.kind === 'write' ? lockedSet.newLockfile : previousLockfile,
-      summary: summarize(perFacet, totalAssets, drift.value.removedAssets),
+      // `deletion.deleted` counts identities that actually existed on disk,
+      // across every adapter — not a per-facet estimate multiplied out.
+      summary: summarize(perFacet, totalAssets, deletion.deleted),
       perFacet,
       serverWarnings,
     }

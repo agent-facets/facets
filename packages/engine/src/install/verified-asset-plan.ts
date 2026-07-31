@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { ValidationError } from '@agent-facets/common'
+import type { AssetType, Scope, ValidationError } from '@agent-facets/common'
 import { type CurrentLockfileAssetEntry, type FacetManifest, planArchiveEntries } from '@agent-facets/protocol'
 import { computeDirIntegrity } from '../cache/index.ts'
 
@@ -205,8 +205,23 @@ export function authoredAssetEntries(plan: VerifiedAssetPlan): CurrentLockfileAs
 export type SkillCompanionBytes = Record<string, Uint8Array>
 
 /**
+ * The key skill companion bytes are stored and retrieved under.
+ *
+ * Deliberately AUTHORED-domain, and deliberately one function shared by the
+ * producer and the consumer. Companion bytes are keyed by the name that
+ * determines where they came from in the archive, never by the name they are
+ * written under — and a lookup miss is indistinguishable from a genuinely
+ * companion-less skill, so a producer and consumer that disagreed about the
+ * key would silently strip every companion from an aliased bundle instead of
+ * failing.
+ */
+export function authoredCompanionKey(scope: Scope, type: AssetType, authoredName: string): string {
+  return `${scope}:${type}:${authoredName}`
+}
+
+/**
  * Read the companion bytes for every skill in a verified asset plan from the
- * verified directory, keyed by `type:name` asset identity.
+ * verified directory, keyed by {@link authoredCompanionKey}.
  *
  * Companion bytes are read verbatim (opaque `Uint8Array`) — never decoded or
  * front-matter processed. Paths are converted from the plan's full inner-
@@ -234,10 +249,7 @@ export function readSkillCompanionBytes(
       const relative = file.path.startsWith(skillRoot) ? file.path.slice(skillRoot.length) : file.path
       companions[relative] = new Uint8Array(readFileSync(join(verifiedDir, file.path)))
     }
-    // Keyed by the `scope:type:name` identity `materialize` uses to look this
-    // up. Companion bytes only exist for `project`-scoped skills today (the
-    // only scope the plan mints), so the scope prefix is fixed.
-    byAsset.set(`${asset.scope}:skill:${asset.name}`, companions)
+    byAsset.set(authoredCompanionKey(asset.scope, asset.type, asset.name), companions)
   }
   return byAsset
 }

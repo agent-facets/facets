@@ -1,6 +1,12 @@
 import type { Adapter } from '@agent-facets/adapter'
 import type { AssetType, Scope, ValidationError } from '@agent-facets/common'
-import type { CollisionGroup, IntegrityFailure, StaleOverride, SupportedLockfile } from '@agent-facets/protocol'
+import type {
+  CollisionGroup,
+  IntegrityFailure,
+  MaterializationDisposition,
+  StaleOverride,
+  SupportedLockfile,
+} from '@agent-facets/protocol'
 import type { AdapterCompatibilityFailure } from '../adapters/api-compatibility.ts'
 import type { RegistryError } from '../registry/index.ts'
 import type { ParseError, Source } from '../sources/facet/types.ts'
@@ -120,6 +126,16 @@ export type StageEvent =
    * receipt's say-so — while the rest of the receipt is processed.
    */
   | { kind: 'receipt-invalid-asset'; facet: string; asset: string; reason: string }
+  /**
+   * A materialization override was dropped because the resolved facet version
+   * no longer contains the asset it named.
+   *
+   * A dedicated event rather than a verbose log line: this silently changes
+   * what `facets.json` says, so a user who never passes `--verbose` still has
+   * to be told. Emitted only after the transaction commits — the prune is not
+   * real until then.
+   */
+  | { kind: 'stale-override-pruned'; facet: string; assetType: AssetType; authoredName: string }
   | { kind: 'adapter-complete'; facet: string; adapter: string }
   | { kind: 'asset-installed'; facet: string; adapter: string; asset: AssetIdentity }
   | { kind: 'asset-deleted'; facet: string; adapter: string; asset: AssetIdentity }
@@ -149,6 +165,30 @@ export type LockfileDriftEntry =
   | { name: string; reason: 'unsatisfied'; manifestSpec: string; lockedVersion: string }
   | { name: string; reason: 'orphaned'; lockedVersion: string }
   | { name: string; reason: 'source-changed'; manifestSpec: string; lockedSource: string }
+  /**
+   * The manifest's materialization intent for an asset disagrees with the
+   * disposition the lockfile recorded. Reproducing recorded state cannot also
+   * apply a new decision, so frozen mode refuses rather than picking one.
+   */
+  | {
+      name: string
+      reason: 'materialization-drift'
+      assetType: AssetType
+      authoredName: string
+      manifest: MaterializationDisposition
+      locked: MaterializationDisposition
+    }
+  /**
+   * An override names an asset the locked content does not contain. A normal
+   * install prunes it inside its transaction; frozen mode writes nothing, so
+   * it can only report it.
+   */
+  | { name: string; reason: 'stale-override'; assetType: AssetType; authoredName: string }
+  /**
+   * The manifest records materialization intent the loaded lockfile format
+   * cannot express. Reproduction would have to invent the missing half.
+   */
+  | { name: string; reason: 'materialization-unrepresentable'; lockfileVersion: number; requiredVersion: number }
 
 /**
  * Discriminated failure type for `runInstall`. Every failure mode

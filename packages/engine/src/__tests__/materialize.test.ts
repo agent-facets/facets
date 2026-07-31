@@ -5,20 +5,58 @@ import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
 import { ADAPTER_API_VERSION, deleteAssetFile, installAssetFile, readAssetFile } from '@agent-facets/adapter'
 import type { ResolvedFacetManifest } from '@agent-facets/protocol'
+import { adapterKey, type MaterializedAsset } from '@agent-facets/protocol'
+import type { PreviousOwnership } from '../install/commit/ownership.ts'
 import { InstallJournal } from '../install/journal.ts'
-import { computeAssetList, materialize } from '../install/materialize.ts'
-import type { AssetIdentity, MaterializedAssetOwnership } from '../install/types.ts'
+import { materialize } from '../install/materialize.ts'
 
 /**
- * Previous ownership for assets whose authored layout is the conventional
- * one — the shape a caller normalizes from a locked entry before handing it
- * to `materialize`.
+ * The plan a facet contributes when every asset keeps its authored name.
+ *
+ * Built as `MaterializedAsset[]` — the real Compose output — rather than a
+ * test-local identity shape, so these tests exercise the same values the
+ * pipeline passes and cannot drift from it.
  */
-function ownershipOf(assets: readonly AssetIdentity[]): MaterializedAssetOwnership[] {
-  return assets.map((asset) => ({
-    ...asset,
-    ownedPaths: [asset.type === 'skill' ? `skills/${asset.name}/SKILL.md` : `${asset.type}s/${asset.name}.md`],
-  }))
+function authoredPlan(facet: string, manifest: ResolvedFacetManifest): MaterializedAsset[] {
+  const assets: MaterializedAsset[] = []
+  const groups: ReadonlyArray<['skill' | 'agent' | 'command', Record<string, unknown> | undefined]> = [
+    ['skill', manifest.skills],
+    ['agent', manifest.agents],
+    ['command', manifest.commands],
+  ]
+  for (const [type, group] of groups) {
+    for (const name of Object.keys(group ?? {}).sort()) {
+      assets.push({
+        facet,
+        scope: 'project',
+        type,
+        authoredName: name,
+        effectiveName: name,
+        disposition: { kind: 'authored' },
+        adapterKey: adapterKey('project', type, name),
+      })
+    }
+  }
+  return assets
+}
+
+/**
+ * A previous-ownership index for assets already on disk at their conventional
+ * authored layout — no companions, so a replacement removes nothing extra.
+ */
+function ownershipIndex(assets: readonly MaterializedAsset[]): Map<string, PreviousOwnership> {
+  return new Map(
+    assets.map((asset) => [
+      asset.adapterKey,
+      {
+        scope: asset.scope,
+        type: asset.type,
+        effectiveName: asset.effectiveName,
+        ownedCompanionPaths: [],
+        facets: [asset.facet],
+      },
+    ]),
+  )
 }
 
 let projectRoot: string
@@ -163,13 +201,13 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
       skills: { planning: { description: 'planning skill', prompt: '# planning content\n' } },
     }
     const fixture = buildSdkAdapter('sdk-test')
-    const newAssets = computeAssetList(manifest)
+    const newAssets = authoredPlan('viper-plans', manifest)
 
     const first = await materialize({
       facetName: 'viper-plans',
       manifest,
       adapters: [fixture.adapter],
-      oldAssets: [],
+      previousOwnership: new Map(),
       newAssets,
       journal: new InstallJournal(),
     })
@@ -183,7 +221,7 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
       facetName: 'viper-plans',
       manifest,
       adapters: [fixture.adapter],
-      oldAssets: ownershipOf(newAssets),
+      previousOwnership: ownershipIndex(newAssets),
       newAssets,
       journal: new InstallJournal(),
     })
@@ -209,13 +247,13 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
       commands: { foo: { description: 'real desc', prompt: promptBody } },
     }
     const fixture = buildSdkAdapter('sdk-author-fm')
-    const newAssets = computeAssetList(manifest)
+    const newAssets = authoredPlan('viper-plans', manifest)
 
     const first = await materialize({
       facetName: 'viper-plans',
       manifest,
       adapters: [fixture.adapter],
-      oldAssets: [],
+      previousOwnership: new Map(),
       newAssets,
       journal: new InstallJournal(),
     })
@@ -239,7 +277,7 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
       facetName: 'viper-plans',
       manifest,
       adapters: [fixture.adapter],
-      oldAssets: ownershipOf(newAssets),
+      previousOwnership: ownershipIndex(newAssets),
       newAssets,
       journal: new InstallJournal(),
     })
@@ -266,13 +304,13 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
       },
     }
     const fixture = buildSdkAdapter('sdk-extras-test')
-    const newAssets = computeAssetList(manifest)
+    const newAssets = authoredPlan('viper-plans', manifest)
 
     await materialize({
       facetName: 'viper-plans',
       manifest,
       adapters: [fixture.adapter],
-      oldAssets: [],
+      previousOwnership: new Map(),
       newAssets,
       journal: new InstallJournal(),
     })
@@ -280,7 +318,7 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
       facetName: 'viper-plans',
       manifest,
       adapters: [fixture.adapter],
-      oldAssets: ownershipOf(newAssets),
+      previousOwnership: ownershipIndex(newAssets),
       newAssets,
       journal: new InstallJournal(),
     })
@@ -298,14 +336,14 @@ describe('materialize — skip-if-identical', () => {
       skills: { planning: { description: 'planning skill', prompt: '# planning content' } },
     }
     const { adapter, calls } = buildRecordingAdapter('repeat')
-    const newAssets = computeAssetList(manifest)
+    const newAssets = authoredPlan('viper-plans', manifest)
 
     // First materialize: writes once.
     const first = await materialize({
       facetName: 'viper-plans',
       manifest,
       adapters: [adapter],
-      oldAssets: [],
+      previousOwnership: new Map(),
       newAssets,
       journal: new InstallJournal(),
     })
@@ -319,7 +357,7 @@ describe('materialize — skip-if-identical', () => {
       facetName: 'viper-plans',
       manifest,
       adapters: [adapter],
-      oldAssets: ownershipOf(newAssets),
+      previousOwnership: ownershipIndex(newAssets),
       newAssets,
       journal: new InstallJournal(),
     })
@@ -337,14 +375,14 @@ describe('materialize — skip-if-identical', () => {
       skills: { planning: { description: 'planning skill', prompt: '# planning content' } },
     }
     const { adapter, calls } = buildRecordingAdapter('drifted')
-    const newAssets = computeAssetList(manifest)
+    const newAssets = authoredPlan('viper-plans', manifest)
 
     // First materialize.
     await materialize({
       facetName: 'viper-plans',
       manifest,
       adapters: [adapter],
-      oldAssets: [],
+      previousOwnership: new Map(),
       newAssets,
       journal: new InstallJournal(),
     })
@@ -358,7 +396,7 @@ describe('materialize — skip-if-identical', () => {
       facetName: 'viper-plans',
       manifest,
       adapters: [adapter],
-      oldAssets: ownershipOf(newAssets),
+      previousOwnership: ownershipIndex(newAssets),
       newAssets,
       journal: new InstallJournal(),
     })
@@ -392,13 +430,13 @@ describe('materialize — skip-if-identical', () => {
       },
     }
     const { adapter, calls } = buildRecordingAdapter('meta-test')
-    const newAssets = computeAssetList(manifestA)
+    const newAssets = authoredPlan('viper-plans', manifestA)
 
     await materialize({
       facetName: 'viper-plans',
       manifest: manifestA,
       adapters: [adapter],
-      oldAssets: [],
+      previousOwnership: new Map(),
       newAssets,
       journal: new InstallJournal(),
     })
@@ -406,7 +444,7 @@ describe('materialize — skip-if-identical', () => {
       facetName: 'viper-plans',
       manifest: manifestB,
       adapters: [adapter],
-      oldAssets: ownershipOf(newAssets),
+      previousOwnership: ownershipIndex(newAssets),
       newAssets,
       journal: new InstallJournal(),
     })
@@ -441,14 +479,14 @@ describe('materialize — adapter-extras cannot override computed identity', () 
     }
 
     const { adapter, calls } = buildRecordingAdapter('recorder')
-    const newAssets = computeAssetList(manifest)
+    const newAssets = authoredPlan('viper-plans', manifest)
     const journal = new InstallJournal()
 
     await materialize({
       facetName: 'viper-plans',
       manifest,
       adapters: [adapter],
-      oldAssets: [],
+      previousOwnership: new Map(),
       newAssets,
       journal,
     })
@@ -492,8 +530,8 @@ describe('materialize — adapter API invariant check', () => {
       facetName: 'viper-plans',
       manifest,
       adapters: [incompatible],
-      oldAssets: [],
-      newAssets: computeAssetList(manifest),
+      previousOwnership: new Map(),
+      newAssets: authoredPlan('viper-plans', manifest),
       journal: new InstallJournal(),
     })
     if (result.ok) expect.unreachable()
@@ -537,8 +575,8 @@ describe('materialize — adapter API invariant check', () => {
       facetName: 'viper-plans',
       manifest,
       adapters: [positional],
-      oldAssets: [],
-      newAssets: computeAssetList(manifest),
+      previousOwnership: new Map(),
+      newAssets: authoredPlan('viper-plans', manifest),
       journal: new InstallJournal(),
     })
     if (result.ok) expect.unreachable()
@@ -597,12 +635,12 @@ describe('materialize — journal undo surfaces structured adapter failures', ()
     }
 
     const journal = new InstallJournal()
-    const newAssets = computeAssetList(manifest)
+    const newAssets = authoredPlan('viper-plans', manifest)
     const result = await materialize({
       facetName: 'viper-plans',
       manifest,
       adapters: [adapter],
-      oldAssets: [],
+      previousOwnership: new Map(),
       newAssets,
       journal,
     })
@@ -654,8 +692,8 @@ describe('materialize — journal undo surfaces structured adapter failures', ()
       facetName: 'viper-plans',
       manifest,
       adapters: [adapter],
-      oldAssets: [],
-      newAssets: computeAssetList(manifest),
+      previousOwnership: new Map(),
+      newAssets: authoredPlan('viper-plans', manifest),
       journal,
     })
     if (result.ok) expect.unreachable()

@@ -153,8 +153,13 @@ export type { AcquireLockError, AcquireLockResult, InstallLock } from './install
 export { acquireInstallLock, computeLockPath } from './install/lockfile-guard.ts'
 export type { LoadLockfileResult } from './install/lockfile-io.ts'
 export { emptyLockfile, FACETS_LOCK_FILE, loadLockfile, writeLockfile } from './install/lockfile-io.ts'
-export type { MaterializeOptions, MaterializeResult } from './install/materialize.ts'
-export { computeAssetList, diffAssetsForDeletion, materialize } from './install/materialize.ts'
+export type {
+  DeleteObsoleteOptions,
+  DeleteObsoleteResult,
+  MaterializeOptions,
+  MaterializeResult,
+} from './install/materialize.ts'
+export { deleteObsoleteAssets, materialize } from './install/materialize.ts'
 // add orchestrator (owns the facet add manifest transaction)
 export type { AddPrepareFailure, AddSource, PrepareAddResult, RunAddOptions, RunAddResult } from './install/run-add.ts'
 export { prepareAdd, runAdd } from './install/run-add.ts'

@@ -442,7 +442,7 @@ export function writeReceipt(projectDir: string, receipt: Receipt): void {
  * it belongs in the lockfile, which records the resolved asset SET, but not
  * in the receipt, which records what is on disk.
  */
-function materializedDispositionOf(asset: SupportedLockfileAssetEntry): MaterializedDisposition | undefined {
+export function materializedDispositionOf(asset: SupportedLockfileAssetEntry): MaterializedDisposition | undefined {
   if (!('materialization' in asset)) return { kind: 'authored' }
   return isMaterialized(asset.materialization) ? asset.materialization : undefined
 }

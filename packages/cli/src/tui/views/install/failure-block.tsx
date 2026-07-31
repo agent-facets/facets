@@ -1,8 +1,59 @@
-import type { RunInstallFailure } from '@agent-facets/engine'
+import type { LockfileDriftEntry, RunInstallFailure } from '@agent-facets/engine'
 import { Box, Text } from 'ink'
 import type React from 'react'
 import { describeCompatibilityFailure } from '../../../util/adapter-install-errors.ts'
 import { THEME } from '../../theme.ts'
+
+/** How a materialization disposition reads in a one-line drift report. */
+function describeDisposition(disposition: { kind: string; as?: string }): string {
+  return disposition.kind === 'aliased' ? `aliased to "${disposition.as}"` : disposition.kind
+}
+
+/**
+ * A stable React key for one drift entry.
+ *
+ * Facet + reason is not unique on its own: a facet can drift on several assets
+ * at once. The two per-asset reasons therefore include the asset; every other
+ * reason is at most one per facet by construction.
+ */
+function driftKey(entry: LockfileDriftEntry): string {
+  switch (entry.reason) {
+    case 'materialization-drift':
+    case 'stale-override':
+      return `${entry.name}:${entry.reason}:${entry.assetType}:${entry.authoredName}`
+    default:
+      return `${entry.name}:${entry.reason}`
+  }
+}
+
+/**
+ * One line of frozen-lockfile drift detail.
+ *
+ * An exhaustive `switch`, deliberately: this was a chain of ternaries whose
+ * final `else` assumed `unsatisfied` and read fields off it. Every reason
+ * added afterwards would have rendered another reason's text with `undefined`
+ * spliced into it, and nothing would have failed.
+ */
+function describeDrift(entry: LockfileDriftEntry): string {
+  switch (entry.reason) {
+    case 'missing-lockfile':
+      return 'no lockfile'
+    case 'no-entry':
+      return `not in lockfile (manifest wants ${entry.manifestSpec})`
+    case 'orphaned':
+      return `in lockfile but not in facets.json (locked ${entry.lockedVersion})`
+    case 'source-changed':
+      return `source changed: locked ${entry.lockedSource}, manifest wants ${entry.manifestSpec}`
+    case 'unsatisfied':
+      return `locked ${entry.lockedVersion} does not satisfy ${entry.manifestSpec}`
+    case 'materialization-drift':
+      return `${entry.assetType} "${entry.authoredName}": facets.json says ${describeDisposition(entry.manifest)}, lockfile says ${describeDisposition(entry.locked)}`
+    case 'stale-override':
+      return `${entry.assetType} "${entry.authoredName}" has a materialization override but is not in the locked content`
+    case 'materialization-unrepresentable':
+      return `lockfile v${entry.lockfileVersion} cannot record materialization overrides (needs v${entry.requiredVersion})`
+  }
+}
 
 /**
  * Renders the structured failure detail at the bottom of the install
@@ -338,18 +389,9 @@ export function FailureBlock({ failure }: { failure: RunInstallFailure }): React
             ✕ lockfile is out of date with facets.json
           </Text>
           {failure.facets.map((f) => (
-            <Text key={f.name}>
+            <Text key={driftKey(f)}>
               {' '}
-              {f.name}:{' '}
-              {f.reason === 'missing-lockfile'
-                ? 'no lockfile'
-                : f.reason === 'no-entry'
-                  ? `not in lockfile (manifest wants ${f.manifestSpec})`
-                  : f.reason === 'orphaned'
-                    ? `in lockfile but not in facets.json (locked ${f.lockedVersion})`
-                    : f.reason === 'source-changed'
-                      ? `source changed: locked ${f.lockedSource}, manifest wants ${f.manifestSpec}`
-                      : `locked ${f.lockedVersion} does not satisfy ${f.manifestSpec}`}
+              {f.name}: {describeDrift(f)}
             </Text>
           ))}
           <Text color={THEME.hint}> Run without --frozen-lockfile, or `facet add` to update the lockfile.</Text>

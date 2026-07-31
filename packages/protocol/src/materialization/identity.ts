@@ -37,6 +37,15 @@ export function compareAssetTypes(a: AssetType, b: AssetType): number {
 }
 
 /**
+ * Every asset type, in canonical order.
+ *
+ * Derived from {@link ASSET_TYPE_ORDER} rather than written out again, so a
+ * new asset type cannot be given an order without also appearing in every
+ * exhaustive iteration that walks this list.
+ */
+export const ASSET_TYPES: readonly AssetType[] = (Object.keys(ASSET_TYPE_ORDER) as AssetType[]).sort(compareAssetTypes)
+
+/**
  * The inner-archive directory each asset type occupies.
  *
  * These strings double as the facet manifest's asset-group keys
