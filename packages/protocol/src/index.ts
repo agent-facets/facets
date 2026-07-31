@@ -19,7 +19,7 @@ export type {
   ArchivePlanInput,
   ArchivePlanResult,
 } from './build/archive-plan.ts'
-export { planArchiveEntries, portableCollisionKey, validateSupplementaryPath } from './build/archive-plan.ts'
+export { planArchiveEntries, validateSupplementaryPath } from './build/archive-plan.ts'
 // content hashing + archive format (deterministic tar layout, hash format,
 // constants — all part of the integrity contract)
 export type { ArchiveEntry, FacetArchiveParseFailure, ParseFacetArchiveResult } from './build/content-hash.ts'
@@ -95,8 +95,61 @@ export {
 // `1` vs current `0.2`, no numeric ordering, no shape-sniffing)
 export type { LockfileParseFailure, ParsedLockfile, ParseLockfileResult } from './loaders/lockfile.ts'
 export { parseLockfileDocument } from './loaders/lockfile.ts'
+// versioned project-manifest parsing (exact manifestVersion dispatch —
+// legacy unversioned vs current `0.1`, no shape-sniffing, duplicate members
+// rejected before dispatch)
+export type {
+  ParsedProjectManifest,
+  ParseProjectManifestResult,
+  ProjectManifestParseFailure,
+} from './loaders/project-manifest.ts'
+export { parseProjectManifestDocument } from './loaders/project-manifest.ts'
 export { SERVER_MANIFEST_FILE, validateServerManifest } from './loaders/server.ts'
 export { findDuplicateJsonMembers, mapArkErrors, parseJson } from './loaders/validate.ts'
+// materialization identity — the canonical derivation of an asset's authored
+// archive paths and of the two keys that identify it while materializing:
+// the logical collision key (what may not coexist) and the concrete adapter
+// key (what is read, written, or deleted). Also the portable path/name fold
+// shared by archive planning, raw tar-header validation, and cross-facet
+// collision planning.
+export {
+  ASSET_DIRECTORY,
+  ASSET_TYPE_ORDER,
+  adapterKey,
+  canonicalPrimaryPath,
+  collisionKey,
+  compareAssetTypes,
+  portableCollisionKey,
+  SKILL_PRIMARY_FILE,
+  skillRootPath,
+} from './materialization/identity.ts'
+// materialization namespaces (design D9) — the single source of truth for
+// which asset types compete for the same names. Skills and commands share
+// one namespace; agents occupy another.
+export type { MaterializationNamespace } from './materialization/namespace.ts'
+export {
+  MATERIALIZATION_NAMESPACE,
+  materializationNamespace,
+  sharesNamespace,
+} from './materialization/namespace.ts'
+// materialization planner — the pure, deterministic, single-pass rule that
+// turns authored contributions plus project overrides into either a
+// collision-free plan or the complete list of collisions blocking one.
+// Shared by the engine (compose + final validation) and the CLI (live draft
+// status), so both agree on what collides.
+export type {
+  AuthoredAsset,
+  CollisionGroup,
+  CollisionMember,
+  FacetContribution,
+  InvalidAlias,
+  MaterializationPlan,
+  MaterializedAsset,
+  PlanMaterializationResult,
+  PlannedAsset,
+  StaleOverride,
+} from './materialization/planner.ts'
+export { overrideGroupKey, planMaterialization } from './materialization/planner.ts'
 // asset-name grammar (Agent Skills spec) — exported so build validators, the
 // CLI, and the engine's edit/scaffold machinery all validate skill/command/
 // agent names against one canonical grammar. Distinct from facet identity
@@ -131,12 +184,21 @@ export { LegacyFacetManifestSchema } from './schemas/facet-manifest-legacy.ts'
 // ownership) validate scopes with the same grammar.
 export type { FacetName, FacetNameResult, SlugResult } from './schemas/facet-name.ts'
 export { parseFacetName, parseSlug, validateFacetName } from './schemas/facet-name.ts'
+// lockfile schemas — one per exact format version (legacy alpha `1`, `0.2`,
+// `0.3`), plus `Current*` aliases tracking whichever version a normal
+// install writes. Readers for `0.3` ship ahead of the writer flip.
 export type {
   CurrentLockfile,
   CurrentLockfileAssetEntry,
   CurrentLockfileFacet,
   LegacyLockfile,
   Lockfile,
+  Lockfile02,
+  Lockfile02AssetEntry,
+  Lockfile02Facet,
+  Lockfile03,
+  Lockfile03AssetEntry,
+  Lockfile03Facet,
   LockfileAssetEntry,
   LockfileFacet,
   LockfileFileRecord,
@@ -148,11 +210,49 @@ export {
   LEGACY_LOCKFILE_VERSION,
   LegacyLockfileSchema,
   LOCKFILE_VERSION,
+  LOCKFILE_VERSION_0_2,
+  LOCKFILE_VERSION_0_3,
+  Lockfile02Schema,
+  Lockfile03Schema,
   LockfileSchema,
   SUPPORTED_LOCKFILE_VERSIONS,
 } from './schemas/lockfile.ts'
-export type { FacetsJson } from './schemas/project-manifest.ts'
-export { FacetsJsonSchema } from './schemas/project-manifest.ts'
+// materialization dispositions — the three-arm tagged shape (authored /
+// aliased / omitted) plus the two narrower variants derived from it: project
+// intent (no `authored`, absence means authored) and resolved on-disk state
+// (no `omitted`, which materializes nothing).
+export type {
+  MaterializationDisposition,
+  MaterializedDisposition,
+  ProjectAssetOverride,
+} from './schemas/materialization.ts'
+export {
+  isMaterialized,
+  MaterializationDispositionSchema,
+  MaterializedDispositionSchema,
+  materializedNameOf,
+  ProjectAssetOverrideSchema,
+} from './schemas/materialization.ts'
+// project manifest (`facets.json`) — versioned schemas plus the accessors
+// read-only consumers use so a compact and an expanded entry are never
+// handled differently by accident.
+export type {
+  CurrentProjectManifest,
+  FacetMaterializationOverrides,
+  FacetsJson,
+  LegacyProjectManifest,
+  ProjectFacetEntry,
+} from './schemas/project-manifest.ts'
+export {
+  CURRENT_PROJECT_MANIFEST_VERSION,
+  CurrentProjectManifestSchema,
+  FacetsJsonSchema,
+  facetEntryOverrides,
+  facetEntrySource,
+  LEGACY_PROJECT_MANIFEST_VERSION,
+  LegacyProjectManifestSchema,
+  SUPPORTED_PROJECT_MANIFEST_VERSIONS,
+} from './schemas/project-manifest.ts'
 export type { ServerManifest } from './schemas/server-manifest.ts'
 export { ServerManifestSchema } from './schemas/server-manifest.ts'
 // version-spec grammar (versions as they appear inside artifacts)

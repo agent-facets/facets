@@ -1,5 +1,8 @@
+import type { AssetType } from '@agent-facets/common'
 import { type } from 'arktype'
 import { planArchiveEntries } from '../build/archive-plan.ts'
+import { ASSET_DIRECTORY, portableCollisionKey } from '../materialization/identity.ts'
+import { materializationNamespace } from '../materialization/namespace.ts'
 import { validateAssetNameSegment } from './asset-name.ts'
 import { validateFacetName } from './facet-name.ts'
 
@@ -148,33 +151,53 @@ export const FacetManifestSchema = type({
   // relativePathFor(type, name)). LockfileSchema intentionally keeps the
   // weaker `@agent-facets/common` path-safety guard so legacy installs with
   // non-kebab asset names still load and can be removed.
-  const assetNameGroups: [string, Record<string, unknown> | undefined][] = [
-    ['skills', data.skills],
-    ['agents', data.agents],
-    ['commands', data.commands],
+  const assetGroups: [AssetType, Record<string, unknown> | undefined][] = [
+    ['skill', data.skills],
+    ['agent', data.agents],
+    ['command', data.commands],
   ]
-  for (const [group, record] of assetNameGroups) {
+  for (const [assetType, record] of assetGroups) {
     if (!record) continue
     for (const key of Object.keys(record)) {
       const check = validateAssetNameSegment(key)
       if (!check.ok) {
-        ctx.mustBe(`${group} name "${key}" ${check.reason}`)
+        ctx.mustBe(`${ASSET_DIRECTORY[assetType]} name "${key}" ${check.reason}`)
       }
     }
   }
 
-  // Constraint 5: skills and commands share one logical namespace (design
-  // D9). A facet declaring both skill `review` and command `review` is
-  // invalid; the error identifies both declarations. Agents are a separate
-  // namespace.
-  if (data.skills && data.commands) {
-    for (const name of Object.keys(data.skills)) {
-      if (Object.hasOwn(data.commands, name)) {
-        ctx.mustBe(
-          `skills and commands share one namespace: "${name}" is declared as both skills.${name} and commands.${name}`,
-        )
+  // Constraint 5: asset types that share a materialization namespace must
+  // use disjoint names (design D9). A facet declaring both skill `review`
+  // and command `review` is invalid; the error identifies every conflicting
+  // declaration. Agents occupy their own namespace and are unaffected.
+  //
+  // The pairing is derived from the published `MATERIALIZATION_NAMESPACE`
+  // map rather than restated here, so a new asset type cannot silently
+  // escape this check by simply not appearing in a hand-written condition.
+  // Names are folded with the shared portable key for defense in depth:
+  // Constraint 3 already restricts names to lowercase ASCII, so the fold is
+  // a no-op today, but it means this check can never be the weak link.
+  const declarationsByNamespacedName = new Map<string, { name: string; groups: string[] }>()
+  for (const [assetType, record] of assetGroups) {
+    if (!record) continue
+    for (const name of Object.keys(record)) {
+      const key = `${materializationNamespace(assetType)}\u0000${portableCollisionKey(name)}`
+      const existing = declarationsByNamespacedName.get(key)
+      if (existing) {
+        existing.groups.push(ASSET_DIRECTORY[assetType])
+      } else {
+        declarationsByNamespacedName.set(key, { name, groups: [ASSET_DIRECTORY[assetType]] })
       }
     }
+  }
+  for (const { name, groups } of declarationsByNamespacedName.values()) {
+    if (groups.length < 2) continue
+    const sites = groups.map((group) => `${group}.${name}`)
+    ctx.mustBe(
+      `${groups.join(' and ')} share one namespace: "${name}" is declared as ${
+        sites.length === 2 ? 'both ' : ''
+      }${sites.join(' and ')}`,
+    )
   }
 
   // Constraint 6: supplementary declarations must yield a valid archive plan
