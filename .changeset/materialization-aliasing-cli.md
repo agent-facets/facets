@@ -61,7 +61,35 @@ read-only, so a collision, invalid alias, or cancellation leaves the project
 byte-identical with no rollback needed. Apply deletes obsolete assets in one
 global pass keyed by effective adapter identity *before* writing, which makes
 ownership transfer between facets correct and stops a duplicate historical claim
-from double-deleting.
+from double-deleting. Aliasing every claimant in a collision group is fully
+supported: the authored identity they all move away from is deleted before any
+alias is written, and each alias receives its own facet's authored content.
+
+**BREAKING: only your machine's install receipt authorizes deletion.**
+`facets.lock` is shared, version-controlled state — it says what *should* be
+materialized, not what this machine actually wrote — so it is no longer
+projected into an ownership record when a receipt is absent, unreadable, or
+identifies a different project, and it no longer fills in a facet the receipt
+does not mention. Two rules replace the old fallback: your project's desired
+state authorizes **writes**, and the receipt authorizes **deletions**.
+
+In practice:
+
+- An install still writes every desired asset, overwriting an unmanaged file
+  that happens to occupy the same name. Only after that write does the file
+  become tracked, and only then can a later operation delete it.
+- Files this CLI has no record of writing are never deleted. Pull a teammate's
+  `facets.lock` onto a machine that never ran an install, then `facet remove`
+  the facet: `facets.json` and `facets.lock` drop it, and the files on disk stay
+  exactly where they are. The summary says so rather than reporting a deletion
+  that did not happen. Run `facet install` first if you want the CLI to take
+  ownership of them.
+- A receipt that exists but cannot be used — unreadable, or recorded against a
+  different project — is now reported instead of being silently replaced by a
+  lockfile projection. Nothing already on disk is tracked in that state, so
+  nothing is cleaned up, and the run records only what it writes.
+- The offline guarantee for `facet remove` is a property of tracked state, not
+  of removal. See the `facet remove` entry below for what happens without it.
 
 **Other user-visible changes.**
 
@@ -82,16 +110,18 @@ from double-deleting.
   hand-edit path for resolving a collision without a TTY.
 - `facet remove` never fetches a facet it is keeping. Removing one facet from a
   project whose other facets are uncached and whose registry is unreachable now
-  succeeds: surviving lockfile entries are carried forward from local state
+  succeeds: the remaining lockfile entries are carried forward from local state
   rather than re-resolved, and their materialized files are left untouched. That
-  offline path is taken only when local state genuinely answers for every
-  survivor — a present machine install receipt has to be readable and agree
-  with the lockfile about each survivor's version, dispositions, and owned
-  files, and no name a survivor keeps may have been claimed by a facet being
-  removed. Otherwise, the ordinary pipeline runs, which is what actually moves
-  the files. Ctrl-C is honored on that path too: before anything is deleted
-  nothing is written, and after deletion the deletes are rolled back rather than
-  committed.
+  offline path is taken only when your machine's receipt genuinely accounts for
+  every facet you are keeping — it has to load, record each of them, and agree
+  with the lockfile about version, dispositions, and owned files, and no name a
+  kept facet holds may have been claimed by a facet being removed. Otherwise,
+  the ordinary pipeline runs, which is what actually moves the files — it
+  materializes the state you are keeping and only then records ownership of it.
+  With the content reachable that succeeds; fully offline it fails, rather than
+  deleting files nothing proves this machine wrote. Ctrl-C is honored on that
+  path too: before anything is deleted nothing is written, and after deletion
+  the deletes are rolled back rather than committed.
 - **BREAKING: `facet remove` now connects an adapter even when every name you
   gave it looks undeclared.** Whether a name is declared is decided by the
   commit, under the project lock — a pre-lock read can be stale, and acting on

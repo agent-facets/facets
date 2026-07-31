@@ -18,7 +18,7 @@ import { FACETS_LOCK_FILE, loadLockfile } from './lockfile-io.ts'
 import { deleteObsoleteAssets } from './materialize.ts'
 import { materializeFailureToRunInstall } from './materialize-failure.ts'
 import { ownEntry } from './own-entry.ts'
-import { type Receipt, resolveProjectReceipt } from './receipt.ts'
+import { type Receipt, receiptBaseFor, resolveProjectReceipt } from './receipt.ts'
 import { refineRemoval } from './remove/refine.ts'
 import { rollbackAndFail, summarize } from './run-install-support.ts'
 import type { InstallDelta, RunInstallFailure, RunInstallOptions, RunInstallResult, StageEvent } from './types.ts'
@@ -29,8 +29,8 @@ import type { InstallDelta, RunInstallFailure, RunInstallOptions, RunInstallResu
  * One orchestrator behind three front doors (add, remove, install). The
  * delta is merged in memory; then either
  *
- *   - a non-frozen removal-only delta that local state already answers for
- *     every survivor is refined without resolution, or
+ *   - a non-frozen removal-only delta that this machine's receipt already
+ *     witnesses for every remaining facet is refined without resolution, or
  *   - every desired facet is resolved through the commit-phase machinery in
  *     `install/commit/`.
  *
@@ -121,16 +121,25 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     // from disk" from "bootstrapped empty at the current version".
     const previousLockfile = lockfileResult.parsed.lockfile
 
-    // Load (or bootstrap) the machine-local receipt. Invalid asset
-    // entries (escape paths) are reported and skipped — the rest of
-    // the receipt is still processed (W2 / design D6).
-    const receiptState = resolveProjectReceipt(projectRoot, previousLockfile)
-    const receipt: Receipt = receiptState.kind === 'invalid' ? receiptState.fallback : receiptState.receipt
+    // Load the machine-local receipt — the only thing that can witness what
+    // THIS machine materialized, and therefore the only authority for
+    // deletion. An unusable receipt claims nothing rather than borrowing the
+    // lockfile's claims. Invalid asset entries (escape paths) are reported and
+    // skipped — the rest of the receipt is still processed (W2 / design D6).
+    const receiptState = resolveProjectReceipt(projectRoot)
+    const receipt: Receipt = receiptBaseFor(receiptState)
     if (receiptState.kind === 'loaded') {
       for (const invalid of receiptState.invalidEntries) {
         onLog(() => `[warn] receipt asset entry rejected for ${invalid.facet}: "${invalid.asset}" (${invalid.reason})`)
         onStage({ kind: 'receipt-invalid-asset', ...invalid })
       }
+    } else if (receiptState.reason !== 'missing') {
+      // A receipt that exists but cannot be read is an anomaly with a large
+      // consequence: every identity this machine had tracked is now untracked,
+      // so nothing can be cleaned up and this run's record starts from scratch.
+      // `missing` is silent by contrast — that is just a first operation.
+      onLog(() => `[warn] install receipt unreadable (${receiptState.reason}); nothing on disk is tracked`)
+      onStage({ kind: 'receipt-unavailable', reason: receiptState.reason })
     }
 
     // 3b. Delta conflict check. The same facet name in both additions
@@ -189,17 +198,19 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     // 5. Removal without resolution.
     //
     //    Removing a facet asks only about state this machine already has, so
-    //    when the lockfile already answers it for every SURVIVOR, nothing is
+    //    when local state answers it for every REMAINING facet, nothing is
     //    fetched, rebuilt, or reverified. That is what makes removal work with
     //    a cold cache and an unreachable registry — previously only the facet
-    //    being removed enjoyed that guarantee, while an unrelated survivor
-    //    being unavailable failed the whole operation.
+    //    being removed enjoyed that guarantee, while an unrelated remaining
+    //    facet being unavailable failed the whole operation.
     //
-    //    When local state cannot answer it — a survivor was never locked, its
-    //    entry drifted, the locked set collides, or the manifest declares
-    //    intent the lockfile does not record — the ordinary pipeline runs
-    //    instead. Those cases genuinely need resolution, and failing would
-    //    break removals that work today for reasons unrelated to the removal.
+    //    "Local state" means the receipt, not the lockfile. Writing nothing is
+    //    only safe when every remaining materialization is TRACKED — witnessed
+    //    by this machine's own record. When it is not — a remaining facet was
+    //    never locked or never recorded, its entry drifted, the locked set
+    //    collides, or the manifest declares intent the lockfile does not
+    //    record — the ordinary pipeline runs instead, materializes the
+    //    remaining desired state, and only then claims it.
     //
     //    The route is chosen from the REQUEST: any delta that carries only
     //    removals may be answered locally. Gating on how many of those names
@@ -246,7 +257,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
 
       // The steps below mirror the resolve path's Apply and commit, minus the
       // write pass: nothing is materialized, because refinement has confirmed
-      // every surviving asset is already on disk under the identity it keeps.
+      // every remaining asset is already on disk under the identity it keeps.
       // Keep the two in step.
       //
       // The ownership index comes back from the refinement rather than being
@@ -255,8 +266,10 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       // the decision already made.
       const journal = new InstallJournal()
       const previousOwnership = refined.previousOwnership
-      const removed = removedFacetOutcomes({ desiredFacets: merged.desiredFacets, receipt, previousLockfile })
+      const removed = removedFacetOutcomes({ desiredFacets: merged.desiredFacets, receiptState, previousLockfile })
       for (const outcome of removed) {
+        // Only a tracked removal has cleanup to announce; `removed-untracked`
+        // deletes nothing, so reporting progress against it would be a lie.
         if (outcome.kind !== 'removed') continue
         onStage({ kind: 'drift-removal', facet: outcome.name, oldVersion: outcome.oldVersion })
       }
@@ -361,21 +374,25 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     //    actually happened.
     const journal = new InstallJournal()
 
-    // 7a. Index what this machine already has, keyed by EFFECTIVE adapter
+    // 7a. Index what this machine can PROVE it has, keyed by EFFECTIVE adapter
     //     identity rather than by facet. Both halves of Apply read it: the
-    //     delete pass to find identities nothing wants any more, the write
-    //     pass to learn which owned companion paths a replacement may remove.
-    const previousOwnership = buildPreviousOwnership(receipt, previousLockfile)
+    //     delete pass to find owned identities nothing wants any more, the
+    //     write pass to learn which owned companion paths a replacement may
+    //     remove. Built from the receipt STATE alone — the desired set
+    //     authorizes writes, but only this index authorizes deletion, and an
+    //     unusable receipt yields an empty index by construction.
+    const previousOwnership = buildPreviousOwnership(receiptState)
 
     // 7b. Facets being dropped, for the summary. Computed before the delete
     //     pass so the progress events precede the work they describe; the
     //     deletion itself is global, not per facet.
     const removedOutcomes = removedFacetOutcomes({
       desiredFacets: merged.desiredFacets,
-      receipt,
+      receiptState,
       previousLockfile,
     })
     for (const outcome of removedOutcomes) {
+      // See the refined path: an untracked removal has no cleanup to report.
       if (outcome.kind !== 'removed') continue
       onStage({ kind: 'drift-removal', facet: outcome.name, oldVersion: outcome.oldVersion })
     }

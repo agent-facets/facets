@@ -71,8 +71,16 @@ export function assetIdentity(scope: Scope, type: AssetType, effectiveName: stri
  *   - `unchanged`: facet was in the previous lockfile at the same
  *     version AND every asset was already in its desired state on disk
  *     (no writes performed).
- *   - `removed`: facet was in the previous lockfile but is no longer
- *     declared in `facets.json`; its assets were cleaned up.
+ *   - `removed`: facet is no longer declared in `facets.json` and this
+ *     machine's receipt tracked its materialization, so its ownership was
+ *     reconciled — obsolete identities deleted, transferred ones retained.
+ *   - `removed-untracked`: facet is no longer declared and only the lockfile
+ *     recorded it. Its declaration is dropped from the project's files, but
+ *     nothing on disk is deleted, because no receipt claim proves this machine
+ *     wrote it. A separate outcome rather than a flag on `removed`: "removed"
+ *     and "removed, but the files are still there" are different things to
+ *     tell a user, and a boolean beside `removed` would let a caller render
+ *     the first while meaning the second.
  */
 export type FacetOutcome =
   | { kind: 'installed'; name: string; version: string }
@@ -80,6 +88,7 @@ export type FacetOutcome =
   | { kind: 'repaired'; name: string; version: string }
   | { kind: 'unchanged'; name: string; version: string }
   | { kind: 'removed'; name: string; oldVersion: string }
+  | { kind: 'removed-untracked'; name: string; oldVersion: string }
 
 /**
  * Aggregate counts for the post-install summary line.
@@ -141,6 +150,16 @@ export type StageEvent =
    * receipt's say-so — while the rest of the receipt is processed.
    */
   | { kind: 'receipt-invalid-asset'; facet: string; asset: string; reason: string }
+  /**
+   * A receipt file exists for this project but could not be used — unreadable,
+   * or self-identifying as a different project. Every identity it had tracked
+   * is therefore untracked for this run: nothing can be cleaned up, and this
+   * run's record starts from what it writes.
+   *
+   * Emitted only for `corrupt` and `path-mismatch`. A `missing` receipt is the
+   * normal first-operation state and is not worth a warning.
+   */
+  | { kind: 'receipt-unavailable'; reason: 'corrupt' | 'path-mismatch' }
   /**
    * A materialization override was dropped because the resolved facet version
    * no longer contains the asset it named.

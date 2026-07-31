@@ -66,10 +66,10 @@ function pruneFacetOverrides(
     const record = overridesForType(overrides, type)
     if (record === undefined) continue
     // Null-prototype: keyed by authored asset name, which `constructor` and
-    // `__proto__` are both legal values of. A survivor written into a plain
+    // `__proto__` are both legal values of. A retained override written into a plain
     // object under the latter would be dropped from the manifest silently.
-    const survivors = ownRecord<ProjectAssetOverride>()
-    let survivorCount = 0
+    const retained = ownRecord<ProjectAssetOverride>()
+    let retainedCount = 0
     for (const authoredName of Object.keys(record)) {
       const disposition = overrideFor(overrides, type, authoredName)
       if (disposition === undefined) continue
@@ -77,12 +77,12 @@ function pruneFacetOverrides(
         pruned.push({ facet, type, authoredName })
         continue
       }
-      survivors[authoredName] = disposition
-      survivorCount += 1
+      retained[authoredName] = disposition
+      retainedCount += 1
     }
-    if (survivorCount > 0) {
-      next[ASSET_DIRECTORY[type]] = survivors
-      kept += survivorCount
+    if (retainedCount > 0) {
+      next[ASSET_DIRECTORY[type]] = retained
+      kept += retainedCount
     }
   }
 

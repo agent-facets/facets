@@ -7,7 +7,7 @@ rss: true
 
 <Update label="2026-07-27" description="Resolve name collisions between facets; manifest 0.1, lockfile 0.3, and asset aliasing" tags={["CLI", "Breaking", "New Feature"]} rss={{
   title: "Asset aliasing, omission, and cross-facet collision resolution",
-  description: "Two facets can now publish an asset with the same name without one of them losing. facet add and facet install detect every cross-facet name collision before writing anything, and in a terminal they pause and let you keep, rename, or omit each contested asset. Your choices are saved into facets.json as a materialization block and replayed on every later install, so it happens once and your teammates get the same layout. Without a terminal -- CI, or piped output -- nothing is prompted: the install fails and prints every claimant with the exact facets.json edit to make, choosing no winner and inventing no name. Aliasing renames only the file on disk; archive paths, integrity hashes, and the lockfile keep the publisher's authored name, so an alias can never smuggle different content under a familiar name. Omitted assets are still resolved, verified, and recorded, they are simply not written. Breaking: facets.json now carries manifestVersion 0.1 and entries may be objects instead of strings, so any tool that reads it must handle both forms; facets.lock moves to 0.3 with a required materialization disposition on every asset. Both migrate automatically on the next successful install. A frozen install fails if the manifest declares overrides while facets.lock is still at 0.2, which has no field in which to record them -- run one normal install first. Commit is now three phases, Resolve-all then Compose then Apply, so nothing is written until the whole plan is known to be collision-free. Removing a facet is the exception: when the lockfile still answers for everything you are keeping, facet remove refines those entries in place instead of resolving them, so it still works with a cold cache and an unreachable registry."
+  description: "Two facets can now publish an asset with the same name without one of them losing. facet add and facet install detect every cross-facet name collision before writing anything, and in a terminal they pause and let you keep, rename, or omit each contested asset. Your choices are saved into facets.json as a materialization block and replayed on every later install, so it happens once and your teammates get the same layout. Without a terminal -- CI, or piped output -- nothing is prompted: the install fails and prints every claimant with the exact facets.json edit to make, choosing no winner and inventing no name. Aliasing renames only the file on disk; archive paths, integrity hashes, and the lockfile keep the publisher's authored name, so an alias can never smuggle different content under a familiar name. Omitted assets are still resolved, verified, and recorded, they are simply not written. Breaking: facets.json now carries manifestVersion 0.1 and entries may be objects instead of strings, so any tool that reads it must handle both forms; facets.lock moves to 0.3 with a required materialization disposition on every asset. Both migrate automatically on the next successful install. A frozen install fails if the manifest declares overrides while facets.lock is still at 0.2, which has no field in which to record them -- run one normal install first. Commit is now three phases, Resolve-all then Compose then Apply, so nothing is written until the whole plan is known to be collision-free. Removing a facet is the exception: when your machine's install receipt already accounts for everything you are keeping, facet remove refines those lockfile entries in place instead of resolving them, so it still works with a cold cache and an unreachable registry. Breaking: only that receipt authorizes deletion now. facets.lock is shared state describing what should be installed, so it is never treated as proof that this machine wrote a file -- pull a teammate's lockfile onto a machine that never ran an install, remove the facet, and the declaration is dropped while the files stay exactly where they are. Run facet install first if you want the CLI to take ownership of them."
 }}>
   ## Two facets, one name
 
@@ -154,10 +154,13 @@ rss: true
   another in a single install without the new owner's file being
   deleted behind it.
 
-  Removing a facet is the exception. When the lockfile still answers
-  for everything you are keeping, [`facet remove`](/cli/remove) refines
-  those entries in place instead of resolving them, so it still works
-  with a cold cache and an unreachable registry.
+  Removing a facet is the exception. When your machine's install
+  receipt already accounts for everything you are keeping,
+  [`facet remove`](/cli/remove) refines those lockfile entries in place
+  instead of resolving them, so it still works with a cold cache and an
+  unreachable registry. Without that receipt nothing on disk is proven
+  to be yours, so the removal resolves normally rather than deleting on
+  the lockfile's word.
 
   Two smaller consequences you may notice:
 

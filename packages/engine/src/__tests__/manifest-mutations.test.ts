@@ -430,7 +430,7 @@ describe('applyDesiredFacets — comment preservation', () => {
       )
     })
 
-    test('pruning one override keeps the survivor and drops the pruned note', () => {
+    test('pruning one override keeps the other and drops the pruned note', () => {
       const out = roundTrip(annotated, {
         alpha: entry('1.*', { skills: { review: alias('vendor-review') } }),
       })

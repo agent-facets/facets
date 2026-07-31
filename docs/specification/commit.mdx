@@ -7,7 +7,7 @@ import { DeltaTip, InstallReceiptTip, CanonicalFingerprintTip, SidecarTip } from
 
 Commit is phase 2 of the [install pipeline](/specification/install): a single transaction that applies the <DeltaTip>delta</DeltaTip> from [Planning](/specification/planning). Its inputs are the on-disk `facets.json` — including the [materialization](/specification/materialization) intent it records — `facets.lock`, the <InstallReceiptTip>install receipt</InstallReceiptTip>, and the delta.
 
-It is never partial. Commit runs in three phases, and the boundary between the second and third is where mutation begins: everything up to and including [Compose](#compose) is read-only, so a failure there leaves the project byte-identical without needing to undo anything. A [removal-only short circuit](#removal-only-short-circuit) skips both read-only phases when local state already answers for every surviving facet; it writes nothing until that same boundary. From the first write onward, every write records its inverse in the **journal**, and a failure MUST replay it in reverse to leave the project exactly as it was.
+It is never partial. Commit runs in three phases, and the boundary between the second and third is where mutation begins: everything up to and including [Compose](#compose) is read-only, so a failure there leaves the project byte-identical without needing to undo anything. A [removal-only short circuit](#removal-only-short-circuit) skips both read-only phases when this machine's receipt already answers for every remaining facet; it writes nothing until that same boundary. From the first write onward, every write records its inverse in the **journal**, and a failure MUST replay it in reverse to leave the project exactly as it was.
 
 <CardGroup cols={3}>
   <Card title="Verify" icon="shield-check">
@@ -27,7 +27,7 @@ It is never partial. Commit runs in three phases, and the boundary between the s
   <Step title="Load state and gate">
     The manifest is read and the **install lock** — a per-project advisory lock ensuring only one install operates on a project at a time — is acquired. A frozen operation carrying a non-empty delta is rejected here, before the lockfile is even read, so `facet add --frozen-lockfile` against a corrupt lockfile reports the operation it cannot perform rather than a file it never needed to open.
 
-    The lockfile and receipt are then loaded (an invalid receipt is re-bootstrapped from the lockfile; receipt asset entries with crafted names are reported and skipped individually). A delta naming the same facet in both additions and removals MUST be rejected, and the adapters selected for this operation MUST pass the adapter API compatibility preflight — a defense-in-depth re-check behind the command-level gate that already rejected any incompatible installed adapter before planning. Every incompatible adapter is collected, not just the first. A selected adapter whose declared adapter API the CLI does not support MUST fail the commit here, before any Git or local facet build can invoke adapter metadata methods. Failures here touch nothing — no rollback is needed.
+    The lockfile and receipt are then loaded (a receipt that is absent, corrupt, or path-mismatched witnesses nothing and is never projected from the lockfile; the two readable failures are reported; receipt asset entries with crafted names are reported and skipped individually). A delta naming the same facet in both additions and removals MUST be rejected, and the adapters selected for this operation MUST pass the adapter API compatibility preflight — a defense-in-depth re-check behind the command-level gate that already rejected any incompatible installed adapter before planning. Every incompatible adapter is collected, not just the first. A selected adapter whose declared adapter API the CLI does not support MUST fail the commit here, before any Git or local facet build can invoke adapter metadata methods. Failures here touch nothing — no rollback is needed.
   </Step>
   <Step title="Merge delta in memory">
     Additions are upserted, removals are deleted — all in memory. The on-disk `facets.json` MUST NOT be written ahead of the install. Re-adding a facet preserves any materialization overrides already recorded for it: changing where a facet comes from is not a statement about how its assets should be named.
@@ -50,25 +50,25 @@ It is never partial. Commit runs in three phases, and the boundary between the s
 
 ## Removal-only short circuit
 
-Removing a facet asks only about state this machine already has. So a non-frozen operation whose delta contains only removals skips Phases A and B whenever local state still answers for every **survivor** — every facet that is staying.
+Removing a facet asks only about state this machine already has. So a non-frozen operation whose delta contains only removals skips Phases A and B whenever local state still answers for every **remaining facet** — every facet that is staying.
 
 Six conditions MUST all hold:
 
-- every survivor has a lockfile entry;
+- every remaining facet has a lockfile entry;
 - each of those entries still matches its manifest source and specifier;
-- the surviving locked asset set plans cleanly (no recorded collision, no invalid alias);
+- the remaining locked asset set plans cleanly (no recorded collision, no invalid alias);
 - the manifest declares no materialization intent the lockfile does not already record;
-- no effective identity a survivor keeps was also claimed by a facet being removed;
-- this machine's [install receipt](#machine-local-install-receipt), when present, is readable and witnesses every survivor it records — same version, same materialized assets, same dispositions, same owned files.
+- no effective identity a remaining facet keeps was also claimed by a facet being removed;
+- every remaining materialization is **tracked**: this machine's [install receipt](#machine-local-install-receipt) loaded, records each remaining facet, and agrees with the lockfile about version, materialized assets, dispositions, and owned files.
 
-When they do, commit refines the surviving entries **structurally** instead of resolving them: source, version, integrity, per-file records, and unrecognized fields are carried forward unchanged, and each asset's recorded disposition is attached (an entry written before dispositions existed refines to `authored`). Nothing is fetched, rebuilt, or re-verified — which is what lets `facet remove` work with a cold cache and an unreachable registry even when an unrelated survivor is unavailable. Refinement is lossless, so it applies to every readable lockfile version and still writes the current one.
+When they do, commit refines the remaining entries **structurally** instead of resolving them: source, version, integrity, per-file records, and unrecognized fields are carried forward unchanged, and each asset's recorded disposition is attached (an entry written before dispositions existed refines to `authored`). Nothing is fetched, rebuilt, or re-verified — which is what lets `facet remove` work with a cold cache and an unreachable registry even when an unrelated remaining facet is unavailable. Refinement is lossless, so it applies to every readable lockfile version and still writes the current one.
 
 When any condition fails, the ordinary phases run. Those cases genuinely need resolution, and failing instead would break removals that work today for reasons unrelated to what is being removed.
 
-The last two conditions are about the gap between shared state and this machine. A `git pull` can change what the lockfile says an asset is called without touching the file on disk, and a lockfile written before cross-facet collisions were detected can record two facets claiming one name. In both cases the survivor's bytes are not where the lockfile says they are — and this path writes nothing, so only ordinary resolution can put them there. A survivor absent from a readable receipt, or a project with no receipt, is a bootstrap gap; a corrupt or path-mismatched receipt is not, because projecting it from the lockfile would make the lockfile witness itself.
+The last two conditions are about the gap between shared state and this machine. A `git pull` can change what the lockfile says an asset is called without touching the file on disk, and a lockfile written before cross-facet collisions were detected can record two facets claiming one name. In both cases the remaining bytes are not where the lockfile says they are — and this path writes nothing, so only ordinary resolution can put them there. The same applies when the receipt says nothing at all: an absent, corrupt, or path-mismatched receipt, or one that simply does not record a remaining facet, leaves that materialization **untracked**, and the lockfile cannot stand in for it without making shared state witness itself. The offline short circuit is therefore a property of fully tracked state, not of removal.
 
 <Note>
-The short circuit changes how the surviving entries are produced, not what is written. Drift removal, the journal, and the [transactional tri-write](#transactional-tri-write) are identical on both paths. The receipt it commits is the record it just witnessed, never a projection of the lockfile — an operation that materializes nothing must not claim an identity it did not write. Cancellation is honored at the same two checkpoints as the ordinary path: before anything is deleted (nothing is written) and after deletion but before the tri-write (the deletes are rolled back).
+The short circuit changes how the remaining entries are produced, not what is written. Drift removal, the journal, and the [transactional tri-write](#transactional-tri-write) are identical on both paths. The receipt it commits is the record it just witnessed, never a projection of the lockfile — an operation that materializes nothing must not claim an identity it did not write. Cancellation is honored at the same two checkpoints as the ordinary path: before anything is deleted (nothing is written) and after deletion but before the tri-write (the deletes are rolled back).
 </Note>
 
 ## Registry interactions
@@ -225,7 +225,7 @@ This lets drift removal clean up correctly — including a skill's owned compani
     Each project has its own receipt, identified by a hash of the project's canonical path. Two projects never share a receipt.
   </Card>
   <Card title="Self-identifying" icon="fingerprint">
-    The receipt embeds the canonical path. A mismatch on load MUST fail closed — treated as absent and re-bootstrapped from the lockfile.
+    The receipt embeds the canonical path. A mismatch on load MUST fail closed — the receipt witnesses nothing, and the lockfile is never projected in its place.
   </Card>
   <Card title="Untrusted input" icon="shield">
     Asset entries and per-file ownership paths with crafted names (path traversal, backslashes) are **reported and skipped individually** — each owned path is containment-validated before use, and the rest of the receipt still loads and is processed.
@@ -239,23 +239,38 @@ This lets drift removal clean up correctly — including a skill's owned compani
 
 Drift removal is a **single global pass keyed by effective identity**, and it runs at the start of Apply — *before* any asset is written, not after.
 
-The receipt supplies the previous ownership set, with the lockfile as a fallback for facets the receipt does not mention. Every historical claim on one effective identity is unioned, and each claim's owned companion paths are stripped using its **own** authored name, because an aliased skill's recorded paths are authored while its bundle lives under the effective name. The desired set is the composed plan's effective identities. The difference is deleted.
+The receipt is the **only** source of the previous ownership set. Every historical claim on one effective identity is unioned, and each claim's owned companion paths are stripped using its **own** authored name, because an aliased skill's recorded paths are authored while its bundle lives under the effective name. The desired set is the composed plan's effective identities. The difference is deleted.
 
 The question asked is *"is this effective identity still claimed by any desired asset?"* — not *"is this facet still wanted?"* An identity is retained even when the facet that used to own it is gone, which is what makes **ownership transfer** work: facet A gives up the name `deploy`, facet B claims it, and B's file survives. A per-facet decision would have deleted it.
 
 Deleting before writing is load-bearing for the same reason. If writes came first, transferring a name would write B's asset and then delete it as part of cleaning up A.
 
-The comparison runs against the **receipt**, not the on-disk lockfile; this is what makes **orphan-on-pull** recoverable (a facet whose lockfile entry vanished because a teammate removed it and you pulled — the receipt still remembers the local materialization). Lockfile entries missing from a freshly-bootstrapped receipt are caught too. And because the asset tuples and owned-file sets to delete come from the receipt itself, removal needs no cache and no network.
+Because the comparison runs against the **receipt** and nothing else, **orphan-on-pull** is recoverable (a facet whose lockfile entry vanished because a teammate removed it and you pulled — the receipt still remembers the local materialization), and the reverse is not a deletion: a lockfile entry the receipt never recorded is **untracked**, and the pass leaves whatever is at that identity alone. The asset tuples and owned-file sets to delete come from the receipt itself, so removal of tracked state needs no cache and no network.
 
 Deletions MUST be journaled like every other write — if the commit fails afterward, rollback restores them.
 
 ```mermaid
 flowchart TD
-    PREV["Every effective identity<br/>previously owned"] --> W{"Claimed by any<br/>desired asset?"}
+    PREV["Every effective identity<br/>the receipt records"] --> W{"Claimed by any<br/>desired asset?"}
     W -->|yes| KEEP["Retain — possibly<br/>under a new owner"]
     W -->|no| DROP["Delete offline<br/>(primary + owned companions)"]
     DROP --> RM["Drop from lockfile + receipt"]
 ```
+
+## Ownership, in one rule each
+
+<CardGroup cols={2}>
+  <Card title="Desired state authorizes writes" icon="pen">
+    Every desired effective identity is written, even if an untracked file already occupies it. The write is what makes it tracked; the committed receipt records it from then on.
+  </Card>
+  <Card title="Tracked ownership authorizes deletion" icon="trash">
+    Only an identity the receipt records can be deleted. Untracked files at identities the desired set does not name are never addressed, and a lockfile entry alone is not evidence.
+  </Card>
+</CardGroup>
+
+A receipt that cannot be used at all — absent, unreadable, or self-identifying as a different project — is the same case as an empty one: nothing is tracked, so nothing is deleted, and the run records only what it writes. The two readable-failure reasons are reported; a missing receipt is just a first operation and is not.
+
+Aliasing follows from the two rules rather than needing its own. When every claimant in a collision group is aliased away from the authored name, that name is claimed by nothing in the desired set, so it is deleted in the same pass — before either alias is written. Each alias then receives its own facet's authored content, and the committed receipt records both aliases and not the vacated name.
 
 ## Manifest-write policy
 
@@ -280,8 +295,8 @@ sequenceDiagram
     participant Commit as commit()
     participant FS as filesystem
     Commit->>Commit: merge delta in memory
-    alt removal-only, answered by local state
-        Commit->>Commit: refine surviving lockfile entries (no fetch)
+    alt removal-only, every remaining materialization tracked
+        Commit->>Commit: refine remaining lockfile entries (no fetch)
     else
         Commit->>Commit: Phase A — parse + resolve + verify every facet
         Commit->>Commit: Phase B — compose the global plan

@@ -126,6 +126,15 @@ function OutcomeRow({ name, outcome, adapters }: { name: string; outcome: FacetO
           </Text>
         </Box>
       )
+    case 'removed-untracked':
+      return (
+        <Box gap={1}>
+          <Text color={THEME.warning}>-</Text>
+          <Text>
+            {name}@{outcome.oldVersion} <Text color={THEME.hint}>(files kept — not installed by this machine)</Text>
+          </Text>
+        </Box>
+      )
   }
 }
 

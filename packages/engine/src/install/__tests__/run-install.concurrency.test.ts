@@ -197,7 +197,7 @@ describe('runRemove — a facet declared after validation but before the lock', 
 
     // Both were requested, so both are gone. Deriving the delta from the
     // advisory snapshot dropped `beta` from the request and then treated it
-    // as a SURVIVOR — installing the facet the user asked to remove.
+    // as a REMAINING facet — installing the one the user asked to remove.
     expect(Object.keys(readManifestFacets())).toEqual([])
     expect(Object.keys(readLockfileFacets())).toEqual([])
   })

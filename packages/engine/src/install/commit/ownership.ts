@@ -4,11 +4,9 @@ import {
   type MaterializedAsset,
   materializedNameOf,
   SKILL_PRIMARY_FILE,
-  type SupportedLockfile,
   skillRootPath,
 } from '@agent-facets/protocol'
-import { ownEntry } from '../own-entry.ts'
-import { materializedDispositionOf, ownedPathsForLockedAsset, type Receipt } from '../receipt.ts'
+import type { ProjectReceiptState } from '../receipt.ts'
 
 /**
  * The global ownership index: what this machine has materialized, keyed by
@@ -103,19 +101,25 @@ function addClaim(
 /**
  * Build the global previous-ownership index.
  *
- * The receipt is the authority: it records what this machine actually wrote,
- * survives a `git pull` that rewrites the lockfile, and is the only source
- * that works offline. The lockfile is the fallback for a facet the receipt
- * does not mention — a bootstrap gap, not a disagreement — and its omitted
- * assets are skipped because an omitted asset was never materialized.
+ * Takes the receipt STATE rather than a receipt, so "no usable account" and
+ * "an account that happens to be empty" cannot be confused at the call site.
+ * The loaded record is the ONLY authority: it records what this machine
+ * actually wrote, survives a `git pull` that rewrites the lockfile, and is the
+ * only source that works offline. Nothing else may enter this index, because
+ * everything in it is a licence to delete — the lockfile is shared,
+ * version-controlled state describing what *should* be on disk on some
+ * machine, and treating it as evidence about THIS one means deleting files a
+ * teammate's commit merely mentioned.
+ *
+ * An identity absent here is UNTRACKED, not unowned-and-therefore-stale. It is
+ * left alone unless the desired set asks for it, and a write to it is what
+ * creates ownership — see `run-install`'s apply ordering.
  */
-export function buildPreviousOwnership(
-  receipt: Receipt,
-  previousLockfile: SupportedLockfile,
-): Map<string, PreviousOwnership> {
+export function buildPreviousOwnership(state: ProjectReceiptState): Map<string, PreviousOwnership> {
   const index = new Map<string, PreviousOwnership>()
+  if (state.kind !== 'loaded') return index
 
-  for (const [facet, entry] of Object.entries(receipt.facets)) {
+  for (const [facet, entry] of Object.entries(state.receipt.facets)) {
     for (const asset of entry.assets) {
       addClaim(index, facet, {
         scope: asset.scope,
@@ -127,27 +131,12 @@ export function buildPreviousOwnership(
     }
   }
 
-  for (const [facet, entry] of Object.entries(previousLockfile.facets)) {
-    if (ownEntry(receipt.facets, facet) !== undefined) continue
-    for (const asset of entry.assets) {
-      const disposition = materializedDispositionOf(asset)
-      if (disposition === undefined) continue
-      addClaim(index, facet, {
-        scope: asset.scope,
-        type: asset.type,
-        authoredName: asset.name,
-        effectiveName: materializedNameOf(asset.name, disposition),
-        ownedPaths: ownedPathsForLockedAsset(asset),
-      })
-    }
-  }
-
   return index
 }
 
 /**
- * The identities to delete: previously owned, claimed by nothing in the
- * desired set.
+ * The identities to delete: previously owned per the receipt, claimed by
+ * nothing in the desired set.
  *
  * An identity claimed by ANY desired asset is retained even when the facet
  * that used to own it is gone — that is the ownership-transfer case, where

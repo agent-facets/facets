@@ -12,8 +12,10 @@ import {
   readAssetFile,
   readSkillBundle,
 } from '@agent-facets/adapter'
+import type { CollisionResolution } from '../commit/compose.ts'
 import { CURRENT_RECEIPT_VERSION, type Receipt, receiptPath, writeReceipt } from '../receipt.ts'
 import { runInstall } from '../run-install.ts'
+import type { StageEvent } from '../types.ts'
 
 /**
  * Effective-identity materialization and global ownership reconciliation,
@@ -330,6 +332,75 @@ describe('apply — global ownership reconciliation', () => {
     expect(result.perFacet).toEqual([{ kind: 'updated', name: 'alpha', oldVersion: '1.0.0', newVersion: '1.0.0' }])
   })
 
+  test('aliasing both claimants apart vacates the old identity and writes both aliases', async () => {
+    // `alpha` is installed and materialized under its authored name. A second
+    // facet then contributes the same authored name, and the accepted
+    // resolution aliases BOTH claimants — so one operation has to delete an
+    // identity a facet that is STAYING used to own, and create two new ones.
+    // Every ingredient of this was covered in isolation; the combination is
+    // where a per-facet or write-before-delete ordering silently loses content.
+    const a = skillFixture('alpha', 'planner')
+    writeManifest({ facets: { alpha: a } })
+    const { adapter, io } = recordingAdapter()
+    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    expect(readFileSync(join(skillRoot('planner'), 'SKILL.md'), 'utf8')).toContain('# planner from alpha')
+
+    const b = skillFixture('beta', 'planner')
+    writeManifest({ facets: { alpha: a, beta: b } })
+
+    io.length = 0
+    let groups = 0
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      resolveCollisions: async (request): Promise<CollisionResolution> => {
+        groups = request.groups.length
+        // Intent is settled before anything moves on disk.
+        expect(io).toEqual([])
+        return {
+          kind: 'resolved',
+          overrides: {
+            alpha: { skills: { planner: { kind: 'aliased', as: 'planner-a' } } },
+            beta: { skills: { planner: { kind: 'aliased', as: 'planner-b' } } },
+          },
+        }
+      },
+    })
+    if (!result.ok) expect.unreachable()
+    expect(groups).toBe(1)
+
+    // The vacated identity is deleted before either alias is written.
+    const vacated = io.indexOf('delete:skill:planner')
+    expect(vacated).toBeGreaterThanOrEqual(0)
+    expect(vacated).toBeLessThan(io.indexOf('install:skill:planner-a'))
+    expect(vacated).toBeLessThan(io.indexOf('install:skill:planner-b'))
+    expect(existsSync(skillRoot('planner'))).toBe(false)
+
+    // Each alias holds its OWN facet's content — content is looked up by
+    // authored name, and both facets author the same one.
+    expect(readFileSync(join(skillRoot('planner-a'), 'SKILL.md'), 'utf8')).toContain('# planner from alpha')
+    expect(readFileSync(join(skillRoot('planner-b'), 'SKILL.md'), 'utf8')).toContain('# planner from beta')
+
+    // Both aliases are recorded, and no authored claim on `planner` survives —
+    // a stale claim there would delete a file the next run just wrote.
+    const receipt = readReceipt()
+    expect(receipt.facets.alpha?.assets[0]?.materialization).toEqual({ kind: 'aliased', as: 'planner-a' })
+    expect(receipt.facets.beta?.assets[0]?.materialization).toEqual({ kind: 'aliased', as: 'planner-b' })
+    expect(receipt.facets.alpha?.assets[0]?.files).toEqual(['skills/planner/SKILL.md'])
+
+    // The accepted intent is durable for both facets, not just the newcomer.
+    const manifest = JSON.parse(readFileSync(join(projectRoot, 'facets.json'), 'utf8'))
+    expect(manifest.facets.alpha.materialization).toEqual({ skills: { planner: { kind: 'aliased', as: 'planner-a' } } })
+    expect(manifest.facets.beta.materialization).toEqual({ skills: { planner: { kind: 'aliased', as: 'planner-b' } } })
+
+    // A disposition-only change at an unchanged version is an update; the
+    // newcomer is an install.
+    expect([...result.perFacet].sort((x, y) => x.name.localeCompare(y.name))).toEqual([
+      { kind: 'updated', name: 'alpha', oldVersion: '1.0.0', newVersion: '1.0.0' },
+      { kind: 'installed', name: 'beta', version: '1.0.0' },
+    ])
+  })
+
   test('omitting an installed asset removes its whole bundle, and un-omitting restores it', async () => {
     const a = skillFixture('alpha', 'review', { companions: { 'refs/api.md': '# api\n' } })
     writeManifest({ facets: { alpha: a } })
@@ -402,6 +473,164 @@ describe('apply — global ownership reconciliation', () => {
 
     expect(existsSync(join(skillRoot('review'), 'SKILL.md'))).toBe(false)
     expect(readFileSync(note, 'utf8')).toBe('mine\n')
+  })
+
+  test('an untracked file at a desired identity is overwritten and then tracked', async () => {
+    // Desired state authorizes writes: an install converges the identity it
+    // was asked for even when something unmanaged already occupies it.
+    // Ownership is what the write CREATES, not a precondition for it.
+    const a = skillFixture('alpha', 'review')
+    mkdirSync(skillRoot('review'), { recursive: true })
+    writeFileSync(join(skillRoot('review'), 'SKILL.md'), '# not ours\n')
+    writeManifest({ facets: { alpha: a } })
+    const { adapter } = recordingAdapter()
+
+    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    if (!result.ok) expect.unreachable()
+
+    expect(readFileSync(join(skillRoot('review'), 'SKILL.md'), 'utf8')).toContain('# review from alpha')
+    // Recorded only now — which is what makes a later removal able to delete it.
+    expect(readReceipt().facets.alpha?.assets[0]?.files).toEqual(['skills/review/SKILL.md'])
+  })
+
+  test('an untracked identity the desired set never names is left untouched', async () => {
+    const a = skillFixture('alpha', 'review')
+    writeManifest({ facets: { alpha: a } })
+    const { adapter, io } = recordingAdapter()
+    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+
+    // A bundle this machine never materialized, at an identity nothing claims.
+    mkdirSync(skillRoot('handwritten'), { recursive: true })
+    writeFileSync(join(skillRoot('handwritten'), 'SKILL.md'), '# mine\n')
+
+    writeManifest({ facets: {} })
+    io.length = 0
+    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    if (!result.ok) expect.unreachable()
+
+    // Cleanup is authorized by the receipt, so an unclaimed identity is not
+    // even addressed — let alone deleted.
+    expect(io.some((call) => call.endsWith(':handwritten'))).toBe(false)
+    expect(readFileSync(join(skillRoot('handwritten'), 'SKILL.md'), 'utf8')).toBe('# mine\n')
+    expect(existsSync(skillRoot('review'))).toBe(false)
+  })
+
+  test('removing a facet this machine never tracked deletes nothing from disk', async () => {
+    const a = skillFixture('alpha', 'review')
+    writeManifest({ facets: { alpha: a } })
+    const { adapter, io } = recordingAdapter()
+    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+
+    // The shape of a pulled lockfile on a machine that never ran the install:
+    // the declaration exists in shared state, but nothing witnesses that THIS
+    // machine put those bytes on disk. Removing the declaration must not be
+    // read as permission to delete whatever currently sits at that identity.
+    rmSync(receiptPath(projectRoot), { force: true })
+
+    io.length = 0
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      delta: { additions: [], removals: [{ facetName: 'alpha' }] },
+    })
+    if (!result.ok) expect.unreachable()
+
+    // The project's records drop the facet...
+    const lock = JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8'))
+    expect(lock.facets.alpha).toBeUndefined()
+    expect(readReceipt().facets.alpha).toBeUndefined()
+    // ...and nothing on disk is touched, because nothing proved ownership.
+    expect(io.some((call) => call.startsWith('delete:'))).toBe(false)
+    expect(readFileSync(join(skillRoot('review'), 'SKILL.md'), 'utf8')).toContain('# review from alpha')
+    expect(result.summary.removedAssets).toBe(0)
+    // Reported as its own outcome: "removed" would claim the files are gone.
+    expect(result.perFacet).toEqual([{ kind: 'removed-untracked', name: 'alpha', oldVersion: '1.0.0' }])
+    // Still counted as a removal — a declaration really did leave the project.
+    expect(result.summary.removed).toBe(1)
+  })
+
+  test('a tracked removal reports removed, not removed-untracked', async () => {
+    // The control for the test above: same operation, receipt intact. Without
+    // it, a bug that reported every removal as untracked would pass.
+    const a = skillFixture('alpha', 'review')
+    const b = skillFixture('beta', 'other')
+    writeManifest({ facets: { alpha: a, beta: b } })
+    const { adapter } = recordingAdapter()
+    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      delta: { additions: [], removals: [{ facetName: 'alpha' }] },
+    })
+    if (!result.ok) expect.unreachable()
+
+    expect(result.perFacet).toContainEqual({ kind: 'removed', name: 'alpha', oldVersion: '1.0.0' })
+    expect(existsSync(skillRoot('review'))).toBe(false)
+    expect(result.summary.removedAssets).toBe(1)
+  })
+
+  test.each([
+    ['corrupt', 'not json{'],
+    ['path-mismatch', JSON.stringify({ version: CURRENT_RECEIPT_VERSION, path: '/nowhere/else', facets: {} })],
+  ] as const)('a %s receipt authorizes no deletion and is reported', async (reason, body) => {
+    const a = skillFixture('alpha', 'review')
+    writeManifest({ facets: { alpha: a } })
+    const { adapter, io } = recordingAdapter()
+    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+
+    // A receipt file that exists and cannot be used. Every identity it had
+    // tracked is now untracked, so an install that drops the facet must not
+    // delete anything — and the user has to be told, because the consequence
+    // outlives the command.
+    writeFileSync(receiptPath(projectRoot), body)
+
+    writeManifest({ facets: {} })
+    io.length = 0
+    const events: StageEvent[] = []
+    const result = await runInstall({ projectRoot, adapters: [adapter], onStage: (e) => events.push(e) })
+    if (!result.ok) expect.unreachable()
+
+    expect(events).toContainEqual({ kind: 'receipt-unavailable', reason })
+    expect(io.some((call) => call.startsWith('delete:'))).toBe(false)
+    expect(readFileSync(join(skillRoot('review'), 'SKILL.md'), 'utf8')).toContain('# review from alpha')
+    expect(result.perFacet).toEqual([{ kind: 'removed-untracked', name: 'alpha', oldVersion: '1.0.0' }])
+    // The unusable document is replaced by a record of what this run wrote.
+    expect(readReceipt().facets).toEqual({})
+  })
+
+  test('a missing receipt is not reported as an anomaly', async () => {
+    // First install on a project. Nothing is wrong, so nothing is warned about.
+    const a = skillFixture('alpha', 'review')
+    writeManifest({ facets: { alpha: a } })
+    const { adapter } = recordingAdapter()
+    const events: StageEvent[] = []
+
+    expect((await runInstall({ projectRoot, adapters: [adapter], onStage: (e) => events.push(e) })).ok).toBe(true)
+
+    expect(events.some((e) => e.kind === 'receipt-unavailable')).toBe(false)
+  })
+
+  test('an install after an unusable receipt re-establishes ownership it can then delete', async () => {
+    const a = skillFixture('alpha', 'review')
+    writeManifest({ facets: { alpha: a } })
+    const { adapter, io } = recordingAdapter()
+    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    writeFileSync(receiptPath(projectRoot), 'not json{')
+
+    // The remedy the CLI points at: install while the source is reachable. The
+    // write is what re-creates the claim...
+    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    expect(readReceipt().facets.alpha?.assets.map((asset) => asset.name)).toEqual(['review'])
+
+    // ...and only now can a removal delete it.
+    writeManifest({ facets: {} })
+    io.length = 0
+    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    if (!result.ok) expect.unreachable()
+    expect(io).toContain('delete:skill:review')
+    expect(existsSync(skillRoot('review'))).toBe(false)
+    expect(result.perFacet).toEqual([{ kind: 'removed', name: 'alpha', oldVersion: '1.0.0' }])
   })
 
   test('an aliased asset is removed offline from the receipt alone', async () => {
@@ -648,12 +877,12 @@ describe('apply — frozen reproduction of recorded intent', () => {
 /**
  * The removal-only refinement path, where nothing is written.
  *
- * That is safe exactly when local state already agrees about every surviving
+ * That is safe exactly when the receipt already agrees about every remaining
  * asset. When it does not, refining would commit a receipt describing files
  * this machine does not have — and because ownership reconciliation trusts
  * the receipt, the real file becomes unreachable forever. Each case below
- * must therefore fall back to the ordinary pipeline, which puts the
- * survivor's bytes where the record says they are.
+ * must therefore fall back to the ordinary pipeline, which puts the remaining
+ * facet's bytes where the record says they are.
  */
 describe('remove — refinement only when local state agrees', () => {
   function readLock(): { lockfileVersion: number; facets: Record<string, Record<string, unknown>> } {
@@ -683,7 +912,7 @@ describe('remove — refinement only when local state agrees', () => {
     })
   }
 
-  test('a survivor alias this machine never wrote is materialized, not just recorded', async () => {
+  test('a remaining alias this machine never wrote is materialized, not just recorded', async () => {
     const a = skillFixture('alpha', 'review')
     const b = skillFixture('beta', 'other')
     writeManifest({ facets: { alpha: a, beta: b } })
@@ -717,7 +946,7 @@ describe('remove — refinement only when local state agrees', () => {
     expect(receipt.facets.beta?.assets[0]?.materialization).toEqual({ kind: 'aliased', as: 'vendor-other' })
   })
 
-  test('an identity a removed facet also claimed gets the survivor content', async () => {
+  test('an identity a removed facet also claimed gets the remaining content', async () => {
     const a = skillFixture('alpha', 'review')
     const b = skillFixture('beta', 'other')
     writeManifest({ facets: { alpha: a, beta: b } })
@@ -740,7 +969,7 @@ describe('remove — refinement only when local state agrees', () => {
     const result = await removeAlpha(adapter)
     if (!result.ok) expect.unreachable()
 
-    // Refining would have kept the identity (a survivor claims it), written
+    // Refining would have kept the identity (a remaining facet claims it), written
     // nothing, and committed a receipt attributing alpha's bytes to beta.
     expect(io).toContain('install:skill:review')
     expect(readFileSync(join(skillRoot('review'), 'SKILL.md'), 'utf8')).toContain('# other from beta')
@@ -753,7 +982,7 @@ describe('remove — refinement only when local state agrees', () => {
     writeManifest({ facets: { alpha: a, beta: b } })
     const { adapter, io } = recordingAdapter()
     expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
-    const survivorBefore = readFileSync(join(skillRoot('other'), 'refs/api.md'), 'utf8')
+    const remainingBefore = readFileSync(join(skillRoot('other'), 'refs/api.md'), 'utf8')
 
     io.length = 0
     const result = await removeAlpha(adapter)
@@ -763,7 +992,7 @@ describe('remove — refinement only when local state agrees', () => {
     // nothing is written. (The read is the delete pass snapshotting it for
     // rollback.)
     expect(io).toEqual(['read:skill:review', 'delete:skill:review'])
-    expect(readFileSync(join(skillRoot('other'), 'refs/api.md'), 'utf8')).toBe(survivorBefore)
+    expect(readFileSync(join(skillRoot('other'), 'refs/api.md'), 'utf8')).toBe(remainingBefore)
     expect(existsSync(skillRoot('review'))).toBe(false)
     expect(readReceipt().facets.beta?.assets[0]?.files).toEqual(['skills/other/SKILL.md', 'skills/other/refs/api.md'])
   })
