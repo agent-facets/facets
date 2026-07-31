@@ -6,7 +6,7 @@ import type {
   InstallAssetRequest,
   ReadAssetRequest,
 } from '@agent-facets/adapter'
-import { splitFrontMatter } from '@agent-facets/common'
+import { type Scope, splitFrontMatter } from '@agent-facets/common'
 import { type MaterializedAsset, type ResolvedFacetManifest, skillRootPath } from '@agent-facets/protocol'
 import { type AdapterCompatibilityFailure, compatibilityFailureFor } from '../adapters/api-compatibility.ts'
 import { ownedCompanionPathsFor, type PreviousOwnership } from './commit/ownership.ts'
@@ -319,8 +319,29 @@ export interface DeleteObsoleteOptions {
   onLog?: OnLog
 }
 
+/**
+ * An obsolete skill bundle whose cleanup was deliberately skipped because its
+ * primary file was already gone, leaving the recorded companion paths on disk
+ * and no longer tracked. Carries everything a view layer needs to tell the
+ * user what to clean up by hand.
+ *
+ * `type` is a literal rather than an `AssetType` because only a skill bundle
+ * has companions to retain — a single-file asset that reads as absent has
+ * nothing left to delete.
+ */
+export interface RetainedObsoleteBundle {
+  adapter: string
+  scope: Scope
+  type: 'skill'
+  effectiveName: string
+  /** Every facet that claimed this identity. */
+  facets: readonly string[]
+  /** Recorded companion paths, relative to the skill root. */
+  companionPaths: readonly string[]
+}
+
 export type DeleteObsoleteResult =
-  | { ok: true; deleted: number }
+  | { ok: true; deleted: number; retained: readonly RetainedObsoleteBundle[] }
   | { ok: false; failure: MaterializeFailure; facets: readonly string[] }
 
 /**
@@ -342,6 +363,7 @@ export type DeleteObsoleteResult =
  */
 export async function deleteObsoleteAssets(opts: DeleteObsoleteOptions): Promise<DeleteObsoleteResult> {
   let deleted = 0
+  const retained: RetainedObsoleteBundle[] = []
 
   for (const adapter of opts.adapters) {
     if (adapter.supportsInstall !== true) {
@@ -368,6 +390,27 @@ export async function deleteObsoleteAssets(opts: DeleteObsoleteOptions): Promise
         }
       }
       const previous = readOutcome.previous
+
+      // A skill whose primary is gone reads as wholly absent — the bundle read
+      // checks the primary first and never reaches the companions — so we hold
+      // no preimage for the companion bytes the receipt still claims. Deleting
+      // them anyway would be a mutation with no journal inverse: a later
+      // failure would roll everything else back and report a clean rollback
+      // while those bytes were gone for good. Keep them instead. They stop
+      // being tracked either way, so the honest outcome is to leave the files
+      // and say so, not to destroy what we cannot restore.
+      if (previous === null && ownership.type === 'skill' && ownedCompanionPaths.length > 0) {
+        retained.push({
+          adapter: adapter.name,
+          scope: ownership.scope,
+          type: 'skill',
+          effectiveName: ownership.effectiveName,
+          facets: ownership.facets,
+          companionPaths: [...ownedCompanionPaths].sort(),
+        })
+        opts.onLog?.(() => `[verbose]     ?${target.type}:${target.name} (primary missing — companions retained)`)
+        continue
+      }
 
       let deletedPath: string | undefined
       try {
@@ -420,7 +463,7 @@ export async function deleteObsoleteAssets(opts: DeleteObsoleteOptions): Promise
     }
   }
 
-  return { ok: true, deleted }
+  return { ok: true, deleted, retained }
 }
 
 /**

@@ -670,6 +670,78 @@ describe('apply — global ownership reconciliation', () => {
     expect(result.summary.removedAssets).toBe(1)
   })
 
+  test('an obsolete bundle whose primary is gone keeps its companions and says so', async () => {
+    // The bundle reads as `not-found` because a bundle is addressed through
+    // its primary, so nothing captured the companion bytes the receipt still
+    // claims. Deleting them would be a mutation with no inverse: a later
+    // failure would report a clean rollback with the bytes gone for good.
+    const a = skillFixture('alpha', 'review', { companions: { 'refs/api.md': '# api\n' } })
+    writeManifest({ facets: { alpha: a } })
+    const { adapter, io } = recordingAdapter()
+    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+
+    rmSync(join(skillRoot('review'), 'SKILL.md'))
+
+    writeManifest({ facets: {} })
+    io.length = 0
+    const events: StageEvent[] = []
+    const result = await runInstall({ projectRoot, adapters: [adapter], onStage: (e) => events.push(e) })
+    if (!result.ok) expect.unreachable()
+
+    // No delete was attempted, and the companion is byte-for-byte intact.
+    expect(io.some((call) => call.startsWith('delete:'))).toBe(false)
+    expect(readFileSync(join(skillRoot('review'), 'refs/api.md'), 'utf8')).toBe('# api\n')
+    expect(existsSync(join(skillRoot('review'), 'SKILL.md'))).toBe(false)
+
+    // The declaration and the claim are gone regardless, which is exactly why
+    // the retained files have to be announced: nothing tracks them now.
+    const lock = JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8'))
+    expect(lock.facets.alpha).toBeUndefined()
+    expect(readReceipt().facets.alpha).toBeUndefined()
+    expect(events).toContainEqual({
+      kind: 'obsolete-bundle-retained',
+      adapter: 'rec',
+      // Carried through from the ownership record: the companion paths below
+      // are skill-root-relative, and the scope is what says which root.
+      scope: 'project',
+      assetName: 'review',
+      facets: ['alpha'],
+      companionPaths: ['refs/api.md'],
+    })
+    // Nothing left disk, so the asset count must not claim otherwise.
+    expect(result.summary.removedAssets).toBe(0)
+  })
+
+  test('a failure after a skipped bundle delete needs no inverse and loses nothing', async () => {
+    const a = skillFixture('alpha', 'review', { companions: { 'refs/api.md': '# api\n' } })
+    writeManifest({ facets: { alpha: a } })
+    const { adapter } = recordingAdapter()
+    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    const before = {
+      lock: readFileSync(join(projectRoot, 'facets.lock'), 'utf8'),
+      receipt: readFileSync(receiptPath(projectRoot), 'utf8'),
+    }
+
+    rmSync(join(skillRoot('review'), 'SKILL.md'))
+    // Fail the first write of the trio, after the delete pass has run.
+    mkdirSync(join(projectRoot, 'facets.json.tmp'), { recursive: true })
+
+    writeManifest({ facets: {} })
+    const events: StageEvent[] = []
+    const result = await runInstall({ projectRoot, adapters: [adapter], onStage: (e) => events.push(e) })
+    if (result.ok) expect.unreachable()
+
+    // Nothing to undo, because nothing was destroyed — the rollback is clean
+    // by construction rather than by a preimage we could not have captured.
+    expect(result.rollback).toEqual({ kind: 'succeeded', entriesUndone: 0 })
+    expect(readFileSync(join(skillRoot('review'), 'refs/api.md'), 'utf8')).toBe('# api\n')
+    expect(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')).toBe(before.lock)
+    expect(readFileSync(receiptPath(projectRoot), 'utf8')).toBe(before.receipt)
+    // The removal never committed, so the files are still tracked: warning
+    // the user that they are orphaned here would be a lie.
+    expect(events.some((e) => e.kind === 'obsolete-bundle-retained')).toBe(false)
+  })
+
   test.each([
     ['corrupt', 'not json{'],
     ['path-mismatch', JSON.stringify({ version: CURRENT_RECEIPT_VERSION, path: '/nowhere/else', facets: {} })],

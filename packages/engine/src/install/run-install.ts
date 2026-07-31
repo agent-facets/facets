@@ -15,7 +15,7 @@ import { checkFrozenConsistency } from './frozen-gates.ts'
 import { InstallJournal } from './journal.ts'
 import { acquireInstallLock } from './lockfile-guard.ts'
 import { FACETS_LOCK_FILE, loadLockfile } from './lockfile-io.ts'
-import { deleteObsoleteAssets } from './materialize.ts'
+import { deleteObsoleteAssets, type RetainedObsoleteBundle } from './materialize.ts'
 import { materializeFailureToRunInstall } from './materialize-failure.ts'
 import { ownEntry } from './own-entry.ts'
 import { type Receipt, receiptBaseFor, resolveProjectReceipt } from './receipt.ts'
@@ -313,6 +313,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
         return await rollbackAndFail(journal, committed.failure, onLog)
       }
       onStage({ kind: 'lockfile-write', path: join(projectRoot, FACETS_LOCK_FILE) })
+      reportRetainedBundles(deletion.retained)
       for (const entry of prunedIntent) {
         onStage({
           kind: 'stale-override-pruned',
@@ -494,6 +495,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     if (!frozenLockfile) {
       onStage({ kind: 'lockfile-write', path: join(projectRoot, FACETS_LOCK_FILE) })
     }
+    reportRetainedBundles(deletion.retained)
 
     // Reported only now: before the write, the prune had not happened, and a
     // failed transaction leaves every override on disk untouched.
@@ -526,6 +528,24 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
 
   function noopStage(_event: StageEvent): void {}
   function noopLog(_build: () => string): void {}
+
+  /**
+   * Announce obsolete bundles whose cleanup was skipped because their primary
+   * was already gone. Called only after the project files commit: before that
+   * the removal can still roll back, and the files are still tracked.
+   */
+  function reportRetainedBundles(retained: readonly RetainedObsoleteBundle[]): void {
+    for (const bundle of retained) {
+      onStage({
+        kind: 'obsolete-bundle-retained',
+        adapter: bundle.adapter,
+        scope: bundle.scope,
+        assetName: bundle.effectiveName,
+        facets: bundle.facets,
+        companionPaths: bundle.companionPaths,
+      })
+    }
+  }
 
   /**
    * Failure path that runs before the install lock has been released
