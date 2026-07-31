@@ -30,7 +30,7 @@ async function runCli(...args: string[]) {
   // builds proceed with unknown-adapter warnings. Created under `testDir`
   // so the suite's afterAll cleanup sweeps it — no per-call leak.
   const facetDir = await mkdtemp(join(testDir, 'facet-dir-'))
-  const result = await spawnCli(args, { env: { NO_COLOR: '1', FACET_DIR: facetDir } })
+  const result = await spawnCli(args, { env: { FACET_DIR: facetDir } })
 
   // Don't let build errors flood test output — capture but don't dump
   if (result.exitCode !== 0 && result.stderr) {

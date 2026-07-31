@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { render } from 'ink-testing-library'
 import { createElement } from 'react'
+import { visibleTerminalText } from '../../../__tests__/helpers/terminal-output.ts'
 import { ConfirmPrompt } from '../confirm-prompt.tsx'
 
 const KEY_ENTER = '\r'
@@ -25,7 +26,7 @@ describe('ConfirmPrompt — initial render', () => {
         onAnswer: () => {},
       }),
     )
-    const frame = instance.lastFrame()
+    const frame = visibleTerminalText(instance.lastFrame() ?? '')
     expect(frame).toContain('Overwrite existing file?')
     expect(frame).toContain('(y/N)')
     instance.unmount()
@@ -39,7 +40,7 @@ describe('ConfirmPrompt — initial render', () => {
         onAnswer: () => {},
       }),
     )
-    expect(instance.lastFrame()).toContain('(Y/n)')
+    expect(visibleTerminalText(instance.lastFrame() ?? '')).toContain('(Y/n)')
     instance.unmount()
   })
 })

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { render } from 'ink-testing-library'
 import { createElement } from 'react'
+import { stripTerminalControls, visibleTerminalText } from '../../../__tests__/helpers/terminal-output.ts'
 import { InstallPicker } from '../install-picker.tsx'
 
 const KEY_DOWN = '\u001b[B'
@@ -27,7 +28,9 @@ describe('InstallPicker — initial render', () => {
         onAbort: () => {},
       }),
     )
-    expect(instance.lastFrame()).toContain('No AI tools are connected yet. Pick which adapter to install.')
+    expect(visibleTerminalText(instance.lastFrame() ?? '')).toContain(
+      'No AI tools are connected yet. Pick which adapter to install.',
+    )
     instance.unmount()
   })
 
@@ -39,7 +42,7 @@ describe('InstallPicker — initial render', () => {
         onAbort: () => {},
       }),
     )
-    const frame = instance.lastFrame() ?? ''
+    const frame = visibleTerminalText(instance.lastFrame() ?? '')
     expect(frame).toContain('Pick which adapter to install or update.')
     expect(frame).not.toContain('No AI tools are connected yet')
     instance.unmount()
@@ -53,7 +56,11 @@ describe('InstallPicker — initial render', () => {
         onAbort: () => {},
       }),
     )
-    const frame = instance.lastFrame() ?? ''
+    // Row-scoped: the annotation must sit on the claude-code row and nowhere
+    // else, so this keeps the frame's rows rather than unwrapping them — `.*`
+    // across a single string would let one row's annotation satisfy another
+    // row's name.
+    const frame = stripTerminalControls(instance.lastFrame() ?? '')
     // claude-code marked as installed
     expect(frame).toMatch(/claude-code.*\(installed — select to update\)/)
     // opencode (not installed) stays un-annotated
@@ -68,7 +75,7 @@ describe('InstallPicker — initial render', () => {
         onAbort: () => {},
       }),
     )
-    const frame = instance.lastFrame() ?? ''
+    const frame = visibleTerminalText(instance.lastFrame() ?? '')
     expect(frame).toContain('claude-code')
     expect(frame).toContain('opencode')
     expect(frame).toContain('codex')
@@ -82,7 +89,9 @@ describe('InstallPicker — initial render', () => {
         onAbort: () => {},
       }),
     )
-    expect(instance.lastFrame()).toContain('↑↓ move · Space toggle · Enter confirm · Esc cancel')
+    expect(visibleTerminalText(instance.lastFrame() ?? '')).toContain(
+      '↑↓ move · Space toggle · Enter confirm · Esc cancel',
+    )
     instance.unmount()
   })
 })
@@ -137,7 +146,7 @@ describe('InstallPicker — keyboard interaction', () => {
     await nextTick()
     expect(confirmed).toBe(false)
     expect(aborted).toBe(false)
-    expect(instance.lastFrame()).toContain('Select at least one with Space.')
+    expect(visibleTerminalText(instance.lastFrame() ?? '')).toContain('Select at least one with Space.')
     instance.unmount()
   })
 
@@ -225,10 +234,10 @@ describe('InstallPicker — keyboard interaction', () => {
     )
     instance.stdin.write(KEY_ENTER)
     await nextTick()
-    expect(instance.lastFrame()).toContain('Select at least one with Space.')
+    expect(visibleTerminalText(instance.lastFrame() ?? '')).toContain('Select at least one with Space.')
     instance.stdin.write(KEY_DOWN)
     await nextTick()
-    expect(instance.lastFrame()).not.toContain('Select at least one with Space.')
+    expect(visibleTerminalText(instance.lastFrame() ?? '')).not.toContain('Select at least one with Space.')
     instance.unmount()
   })
 })

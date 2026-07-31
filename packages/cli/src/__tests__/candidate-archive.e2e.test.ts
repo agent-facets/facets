@@ -36,7 +36,7 @@ afterAll(async () => {
 
 async function runCli(cwd: string, ...args: string[]) {
   const facetDir = await mkdtemp(join(testDir, 'facet-dir-'))
-  return await spawnCli(args, { cwd, env: { NO_COLOR: '1', FACET_DIR: facetDir } })
+  return await spawnCli(args, { cwd, env: { FACET_DIR: facetDir } })
 }
 
 const REPRESENTATIVE_BINARY = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01, 0xff, 0xfe])

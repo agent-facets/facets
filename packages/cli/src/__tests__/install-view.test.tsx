@@ -20,6 +20,7 @@ import {
   UNSUPPORTED_MANIFEST_VERSION_FIX,
   UNSUPPORTED_MANIFEST_VERSION_WHAT,
 } from '../util/unsupported-manifest-version.ts'
+import { visibleContentFrame, visibleTerminalText } from './helpers/terminal-output.ts'
 
 /**
  * Wait long enough for the view's `useEffect` chain to finish (run the
@@ -28,34 +29,6 @@ import {
  */
 function settle(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 50))
-}
-
-/**
- * `ink-testing-library`'s `lastFrame()` returns the literal final frame,
- * which post-unmount is just `"\n"`. We want the last frame with actual
- * content — the one rendered immediately before the view auto-unmounted.
- *
- * Searches backwards from the end and returns the most recent frame
- * with non-trivial text. Throws if no such frame exists, so a missing
- * frame fails loudly instead of silently passing assertions.
- */
-function findContentFrame(frames: ReadonlyArray<string | undefined>): string {
-  for (let i = frames.length - 1; i >= 0; i--) {
-    const frame = frames[i]
-    if (frame !== undefined && frame.trim().length > 0) return frame
-  }
-  throw new Error(`no content frame found among ${frames.length} captured frames`)
-}
-
-/**
- * Collapse a frame's whitespace so an assertion can name a phrase without
- * knowing where Ink wrapped it. A rendered sentence breaks at whatever column
- * the terminal width lands on, so `toContain('no longer tracked')` is really
- * an assertion about line width — it fails the moment the copy before it
- * changes length, which says nothing about the behavior under test.
- */
-function unwrapped(frame: string): string {
-  return frame.replace(/\s+/g, ' ')
 }
 
 /**
@@ -167,7 +140,7 @@ describe('InstallView — single-facet success', () => {
       }),
     )
     await settle()
-    const frame = findContentFrame(instance.frames)
+    const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain('viper-plans installed.')
     expect(frame).toContain('1 installed')
     instance.unmount()
@@ -205,7 +178,7 @@ describe('InstallView — multi-facet success with update', () => {
       }),
     )
     await settle()
-    const frame = findContentFrame(instance.frames)
+    const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain('Install complete.')
     expect(frame).toContain('2 installed')
     expect(frame).toContain('1 updated')
@@ -237,7 +210,7 @@ describe('InstallView — server warnings', () => {
       }),
     )
     await settle()
-    const frame = findContentFrame(instance.frames)
+    const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain('with-servers')
     expect(frame).toContain('2 servers declared')
     expect(frame).toContain('inline-server')
@@ -278,7 +251,7 @@ describe('InstallView — drift removal', () => {
       }),
     )
     await settle()
-    const frame = findContentFrame(instance.frames)
+    const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain('1 removed')
     instance.unmount()
   })
@@ -307,7 +280,7 @@ describe('InstallView — drift removal', () => {
     }
     const instance = render(createElement(InstallView, { mode: 'remove', run: makeFakeRun(events, result) }))
     await settle()
-    const frame = findContentFrame(instance.frames)
+    const frame = visibleContentFrame(instance.frames)
     // Still named as removed — the declaration did go away.
     expect(frame).toContain('orphan')
     // Ink wraps at the test terminal width, so assert on wrap-safe fragments.
@@ -342,7 +315,7 @@ describe('InstallView — drift removal', () => {
     }
     const instance = render(createElement(InstallView, { mode: 'install', run: makeFakeRun(events, result) }))
     await settle()
-    const frame = findContentFrame(instance.frames)
+    const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain('unreadable')
     expect(frame).toContain('nothing already on disk is tracked')
     instance.unmount()
@@ -363,7 +336,7 @@ describe('InstallView — drift removal', () => {
       }),
     )
     await settle()
-    const frame = findContentFrame(instance.frames)
+    const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain('different project')
     expect(frame).not.toContain('unreadable')
     instance.unmount()
@@ -385,7 +358,7 @@ describe('InstallView — drift removal', () => {
       }),
     )
     await settle()
-    const frame = findContentFrame(instance.frames)
+    const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain('review')
     expect(frame).toContain('alpha')
     expect(frame).toContain('left in place')
@@ -407,7 +380,7 @@ describe('InstallView — drift removal', () => {
       }),
     )
     await settle()
-    const frame = findContentFrame(instance.frames)
+    const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain('could not be written')
     expect(frame).toContain('untracked')
     instance.unmount()
@@ -436,7 +409,7 @@ describe('InstallView — drift removal', () => {
       }),
     )
     await settle()
-    const frame = unwrapped(findContentFrame(instance.frames))
+    const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain('review')
     expect(frame).toContain('refs/api.md')
     expect(frame).toContain('no longer tracked')
@@ -476,7 +449,7 @@ describe('InstallView — drift removal', () => {
       }),
     )
     await settle()
-    const frame = unwrapped(findContentFrame(instance.frames))
+    const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain('project scope')
     expect(frame).toContain('user scope')
     // Both rows rendered — a scope-free React key would have collapsed them.
@@ -545,7 +518,7 @@ describe('InstallView — marketing aesthetic on `add`', () => {
       }),
     )
     await settle()
-    const frame = findContentFrame(instance.frames)
+    const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain('1 skill')
     expect(frame).toContain('1 command')
     // The "Now /x is available" line was removed in the marketing overhaul.
@@ -604,7 +577,7 @@ describe('InstallView — marketing aesthetic on `add`', () => {
       }),
     )
     await settle()
-    const frame = findContentFrame(instance.frames)
+    const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain('1 skill')
     expect(frame).not.toContain('is available to your agents')
     instance.unmount()
@@ -698,7 +671,7 @@ describe('InstallView — marketing aesthetic on `add`', () => {
       }),
     )
     await settle()
-    const frame = findContentFrame(instance.frames)
+    const frame = visibleContentFrame(instance.frames)
     // Only cowsay's one command — no skills from `existing-skill`.
     expect(frame).toContain('1 command')
     expect(frame).not.toContain('skill')
@@ -758,7 +731,7 @@ describe('InstallView — marketing aesthetic on `add`', () => {
       }),
     )
     await settle()
-    const frame = findContentFrame(instance.frames)
+    const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain('1 command')
     expect(frame).not.toContain('is available to your agents')
     instance.unmount()
@@ -778,7 +751,7 @@ describe('InstallView — empty / no-op', () => {
       }),
     )
     await settle()
-    const frame = findContentFrame(instance.frames)
+    const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain('no changes')
     instance.unmount()
   })
@@ -814,7 +787,7 @@ describe('InstallView — integrity failure', () => {
       }),
     )
     await settle()
-    const frame = findContentFrame(instance.frames)
+    const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain('integrity check failed')
     expect(frame).toContain('check: B')
     expect(frame).toContain(integrityFailure.expected)
@@ -846,7 +819,7 @@ describe('InstallView — integrity failure', () => {
     }
     const instance = render(createElement(InstallView, { mode: 'add', run: makeFakeRun(events, result) }))
     await settle()
-    const frame = findContentFrame(instance.frames)
+    const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain('file integrity mismatch')
     expect(frame).toContain('skills/planning/references/api.md')
     expect(frame).toContain(failure.code === 'RECONCILE_PER_FILE_INTEGRITY' ? failure.expected : '')
@@ -883,7 +856,7 @@ describe('InstallView — parse error failure', () => {
       }),
     )
     await settle()
-    const frame = findContentFrame(instance.frames)
+    const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain('could not parse source for broken')
     expect(frame).toContain('git+ prefix is not supported')
     expect(frame).toContain('fix:')
@@ -916,7 +889,7 @@ describe('InstallView — aborted', () => {
       }),
     )
     await settle()
-    const frame = findContentFrame(instance.frames)
+    const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain('install aborted')
     // Asserted against the shared helper rather than a literal: this is the
     // check that the view and the stderr `fix:` line cannot drift apart.
@@ -954,7 +927,7 @@ describe('InstallView — unsupported manifest version', () => {
       }),
     )
     await settle()
-    const frame = findContentFrame(instance.frames)
+    const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain(UNSUPPORTED_MANIFEST_VERSION_WHAT)
     expect(frame).toContain(UNSUPPORTED_MANIFEST_VERSION_FIX)
     expect(frame).toContain(describeUnsupportedManifestVersion({ ...detail, observed }))
@@ -978,7 +951,7 @@ describe('InstallView — unsupported manifest version', () => {
       }),
     )
     await settle()
-    const frame = findContentFrame(instance.frames)
+    const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain(UNSUPPORTED_MANIFEST_VERSION_WHAT)
     expect(frame).toContain(UNSUPPORTED_MANIFEST_VERSION_FIX)
     instance.unmount()
@@ -1008,7 +981,7 @@ describe('InstallView — partial rollback failure surfaces', () => {
       }),
     )
     await settle()
-    const frame = findContentFrame(instance.frames)
+    const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain(diskStateSentence(rollback))
     expect(frame).toContain('Some adapter writes could not be undone')
     expect(frame).toContain('disk full')
@@ -1038,7 +1011,7 @@ describe('InstallView — adapter registration', () => {
       }),
     )
     await settle()
-    const frame = findContentFrame(instance.frames)
+    const frame = visibleContentFrame(instance.frames)
     // Registration line: "Updated facets via 2 adapters"
     expect(frame).toContain('Updated facets via')
     expect(frame).toContain('2 adapter')
@@ -1077,7 +1050,7 @@ describe('InstallView — frozen-lockfile drift', () => {
       }),
     )
     await settle()
-    const frame = findContentFrame(instance.frames)
+    const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain('lockfile is out of date')
     expect(frame).toContain('locked 0.1.1 does not satisfy 0.1.2')
     expect(frame).toContain('not in lockfile (manifest wants 0.2.0)')
@@ -1157,7 +1130,7 @@ describe('InstallView — collision phase machine', () => {
       }),
     )
     await tick()
-    expect(instance.lastFrame() ?? '').toContain('Checking for name collisions')
+    expect(visibleTerminalText(instance.lastFrame() ?? '')).toContain('Checking for name collisions')
     await settle()
     instance.unmount()
   })
@@ -1184,7 +1157,7 @@ describe('InstallView — collision phase machine', () => {
     )
     await tick()
 
-    const paused = instance.lastFrame() ?? ''
+    const paused = visibleTerminalText(instance.lastFrame() ?? '')
     expect(paused).toContain('Checking for name collisions across all facets')
     // One phase, not one per facet.
     expect(paused.match(/Checking for name collisions/g)).toHaveLength(1)
@@ -1209,11 +1182,11 @@ describe('InstallView — collision phase machine', () => {
       }),
     )
     await tick()
-    expect(instance.lastFrame() ?? '').toContain('Checking for name collisions')
+    expect(visibleTerminalText(instance.lastFrame() ?? '')).toContain('Checking for name collisions')
 
     await tick()
     await tick()
-    expect(instance.lastFrame() ?? '').not.toContain('Checking for name collisions')
+    expect(visibleTerminalText(instance.lastFrame() ?? '')).not.toContain('Checking for name collisions')
 
     await settle()
     instance.unmount()
@@ -1230,7 +1203,7 @@ describe('InstallView — collision phase machine', () => {
     await tick()
 
     // Phase 2: the workspace has the screen.
-    expect(instance.lastFrame() ?? '').toContain('Installation is paused')
+    expect(visibleTerminalText(instance.lastFrame() ?? '')).toContain('Installation is paused')
 
     // Resolve by omitting both claimants, then confirm.
     for (const key of [
@@ -1257,7 +1230,7 @@ describe('InstallView — collision phase machine', () => {
     // second Ink renderer, so the whole run is one continuous frame
     // stream.
     await settle()
-    const frame = findContentFrame(instance.frames)
+    const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain('Install complete.')
     expect(frame).toContain('1 installed')
     instance.unmount()
@@ -1276,7 +1249,7 @@ describe('InstallView — collision phase machine', () => {
     await settle()
 
     expect(resolutions).toEqual([{ kind: 'cancelled' }])
-    const frame = findContentFrame(instance.frames)
+    const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain('Cancelled')
     expect(frame).toContain(diskStateSentence({ kind: 'not-needed', reason: 'test fixture' }))
     expect(frame).not.toContain('Install complete.')
@@ -1297,7 +1270,7 @@ describe('InstallView — collision phase machine', () => {
       }),
     )
     await tick()
-    expect(instance.lastFrame() ?? '').toContain('Installation is paused')
+    expect(visibleTerminalText(instance.lastFrame() ?? '')).toContain('Installation is paused')
 
     controller.abort()
     await settle()
@@ -1350,7 +1323,7 @@ describe('InstallView — materialization reporting', () => {
     )
     await settle()
 
-    const frame = findContentFrame(instance.frames)
+    const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain('review')
     expect(frame).toContain('vendor-review')
     expect(frame).toContain('deploy')
@@ -1370,7 +1343,7 @@ describe('InstallView — materialization reporting', () => {
     // The omitted command stays in the lockfile — it is part of the
     // resolved set — but claiming it in the bundle would advertise a
     // file that was never written.
-    const frame = findContentFrame(instance.frames)
+    const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain('1 skill')
     expect(frame).not.toContain('1 command')
     instance.unmount()
@@ -1393,7 +1366,7 @@ describe('InstallView — materialization reporting', () => {
 
     // No `onLog` was supplied — this has to be visible anyway, because
     // it silently changed what facets.json says.
-    const frame = findContentFrame(instance.frames)
+    const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain('gone')
     expect(frame).toContain('alpha')
     expect(frame).toContain('no longer contains')
@@ -1421,7 +1394,7 @@ describe('InstallView — disposition-only change', () => {
     )
     await settle()
 
-    const frame = findContentFrame(instance.frames)
+    const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain('1 updated')
     expect(frame).not.toContain('repaired')
     expect(frame).not.toContain('1.0.0 → 1.0.0')
