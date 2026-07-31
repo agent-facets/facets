@@ -184,6 +184,8 @@ export type {
 export { prepareRemove, runRemove } from './install/run-remove.ts'
 export type {
   Addition,
+  AssetIdentity,
+  EffectiveAssetName,
   FacetOutcome,
   FacetStage,
   InstallDelta,
@@ -197,6 +199,11 @@ export type {
   RunInstallResult,
   StageEvent,
 } from './install/types.ts'
+// `AssetIdentity` names an asset by its EFFECTIVE name, and the brand on
+// that field makes the type unconstructible from a bare string. Adapter
+// failure shapes carry one, so anything rendering `RunInstallFailure` needs
+// the constructor to build a fixture -- exported alongside the type.
+export { assetIdentity } from './install/types.ts'
 // loaders. Note: `ResolvedFacetManifest` and `FACET_MANIFEST_FILE` are
 // part of `@agent-facets/protocol`'s public surface, not engine's. CLI
 // imports them directly from protocol; we don't re-export them here to

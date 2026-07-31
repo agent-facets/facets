@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type {
   CurrentLockfileFacet,
   LegacyLockfileFacet,
+  Lockfile02Facet,
   MaterializationDisposition,
   SupportedLockfileFacet,
 } from '@agent-facets/protocol'
@@ -24,6 +25,21 @@ const entry = (
       type: 'skill',
       name: 'planning',
       materialization,
+      files: [{ path: 'skills/planning/SKILL.md', integrity: HASH }],
+    },
+  ],
+})
+
+/** A `0.2` entry: per-file records, but no disposition field. */
+const entry02 = (version: string): Lockfile02Facet => ({
+  source: SOURCE,
+  version,
+  integrity: 'sha256:stub',
+  assets: [
+    {
+      scope: 'user',
+      type: 'skill',
+      name: 'planning',
       files: [{ path: 'skills/planning/SKILL.md', integrity: HASH }],
     },
   ],
@@ -134,6 +150,16 @@ describe('classifyOutcome', () => {
       const previous: SupportedLockfileFacet = legacyEntry('1.0.0')
       const current = entry('1.0.0', { kind: 'aliased', as: 'vendor-planning' })
       expect(classifyOutcome('cowsay', previous, current, 0).kind).toBe('updated')
+    })
+
+    test('a 0.2 entry -- per-file records but no disposition -- also compares equal', () => {
+      // The legacy (`1`) shape is identity-only, so it exercises the
+      // refinement via an asset with no `files` either. A `0.2` asset
+      // carries `files` and lacks only `materialization`, which is the
+      // shape the refinement actually has to narrow in a real upgrade.
+      const previous: SupportedLockfileFacet = entry02('1.0.0')
+      expect(classifyOutcome('cowsay', previous, entry('1.0.0'), 0).kind).toBe('unchanged')
+      expect(classifyOutcome('cowsay', previous, entry('1.0.0', { kind: 'omitted' }), 0).kind).toBe('updated')
     })
   })
 })

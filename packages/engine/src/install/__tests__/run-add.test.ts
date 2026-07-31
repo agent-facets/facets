@@ -3,6 +3,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
+import type { ProjectFacetEntry } from '@agent-facets/protocol'
 
 /**
  * Tests for the `facet add` orchestrator (`runAdd`).
@@ -126,11 +127,16 @@ export default {
   )
 }
 
-function readFacets(): Record<string, string> {
+/**
+ * A facets.json entry is `string | { source, materialization }`. Typing
+ * these helpers as a flat string map made the expanded form unrepresentable,
+ * so a suite using them could not cover aliasing even if it wanted to.
+ */
+function readFacets(): Record<string, ProjectFacetEntry> {
   return JSON.parse(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).facets
 }
 
-function writeFacets(facets: Record<string, string>): string {
+function writeFacets(facets: Record<string, ProjectFacetEntry>): string {
   const bytes = `${JSON.stringify({ facets }, null, 2)}\n`
   writeFileSync(join(projectRoot, 'facets.json'), bytes)
   return bytes

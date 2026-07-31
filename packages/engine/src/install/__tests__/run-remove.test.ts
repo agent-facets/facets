@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
 import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
-import { CURRENT_LOCKFILE_VERSION } from '@agent-facets/protocol'
+import { CURRENT_LOCKFILE_VERSION, type ProjectFacetEntry } from '@agent-facets/protocol'
 
 /**
  * Tests for the `facet remove` orchestrator (`runRemove`).
@@ -127,7 +127,12 @@ export default {
   )
 }
 
-function readFacets(): Record<string, string> {
+/**
+ * A facets.json entry is `string | { source, materialization }`. Typing
+ * these helpers as a flat string map made the expanded form unrepresentable,
+ * so a suite using them could not cover aliasing even if it wanted to.
+ */
+function readFacets(): Record<string, ProjectFacetEntry> {
   return JSON.parse(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).facets
 }
 

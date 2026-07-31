@@ -1,11 +1,11 @@
 import {
   type FacetContribution,
   LOCKFILE_VERSION_0_3,
-  type MaterializationDisposition,
+  lockedDispositionOf,
   planMaterialization,
   type SupportedLockfile,
-  type SupportedLockfileAssetEntry,
   type SupportedLockfileVersion,
+  sameDisposition,
 } from '@agent-facets/protocol'
 import { countOverrides, type NormalizedFacetEntry } from '../manifest/mutations.ts'
 import { detectLockfileDrift } from './detect-lockfile-drift.ts'
@@ -33,16 +33,6 @@ export interface FrozenGateArgs {
   /** The exact schema the lockfile bytes validated under. */
   lockfileVersion: SupportedLockfileVersion
   lockfileExisted: boolean
-}
-
-/** The disposition a locked asset records, refining pre-`0.3` entries. */
-function lockedDispositionOf(asset: SupportedLockfileAssetEntry): MaterializationDisposition {
-  return 'materialization' in asset ? asset.materialization : { kind: 'authored' }
-}
-
-function sameDisposition(a: MaterializationDisposition, b: MaterializationDisposition): boolean {
-  if (a.kind !== b.kind) return false
-  return a.kind === 'aliased' && b.kind === 'aliased' ? a.as === b.as : true
 }
 
 /**

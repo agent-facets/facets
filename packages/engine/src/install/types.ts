@@ -12,35 +12,49 @@ import type { RegistryError } from '../registry/index.ts'
 import type { ParseError, Source } from '../sources/facet/types.ts'
 import type { CollisionResolver } from './commit/compose.ts'
 
+declare const EFFECTIVE_NAME: unique symbol
+
+/**
+ * An asset name in the EFFECTIVE domain — the name a project materializes an
+ * asset under, which is the name on disk.
+ *
+ * Branded because the authored and effective names are both plain strings of
+ * the same grammar, so nothing structural distinguishes them. The receipt and
+ * lockfile record AUTHORED names; adapters are addressed by EFFECTIVE ones.
+ * Without the brand a `ReceiptAsset` is assignable to {@link AssetIdentity},
+ * and handing one to a delete request compiles cleanly while addressing the
+ * wrong file for every aliased asset.
+ *
+ * The brand exists only in the type system: at runtime this is a string.
+ * Produce one with {@link assetIdentity}, never by casting at a call site.
+ */
+export type EffectiveAssetName = string & { readonly [EFFECTIVE_NAME]: true }
+
 /**
  * The adapter-agnostic identity of a single asset: the triple that names it
  * for read, install, and delete.
  *
- * Distinct from any lockfile asset entry on purpose. Materialization,
- * journal entries, and progress events need only the identity, and typing
- * them against a lockfile entry implied they cared about per-file records or
- * dispositions — which in turn invited reading those fields off a value
- * whose version was no longer known.
+ * `name` is the EFFECTIVE name. Distinct from any lockfile asset entry on
+ * purpose. Materialization, journal entries, and progress events need only
+ * the identity, and typing them against a lockfile entry implied they cared
+ * about per-file records or dispositions — which in turn invited reading
+ * those fields off a value whose version was no longer known.
  */
 export interface AssetIdentity {
   scope: Scope
   type: AssetType
-  name: string
+  name: EffectiveAssetName
 }
 
 /**
- * An asset previously materialized on this machine: its identity plus every
- * inner-archive path it owns, primary included.
+ * The sole constructor for an {@link AssetIdentity}.
  *
- * Callers normalize into this shape before handing it to materialization.
- * Previous ownership can arrive from a lockfile entry (`{ path, integrity }`
- * records, or none at all on a legacy entry) or from the receipt (bare path
- * strings), and materialization used to accept whichever it was given and
- * probe for `files` structurally. Normalizing at the boundary means the
- * shape question is answered once, by the code that knows the answer.
+ * Taking the effective name as an explicitly-named parameter is the whole
+ * point: a caller holding an authored name has to notice it is passing the
+ * wrong one. Every adapter request in this package flows through here.
  */
-export interface MaterializedAssetOwnership extends AssetIdentity {
-  ownedPaths: readonly string[]
+export function assetIdentity(scope: Scope, type: AssetType, effectiveName: string): AssetIdentity {
+  return { scope, type, name: effectiveName as EffectiveAssetName }
 }
 
 /**

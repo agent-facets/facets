@@ -124,12 +124,21 @@
 
 ## 13. Migration and Cross-Layer Validation — Research
 
-- [ ] 13.1 Explore: Audit all protocol, engine, CLI, adapter, fixture, and documentation tests affected by the manifest/lockfile/receipt version changes and identify any remaining permissive types, obsolete compatibility exports, or alias-unaware helpers that could drop dispositions.
-- [ ] 13.2 Propose: Define the final cross-layer migration validation matrix and any residual corrections required before the single release is implementation-ready.
+- [x] 13.1 Explore: Audit all protocol, engine, CLI, adapter, fixture, and documentation tests affected by the manifest/lockfile/receipt version changes and identify any remaining permissive types, obsolete compatibility exports, or alias-unaware helpers that could drop dispositions.
+- [x] 13.2 Propose: Define the final cross-layer migration validation matrix and any residual corrections required before the single release is implementation-ready.
 
 ## 14. Migration and Cross-Layer Validation — Implementation
 
-- [ ] 14.1 Implement: Remove any residual permissive or obsolete compatibility path found by the final audit while retaining only the explicit legacy `1`, `0.2`, and unversioned readers required by the specification.
-- [ ] 14.2 Implement: Verify unconditional non-frozen lockfile/receipt `0.3` writes and transactional project-manifest `0.1` migration hold across every command, and that frozen operations retain loaded manifest/lockfile versions and write only safe machine-local receipt state.
-- [ ] 14.3 Implement: Add cross-package migration fixtures and tests for resolution-free upgrades, alias/omit projects, downgrade fail-closed behavior, failed-write restoration, teammate/CI reproduction, and removing all overrides without format downgrade.
-- [ ] 14.4 Verify: Run `bun check` for the complete repository and resolve every test, type, lint, formatting, e2e, documentation, and build failure before marking the change implementation-ready.
+> The 13.1 audit found **no live defects**: no unpinned lockfile type survives,
+> no production code types a manifest entry as a bare string, a lockfile asset
+> cannot be constructed without a disposition, and there are no `as any`,
+> `@ts-expect-error`, or non-null assertions in any manifest/lockfile/receipt
+> path. What it found were latent traps — approved for correction in 14.1 —
+> and five test gaps, three of which 14.3 already named.
+
+- [x] 14.1 Implement: Remove any residual permissive or obsolete compatibility path found by the final audit while retaining only the explicit legacy `1`, `0.2`, and unversioned readers required by the specification. Approved scope: remove the deprecated `FacetsJsonSchema`/`FacetsJson` (its stated removal precondition — engine migrating — is met) and note it in the protocol changeset; delete the dead `authoredAssetEntries` factory, which can stamp `authored` across a facet while bypassing Compose; retype `reconcile.ts`'s `filesOf` against the supported-asset union instead of `unknown` plus a cast.
+- [x] 14.1a Implement: Close the `AssetIdentity` authored/effective ambiguity with a compile-time brand, so an `AssetIdentity` can only be produced from an effective name and a `ReceiptAsset` (whose `name` is authored) is no longer structurally assignable to it. The on-disk receipt format does not change.
+- [x] 14.1b Implement: Remove the single-source-of-truth violations the audit found — consolidate the three duplicate `'materialization' in asset` refinements into one shared helper, and route the hand-rolled authored-path derivations in `receipt.ts` and `verified-asset-plan.ts` through protocol's `canonicalPrimaryPath`.
+- [x] 14.2 Implement: Verify unconditional non-frozen lockfile/receipt `0.3` writes and transactional project-manifest `0.1` migration hold across every command, and that frozen operations retain loaded manifest/lockfile versions and write only safe machine-local receipt state.
+- [x] 14.3 Implement: Add cross-package migration fixtures and tests for resolution-free upgrades, alias/omit projects, downgrade fail-closed behavior, failed-write restoration, teammate/CI reproduction, and removing all overrides without format downgrade. Audit-identified gaps to close: `0.2` → `0.3` lockfile migration on a non-frozen install (only the legacy `1` path is covered today); `manifestVersion` surviving an override collapse; reproduction from a committed manifest/lockfile pair in a fresh project root with no receipt; the string `"0.1"` rejection through the engine loader; and a `0.2`-shaped asset in `classifyOutcome`. Also retype the five engine test helpers that declare raw `facets.json` as `Record<string, string>`.
+- [x] 14.4 Verify: Run `bun check` for the complete repository and resolve every test, type, lint, formatting, e2e, documentation, and build failure before marking the change implementation-ready.

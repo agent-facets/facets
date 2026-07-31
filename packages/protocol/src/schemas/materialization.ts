@@ -106,3 +106,14 @@ export function materializedNameOf(authoredName: string, disposition: Materializ
 export function isMaterialized(disposition: MaterializationDisposition): disposition is MaterializedDisposition {
   return disposition.kind !== 'omitted'
 }
+
+/**
+ * Whether two dispositions describe the same materialization outcome.
+ *
+ * Structural equality would compare `as` on arms that do not carry it, so
+ * the comparison is arm-aware: only `aliased` has a target to disagree on.
+ */
+export function sameDisposition(a: MaterializationDisposition, b: MaterializationDisposition): boolean {
+  if (a.kind !== b.kind) return false
+  return a.kind === 'aliased' && b.kind === 'aliased' ? a.as === b.as : true
+}

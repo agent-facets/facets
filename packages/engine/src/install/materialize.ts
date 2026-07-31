@@ -11,7 +11,7 @@ import { type MaterializedAsset, type ResolvedFacetManifest, skillRootPath } fro
 import { type AdapterCompatibilityFailure, compatibilityFailureFor } from '../adapters/api-compatibility.ts'
 import { ownedCompanionPathsFor, type PreviousOwnership } from './commit/ownership.ts'
 import type { InstallJournal } from './journal.ts'
-import type { AssetIdentity, OnLog, StageEvent } from './types.ts'
+import { type AssetIdentity, assetIdentity, type OnLog, type StageEvent } from './types.ts'
 import { authoredCompanionKey, type SkillCompanionBytes } from './verified-asset-plan.ts'
 
 export interface MaterializeOptions {
@@ -287,7 +287,7 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
  * directly, so the two domains never share a variable.
  */
 function adapterTargetFor(asset: MaterializedAsset): AssetIdentity {
-  return { scope: asset.scope, type: asset.type, name: asset.effectiveName }
+  return assetIdentity(asset.scope, asset.type, asset.effectiveName)
 }
 
 /** `type:name`, naming the alias when there is one. */
@@ -343,11 +343,7 @@ export async function deleteObsoleteAssets(opts: DeleteObsoleteOptions): Promise
     }
 
     for (const ownership of opts.obsolete) {
-      const target: AssetIdentity = {
-        scope: ownership.scope,
-        type: ownership.type,
-        name: ownership.effectiveName,
-      }
+      const target = assetIdentity(ownership.scope, ownership.type, ownership.effectiveName)
       const ownedCompanionPaths = ownership.ownedCompanionPaths
 
       // Same F14 guard as the write pass: only a structured `not-found` is

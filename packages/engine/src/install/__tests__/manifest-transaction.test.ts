@@ -1,11 +1,17 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
+import {
+  CURRENT_LOCKFILE_VERSION,
+  CURRENT_PROJECT_MANIFEST_VERSION,
+  LOCKFILE_VERSION_0_2,
+} from '@agent-facets/protocol'
 import { loadInstalledAdapters } from '../../adapters/loader.ts'
 import { parseFacetSource } from '../../sources/facet/parse-source.ts'
 import { runAdd } from '../add/index.ts'
+import { CURRENT_RECEIPT_VERSION, receiptPath } from '../receipt.ts'
 import { runRemove } from '../remove/index.ts'
 import { runInstall } from '../run-install.ts'
 
@@ -366,5 +372,176 @@ describe('comments survive the real install pipeline', () => {
     const raw = readManifest()
     expect(raw).toContain('about alpha')
     expect(raw).not.toContain('"beta"')
+  })
+})
+
+describe('every command writes the current formats, and only frozen mode does not', () => {
+  // `writeLockfile` and `writeReceipt` accept only the current schemas, so a
+  // stale version cannot be re-emitted by construction. What is NOT
+  // type-enforced is that every command reaches those writers at all --
+  // `commitProjectFiles` is the sole call site, and add/install/remove all
+  // have to route through it. These tests pin that routing.
+
+  const lockPath = () => join(projectRoot, 'facets.lock')
+  const readLock = () => JSON.parse(readFileSync(lockPath(), 'utf8'))
+  const readReceipt = () => JSON.parse(readFileSync(receiptPath(projectRoot), 'utf8'))
+
+  function expectCurrentFormats(): void {
+    expect(parseManifest().manifestVersion).toBe(CURRENT_PROJECT_MANIFEST_VERSION)
+    expect(readLock().lockfileVersion).toBe(CURRENT_LOCKFILE_VERSION)
+    expect(readReceipt().version).toBe(CURRENT_RECEIPT_VERSION)
+  }
+
+  test('facet add writes manifest 0.1, lockfile 0.3, and receipt 0.3', async () => {
+    const a = buildFixture('alpha', '1.0.0')
+    expect((await add(a)).ok).toBe(true)
+    expectCurrentFormats()
+  })
+
+  test('facet install writes the current formats', async () => {
+    const a = buildFixture('alpha', '1.0.0')
+    writeManifest(JSON.stringify({ facets: { alpha: a } }))
+    expect((await install()).ok).toBe(true)
+    expectCurrentFormats()
+  })
+
+  test('facet remove writes the current formats', async () => {
+    const a = buildFixture('alpha', '1.0.0')
+    const b = buildFixture('beta', '2.0.0')
+    expect((await add(a)).ok).toBe(true)
+    expect((await add(b)).ok).toBe(true)
+    expect((await remove('alpha')).ok).toBe(true)
+    expectCurrentFormats()
+    expect(parseManifest().facets.alpha).toBeUndefined()
+  })
+
+  test('a frozen install retains the loaded versions and writes only the receipt', async () => {
+    const a = buildFixture('alpha', '1.0.0')
+    expect((await add(a)).ok).toBe(true)
+
+    // Downgrade both version-controlled files in place. Frozen mode must
+    // reproduce them as-is rather than migrating: rewriting a lockfile is
+    // exactly what the flag forbids, and the receipt is machine-local so it
+    // is safe (and necessary) to keep current.
+    const lock = readLock()
+    lock.lockfileVersion = LOCKFILE_VERSION_0_2
+    for (const facet of Object.values(lock.facets) as Array<{ assets: Array<Record<string, unknown>> }>) {
+      for (const asset of facet.assets) delete asset.materialization
+    }
+    writeFileSync(lockPath(), JSON.stringify(lock, null, 2))
+    const manifestText = writeManifest(JSON.stringify({ facets: { alpha: a } }, null, 2))
+
+    const lockBefore = readFileSync(lockPath(), 'utf8')
+    expect((await install({ frozenLockfile: true })).ok).toBe(true)
+
+    expect(readFileSync(lockPath(), 'utf8')).toBe(lockBefore)
+    expect(readLock().lockfileVersion).toBe(LOCKFILE_VERSION_0_2)
+    expect(readManifest()).toBe(manifestText)
+    expect(parseManifest().manifestVersion).toBeUndefined()
+    // The receipt is machine-local, so frozen mode still keeps it current.
+    expect(readReceipt().version).toBe(CURRENT_RECEIPT_VERSION)
+  })
+})
+
+describe('migration and reproduction across formats', () => {
+  const lockPath = () => join(projectRoot, 'facets.lock')
+  const readLock = () => JSON.parse(readFileSync(lockPath(), 'utf8'))
+
+  test('a non-frozen install migrates a 0.2 lockfile to 0.3, back-filling authored', async () => {
+    // The legacy `1` path has had a migration test since dispositions
+    // landed; `0.2` only ever had read-side coverage, and both on-disk
+    // `0.2` fixtures were frozen installs -- which never write.
+    const a = buildFixture('alpha', '1.0.0')
+    expect((await add(a)).ok).toBe(true)
+
+    const lock = readLock()
+    lock.lockfileVersion = LOCKFILE_VERSION_0_2
+    for (const facet of Object.values(lock.facets) as Array<{ assets: Array<Record<string, unknown>> }>) {
+      for (const asset of facet.assets) delete asset.materialization
+    }
+    writeFileSync(lockPath(), JSON.stringify(lock, null, 2))
+
+    expect((await install()).ok).toBe(true)
+
+    const migrated = readLock()
+    expect(migrated.lockfileVersion).toBe(CURRENT_LOCKFILE_VERSION)
+    for (const facet of Object.values(migrated.facets) as Array<{ assets: Array<Record<string, unknown>> }>) {
+      expect(facet.assets.length).toBeGreaterThan(0)
+      for (const asset of facet.assets) expect(asset.materialization).toEqual({ kind: 'authored' })
+    }
+  })
+
+  test('removing the last override collapses the entry without downgrading manifestVersion', async () => {
+    // Collapse is well covered; what was not asserted is that the document
+    // stays at 0.1 afterwards. A collapse that also dropped the version
+    // would silently re-classify the manifest as legacy on the next read,
+    // at which point any surviving expanded entry becomes unreadable.
+    const a = buildFixture('alpha', '1.0.0')
+    expect((await add(a)).ok).toBe(true)
+
+    writeManifest(
+      JSON.stringify(
+        {
+          manifestVersion: CURRENT_PROJECT_MANIFEST_VERSION,
+          facets: {
+            alpha: {
+              source: a,
+              materialization: { skills: { 'alpha-planning': { kind: 'aliased', as: 'renamed' } } },
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    )
+    expect((await install()).ok).toBe(true)
+    expect(parseManifest().facets.alpha.materialization).toBeDefined()
+
+    // Drop the override and reinstall: the entry collapses to a string.
+    writeManifest(JSON.stringify({ manifestVersion: CURRENT_PROJECT_MANIFEST_VERSION, facets: { alpha: a } }, null, 2))
+    expect((await install()).ok).toBe(true)
+
+    const manifest = parseManifest()
+    expect(manifest.facets.alpha).toBe(a)
+    expect(manifest.manifestVersion).toBe(CURRENT_PROJECT_MANIFEST_VERSION)
+  })
+
+  test('a committed manifest and lockfile reproduce in a fresh checkout with no receipt', async () => {
+    // The teammate/CI case. Every prior reproduction test reused a project
+    // root whose receipt was already written -- but a receipt is keyed by
+    // project path and lives outside the tree, so a colleague cloning the
+    // repo has none. Reproduction must not depend on it.
+    const a = buildFixture('alpha', '1.0.0')
+    const b = buildFixture('beta', '2.0.0')
+    expect((await add(a)).ok).toBe(true)
+    expect((await add(b)).ok).toBe(true)
+
+    const committedManifest = readManifest()
+    const committedLock = readFileSync(lockPath(), 'utf8')
+    const originalAsset = readFileSync(join(projectRoot, '.test-adapter/skills/alpha-planning.md'), 'utf8')
+
+    // A second project root: the committed pair plus the vendored sources,
+    // and deliberately no receipt.
+    const clone = realpathSync(mkdtempSync(join(tmpdir(), 'facet-clone-')))
+    cpSync(join(projectRoot, 'vendor'), join(clone, 'vendor'), { recursive: true })
+    writeFileSync(join(clone, 'facets.json'), committedManifest)
+    writeFileSync(join(clone, 'facets.lock'), committedLock)
+
+    const previousRoot = projectRoot
+    projectRoot = clone
+    process.chdir(clone)
+    try {
+      expect(existsSync(receiptPath(clone))).toBe(false)
+      expect((await install()).ok).toBe(true)
+
+      expect(readManifest()).toBe(committedManifest)
+      expect(JSON.parse(readFileSync(lockPath(), 'utf8'))).toEqual(JSON.parse(committedLock))
+      expect(readFileSync(join(clone, '.test-adapter/skills/alpha-planning.md'), 'utf8')).toBe(originalAsset)
+      expect(existsSync(join(clone, '.test-adapter/skills/beta-planning.md'))).toBe(true)
+    } finally {
+      projectRoot = previousRoot
+      process.chdir(previousRoot)
+      rmSync(clone, { recursive: true, force: true })
+    }
   })
 })

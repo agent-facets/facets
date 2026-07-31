@@ -1,8 +1,12 @@
 import { describe, expect, test } from 'bun:test'
-import type { LegacyLockfileAssetEntry } from '@agent-facets/protocol'
 import { materializeFailureToRunInstall } from '../materialize-failure.ts'
+import { assetIdentity } from '../types.ts'
 
-const asset: LegacyLockfileAssetEntry = { scope: 'user', type: 'skill', name: 'planning' }
+// An adapter failure names the asset the adapter was addressing, which is
+// its EFFECTIVE identity. This was previously typed as a lockfile asset
+// entry, whose name is authored -- the two are only interchangeable for an
+// asset that happens not to be aliased.
+const asset = assetIdentity('user', 'skill', 'planning')
 
 describe('materializeFailureToRunInstall', () => {
   test('unsupported-adapter → ADAPTER_UNSUPPORTED', () => {

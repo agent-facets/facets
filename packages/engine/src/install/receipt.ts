@@ -21,9 +21,11 @@
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { atomicWriteFileSync, validateAssetName } from '@agent-facets/common'
+import { type AssetType, atomicWriteFileSync, type Scope, validateAssetName } from '@agent-facets/common'
 import {
+  canonicalPrimaryPath,
   isMaterialized,
+  lockedDispositionOf,
   type MaterializedDisposition,
   MaterializedDispositionSchema,
   type SupportedLockfile,
@@ -149,12 +151,21 @@ const LegacyReceiptSchema = type({
 /**
  * A current receipt asset record with its owned inner-archive file paths.
  *
- * Built on the engine's own asset identity, not a lockfile asset type: the
- * receipt is machine-local state with its own schema and its own version
- * axis, and inheriting a lockfile shape made it look like the two evolve
- * together. They do not.
+ * Built on its own shape, not a lockfile asset type: the receipt is
+ * machine-local state with its own schema and its own version axis, and
+ * inheriting a lockfile shape made it look like the two evolve together.
+ * They do not.
+ *
+ * `name` is the AUTHORED name, and `files` are authored inner-archive paths;
+ * the name on disk is derived by applying `materialization` to them. This is
+ * deliberately NOT an {@link AssetIdentity}, whose `name` is effective —
+ * handing a receipt asset to an adapter request would address the wrong file
+ * for anything aliased, so the two shapes are kept unassignable.
  */
-export interface ReceiptAsset extends AssetIdentity {
+export interface ReceiptAsset {
+  scope: Scope
+  type: AssetType
+  name: string
   /**
    * How this asset was materialized. Only the two arms that write bytes are
    * admissible — an omitted asset is absent from the receipt entirely.
@@ -324,7 +335,11 @@ export function loadReceipt(projectDir: string): LoadReceiptResult {
     for (const [name, entry] of Object.entries(validated.facets)) {
       rawFacets[name] = {
         version: entry.version,
-        assets: entry.assets.map((a) => ({ ...a, materialization: authored, files: [primaryPathFor(a)] })),
+        assets: entry.assets.map((a) => ({
+          ...a,
+          materialization: authored,
+          files: [canonicalPrimaryPath(a.type, a.name)],
+        })),
       }
     }
   } else {
@@ -394,18 +409,6 @@ interface RawReceiptAsset {
   files: ReadonlyArray<string>
 }
 
-/** The conventional primary inner-archive path for an asset identity. */
-function primaryPathFor(asset: { type: 'skill' | 'agent' | 'command'; name: string }): string {
-  switch (asset.type) {
-    case 'skill':
-      return `skills/${asset.name}/SKILL.md`
-    case 'agent':
-      return `agents/${asset.name}.md`
-    case 'command':
-      return `commands/${asset.name}.md`
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Write
 // ---------------------------------------------------------------------------
@@ -443,8 +446,8 @@ export function writeReceipt(projectDir: string, receipt: Receipt): void {
  * in the receipt, which records what is on disk.
  */
 export function materializedDispositionOf(asset: SupportedLockfileAssetEntry): MaterializedDisposition | undefined {
-  if (!('materialization' in asset)) return { kind: 'authored' }
-  return isMaterialized(asset.materialization) ? asset.materialization : undefined
+  const disposition = lockedDispositionOf(asset)
+  return isMaterialized(disposition) ? disposition : undefined
 }
 
 /**
@@ -500,5 +503,5 @@ export function ownedPathsForLockedAsset(asset: SupportedLockfileAssetEntry): st
   if ('files' in asset && asset.files.length > 0) {
     return asset.files.map((f) => f.path)
   }
-  return [primaryPathFor(asset)]
+  return [canonicalPrimaryPath(asset.type, asset.name)]
 }
