@@ -1,5 +1,5 @@
 {
-  "lockfileVersion": 0.2,
+  "lockfileVersion": 0.3,
   "facets": {
     "@agentfacets/address-pr-feedback": {
       "source": {
@@ -13,6 +13,9 @@
           "scope": "project",
           "type": "skill",
           "name": "address-pr-feedback-rules",
+          "materialization": {
+            "kind": "authored"
+          },
           "files": [
             {
               "path": "skills/address-pr-feedback-rules/SKILL.md",
@@ -24,6 +27,9 @@
           "scope": "project",
           "type": "agent",
           "name": "address-pr-feedback",
+          "materialization": {
+            "kind": "authored"
+          },
           "files": [
             {
               "path": "agents/address-pr-feedback.md",
@@ -35,6 +41,9 @@
           "scope": "project",
           "type": "command",
           "name": "address-pr-feedback",
+          "materialization": {
+            "kind": "authored"
+          },
           "files": [
             {
               "path": "commands/address-pr-feedback.md",
@@ -56,6 +65,9 @@
           "scope": "project",
           "type": "skill",
           "name": "openspec-adversary-author",
+          "materialization": {
+            "kind": "authored"
+          },
           "files": [
             {
               "path": "skills/openspec-adversary-author/SKILL.md",
@@ -67,6 +79,9 @@
           "scope": "project",
           "type": "skill",
           "name": "openspec-adversary-compare",
+          "materialization": {
+            "kind": "authored"
+          },
           "files": [
             {
               "path": "skills/openspec-adversary-compare/SKILL.md",
@@ -78,6 +93,9 @@
           "scope": "project",
           "type": "skill",
           "name": "openspec-adversary-reconcile",
+          "materialization": {
+            "kind": "authored"
+          },
           "files": [
             {
               "path": "skills/openspec-adversary-reconcile/SKILL.md",
@@ -89,6 +107,9 @@
           "scope": "project",
           "type": "skill",
           "name": "openspec-adversary-run",
+          "materialization": {
+            "kind": "authored"
+          },
           "files": [
             {
               "path": "skills/openspec-adversary-run/SKILL.md",
@@ -100,6 +121,9 @@
           "scope": "project",
           "type": "agent",
           "name": "openspec-adversary",
+          "materialization": {
+            "kind": "authored"
+          },
           "files": [
             {
               "path": "agents/openspec-adversary.md",
@@ -111,6 +135,9 @@
           "scope": "project",
           "type": "command",
           "name": "reconcile-adversary",
+          "materialization": {
+            "kind": "authored"
+          },
           "files": [
             {
               "path": "commands/reconcile-adversary.md",
@@ -122,6 +149,9 @@
           "scope": "project",
           "type": "command",
           "name": "run-adversary",
+          "materialization": {
+            "kind": "authored"
+          },
           "files": [
             {
               "path": "commands/run-adversary.md",
@@ -133,6 +163,9 @@
           "scope": "project",
           "type": "command",
           "name": "run-inline-adversary",
+          "materialization": {
+            "kind": "authored"
+          },
           "files": [
             {
               "path": "commands/run-inline-adversary.md",
@@ -154,6 +187,9 @@
           "scope": "project",
           "type": "skill",
           "name": "openspec-design-review-rules",
+          "materialization": {
+            "kind": "authored"
+          },
           "files": [
             {
               "path": "skills/openspec-design-review-rules/SKILL.md",
@@ -165,6 +201,9 @@
           "scope": "project",
           "type": "command",
           "name": "review-openspec-design",
+          "materialization": {
+            "kind": "authored"
+          },
           "files": [
             {
               "path": "commands/review-openspec-design.md",
@@ -186,6 +225,9 @@
           "scope": "project",
           "type": "skill",
           "name": "cowsay-rules",
+          "materialization": {
+            "kind": "authored"
+          },
           "files": [
             {
               "path": "skills/cowsay-rules/SKILL.md",
@@ -197,6 +239,9 @@
           "scope": "project",
           "type": "agent",
           "name": "cowsay",
+          "materialization": {
+            "kind": "authored"
+          },
           "files": [
             {
               "path": "agents/cowsay.md",
@@ -208,6 +253,9 @@
           "scope": "project",
           "type": "command",
           "name": "cowchat",
+          "materialization": {
+            "kind": "authored"
+          },
           "files": [
             {
               "path": "commands/cowchat.md",
@@ -219,6 +267,9 @@
           "scope": "project",
           "type": "command",
           "name": "cowsay",
+          "materialization": {
+            "kind": "authored"
+          },
           "files": [
             {
               "path": "commands/cowsay.md",
@@ -240,6 +291,9 @@
           "scope": "project",
           "type": "skill",
           "name": "using-graphite",
+          "materialization": {
+            "kind": "authored"
+          },
           "files": [
             {
               "path": "skills/using-graphite/SKILL.md",
@@ -261,6 +315,9 @@
           "scope": "project",
           "type": "skill",
           "name": "viper-execution-rules",
+          "materialization": {
+            "kind": "authored"
+          },
           "files": [
             {
               "path": "skills/viper-execution-rules/SKILL.md",
@@ -272,6 +329,9 @@
           "scope": "project",
           "type": "skill",
           "name": "viper-planning",
+          "materialization": {
+            "kind": "authored"
+          },
           "files": [
             {
               "path": "skills/viper-planning/SKILL.md",
@@ -283,6 +343,9 @@
           "scope": "project",
           "type": "command",
           "name": "viper-continue",
+          "materialization": {
+            "kind": "authored"
+          },
           "files": [
             {
               "path": "commands/viper-continue.md",
@@ -294,6 +357,9 @@
           "scope": "project",
           "type": "command",
           "name": "viper-plan",
+          "materialization": {
+            "kind": "authored"
+          },
           "files": [
             {
               "path": "commands/viper-plan.md",
@@ -305,6 +371,9 @@
           "scope": "project",
           "type": "command",
           "name": "viper-run",
+          "materialization": {
+            "kind": "authored"
+          },
           "files": [
             {
               "path": "commands/viper-run.md",
@@ -326,6 +395,9 @@
           "scope": "project",
           "type": "skill",
           "name": "using-worktrunk",
+          "materialization": {
+            "kind": "authored"
+          },
           "files": [
             {
               "path": "skills/using-worktrunk/SKILL.md",
@@ -373,6 +445,9 @@
           "scope": "project",
           "type": "command",
           "name": "wt-switch-create",
+          "materialization": {
+            "kind": "authored"
+          },
           "files": [
             {
               "path": "commands/wt-switch-create.md",
