@@ -21,7 +21,7 @@
     "prepack": "bun ../../scripts/prepack.ts",
     "postpack": "bun ../../scripts/postpack.ts",
     "types": "tsgo --noEmit",
-    "test": "bun test --pass-with-no-tests"
+    "test": "bun test --pass-with-no-tests --reporter=junit --reporter-outfile=junit.xml"
   },
   "dependencies": {
     "arktype": "2.2.0",

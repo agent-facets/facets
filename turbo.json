@@ -2,27 +2,33 @@
   "$schema": "https://turborepo.com/schema.json",
   "globalDependencies": ["bun.lock", "mise.toml"],
   "tasks": {
+    "transit": {
+      "dependsOn": ["^transit"],
+      "inputs": ["$TURBO_DEFAULT$", "!**/*.test.ts", "!**/*.test.tsx"]
+    },
     "build": {
-      "dependsOn": ["^build"],
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/bunfig.toml"],
+      "dependsOn": ["transit"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/tsconfig.json"],
       "outputs": ["dist/**"]
     },
     "test": {
-      "dependsOn": ["^test"],
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/bunfig.toml"],
-      "outputs": ["$TURBO_ROOT$/test-results/**"]
+      "dependsOn": ["transit"],
+      "inputs": ["$TURBO_DEFAULT$", "!**/*.e2e.test.ts", "$TURBO_ROOT$/tsconfig.json"],
+      "outputs": ["junit.xml"]
     },
     "test:e2e": {
-      "dependsOn": ["^build"],
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/bunfig.toml"],
-      "outputs": ["$TURBO_ROOT$/test-results/**"]
+      "dependsOn": ["transit"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/tsconfig.json"],
+      "outputs": ["junit-e2e.xml"]
     },
     "types": {
-      "dependsOn": ["^types"]
+      "dependsOn": ["transit"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/tsconfig.json"]
     },
     "check": {
       "dependsOn": [
         "//#lint",
+        "^build",
         "types",
         "test",
         "test:e2e",
@@ -45,6 +51,7 @@
       "inputs": [
         "scripts/**",
         ".changeset/**",
+        "bunfig.toml",
         "package.json",
         "packages/*/package.json",
         "packages/adapters/*/package.json",

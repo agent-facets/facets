@@ -38,6 +38,13 @@ async function packOpencode(): Promise<string> {
   const adapterDir = resolve(REPO_ROOT, 'packages/adapters/opencode')
   const workDir = await mkdtemp(join(tmpdir(), 'facet-pack-opencode-'))
 
+  // `@agent-facets/adapter-opencode` ships `files: ["dist"]`, so the tarball
+  // below is only meaningful once `dist/` is present. This suite does not build
+  // it: `packages/cli/turbo.json` declares a `@agent-facets/adapter-opencode#build`
+  // dependency, so turbo has either run that build or restored its cached
+  // `dist/**` before this task starts. That build task is the single writer of
+  // that directory — building here too would race it.
+  //
   // Run `npm pack --pack-destination <workDir>` inside the adapter directory.
   // This triggers prepack (rewrites workspace:* deps + hoists publishConfig)
   // and produces a .tgz identical to what `npm publish` would upload.
@@ -232,8 +239,9 @@ async function activeManagedBundle(facetDir: string, name: string): Promise<stri
 
 beforeAll(async () => {
   // Verify the compiled binary exists — if it doesn't, the test suite can't
-  // run. The turbo config declares test depends on build, but surface a
-  // clearer error if somebody runs `bun test` directly without building.
+  // run. The package's `test:e2e` script builds the CLI inline before invoking
+  // bun test, but surface a clearer error if somebody runs `bun test` directly
+  // without building.
   try {
     await stat(CLI_PATH)
   } catch {

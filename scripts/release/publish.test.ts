@@ -117,8 +117,9 @@ describe('publish.ts', () => {
     })
 
     test('builds with scoped filter for the released package', async () => {
-      // Releases scope the turbo build to the released package + its workspace
-      // deps so we don't fan out to all 11 packages and OOM the executor.
+      // Releases scope the turbo build to exactly the released package. Deps
+      // resolve to source and are inlined by tsdown, so building them would
+      // produce artifacts nothing reads — and would risk OOMing the executor.
       process.env.CIRCLE_TAG = '@agent-facets/protocol@1.1.0'
       setupPublishPath()
 
@@ -128,7 +129,7 @@ describe('publish.ts', () => {
       await release()
 
       expect(buildSpy).toHaveBeenCalledTimes(1)
-      expect(buildSpy).toHaveBeenCalledWith('@agent-facets/protocol...')
+      expect(buildSpy).toHaveBeenCalledWith('@agent-facets/protocol')
     })
 
     test('skips private packages without publishing', async () => {

@@ -1,18 +1,15 @@
 docker:
   - image: cimg/base:current
 # `medium` (4 GB, 2 vCPU). `small` (2 GB) gets OOM-killed by the
-# rolldown-plugin-dts:generate pass during `turbo build` even with the build
-# scoped to one package — see scripts/release/publish.ts and the equivalent
-# rationale in development/commands/run-check.yml.
+# rolldown-plugin-dts:generate pass during `turbo build` even though the build
+# is scoped to a single package — see scripts/release/publish.ts and the
+# equivalent rationale in development/commands/run-check.yml.
 resource_class: medium
 environment:
   LEFTHOOK: "0"
   MISE_ENV: release
-  # Belt-and-suspenders against the same OOM. With the build scoped to one
-  # package + its deps, this is rarely needed, but on a cache miss the dts
-  # build still spends most of its time in a memory-hungry plugin pass — and
-  # serializing tasks costs us seconds, not minutes.
-  TURBO_CONCURRENCY: "1"
+  # No TURBO_CONCURRENCY cap: publish.ts scopes the build to exactly one
+  # package, so there is never more than one DTS pass to overlap.
 steps:
   - setup-mise
   - run:

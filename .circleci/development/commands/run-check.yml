@@ -5,17 +5,34 @@ steps:
         - v1-mint-
   - run:
       name: Check
-      # Runs on a `medium` resource class (4 GB, 2 vCPU). Even on `medium`,
-      # parallel DTS builds (arktype inlined via tsdown's `deps.alwaysBundle`,
-      # heavy `rolldown-plugin-dts:generate` pass) peak over 4 GB when
-      # protocol + engine + three adapter builds fan out simultaneously and
-      # intermittently get SIGKILL'd by the OOM killer (exit 137). Forcing
-      # `TURBO_CONCURRENCY=1` serializes all tasks at the cost of ~30–45s of
-      # wall-time, which is well under the cost of a flaky CI. The release
-      # job applies the same mitigations — see development/jobs/release.yml.
+      # Runs on a `medium` resource class (4 GB, 2 vCPU). tsdown's DTS pass
+      # (`rolldown-plugin-dts:generate`, with arktype inlined via
+      # `deps.alwaysBundle`) is memory-hungry, and letting every package build
+      # fan out at once peaked over 4 GB and got tasks SIGKILL'd by the OOM
+      # killer (exit 137). `check` still schedules those builds, so the cap
+      # stays — but at "2" rather than "1": at most two DTS passes can overlap,
+      # while the rest of the graph (tests and type checks, which no longer
+      # queue behind each other's packages) can use both vCPUs instead of
+      # serializing all ~57 nodes. If exit 137 comes back, drop this to "1"
+      # before reaching for a bigger resource class.
       environment:
-        TURBO_CONCURRENCY: "1"
+        TURBO_CONCURRENCY: "2"
       command: bun turbo check
+  - run:
+      name: Collect package test reports
+      # Every package's `test` / `test:e2e` task writes its report to the same
+      # relative path inside its own directory (`junit.xml` / `junit-e2e.xml`),
+      # which is what makes each task's declared `outputs` unique and stops
+      # cache restores from clobbering each other. Turbo restores those files on
+      # a cache hit, so flattening them here is enough for `store_test_results`
+      # to see every suite whether it ran or was replayed. `//#test:scripts`
+      # already writes straight into test-results/.
+      when: always
+      command: |
+        mkdir -p test-results
+        find packages -name 'junit*.xml' -not -path '*/node_modules/*' | while read -r report; do
+          cp "$report" "test-results/$(dirname "$report" | tr '/' '-')-$(basename "$report")"
+        done
   - save_cache:
       # Caches the ~306 MB Mintlify framework workspace that `mint validate`
       # lazily downloads to ~/.mintlify/mint/ on first run. Keyed on bun.lock

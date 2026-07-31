@@ -1,2 +1,0 @@
-[test.reporter]
-junit = "../../../test-results/adapter-codex-junit.xml"

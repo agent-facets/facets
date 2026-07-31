@@ -5,6 +5,8 @@
     "build": {
       "outputs": []
     },
-    "test": {}
+    "test:e2e": {
+      "dependsOn": ["$TURBO_EXTENDS$", "@agent-facets/adapter-opencode#build"]
+    }
   }
 }

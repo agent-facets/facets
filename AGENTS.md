@@ -390,27 +390,60 @@ itself is the assertion.
 
 The `check` pipeline (`bun check`) orchestrates `test`, `types`, `lint`, and other tasks via Turborepo. Caching rules:
 
-- **`build`** is cached by default. The CLI package (`packages/cli`) overrides `outputs` to `[]` in its package-level `turbo.json` — Turbo caches the hash (knows the build succeeded) but never uploads the ~63 MB compiled binary to the remote cache.
-- **`test`** and **`types`** are cached and never depend on `build`. End-to-end tests that need a compiled binary live in a separate **`test:e2e`** task — see "Test conventions" below.
-- Package-level overrides live in `packages/<name>/turbo.json`.
+- **`transit`** is a scriptless [Transit Node](https://turborepo.com/docs/core-concepts/package-and-task-graph#transit-nodes). It is the task that propagates dependency-source hashes through the package graph (`dependsOn: ["^transit"]`), and the only one that does so *recursively* — `transit` depends on `^transit`, so the traversal reaches the entire transitive dependency closure. It is not the only task with a topological edge: `check` also has one (`^build`, below), but that edge is a single hop whose purpose is scheduling real work, not hash propagation. `build`, `test`, `types`, and `test:e2e` each depend on their own package's `transit`, so a change to a dependency's source still busts every downstream hash, but nothing waits for a dependency's tests, type check, or build to finish. This is what lets the whole graph start in parallel.
+- Removing those `transit` edges would silently break caching. Turbo only hashes a package's *own* files; because every workspace `exports` points at `src/`, `transit` is what folds dependency source into a downstream hash. Verify with: change a file in `packages/protocol/src/`, then confirm `agent-facets#test`'s hash moves (`turbo test --filter=agent-facets --dry=json`).
+- `transit` excludes `**/*.test.ts` / `**/*.test.tsx` from its inputs, so editing one package's tests never invalidates another package's tasks.
+- **`test`** and **`types`** never depend on `build`. Unit tests import from source, and no package's build consumes another package's `dist/` (tsdown inlines private workspace deps via `deps.alwaysBundle`).
+- **`test:e2e`** does **not** depend on `^build` either. An e2e task either builds what it needs inline or declares an edge to the one task that owns that artifact — see "Build artifacts and the cache" below.
+- **`check`** depends on `^build`, not `build`. That builds every package something else depends on (`protocol`, `engine`, `adapter`, `brand`, `adapter-opencode`) so a broken `tsdown`/DTS pass fails CI instead of surfacing at release time. It deliberately skips leaf packages — the CLI (63 MB binary) and the codex/claude-code adapters, all of which already build inline in their own `test:e2e`.
+- Package-level overrides live in `packages/<name>/turbo.json`. Keep them to a minimum: an override that resolves identically to the root definition is dead config.
+
+### Build artifacts and the cache
+
+Whether a compiled artifact belongs in the cache is a question of size, and the answer differs per package:
+
+- The CLI binary is ~63 MB — far too large for the Lambda-backed remote cache. `packages/cli/turbo.json` sets `outputs: []` on `build`, so Turbo records the hash and logs without uploading the binary, and `agent-facets#test:e2e` builds it inline (`bun run build && bun test ...`).
+- Every other `dist/` is small (the largest is engine's at ~700 KB) and keeps the root `outputs: ["dist/**"]`, so Turbo uploads and restores it normally.
+
+A `dist/` directory has exactly one writer: that package's `build` task, or Turbo restoring that task's cached output. A task that needs another package's `dist/` declares an edge to its `build` rather than running the build itself — two processes running `tsdown` (which is configured with `clean: true`) against one directory would delete it out from under each other.
+
+### The opencode adapter's `dist/`
+
+`packages/adapters/opencode/dist/` is the one directory in the repo read by more than one task, so it is the one place that edge is spelled out:
+
+- `packages/adapters/opencode/turbo.json` — `test:e2e` depends on same-package `build`. `src/__tests__/dist.e2e.test.ts` imports `../../dist/index.mjs`.
+- `packages/cli/turbo.json` — `test:e2e` depends on `@agent-facets/adapter-opencode#build`. `packOpencode()` in `src/__tests__/adapter-install-cli.e2e.test.ts` runs `npm pack` there (`files: ["dist"]`) to produce a tarball identical to what `npm publish` would upload.
+
+Neither consumer builds the adapter. Both edges use `$TURBO_EXTENDS$` to keep the inherited `dependsOn: ["transit"]` — a bare `dependsOn` array in a Package Configuration *replaces* the root value rather than appending to it, which would drop hash propagation.
+
+### Test reports
+
+Every package's `test` / `test:e2e` writes JUnit XML to the **same relative path inside its own package** — `junit.xml` and `junit-e2e.xml` — via `--reporter=junit --reporter-outfile=` in its `package.json` script. That means the root `turbo.json` declares `outputs: ["junit.xml"]` once and Turbo resolves it per package, giving every task exclusive ownership of exactly one file.
+
+Do **not** declare a shared directory (e.g. `$TURBO_ROOT$/test-results/**`) as a task's `outputs`. Doing so makes every task's cache artifact snapshot every other task's reports, and a restore then clobbers them — which is how stale suites from other branches used to end up in CI results.
+
+CircleCI's `store_test_results` still reads one directory. The `Collect package test reports` step in `.circleci/development/commands/run-check.yml` flattens `packages/**/junit*.xml` into `test-results/` with a package-path prefix. It runs `when: always`, and because Turbo restores the report files on a cache hit, cached packages still report their suites. `//#test:scripts` is the exception that writes straight to `test-results/scripts-junit.xml` — it is a root task, so there is no package directory to write into.
+
+### CI concurrency
+
+`.circleci/development/commands/run-check.yml` pins `TURBO_CONCURRENCY=2` on a `medium` (4 GB, 2 vCPU) executor. tsdown's `rolldown-plugin-dts:generate` pass is memory-hungry; letting all builds fan out peaked over 4 GB and got tasks OOM-killed (exit 137). Two is the bound that keeps both vCPUs busy without overlapping more than two DTS passes. If exit 137 returns, drop to `1` before reaching for a larger resource class.
+
+Releases (`scripts/release/publish.ts`) scope the build to exactly one package — `turboBuild(pkg.name)`, no `...` dependency filter — because dependency `dist/` is never consumed. `transit` still folds dependency source into that build's hash, so the narrower filter costs no cache correctness.
 
 ### Test conventions
 
 - `*.test.ts` files are unit tests. They import from source (`../index.ts`, not `dist/`) and never depend on `build`.
-- `*.e2e.test.ts` files are end-to-end tests. They may spawn compiled binaries or read from `dist/`. They run via `test:e2e`, which `dependsOn: ["^build"]` (upstream package builds). The CLI's `test:e2e` script inlines its own build (`bun run build && bun test ...`) so the compiled binary is produced fresh without making Turbo's cache depend on the large artifact.
-- `bun check` is the canonical entry point — it runs lint, types, unit tests, e2e tests, and the root-level `scripts/` tests via Turbo.
-- `bun test` at the repo root tests files in `scripts/` only (configured via root `bunfig.toml` `[test] root`). For per-package work use `bun test --cwd packages/<pkg>` (unit only) or `bun run --cwd packages/<pkg> test:e2e`.
+- `*.e2e.test.ts` files are end-to-end tests. They may spawn compiled binaries or read from `dist/`. The root `test` task excludes them from its `inputs`, so touching an e2e file doesn't bust the unit-test cache.
+- **Run tests through Turbo, always.** `bun check` is the canonical entry point. To narrow the run, filter — `bun turbo test --filter=@agent-facets/engine`, `bun turbo test:e2e --filter=@agent-facets/adapter-opencode` — rather than invoking a package's script directly.
+- Reaching into a package with `bun test --cwd packages/<pkg>` or `bun run --cwd packages/<pkg> test:e2e` is an anti-pattern: it bypasses the task graph, so dependency builds a suite relies on are never scheduled and the run either fails or reads a stale `dist/`.
+- `bun test` at the repo root tests files in `scripts/` only (configured via root `bunfig.toml` `[test] root`).
 - The `test` script in each package excludes e2e files via `bun test --path-ignore-patterns '**/*.e2e.test.ts'` (set per-package in `package.json`).
-
-### CLI build caching
-
-The CLI compiled binary (~63 MB) is too large for the Lambda-based Turbo remote cache. To handle this, `packages/cli/turbo.json` sets `outputs: []` on the `build` task — Turbo caches the hash (knows the build succeeded for these inputs) but never tries to upload or download the binary. The `test:e2e` script inlines `bun run build &&` so the binary is produced fresh when e2e tests run, without poisoning the Turbo cache chain.
 
 ### When adding a new package
 
-1. Add `"test": "bun test"` and `"types": "tsc --noEmit"` scripts to its `package.json` so turbo picks them up for the `check` pipeline.
-2. If the package has end-to-end tests that depend on build output, name them `*.e2e.test.ts`, add a `test:e2e` script that inlines the build (`bun run build && bun test ...`), and ensure the root `turbo.json`'s `test:e2e` task has `dependsOn: ["^build"]` (upstream builds only). See `packages/cli/` for an example.
-3. If the package's build output is too large for remote cache, set `"outputs": []` in the package-level `turbo.json` so Turbo caches the hash without uploading artifacts.
+1. Add `"test"` and `"types"` scripts to its `package.json` so turbo picks them up for the `check` pipeline. Point the test reporter at the package-local file: `bun test --reporter=junit --reporter-outfile=junit.xml`.
+2. If the package has end-to-end tests, name them `*.e2e.test.ts` and add a `test:e2e` script that writes its own report: `bun test --reporter=junit --reporter-outfile=junit-e2e.xml ...`. If those tests read a `dist/`, add a package-level `turbo.json` declaring the edge to whichever `build` owns it — same-package `build`, or `<pkg>#build` for another package's. See `packages/adapters/opencode/` for an example.
+3. Apart from that edge, no package-level `turbo.json` is needed — the root task definitions resolve per package.
 
 ## Frontend
 

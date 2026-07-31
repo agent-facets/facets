@@ -17,8 +17,8 @@
     "prepack": "bun ../../scripts/prepack.ts",
     "postpack": "bun ../../scripts/postpack.ts",
     "types": "tsgo --noEmit",
-    "test": "bun test --path-ignore-patterns '**/*.e2e.test.ts' --reporter=junit --reporter-outfile=../../test-results/cli-junit.xml",
-    "test:e2e": "bun run build && bun test --timeout 15000 --reporter=junit --reporter-outfile=../../test-results/cli-e2e-junit.xml src/__tests__/*.e2e.test.ts"
+    "test": "bun test --path-ignore-patterns '**/*.e2e.test.ts' --reporter=junit --reporter-outfile=junit.xml",
+    "test:e2e": "bun run build && bun test --timeout 15000 --reporter=junit --reporter-outfile=junit-e2e.xml src/__tests__/*.e2e.test.ts"
   },
   "dependencies": {
     "@bomb.sh/args": "0.3.1",

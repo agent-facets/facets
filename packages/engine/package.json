@@ -14,7 +14,7 @@
     "build": "tsdown",
     "codegen:registry": "bun ./scripts/sync-registry-openapi.ts",
     "types": "tsgo --noEmit",
-    "test": "bun test"
+    "test": "bun test --reporter=junit --reporter-outfile=junit.xml"
   },
   "dependencies": {
     "@agent-facets/adapter": "workspace:*",

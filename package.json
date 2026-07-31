@@ -26,7 +26,7 @@
     "docs:validate": "bun --cwd docs mint validate",
     "docs:broken-links": "bun --cwd docs mint broken-links",
     "postinstall": "bun scripts/postinstall.ts",
-    "clean": "rm -rf .turbo node_modules packages/**/node_modules packages/**/.turbo packages/**/dist packages/cli/bin/.facet test-results/*.xml tmp docs/.mintlify",
+    "clean": "rm -rf .turbo node_modules packages/**/node_modules packages/**/.turbo packages/**/dist packages/cli/bin/.facet packages/*/junit*.xml packages/adapters/*/junit*.xml test-results/*.xml tmp docs/.mintlify",
     "nuke": "bun run clean && bun install && bun check"
   },
   "devDependencies": {

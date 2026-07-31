@@ -18,8 +18,8 @@
     "prepack": "bun ../../../scripts/prepack.ts",
     "postpack": "bun ../../../scripts/postpack.ts",
     "types": "tsgo --noEmit",
-    "test": "bun test --path-ignore-patterns '**/*.e2e.test.ts'",
-    "test:e2e": "bun run build && bun test src/__tests__/dist.e2e.test.ts"
+    "test": "bun test --path-ignore-patterns '**/*.e2e.test.ts' --reporter=junit --reporter-outfile=junit.xml",
+    "test:e2e": "bun run build && bun test --reporter=junit --reporter-outfile=junit-e2e.xml src/__tests__/dist.e2e.test.ts"
   },
   "devDependencies": {
     "@agent-facets/adapter": "workspace:*",

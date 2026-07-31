@@ -14,8 +14,16 @@ commands:
       - run:
           command: bun turbo check
           environment:
-            TURBO_CONCURRENCY: "1"
+            TURBO_CONCURRENCY: "2"
           name: Check
+      - run:
+          command: |
+            mkdir -p test-results
+            find packages -name 'junit*.xml' -not -path '*/node_modules/*' | while read -r report; do
+              cp "$report" "test-results/$(dirname "$report" | tr '/' '-')-$(basename "$report")"
+            done
+          name: Collect package test reports
+          when: always
       - save_cache:
           key: v1-mint-{{ checksum "bun.lock" }}
           paths:
@@ -108,7 +116,6 @@ jobs:
     environment:
       LEFTHOOK: "0"
       MISE_ENV: release
-      TURBO_CONCURRENCY: "1"
     resource_class: medium
     steps:
       - setup-mise

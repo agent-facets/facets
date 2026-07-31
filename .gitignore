@@ -20,6 +20,12 @@ dist/
 docs/.mintlify/
 node_modules/
 
+# Per-package JUnit reports. Each package's `test` / `test:e2e` turbo task
+# writes one of these into its own directory, which is what makes each task's
+# declared `outputs` unique. CI flattens them into test-results/ for upload.
+junit.xml
+junit-e2e.xml
+
 # postinstall cached binary (hard-link created by packages/cli/scripts/postinstall.mjs)
 packages/cli/bin/.facet
 
