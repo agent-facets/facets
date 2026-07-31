@@ -103,6 +103,10 @@ export async function resolveLocalFacet(args: ResolveLocalFacetArgs): Promise<Re
   if (!built.ok) {
     return { ok: false, failure: { code: 'BUILD_FAILED', facet: facetName, errors: built.errors } }
   }
+  const companionBytes = readSkillCompanionBytes(built.plan, local.dir)
+  if (!companionBytes.ok) {
+    return { ok: false, failure: { code: 'BUILD_FAILED', facet: facetName, errors: companionBytes.errors } }
+  }
 
   return {
     ok: true,
@@ -110,7 +114,7 @@ export async function resolveLocalFacet(args: ResolveLocalFacetArgs): Promise<Re
       ...identity,
       resolved: content.resolved,
       plan: built.plan,
-      companionBytes: readSkillCompanionBytes(built.plan, local.dir),
+      companionBytes: companionBytes.companions,
       serversDeclared: content.serversDeclared,
     },
   }

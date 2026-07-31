@@ -27,7 +27,7 @@ It is never partial. Commit runs in three phases, and the boundary between the s
   <Step title="Load state and gate">
     The manifest is read and the **install lock** — a per-project advisory lock ensuring only one install operates on a project at a time — is acquired. A frozen operation carrying a non-empty delta is rejected here, before the lockfile is even read, so `facet add --frozen-lockfile` against a corrupt lockfile reports the operation it cannot perform rather than a file it never needed to open.
 
-    The lockfile and receipt are then loaded (a receipt that is absent, corrupt, or path-mismatched witnesses nothing and is never projected from the lockfile; the two readable failures are reported; receipt asset entries with crafted names are reported and skipped individually). A delta naming the same facet in both additions and removals MUST be rejected, and the adapters selected for this operation MUST pass the adapter API compatibility preflight — a defense-in-depth re-check behind the command-level gate that already rejected any incompatible installed adapter before planning. Every incompatible adapter is collected, not just the first. A selected adapter whose declared adapter API the CLI does not support MUST fail the commit here, before any Git or local facet build can invoke adapter metadata methods. Failures here touch nothing — no rollback is needed.
+    The lockfile and receipt are then loaded (a receipt that is absent, corrupt, or path-mismatched witnesses nothing and is never projected from the lockfile; the two readable failures are reported; individual receipt asset entries that fail validation are reported and skipped, leaving the files they covered in place). A delta naming the same facet in both additions and removals MUST be rejected, and the adapters selected for this operation MUST pass the adapter API compatibility preflight — a defense-in-depth re-check behind the command-level gate that already rejected any incompatible installed adapter before planning. Every incompatible adapter is collected, not just the first. A selected adapter whose declared adapter API the CLI does not support MUST fail the commit here, before any Git or local facet build can invoke adapter metadata methods. Failures here touch nothing — no rollback is needed.
   </Step>
   <Step title="Merge delta in memory">
     Additions are upserted, removals are deleted — all in memory. The on-disk `facets.json` MUST NOT be written ahead of the install. Re-adding a facet preserves any materialization overrides already recorded for it: changing where a facet comes from is not a statement about how its assets should be named.
@@ -52,7 +52,7 @@ It is never partial. Commit runs in three phases, and the boundary between the s
 
 Removing a facet asks only about state this machine already has. So a non-frozen operation whose delta contains only removals skips Phases A and B whenever local state still answers for every **remaining facet** — every facet that is staying.
 
-Six conditions MUST all hold:
+A lockfile must exist, and six conditions MUST all hold:
 
 - every remaining facet has a lockfile entry;
 - each of those entries still matches its manifest source and specifier;
@@ -261,16 +261,20 @@ flowchart TD
 
 <CardGroup cols={2}>
   <Card title="Desired state authorizes writes" icon="pen">
-    Every desired effective identity is written, even if an untracked file already occupies it. The write is what makes it tracked; the committed receipt records it from then on.
+    Every desired effective identity is reconciled, even if an untracked file already occupies it. Reconciling it is what makes it tracked; the committed receipt records it from then on.
   </Card>
   <Card title="Tracked ownership authorizes deletion" icon="trash">
     Only an identity the receipt records can be deleted. Untracked files at identities the desired set does not name are never addressed, and a lockfile entry alone is not evidence.
   </Card>
 </CardGroup>
 
-A receipt that cannot be used at all — absent, unreadable, or self-identifying as a different project — is the same case as an empty one: nothing is tracked, so nothing is deleted, and the run records only what it writes. The two readable-failure reasons are reported; a missing receipt is just a first operation and is not.
+**Reconciled** covers two outcomes, because both establish the same fact. Usually the file is written. When what is already on disk matches the desired content, metadata, and owned companions byte for byte, the write is skipped — rewriting identical bytes would prove nothing a comparison has not already proven — and the identity is recorded as tracked all the same.
 
-Aliasing follows from the two rules rather than needing its own. When every claimant in a collision group is aliased away from the authored name, that name is claimed by nothing in the desired set, so it is deleted in the same pass — before either alias is written. Each alias then receives its own facet's authored content, and the committed receipt records both aliases and not the vacated name.
+Ownership is recorded **per project, not per adapter**. The receipt names `(scope, type, name)`, the same adapter-agnostic shape the lockfile uses, and that one record governs every selected adapter. Connecting an adapter is what delegates management of those identities inside it: a facet's `deploy` skill is this project's `deploy` skill in Claude Code and OpenCode alike, and removing the facet removes it from both.
+
+A receipt that cannot be used at all — absent, unreadable, or self-identifying as a different project — is the same case as an empty one: nothing is tracked, so nothing is deleted, and the run records only what it reconciles. The two readable-failure reasons are reported; a missing receipt is just a first operation and is not. An individual receipt entry that fails validation is reported too, and the files it covered are left in place: a claim the CLI cannot safely act on is not a licence to delete.
+
+Aliasing follows from the two rules rather than needing its own. When both claimants in a collision group are aliased away from the authored name, that name is claimed by nothing in the desired set — so if the receipt tracks it, it is deleted in the same pass, before either alias is written. Each alias then receives its own facet's authored content, and the committed receipt records both aliases and not the vacated name. The same holds for any number of claimants: a name nothing in the desired set retains is vacated. An authored name the receipt does *not* track is left alone instead, like any other untracked file.
 
 ## Manifest-write policy
 
@@ -313,7 +317,7 @@ sequenceDiagram
 ## Frozen lockfile
 
 {/* this bucks the <code> wrapping because the `--` gets smushed into a — in mintlify */}
-Frozen mode (the [`--frozen-lockfile`](/cli/install#param-frozen-lockfile) flag) treats the lockfile as the complete, authoritative source of truth.
+Frozen mode (the [`--frozen-lockfile`](/cli/install#param-frozen-lockfile) flag) treats the lockfile as the complete, authoritative source of truth **for what to reproduce**. It is not authority to delete — that stays with the receipt in frozen mode exactly as it does everywhere else.
 
 <Warning>
 A frozen commit with a non-empty delta (any addition or removal) MUST be rejected immediately. Only a plain `facet install` can run frozen.
@@ -353,6 +357,8 @@ Five gates run before anything is touched, and all of them run **before any netw
 | Drift removal                    | Runs; receipt is rewritten                           |
 | Lockfile write                   | Never                                                |
 | Manifest write                   | Never                                                |
+
+A receipt write is the one thing frozen mode does commit, and the one it can survive losing. If it fails, the install still succeeds — the locked set it reproduced is on disk and correct — but the assets it just wrote are untracked, so a later removal will leave them behind. The CLI says so rather than reporting a clean success.
 
 ## Not in the install flow
 

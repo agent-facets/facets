@@ -193,6 +193,10 @@ export async function resolveRegistryFacet(args: ResolveRegistryFacetArgs): Prom
   if (!built.ok) {
     return { ok: false, failure: { code: 'BUILD_FAILED', facet: facetName, errors: built.errors } }
   }
+  const companionBytes = readSkillCompanionBytes(built.plan, result.slotPath)
+  if (!companionBytes.ok) {
+    return { ok: false, failure: { code: 'BUILD_FAILED', facet: facetName, errors: companionBytes.errors } }
+  }
 
   // Identity comes from the locked entry when reproducing, or from the
   // resolved version plus chain integrity when confirming a fresh add.
@@ -215,7 +219,7 @@ export async function resolveRegistryFacet(args: ResolveRegistryFacetArgs): Prom
       ...identity,
       resolved: content.resolved,
       plan: built.plan,
-      companionBytes: readSkillCompanionBytes(built.plan, result.slotPath),
+      companionBytes: companionBytes.companions,
       serversDeclared: content.serversDeclared,
     },
   }

@@ -19,8 +19,9 @@ import type { OnLog, RunInstallFailure } from '../types.ts'
  * which a new receipt may be derived.
  *
  *   - `written` — this run materialized these facets from these very lockfile
- *     entries, so the entries describe what it just wrote. Deriving the
- *     receipt from them is an observation, not a guess.
+ *     entries, so the entries describe what it just reconciled: wrote, or
+ *     read and proved already identical. Deriving the receipt from them is an
+ *     observation, not a guess.
  *   - `carried-forward` — this run wrote nothing. The receipt entries were
  *     already witnessed against local state (see `refineRemoval`) and are
  *     committed verbatim.
@@ -56,7 +57,23 @@ export function buildUpdatedReceipt(receipt: Receipt, state: MaterializedReceipt
   return { ...receipt, facets }
 }
 
-export type TriWriteResult = { ok: true } | { ok: false; failure: RunInstallFailure }
+/**
+ * The outcome of the commit's write step.
+ *
+ *   - `persisted` — the files this mode writes all landed, receipt included.
+ *   - `unpersisted` — frozen mode materialized assets but could not record
+ *     them. The operation still succeeded: the locked set on disk is
+ *     untouched and correct, and refusing here would fail a reproduction over
+ *     machine-local bookkeeping. But the consequence outlives the command —
+ *     every identity this run wrote is now untracked, so nothing can clean it
+ *     up later — which is why the reason travels in the result instead of
+ *     being swallowed. Only frozen mode can produce it; the non-frozen trio
+ *     rolls back instead.
+ */
+export type TriWriteResult =
+  | { ok: true; receipt: 'persisted' }
+  | { ok: true; receipt: 'unpersisted'; cause: string }
+  | { ok: false; failure: RunInstallFailure }
 
 /**
  * What this commit does to the locked set (`facets.json` + `facets.lock`).
@@ -95,8 +112,10 @@ export interface TriWriteArgs {
  *
  * Frozen mode writes the receipt ONLY — materialization state
  * converges, but the locked set (manifest + lockfile) is never
- * written. A receipt write failure under frozen is non-fatal: the
- * receipt is machine-local convenience state, not the locked set.
+ * written. A receipt write failure under frozen does not fail the
+ * operation — the locked set it reproduced is intact — but it is
+ * reported through the result rather than swallowed, because the files
+ * this run wrote are untracked from here on.
  *
  * Non-frozen mode writes all three files — `facets.json`,
  * `facets.lock`, and the receipt — as one transaction. Disk I/O can
@@ -114,20 +133,25 @@ export function commitProjectFiles(args: TriWriteArgs): TriWriteResult {
   if (lockedSet.kind === 'retain') {
     try {
       writeReceipt(projectRoot, newReceipt)
-      args.onLog?.(() => `[verbose]   wrote receipt (${receiptPath(projectRoot)}) [frozen]`)
-    } catch {
-      // Non-fatal by design (see doc comment).
+    } catch (error) {
+      return { ok: true, receipt: 'unpersisted', cause: describeError(error) }
     }
-    return { ok: true }
+    args.onLog?.(() => `[verbose]   wrote receipt (${receiptPath(projectRoot)}) [frozen]`)
+    return { ok: true, receipt: 'persisted' }
   }
 
-  // Capture pre-images right before the trio so a mid-trio failure can
-  // restore all three files exactly as they were.
-  const preImages = [
-    capturePreImage(join(projectRoot, 'facets.json')),
-    capturePreImage(join(projectRoot, FACETS_LOCK_FILE)),
-    capturePreImage(receiptPath(projectRoot)),
-  ]
+  // Resolve the receipt path and capture pre-images right before the trio, so
+  // a mid-trio failure can restore all three files exactly as they were.
+  //
+  // Both steps can fail on a disk that has moved under the run — an
+  // unresolvable project root, a file that exists but cannot be read — and
+  // both used to escape as a throw, out of a function whose contract is to
+  // return and at a point where materialization has already happened. The
+  // caller never got the chance to replay the journal. They are failures like
+  // any other write failure now.
+  const prepared = prepareTriWrite(projectRoot)
+  if (!prepared.ok) return { ok: false, failure: prepared.failure }
+  const { receiptFile, preImages } = prepared
 
   // Each write is wrapped individually so a mid-trio failure identifies
   // which file threw. The pre-image restore always runs for all three
@@ -153,7 +177,7 @@ export function commitProjectFiles(args: TriWriteArgs): TriWriteResult {
     },
     {
       file: 'receipt',
-      path: receiptPath(projectRoot),
+      path: receiptFile,
       fn: () => writeReceipt(projectRoot, newReceipt),
     },
   ]
@@ -176,7 +200,7 @@ export function commitProjectFiles(args: TriWriteArgs): TriWriteResult {
       }
     }
   }
-  return { ok: true }
+  return { ok: true, receipt: 'persisted' }
 }
 
 /**
@@ -188,12 +212,64 @@ interface FilePreImage {
   bytes: Buffer | null
 }
 
-function capturePreImage(path: string): FilePreImage {
+/**
+ * Everything the trio needs that can fail before its first write: the
+ * receipt's location, and a pre-image of each of the three files.
+ */
+function prepareTriWrite(
+  projectRoot: string,
+): { ok: true; receiptFile: string; preImages: FilePreImage[] } | { ok: false; failure: RunInstallFailure } {
+  let receiptFile: string
   try {
-    return { path, bytes: readFileSync(path) }
-  } catch {
-    return { path, bytes: null }
+    receiptFile = receiptPath(projectRoot)
+  } catch (error) {
+    return {
+      ok: false,
+      failure: {
+        code: 'LOCKFILE_WRITE_FAILED',
+        path: projectRoot,
+        cause: `could not resolve the receipt path: ${describeError(error)}`,
+      },
+    }
   }
+
+  const preImages: FilePreImage[] = []
+  for (const path of [join(projectRoot, 'facets.json'), join(projectRoot, FACETS_LOCK_FILE), receiptFile]) {
+    const captured = capturePreImage(path)
+    if (!captured.ok) {
+      return { ok: false, failure: { code: 'LOCKFILE_WRITE_FAILED', path, cause: captured.cause } }
+    }
+    preImages.push(captured.image)
+  }
+  return { ok: true, receiptFile, preImages }
+}
+
+/**
+ * Read a file's current bytes, or record that it does not exist.
+ *
+ * Only the "not there" errno family means absence. Every other read failure —
+ * EACCES, EIO, a path that turned into a directory — is reported, because
+ * treating it as absence would arm a restore that DELETES a file this run
+ * could not read, turning an unreadable manifest into a lost one.
+ */
+function capturePreImage(path: string): { ok: true; image: FilePreImage } | { ok: false; cause: string } {
+  try {
+    return { ok: true, image: { path, bytes: readFileSync(path) } }
+  } catch (error) {
+    if (isMissingFile(error)) return { ok: true, image: { path, bytes: null } }
+    return { ok: false, cause: `could not read the current contents: ${describeError(error)}` }
+  }
+}
+
+/** ENOENT/ENOTDIR — the "file is not there" errno family. */
+function isMissingFile(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null || !('code' in error)) return false
+  const code = (error as NodeJS.ErrnoException).code
+  return code === 'ENOENT' || code === 'ENOTDIR'
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 /**

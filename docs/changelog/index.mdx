@@ -7,7 +7,7 @@ rss: true
 
 <Update label="2026-07-27" description="Resolve name collisions between facets; manifest 0.1, lockfile 0.3, and asset aliasing" tags={["CLI", "Breaking", "New Feature"]} rss={{
   title: "Asset aliasing, omission, and cross-facet collision resolution",
-  description: "Two facets can now publish an asset with the same name without one of them losing. facet add and facet install detect every cross-facet name collision before writing anything, and in a terminal they pause and let you keep, rename, or omit each contested asset. Your choices are saved into facets.json as a materialization block and replayed on every later install, so it happens once and your teammates get the same layout. Without a terminal -- CI, or piped output -- nothing is prompted: the install fails and prints every claimant with the exact facets.json edit to make, choosing no winner and inventing no name. Aliasing renames only the file on disk; archive paths, integrity hashes, and the lockfile keep the publisher's authored name, so an alias can never smuggle different content under a familiar name. Omitted assets are still resolved, verified, and recorded, they are simply not written. Breaking: facets.json now carries manifestVersion 0.1 and entries may be objects instead of strings, so any tool that reads it must handle both forms; facets.lock moves to 0.3 with a required materialization disposition on every asset. Both migrate automatically on the next successful install. A frozen install fails if the manifest declares overrides while facets.lock is still at 0.2, which has no field in which to record them -- run one normal install first. Commit is now three phases, Resolve-all then Compose then Apply, so nothing is written until the whole plan is known to be collision-free. Removing a facet is the exception: when your machine's install receipt already accounts for everything you are keeping, facet remove refines those lockfile entries in place instead of resolving them, so it still works with a cold cache and an unreachable registry. Breaking: only that receipt authorizes deletion now. facets.lock is shared state describing what should be installed, so it is never treated as proof that this machine wrote a file -- pull a teammate's lockfile onto a machine that never ran an install, remove the facet, and the declaration is dropped while the files stay exactly where they are. Run facet install first if you want the CLI to take ownership of them."
+  description: "Two facets can now publish an asset with the same name without one of them losing. facet add and facet install detect every cross-facet name collision before writing anything, and in a terminal they pause and let you keep, rename, or omit each contested asset. Your choices are saved into facets.json as a materialization block and replayed on every later install, so it happens once and your teammates get the same layout. Without a terminal -- CI, or piped output -- nothing is prompted: the install fails and prints every claimant with the exact facets.json edit to make, choosing no winner and inventing no name. Aliasing renames only the file on disk; archive paths, integrity hashes, and the lockfile keep the publisher's authored name, so an alias can never smuggle different content under a familiar name. Omitted assets are still resolved, verified, and recorded, they are simply not written. Breaking: facets.json now carries manifestVersion 0.1 and entries may be objects instead of strings, so any tool that reads it must handle both forms; facets.lock moves to 0.3 with a required materialization disposition on every asset. Both migrate automatically on the next successful install. A frozen install fails if the manifest declares overrides while facets.lock is still at 0.2, which has no field in which to record them -- run one normal install first. Commit is now three phases, Resolve-all then Compose then Apply, so nothing is written until the whole plan is known to be collision-free. Removing a facet is the exception: when your machine's install receipt already accounts for everything you are keeping, facet remove refines those lockfile entries in place instead of resolving them, so it still works with a cold cache and an unreachable registry. Breaking: only that receipt authorizes deletion now. facets.lock is shared state describing what should be installed, so it is never treated as proof that this machine wrote a file -- pull a teammate's lockfile onto a machine that never ran an install, remove the facet, and the declaration is dropped while the files stay exactly where they are. Run facet install first if you want the CLI to take ownership of them, and note that facet remove needs the network when a facet you are KEEPING is not covered by that receipt -- it materializes what stays before claiming it, and fails without deleting anything if the content is unreachable. Breaking: facet remove also decides what is declared under the project lock rather than from a read taken before it, so a request whose names all look undeclared still connects an adapter -- it opens the picker in a terminal and exits non-zero in CI instead of printing a no-op it never verified."
 }}>
   ## Two facets, one name
 
@@ -103,7 +103,7 @@ rss: true
   format and is migrated in place on the next successful install. There
   is no separate migration command and nothing to run.
 
-  ## **Breaking:** lockfile `0.3`
+  ## **Breaking:** lockfile `0.3` (and receipt `0.3`)
 
   Every asset entry in `facets.lock` now carries a required
   `materialization` disposition -- `authored`, `aliased`, or `omitted`.
@@ -112,6 +112,11 @@ rss: true
   you still have one, delete `facets.lock` and run `facet install` to
   regenerate it. The number `1` is reserved for the eventual stable v1
   format.
+
+  The machine-local install receipt moves to `0.3` alongside it, so it
+  can record the disposition each asset was materialized under. It
+  migrates itself on the next install and lives outside your repository,
+  so there is nothing to commit and nothing to run.
 
   ```json facets.lock
   {
@@ -158,9 +163,7 @@ rss: true
   receipt already accounts for everything you are keeping,
   [`facet remove`](/cli/remove) refines those lockfile entries in place
   instead of resolving them, so it still works with a cold cache and an
-  unreachable registry. Without that receipt nothing on disk is proven
-  to be yours, so the removal resolves normally rather than deleting on
-  the lockfile's word.
+  unreachable registry.
 
   Two smaller consequences you may notice:
 
@@ -170,6 +173,55 @@ rss: true
   - **Stale choices are pruned and reported.** If you upgrade a facet
     and the publisher removed an asset you had aliased, the override is
     dropped on a successful install and the CLI tells you which one.
+
+  ## **Breaking:** only your install receipt authorizes deletion
+
+  `facets.lock` is shared, version-controlled state. It says what
+  *should* be materialized -- not what your machine actually wrote --
+  so it is no longer treated as proof of ownership. Deletion is driven
+  by the machine-local install receipt alone.
+
+  Two rules replace the old fallback:
+
+  - **Your project's desired state authorizes writes.** An install
+    still materializes every declared asset, overwriting an unmanaged
+    file that happens to occupy the same name. (If what is already
+    there matches byte for byte, it is adopted without a rewrite.)
+    Either way the file is tracked from then on.
+  - **The receipt authorizes deletions.** Files the CLI has no record
+    of writing are never deleted.
+
+  What you may notice:
+
+  - **Pull a teammate's `facets.lock` onto a machine that never ran an
+    install, then `facet remove` the facet:** `facets.json` and
+    `facets.lock` drop it and the files stay exactly where they are.
+    The summary says so instead of reporting a cleanup that did not
+    happen, and those files are then yours to delete by hand.
+  - **`facet remove` may need the network.** The offline guarantee is a
+    property of *tracked* state, not of removal. If a facet you are
+    **keeping** is not fully accounted for by your receipt, the removal
+    runs the ordinary pipeline to materialize it before claiming it --
+    which succeeds when the content is reachable and fails, deleting
+    nothing, when it is not. Run `facet install` first to take
+    ownership.
+  - **An unusable receipt is reported.** Unreadable, or recorded
+    against a different project: nothing on disk is tracked, so nothing
+    is cleaned up, and the run records only what it materializes.
+
+  ## **Breaking:** `facet remove` decides what is declared under the lock
+
+  Whether a name is declared is now answered by the commit, holding the
+  project lock, instead of by a read taken before it. A pre-lock read
+  can be stale, and acting on one let a facet added by a concurrent
+  process survive the removal that asked for it.
+
+  So `facet remove ghost` in a project with no adapter opens the picker
+  in a terminal and exits non-zero in CI, rather than printing a no-op
+  summary it never verified. Names that really are absent under the
+  lock are still ignored, and a removal whose names are all absent
+  still succeeds. An unreadable `facets.json` is still reported as a
+  manifest problem, before any adapter is discovered.
 
   ## Adapter authors
 

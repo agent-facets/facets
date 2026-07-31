@@ -241,6 +241,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
         : null
     if (refinement !== null && refinement.kind === 'not-applicable') {
       onLog(() => `[verbose] removal needs full resolution (${refinement.reason.code})`)
+      onStage({ kind: 'removal-resolution-required', reason: refinement.reason.code })
     }
 
     if (refinement !== null && refinement.kind === 'refined') {
@@ -485,6 +486,10 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     })
     if (!written.ok) {
       return await rollbackAndFail(journal, written.failure, onLog)
+    }
+    if (written.receipt === 'unpersisted') {
+      onLog(() => `[warn] install receipt could not be written (${written.cause}); this run's assets stay untracked`)
+      onStage({ kind: 'receipt-unpersisted', cause: written.cause })
     }
     if (!frozenLockfile) {
       onStage({ kind: 'lockfile-write', path: join(projectRoot, FACETS_LOCK_FILE) })

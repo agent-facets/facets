@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
 import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
 import { CURRENT_LOCKFILE_VERSION, LOCKFILE_VERSION_0_2, type ProjectFacetEntry } from '@agent-facets/protocol'
+import type { StageEvent } from '../types.ts'
 
 /**
  * Tests for the `facet remove` orchestrator (`runRemove`).
@@ -161,11 +162,11 @@ async function installFacet(name: string, version: string): Promise<void> {
   if (!result.ok) throw new Error(`test bug: failed to seed facet ${name}`)
 }
 
-async function remove(names: string[]) {
+async function remove(names: string[], onStage?: (event: StageEvent) => void) {
   const loadResult = await loadInstalledAdapters()
   if (!loadResult.ok) expect.unreachable('test bug: installed fixture adapters failed to load')
   const adapters = loadResult.adapters.filter((a) => a.supportsInstall === true)
-  return runRemove({ projectRoot, names, adapters })
+  return runRemove({ projectRoot, names, adapters, ...(onStage ? { onStage } : {}) })
 }
 
 beforeEach(() => {
@@ -450,7 +451,8 @@ describe('runRemove — a remaining facet is unavailable', () => {
     rmSync(receiptPath(projectRoot), { force: true })
     goOffline()
 
-    const result = await remove(['cowsay'])
+    const events: StageEvent[] = []
+    const result = await remove(['cowsay'], (event) => events.push(event))
 
     expect(result.ok).toBe(false)
     if (result.ok) expect.unreachable()
@@ -459,6 +461,10 @@ describe('runRemove — a remaining facet is unavailable', () => {
     // belonging to the facet the user asked to remove.
     expect(readFileSync(remainingAsset, 'utf8')).toBe(remainingBefore)
     expect(existsSync(assetPath('test-adapter', 'cowsay'))).toBe(true)
+    // The failure names `planner` — a facet the user is KEEPING. Why this run
+    // was resolving it at all has to travel with the failure, or the error
+    // reads as unrelated to the removal that caused it.
+    expect(events).toContainEqual({ kind: 'removal-resolution-required', reason: 'receipt-unwitnessable' })
   })
 
   // The other half of the same rule: needing resolution is not the same as

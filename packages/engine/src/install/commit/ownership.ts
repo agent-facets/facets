@@ -112,8 +112,9 @@ function addClaim(
  * teammate's commit merely mentioned.
  *
  * An identity absent here is UNTRACKED, not unowned-and-therefore-stale. It is
- * left alone unless the desired set asks for it, and a write to it is what
- * creates ownership — see `run-install`'s apply ordering.
+ * left alone unless the desired set asks for it; reconciling it to the desired
+ * state — writing it, or proving it already matches — is what creates
+ * ownership. See `run-install`'s apply ordering.
  */
 export function buildPreviousOwnership(state: ProjectReceiptState): Map<string, PreviousOwnership> {
   const index = new Map<string, PreviousOwnership>()

@@ -457,6 +457,106 @@ describe('apply — global ownership reconciliation', () => {
     expect(readFileSync(join(skillRoot('review'), 'refs/api.md'), 'utf8')).toBe('# api\n')
   })
 
+  test('rollback removes a companion the failed operation added', async () => {
+    // The forward write replaced a bundle and added `refs/new.md`. Its undo
+    // restores the prior bundle — and must also take the added companion with
+    // it. An undo scoped to only the PREVIOUSLY owned paths leaves `new.md`
+    // beside a restored bundle that never referenced it, and the failed
+    // transaction writes no receipt, so nothing would ever be able to claim
+    // or delete it again.
+    const a = skillFixture('alpha', 'review', { companions: { 'refs/api.md': '# api\n' } })
+    const b = skillFixture('beta', 'other')
+    writeManifest({ facets: { alpha: a, beta: b } })
+    expect((await runInstall({ projectRoot, adapters: [recordingAdapter().adapter] })).ok).toBe(true)
+
+    // alpha gains a companion; beta's write will fail after alpha's succeeds.
+    writeFileSync(join(projectRoot, 'vendor/alpha/skills/review/refs/new.md'), '# new\n')
+    writeFileSync(
+      join(projectRoot, 'vendor/alpha/facet.json'),
+      JSON.stringify({
+        name: 'alpha',
+        version: '1.0.0',
+        skills: { review: { description: 'review of alpha', files: ['refs/api.md', 'refs/new.md'] } },
+      }),
+    )
+    writeFileSync(join(projectRoot, 'vendor/beta/skills/other/SKILL.md'), '# other v2\n')
+
+    const { adapter } = recordingAdapter({ failInstallOf: new Set(['other']) })
+    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    if (result.ok) expect.unreachable()
+    expect(result.rollback.kind).toBe('succeeded')
+
+    expect(existsSync(join(skillRoot('review'), 'refs/new.md'))).toBe(false)
+    expect(readFileSync(join(skillRoot('review'), 'refs/api.md'), 'utf8')).toBe('# api\n')
+    expect(readFileSync(join(skillRoot('review'), 'SKILL.md'), 'utf8')).toContain('# review from alpha')
+  })
+
+  test('rollback removes a freshly created bundle in full, companions included', async () => {
+    const a = skillFixture('alpha', 'review', { companions: { 'refs/api.md': '# api\n' } })
+    const b = skillFixture('beta', 'other')
+    writeManifest({ facets: { alpha: a, beta: b } })
+
+    const { adapter } = recordingAdapter({ failInstallOf: new Set(['other']) })
+    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    if (result.ok) expect.unreachable()
+    expect(result.rollback.kind).toBe('succeeded')
+
+    // Nothing this run created may survive it — the undo of a create is a
+    // delete of everything it wrote, not just the primary.
+    expect(existsSync(join(skillRoot('review'), 'refs/api.md'))).toBe(false)
+    expect(existsSync(skillRoot('review'))).toBe(false)
+    expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)
+  })
+
+  test('rollback of a repaired bundle whose primary was missing converges on absent', async () => {
+    // The boundary case. The user deleted `SKILL.md` but left the owned
+    // companion; the adapter's read reports the whole bundle `not-found`,
+    // because a bundle is addressed through its primary. The repair therefore
+    // records a CREATE, and undoing a create deletes the bundle — including
+    // the companion that was on disk beforehand.
+    //
+    // That is not byte-identical restoration, and it is deliberate: the undo
+    // converges on the state the adapter contract could actually witness, and
+    // every file it removes is one the receipt already owned. Claiming more
+    // would mean inventing a preimage nothing read.
+    const a = skillFixture('alpha', 'review', { companions: { 'refs/api.md': '# api\n' } })
+    const b = skillFixture('beta', 'other')
+    writeManifest({ facets: { alpha: a, beta: b } })
+    expect((await runInstall({ projectRoot, adapters: [recordingAdapter().adapter] })).ok).toBe(true)
+
+    rmSync(join(skillRoot('review'), 'SKILL.md'))
+    expect(existsSync(join(skillRoot('review'), 'refs/api.md'))).toBe(true)
+    writeFileSync(join(projectRoot, 'vendor/beta/skills/other/SKILL.md'), '# other v2\n')
+
+    const { adapter } = recordingAdapter({ failInstallOf: new Set(['other']) })
+    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    if (result.ok) expect.unreachable()
+    expect(result.rollback.kind).toBe('succeeded')
+
+    expect(existsSync(join(skillRoot('review'), 'SKILL.md'))).toBe(false)
+    expect(existsSync(join(skillRoot('review'), 'refs/api.md'))).toBe(false)
+  })
+
+  test('an unreadable receipt path fails the commit and rolls materialization back', async () => {
+    // A receipt path that cannot be read — here a directory where the file
+    // belongs — used to escape `commitProjectFiles` as a throw, out of a
+    // function documented never to throw, AFTER the write pass had already
+    // run. The journal never replayed. It is an ordinary commit failure now.
+    const a = skillFixture('alpha', 'review')
+    writeManifest({ facets: { alpha: a } })
+    mkdirSync(receiptPath(projectRoot), { recursive: true })
+
+    const { adapter } = recordingAdapter()
+    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    if (result.ok) expect.unreachable()
+    expect(result.failure.code).toBe('LOCKFILE_WRITE_FAILED')
+    expect(result.rollback.kind).toBe('succeeded')
+
+    // The write pass ran and was undone; no project file was touched.
+    expect(existsSync(skillRoot('review'))).toBe(false)
+    expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)
+  })
+
   test('a file the receipt does not own survives cleanup', async () => {
     const a = skillFixture('alpha', 'review')
     writeManifest({ facets: { alpha: a } })
@@ -744,6 +844,37 @@ describe('apply — frozen reproduction of recorded intent', () => {
     expect(entry.authoredName).toBe('gone')
     // A normal install prunes this; frozen mode must leave it exactly alone.
     expectUntouched(lock, manifestText)
+  })
+
+  test('a receipt it cannot write is reported, and the reproduction still succeeds', async () => {
+    // Frozen mode has no locked set to roll back — the manifest and lockfile
+    // it reproduced are correct and untouched — so a receipt it cannot
+    // persist does not fail the operation. It does have to be SAID: every
+    // asset this run put on disk is untracked from here on, and nothing about
+    // a silent success would let a user work that out.
+    const a = skillFixture('alpha', 'review')
+    const { adapter, lock } = await seed({ facets: { alpha: a } })
+    const manifestText = readFileSync(join(projectRoot, 'facets.json'), 'utf8')
+
+    // A directory where the receipt file belongs: readable as nothing,
+    // writable as nothing.
+    rmSync(receiptPath(projectRoot), { force: true })
+    mkdirSync(receiptPath(projectRoot), { recursive: true })
+    rmSync(skillRoot('review'), { recursive: true, force: true })
+
+    const events: StageEvent[] = []
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      frozenLockfile: true,
+      onStage: (event) => events.push(event),
+    })
+    if (!result.ok) expect.unreachable()
+
+    // The repair happened; the locked set is untouched; the loss is reported.
+    expect(existsSync(join(skillRoot('review'), 'SKILL.md'))).toBe(true)
+    expectUntouched(lock, manifestText)
+    expect(events.some((event) => event.kind === 'receipt-unpersisted')).toBe(true)
   })
 
   test('a collision in recorded state fails before anything is resolved', async () => {

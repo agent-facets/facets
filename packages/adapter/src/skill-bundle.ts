@@ -402,8 +402,7 @@ export async function deleteSkillBundle(
   const targets: string[] = [paths.primaryFile, ...validated.resolved.values()]
 
   // Track the exact path being touched so a failure attributes the error to
-  // the real file (a companion, or the .meta.json sidecar) rather than
-  // always blaming the primary.
+  // the real file — a companion, not always the primary.
   let currentPath = paths.primaryFile
   const snapshot: Snapshot = new Map()
   try {
@@ -419,7 +418,6 @@ export async function deleteSkillBundle(
 
   const deletedPaths: string[] = []
   const deletedDirs: string[] = []
-  const sidecarPath = `${paths.primaryFile}.meta.json`
   try {
     for (const abs of targets) {
       if (snapshot.get(abs) === null) continue
@@ -428,12 +426,6 @@ export async function deleteSkillBundle(
       deletedPaths.push(abs)
       deletedDirs.push(dirname(abs))
     }
-    // Legacy sidecar cleanup, mirroring deleteAssetFile. Snapshot it first so
-    // a mid-delete rollback restores it too, then attribute any rm failure to
-    // the sidecar path.
-    await snapshotFile(snapshot, sidecarPath)
-    currentPath = sidecarPath
-    await rm(sidecarPath, { force: true })
   } catch (err) {
     const failure = ioFailure('delete', currentPath, err)
     const restoreError = await restoreSnapshot(snapshot)

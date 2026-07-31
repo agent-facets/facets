@@ -108,12 +108,20 @@ describe('deleteAssetFile', () => {
     expect(existsSync(file)).toBe(false)
   })
 
-  test('also removes a legacy .meta.json sidecar (upgrade path)', async () => {
+  test('leaves an adjacent .meta.json file alone', async () => {
+    // Metadata has always been written into the asset file's own front
+    // matter; this SDK has never produced a `<asset>.meta.json`. A file with
+    // that name is therefore somebody else's, and deleting an asset is not a
+    // licence to remove the files next to it.
     const file = join(workDir, 'skill.md')
-    writeFileSync(file, 'body')
-    writeFileSync(`${file}.meta.json`, '{"old":true}')
+    const neighbor = `${file}.meta.json`
+    await installAssetFile({ file }, 'body')
+    writeFileSync(neighbor, '{"mine":true}')
+
     await deleteAssetFile({ file })
-    expect(existsSync(`${file}.meta.json`)).toBe(false)
+
+    expect(existsSync(file)).toBe(false)
+    expect(readFileSync(neighbor, 'utf8')).toBe('{"mine":true}')
   })
 
   test('is a no-op when the asset is absent', async () => {

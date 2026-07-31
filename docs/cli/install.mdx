@@ -76,12 +76,20 @@ The summary line classifies each facet by what happened on disk:
 </ResponseField>
 
 <ResponseField name="unchanged" type="no-op">
-  Same version, same materialization intent, every asset already in its desired state. Nothing was written.
+  Same version, same materialization intent, every asset already in its desired state. Nothing was written — the on-disk bytes were compared and matched, which is enough to record the assets as tracked without rewriting them.
 </ResponseField>
 
 <ResponseField name="removed" type="cleanup">
-  Facet was materialized previously but is no longer declared in `facets.json`. Assets cleaned up.
+  Facet is no longer declared in `facets.json`, and this machine's [install receipt](/specification/commit#machine-local-install-receipt) tracked it. Its ownership was reconciled: obsolete identities deleted, and any identity another declared facet now claims kept.
 </ResponseField>
+
+<ResponseField name="removed-untracked" type="records only">
+  Facet is no longer declared, and only the lockfile ever recorded it — you pulled a teammate's `facets.lock` and never installed. The declaration is dropped from `facets.json` and `facets.lock`, but **nothing on disk is deleted**, because no receipt claim proves this machine wrote it. The summary names the facet and says the files were left in place.
+</ResponseField>
+
+<Note>
+The `N removed` count covers both: it counts declarations that went away. How many *assets* left disk is the separate asset count — zero, for an untracked removal.
+</Note>
 
 If you delete a materialized asset by hand and re-run `facet install`, the affected facet shows up as `repaired`.
 

@@ -64,6 +64,17 @@ function makeFakeRun(
   }
 }
 
+/** A no-op successful run, for tests whose subject is a warning event. */
+function emptySuccess(): RunInstallResult {
+  return {
+    ok: true,
+    lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
+    summary: { installed: 0, updated: 0, repaired: 0, unchanged: 0, removed: 0, totalAssets: 0, removedAssets: 0 },
+    perFacet: [],
+    serverWarnings: [],
+  }
+}
+
 /**
  * {@link makeFakeRun} for the two results that never reach the install
  * pipeline: `add` and `remove` can fail while still preparing, and the view
@@ -290,7 +301,10 @@ describe('InstallView — drift removal', () => {
     expect(frame).toContain('orphan')
     // Ink wraps at the test terminal width, so assert on wrap-safe fragments.
     expect(frame).toContain('left in place')
-    expect(frame).toContain('facet install')
+    expect(frame).toContain('manually')
+    // The remedy must be one that still works from here. `facet install`
+    // does not: the facet is already out of `facets.json`.
+    expect(frame).not.toContain('facet install')
     instance.unmount()
   })
 
@@ -320,6 +334,71 @@ describe('InstallView — drift removal', () => {
     const frame = findContentFrame(instance.frames)
     expect(frame).toContain('unreadable')
     expect(frame).toContain('nothing already on disk is tracked')
+    instance.unmount()
+  })
+
+  test('names the other unusable-receipt reason distinctly', async () => {
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'install',
+        run: makeFakeRun(
+          [
+            { kind: 'install-start', totalFacets: 0 },
+            { kind: 'receipt-unavailable', reason: 'path-mismatch' },
+            { kind: 'install-complete', outcome: 'success' },
+          ],
+          emptySuccess(),
+        ),
+      }),
+    )
+    await settle()
+    const frame = findContentFrame(instance.frames)
+    expect(frame).toContain('different project')
+    expect(frame).not.toContain('unreadable')
+    instance.unmount()
+  })
+
+  test('warns when a receipt entry was rejected, naming what stays behind', async () => {
+    // Verbose-only would hide a cleanup that will never happen.
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'remove',
+        run: makeFakeRun(
+          [
+            { kind: 'install-start', totalFacets: 0 },
+            { kind: 'receipt-invalid-asset', facet: 'alpha', asset: 'review', reason: 'owned path escapes' },
+            { kind: 'install-complete', outcome: 'success' },
+          ],
+          emptySuccess(),
+        ),
+      }),
+    )
+    await settle()
+    const frame = findContentFrame(instance.frames)
+    expect(frame).toContain('review')
+    expect(frame).toContain('alpha')
+    expect(frame).toContain('left in place')
+    instance.unmount()
+  })
+
+  test('warns when assets were written but the receipt could not be', async () => {
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'install',
+        run: makeFakeRun(
+          [
+            { kind: 'install-start', totalFacets: 0 },
+            { kind: 'receipt-unpersisted', cause: 'EACCES' },
+            { kind: 'install-complete', outcome: 'success' },
+          ],
+          emptySuccess(),
+        ),
+      }),
+    )
+    await settle()
+    const frame = findContentFrame(instance.frames)
+    expect(frame).toContain('could not be written')
+    expect(frame).toContain('untracked')
     instance.unmount()
   })
 })

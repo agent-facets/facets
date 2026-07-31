@@ -27,7 +27,9 @@ export type CompanionMap = Record<string, Uint8Array>
  * materialized — never from shared, version-controlled project state.
  * Replacement removes exactly the owned paths absent from the new bundle;
  * unowned files are never touched. Adapters never persist ownership or
- * infer it from disk — ownership data arrives on every request.
+ * infer it from disk — ownership data arrives on every request, and the
+ * supplied set is the complete extent of what may be removed. An adapter
+ * must not widen it by convention, filename pattern, or storage format.
  *
  * Agent and command variants structurally cannot carry companions or
  * ownership sets, and no variant exists for archive-only supplementary

@@ -9,7 +9,7 @@ description: Remove one or more facets from the project
 facet remove <facet> [more facets...]
 ```
 
-Removes one or more facets from `facets.json`, deletes the assets they still own from every connected adapter, and rewrites `facets.lock` without them  -- in a single command. The inverse of [`facet add`](/cli/add). Aliased as `facet rm`.
+Removes one or more facets from `facets.json`, deletes the assets they still own from every connected adapter, and rewrites `facets.lock` without them  -- in a single command. "Still own" is decided by your machine's [install receipt](/specification/commit#machine-local-install-receipt): a facet this machine never installed loses its declaration but keeps its files. The inverse of [`facet add`](/cli/add). Aliased as `facet rm`.
 
 ## Examples
 
@@ -34,7 +34,7 @@ facet remove viper-plans rezi
 
 | Code | Meaning                                                                              |
 | ---- | ------------------------------------------------------------------------------------ |
-| `0`  | Removal succeeded, or all requested names were already absent from `facets.json` (no-op). |
+| `0`  | Removal succeeded, or all requested names were already absent from `facets.json` (no-op). Names still declared under the lock are removed together; names already gone are ignored. |
 | `1`  | Failed — no names given, no `facets.json`, no adapter connected in a non-interactive shell, an unresolved [name collision](/cli/install#name-collisions), a cancelled resolution, or an install failure. Nothing is modified unless the failure happened mid-write, in which case the journal rolls it back. |
 
 ## What it does
@@ -49,7 +49,7 @@ facet remove viper-plans rezi
   <Step title="Commit">
     Delegate to the [install pipeline](/specification/install) with the removals delta. Removal is [receipt-driven](/specification/commit#drift-removal); when your machine's receipt accounts for the facets you are keeping, their lockfile entries are [refined in place rather than re-fetched](/specification/commit#removal-only-short-circuit) and nothing goes over the network; the manifest, lockfile, and receipt are [written together](/specification/commit#transactional-tri-write).
 
-    Deletion is keyed by the name each asset was **materialized** under, not by the facet that owned it. A name another declared facet still claims is kept, so removing a facet never deletes an asset that has since transferred to a different one. Assets you [omitted](/specification/materialization#dispositions) were never written, so there is nothing to delete for them. Only files your machine's receipt records are deleted: if this machine never installed the facet — you pulled a teammate's `facets.lock` and never ran an install — removing it updates `facets.json` and `facets.lock` and leaves the files alone.
+    Deletion is keyed by the name each asset was **materialized** under, not by the facet that owned it. A name another declared facet still claims is kept, so removing a facet never deletes an asset that has since transferred to a different one. Assets you [omitted](/specification/materialization#dispositions) were never written, so there is nothing to delete for them. Only files your machine's receipt records are deleted: if this machine never installed the facet — you pulled a teammate's `facets.lock` and never ran an install — removing it updates `facets.json` and `facets.lock`, leaves the files alone, and says so. Clean those up by hand; nothing tracks them.
   </Step>
   <Step title="On any failure">
     The journal rolls back all changes. Nothing is written ahead of success.
@@ -59,7 +59,7 @@ facet remove viper-plans rezi
 Removing a facet discards the materialization overrides recorded for it. Overrides on the facets that remain are durable and are **not** reverted, even if the removal frees the name they were working around — undoing them is a decision, so it stays yours. Delete the `materialization` block from `facets.json` and re-run [`facet install`](/cli/install) to go back to published names.
 
 <Note>
-Removal does not re-fetch a facet it is keeping. When your machine's receipt already accounts for every facet you are keeping, removal completes with a cold cache and an unreachable registry. It falls back to the [full install pipeline](/specification/commit#removal-only-short-circuit) when local state cannot answer — a kept facet that was never locked, one whose entry drifted, a collision already recorded among the facets you are keeping, a name a removed facet shared with one you are keeping, a receipt that is absent, corrupt, or path-mismatched, a kept facet your receipt does not record or does not match, or manifest intent the lockfile does not record. In those cases the removal materializes what you are keeping and only then records ownership of it, so it needs the content: reachable, it succeeds; fully offline, it fails rather than deleting files nothing proves this machine wrote. That fallback is also what can surface a name collision that was never resolved: in a terminal you get the same resolver [`facet install`](/cli/install#name-collisions) uses; in CI it fails with the report.
+Removal does not re-fetch a facet it is keeping. When your machine's receipt already accounts for every facet you are keeping, removal completes with a cold cache and an unreachable registry. It falls back to the [full install pipeline](/specification/commit#removal-only-short-circuit) when local state cannot answer — no lockfile at all, a kept facet that was never locked, one whose entry drifted, a collision already recorded among the facets you are keeping, a name a removed facet shared with one you are keeping, a receipt that is absent, corrupt, or path-mismatched, a kept facet your receipt does not record or does not match, or manifest intent the lockfile does not record. In those cases the removal materializes what you are keeping and only then records ownership of it, so it needs the content: reachable, it succeeds; fully offline, it fails rather than deleting files nothing proves this machine wrote. That fallback is also what can surface a name collision that was never resolved: in a terminal you get the same resolver [`facet install`](/cli/install#name-collisions) uses; in CI it fails with the report.
 </Note>
 
 ## See also
