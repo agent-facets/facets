@@ -3,16 +3,23 @@ import type {
   CollisionResolution,
   CollisionResolutionRequest,
   CollisionResolver,
+  RollbackOutcome,
   RunInstallFailure,
   RunInstallResult,
   StageEvent,
 } from '@agent-facets/engine'
 import { assetIdentity } from '@agent-facets/engine'
 import type { FacetContribution, IntegrityFailure } from '@agent-facets/protocol'
-import { planMaterialization } from '@agent-facets/protocol'
+import { CURRENT_LOCKFILE_VERSION, LOCKFILE_VERSION_0_3, planMaterialization } from '@agent-facets/protocol'
 import { render } from 'ink-testing-library'
 import { createElement } from 'react'
-import { InstallView } from '../tui/views/install/install-view.tsx'
+import { InstallView, type InstallViewResult } from '../tui/views/install/install-view.tsx'
+import { diskStateSentence } from '../util/install-outcome.ts'
+import {
+  describeUnsupportedManifestVersion,
+  UNSUPPORTED_MANIFEST_VERSION_FIX,
+  UNSUPPORTED_MANIFEST_VERSION_WHAT,
+} from '../util/unsupported-manifest-version.ts'
 
 /**
  * Wait long enough for the view's `useEffect` chain to finish (run the
@@ -57,9 +64,18 @@ function makeFakeRun(
   }
 }
 
+/**
+ * {@link makeFakeRun} for the two results that never reach the install
+ * pipeline: `add` and `remove` can fail while still preparing, and the view
+ * renders a different block for each.
+ */
+function makeFakePrepareRun(result: InstallViewResult): () => Promise<InstallViewResult> {
+  return async () => result
+}
+
 const successResultSingle: RunInstallResult = {
   ok: true,
-  lockfile: { lockfileVersion: 1, facets: {} },
+  lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
   summary: {
     installed: 1,
     updated: 0,
@@ -75,7 +91,7 @@ const successResultSingle: RunInstallResult = {
 
 const successResultMulti: RunInstallResult = {
   ok: true,
-  lockfile: { lockfileVersion: 1, facets: {} },
+  lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
   summary: {
     installed: 2,
     updated: 1,
@@ -95,7 +111,7 @@ const successResultMulti: RunInstallResult = {
 
 const successResultNoOp: RunInstallResult = {
   ok: true,
-  lockfile: { lockfileVersion: 1, facets: {} },
+  lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
   summary: {
     installed: 0,
     updated: 0,
@@ -220,7 +236,7 @@ describe('InstallView — drift removal', () => {
     ]
     const result: RunInstallResult = {
       ok: true,
-      lockfile: { lockfileVersion: 1, facets: {} },
+      lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
       summary: {
         installed: 0,
         updated: 0,
@@ -261,15 +277,27 @@ describe('InstallView — marketing aesthetic on `add`', () => {
     const result: RunInstallResult = {
       ok: true,
       lockfile: {
-        lockfileVersion: 1,
+        lockfileVersion: LOCKFILE_VERSION_0_3,
         facets: {
           cowsay: {
             source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
             version: '0.1.0',
             integrity: 'sha256:x',
             assets: [
-              { scope: 'project', type: 'command', name: 'cowsay' },
-              { scope: 'project', type: 'skill', name: 'ascii-art' },
+              {
+                scope: 'project',
+                type: 'command',
+                name: 'cowsay',
+                materialization: { kind: 'authored' },
+                files: [{ path: 'commands/cowsay.md', integrity: `sha256:${'0'.repeat(64)}` }],
+              },
+              {
+                scope: 'project',
+                type: 'skill',
+                name: 'ascii-art',
+                materialization: { kind: 'authored' },
+                files: [{ path: 'skills/ascii-art/SKILL.md', integrity: `sha256:${'0'.repeat(64)}` }],
+              },
             ],
           },
         },
@@ -315,13 +343,21 @@ describe('InstallView — marketing aesthetic on `add`', () => {
     const result: RunInstallResult = {
       ok: true,
       lockfile: {
-        lockfileVersion: 1,
+        lockfileVersion: LOCKFILE_VERSION_0_3,
         facets: {
           'pure-skills': {
             source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
             version: '1.0.0',
             integrity: 'sha256:x',
-            assets: [{ scope: 'project', type: 'skill', name: 'planning' }],
+            assets: [
+              {
+                scope: 'project',
+                type: 'skill',
+                name: 'planning',
+                materialization: { kind: 'authored' },
+                files: [{ path: 'skills/planning/SKILL.md', integrity: `sha256:${'0'.repeat(64)}` }],
+              },
+            ],
           },
         },
       },
@@ -367,7 +403,7 @@ describe('InstallView — marketing aesthetic on `add`', () => {
     const result: RunInstallResult = {
       ok: true,
       lockfile: {
-        lockfileVersion: 1,
+        lockfileVersion: LOCKFILE_VERSION_0_3,
         facets: {
           // pre-existing — must NOT appear in the count
           'existing-skill': {
@@ -375,9 +411,27 @@ describe('InstallView — marketing aesthetic on `add`', () => {
             version: '1.0.0',
             integrity: 'sha256:y',
             assets: [
-              { scope: 'project', type: 'skill', name: 'old-skill-a' },
-              { scope: 'project', type: 'skill', name: 'old-skill-b' },
-              { scope: 'project', type: 'command', name: 'old-command' },
+              {
+                scope: 'project',
+                type: 'skill',
+                name: 'old-skill-a',
+                materialization: { kind: 'authored' },
+                files: [{ path: 'skills/old-skill-a/SKILL.md', integrity: `sha256:${'0'.repeat(64)}` }],
+              },
+              {
+                scope: 'project',
+                type: 'skill',
+                name: 'old-skill-b',
+                materialization: { kind: 'authored' },
+                files: [{ path: 'skills/old-skill-b/SKILL.md', integrity: `sha256:${'0'.repeat(64)}` }],
+              },
+              {
+                scope: 'project',
+                type: 'command',
+                name: 'old-command',
+                materialization: { kind: 'authored' },
+                files: [{ path: 'commands/old-command.md', integrity: `sha256:${'0'.repeat(64)}` }],
+              },
             ],
           },
           // newly installed this run
@@ -385,7 +439,15 @@ describe('InstallView — marketing aesthetic on `add`', () => {
             source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
             version: '0.1.0',
             integrity: 'sha256:x',
-            assets: [{ scope: 'project', type: 'command', name: 'cowsay' }],
+            assets: [
+              {
+                scope: 'project',
+                type: 'command',
+                name: 'cowsay',
+                materialization: { kind: 'authored' },
+                files: [{ path: 'commands/cowsay.md', integrity: `sha256:${'0'.repeat(64)}` }],
+              },
+            ],
           },
         },
       },
@@ -435,13 +497,21 @@ describe('InstallView — marketing aesthetic on `add`', () => {
     const result: RunInstallResult = {
       ok: true,
       lockfile: {
-        lockfileVersion: 1,
+        lockfileVersion: LOCKFILE_VERSION_0_3,
         facets: {
           cowsay: {
             source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
             version: '0.1.0',
             integrity: 'sha256:x',
-            assets: [{ scope: 'project', type: 'command', name: 'cowsay' }],
+            assets: [
+              {
+                scope: 'project',
+                type: 'command',
+                name: 'cowsay',
+                materialization: { kind: 'authored' },
+                files: [{ path: 'commands/cowsay.md', integrity: `sha256:${'0'.repeat(64)}` }],
+              },
+            ],
           },
         },
       },
@@ -525,7 +595,7 @@ describe('InstallView — integrity failure', () => {
     expect(frame).toContain('check: B')
     expect(frame).toContain(integrityFailure.expected)
     expect(frame).toContain(integrityFailure.observed)
-    expect(frame).toContain('No assets were written')
+    expect(frame).toContain(diskStateSentence({ kind: 'not-needed', reason: 'test fixture' }))
     instance.unmount()
   })
 
@@ -598,17 +668,23 @@ describe('InstallView — parse error failure', () => {
 })
 
 describe('InstallView — aborted', () => {
-  test('renders the aborted block with rollback note', async () => {
+  // An abort reaches all three rollback outcomes: before any mutation, after
+  // a clean rollback, and after one that could not finish. The block used to
+  // claim "Rolled back to pre-install state" for every one of them, and the
+  // `not-needed` case was the common one (Ctrl-C during fetch).
+  const rollbacks: RollbackOutcome[] = [
+    { kind: 'not-needed', reason: 'test fixture' },
+    { kind: 'succeeded', entriesUndone: 3 },
+    { kind: 'partial-failure', entriesUndone: 0, failures: 2 },
+  ]
+
+  test.each(rollbacks)('states what $kind rollback left on disk', async (rollback) => {
     const failure: RunInstallFailure = { code: 'ABORTED' }
     const events: StageEvent[] = [
       { kind: 'install-start', totalFacets: 1 },
       { kind: 'install-complete', outcome: 'aborted' },
     ]
-    const result: RunInstallResult = {
-      ok: false,
-      failure,
-      rollback: { kind: 'not-needed', reason: 'test fixture' },
-    }
+    const result: RunInstallResult = { ok: false, failure, rollback }
     const instance = render(
       createElement(InstallView, {
         mode: 'install',
@@ -618,7 +694,69 @@ describe('InstallView — aborted', () => {
     await settle()
     const frame = findContentFrame(instance.frames)
     expect(frame).toContain('install aborted')
-    expect(frame).toContain('Rolled back')
+    // Asserted against the shared helper rather than a literal: this is the
+    // check that the view and the stderr `fix:` line cannot drift apart.
+    expect(frame).toContain(diskStateSentence(rollback))
+    // And exactly one of the three, so a block that emitted all of them —
+    // which is what rendering every branch unconditionally would look like —
+    // cannot pass on the `toContain` above alone.
+    for (const other of rollbacks.filter((r) => r.kind !== rollback.kind)) {
+      expect(frame).not.toContain(diskStateSentence(other))
+    }
+    instance.unmount()
+  })
+})
+
+describe('InstallView — unsupported manifest version', () => {
+  // The words come from the CLI's shared module; asserting against the
+  // constants rather than literals is what stops a `.tsx` edit from
+  // reintroducing a fourth phrasing without failing anything.
+  const detail = { path: '/p/facets.json', supported: [0.1] }
+
+  test.each([
+    ['a numeric version', 0.9 as number | undefined],
+    ['a non-numeric version', undefined as number | undefined],
+  ])('the install-phase block renders %s through the shared module', async (_label, observed) => {
+    const failure: RunInstallFailure = { code: 'FACETS_JSON_UNSUPPORTED_VERSION', ...detail, observed }
+    const result: RunInstallResult = {
+      ok: false,
+      failure,
+      rollback: { kind: 'not-needed', reason: 'test fixture' },
+    }
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'install',
+        run: makeFakeRun([{ kind: 'install-complete', outcome: 'failure' }], result),
+      }),
+    )
+    await settle()
+    const frame = findContentFrame(instance.frames)
+    expect(frame).toContain(UNSUPPORTED_MANIFEST_VERSION_WHAT)
+    expect(frame).toContain(UNSUPPORTED_MANIFEST_VERSION_FIX)
+    expect(frame).toContain(describeUnsupportedManifestVersion({ ...detail, observed }))
+    // The remedy is the opposite of the malformed-manifest one, and the
+    // block that used to render here got it backwards.
+    expect(frame).not.toContain('fix the underlying issue')
+    instance.unmount()
+  })
+
+  const prepareFailure = { reason: 'manifest-unsupported-version', ...detail, observed: 0.9 } as const
+  const prepareResults: Array<['add' | 'remove', InstallViewResult]> = [
+    ['add', { ok: false, prepareFailure }],
+    ['remove', { ok: false, removePrepareFailure: prepareFailure }],
+  ]
+
+  test.each(prepareResults)('the %s prepare block renders the same words', async (mode, result) => {
+    const instance = render(
+      createElement(InstallView, {
+        mode,
+        run: makeFakePrepareRun(result),
+      }),
+    )
+    await settle()
+    const frame = findContentFrame(instance.frames)
+    expect(frame).toContain(UNSUPPORTED_MANIFEST_VERSION_WHAT)
+    expect(frame).toContain(UNSUPPORTED_MANIFEST_VERSION_FIX)
     instance.unmount()
   })
 })
@@ -637,11 +775,8 @@ describe('InstallView — partial rollback failure surfaces', () => {
       { kind: 'facet-start', facet: 'viper-plans', specifier: './fixture' },
       { kind: 'facet-failure', facet: 'viper-plans', failure },
     ]
-    const result: RunInstallResult = {
-      ok: false,
-      failure,
-      rollback: { kind: 'partial-failure', entriesUndone: 0, failures: 2 },
-    }
+    const rollback: RollbackOutcome = { kind: 'partial-failure', entriesUndone: 0, failures: 2 }
+    const result: RunInstallResult = { ok: false, failure, rollback }
     const instance = render(
       createElement(InstallView, {
         mode: 'add',
@@ -650,7 +785,8 @@ describe('InstallView — partial rollback failure surfaces', () => {
     )
     await settle()
     const frame = findContentFrame(instance.frames)
-    expect(frame).toContain('rollback completed with 2 partial failures')
+    expect(frame).toContain(diskStateSentence(rollback))
+    expect(frame).toContain('Some adapter writes could not be undone')
     expect(frame).toContain('disk full')
     instance.unmount()
   })
@@ -735,6 +871,8 @@ describe('InstallView — frozen-lockfile drift', () => {
 const KEY = { down: '\u001B[B', right: '\u001B[C', enter: '\r', escape: '\u001B' } as const
 
 function collisionRequest(): CollisionResolutionRequest {
+  // Planner contributions are AUTHORED assets — identity only. They carry no
+  // disposition or file records, unlike a lockfile entry.
   const contributions: FacetContribution[] = [
     { facet: 'alpha', assets: [{ scope: 'project', type: 'skill', name: 'review' }] },
     { facet: 'beta', assets: [{ scope: 'project', type: 'skill', name: 'review' }] },
@@ -800,6 +938,63 @@ describe('InstallView — collision phase machine', () => {
     instance.unmount()
   })
 
+  // Collision checking is evaluated once over the COMPLETE desired set, not
+  // per facet. A rendering that showed it for one facet and skipped it for
+  // several would misdescribe when the check happens — and the spec's
+  // single-facet scenario named it while the multi-facet one did not.
+  test('the same single global phase is shown for a multi-facet run', async () => {
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'install',
+        run: async (onStage) => {
+          onStage({ kind: 'install-start', totalFacets: 2 })
+          for (const facet of ['alpha', 'beta']) {
+            onStage({ kind: 'facet-start', facet, specifier: `./${facet}` })
+            onStage({ kind: 'facet-stage', facet, stage: 'verify' })
+          }
+          onStage({ kind: 'collision-check' })
+          await tick()
+          return successResultSingle
+        },
+      }),
+    )
+    await tick()
+
+    const paused = instance.lastFrame() ?? ''
+    expect(paused).toContain('Checking for name collisions across all facets')
+    // One phase, not one per facet.
+    expect(paused.match(/Checking for name collisions/g)).toHaveLength(1)
+
+    await settle()
+    instance.unmount()
+  })
+
+  test('the collision phase clears once materialization starts', async () => {
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'install',
+        run: async (onStage) => {
+          onStage({ kind: 'install-start', totalFacets: 2 })
+          onStage({ kind: 'facet-start', facet: 'alpha', specifier: './alpha' })
+          onStage({ kind: 'collision-check' })
+          await tick()
+          onStage({ kind: 'facet-stage', facet: 'alpha', stage: 'materialize' })
+          await tick()
+          return successResultSingle
+        },
+      }),
+    )
+    await tick()
+    expect(instance.lastFrame() ?? '').toContain('Checking for name collisions')
+
+    await tick()
+    await tick()
+    expect(instance.lastFrame() ?? '').not.toContain('Checking for name collisions')
+
+    await settle()
+    instance.unmount()
+  })
+
   test('progress gives way to the workspace and comes back, in one mount', async () => {
     const resolutions: CollisionResolution[] = []
     const instance = render(
@@ -859,7 +1054,7 @@ describe('InstallView — collision phase machine', () => {
     expect(resolutions).toEqual([{ kind: 'cancelled' }])
     const frame = findContentFrame(instance.frames)
     expect(frame).toContain('Cancelled')
-    expect(frame).toContain('Nothing was changed')
+    expect(frame).toContain(diskStateSentence({ kind: 'not-needed', reason: 'test fixture' }))
     expect(frame).not.toContain('Install complete.')
     instance.unmount()
   })
@@ -892,7 +1087,7 @@ describe('InstallView — materialization reporting', () => {
   const lockfileWithDispositions: RunInstallResult = {
     ok: true,
     lockfile: {
-      lockfileVersion: 0.3,
+      lockfileVersion: LOCKFILE_VERSION_0_3,
       facets: {
         alpha: {
           source: { kind: 'local', path: './alpha' },
@@ -989,7 +1184,7 @@ describe('InstallView — disposition-only change', () => {
     // "was 1.0.0 → 1.0.0" would read as a bug in the version resolver.
     const result: RunInstallResult = {
       ok: true,
-      lockfile: { lockfileVersion: 1, facets: {} },
+      lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
       summary: { installed: 0, updated: 1, repaired: 0, unchanged: 0, removed: 0, totalAssets: 1, removedAssets: 0 },
       perFacet: [{ kind: 'updated', name: 'alpha', oldVersion: '1.0.0', newVersion: '1.0.0' }],
       serverWarnings: [],

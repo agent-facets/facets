@@ -2,8 +2,9 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { DEFAULT_VERSION, writeScaffold } from '@agent-facets/engine'
+import { spawnCli } from './helpers/cli-process.ts'
 
 let testDir: string
 
@@ -21,18 +22,6 @@ async function createFixtureDir(name: string): Promise<string> {
   return dir
 }
 
-const CLI_PATH = resolve(import.meta.dir, '../../dist/facet')
-
-if (!existsSync(CLI_PATH)) {
-  throw new Error(
-    `[e2e] dist/facet not found at ${CLI_PATH}.\n` +
-      `Build the CLI first:\n` +
-      `  bun run --cwd packages/cli build\n` +
-      `Or run the full check pipeline:\n` +
-      `  bun check`,
-  )
-}
-
 async function runCli(...args: string[]) {
   // Hermetic FACET_DIR: `facet build` fail-closed-loads installed
   // adapters, so inheriting the developer's real ~/.facet (which may
@@ -41,24 +30,17 @@ async function runCli(...args: string[]) {
   // builds proceed with unknown-adapter warnings. Created under `testDir`
   // so the suite's afterAll cleanup sweeps it — no per-call leak.
   const facetDir = await mkdtemp(join(testDir, 'facet-dir-'))
-  const proc = Bun.spawn([CLI_PATH, ...args], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-    env: { ...process.env, NO_COLOR: '1', FACET_DIR: facetDir },
-  })
-  const stdout = await new Response(proc.stdout).text()
-  const stderr = await new Response(proc.stderr).text()
-  const exitCode = await proc.exited
+  const result = await spawnCli(args, { env: { NO_COLOR: '1', FACET_DIR: facetDir } })
 
   // Don't let build errors flood test output — capture but don't dump
-  if (exitCode !== 0 && stderr.trim()) {
-    const lines = stderr.trim().split('\n')
-    const summary =
-      lines.length > 3 ? [...lines.slice(0, 3), `... (${lines.length - 3} more lines)`].join('\n') : stderr.trim()
-    return { stdout: stdout.trim(), stderr: summary, exitCode }
+  if (result.exitCode !== 0 && result.stderr) {
+    const lines = result.stderr.split('\n')
+    if (lines.length > 3) {
+      return { ...result, stderr: [...lines.slice(0, 3), `... (${lines.length - 3} more lines)`].join('\n') }
+    }
   }
 
-  return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode }
+  return result
 }
 
 // --- Scaffold generation (unit) ---

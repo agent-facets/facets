@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import type { LegacyLockfile, LegacyLockfileFacet, LockfileSource } from '@agent-facets/protocol'
-import { LEGACY_LOCKFILE_VERSION } from '@agent-facets/protocol'
+import type { Lockfile02, Lockfile02Facet, LockfileSource } from '@agent-facets/protocol'
+import { LOCKFILE_VERSION_0_2 } from '@agent-facets/protocol'
 import type { NormalizedFacetEntry } from '../../manifest/mutations.ts'
 import { detectLockfileDrift } from '../detect-lockfile-drift.ts'
 
@@ -19,15 +19,22 @@ const taggedSource = (source: string): LockfileSource => {
   return { kind: 'registry', registry: 'https://api.agentfacets.io' }
 }
 
-const lockEntry = (version: string, source = version): LegacyLockfileFacet => ({
+const lockEntry = (version: string, source = version): Lockfile02Facet => ({
   source: taggedSource(source),
   version,
   integrity: 'sha256:stub',
-  assets: [{ scope: 'user', type: 'skill', name: 'planning' }],
+  assets: [
+    {
+      scope: 'user',
+      type: 'skill',
+      name: 'planning',
+      files: [{ path: 'skills/planning/SKILL.md', integrity: `sha256:${'0'.repeat(64)}` }],
+    },
+  ],
 })
 
-const lock = (facets: Record<string, LegacyLockfileFacet>): LegacyLockfile => ({
-  lockfileVersion: LEGACY_LOCKFILE_VERSION,
+const lock = (facets: Record<string, Lockfile02Facet>): Lockfile02 => ({
+  lockfileVersion: LOCKFILE_VERSION_0_2,
   facets,
 })
 

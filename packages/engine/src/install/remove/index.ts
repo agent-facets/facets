@@ -12,7 +12,14 @@ export interface RunRemoveOptions {
   /** Facet names (the `facets.json` keys) to remove — not source specifiers. */
   names: ReadonlyArray<string>
   adapters: ReadonlyArray<Adapter>
-  /** Pre-validated state from {@link prepareRemove}. */
+  /**
+   * Proof that {@link prepareRemove} already ran and passed.
+   *
+   * Consumed ONLY to skip repeating that validation. It carries no project
+   * state by construction, so nothing about it can reach the delta: the
+   * requested `names` go to the commit verbatim, and the manifest loaded
+   * under the lock decides which of them exist.
+   */
   prepared?: Extract<RemovePrepareResult, { ok: true }>
   onStage?: (event: StageEvent) => void
   onLog?: OnLog
@@ -43,8 +50,8 @@ export type RunRemoveResult =
 /**
  * The `facet remove` orchestrator. Pure plan routing:
  *
- *   1. Validate names exist in the manifest.
- *   2. Build the removals delta.
+ *   1. Validate the manifest can be read at all.
+ *   2. Build the removals delta from the requested names.
  *   3. Delegate to `runInstall` with the delta.
  *
  * No write-ahead manifest mutation. No snapshot/restore. The commit
@@ -62,13 +69,11 @@ export async function runRemove(opts: RunRemoveOptions): Promise<RunRemoveResult
   if (!prep.ok) {
     return { ok: false, phase: 'prepare', failure: prep.failure }
   }
-  const filteredNames = prep.names
-
-  for (const name of filteredNames) {
-    onLog?.(() => `[verbose]   removing "${name}"`)
+  for (const name of names) {
+    onLog?.(() => `[verbose]   requesting removal of "${name}"`)
   }
 
-  const removals: Removal[] = filteredNames.map((name) => ({ facetName: name }))
+  const removals: Removal[] = names.map((name) => ({ facetName: name }))
 
   const install = await runInstall({
     projectRoot,

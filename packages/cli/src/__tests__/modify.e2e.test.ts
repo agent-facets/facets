@@ -2,8 +2,9 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { DEFAULT_VERSION, writeScaffold } from '@agent-facets/engine'
+import { spawnCli } from './helpers/cli-process.ts'
 
 let testDir: string
 
@@ -15,19 +16,7 @@ afterAll(async () => {
   await rm(testDir, { recursive: true, force: true })
 })
 
-const CLI_PATH = resolve(import.meta.dir, '../../dist/facet')
-
-async function runCli(...args: string[]) {
-  const proc = Bun.spawn([CLI_PATH, ...args], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-    env: { ...process.env, NO_COLOR: '1' },
-  })
-  const stdout = await new Response(proc.stdout).text()
-  const stderr = await new Response(proc.stderr).text()
-  const exitCode = await proc.exited
-  return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode }
-}
+const runCli = (...args: string[]) => spawnCli(args, { env: { NO_COLOR: '1' } })
 
 /**
  * Scaffold a fresh facet in its own dir and return the path. Includes a skill

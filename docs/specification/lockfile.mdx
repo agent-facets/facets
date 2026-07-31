@@ -66,19 +66,19 @@ Note what aliasing does **not** move: `name` is still `viper-planning` and its `
 ## Fields
 
 <ResponseField name="lockfileVersion" type="number" required>
-  The lockfile schema version. The current schema — the one a normal install writes — is `0.3`. Two earlier schemas remain **readable**: `0.2`, and the numeric `1` naming the legacy-alpha schema.
+  The lockfile schema version. The current schema — the one a normal install writes — is `0.3`. One earlier schema remains **readable**: `0.2`.
 
-  Versions are dispatched by **exact match**, never by numeric ordering. Note that `0.3 < 0.2 < 1` numerically, so ordered comparison would rank the newest schema as the oldest; a loader recognizes exactly the versions it supports and fails on any other rather than guessing. There is no cross-version fallback.
+  Versions are dispatched by **exact match**, never by numeric ordering. A version number names a schema, not a position in a sequence, so a loader recognizes exactly the versions it supports and fails on any other rather than guessing. There is no cross-version fallback.
 
-  A normal install migrates a verified `1` or `0.2` lockfile to `0.3` as part of the tri-write. A [frozen install](/specification/commit#frozen-lockfile) never rewrites it, and therefore retains whatever version it loaded. The authoritative version is the `CURRENT_LOCKFILE_VERSION` constant in `@agent-facets/protocol`.
-
-  <Note>
-  Readers are deliberately broader than the writer: reading three versions and writing one is a format-compatibility property, not a staged rollout.
-  </Note>
+  A normal install migrates a verified `0.2` lockfile to `0.3` as part of the tri-write. A [frozen install](/specification/commit#frozen-lockfile) never rewrites it, and therefore retains whatever version it loaded. The authoritative version is the `CURRENT_LOCKFILE_VERSION` constant in `@agent-facets/protocol`.
 
   <Note>
-  Before the future stable lockfile v1 (which reuses the numeric `1`), legacy-alpha-`1` parsing is removed and replaced with delete-and-regenerate guidance for old-shape files.
+  Readers are deliberately broader than the writer: reading two versions and writing one is a format-compatibility property, not a staged rollout.
   </Note>
+
+  <Warning>
+  The withdrawn closed-alpha `1` is no longer parsed. A `facets.lock` declaring it fails as an unsupported version — delete the file and run [`facet install`](/cli/install) to regenerate it. The number `1` is reserved for the eventual stable v1 schema, which is why it is not reused for a compatibility shim.
+  </Warning>
 </ResponseField>
 
 <ResponseField name="facets" type="map<name, entry>" required>
@@ -111,11 +111,19 @@ Note what aliasing does **not** move: `name` is still `viper-planning` and its `
   `materialization` is the resolved [disposition](/specification/materialization#dispositions), and all three arms are legal here: this array is the resolved asset **set**, not the on-disk set. An **omitted** asset therefore stays listed with its complete file records — dropping it would make an omission indistinguishable from a facet that never published the asset. (The [install receipt](/specification/commit#machine-local-install-receipt), which records what is actually on disk, admits only `authored` and `aliased`.)
 
   The `files` array records every file the asset owns as a `{ path, integrity }` record: a skill lists its `SKILL.md` plus each companion; an agent or command lists its single primary file. Each `integrity` is `sha256:` followed by exactly 64 lowercase hex characters — the recomputed [canonical per-entry hash](/specification/integrity#two-hashes-two-domains) of the verified file, never copied from a self-declared value. Records are sorted strictly ascending by path, which also forbids duplicates. At least one record is required. Archive-only supplementary files (like `README.md`) are never materialized and never appear here; they stay protected by facet-level integrity.
+
+  Ownership is derived from the asset, not merely asserted: an agent or command entry MUST contain exactly one record at its own canonical primary path, and every record in a skill entry MUST live under that skill's authored root with the canonical `SKILL.md` present. A safe, sorted path that no derivation from the asset's authored identity could produce — command `deploy` claiming `README.md`, say — is rejected, so integrity and deletion can never be pointed at an unrelated file. The same rule applies to `0.2` entries.
 </ResponseField>
 
 <Note>
-An asset entry from a pre-`0.3` lockfile has no `materialization` field. It is read as equivalent to an explicit `{ "kind": "authored" }` — the only disposition those schemas could express.
+An asset entry from a `0.2` lockfile has no `materialization` field. It is read as equivalent to an explicit `{ "kind": "authored" }` — the only disposition that schema could express.
 </Note>
+
+## Unrecognized fields
+
+Fields the schema does not define are accepted, and they **survive a rewrite** — not just a read. When install rebuilds `facets.lock`, it carries forward the unrecognized fields of the document, of each facet entry, of a retained entry's `source` when the source kind is unchanged, of each asset matched by authored `(scope, type, name)`, and of each file record matched by `path`. Migrating `0.2 → 0.3` preserves them exactly as a `0.3 → 0.3` write does.
+
+Two consequences follow. A schema-defined field always wins over an unrecognized field of the same name, so a future version claiming a name cannot be shadowed by stale data. And unrecognized fields attached to a facet, asset, or file record that no longer exists are dropped with it, because there is nothing left to carry them.
 
 ## Role in the pipeline
 
@@ -123,4 +131,4 @@ An asset entry from a pre-`0.3` lockfile has no `materialization` field. It is r
 - **Lockfile trust for resolution.** Whether a satisfying entry short-circuits version resolution depends on how the facet was requested (addition vs reproduction). → [Commit — Resolve](/specification/commit#resolve)
 - **Per-file reconciliation on reproduction.** When a facet resolves to the integrity already locked, install proves the per-file records still agree with the recomputed archive before writing, and fails with the exact mismatching path. A legitimate change resolves to a *different* integrity, so reconciliation does not apply to it. → [Commit — Verify](/specification/commit#verify)
 - **Ownership fallback for deletion.** The install receipt is the authority on what is on disk; the lockfile's `assets` supply the previous ownership set for facets the receipt does not mention. Ownership is indexed by **effective** identity, so a name that transferred between facets is not deleted out from under its new owner. Omitted assets contribute nothing, having never been written. → [Drift removal](/specification/commit#drift-removal)
-- **Frozen mode.** With `--frozen-lockfile`, the lockfile is the complete, authoritative source of truth and is never written. A lockfile older than `0.3` cannot record a disposition, so a project that declares materialization overrides against one fails frozen validation rather than silently ignoring the intent. → [Frozen lockfile](/specification/commit#frozen-lockfile)
+- **Frozen mode.** With `--frozen-lockfile`, the lockfile is the complete, authoritative source of truth and is never written. A `0.2` lockfile has no field in which to record a disposition, so a project that declares materialization overrides against one fails frozen validation rather than silently ignoring the intent. → [Frozen lockfile](/specification/commit#frozen-lockfile)

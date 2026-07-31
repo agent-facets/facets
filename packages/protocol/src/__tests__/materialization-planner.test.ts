@@ -446,3 +446,120 @@ describe('overrideGroupKey', () => {
     expect(overrideGroupKey('command')).toBe('commands')
   })
 })
+
+// `constructor` and `__proto__` are legal asset names, and an override map is
+// an ordinary object, so an indexed read returns an INHERITED value for
+// either. The planner would then treat a function (or `Object.prototype`) as
+// a disposition and emit an apparently-successful plan whose disposition
+// disappears on serialization.
+describe('planMaterialization — inherited property names', () => {
+  test('an asset named constructor is not given an inherited disposition', () => {
+    const result = planMaterialization([
+      facet('a', [asset('skill', 'constructor')], { skills: { other: { kind: 'omitted' } } }),
+    ])
+    if (!result.ok) expect.unreachable()
+
+    const planned = result.plan.materialized[0]
+    expect(planned?.disposition).toEqual({ kind: 'authored' })
+    expect(typeof planned?.disposition).toBe('object')
+    // The failure mode this guards is silent: a function serializes away.
+    expect(JSON.parse(JSON.stringify(result.plan)).materialized[0].disposition).toEqual({ kind: 'authored' })
+  })
+
+  test('an asset named __proto__ is not given an inherited disposition', () => {
+    const result = planMaterialization([
+      facet('a', [asset('skill', '__proto__')], { skills: { other: { kind: 'omitted' } } }),
+    ])
+    if (!result.ok) expect.unreachable()
+    expect(result.plan.materialized[0]?.disposition).toEqual({ kind: 'authored' })
+  })
+
+  test('a real override keyed constructor still applies', () => {
+    // The fix must not over-reject: an OWN key named `constructor` is a
+    // legitimate override and has to keep working.
+    const overrides = JSON.parse('{"skills":{"constructor":{"kind":"aliased","as":"ctor"}}}')
+    const result = planMaterialization([facet('a', [asset('skill', 'constructor')], overrides)])
+    if (!result.ok) expect.unreachable()
+    expect(result.plan.materialized[0]?.effectiveName).toBe('ctor')
+    expect(result.staleOverrides).toEqual([])
+  })
+
+  test('an override keyed constructor naming an absent asset is stale exactly once', () => {
+    const overrides = JSON.parse('{"skills":{"constructor":{"kind":"omitted"}}}')
+    const result = planMaterialization([facet('a', [asset('skill', 'review')], overrides)])
+    if (!result.ok) expect.unreachable()
+    expect(result.staleOverrides).toEqual([
+      { facet: 'a', type: 'skill', authoredName: 'constructor', disposition: { kind: 'omitted' } },
+    ])
+  })
+})
+
+// The planner documents that its result "shares no mutable structure" with
+// its input. Dispositions were the exception: the same object was handed
+// straight through, so a later edit to the caller's draft silently rewrote a
+// plan that had already derived `effectiveName` and `adapterKey` from the
+// old value.
+describe('planMaterialization — output snapshots', () => {
+  function aliasInput(as: string) {
+    const override = { kind: 'aliased' as const, as }
+    return { override, contributions: [facet('a', [asset('skill', 'review')], { skills: { review: override } })] }
+  }
+
+  test('mutating an input override after planning does not change the plan', () => {
+    const { override, contributions } = aliasInput('foo')
+    const result = planMaterialization(contributions)
+    if (!result.ok) expect.unreachable()
+
+    override.as = 'bar'
+
+    const materialized = result.plan.materialized[0]
+    expect(materialized?.disposition).toEqual({ kind: 'aliased', as: 'foo' })
+    expect(materialized?.effectiveName).toBe('foo')
+    expect(materialized?.adapterKey).toContain('foo')
+    expect(result.plan.assets[0]?.disposition).toEqual({ kind: 'aliased', as: 'foo' })
+  })
+
+  test('no output collection shares a disposition object with the input or each other', () => {
+    const { override, contributions } = aliasInput('foo')
+    const result = planMaterialization(contributions)
+    if (!result.ok) expect.unreachable()
+
+    const planned = result.plan.assets[0]?.disposition
+    const materialized = result.plan.materialized[0]?.disposition
+    expect(planned).not.toBe(override)
+    expect(materialized).not.toBe(override)
+    expect(planned).not.toBe(materialized)
+    expect(planned).toEqual(materialized)
+  })
+
+  test('stale overrides are snapshotted too', () => {
+    const override = { kind: 'aliased' as const, as: 'foo' }
+    const result = planMaterialization([facet('a', [asset('skill', 'review')], { skills: { gone: override } })])
+    if (!result.ok) expect.unreachable()
+
+    const reported = result.staleOverrides[0]?.disposition
+    expect(reported).not.toBe(override)
+
+    override.as = 'bar'
+    expect(result.staleOverrides[0]?.disposition).toEqual({ kind: 'aliased', as: 'foo' })
+  })
+
+  test('collision members are snapshotted too', () => {
+    const override = { kind: 'aliased' as const, as: 'review' }
+    const result = planMaterialization([
+      facet('a', [asset('skill', 'other')], { skills: { other: override } }),
+      facet('b', [asset('skill', 'review')]),
+    ])
+    if (result.ok) expect.unreachable()
+    if (result.reason !== 'collision') expect.unreachable()
+
+    const member = result.groups[0]?.members.find((m) => m.facet === 'a')
+    expect(member?.disposition).not.toBe(override)
+
+    override.as = 'moved'
+    expect(result.groups[0]?.members.find((m) => m.facet === 'a')?.disposition).toEqual({
+      kind: 'aliased',
+      as: 'review',
+    })
+  })
+})

@@ -1,19 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { resolve } from 'node:path'
+import { spawnCli } from './helpers/cli-process.ts'
 
-const CLI_PATH = resolve(import.meta.dir, '../../dist/facet')
-
-async function runCli(...args: string[]) {
-  const proc = Bun.spawn([CLI_PATH, ...args], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-    env: { ...process.env, NO_COLOR: '1' },
-  })
-  const stdout = await new Response(proc.stdout).text()
-  const stderr = await new Response(proc.stderr).text()
-  const exitCode = await proc.exited
-  return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode }
-}
+const runCli = (...args: string[]) => spawnCli(args, { env: { NO_COLOR: '1' } })
 
 describe('facet instructions', () => {
   test('default topic prints the overview and points at authoring', async () => {

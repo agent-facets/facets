@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { CURRENT_LOCKFILE_VERSION } from '@agent-facets/protocol'
 import { captureStderr, captureStdout } from '../../../__tests__/helpers/capture-std.ts'
 import { listCommand } from '../index.ts'
 
@@ -68,7 +69,7 @@ describe('listCommand', () => {
     writeFileSync(
       join(projectRoot, 'facets.lock'),
       JSON.stringify({
-        lockfileVersion: 1,
+        lockfileVersion: CURRENT_LOCKFILE_VERSION,
         facets: {
           cowsay: {
             source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
@@ -100,7 +101,7 @@ describe('listCommand', () => {
     writeFileSync(
       join(projectRoot, 'facets.lock'),
       JSON.stringify({
-        lockfileVersion: 1,
+        lockfileVersion: CURRENT_LOCKFILE_VERSION,
         facets: {
           installed: {
             source: { kind: 'registry', registry: 'https://api.agentfacets.io' },

@@ -3,15 +3,21 @@ import { satisfies } from '@agent-facets/protocol'
 import type { NormalizedFacetEntry } from '../manifest/mutations.ts'
 import { parseFacetSource } from '../sources/facet/parse-source.ts'
 import { parseVersionSpec } from '../sources/facet/parse-version.ts'
+import { ownEntry } from './own-entry.ts'
 import { parseLockedVersion } from './parse-locked-version.ts'
 import { sourceMatchesLockedSource } from './source-matches.ts'
 import type { LockfileDriftEntry } from './types.ts'
 
 /**
- * Frozen-lockfile pre-flight: collect every manifest facet whose lockfile
- * coverage is missing or stale. Returns an empty array when the lockfile
- * fully and consistently covers the manifest. Registry specifiers must be
- * satisfied by the locked version; git/local entries need only exist.
+ * Coverage check: collect every manifest facet whose lockfile coverage is
+ * missing or stale. Returns an empty array when the lockfile fully and
+ * consistently covers the manifest. Registry specifiers must be satisfied by
+ * the locked version; git/local entries need only exist.
+ *
+ * Two callers ask the same question for different reasons: the frozen
+ * pre-flight, which must fail when the lockfile no longer reproduces the
+ * manifest, and the removal-only refinement, which may skip resolution only
+ * while every survivor is still answered by its locked entry.
  */
 export function detectLockfileDrift(
   facets: Readonly<Record<string, NormalizedFacetEntry>>,
@@ -25,7 +31,7 @@ export function detectLockfileDrift(
       drift.push({ name, reason: 'missing-lockfile', manifestSpec: specifier })
       continue
     }
-    const locked = previousLockfile.facets[name]
+    const locked = ownEntry(previousLockfile.facets, name)
     if (locked === undefined) {
       drift.push({ name, reason: 'no-entry', manifestSpec: specifier })
       continue
@@ -66,7 +72,7 @@ export function detectLockfileDrift(
   // when a lockfile exists (a missing lockfile is already reported above).
   if (lockfileExisted) {
     for (const [name, locked] of Object.entries(previousLockfile.facets)) {
-      if (facets[name] === undefined) {
+      if (ownEntry(facets, name) === undefined) {
         drift.push({ name, reason: 'orphaned', lockedVersion: locked.version })
       }
     }

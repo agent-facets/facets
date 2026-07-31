@@ -27,7 +27,10 @@ export function AliasInput({
   onSubmit: (alias: string) => void
   onCancel: () => void
 }) {
-  const error = value.length === 0 ? 'an alias cannot be empty' : validateAlias(value)
+  // No local empty-string branch: the published validator already rejects an
+  // empty name with its own reason, and a friendlier local copy is exactly
+  // the second source of truth this file's own doc comment warns about.
+  const error = validateAlias(value)
 
   useInput((_input, key) => {
     if (key.return) {

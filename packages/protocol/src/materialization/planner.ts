@@ -1,10 +1,12 @@
 import type { AssetType, Scope } from '@agent-facets/common'
+import { compareCodeUnits } from '../ordering.ts'
 import { validateAssetNameSegment } from '../schemas/asset-name.ts'
 import type {
   MaterializationDisposition,
   MaterializedDisposition,
   ProjectAssetOverride,
 } from '../schemas/materialization.ts'
+import { cloneDisposition } from '../schemas/materialization.ts'
 import type { FacetMaterializationOverrides } from '../schemas/project-manifest.ts'
 import {
   ASSET_DIRECTORY,
@@ -39,8 +41,13 @@ import { type MaterializationNamespace, materializationNamespace } from './names
  *     colliding, so a colliding result is a first-class value carrying
  *     every group — never an error and never a truncated report.
  *
- * Determinism is a contract, not an accident: every output list is sorted,
- * so identical inputs produce identical bytes and reviewable diffs.
+ * Determinism is a contract, not an accident. Facets, assets, collision
+ * groups, group members, and stale overrides are all emitted in a total
+ * order derived from code-unit string comparison and the canonical
+ * asset-type order, so a result depends only on the input SET and never on
+ * the order a caller enumerated it in. Byte-level stability of the artifacts
+ * downstream is a separate guarantee, owned by the writers that serialize
+ * them.
  */
 
 /** One authored asset contributed by a facet, before any override applies. */
@@ -171,12 +178,6 @@ export type PlanMaterializationResult =
       staleOverrides: readonly StaleOverride[]
     }
 
-/** Code-unit string ordering. Deliberately not locale-aware: locale-sensitive
- * collation would make output depend on the machine's environment. */
-function compareStrings(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0
-}
-
 /**
  * The override map for one asset type, if the facet declared any.
  *
@@ -191,6 +192,32 @@ export function overridesForType(
   type: AssetType,
 ): Record<string, ProjectAssetOverride> | undefined {
   return overrides?.[ASSET_DIRECTORY[type]]
+}
+
+/**
+ * The override declared for one authored asset, if the facet declared one.
+ *
+ * The own-property check is load-bearing, not defensive style. An override
+ * map is an ordinary object, and `constructor` and `__proto__` are perfectly
+ * legal asset names, so an indexed read for an asset with either name
+ * returns an INHERITED value — `Object`'s constructor function, or
+ * `Object.prototype` — where the type promises `ProjectAssetOverride |
+ * undefined`. The planner would then store a function as a disposition and
+ * emit a plan that looks successful until the field disappears on
+ * serialization.
+ *
+ * Exported so every consumer that reads project intent resolves an override
+ * the same way; three call sites had independently open-coded the unsafe
+ * indexed read.
+ */
+export function overrideFor(
+  overrides: FacetMaterializationOverrides | undefined,
+  type: AssetType,
+  authoredName: string,
+): ProjectAssetOverride | undefined {
+  const record = overridesForType(overrides, type)
+  if (record === undefined || !Object.hasOwn(record, authoredName)) return undefined
+  return record[authoredName]
 }
 
 /**
@@ -216,7 +243,7 @@ export function planMaterialization(contributions: readonly FacetContribution[])
   // 1. Deterministic ordering. Sorting up front means every downstream list
   //    inherits a stable order without re-sorting, and makes the result
   //    independent of how the caller happened to enumerate facets.
-  const orderedFacets = [...contributions].sort((a, b) => compareStrings(a.facet, b.facet))
+  const orderedFacets = [...contributions].sort((a, b) => compareCodeUnits(a.facet, b.facet))
 
   const planned: PlannedAsset[] = []
   const materialized: MaterializedAsset[] = []
@@ -225,13 +252,13 @@ export function planMaterialization(contributions: readonly FacetContribution[])
 
   for (const contribution of orderedFacets) {
     const orderedAssets = [...contribution.assets].sort(
-      (a, b) => compareAssetTypes(a.type, b.type) || compareStrings(a.name, b.name),
+      (a, b) => compareAssetTypes(a.type, b.type) || compareCodeUnits(a.name, b.name),
     )
 
     // 2/3. Resolve each authored asset's disposition.
     const matchedOverrideKeys = new Set<string>()
     for (const asset of orderedAssets) {
-      const override = overridesForType(contribution.overrides, asset.type)?.[asset.name]
+      const override = overrideFor(contribution.overrides, asset.type, asset.name)
       matchedOverrideKeys.add(`${asset.type}\u0000${asset.name}`)
 
       const disposition: MaterializationDisposition = override ?? { kind: 'authored' }
@@ -250,12 +277,15 @@ export function planMaterialization(contributions: readonly FacetContribution[])
         }
       }
 
+      // Cloned per output collection, not once: the caller's override object
+      // must not be reachable from the result, and `plan.assets` and
+      // `plan.materialized` must not alias each other either.
       planned.push({
         facet: contribution.facet,
         scope: asset.scope,
         type: asset.type,
         authoredName: asset.name,
-        disposition,
+        disposition: cloneDisposition(disposition),
       })
 
       // 4. Omitted assets leave the effective set entirely.
@@ -268,7 +298,7 @@ export function planMaterialization(contributions: readonly FacetContribution[])
         type: asset.type,
         authoredName: asset.name,
         effectiveName,
-        disposition,
+        disposition: cloneDisposition(disposition),
         adapterKey: adapterKey(asset.scope, asset.type, effectiveName),
       })
     }
@@ -278,11 +308,16 @@ export function planMaterialization(contributions: readonly FacetContribution[])
     for (const type of ASSET_TYPES) {
       const record = overridesForType(contribution.overrides, type)
       if (record === undefined) continue
-      for (const authoredName of Object.keys(record).sort(compareStrings)) {
+      for (const authoredName of Object.keys(record).sort(compareCodeUnits)) {
         if (matchedOverrideKeys.has(`${type}\u0000${authoredName}`)) continue
-        const disposition = record[authoredName]
+        const disposition = overrideFor(contribution.overrides, type, authoredName)
         if (disposition === undefined) continue
-        staleOverrides.push({ facet: contribution.facet, type, authoredName, disposition })
+        staleOverrides.push({
+          facet: contribution.facet,
+          type,
+          authoredName,
+          disposition: cloneDisposition(disposition),
+        })
       }
     }
   }
@@ -310,9 +345,9 @@ export function planMaterialization(contributions: readonly FacetContribution[])
     if (claimants.length < 2) continue
     const ordered = [...claimants].sort(
       (a, b) =>
-        compareStrings(a.facet, b.facet) ||
+        compareCodeUnits(a.facet, b.facet) ||
         compareAssetTypes(a.type, b.type) ||
-        compareStrings(a.authoredName, b.authoredName),
+        compareCodeUnits(a.authoredName, b.authoredName),
     )
     // Projected explicitly rather than passed through: a collision member is
     // a claim under review, not a planned write, so it must not carry the
@@ -323,7 +358,7 @@ export function planMaterialization(contributions: readonly FacetContribution[])
       type: a.type,
       authoredName: a.authoredName,
       effectiveName: a.effectiveName,
-      disposition: a.disposition,
+      disposition: cloneDisposition(a.disposition),
     }))
     const first = ordered[0] as MaterializedAsset
     groups.push({
@@ -337,9 +372,9 @@ export function planMaterialization(contributions: readonly FacetContribution[])
   if (groups.length > 0) {
     groups.sort(
       (a, b) =>
-        compareStrings(a.scope, b.scope) ||
-        compareStrings(a.namespace, b.namespace) ||
-        compareStrings(portableCollisionKey(a.effectiveName), portableCollisionKey(b.effectiveName)),
+        compareCodeUnits(a.scope, b.scope) ||
+        compareCodeUnits(a.namespace, b.namespace) ||
+        compareCodeUnits(portableCollisionKey(a.effectiveName), portableCollisionKey(b.effectiveName)),
     )
     return { ok: false, reason: 'collision', groups, staleOverrides }
   }

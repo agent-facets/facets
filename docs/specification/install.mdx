@@ -6,7 +6,7 @@ description: The two-phase install pipeline
 
 import { DeltaTip } from "/snippets/glossary.jsx";
 
-Installation is a single pipeline with two phases. **[Planning](/specification/planning)** builds a <DeltaTip>delta</DeltaTip> — what should change. **[Commit](/specification/commit)** applies it — resolving versions, verifying [integrity](/specification/integrity), composing one global [materialization](/specification/materialization) plan, writing assets, and writing `facets.json`, `facets.lock`, and the install receipt together.
+Installation is a single pipeline with two phases. **[Planning](/specification/planning)** builds a <DeltaTip>delta</DeltaTip> — what should change. **[Commit](/specification/commit)** applies it — resolving versions, verifying [integrity](/specification/integrity), composing one global [materialization](/specification/materialization) plan, writing assets, and writing `facets.json`, `facets.lock`, and the install receipt together. A removal that local state already answers for [skips resolution entirely](/specification/commit#removal-only-short-circuit).
 
 [`facet add`](/cli/add), [`facet remove`](/cli/remove), and [`facet install`](/cli/install) all run this same pipeline — they differ only in the delta they produce.
 
@@ -29,7 +29,7 @@ What install materializes — and what it does not — is a first-class part of 
     Phase 1 — build the delta. No version resolution, no lockfile reads, no project mutation.
   </Card>
   <Card title="Commit" icon="check" href="/specification/commit">
-    Phase 2 — the transaction. Resolve every facet, compose one global plan, then delete drift and materialize; write atomically.
+    Phase 2 — the transaction. Resolve every facet (or refine a removal from local state), compose one global plan, then delete drift and materialize; write atomically.
   </Card>
 </CardGroup>
 

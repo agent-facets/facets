@@ -54,6 +54,12 @@ Common errors, what causes them, and how to fix them. Each entry mirrors the CLI
     **Fix:** update the CLI with [`facet self-update`](/cli/self-update). The error names the minimum supporting release when the format is known; when it isn't, update to the latest.
   </Accordion>
 
+  <Accordion title='"unsupported lockfileVersion" on install'>
+    **Cause:** `facets.lock` declares a version this CLI does not read. The common case is the withdrawn closed-alpha `1`, which is no longer parsed — the number is reserved for the eventual stable v1 schema, so it is not reused for a compatibility shim. A version newer than your CLI fails the same way.
+
+    **Fix:** if the file declares `1`, delete `facets.lock` and run [`facet install`](/cli/install); the lockfile is regenerated from `facets.json` and re-verified from scratch. If it declares something newer, update the CLI with [`facet self-update`](/cli/self-update) instead — deleting a newer lockfile would discard resolutions your teammates committed. The adapter API, archive `facetVersion`, and lockfile version are [independent axes](/specification/install); this is the lockfile axis.
+  </Accordion>
+
   <Accordion title='"integrity mismatch" / companion drift on install'>
     **Cause:** a materialized file no longer matches the [per-file integrity](/specification/lockfile) recorded in `facets.lock` — a file was edited or corrupted on disk, or the cache was tampered with. Install reconciles every file (including each skill companion) before writing and reports the exact drifting path.
 
@@ -84,7 +90,7 @@ Common errors, what causes them, and how to fix them. Each entry mirrors the CLI
   </Accordion>
 
   <Accordion title='"lockfile cannot record materialization overrides" (frozen install)'>
-    **Cause:** `facets.json` declares an alias or omission, but `facets.lock` predates lockfile `0.3` and has no field to record it. [`--frozen-lockfile`](/cli/install) refuses rather than silently ignoring your intent.
+    **Cause:** `facets.json` declares an alias or omission, but `facets.lock` is still at lockfile `0.2`, which has no field in which to record it. [`--frozen-lockfile`](/cli/install) refuses rather than silently ignoring your intent.
 
     **Fix:** run one plain `facet install` (without the flag) to migrate the lockfile to `0.3`, then commit it. CI will pass from then on.
   </Accordion>

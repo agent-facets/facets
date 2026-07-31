@@ -1,4 +1,5 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
+import { mergeDeltaIntoManifest } from '../install/commit/delta.ts'
 import {
   applyDesiredFacets,
   countOverrides,
@@ -73,6 +74,138 @@ describe('parseProjectManifest', () => {
     expect(result.manifest.facets.a?.source).toBe('1.*')
     expect(result.manifest.facets.b?.source).toBe('github:a/b#main')
     expect(result.manifest.facets.b?.overrides?.skills?.review).toEqual({ kind: 'aliased', as: 'b-review' })
+  })
+})
+
+// A facet key is an arbitrary string from a user-authored file. Assigning an
+// own `__proto__` key into a plain `{}` invokes the inherited setter instead
+// of creating a property, so the declaration vanished — and a vanished facet
+// reads as REMOVED, which would delete its locked assets and commit a
+// manifest without it. It must survive to ordinary name validation instead.
+describe('facet keys that collide with Object.prototype', () => {
+  // Written as text, not built from an object literal: `{ __proto__: … }` in
+  // JS source sets the prototype rather than creating a member, so a literal
+  // could not express the document under test. `JSON.parse` DOES create an
+  // own `__proto__` property, which is exactly why the key reaches us.
+  const raw = '{"manifestVersion":0.1,"facets":{"__proto__":"./vendor/x","constructor":"./vendor/y","ok":"1.*"}}'
+
+  test('an own __proto__ declaration survives normalization', () => {
+    const result = parseProjectManifest(raw)
+    if (!result.ok) expect.unreachable()
+
+    expect(Object.hasOwn(result.manifest.facets, '__proto__')).toBe(true)
+    expect(Object.keys(result.manifest.facets).sort()).toEqual(['__proto__', 'constructor', 'ok'])
+    expect(Object.getPrototypeOf(result.manifest.facets)).toBeNull()
+  })
+
+  test('a constructor declaration is the declaration, not an inherited function', () => {
+    const result = parseProjectManifest(raw)
+    if (!result.ok) expect.unreachable()
+    // Held in a variable rather than written as a literal key: reading
+    // `facets.constructor` resolves to `Object`'s at the type level too,
+    // which is the same hazard in a different guise.
+    const facetName = 'constructor'
+    expect(result.manifest.facets[facetName]).toEqual({ source: './vendor/y', overrides: undefined })
+  })
+
+  // The fix has to hold one hop later too: the desired set is rebuilt
+  // key-by-key before anything is resolved.
+  test('the merged desired set carries both keys through', () => {
+    const result = parseProjectManifest(raw)
+    if (!result.ok) expect.unreachable()
+
+    const merged = mergeDeltaIntoManifest(result.manifest.facets, { additions: [], removals: [] })
+
+    expect(Object.keys(merged.desiredFacets).sort()).toEqual(['__proto__', 'constructor', 'ok'])
+  })
+})
+
+// The last hop, and the one that bites hardest: the WRITE side.
+//
+// Reading a `__proto__` key off the live comment-json document returns
+// `Object.prototype` — an object, so the "update this node in place" branch
+// accepted it and assigned `source`, `materialization`, `kind`, and `as`
+// onto the prototype every object in the process inherits from. The write
+// itself was equally unsafe: assignment for that key creates no own member,
+// so the facet disappeared from the serialized manifest while its assets
+// stayed on disk, claimed by a lockfile entry nothing declared any more.
+describe('applyDesiredFacets — document keys that collide with Object.prototype', () => {
+  const POLLUTED_KEYS = ['source', 'materialization', 'kind', 'as'] as const
+
+  // Restored rather than merely asserted: a regression here would otherwise
+  // leak into every sibling test in the process.
+  afterEach(() => {
+    for (const key of POLLUTED_KEYS) {
+      if (Object.hasOwn(Object.prototype, key)) {
+        delete (Object.prototype as Record<string, unknown>)[key]
+      }
+    }
+  })
+
+  function pollutedKeys(): string[] {
+    return POLLUTED_KEYS.filter((key) => Object.hasOwn(Object.prototype, key))
+  }
+
+  /**
+   * A record with an own `__proto__` member. `{ __proto__: v }` in JS source
+   * sets the prototype instead, so the desired set has to be built the same
+   * way the production one is: key by key, never as a literal.
+   */
+  function withProtoKey<T>(value: T, rest: Record<string, T> = {}): Record<string, T> {
+    const record: Record<string, T> = { ...rest }
+    Object.defineProperty(record, '__proto__', { value, enumerable: true, writable: true, configurable: true })
+    return record
+  }
+
+  test('a __proto__ facet is written as an own member, not onto the prototype', () => {
+    const raw = '{"manifestVersion":0.1,"facets":{"__proto__":"./vendor/x","ok":"1.*"}}'
+    const parsed = parseProjectManifest(raw)
+    if (!parsed.ok) expect.unreachable()
+
+    applyDesiredFacets(
+      parsed.manifest.document,
+      withProtoKey(entry('./vendor/x', { skills: { review: { kind: 'aliased', as: 'vendor-review' } } }), {
+        ok: entry('1.*'),
+      }),
+    )
+
+    expect(pollutedKeys()).toEqual([])
+    const serialized = JSON.parse(serializeProjectManifest(parsed.manifest.document))
+    expect(Object.hasOwn(serialized.facets, '__proto__')).toBe(true)
+  })
+
+  test('a __proto__ override name is written as an own member', () => {
+    const raw =
+      '{"manifestVersion":0.1,"facets":{"vendor":{"source":"./vendor/x","materialization":{"skills":{"other":{"kind":"omitted"}}}}}}'
+    const parsed = parseProjectManifest(raw)
+    if (!parsed.ok) expect.unreachable()
+
+    // An asset genuinely named `__proto__` can reach here: lockfile asset
+    // names are validated for path safety only, and a removal-only
+    // refinement plans over the LOCKED asset set without ever resolving.
+    applyDesiredFacets(parsed.manifest.document, {
+      vendor: entry('./vendor/x', { skills: withProtoKey({ kind: 'aliased', as: 'safe' } as const) }),
+    })
+
+    expect(pollutedKeys()).toEqual([])
+    const serialized = JSON.parse(serializeProjectManifest(parsed.manifest.document))
+    expect(Object.hasOwn(serialized.facets.vendor.materialization.skills, '__proto__')).toBe(true)
+  })
+
+  // The guard must not over-reject: `constructor` reads back as a function
+  // rather than an object, so the replace branch is correct for it — but the
+  // entry still has to land, and its comments still have to survive when the
+  // intent is unchanged.
+  test('a constructor facet keeps its comments when nothing changed', () => {
+    const raw = '{"manifestVersion":0.1,"facets":{\n// keep me\n"constructor":"./vendor/y"}}'
+    const parsed = parseProjectManifest(raw)
+    if (!parsed.ok) expect.unreachable()
+
+    applyDesiredFacets(parsed.manifest.document, { constructor: entry('./vendor/y') })
+
+    const serialized = serializeProjectManifest(parsed.manifest.document)
+    expect(serialized).toContain('keep me')
+    expect(serialized).toContain('"constructor": "./vendor/y"')
   })
 })
 
@@ -243,6 +376,88 @@ describe('applyDesiredFacets — comment preservation', () => {
     })
     expect(out).toContain('file header')
     expect(JSON.parse(stripJsonComments(out)).manifestVersion).toBe(0.1)
+  })
+
+  // Comments INSIDE a `materialization` block died on every routine install:
+  // the whole subtree was reassigned, and comment-json keeps its metadata on
+  // Symbol-keyed properties of the object being replaced. The intent map is
+  // rebuilt from scratch on every run, so identity comparison cannot detect
+  // "unchanged" — only comparing by value can.
+  describe('nested materialization comments', () => {
+    const annotated = `{
+  "manifestVersion": 0.1,
+  "facets": {
+    "alpha": {
+      "source": "1.*",
+      // why we alias
+      "materialization": {
+        "skills": {
+          // renamed to avoid the vendor clash
+          "review": { "kind": "aliased", "as": "vendor-review" },
+          // dropped: superseded internally
+          "deploy": { "kind": "omitted" }
+        }
+      }
+    }
+  }
+}`
+
+    const alias = (as: string) => ({ kind: 'aliased' as const, as })
+
+    test('unchanged intent leaves the block byte-identical', () => {
+      const desired = {
+        alpha: entry('1.*', { skills: { review: alias('vendor-review'), deploy: { kind: 'omitted' } } }),
+      }
+      // Baseline is a parse+serialize round trip, not the raw fixture: the
+      // serializer normalizes layout regardless of this change, so comparing
+      // against the source would fail for an unrelated reason.
+      const parsed = parseProjectManifest(annotated)
+      if (!parsed.ok) expect.unreachable()
+      const baseline = serializeProjectManifest(parsed.manifest.document)
+
+      expect(roundTrip(annotated, desired)).toBe(baseline)
+    })
+
+    test('retargeting one alias keeps every nested comment', () => {
+      const out = roundTrip(annotated, {
+        alpha: entry('1.*', { skills: { review: alias('team-review'), deploy: { kind: 'omitted' } } }),
+      })
+      expect(out).toContain('why we alias')
+      expect(out).toContain('renamed to avoid the vendor clash')
+      expect(out).toContain('dropped: superseded internally')
+      expect(JSON.parse(stripJsonComments(out)).facets.alpha.materialization.skills.review).toEqual(
+        alias('team-review'),
+      )
+    })
+
+    test('pruning one override keeps the survivor and drops the pruned note', () => {
+      const out = roundTrip(annotated, {
+        alpha: entry('1.*', { skills: { review: alias('vendor-review') } }),
+      })
+      expect(out).toContain('renamed to avoid the vendor clash')
+      expect(out).not.toContain('dropped: superseded internally')
+      expect(JSON.parse(stripJsonComments(out)).facets.alpha.materialization.skills).toEqual({
+        review: alias('vendor-review'),
+      })
+    })
+
+    test('changing an alias to an omission leaves no stray effective name', () => {
+      const out = roundTrip(annotated, {
+        alpha: entry('1.*', { skills: { review: { kind: 'omitted' }, deploy: { kind: 'omitted' } } }),
+      })
+      expect(out).toContain('renamed to avoid the vendor clash')
+      const written = JSON.parse(stripJsonComments(out)).facets.alpha.materialization.skills.review
+      expect(written).toEqual({ kind: 'omitted' })
+      expect('as' in written).toBe(false)
+    })
+
+    test('an emptied group is removed rather than left as an empty object', () => {
+      const out = roundTrip(annotated, {
+        alpha: entry('1.*', { commands: { ship: { kind: 'omitted' } } }),
+      })
+      const materialization = JSON.parse(stripJsonComments(out)).facets.alpha.materialization
+      expect(materialization).toEqual({ commands: { ship: { kind: 'omitted' } } })
+    })
   })
 
   test('comments survive an entry becoming expanded', () => {

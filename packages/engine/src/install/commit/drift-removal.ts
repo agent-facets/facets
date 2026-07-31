@@ -1,5 +1,6 @@
 import type { SupportedLockfile } from '@agent-facets/protocol'
 import type { NormalizedFacetEntry } from '../../manifest/mutations.ts'
+import { ownEntry } from '../own-entry.ts'
 import type { Receipt } from '../receipt.ts'
 import type { FacetOutcome } from '../types.ts'
 
@@ -28,15 +29,15 @@ export interface DriftRemovalArgs {
 export function removedFacetOutcomes(args: DriftRemovalArgs): FacetOutcome[] {
   const { desiredFacets, receipt, previousLockfile } = args
 
-  const unwantedFromReceipt = Object.keys(receipt.facets).filter((name) => desiredFacets[name] === undefined)
+  const unwantedFromReceipt = Object.keys(receipt.facets).filter((name) => ownEntry(desiredFacets, name) === undefined)
   const unwantedFromLockfile = Object.keys(previousLockfile.facets).filter(
-    (name) => desiredFacets[name] === undefined && !receipt.facets[name],
+    (name) => ownEntry(desiredFacets, name) === undefined && ownEntry(receipt.facets, name) === undefined,
   )
   const unwantedNames = [...new Set([...unwantedFromReceipt, ...unwantedFromLockfile])].sort()
 
   return unwantedNames.map((name) => ({
     kind: 'removed' as const,
     name,
-    oldVersion: receipt.facets[name]?.version ?? previousLockfile.facets[name]?.version ?? '0.0.0',
+    oldVersion: ownEntry(receipt.facets, name)?.version ?? ownEntry(previousLockfile.facets, name)?.version ?? '0.0.0',
   }))
 }

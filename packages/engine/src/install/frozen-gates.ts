@@ -9,6 +9,7 @@ import {
 } from '@agent-facets/protocol'
 import { countOverrides, type NormalizedFacetEntry } from '../manifest/mutations.ts'
 import { detectLockfileDrift } from './detect-lockfile-drift.ts'
+import { ownEntry } from './own-entry.ts'
 import type { LockfileDriftEntry, RunInstallFailure } from './types.ts'
 
 /**
@@ -53,7 +54,7 @@ export function checkFrozenConsistency(args: FrozenGateArgs): RunInstallFailure 
     return { code: 'LOCKFILE_DRIFT', facets: coverage }
   }
 
-  // 2. Format. An earlier lockfile has no place to record a disposition, so
+  // 2. Format. A `0.2` lockfile has no place to record a disposition, so
   //    every asset in it reads as authored. Comparing an alias against that
   //    would report drift — true, but it would send the user hunting for a
   //    disagreement when the real problem is that this lockfile predates the
@@ -82,12 +83,12 @@ export function checkFrozenConsistency(args: FrozenGateArgs): RunInstallFailure 
     .sort()
     .map((name) => ({
       facet: name,
-      assets: (previousLockfile.facets[name]?.assets ?? []).map((asset) => ({
+      assets: (ownEntry(previousLockfile.facets, name)?.assets ?? []).map((asset) => ({
         scope: asset.scope,
         type: asset.type,
         name: asset.name,
       })),
-      overrides: facets[name]?.overrides,
+      overrides: ownEntry(facets, name)?.overrides,
     }))
 
   const planned = planMaterialization(contributions)
@@ -119,7 +120,7 @@ export function checkFrozenConsistency(args: FrozenGateArgs): RunInstallFailure 
 
   // 5. Intent vs. recorded disposition, per locked asset.
   for (const asset of planned.plan.assets) {
-    const locked = previousLockfile.facets[asset.facet]?.assets.find(
+    const locked = ownEntry(previousLockfile.facets, asset.facet)?.assets.find(
       (candidate) =>
         candidate.scope === asset.scope && candidate.type === asset.type && candidate.name === asset.authoredName,
     )

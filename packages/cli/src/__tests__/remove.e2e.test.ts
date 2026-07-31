@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
+import { spawnCli } from './helpers/cli-process.ts'
+import { installFakeAdapter } from './helpers/fake-adapter.ts'
 
 /**
  * End-to-end tests for `facet remove` that spawn the compiled `./dist/facet`
@@ -18,31 +20,7 @@ import { join, resolve } from 'node:path'
  * so this file stays focused on argv/help/usage behavior.
  */
 
-const CLI_PATH = resolve(import.meta.dir, '../../dist/facet')
-
-if (!existsSync(CLI_PATH)) {
-  throw new Error(
-    `[e2e] dist/facet not found at ${CLI_PATH}.\n` +
-      `Build the CLI first:\n` +
-      `  bun run --cwd packages/cli build\n` +
-      `Or run the full check pipeline:\n` +
-      `  bun check`,
-  )
-}
-
-type ExecResult = { stdout: string; stderr: string; exitCode: number }
-
-async function runCli(args: string[], opts?: { cwd?: string; env?: Record<string, string> }): Promise<ExecResult> {
-  const proc = Bun.spawn([CLI_PATH, ...args], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-    cwd: opts?.cwd,
-    env: { ...process.env, ...opts?.env },
-  })
-  const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()])
-  const exitCode = await proc.exited
-  return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode }
-}
+const runCli = (args: string[], opts?: { cwd?: string; env?: Record<string, string> }) => spawnCli(args, opts)
 
 // --- Help / alias ---
 
@@ -87,12 +65,14 @@ describe('facet remove — usage', () => {
 describe('facet remove — validates before adapter discovery', () => {
   let projectRoot: string
   let fakeHome: string
+  let adaptersDir: string
 
   beforeEach(() => {
     projectRoot = realpathSync(mkdtempSync(join(tmpdir(), 'facet-rm-e2e-')))
     fakeHome = realpathSync(mkdtempSync(join(tmpdir(), 'facet-rm-home-')))
-    // An empty adapters dir → zero installed adapters.
-    mkdirSync(join(fakeHome, '.facet', 'adapters'), { recursive: true })
+    // Empty until a test installs one → zero installed adapters by default.
+    adaptersDir = join(fakeHome, '.facet', 'adapters')
+    mkdirSync(adaptersDir, { recursive: true })
   })
 
   afterEach(() => {
@@ -100,8 +80,26 @@ describe('facet remove — validates before adapter discovery', () => {
     rmSync(fakeHome, { recursive: true, force: true })
   })
 
-  test('removing an undeclared facet prints no-op summary without discovering adapters', async () => {
-    // Valid manifest that declares one facet — but NOT the one we remove.
+  test('an unreadable manifest fails before adapter discovery', async () => {
+    // The ordering this phase exists to guarantee: a manifest problem is
+    // reported as a manifest problem, not as "no adapters installed".
+    writeFileSync(join(projectRoot, 'facets.json'), '{ not json')
+
+    const result = await runCli(['remove', 'ghost'], {
+      cwd: projectRoot,
+      env: { HOME: fakeHome, FACET_DIR: join(fakeHome, '.facet') },
+    })
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('facets.json')
+    expect(result.stderr).not.toContain('no adapters installed')
+  })
+
+  test('an undeclared name still reaches adapter discovery', async () => {
+    // Whether a requested name is declared is decided by the commit, under
+    // the project lock — so the CLI cannot skip discovery on the strength of
+    // a pre-lock read. In a non-interactive shell with no adapters, that
+    // means this fails rather than reporting a no-op it never verified.
     const before = `${JSON.stringify({ facets: { cowsay: '0.1.1' } }, null, 2)}\n`
     writeFileSync(join(projectRoot, 'facets.json'), before)
 
@@ -110,15 +108,27 @@ describe('facet remove — validates before adapter discovery', () => {
       env: { HOME: fakeHome, FACET_DIR: join(fakeHome, '.facet') },
     })
 
-    expect(result.exitCode).toBe(0)
-    // No-op summary printed — the one declared facet is counted.
-    expect(result.stdout).toContain('Checked 1 facet')
-    expect(result.stdout).toContain('no changes')
-    // No error output — undeclared facets are silently ignored, and
-    // adapter discovery is skipped entirely (no "no adapters installed").
-    expect(result.stderr).not.toContain('not declared')
-    expect(result.stderr).not.toContain('no adapters installed')
-    // Nothing was removed: the manifest is byte-for-byte unchanged.
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('no adapters installed')
+    // Still nothing removed: the manifest is byte-for-byte unchanged.
     expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(before)
+  })
+
+  test('an undeclared name reaches the commit when an adapter is installed', async () => {
+    installFakeAdapter(adaptersDir, 'test-adapter')
+    writeFileSync(join(projectRoot, 'facets.json'), `${JSON.stringify({ facets: {} }, null, 2)}\n`)
+
+    const result = await runCli(['remove', 'ghost'], {
+      cwd: projectRoot,
+      env: { HOME: fakeHome, FACET_DIR: join(fakeHome, '.facet') },
+    })
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('no changes')
+    expect(result.stderr).not.toContain('no adapters installed')
+    // The lockfile did not exist before this run, so its arrival is proof the
+    // request reached the commit rather than being answered by a pre-lock read.
+    expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(true)
+    expect(JSON.parse(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).facets).toEqual({})
   })
 })

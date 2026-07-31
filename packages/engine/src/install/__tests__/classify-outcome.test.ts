@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type {
   CurrentLockfileFacet,
-  LegacyLockfileFacet,
   Lockfile02Facet,
   MaterializationDisposition,
   SupportedLockfileFacet,
@@ -43,14 +42,6 @@ const entry02 = (version: string): Lockfile02Facet => ({
       files: [{ path: 'skills/planning/SKILL.md', integrity: HASH }],
     },
   ],
-})
-
-/** A legacy (`1`) entry: identity only, no disposition recorded. */
-const legacyEntry = (version: string): LegacyLockfileFacet => ({
-  source: SOURCE,
-  version,
-  integrity: 'sha256:stub',
-  assets: [{ scope: 'user', type: 'skill', name: 'planning' }],
 })
 
 describe('classifyOutcome', () => {
@@ -138,27 +129,24 @@ describe('classifyOutcome', () => {
   })
 
   describe('entries predating dispositions', () => {
-    test('a legacy entry compares equal to explicit authored materialization', () => {
+    // `0.2` is now the only readable shape that lacks `materialization`, so
+    // it is the shape the refinement has to narrow in a real upgrade.
+    test('a 0.2 entry compares equal to explicit authored materialization', () => {
       // A version that could not record a disposition meant authored. Treating
       // it as "unknown" would report every first install after the upgrade as
       // an update.
-      const previous: SupportedLockfileFacet = legacyEntry('1.0.0')
+      const previous: SupportedLockfileFacet = entry02('1.0.0')
       expect(classifyOutcome('cowsay', previous, entry('1.0.0'), 0).kind).toBe('unchanged')
     })
 
-    test('a legacy entry against a new alias is still an update', () => {
-      const previous: SupportedLockfileFacet = legacyEntry('1.0.0')
+    test('a 0.2 entry against a new alias is still an update', () => {
+      const previous: SupportedLockfileFacet = entry02('1.0.0')
       const current = entry('1.0.0', { kind: 'aliased', as: 'vendor-planning' })
       expect(classifyOutcome('cowsay', previous, current, 0).kind).toBe('updated')
     })
 
-    test('a 0.2 entry -- per-file records but no disposition -- also compares equal', () => {
-      // The legacy (`1`) shape is identity-only, so it exercises the
-      // refinement via an asset with no `files` either. A `0.2` asset
-      // carries `files` and lacks only `materialization`, which is the
-      // shape the refinement actually has to narrow in a real upgrade.
+    test('a 0.2 entry against a new omission is an update', () => {
       const previous: SupportedLockfileFacet = entry02('1.0.0')
-      expect(classifyOutcome('cowsay', previous, entry('1.0.0'), 0).kind).toBe('unchanged')
       expect(classifyOutcome('cowsay', previous, entry('1.0.0', { kind: 'omitted' }), 0).kind).toBe('updated')
     })
   })

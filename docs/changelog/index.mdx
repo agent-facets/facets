@@ -7,7 +7,7 @@ rss: true
 
 <Update label="2026-07-27" description="Resolve name collisions between facets; manifest 0.1, lockfile 0.3, and asset aliasing" tags={["CLI", "Breaking", "New Feature"]} rss={{
   title: "Asset aliasing, omission, and cross-facet collision resolution",
-  description: "Two facets can now publish an asset with the same name without one of them losing. facet add and facet install detect every cross-facet name collision before writing anything, and in a terminal they pause and let you keep, rename, or omit each contested asset. Your choices are saved into facets.json as a materialization block and replayed on every later install, so it happens once and your teammates get the same layout. Without a terminal -- CI, or piped output -- nothing is prompted: the install fails and prints every claimant with the exact facets.json edit to make, choosing no winner and inventing no name. Aliasing renames only the file on disk; archive paths, integrity hashes, and the lockfile keep the publisher's authored name, so an alias can never smuggle different content under a familiar name. Omitted assets are still resolved, verified, and recorded, they are simply not written. Breaking: facets.json now carries manifestVersion 0.1 and entries may be objects instead of strings, so any tool that reads it must handle both forms; facets.lock moves to 0.3 with a required materialization disposition on every asset. Both migrate automatically on the next successful install. A frozen install against a pre-0.3 lockfile fails if the manifest declares overrides -- run one normal install first. Commit is now three phases, Resolve-all then Compose then Apply, so nothing is written until the whole plan is known to be collision-free."
+  description: "Two facets can now publish an asset with the same name without one of them losing. facet add and facet install detect every cross-facet name collision before writing anything, and in a terminal they pause and let you keep, rename, or omit each contested asset. Your choices are saved into facets.json as a materialization block and replayed on every later install, so it happens once and your teammates get the same layout. Without a terminal -- CI, or piped output -- nothing is prompted: the install fails and prints every claimant with the exact facets.json edit to make, choosing no winner and inventing no name. Aliasing renames only the file on disk; archive paths, integrity hashes, and the lockfile keep the publisher's authored name, so an alias can never smuggle different content under a familiar name. Omitted assets are still resolved, verified, and recorded, they are simply not written. Breaking: facets.json now carries manifestVersion 0.1 and entries may be objects instead of strings, so any tool that reads it must handle both forms; facets.lock moves to 0.3 with a required materialization disposition on every asset. Both migrate automatically on the next successful install. A frozen install fails if the manifest declares overrides while facets.lock is still at 0.2, which has no field in which to record them -- run one normal install first. Commit is now three phases, Resolve-all then Compose then Apply, so nothing is written until the whole plan is known to be collision-free. Removing a facet is the exception: when the lockfile still answers for everything you are keeping, facet remove refines those entries in place instead of resolving them, so it still works with a cold cache and an unreachable registry."
 }}>
   ## Two facets, one name
 
@@ -37,7 +37,9 @@ rss: true
 
   - **Nothing is written until you decide.** A collision leaves
     `facets.json`, `facets.lock`, the receipt, and your materialized
-    assets byte-identical. Cancelling with `Esc` is not an error state.
+    assets byte-identical. Cancelling with `Esc` ends the command
+    without applying anything -- it reports the cancellation and exits
+    non-zero, and your project is exactly as you left it.
   - **You decide once.** Your choices are saved into `facets.json`, so
     the next install -- and every teammate's, and CI's -- replays them
     without prompting.
@@ -105,8 +107,11 @@ rss: true
 
   Every asset entry in `facets.lock` now carries a required
   `materialization` disposition -- `authored`, `aliased`, or `omitted`.
-  Versions `1` and `0.2` remain readable and are migrated to `0.3` by
-  any normal install.
+  Version `0.2` remains readable and is migrated to `0.3` by any normal
+  install. The withdrawn closed-alpha `1` is no longer read at all: if
+  you still have one, delete `facets.lock` and run `facet install` to
+  regenerate it. The number `1` is reserved for the eventual stable v1
+  format.
 
   ```json facets.lock
   {
@@ -117,13 +122,20 @@ rss: true
   ```
 
   Note `name` and `files` keep the authored name even when aliased.
-  Versions are matched exactly, never by ordering -- `0.3` is
-  numerically *less* than `0.2`, so comparison would rank the newest
-  schema as the oldest.
+  Versions are matched exactly, never by ordering: a version number
+  names a schema rather than a position in a sequence, so a reader
+  recognizes the versions it supports and fails on anything else
+  instead of comparing magnitudes.
+
+  Each asset's `files` are also checked against the asset itself now,
+  not just for path safety: an agent or command lists exactly its own
+  primary file, and every path in a skill lives under that skill's
+  directory. A lockfile that pointed an asset at an unrelated file no
+  longer validates.
 
   **In CI:** a [`--frozen-lockfile`](/cli/install) install fails if
   `facets.json` declares any materialization override while
-  `facets.lock` predates `0.3`, since the older format has no field to
+  `facets.lock` is still at `0.2`, which has no field in which to
   record it. Run one normal `facet install` locally and commit the
   migrated lockfile. Frozen mode also treats a changed alias as drift,
   exactly like a changed version, and never prompts.
@@ -141,6 +153,11 @@ rss: true
   before any write, so an asset name can transfer from one facet to
   another in a single install without the new owner's file being
   deleted behind it.
+
+  Removing a facet is the exception. When the lockfile still answers
+  for everything you are keeping, [`facet remove`](/cli/remove) refines
+  those entries in place instead of resolving them, so it still works
+  with a cold cache and an unreachable registry.
 
   Two smaller consequences you may notice:
 

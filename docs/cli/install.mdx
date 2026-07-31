@@ -26,7 +26,7 @@ Reads `facets.json`, fetches and materializes every facet declared there, and wr
 
   Frozen mode **never prompts**, even in a fully interactive terminal. It reproduces recorded intent, so it must not collect a new decision. A name collision under `--frozen-lockfile` is reported and fails.
 
-  A lockfile older than `0.3` cannot record a materialization disposition. If `facets.json` declares any override against one, the frozen install fails rather than silently ignoring it — run one non-frozen `facet install` to migrate the lockfile.
+  A `0.2` lockfile has no field in which to record a materialization disposition. If `facets.json` declares any override against one, the frozen install fails rather than silently ignoring it — run one non-frozen `facet install` to migrate the lockfile.
 
   <Tip>
   Use this in CI to guarantee `facets.json` and `facets.lock` are in agreement. Mirrors `--frozen-lockfile` from `npm` and `bun`.

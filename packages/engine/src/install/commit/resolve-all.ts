@@ -1,6 +1,7 @@
 import type { Adapter } from '@agent-facets/adapter'
-import type { SupportedLockfile, SupportedLockfileFacet } from '@agent-facets/protocol'
+import { compareCodeUnits, type SupportedLockfile, type SupportedLockfileFacet } from '@agent-facets/protocol'
 import type { NormalizedFacetEntry } from '../../manifest/mutations.ts'
+import { ownEntry } from '../own-entry.ts'
 import type { OnLog, RunInstallFailure, StageEvent } from '../types.ts'
 import { reconcileLockedAgainstPlan } from './reconcile.ts'
 import { resolveFacet } from './resolve-facet.ts'
@@ -72,10 +73,10 @@ export async function resolveAll(args: ResolveAllArgs): Promise<ResolveAllResult
   const resolved: ResolvedFacetRecord[] = []
   const serverWarnings: { facet: string; servers: ReadonlyArray<string> }[] = []
 
-  const facetNames = Object.keys(desiredFacets).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+  const facetNames = Object.keys(desiredFacets).sort(compareCodeUnits)
 
   for (const facetName of facetNames) {
-    const desired = desiredFacets[facetName]
+    const desired = ownEntry(desiredFacets, facetName)
     if (desired === undefined) continue
     const specifier = desired.source
     if (signal?.aborted) {
@@ -115,7 +116,7 @@ export async function resolveAll(args: ResolveAllArgs): Promise<ResolveAllResult
     //
     // It runs unconditionally. Gating it on how content was obtained made
     // frozen reproduction verify a warm cache less strictly than a cold one.
-    const previousEntry = previousLockfile.facets[facetName]
+    const previousEntry = ownEntry(previousLockfile.facets, facetName)
     const mismatch = reconcileLockedAgainstPlan(
       facetName,
       previousEntry,

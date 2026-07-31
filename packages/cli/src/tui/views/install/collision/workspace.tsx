@@ -3,7 +3,6 @@ import type { MaterializationDisposition } from '@agent-facets/protocol'
 import { Box, Text, useInput } from 'ink'
 import { useCallback, useMemo, useState } from 'react'
 import { THEME } from '../../../theme.ts'
-import { COLLISION_STATUS } from '../collision-status.ts'
 import { CHOICES, type ChoiceKind, ClaimantRow, choiceOf, StatusTag } from './claimant-row.tsx'
 import {
   type ClaimantModel,
@@ -47,12 +46,13 @@ export function CollisionWorkspace({
   const model = useMemo(() => evaluateDraft(request, draft), [request, draft])
   const { groups, confirmable } = model
 
-  const activeGroup = view.kind === 'group' ? findGroup(groups, view.anchor) : null
-  // A group always has at least two members, but the index signature
-  // cannot say so; normalize to null so the narrowing below is real.
-  const focusedMember: ClaimantModel | null = activeGroup
-    ? (findMember(activeGroup, view) ?? activeGroup.members[0] ?? null)
-    : null
+  // One lookup, keyed by the FOCUSED claimant: the group is whichever one
+  // currently contains it. Selecting the group separately (by an `anchor`
+  // claimant) let the two disagree the moment a temporary merge split apart —
+  // the view followed the anchor, silently substituted the first member for
+  // the missing focus, and kept the old highlight, so the next Enter applied
+  // a choice to a claimant the user was not looking at.
+  const focused = view.kind === 'group' ? locate(groups, view.focus) : null
 
   const revise = useCallback(
     (claimant: ClaimantModel, disposition: MaterializationDisposition) => {
@@ -91,13 +91,19 @@ export function CollisionWorkspace({
     [revise, openAlias],
   )
 
-  useInput(
-    (input, key) => {
-      if (key.ctrl && input === 'c') {
-        onComplete({ kind: 'cancelled' })
-        return
-      }
+  // Ctrl-C is handled by its own ALWAYS-ACTIVE handler, deliberately separate
+  // from the navigation handler below. That one is disabled while the alias
+  // editor is open, and the editor itself handles only Enter and Escape — so
+  // an interrupt typed mid-edit reached nothing at all. The engine kept
+  // awaiting this resolver, holding the project lock, and the install hung.
+  // Escape stays editor-local: it means "abandon this edit", not "abandon the
+  // install".
+  useInput((input, key) => {
+    if (key.ctrl && input === 'c') onComplete({ kind: 'cancelled' })
+  })
 
+  useInput(
+    (_input, key) => {
       if (view.kind === 'overview') {
         const rows = groups.length + 1 // groups, then the confirm row
         if (key.escape) {
@@ -117,7 +123,7 @@ export function CollisionWorkspace({
           if (group !== undefined) {
             const first = group.members[0]
             if (first !== undefined) {
-              setView({ kind: 'group', anchor: first.key, focus: first.key, highlight: choiceOf(first) })
+              setView({ kind: 'group', focus: first.key, highlight: choiceOf(first) })
             }
             return
           }
@@ -126,7 +132,8 @@ export function CollisionWorkspace({
         return
       }
 
-      if (activeGroup === null || focusedMember === null) return
+      if (focused === null) return
+      const { group: activeGroup, member: focusedMember } = focused
 
       if (key.escape) {
         setView({ kind: 'overview', index: indexOfGroup(groups, activeGroup) })
@@ -157,16 +164,17 @@ export function CollisionWorkspace({
     { isActive: editing === null },
   )
 
-  if (activeGroup !== null && focusedMember !== null) {
+  if (focused !== null && view.kind === 'group') {
+    const { group, member } = focused
     return (
       <GroupView
-        group={activeGroup}
-        focused={focusedMember}
-        highlight={view.kind === 'group' ? view.highlight : choiceOf(focusedMember)}
+        group={group}
+        focused={member}
+        highlight={view.highlight}
         editing={editing}
         onAliasChange={(value) => setEditing((current) => (current === null ? null : { ...current, value }))}
         onAliasSubmit={(alias) => {
-          revise(focusedMember, { kind: 'aliased', as: alias })
+          revise(member, { kind: 'aliased', as: alias })
           setEditing(null)
         }}
         onAliasCancel={() => setEditing(null)}
@@ -180,12 +188,18 @@ export function CollisionWorkspace({
 type View =
   | { kind: 'overview'; index: number }
   /**
-   * `anchor` selects the group by a claimant rather than a group id,
-   * because group identity is not stable: aliasing across groups merges
-   * two of them, and a merge would otherwise strand the user on a group
-   * that no longer exists. A claimant, once surfaced, never disappears.
+   * A group view is identified by the FOCUSED claimant, and by nothing else.
+   *
+   * Group identity is not stable — aliasing across groups merges two of them,
+   * and withdrawing an alias splits them again — so a group id would strand
+   * the user on a group that no longer exists. A claimant, once surfaced,
+   * never disappears (see `CollisionDraft.claimants`), so it always resolves.
+   *
+   * Carrying a separate `anchor` alongside it made "the anchor's group does
+   * not contain the focus" representable, which is exactly the state a split
+   * produced.
    */
-  | { kind: 'group'; anchor: string; focus: string; highlight: ChoiceKind }
+  | { kind: 'group'; focus: string; highlight: ChoiceKind }
 
 function Overview({ model, index }: { model: ReturnType<typeof evaluateDraft>; index: number }) {
   const { groups, confirmable, staleOverrides } = model
@@ -206,8 +220,8 @@ function Overview({ model, index }: { model: ReturnType<typeof evaluateDraft>; i
           <Box key={group.key} flexDirection="column">
             <Text>
               <Text color={groupIndex === index ? THEME.focus : THEME.hint}>{groupIndex === index ? '▸ ' : '  '}</Text>
-              <StatusTagFor status={group.status} />
-              <Text bold> {group.contested.length > 0 ? group.contested.join(', ') : group.origin}</Text>
+              <StatusTag status={group.status} />
+              <Text bold> {group.title}</Text>
               <Text color={THEME.hint}>
                 {' '}
                 ({group.members.length} asset{group.members.length === 1 ? '' : 's'})
@@ -270,7 +284,7 @@ function GroupView({
   return (
     <Box flexDirection="column">
       <Text bold color={THEME.brand}>
-        {group.contested.length > 0 ? group.contested.join(', ') : group.origin}
+        {group.title}
       </Text>
       <Text color={THEME.hint}>
         {group.members.length} assets want this name. Give each one an outcome; they only have to differ from each
@@ -310,22 +324,19 @@ function GroupView({
   )
 }
 
-function StatusTagFor({ status }: { status: ClaimantModel['status'] }) {
-  const presentation = COLLISION_STATUS[status]
-  return (
-    <Text color={presentation.color}>
-      {presentation.icon} {presentation.label}
-    </Text>
-  )
-}
-
-function findGroup(groups: readonly DisplayGroup[], anchor: string): DisplayGroup | null {
-  return groups.find((group) => group.members.some((member) => member.key === anchor)) ?? null
-}
-
-function findMember(group: DisplayGroup, view: View): ClaimantModel | undefined {
-  if (view.kind !== 'group') return undefined
-  return group.members.find((member) => member.key === view.focus)
+/**
+ * The focused claimant and the group it currently belongs to.
+ *
+ * Returned together so the pair cannot disagree: the group is defined AS the
+ * one containing the claimant, rather than located separately and then
+ * checked.
+ */
+function locate(groups: readonly DisplayGroup[], focus: string): { group: DisplayGroup; member: ClaimantModel } | null {
+  for (const group of groups) {
+    const member = group.members.find((candidate) => candidate.key === focus)
+    if (member !== undefined) return { group, member }
+  }
+  return null
 }
 
 function indexOfGroup(groups: readonly DisplayGroup[], group: DisplayGroup): number {
@@ -339,11 +350,9 @@ function moveFocus(view: View, group: DisplayGroup, delta: number): View {
   const next = group.members[clamp(current + delta, 0, group.members.length - 1)]
   // The cursor follows the row it lands on, so arrowing down and back up
   // never silently re-points an option at a different claimant.
-  return next === undefined ? view : { kind: 'group', anchor: view.anchor, focus: next.key, highlight: choiceOf(next) }
+  return next === undefined ? view : { kind: 'group', focus: next.key, highlight: choiceOf(next) }
 }
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }
-
-export { StatusTag }

@@ -52,6 +52,12 @@ const MaterializationOverrides = type({
   'skills?': type.Record('string', ProjectAssetOverrideSchema),
   'agents?': type.Record('string', ProjectAssetOverrideSchema),
   'commands?': type.Record('string', ProjectAssetOverrideSchema),
+  // Arktype tolerates undeclared keys by default, which is right for
+  // forward-compatible extension data but wrong here: the group name IS the
+  // asset type, so `skillz` is not a field we do not understand yet — it is
+  // a misspelling of one we do. Accepting it would silently discard the very
+  // intent the override exists to record.
+  '+': 'reject',
 }).narrow((data, ctx) => {
   const groups = [
     [ASSET_DIRECTORY.skill, data.skills],

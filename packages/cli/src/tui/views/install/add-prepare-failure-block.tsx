@@ -2,6 +2,7 @@ import type { AddPrepareFailure } from '@agent-facets/engine'
 import { Box, Text } from 'ink'
 import type React from 'react'
 import { THEME } from '../../theme.ts'
+import { UnsupportedManifestVersionBlock } from './unsupported-version-block.tsx'
 
 /**
  * Renders the structured failure detail for the `add` flow's pre-install
@@ -25,6 +26,8 @@ export function AddPrepareFailureBlock({ failure }: { failure: AddPrepareFailure
           <Text> {failure.error}</Text>
         </Box>
       )
+    case 'manifest-unsupported-version':
+      return <UnsupportedManifestVersionBlock detail={failure} />
     case 'git-binary-missing':
       return (
         <Box flexDirection="column" marginTop={1}>

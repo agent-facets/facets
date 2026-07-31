@@ -67,19 +67,72 @@ export function writeProjectManifest(projectRoot: string, document: ManifestDocu
   atomicWriteFileSync(path, serializeProjectManifest(document))
 }
 
+/**
+ * The data an unsupported `manifestVersion` must carry to whoever reports it.
+ *
+ * Declared once and reused by every failure shape that can express it, so the
+ * three fields cannot drift apart between the install orchestrator and the
+ * prepare phases of add and remove.
+ */
+export interface UnsupportedManifestVersion {
+  path: string
+  observed: number | undefined
+  supported: readonly number[]
+}
+
+/**
+ * Every way loading `facets.json` can fail, as data rather than prose.
+ *
+ * The split is not cosmetic: a malformed document and a document this CLI is
+ * too old to read need opposite remedies — fix the file versus upgrade the
+ * tool — and only one of them can name the versions involved. Flattening both
+ * into a message string is what made the upgrade guidance unreachable from
+ * `facet add` and `facet remove`.
+ */
+export type ManifestLoadFailure =
+  | { reason: 'manifest-read'; error: string }
+  | ({ reason: 'manifest-unsupported-version' } & UnsupportedManifestVersion)
+
+/** Convert a failed manifest load into the discriminated prepare failure. */
+export function manifestLoadFailure(
+  projectRoot: string,
+  loaded: Extract<LoadProjectManifestResult, { ok: false }>,
+): ManifestLoadFailure {
+  if (loaded.reason === 'read') {
+    return { reason: 'manifest-read', error: loaded.error }
+  }
+  if (loaded.failure.code === 'unsupported-manifest-version') {
+    return {
+      reason: 'manifest-unsupported-version',
+      path: join(projectRoot, FACETS_JSON_FILE),
+      observed: loaded.failure.observed,
+      supported: loaded.failure.supported,
+    }
+  }
+  return { reason: 'manifest-read', error: describeManifestFailure(loaded.failure) }
+}
+
+/**
+ * A parse failure this module is allowed to turn into prose.
+ *
+ * An unsupported `manifestVersion` is excluded BY TYPE rather than by an
+ * arm that promises never to run. It is the one failure whose remedy is not
+ * "repair the document", and the only one whose report needs the observed
+ * and supported versions as data — so it travels as
+ * {@link UnsupportedManifestVersion} and is worded by whoever is reporting
+ * to the user. Leaving a sentence for it here meant engine carried a second,
+ * contradictory remedy ("remove the field") that survived only because every
+ * caller happened to check for it first.
+ */
+type RenderableManifestFailure = Exclude<ProjectManifestParseFailure, { code: 'unsupported-manifest-version' }>
+
 /** Render a parse failure as a single actionable line for callers that need a string. */
-export function describeManifestFailure(failure: ProjectManifestParseFailure): string {
+function describeManifestFailure(failure: RenderableManifestFailure): string {
   switch (failure.code) {
     case 'invalid-json':
       return `${FACETS_JSON_FILE} is malformed JSON: ${summarize(failure.errors)}`
     case 'duplicate-members':
       return `${FACETS_JSON_FILE} contains duplicate object member names: ${summarize(failure.errors)}`
-    case 'unsupported-manifest-version':
-      return (
-        `${FACETS_JSON_FILE} declares an unsupported manifestVersion ` +
-        `(${failure.observed ?? 'missing'}, this CLI supports ${failure.supported.join(', ')}). ` +
-        `Upgrade the CLI, or remove the field to use the legacy unversioned format.`
-      )
     case 'schema-violation':
       return `${FACETS_JSON_FILE} is invalid (manifestVersion ${failure.manifestVersion}): ${summarize(failure.errors)}`
   }

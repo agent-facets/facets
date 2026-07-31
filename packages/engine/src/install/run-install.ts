@@ -1,8 +1,8 @@
 import { join } from 'node:path'
-import { CURRENT_LOCKFILE_VERSION } from '@agent-facets/protocol'
+import { CURRENT_LOCKFILE_VERSION, preserveLockfileExtensions } from '@agent-facets/protocol'
 import { type AdapterCompatibilityFailure, compatibilityFailureFor } from '../adapters/api-compatibility.ts'
-import type { NormalizedProjectManifest } from '../manifest/mutations.ts'
-import { describeManifestFailure, loadProjectManifest } from '../manifest/project-files.ts'
+import { FACETS_JSON_FILE, type NormalizedProjectManifest } from '../manifest/mutations.ts'
+import { loadProjectManifest, manifestLoadFailure } from '../manifest/project-files.ts'
 import { compose } from './commit/compose.ts'
 import { applyManifestWritePolicy, mergeDeltaIntoManifest } from './commit/delta.ts'
 import { removedFacetOutcomes } from './commit/drift-removal.ts'
@@ -17,18 +17,25 @@ import { acquireInstallLock } from './lockfile-guard.ts'
 import { FACETS_LOCK_FILE, loadLockfile } from './lockfile-io.ts'
 import { deleteObsoleteAssets } from './materialize.ts'
 import { materializeFailureToRunInstall } from './materialize-failure.ts'
-import { bootstrapReceipt, loadReceipt, type Receipt } from './receipt.ts'
+import { ownEntry } from './own-entry.ts'
+import { type Receipt, resolveProjectReceipt } from './receipt.ts'
+import { refineRemoval } from './remove/refine.ts'
 import { rollbackAndFail, summarize } from './run-install-support.ts'
 import type { InstallDelta, RunInstallFailure, RunInstallOptions, RunInstallResult, StageEvent } from './types.ts'
 
 /**
  * Run the install pipeline for a project — the commit orchestrator.
  *
- * Behavior is uniform across all callers (add, remove, install): the
- * delta is merged in memory, every desired facet is resolved through
- * the commit-phase machinery in `install/commit/`, drift is removed
- * against the machine-local receipt, and the manifest + lockfile +
- * receipt are written together at the end.
+ * One orchestrator behind three front doors (add, remove, install). The
+ * delta is merged in memory; then either
+ *
+ *   - a non-frozen removal-only delta that local state already answers for
+ *     every survivor is refined without resolution, or
+ *   - every desired facet is resolved through the commit-phase machinery in
+ *     `install/commit/`.
+ *
+ * Either way, drift is removed against the machine-local receipt and the
+ * manifest + lockfile + receipt are written together at the end.
  *
  * Always returns; never throws. Failures are reported via
  * `result.failure`; rollback status via `result.rollback`.
@@ -40,47 +47,56 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
   const onLog = opts.onLog ?? noopLog
   const frozenLockfile = opts.frozenLockfile === true
 
-  // 1. Load facets.json. When the delta carries additions and no manifest
-  //    exists yet, start from an empty skeleton — the manifest will be
-  //    created as part of the transactional write. Without a delta, a
-  //    missing manifest is still a hard error (plain `facet install` with
-  //    nothing to install).
-  const manifestResult = loadProjectManifest(projectRoot)
-  if (!manifestResult.ok) {
-    if (manifestResult.reason === 'invalid' && manifestResult.failure.code === 'unsupported-manifest-version') {
-      return failureWithoutRollback({
-        code: 'FACETS_JSON_UNSUPPORTED_VERSION',
-        path: join(projectRoot, 'facets.json'),
-        observed: manifestResult.failure.observed,
-        supported: manifestResult.failure.supported,
-      })
-    }
-    return failureWithoutRollback({
-      code: 'FACETS_JSON_INVALID',
-      path: join(projectRoot, 'facets.json'),
-      error: manifestResult.reason === 'read' ? manifestResult.error : describeManifestFailure(manifestResult.failure),
-    })
-  }
-  if (!manifestResult.existed && delta.additions.length === 0) {
-    return failureWithoutRollback({
-      code: 'FACETS_JSON_NOT_FOUND',
-      path: join(projectRoot, 'facets.json'),
-    })
-  }
-  const projectManifest: NormalizedProjectManifest = manifestResult.manifest
-
-  // 2. Acquire install lock.
+  // 1. Acquire the install lock BEFORE reading anything a commit is derived
+  //    from. Reading first left a window in which a concurrent operation
+  //    could commit: this run would then merge against a snapshot taken
+  //    before that commit existed and write it back over the top. Lock
+  //    contention is therefore the only outcome that can precede the lock,
+  //    which also keeps "another operation owns this project" distinct from
+  //    "this project's state is unusable".
   const lockResult = acquireInstallLock(projectRoot)
   if (!lockResult.ok) {
-    return failureWithoutRollback({
-      code: 'LOCK_HELD',
-      path: lockResult.path,
-      heldByPid: lockResult.heldByPid,
-    })
+    onStage({ kind: 'install-complete', outcome: 'failure' })
+    return {
+      ok: false,
+      failure: { code: 'LOCK_HELD', path: lockResult.path, heldByPid: lockResult.heldByPid },
+      rollback: { kind: 'not-needed', reason: 'failed before install lock acquired' },
+    }
   }
   const installLock = lockResult.lock
 
   try {
+    // 2. Load facets.json, now under the lock. When the delta carries
+    //    additions and no manifest exists yet, start from an empty skeleton —
+    //    the manifest will be created as part of the transactional write.
+    //    Without a delta, a missing manifest is still a hard error (plain
+    //    `facet install` with nothing to install).
+    const manifestResult = loadProjectManifest(projectRoot)
+    if (!manifestResult.ok) {
+      // Routed through the shared classifier rather than re-branched here, so
+      // the orchestrator and the two prepare phases cannot disagree about
+      // which load failures are "repair the document" and which are "this CLI
+      // is too old" — the distinction the CLI's remedy depends on.
+      const loadFailure = manifestLoadFailure(projectRoot, manifestResult)
+      if (loadFailure.reason === 'manifest-unsupported-version') {
+        return failureNoMutation({
+          code: 'FACETS_JSON_UNSUPPORTED_VERSION',
+          path: loadFailure.path,
+          observed: loadFailure.observed,
+          supported: loadFailure.supported,
+        })
+      }
+      return failureNoMutation({
+        code: 'FACETS_JSON_INVALID',
+        path: join(projectRoot, FACETS_JSON_FILE),
+        error: loadFailure.error,
+      })
+    }
+    if (!manifestResult.existed && delta.additions.length === 0) {
+      return failureNoMutation({ code: 'FACETS_JSON_NOT_FOUND', path: join(projectRoot, FACETS_JSON_FILE) })
+    }
+    const projectManifest: NormalizedProjectManifest = manifestResult.manifest
+
     // 3. Frozen mode can never carry a delta: adding or removing a facet
     //    changes the locked set by definition. Checked before the lockfile is
     //    even read, so `facet add --frozen-lockfile` against a corrupt
@@ -108,10 +124,10 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     // Load (or bootstrap) the machine-local receipt. Invalid asset
     // entries (escape paths) are reported and skipped — the rest of
     // the receipt is still processed (W2 / design D6).
-    const receiptResult = loadReceipt(projectRoot)
-    const receipt: Receipt = receiptResult.ok ? receiptResult.receipt : bootstrapReceipt(projectRoot, previousLockfile)
-    if (receiptResult.ok) {
-      for (const invalid of receiptResult.invalidEntries) {
+    const receiptState = resolveProjectReceipt(projectRoot, previousLockfile)
+    const receipt: Receipt = receiptState.kind === 'invalid' ? receiptState.fallback : receiptState.receipt
+    if (receiptState.kind === 'loaded') {
+      for (const invalid of receiptState.invalidEntries) {
         onLog(() => `[warn] receipt asset entry rejected for ${invalid.facet}: "${invalid.asset}" (${invalid.reason})`)
         onStage({ kind: 'receipt-invalid-asset', ...invalid })
       }
@@ -170,9 +186,142 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       }
     }
 
+    // 5. Removal without resolution.
+    //
+    //    Removing a facet asks only about state this machine already has, so
+    //    when the lockfile already answers it for every SURVIVOR, nothing is
+    //    fetched, rebuilt, or reverified. That is what makes removal work with
+    //    a cold cache and an unreachable registry — previously only the facet
+    //    being removed enjoyed that guarantee, while an unrelated survivor
+    //    being unavailable failed the whole operation.
+    //
+    //    When local state cannot answer it — a survivor was never locked, its
+    //    entry drifted, the locked set collides, or the manifest declares
+    //    intent the lockfile does not record — the ordinary pipeline runs
+    //    instead. Those cases genuinely need resolution, and failing would
+    //    break removals that work today for reasons unrelated to the removal.
+    //
+    //    The route is chosen from the REQUEST: any delta that carries only
+    //    removals may be answered locally. Gating on how many of those names
+    //    still exist under the lock would send the fully-absent case — every
+    //    requested name already gone, which is precisely the state a
+    //    concurrent removal leaves behind — down the resolve path to fetch
+    //    every unrelated facet in the project for an operation with nothing
+    //    to do.
+    //
+    //    Which requested removals actually APPLY is a separate question,
+    //    answered here from the manifest loaded under the lock and used only
+    //    for reporting. A name absent under the lock removes nothing (the
+    //    merge already treats it as a no-op), and a name a concurrent commit
+    //    declared after a caller's pre-lock validation is still removed,
+    //    because the request rather than a stale snapshot reached the delta.
+    const effectiveRemovals = delta.removals.filter(
+      (removal) => ownEntry(projectManifest.facets, removal.facetName) !== undefined,
+    )
+    const removalOnly = delta.removals.length > 0 && delta.additions.length === 0
+    const refinement =
+      removalOnly && !frozenLockfile
+        ? refineRemoval({
+            desiredFacets: merged.desiredFacets,
+            previousLockfile,
+            lockfileExisted: lockfileResult.existed,
+            receiptState,
+          })
+        : null
+    if (refinement !== null && refinement.kind === 'not-applicable') {
+      onLog(() => `[verbose] removal needs full resolution (${refinement.reason.code})`)
+    }
+
+    if (refinement !== null && refinement.kind === 'refined') {
+      const refined = refinement.refinement
+      onStage({ kind: 'install-start', totalFacets: effectiveRemovals.length })
+
+      // Cancellation checkpoint, before the journal opens and before the
+      // delete pass — the same boundary the resolve path checks at. Without
+      // it this branch accepted `signal` and never read it, so Ctrl-C during
+      // a removal still deleted assets and committed the manifest.
+      if (signal?.aborted) {
+        return failureNoMutation({ code: 'ABORTED' })
+      }
+
+      // The steps below mirror the resolve path's Apply and commit, minus the
+      // write pass: nothing is materialized, because refinement has confirmed
+      // every surviving asset is already on disk under the identity it keeps.
+      // Keep the two in step.
+      //
+      // The ownership index comes back from the refinement rather than being
+      // rebuilt here: the gates that authorized this path were checked against
+      // that index, and a second build could only differ by disagreeing with
+      // the decision already made.
+      const journal = new InstallJournal()
+      const previousOwnership = refined.previousOwnership
+      const removed = removedFacetOutcomes({ desiredFacets: merged.desiredFacets, receipt, previousLockfile })
+      for (const outcome of removed) {
+        if (outcome.kind !== 'removed') continue
+        onStage({ kind: 'drift-removal', facet: outcome.name, oldVersion: outcome.oldVersion })
+      }
+
+      const obsolete = obsoleteOwnership(previousOwnership, refined.materialized)
+      const deletion = await deleteObsoleteAssets({ adapters: [...adapters], obsolete, journal, onLog })
+      if (!deletion.ok) {
+        const failure = materializeFailureToRunInstall(deletion.facets[0] ?? '', deletion.failure)
+        return await rollbackAndFail(journal, failure, onLog)
+      }
+
+      // Second checkpoint: the deletes are done and the tri-write is next, so
+      // an abort arriving now must undo them rather than commit on top. The
+      // last safe moment — the tri-write is the transaction boundary, and the
+      // journal cannot undo a committed one.
+      if (signal?.aborted) {
+        return await rollbackAndFail(journal, { code: 'ABORTED' }, onLog)
+      }
+
+      const newLockfile = preserveLockfileExtensions(previousLockfile, {
+        lockfileVersion: CURRENT_LOCKFILE_VERSION,
+        facets: refined.facetEntries,
+      })
+      const prunedIntent = finalizeMaterializationIntent(
+        merged.desiredFacets,
+        refined.overrides,
+        refined.staleOverrides,
+      )
+      const committed = commitProjectFiles({
+        projectRoot,
+        manifestDocument: projectManifest.document,
+        desiredFacets: merged.desiredFacets,
+        lockedSet: { kind: 'write', newLockfile },
+        // Nothing was written, so the receipt can only be PRUNED — never
+        // re-derived from lockfile entries this run did not apply.
+        newReceipt: buildUpdatedReceipt(receipt, { kind: 'carried-forward', facets: refined.receiptFacets }),
+        onLog,
+      })
+      if (!committed.ok) {
+        return await rollbackAndFail(journal, committed.failure, onLog)
+      }
+      onStage({ kind: 'lockfile-write', path: join(projectRoot, FACETS_LOCK_FILE) })
+      for (const entry of prunedIntent) {
+        onStage({
+          kind: 'stale-override-pruned',
+          facet: entry.facet,
+          assetType: entry.type,
+          authoredName: entry.authoredName,
+        })
+      }
+      onStage({ kind: 'install-complete', outcome: 'success' })
+
+      const perFacetOutcomes = [...refined.outcomes, ...removed]
+      return {
+        ok: true,
+        lockfile: newLockfile,
+        summary: summarize(perFacetOutcomes, 0, deletion.deleted),
+        perFacet: perFacetOutcomes,
+        serverWarnings: [],
+      }
+    }
+
     onStage({ kind: 'install-start', totalFacets: Object.keys(merged.desiredFacets).length })
 
-    // 5. Resolve every desired facet. Nothing is written during this phase,
+    // 6. Resolve every desired facet. Nothing is written during this phase,
     //    so a failure here still leaves the project untouched — which is
     //    why it reports through the no-mutation helper and why no journal
     //    exists yet.
@@ -192,7 +341,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     }
     const { resolved, serverWarnings } = resolution.value
 
-    // 6. Compose the global plan. Still no journal and still nothing
+    // 7. Compose the global plan. Still no journal and still nothing
     //    written: a collision, an invalid alias, or a cancelled resolution
     //    leaves the project exactly as it was.
     const composed = await compose({
@@ -277,15 +426,25 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     //    explicit → verbatim) is applied just before the write.
     //
     //    Version migration (design D10): a normal install always writes the
-    //    current schema, migrating a legacy-alpha `1` or `0.2` lockfile after
-    //    every resolved artifact has passed verification. Frozen mode never
-    //    rewrites the lockfile, so it retains the version the file was loaded
-    //    under — a newer archive against a legacy lockfile is rejected by the
-    //    frozen drift gate above, not silently upgraded here.
+    //    current schema, migrating a `0.2` lockfile after every resolved
+    //    artifact has passed verification. Frozen mode never rewrites the
+    //    lockfile, so it retains the version the file was loaded under.
+    //    Extension carry-through (`preserveLockfileExtensions`): the entries
+    //    above are rebuilt from resolved state, so anything the previous
+    //    document carried that this implementation does not model would be
+    //    dropped by the rewrite — including across the migration. The
+    //    published contract says unrecognized fields are preserved, and until
+    //    now only LOADING honored it.
     const lockedSet: LockedSetCommit = frozenLockfile
       ? { kind: 'retain' }
-      : { kind: 'write', newLockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: newFacetEntries } }
-    const newReceipt = buildUpdatedReceipt(receipt, newFacetEntries)
+      : {
+          kind: 'write',
+          newLockfile: preserveLockfileExtensions(previousLockfile, {
+            lockfileVersion: CURRENT_LOCKFILE_VERSION,
+            facets: newFacetEntries,
+          }),
+        }
+    const newReceipt = buildUpdatedReceipt(receipt, { kind: 'written', facetEntries: newFacetEntries })
     if (!frozenLockfile && merged.hasDelta) {
       applyManifestWritePolicy(merged.desiredFacets, delta.additions, newFacetEntries)
     }
@@ -360,20 +519,6 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
         kind: 'not-needed',
         reason: 'failed after lock acquired but before any disk mutations',
       },
-    }
-  }
-
-  /**
-   * Failure path that runs before the install lock has even been
-   * acquired (e.g., facets.json missing). Same as `failureNoMutation`
-   * but skips the lock release in `finally` because no lock was taken.
-   */
-  function failureWithoutRollback(failure: RunInstallFailure): RunInstallResult {
-    onStage({ kind: 'install-complete', outcome: 'failure' })
-    return {
-      ok: false,
-      failure,
-      rollback: { kind: 'not-needed', reason: 'failed before install lock acquired' },
     }
   }
 }

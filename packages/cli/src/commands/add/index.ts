@@ -11,10 +11,11 @@ import { createElement } from 'react'
 import type { Command } from '../../commands.ts'
 import { InstallView } from '../../tui/views/install/install-view.tsx'
 import { writeMaterializationDetail } from '../../util/collision-report.ts'
-import { writeCliError } from '../../util/errors.ts'
+import { type CliError, writeCliError } from '../../util/errors.ts'
 import { canPromptInteractively } from '../../util/interactive.ts'
+import { unsupportedManifestVersionError } from '../../util/unsupported-manifest-version.ts'
 import { ensureAdapters } from '../shared/ensure-adapters.ts'
-import { installFailureFix } from '../shared/install-failure.ts'
+import { installFailureDetail, installFailureFix } from '../shared/install-failure.ts'
 
 /**
  * `facet add <source> [more sources...]` — adds one or more facets to
@@ -147,7 +148,7 @@ export const addCommand: Command = {
     writeMaterializationDetail(captured.install.failure)
     writeCliError({
       what: 'add failed',
-      detail: `code=${captured.install.failure.code}`,
+      detail: installFailureDetail(captured.install.failure),
       fix: installFailureFix(captured.install.failure, captured.install.rollback, 'add'),
     })
     return 1
@@ -166,71 +167,73 @@ function writeParseError(specifier: string, error: ParseError): void {
  * Map an `AddPrepareFailure` (engine) to the canonical CLI error block on
  * stderr. The view already rendered a richer block on stdout; this keeps
  * stderr grep-friendly and gives each failure a precise fix line.
+ *
+ * Returns the error rather than writing it, so the `switch` has to produce a
+ * value: a `void` switch with no `default` compiles happily when a new
+ * variant is added and then silently prints nothing. The compiler now refuses
+ * an unhandled variant instead.
  */
-function writePrepareError(failure: AddPrepareFailure): void {
+export function addPrepareCliError(failure: AddPrepareFailure): CliError {
   switch (failure.reason) {
     case 'manifest-read':
-      writeCliError({
+      return {
         what: 'could not read facets.json',
         detail: failure.error,
         fix: 'fix or delete the malformed facets.json and retry',
-      })
-      return
+      }
+    case 'manifest-unsupported-version':
+      return unsupportedManifestVersionError(failure)
     case 'git-binary-missing':
-      writeCliError({
+      return {
         what: `could not clone git source "${failure.specifier}"`,
         detail: 'git is not installed (or not on PATH)',
         fix: 'install git and re-run this command',
-      })
-      return
+      }
     case 'git-auth-required':
-      writeCliError({
+      return {
         what: `git authentication required for ${failure.url}`,
         detail: 'closed alpha supports public repos and SSH (via agent) only',
         fix: 'use a public URL or configure your SSH agent',
-      })
-      return
+      }
     case 'git-clone-failed':
-      writeCliError({
+      return {
         what: `could not clone git source "${failure.specifier}"`,
         detail: failure.stderr,
         fix: 'verify the URL and your network connectivity',
-      })
-      return
+      }
     case 'git-checkout-failed':
-      writeCliError({
+      return {
         what: `could not check out commit ${failure.commitish} in "${failure.specifier}"`,
         detail: failure.stderr,
         fix: 'verify the commit SHA exists in the repository',
-      })
-      return
+      }
     case 'git-commit-unresolved':
-      writeCliError({
+      return {
         what: `could not pin a commit for git source "${failure.specifier}"`,
         detail: failure.stderr || `cloned ${failure.url} but git rev-parse HEAD did not return a commit`,
         fix: 'a git source must resolve to a commit to be reproducible; verify the repository has a valid HEAD',
-      })
-      return
+      }
     case 'local-resolve-failed':
-      writeCliError({
+      return {
         what: `could not resolve local source "${failure.specifier}"`,
         detail: failure.error,
         fix: 'check the path exists inside the project tree',
-      })
-      return
+      }
     case 'manifest-load-failed':
-      writeCliError({
+      return {
         what: `could not load facet.json from ${failure.specifier}`,
         detail: failure.detail,
         fix: 'verify the source is a facet directory with a valid facet.json',
-      })
-      return
+      }
     case 'composition-rejected':
-      writeCliError({
+      return {
         what: 'facet composition is not supported',
         detail: `${failure.specifier} declares dependencies on other facets`,
         fix: 'use a non-composing facet, or wait until composition support ships',
-      })
-      return
+      }
   }
+}
+
+function writePrepareError(failure: AddPrepareFailure): void {
+  writeCliError(addPrepareCliError(failure))
 }

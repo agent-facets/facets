@@ -146,6 +146,8 @@ Version selection SHALL recognize exactly two supported forms: a document withou
 
 Every legacy unversioned facet entry MUST be a compact source string. Under the current `0.1` schema, an entry SHALL be either a compact source string or an expanded object containing `source` and a non-empty `materialization` object. Materialization overrides SHALL be grouped into optional `skills`, `commands`, and `agents` maps keyed by authored asset name. Each value SHALL be an `aliased` or `omitted` disposition. Alias values MUST satisfy the current single-segment asset-name grammar; authored keys MUST remain safe to address, including for supported legacy assets.
 
+A materialization object SHALL NOT declare any group other than `skills`, `commands`, and `agents`. An undeclared group SHALL be rejected rather than retained and ignored, including when declared alongside recognized groups, so a misspelled group name cannot silently discard the intent it carries.
+
 The compact string SHALL be canonical when a facet has no overrides. A producer SHALL preserve `manifestVersion`, sources, and overrides it does not intentionally change, SHALL preserve overrides when changing a facet's source, and SHALL collapse an expanded entry to its compact source only after its final override is removed. An override naming an asset absent from a resolved facet SHALL remain schema-valid because document validation SHALL NOT require source resolution.
 
 A project-manifest JSON document containing duplicate object member names SHALL be rejected before version dispatch and schema validation.
@@ -189,6 +191,12 @@ A project-manifest JSON document containing duplicate object member names SHALL 
 - **WHEN** a current manifest records an alias for skill `review` and an omission for command `deploy`
 - **THEN** the system SHALL associate each override with its facet, asset type, and authored name
 
+#### Scenario: Undeclared override group is rejected
+
+- **WHEN** a materialization object declares a `skillz` group, whether alone or alongside a valid `skills` group
+- **THEN** the system SHALL reject the manifest
+- **AND** the system SHALL NOT accept the document while ignoring the undeclared group
+
 #### Scenario: Compact entry is canonical without overrides
 
 - **WHEN** a current manifest producer emits a facet with no materialization override
@@ -214,7 +222,7 @@ A project-manifest JSON document containing duplicate object member names SHALL 
 
 The shape of a lockfile (`facets.lock`) SHALL be published as a normative schema. Any system that reads, writes, or interprets a lockfile SHALL conform to the published schema. The schema SHALL define the lockfile version, source-provenance fields, identity-and-integrity fields, the complete authored asset list, each asset's materialization disposition and canonical file-integrity records, and the rules for unrecognized fields.
 
-Version dispatch SHALL use exact equality. Numeric `1` SHALL identify only the earliest alpha schema, numeric `0.2` SHALL identify only the preceding schema, and numeric `0.3` SHALL identify only the current schema. A malformed document SHALL NOT be retried under another version, and an unsupported version SHALL be rejected with structured observed and supported values. Project-manifest, lockfile, archive, and adapter-contract versions SHALL be interpreted independently. Duplicate lockfile members SHALL be rejected before schema validation.
+Version dispatch SHALL use exact equality. Numeric `0.2` SHALL identify only the preceding schema, and numeric `0.3` SHALL identify only the current schema. Numeric `1` SHALL NOT identify any readable schema: it named a withdrawn closed-alpha shape and is reserved for a future stable v1, so a document declaring it SHALL be rejected as unsupported rather than reinterpreted from its remaining shape. A malformed document SHALL NOT be retried under another version, and an unsupported version SHALL be rejected with structured observed and supported values. Project-manifest, lockfile, archive, and adapter-contract versions SHALL be interpreted independently. Duplicate lockfile members SHALL be rejected before schema validation.
 
 The published API SHALL expose each supported lockfile version through its exact schema and type plus a closed union derived from those exact readers. It SHALL NOT expose an unpinned numeric-version schema or identity-only compatibility type as a substitute for the supported union: such a type would admit mixed states whose declared version and asset shape disagree. Current writer types SHALL describe only `0.3`.
 
@@ -223,6 +231,10 @@ The published source provenance SHALL remain tagged by source kind: registry rec
 Every `0.3` asset entry SHALL record `scope`, `type`, authored `name`, a required materialization disposition, and a required `files` array sorted by canonical path. Each file record SHALL contain exactly the canonical inner-archive path derived from the authored name and its `sha256:<hex>` integrity. Aliased and omitted dispositions SHALL NOT change those paths or hashes. An omitted asset SHALL remain in the lockfile with all authored file records. Skill companions SHALL remain subordinate records, and archive-only supplementary files SHALL NOT appear in an asset's files.
 
 Every `0.2` asset entry SHALL retain its preceding `{ scope, type, name, files }` shape and SHALL be understood as materialized under its authored name. Materialization dispositions SHALL be recognized only in `0.3`.
+
+In both `0.2` and `0.3`, an asset's file records SHALL be derived from its own authored type and name rather than merely being safe, sorted paths. An agent or command entry SHALL contain exactly one record, whose path is that asset's canonical primary path. A skill entry SHALL contain its canonical `SKILL.md` record, and every record it contains SHALL lie beneath that skill's authored root. A record that no derivation from the asset's authored identity could produce SHALL be rejected, so ownership and integrity can never be associated with an unrelated archive file.
+
+Unrecognized fields SHALL be tolerated and SHALL survive reconstruction, not merely loading. A producer rewriting a lockfile SHALL carry forward the unrecognized fields of every top-level document, facet entry, source value of unchanged kind, asset entry matched by authored identity, and file record matched by path. Where a schema-defined field and an unrecognized field share a name, the schema-defined value SHALL win. Unrecognized fields belonging to a facet, asset, or file record that the new state no longer contains SHALL be dropped with it.
 
 #### Scenario: A consumer interprets a lockfile written by a different system
 
@@ -268,6 +280,29 @@ Every `0.2` asset entry SHALL retain its preceding `{ scope, type, name, files }
 - **WHEN** a `0.3` lockfile records agent `reviewer` and command `review`
 - **THEN** each asset's `files` array SHALL contain exactly its authored conventional primary path
 
+#### Scenario: Unrelated file path is rejected
+
+- **WHEN** a `0.2` or `0.3` lockfile records command `deploy` with a safe, sorted file record for `README.md`
+- **THEN** the lockfile SHALL NOT satisfy the published schema
+- **AND** the rejection SHALL identify the record as not derived from the asset's authored identity
+
+#### Scenario: Extra file on a single-file asset is rejected
+
+- **WHEN** an agent entry records its canonical primary path plus a second file record
+- **THEN** the lockfile SHALL NOT satisfy the published schema
+
+#### Scenario: Companion outside the authored skill root is rejected
+
+- **WHEN** skill `review` records a file under another skill's root, or omits its canonical `SKILL.md`
+- **THEN** the lockfile SHALL NOT satisfy the published schema
+
+#### Scenario: Unrecognized fields survive a rewrite
+
+- **WHEN** a producer rewrites a lockfile whose document, facet entry, source, asset entry, and file record each carry an unrecognized field
+- **THEN** every unrecognized field SHALL be present in the rewritten document
+- **AND** an unrecognized field sharing a schema-defined field's name SHALL NOT displace the schema-defined value
+- **AND** unrecognized fields of a facet, asset, or file record the new state no longer contains SHALL be dropped with it
+
 #### Scenario: Aliased asset retains authored records
 
 - **WHEN** skill `review` is recorded as aliased to `vendor-review`
@@ -290,11 +325,12 @@ Every `0.2` asset entry SHALL retain its preceding `{ scope, type, name, files }
 - **WHEN** a verified facet contains root `README.md`
 - **THEN** no `0.2` or `0.3` asset entry SHALL list it
 
-#### Scenario: Legacy alpha is selected exactly
+#### Scenario: Withdrawn alpha version is rejected
 
 - **WHEN** a lockfile declares numeric `lockfileVersion: 1`
-- **THEN** it SHALL be interpreted only under the earliest alpha schema
-- **AND** the system SHALL NOT reinterpret its shape as `0.3`
+- **THEN** the system SHALL reject it as an unsupported version
+- **AND** the system SHALL NOT interpret it under any readable schema
+- **AND** the system SHALL NOT reinterpret its shape as `0.2` or `0.3`
 
 #### Scenario: Previous version is selected exactly
 
@@ -306,12 +342,12 @@ Every `0.2` asset entry SHALL retain its preceding `{ scope, type, name, files }
 #### Scenario: Malformed current lockfile is not reinterpreted
 
 - **WHEN** a lockfile declares `lockfileVersion: 0.3` but violates the current schema
-- **THEN** it SHALL be rejected without fallback to `0.2` or `1`
+- **THEN** it SHALL be rejected without fallback to `0.2`
 
 #### Scenario: Supported aggregate remains version-discriminated
 
 - **WHEN** a protocol consumer accepts any supported lockfile
-- **THEN** its declared version SHALL discriminate the corresponding legacy `1`, previous `0.2`, or current `0.3` payload
+- **THEN** its declared version SHALL discriminate the corresponding previous `0.2` or current `0.3` payload
 - **AND** a `0.3` version paired with identity-only or disposition-less assets SHALL NOT be representable as validated supported state
 
 #### Scenario: Unsupported version is structured
@@ -389,7 +425,11 @@ The shape of a server manifest SHALL be published as a normative schema. Any sys
 
 The protocol SHALL publish a materialization disposition with exactly three arms: `authored`, meaning the asset is materialized under its authored name; `aliased`, which MUST carry the effective name; and `omitted`, meaning the asset is not materialized. An aliased effective name MUST satisfy the current single-segment asset-name grammar and SHALL NOT change the asset's authored scope, type, archive paths, or integrity values.
 
-An artifact that records project intent SHALL admit only the `aliased` and `omitted` arms because absence of an override means authored materialization. An artifact that records resolved state SHALL require one of all three arms. Illegal combinations, including an alias without an effective name or an effective name on another arm, SHALL be rejected.
+An artifact that records project intent SHALL admit only the `aliased` and `omitted` arms because absence of an override means authored materialization.
+
+An artifact that records the resolved asset set SHALL require one of all three arms, because that set stays comparable against project intent and therefore still lists what was deliberately not materialized. An artifact that records materialized on-disk state SHALL admit only the `authored` and `aliased` arms, because an omitted asset puts no bytes on disk; `omitted` SHALL be unrepresentable there rather than merely unused.
+
+Illegal combinations, including an alias without an effective name or an effective name on another arm, SHALL be rejected.
 
 #### Scenario: Valid aliased disposition
 
@@ -401,6 +441,12 @@ An artifact that records project intent SHALL admit only the `aliased` and `omit
 
 - **WHEN** a disposition declares `omitted` without an effective name
 - **THEN** the disposition SHALL satisfy the published schema
+
+#### Scenario: Materialized-state artifact rejects omitted
+
+- **WHEN** an artifact recording materialized on-disk state declares an `omitted` disposition
+- **THEN** the disposition SHALL NOT satisfy that artifact's schema
+- **AND** the same `omitted` disposition SHALL remain valid in an artifact recording the resolved asset set
 
 #### Scenario: Alias without an effective name is rejected
 

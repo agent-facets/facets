@@ -162,13 +162,13 @@ export type { AcquireLockError, AcquireLockResult, InstallLock } from './install
 export { acquireInstallLock, computeLockPath } from './install/lockfile-guard.ts'
 export type { LoadLockfileResult } from './install/lockfile-io.ts'
 export { emptyLockfile, FACETS_LOCK_FILE, loadLockfile, writeLockfile } from './install/lockfile-io.ts'
-export type {
-  DeleteObsoleteOptions,
-  DeleteObsoleteResult,
-  MaterializeOptions,
-  MaterializeResult,
-} from './install/materialize.ts'
-export { deleteObsoleteAssets, materialize } from './install/materialize.ts'
+export type { MaterializeOptions, MaterializeResult } from './install/materialize.ts'
+export { materialize } from './install/materialize.ts'
+// Prototype-safe access to records keyed by user-authored names. The CLI's
+// collision draft builds and rewrites exactly such a record before handing it
+// back as the resolver's answer, so it needs the same two primitives the
+// commit path uses rather than a second copy of them.
+export { ownEntry, ownRecord } from './install/own-entry.ts'
 // add orchestrator (owns the facet add manifest transaction)
 export type { AddPrepareFailure, AddSource, PrepareAddResult, RunAddOptions, RunAddResult } from './install/run-add.ts'
 export { prepareAdd, runAdd } from './install/run-add.ts'
@@ -227,8 +227,12 @@ export {
   serializeProjectManifest,
 } from './manifest/mutations.ts'
 // manifest project files (I/O bridge)
-export type { LoadProjectManifestResult } from './manifest/project-files.ts'
-export { describeManifestFailure, loadProjectManifest, writeProjectManifest } from './manifest/project-files.ts'
+export type {
+  LoadProjectManifestResult,
+  ManifestLoadFailure,
+  UnsupportedManifestVersion,
+} from './manifest/project-files.ts'
+export { loadProjectManifest, manifestLoadFailure, writeProjectManifest } from './manifest/project-files.ts'
 // readme (shared by scaffold + edit)
 export type { ReadmePath } from './readme.ts'
 export { isReadmePath, README_EXTENSIONLESS, README_MD, README_PATHS, readmeTemplate } from './readme.ts'

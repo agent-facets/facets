@@ -1,6 +1,7 @@
 import type { CurrentLockfileFacet } from '@agent-facets/protocol'
 import type { NormalizedFacetEntry } from '../../manifest/mutations.ts'
 import { describeVersionSpec } from '../../registry/describe.ts'
+import { ownEntry } from '../own-entry.ts'
 import type { Addition, InstallDelta } from '../types.ts'
 
 /**
@@ -34,7 +35,11 @@ export function mergeDeltaIntoManifest(
   facets: Readonly<Record<string, NormalizedFacetEntry>>,
   delta: InstallDelta,
 ): MergedDelta {
-  const desiredFacets: Record<string, NormalizedFacetEntry> = {}
+  // Null-prototype for the same reason `parseProjectManifest` uses one: this
+  // map is rebuilt key-by-key from user-authored facet names, and an ordinary
+  // `{}` would drop an own `__proto__` here even after normalization
+  // preserved it — putting the fix one hop from where it is observable.
+  const desiredFacets: Record<string, NormalizedFacetEntry> = Object.create(null)
   for (const [name, entry] of Object.entries(facets)) {
     desiredFacets[name] = { source: entry.source, overrides: entry.overrides }
   }
@@ -43,7 +48,7 @@ export function mergeDeltaIntoManifest(
       addition.source.kind === 'registry' ? describeVersionSpec(addition.source.version) : addition.specifier
     desiredFacets[addition.facetName] = {
       source,
-      overrides: desiredFacets[addition.facetName]?.overrides,
+      overrides: ownEntry(desiredFacets, addition.facetName)?.overrides,
     }
   }
   for (const removal of delta.removals) {
@@ -82,14 +87,14 @@ export function applyManifestWritePolicy(
   newFacetEntries: Readonly<Record<string, CurrentLockfileFacet>>,
 ): void {
   for (const addition of additions) {
-    const lockEntry = newFacetEntries[addition.facetName]
+    const lockEntry = ownEntry(newFacetEntries, addition.facetName)
     if (lockEntry === undefined) continue
     const isBareAdd =
       addition.source.kind === 'registry' &&
       addition.source.version.kind === 'latest' &&
       addition.specifier === addition.facetName
     if (isBareAdd) {
-      const entry = desiredFacets[addition.facetName]
+      const entry = ownEntry(desiredFacets, addition.facetName)
       if (entry !== undefined) {
         // Pin the source only. Overrides are untouched for the same reason
         // they survive a source update.

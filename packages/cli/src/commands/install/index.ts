@@ -1,4 +1,4 @@
-import { type RunInstallFailure, type RunInstallResult, runInstall } from '@agent-facets/engine'
+import { type RunInstallResult, runInstall } from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
 import type { Command } from '../../commands.ts'
@@ -7,7 +7,7 @@ import { writeMaterializationDetail } from '../../util/collision-report.ts'
 import { writeCliError } from '../../util/errors.ts'
 import { canPromptInteractively } from '../../util/interactive.ts'
 import { ensureAdapters } from '../shared/ensure-adapters.ts'
-import { installFailureFix } from '../shared/install-failure.ts'
+import { installFailureDetail, installFailureFix } from '../shared/install-failure.ts'
 
 /**
  * `facet install` — bring the project on disk into agreement with
@@ -133,7 +133,7 @@ export const installCommand: Command = {
       writeMaterializationDetail(captured.failure)
       writeCliError({
         what: 'install failed',
-        detail: failureDetail(captured.failure),
+        detail: installFailureDetail(captured.failure),
         fix: installFailureFix(captured.failure, captured.rollback, 'install'),
       })
       return 1
@@ -141,13 +141,4 @@ export const installCommand: Command = {
 
     return 0
   },
-}
-
-/**
- * Carry the structured failure code into the CLI error's detail line so
- * log-grepping can branch on the exact reason without parsing the
- * (richer) Ink-rendered failure block on stdout.
- */
-function failureDetail(failure: RunInstallFailure): string {
-  return `code=${failure.code}`
 }

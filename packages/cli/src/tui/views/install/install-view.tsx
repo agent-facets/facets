@@ -450,17 +450,10 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
       )}
       {result && isPrepareFailure(result) && <AddPrepareFailureBlock failure={result.prepareFailure} />}
       {result && isRemovePrepareFailure(result) && <RemovePrepareFailureBlock failure={result.removePrepareFailure} />}
-      {result && isInstallFailure(result) && <FailureBlock failure={result.failure} />}
-      {result && isInstallFailure(result) && result.rollback.kind === 'partial-failure' && (
-        <Box flexDirection="column" marginTop={1}>
-          <Text color={THEME.warning}>
-            ⚠ rollback completed with {result.rollback.failures} partial failure
-            {result.rollback.failures === 1 ? '' : 's'} ({result.rollback.entriesUndone} entr
-            {result.rollback.entriesUndone === 1 ? 'y' : 'ies'} successfully undone)
-          </Text>
-          <Text color={THEME.hint}> Some adapter writes could not be undone. Inspect the project tree.</Text>
-        </Box>
-      )}
+      {/* The partial-rollback note used to live here as well, restating what
+          the failure block already claimed. `FailureBlock` now renders the
+          disk state once, for every failure code, from the shared helper. */}
+      {result && isInstallFailure(result) && <FailureBlock result={result} />}
     </Box>
   )
 }

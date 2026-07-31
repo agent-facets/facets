@@ -76,6 +76,7 @@ There is no cross-version fallback. A `0.1` document that violates the current s
 
 Beyond shape, the load validates what it can prove locally:
 
+- Override **groups** MUST be `skills`, `agents`, or `commands`. Any other key — `skillz`, say — is rejected, including when it sits beside a valid group. Accepting it would silently drop the intent it carries, which is the failure mode an override exists to prevent.
 - Override **keys** are checked for path safety, so a project can address a legacy multi-segment authored name.
 - Alias **values** are checked against the current single-segment [asset-name grammar](/specification/manifest#asset-names) and are rejected rather than normalized.
 - An `{ "kind": "authored" }` override is rejected. Authored materialization is expressed by the absence of an override, and one state MUST have exactly one spelling.
@@ -88,7 +89,7 @@ Specifier grammar is *not* validated at load. It is validated when each entry is
 - Every successful non-frozen write stamps the current `manifestVersion`, migrating a legacy document **inside the same transaction** that writes the lockfile and receipt. There is no separate migration step and no standalone upgrade command.
 - What gets written per specifier shape (bare names pin, explicit specifiers are preserved verbatim, reproductions are unchanged) is defined by the [manifest-write policy](/specification/commit#manifest-write-policy).
 - Entry form follows content: an entry that has overrides is written expanded; an entry whose last override is removed **collapses back to a compact string**. An existing expanded entry is mutated in place.
-- Comments survive. `facets.json` may carry `//` and `/* */` comments; writes mutate the document in place rather than re-serializing it, so hand-written annotations are preserved.
+- Comments survive. `facets.json` may carry `//` and `/* */` comments; writes mutate the document in place rather than re-serializing it, so hand-written annotations are preserved. That includes comments **inside** a `materialization` block: an override whose intent is unchanged is not rewritten at all, and a changed one is edited as narrowly as possible, so a note explaining why you aliased an asset outlives every later install.
 - [Stale overrides](/specification/materialization#stale-overrides) are pruned as part of a successful commit, and reported afterwards.
 - On success it is written atomically alongside `facets.lock` and the install receipt — the [tri-write](/specification/commit#transactional-tri-write).
 

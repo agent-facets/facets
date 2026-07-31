@@ -2,9 +2,10 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { gunzipSync } from 'node:zlib'
 import { type GunzipFn, parseFacetArchive, validateFacetArchive } from '@agent-facets/protocol'
+import { spawnCli } from './helpers/cli-process.ts'
 
 /**
  * Reproducible candidate `0.2` archive / interop path (task 11.6).
@@ -33,24 +34,9 @@ afterAll(async () => {
   await rm(testDir, { recursive: true, force: true })
 })
 
-const CLI_PATH = resolve(import.meta.dir, '../../dist/facet')
-
-if (!existsSync(CLI_PATH)) {
-  throw new Error(`[e2e] dist/facet not found at ${CLI_PATH}.\nBuild the CLI first: bun run --cwd packages/cli build`)
-}
-
 async function runCli(cwd: string, ...args: string[]) {
   const facetDir = await mkdtemp(join(testDir, 'facet-dir-'))
-  const proc = Bun.spawn([CLI_PATH, ...args], {
-    cwd,
-    stdout: 'pipe',
-    stderr: 'pipe',
-    env: { ...process.env, NO_COLOR: '1', FACET_DIR: facetDir },
-  })
-  const stdout = await new Response(proc.stdout).text()
-  const stderr = await new Response(proc.stderr).text()
-  const exitCode = await proc.exited
-  return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode }
+  return await spawnCli(args, { cwd, env: { NO_COLOR: '1', FACET_DIR: facetDir } })
 }
 
 const REPRESENTATIVE_BINARY = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01, 0xff, 0xfe])

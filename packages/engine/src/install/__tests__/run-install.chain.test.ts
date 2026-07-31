@@ -3,13 +3,8 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
-import type {
-  BuildManifest,
-  CurrentBuildManifest,
-  LegacyLockfileFacet,
-  ProjectFacetEntry,
-} from '@agent-facets/protocol'
-import { LEGACY_LOCKFILE_VERSION } from '@agent-facets/protocol'
+import type { BuildManifest, CurrentBuildManifest, Lockfile02Facet, ProjectFacetEntry } from '@agent-facets/protocol'
+import { LOCKFILE_VERSION_0_2 } from '@agent-facets/protocol'
 import type { Addition } from '../types.ts'
 
 /**
@@ -123,12 +118,17 @@ function buildFixture(parent: string, name: string, version: string): string {
  * same content `buildFixture` produces — so a paired fixture (for the
  * metadata fingerprint or a re-download) hashes identically.
  */
-function seedRegistrySlot(name: string, version: string): { slotPath: string; integrity: string; fixture: string } {
+function seedRegistrySlot(
+  name: string,
+  version: string,
+): { slotPath: string; integrity: string; fixture: string; skillIntegrity: string } {
   const fixture = buildFixture(fakeHome, name, version)
   const staging = cacheStagingDir()
   cpSync(fixture, staging, { recursive: true })
   const computed = computeDirIntegrity(staging, FIXTURE_FILES)
   if (!computed.ok) throw new Error('test bug: staged fixture unreadable')
+  const skillIntegrity = computed.assetHashes['skills/planning/SKILL.md']
+  if (skillIntegrity === undefined) throw new Error('test bug: fixture has no planning skill')
   const manifest: BuildManifest = {
     facetVersion: 0.1,
     archive: 'archive.tar.gz',
@@ -143,7 +143,7 @@ function seedRegistrySlot(name: string, version: string): { slotPath: string; in
     name,
   )
   if (!put.ok) throw new Error('test bug: seeding cache slot failed')
-  return { slotPath: put.path, integrity: computed.integrity, fixture }
+  return { slotPath: put.path, integrity: computed.integrity, fixture, skillIntegrity }
 }
 
 function installFakeAdapter(baseDir: string, name: string): void {
@@ -195,17 +195,34 @@ function writeFacets(facets: Record<string, ProjectFacetEntry>): string {
   return bytes
 }
 
-function writeLock(facets: Record<string, { version: string; integrity: string }>): string {
-  const entries: Record<string, LegacyLockfileFacet> = {}
+/**
+ * Seed a `0.2` lockfile entry.
+ *
+ * `skillIntegrity` is the fixture's real per-file hash whenever the entry's
+ * facet integrity is real: a matching facet integrity means REPRODUCTION, so
+ * per-file reconciliation runs and a stub hash would fail it for the wrong
+ * reason. The locked scope is `project` for the same class of reason — the
+ * verified plan derives `project`, and a locked `user` would be genuine
+ * identity drift rather than a fixture detail.
+ */
+function writeLock(facets: Record<string, { version: string; integrity: string; skillIntegrity?: string }>): string {
+  const entries: Record<string, Lockfile02Facet> = {}
   for (const [name, e] of Object.entries(facets)) {
     entries[name] = {
       source: { kind: 'registry', registry: 'https://api.agentfacets.io' },
       version: e.version,
       integrity: e.integrity,
-      assets: [{ scope: 'user', type: 'skill', name: 'planning' }],
+      assets: [
+        {
+          scope: 'project',
+          type: 'skill',
+          name: 'planning',
+          files: [{ path: 'skills/planning/SKILL.md', integrity: e.skillIntegrity ?? `sha256:${'0'.repeat(64)}` }],
+        },
+      ],
     }
   }
-  const bytes = `${JSON.stringify({ lockfileVersion: LEGACY_LOCKFILE_VERSION, facets: entries }, null, 2)}\n`
+  const bytes = `${JSON.stringify({ lockfileVersion: LOCKFILE_VERSION_0_2, facets: entries }, null, 2)}\n`
   writeFileSync(join(projectRoot, 'facets.lock'), bytes)
   return bytes
 }
@@ -338,7 +355,7 @@ describe('runInstall — locked-hit (plain install, warm cache, satisfying lock)
     const seeded = seedRegistrySlot('cowsay', '0.1.0')
     metadataOffline = true
     writeFacets({ cowsay: '0.1.0' })
-    writeLock({ cowsay: { version: '0.1.0', integrity: seeded.integrity } })
+    writeLock({ cowsay: { version: '0.1.0', integrity: seeded.integrity, skillIntegrity: seeded.skillIntegrity } })
 
     const result = await install()
     if (!result.ok) expect.unreachable()
@@ -357,7 +374,7 @@ describe('runInstall — tampered cache slot (bytes modified, sidecar intact)', 
     writeFileSync(join(seeded.slotPath, 'skills/planning/SKILL.md'), '# tampered\n')
     fixtureForVersion = (v) => (v === '0.1.0' ? seeded.fixture : null)
     writeFacets({ cowsay: '0.1.0' })
-    writeLock({ cowsay: { version: '0.1.0', integrity: seeded.integrity } })
+    writeLock({ cowsay: { version: '0.1.0', integrity: seeded.integrity, skillIntegrity: seeded.skillIntegrity } })
 
     const result = await install()
     if (!result.ok) expect.unreachable()
@@ -375,7 +392,9 @@ describe('runInstall — tampered cache slot (bytes modified, sidecar intact)', 
     writeFileSync(join(seeded.slotPath, 'skills/planning/SKILL.md'), '# tampered\n')
     metadataOffline = true
     const facetsBefore = writeFacets({ cowsay: '0.1.0' })
-    const lockBefore = writeLock({ cowsay: { version: '0.1.0', integrity: seeded.integrity } })
+    const lockBefore = writeLock({
+      cowsay: { version: '0.1.0', integrity: seeded.integrity, skillIntegrity: seeded.skillIntegrity },
+    })
 
     const result = await install()
     if (result.ok) expect.unreachable()
@@ -429,7 +448,7 @@ describe('runInstall — the structural discriminator vs a satisfying lock', () 
     const newest = buildFixture(fakeHome, 'cowsay', '0.2.0')
     fixtureForVersion = (v) => (v === '0.2.0' ? newest : null)
     writeFacets({ cowsay: '0.*' })
-    writeLock({ cowsay: { version: '0.1.0', integrity: seeded.integrity } })
+    writeLock({ cowsay: { version: '0.1.0', integrity: seeded.integrity, skillIntegrity: seeded.skillIntegrity } })
 
     const result = await install({ additions: [registryAddition('cowsay@0.*')] })
     if (!result.ok) expect.unreachable()
@@ -447,7 +466,7 @@ describe('runInstall — the structural discriminator vs a satisfying lock', () 
     const newest = buildFixture(fakeHome, 'cowsay', '0.2.0')
     fixtureForVersion = (v) => (v === '0.2.0' ? newest : null)
     writeFacets({ cowsay: '0.1.0' })
-    writeLock({ cowsay: { version: '0.1.0', integrity: seeded.integrity } })
+    writeLock({ cowsay: { version: '0.1.0', integrity: seeded.integrity, skillIntegrity: seeded.skillIntegrity } })
 
     const result = await install({ additions: [registryAddition('cowsay')] })
     if (!result.ok) expect.unreachable()
@@ -464,7 +483,7 @@ describe('runInstall — the structural discriminator vs a satisfying lock', () 
     const newest = buildFixture(fakeHome, 'cowsay', '0.2.0')
     fixtureForVersion = (v) => (v === '0.2.0' ? newest : null)
     writeFacets({ cowsay: '0.1.0' })
-    writeLock({ cowsay: { version: '0.1.0', integrity: seeded.integrity } })
+    writeLock({ cowsay: { version: '0.1.0', integrity: seeded.integrity, skillIntegrity: seeded.skillIntegrity } })
 
     const result = await install({ additions: [registryAddition('cowsay@latest')] })
     if (!result.ok) expect.unreachable()
@@ -479,7 +498,7 @@ describe('runInstall — the structural discriminator vs a satisfying lock', () 
     const seeded = seedRegistrySlot('cowsay', '0.1.0')
     metadataOffline = true
     writeFacets({ cowsay: '0.1.0' })
-    writeLock({ cowsay: { version: '0.1.0', integrity: seeded.integrity } })
+    writeLock({ cowsay: { version: '0.1.0', integrity: seeded.integrity, skillIntegrity: seeded.skillIntegrity } })
 
     const result = await install({ additions: [registryAddition('cowsay@0.1.0')] })
     if (!result.ok) expect.unreachable()
@@ -500,7 +519,9 @@ describe('runInstall — frozen mode and the chain', () => {
     writeFileSync(join(seeded.slotPath, 'skills/planning/SKILL.md'), '# tampered\n')
     fixtureForVersion = (v) => (v === '0.1.0' ? seeded.fixture : null)
     const facetsBefore = writeFacets({ cowsay: '0.1.0' })
-    const lockBefore = writeLock({ cowsay: { version: '0.1.0', integrity: seeded.integrity } })
+    const lockBefore = writeLock({
+      cowsay: { version: '0.1.0', integrity: seeded.integrity, skillIntegrity: seeded.skillIntegrity },
+    })
 
     const result = await install({ frozen: true })
     if (!result.ok) expect.unreachable()

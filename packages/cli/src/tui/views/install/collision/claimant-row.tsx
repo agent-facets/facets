@@ -1,6 +1,6 @@
 import { Box, Text } from 'ink'
 import { THEME } from '../../../theme.ts'
-import { COLLISION_STATUS } from '../collision-status.ts'
+import { COLLISION_STATUS, type CollisionStatus, describeStatus } from '../collision-status.ts'
 import { AliasInput } from './alias-input.tsx'
 import type { ClaimantModel } from './draft.ts'
 
@@ -32,13 +32,17 @@ export function choiceOf(claimant: ClaimantModel): ChoiceKind {
   }
 }
 
-export function StatusTag({ claimant }: { claimant: ClaimantModel }) {
-  const presentation = COLLISION_STATUS[claimant.status]
-  return (
-    <Text color={presentation.color}>
-      {presentation.icon} {presentation.label}
-    </Text>
-  )
+/**
+ * One status tag, for a claimant or for a whole group.
+ *
+ * Takes the status rather than a claimant so the group overview can use it
+ * too; the two views previously had near-identical private copies, which is
+ * one edit away from a fourth state rendering differently in each. The text
+ * comes from `describeStatus`, so what the accessibility tests assert is
+ * literally what users read.
+ */
+export function StatusTag({ status }: { status: CollisionStatus }) {
+  return <Text color={COLLISION_STATUS[status].color}>{describeStatus(status)}</Text>
 }
 
 /** How this claimant's asset will land on disk, in one phrase. */
@@ -98,7 +102,7 @@ export function ClaimantRow({
             {choice === applied ? `(${CHOICE_LABELS[choice]})` : ` ${CHOICE_LABELS[choice]} `}
           </Text>
         ))}
-        <StatusTag claimant={claimant} />
+        <StatusTag status={claimant.status} />
       </Box>
 
       {editing ? (

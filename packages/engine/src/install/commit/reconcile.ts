@@ -1,4 +1,4 @@
-import type { SupportedLockfileAssetEntry, SupportedLockfileFacet } from '@agent-facets/protocol'
+import type { SupportedLockfileFacet } from '@agent-facets/protocol'
 import type { RunInstallFailure } from '../types.ts'
 import type { VerifiedAssetPlan } from '../verified-asset-plan.ts'
 
@@ -32,13 +32,12 @@ import type { VerifiedAssetPlan } from '../verified-asset-plan.ts'
  *   - It only runs when BOTH a `previous` locked entry and a freshly-derived
  *     `plan` are present. A fresh add has no prior entry to reconcile
  *     against. A frozen reproduction derives no plan (the entry is inherited
- *     verbatim, possibly legacy) and is gated by the frozen drift preflight
- *     instead.
- *   - A legacy (`1`) `previous` entry carries identity-only assets (no
- *     per-file records). Asset-identity agreement is still checked; per-file
- *     agreement is vacuous because the legacy entry pins no file hashes.
- *     This is the migration case, and it is intentionally permissive at the
- *     file level — the plan's recomputed records become the new `0.2` truth.
+ *     verbatim) and is gated by the frozen drift preflight instead.
+ *   - Every supported locked entry (`0.2` and `0.3`) carries per-file
+ *     records, so both asset-identity and per-file agreement are always
+ *     checked. There is no longer a migration case that pins no file hashes:
+ *     the withdrawn `1` format, which was the only identity-only shape, is
+ *     no longer readable.
  */
 export function reconcileLockedAgainstPlan(
   facet: string,
@@ -53,15 +52,6 @@ export function reconcileLockedAgainstPlan(
   // locked entry is expected to change and the fresh plan is the new truth.
   if (currentIntegrity !== previous.integrity) return undefined
 
-  // Migration gate: a legacy (`1`) entry carries identity-only assets under
-  // the previous system's conventions (e.g. a different default scope). Its
-  // asset identities and file records are NOT authoritative against the
-  // current plan — a normal install migrates it to the current version, and
-  // the fresh plan becomes the new truth. Reconciliation therefore only
-  // asserts agreement between a file-carrying locked entry and the plan.
-  const anyLockedFiles = previous.assets.some((a) => filesOf(a) !== undefined)
-  if (!anyLockedFiles) return undefined
-
   // Asset-identity agreement: the locked identity set vs the plan's.
   const lockedIdentities = new Set(previous.assets.map(identityKey))
   const plannedIdentities = new Set(plan.assets.map(identityKey))
@@ -71,13 +61,11 @@ export function reconcileLockedAgainstPlan(
     return { code: 'RECONCILE_ASSET_IDENTITY', facet, missing, unexpected }
   }
 
-  // Per-asset owned-path sets and per-file integrity. Only a `0.2` or `0.3`
-  // locked asset carries `files`; a legacy identity-only asset has none, so
-  // per-file reconciliation is skipped for it (migration).
+  // Per-asset owned-path sets and per-file integrity. Every supported locked
+  // asset carries `files`, so this runs for all of them.
   const plannedByIdentity = new Map(plan.assets.map((a) => [identityKey(a), a]))
   for (const lockedAsset of previous.assets) {
-    const lockedFiles = filesOf(lockedAsset)
-    if (lockedFiles === undefined) continue // legacy identity-only entry
+    const lockedFiles = lockedAsset.files
 
     const planned = plannedByIdentity.get(identityKey(lockedAsset))
     // Identity agreement above guarantees a planned counterpart exists.
@@ -122,16 +110,4 @@ export function reconcileLockedAgainstPlan(
 
 function identityKey(asset: { scope: string; type: string; name: string }): string {
   return `${asset.scope}:${asset.type}:${asset.name}`
-}
-
-/**
- * Extract the per-file records from a locked asset. A `0.2` or `0.3` asset
- * carries a `files` array; a legacy (`1`) identity-only asset does not.
- *
- * `SupportedLockfileAssetEntry` is a union projected from `ParsedLockfile`,
- * so `'files' in asset` is an exact discriminant over its arms rather than a
- * structural guess — the legacy arm is the only one without the field.
- */
-function filesOf(asset: SupportedLockfileAssetEntry): ReadonlyArray<{ path: string; integrity: string }> | undefined {
-  return 'files' in asset ? asset.files : undefined
 }

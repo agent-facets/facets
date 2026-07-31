@@ -8,6 +8,7 @@ import type {
   SupportedLockfile,
 } from '@agent-facets/protocol'
 import type { AdapterCompatibilityFailure } from '../adapters/api-compatibility.ts'
+import type { UnsupportedManifestVersion } from '../manifest/project-files.ts'
 import type { RegistryError } from '../registry/index.ts'
 import type { ParseError, Source } from '../sources/facet/types.ts'
 import type { CollisionResolver } from './commit/compose.ts'
@@ -218,12 +219,7 @@ export type RunInstallFailure =
    * upgrade the CLI, rather than fix the document — and because the observed
    * and supported versions must reach the view as data, not prose.
    */
-  | {
-      code: 'FACETS_JSON_UNSUPPORTED_VERSION'
-      path: string
-      observed: number | undefined
-      supported: readonly number[]
-    }
+  | ({ code: 'FACETS_JSON_UNSUPPORTED_VERSION' } & UnsupportedManifestVersion)
   | { code: 'LOCKFILE_INVALID'; path: string; error: string }
   | { code: 'LOCKFILE_WRITE_FAILED'; path: string; cause: string }
   | { code: 'LOCK_HELD'; path: string; heldByPid: number }
