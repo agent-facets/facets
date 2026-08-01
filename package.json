@@ -34,7 +34,7 @@
     "@changesets/changelog-github": "0.7.0",
     "@changesets/cli": "2.31.0",
     "@changesets/release-utils": "0.2.7",
-    "@fission-ai/openspec": "1.5.0",
+    "@fission-ai/openspec": "1.7.0",
     "@octokit/auth-app": "8.2.0",
     "@types/bun": "1.3.14",
     "@types/node": "24.12.4",
