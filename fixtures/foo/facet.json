@@ -1,0 +1,14 @@
+{
+  "name": "foo",
+  "version": "0.0.0",
+  "description": "This should solid with the bar facet",
+  "skills": {
+    "testing": {
+      "description": "A Testing skill"
+    },
+    "foo": {
+      "description": "A Foo skill"
+    }
+  },
+  "files": ["README.md"]
+}
