@@ -496,8 +496,13 @@ describe('runInstall — manifest name mismatch', () => {
   })
 })
 
-describe('runInstall — server warnings', () => {
-  test('facet declaring servers emits server-warning event and serverWarnings result', async () => {
+describe('runInstall — concrete MCP declarations', () => {
+  // The warn-and-skip path this block used to cover is gone: a speculative
+  // version-string reference is now a validation failure, not a successful
+  // install carrying a warning. Materialization of concrete declarations is
+  // added later in this change; for now the contract under test is that a
+  // valid declaration no longer blocks or degrades an install.
+  test('a facet declaring a concrete server installs its assets', async () => {
     const fixture = realpathSync(mkdtempSync(join(projectRoot, 'with-servers-')))
     writeFileSync(
       join(fixture, 'facet.json'),
@@ -505,7 +510,7 @@ describe('runInstall — server warnings', () => {
         name: 'with-servers',
         version: '0.1.0',
         skills: { planning: { description: 'planning skill' } },
-        servers: { 'inline-server': '1.0.0' },
+        servers: { 'inline-server': { type: 'stdio', command: 'inline-mcp' } },
       }),
     )
     mkdirSync(join(fixture, 'skills/planning'), { recursive: true })
@@ -516,21 +521,34 @@ describe('runInstall — server warnings', () => {
       JSON.stringify({ facets: { 'with-servers': `./${fixture.split('/').pop()}` } }),
     )
 
-    const events: StageEvent[] = []
     const result = await runInstall({
       projectRoot,
       adapters: [buildFakeAdapter('test')],
-      onStage: (e) => events.push(e),
     })
     expect(result.ok).toBe(true)
-    if (!result.ok) expect.unreachable()
-    expect(result.serverWarnings).toHaveLength(1)
-    expect(result.serverWarnings[0]).toEqual({
-      facet: 'with-servers',
-      servers: ['inline-server'],
-    })
-    const warningEvent = events.find((e) => e.kind === 'server-warning')
-    expect(warningEvent).toBeDefined()
+  })
+
+  test('a speculative version-string reference fails validation', async () => {
+    const fixture = realpathSync(mkdtempSync(join(projectRoot, 'legacy-servers-')))
+    writeFileSync(
+      join(fixture, 'facet.json'),
+      JSON.stringify({
+        name: 'legacy-servers',
+        version: '0.1.0',
+        skills: { planning: { description: 'planning skill' } },
+        servers: { 'inline-server': '1.0.0' },
+      }),
+    )
+    mkdirSync(join(fixture, 'skills/planning'), { recursive: true })
+    writeFileSync(join(fixture, 'skills/planning/SKILL.md'), '# planning\n')
+
+    writeFileSync(
+      join(projectRoot, 'facets.json'),
+      JSON.stringify({ facets: { 'legacy-servers': `./${fixture.split('/').pop()}` } }),
+    )
+
+    const result = await runInstall({ projectRoot, adapters: [buildFakeAdapter('test')] })
+    expect(result.ok).toBe(false)
   })
 })
 

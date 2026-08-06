@@ -6,6 +6,7 @@ import {
   facetEntryOverrides,
   facetEntrySource,
   type LEGACY_PROJECT_MANIFEST_VERSION,
+  type PROJECT_MANIFEST_VERSION_0_1,
   type ProjectAssetOverride,
   type ProjectManifestParseFailure,
   parseProjectManifestDocument,
@@ -47,8 +48,20 @@ export interface NormalizedFacetEntry {
   overrides: FacetMaterializationOverrides | undefined
 }
 
-/** The exact schema a manifest's bytes validated under. */
-export type LoadedManifestVersion = typeof LEGACY_PROJECT_MANIFEST_VERSION | typeof CURRENT_PROJECT_MANIFEST_VERSION
+/**
+ * The exact schema a manifest's bytes validated under.
+ *
+ * Every readable version is a member, not just the one a normal write
+ * emits: this records what was READ. Migration is the difference between
+ * this value and {@link CURRENT_PROJECT_MANIFEST_VERSION}, so collapsing a
+ * readable-but-superseded version into the current tag would erase the only
+ * evidence that a document needs migrating — and would let frozen mode,
+ * which must never migrate, believe it had already read current bytes.
+ */
+export type LoadedManifestVersion =
+  | typeof LEGACY_PROJECT_MANIFEST_VERSION
+  | typeof PROJECT_MANIFEST_VERSION_0_1
+  | typeof CURRENT_PROJECT_MANIFEST_VERSION
 
 /**
  * The live comment-json document. Structurally typed rather than imported

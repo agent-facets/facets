@@ -60,7 +60,7 @@ describe('parseProjectManifest', () => {
 
   test('a current manifest normalizes compact and expanded entries uniformly', () => {
     const raw = JSON.stringify({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: {
         a: '1.*',
         b: {
@@ -87,7 +87,7 @@ describe('facet keys that collide with Object.prototype', () => {
   // JS source sets the prototype rather than creating a member, so a literal
   // could not express the document under test. `JSON.parse` DOES create an
   // own `__proto__` property, which is exactly why the key reaches us.
-  const raw = '{"manifestVersion":0.1,"facets":{"__proto__":"./vendor/x","constructor":"./vendor/y","ok":"1.*"}}'
+  const raw = '{"manifestVersion":0.2,"facets":{"__proto__":"./vendor/x","constructor":"./vendor/y","ok":"1.*"}}'
 
   test('an own __proto__ declaration survives normalization', () => {
     const result = parseProjectManifest(raw)
@@ -158,7 +158,7 @@ describe('applyDesiredFacets — document keys that collide with Object.prototyp
   }
 
   test('a __proto__ facet is written as an own member, not onto the prototype', () => {
-    const raw = '{"manifestVersion":0.1,"facets":{"__proto__":"./vendor/x","ok":"1.*"}}'
+    const raw = '{"manifestVersion":0.2,"facets":{"__proto__":"./vendor/x","ok":"1.*"}}'
     const parsed = parseProjectManifest(raw)
     if (!parsed.ok) expect.unreachable()
 
@@ -176,7 +176,7 @@ describe('applyDesiredFacets — document keys that collide with Object.prototyp
 
   test('a __proto__ override name is written as an own member', () => {
     const raw =
-      '{"manifestVersion":0.1,"facets":{"vendor":{"source":"./vendor/x","materialization":{"skills":{"other":{"kind":"omitted"}}}}}}'
+      '{"manifestVersion":0.2,"facets":{"vendor":{"source":"./vendor/x","materialization":{"skills":{"other":{"kind":"omitted"}}}}}}'
     const parsed = parseProjectManifest(raw)
     if (!parsed.ok) expect.unreachable()
 
@@ -197,7 +197,7 @@ describe('applyDesiredFacets — document keys that collide with Object.prototyp
   // entry still has to land, and its comments still have to survive when the
   // intent is unchanged.
   test('a constructor facet keeps its comments when nothing changed', () => {
-    const raw = '{"manifestVersion":0.1,"facets":{\n// keep me\n"constructor":"./vendor/y"}}'
+    const raw = '{"manifestVersion":0.2,"facets":{\n// keep me\n"constructor":"./vendor/y"}}'
     const parsed = parseProjectManifest(raw)
     if (!parsed.ok) expect.unreachable()
 
@@ -264,9 +264,9 @@ describe('countOverrides', () => {
 describe('emptyProjectManifest', () => {
   test('starts at the current format version with no facets', () => {
     const manifest = emptyProjectManifest()
-    expect(manifest.loadedVersion).toBe(0.1)
+    expect(manifest.loadedVersion).toBe(0.2)
     expect(manifest.facets).toEqual({})
-    expect(serializeProjectManifest(manifest.document)).toBe('{\n  "manifestVersion": 0.1,\n  "facets": {}\n}\n')
+    expect(serializeProjectManifest(manifest.document)).toBe('{\n  "manifestVersion": 0.2,\n  "facets": {}\n}\n')
   })
 })
 
@@ -290,7 +290,7 @@ describe('applyDesiredFacets — canonical form', () => {
   // one must collapse it rather than leave an empty object behind.
   test('an expanded entry collapses to a string when its last override is pruned', () => {
     const raw = JSON.stringify({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: { a: { source: '1.*', materialization: { skills: { review: { kind: 'omitted' } } } } },
     })
     const out = roundTrip(raw, { a: entry('1.*') })
@@ -311,19 +311,19 @@ describe('applyDesiredFacets — canonical form', () => {
 describe('applyDesiredFacets — version stamping', () => {
   test('a legacy document is stamped with the current version', () => {
     const out = roundTrip('{"facets":{"a":"1.*"}}', { a: entry('1.*') })
-    expect(JSON.parse(out).manifestVersion).toBe(0.1)
+    expect(JSON.parse(out).manifestVersion).toBe(0.2)
   })
 
   test('a current document keeps its version', () => {
-    const out = roundTrip('{"manifestVersion":0.1,"facets":{"a":"1.*"}}', { a: entry('1.*') })
-    expect(JSON.parse(out).manifestVersion).toBe(0.1)
+    const out = roundTrip('{"manifestVersion":0.2,"facets":{"a":"1.*"}}', { a: entry('1.*') })
+    expect(JSON.parse(out).manifestVersion).toBe(0.2)
   })
 })
 
 describe('applyDesiredFacets — source updates preserve overrides', () => {
   test('changing a source keeps the entry expanded with its overrides', () => {
     const raw = JSON.stringify({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: { a: { source: '1.*', materialization: { commands: { deploy: { kind: 'omitted' } } } } },
     })
     const out = roundTrip(raw, {
@@ -375,7 +375,7 @@ describe('applyDesiredFacets — comment preservation', () => {
       beta: entry('github:b/beta#main'),
     })
     expect(out).toContain('file header')
-    expect(JSON.parse(stripJsonComments(out)).manifestVersion).toBe(0.1)
+    expect(JSON.parse(stripJsonComments(out)).manifestVersion).toBe(0.2)
   })
 
   // Comments INSIDE a `materialization` block died on every routine install:
@@ -385,7 +385,7 @@ describe('applyDesiredFacets — comment preservation', () => {
   // "unchanged" — only comparing by value can.
   describe('nested materialization comments', () => {
     const annotated = `{
-  "manifestVersion": 0.1,
+  "manifestVersion": 0.2,
   "facets": {
     "alpha": {
       "source": "1.*",

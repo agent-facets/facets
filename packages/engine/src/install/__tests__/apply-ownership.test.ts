@@ -165,7 +165,7 @@ describe('apply — aliased assets materialize under the effective name', () => 
   test('an aliased skill lands under its alias with authored content and companions', async () => {
     const a = skillFixture('alpha', 'review', { companions: { 'refs/api.md': '# api\n' } })
     writeManifest({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: {
         alpha: { source: a, materialization: { skills: { review: { kind: 'aliased', as: 'vendor-review' } } } },
       },
@@ -212,7 +212,7 @@ describe('apply — aliased assets materialize under the effective name', () => 
   test('re-running an aliased install is a no-op, not a perpetual repair', async () => {
     const a = skillFixture('alpha', 'review', { companions: { 'refs/api.md': '# api\n' } })
     writeManifest({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: {
         alpha: { source: a, materialization: { skills: { review: { kind: 'aliased', as: 'vendor-review' } } } },
       },
@@ -244,7 +244,7 @@ describe('apply — global ownership reconciliation', () => {
     expect(existsSync(join(skillRoot('review'), 'SKILL.md'))).toBe(true)
 
     writeManifest({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: { beta: { source: b, materialization: { skills: { other: { kind: 'aliased', as: 'review' } } } } },
     })
     const result = await runInstall({ projectRoot, adapters: [adapter] })
@@ -307,7 +307,7 @@ describe('apply — global ownership reconciliation', () => {
   test('changing an alias deletes the old identity and writes the new one', async () => {
     const a = skillFixture('alpha', 'review', { companions: { 'refs/api.md': '# api\n' } })
     const aliased = (as: string) => ({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: { alpha: { source: a, materialization: { skills: { review: { kind: 'aliased', as } } } } },
     })
 
@@ -409,7 +409,7 @@ describe('apply — global ownership reconciliation', () => {
     expect(existsSync(join(skillRoot('review'), 'refs/api.md'))).toBe(true)
 
     writeManifest({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: { alpha: { source: a, materialization: { skills: { review: { kind: 'omitted' } } } } },
     })
     expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
@@ -438,7 +438,7 @@ describe('apply — global ownership reconciliation', () => {
     // Change beta's content so its write is not skipped as identical.
     writeFileSync(join(projectRoot, 'vendor/beta/skills/other/SKILL.md'), '# other v2\n')
     writeManifest({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: {
         alpha: { source: a, materialization: { skills: { review: { kind: 'omitted' } } } },
         beta: b,
@@ -808,7 +808,7 @@ describe('apply — global ownership reconciliation', () => {
   test('an aliased asset is removed offline from the receipt alone', async () => {
     const a = skillFixture('alpha', 'review', { companions: { 'refs/api.md': '# api\n' } })
     writeManifest({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: {
         alpha: { source: a, materialization: { skills: { review: { kind: 'aliased', as: 'vendor-review' } } } },
       },
@@ -849,7 +849,7 @@ describe('apply — frozen reproduction of recorded intent', () => {
   test('recorded dispositions reproduce without prompting or rewriting', async () => {
     const a = skillFixture('alpha', 'review', { companions: { 'refs/api.md': '# api\n' } })
     const { adapter, lock } = await seed({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: {
         alpha: { source: a, materialization: { skills: { review: { kind: 'aliased', as: 'vendor-review' } } } },
       },
@@ -878,7 +878,7 @@ describe('apply — frozen reproduction of recorded intent', () => {
     const { adapter, lock } = await seed({ facets: { alpha: a } })
 
     const manifestText = writeManifest({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: {
         alpha: { source: a, materialization: { skills: { review: { kind: 'aliased', as: 'vendor-review' } } } },
       },
@@ -905,7 +905,7 @@ describe('apply — frozen reproduction of recorded intent', () => {
     const { adapter, lock } = await seed({ facets: { alpha: a } })
 
     const manifestText = writeManifest({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: { alpha: { source: a, materialization: { skills: { gone: { kind: 'omitted' } } } } },
     })
     const result = await runInstall({ projectRoot, adapters: [adapter], frozenLockfile: true })
@@ -958,7 +958,7 @@ describe('apply — frozen reproduction of recorded intent', () => {
     const { adapter, lock } = await seed({ facets: { alpha: a, beta: b } })
 
     const manifestText = writeManifest({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: {
         alpha: a,
         beta: { source: b, materialization: { skills: { other: { kind: 'aliased', as: 'review' } } } },
@@ -1013,7 +1013,7 @@ describe('apply — frozen reproduction of recorded intent', () => {
     writeFileSync(join(projectRoot, 'facets.lock'), lock)
 
     const manifestText = writeManifest({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: {
         alpha: { source: a, materialization: { skills: { review: { kind: 'aliased', as: 'vendor-review' } } } },
       },
@@ -1127,7 +1127,7 @@ describe('remove — refinement only when local state agrees', () => {
     // is actually on disk.
     recordAliasInLockfile('beta', 'other', 'vendor-other')
     writeManifest({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: {
         alpha: a,
         beta: { source: b, materialization: { skills: { other: { kind: 'aliased', as: 'vendor-other' } } } },
@@ -1161,7 +1161,7 @@ describe('remove — refinement only when local state agrees', () => {
     // that identity are alpha's, and alpha is the facet being removed.
     recordAliasInLockfile('beta', 'other', 'review')
     writeManifest({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: {
         alpha: a,
         beta: { source: b, materialization: { skills: { other: { kind: 'aliased', as: 'review' } } } },

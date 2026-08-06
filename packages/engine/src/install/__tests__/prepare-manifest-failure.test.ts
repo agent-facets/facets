@@ -70,8 +70,8 @@ describe('prepare — unsupported manifestVersion', () => {
 describe('prepare — failures that really are about the document', () => {
   test.each([
     ['malformed JSON', '{ not json'],
-    ['a schema violation', JSON.stringify({ manifestVersion: 0.1, facets: { a: 1 } })],
-    ['duplicate members', '{"manifestVersion":0.1,"facets":{"a":"1.*","a":"2.*"}}'],
+    ['a schema violation', JSON.stringify({ manifestVersion: 0.2, facets: { a: 1 } })],
+    ['duplicate members', '{"manifestVersion":0.2,"facets":{"a":"1.*","a":"2.*"}}'],
   ])('add reports %s as a read failure', async (_label, text) => {
     writeManifest(text)
 

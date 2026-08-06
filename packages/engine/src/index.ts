@@ -209,7 +209,6 @@ export { assetIdentity } from './install/types.ts'
 // imports them directly from protocol; we don't re-export them here to
 // avoid two import paths for the same value.
 export { loadManifest, resolvePrompts } from './loaders/facet.ts'
-export { loadServerManifest } from './loaders/server.ts'
 // project manifest — the normalized view the install pipeline reasons about,
 // plus the comment-preserving document that is the only thing serialized.
 export type {

@@ -302,7 +302,7 @@ describe('compose — persisted intent', () => {
     const a = fixture('alpha', 'review')
     const b = fixture('beta', 'review')
     writeManifest({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: {
         alpha: a,
         beta: { source: b, materialization: { skills: { review: { kind: 'aliased', as: 'beta-review' } } } },
@@ -320,7 +320,7 @@ describe('compose — persisted intent', () => {
   test('an omitted asset is locked but never materialized', async () => {
     const a = fixture('alpha', 'review')
     writeManifest({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: { alpha: { source: a, materialization: { skills: { review: { kind: 'omitted' } } } } },
     })
     const { adapter, io } = recordingAdapter('rec')
@@ -344,7 +344,7 @@ describe('compose — persisted intent', () => {
   test('a stale override is reported but does not fail the install', async () => {
     const a = fixture('alpha', 'review')
     writeManifest({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: { alpha: { source: a, materialization: { skills: { gone: { kind: 'omitted' } } } } },
     })
     const { adapter } = recordingAdapter('rec')
@@ -376,7 +376,7 @@ describe('compose — persisting and pruning intent', () => {
     // Without this, the choice would live only in the lockfile: a teammate
     // cloning the repo would be prompted again for a decision already made.
     const manifest = JSON.parse(readManifest())
-    expect(manifest.manifestVersion).toBe(0.1)
+    expect(manifest.manifestVersion).toBe(0.2)
     expect(manifest.facets.beta).toEqual({
       source: b,
       materialization: { skills: { review: { kind: 'aliased', as: 'beta-review' } } },
@@ -402,7 +402,7 @@ describe('compose — persisting and pruning intent', () => {
   test('a successful install prunes a stale override and reports it', async () => {
     const a = fixture('alpha', 'review')
     writeManifest({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: {
         alpha: {
           source: a,
@@ -435,7 +435,7 @@ describe('compose — persisting and pruning intent', () => {
   test('pruning the last override collapses the entry back to a compact string', async () => {
     const a = fixture('alpha', 'review')
     writeManifest({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: { alpha: { source: a, materialization: { skills: { gone: { kind: 'omitted' } } } } },
     })
     const { adapter } = recordingAdapter('rec')
@@ -451,7 +451,7 @@ describe('compose — persisting and pruning intent', () => {
   test('a failed install leaves a stale override on disk', async () => {
     const a = fixture('alpha', 'review')
     const before = writeManifest({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: { alpha: { source: a, materialization: { skills: { gone: { kind: 'omitted' } } } } },
     })
 

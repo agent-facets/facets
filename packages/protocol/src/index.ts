@@ -112,8 +112,22 @@ export type {
   ProjectManifestParseFailure,
 } from './loaders/project-manifest.ts'
 export { parseProjectManifestDocument } from './loaders/project-manifest.ts'
-export { SERVER_MANIFEST_FILE, validateServerManifest } from './loaders/server.ts'
 export { findDuplicateJsonMembers, mapArkErrors, parseJson } from './loaders/validate.ts'
+// the domain-neutral effective-name core the asset and MCP planners share,
+// exported so another implementation of the specification can reproduce the
+// ordering, alias, and stale-intent contract exactly once.
+export type {
+  InvalidAliasName,
+  MaterializedName,
+  NameClaim,
+  NameContribution,
+  NameGroup,
+  OverrideGroups,
+  PlanEffectiveNamesResult,
+  PlannedName,
+  StaleName,
+} from './materialization/effective-name.ts'
+export { planEffectiveNames } from './materialization/effective-name.ts'
 // materialization identity — the canonical derivation of an asset's authored
 // archive paths and of the two keys that identify it while materializing:
 // the logical collision key (what may not coexist) and the concrete adapter
@@ -159,6 +173,28 @@ export type {
   StaleOverride,
 } from './materialization/planner.ts'
 export { overrideFor, overrideGroupKey, overridesForType, planMaterialization } from './materialization/planner.ts'
+// MCP server configuration planning — the same rule as asset planning, in a
+// separate identity space, with identical declarations composing instead of
+// colliding.
+export type {
+  AuthoredServer,
+  InvalidServerAlias,
+  McpServerIdentity,
+  PlannedServer,
+  PlannedServerConfiguration,
+  PlanServerMaterializationResult,
+  ServerClaimant,
+  ServerCollisionGroup,
+  ServerCollisionMember,
+  ServerContribution,
+  StaleServerOverride,
+} from './materialization/servers.ts'
+export { mcpServerKey, planServerMaterialization } from './materialization/servers.ts'
+// canonical MCP declaration fingerprint — the semantic identity the receipt
+// stores in place of the declaration, so prior approval can be proven without
+// recording a command, URL, or environment data.
+export type { McpServerFingerprint } from './mcp/fingerprint.ts'
+export { canonicalMcpServerEncoding, computeMcpServerFingerprint } from './mcp/fingerprint.ts'
 // deterministic ordering — one comparator for every artifact and report whose
 // order is part of its contract, so planner output, the removal-refinement
 // rebuild, and the lockfile writer cannot disagree.
@@ -242,14 +278,28 @@ export {
   ProjectAssetOverrideSchema,
   sameDisposition,
 } from './schemas/materialization.ts'
+// portable MCP server declarations — the closed tagged union a facet author
+// writes in `facet.json`. This schema and its inferred type are the single
+// source of truth for the shape; the Adapter SDK consumes the type directly
+// so a capability signature cannot drift from the published contract.
+export type { McpServerDeclaration, McpServerTransport } from './schemas/mcp-server.ts'
+export {
+  MCP_SERVER_TRANSPORTS,
+  McpServerDeclarationSchema,
+  validateMcpEnvironmentName,
+  validateMcpServerName,
+} from './schemas/mcp-server.ts'
 // project manifest (`facets.json`) — versioned schemas plus the accessors
 // read-only consumers use so a compact and an expanded entry are never
 // handled differently by accident.
 export type {
   CurrentProjectManifest,
   FacetMaterializationOverrides,
+  FacetMaterializationOverrides01,
   LegacyProjectManifest,
   ProjectFacetEntry,
+  ProjectFacetEntry01,
+  ProjectManifest01,
 } from './schemas/project-manifest.ts'
 export {
   CURRENT_PROJECT_MANIFEST_VERSION,
@@ -258,10 +308,11 @@ export {
   facetEntrySource,
   LEGACY_PROJECT_MANIFEST_VERSION,
   LegacyProjectManifestSchema,
+  PROJECT_MANIFEST_VERSION_0_1,
+  ProjectManifest01Schema,
+  SERVER_OVERRIDE_GROUP,
   SUPPORTED_PROJECT_MANIFEST_VERSIONS,
 } from './schemas/project-manifest.ts'
-export type { ServerManifest } from './schemas/server-manifest.ts'
-export { ServerManifestSchema } from './schemas/server-manifest.ts'
 // version-spec grammar (versions as they appear inside artifacts)
 export type { VersionSpec } from './sources/version-spec.ts'
 export { resolvesToLatest, satisfies } from './sources/version-spec.ts'

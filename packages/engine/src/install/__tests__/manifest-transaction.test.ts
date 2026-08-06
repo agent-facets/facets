@@ -199,7 +199,7 @@ describe('a facet key colliding with Object.prototype', () => {
     const a = buildFixture('alpha', '1.0.0')
     // Written as text: `{ __proto__: … }` in JS source sets the prototype
     // rather than creating a member.
-    const before = writeManifest(`{"manifestVersion":0.1,"facets":{"__proto__":${JSON.stringify(a)}}}`)
+    const before = writeManifest(`{"manifestVersion":0.2,"facets":{"__proto__":${JSON.stringify(a)}}}`)
 
     const result = await install()
     if (result.ok) expect.unreachable()
@@ -222,7 +222,7 @@ describe('legacy migration is transactional', () => {
     expect(result.ok).toBe(true)
 
     const written = parseManifest()
-    expect(written.manifestVersion).toBe(0.1)
+    expect(written.manifestVersion).toBe(0.2)
     expect(written.facets).toEqual({ alpha: a, beta: b })
   })
 
@@ -230,7 +230,7 @@ describe('legacy migration is transactional', () => {
     const a = buildFixture('alpha', '1.0.0')
     const result = await add(a)
     expect(result.ok).toBe(true)
-    expect(parseManifest().manifestVersion).toBe(0.1)
+    expect(parseManifest().manifestVersion).toBe(0.2)
   })
 
   // A failed operation must leave the file exactly as it was — not a
@@ -281,7 +281,7 @@ describe('malformed manifests fail before any mutation', () => {
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'FACETS_JSON_UNSUPPORTED_VERSION') expect.unreachable()
     expect(result.failure.observed).toBe(0.9)
-    expect(result.failure.supported).toEqual([0.1])
+    expect(result.failure.supported).toEqual([0.1, 0.2])
     expect(readManifest()).toBe(before)
   })
 
@@ -306,7 +306,7 @@ describe('expanded entries survive unrelated operations', () => {
     writeManifest(
       `${JSON.stringify(
         {
-          manifestVersion: 0.1,
+          manifestVersion: 0.2,
           facets: {
             alpha: {
               source: a,
@@ -391,7 +391,7 @@ describe('comments survive the real install pipeline', () => {
     expect(raw).toContain('file header')
     expect(raw).toContain('about alpha')
     expect(raw).toContain('about beta')
-    expect(parseManifest().manifestVersion).toBe(0.1)
+    expect(parseManifest().manifestVersion).toBe(0.2)
   })
 
   test('an add preserves comments on untouched entries', async () => {

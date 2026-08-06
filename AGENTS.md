@@ -40,7 +40,7 @@ would survive untouched — that's the test for what belongs here. See
 ```
 src/
 ├── schemas/        # Arktype schemas (facet, project, lockfile, build, server)
-├── loaders/        # Pure bytes-validators: validateFacetManifest, validateServerManifest, resolvePromptsFromMap
+├── loaders/        # Pure bytes-validators: validateFacetManifest, resolvePromptsFromMap
 ├── integrity/      # 3-check + 1-check verification, IntegrityResult types
 ├── build/          # Pure: detect-collisions, validate-content, validate-facets, content-hash, parseFacetArchive
 ├── sources/        # Just version-spec.ts (VersionSpec type + grammar + resolvesToLatest)

@@ -21,20 +21,20 @@
 
 ## 1. Protocol declarations and authored artifacts — Research
 
-- [ ] 1.1 Explore: Map the current facet-manifest, legacy-manifest, project-manifest, archive, build-validation, lockfile, and standalone-server schema paths and their test fixtures.
-- [ ] 1.2 Explore: Inspect the materialization planner and identity helpers to identify the smallest generic effective-name core that can serve assets and MCP servers without widening `AssetType`.
-- [ ] 1.3 Propose: Define the protocol implementation approach for the closed declaration union, environment-name validation, canonical fingerprint, exact version dispatch, and exported declaration type consumed by the Adapter SDK without a runtime dependency.
+- [x] 1.1 Explore: Map the current facet-manifest, legacy-manifest, project-manifest, archive, build-validation, lockfile, and standalone-server schema paths and their test fixtures.
+- [x] 1.2 Explore: Inspect the materialization planner and identity helpers to identify the smallest generic effective-name core that can serve assets and MCP servers without widening `AssetType`.
+- [x] 1.3 Propose: Define the protocol implementation approach for the closed declaration union, environment-name validation, canonical fingerprint, exact version dispatch, and exported declaration type consumed by the Adapter SDK without a runtime dependency.
 
 ## 2. Protocol declarations and authored artifacts — Implementation
 
-- [ ] 2.1 Implement: Add the portable stdio/Streamable HTTP declaration schema and exported type, including closed-arm validation, portable server/environment names, literal values, non-empty commands, and absolute HTTP(S) URLs.
-- [ ] 2.2 Implement: Replace current server references with concrete declarations, explicitly reject current version-string and `{ image }` forms, admit server-only facets, retain top-level extension tolerance, reject every legacy `servers` member without fallback, and preserve actionable field-path errors.
-- [ ] 2.3 Implement: Add the canonical declaration fingerprint with deterministic `sha256:` output, stable tagged encoding, ordered arguments, code-unit-sorted environment keys, omitted/empty normalization, and name independence.
-- [ ] 2.4 Implement: Advance the project manifest to `0.2` with a frozen `0.1` schema, closed `servers` alias/omit overrides, exact three-form dispatch, canonical compact entries, and duplicate-member protection.
-- [ ] 2.5 Implement: Extract a generic deterministic effective-name planning primitive and add separate MCP identity, plan, collision, invalid-alias, and stale-override wrappers while keeping asset domain types and `AssetType` unchanged.
-- [ ] 2.6 Implement: Remove standalone `server.json` schemas, loaders, exports, tests, and source-map references from protocol and engine surfaces.
-- [ ] 2.7 Implement: Extend build/archive/loader tests for declaration validation, prior-output preservation, non-execution, server-only archives, legacy rejection, unchanged lockfile `0.3`, empty asset lists, and declaration-integrity drift.
-- [ ] 2.8 Verify: Run focused common/protocol/engine-loader tests and type checks, then confirm the published protocol surface contains concrete declarations and no standalone server artifact API.
+- [x] 2.1 Implement: Add the portable stdio/Streamable HTTP declaration schema and exported type, including closed-arm validation, portable server/environment names, literal values, non-empty commands, and absolute HTTP(S) URLs.
+- [x] 2.2 Implement: Replace current server references with concrete declarations, explicitly reject current version-string and `{ image }` forms, admit server-only facets, retain top-level extension tolerance, reject every legacy `servers` member without fallback, and preserve actionable field-path errors.
+- [x] 2.3 Implement: Add the canonical declaration fingerprint with deterministic `sha256:` output, stable tagged encoding, ordered arguments, code-unit-sorted environment keys, omitted/empty normalization, and name independence.
+- [x] 2.4 Implement: Advance the project manifest to `0.2` with a frozen `0.1` schema, closed `servers` alias/omit overrides, exact three-form dispatch, canonical compact entries, and duplicate-member protection.
+- [x] 2.5 Implement: Extract a generic deterministic effective-name planning primitive and add separate MCP identity, plan, collision, invalid-alias, and stale-override wrappers while keeping asset domain types and `AssetType` unchanged.
+- [x] 2.6 Implement: Remove standalone `server.json` schemas, loaders, exports, tests, and source-map references from protocol and engine surfaces.
+- [x] 2.7 Implement: Extend build/archive/loader tests for declaration validation, prior-output preservation, non-execution, server-only archives, legacy rejection, unchanged lockfile `0.3`, empty asset lists, and declaration-integrity drift.
+- [x] 2.8 Verify: Run focused common/protocol/engine-loader tests and type checks, then confirm the published protocol surface contains concrete declarations and no standalone server artifact API.
 
 ## 3. Adapter SDK and compatibility window — Research
 
