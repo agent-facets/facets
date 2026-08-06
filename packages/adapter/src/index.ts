@@ -1,3 +1,10 @@
+/**
+ * Re-exported from `@agent-facets/common` (which the bundler inlines) so an
+ * adapter can satisfy the MCP capability's "one atomic update per document"
+ * requirement without hand-rolling tmp-then-rename or taking a dependency an
+ * adapter author would have to install separately.
+ */
+export { atomicWriteFileSync } from '@agent-facets/common'
 export type { AdapterApiVersion, AdapterApiVersionAssetsOnly } from './api-version.ts'
 export {
   ADAPTER_API_VERSION,
@@ -20,6 +27,8 @@ export {
   validateContainedRelativePath,
 } from './asset-fs.ts'
 export { defineAdapter } from './define-adapter.ts'
+export type { McpNativeMatch, ReconcileMcpServersInput } from './mcp-reconcile.ts'
+export { mcpDeclarationLiterals, mcpOutcomesRequireWrite, reconcileMcpServers } from './mcp-reconcile.ts'
 export type {
   ApplyMcpServersResult,
   McpServerCapability,

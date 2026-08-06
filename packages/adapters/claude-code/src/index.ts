@@ -15,6 +15,7 @@ import {
   type SkillBundlePaths,
 } from '@agent-facets/adapter'
 import { type } from 'arktype'
+import { claudeCodeMcpServers } from './mcp-servers.ts'
 
 /** Claude Code per-asset metadata schema */
 const ClaudeCodeMetadataSchema = type({
@@ -30,9 +31,7 @@ export default defineAdapter({
   name: 'claude-code',
   supportsInstall: true,
 
-  // Native MCP reconciliation lands in a later task of this change; declaring
-  // it explicitly is the point of the required field.
-  mcpServers: false,
+  mcpServers: claudeCodeMcpServers,
 
   buildAssetMetadata(data) {
     const result = ClaudeCodeMetadataSchema(data)

@@ -4,7 +4,7 @@
   "commit": false,
   "fixed": [],
   "linked": [],
-  "ignore": ["@agent-facets/engine", "@agent-facets/common"],
+  "ignore": ["@agent-facets/engine", "@agent-facets/common", "@agent-facets/adapter-test-kit"],
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",

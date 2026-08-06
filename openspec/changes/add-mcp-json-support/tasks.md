@@ -53,23 +53,23 @@
 
 ## 5. First-party native MCP adapters — Research
 
-- [ ] 5.1 Explore: Inspect Claude Code and OpenCode native JSON/JSONC schemas, project-file precedence, comment-preservation behavior, equality semantics, and package bundling constraints.
-- [ ] 5.2 Explore: Evaluate Codex TOML editing options against syntax-aware preservation, bundle size, trusted-project scope, and atomic-write requirements, and identify the comment-bearing round-trip proof the implementation must satisfy.
-- [ ] 5.3 Explore: Define a shared fixture matrix for absent, malformed, equivalent, divergent, tracked, untracked, unrelated-setting, native-extension, and no-op documents across all three adapters.
-- [ ] 5.4 Propose: Specify the common prepare/apply behavior and each adapter's native translation, project-only path, semantic-equality rules, safe extension preservation, and dependency/bundling approach.
+- [x] 5.1 Explore: Inspect Claude Code and OpenCode native JSON/JSONC schemas, project-file precedence, comment-preservation behavior, equality semantics, and package bundling constraints.
+- [x] 5.2 Explore: Evaluate Codex TOML editing options against syntax-aware preservation, bundle size, trusted-project scope, and atomic-write requirements, and identify the comment-bearing round-trip proof the implementation must satisfy.
+- [x] 5.3 Explore: Define a shared fixture matrix for absent, malformed, equivalent, divergent, tracked, untracked, unrelated-setting, native-extension, and no-op documents across all three adapters.
+- [x] 5.4 Propose: Specify the common prepare/apply behavior and each adapter's native translation, project-only path, semantic-equality rules, safe extension preservation, and dependency/bundling approach.
 
 ## 6. First-party native MCP adapters — Implementation
 
-- [ ] 6.1 Implement: Implement Claude Code batch prepare/apply for project `.mcp.json` and `mcpServers`, with read-only planning, native semantic equality, unrelated-state preservation, and atomic writes.
-- [ ] 6.2 Implement: Implement OpenCode batch prepare/apply using existing `opencode.jsonc` when present, otherwise existing `opencode.json`, otherwise creating `opencode.jsonc`; when both exist, treat JSONC as canonical and leave JSON unchanged; reconcile the selected document's `mcp` map with JSONC-aware preservation, native semantic equality, and atomic writes.
-- [ ] 6.3 Implement: Implement Codex batch prepare/apply for trusted-project `.codex/config.toml` and `mcp_servers` using the approved syntax-aware TOML strategy.
-- [ ] 6.4 Implement: Add per-adapter fixtures and tests for stdio/HTTP translation, project-only scope, complete occupancy outcomes, unowned-entry preservation, safe native extensions, parse failures, no-op adoption, atomic failure behavior, and absence of server execution/authentication.
-- [ ] 6.5 Verify: Build and run unit plus dist e2e checks for all first-party adapters, including API `0.2` metadata and bundled parser availability.
+- [x] 6.1 Implement: Implement Claude Code batch prepare/apply for project `.mcp.json` and `mcpServers`, with read-only planning, native semantic equality, unrelated-state preservation, and atomic writes.
+- [x] 6.2 Implement: Implement OpenCode batch prepare/apply using existing `opencode.jsonc` when present, otherwise existing `opencode.json`, otherwise creating `opencode.jsonc`; when both exist, treat JSONC as canonical and leave JSON unchanged; reconcile the selected document's `mcp` map with JSONC-aware preservation, native semantic equality, and atomic writes.
+- [x] 6.3 Implement: Implement Codex batch prepare/apply for trusted-project `.codex/config.toml` and `mcp_servers` using the approved syntax-aware TOML strategy.
+- [x] 6.4 Implement: Add per-adapter fixtures and tests for stdio/HTTP translation, project-only scope, complete occupancy outcomes, unowned-entry preservation, safe native extensions, parse failures, no-op adoption, atomic failure behavior, and absence of server execution/authentication.
+- [x] 6.5 Verify: Build and run unit plus dist e2e checks for all first-party adapters, including API `0.2` metadata and bundled parser availability.
 
 ## 7. Project intent, composition, and receipt ownership — Research
 
-- [ ] 7.1 Explore: Trace project-manifest mutation, stale-override pruning, collision composition, resolved-facet data, and frozen consistency paths that currently iterate only asset groups.
-- [ ] 7.2 Explore: Trace receipt exact dispatch, ownership indexes, tri-write receipt construction, corruption handling, and removal witnesses across receipt versions `1`, `0.2`, and `0.3`.
+- [x] 7.1 Explore: Trace project-manifest mutation, stale-override pruning, collision composition, resolved-facet data, and frozen consistency paths that currently iterate only asset groups.
+- [x] 7.2 Explore: Trace receipt exact dispatch, ownership indexes, tri-write receipt construction, corruption handling, and removal witnesses across receipt versions `1`, `0.2`, and `0.3`.
 - [ ] 7.3 Propose: Define tagged server-intent, composition, ownership, and witnessed/unwitnessed receipt models that preserve the unified desired-state/write and receipt-only/delete rule.
 
 ## 8. Project intent, composition, and receipt ownership — Implementation

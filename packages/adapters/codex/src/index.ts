@@ -21,6 +21,7 @@ import {
 } from '@agent-facets/adapter'
 import { type } from 'arktype'
 import { parse as parseToml, stringify as stringifyToml } from 'smol-toml'
+import { codexMcpServers } from './mcp-servers.ts'
 
 /**
  * Codex per-asset metadata schema.
@@ -68,9 +69,7 @@ export default defineAdapter({
   name: 'codex',
   supportsInstall: true,
 
-  // Native MCP reconciliation lands in a later task of this change; declaring
-  // it explicitly is the point of the required field.
-  mcpServers: false,
+  mcpServers: codexMcpServers,
 
   buildAssetMetadata(data) {
     const result = CodexMetadataSchema(data)
