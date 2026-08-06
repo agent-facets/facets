@@ -5,6 +5,59 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-07-31" description="agent-facets 0.30.0 ships collision resolution; receipt hardening; facet instructions refresh" tags={["CLI", "Improvement", "Fix"]} rss={{
+  title: "agent-facets 0.30.0 ships collision resolution; receipt hardening; facet instructions refresh",
+  description: "The cross-facet name collision resolution and asset aliasing work described in the 2026-07-27 entry is now published to npm as agent-facets@0.30.0 and @agent-facets/protocol@0.30.0 -- run facet self-update to pick it up. This release also hardens install-receipt behavior on the edges: an install that materializes assets but cannot write the receipt reports the assets it wrote as untracked instead of claiming a clean success, a receipt entry that fails validation is surfaced rather than silently replaced, and the removal-resolution report now names which gate sent facet remove down the ordinary (network-requiring) path so a failure naming a facet you are keeping is not a mystery. Ctrl-C is honored during facet remove: before anything is deleted nothing is written, and after deletion the deletes are rolled back rather than committed. Separately: facet instructions has been refreshed for the 0.29 and 0.30 CLIs. The default overview now opens with a generated index of every instruction topic (derived from a single typed topic registry, so it cannot drift), and the topic prompts now cover README and supplementary-file authoring, single-segment asset naming and the shared skill/command namespace, and adapter API 0.1 compatibility recovery."
+}}>
+  ## `agent-facets@0.30.0` on npm
+
+  The cross-facet name collision resolution and asset aliasing feature
+  described in the [2026-07-27 entry](#2026-07-27) is now published as
+  `agent-facets@0.30.0` and `@agent-facets/protocol@0.30.0`. Run
+  [`facet self-update`](/cli/self-update) to pick it up.
+
+  ## Install receipt hardening
+
+  The receipt is the record of what your machine actually materialized,
+  and is what authorizes [`facet remove`](/cli/remove) to delete a
+  file. A few edges that used to be silent are now reported:
+
+  - **Frozen install that cannot write the receipt.** Under
+    `--frozen-lockfile`, if `facet install` materializes every asset
+    but the receipt write fails, the run still succeeds — the locked
+    set it reproduced is intact — and it now says the assets it wrote
+    are untracked, instead of reporting a clean success.
+  - **Unusable receipt.** A receipt that exists but cannot be used
+    (unreadable, or recorded against a different project) is reported
+    instead of being silently replaced by a lockfile projection. A
+    single receipt entry that fails validation is reported the same
+    way, and the files it covered are left in place.
+  - **Removal-resolution report names the gate.** When `facet remove`
+    falls back from the offline fast-path to the ordinary pipeline
+    (which needs the network), the failure now names which gate sent
+    it down that path, so an error naming a facet you are **keeping**
+    is not a mystery.
+  - **Ctrl-C is honored during `facet remove`.** Before anything is
+    deleted, nothing is written; after deletion, the deletes are
+    rolled back rather than committed.
+
+  ## `facet instructions` refresh
+
+  [`facet instructions`](/cli/instructions) has been refreshed for the
+  0.29 and 0.30 CLIs.
+
+  - **Generated overview index.** The default overview now opens with
+    an index of every instruction topic. The index is generated from a
+    single typed topic registry, so it cannot drift from the topics
+    the command actually serves.
+  - **Updated topic prompts.** Topic content now covers `README.md`
+    and supplementary-file authoring, single-segment asset naming and
+    the shared skill/command namespace, and adapter API `0.1`
+    compatibility recovery.
+
+  See the [CLI reference](/cli) for the full command surface.
+</Update>
+
 <Update label="2026-07-27" description="Resolve name collisions between facets; manifest 0.1, lockfile 0.3, and asset aliasing" tags={["CLI", "Breaking", "New Feature"]} rss={{
   title: "Asset aliasing, omission, and cross-facet collision resolution",
   description: "Two facets can now publish an asset with the same name without one of them losing. facet add and facet install detect every cross-facet name collision before writing anything, and in a terminal they pause and let you keep, rename, or omit each contested asset. Your choices are saved into facets.json as a materialization block and replayed on every later install, so it happens once and your teammates get the same layout. Without a terminal -- CI, or piped output -- nothing is prompted: the install fails and prints every claimant with the exact facets.json edit to make, choosing no winner and inventing no name. Aliasing renames only the file on disk; archive paths, integrity hashes, and the lockfile keep the publisher's authored name, so an alias can never smuggle different content under a familiar name. Omitted assets are still resolved, verified, and recorded, they are simply not written. Breaking: facets.json now carries manifestVersion 0.1 and entries may be objects instead of strings, so any tool that reads it must handle both forms; facets.lock moves to 0.3 with a required materialization disposition on every asset. Both migrate automatically on the next successful install. A frozen install fails if the manifest declares overrides while facets.lock is still at 0.2, which has no field in which to record them -- run one normal install first. Commit is now three phases, Resolve-all then Compose then Apply, so nothing is written until the whole plan is known to be collision-free. Removing a facet is the exception: when your machine's install receipt already accounts for everything you are keeping, facet remove refines those lockfile entries in place instead of resolving them, so it still works with a cold cache and an unreachable registry. Breaking: only that receipt authorizes deletion now. facets.lock is shared state describing what should be installed, so it is never treated as proof that this machine wrote a file -- pull a teammate's lockfile onto a machine that never ran an install, remove the facet, and the declaration is dropped while the files stay exactly where they are. Run facet install first if you want the CLI to take ownership of them, and note that facet remove needs the network when a facet you are KEEPING is not covered by that receipt -- it materializes what stays before claiming it, and fails without deleting anything if the content is unreachable. Breaking: facet remove also decides what is declared under the project lock rather than from a read taken before it, so a request whose names all look undeclared still connects an adapter -- it opens the picker in a terminal and exits non-zero in CI instead of printing a no-op it never verified."
