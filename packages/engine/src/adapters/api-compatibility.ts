@@ -2,7 +2,7 @@
 // runtime graph stays free of the full SDK (yaml, asset-fs, common). This
 // also avoids a bun:test-runner cache collision between runtime-loaded SDK
 // sources and in-process `Bun.build` runs over the same files.
-import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
+import { ADAPTER_API_VERSION, ADAPTER_API_VERSION_ASSETS_ONLY } from '@agent-facets/adapter/api-version'
 
 /**
  * Pure adapter-API compatibility primitives.
@@ -16,12 +16,42 @@ import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
  */
 
 /**
- * The exact adapter APIs this CLI supports. Derived from the SDK's
- * canonical constant — the current API literal lives only in the SDK. A
- * later change MAY add further exact identifiers without changing how the
- * SDK stamps newly built adapters.
+ * The runtime object shape a supported adapter API requires.
+ *
+ * Not a version comparison: the token is opaque, and this says what the CLI
+ * must find on the imported object once it knows which contract that token
+ * names.
  */
-export const SUPPORTED_ADAPTER_APIS: readonly string[] = [ADAPTER_API_VERSION]
+export type AdapterContractShape = 'assets-only' | 'assets-and-mcp'
+
+/**
+ * Every adapter API this CLI supports, mapped to the runtime shape it
+ * promises.
+ *
+ * Support and shape-verifiability are the same fact, so they are one table
+ * rather than a set plus a parallel lookup that could disagree. A token this
+ * CLI accepts but has no shape check for is not representable.
+ */
+const ADAPTER_API_CONTRACTS: Readonly<Record<string, AdapterContractShape>> = {
+  [ADAPTER_API_VERSION_ASSETS_ONLY]: 'assets-only',
+  [ADAPTER_API_VERSION]: 'assets-and-mcp',
+}
+
+/**
+ * The exact adapter APIs this CLI supports — the compatibility window.
+ *
+ * This is the CLI's sole concrete declaration of what it accepts. Every
+ * check (verification, loading, listing, npm selection, package-versus-runtime
+ * agreement) and every diagnostic derives from it; no other module, prose
+ * string, or test restates the literals.
+ *
+ * The values come from the SDK so each token's literal appears in exactly one
+ * place. Membership is unordered: the array order is presentation only, and
+ * nothing may read it as precedence. Widening the set adds an acceptable
+ * token; it never changes what an existing token means, and it never weakens
+ * an exact-token equality check.
+ */
+export const SUPPORTED_ADAPTER_APIS: readonly string[] = Object.keys(ADAPTER_API_CONTRACTS)
 
 /**
  * Canonical adapter API syntax: `MAJOR.MINOR` in decimal with no sign,
@@ -42,7 +72,7 @@ export function isWellFormedAdapterApi(value: string): boolean {
  * string classifies as malformed.
  */
 export type ApiDeclarationClassification =
-  | { kind: 'supported'; api: string }
+  | { kind: 'supported'; api: string; contract: AdapterContractShape }
   | { kind: 'unsupported'; api: string }
   | { kind: 'malformed'; found: string }
   | { kind: 'missing' }
@@ -71,10 +101,13 @@ export function classifyApiDeclaration(declared: unknown): ApiDeclarationClassif
   if (!isWellFormedAdapterApi(declared)) {
     return { kind: 'malformed', found: declared }
   }
-  if (!SUPPORTED_ADAPTER_APIS.includes(declared)) {
+  // Membership *is* having a known contract shape — one lookup, so a token
+  // cannot be accepted without the CLI knowing what to verify on it.
+  const contract = ADAPTER_API_CONTRACTS[declared]
+  if (contract === undefined) {
     return { kind: 'unsupported', api: declared }
   }
-  return { kind: 'supported', api: declared }
+  return { kind: 'supported', api: declared, contract }
 }
 
 /**

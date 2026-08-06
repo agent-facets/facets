@@ -87,7 +87,7 @@ Adapter tooling — `facet adapter`
     facet adapter list                    List installed adapters.
     facet adapter remove <name>           Remove an installed adapter.
 
-  This CLI supports adapter API 0.1. An adapter that declares an older or
+  This CLI supports adapter API {{ADAPTER_API_SUPPORT_SET}}. An adapter that declares an older or
   unsupported API fails closed before any project files change. If `facet
   build`, `facet add`, or `facet install` reports an incompatible adapter:
     1. Run `facet adapter list` to see each adapter's API and status. Failing

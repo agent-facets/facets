@@ -38,18 +38,18 @@
 
 ## 3. Adapter SDK and compatibility window — Research
 
-- [ ] 3.1 Explore: Inspect Adapter SDK factory/types/build output and determine the zero-runtime type-import and declaration-bundling path from the protocol source of truth.
-- [ ] 3.2 Explore: Map engine adapter verification, loading, placement, npm selection, package/runtime agreement, diagnostics, and test helpers that currently assume one supported API token.
-- [ ] 3.3 Propose: Define the API `0.2` capability/result unions and the atomic rollout that keeps API `0.1` asset-only adapters usable while making `{0.1, 0.2}` the engine's sole concrete support-set declaration.
+- [x] 3.1 Explore: Inspect Adapter SDK factory/types/build output and determine the zero-runtime type-import and declaration-bundling path from the protocol source of truth.
+- [x] 3.2 Explore: Map engine adapter verification, loading, placement, npm selection, package/runtime agreement, diagnostics, and test helpers that currently assume one supported API token.
+- [x] 3.3 Propose: Define the API `0.2` capability/result unions and the atomic rollout that keeps API `0.1` asset-only adapters usable while making `{0.1, 0.2}` the engine's sole concrete support-set declaration.
 
 ## 4. Adapter SDK and compatibility window — Implementation
 
-- [ ] 4.1 Implement: Add the required `mcpServers: false | McpServerCapability` SDK field and complete batch prepare/apply request, outcome, opaque-plan, path-disclosure, and structured-failure types using the protocol declaration type directly.
-- [ ] 4.2 Implement: Update `defineAdapter` validation and exports so partial MCP capabilities are unrepresentable, author-supplied API identifiers remain ignored, and first-party definitions explicitly declare initial MCP support state.
-- [ ] 4.3 Implement: Atomically advance the SDK canonical API to `0.2` and widen the engine's authoritative exact support set to `{0.1, 0.2}` without range or ordering semantics.
-- [ ] 4.4 Implement: Make runtime shape verification API-aware: preserve the tagged asset contract for `0.1`, require the complete `mcpServers` field for `0.2`, and invoke no contract method before verification.
-- [ ] 4.5 Implement: Cover loading, listing, package/runtime mismatch, npm highest-compatible selection across both tokens, positional `0.0` rejection, and complete actionable diagnostics without duplicating the support-set literal.
-- [ ] 4.6 Verify: Run focused Adapter SDK, engine adapter-management, prepack, package-build, and dist e2e checks for both supported contracts.
+- [x] 4.1 Implement: Add the required `mcpServers: false | McpServerCapability` SDK field and complete batch prepare/apply request, outcome, opaque-plan, path-disclosure, and structured-failure types using the protocol declaration type directly.
+- [x] 4.2 Implement: Update `defineAdapter` validation and exports so partial MCP capabilities are unrepresentable, author-supplied API identifiers remain ignored, and first-party definitions explicitly declare initial MCP support state.
+- [x] 4.3 Implement: Atomically advance the SDK canonical API to `0.2` and widen the engine's authoritative exact support set to `{0.1, 0.2}` without range or ordering semantics.
+- [x] 4.4 Implement: Make runtime shape verification API-aware: preserve the tagged asset contract for `0.1`, require the complete `mcpServers` field for `0.2`, and invoke no contract method before verification.
+- [x] 4.5 Implement: Cover loading, listing, package/runtime mismatch, npm highest-compatible selection across both tokens, positional `0.0` rejection, and complete actionable diagnostics without duplicating the support-set literal.
+- [x] 4.6 Verify: Run focused Adapter SDK, engine adapter-management, prepack, package-build, and dist e2e checks for both supported contracts.
 
 ## 5. First-party native MCP adapters — Research
 

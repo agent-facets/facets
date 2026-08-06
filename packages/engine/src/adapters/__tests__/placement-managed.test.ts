@@ -54,6 +54,7 @@ async function makeBundle(name: string, opts: { apiVersion?: string; marker?: st
 export default {
   name: '${name}',
   apiVersion: '${api}',
+  mcpServers: false,
   buildAssetMetadata: () => ({ ok: true, data: {} }),
   installAsset: async () => undefined,
   readAsset: async () => ({ content: '' }),

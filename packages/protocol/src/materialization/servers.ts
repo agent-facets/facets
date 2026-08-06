@@ -4,7 +4,7 @@ import type {
   MaterializedDisposition,
   ProjectAssetOverride,
 } from '../schemas/materialization.ts'
-import type { McpServerDeclaration } from '../schemas/mcp-server.ts'
+import type { McpServerDeclaration } from '../schemas/mcp-server-declaration.ts'
 import type { FacetMaterializationOverrides } from '../schemas/project-manifest.ts'
 import { SERVER_OVERRIDE_GROUP } from '../schemas/project-manifest.ts'
 import { type MaterializedName, planEffectiveNames } from './effective-name.ts'

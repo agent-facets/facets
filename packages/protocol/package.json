@@ -11,7 +11,8 @@
     "dist"
   ],
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./mcp-declaration": "./src/schemas/mcp-server-declaration.ts"
   },
   "engines": {
     "node": ">=22"
@@ -44,6 +45,10 @@
       ".": {
         "import": "./dist/index.mjs",
         "types": "./dist/index.d.mts"
+      },
+      "./mcp-declaration": {
+        "import": "./dist/mcp-declaration.mjs",
+        "types": "./dist/mcp-declaration.d.mts"
       }
     }
   }

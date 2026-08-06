@@ -60,6 +60,7 @@ function recordingAdapter(opts: { failInstallOf?: ReadonlySet<string> } = {}): {
       name: 'rec',
       apiVersion: ADAPTER_API_VERSION,
       supportsInstall: true,
+      mcpServers: false,
       buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
       async installAsset(request) {
         io.push(`install:${request.assetType}:${request.name}`)

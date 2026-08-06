@@ -52,6 +52,7 @@ function path(type, name) {
 export default {
   name: '${name}',
   apiVersion: '${ADAPTER_API_VERSION}',
+  mcpServers: false,
   supportsInstall: true,
   buildAssetMetadata(data) { return { ok: true, data: data || {} } },
   async installAsset(req) {

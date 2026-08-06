@@ -1,5 +1,6 @@
 import type { AssetType, Scope, Validated, ValidationError } from '@agent-facets/common'
-import type { AdapterApiVersion } from './api-version.ts'
+import type { AdapterApiVersion, AdapterApiVersionAssetsOnly } from './api-version.ts'
+import type { McpServerCapability } from './mcp-servers.ts'
 
 /**
  * Opaque record type for adapter-specific asset metadata.
@@ -187,18 +188,9 @@ export type DeleteAssetResult =
  * prior bundle remains intact. Recovery from an interrupted process is
  * the caller's idempotent re-install, so operations must be convergent.
  */
-export interface Adapter {
+interface AdapterAssetContract {
   /** Unique adapter name (e.g., "opencode", "claude-code", "codex") */
   readonly name: string
-
-  /**
-   * The adapter API contract identifier this adapter implements.
-   *
-   * Stamped by `defineAdapter()` from the SDK's canonical
-   * `ADAPTER_API_VERSION` — adapter authors do not (and cannot) supply
-   * it; the factory's input type (`AdapterDefinition`) excludes it.
-   */
-  readonly apiVersion: AdapterApiVersion
 
   /**
    * When true, this adapter exposes real filesystem I/O (installAsset,
@@ -227,13 +219,68 @@ export interface Adapter {
 }
 
 /**
+ * An adapter published against the superseded asset-only contract.
+ *
+ * This SDK cannot produce one — `defineAdapter()` always stamps the current
+ * identifier. The type exists because such adapters are already published and
+ * remain loadable during the compatibility window, so consumers need a way to
+ * talk about them. It has no `mcpServers` member at all: a `0.1` adapter does
+ * not decline MCP support, it predates the question.
+ */
+export interface AssetOnlyAdapter extends AdapterAssetContract {
+  readonly apiVersion: AdapterApiVersionAssetsOnly
+}
+
+/**
+ * An adapter implementing the current contract: the tagged asset methods plus
+ * a stated MCP server capability.
+ */
+export interface McpCapableAdapter extends AdapterAssetContract {
+  /**
+   * The adapter API contract identifier this adapter implements.
+   *
+   * Stamped by `defineAdapter()` from the SDK's canonical
+   * `ADAPTER_API_VERSION` — adapter authors do not (and cannot) supply
+   * it; the factory's input type (`AdapterDefinition`) excludes it.
+   */
+  readonly apiVersion: AdapterApiVersion
+
+  /**
+   * Whether this adapter can reconcile MCP servers into its tool's native
+   * project configuration, and if so, how.
+   *
+   * Required, and deliberately one field rather than a boolean beside optional
+   * methods: a `supportsMcp: true` that could sit next to a missing `apply` is
+   * a representable lie. `false` is an explicit, unambiguous "this tool has no
+   * MCP configuration I can write" — it is not the same as "not implemented
+   * yet", and the CLI reports it as such when a project actually has servers.
+   *
+   * The capability is MCP-specific on purpose. A future project-configuration
+   * feature gets its own field with its own identity, composition, and consent
+   * rules rather than being bolted onto this one.
+   */
+  readonly mcpServers: false | McpServerCapability
+}
+
+/**
+ * Any adapter a current consumer may hold.
+ *
+ * Tagged by `apiVersion`, so "which contract is this?" is answered by an
+ * exhaustive switch rather than by probing for fields. Widening a support set
+ * to accept another contract means adding an arm here, which makes every
+ * consumer that must handle it fail to compile — the intended outcome.
+ */
+export type Adapter = AssetOnlyAdapter | McpCapableAdapter
+
+/**
  * The author-facing definition accepted by `defineAdapter()`.
  *
- * Identical to `Adapter` except the SDK-owned `apiVersion` field is
- * excluded — the factory stamps the canonical value, so an author cannot
- * declare a conflicting API identifier.
+ * Identical to the current adapter contract except the SDK-owned `apiVersion`
+ * field is excluded — the factory stamps the canonical value, so an author
+ * cannot declare a conflicting API identifier. There is no definition type for
+ * the superseded contract: this SDK only builds current adapters.
  */
-export type AdapterDefinition = Omit<Adapter, 'apiVersion'>
+export type AdapterDefinition = Omit<McpCapableAdapter, 'apiVersion'>
 
 // Re-export common types for convenience — SDK consumers don't need to install common
 export type { AssetType, Scope, Validated, ValidationError }

@@ -6,6 +6,7 @@ import type { Adapter } from '@agent-facets/adapter'
 import { ADAPTER_API_VERSION, deleteAssetFile, installAssetFile, readAssetFile } from '@agent-facets/adapter'
 import type { ResolvedFacetManifest } from '@agent-facets/protocol'
 import { adapterKey, type MaterializedAsset } from '@agent-facets/protocol'
+import { SUPPORTED_ADAPTER_APIS } from '../adapters/api-compatibility.ts'
 import type { PreviousOwnership } from '../install/commit/ownership.ts'
 import { InstallJournal } from '../install/journal.ts'
 import { materialize } from '../install/materialize.ts'
@@ -82,6 +83,7 @@ function buildRecordingAdapter(name: string): {
     name,
     apiVersion: ADAPTER_API_VERSION,
     supportsInstall: true,
+    mcpServers: false,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
     async installAsset(request) {
       calls.push({ name: request.name, metadata: request.metadata })
@@ -149,6 +151,7 @@ function buildSdkAdapter(name: string): {
     name,
     apiVersion: ADAPTER_API_VERSION,
     supportsInstall: true,
+    mcpServers: false,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
     async installAsset(request) {
       installCalls++
@@ -540,7 +543,7 @@ describe('materialize — adapter API invariant check', () => {
       kind: 'api-unsupported',
       adapter: 'future-adapter',
       found: '9.9',
-      supported: [ADAPTER_API_VERSION],
+      supported: SUPPORTED_ADAPTER_APIS,
     })
   })
 
@@ -585,7 +588,7 @@ describe('materialize — adapter API invariant check', () => {
       kind: 'api-unsupported',
       adapter: 'legacy-positional',
       found: '0.0',
-      supported: [ADAPTER_API_VERSION],
+      supported: SUPPORTED_ADAPTER_APIS,
     })
   })
 })
@@ -612,6 +615,7 @@ describe('materialize — journal undo surfaces structured adapter failures', ()
       name: 'flaky',
       apiVersion: ADAPTER_API_VERSION,
       supportsInstall: true,
+      mcpServers: false,
       buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
       async installAsset(request) {
         installCount++
@@ -670,6 +674,7 @@ describe('materialize — journal undo surfaces structured adapter failures', ()
       name: 'flaky',
       apiVersion: ADAPTER_API_VERSION,
       supportsInstall: true,
+      mcpServers: false,
       buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
       async installAsset(request) {
         installCount++

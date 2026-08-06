@@ -2,11 +2,12 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ADAPTER_API_VERSION, type Adapter, defineAdapter } from '@agent-facets/adapter'
+import { type Adapter, defineAdapter } from '@agent-facets/adapter'
 import type { FacetManifest } from '@agent-facets/protocol'
 import { computeContentHash, detectNamingCollisions, validateCompactFacets } from '@agent-facets/protocol'
 import dedent from 'dedent'
 import { parseTar, parseTarGzip } from 'nanotar'
+import { SUPPORTED_ADAPTER_APIS } from '../adapters/api-compatibility.ts'
 import { runBuildPipeline } from '../build/pipeline.ts'
 import { validateAdapterMetadata } from '../build/validate-adapters.ts'
 import { writeBuildOutput } from '../build/write-output.ts'
@@ -138,6 +139,7 @@ describe('detectNamingCollisions', () => {
 /** A mock adapter that accepts any data as valid metadata */
 const mockAdapter = defineAdapter({
   name: 'mock-adapter',
+  mcpServers: false,
   buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
   async installAsset() {
     return { ok: true as const, primaryPath: '/dev/null' }
@@ -153,6 +155,7 @@ const mockAdapter = defineAdapter({
 /** A mock adapter that rejects all metadata */
 const rejectingAdapter = defineAdapter({
   name: 'rejecting-adapter',
+  mcpServers: false,
   buildAssetMetadata: () => ({
     ok: false,
     errors: [{ path: 'tools', message: 'Invalid tools config', expected: 'Record<string, boolean>', actual: 'string' }],
@@ -489,6 +492,7 @@ describe('runBuildPipeline', () => {
 
     const mockAdapter = defineAdapter({
       name: 'mock-adapter',
+      mcpServers: false,
       buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
       async installAsset() {
         return { ok: true as const, primaryPath: '/dev/null' }
@@ -527,6 +531,7 @@ describe('runBuildPipeline', () => {
 
     const rejectingAdapter = defineAdapter({
       name: 'rejecting-adapter',
+      mcpServers: false,
       buildAssetMetadata: () => ({
         ok: false,
         errors: [
@@ -607,6 +612,7 @@ describe('runBuildPipeline', () => {
 
     const defaultingAdapter = defineAdapter({
       name: 'defaulting-adapter',
+      mcpServers: false,
       buildAssetMetadata: (data) => {
         const input = (data ?? {}) as { model?: string }
         // Adapter enriches metadata by injecting a default "model" field
@@ -1067,7 +1073,7 @@ describe('runBuildPipeline — adapter API preflight', () => {
     if (result.ok) expect.unreachable()
     if (result.kind !== 'adapter-incompatible') expect.unreachable()
     expect(result.failures).toEqual([
-      { kind: 'api-unsupported', adapter: 'future-adapter', found: '9.9', supported: [ADAPTER_API_VERSION] },
+      { kind: 'api-unsupported', adapter: 'future-adapter', found: '9.9', supported: SUPPORTED_ADAPTER_APIS },
     ])
     // The preflight fires before stage 1 — no stage ever started.
     expect(stages).toEqual([])
@@ -1096,7 +1102,7 @@ describe('runBuildPipeline — adapter API preflight', () => {
     if (result.ok) expect.unreachable()
     if (result.kind !== 'adapter-incompatible') expect.unreachable()
     expect(result.failures).toEqual([
-      { kind: 'api-unsupported', adapter: 'legacy-positional', found: '0.0', supported: [ADAPTER_API_VERSION] },
+      { kind: 'api-unsupported', adapter: 'legacy-positional', found: '0.0', supported: SUPPORTED_ADAPTER_APIS },
     ])
     expect(stages).toEqual([])
   })

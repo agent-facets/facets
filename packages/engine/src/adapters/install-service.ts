@@ -188,7 +188,7 @@ export async function installAdapter(
 
     opts.onProgress?.('placing', adapter.name)
     const placed = await placeAdapterManaged(adapter.name, located.bundlePath, {
-      apiVersion: located.verified.apiVersion,
+      apiVersion: located.verified.adapter.apiVersion,
       source,
     })
     if (!placed.ok) {

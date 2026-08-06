@@ -1,5 +1,6 @@
 import { type } from 'arktype'
 import { validateAssetNameSegment } from './asset-name.ts'
+import type { McpServerDeclaration } from './mcp-server-declaration.ts'
 
 /**
  * Portable MCP server declarations — the connection and launch information a
@@ -40,12 +41,6 @@ import { validateAssetNameSegment } from './asset-name.ts'
  * rather than any one platform's maximum.
  */
 const ENVIRONMENT_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
-
-/** The transports a portable declaration may use, in canonical order. */
-export const MCP_SERVER_TRANSPORTS = ['stdio', 'http'] as const
-
-/** A declared transport. */
-export type McpServerTransport = (typeof MCP_SERVER_TRANSPORTS)[number]
 
 /**
  * Validate one environment-variable name. Errors are data, not exceptions,
@@ -162,5 +157,20 @@ const HttpMcpServerDeclaration = type({
  */
 export const McpServerDeclarationSchema = StdioMcpServerDeclaration.or(HttpMcpServerDeclaration)
 
-/** Inferred type for a validated portable MCP server declaration. */
-export type McpServerDeclaration = typeof McpServerDeclarationSchema.infer
+/** True only when `A` and `B` are mutually assignable. */
+type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false
+
+/** Fails to compile unless its argument is exactly `true`. */
+type Assert<T extends true> = T
+
+/**
+ * Compile-time proof that the dependency-free `McpServerDeclaration` and the
+ * type `McpServerDeclarationSchema` actually infers describe the same shape.
+ * Adding an arm, field, or optionality to the schema without updating the type
+ * (or the reverse) makes this alias fail to compile — which is what makes the
+ * split into two files a mechanically checked restatement rather than a second
+ * definition free to drift.
+ */
+export type McpServerDeclarationSchemaAgreement = Assert<
+  Exact<McpServerDeclaration, typeof McpServerDeclarationSchema.infer>
+>

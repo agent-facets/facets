@@ -18,7 +18,8 @@
     "build": "tsdown",
     "prepack": "bun ../../scripts/prepack.ts",
     "postpack": "bun ../../scripts/postpack.ts",
-    "test": "bun test",
+    "test": "bun test --path-ignore-patterns '**/*.e2e.test.ts'",
+    "test:e2e": "bun run build && bun test src/__tests__/dist.e2e.test.ts",
     "types": "tsgo --noEmit"
   },
   "dependencies": {
@@ -26,6 +27,7 @@
   },
   "devDependencies": {
     "@agent-facets/common": "workspace:*",
+    "@agent-facets/protocol": "workspace:*",
     "tsdown": "^0.22.3",
     "typescript": "^6.0.3"
   },

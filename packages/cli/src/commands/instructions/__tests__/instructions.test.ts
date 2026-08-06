@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test'
+import { SUPPORTED_ADAPTER_APIS } from '@agent-facets/engine'
 import { FacetManifestSchema } from '@agent-facets/protocol'
 import {
   DEFAULT_TOPIC,
   INSTRUCTION_TOPICS,
   isInstructionTopic,
   promptFor,
+  renderAdapterApiSupportSet,
   renderTopicIndex,
   TOPICS,
 } from '../../../prompts/index.ts'
@@ -51,10 +53,20 @@ describe('topic index', () => {
     expect(overview.indexOf('Instruction topics')).toBeLessThan(overview.indexOf('AUTHORING a facet'))
   })
 
-  test('non-overview prompts are returned verbatim (no marker substitution)', () => {
+  test('no rendered prompt still carries an unsubstituted marker', () => {
+    // Weaker than "returned verbatim", which stopped being true once a
+    // second topic gained a generated value — but it tests the thing that
+    // actually matters: a marker must never reach a reader.
     for (const topic of INSTRUCTION_TOPICS) {
-      if (topic === 'overview') continue
-      expect(promptFor(topic)).toBe(TOPICS[topic].prompt)
+      expect(promptFor(topic)).not.toContain('{{')
+    }
+  })
+
+  test('prompts without markers are returned verbatim', () => {
+    for (const topic of INSTRUCTION_TOPICS) {
+      const raw = TOPICS[topic].prompt
+      if (raw.includes('{{')) continue
+      expect(promptFor(topic)).toBe(raw)
     }
   })
 })
@@ -77,9 +89,16 @@ describe('0.29 guidance is present in the prompts', () => {
     expect(manifest).toContain('--- JSON Schema (generated) ---')
   })
 
-  test('usage covers adapter API 0.1 recovery guidance', () => {
-    const usage = TOPICS.usage.prompt
-    expect(usage).toContain('adapter API 0.1')
+  test('usage covers adapter API recovery guidance for the whole support set', () => {
+    // Rendered, not raw: the support set is generated from engine's single
+    // declaration, so asserting the raw prompt would only prove a marker
+    // exists — and asserting a literal would be the duplication the marker
+    // was introduced to remove.
+    const usage = promptFor('usage')
+    expect(usage).toContain(`adapter API ${renderAdapterApiSupportSet()}`)
+    for (const api of SUPPORTED_ADAPTER_APIS) {
+      expect(usage).toContain(api)
+    }
     expect(usage).toContain('facet adapter list')
   })
 })

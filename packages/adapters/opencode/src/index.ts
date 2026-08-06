@@ -50,6 +50,10 @@ export default defineAdapter({
   name: 'opencode',
   supportsInstall: true,
 
+  // Native MCP reconciliation lands in a later task of this change; declaring
+  // it explicitly is the point of the required field.
+  mcpServers: false,
+
   buildAssetMetadata(data) {
     const result = OpenCodeMetadataSchema(data)
     if (result instanceof type.errors) {

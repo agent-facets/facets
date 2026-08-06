@@ -35,6 +35,7 @@ function recordingAdapter(name: string): { adapter: Adapter; io: string[] } {
       name,
       apiVersion: ADAPTER_API_VERSION,
       supportsInstall: true,
+      mcpServers: false,
       buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
       async installAsset(request) {
         io.push(`install:${request.assetType}:${request.name}`)
@@ -459,6 +460,7 @@ describe('compose — persisting and pruning intent', () => {
       name: 'failing',
       apiVersion: ADAPTER_API_VERSION,
       supportsInstall: true,
+      mcpServers: false,
       buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
       async installAsset() {
         return { ok: false, failure: { code: 'io-failed', operation: 'write', message: 'disk on fire' } }

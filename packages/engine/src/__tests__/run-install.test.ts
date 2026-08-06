@@ -61,6 +61,7 @@ function buildFakeAdapter(name: string): Adapter {
     name,
     apiVersion: ADAPTER_API_VERSION,
     supportsInstall: true,
+    mcpServers: false,
     buildAssetMetadata: (data) => ({
       ok: true,
       data: (data ?? {}) as Record<string, unknown>,
@@ -112,6 +113,7 @@ function buildNestedFakeAdapter(name: string): Adapter {
     name,
     apiVersion: ADAPTER_API_VERSION,
     supportsInstall: true,
+    mcpServers: false,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
     async installAsset(request) {
       const p = path(request.assetType, request.name)
@@ -151,6 +153,7 @@ function buildBrokenAdapter(name: string, throwOnCall: number): Adapter {
     name,
     apiVersion: ADAPTER_API_VERSION,
     supportsInstall: true,
+    mcpServers: false,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
     async installAsset(request) {
       calls += 1
@@ -193,6 +196,7 @@ function buildBadReadAdapter(name: string): Adapter {
     name,
     apiVersion: ADAPTER_API_VERSION,
     supportsInstall: true,
+    mcpServers: false,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
     async installAsset() {
       throw new Error('should not be reached: readAsset failed first')
@@ -1135,6 +1139,7 @@ describe('runInstall — multi-file skill materialization', () => {
       name,
       apiVersion: ADAPTER_API_VERSION,
       supportsInstall: true,
+      mcpServers: false,
       buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
       async installAsset(request) {
         if (request.assetType === 'skill') {

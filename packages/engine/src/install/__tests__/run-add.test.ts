@@ -97,6 +97,7 @@ function path(type, name) { return join(process.cwd(), '.${name}', type + 's', n
 export default {
   name: '${name}',
   apiVersion: '${ADAPTER_API_VERSION}',
+  mcpServers: false,
   supportsInstall: true,
   buildAssetMetadata(data) { return { ok: true, data: data || {} } },
   async installAsset(req) {

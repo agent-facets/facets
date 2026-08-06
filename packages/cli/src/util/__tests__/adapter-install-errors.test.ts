@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import type { AdapterCompatibilityFailure, AdapterInstallFailure, NpmVersionRequest } from '@agent-facets/engine'
+import {
+  type AdapterCompatibilityFailure,
+  type AdapterInstallFailure,
+  type NpmVersionRequest,
+  SUPPORTED_ADAPTER_APIS,
+} from '@agent-facets/engine'
 import {
   compatibilityFailureMessage,
   describeAdapterInstallFailure,
@@ -21,8 +26,8 @@ describe('compatibilityFailureMessage — per-adapter JSON error identity', () =
     // Substring-adjacent names ("code" ⊂ "claude-code") would mispair
     // under any .includes()-based matching; the per-failure renderer must not.
     const failures: AdapterCompatibilityFailure[] = [
-      { kind: 'api-missing', adapter: 'code', supported: ['0.1'] },
-      { kind: 'api-unsupported', adapter: 'claude-code', found: '9.9', supported: ['0.1'] },
+      { kind: 'api-missing', adapter: 'code', supported: SUPPORTED_ADAPTER_APIS },
+      { kind: 'api-unsupported', adapter: 'claude-code', found: '9.9', supported: SUPPORTED_ADAPTER_APIS },
     ]
     const rows = failures.map((failure) => ({
       message: compatibilityFailureMessage(failure),
@@ -34,6 +39,46 @@ describe('compatibilityFailureMessage — per-adapter JSON error identity', () =
     expect(rows[1]?.path).toBe('adapters.claude-code')
     expect(rows[1]?.message).toContain('adapter "claude-code"')
     expect(rows[1]?.message).toContain('9.9')
+  })
+})
+
+describe('describeCompatibilityFailure — the whole support set reaches the user', () => {
+  test('every supported API appears in an unsupported-adapter diagnostic', () => {
+    // A user staring at "supported: 0.2" when their 0.1 adapter would in
+    // fact have worked is being told to do unnecessary work.
+    const rendered = describeCompatibilityFailure({
+      kind: 'api-unsupported',
+      adapter: 'claude-code',
+      found: '0.0',
+      supported: SUPPORTED_ADAPTER_APIS,
+    })
+    for (const api of SUPPORTED_ADAPTER_APIS) {
+      expect(rendered.detail).toContain(api)
+    }
+  })
+
+  test('a multi-token set renders as a comma-separated list', () => {
+    expect(SUPPORTED_ADAPTER_APIS.length).toBeGreaterThan(1)
+    const rendered = describeCompatibilityFailure({
+      kind: 'api-missing',
+      adapter: 'nameless',
+      supported: SUPPORTED_ADAPTER_APIS,
+    })
+    expect(rendered.detail).toContain(SUPPORTED_ADAPTER_APIS.join(', '))
+  })
+
+  test('a metadata mismatch between two supported tokens still lists both', () => {
+    const [first, second] = SUPPORTED_ADAPTER_APIS
+    if (first === undefined || second === undefined) expect.unreachable()
+    const rendered = describeCompatibilityFailure({
+      kind: 'api-metadata-mismatch',
+      adapter: 'split-brain',
+      packageDeclared: first,
+      runtimeDeclared: second,
+      supported: SUPPORTED_ADAPTER_APIS,
+    })
+    expect(rendered.detail).toContain(first)
+    expect(rendered.detail).toContain(second)
   })
 })
 
@@ -52,7 +97,7 @@ function noCompatibleReleaseFailure(
         reason: 'no-compatible-release',
         packageName: 'pkg',
         request,
-        supported: ['0.1'],
+        supported: SUPPORTED_ADAPTER_APIS,
         ...(newestConsidered ? { newestConsidered } : {}),
       },
     },
@@ -119,7 +164,7 @@ describe('describeCompatibilityFailure — install target', () => {
       kind: 'api-unsupported',
       adapter: 'future-adapter',
       found: '9.9',
-      supported: ['0.1'],
+      supported: SUPPORTED_ADAPTER_APIS,
     })
     expect(described.fix).toContain('facet adapter install future-adapter')
   })
@@ -129,7 +174,7 @@ describe('describeCompatibilityFailure — install target', () => {
       {
         kind: 'api-missing',
         adapter: '/tmp/facet-adapter-verify-abc123/adapter.mjs',
-        supported: ['0.1'],
+        supported: SUPPORTED_ADAPTER_APIS,
       },
       'my-adapter',
     )
@@ -149,7 +194,7 @@ describe('describeAdapterInstallFailure — nameless bundle verify failure', () 
         bundlePath,
         // Nameless bundle: verification falls back to the bundle path
         // as the adapter identity.
-        failure: { kind: 'api-missing', adapter: bundlePath, supported: ['0.1'] },
+        failure: { kind: 'api-missing', adapter: bundlePath, supported: SUPPORTED_ADAPTER_APIS },
       },
     }
     const described = describeAdapterInstallFailure(failure)

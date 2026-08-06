@@ -266,6 +266,12 @@ function describeVerifyFailure(
         detail: failure.detail,
         fix: 'rebuild the adapter with the @agent-facets/adapter SDK factory (defineAdapter)',
       }
+    case 'invalid-capability':
+      return {
+        what: `adapter "${failure.adapter}" declares adapter API ${failure.api} but does not implement it`,
+        detail: failure.detail,
+        fix: 'declare "mcpServers" as false or a complete { prepare, apply } capability, then rebuild the adapter',
+      }
   }
 }
 

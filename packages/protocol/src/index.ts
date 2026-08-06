@@ -278,17 +278,19 @@ export {
   ProjectAssetOverrideSchema,
   sameDisposition,
 } from './schemas/materialization.ts'
-// portable MCP server declarations — the closed tagged union a facet author
-// writes in `facet.json`. This schema and its inferred type are the single
-// source of truth for the shape; the Adapter SDK consumes the type directly
-// so a capability signature cannot drift from the published contract.
-export type { McpServerDeclaration, McpServerTransport } from './schemas/mcp-server.ts'
 export {
-  MCP_SERVER_TRANSPORTS,
   McpServerDeclarationSchema,
   validateMcpEnvironmentName,
   validateMcpServerName,
 } from './schemas/mcp-server.ts'
+// portable MCP server declarations — the closed tagged union a facet author
+// writes in `facet.json`. The declaration type lives in its own
+// dependency-free module (also published as the `./mcp-declaration` subpath)
+// so the Adapter SDK can consume the authoritative contract without inheriting
+// arktype; `mcp-server.ts` holds the validating schema and a compile-time
+// assertion that the two agree.
+export type { McpServerDeclaration, McpServerTransport } from './schemas/mcp-server-declaration.ts'
+export { MCP_SERVER_TRANSPORTS } from './schemas/mcp-server-declaration.ts'
 // project manifest (`facets.json`) — versioned schemas plus the accessors
 // read-only consumers use so a compact and an expanded entry are never
 // handled differently by accident.

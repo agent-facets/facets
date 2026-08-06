@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { compareCodeUnits } from '../ordering.ts'
-import type { McpServerDeclaration } from '../schemas/mcp-server.ts'
+import type { McpServerDeclaration } from '../schemas/mcp-server-declaration.ts'
 
 /**
  * Canonical semantic fingerprint for a portable MCP server declaration.

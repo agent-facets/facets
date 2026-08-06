@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
 import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
 import type { CurrentBuildManifest, ProjectFacetEntry } from '@agent-facets/protocol'
+import { SUPPORTED_ADAPTER_APIS } from '../../adapters/api-compatibility.ts'
 
 /**
  * Tests for `runInstall`'s manifest-vs-lockfile reconciliation.
@@ -155,6 +156,7 @@ function path(type, name) { return join(process.cwd(), '.${name}', type + 's', n
 export default {
   name: '${name}',
   apiVersion: '${ADAPTER_API_VERSION}',
+  mcpServers: false,
   supportsInstall: true,
   buildAssetMetadata(data) { return { ok: true, data: data || {} } },
   async installAsset(req) {
@@ -615,7 +617,7 @@ describe('runInstall — ADAPTER_INCOMPATIBLE preflight', () => {
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'ADAPTER_INCOMPATIBLE') expect.unreachable()
     expect(result.failure.failures).toEqual([
-      { kind: 'api-unsupported', adapter: 'future-adapter', found: '9.9', supported: [ADAPTER_API_VERSION] },
+      { kind: 'api-unsupported', adapter: 'future-adapter', found: '9.9', supported: SUPPORTED_ADAPTER_APIS },
     ])
     expect(result.rollback.kind).toBe('not-needed')
 
@@ -651,7 +653,7 @@ describe('runInstall — ADAPTER_INCOMPATIBLE preflight', () => {
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'ADAPTER_INCOMPATIBLE') expect.unreachable()
     expect(result.failure.failures).toEqual([
-      { kind: 'api-unsupported', adapter: 'legacy-positional', found: '0.0', supported: [ADAPTER_API_VERSION] },
+      { kind: 'api-unsupported', adapter: 'legacy-positional', found: '0.0', supported: SUPPORTED_ADAPTER_APIS },
     ])
     expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(manifestBytes)
     expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)

@@ -1,3 +1,4 @@
+import { SUPPORTED_ADAPTER_APIS } from '@agent-facets/engine'
 import authoring from './authoring.txt' with { type: 'text' }
 import manifest from './manifest.txt' with { type: 'text' }
 import overview from './overview.txt' with { type: 'text' }
@@ -59,6 +60,22 @@ export function isInstructionTopic(value: string): value is InstructionTopic {
 export const OVERVIEW_INDEX_MARKER = '{{TOPIC_INDEX}}'
 
 /**
+ * The marker in `usage.txt` where the CLI's adapter API support set is
+ * injected. Generated for the same reason as the topic index: the window is
+ * declared once, in engine's `SUPPORTED_ADAPTER_APIS`, and prose that restated
+ * it would silently go stale the next time the set changes.
+ */
+export const ADAPTER_API_SUPPORT_SET_MARKER = '{{ADAPTER_API_SUPPORT_SET}}'
+
+/** Render the support set as prose: `0.1`, or `0.1 and 0.2`, or `a, b, and c`. */
+export function renderAdapterApiSupportSet(): string {
+  const apis = [...SUPPORTED_ADAPTER_APIS]
+  if (apis.length <= 1) return apis.join('')
+  if (apis.length === 2) return apis.join(' and ')
+  return `${apis.slice(0, -1).join(', ')}, and ${apis.at(-1)}`
+}
+
+/**
  * Render the topic index block injected into the overview. Each line is the
  * exact invocation an agent would run, padded to a shared column, followed by
  * the topic's summary — so the overview always advertises every topic the CLI
@@ -82,5 +99,6 @@ export function renderTopicIndex(): string {
 export function promptFor(topic: InstructionTopic): string {
   const body = TOPICS[topic].prompt
   if (topic === 'overview') return body.replace(OVERVIEW_INDEX_MARKER, renderTopicIndex())
+  if (topic === 'usage') return body.replace(ADAPTER_API_SUPPORT_SET_MARKER, renderAdapterApiSupportSet())
   return body
 }
