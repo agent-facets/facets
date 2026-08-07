@@ -303,6 +303,366 @@
         }
       ]
     },
+    "openspec": {
+      "source": {
+        "kind": "registry",
+        "registry": "https://api.agentfacets.io"
+      },
+      "version": "0.1.0",
+      "integrity": "sha256:86b5779cd013f1fefcb1466d79e6e01ce552ed2333bf5e41a8c5739c9a68d1c3",
+      "assets": [
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "openspec-apply-change",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "skills/openspec-apply-change/SKILL.md",
+              "integrity": "sha256:dad7cd96275faa6cfbc6d4c64bd53aaa58cecb8f0408a8e55324c4c7383ea3db"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "openspec-archive-change",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "skills/openspec-archive-change/SKILL.md",
+              "integrity": "sha256:862e5f65150f817a3b5dd373911bd1b1f75df75aacbf25d30dda387aa37840fe"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "openspec-bulk-archive-change",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "skills/openspec-bulk-archive-change/SKILL.md",
+              "integrity": "sha256:61a0e3f11658328fa463e4139a1caca91ae3a99900a7c020fc9126358a94e490"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "openspec-continue-change",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "skills/openspec-continue-change/SKILL.md",
+              "integrity": "sha256:2a05ea2e921c930aac895cf54f0db08cd956a4575c11cce085a7187451d8066c"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "openspec-explore",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "skills/openspec-explore/SKILL.md",
+              "integrity": "sha256:aa57a1e244bcf3c26b765d94e79961330e8b880f06959f48ba87967afe4d7107"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "openspec-ff-change",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "skills/openspec-ff-change/SKILL.md",
+              "integrity": "sha256:336b4df5446c2893da7acd7ee9b2d01b2a38a388c0fdbb4fe664f85cab488bb8"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "openspec-new-change",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "skills/openspec-new-change/SKILL.md",
+              "integrity": "sha256:1ccb6e5c123274511feb37292213ab8b9b708cea6a88e480824bfe2df16ee7f4"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "openspec-onboard",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "skills/openspec-onboard/SKILL.md",
+              "integrity": "sha256:f8ab0da46a6c60e323d422ce1aed0547f2395f18ec695054b08aea07a43442d9"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "openspec-propose",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "skills/openspec-propose/SKILL.md",
+              "integrity": "sha256:f7d2abb02d623ecdd13c27288e2d5f72b9676cb40d1b046ba76cdc5db278e521"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "openspec-sync-specs",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "skills/openspec-sync-specs/SKILL.md",
+              "integrity": "sha256:6793649c35b9c289a0d8395d4f42c221b08470d9d3fdda1a8892d7639b389072"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "openspec-update-change",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "skills/openspec-update-change/SKILL.md",
+              "integrity": "sha256:cbba8c14cd573a0d2eb327a16b70c8d7ec49eeff6b1df79f3b41075347618f26"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "openspec-verify-change",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "skills/openspec-verify-change/SKILL.md",
+              "integrity": "sha256:1746efaa1606fd23b887eeb7dca457c7a6240bcaa81cfe7c28c5e3ffc65e6e64"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "install-openspec",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "commands/install-openspec.md",
+              "integrity": "sha256:64510fbddad0ae6f284469b36102126de4276bb0613163d4b3177f7ed5f02d75"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "opsx-apply",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "commands/opsx-apply.md",
+              "integrity": "sha256:24b68c17470886b74c2ba889465540cf5216fb0cf537ac6c1639e46664ac1bf1"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "opsx-archive",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "commands/opsx-archive.md",
+              "integrity": "sha256:23a8531857fbfa9d8b1ee105ec7a975a176c14db02e48d113437a33c3598b589"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "opsx-bulk-archive",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "commands/opsx-bulk-archive.md",
+              "integrity": "sha256:a39a2225d0268cdd7677523c9f05a7400da058874f72fadad6b32bfc8cae2484"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "opsx-continue",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "commands/opsx-continue.md",
+              "integrity": "sha256:c11d3a8af1077b8d6ff424ec20c19829119441f14814f68ee399a94e673697da"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "opsx-explore",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "commands/opsx-explore.md",
+              "integrity": "sha256:44652b2e41c75f61beb6a68faa94ebd149364a04c341794fb36fca7ac49f4a29"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "opsx-ff",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "commands/opsx-ff.md",
+              "integrity": "sha256:f8a7b252bce9368b1e4b2b2b56c192ffd150b440104c69296232ed7b9834ea9c"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "opsx-new",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "commands/opsx-new.md",
+              "integrity": "sha256:71facd424ca0deba5d9cd98bb5910a518333779cb186180e3a00773f8826bd79"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "opsx-onboard",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "commands/opsx-onboard.md",
+              "integrity": "sha256:313787ed65e63bb96c65997199cbe2f852a4e56ceed20329e0bc46308149e933"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "opsx-propose",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "commands/opsx-propose.md",
+              "integrity": "sha256:830b9a3ce59fccd329c4bc5ef3f79cf5e25319c4f937e062d8ea36387d08f265"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "opsx-sync",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "commands/opsx-sync.md",
+              "integrity": "sha256:952ff62ed43dea37c006f57e0826aa44bcf1870928f0208cb615b914cc92d0a9"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "opsx-update",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "commands/opsx-update.md",
+              "integrity": "sha256:a224d901128007bea4047b29105ca04d23b89c79884e387d37dce60c78e1c2af"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "opsx-verify",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "commands/opsx-verify.md",
+              "integrity": "sha256:fe77ce349514f64272b91107559fe9270ff48fc6f87a01fd76f8b818d9f1c9ea"
+            }
+          ]
+        }
+      ]
+    },
     "viper-plans": {
       "source": {
         "kind": "registry",
