@@ -54,10 +54,6 @@ An adapter is a small TypeScript library. You write one file, build it, and inst
 
 When you run `facet install`, the CLI resolves each facet's assets and hands the ones the project wants materialized to every installed adapter. The adapter decides **where** on disk each asset goes and **how** it's formatted, so the target tool picks it up. That's the entire job: translate a facet asset into files your tool understands.
 
-<Warning>
-`request.name` is the asset's **effective** name — the name the consuming project chose, which is not necessarily the one the publisher declared. A project can [alias](/specification/materialization) any asset, so the same published skill may arrive as `planning` in one project and `team-planning` in another. Address the file by `request.name` and never re-derive it from a facet's manifest. Assets the project [omitted](/specification/materialization#dispositions) are never passed to you at all — their absence is a choice, not a bug.
-</Warning>
-
 An adapter implements a small contract from the SDK. Two methods matter most:
 
 - `buildAssetMetadata` validates the per-asset metadata an author put in `facet.json` (the `adapters.<name>` block) and enriches it with your defaults.
