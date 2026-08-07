@@ -1,0 +1,15 @@
+# Worktrunk project config. Hooks run on `wt switch --create`; the pipeline
+# form ([[pre-start]] blocks) runs each block in sequence.
+
+# mise keys trust by absolute path, so a freshly created worktree is always
+# untrusted and every `mise exec` below fails until this runs.
+[[pre-start]]
+trust = "mise trust"
+
+[[pre-start]]
+# .env.local is gitignored, so it never arrives with the checkout, but
+# .mise.development.toml loads it for AWS_PROFILE. Tolerate its absence:
+# teammates without one should still get a worktree.
+env = "if [ -f \"{{ primary_worktree_path }}/.env.local\" ]; then cp \"{{ primary_worktree_path }}/.env.local\" .env.local; fi"
+deps = "mise exec -- bun nuke"
+facets = "facet install"
