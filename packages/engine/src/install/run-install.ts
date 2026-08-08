@@ -4,10 +4,11 @@ import { CURRENT_LOCKFILE_VERSION, preserveLockfileExtensions } from '@agent-fac
 import { type AdapterCompatibilityFailure, compatibilityFailureFor } from '../adapters/api-compatibility.ts'
 import { FACETS_JSON_FILE, type NormalizedProjectManifest } from '../manifest/mutations.ts'
 import { loadProjectManifest, manifestLoadFailure } from '../manifest/project-files.ts'
+import { classifyOutcome, facetConfigurationWork, NO_CONFIGURATION_WORK } from './classify-outcome.ts'
 import { compose } from './commit/compose.ts'
 import { applyManifestWritePolicy, mergeDeltaIntoManifest } from './commit/delta.ts'
 import { removedFacetOutcomes } from './commit/drift-removal.ts'
-import { finalizeMaterializationIntent } from './commit/finalize-intent.ts'
+import { finalizeMaterializationIntent, type PrunedOverride } from './commit/finalize-intent.ts'
 import { installFacets } from './commit/install-loop.ts'
 import { buildPreviousOwnership, obsoleteOwnership } from './commit/ownership.ts'
 import { resolveAll } from './commit/resolve-all.ts'
@@ -26,12 +27,30 @@ import { deleteObsoleteAssets, type RetainedObsoleteBundle } from './materialize
 import { materializeFailureToRunInstall } from './materialize-failure.ts'
 import { applyMcpServers } from './mcp/apply.ts'
 import { deriveMcpConsent, type McpConsentPolicy, settleMcpConsent } from './mcp/consent.ts'
+import {
+  classifyMcpConfigurations,
+  classifyMcpDispositions,
+  type McpConfigurationOutcome,
+  type McpConsentOutcome,
+  type McpInstallOutcomes,
+  mcpIntentBaseline,
+  NO_MCP_OUTCOMES,
+  type PrunedServerIntent,
+  summarizeMcpConsentRequest,
+} from './mcp/outcomes.ts'
 import { prepareMcpServers } from './mcp/prepare.ts'
 import { ownEntry } from './own-entry.ts'
 import { receiptProjectPath, resolveProjectReceipt } from './receipt.ts'
 import { refineRemoval } from './remove/refine.ts'
 import { rollbackAndFail, summarize } from './run-install-support.ts'
-import type { InstallDelta, RunInstallFailure, RunInstallOptions, RunInstallResult, StageEvent } from './types.ts'
+import type {
+  FacetOutcome,
+  InstallDelta,
+  RunInstallFailure,
+  RunInstallOptions,
+  RunInstallResult,
+  StageEvent,
+} from './types.ts'
 
 /**
  * Run the install pipeline for a project — the commit orchestrator.
@@ -383,15 +402,29 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
           authoredName: entry.authoredName,
         })
       }
+
+      // Removal reconciles ownership without resolving anything, so it has no
+      // declarations to report a disposition for and no approval to record.
+      // What it does have is the native entries it just dropped.
+      const refinedOutcomes: McpInstallOutcomes = {
+        ...NO_MCP_OUTCOMES,
+        configurations: classifyMcpConfigurations({
+          configurations: [],
+          previousOwnership: refined.previousMcpOwnership,
+          prepared: refinedMcp.prepared,
+        }),
+        prunedIntent: prunedServerIntent(prunedIntent),
+      }
+      reportMcpConfigured(refinedOutcomes.configurations)
       onStage({ kind: 'install-complete', outcome: 'success' })
 
       const perFacetOutcomes = [...refined.outcomes, ...removed]
       return {
         ok: true,
         lockfile: newLockfile,
-        summary: summarize(perFacetOutcomes, 0, deletion.deleted),
+        summary: summarize(perFacetOutcomes, 0, deletion.deleted, refinedOutcomes),
         perFacet: perFacetOutcomes,
-        serverWarnings: [],
+        mcp: refinedOutcomes,
       }
     }
 
@@ -415,7 +448,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     if (!resolution.ok) {
       return failureNoMutation(resolution.failure)
     }
-    const { resolved, serverWarnings } = resolution.value
+    const { resolved } = resolution.value
 
     // 7. Compose the global plan. Still no journal and still nothing
     //    written: a collision, an invalid alias, or a cancelled resolution
@@ -483,6 +516,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       previousOwnership: previousMcpOwnership,
       prepared: preparedMcp.prepared,
     })
+    let mcpConsentOutcome: McpConsentOutcome = { kind: 'not-required' }
     if (consent.kind === 'required') {
       // Frozen mode reproduces recorded intent and must never collect a new
       // decision, not even from a human at a terminal. The CLI already
@@ -490,6 +524,8 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       // the collision resolver's own frozen guard.
       const policy: McpConsentPolicy =
         frozenLockfile && mcpConsent.kind === 'interactive' ? { kind: 'unavailable' } : mcpConsent
+      const summary = summarizeMcpConsentRequest(consent.request)
+      onStage({ kind: 'mcp-consent-required', request: summary })
       const settled = await settleMcpConsent(policy, consent.request)
       if (settled.kind === 'unavailable') {
         return failureNoMutation({ code: 'MCP_CONSENT_REQUIRED', request: consent.request })
@@ -501,8 +537,14 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
         return failureNoMutation({ code: 'ABORTED' })
       }
       if (settled.kind === 'declined') {
-        return failureNoMutation({ code: 'MCP_CONSENT_DECLINED' })
+        onStage({ kind: 'mcp-consent-declined' })
+        return failureNoMutation({ code: 'MCP_CONSENT_DECLINED', request: summary })
       }
+      // `preapproved` is the only arm that answers without asking, so it is
+      // the only one that can report an approval nobody read.
+      const via = policy.kind === 'preapproved' ? 'preapproved' : 'interactive'
+      onStage({ kind: 'mcp-consent-accepted', via })
+      mcpConsentOutcome = { kind: 'accepted', via, request: summary }
     }
 
     // 7. The first mutation is now imminent, so the rollback ledger opens
@@ -572,8 +614,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     if (!loop.ok) {
       return await rollbackAndFail(journal, loop.failure, onLog)
     }
-    const { newFacetEntries, perFacet, totalAssets } = loop.value
-    perFacet.push(...removedOutcomes)
+    const { newFacetEntries, assetWrites, totalAssets } = loop.value
 
     // 10. Apply every prepared native MCP plan, last of the mutations and
     //     immediately before the transaction commits. Each changed document
@@ -680,6 +721,44 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       })
     }
 
+    // Same rule for configuration outcomes: the reconciliation is not real
+    // until the tri-write above commits, so nothing is announced before it.
+    const mcp: McpInstallOutcomes = {
+      consent: mcpConsentOutcome,
+      dispositions: classifyMcpDispositions(plan.mcpServers.planned, mcpIntentBaseline(receiptState)),
+      configurations: classifyMcpConfigurations({
+        configurations: reconciledServerConfigurations,
+        previousOwnership: previousMcpOwnership,
+        prepared: preparedMcp.prepared,
+      }),
+      prunedIntent: prunedServerIntent(pruned),
+    }
+    reportMcpConfigured(mcp.configurations)
+
+    // Classified here rather than inside the write loop, because a facet's
+    // outcome is not knowable until its configuration has been reconciled
+    // too: a server-only facet writes no asset at all, and a declaration
+    // whose native entry had drifted is a repair the loop cannot see.
+    const configurationWork = facetConfigurationWork(mcp)
+    const perFacet: FacetOutcome[] = []
+    for (const record of resolved) {
+      // Composed entries are the authority on what was locked, including the
+      // dispositions this run applied. A facet the plan does not carry was
+      // never composed and so has nothing to classify.
+      const composedEntry = plan.facetEntries[record.facet]
+      if (composedEntry === undefined) continue
+      const outcome = classifyOutcome(
+        record.facet,
+        record.previousEntry,
+        composedEntry,
+        assetWrites.get(record.facet) ?? 0,
+        configurationWork.get(record.facet) ?? NO_CONFIGURATION_WORK,
+      )
+      perFacet.push(outcome)
+      onStage({ kind: 'facet-success', facet: record.facet, outcome })
+    }
+    perFacet.push(...removedOutcomes)
+
     onStage({ kind: 'install-complete', outcome: 'success' })
 
     return {
@@ -690,9 +769,9 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       lockfile: lockedSet.kind === 'write' ? lockedSet.newLockfile : previousLockfile,
       // `deletion.deleted` counts identities that actually existed on disk,
       // across every adapter — not a per-facet estimate multiplied out.
-      summary: summarize(perFacet, totalAssets, deletion.deleted),
+      summary: summarize(perFacet, totalAssets, deletion.deleted, mcp),
       perFacet,
-      serverWarnings,
+      mcp,
     }
   } finally {
     await installLock.release()
@@ -700,6 +779,19 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
 
   function noopStage(_event: StageEvent): void {}
   function noopLog(_build: () => string): void {}
+
+  /**
+   * The server half of what a successful commit pruned.
+   *
+   * Both domains prune through one pass over one override document, so the
+   * split happens here rather than by running the prune twice. Assets already
+   * have somewhere to be reported; servers did not until now.
+   */
+  function prunedServerIntent(pruned: readonly PrunedOverride[]): PrunedServerIntent[] {
+    return pruned
+      .filter((entry) => entry.contribution.kind === 'mcp-server')
+      .map((entry) => ({ facet: entry.facet, authoredName: entry.authoredName }))
+  }
 
   /**
    * Announce obsolete bundles whose cleanup was skipped because their primary
@@ -716,6 +808,18 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
         facets: bundle.facets,
         companionPaths: bundle.companionPaths,
       })
+    }
+  }
+
+  /**
+   * Announce every effective identity this operation reconciled, after the
+   * transaction has committed. Same rule as the retained-bundle and
+   * stale-override reports: until the tri-write succeeds, a configuration
+   * write is still a candidate for rollback.
+   */
+  function reportMcpConfigured(outcomes: readonly McpConfigurationOutcome[]): void {
+    for (const outcome of outcomes) {
+      onStage({ kind: 'mcp-configured', outcome })
     }
   }
 

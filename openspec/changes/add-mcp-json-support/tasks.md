@@ -103,16 +103,16 @@
 
 ## 11. Engine outcomes and obsolete warning path — Research
 
-- [ ] 11.1 Explore: Map stage events, install failures, facet classification, summaries, stale-intent reporting, and every `server-warning`/`serverWarnings` producer and consumer.
-- [ ] 11.2 Propose: Define structured MCP outcomes and aggregate result shapes that distinguish intent updates, native drift repair, semantic no-op, takeover, unsupported adapters, and text-asset counts without carrying declaration secrets.
+- [x] 11.1 Explore: Map stage events, install failures, facet classification, summaries, stale-intent reporting, and every `server-warning`/`serverWarnings` producer and consumer.
+- [x] 11.2 Propose: Define structured MCP outcomes and aggregate result shapes that distinguish intent updates, native drift repair, semantic no-op, takeover, unsupported adapters, and text-asset counts without carrying declaration secrets.
 
 ## 12. Engine outcomes and obsolete warning path — Implementation
 
-- [ ] 12.1 Implement: Add typed MCP consent, configuration, collision, takeover, stale-intent, and unsupported-adapter events/failures/results, with exhaustive switches and pure-data failure contracts.
-- [ ] 12.2 Implement: Extend facet classification and summaries so declaration/alias/omission changes are updated, native drift is repaired, semantic matches are unchanged, and server-only facets report configuration work with zero assets.
-- [ ] 12.3 Implement: Remove `server-warning`, `serverWarnings`, `serversDeclared`, warn-and-skip plumbing, and associated success-path tests now that obsolete references fail validation.
-- [ ] 12.4 Implement: Add focused outcome, summary, failure aggregation, stale-intent, and secret-redaction tests.
-- [ ] 12.5 Verify: Run focused engine outcome tests and type checks.
+- [x] 12.1 Implement: Add typed MCP consent, configuration, collision, takeover, stale-intent, and unsupported-adapter events/failures/results, with exhaustive switches and pure-data failure contracts.
+- [x] 12.2 Implement: Extend facet classification and summaries so declaration/alias/omission changes are updated, native drift is repaired, semantic matches are unchanged, and server-only facets report configuration work with zero assets.
+- [x] 12.3 Implement: Remove `server-warning`, `serverWarnings`, `serversDeclared`, warn-and-skip plumbing, and associated success-path tests now that obsolete references fail validation.
+- [x] 12.4 Implement: Add focused outcome, summary, failure aggregation, stale-intent, and secret-redaction tests.
+- [x] 12.5 Verify: Run focused engine outcome tests and type checks.
 
 ## 13. Collision resolution UI — Research
 

@@ -3,6 +3,8 @@ import type {
   CollisionResolution,
   CollisionResolutionRequest,
   CollisionResolver,
+  InstallSummary,
+  McpInstallOutcomes,
   RollbackOutcome,
   RunInstallFailure,
   RunInstallResult,
@@ -21,6 +23,20 @@ import {
   UNSUPPORTED_MANIFEST_VERSION_WHAT,
 } from '../util/unsupported-manifest-version.ts'
 import { visibleContentFrame, visibleTerminalText } from './helpers/terminal-output.ts'
+
+/** An operation with no MCP work at all, which is every fixture below. */
+const NO_MCP: McpInstallOutcomes = {
+  consent: { kind: 'not-required' },
+  dispositions: [],
+  configurations: [],
+  prunedIntent: [],
+}
+
+const NO_MCP_COUNTS: InstallSummary['mcp'] = {
+  configurations: { added: 0, updated: 0, repaired: 0, unchanged: 0, removed: 0 },
+  declarations: { aliased: 0, omitted: 0 },
+  takeovers: { accepted: 0 },
+}
 
 /**
  * Wait long enough for the view's `useEffect` chain to finish (run the
@@ -48,14 +64,18 @@ function makeFakeRun(
   }
 }
 
-/** A no-op successful run, for tests whose subject is a warning event. */
+/** A no-op successful run, for tests whose subject is an event rather than a result. */
 function emptySuccess(): RunInstallResult {
   return {
     ok: true,
     lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
-    summary: { installed: 0, updated: 0, repaired: 0, unchanged: 0, removed: 0, totalAssets: 0, removedAssets: 0 },
+    summary: {
+      facets: { installed: 0, updated: 0, repaired: 0, unchanged: 0, removed: 0 },
+      textAssets: { written: 0, removed: 0 },
+      mcp: NO_MCP_COUNTS,
+    },
     perFacet: [],
-    serverWarnings: [],
+    mcp: NO_MCP,
   }
 }
 
@@ -72,52 +92,40 @@ const successResultSingle: RunInstallResult = {
   ok: true,
   lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
   summary: {
-    installed: 1,
-    updated: 0,
-    repaired: 0,
-    unchanged: 0,
-    removed: 0,
-    totalAssets: 3,
-    removedAssets: 0,
+    facets: { installed: 1, updated: 0, repaired: 0, unchanged: 0, removed: 0 },
+    textAssets: { written: 3, removed: 0 },
+    mcp: NO_MCP_COUNTS,
   },
   perFacet: [{ kind: 'installed', name: 'viper-plans', version: '1.2.3' }],
-  serverWarnings: [],
+  mcp: NO_MCP,
 }
 
 const successResultMulti: RunInstallResult = {
   ok: true,
   lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
   summary: {
-    installed: 2,
-    updated: 1,
-    repaired: 0,
-    unchanged: 0,
-    removed: 0,
-    totalAssets: 9,
-    removedAssets: 0,
+    facets: { installed: 2, updated: 1, repaired: 0, unchanged: 0, removed: 0 },
+    textAssets: { written: 9, removed: 0 },
+    mcp: NO_MCP_COUNTS,
   },
   perFacet: [
     { kind: 'installed', name: 'viper-plans', version: '1.2.3' },
     { kind: 'installed', name: 'rezi', version: '0.5.0' },
     { kind: 'updated', name: 'planner', oldVersion: '1.0.0', newVersion: '2.0.0' },
   ],
-  serverWarnings: [],
+  mcp: NO_MCP,
 }
 
 const successResultNoOp: RunInstallResult = {
   ok: true,
   lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
   summary: {
-    installed: 0,
-    updated: 0,
-    repaired: 0,
-    unchanged: 0,
-    removed: 0,
-    totalAssets: 0,
-    removedAssets: 0,
+    facets: { installed: 0, updated: 0, repaired: 0, unchanged: 0, removed: 0 },
+    textAssets: { written: 0, removed: 0 },
+    mcp: NO_MCP_COUNTS,
   },
   perFacet: [],
-  serverWarnings: [],
+  mcp: NO_MCP,
 }
 
 describe('InstallView — single-facet success', () => {
@@ -186,42 +194,6 @@ describe('InstallView — multi-facet success with update', () => {
   })
 })
 
-describe('InstallView — server warnings', () => {
-  test('renders a warning line when servers are declared', async () => {
-    const events: StageEvent[] = [
-      { kind: 'install-start', totalFacets: 1 },
-      { kind: 'facet-start', facet: 'with-servers', specifier: './fixture' },
-      {
-        kind: 'server-warning',
-        facet: 'with-servers',
-        servers: ['inline-server', 'remote-server'],
-      },
-      {
-        kind: 'facet-success',
-        facet: 'with-servers',
-        outcome: { kind: 'installed', name: 'with-servers', version: '0.1.0' },
-      },
-      { kind: 'install-complete', outcome: 'success' },
-    ]
-    const instance = render(
-      createElement(InstallView, {
-        mode: 'add',
-        run: makeFakeRun(events, successResultSingle),
-      }),
-    )
-    await settle()
-    const frame = visibleContentFrame(instance.frames)
-    expect(frame).toContain('with-servers')
-    expect(frame).toContain('2 servers declared')
-    expect(frame).toContain('inline-server')
-    expect(frame).toContain('remote-server')
-    // Ink wraps the warning message across lines in the test terminal width,
-    // so we check for a substring that survives wrapping.
-    expect(frame).toContain('not yet')
-    instance.unmount()
-  })
-})
-
 describe('InstallView — drift removal', () => {
   test('renders a removal line when a facet is dropped from facets.json', async () => {
     const events: StageEvent[] = [
@@ -233,16 +205,12 @@ describe('InstallView — drift removal', () => {
       ok: true,
       lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
       summary: {
-        installed: 0,
-        updated: 0,
-        repaired: 0,
-        unchanged: 0,
-        removed: 1,
-        totalAssets: 0,
-        removedAssets: 2,
+        facets: { installed: 0, updated: 0, repaired: 0, unchanged: 0, removed: 1 },
+        textAssets: { written: 0, removed: 2 },
+        mcp: NO_MCP_COUNTS,
       },
       perFacet: [{ kind: 'removed', name: 'orphan', oldVersion: '1.0.0' }],
-      serverWarnings: [],
+      mcp: NO_MCP,
     }
     const instance = render(
       createElement(InstallView, {
@@ -267,16 +235,12 @@ describe('InstallView — drift removal', () => {
       ok: true,
       lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
       summary: {
-        installed: 0,
-        updated: 0,
-        repaired: 0,
-        unchanged: 0,
-        removed: 1,
-        totalAssets: 0,
-        removedAssets: 0,
+        facets: { installed: 0, updated: 0, repaired: 0, unchanged: 0, removed: 1 },
+        textAssets: { written: 0, removed: 0 },
+        mcp: NO_MCP_COUNTS,
       },
       perFacet: [{ kind: 'removed-untracked', name: 'orphan', oldVersion: '1.0.0' }],
-      serverWarnings: [],
+      mcp: NO_MCP,
     }
     const instance = render(createElement(InstallView, { mode: 'remove', run: makeFakeRun(events, result) }))
     await settle()
@@ -302,16 +266,12 @@ describe('InstallView — drift removal', () => {
       ok: true,
       lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
       summary: {
-        installed: 0,
-        updated: 0,
-        repaired: 0,
-        unchanged: 0,
-        removed: 0,
-        totalAssets: 0,
-        removedAssets: 0,
+        facets: { installed: 0, updated: 0, repaired: 0, unchanged: 0, removed: 0 },
+        textAssets: { written: 0, removed: 0 },
+        mcp: NO_MCP_COUNTS,
       },
       perFacet: [],
-      serverWarnings: [],
+      mcp: NO_MCP,
     }
     const instance = render(createElement(InstallView, { mode: 'install', run: makeFakeRun(events, result) }))
     await settle()
@@ -500,16 +460,12 @@ describe('InstallView — marketing aesthetic on `add`', () => {
         },
       },
       summary: {
-        installed: 1,
-        updated: 0,
-        repaired: 0,
-        unchanged: 0,
-        removed: 0,
-        totalAssets: 2,
-        removedAssets: 0,
+        facets: { installed: 1, updated: 0, repaired: 0, unchanged: 0, removed: 0 },
+        textAssets: { written: 2, removed: 0 },
+        mcp: NO_MCP_COUNTS,
       },
       perFacet: [{ kind: 'installed', name: 'cowsay', version: '0.1.0' }],
-      serverWarnings: [],
+      mcp: NO_MCP,
     }
     const instance = render(
       createElement(InstallView, {
@@ -559,16 +515,12 @@ describe('InstallView — marketing aesthetic on `add`', () => {
         },
       },
       summary: {
-        installed: 1,
-        updated: 0,
-        repaired: 0,
-        unchanged: 0,
-        removed: 0,
-        totalAssets: 1,
-        removedAssets: 0,
+        facets: { installed: 1, updated: 0, repaired: 0, unchanged: 0, removed: 0 },
+        textAssets: { written: 1, removed: 0 },
+        mcp: NO_MCP_COUNTS,
       },
       perFacet: [{ kind: 'installed', name: 'pure-skills', version: '1.0.0' }],
-      serverWarnings: [],
+      mcp: NO_MCP,
     }
     const instance = render(
       createElement(InstallView, {
@@ -649,20 +601,16 @@ describe('InstallView — marketing aesthetic on `add`', () => {
         },
       },
       summary: {
-        installed: 1,
-        updated: 0,
-        repaired: 0,
-        unchanged: 1,
-        removed: 0,
-        totalAssets: 1,
-        removedAssets: 0,
+        facets: { installed: 1, updated: 0, repaired: 0, unchanged: 1, removed: 0 },
+        textAssets: { written: 1, removed: 0 },
+        mcp: NO_MCP_COUNTS,
       },
       perFacet: [
         { kind: 'installed', name: 'cowsay', version: '0.1.0' },
         // pre-existing — `unchanged` must NOT contribute to the bundle viz
         { kind: 'unchanged', name: 'existing-skill', version: '1.0.0' },
       ],
-      serverWarnings: [],
+      mcp: NO_MCP,
     }
     const instance = render(
       createElement(InstallView, {
@@ -713,16 +661,12 @@ describe('InstallView — marketing aesthetic on `add`', () => {
         },
       },
       summary: {
-        installed: 1,
-        updated: 0,
-        repaired: 0,
-        unchanged: 0,
-        removed: 0,
-        totalAssets: 1,
-        removedAssets: 0,
+        facets: { installed: 1, updated: 0, repaired: 0, unchanged: 0, removed: 0 },
+        textAssets: { written: 1, removed: 0 },
+        mcp: NO_MCP_COUNTS,
       },
       perFacet: [{ kind: 'installed', name: 'cowsay', version: '0.1.0' }],
-      serverWarnings: [],
+      mcp: NO_MCP,
     }
     const instance = render(
       createElement(InstallView, {
@@ -1309,9 +1253,13 @@ describe('InstallView — materialization reporting', () => {
         },
       },
     },
-    summary: { installed: 1, updated: 0, repaired: 0, unchanged: 0, removed: 0, totalAssets: 1, removedAssets: 0 },
+    summary: {
+      facets: { installed: 1, updated: 0, repaired: 0, unchanged: 0, removed: 0 },
+      textAssets: { written: 1, removed: 0 },
+      mcp: NO_MCP_COUNTS,
+    },
     perFacet: [{ kind: 'installed', name: 'alpha', version: '1.0.0' }],
-    serverWarnings: [],
+    mcp: NO_MCP,
   }
 
   test('shows the authored name beside the effective name, and marks omissions', async () => {
@@ -1387,9 +1335,13 @@ describe('InstallView — disposition-only change', () => {
     const result: RunInstallResult = {
       ok: true,
       lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
-      summary: { installed: 0, updated: 1, repaired: 0, unchanged: 0, removed: 0, totalAssets: 1, removedAssets: 0 },
+      summary: {
+        facets: { installed: 0, updated: 1, repaired: 0, unchanged: 0, removed: 0 },
+        textAssets: { written: 1, removed: 0 },
+        mcp: NO_MCP_COUNTS,
+      },
       perFacet: [{ kind: 'updated', name: 'alpha', oldVersion: '1.0.0', newVersion: '1.0.0' }],
-      serverWarnings: [],
+      mcp: NO_MCP,
     }
     const instance = render(
       createElement(InstallView, {

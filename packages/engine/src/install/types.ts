@@ -16,6 +16,7 @@ import type { ParseError, Source } from '../sources/facet/types.ts'
 import type { AssetTakeoverResolver } from './asset-takeover.ts'
 import type { CollisionResolver } from './commit/compose.ts'
 import type { McpConsentPolicy, McpConsentRequest } from './mcp/consent.ts'
+import type { McpConfigurationOutcome, McpConsentRequestSummary, McpInstallOutcomes } from './mcp/outcomes.ts'
 import type { McpContractViolation } from './mcp/prepare.ts'
 
 /**
@@ -139,16 +140,54 @@ export type FacetOutcome =
 
 /**
  * Aggregate counts for the post-install summary line.
+ *
+ * Grouped by domain rather than flattened. Text assets and MCP configurations
+ * are different work in different places, and a flat shape made one of them
+ * the default: `totalAssets` beside the facet counts read as "everything this
+ * run did", so a facet that configured three servers and wrote no file
+ * summarized as nothing happening. Naming the domain forces every reader to
+ * say which one it means.
  */
 export interface InstallSummary {
-  installed: number
-  updated: number
-  repaired: number
-  unchanged: number
-  removed: number
-  /** Assets actually written across all facets (excludes skipped no-ops). */
-  totalAssets: number
-  removedAssets: number
+  /** Per-facet outcomes, counted by kind. `removed` includes untracked removals. */
+  facets: {
+    installed: number
+    updated: number
+    repaired: number
+    unchanged: number
+    removed: number
+  }
+  /**
+   * Files. Counted per adapter and asset, so one skill across three adapters
+   * is three writes — the same unit the adapters actually worked in.
+   */
+  textAssets: {
+    /** Assets actually written (excludes skipped no-ops). */
+    written: number
+    removed: number
+  }
+  mcp: {
+    /**
+     * Native reconciliation, counted per adapter and effective identity —
+     * the same unit as {@link textAssets}, for the same reason.
+     */
+    configurations: {
+      added: number
+      updated: number
+      repaired: number
+      unchanged: number
+      removed: number
+    }
+    /** Authored declarations by disposition. Counted once, not per adapter. */
+    declarations: {
+      aliased: number
+      omitted: number
+    }
+    /** Untracked native entries this run adopted or replaced with approval. */
+    takeovers: {
+      accepted: number
+    }
+  }
 }
 
 /**
@@ -189,7 +228,6 @@ export type StageEvent =
   | { kind: 'facet-stage'; facet: string; stage: FacetStage }
   | { kind: 'facet-success'; facet: string; outcome: FacetOutcome }
   | { kind: 'facet-failure'; facet: string; failure: RunInstallFailure }
-  | { kind: 'server-warning'; facet: string; servers: ReadonlyArray<string> }
   | { kind: 'drift-removal'; facet: string; oldVersion: string }
   /**
    * A receipt asset entry was rejected during load (path traversal,
@@ -268,6 +306,50 @@ export type StageEvent =
    * real until then.
    */
   | ({ kind: 'stale-override-pruned' } & MaterializationOverrideRef)
+  /**
+   * MCP configuration needs approval, and this run is about to ask for it.
+   *
+   * Carries the summary rather than the request: the exact declarations go to
+   * the approval surface, which is the one place whose purpose is showing them.
+   * A progress event describes what is being decided, not its payload.
+   */
+  | { kind: 'mcp-consent-required'; request: McpConsentRequestSummary }
+  /**
+   * Approval was obtained. `via` separates a human who read the commands from
+   * a flag that stood in for one — the same set of work, authorized two
+   * materially different ways.
+   */
+  | { kind: 'mcp-consent-accepted'; via: 'interactive' | 'preapproved' }
+  /**
+   * The user refused. Emitted before the journal opens, so nothing needs
+   * undoing and the operation ends with every file as it was.
+   */
+  | { kind: 'mcp-consent-declined' }
+  /**
+   * An asset write reached an occupied destination this machine does not own,
+   * and the just-in-time gate is about to ask about it.
+   */
+  | {
+      kind: 'asset-takeover-required'
+      facet: string
+      adapter: string
+      asset: AssetIdentity
+      occupancy: 'equivalent' | 'divergent'
+    }
+  /** The occupied destination was adopted or overwritten. */
+  | { kind: 'asset-takeover-accepted'; facet: string; adapter: string; asset: AssetIdentity }
+  /** The user refused mid-application; the caller rolls the journal back. */
+  | { kind: 'asset-takeover-cancelled'; facet: string; adapter: string; asset: AssetIdentity }
+  /**
+   * One effective MCP identity was reconciled into one adapter's native
+   * configuration.
+   *
+   * Emitted only after the transaction commits, like `stale-override-pruned`
+   * and for the same reason: until the tri-write succeeds the write is still
+   * a candidate for rollback, and reporting it earlier would announce work
+   * that may be undone a moment later.
+   */
+  | { kind: 'mcp-configured'; outcome: McpConfigurationOutcome }
   | { kind: 'adapter-complete'; facet: string; adapter: string }
   | { kind: 'asset-installed'; facet: string; adapter: string; asset: AssetIdentity }
   | { kind: 'asset-deleted'; facet: string; adapter: string; asset: AssetIdentity }
@@ -595,11 +677,12 @@ export type RunInstallFailure =
   /**
    * The user declined the MCP configuration request.
    *
-   * Payload-free, unlike `MCP_CONSENT_REQUIRED`: re-printing declarations the
-   * user just refused would push them onto a persistent surface for no
-   * benefit. Nothing was mutated — consent settles before the journal opens.
+   * Carries the SUMMARY, not the request: the user just read the declarations
+   * and said no, so reprinting them helps nobody, while the identities are
+   * what a report needs to say which servers were left unconfigured. Nothing
+   * was mutated — consent settles before the journal opens.
    */
-  | { code: 'MCP_CONSENT_DECLINED' }
+  | { code: 'MCP_CONSENT_DECLINED'; request: McpConsentRequestSummary }
   | { code: 'ABORTED' }
 
 /**
@@ -632,8 +715,8 @@ export type RollbackOutcome =
  * Result of a `runInstall` invocation. Discriminated by `ok`.
  *
  * On success, callers receive the new lockfile (already written to
- * disk), a summary of counts, per-facet outcomes, and any server
- * warnings collected during install.
+ * disk), a summary of counts, per-facet outcomes, and what the run did
+ * to this project's MCP configuration.
  *
  * On failure, callers receive the structured failure plus the
  * `RollbackOutcome` — view layers branch on `rollback.kind`.
@@ -644,7 +727,11 @@ export type RunInstallResult =
       lockfile: SupportedLockfile
       summary: InstallSummary
       perFacet: ReadonlyArray<FacetOutcome>
-      serverWarnings: ReadonlyArray<{ facet: string; servers: ReadonlyArray<string> }>
+      /**
+       * What this operation did to MCP configuration: intent, native
+       * reconciliation, and the approval that authorized it.
+       */
+      mcp: McpInstallOutcomes
     }
   | {
       ok: false

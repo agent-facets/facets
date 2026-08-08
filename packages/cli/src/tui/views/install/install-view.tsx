@@ -4,6 +4,7 @@ import type {
   CollisionResolution,
   CollisionResolutionRequest,
   CollisionResolver,
+  InstallSummary,
   MaterializationOverrideRef,
   RemovePrepareFailure,
   RunInstallResult,
@@ -94,11 +95,6 @@ function isInstallFailure(r: InstallViewResult): r is Extract<RunInstallResult, 
   return !r.ok && !isPrepareFailure(r) && !isRemovePrepareFailure(r)
 }
 
-interface ServerWarning {
-  facet: string
-  servers: ReadonlyArray<string>
-}
-
 /** A materialization choice dropped because its contribution no longer exists. */
 type PrunedOverride = MaterializationOverrideRef
 
@@ -150,7 +146,6 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
   const [totalFacets, setTotalFacets] = useState(0)
   const [facetOrder, setFacetOrder] = useState<string[]>([])
   const [facets, setFacets] = useState<Record<string, FacetState>>({})
-  const [serverWarnings, setServerWarnings] = useState<ServerWarning[]>([])
 
   /** Per-facet adapter completions: facetName → list of adapter names done. */
   const [adaptersByFacet, setAdaptersByFacet] = useState<Record<string, string[]>>({})
@@ -234,9 +229,6 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
         })
         setFacetOrder((prev) => (prev.includes(event.facet) ? prev : [...prev, event.facet]))
         return
-      case 'server-warning':
-        setServerWarnings((prev) => [...prev, { facet: event.facet, servers: event.servers }])
-        return
       case 'adapter-complete':
         setAdaptersByFacet((prev) => {
           const existing = prev[event.facet] ?? []
@@ -297,6 +289,19 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
         // No per-event UI for these; the final result render covers them.
         // A drift removal in particular is already named in the summary,
         // where it can also say whether anything was actually cleaned up.
+        return
+      case 'mcp-consent-required':
+      case 'mcp-consent-accepted':
+      case 'mcp-consent-declined':
+      case 'asset-takeover-required':
+      case 'asset-takeover-accepted':
+      case 'asset-takeover-cancelled':
+      case 'mcp-configured':
+        // Deliberately unrendered for now. This view cannot yet reach any of
+        // them: no command supplies a consent policy or a takeover resolver,
+        // so the engine settles both without asking. The approval and
+        // takeover screens, and the MCP half of the summary, arrive together
+        // with that plumbing rather than as a half-wired preview of it.
         return
       default: {
         // Exhaustiveness guard. Without it a newly added stage event
@@ -479,17 +484,6 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
         </Box>
       )}
 
-      {serverWarnings.length > 0 && (
-        <Box flexDirection="column" marginLeft={2}>
-          {serverWarnings.map((w) => (
-            <Text key={w.facet} color={THEME.warning}>
-              ⚠ {w.facet}: {w.servers.length} server{w.servers.length === 1 ? '' : 's'} declared ({w.servers.join(', ')}
-              ) — server installation not yet supported, skipping.
-            </Text>
-          ))}
-        </Box>
-      )}
-
       {prunedOverrides.length > 0 && (
         <Box flexDirection="column" marginLeft={2}>
           {prunedOverrides.map((pruned) => (
@@ -600,7 +594,21 @@ function SuccessSummary({
   elapsedMs: number
 }) {
   const { summary } = result
-  const isNoOp = summary.installed === 0 && summary.updated === 0 && summary.repaired === 0 && summary.removed === 0
+  // MCP configuration counts on its own: a run whose only work was removing a
+  // receipt-owned server orphan leaves every facet `unchanged`, and reporting
+  // "no changes" over a native file this run rewrote is exactly the lie the
+  // separate counts exist to prevent.
+  const configurationWork =
+    summary.mcp.configurations.added +
+    summary.mcp.configurations.updated +
+    summary.mcp.configurations.repaired +
+    summary.mcp.configurations.removed
+  const isNoOp =
+    summary.facets.installed === 0 &&
+    summary.facets.updated === 0 &&
+    summary.facets.repaired === 0 &&
+    summary.facets.removed === 0 &&
+    configurationWork === 0
   const elapsed = `${(elapsedMs / 1000).toFixed(2)}s`
 
   if (isNoOp) {
@@ -807,20 +815,25 @@ function formatColoredBundleViz(counts: AssetCounts): React.ReactNode {
   )
 }
 
-function summaryLine(summary: {
-  installed: number
-  updated: number
-  repaired: number
-  unchanged: number
-  removed: number
-  totalAssets: number
-}): string {
+/**
+ * Takes the whole {@link InstallSummary} rather than the six fields it reads,
+ * so a count added to the engine's shape is at least visible here instead of
+ * being structurally invisible to this file.
+ */
+function summaryLine(summary: InstallSummary): string {
+  const { facets, textAssets, mcp } = summary
   const parts: string[] = []
-  if (summary.installed > 0) parts.push(`${summary.installed} installed`)
-  if (summary.updated > 0) parts.push(`${summary.updated} updated`)
-  if (summary.repaired > 0) parts.push(`${summary.repaired} repaired`)
-  if (summary.unchanged > 0) parts.push(`${summary.unchanged} unchanged`)
-  if (summary.removed > 0) parts.push(`${summary.removed} removed`)
-  parts.push(`${summary.totalAssets} asset${summary.totalAssets === 1 ? '' : 's'} written`)
+  if (facets.installed > 0) parts.push(`${facets.installed} installed`)
+  if (facets.updated > 0) parts.push(`${facets.updated} updated`)
+  if (facets.repaired > 0) parts.push(`${facets.repaired} repaired`)
+  if (facets.unchanged > 0) parts.push(`${facets.unchanged} unchanged`)
+  if (facets.removed > 0) parts.push(`${facets.removed} removed`)
+  parts.push(`${textAssets.written} asset${textAssets.written === 1 ? '' : 's'} written`)
+
+  // Counted separately from assets, because they are: a server-only facet
+  // writes no file and would otherwise summarize as having done nothing.
+  const configured = mcp.configurations.added + mcp.configurations.updated + mcp.configurations.repaired
+  if (configured > 0) parts.push(`${configured} server config${configured === 1 ? '' : 's'} written`)
+  if (mcp.configurations.removed > 0) parts.push(`${mcp.configurations.removed} server config removed`)
   return parts.join(' · ')
 }

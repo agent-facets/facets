@@ -26,7 +26,6 @@ export interface ResolvedFacetRecord extends ResolvedFacet {
 export interface ResolveAllSuccess {
   /** Sorted by facet name. See the ordering note on {@link resolveAll}. */
   resolved: readonly ResolvedFacetRecord[]
-  serverWarnings: { facet: string; servers: ReadonlyArray<string> }[]
 }
 
 export type ResolveAllResult = { ok: true; value: ResolveAllSuccess } | { ok: false; failure: RunInstallFailure }
@@ -71,7 +70,6 @@ export async function resolveAll(args: ResolveAllArgs): Promise<ResolveAllResult
   const { desiredFacets, previousLockfile, adapters, signal, onStage, onLog } = args
 
   const resolved: ResolvedFacetRecord[] = []
-  const serverWarnings: { facet: string; servers: ReadonlyArray<string> }[] = []
 
   const facetNames = Object.keys(desiredFacets).sort(compareCodeUnits)
 
@@ -102,12 +100,6 @@ export async function resolveAll(args: ResolveAllArgs): Promise<ResolveAllResult
 
     const facetResolution = resolveResult.value
 
-    if (facetResolution.servers.length > 0) {
-      const names = facetResolution.servers.map((server) => server.name)
-      serverWarnings.push({ facet: facetName, servers: names })
-      onStage({ kind: 'server-warning', facet: facetName, servers: names })
-    }
-
     // Pre-materialization reconciliation (design D10): the previously-locked
     // entry MUST agree with the freshly derived plan before any adapter
     // write. It lives here rather than in the materialize pass because it is
@@ -132,5 +124,5 @@ export async function resolveAll(args: ResolveAllArgs): Promise<ResolveAllResult
     resolved.push({ ...facetResolution, facet: facetName, previousEntry })
   }
 
-  return { ok: true, value: { resolved, serverWarnings } }
+  return { ok: true, value: { resolved } }
 }

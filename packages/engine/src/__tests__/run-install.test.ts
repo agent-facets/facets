@@ -301,7 +301,7 @@ describe('runInstall — local source success path with events', () => {
 
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
-    expect(result.summary.installed).toBe(1)
+    expect(result.summary.facets.installed).toBe(1)
     expect(result.lockfile.facets['viper-plans']?.version).toBe('0.1.0')
     expect(events.find((e) => e.kind === 'install-start')).toBeDefined()
     expect(events.find((e) => e.kind === 'facet-success')).toBeDefined()
@@ -321,7 +321,7 @@ describe('runInstall — local source success path', () => {
     })
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
-    expect(result.summary.installed).toBe(1)
+    expect(result.summary.facets.installed).toBe(1)
     expect(result.lockfile.facets['viper-plans']?.version).toBe('0.1.0')
   })
 
@@ -598,7 +598,7 @@ describe('runInstall — drift removal', () => {
     })
     expect(second.ok).toBe(true)
     if (!second.ok) expect.unreachable()
-    expect(second.summary.removed).toBe(1)
+    expect(second.summary.facets.removed).toBe(1)
     expect(second.lockfile.facets.orphan).toBeUndefined()
     expect(second.lockfile.facets.keeper).toBeDefined()
     expect(events.find((e) => e.kind === 'drift-removal')).toBeDefined()
@@ -643,8 +643,8 @@ describe('runInstall — lockfile bootstrap and reuse', () => {
     expect(result.lockfile.facets['viper-plans']?.version).toBe('0.1.0')
     // Same content + metadata on disk → skip-if-identical kicks in:
     // the facet reports as unchanged with zero new writes.
-    expect(result.summary.unchanged).toBe(1)
-    expect(result.summary.totalAssets).toBe(0)
+    expect(result.summary.facets.unchanged).toBe(1)
+    expect(result.summary.textAssets.written).toBe(0)
   })
 
   test('repaired: deleted asset is re-written and reported as repaired', async () => {
@@ -671,9 +671,9 @@ describe('runInstall — lockfile bootstrap and reuse', () => {
     })
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
-    expect(result.summary.repaired).toBe(1)
-    expect(result.summary.unchanged).toBe(0)
-    expect(result.summary.totalAssets).toBe(1)
+    expect(result.summary.facets.repaired).toBe(1)
+    expect(result.summary.facets.unchanged).toBe(0)
+    expect(result.summary.textAssets.written).toBe(1)
     expect(existsSync(skillPath)).toBe(true)
   })
 })
@@ -1220,12 +1220,12 @@ describe('runInstall — multi-file skill materialization', () => {
 
     const first = await runInstall({ projectRoot, adapters })
     if (!first.ok) expect.unreachable()
-    expect(first.summary.totalAssets).toBe(1)
+    expect(first.summary.textAssets.written).toBe(1)
 
     // Second install with no changes: the whole bundle is identical → skipped.
     const second = await runInstall({ projectRoot, adapters })
     if (!second.ok) expect.unreachable()
-    expect(second.summary.totalAssets).toBe(0)
+    expect(second.summary.textAssets.written).toBe(0)
 
     // Drift a single companion on disk, then reinstall: the bundle is
     // repaired (one write) and the drifted file is restored from source. The
@@ -1235,7 +1235,7 @@ describe('runInstall — multi-file skill materialization', () => {
     const logs: string[] = []
     const third = await runInstall({ projectRoot, adapters, onLog: (b) => logs.push(b()) })
     if (!third.ok) expect.unreachable()
-    expect(third.summary.totalAssets).toBe(1)
+    expect(third.summary.textAssets.written).toBe(1)
     expect(readFileSync(apiPath, 'utf8')).toBe('# api reference\n')
     expect(logs.some((l) => l.includes('drift: skills/planning/references/api.md'))).toBe(true)
   })
@@ -1366,7 +1366,7 @@ describe('runInstall — multi-file skill materialization', () => {
     // survives, and the install reports the bundle as repaired (one write).
     const second = await runInstall({ projectRoot, adapters })
     if (!second.ok) expect.unreachable()
-    expect(second.summary.totalAssets).toBe(1)
+    expect(second.summary.textAssets.written).toBe(1)
     expect(readFileSync(join(skillDir, 'references/api.md'), 'utf8')).toBe('# api reference\n')
     expect(readFileSync(notePath, 'utf8')).toBe('keep me\n')
   })
@@ -1391,7 +1391,7 @@ describe('runInstall — multi-file skill materialization', () => {
     if (!frozen.ok) expect.unreachable()
 
     // Nothing written, and every companion survives.
-    expect(frozen.summary.totalAssets).toBe(0)
+    expect(frozen.summary.textAssets.written).toBe(0)
     expect(frozen.perFacet).toEqual([{ kind: 'unchanged', name: 'viper-plans', version: '0.1.0' }])
     const skillDir = join(projectRoot, '.bundle/skills/planning')
     expect(readFileSync(join(skillDir, 'references/api.md'), 'utf8')).toBe('# api reference\n')

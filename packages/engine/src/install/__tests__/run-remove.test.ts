@@ -493,7 +493,7 @@ describe('runRemove — a remaining facet is unavailable', () => {
       name: 'cowsay',
       oldVersion: '0.1.1',
     })
-    expect(result.install.summary.removedAssets).toBe(0)
+    expect(result.install.summary.textAssets.removed).toBe(0)
     // The facet that stays was rewritten, and is tracked from now on.
     expect(existsSync(assetPath('test-adapter', 'planner'))).toBe(true)
     const receipt = JSON.parse(readFileSync(receiptPath(projectRoot), 'utf8'))

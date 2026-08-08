@@ -339,7 +339,7 @@ describe('runInstall — a facet named after an Object.prototype member', () => 
     const result = await install()
 
     if (!result.ok) expect.unreachable('a facet named `constructor` should install like any other')
-    expect(result.summary.installed).toBe(1)
+    expect(result.summary.facets.installed).toBe(1)
     expect(Object.hasOwn(readLock().facets, 'constructor')).toBe(true)
   })
 
@@ -355,7 +355,7 @@ describe('runInstall — a facet named after an Object.prototype member', () => 
     const second = await install()
 
     if (!second.ok) expect.unreachable()
-    expect(second.summary.unchanged).toBe(1)
+    expect(second.summary.facets.unchanged).toBe(1)
   })
 })
 

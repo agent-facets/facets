@@ -227,18 +227,38 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
       // still being adopted: the bytes do not change, but this machine is
       // about to start claiming a file someone else put there.
       if (previous !== null && ownershipFor(opts.previousOwnership, asset) === undefined) {
+        const occupancy = identical ? 'equivalent' : 'divergent'
+        opts.onStage?.({
+          kind: 'asset-takeover-required',
+          facet: opts.facetName,
+          adapter: adapter.name,
+          asset: target,
+          occupancy,
+        })
         const decision = opts.resolveAssetTakeover
           ? await opts.resolveAssetTakeover({
               facet: opts.facetName,
               adapter: adapter.name,
               asset: target,
               authoredName: asset.authoredName,
-              occupancy: identical ? 'equivalent' : 'divergent',
+              occupancy,
             })
           : { kind: 'continue' as const }
         if (decision.kind === 'cancelled') {
+          opts.onStage?.({
+            kind: 'asset-takeover-cancelled',
+            facet: opts.facetName,
+            adapter: adapter.name,
+            asset: target,
+          })
           return { ok: false, failure: { kind: 'takeover-cancelled', adapter: adapter.name, asset: target } }
         }
+        opts.onStage?.({
+          kind: 'asset-takeover-accepted',
+          facet: opts.facetName,
+          adapter: adapter.name,
+          asset: target,
+        })
       }
 
       if (identical) {

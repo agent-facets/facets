@@ -226,7 +226,7 @@ describe('apply — aliased assets materialize under the effective name', () => 
 
     // If the companion lookup keyed off the effective name, the bundle would
     // read as "companions missing" and be rewritten every single run.
-    expect(second.summary.totalAssets).toBe(0)
+    expect(second.summary.textAssets.written).toBe(0)
     expect(second.perFacet).toEqual([{ kind: 'unchanged', name: 'alpha', version: '1.0.0' }])
   })
 })
@@ -304,7 +304,7 @@ describe('apply — global ownership reconciliation', () => {
     // Both claimants' companions were removed — the union, not just one set.
     expect(existsSync(skillRoot('shared'))).toBe(false)
     // Counted once, not once per claim.
-    expect(result.summary.removedAssets).toBe(1)
+    expect(result.summary.textAssets.removed).toBe(1)
   })
 
   test('changing an alias deletes the old identity and writes the new one', async () => {
@@ -645,11 +645,11 @@ describe('apply — global ownership reconciliation', () => {
     // ...and nothing on disk is touched, because nothing proved ownership.
     expect(io.some((call) => call.startsWith('delete:'))).toBe(false)
     expect(readFileSync(join(skillRoot('review'), 'SKILL.md'), 'utf8')).toContain('# review from alpha')
-    expect(result.summary.removedAssets).toBe(0)
+    expect(result.summary.textAssets.removed).toBe(0)
     // Reported as its own outcome: "removed" would claim the files are gone.
     expect(result.perFacet).toEqual([{ kind: 'removed-untracked', name: 'alpha', oldVersion: '1.0.0' }])
     // Still counted as a removal — a declaration really did leave the project.
-    expect(result.summary.removed).toBe(1)
+    expect(result.summary.facets.removed).toBe(1)
   })
 
   test('a tracked removal reports removed, not removed-untracked', async () => {
@@ -670,7 +670,7 @@ describe('apply — global ownership reconciliation', () => {
 
     expect(result.perFacet).toContainEqual({ kind: 'removed', name: 'alpha', oldVersion: '1.0.0' })
     expect(existsSync(skillRoot('review'))).toBe(false)
-    expect(result.summary.removedAssets).toBe(1)
+    expect(result.summary.textAssets.removed).toBe(1)
   })
 
   test('an obsolete bundle whose primary is gone keeps its companions and says so', async () => {
@@ -712,7 +712,7 @@ describe('apply — global ownership reconciliation', () => {
       companionPaths: ['refs/api.md'],
     })
     // Nothing left disk, so the asset count must not claim otherwise.
-    expect(result.summary.removedAssets).toBe(0)
+    expect(result.summary.textAssets.removed).toBe(0)
   })
 
   test('a failure after a skipped bundle delete needs no inverse and loses nothing', async () => {
@@ -871,7 +871,7 @@ describe('apply — frozen reproduction of recorded intent', () => {
     })
     if (!result.ok) expect.unreachable()
     expect(prompted).toBe(false)
-    expect(result.summary.totalAssets).toBe(0)
+    expect(result.summary.textAssets.written).toBe(0)
     expect(existsSync(join(skillRoot('vendor-review'), 'refs/api.md'))).toBe(true)
     expectUntouched(lock, manifestText)
   })

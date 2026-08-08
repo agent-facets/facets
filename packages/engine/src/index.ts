@@ -182,6 +182,19 @@ export type {
   McpDeclarationApproval,
   McpNativeTakeover,
 } from './install/mcp/consent.ts'
+// MCP outcomes. The CLI renders these; the engine decides them.
+export type {
+  McpActiveConfigurationStatus,
+  McpApprovalSummary,
+  McpConfigurationOutcome,
+  McpConsentOutcome,
+  McpConsentRequestSummary,
+  McpDispositionOutcome,
+  McpInstallOutcomes,
+  McpIntentChange,
+  McpTakeoverSummary,
+  PrunedServerIntent,
+} from './install/mcp/outcomes.ts'
 export type { McpContractViolation } from './install/mcp/prepare.ts'
 // Prototype-safe access to records keyed by user-authored names. The CLI's
 // collision draft builds and rewrites exactly such a record before handing it
