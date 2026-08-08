@@ -176,5 +176,22 @@ export function ownedCompanionPathsFor(
   previous: ReadonlyMap<string, PreviousOwnership>,
   asset: MaterializedAsset,
 ): readonly string[] {
-  return previous.get(asset.adapterKey)?.ownedCompanionPaths ?? []
+  return ownershipFor(previous, asset)?.ownedCompanionPaths ?? []
+}
+
+/**
+ * This machine's record for a desired asset's effective identity, or
+ * `undefined` when it has none.
+ *
+ * The tracked/untracked distinction has to come from here rather than from
+ * {@link ownedCompanionPathsFor}, which collapses "no record" and "a record
+ * with no companions" into the same empty array — and the second is every
+ * agent, every command, and every companion-less skill this machine already
+ * owns. A takeover gate keyed on that emptiness would prompt for all of them.
+ */
+export function ownershipFor(
+  previous: ReadonlyMap<string, PreviousOwnership>,
+  asset: MaterializedAsset,
+): PreviousOwnership | undefined {
+  return previous.get(asset.adapterKey)
 }

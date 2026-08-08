@@ -1,5 +1,7 @@
 import type { Adapter } from '@agent-facets/adapter'
+import type { AssetTakeoverResolver } from '../asset-takeover.ts'
 import type { CollisionResolver } from '../commit/compose.ts'
+import type { McpConsentPolicy } from '../mcp/consent.ts'
 import { runInstall } from '../run-install.ts'
 import type { OnLog, RunInstallResult, StageEvent } from '../types.ts'
 import { type AddPrepareFailure, type AddSource, type PrepareAddResult, prepareAdd } from './prepare.ts'
@@ -33,6 +35,18 @@ export interface RunAddOptions {
    * most needed.
    */
   resolveCollisions?: CollisionResolver
+  /**
+   * How this invocation may obtain MCP configuration approval, forwarded to
+   * `runInstall`. Present on all three front doors because all three enter
+   * the same commit pipeline and reconcile the same remaining facets.
+   */
+  mcpConsent?: McpConsentPolicy
+  /**
+   * Just-in-time gate for an occupied asset destination this machine does not
+   * own, forwarded to `runInstall`. Absence continues, preserving existing
+   * non-interactive behavior.
+   */
+  resolveAssetTakeover?: AssetTakeoverResolver
 }
 
 /**
@@ -80,6 +94,8 @@ export async function runAdd(opts: RunAddOptions): Promise<RunAddResult> {
     ...(onLog ? { onLog } : {}),
     ...(signal ? { signal } : {}),
     ...(opts.resolveCollisions ? { resolveCollisions: opts.resolveCollisions } : {}),
+    ...(opts.mcpConsent ? { mcpConsent: opts.mcpConsent } : {}),
+    ...(opts.resolveAssetTakeover ? { resolveAssetTakeover: opts.resolveAssetTakeover } : {}),
   })
 
   if (!install.ok) {

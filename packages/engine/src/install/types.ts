@@ -1,4 +1,4 @@
-import type { Adapter } from '@agent-facets/adapter'
+import type { Adapter, McpServerCapabilityFailure } from '@agent-facets/adapter'
 import type { AssetType, Scope, ValidationError } from '@agent-facets/common'
 import type {
   CollisionGroup,
@@ -9,10 +9,14 @@ import type {
   SupportedLockfile,
 } from '@agent-facets/protocol'
 import type { AdapterCompatibilityFailure } from '../adapters/api-compatibility.ts'
+import type { McpUnsupportedAdapter } from '../adapters/mcp-support.ts'
 import type { UnsupportedManifestVersion } from '../manifest/project-files.ts'
 import type { RegistryError } from '../registry/index.ts'
 import type { ParseError, Source } from '../sources/facet/types.ts'
+import type { AssetTakeoverResolver } from './asset-takeover.ts'
 import type { CollisionResolver } from './commit/compose.ts'
+import type { McpConsentPolicy, McpConsentRequest } from './mcp/consent.ts'
+import type { McpContractViolation } from './mcp/prepare.ts'
 
 /**
  * Which kind of contribution a materialization override names.
@@ -524,6 +528,78 @@ export type RunInstallFailure =
     }
   /** The user dismissed collision resolution. No state was mutated. */
   | { code: 'MATERIALIZATION_CANCELLED' }
+  /**
+   * The user declined to take over an occupied destination this machine does
+   * not own.
+   *
+   * Distinct from `MATERIALIZATION_CANCELLED`, which settles before the
+   * journal opens and has nothing to undo. This one lands mid-application, so
+   * the rollback outcome is the load-bearing half of the report: whether the
+   * work already done was fully restored.
+   */
+  | { code: 'ASSET_TAKEOVER_CANCELLED'; facet: string; adapter: string; asset: AssetIdentity }
+  /**
+   * This operation has MCP configuration work — an active declaration to
+   * reconcile, or a receipt-owned entry to remove — and at least one selected
+   * adapter cannot do it.
+   *
+   * Raised after composition (which is what makes the active set knowable)
+   * and before preparation, consent, or any mutation. Carries every
+   * unsupported adapter, because upgrading one at a time to discover the next
+   * teaches a user nothing about the shape of the problem, and the effective
+   * server names so the remedy can point at the declarations to omit. It
+   * deliberately carries no declaration: neither remedy needs the command a
+   * server would run.
+   */
+  | {
+      code: 'MCP_ADAPTERS_UNSUPPORTED'
+      adapters: ReadonlyArray<McpUnsupportedAdapter>
+      servers: ReadonlyArray<string>
+    }
+  /**
+   * An adapter's read-only MCP preparation reported a structured failure —
+   * an unparseable or unsafely-shaped native document, or a read it could not
+   * perform. Preparation writes nothing, so every inspected document is
+   * unchanged.
+   */
+  | { code: 'MCP_PREPARE_FAILED'; adapter: string; failure: McpServerCapabilityFailure }
+  /**
+   * An adapter's MCP application reported a structured failure. Its own
+   * documents are unchanged (the capability is atomic per document); every
+   * earlier document this run changed is restored from its byte preimage.
+   */
+  | { code: 'MCP_APPLY_FAILED'; adapter: string; failure: McpServerCapabilityFailure }
+  /**
+   * A disclosed configuration document could not be read for its byte
+   * preimage, so the write was refused rather than performed without an undo.
+   * Distinct from a read failure inside preparation: the adapter did nothing
+   * wrong, and the document is one the engine — not the adapter — was reading.
+   */
+  | { code: 'MCP_DOCUMENT_UNREADABLE'; adapter: string; path: string; cause: string }
+  /**
+   * An adapter broke the MCP capability contract in a way that would make
+   * rollback unsound. Distinct from `MCP_PREPARE_FAILED`: the fault is in the
+   * adapter, not in the project's configuration, and no user edit fixes it.
+   */
+  | { code: 'MCP_CONTRACT_VIOLATION'; violation: McpContractViolation }
+  /**
+   * MCP configuration needs approval and this caller cannot give it: a
+   * non-interactive command without `--accept-mcp`, or frozen mode, which
+   * reproduces recorded intent and never collects a new decision.
+   *
+   * Carries the complete request because the remedy is to read it: a user
+   * deciding whether to pass `--accept-mcp` needs the exact commands and URLs
+   * it would authorize. Raised before the journal opens, so nothing changed.
+   */
+  | { code: 'MCP_CONSENT_REQUIRED'; request: McpConsentRequest }
+  /**
+   * The user declined the MCP configuration request.
+   *
+   * Payload-free, unlike `MCP_CONSENT_REQUIRED`: re-printing declarations the
+   * user just refused would push them onto a persistent surface for no
+   * benefit. Nothing was mutated — consent settles before the journal opens.
+   */
+  | { code: 'MCP_CONSENT_DECLINED' }
   | { code: 'ABORTED' }
 
 /**
@@ -663,4 +739,26 @@ export interface RunInstallOptions {
    * new decisions.
    */
   resolveCollisions?: CollisionResolver
+  /**
+   * How this invocation may obtain MCP configuration approval.
+   *
+   * Defaults to `unavailable`, which makes "fail with the complete request"
+   * the default rather than a special case — the same discipline that makes
+   * an omitted `resolveCollisions` report instead of guess. Frozen mode may
+   * use `preapproved` but never `interactive`.
+   */
+  mcpConsent?: McpConsentPolicy
+  /**
+   * Optional just-in-time gate for an occupied asset destination this machine
+   * does not own.
+   *
+   * Note the deliberate asymmetry with `resolveCollisions`: an absent
+   * collision resolver FAILS, because a collision has no correct answer
+   * without the user. An absent takeover resolver CONTINUES, because a
+   * takeover does — the behavior every non-interactive caller has today.
+   *
+   * Independent of `mcpConsent` by construction. Approving a server's command
+   * must never be the act that also accepts overwriting a file.
+   */
+  resolveAssetTakeover?: AssetTakeoverResolver
 }

@@ -11,14 +11,22 @@ import { finalizeMaterializationIntent } from './commit/finalize-intent.ts'
 import { installFacets } from './commit/install-loop.ts'
 import { buildPreviousOwnership, obsoleteOwnership } from './commit/ownership.ts'
 import { resolveAll } from './commit/resolve-all.ts'
-import { claimsByFacet } from './commit/server-ownership.ts'
+import {
+  buildPreviousMcpOwnership,
+  claimsByFacet,
+  obsoleteMcpOwnership,
+  previouslyOwnedServerNames,
+} from './commit/server-ownership.ts'
 import { buildUpdatedReceipt, commitProjectFiles, type LockedSetCommit } from './commit/tri-write.ts'
-import { checkFrozenConsistency } from './frozen-gates.ts'
+import { checkFrozenConsistency, checkFrozenServerIntent } from './frozen-gates.ts'
 import { InstallJournal } from './journal.ts'
 import { acquireInstallLock } from './lockfile-guard.ts'
 import { FACETS_LOCK_FILE, loadLockfile } from './lockfile-io.ts'
 import { deleteObsoleteAssets, type RetainedObsoleteBundle } from './materialize.ts'
 import { materializeFailureToRunInstall } from './materialize-failure.ts'
+import { applyMcpServers } from './mcp/apply.ts'
+import { deriveMcpConsent, type McpConsentPolicy, settleMcpConsent } from './mcp/consent.ts'
+import { prepareMcpServers } from './mcp/prepare.ts'
 import { ownEntry } from './own-entry.ts'
 import { receiptProjectPath, resolveProjectReceipt } from './receipt.ts'
 import { refineRemoval } from './remove/refine.ts'
@@ -43,11 +51,14 @@ import type { InstallDelta, RunInstallFailure, RunInstallOptions, RunInstallResu
  * `result.failure`; rollback status via `result.rollback`.
  */
 export async function runInstall(opts: RunInstallOptions): Promise<RunInstallResult> {
-  const { projectRoot, adapters, signal, resolveCollisions } = opts
+  const { projectRoot, adapters, signal, resolveCollisions, resolveAssetTakeover } = opts
   const delta: InstallDelta = opts.delta ?? { additions: [], removals: [] }
   const onStage = opts.onStage ?? noopStage
   const onLog = opts.onLog ?? noopLog
   const frozenLockfile = opts.frozenLockfile === true
+  // Absent means "this caller cannot answer", which is what makes failing
+  // with the complete request the default rather than a special case.
+  const mcpConsent: McpConsentPolicy = opts.mcpConsent ?? { kind: 'unavailable' }
 
   // 1. Acquire the install lock BEFORE reading anything a commit is derived
   //    from. Reading first left a window in which a concurrent operation
@@ -272,6 +283,27 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
         return failureNoMutation({ code: 'ABORTED' })
       }
 
+      // Configuration cleanup is prepared here, on the no-mutation path, for
+      // the same reason the resolve path prepares before its journal opens.
+      //
+      // The request is deliberately asymmetric: nothing is desired, and the
+      // owned set is narrowed to exactly the identities this removal is
+      // authorized to delete. A retained identity therefore appears in
+      // neither list, which is how an adapter is told to leave it alone. No
+      // consent is asked for either — removal withdraws authorization, it
+      // never grants it.
+      const refinedMcp = await prepareMcpServers({
+        projectRoot,
+        adapters,
+        configurations: [],
+        obsolete: refined.obsoleteConfigurations,
+        previouslyOwnedNames: refined.obsoleteConfigurations.map((ownership) => ownership.effectiveName),
+        onLog,
+      })
+      if (!refinedMcp.ok) {
+        return failureNoMutation(refinedMcp.failure)
+      }
+
       // The steps below mirror the resolve path's Apply and commit, minus the
       // write pass: nothing is materialized, because refinement has confirmed
       // every remaining asset is already on disk under the identity it keeps.
@@ -296,6 +328,19 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       if (!deletion.ok) {
         const failure = materializeFailureToRunInstall(deletion.facets[0] ?? '', deletion.failure)
         return await rollbackAndFail(journal, failure, onLog)
+      }
+
+      // Remove the obsolete native entries, journaled with their exact prior
+      // bytes like every other configuration write.
+      const refinedApplied = await applyMcpServers({
+        prepared: refinedMcp.prepared,
+        projectRoot,
+        journal,
+        signal,
+        onLog,
+      })
+      if (!refinedApplied.ok) {
+        return await rollbackAndFail(journal, refinedApplied.failure, onLog)
       }
 
       // Second checkpoint: the deletes are done and the tri-write is next, so
@@ -387,10 +432,78 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     }
     const plan = composed.plan
 
-    // The MCP configurations this run reconciled into native tool state.
-    // Empty until the native apply step exists: the composed plan says what
-    // SHOULD be configured, and a receipt claim may only record what was.
-    const reconciledServerConfigurations: readonly PlannedServerConfiguration[] = []
+    // 7a0. Frozen server intent. Runs here rather than in the pre-fetch gate
+    //      because whether an override still names a declaration the facet
+    //      publishes is only knowable from the verified archive. Still ahead
+    //      of everything that mutates: a frozen run that refuses has not
+    //      deleted, written, or reconciled anything first.
+    if (frozenLockfile) {
+      const staleServerIntent = checkFrozenServerIntent(plan.staleOverrides)
+      if (staleServerIntent !== null) {
+        return failureNoMutation(staleServerIntent)
+      }
+    }
+
+    // 7a. The MCP configuration ownership index, built from the receipt
+    //     STATE. Needed here — before the journal — because both remaining
+    //     pre-mutation steps read it: preparation needs the exact set of
+    //     effective names an adapter is authorized to remove, and consent
+    //     needs the approval evidence recorded at each identity. A receipt
+    //     that predates configuration claims yields an empty index, which is
+    //     the safe answer in both directions: nothing is deletable, and every
+    //     declaration needs approval.
+    const previousMcpOwnership = buildPreviousMcpOwnership(receiptState)
+    const obsoleteConfigurations = obsoleteMcpOwnership(previousMcpOwnership, plan.mcpServers.configurations)
+
+    // 7b. Verify every selected adapter can do this project's MCP work, then
+    //     ask each to prepare its complete native change read-only. Both run
+    //     on the no-mutation path, before the journal and before any prompt:
+    //     an unsupported adapter must not consume an approval it cannot
+    //     honor, and a user cannot be asked to approve a change nothing has
+    //     computed yet.
+    const preparedMcp = await prepareMcpServers({
+      projectRoot,
+      adapters,
+      configurations: plan.mcpServers.configurations,
+      obsolete: obsoleteConfigurations,
+      previouslyOwnedNames: previouslyOwnedServerNames(previousMcpOwnership),
+      onLog,
+    })
+    if (!preparedMcp.ok) {
+      return failureNoMutation(preparedMcp.failure)
+    }
+
+    // 7c. MCP configuration consent. Approval authorizes execution — a
+    //     command this machine will hand a tool to run, or an endpoint it
+    //     will connect to — so it is asked per machine, from the receipt's
+    //     own approval evidence, and never inherited from a teammate's
+    //     commit. Still before the journal: declining costs nothing to undo.
+    const consent = deriveMcpConsent({
+      configurations: plan.mcpServers.configurations,
+      previousOwnership: previousMcpOwnership,
+      prepared: preparedMcp.prepared,
+    })
+    if (consent.kind === 'required') {
+      // Frozen mode reproduces recorded intent and must never collect a new
+      // decision, not even from a human at a terminal. The CLI already
+      // withholds the resolver; this is the defense-in-depth half, mirroring
+      // the collision resolver's own frozen guard.
+      const policy: McpConsentPolicy =
+        frozenLockfile && mcpConsent.kind === 'interactive' ? { kind: 'unavailable' } : mcpConsent
+      const settled = await settleMcpConsent(policy, consent.request)
+      if (settled.kind === 'unavailable') {
+        return failureNoMutation({ code: 'MCP_CONSENT_REQUIRED', request: consent.request })
+      }
+      // An abort arriving while the screen was open settles it as declined;
+      // the signal is the honest account of what happened, so it is read
+      // first rather than adding a third decision arm for the same fact.
+      if (signal?.aborted) {
+        return failureNoMutation({ code: 'ABORTED' })
+      }
+      if (settled.kind === 'declined') {
+        return failureNoMutation({ code: 'MCP_CONSENT_DECLINED' })
+      }
+    }
 
     // 7. The first mutation is now imminent, so the rollback ledger opens
     //    here. Every entry it accumulates corresponds to a write that
@@ -447,6 +560,11 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       previousOwnership,
       adapters,
       journal,
+      // Frozen mode reproduces recorded intent and never collects a new
+      // decision, so the gate is withheld and reconciliation continues
+      // exactly as it did before — the same rule the collision resolver and
+      // MCP consent follow.
+      ...(resolveAssetTakeover && !frozenLockfile ? { resolveAssetTakeover } : {}),
       signal,
       onStage,
       onLog,
@@ -456,6 +574,32 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     }
     const { newFacetEntries, perFacet, totalAssets } = loop.value
     perFacet.push(...removedOutcomes)
+
+    // 10. Apply every prepared native MCP plan, last of the mutations and
+    //     immediately before the transaction commits. Each changed document
+    //     is journaled with its exact prior bytes, so a tri-write failure or
+    //     an abort arriving now walks configuration and assets back together
+    //     in one LIFO replay.
+    const appliedMcp = await applyMcpServers({
+      prepared: preparedMcp.prepared,
+      projectRoot,
+      journal,
+      signal,
+      onLog,
+    })
+    if (!appliedMcp.ok) {
+      return await rollbackAndFail(journal, appliedMcp.failure, onLog)
+    }
+
+    // What this run actually reconciled. Every active configuration was —
+    // each adapter either wrote it or proved the native state already matched
+    // — and approval for all of them was obtained above, which is what makes
+    // a claim assert two true things rather than one.
+    //
+    // Zero capable adapters with a non-empty desired set is not that: nothing
+    // reconciled it, so nothing may claim it.
+    const reconciledServerConfigurations: readonly PlannedServerConfiguration[] =
+      preparedMcp.prepared.length > 0 ? plan.mcpServers.configurations : []
 
     if (signal?.aborted) {
       return await rollbackAndFail(journal, { code: 'ABORTED' }, onLog)
@@ -484,11 +628,9 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
             facets: newFacetEntries,
           }),
         }
-    // The claims this run reconciled. Nothing in this pipeline applies native
-    // MCP configuration yet, so it reconciled none — and a claim asserts BOTH
-    // that an identity was reconciled and that its declaration was approved
-    // here, so recording one from the composed plan alone would assert two
-    // things that have not happened.
+    // A claim asserts BOTH that an identity was reconciled and that its
+    // declaration was approved here, which is why it is derived from what the
+    // apply step did rather than from the composed plan.
     const newReceipt = buildUpdatedReceipt(receiptPath, {
       kind: 'written',
       facetEntries: newFacetEntries,

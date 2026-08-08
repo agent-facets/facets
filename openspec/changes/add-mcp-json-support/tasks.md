@@ -84,22 +84,22 @@
 
 ## 9. Transaction, consent, frozen, removal, and takeover — Research
 
-- [ ] 9.1 Explore: Trace install ordering, journal semantics, byte-preimage helpers, rollback error reporting, and the first mutation boundary for normal and removal-only paths.
-- [ ] 9.2 Explore: Trace interactive resolver plumbing and define MCP consent/failure values for new or changed declarations, native takeovers, non-interactive opt-in, and unsupported selected adapters.
-- [ ] 9.3 Explore: Trace frozen post-resolution checks and removal refinement proofs needed for integrity-anchored configuration claims and receipt-only server-orphan cleanup.
-- [ ] 9.4 Explore: Trace asset previous-state reads and ownership lookup to place the just-in-time takeover gate without an eager scan or coupling it to MCP consent.
-- [ ] 9.5 Propose: Define the complete orchestration change from preflight through prepare, consent, journaled asset work, native apply, receipt commit, rollback, and offline removal fallback.
+- [x] 9.1 Explore: Trace install ordering, journal semantics, byte-preimage helpers, rollback error reporting, and the first mutation boundary for normal and removal-only paths.
+- [x] 9.2 Explore: Trace interactive resolver plumbing and define MCP consent/failure values for new or changed declarations, native takeovers, non-interactive opt-in, and unsupported selected adapters.
+- [x] 9.3 Explore: Trace frozen post-resolution checks and removal refinement proofs needed for integrity-anchored configuration claims and receipt-only server-orphan cleanup.
+- [x] 9.4 Explore: Trace asset previous-state reads and ownership lookup to place the just-in-time takeover gate without an eager scan or coupling it to MCP consent.
+- [x] 9.5 Propose: Define the complete orchestration change from preflight through prepare, consent, journaled asset work, native apply, receipt commit, rollback, and offline removal fallback.
 
 ## 10. Transaction, consent, frozen, removal, and takeover — Implementation
 
-- [ ] 10.1 Implement: Add the post-compose collective MCP-support preflight and batch read-only preparation for every selected adapter before prompting or mutation.
-- [ ] 10.2 Implement: Derive machine-local approval from effective identity plus fingerprint, combine unapproved declarations and untracked native occupancy into one MCP-only request, and enforce `--accept-mcp` for non-interactive/frozen callers without banking failed approval.
-- [ ] 10.3 Implement: Capture each prepared document's byte preimage, journal throwing restore operations, apply native MCP plans after asset writes, and restore every document exactly on later adapter, cancellation, or tri-write failure.
-- [ ] 10.4 Implement: Add the separate just-in-time asset takeover resolver at the existing previous-state read, default to continue, adopt equivalent bytes without rewriting, overwrite divergent content transactionally, and roll back all prior work on cancellation.
-- [ ] 10.5 Implement: Add post-resolution frozen MCP gates for collision, stale intent, support, parse, integrity, and approval while allowing receipt/native reconciliation only after every consistency check passes.
-- [ ] 10.6 Implement: Extend removal-only refinement to carry integrity-witnessed configuration claims offline, fall back for pre-`0.4` or unprovable state, preserve remaining claimants, and delete only obsolete receipt-owned server identities.
-- [ ] 10.7 Implement: Add ordering, no-mutation, no-reprompt, teammate-consent, takeover, byte-restore, frozen-orphan, offline-removal, and fallback tests across successful, declined, failed, and interrupted operations.
-- [ ] 10.8 Verify: Run focused install, frozen, removal, materialization, journal, and rollback tests and type checks.
+- [x] 10.1 Implement: Add the post-compose collective MCP-support preflight and batch read-only preparation for every selected adapter before prompting or mutation.
+- [x] 10.2 Implement: Derive machine-local approval from effective identity plus fingerprint, combine unapproved declarations and untracked native occupancy into one MCP-only request, and enforce `--accept-mcp` for non-interactive/frozen callers without banking failed approval.
+- [x] 10.3 Implement: Capture each prepared document's byte preimage, journal throwing restore operations, apply native MCP plans after asset writes, and restore every document exactly on later adapter, cancellation, or tri-write failure.
+- [x] 10.4 Implement: Add the separate just-in-time asset takeover resolver at the existing previous-state read, default to continue, adopt equivalent bytes without rewriting, overwrite divergent content transactionally, and roll back all prior work on cancellation.
+- [x] 10.5 Implement: Add post-resolution frozen MCP gates for collision, stale intent, support, parse, integrity, and approval while allowing receipt/native reconciliation only after every consistency check passes.
+- [x] 10.6 Implement: Extend removal-only refinement to carry integrity-witnessed configuration claims offline, fall back for pre-`0.4` or unprovable state, preserve remaining claimants, and delete only obsolete receipt-owned server identities.
+- [x] 10.7 Implement: Add ordering, no-mutation, no-reprompt, teammate-consent, takeover, byte-restore, frozen-orphan, offline-removal, and fallback tests across successful, declined, failed, and interrupted operations.
+- [x] 10.8 Verify: Run focused install, frozen, removal, materialization, journal, and rollback tests and type checks.
 
 ## 11. Engine outcomes and obsolete warning path — Research
 

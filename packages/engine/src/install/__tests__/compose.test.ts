@@ -8,6 +8,7 @@ import type { CollisionResolution, CollisionResolutionRequest } from '../commit/
 import { receiptPath } from '../receipt.ts'
 import { runInstall } from '../run-install.ts'
 import type { StageEvent } from '../types.ts'
+import { recordingMcpCapability } from './helpers/mcp-adapter.ts'
 
 /**
  * Cross-facet collision detection and resolution, exercised through the real
@@ -25,17 +26,24 @@ let originalFacetDir: string | undefined
 let fakeHome: string
 
 /** Adapter that records every I/O call so "never invoked" is provable. */
-function recordingAdapter(name: string): { adapter: Adapter; io: string[] } {
+function recordingAdapter(name: string): { adapter: Adapter; io: string[]; mcpDocument: string } {
   const io: string[] = []
   const baseDir = () => join(projectRoot, `.${name}`)
   const file = (type: string, assetName: string) => join(baseDir(), `${type}s`, `${assetName}.md`)
+  const mcpDocument = () => join(baseDir(), 'mcp.json')
+  const mcp = recordingMcpCapability(mcpDocument)
   return {
     io,
+    // Resolved lazily by the caller only after `projectRoot` exists; exposed
+    // as a getter so the literal above stays a plain object.
+    get mcpDocument() {
+      return mcpDocument()
+    },
     adapter: {
       name,
       apiVersion: ADAPTER_API_VERSION,
       supportsInstall: true,
-      mcpServers: false,
+      mcpServers: mcp.capability,
       buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
       async installAsset(request) {
         io.push(`install:${request.assetType}:${request.name}`)
@@ -86,6 +94,14 @@ function serverFixture(facet: string, server: string, declaration: unknown, vers
 }
 
 const STDIO = { type: 'stdio', command: 'npx', args: ['-y', 'server-filesystem'] }
+
+/**
+ * These tests are about composition, not consent: every declaration they
+ * install is approved up front so the pipeline reaches the planner. Consent
+ * itself — who may approve, and what happens when nobody can — has its own
+ * suite.
+ */
+const ACCEPT_MCP = { kind: 'preapproved' } as const
 
 function writeManifest(value: unknown): string {
   const text = `${JSON.stringify(value, null, 2)}\n`
@@ -188,7 +204,7 @@ describe('compose — MCP server composition', () => {
 
     // Same declaration, same effective name: one configuration, two
     // claimants. Contesting here would block an install over an agreement.
-    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    const result = await runInstall({ projectRoot, adapters: [adapter], mcpConsent: ACCEPT_MCP })
     expect(result.ok).toBe(true)
   })
 
@@ -217,7 +233,7 @@ describe('compose — MCP server composition', () => {
     const { adapter } = recordingAdapter('rec')
 
     // Separate identity spaces, so there is no shared key to contend in.
-    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    const result = await runInstall({ projectRoot, adapters: [adapter], mcpConsent: ACCEPT_MCP })
     expect(result.ok).toBe(true)
   })
 
@@ -233,7 +249,7 @@ describe('compose — MCP server composition', () => {
     })
     const { adapter } = recordingAdapter('rec')
 
-    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    const result = await runInstall({ projectRoot, adapters: [adapter], mcpConsent: ACCEPT_MCP })
     expect(result.ok).toBe(true)
   })
 
@@ -249,7 +265,7 @@ describe('compose — MCP server composition', () => {
     })
     const { adapter } = recordingAdapter('rec')
 
-    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    const result = await runInstall({ projectRoot, adapters: [adapter], mcpConsent: ACCEPT_MCP })
     expect(result.ok).toBe(true)
   })
 
@@ -258,7 +274,7 @@ describe('compose — MCP server composition', () => {
     writeManifest({ facets: { alpha: a } })
     const { adapter, io } = recordingAdapter('rec')
 
-    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    const result = await runInstall({ projectRoot, adapters: [adapter], mcpConsent: ACCEPT_MCP })
 
     if (!result.ok) expect.unreachable()
     // The lockfile records the facet with an empty asset list; no adapter
@@ -290,7 +306,7 @@ describe('compose — MCP server composition', () => {
     writeManifest({ facets: { alpha: a } })
     const { adapter } = recordingAdapter('rec')
 
-    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    expect((await runInstall({ projectRoot, adapters: [adapter], mcpConsent: ACCEPT_MCP })).ok).toBe(true)
 
     // The lockfile is unchanged by MCP support: a declaration travels inside
     // the integrity-pinned `facet.json`, so duplicating it here would give a
@@ -313,7 +329,12 @@ describe('compose — MCP server composition', () => {
     const { adapter } = recordingAdapter('rec')
     const events: StageEvent[] = []
 
-    const result = await runInstall({ projectRoot, adapters: [adapter], onStage: (e) => events.push(e) })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      mcpConsent: ACCEPT_MCP,
+      onStage: (e) => events.push(e),
+    })
 
     expect(result.ok).toBe(true)
     expect(events.filter((e) => e.kind === 'stale-override-pruned')).toEqual([

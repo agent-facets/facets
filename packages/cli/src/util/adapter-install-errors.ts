@@ -18,7 +18,7 @@ import { quoteShellArg } from './shell-quote.ts'
  * fix lines. Targets are user/source-derived (receipt specifiers, local
  * paths, package names) and must paste back into a shell safely.
  */
-function adapterInstallCommand(target: string): string {
+export function adapterInstallCommand(target: string): string {
   return `facet adapter install ${quoteShellArg(target)}`
 }
 

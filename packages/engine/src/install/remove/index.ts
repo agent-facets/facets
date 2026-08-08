@@ -1,5 +1,7 @@
 import type { Adapter } from '@agent-facets/adapter'
+import type { AssetTakeoverResolver } from '../asset-takeover.ts'
 import type { CollisionResolver } from '../commit/compose.ts'
+import type { McpConsentPolicy } from '../mcp/consent.ts'
 import { runInstall } from '../run-install.ts'
 import type { OnLog, Removal, RunInstallResult, StageEvent } from '../types.ts'
 import { prepareRemove, type RemovePrepareFailure, type RemovePrepareResult } from './prepare.ts'
@@ -33,6 +35,19 @@ export interface RunRemoveOptions {
    * dead-ending the user in a command that can only report.
    */
   resolveCollisions?: CollisionResolver
+  /**
+   * How this invocation may obtain MCP configuration approval, forwarded to
+   * `runInstall`. A removal that falls back to ordinary resolution
+   * reconciles every remaining facet, which can include configuration this
+   * machine has not approved.
+   */
+  mcpConsent?: McpConsentPolicy
+  /**
+   * Just-in-time gate for an occupied asset destination this machine does not
+   * own, forwarded to `runInstall`. Absence continues, preserving existing
+   * non-interactive behavior.
+   */
+  resolveAssetTakeover?: AssetTakeoverResolver
 }
 
 /**
@@ -83,6 +98,8 @@ export async function runRemove(opts: RunRemoveOptions): Promise<RunRemoveResult
     ...(onLog ? { onLog } : {}),
     ...(signal ? { signal } : {}),
     ...(opts.resolveCollisions ? { resolveCollisions: opts.resolveCollisions } : {}),
+    ...(opts.mcpConsent ? { mcpConsent: opts.mcpConsent } : {}),
+    ...(opts.resolveAssetTakeover ? { resolveAssetTakeover: opts.resolveAssetTakeover } : {}),
   })
 
   if (!install.ok) {

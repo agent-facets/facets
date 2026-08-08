@@ -5,6 +5,14 @@ import { describeCompatibilityFailure } from '../../../util/adapter-install-erro
 import { collisionClaimants, collisionGroupKey, describeCollisionGroup } from '../../../util/collision-report.ts'
 import { contributionKey, describeContribution } from '../../../util/contribution.ts'
 import { diskStateSentence } from '../../../util/install-outcome.ts'
+import {
+  describeApprovalHeading,
+  describeDeclarationInFull,
+  describeMcpCapabilityFailure,
+  describeMcpContractViolation,
+  describeTakeoverHeading,
+  describeUnsupportedMcpAdapter,
+} from '../../../util/mcp-report.ts'
 import { THEME } from '../../theme.ts'
 import { UnsupportedManifestVersionBlock } from './unsupported-version-block.tsx'
 
@@ -584,6 +592,100 @@ function failureDetail(failure: RunInstallFailure): React.JSX.Element {
       return (
         <Box flexDirection="column" marginTop={1}>
           <Text color={THEME.hint}>Cancelled.</Text>
+        </Box>
+      )
+    case 'MCP_ADAPTERS_UNSUPPORTED':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ {failure.adapters.length !== 1 ? 'selected adapters cannot' : 'a selected adapter cannot'} configure MCP
+            servers — nothing was changed
+          </Text>
+          {failure.adapters.map((entry) => {
+            const described = describeUnsupportedMcpAdapter(entry)
+            return (
+              <Box key={entry.adapter} flexDirection="column">
+                <Text> {described.what}</Text>
+                <Text color={THEME.hint}> {described.fix}</Text>
+              </Box>
+            )
+          })}
+          <Text color={THEME.hint}> servers: {failure.servers.join(', ')}</Text>
+        </Box>
+      )
+    case 'MCP_PREPARE_FAILED':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ {failure.adapter} could not plan its MCP configuration — nothing was changed
+          </Text>
+          <Text> {describeMcpCapabilityFailure(failure.failure)}</Text>
+        </Box>
+      )
+    case 'ASSET_TAKEOVER_CANCELLED':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.hint}>
+            Cancelled at {failure.adapter}: {failure.asset.type} “{failure.asset.name}” was already there and is not
+            tracked by this project.
+          </Text>
+        </Box>
+      )
+    case 'MCP_APPLY_FAILED':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ {failure.adapter} could not write its MCP configuration
+          </Text>
+          <Text> {describeMcpCapabilityFailure(failure.failure)}</Text>
+        </Box>
+      )
+    case 'MCP_DOCUMENT_UNREADABLE':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ could not read {failure.path} before changing it
+          </Text>
+          <Text> {failure.cause}</Text>
+          <Text color={THEME.hint}> {failure.adapter}'s configuration was left alone rather than written back</Text>
+        </Box>
+      )
+    case 'MCP_CONSENT_REQUIRED':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ MCP server configuration needs your approval — nothing was changed
+          </Text>
+          {failure.request.declarations.map((entry) => (
+            <Box key={entry.identity.effectiveName} flexDirection="column">
+              <Text> {describeApprovalHeading(entry)}</Text>
+              {describeDeclarationInFull(entry.declaration).map((line) => (
+                <Text key={line} color={THEME.hint}>
+                  {'   '}
+                  {line}
+                </Text>
+              ))}
+            </Box>
+          ))}
+          {failure.request.takeovers.map((entry) => (
+            <Text key={`${entry.adapter}:${entry.identity.effectiveName}`}> {describeTakeoverHeading(entry)}</Text>
+          ))}
+        </Box>
+      )
+    case 'MCP_CONSENT_DECLINED':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.hint}>Declined. No MCP server configuration was written.</Text>
+        </Box>
+      )
+    case 'MCP_CONTRACT_VIOLATION':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ an adapter broke the MCP configuration contract
+          </Text>
+          <Text> {describeMcpContractViolation(failure.violation)}</Text>
+          <Text color={THEME.hint}> this is an adapter bug; report it to the adapter's author</Text>
         </Box>
       )
     default: {

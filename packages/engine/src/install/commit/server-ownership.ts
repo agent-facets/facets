@@ -107,7 +107,11 @@ export function buildPreviousMcpOwnership(state: ProjectReceiptState): Map<strin
  */
 export function obsoleteMcpOwnership(
   previous: ReadonlyMap<string, PreviousMcpOwnership>,
-  desired: readonly PlannedServerConfiguration[],
+  // Only the key is read, and only the key can be: the removal path proves
+  // what remains from carried receipt claims, which carry no declaration
+  // because no fetch happened. Demanding a `PlannedServerConfiguration` there
+  // would force it to invent one.
+  desired: readonly { readonly key: string }[],
 ): PreviousMcpOwnership[] {
   const claimed = new Set(desired.map((configuration) => configuration.key))
   const obsolete: PreviousMcpOwnership[] = []

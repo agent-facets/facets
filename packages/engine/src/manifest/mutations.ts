@@ -5,10 +5,12 @@ import {
   facetEntrySource,
   type LEGACY_PROJECT_MANIFEST_VERSION,
   MATERIALIZATION_OVERRIDE_GROUPS,
+  type MaterializationOverrideGroup,
   type PROJECT_MANIFEST_VERSION_0_1,
   type ProjectAssetOverride,
   type ProjectManifestParseFailure,
   parseProjectManifestDocument,
+  SERVER_OVERRIDE_GROUP,
 } from '@agent-facets/protocol'
 import { parse as parseCommentJson, stringify as stringifyCommentJson } from 'comment-json'
 
@@ -246,8 +248,35 @@ export function emptyProjectManifest(): NormalizedProjectManifest {
 
 /** How many overrides an entry declares across every recognized group. */
 export function countOverrides(overrides: FacetMaterializationOverrides | undefined): number {
+  return countOverridesIn(overrides, MATERIALIZATION_OVERRIDE_GROUPS)
+}
+
+/**
+ * How many overrides an entry declares in its ASSET groups only.
+ *
+ * Separate from {@link countOverrides} because one caller — the frozen
+ * lockfile-format gate — is asking a narrower question: can this lockfile
+ * VERSION record the dispositions this entry declares? Servers are absent
+ * from the lockfile at every version by design, so a server alias is not
+ * something an older lockfile fails to express; counting it there reported a
+ * migration the user could not perform and that would not have helped.
+ */
+export function countAssetOverrides(overrides: FacetMaterializationOverrides | undefined): number {
+  return countOverridesIn(overrides, ASSET_OVERRIDE_GROUPS)
+}
+
+/**
+ * The asset half of the override groups, derived from the full list so a new
+ * asset type joins it automatically and a new non-asset group cannot.
+ */
+const ASSET_OVERRIDE_GROUPS = MATERIALIZATION_OVERRIDE_GROUPS.filter((group) => group !== SERVER_OVERRIDE_GROUP)
+
+function countOverridesIn(
+  overrides: FacetMaterializationOverrides | undefined,
+  groups: readonly MaterializationOverrideGroup[],
+): number {
   if (overrides === undefined) return 0
-  return MATERIALIZATION_OVERRIDE_GROUPS.reduce((total, group) => total + Object.keys(overrides[group] ?? {}).length, 0)
+  return groups.reduce((total, group) => total + Object.keys(overrides[group] ?? {}).length, 0)
 }
 
 /**

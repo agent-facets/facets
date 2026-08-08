@@ -36,6 +36,7 @@ export {
 } from './adapters/installation.ts'
 export type { InstalledAdapterFailure, LoadAdaptersResult } from './adapters/loader.ts'
 export { loadInstalledAdapters } from './adapters/loader.ts'
+export type { McpUnsupportedAdapter } from './adapters/mcp-support.ts'
 export type {
   PlaceAdapterFailure,
   PlaceAdapterResult,
@@ -146,6 +147,11 @@ export {
   facetReceiptsDir,
   resolveFacetDir,
 } from './facet-dir.ts'
+export type {
+  AssetTakeoverDecision,
+  AssetTakeoverRequest,
+  AssetTakeoverResolver,
+} from './install/asset-takeover.ts'
 // install machinery
 // The collision-resolver contract. Exported because the interactive
 // workspace lives in the CLI (TTY detection and prompting are display
@@ -164,6 +170,19 @@ export type { LoadLockfileResult } from './install/lockfile-io.ts'
 export { emptyLockfile, FACETS_LOCK_FILE, loadLockfile, writeLockfile } from './install/lockfile-io.ts'
 export type { MaterializeOptions, MaterializeResult } from './install/materialize.ts'
 export { materialize } from './install/materialize.ts'
+// MCP configuration consent. Exported for the same reason the collision
+// resolver is: the screen is a display concern the CLI owns, while what
+// needs approving — and what an approval means — is an engine rule.
+export type {
+  McpApprovalStanding,
+  McpConsentDecision,
+  McpConsentPolicy,
+  McpConsentRequest,
+  McpConsentResolver,
+  McpDeclarationApproval,
+  McpNativeTakeover,
+} from './install/mcp/consent.ts'
+export type { McpContractViolation } from './install/mcp/prepare.ts'
 // Prototype-safe access to records keyed by user-authored names. The CLI's
 // collision draft builds and rewrites exactly such a record before handing it
 // back as the resolver's answer, so it needs the same two primitives the

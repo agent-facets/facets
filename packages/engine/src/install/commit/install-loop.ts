@@ -1,5 +1,6 @@
 import type { Adapter } from '@agent-facets/adapter'
 import type { CurrentLockfileFacet, MaterializedAsset } from '@agent-facets/protocol'
+import type { AssetTakeoverResolver } from '../asset-takeover.ts'
 import { classifyOutcome } from '../classify-outcome.ts'
 import type { InstallJournal } from '../journal.ts'
 import { materialize } from '../materialize.ts'
@@ -32,6 +33,11 @@ export interface InstallLoopArgs {
   previousOwnership: ReadonlyMap<string, PreviousOwnership>
   adapters: ReadonlyArray<Adapter>
   journal: InstallJournal
+  /**
+   * Interactive gate for an occupied destination this machine does not own.
+   * Forwarded verbatim; absence means continue.
+   */
+  resolveAssetTakeover?: AssetTakeoverResolver
   signal?: AbortSignal
   onStage: (event: StageEvent) => void
   onLog: OnLog
@@ -50,7 +56,7 @@ export interface InstallLoopArgs {
  * only reports; it never unwinds.
  */
 export async function installFacets(args: InstallLoopArgs): Promise<InstallLoopResult> {
-  const { resolved, plan, previousOwnership, adapters, journal, signal, onStage, onLog } = args
+  const { resolved, plan, previousOwnership, adapters, journal, resolveAssetTakeover, signal, onStage, onLog } = args
 
   // Entries come from Compose, which is where dispositions were decided.
   // Apply reports what it wrote; it does not re-derive what should be locked.
@@ -88,6 +94,7 @@ export async function installFacets(args: InstallLoopArgs): Promise<InstallLoopR
       previousOwnership,
       companionBytes: record.companionBytes,
       journal,
+      ...(resolveAssetTakeover ? { resolveAssetTakeover } : {}),
       onLog,
       onStage,
     })

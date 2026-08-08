@@ -21,6 +21,7 @@ import {
 } from '@agent-facets/protocol'
 import { type } from 'arktype'
 import { type CacheIdentity, cachePath, cachePutVerified, computeDirIntegrity } from '../cache/index.ts'
+import { recordingMcpCapability } from '../install/__tests__/helpers/mcp-adapter.ts'
 import { loadLockfile } from '../install/lockfile-io.ts'
 import { runInstall } from '../install/run-install.ts'
 import type { StageEvent } from '../install/types.ts'
@@ -61,7 +62,10 @@ function buildFakeAdapter(name: string): Adapter {
     name,
     apiVersion: ADAPTER_API_VERSION,
     supportsInstall: true,
-    mcpServers: false,
+    // A declared capability rather than `false`: a project with an active
+    // server declaration now requires one, and an adapter that declines is a
+    // different scenario with its own tests.
+    mcpServers: recordingMcpCapability(() => join(baseDir, 'mcp.json')).capability,
     buildAssetMetadata: (data) => ({
       ok: true,
       data: (data ?? {}) as Record<string, unknown>,
@@ -528,6 +532,10 @@ describe('runInstall — concrete MCP declarations', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [buildFakeAdapter('test')],
+      // A declaration authorizes execution, so an unapproved one now stops
+      // the run. This test is about the declaration not *degrading* the
+      // install; approval is exercised on its own.
+      mcpConsent: { kind: 'preapproved' },
     })
     expect(result.ok).toBe(true)
   })
