@@ -77,6 +77,16 @@ function fixture(facet: string, skill: string, version = '1.0.0'): string {
   return `./vendor/${facet}`
 }
 
+/** A local facet whose only deliverable is one MCP server declaration. */
+function serverFixture(facet: string, server: string, declaration: unknown, version = '1.0.0'): string {
+  const dir = join(projectRoot, 'vendor', facet)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'facet.json'), JSON.stringify({ name: facet, version, servers: { [server]: declaration } }))
+  return `./vendor/${facet}`
+}
+
+const STDIO = { type: 'stdio', command: 'npx', args: ['-y', 'server-filesystem'] }
+
 function writeManifest(value: unknown): string {
   const text = `${JSON.stringify(value, null, 2)}\n`
   writeFileSync(join(projectRoot, 'facets.json'), text)
@@ -117,9 +127,10 @@ describe('compose — collision detection', () => {
 
     // Both claimants are named, in one report.
     expect(result.failure.groups).toHaveLength(1)
-    const group = result.failure.groups[0]
-    expect(group?.effectiveName).toBe('review')
-    expect(group?.members.map((m) => m.facet).sort()).toEqual(['alpha', 'beta'])
+    const entry = result.failure.groups[0]
+    if (entry?.kind !== 'asset') expect.unreachable()
+    expect(entry.group.effectiveName).toBe('review')
+    expect(entry.group.members.map((m) => m.facet).sort()).toEqual(['alpha', 'beta'])
 
     // Nothing was written, and no adapter I/O method ran at all.
     expect(io).toEqual([])
@@ -142,7 +153,7 @@ describe('compose — collision detection', () => {
     if (result.failure.code !== 'MATERIALIZATION_COLLISION') expect.unreachable()
     // Two independent conflicts: a user should learn both at once rather
     // than discovering the second only after fixing the first.
-    expect(result.failure.groups.map((g) => g.effectiveName).sort()).toEqual(['deploy', 'review'])
+    expect(result.failure.groups.map((g) => g.group.effectiveName).sort()).toEqual(['deploy', 'review'])
   })
 
   test('agents do not collide with skills of the same name', async () => {
@@ -165,6 +176,156 @@ describe('compose — collision detection', () => {
 
     const result = await runInstall({ projectRoot, adapters: [adapter] })
     expect(result.ok).toBe(true)
+  })
+})
+
+describe('compose — MCP server composition', () => {
+  test('two facets declaring the identical server compose instead of colliding', async () => {
+    const a = serverFixture('alpha', 'filesystem', STDIO)
+    const b = serverFixture('beta', 'filesystem', STDIO)
+    writeManifest({ facets: { alpha: a, beta: b } })
+    const { adapter } = recordingAdapter('rec')
+
+    // Same declaration, same effective name: one configuration, two
+    // claimants. Contesting here would block an install over an agreement.
+    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    expect(result.ok).toBe(true)
+  })
+
+  test('two facets declaring different servers at one name collide before any write', async () => {
+    const a = serverFixture('alpha', 'filesystem', STDIO)
+    const b = serverFixture('beta', 'filesystem', { type: 'http', url: 'https://example.test/mcp' })
+    writeManifest({ facets: { alpha: a, beta: b } })
+    const { adapter, io } = recordingAdapter('rec')
+
+    const result = await runInstall({ projectRoot, adapters: [adapter] })
+
+    if (result.ok) expect.unreachable()
+    if (result.failure.code !== 'MATERIALIZATION_COLLISION') expect.unreachable()
+    const entry = result.failure.groups[0]
+    if (entry?.kind !== 'mcp-server') expect.unreachable()
+    expect(entry.group.effectiveName).toBe('filesystem')
+    expect(entry.group.members.map((m) => m.facet).sort()).toEqual(['alpha', 'beta'])
+    expect(io).toEqual([])
+    expect(existsSyncSafe(join(projectRoot, 'facets.lock'))).toBe(false)
+  })
+
+  test('a server and a skill of the same name do not collide', async () => {
+    const a = serverFixture('alpha', 'review', STDIO)
+    const b = fixture('beta', 'review')
+    writeManifest({ facets: { alpha: a, beta: b } })
+    const { adapter } = recordingAdapter('rec')
+
+    // Separate identity spaces, so there is no shared key to contend in.
+    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    expect(result.ok).toBe(true)
+  })
+
+  test('an alias resolves a server collision, and both survive', async () => {
+    const a = serverFixture('alpha', 'filesystem', STDIO)
+    const b = serverFixture('beta', 'filesystem', { type: 'http', url: 'https://example.test/mcp' })
+    writeManifest({
+      manifestVersion: 0.2,
+      facets: {
+        alpha: { source: a, materialization: { servers: { filesystem: { kind: 'aliased', as: 'alpha-fs' } } } },
+        beta: b,
+      },
+    })
+    const { adapter } = recordingAdapter('rec')
+
+    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    expect(result.ok).toBe(true)
+  })
+
+  test('an omission resolves a server collision', async () => {
+    const a = serverFixture('alpha', 'filesystem', STDIO)
+    const b = serverFixture('beta', 'filesystem', { type: 'http', url: 'https://example.test/mcp' })
+    writeManifest({
+      manifestVersion: 0.2,
+      facets: {
+        alpha: { source: a, materialization: { servers: { filesystem: { kind: 'omitted' } } } },
+        beta: b,
+      },
+    })
+    const { adapter } = recordingAdapter('rec')
+
+    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    expect(result.ok).toBe(true)
+  })
+
+  test('a server-only facet installs with zero assets', async () => {
+    const a = serverFixture('alpha', 'filesystem', STDIO)
+    writeManifest({ facets: { alpha: a } })
+    const { adapter, io } = recordingAdapter('rec')
+
+    const result = await runInstall({ projectRoot, adapters: [adapter] })
+
+    if (!result.ok) expect.unreachable()
+    // The lockfile records the facet with an empty asset list; no adapter
+    // asset method runs, because there is no asset.
+    expect(io).toEqual([])
+    expect(existsSyncSafe(join(projectRoot, 'facets.lock'))).toBe(true)
+  })
+
+  test('asset and server collisions are reported together in one pass', async () => {
+    const a = fixture('alpha', 'review')
+    const b = fixture('beta', 'review')
+    const c = serverFixture('gamma', 'filesystem', STDIO)
+    const d = serverFixture('delta', 'filesystem', { type: 'http', url: 'https://example.test/mcp' })
+    writeManifest({ facets: { alpha: a, beta: b, gamma: c, delta: d } })
+    const { adapter } = recordingAdapter('rec')
+
+    const result = await runInstall({ projectRoot, adapters: [adapter] })
+
+    if (result.ok) expect.unreachable()
+    if (result.failure.code !== 'MATERIALIZATION_COLLISION') expect.unreachable()
+    // Both domains in one report: a user shown the asset conflict now and the
+    // server conflict on the next attempt learns the shape of the problem one
+    // round trip at a time.
+    expect(result.failure.groups.map((g) => g.kind).sort()).toEqual(['asset', 'mcp-server'])
+  })
+
+  test('a server-only facet locks with an empty asset list and no server data', async () => {
+    const a = serverFixture('alpha', 'filesystem', STDIO)
+    writeManifest({ facets: { alpha: a } })
+    const { adapter } = recordingAdapter('rec')
+
+    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+
+    // The lockfile is unchanged by MCP support: a declaration travels inside
+    // the integrity-pinned `facet.json`, so duplicating it here would give a
+    // shared file a second, unverifiable copy.
+    const lockfile = JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8'))
+    expect(lockfile.lockfileVersion).toBe(0.3)
+    expect(lockfile.facets.alpha.assets).toEqual([])
+    expect(JSON.stringify(lockfile)).not.toContain('npx')
+    expect(JSON.stringify(lockfile)).not.toContain('servers')
+  })
+
+  test('a server override naming an undeclared server is reported as stale, not fatal', async () => {
+    const a = serverFixture('alpha', 'filesystem', STDIO)
+    writeManifest({
+      manifestVersion: 0.2,
+      facets: {
+        alpha: { source: a, materialization: { servers: { gone: { kind: 'omitted' } } } },
+      },
+    })
+    const { adapter } = recordingAdapter('rec')
+    const events: StageEvent[] = []
+
+    const result = await runInstall({ projectRoot, adapters: [adapter], onStage: (e) => events.push(e) })
+
+    expect(result.ok).toBe(true)
+    expect(events.filter((e) => e.kind === 'stale-override-pruned')).toEqual([
+      {
+        kind: 'stale-override-pruned',
+        facet: 'alpha',
+        contribution: { kind: 'mcp-server' },
+        authoredName: 'gone',
+      },
+    ])
+    // Its last override is gone, so the entry collapses to its compact form.
+    expect(JSON.parse(readManifest()).facets.alpha).toBe('./vendor/alpha')
   })
 })
 
@@ -429,7 +590,12 @@ describe('compose — persisting and pruning intent', () => {
     // the user committed has changed.
     const prunes = events.filter((e) => e.kind === 'stale-override-pruned')
     expect(prunes).toEqual([
-      { kind: 'stale-override-pruned', facet: 'alpha', assetType: 'skill', authoredName: 'gone' },
+      {
+        kind: 'stale-override-pruned',
+        facet: 'alpha',
+        contribution: { kind: 'asset', assetType: 'skill' },
+        authoredName: 'gone',
+      },
     ])
   })
 

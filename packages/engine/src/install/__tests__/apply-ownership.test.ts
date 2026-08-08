@@ -277,6 +277,7 @@ describe('apply — global ownership reconciliation', () => {
     const receipt = readReceipt()
     const claim = (_facet: string, companion: string): Receipt['facets'][string] => ({
       version: '1.0.0',
+      integrity: 'sha256:ghost',
       assets: [
         {
           scope: 'project',
@@ -286,6 +287,7 @@ describe('apply — global ownership reconciliation', () => {
           files: ['skills/shared/SKILL.md', `skills/shared/${companion}`],
         },
       ],
+      configurations: [],
     })
     writeReceipt(projectRoot, {
       version: CURRENT_RECEIPT_VERSION,
@@ -985,7 +987,7 @@ describe('apply — frozen reproduction of recorded intent', () => {
     // claimant named, exactly as a non-interactive install would get it.
     if (result.failure.code !== 'MATERIALIZATION_COLLISION') expect.unreachable()
     expect(result.failure.groups).toHaveLength(1)
-    expect(result.failure.groups[0]?.members.map((m) => m.facet).sort()).toEqual(['alpha', 'beta'])
+    expect(result.failure.groups[0]?.group.members.map((m) => m.facet).sort()).toEqual(['alpha', 'beta'])
     expect(prompted).toBe(false)
     expectUntouched(lock, manifestText)
   })

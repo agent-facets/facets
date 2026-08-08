@@ -1,12 +1,7 @@
 import type { AssetType, Scope } from '@agent-facets/common'
-import type { CollisionResolutionRequest } from '@agent-facets/engine'
+import type { CollisionResolutionRequest, StaleMaterializationOverride } from '@agent-facets/engine'
 import { ownEntry, ownRecord } from '@agent-facets/engine'
-import type {
-  CollisionGroup,
-  FacetMaterializationOverrides,
-  MaterializationDisposition,
-  StaleOverride,
-} from '@agent-facets/protocol'
+import type { CollisionGroup, FacetMaterializationOverrides, MaterializationDisposition } from '@agent-facets/protocol'
 import {
   compareCodeUnits,
   isMaterialized,
@@ -118,7 +113,7 @@ export interface WorkspaceModel {
    * final check then answer the same question the same way.
    */
   confirmable: boolean
-  staleOverrides: readonly StaleOverride[]
+  staleOverrides: readonly StaleMaterializationOverride[]
 }
 
 /** Seed a draft from the overrides the project already has. */
@@ -232,7 +227,14 @@ export function evaluateDraft(request: CollisionResolutionRequest, draft: Collis
   return {
     groups,
     confirmable: planned.ok,
-    staleOverrides: planned.ok ? planned.staleOverrides : request.staleOverrides,
+    staleOverrides: planned.ok
+      ? planned.staleOverrides.map((stale) => ({
+          facet: stale.facet,
+          contribution: { kind: 'asset' as const, assetType: stale.type },
+          authoredName: stale.authoredName,
+          disposition: stale.disposition,
+        }))
+      : request.staleOverrides,
   }
 }
 

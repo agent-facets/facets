@@ -115,7 +115,7 @@ export async function resolveLocalFacet(args: ResolveLocalFacetArgs): Promise<Re
       resolved: content.resolved,
       plan: built.plan,
       companionBytes: companionBytes.companions,
-      serversDeclared: content.serversDeclared,
+      servers: content.servers,
     },
   }
 }

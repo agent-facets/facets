@@ -194,7 +194,7 @@ export { mcpServerKey, planServerMaterialization } from './materialization/serve
 // stores in place of the declaration, so prior approval can be proven without
 // recording a command, URL, or environment data.
 export type { McpServerFingerprint } from './mcp/fingerprint.ts'
-export { canonicalMcpServerEncoding, computeMcpServerFingerprint } from './mcp/fingerprint.ts'
+export { canonicalMcpServerEncoding, computeMcpServerFingerprint, isMcpServerFingerprint } from './mcp/fingerprint.ts'
 // deterministic ordering — one comparator for every artifact and report whose
 // order is part of its contract, so planner output, the removal-refinement
 // rebuild, and the lockfile writer cannot disagree.
@@ -299,6 +299,7 @@ export type {
   FacetMaterializationOverrides,
   FacetMaterializationOverrides01,
   LegacyProjectManifest,
+  MaterializationOverrideGroup,
   ProjectFacetEntry,
   ProjectFacetEntry01,
   ProjectManifest01,
@@ -310,6 +311,7 @@ export {
   facetEntrySource,
   LEGACY_PROJECT_MANIFEST_VERSION,
   LegacyProjectManifestSchema,
+  MATERIALIZATION_OVERRIDE_GROUPS,
   PROJECT_MANIFEST_VERSION_0_1,
   ProjectManifest01Schema,
   SERVER_OVERRIDE_GROUP,

@@ -1,4 +1,4 @@
-import type { LockfileSource, ResolvedFacetManifest } from '@agent-facets/protocol'
+import type { AuthoredServer, LockfileSource, ResolvedFacetManifest } from '@agent-facets/protocol'
 import type { RunInstallFailure } from '../types.ts'
 import type { SkillCompanionBytes, VerifiedAssetPlan } from '../verified-asset-plan.ts'
 
@@ -36,7 +36,16 @@ export interface ResolvedFacet {
   plan: VerifiedAssetPlan
   /** Keyed by `skill:<name>`; empty map for a companion-less skill. */
   companionBytes: Map<string, SkillCompanionBytes>
-  serversDeclared: ReadonlyArray<string>
+  /**
+   * The facet's authored MCP server declarations, in authored-name order.
+   *
+   * The complete declarations, not their names: a name alone cannot be
+   * fingerprinted, rendered natively, or compared against what a tool's
+   * configuration already says. They arrive verified — a declaration lives
+   * inside the integrity-protected `facet.json`, so anything that reached
+   * this point has already reproduced the locked integrity.
+   */
+  servers: ReadonlyArray<AuthoredServer>
 }
 
 /**

@@ -4,9 +4,11 @@ import type { CurrentLockfile, CurrentLockfileFacet } from '@agent-facets/protoc
 import { applyDesiredFacets, type ManifestDocument, type NormalizedFacetEntry } from '../../manifest/mutations.ts'
 import { writeProjectManifest } from '../../manifest/project-files.ts'
 import { FACETS_LOCK_FILE, writeLockfile } from '../lockfile-io.ts'
-import { ownRecord } from '../own-entry.ts'
+import { ownEntry, ownRecord } from '../own-entry.ts'
 import {
+  CURRENT_RECEIPT_VERSION,
   type Receipt,
+  type ReceiptConfigurationClaim,
   type ReceiptFacetEntry,
   receiptEntryForLockedFacet,
   receiptPath,
@@ -34,27 +36,42 @@ import type { OnLog, RunInstallFailure } from '../types.ts'
  * the real file permanently.
  */
 export type MaterializedReceiptState =
-  | { kind: 'written'; facetEntries: Readonly<Record<string, CurrentLockfileFacet>> }
+  | {
+      kind: 'written'
+      facetEntries: Readonly<Record<string, CurrentLockfileFacet>>
+      /**
+       * The MCP configuration claims this run reconciled, keyed by facet.
+       * Separate from `facetEntries` because the lockfile records no
+       * declarations, so there is nothing in a locked entry to derive a claim
+       * from — it can only come from what was actually applied.
+       */
+      configurations: Readonly<Record<string, readonly ReceiptConfigurationClaim[]>>
+    }
   | { kind: 'carried-forward'; facets: Readonly<Record<string, ReceiptFacetEntry>> }
 
 /**
  * Derive the new receipt from what this run actually put on disk. The receipt
- * records `{ version, assets[] }` per facet, each asset carrying the owned
- * inner-archive file paths — a self-sufficient, offline-capable deletion
- * record for future drift removal. It mirrors paths, never hashes.
+ * records, per facet, the resolved integrity plus the assets and MCP
+ * configuration claims it owns — a self-sufficient, offline-capable deletion
+ * record for future drift removal. It mirrors asset paths, never hashes, and
+ * declaration fingerprints, never declarations.
+ *
+ * Takes the project PATH rather than a previous receipt: every field of the
+ * new record comes from this run, so a previous one could only contribute
+ * claims this run has no evidence for.
  */
-export function buildUpdatedReceipt(receipt: Receipt, state: MaterializedReceiptState): Receipt {
+export function buildUpdatedReceipt(projectPath: string, state: MaterializedReceiptState): Receipt {
   const facets: Record<string, ReceiptFacetEntry> = ownRecord()
   if (state.kind === 'carried-forward') {
     for (const [name, entry] of Object.entries(state.facets)) {
       facets[name] = entry
     }
-    return { ...receipt, facets }
+    return { version: CURRENT_RECEIPT_VERSION, path: projectPath, facets }
   }
   for (const [name, entry] of Object.entries(state.facetEntries)) {
-    facets[name] = receiptEntryForLockedFacet(entry)
+    facets[name] = receiptEntryForLockedFacet(entry, ownEntry(state.configurations, name) ?? [])
   }
-  return { ...receipt, facets }
+  return { version: CURRENT_RECEIPT_VERSION, path: projectPath, facets }
 }
 
 /**

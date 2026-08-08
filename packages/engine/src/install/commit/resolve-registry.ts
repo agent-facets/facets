@@ -220,7 +220,7 @@ export async function resolveRegistryFacet(args: ResolveRegistryFacetArgs): Prom
       resolved: content.resolved,
       plan: built.plan,
       companionBytes: companionBytes.companions,
-      serversDeclared: content.serversDeclared,
+      servers: content.servers,
     },
   }
 }

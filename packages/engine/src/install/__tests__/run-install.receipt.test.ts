@@ -213,6 +213,7 @@ describe('runInstall — frozen orphan-on-pull cleanup', () => {
     const receipt = JSON.parse(readFileSync(receiptFile, 'utf8')) as Receipt
     receipt.facets.ghost = {
       version: '1.0.0',
+      integrity: 'sha256:ghost',
       assets: [
         {
           scope: 'project',
@@ -222,6 +223,7 @@ describe('runInstall — frozen orphan-on-pull cleanup', () => {
           files: ['skills/ghostly/SKILL.md'],
         },
       ],
+      configurations: [],
     }
     writeReceipt(projectRoot, receipt)
     mkdirSync(join(projectRoot, '.test-adapter/skills'), { recursive: true })
@@ -289,6 +291,7 @@ describe('runInstall — receipt escape entries (W2)', () => {
       facets: {
         ghost: {
           version: '1.0.0',
+          integrity: 'sha256:ghost',
           assets: [
             {
               scope: 'project',
@@ -305,6 +308,7 @@ describe('runInstall — receipt escape entries (W2)', () => {
               files: ['skills/ghostly/SKILL.md'],
             },
           ],
+          configurations: [],
         },
       },
     }

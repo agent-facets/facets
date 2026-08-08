@@ -4,6 +4,7 @@ import type {
   CollisionResolution,
   CollisionResolutionRequest,
   CollisionResolver,
+  MaterializationOverrideRef,
   RemovePrepareFailure,
   RunInstallResult,
   StageEvent,
@@ -11,6 +12,7 @@ import type {
 import { LOCKFILE_VERSION_0_3 } from '@agent-facets/protocol'
 import { Box, Text, useApp, useStderr } from 'ink'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { contributionKey, describeContribution } from '../../../util/contribution.ts'
 import { ProgressBar } from '../../components/progress-bar.tsx'
 import { ASSET_TYPE_COLORS, THEME } from '../../theme.ts'
 import { AddPrepareFailureBlock } from './add-prepare-failure-block.tsx'
@@ -97,18 +99,17 @@ interface ServerWarning {
   servers: ReadonlyArray<string>
 }
 
-/** A materialization choice dropped because its asset no longer exists. */
-interface PrunedOverride {
-  facet: string
-  assetType: AssetType
-  authoredName: string
-}
+/** A materialization choice dropped because its contribution no longer exists. */
+type PrunedOverride = MaterializationOverrideRef
 
 /** A receipt claim that failed validation and can no longer be acted on. */
 interface RejectedReceiptEntry {
   facet: string
-  asset: string
+  /** The asset name or server name the claim covered. */
+  claimed: string
   reason: string
+  /** What is left behind, phrased for the kind of claim that was lost. */
+  consequence: string
 }
 
 /**
@@ -183,7 +184,7 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
         // visible without `--verbose`, so it is state, not a log line.
         setPrunedOverrides((prev) => [
           ...prev,
-          { facet: event.facet, assetType: event.assetType, authoredName: event.authoredName },
+          { facet: event.facet, contribution: event.contribution, authoredName: event.authoredName },
         ])
         return
       case 'facet-start':
@@ -258,7 +259,30 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
         // stay on disk and no longer have anything that could clean them up,
         // which is not something a user can deduce from a summary that says
         // the facet was removed.
-        setRejectedReceiptEntries((prev) => [...prev, { facet: event.facet, asset: event.asset, reason: event.reason }])
+        setRejectedReceiptEntries((prev) => [
+          ...prev,
+          {
+            facet: event.facet,
+            claimed: event.asset,
+            reason: event.reason,
+            consequence: 'that asset’s files are left in place and will not be cleaned up',
+          },
+        ])
+        return
+      case 'receipt-invalid-configuration':
+        // Losing a server claim costs both of the things it carried: the
+        // entry is no longer ours to remove, and the declaration behind it is
+        // no longer recorded as approved on this machine.
+        setRejectedReceiptEntries((prev) => [
+          ...prev,
+          {
+            facet: event.facet,
+            claimed: event.server,
+            reason: event.reason,
+            consequence:
+              'that server’s configuration is no longer tracked, and its declaration will need approval again',
+          },
+        ])
         return
       case 'obsolete-bundle-retained':
         // The removal succeeded, so the summary will say the facet is gone —
@@ -469,9 +493,12 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
       {prunedOverrides.length > 0 && (
         <Box flexDirection="column" marginLeft={2}>
           {prunedOverrides.map((pruned) => (
-            <Text key={`${pruned.facet}:${pruned.assetType}:${pruned.authoredName}`} color={THEME.caution}>
-              ⚠ dropped the materialization choice for {pruned.assetType} “{pruned.authoredName}” in {pruned.facet} —
-              this version no longer contains that asset.
+            <Text
+              key={`${pruned.facet}:${contributionKey(pruned.contribution)}:${pruned.authoredName}`}
+              color={THEME.caution}
+            >
+              ⚠ dropped the materialization choice for {describeContribution(pruned.contribution)} “
+              {pruned.authoredName}” in {pruned.facet} — this version no longer contains it.
             </Text>
           ))}
         </Box>
@@ -495,9 +522,9 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
       {rejectedReceiptEntries.length > 0 && (
         <Box flexDirection="column" marginLeft={2}>
           {rejectedReceiptEntries.map((entry) => (
-            <Text key={`${entry.facet}:${entry.asset}`} color={THEME.caution}>
-              ⚠ this project’s install receipt records “{entry.asset}” in {entry.facet} unusably ({entry.reason}) — that
-              asset’s files are left in place and will not be cleaned up.
+            <Text key={`${entry.facet}:${entry.claimed}`} color={THEME.caution}>
+              ⚠ this project’s install receipt records “{entry.claimed}” in {entry.facet} unusably ({entry.reason}) —{' '}
+              {entry.consequence}.
             </Text>
           ))}
         </Box>

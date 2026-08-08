@@ -1356,7 +1356,12 @@ describe('InstallView — materialization reporting', () => {
         run: makeFakeRun(
           [
             { kind: 'install-start', totalFacets: 1 },
-            { kind: 'stale-override-pruned', facet: 'alpha', assetType: 'skill', authoredName: 'gone' },
+            {
+              kind: 'stale-override-pruned',
+              facet: 'alpha',
+              contribution: { kind: 'asset', assetType: 'skill' },
+              authoredName: 'gone',
+            },
           ],
           successResultSingle,
         ),

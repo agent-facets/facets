@@ -259,6 +259,19 @@ describe('countOverrides', () => {
       }),
     ).toBe(3)
   })
+
+  // This count decides whether an entry stays expanded. A servers-only entry
+  // counting as zero is not a cosmetic undercount — it collapses the entry to
+  // a compact source string and erases the intent from `facets.json`.
+  test('counts server overrides too', () => {
+    expect(countOverrides({ servers: { filesystem: { kind: 'omitted' } } })).toBe(1)
+    expect(
+      countOverrides({
+        skills: { review: { kind: 'omitted' } },
+        servers: { filesystem: { kind: 'aliased', as: 'project-filesystem' } },
+      }),
+    ).toBe(2)
+  })
 })
 
 describe('emptyProjectManifest', () => {
@@ -306,6 +319,54 @@ describe('applyDesiredFacets — canonical form', () => {
     const out = roundTrip('{"facets":{"a":"1.*","b":"2.*"}}', { a: entry('1.*') })
     expect(JSON.parse(out).facets).toEqual({ a: '1.*' })
   })
+
+  test('a server-only entry stays expanded rather than collapsing', () => {
+    const out = roundTrip('{"facets":{}}', {
+      a: entry('1.*', { servers: { filesystem: { kind: 'aliased', as: 'project-filesystem' } } }),
+    })
+    expect(JSON.parse(out).facets.a).toEqual({
+      source: '1.*',
+      materialization: { servers: { filesystem: { kind: 'aliased', as: 'project-filesystem' } } },
+    })
+  })
+
+  test('a server override is reconciled in place, not left behind', () => {
+    const raw = JSON.stringify({
+      manifestVersion: 0.2,
+      facets: {
+        a: {
+          source: '1.*',
+          materialization: { servers: { filesystem: { kind: 'aliased', as: 'old' }, docs: { kind: 'omitted' } } },
+        },
+      },
+    })
+    // `docs` is dropped and `filesystem` retargeted. Both edits have to land:
+    // a group this writer does not visit keeps whatever the document said.
+    const out = roundTrip(raw, {
+      a: entry('1.*', { servers: { filesystem: { kind: 'aliased', as: 'new' } } }),
+    })
+    expect(JSON.parse(out).facets.a).toEqual({
+      source: '1.*',
+      materialization: { servers: { filesystem: { kind: 'aliased', as: 'new' } } },
+    })
+  })
+
+  test('an emptied servers group is removed rather than left as an empty object', () => {
+    const raw = JSON.stringify({
+      manifestVersion: 0.2,
+      facets: {
+        a: {
+          source: '1.*',
+          materialization: { skills: { review: { kind: 'omitted' } }, servers: { docs: { kind: 'omitted' } } },
+        },
+      },
+    })
+    const out = roundTrip(raw, { a: entry('1.*', { skills: { review: { kind: 'omitted' } } }) })
+    expect(JSON.parse(out).facets.a).toEqual({
+      source: '1.*',
+      materialization: { skills: { review: { kind: 'omitted' } } },
+    })
+  })
 })
 
 describe('applyDesiredFacets — version stamping', () => {
@@ -332,6 +393,18 @@ describe('applyDesiredFacets — source updates preserve overrides', () => {
     expect(JSON.parse(out).facets.a).toEqual({
       source: '2.*',
       materialization: { commands: { deploy: { kind: 'omitted' } } },
+    })
+  })
+
+  test('changing a source preserves a server override', () => {
+    const raw = JSON.stringify({
+      manifestVersion: 0.2,
+      facets: { a: { source: '1.*', materialization: { servers: { filesystem: { kind: 'omitted' } } } } },
+    })
+    const out = roundTrip(raw, { a: entry('2.*', { servers: { filesystem: { kind: 'omitted' } } }) })
+    expect(JSON.parse(out).facets.a).toEqual({
+      source: '2.*',
+      materialization: { servers: { filesystem: { kind: 'omitted' } } },
     })
   })
 })

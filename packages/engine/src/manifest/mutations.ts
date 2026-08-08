@@ -1,11 +1,10 @@
 import {
-  ASSET_DIRECTORY,
-  ASSET_TYPES,
   CURRENT_PROJECT_MANIFEST_VERSION,
   type FacetMaterializationOverrides,
   facetEntryOverrides,
   facetEntrySource,
   type LEGACY_PROJECT_MANIFEST_VERSION,
+  MATERIALIZATION_OVERRIDE_GROUPS,
   type PROJECT_MANIFEST_VERSION_0_1,
   type ProjectAssetOverride,
   type ProjectManifestParseFailure,
@@ -245,18 +244,10 @@ export function emptyProjectManifest(): NormalizedProjectManifest {
   }
 }
 
-/**
- * The manifest override groups, in canonical asset-type order.
- *
- * Derived from the published asset-type list rather than written out, so a
- * new asset type cannot gain a group that this module then fails to iterate.
- */
-const OVERRIDE_GROUPS = ASSET_TYPES.map((type) => ASSET_DIRECTORY[type])
-
-/** How many overrides an entry declares across every asset type. */
+/** How many overrides an entry declares across every recognized group. */
 export function countOverrides(overrides: FacetMaterializationOverrides | undefined): number {
   if (overrides === undefined) return 0
-  return OVERRIDE_GROUPS.reduce((total, group) => total + Object.keys(overrides[group] ?? {}).length, 0)
+  return MATERIALIZATION_OVERRIDE_GROUPS.reduce((total, group) => total + Object.keys(overrides[group] ?? {}).length, 0)
 }
 
 /**
@@ -345,7 +336,7 @@ function reconcileOverrides(expanded: { materialization?: unknown }, desired: Fa
   }
   const document = expanded.materialization as Record<string, unknown>
 
-  for (const group of OVERRIDE_GROUPS) {
+  for (const group of MATERIALIZATION_OVERRIDE_GROUPS) {
     const desiredGroup = desired[group]
     if (desiredGroup === undefined || Object.keys(desiredGroup).length === 0) {
       // The canonical form of "no overrides of this type" is an absent group,

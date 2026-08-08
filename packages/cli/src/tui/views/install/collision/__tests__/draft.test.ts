@@ -21,7 +21,16 @@ function requestFor(contributions: FacetContribution[]): CollisionResolutionRequ
   const planned = planMaterialization(contributions)
   if (planned.ok) expect.unreachable()
   if (planned.reason !== 'collision') expect.unreachable()
-  return { groups: planned.groups, contributions, staleOverrides: planned.staleOverrides }
+  return {
+    groups: planned.groups,
+    contributions,
+    staleOverrides: planned.staleOverrides.map((stale) => ({
+      facet: stale.facet,
+      contribution: { kind: 'asset' as const, assetType: stale.type },
+      authoredName: stale.authoredName,
+      disposition: stale.disposition,
+    })),
+  }
 }
 
 function skill(facet: string, ...names: string[]): FacetContribution {

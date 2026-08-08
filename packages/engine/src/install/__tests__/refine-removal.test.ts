@@ -106,13 +106,17 @@ function receiptFor(lockfile: SupportedLockfile, opts: { without?: string } = {}
   const facets: Array<[string, ReceiptFacetEntry]> = []
   for (const [name, entry] of Object.entries(lockfile.facets)) {
     if (name === opts.without) continue
-    facets.push([name, receiptEntryForLockedFacet(entry)])
+    facets.push([name, receiptEntryForLockedFacet(entry, [])])
   }
   return { version: CURRENT_RECEIPT_VERSION, path: '/tmp/project', facets: record(facets) }
 }
 
 function loaded(receipt: Receipt): ProjectReceiptState {
-  return { kind: 'loaded', receipt, invalidEntries: [] }
+  return {
+    kind: 'loaded',
+    record: { authority: 'assets-and-configuration', path: receipt.path, facets: receipt.facets },
+    invalidEntries: [],
+  }
 }
 
 /** No usable local evidence, whatever the reason. Ownership is zero. */

@@ -104,8 +104,13 @@ export function checkFrozenConsistency(args: FrozenGateArgs): RunInstallFailure 
     // just delivered before anything was downloaded.
     return {
       code: 'MATERIALIZATION_COLLISION',
-      groups: planned.groups,
-      staleOverrides: planned.staleOverrides,
+      groups: planned.groups.map((group) => ({ kind: 'asset' as const, group })),
+      staleOverrides: planned.staleOverrides.map((stale) => ({
+        facet: stale.facet,
+        contribution: { kind: 'asset', assetType: stale.type },
+        authoredName: stale.authoredName,
+        disposition: stale.disposition,
+      })),
     }
   }
 
@@ -114,7 +119,7 @@ export function checkFrozenConsistency(args: FrozenGateArgs): RunInstallFailure 
   const drift: LockfileDriftEntry[] = planned.staleOverrides.map((stale) => ({
     name: stale.facet,
     reason: 'stale-override' as const,
-    assetType: stale.type,
+    contribution: { kind: 'asset', assetType: stale.type },
     authoredName: stale.authoredName,
   }))
 

@@ -6,7 +6,7 @@ import {
   SKILL_PRIMARY_FILE,
   skillRootPath,
 } from '@agent-facets/protocol'
-import type { ProjectReceiptState } from '../receipt.ts'
+import { assetOwnershipOf, type ProjectReceiptState } from '../receipt.ts'
 
 /**
  * The global ownership index: what this machine has materialized, keyed by
@@ -120,7 +120,10 @@ export function buildPreviousOwnership(state: ProjectReceiptState): Map<string, 
   const index = new Map<string, PreviousOwnership>()
   if (state.kind !== 'loaded') return index
 
-  for (const [facet, entry] of Object.entries(state.receipt.facets)) {
+  // Every readable receipt version records assets identically, so asset
+  // ownership does not discriminate on configuration authority: a pre-`0.4`
+  // record owns exactly as many files as a current one.
+  for (const [facet, entry] of Object.entries(assetOwnershipOf(state.record))) {
     for (const asset of entry.assets) {
       addClaim(index, facet, {
         scope: asset.scope,

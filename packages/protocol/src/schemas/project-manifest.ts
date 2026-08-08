@@ -1,6 +1,6 @@
-import { validateAssetName } from '@agent-facets/common'
+import { type AssetType, validateAssetName } from '@agent-facets/common'
 import { type } from 'arktype'
-import { ASSET_DIRECTORY } from '../materialization/identity.ts'
+import { ASSET_DIRECTORY, ASSET_TYPES } from '../materialization/identity.ts'
 import { ProjectAssetOverrideSchema } from './materialization.ts'
 import { validateMcpServerName } from './mcp-server.ts'
 
@@ -56,6 +56,23 @@ export const SUPPORTED_PROJECT_MANIFEST_VERSIONS: readonly number[] = [
  * non-interactive collision report all point users at the same location.
  */
 export const SERVER_OVERRIDE_GROUP = 'servers'
+
+/**
+ * Every override group the current schema recognizes, in document order.
+ *
+ * Derived from the asset-type list plus the server group rather than written
+ * out, so a producer that iterates this cannot fail to visit a group the
+ * schema accepts. That failure mode is not hypothetical: counting, pruning,
+ * and comment-preserving reconciliation all iterate groups, and a group
+ * missing from that iteration is silently dropped from the document on the
+ * next successful write.
+ */
+export type MaterializationOverrideGroup = (typeof ASSET_DIRECTORY)[AssetType] | typeof SERVER_OVERRIDE_GROUP
+
+export const MATERIALIZATION_OVERRIDE_GROUPS: readonly MaterializationOverrideGroup[] = [
+  ...ASSET_TYPES.map((type) => ASSET_DIRECTORY[type]),
+  SERVER_OVERRIDE_GROUP,
+]
 
 // --- Materialization overrides ---
 

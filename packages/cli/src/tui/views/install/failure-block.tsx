@@ -2,7 +2,8 @@ import type { LockfileDriftEntry, RollbackOutcome, RunInstallFailure, RunInstall
 import { Box, Text } from 'ink'
 import type React from 'react'
 import { describeCompatibilityFailure } from '../../../util/adapter-install-errors.ts'
-import { describeNamespace, manifestLocation } from '../../../util/collision-report.ts'
+import { collisionClaimants, collisionGroupKey, describeCollisionGroup } from '../../../util/collision-report.ts'
+import { contributionKey, describeContribution } from '../../../util/contribution.ts'
 import { diskStateSentence } from '../../../util/install-outcome.ts'
 import { THEME } from '../../theme.ts'
 import { UnsupportedManifestVersionBlock } from './unsupported-version-block.tsx'
@@ -22,8 +23,9 @@ function describeDisposition(disposition: { kind: string; as?: string }): string
 function driftKey(entry: LockfileDriftEntry): string {
   switch (entry.reason) {
     case 'materialization-drift':
-    case 'stale-override':
       return `${entry.name}:${entry.reason}:${entry.assetType}:${entry.authoredName}`
+    case 'stale-override':
+      return `${entry.name}:${entry.reason}:${contributionKey(entry.contribution)}:${entry.authoredName}`
     default:
       return `${entry.name}:${entry.reason}`
   }
@@ -52,7 +54,7 @@ function describeDrift(entry: LockfileDriftEntry): string {
     case 'materialization-drift':
       return `${entry.assetType} "${entry.authoredName}": facets.json says ${describeDisposition(entry.manifest)}, lockfile says ${describeDisposition(entry.locked)}`
     case 'stale-override':
-      return `${entry.assetType} "${entry.authoredName}" has a materialization override but is not in the locked content`
+      return `${describeContribution(entry.contribution)} "${entry.authoredName}" has a materialization override but is not in the locked content`
     case 'materialization-unrepresentable':
       return `lockfile v${entry.lockfileVersion} cannot record materialization overrides (needs v${entry.requiredVersion})`
   }
@@ -513,29 +515,29 @@ function failureDetail(failure: RunInstallFailure): React.JSX.Element {
           <Text color={THEME.warning} bold>
             ✕ two or more facets want the same name
           </Text>
-          {failure.groups.map((group) => (
-            <Box key={`${group.scope}:${group.namespace}:${group.effectiveName}`} flexDirection="column">
+          {failure.groups.map((entry) => (
+            <Box key={collisionGroupKey(entry)} flexDirection="column">
               <Text>
                 {' '}
-                {describeNamespace(group.namespace, group.scope)} — “{group.effectiveName}” is claimed by:
+                {describeCollisionGroup(entry)} — “{entry.group.effectiveName}” is claimed by:
               </Text>
-              {group.members.map((member) => (
-                <Box key={`${member.facet}:${member.type}:${member.authoredName}`} flexDirection="column">
+              {collisionClaimants(entry).map((claimant) => (
+                <Box key={claimant.key} flexDirection="column">
                   <Text color={THEME.hint}>
                     {'   '}
-                    {member.facet} ({member.type} {member.authoredName})
+                    {claimant.facet} ({claimant.label})
                   </Text>
                   {/* The exact edit site, derived from the published
                       group mapping so it cannot drift from the schema. */}
                   <Text color={THEME.hint}>
                     {'     '}
-                    {manifestLocation(member.facet, member.type, member.authoredName)}
+                    {claimant.location}
                   </Text>
                 </Box>
               ))}
             </Box>
           ))}
-          <Text color={THEME.hint}> Record an alias or omission per asset in facets.json, then re-run.</Text>
+          <Text color={THEME.hint}> Record an alias or omission per claimant in facets.json, then re-run.</Text>
         </Box>
       )
     case 'MATERIALIZATION_ALIAS_INVALID':
@@ -564,14 +566,16 @@ function failureDetail(failure: RunInstallFailure): React.JSX.Element {
               {problem.facet}: “{problem.alias}” {problem.reason}
             </Text>
           ))}
-          {failure.groups.map((group) => (
-            <Text key={`${group.scope}:${group.namespace}:${group.effectiveName}`} color={THEME.hint}>
+          {failure.groups.map((entry) => (
+            <Text key={collisionGroupKey(entry)} color={THEME.hint}>
               {' '}
               {/* Humanized, like the collision arm above: the raw
                   discriminant (`skill-command`) is an internal name, and it
                   drops the scope entirely. */}
-              {describeNamespace(group.namespace, group.scope)} “{group.effectiveName}” is still claimed by{' '}
-              {group.members.map((m) => m.facet).join(', ')}
+              {describeCollisionGroup(entry)} “{entry.group.effectiveName}” is still claimed by{' '}
+              {collisionClaimants(entry)
+                .map((claimant) => claimant.facet)
+                .join(', ')}
             </Text>
           ))}
         </Box>

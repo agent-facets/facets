@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Lockfile02, SupportedLockfile } from '@agent-facets/protocol'
@@ -10,14 +10,39 @@ import {
   LEGACY_RECEIPT_VERSION,
   loadReceipt,
   RECEIPT_VERSION_0_2,
+  RECEIPT_VERSION_0_3,
   type Receipt,
   type ReceiptAsset,
-  receiptBaseFor,
+  type ReceiptConfigurationClaim,
+  type ReceiptFacetEntry,
   receiptEntryForLockedFacet,
   receiptPath,
+  receiptProjectPath,
   resolveProjectReceipt,
   writeReceipt,
 } from '../receipt.ts'
+
+/** Placeholder facet integrity. Only its identity across a round trip matters. */
+const INTEGRITY = 'sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
+
+/** A configuration claim. The fingerprint stands in for a declaration. */
+function claim(name: string, materialization: ReceiptConfigurationClaim['materialization'] = { kind: 'authored' }) {
+  return {
+    kind: 'mcp-server',
+    name,
+    materialization,
+    fingerprint: `sha256:${'a'.repeat(64)}`,
+  } satisfies ReceiptConfigurationClaim
+}
+
+/** A current facet record. Most tests care only about its assets. */
+function facetEntry(
+  version: string,
+  assets: ReceiptAsset[],
+  configurations: ReceiptConfigurationClaim[] = [],
+): ReceiptFacetEntry {
+  return { version, integrity: INTEGRITY, assets, configurations }
+}
 
 /** An authored-materialization skill asset owning exactly its SKILL.md. */
 function skillAsset(name: string): ReceiptAsset {
@@ -55,6 +80,12 @@ function commandAsset(name: string): ReceiptAsset {
 let facetDir: string
 let projectDir: string
 let originalFacetDir: string | undefined
+
+/** Write receipt bytes verbatim, bypassing the writer's own shaping. */
+function writeRawReceipt(body: string): void {
+  mkdirSync(join(facetDir, 'receipts'), { recursive: true })
+  writeFileSync(receiptPath(projectDir), body)
+}
 
 beforeEach(() => {
   originalFacetDir = process.env.FACET_DIR
@@ -154,14 +185,8 @@ describe('loadReceipt', () => {
       version: CURRENT_RECEIPT_VERSION,
       path: realpathSync(projectDir),
       facets: {
-        cowsay: {
-          version: '0.0.1',
-          assets: [{ ...skillAsset('escape'), name: '../escape' }, skillAsset('cowsay')],
-        },
-        hello: {
-          version: '1.0.0',
-          assets: [agentAsset('greeter')],
-        },
+        cowsay: facetEntry('0.0.1', [{ ...skillAsset('escape'), name: '../escape' }, skillAsset('cowsay')]),
+        hello: facetEntry('1.0.0', [agentAsset('greeter')]),
       },
     }
     const path = receiptPath(projectDir)
@@ -171,12 +196,14 @@ describe('loadReceipt', () => {
     if (!result.ok) expect.unreachable()
     // The invalid entry is reported with its facet, name, and reason.
     expect(result.invalidEntries).toHaveLength(1)
-    expect(result.invalidEntries[0]?.facet).toBe('cowsay')
-    expect(result.invalidEntries[0]?.asset).toBe('../escape')
-    expect(result.invalidEntries[0]?.reason.length).toBeGreaterThan(0)
+    const invalid = result.invalidEntries[0]
+    if (invalid?.kind !== 'asset') expect.unreachable()
+    expect(invalid.facet).toBe('cowsay')
+    expect(invalid.asset).toBe('../escape')
+    expect(invalid.reason.length).toBeGreaterThan(0)
     // The valid sibling asset and the untouched facet still load.
-    expect(result.receipt.facets.cowsay?.assets).toEqual([skillAsset('cowsay')])
-    expect(result.receipt.facets.hello?.assets).toHaveLength(1)
+    expect(result.record.facets.cowsay?.assets).toEqual([skillAsset('cowsay')])
+    expect(result.record.facets.hello?.assets).toHaveLength(1)
   })
 
   test('drops an asset whose owned file path escapes, reporting it', () => {
@@ -187,19 +214,16 @@ describe('loadReceipt', () => {
       version: CURRENT_RECEIPT_VERSION,
       path: realpathSync(projectDir),
       facets: {
-        cowsay: {
-          version: '0.0.1',
-          assets: [
-            {
-              scope: 'project',
-              type: 'skill',
-              name: 'cowsay',
-              materialization: { kind: 'authored' },
-              files: ['skills/cowsay/../../escape.md'],
-            },
-            skillAsset('safe'),
-          ],
-        },
+        cowsay: facetEntry('0.0.1', [
+          {
+            scope: 'project',
+            type: 'skill',
+            name: 'cowsay',
+            materialization: { kind: 'authored' },
+            files: ['skills/cowsay/../../escape.md'],
+          },
+          skillAsset('safe'),
+        ]),
       },
     }
     const path = receiptPath(projectDir)
@@ -208,9 +232,11 @@ describe('loadReceipt', () => {
     const result = loadReceipt(projectDir)
     if (!result.ok) expect.unreachable()
     expect(result.invalidEntries).toHaveLength(1)
-    expect(result.invalidEntries[0]?.asset).toBe('cowsay')
-    expect(result.invalidEntries[0]?.reason).toContain('owned path')
-    expect(result.receipt.facets.cowsay?.assets).toEqual([skillAsset('safe')])
+    const invalid = result.invalidEntries[0]
+    if (invalid?.kind !== 'asset') expect.unreachable()
+    expect(invalid.asset).toBe('cowsay')
+    expect(invalid.reason).toContain('owned path')
+    expect(result.record.facets.cowsay?.assets).toEqual([skillAsset('safe')])
   })
 
   test('refines a legacy (1) receipt to primary-only ownership', () => {
@@ -235,8 +261,8 @@ describe('loadReceipt', () => {
     writeFileSync(path, JSON.stringify(legacy))
     const result = loadReceipt(projectDir)
     if (!result.ok) expect.unreachable()
-    expect(result.receipt.version).toBe(CURRENT_RECEIPT_VERSION)
-    expect(result.receipt.facets.cowsay?.assets).toEqual([skillAsset('cowsay'), commandAsset('moo')])
+    expect(result.record.authority).toBe('assets-only')
+    expect(result.record.facets.cowsay?.assets).toEqual([skillAsset('cowsay'), commandAsset('moo')])
   })
 
   test('refines a 0.2 receipt to authored, retaining its complete ownership', () => {
@@ -265,9 +291,9 @@ describe('loadReceipt', () => {
     writeFileSync(path, JSON.stringify(receipt02))
     const result = loadReceipt(projectDir)
     if (!result.ok) expect.unreachable()
-    expect(result.receipt.version).toBe(CURRENT_RECEIPT_VERSION)
-    expect(result.receipt.facets.cowsay?.assets[0]?.materialization).toEqual({ kind: 'authored' })
-    expect(result.receipt.facets.cowsay?.assets[0]?.files).toEqual([
+    expect(result.record.authority).toBe('assets-only')
+    expect(result.record.facets.cowsay?.assets[0]?.materialization).toEqual({ kind: 'authored' })
+    expect(result.record.facets.cowsay?.assets[0]?.files).toEqual([
       'skills/cowsay/SKILL.md',
       'skills/cowsay/references/art.md',
     ])
@@ -278,18 +304,15 @@ describe('loadReceipt', () => {
       version: CURRENT_RECEIPT_VERSION,
       path: realpathSync(projectDir),
       facets: {
-        cowsay: {
-          version: '0.0.1',
-          assets: [
-            {
-              scope: 'project',
-              type: 'skill',
-              name: 'cowsay',
-              materialization: { kind: 'aliased', as: 'vendor-cowsay' },
-              files: ['skills/cowsay/SKILL.md'],
-            },
-          ],
-        },
+        cowsay: facetEntry('0.0.1', [
+          {
+            scope: 'project',
+            type: 'skill',
+            name: 'cowsay',
+            materialization: { kind: 'aliased', as: 'vendor-cowsay' },
+            files: ['skills/cowsay/SKILL.md'],
+          },
+        ]),
       },
     }
     const path = receiptPath(projectDir)
@@ -299,12 +322,12 @@ describe('loadReceipt', () => {
     if (!result.ok) expect.unreachable()
     // Both names survive: authored anchors ownership and canonical paths,
     // the alias is what the adapter must be asked to delete.
-    expect(result.receipt.facets.cowsay?.assets[0]?.name).toBe('cowsay')
-    expect(result.receipt.facets.cowsay?.assets[0]?.materialization).toEqual({
+    expect(result.record.facets.cowsay?.assets[0]?.name).toBe('cowsay')
+    expect(result.record.facets.cowsay?.assets[0]?.materialization).toEqual({
       kind: 'aliased',
       as: 'vendor-cowsay',
     })
-    expect(result.receipt.facets.cowsay?.assets[0]?.files).toEqual(['skills/cowsay/SKILL.md'])
+    expect(result.record.facets.cowsay?.assets[0]?.files).toEqual(['skills/cowsay/SKILL.md'])
   })
 
   test('a receipt recording an omitted asset is corrupt, not silently accepted', () => {
@@ -343,10 +366,7 @@ describe('loadReceipt', () => {
       version: CURRENT_RECEIPT_VERSION,
       path: realpathSync(projectDir),
       facets: {
-        cowsay: {
-          version: '0.0.1',
-          assets: [skillAsset('cowsay')],
-        },
+        cowsay: facetEntry('0.0.1', [skillAsset('cowsay')]),
       },
     }
     writeReceipt(projectDir, receipt)
@@ -360,18 +380,139 @@ describe('loadReceipt', () => {
       version: CURRENT_RECEIPT_VERSION,
       path: realpathSync(projectDir),
       facets: {
-        cowsay: {
-          version: '0.0.1',
-          assets: [skillAsset('cowsay')],
-        },
+        cowsay: facetEntry('0.0.1', [skillAsset('cowsay')]),
       },
     }
     writeReceipt(projectDir, receipt)
     const result = loadReceipt(projectDir)
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
-    expect(result.receipt.facets.cowsay?.version).toBe('0.0.1')
-    expect(result.receipt.facets.cowsay?.assets).toHaveLength(1)
+    expect(result.record.facets.cowsay?.version).toBe('0.0.1')
+    expect(result.record.facets.cowsay?.assets).toHaveLength(1)
+  })
+
+  test('round-trips a configuration claim without recording the declaration', () => {
+    const receipt: Receipt = {
+      version: CURRENT_RECEIPT_VERSION,
+      path: realpathSync(projectDir),
+      facets: {
+        cowsay: facetEntry('0.0.1', [], [claim('filesystem', { kind: 'aliased', as: 'project-filesystem' })]),
+      },
+    }
+    writeReceipt(projectDir, receipt)
+
+    const result = loadReceipt(projectDir)
+
+    if (!result.ok) expect.unreachable()
+    if (result.record.authority !== 'assets-and-configuration') expect.unreachable()
+    expect(result.record.facets.cowsay?.configurations).toEqual([
+      claim('filesystem', { kind: 'aliased', as: 'project-filesystem' }),
+    ])
+    // The whole point of storing a fingerprint: the file names no command,
+    // no URL, and no environment data.
+    const raw = readFileSync(receiptPath(projectDir), 'utf8')
+    for (const secret of ['command', 'args', 'url', 'env', 'npx', 'https://']) {
+      expect(raw).not.toContain(secret)
+    }
+  })
+
+  // Per-entry containment, exactly as for assets: one unusable claim must not
+  // withdraw authority over the rest of the file.
+  test.each([
+    ['a malformed server name', { ...claim('ok'), name: 'Not Valid' }],
+    ['a fingerprint that is not a digest', { ...claim('ok'), fingerprint: 'sha256:nope' }],
+  ])('drops %s, reporting it, while valid claims still load', (_label, bad) => {
+    writeRawReceipt(
+      JSON.stringify({
+        version: CURRENT_RECEIPT_VERSION,
+        path: realpathSync(projectDir),
+        facets: {
+          cowsay: { version: '0.0.1', integrity: INTEGRITY, assets: [], configurations: [bad, claim('good')] },
+        },
+      }),
+    )
+
+    const result = loadReceipt(projectDir)
+
+    if (!result.ok) expect.unreachable()
+    expect(result.invalidEntries).toHaveLength(1)
+    const invalid = result.invalidEntries[0]
+    if (invalid?.kind !== 'configuration') expect.unreachable()
+    expect(invalid.facet).toBe('cowsay')
+    if (result.record.authority !== 'assets-and-configuration') expect.unreachable()
+    expect(result.record.facets.cowsay?.configurations).toEqual([claim('good')])
+  })
+
+  test('collapses a claim the receipt repeats verbatim', () => {
+    writeRawReceipt(
+      JSON.stringify({
+        version: CURRENT_RECEIPT_VERSION,
+        path: realpathSync(projectDir),
+        facets: {
+          cowsay: { version: '0.0.1', integrity: INTEGRITY, assets: [], configurations: [claim('fs'), claim('fs')] },
+        },
+      }),
+    )
+
+    const result = loadReceipt(projectDir)
+
+    if (!result.ok) expect.unreachable()
+    expect(result.invalidEntries).toEqual([])
+    if (result.record.authority !== 'assets-and-configuration') expect.unreachable()
+    expect(result.record.facets.cowsay?.configurations).toEqual([claim('fs')])
+  })
+
+  test('drops both claims when a facet contradicts itself about one server', () => {
+    // File order must not get to decide which effective entry this machine
+    // believes it owns, or which declaration it believes was approved.
+    writeRawReceipt(
+      JSON.stringify({
+        version: CURRENT_RECEIPT_VERSION,
+        path: realpathSync(projectDir),
+        facets: {
+          cowsay: {
+            version: '0.0.1',
+            integrity: INTEGRITY,
+            assets: [],
+            configurations: [claim('fs'), { ...claim('fs'), fingerprint: `sha256:${'b'.repeat(64)}` }],
+          },
+        },
+      }),
+    )
+
+    const result = loadReceipt(projectDir)
+
+    if (!result.ok) expect.unreachable()
+    expect(result.invalidEntries).toHaveLength(1)
+    const invalid = result.invalidEntries[0]
+    if (invalid?.kind !== 'configuration') expect.unreachable()
+    expect(invalid.server).toBe('fs')
+    if (result.record.authority !== 'assets-and-configuration') expect.unreachable()
+    expect(result.record.facets.cowsay?.configurations).toEqual([])
+  })
+
+  test('a claim carrying an unrecognized member is corrupt, not silently accepted', () => {
+    // The closure is the whole reason a receipt can be trusted to hold no
+    // secrets: an unrecognized member is exactly where one would live.
+    writeRawReceipt(
+      JSON.stringify({
+        version: CURRENT_RECEIPT_VERSION,
+        path: realpathSync(projectDir),
+        facets: {
+          cowsay: {
+            version: '0.0.1',
+            integrity: INTEGRITY,
+            assets: [],
+            configurations: [{ ...claim('fs'), command: 'npx' }],
+          },
+        },
+      }),
+    )
+
+    const result = loadReceipt(projectDir)
+
+    if (result.ok) expect.unreachable()
+    expect(result.reason).toBe('corrupt')
   })
 
   test('returns corrupt (not throw) on an unresolvable project path (#19)', () => {
@@ -405,23 +546,17 @@ describe('writeReceipt', () => {
       version: CURRENT_RECEIPT_VERSION,
       path: realpathSync(projectDir),
       facets: {
-        cowsay: {
-          version: '0.0.1',
-          assets: [skillAsset('cowsay'), commandAsset('moo')],
-        },
-        hello: {
-          version: '1.0.0',
-          assets: [agentAsset('greeter')],
-        },
+        cowsay: facetEntry('0.0.1', [skillAsset('cowsay'), commandAsset('moo')]),
+        hello: facetEntry('1.0.0', [agentAsset('greeter')]),
       },
     }
     writeReceipt(projectDir, receipt)
     const result = loadReceipt(projectDir)
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
-    expect(Object.keys(result.receipt.facets)).toHaveLength(2)
-    expect(result.receipt.facets.cowsay?.assets).toHaveLength(2)
-    expect(result.receipt.facets.hello?.assets).toHaveLength(1)
+    expect(Object.keys(result.record.facets)).toHaveLength(2)
+    expect(result.record.facets.cowsay?.assets).toHaveLength(2)
+    expect(result.record.facets.hello?.assets).toHaveLength(1)
   })
 
   test('normalizes receipt.path so a stale path does not cause path-mismatch (#20)', () => {
@@ -430,17 +565,14 @@ describe('writeReceipt', () => {
       version: CURRENT_RECEIPT_VERSION,
       path: '/some/other/path', // intentionally wrong
       facets: {
-        cowsay: {
-          version: '0.0.1',
-          assets: [skillAsset('cowsay')],
-        },
+        cowsay: facetEntry('0.0.1', [skillAsset('cowsay')]),
       },
     }
     writeReceipt(projectDir, receipt)
     const result = loadReceipt(projectDir)
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
-    expect(result.receipt.path).toBe(canonical)
+    expect(result.record.path).toBe(canonical)
   })
 })
 
@@ -478,7 +610,7 @@ describe('receiptEntryForLockedFacet', () => {
       ],
     }
 
-    const projected = receiptEntryForLockedFacet(entry)
+    const projected = receiptEntryForLockedFacet(entry, [])
 
     expect(projected.version).toBe('0.0.1')
     // Paths are mirrored; the hashes are not part of what a receipt records.
@@ -486,9 +618,13 @@ describe('receiptEntryForLockedFacet', () => {
     // A pre-disposition entry can only have meant authored materialization.
     expect(projected.assets[0]?.materialization).toEqual({ kind: 'authored' })
     expect(projected.assets[1]).toEqual(commandAsset('moo'))
-    // Provenance belongs to the lockfile, never the receipt.
+    // Provenance belongs to the lockfile, never the receipt. Integrity does
+    // travel — it is what anchors the entry's claims to an exact resolved
+    // facet — but the source that produced it does not.
     expect('source' in projected).toBe(false)
-    expect('integrity' in projected).toBe(false)
+    expect(projected.integrity).toBe('sha256:abc')
+    // A run that reconciled no configuration claims records none.
+    expect(projected.configurations).toEqual([])
   })
 
   test('carries dispositions through and excludes omitted assets', () => {
@@ -521,7 +657,7 @@ describe('receiptEntryForLockedFacet', () => {
       ],
     }
 
-    const projected = receiptEntryForLockedFacet(entry)
+    const projected = receiptEntryForLockedFacet(entry, [])
 
     // The omitted agent is absent: the lockfile records the resolved SET, the
     // receipt records what is on disk, and an omitted asset was never written.
@@ -537,22 +673,17 @@ describe('receiptEntryForLockedFacet', () => {
 // ---------------------------------------------------------------------------
 
 describe('resolveProjectReceipt', () => {
-  function writeRawReceipt(body: string): void {
-    mkdirSync(join(facetDir, 'receipts'), { recursive: true })
-    writeFileSync(receiptPath(projectDir), body)
-  }
-
   test('tags a readable receipt as loaded', () => {
     writeReceipt(projectDir, {
       version: CURRENT_RECEIPT_VERSION,
       path: realpathSync(projectDir),
-      facets: { cowsay: { version: '0.0.1', assets: [skillAsset('cowsay')] } },
+      facets: { cowsay: facetEntry('0.0.1', [skillAsset('cowsay')]) },
     })
 
     const state = resolveProjectReceipt(projectDir)
 
     if (state.kind !== 'loaded') expect.unreachable()
-    expect(state.receipt.facets.cowsay?.assets).toHaveLength(1)
+    expect(state.record.facets.cowsay?.assets).toHaveLength(1)
     expect(state.invalidEntries).toEqual([])
   })
 
@@ -572,25 +703,57 @@ describe('resolveProjectReceipt', () => {
     if (state.kind !== 'unavailable') expect.unreachable()
     expect(state.reason).toBe(reason)
     expect(state.projectPath).toBe(realpathSync(projectDir))
-    // The commit's base is derived, and claims nothing.
-    expect(receiptBaseFor(state).facets).toEqual({})
-    expect(receiptBaseFor(state).path).toBe(realpathSync(projectDir))
+    // The commit is told only where to write, so there is no field an
+    // ownership claim could ride in on.
+    expect(receiptProjectPath(state)).toBe(realpathSync(projectDir))
     // And it authorizes no deletion.
     expect(buildPreviousOwnership(state).size).toBe(0)
   })
 
-  test('a loaded receipt is its own base, and its claims authorize deletion', () => {
+  test('a loaded receipt names its own location, and its claims authorize deletion', () => {
     writeReceipt(projectDir, {
       version: CURRENT_RECEIPT_VERSION,
       path: realpathSync(projectDir),
-      facets: { cowsay: { version: '0.0.1', assets: [skillAsset('cowsay')] } },
+      facets: { cowsay: facetEntry('0.0.1', [skillAsset('cowsay')]) },
     })
 
     const state = resolveProjectReceipt(projectDir)
 
     if (state.kind !== 'loaded') expect.unreachable()
-    expect(receiptBaseFor(state)).toBe(state.receipt)
+    expect(receiptProjectPath(state)).toBe(realpathSync(projectDir))
     expect([...buildPreviousOwnership(state).values()].map((o) => o.effectiveName)).toEqual(['cowsay'])
+  })
+
+  // Earlier versions keep every file they ever owned, and gain nothing they
+  // could not have witnessed. The two halves are reported separately because
+  // they are separate authorities.
+  test.each([
+    [
+      'legacy 1',
+      LEGACY_RECEIPT_VERSION,
+      { version: '0.0.1', assets: [{ scope: 'project', type: 'skill', name: 'cowsay' }] },
+    ],
+    [
+      '0.2',
+      RECEIPT_VERSION_0_2,
+      {
+        version: '0.0.1',
+        assets: [{ scope: 'project', type: 'skill', name: 'cowsay', files: ['skills/cowsay/SKILL.md'] }],
+      },
+    ],
+    ['0.3', RECEIPT_VERSION_0_3, { version: '0.0.1', assets: [skillAsset('cowsay')] }],
+  ] as const)('a %s receipt keeps asset authority and confers no configuration authority', (_label, version, entry) => {
+    writeRawReceipt(JSON.stringify({ version, path: realpathSync(projectDir), facets: { cowsay: entry } }))
+
+    const state = resolveProjectReceipt(projectDir)
+
+    if (state.kind !== 'loaded') expect.unreachable()
+    if (state.record.authority !== 'assets-only') expect.unreachable()
+    expect(state.record.refinedFrom).toBe(version)
+    // Full deletion authority over the files it recorded.
+    expect([...buildPreviousOwnership(state).values()].map((o) => o.effectiveName)).toEqual(['cowsay'])
+    // And no claim field at all — not an empty one.
+    expect('configurations' in (state.record.facets.cowsay ?? {})).toBe(false)
   })
 })
 
@@ -618,10 +781,11 @@ describe('buildUpdatedReceipt', () => {
       }).replace('"PLACEHOLDER"', '"__proto__"'),
     )
 
-    const updated = buildUpdatedReceipt(
-      { version: CURRENT_RECEIPT_VERSION, path: realpathSync(projectDir), facets: {} },
-      { kind: 'written', facetEntries: newFacetEntries },
-    )
+    const updated = buildUpdatedReceipt(realpathSync(projectDir), {
+      kind: 'written',
+      facetEntries: newFacetEntries,
+      configurations: {},
+    })
 
     expect(Object.hasOwn(updated.facets, '__proto__')).toBe(true)
     expect(Object.keys(updated.facets)).toEqual(['__proto__'])
@@ -631,35 +795,33 @@ describe('buildUpdatedReceipt', () => {
   // written, so claiming ownership of it would make the next removal try to
   // delete a file that does not exist.
   test('an omitted asset is not recorded as materialized', () => {
-    const updated = buildUpdatedReceipt(
-      { version: CURRENT_RECEIPT_VERSION, path: realpathSync(projectDir), facets: {} },
-      {
-        kind: 'written',
-        facetEntries: {
-          cowsay: {
-            source: { kind: 'local', path: './vendor/cowsay' },
-            version: '1.0.0',
-            integrity: 'sha256:abc',
-            assets: [
-              {
-                scope: 'project',
-                type: 'skill',
-                name: 'kept',
-                materialization: { kind: 'authored' },
-                files: [{ path: 'skills/kept/SKILL.md', integrity: `sha256:${'0'.repeat(64)}` }],
-              },
-              {
-                scope: 'project',
-                type: 'skill',
-                name: 'dropped',
-                materialization: { kind: 'omitted' },
-                files: [{ path: 'skills/dropped/SKILL.md', integrity: `sha256:${'1'.repeat(64)}` }],
-              },
-            ],
-          },
+    const updated = buildUpdatedReceipt(realpathSync(projectDir), {
+      kind: 'written',
+      configurations: {},
+      facetEntries: {
+        cowsay: {
+          source: { kind: 'local', path: './vendor/cowsay' },
+          version: '1.0.0',
+          integrity: 'sha256:abc',
+          assets: [
+            {
+              scope: 'project',
+              type: 'skill',
+              name: 'kept',
+              materialization: { kind: 'authored' },
+              files: [{ path: 'skills/kept/SKILL.md', integrity: `sha256:${'0'.repeat(64)}` }],
+            },
+            {
+              scope: 'project',
+              type: 'skill',
+              name: 'dropped',
+              materialization: { kind: 'omitted' },
+              files: [{ path: 'skills/dropped/SKILL.md', integrity: `sha256:${'1'.repeat(64)}` }],
+            },
+          ],
         },
       },
-    )
+    })
 
     expect(updated.facets.cowsay?.assets.map((a) => a.name)).toEqual(['kept'])
   })
@@ -670,24 +832,18 @@ describe('buildUpdatedReceipt', () => {
   // effective identity no file on this machine has.
   test('carried-forward records are committed verbatim', () => {
     const carried = {
-      cowsay: {
-        version: '1.0.0',
-        assets: [
-          {
-            scope: 'project' as const,
-            type: 'skill' as const,
-            name: 'review',
-            materialization: { kind: 'aliased' as const, as: 'vendor-review' },
-            files: ['skills/review/SKILL.md'],
-          },
-        ],
-      },
+      cowsay: facetEntry('1.0.0', [
+        {
+          scope: 'project' as const,
+          type: 'skill' as const,
+          name: 'review',
+          materialization: { kind: 'aliased' as const, as: 'vendor-review' },
+          files: ['skills/review/SKILL.md'],
+        },
+      ]),
     }
 
-    const updated = buildUpdatedReceipt(
-      { version: CURRENT_RECEIPT_VERSION, path: realpathSync(projectDir), facets: {} },
-      { kind: 'carried-forward', facets: carried },
-    )
+    const updated = buildUpdatedReceipt(realpathSync(projectDir), { kind: 'carried-forward', facets: carried })
 
     expect(updated.facets.cowsay).toEqual(carried.cowsay)
   })
@@ -699,10 +855,7 @@ describe('buildUpdatedReceipt', () => {
       }).replace('"PLACEHOLDER"', '"__proto__"'),
     )
 
-    const updated = buildUpdatedReceipt(
-      { version: CURRENT_RECEIPT_VERSION, path: realpathSync(projectDir), facets: {} },
-      { kind: 'carried-forward', facets: carried },
-    )
+    const updated = buildUpdatedReceipt(realpathSync(projectDir), { kind: 'carried-forward', facets: carried })
 
     expect(Object.hasOwn(updated.facets, '__proto__')).toBe(true)
     expect(Object.keys(updated.facets)).toEqual(['__proto__'])
@@ -731,16 +884,25 @@ describe('loadReceipt — facet keys that collide with Object.prototype', () => 
 
   // Every version arm rebuilds the facet map, and each did it by assignment.
   test.each([
-    ['current', CURRENT_RECEIPT_VERSION, { version: '0.0.1', assets: [asset] }],
-    ['0.2', 0.2, { version: '0.0.1', assets: [asset] }],
-    ['legacy 1', 1, { version: '0.0.1', assets: [{ type: 'skill', name: 'cowsay', scope: 'project' }] }],
+    [
+      'current',
+      CURRENT_RECEIPT_VERSION,
+      { version: '0.0.1', integrity: INTEGRITY, assets: [asset], configurations: [] },
+    ],
+    ['0.3', RECEIPT_VERSION_0_3, { version: '0.0.1', assets: [asset] }],
+    ['0.2', RECEIPT_VERSION_0_2, { version: '0.0.1', assets: [asset] }],
+    [
+      'legacy 1',
+      LEGACY_RECEIPT_VERSION,
+      { version: '0.0.1', assets: [{ type: 'skill', name: 'cowsay', scope: 'project' }] },
+    ],
   ])('a %s receipt keeps a __proto__ facet as an own key', (_label, version, entry) => {
     writeRaw(version, entry)
 
     const result = loadReceipt(projectDir)
 
     if (!result.ok) expect.unreachable()
-    expect(Object.hasOwn(result.receipt.facets, '__proto__')).toBe(true)
-    expect(Object.keys(result.receipt.facets)).toEqual(['__proto__'])
+    expect(Object.hasOwn(result.record.facets, '__proto__')).toBe(true)
+    expect(Object.keys(result.record.facets)).toEqual(['__proto__'])
   })
 })

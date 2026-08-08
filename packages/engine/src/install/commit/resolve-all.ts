@@ -102,9 +102,10 @@ export async function resolveAll(args: ResolveAllArgs): Promise<ResolveAllResult
 
     const facetResolution = resolveResult.value
 
-    if (facetResolution.serversDeclared.length > 0) {
-      serverWarnings.push({ facet: facetName, servers: facetResolution.serversDeclared })
-      onStage({ kind: 'server-warning', facet: facetName, servers: facetResolution.serversDeclared })
+    if (facetResolution.servers.length > 0) {
+      const names = facetResolution.servers.map((server) => server.name)
+      serverWarnings.push({ facet: facetName, servers: names })
+      onStage({ kind: 'server-warning', facet: facetName, servers: names })
     }
 
     // Pre-materialization reconciliation (design D10): the previously-locked

@@ -185,12 +185,15 @@ export { prepareRemove, runRemove } from './install/run-remove.ts'
 export type {
   Addition,
   AssetIdentity,
+  ContributionKind,
   EffectiveAssetName,
   FacetOutcome,
   FacetStage,
   InstallDelta,
   InstallSummary,
   LockfileDriftEntry,
+  MaterializationCollisionGroup,
+  MaterializationOverrideRef,
   OnLog,
   Removal,
   RollbackOutcome,
@@ -198,6 +201,7 @@ export type {
   RunInstallOptions,
   RunInstallResult,
   StageEvent,
+  StaleMaterializationOverride,
 } from './install/types.ts'
 // `AssetIdentity` names an asset by its EFFECTIVE name, and the brand on
 // that field makes the type unconstructible from a bare string. Adapter

@@ -28,11 +28,15 @@ import { type AssetType, atomicWriteFileSync, type Scope, validateAssetName } fr
 import {
   canonicalPrimaryPath,
   isMaterialized,
+  isMcpServerFingerprint,
   lockedDispositionOf,
   type MaterializedDisposition,
   MaterializedDispositionSchema,
+  type McpServerFingerprint,
   type SupportedLockfileAssetEntry,
   type SupportedLockfileFacet,
+  sameDisposition,
+  validateMcpServerName,
 } from '@agent-facets/protocol'
 import { type } from 'arktype'
 import { facetReceiptsDir } from '../facet-dir.ts'
@@ -60,6 +64,14 @@ export const LEGACY_RECEIPT_VERSION = 1
 export const RECEIPT_VERSION_0_2 = 0.2
 
 /**
+ * The preceding receipt schema version. Numeric `0.3` identifies ONLY the
+ * shape with owned-file records and materialization dispositions, but no
+ * facet integrity and no configuration claims: it can witness what this
+ * machine put on disk as FILES, and nothing about MCP configuration.
+ */
+export const RECEIPT_VERSION_0_3 = 0.3
+
+/**
  * The current receipt schema version.
  *
  * A current receipt records, for each asset actually present on disk: its
@@ -73,23 +85,44 @@ export const RECEIPT_VERSION_0_2 = 0.2
  * Omitted assets never appear: a disposition here admits only the two arms
  * that put bytes on disk, which makes "omitted but materialized"
  * unrepresentable rather than merely unlikely.
+ *
+ * `0.4` additionally records, per facet, the resolved facet integrity that
+ * witnessed the entry and the MCP configuration claims this machine
+ * successfully reconciled. Those claims are simultaneously keyed deletion
+ * authority and this machine's evidence of prior approval, and they carry a
+ * fingerprint rather than a declaration, so the record proves what was
+ * approved without storing a command, URL, or environment data.
  */
-export const CURRENT_RECEIPT_VERSION = 0.3
+export const CURRENT_RECEIPT_VERSION = 0.4
+
+/**
+ * Every readable version that predates configuration claims.
+ *
+ * Derived from the constants rather than restated, so adding a version
+ * cannot leave this union describing a set that no longer exists.
+ */
+export type PreConfigurationReceiptVersion =
+  | typeof LEGACY_RECEIPT_VERSION
+  | typeof RECEIPT_VERSION_0_2
+  | typeof RECEIPT_VERSION_0_3
 
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
 
 /**
- * A current (`0.3`) receipt asset record: authored identity, the complete
- * set of owned authored inner-archive file paths, and the materialization
- * disposition. A skill owns `skills/<name>/SKILL.md` plus every materialized
- * companion; an agent or command owns exactly its single conventional
- * primary file. Companion paths are the engine-supplied
- * `ownedCompanionPaths` handed to the adapter delete request, so offline
- * multi-file cleanup is exact.
+ * A receipt asset record: authored identity, the complete set of owned
+ * authored inner-archive file paths, and the materialization disposition. A
+ * skill owns `skills/<name>/SKILL.md` plus every materialized companion; an
+ * agent or command owns exactly its single conventional primary file.
+ * Companion paths are the engine-supplied `ownedCompanionPaths` handed to the
+ * adapter delete request, so offline multi-file cleanup is exact.
+ *
+ * Shared by `0.3` and `0.4`: configuration claims were added beside asset
+ * ownership, not on top of it, so the asset shape is identical in both and
+ * restating it would let the two drift.
  */
-const CurrentReceiptAssetSchema = type({
+const ReceiptAssetSchema = type({
   scope: "'system' | 'user' | 'project'",
   type: "'skill' | 'agent' | 'command'",
   name: 'string',
@@ -97,15 +130,63 @@ const CurrentReceiptAssetSchema = type({
   files: 'string[]',
 })
 
+/** The members a configuration claim may carry, and nothing else. */
+const CONFIGURATION_CLAIM_MEMBERS: ReadonlySet<string> = new Set(['kind', 'name', 'materialization', 'fingerprint'])
+
+/**
+ * A current (`0.4`) MCP configuration claim.
+ *
+ * Closed, unlike most schemas in this repository: an unrecognized member here
+ * would be a place for a command, a URL, or an environment value to live in a
+ * file whose entire contract is that it holds none of them. Arktype tolerates
+ * extra keys by default, so the closure is explicit.
+ *
+ * `name` is AUTHORED and `materialization` derives the effective identity,
+ * exactly as for assets. `fingerprint` stands in for the declaration itself;
+ * its spelling is validated with the declaration's own semantic checks during
+ * entry validation, where a bad value drops one claim rather than the
+ * document.
+ */
+const ReceiptConfigurationClaimSchema = type({
+  kind: "'mcp-server'",
+  name: 'string',
+  materialization: MaterializedDispositionSchema,
+  fingerprint: 'string',
+}).narrow((data, ctx) => {
+  const stray = Object.keys(data).filter((key) => !CONFIGURATION_CLAIM_MEMBERS.has(key))
+  if (stray.length > 0) {
+    return ctx.mustBe(`a configuration claim without the unrecognized member "${stray[0]}"`)
+  }
+  return true
+})
+
 const CurrentReceiptFacetEntrySchema = type({
   version: 'string',
-  assets: CurrentReceiptAssetSchema.array(),
+  /** The resolved facet integrity that witnessed this entry's claims. */
+  integrity: 'string',
+  assets: ReceiptAssetSchema.array(),
+  configurations: ReceiptConfigurationClaimSchema.array(),
 })
 
 const CurrentReceiptSchema = type({
   version: type.unit(CURRENT_RECEIPT_VERSION),
   path: 'string',
   facets: type.Record('string', CurrentReceiptFacetEntrySchema),
+})
+
+/**
+ * Preceding (`0.3`) receipt: complete asset ownership with dispositions, no
+ * facet integrity and no configuration claims.
+ */
+const Receipt03FacetEntrySchema = type({
+  version: 'string',
+  assets: ReceiptAssetSchema.array(),
+})
+
+const Receipt03Schema = type({
+  version: type.unit(RECEIPT_VERSION_0_3),
+  path: 'string',
+  facets: type.Record('string', Receipt03FacetEntrySchema),
 })
 
 /**
@@ -178,11 +259,64 @@ export interface ReceiptAsset {
   files: string[]
 }
 
-export interface ReceiptFacetEntry {
+/**
+ * One MCP configuration claim: an active declaration this machine
+ * successfully reconciled into every selected adapter.
+ *
+ * The claim is deliberately two things at once. It is keyed deletion
+ * authority — the effective identity derived from `name` and
+ * `materialization` may be removed when nothing desires it any more — and it
+ * is this machine's evidence that the declaration behind `fingerprint` was
+ * approved here. Neither may be inferred from the lockfile, which is shared
+ * state that a teammate's commit rewrites.
+ *
+ * What it is NOT is a copy of the declaration. The fingerprint answers "is
+ * this the same launch or connection behavior?" without the receipt ever
+ * holding a command, its arguments, a URL, or an environment name or value.
+ */
+export interface ReceiptConfigurationClaim {
+  kind: 'mcp-server'
+  /** The AUTHORED server name. The effective one derives from `materialization`. */
+  name: string
+  materialization: MaterializedDisposition
+  fingerprint: McpServerFingerprint
+}
+
+/**
+ * Asset ownership for one facet — the part every readable receipt version can
+ * express, and therefore the part every version confers full authority over.
+ */
+export interface ReceiptAssetOwnership {
   version: string
   assets: ReceiptAsset[]
 }
 
+/**
+ * A current (`0.4`) facet record: asset ownership, plus the facet integrity
+ * that witnessed it, plus the configuration claims reconciled alongside it.
+ *
+ * `integrity` is what makes an offline proof possible later: declarations
+ * live inside the integrity-protected `facet.json` and deliberately not in
+ * the lockfile, so "are this facet's claims still about the same
+ * declarations?" is answerable without a fetch only by comparing the recorded
+ * integrity against the locked one.
+ *
+ * Extends {@link ReceiptAssetOwnership} rather than restating it, so every
+ * consumer that only needs assets accepts a current record unchanged while
+ * nothing can read claims off a record that has none.
+ */
+export interface ReceiptFacetEntry extends ReceiptAssetOwnership {
+  integrity: string
+  configurations: ReceiptConfigurationClaim[]
+}
+
+/**
+ * The receipt this machine writes. Always the current version: every earlier
+ * format refines into memory on load and the next successful write emits
+ * `0.4`, never an intermediate writer format. That is a property of the type
+ * rather than of remembering to set a field — `version` admits one value, and
+ * {@link writeReceipt} accepts nothing else.
+ */
 export interface Receipt {
   version: typeof CURRENT_RECEIPT_VERSION
   path: string
@@ -190,26 +324,91 @@ export interface Receipt {
 }
 
 /**
- * A receipt asset entry rejected during load because its name or one of its
- * owned file paths failed validation (path traversal, backslashes, empty
- * segments). Reported — never acted on — while the facet's remaining valid
- * entries still load (D6: a corrupted receipt may cause a skipped cleanup; it
- * must never poison the rest of the record). Because an invalid path could
- * escape the adapter's storage root, the whole asset record is dropped rather
- * than partially trusted — an unowned or escaping path is never deleted.
+ * What a receipt file that LOADED proves, and how much of it.
+ *
+ * Two arms, because there are exactly two answers and they differ in kind
+ * rather than in degree. A `0.4` document witnessed both what this machine
+ * put on disk and what it configured. Every earlier document witnessed the
+ * files and could not have witnessed configuration, because the concept did
+ * not exist when it was written.
+ *
+ * The distinction is represented rather than flattened, deliberately. A
+ * refined pre-`0.4` record carrying `configurations: []` would be
+ * indistinguishable from a current record whose facet genuinely reconciled no
+ * declarations — and those two states must diverge: the first can prove
+ * nothing and forces ordinary resolution, while the second is positive
+ * evidence, anchored by `integrity`, that a successful operation left no
+ * active configuration behind.
+ *
+ * Tagged at the document rather than per facet, because that is where the
+ * fact lives: version dispatch is exact and refinement is whole-document, so
+ * a receipt in which some facets are witnessed and others are not is not a
+ * state this system can produce.
  */
-export interface InvalidReceiptAsset {
-  facet: string
-  asset: string
-  reason: string
+export type LoadedReceipt =
+  /** Every readable pre-`0.4` document. Full asset authority, no configuration authority. */
+  | {
+      authority: 'assets-only'
+      refinedFrom: PreConfigurationReceiptVersion
+      path: string
+      facets: Readonly<Record<string, ReceiptAssetOwnership>>
+    }
+  /** A current document. Asset authority plus witnessed configuration claims. */
+  | {
+      authority: 'assets-and-configuration'
+      path: string
+      facets: Readonly<Record<string, ReceiptFacetEntry>>
+    }
+
+/**
+ * The asset ownership a loaded record proves, whatever configuration
+ * authority it carries.
+ *
+ * Every readable version records assets identically, so asset consumers
+ * should not have to discriminate — and must not, because branching would
+ * invite one of them to treat a pre-`0.4` record as owning less than it does.
+ */
+export function assetOwnershipOf(record: LoadedReceipt): Readonly<Record<string, ReceiptAssetOwnership>> {
+  return record.facets
 }
 
+/**
+ * A receipt record rejected during load. Reported — never acted on — while
+ * the facet's remaining valid records still load (D6: a corrupted receipt may
+ * cause a skipped cleanup; it must never poison the rest of the file).
+ *
+ * Tagged because the two kinds name different things and are recovered from
+ * differently: an asset names a path this machine will now never clean up, a
+ * configuration claim names a server entry that reverts to untracked and
+ * unapproved. A single shape with an `asset` field holding a server name
+ * would read as the former while meaning the latter.
+ */
+export type InvalidReceiptEntry =
+  /**
+   * The asset's name or one of its owned file paths failed validation (path
+   * traversal, backslashes). Because an invalid path could escape the
+   * adapter's storage root, the whole asset record is dropped rather than
+   * partially trusted — an unowned or escaping path is never deleted.
+   */
+  | { kind: 'asset'; facet: string; asset: string; reason: string }
+  /**
+   * The claim's server name or fingerprint was malformed, or the facet made
+   * two contradictory claims about one authored name. Dropping it withdraws
+   * both of the things a claim confers: the entry becomes untracked native
+   * occupancy, and its declaration needs approval again. Both are the safe
+   * direction — nothing is deleted and nothing is assumed consented.
+   */
+  | { kind: 'configuration'; facet: string; server: string; reason: string }
+
 export type LoadReceiptResult =
-  | { ok: true; receipt: Receipt; invalidEntries: ReadonlyArray<InvalidReceiptAsset> }
+  | { ok: true; record: LoadedReceipt; invalidEntries: ReadonlyArray<InvalidReceiptEntry> }
   | { ok: false; reason: 'missing' | 'corrupt' | 'path-mismatch' }
 
-/** Why this machine has no usable account of what it materialized. */
-export type ReceiptUnavailableReason = 'missing' | 'corrupt' | 'path-mismatch'
+/**
+ * Why this machine has no usable account of what it materialized. Derived
+ * from the failure arm rather than restated, so the two cannot diverge.
+ */
+export type ReceiptUnavailableReason = Extract<LoadReceiptResult, { ok: false }>['reason']
 
 /**
  * What this machine can prove it materialized.
@@ -222,17 +421,16 @@ export type ReceiptUnavailableReason = 'missing' | 'corrupt' | 'path-mismatch'
  * nothing, and the lockfile cannot stand in for either, because it is shared
  * state that a `git pull` rewrites without touching a single file on disk.
  *
- * The `unavailable` arm carries NO `Receipt`, deliberately. Every claim in a
+ * The `unavailable` arm carries NO record, deliberately. Every claim in a
  * receipt is a licence to delete, so a state that means "no claims" must not
- * be able to hold any: an empty-by-convention `Receipt` here would put the
+ * be able to hold any: an empty-by-convention record here would put the
  * whole guarantee on one constructor remembering to leave a field empty.
  * `canonicalProjectPath` is all the arm needs, because the only other use for
- * a receipt value is as the base a commit builds its NEW record on — and that
- * base is derived at commit time from the path (see `emptyReceiptFor`).
+ * a loaded record is as the location a commit writes its NEW one to.
  */
 export type ProjectReceiptState =
   /** Read from this machine's receipt file, and free to contradict the lockfile. */
-  | { kind: 'loaded'; receipt: Receipt; invalidEntries: ReadonlyArray<InvalidReceiptAsset> }
+  | { kind: 'loaded'; record: LoadedReceipt; invalidEntries: ReadonlyArray<InvalidReceiptEntry> }
   /** No trustworthy local account. Proven ownership is empty by construction. */
   | { kind: 'unavailable'; reason: ReceiptUnavailableReason; projectPath: string }
 
@@ -324,114 +522,45 @@ export function loadReceipt(projectDir: string): LoadReceiptResult {
     return { ok: false, reason: 'corrupt' }
   }
 
-  // Exact version dispatch (design D10), mirroring the lockfile. Any
-  // other/absent version is corrupt — the shape is never sniffed to guess a
-  // schema. Each earlier version refines losslessly into the current shape:
-  //
-  //   `1`   — identity only. Refined to primary-only ownership, which is
-  //           exact rather than a guess: legacy installs could not
-  //           materialize companions, so there were none to record.
-  //   `0.2` — complete ownership, no disposition. Refined to authored
-  //           materialization, the only meaning a pre-disposition receipt
-  //           could have had.
-  const observedVersion =
-    typeof parsed === 'object' && parsed !== null && 'version' in parsed
-      ? (parsed as { version?: unknown }).version
-      : undefined
-
-  const authored = { kind: 'authored' } as const
-
-  let embeddedPath: string
-  let rawFacets: Record<string, { version: string; assets: ReadonlyArray<RawReceiptAsset> }>
-  if (observedVersion === CURRENT_RECEIPT_VERSION) {
-    const validated = CurrentReceiptSchema(parsed)
-    if (validated instanceof type.errors) return { ok: false, reason: 'corrupt' }
-    embeddedPath = validated.path
-    rawFacets = validated.facets
-  } else if (observedVersion === RECEIPT_VERSION_0_2) {
-    const validated = Receipt02Schema(parsed)
-    if (validated instanceof type.errors) return { ok: false, reason: 'corrupt' }
-    embeddedPath = validated.path
-    rawFacets = ownRecord()
-    for (const [name, entry] of Object.entries(validated.facets)) {
-      rawFacets[name] = {
-        version: entry.version,
-        assets: entry.assets.map((a) => ({ ...a, materialization: authored })),
-      }
-    }
-  } else if (observedVersion === LEGACY_RECEIPT_VERSION) {
-    const validated = LegacyReceiptSchema(parsed)
-    if (validated instanceof type.errors) return { ok: false, reason: 'corrupt' }
-    embeddedPath = validated.path
-    rawFacets = ownRecord()
-    for (const [name, entry] of Object.entries(validated.facets)) {
-      rawFacets[name] = {
-        version: entry.version,
-        assets: entry.assets.map((a) => ({
-          ...a,
-          materialization: authored,
-          files: [canonicalPrimaryPath(a.type, a.name)],
-        })),
-      }
-    }
-  } else {
-    return { ok: false, reason: 'corrupt' }
-  }
+  const dispatched = dispatchReceiptVersion(parsed)
+  if (dispatched === null) return { ok: false, reason: 'corrupt' }
 
   // Self-identification check: the embedded path must match the
   // project being operated on.
-  if (embeddedPath !== canonical) {
+  if (dispatched.path !== canonical) {
     return { ok: false, reason: 'path-mismatch' }
   }
 
-  // Validate every asset name AND every owned file path — receipt data is
-  // untrusted. A crafted name or a path that could traverse outside the
-  // adapter's storage drops the whole asset record (reported, never
-  // deleted), while the facet's remaining valid entries still load (D6).
   // Null-prototype throughout: a receipt facet key is an arbitrary string
   // from a file on disk, and dropping a `__proto__`-named facet here would
   // erase an ownership claim silently — the one outcome D6 rules out, since
   // the assets it covers would then never be deleted OR re-tracked.
-  const invalidEntries: InvalidReceiptAsset[] = []
-  const facets: Record<string, ReceiptFacetEntry> = ownRecord()
-  for (const [facetName, entry] of Object.entries(rawFacets)) {
-    const validAssets: ReceiptAsset[] = []
-    for (const asset of entry.assets) {
-      const nameCheck = validateAssetName(asset.name)
-      if (!nameCheck.ok) {
-        invalidEntries.push({ facet: facetName, asset: asset.name, reason: nameCheck.reason })
-        continue
-      }
-      let badPath: { path: string; reason: string } | undefined
-      for (const p of asset.files) {
-        const check = validateAssetName(p)
-        if (!check.ok) {
-          badPath = { path: p, reason: check.reason }
-          break
-        }
-      }
-      if (badPath !== undefined) {
-        invalidEntries.push({
-          facet: facetName,
-          asset: asset.name,
-          reason: `owned path "${badPath.path}" ${badPath.reason}`,
-        })
-        continue
-      }
-      validAssets.push({
-        scope: asset.scope,
-        type: asset.type,
-        name: asset.name,
-        materialization: asset.materialization,
-        files: [...asset.files],
-      })
+  const invalidEntries: InvalidReceiptEntry[] = []
+
+  if (dispatched.authority === 'assets-only') {
+    const facets: Record<string, ReceiptAssetOwnership> = ownRecord()
+    for (const [facetName, entry] of Object.entries(dispatched.facets)) {
+      facets[facetName] = { version: entry.version, assets: validatedAssets(facetName, entry.assets, invalidEntries) }
     }
-    facets[facetName] = { version: entry.version, assets: validAssets }
+    return {
+      ok: true,
+      record: { authority: 'assets-only', refinedFrom: dispatched.refinedFrom, path: canonical, facets },
+      invalidEntries,
+    }
   }
 
+  const facets: Record<string, ReceiptFacetEntry> = ownRecord()
+  for (const [facetName, entry] of Object.entries(dispatched.facets)) {
+    facets[facetName] = {
+      version: entry.version,
+      integrity: entry.integrity,
+      assets: validatedAssets(facetName, entry.assets, invalidEntries),
+      configurations: validatedClaims(facetName, entry.configurations, invalidEntries),
+    }
+  }
   return {
     ok: true,
-    receipt: { version: CURRENT_RECEIPT_VERSION, path: canonical, facets },
+    record: { authority: 'assets-and-configuration', path: canonical, facets },
     invalidEntries,
   }
 }
@@ -443,6 +572,230 @@ interface RawReceiptAsset {
   name: string
   materialization: MaterializedDisposition
   files: ReadonlyArray<string>
+}
+
+/** One facet's asset ownership as dispatch produced it. */
+interface RawAssetFacet {
+  version: string
+  assets: ReadonlyArray<RawReceiptAsset>
+}
+
+/** One current facet record as dispatch produced it, claims not yet checked. */
+interface RawCurrentFacet extends RawAssetFacet {
+  integrity: string
+  configurations: ReadonlyArray<{
+    kind: 'mcp-server'
+    name: string
+    materialization: MaterializedDisposition
+    fingerprint: string
+  }>
+}
+
+/** What exact version dispatch establishes, before the path check. */
+type DispatchedReceipt =
+  | {
+      authority: 'assets-only'
+      refinedFrom: PreConfigurationReceiptVersion
+      path: string
+      facets: Readonly<Record<string, RawAssetFacet>>
+    }
+  | { authority: 'assets-and-configuration'; path: string; facets: Readonly<Record<string, RawCurrentFacet>> }
+
+/**
+ * Exact version dispatch (design D10), mirroring the lockfile. Any other or
+ * absent version is corrupt — the shape is never sniffed to guess a schema.
+ *
+ * Each earlier version refines losslessly into the current ASSET shape, and
+ * none of them gains configuration authority by doing so:
+ *
+ *   `1`   — identity only. Refined to primary-only ownership, which is exact
+ *           rather than a guess: legacy installs could not materialize
+ *           companions, so there were none to record.
+ *   `0.2` — complete ownership, no disposition. Refined to authored
+ *           materialization, the only meaning a pre-disposition receipt could
+ *           have had.
+ *   `0.3` — complete ownership with dispositions. Nothing to refine.
+ *
+ * Returns `null` for an unreadable document rather than a reason, because
+ * every way this step can fail is the same reason.
+ */
+function dispatchReceiptVersion(parsed: unknown): DispatchedReceipt | null {
+  const observedVersion =
+    typeof parsed === 'object' && parsed !== null && 'version' in parsed
+      ? (parsed as { version?: unknown }).version
+      : undefined
+
+  const authored = { kind: 'authored' } as const
+
+  if (observedVersion === CURRENT_RECEIPT_VERSION) {
+    const validated = CurrentReceiptSchema(parsed)
+    if (validated instanceof type.errors) return null
+    return { authority: 'assets-and-configuration', path: validated.path, facets: validated.facets }
+  }
+
+  if (observedVersion === RECEIPT_VERSION_0_3) {
+    const validated = Receipt03Schema(parsed)
+    if (validated instanceof type.errors) return null
+    return {
+      authority: 'assets-only',
+      refinedFrom: RECEIPT_VERSION_0_3,
+      path: validated.path,
+      facets: validated.facets,
+    }
+  }
+
+  if (observedVersion === RECEIPT_VERSION_0_2) {
+    const validated = Receipt02Schema(parsed)
+    if (validated instanceof type.errors) return null
+    const facets: Record<string, RawAssetFacet> = ownRecord()
+    for (const [name, entry] of Object.entries(validated.facets)) {
+      facets[name] = {
+        version: entry.version,
+        assets: entry.assets.map((a) => ({ ...a, materialization: authored })),
+      }
+    }
+    return { authority: 'assets-only', refinedFrom: RECEIPT_VERSION_0_2, path: validated.path, facets }
+  }
+
+  if (observedVersion === LEGACY_RECEIPT_VERSION) {
+    const validated = LegacyReceiptSchema(parsed)
+    if (validated instanceof type.errors) return null
+    const facets: Record<string, RawAssetFacet> = ownRecord()
+    for (const [name, entry] of Object.entries(validated.facets)) {
+      facets[name] = {
+        version: entry.version,
+        assets: entry.assets.map((a) => ({
+          ...a,
+          materialization: authored,
+          files: [canonicalPrimaryPath(a.type, a.name)],
+        })),
+      }
+    }
+    return { authority: 'assets-only', refinedFrom: LEGACY_RECEIPT_VERSION, path: validated.path, facets }
+  }
+
+  return null
+}
+
+/**
+ * Validate every asset name AND every owned file path — receipt data is
+ * untrusted. A crafted name or a path that could traverse outside the
+ * adapter's storage drops the whole asset record (reported, never deleted),
+ * while the facet's remaining valid entries still load (D6).
+ */
+function validatedAssets(
+  facetName: string,
+  assets: ReadonlyArray<RawReceiptAsset>,
+  invalidEntries: InvalidReceiptEntry[],
+): ReceiptAsset[] {
+  const valid: ReceiptAsset[] = []
+  for (const asset of assets) {
+    const nameCheck = validateAssetName(asset.name)
+    if (!nameCheck.ok) {
+      invalidEntries.push({ kind: 'asset', facet: facetName, asset: asset.name, reason: nameCheck.reason })
+      continue
+    }
+    let badPath: { path: string; reason: string } | undefined
+    for (const p of asset.files) {
+      const check = validateAssetName(p)
+      if (!check.ok) {
+        badPath = { path: p, reason: check.reason }
+        break
+      }
+    }
+    if (badPath !== undefined) {
+      invalidEntries.push({
+        kind: 'asset',
+        facet: facetName,
+        asset: asset.name,
+        reason: `owned path "${badPath.path}" ${badPath.reason}`,
+      })
+      continue
+    }
+    valid.push({
+      scope: asset.scope,
+      type: asset.type,
+      name: asset.name,
+      materialization: asset.materialization,
+      files: [...asset.files],
+    })
+  }
+  return valid
+}
+
+/**
+ * Validate one facet's configuration claims, dropping and reporting the ones
+ * this machine cannot act on.
+ *
+ * Per-entry containment, exactly as for assets: a claim the file got wrong
+ * must not withdraw authority over every other claim in it. Dropping is
+ * always the safe direction — a dropped claim deletes nothing and consents to
+ * nothing.
+ *
+ * The server-name grammar and the fingerprint spelling are protocol
+ * contracts, so they are checked with the protocol's own predicates rather
+ * than re-expressed here. `isMcpServerFingerprint` narrows, which is what
+ * turns a `string` read off disk into a fingerprint without a cast.
+ *
+ * A facet claiming one authored name twice is resolved by what the two claims
+ * say. Byte-identical repetition is redundancy and collapses to one claim.
+ * Two claims that DISAGREE about the disposition or the declaration are a
+ * record contradicting itself about a single server, so neither survives:
+ * keeping the first would let file order decide which effective entry this
+ * machine believes it owns, and which declaration it believes was approved.
+ */
+function validatedClaims(
+  facetName: string,
+  claims: RawCurrentFacet['configurations'],
+  invalidEntries: InvalidReceiptEntry[],
+): ReceiptConfigurationClaim[] {
+  const byName = new Map<string, ReceiptConfigurationClaim>()
+  const contradicted = new Set<string>()
+
+  for (const claim of claims) {
+    const { fingerprint } = claim
+    const nameCheck = validateMcpServerName(claim.name)
+    if (!nameCheck.ok) {
+      invalidEntries.push({ kind: 'configuration', facet: facetName, server: claim.name, reason: nameCheck.reason })
+      continue
+    }
+    if (!isMcpServerFingerprint(fingerprint)) {
+      invalidEntries.push({
+        kind: 'configuration',
+        facet: facetName,
+        server: claim.name,
+        reason: `fingerprint "${fingerprint}" is not a sha256 digest`,
+      })
+      continue
+    }
+    const candidate: ReceiptConfigurationClaim = {
+      kind: 'mcp-server',
+      name: claim.name,
+      materialization: claim.materialization,
+      fingerprint,
+    }
+    const existing = byName.get(claim.name)
+    if (existing === undefined) {
+      byName.set(claim.name, candidate)
+      continue
+    }
+    if (sameDisposition(existing.materialization, candidate.materialization) && existing.fingerprint === fingerprint) {
+      continue
+    }
+    contradicted.add(claim.name)
+  }
+
+  for (const name of contradicted) {
+    byName.delete(name)
+    invalidEntries.push({
+      kind: 'configuration',
+      facet: facetName,
+      server: name,
+      reason: 'the receipt records two conflicting claims for this server',
+    })
+  }
+
+  return [...byName.values()]
 }
 
 // ---------------------------------------------------------------------------
@@ -499,24 +852,21 @@ export function materializedDispositionOf(asset: SupportedLockfileAssetEntry): M
  */
 export function resolveProjectReceipt(projectDir: string): ProjectReceiptState {
   const result = loadReceipt(projectDir)
-  if (result.ok) return { kind: 'loaded', receipt: result.receipt, invalidEntries: result.invalidEntries }
+  if (result.ok) return { kind: 'loaded', record: result.record, invalidEntries: result.invalidEntries }
   return { kind: 'unavailable', reason: result.reason, projectPath: bestEffortPath(projectDir) }
 }
 
 /**
- * The base a commit builds its new receipt on when there was no readable one.
- * Claims nothing: this run's writes are the only thing that may fill it.
+ * The canonical project path a commit writes this run's receipt to.
+ *
+ * The commit needs the LOCATION and nothing else: the record it writes is
+ * built entirely from what this run reconciled, so handing it a previous
+ * receipt to build "on top of" would offer it claims it has no business
+ * inheriting — including, for a pre-`0.4` record, claims of a shape it cannot
+ * even express.
  */
-export function emptyReceiptFor(projectPath: string): Receipt {
-  return { version: CURRENT_RECEIPT_VERSION, path: projectPath, facets: ownRecord() }
-}
-
-/**
- * The receipt base for whatever provenance a run has — the loaded record, or
- * an empty one. Never an ownership claim in the `unavailable` case.
- */
-export function receiptBaseFor(state: ProjectReceiptState): Receipt {
-  return state.kind === 'loaded' ? state.receipt : emptyReceiptFor(state.projectPath)
+export function receiptProjectPath(state: ProjectReceiptState): string {
+  return state.kind === 'loaded' ? state.record.path : state.projectPath
 }
 
 /**
@@ -545,8 +895,17 @@ function bestEffortPath(projectDir: string): string {
  *
  * Omitted assets are excluded: the lockfile records the resolved SET, the
  * receipt records what is on disk, and an omitted asset was never written.
+ *
+ * `configurations` arrives separately because the lockfile has nowhere to
+ * derive it from — declarations live in the integrity-protected `facet.json`,
+ * deliberately not in the lockfile — so the claims can only come from what
+ * this run actually reconciled. `integrity` anchors them to the exact
+ * resolved facet they were witnessed against.
  */
-export function receiptEntryForLockedFacet(entry: SupportedLockfileFacet): ReceiptFacetEntry {
+export function receiptEntryForLockedFacet(
+  entry: SupportedLockfileFacet,
+  configurations: readonly ReceiptConfigurationClaim[],
+): ReceiptFacetEntry {
   const assets: ReceiptAsset[] = []
   for (const asset of entry.assets) {
     const materialization = materializedDispositionOf(asset)
@@ -559,7 +918,7 @@ export function receiptEntryForLockedFacet(entry: SupportedLockfileFacet): Recei
       files: ownedPathsForLockedAsset(asset),
     })
   }
-  return { version: entry.version, assets }
+  return { version: entry.version, integrity: entry.integrity, assets, configurations: [...configurations] }
 }
 
 /**

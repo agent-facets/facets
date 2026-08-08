@@ -70,17 +70,17 @@
 
 - [x] 7.1 Explore: Trace project-manifest mutation, stale-override pruning, collision composition, resolved-facet data, and frozen consistency paths that currently iterate only asset groups.
 - [x] 7.2 Explore: Trace receipt exact dispatch, ownership indexes, tri-write receipt construction, corruption handling, and removal witnesses across receipt versions `1`, `0.2`, and `0.3`.
-- [ ] 7.3 Propose: Define tagged server-intent, composition, ownership, and witnessed/unwitnessed receipt models that preserve the unified desired-state/write and receipt-only/delete rule.
+- [x] 7.3 Propose: Define tagged server-intent, composition, ownership, and witnessed/unwitnessed receipt models that preserve the unified desired-state/write and receipt-only/delete rule.
 
 ## 8. Project intent, composition, and receipt ownership — Implementation
 
-- [ ] 8.1 Implement: Implement receipt `0.4` exact dispatch with facet integrity and configuration claims, preserving earlier asset authority while explicitly withholding configuration authority and approval from pre-`0.4` receipts; ensure the next successful receipt write emits `0.4` and never an intermediate writer format.
-- [ ] 8.2 Implement: Extend receipt loading/validation for absent, corrupt, path-mismatched, escaping, and duplicate historical claims without storing commands, arguments, URLs, or environment data.
-- [ ] 8.3 Implement: Extend project-manifest mutations and transaction commits for `0.2` server overrides, source-change preservation, compact/expanded canonicalization, successful stale-server pruning, failed-operation retention, and frozen no-migration.
-- [ ] 8.4 Implement: Carry verified concrete declarations through resolution and compose aliases, omissions, identical fingerprints, complete collision groups, claimant sets, and stale overrides separately from asset plans and lockfile entries.
-- [ ] 8.5 Implement: Add configuration ownership indexes and receipt construction so successful reconciliation records project-wide adapter-agnostic claims, omitted declarations remain absent, and deletion never derives from lockfile intent.
-- [ ] 8.6 Implement: Add focused tests for receipt refinement, teammate-local approval separation, server dispositions, migration rollback, server/asset namespace separation, collision exhaustiveness, and unchanged lockfile shape.
-- [ ] 8.7 Verify: Run focused manifest, composition, receipt, ownership, and tri-write tests and type checks.
+- [x] 8.1 Implement: Implement receipt `0.4` exact dispatch with facet integrity and configuration claims, preserving earlier asset authority while explicitly withholding configuration authority and approval from pre-`0.4` receipts; ensure the next successful receipt write emits `0.4` and never an intermediate writer format.
+- [x] 8.2 Implement: Extend receipt loading/validation for absent, corrupt, path-mismatched, escaping, and duplicate historical claims without storing commands, arguments, URLs, or environment data.
+- [x] 8.3 Implement: Extend project-manifest mutations and transaction commits for `0.2` server overrides, source-change preservation, compact/expanded canonicalization, successful stale-server pruning, failed-operation retention, and frozen no-migration.
+- [x] 8.4 Implement: Carry verified concrete declarations through resolution and compose aliases, omissions, identical fingerprints, complete collision groups, claimant sets, and stale overrides separately from asset plans and lockfile entries.
+- [x] 8.5 Implement: Add configuration ownership indexes and receipt construction so successful reconciliation records project-wide adapter-agnostic claims, omitted declarations remain absent, and deletion never derives from lockfile intent.
+- [x] 8.6 Implement: Add focused tests for receipt refinement, teammate-local approval separation, server dispositions, migration rollback, server/asset namespace separation, collision exhaustiveness, and unchanged lockfile shape.
+- [x] 8.7 Verify: Run focused manifest, composition, receipt, ownership, and tri-write tests and type checks.
 
 ## 9. Transaction, consent, frozen, removal, and takeover — Research
 

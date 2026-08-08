@@ -47,6 +47,21 @@ const FINGERPRINT_ENCODING_TAG = 'facets:mcp-server:v1'
 /** A declaration fingerprint, in the repository-wide `sha256:<hex>` form. */
 export type McpServerFingerprint = `sha256:${string}`
 
+/** The exact spelling {@link computeMcpServerFingerprint} emits. */
+const FINGERPRINT_PATTERN = /^sha256:[0-9a-f]{64}$/
+
+/**
+ * Whether a string is a well-formed declaration fingerprint.
+ *
+ * The template-literal type alone accepts `sha256:` followed by anything, so a
+ * value read back from a file needs this narrower check before it may be
+ * treated as one. Kept beside the encoder so the accepted spelling and the
+ * emitted spelling cannot drift.
+ */
+export function isMcpServerFingerprint(value: string): value is McpServerFingerprint {
+  return FINGERPRINT_PATTERN.test(value)
+}
+
 /**
  * The exact bytes hashed for a declaration. Exported for tests and for any
  * other implementation of the specification that needs to reproduce the

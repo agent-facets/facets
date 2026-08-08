@@ -4,7 +4,8 @@ import type {
   CollisionGroup,
   IntegrityFailure,
   MaterializationDisposition,
-  StaleOverride,
+  ProjectAssetOverride,
+  ServerCollisionGroup,
   SupportedLockfile,
 } from '@agent-facets/protocol'
 import type { AdapterCompatibilityFailure } from '../adapters/api-compatibility.ts'
@@ -12,6 +13,48 @@ import type { UnsupportedManifestVersion } from '../manifest/project-files.ts'
 import type { RegistryError } from '../registry/index.ts'
 import type { ParseError, Source } from '../sources/facet/types.ts'
 import type { CollisionResolver } from './commit/compose.ts'
+
+/**
+ * Which kind of contribution a materialization override names.
+ *
+ * Tagged rather than an `AssetType` widened with a `'server'` member: servers
+ * occupy their own identity space and carry no asset type at all, so the
+ * asset arm is the only one that can hold one. Every consumer that has to
+ * name an override — a prune report, a frozen drift entry, a collision
+ * location — needs exactly this distinction and nothing more.
+ */
+export type ContributionKind = { kind: 'asset'; assetType: AssetType } | { kind: 'mcp-server' }
+
+/** One override, identified by the facet and authored contribution it names. */
+export interface MaterializationOverrideRef {
+  facet: string
+  contribution: ContributionKind
+  /** The AUTHORED name, which is what `facets.json` keys the override by. */
+  authoredName: string
+}
+
+/**
+ * An override naming a contribution the resolved facet no longer has.
+ *
+ * Reported, never fatal: an override is durable project intent, so it
+ * survives a failed operation and is dropped only by a successful commit.
+ */
+export interface StaleMaterializationOverride extends MaterializationOverrideRef {
+  disposition: ProjectAssetOverride
+}
+
+/**
+ * One unresolved effective-name collision, from either identity space.
+ *
+ * Tagged rather than flattened into a single member shape: an asset claimant
+ * has a scope, an asset type, and a materialization namespace, while a server
+ * claimant has a declaration and a fingerprint. A union of those fields with
+ * everything optional would let a renderer read a namespace off a server
+ * group and print nothing where a reason belongs.
+ */
+export type MaterializationCollisionGroup =
+  | { kind: 'asset'; group: CollisionGroup }
+  | { kind: 'mcp-server'; group: ServerCollisionGroup }
 
 declare const EFFECTIVE_NAME: unique symbol
 
@@ -151,6 +194,14 @@ export type StageEvent =
    */
   | { kind: 'receipt-invalid-asset'; facet: string; asset: string; reason: string }
   /**
+   * A receipt MCP configuration claim was rejected during load (malformed
+   * server name or fingerprint, or two conflicting claims for one server).
+   * The claim is dropped, so its native entry reverts to untracked occupancy
+   * and its declaration needs approval again — neither of which a user could
+   * deduce from a run that otherwise looks routine.
+   */
+  | { kind: 'receipt-invalid-configuration'; facet: string; server: string; reason: string }
+  /**
    * A receipt file exists for this project but could not be used — unreadable,
    * or self-identifying as a different project. Every identity it had tracked
    * is therefore untracked for this run: nothing can be cleaned up, and this
@@ -205,14 +256,14 @@ export type StageEvent =
     }
   /**
    * A materialization override was dropped because the resolved facet version
-   * no longer contains the asset it named.
+   * no longer contains the asset or server it named.
    *
    * A dedicated event rather than a verbose log line: this silently changes
    * what `facets.json` says, so a user who never passes `--verbose` still has
    * to be told. Emitted only after the transaction commits — the prune is not
    * real until then.
    */
-  | { kind: 'stale-override-pruned'; facet: string; assetType: AssetType; authoredName: string }
+  | ({ kind: 'stale-override-pruned' } & MaterializationOverrideRef)
   | { kind: 'adapter-complete'; facet: string; adapter: string }
   | { kind: 'asset-installed'; facet: string; adapter: string; asset: AssetIdentity }
   | { kind: 'asset-deleted'; facet: string; adapter: string; asset: AssetIdentity }
@@ -256,11 +307,11 @@ export type LockfileDriftEntry =
       locked: MaterializationDisposition
     }
   /**
-   * An override names an asset the locked content does not contain. A normal
-   * install prunes it inside its transaction; frozen mode writes nothing, so
-   * it can only report it.
+   * An override names an asset or server the locked content does not contain.
+   * A normal install prunes it inside its transaction; frozen mode writes
+   * nothing, so it can only report it.
    */
-  | { name: string; reason: 'stale-override'; assetType: AssetType; authoredName: string }
+  | { name: string; reason: 'stale-override'; contribution: ContributionKind; authoredName: string }
   /**
    * The manifest records materialization intent the loaded lockfile format
    * cannot express. Reproduction would have to invent the missing half.
@@ -458,8 +509,8 @@ export type RunInstallFailure =
    */
   | {
       code: 'MATERIALIZATION_COLLISION'
-      groups: ReadonlyArray<CollisionGroup>
-      staleOverrides: ReadonlyArray<StaleOverride>
+      groups: ReadonlyArray<MaterializationCollisionGroup>
+      staleOverrides: ReadonlyArray<StaleMaterializationOverride>
     }
   /**
    * An interactive resolver returned choices that still do not compose. The
@@ -468,7 +519,7 @@ export type RunInstallFailure =
    */
   | {
       code: 'MATERIALIZATION_RESOLUTION_INVALID'
-      groups: ReadonlyArray<CollisionGroup>
+      groups: ReadonlyArray<MaterializationCollisionGroup>
       problems: ReadonlyArray<{ facet: string; alias: string; reason: string }>
     }
   /** The user dismissed collision resolution. No state was mutated. */

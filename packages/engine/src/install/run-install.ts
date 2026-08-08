@@ -1,4 +1,5 @@
 import { join } from 'node:path'
+import type { PlannedServerConfiguration } from '@agent-facets/protocol'
 import { CURRENT_LOCKFILE_VERSION, preserveLockfileExtensions } from '@agent-facets/protocol'
 import { type AdapterCompatibilityFailure, compatibilityFailureFor } from '../adapters/api-compatibility.ts'
 import { FACETS_JSON_FILE, type NormalizedProjectManifest } from '../manifest/mutations.ts'
@@ -10,6 +11,7 @@ import { finalizeMaterializationIntent } from './commit/finalize-intent.ts'
 import { installFacets } from './commit/install-loop.ts'
 import { buildPreviousOwnership, obsoleteOwnership } from './commit/ownership.ts'
 import { resolveAll } from './commit/resolve-all.ts'
+import { claimsByFacet } from './commit/server-ownership.ts'
 import { buildUpdatedReceipt, commitProjectFiles, type LockedSetCommit } from './commit/tri-write.ts'
 import { checkFrozenConsistency } from './frozen-gates.ts'
 import { InstallJournal } from './journal.ts'
@@ -18,7 +20,7 @@ import { FACETS_LOCK_FILE, loadLockfile } from './lockfile-io.ts'
 import { deleteObsoleteAssets, type RetainedObsoleteBundle } from './materialize.ts'
 import { materializeFailureToRunInstall } from './materialize-failure.ts'
 import { ownEntry } from './own-entry.ts'
-import { type Receipt, receiptBaseFor, resolveProjectReceipt } from './receipt.ts'
+import { receiptProjectPath, resolveProjectReceipt } from './receipt.ts'
 import { refineRemoval } from './remove/refine.ts'
 import { rollbackAndFail, summarize } from './run-install-support.ts'
 import type { InstallDelta, RunInstallFailure, RunInstallOptions, RunInstallResult, StageEvent } from './types.ts'
@@ -127,11 +129,25 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     // lockfile's claims. Invalid asset entries (escape paths) are reported and
     // skipped — the rest of the receipt is still processed (W2 / design D6).
     const receiptState = resolveProjectReceipt(projectRoot)
-    const receipt: Receipt = receiptBaseFor(receiptState)
+    const receiptPath = receiptProjectPath(receiptState)
     if (receiptState.kind === 'loaded') {
       for (const invalid of receiptState.invalidEntries) {
-        onLog(() => `[warn] receipt asset entry rejected for ${invalid.facet}: "${invalid.asset}" (${invalid.reason})`)
-        onStage({ kind: 'receipt-invalid-asset', ...invalid })
+        if (invalid.kind === 'asset') {
+          onLog(
+            () => `[warn] receipt asset entry rejected for ${invalid.facet}: "${invalid.asset}" (${invalid.reason})`,
+          )
+          onStage({ kind: 'receipt-invalid-asset', facet: invalid.facet, asset: invalid.asset, reason: invalid.reason })
+          continue
+        }
+        onLog(
+          () => `[warn] receipt server claim rejected for ${invalid.facet}: "${invalid.server}" (${invalid.reason})`,
+        )
+        onStage({
+          kind: 'receipt-invalid-configuration',
+          facet: invalid.facet,
+          server: invalid.server,
+          reason: invalid.reason,
+        })
       }
     } else if (receiptState.reason !== 'missing') {
       // A receipt that exists but cannot be read is an anomaly with a large
@@ -306,7 +322,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
         lockedSet: { kind: 'write', newLockfile },
         // Nothing was written, so the receipt can only be PRUNED — never
         // re-derived from lockfile entries this run did not apply.
-        newReceipt: buildUpdatedReceipt(receipt, { kind: 'carried-forward', facets: refined.receiptFacets }),
+        newReceipt: buildUpdatedReceipt(receiptPath, { kind: 'carried-forward', facets: refined.receiptFacets }),
         onLog,
       })
       if (!committed.ok) {
@@ -318,7 +334,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
         onStage({
           kind: 'stale-override-pruned',
           facet: entry.facet,
-          assetType: entry.type,
+          contribution: entry.contribution,
           authoredName: entry.authoredName,
         })
       }
@@ -370,6 +386,11 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       return failureNoMutation(composed.failure)
     }
     const plan = composed.plan
+
+    // The MCP configurations this run reconciled into native tool state.
+    // Empty until the native apply step exists: the composed plan says what
+    // SHOULD be configured, and a receipt claim may only record what was.
+    const reconciledServerConfigurations: readonly PlannedServerConfiguration[] = []
 
     // 7. The first mutation is now imminent, so the rollback ledger opens
     //    here. Every entry it accumulates corresponds to a write that
@@ -463,7 +484,16 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
             facets: newFacetEntries,
           }),
         }
-    const newReceipt = buildUpdatedReceipt(receipt, { kind: 'written', facetEntries: newFacetEntries })
+    // The claims this run reconciled. Nothing in this pipeline applies native
+    // MCP configuration yet, so it reconciled none — and a claim asserts BOTH
+    // that an identity was reconciled and that its declaration was approved
+    // here, so recording one from the composed plan alone would assert two
+    // things that have not happened.
+    const newReceipt = buildUpdatedReceipt(receiptPath, {
+      kind: 'written',
+      facetEntries: newFacetEntries,
+      configurations: claimsByFacet(reconciledServerConfigurations),
+    })
     if (!frozenLockfile && merged.hasDelta) {
       applyManifestWritePolicy(merged.desiredFacets, delta.additions, newFacetEntries)
     }
@@ -503,7 +533,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       onStage({
         kind: 'stale-override-pruned',
         facet: entry.facet,
-        assetType: entry.type,
+        contribution: entry.contribution,
         authoredName: entry.authoredName,
       })
     }

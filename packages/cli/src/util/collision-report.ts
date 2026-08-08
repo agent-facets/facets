@@ -1,7 +1,12 @@
 import type { AssetType, Scope } from '@agent-facets/common'
-import type { RunInstallFailure } from '@agent-facets/engine'
-import type { CollisionGroup, MaterializationNamespace, StaleOverride } from '@agent-facets/protocol'
-import { overrideGroupKey } from '@agent-facets/protocol'
+import type {
+  MaterializationCollisionGroup,
+  RunInstallFailure,
+  StaleMaterializationOverride,
+} from '@agent-facets/engine'
+import type { MaterializationNamespace, McpServerDeclaration } from '@agent-facets/protocol'
+import { overrideGroupKey, SERVER_OVERRIDE_GROUP } from '@agent-facets/protocol'
+import { describeContribution } from './contribution.ts'
 
 /**
  * The complete, copy-pasteable account of a materialization collision.
@@ -59,25 +64,94 @@ export function describeNamespace(namespace: MaterializationNamespace, scope: Sc
   }
 }
 
+/** Where in `facets.json` a choice for this server is written. */
+export function serverManifestLocation(facet: string, authoredName: string): string {
+  return `facets[${JSON.stringify(facet)}].materialization.${SERVER_OVERRIDE_GROUP}[${JSON.stringify(authoredName)}]`
+}
+
+/** A stable React/list key for one collision group. */
+export function collisionGroupKey(entry: MaterializationCollisionGroup): string {
+  return entry.kind === 'asset'
+    ? `asset:${entry.group.scope}:${entry.group.namespace}:${entry.group.effectiveName}`
+    : `mcp-server:${entry.group.effectiveName}`
+}
+
+/** The heading naming what is being contested, and by which name. */
+export function describeCollisionGroup(entry: MaterializationCollisionGroup): string {
+  return entry.kind === 'asset' ? describeNamespace(entry.group.namespace, entry.group.scope) : 'MCP servers'
+}
+
+/** One claimant, flattened for rendering. */
+export interface CollisionClaimant {
+  key: string
+  facet: string
+  /** What the claimant is, in the user's words. */
+  label: string
+  authoredName: string
+  /** The exact `facets.json` path a choice is written to. */
+  location: string
+}
+
+/**
+ * Every claimant of a group, in one shape.
+ *
+ * Shared so the Ink block and the stderr report cannot disagree about which
+ * claimants exist or where a user edits them — the two surfaces render the
+ * same failure, and only one of them is visible in CI.
+ */
+export function collisionClaimants(entry: MaterializationCollisionGroup): CollisionClaimant[] {
+  if (entry.kind === 'asset') {
+    return entry.group.members.map((member) => ({
+      key: `${member.facet}:${member.type}:${member.authoredName}`,
+      facet: member.facet,
+      label: `${member.type} ${member.authoredName}`,
+      authoredName: member.authoredName,
+      location: manifestLocation(member.facet, member.type, member.authoredName),
+    }))
+  }
+  return entry.group.members.map((member) => ({
+    key: `${member.facet}:mcp-server:${member.authoredName}`,
+    facet: member.facet,
+    label: `server ${member.authoredName}`,
+    authoredName: member.authoredName,
+    location: serverManifestLocation(member.facet, member.authoredName),
+  }))
+}
+
 /** The full stderr report for an unresolved collision. */
 export function formatCollisionReport(
-  groups: readonly CollisionGroup[],
-  staleOverrides: readonly StaleOverride[],
+  groups: readonly MaterializationCollisionGroup[],
+  staleOverrides: readonly StaleMaterializationOverride[],
 ): string {
   const lines: string[] = []
 
   lines.push(
     `Two or more facets want the same name, so installation stopped before writing anything.`,
-    `Every asset below needs one choice: keep its name, give it a different one, or leave it out.`,
+    `Every claimant below needs one choice: keep its name, give it a different one, or leave it out.`,
     ``,
   )
 
-  for (const group of groups) {
-    lines.push(`  ${describeNamespace(group.namespace, group.scope)} — "${group.effectiveName}" is claimed by:`)
+  for (const entry of groups) {
+    if (entry.kind === 'asset') {
+      const group = entry.group
+      lines.push(`  ${describeNamespace(group.namespace, group.scope)} — "${group.effectiveName}" is claimed by:`)
+      for (const member of group.members) {
+        const via = member.disposition.kind === 'aliased' ? ` (already aliased from "${member.authoredName}")` : ''
+        lines.push(`    • ${member.facet}: ${member.type} "${member.authoredName}" → "${member.effectiveName}"${via}`)
+        lines.push(`        edit ${manifestLocation(member.facet, member.type, member.authoredName)}`)
+        lines.push(`          alias:  ${aliasSnippet(member.authoredName)}`)
+        lines.push(`          omit:   ${omitSnippet(member.authoredName)}`)
+      }
+      lines.push(``)
+      continue
+    }
+    const group = entry.group
+    lines.push(`  MCP servers — "${group.effectiveName}" is claimed by:`)
     for (const member of group.members) {
       const via = member.disposition.kind === 'aliased' ? ` (already aliased from "${member.authoredName}")` : ''
-      lines.push(`    • ${member.facet}: ${member.type} "${member.authoredName}" → "${member.effectiveName}"${via}`)
-      lines.push(`        edit ${manifestLocation(member.facet, member.type, member.authoredName)}`)
+      lines.push(`    • ${member.facet}: server "${member.authoredName}" → "${member.effectiveName}"${via}`)
+      lines.push(`        ${describeDeclaration(member.declaration)}`)
+      lines.push(`        edit ${serverManifestLocation(member.facet, member.authoredName)}`)
       lines.push(`          alias:  ${aliasSnippet(member.authoredName)}`)
       lines.push(`          omit:   ${omitSnippet(member.authoredName)}`)
     }
@@ -96,9 +170,9 @@ export function formatCollisionReport(
   )
 
   if (staleOverrides.length > 0) {
-    lines.push(`  Also note — these recorded choices name assets the resolved versions no longer contain:`)
+    lines.push(`  Also note — these recorded choices name contributions the resolved versions no longer contain:`)
     for (const stale of staleOverrides) {
-      lines.push(`    • ${stale.facet}: ${stale.type} "${stale.authoredName}"`)
+      lines.push(`    • ${stale.facet}: ${describeContribution(stale.contribution)} "${stale.authoredName}"`)
     }
     lines.push(``)
   }
@@ -106,6 +180,26 @@ export function formatCollisionReport(
   lines.push(`  facets.json, facets.lock, the install receipt, and your materialized assets were NOT changed.`)
 
   return lines.join('\n')
+}
+
+/**
+ * A one-line summary of a declaration, enough to tell two colliding servers
+ * apart without reproducing the declaration itself.
+ *
+ * Deliberately not the full command, arguments, environment, or URL. This
+ * report goes to stderr, which is a log file in exactly the situations that
+ * produce it, and the complete declaration belongs only on the interactive
+ * approval screen. The fingerprint prefix is the tiebreaker when two
+ * summaries coincide: it is derived from the whole declaration but reveals
+ * none of it.
+ */
+function describeDeclaration(declaration: McpServerDeclaration): string {
+  switch (declaration.type) {
+    case 'stdio':
+      return `stdio, command "${declaration.command}"`
+    case 'http':
+      return `http, ${new URL(declaration.url).origin}`
+  }
 }
 
 function aliasSnippet(authoredName: string): string {
@@ -123,12 +217,19 @@ function omitSnippet(authoredName: string): string {
  * concrete. It is not a suggestion about which facet should yield —
  * every claimant already got the identical pair of snippets above.
  */
-function exampleFacet(groups: readonly CollisionGroup[]): string {
-  return groups[0]?.members[0]?.facet ?? 'your-facet'
+function exampleFacet(groups: readonly MaterializationCollisionGroup[]): string {
+  return groups[0]?.group.members[0]?.facet ?? 'your-facet'
 }
 
-function exampleOverrideBody(groups: readonly CollisionGroup[]): string {
-  const member = groups[0]?.members[0]
+function exampleOverrideBody(groups: readonly MaterializationCollisionGroup[]): string {
+  const first = groups[0]
+  if (first === undefined) return `"skills": { ${aliasSnippet('asset-name')} }`
+  if (first.kind === 'mcp-server') {
+    const member = first.group.members[0]
+    if (member === undefined) return `"${SERVER_OVERRIDE_GROUP}": { ${aliasSnippet('server-name')} }`
+    return `"${SERVER_OVERRIDE_GROUP}": { ${aliasSnippet(member.authoredName)} }`
+  }
+  const member = first.group.members[0]
   if (member === undefined) return `"skills": { ${aliasSnippet('asset-name')} }`
   return `"${overrideGroupKey(member.type)}": { ${aliasSnippet(member.authoredName)} }`
 }

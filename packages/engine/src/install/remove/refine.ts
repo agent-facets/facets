@@ -4,7 +4,6 @@ import type {
   FacetContribution,
   FacetMaterializationOverrides,
   MaterializedAsset,
-  StaleOverride,
   SupportedLockfile,
   SupportedLockfileFacet,
 } from '@agent-facets/protocol'
@@ -22,11 +21,12 @@ import { ownEntry, ownRecord } from '../own-entry.ts'
 import {
   materializedDispositionOf,
   ownedPathsForLockedAsset,
+  type PreConfigurationReceiptVersion,
   type ProjectReceiptState,
   type ReceiptAsset,
   type ReceiptFacetEntry,
 } from '../receipt.ts'
-import type { FacetOutcome, LockfileDriftEntry } from '../types.ts'
+import type { FacetOutcome, LockfileDriftEntry, StaleMaterializationOverride } from '../types.ts'
 
 /**
  * Removal without resolution.
@@ -77,6 +77,14 @@ import type { FacetOutcome, LockfileDriftEntry } from '../types.ts'
 export type RemainingReceiptDisagreement =
   /** The receipt records a different resolved version than the lockfile. */
   | { kind: 'version'; recorded: string; locked: string }
+  /**
+   * The receipt records different facet content than the lockfile pins. The
+   * version string can repeat across a `git pull` or a mutated local path;
+   * integrity cannot, and it is the only offline evidence that this facet's
+   * declarations are still the ones the recorded claims were witnessed
+   * against.
+   */
+  | { kind: 'integrity'; recorded: string; locked: string }
   /** The lockfile says this asset is materialized; the receipt never saw it. */
   | { kind: 'asset-unrecorded'; scope: Scope; assetType: AssetType; authoredName: string }
   /** Both know the asset, but disagree about the name it was written under. */
@@ -109,6 +117,16 @@ export type RefineNotApplicable =
     }
   /** No receipt to witness with, so nothing on disk is tracked. */
   | { code: 'receipt-unwitnessable'; reason: 'missing' | 'corrupt' | 'path-mismatch' }
+  /**
+   * The receipt predates configuration claims. Its asset ownership is intact,
+   * but it cannot say whether a remaining facet declares MCP servers, because
+   * declarations live only inside the integrity-protected `facet.json` this
+   * path deliberately does not fetch. Carrying it forward would commit a
+   * record asserting that nothing is configured, which is a claim rather than
+   * an observation. One ordinary operation rewrites the receipt at the
+   * current version and this stops applying.
+   */
+  | { code: 'configuration-unwitnessed'; refinedFrom: PreConfigurationReceiptVersion }
   /**
    * A remaining facet's materialization is untracked: the receipt says nothing
    * about it. Its assets must be written before they can be claimed, so the
@@ -147,8 +165,8 @@ export interface RefinedRemoval {
   receiptFacets: Record<string, ReceiptFacetEntry>
   /** The remaining facets' persisted intent, unchanged. */
   overrides: Readonly<Record<string, FacetMaterializationOverrides>>
-  /** Remaining overrides naming assets the locked content no longer has. */
-  staleOverrides: readonly StaleOverride[]
+  /** Remaining overrides naming contributions the locked content no longer has. */
+  staleOverrides: readonly StaleMaterializationOverride[]
   /** Remaining facets, reported as untouched. */
   outcomes: readonly FacetOutcome[]
 }
@@ -177,7 +195,14 @@ export function refineRemoval(args: RefineRemovalArgs): RefineRemovalResult {
   if (receiptState.kind === 'unavailable') {
     return { kind: 'not-applicable', reason: { code: 'receipt-unwitnessable', reason: receiptState.reason } }
   }
-  const receipt = receiptState.receipt
+  // Only a record that could have witnessed configuration may be carried
+  // forward. The type enforces it: an `assets-only` record has no claim field
+  // to copy, so there is no way to write one from here even by mistake.
+  const record = receiptState.record
+  if (record.authority !== 'assets-and-configuration') {
+    return { kind: 'not-applicable', reason: { code: 'configuration-unwitnessed', refinedFrom: record.refinedFrom } }
+  }
+  const witnessedFacets = record.facets
 
   // Collect the remaining entries up front. Doing it here rather than during
   // the rebuild means every later step holds a real entry, so there is no
@@ -269,7 +294,7 @@ export function refineRemoval(args: RefineRemovalArgs): RefineRemovalResult {
     // one from the locked entry would claim files this machine has no evidence
     // it wrote — which the next run would then read as permission to delete
     // them. A facet it DOES mention must agree exactly.
-    const recorded = ownEntry(receipt.facets, name)
+    const recorded = ownEntry(witnessedFacets, name)
     if (recorded === undefined) {
       return { kind: 'not-applicable', reason: { code: 'remaining-untracked', facet: name } }
     }
@@ -307,7 +332,12 @@ export function refineRemoval(args: RefineRemovalArgs): RefineRemovalResult {
       previousOwnership,
       receiptFacets,
       overrides,
-      staleOverrides: planned.staleOverrides,
+      staleOverrides: planned.staleOverrides.map((stale) => ({
+        facet: stale.facet,
+        contribution: { kind: 'asset', assetType: stale.type },
+        authoredName: stale.authoredName,
+        disposition: stale.disposition,
+      })),
       outcomes,
     },
   }
@@ -367,6 +397,9 @@ function witnessRemaining(recorded: ReceiptFacetEntry, locked: SupportedLockfile
   if (recorded.version !== locked.version) {
     return { ok: false, disagreement: { kind: 'version', recorded: recorded.version, locked: locked.version } }
   }
+  if (recorded.integrity !== locked.integrity) {
+    return { ok: false, disagreement: { kind: 'integrity', recorded: recorded.integrity, locked: locked.integrity } }
+  }
   const assets: ReceiptAsset[] = []
   for (const asset of locked.assets) {
     const disposition = materializedDispositionOf(asset)
@@ -384,7 +417,19 @@ function witnessRemaining(recorded: ReceiptFacetEntry, locked: SupportedLockfile
     }
     assets.push(witnessed)
   }
-  return { ok: true, entry: { version: recorded.version, assets } }
+  // Claims are carried verbatim. The facet remains desired and its integrity
+  // matches the locked entry, so the declarations behind these fingerprints
+  // are provably the ones that were reconciled — which is exactly the proof
+  // that makes carrying them forward an observation rather than a guess.
+  return {
+    ok: true,
+    entry: {
+      version: recorded.version,
+      integrity: recorded.integrity,
+      assets,
+      configurations: recorded.configurations,
+    },
+  }
 }
 
 /** Set equality over owned paths. Order is not part of what either side means. */
