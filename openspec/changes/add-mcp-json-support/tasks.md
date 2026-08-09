@@ -116,15 +116,15 @@
 
 ## 13. Collision resolution UI — Research
 
-- [ ] 13.1 Explore: Inspect the collision draft/workspace, claimant identity, alias validation, cancellation, non-interactive report, and prototype-safety tests that currently assume asset-only claimants.
-- [ ] 13.2 Propose: Define tagged asset/MCP claimant models and a complete-draft re-planning approach that preserves separate namespaces, accessible statuses, durable server dispositions, and no-winner behavior.
+- [x] 13.1 Explore: Inspect the collision draft/workspace, claimant identity, alias validation, cancellation, non-interactive report, and prototype-safety tests that currently assume asset-only claimants.
+- [x] 13.2 Propose: Define tagged asset/MCP claimant models and a complete-draft re-planning approach that preserves separate namespaces, accessible statuses, durable server dispositions, and no-winner behavior.
 
 ## 14. Collision resolution UI — Implementation
 
-- [ ] 14.1 Implement: Extend the interactive overview, focused workspace, draft model, and Keep/Alias/Omit controls to MCP claimants with declaration summaries and complete global revalidation.
-- [ ] 14.2 Implement: Extend non-interactive collision failures with every MCP claimant, exact `materialization.servers` locations, valid alias/omission examples, no invented winner, and explicit no-mutation reporting.
-- [ ] 14.3 Implement: Add UI/model/report tests for mixed asset/server groups, every-claimant omission, alias conflicts, invalid aliases, cancellation/interruption, accessible status labels, and prototype-pollution keys.
-- [ ] 14.4 Verify: Run focused collision workspace, report, CLI integration, and type checks.
+- [x] 14.1 Implement: Extend the interactive overview, focused workspace, draft model, and Keep/Alias/Omit controls to MCP claimants with declaration summaries and complete global revalidation.
+- [x] 14.2 Implement: Extend non-interactive collision failures with every MCP claimant, exact `materialization.servers` locations, valid alias/omission examples, no invented winner, and explicit no-mutation reporting.
+- [x] 14.3 Implement: Add UI/model/report tests for mixed asset/server groups, every-claimant omission, alias conflicts, invalid aliases, cancellation/interruption, accessible status labels, and prototype-pollution keys.
+- [x] 14.4 Verify: Run focused collision workspace, report, CLI integration, and type checks.
 
 ## 15. Consent, takeover, flags, and command output — Research
 

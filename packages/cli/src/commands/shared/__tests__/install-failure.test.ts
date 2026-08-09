@@ -123,7 +123,19 @@ describe('installFailureDetail', () => {
 
 describe('installFailureFix — actionable failures name their command', () => {
   const actionable: RunInstallFailure[] = [
-    { code: 'MATERIALIZATION_ALIAS_INVALID', problems: [{ facet: 'a', alias: 'Bad', reason: 'must be lowercase' }] },
+    {
+      code: 'MATERIALIZATION_ALIAS_INVALID',
+      problems: [
+        {
+          kind: 'asset',
+          facet: 'a',
+          assetType: 'skill',
+          authoredName: 'review',
+          alias: 'Bad',
+          reason: 'must be lowercase',
+        },
+      ],
+    },
     { code: 'MATERIALIZATION_COLLISION', groups: [], staleOverrides: [] },
     { code: 'MATERIALIZATION_CANCELLED' },
   ]

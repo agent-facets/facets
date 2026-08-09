@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type {
+  CollisionFacetContribution,
   CollisionResolution,
   CollisionResolutionRequest,
   CollisionResolver,
@@ -10,9 +11,9 @@ import type {
   RunInstallResult,
   StageEvent,
 } from '@agent-facets/engine'
-import { assetIdentity } from '@agent-facets/engine'
-import type { FacetContribution, IntegrityFailure } from '@agent-facets/protocol'
-import { CURRENT_LOCKFILE_VERSION, LOCKFILE_VERSION_0_3, planMaterialization } from '@agent-facets/protocol'
+import { assetIdentity, planCollisionIntent } from '@agent-facets/engine'
+import type { IntegrityFailure } from '@agent-facets/protocol'
+import { CURRENT_LOCKFILE_VERSION, LOCKFILE_VERSION_0_3 } from '@agent-facets/protocol'
 import { render } from 'ink-testing-library'
 import { createElement } from 'react'
 import { InstallView, type InstallViewResult } from '../tui/views/install/install-view.tsx'
@@ -1014,13 +1015,13 @@ const KEY = { down: '\u001B[B', right: '\u001B[C', enter: '\r', escape: '\u001B'
 function collisionRequest(): CollisionResolutionRequest {
   // Planner contributions are AUTHORED assets — identity only. They carry no
   // disposition or file records, unlike a lockfile entry.
-  const contributions: FacetContribution[] = [
-    { facet: 'alpha', assets: [{ scope: 'project', type: 'skill', name: 'review' }] },
-    { facet: 'beta', assets: [{ scope: 'project', type: 'skill', name: 'review' }] },
+  const facets: CollisionFacetContribution[] = [
+    { facet: 'alpha', assets: [{ scope: 'project', type: 'skill', name: 'review' }], servers: [] },
+    { facet: 'beta', assets: [{ scope: 'project', type: 'skill', name: 'review' }], servers: [] },
   ]
-  const planned = planMaterialization(contributions)
+  const planned = planCollisionIntent(facets, {})
   if (planned.ok || planned.reason !== 'collision') expect.unreachable()
-  return { groups: planned.groups, contributions, staleOverrides: [] }
+  return { groups: planned.groups, facets, overrides: {}, staleOverrides: [] }
 }
 
 const CANCELLED_RESULT: RunInstallResult = {

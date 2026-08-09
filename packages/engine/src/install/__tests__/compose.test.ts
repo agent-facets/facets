@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
@@ -373,7 +373,7 @@ describe('compose — resolution', () => {
 
     // The resolver saw the complete authored set, not just the conflict.
     expect(seen?.groups).toHaveLength(1)
-    expect(seen?.contributions.map((c) => c.facet).sort()).toEqual(['alpha', 'beta'])
+    expect(seen?.facets.map((facet) => facet.facet).sort()).toEqual(['alpha', 'beta'])
 
     // Both assets materialized — nothing was silently dropped.
     expect(io.filter((c) => c.startsWith('install:')).length).toBe(2)
@@ -768,3 +768,149 @@ function existsSyncSafe(path: string): boolean {
     return false
   }
 }
+
+describe('compose — resolving server collisions', () => {
+  const OTHER = { type: 'stdio', command: 'other-server' }
+
+  test('a server collision reaches the resolver rather than reporting', async () => {
+    writeManifest({
+      facets: {
+        alpha: serverFixture('alpha', 'filesystem', STDIO),
+        beta: serverFixture('beta', 'filesystem', OTHER),
+      },
+    })
+    const { adapter } = recordingAdapter('rec')
+
+    let seen: CollisionResolutionRequest | undefined
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      mcpConsent: ACCEPT_MCP,
+      resolveCollisions: async (request): Promise<CollisionResolution> => {
+        seen = request
+        return {
+          kind: 'resolved',
+          overrides: { beta: { servers: { filesystem: { kind: 'aliased', as: 'beta-filesystem' } } } },
+        }
+      },
+    })
+
+    if (!result.ok) expect.unreachable()
+    expect(seen?.groups).toHaveLength(1)
+    expect(seen?.groups[0]?.kind).toBe('mcp-server')
+    // The complete authored set, so an alias can land on a server that was
+    // not colliding.
+    expect(seen?.facets.map((facet) => facet.facet).sort()).toEqual(['alpha', 'beta'])
+    expect(result.summary.mcp.configurations.added).toBe(2)
+  })
+
+  test('one report carries an asset group and a server group together', async () => {
+    writeManifest({
+      facets: {
+        alpha: fixture('alpha', 'review'),
+        beta: fixture('beta', 'review'),
+        gamma: serverFixture('gamma', 'filesystem', STDIO),
+        delta: serverFixture('delta', 'filesystem', OTHER),
+      },
+    })
+    const { adapter } = recordingAdapter('rec')
+
+    let seen: CollisionResolutionRequest | undefined
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      mcpConsent: ACCEPT_MCP,
+      resolveCollisions: async (request): Promise<CollisionResolution> => {
+        seen = request
+        return { kind: 'cancelled' }
+      },
+    })
+
+    if (result.ok) expect.unreachable()
+    expect(result.failure.code).toBe('MATERIALIZATION_CANCELLED')
+    expect(seen?.groups.map((entry) => entry.kind).sort()).toEqual(['asset', 'mcp-server'])
+  })
+
+  test('cancelling leaves the project and every native document unchanged', async () => {
+    const before = writeManifest({
+      facets: {
+        alpha: serverFixture('alpha', 'filesystem', STDIO),
+        beta: serverFixture('beta', 'filesystem', OTHER),
+      },
+    })
+    const { adapter, io } = recordingAdapter('rec')
+
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      mcpConsent: ACCEPT_MCP,
+      resolveCollisions: async (): Promise<CollisionResolution> => ({ kind: 'cancelled' }),
+    })
+
+    if (result.ok) expect.unreachable()
+    expect(result.failure.code).toBe('MATERIALIZATION_CANCELLED')
+    expect(result.rollback.kind).toBe('not-needed')
+    expect(readManifest()).toBe(before)
+    expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)
+    // Composition precedes MCP preparation, so no adapter was asked to plan
+    // a configuration, let alone write one.
+    expect(io).toEqual([])
+    expect(existsSync(join(projectRoot, '.rec', 'mcp.json'))).toBe(false)
+  })
+
+  test('a resolver that omits every server claimant resolves the group', async () => {
+    writeManifest({
+      facets: {
+        alpha: serverFixture('alpha', 'filesystem', STDIO),
+        beta: serverFixture('beta', 'filesystem', OTHER),
+      },
+    })
+    const { adapter } = recordingAdapter('rec')
+
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      mcpConsent: ACCEPT_MCP,
+      resolveCollisions: async (): Promise<CollisionResolution> => ({
+        kind: 'resolved',
+        overrides: {
+          alpha: { servers: { filesystem: { kind: 'omitted' } } },
+          beta: { servers: { filesystem: { kind: 'omitted' } } },
+        },
+      }),
+    })
+
+    if (!result.ok) expect.unreachable()
+    expect(result.summary.mcp.declarations.omitted).toBe(2)
+    expect(result.summary.mcp.configurations.added).toBe(0)
+  })
+
+  test('a resolver answer that still collides fails without reopening it', async () => {
+    writeManifest({
+      facets: {
+        alpha: serverFixture('alpha', 'filesystem', STDIO),
+        beta: serverFixture('beta', 'filesystem', OTHER),
+      },
+    })
+    const { adapter } = recordingAdapter('rec')
+
+    let calls = 0
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      mcpConsent: ACCEPT_MCP,
+      resolveCollisions: async (): Promise<CollisionResolution> => {
+        calls++
+        // Moves the problem rather than solving it.
+        return {
+          kind: 'resolved',
+          overrides: { alpha: { servers: { filesystem: { kind: 'aliased', as: 'filesystem' } } } },
+        }
+      },
+    })
+
+    if (result.ok) expect.unreachable()
+    expect(result.failure.code).toBe('MATERIALIZATION_RESOLUTION_INVALID')
+    expect(calls).toBe(1)
+  })
+})

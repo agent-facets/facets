@@ -1,4 +1,5 @@
 import { Box, Text } from 'ink'
+import { describeClaimantDeclaration } from '../../../../util/collision-report.ts'
 import { THEME } from '../../../theme.ts'
 import { COLLISION_STATUS, type CollisionStatus, describeStatus } from '../collision-status.ts'
 import { AliasInput } from './alias-input.tsx'
@@ -45,11 +46,41 @@ export function StatusTag({ status }: { status: CollisionStatus }) {
   return <Text color={COLLISION_STATUS[status].color}>{describeStatus(status)}</Text>
 }
 
-/** How this claimant's asset will land on disk, in one phrase. */
+/** How this claimant will land, in one phrase. */
 function outcomeOf(claimant: ClaimantModel): string {
-  if (claimant.effectiveName === null) return 'not materialized'
+  // An omitted asset is not written; an omitted server is not configured.
+  // Same decision, two different things that then do not happen.
+  if (claimant.effectiveName === null) {
+    return claimant.ref.kind === 'asset' ? 'not materialized' : 'not configured'
+  }
   if (claimant.effectiveName === claimant.authoredName) return claimant.authoredName
   return `${claimant.authoredName} → ${claimant.effectiveName}`
+}
+
+/**
+ * What a group of claimants is called, for a heading.
+ *
+ * A group never mixes domains, so one noun always fits — and "2 assets" above
+ * two MCP servers is the kind of wrong that makes a user doubt the rest of
+ * the screen.
+ */
+export function describeClaimantKind(kind: ClaimantModel['ref']['kind'], count: number): string {
+  if (kind === 'asset') return count === 1 ? 'asset' : 'assets'
+  return count === 1 ? 'MCP server' : 'MCP servers'
+}
+
+/**
+ * What this claimant IS, in the user's words.
+ *
+ * An asset is placed, so its scope and type are what distinguish it. A server
+ * is project-scoped and typeless, so what distinguishes it is the declaration
+ * — which is why the spec asks for a summary of one on every MCP row.
+ */
+export function describeClaimant(claimant: ClaimantModel): string {
+  const ref = claimant.ref
+  return ref.kind === 'asset'
+    ? `${ref.scope} ${ref.type} ${ref.authoredName}`
+    : `server ${ref.authoredName} · ${describeClaimantDeclaration(ref.declaration, ref.fingerprint)}`
 }
 
 export function ClaimantRow({
@@ -85,10 +116,7 @@ export function ClaimantRow({
       <Text>
         <Text color={focused ? THEME.focus : THEME.hint}>{focused ? '▸ ' : '  '}</Text>
         <Text bold>{claimant.facet}</Text>
-        <Text color={THEME.hint}>
-          {' '}
-          {claimant.scope} {claimant.type} {claimant.authoredName}
-        </Text>
+        <Text color={THEME.hint}> {describeClaimant(claimant)}</Text>
       </Text>
 
       <Box marginLeft={4} gap={1}>

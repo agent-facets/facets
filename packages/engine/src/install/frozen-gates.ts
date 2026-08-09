@@ -100,7 +100,14 @@ export function checkFrozenConsistency(args: FrozenGateArgs): RunInstallFailure 
     if (planned.reason === 'invalid-alias') {
       return {
         code: 'MATERIALIZATION_ALIAS_INVALID',
-        problems: planned.problems.map((p) => ({ facet: p.facet, alias: p.alias, reason: p.reason })),
+        problems: planned.problems.map((problem) => ({
+          kind: 'asset' as const,
+          facet: problem.facet,
+          assetType: problem.type,
+          authoredName: problem.authoredName,
+          alias: problem.alias,
+          reason: problem.reason,
+        })),
       }
     }
     // Unresolved collisions in recorded state. Frozen mode never prompts, so

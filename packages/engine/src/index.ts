@@ -152,6 +152,15 @@ export type {
   AssetTakeoverRequest,
   AssetTakeoverResolver,
 } from './install/asset-takeover.ts'
+// The shared cross-domain naming rule. Exported because the CLI's collision
+// workspace must answer "does this draft plan cleanly?" with the SAME function
+// the engine uses to validate the answer it gets back.
+export type {
+  CollisionFacetContribution,
+  CollisionPlanResult,
+  MaterializationAliasProblem,
+} from './install/commit/collision-plan.ts'
+export { overrideGroupFor, planCollisionIntent } from './install/commit/collision-plan.ts'
 // install machinery
 // The collision-resolver contract. Exported because the interactive
 // workspace lives in the CLI (TTY detection and prompting are display

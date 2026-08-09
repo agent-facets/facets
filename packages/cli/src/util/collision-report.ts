@@ -1,10 +1,11 @@
 import type { AssetType, Scope } from '@agent-facets/common'
 import type {
+  MaterializationAliasProblem,
   MaterializationCollisionGroup,
   RunInstallFailure,
   StaleMaterializationOverride,
 } from '@agent-facets/engine'
-import type { MaterializationNamespace, McpServerDeclaration } from '@agent-facets/protocol'
+import type { MaterializationNamespace, McpServerDeclaration, McpServerFingerprint } from '@agent-facets/protocol'
 import { overrideGroupKey, SERVER_OVERRIDE_GROUP } from '@agent-facets/protocol'
 import { describeContribution } from './contribution.ts'
 
@@ -85,9 +86,20 @@ export function describeCollisionGroup(entry: MaterializationCollisionGroup): st
 export interface CollisionClaimant {
   key: string
   facet: string
-  /** What the claimant is, in the user's words. */
+  /** What the claimant is, in the user's words — including its scope, for an asset. */
   label: string
   authoredName: string
+  /** The name it is claiming. Always present: a collision is a claim on one. */
+  effectiveName: string
+  /**
+   * Extra lines about this claimant, rendered under it. Empty for an asset,
+   * one declaration summary for a server.
+   *
+   * A list rather than an optional string: "no extra detail" and "a detail
+   * that happens to be empty" are the same thing to a renderer, and a
+   * `string | undefined` invites a caller to print `undefined`.
+   */
+  detail: readonly string[]
   /** The exact `facets.json` path a choice is written to. */
   location: string
 }
@@ -102,10 +114,12 @@ export interface CollisionClaimant {
 export function collisionClaimants(entry: MaterializationCollisionGroup): CollisionClaimant[] {
   if (entry.kind === 'asset') {
     return entry.group.members.map((member) => ({
-      key: `${member.facet}:${member.type}:${member.authoredName}`,
+      key: `${member.facet}:${member.scope}:${member.type}:${member.authoredName}`,
       facet: member.facet,
-      label: `${member.type} ${member.authoredName}`,
+      label: `${member.scope} ${member.type} ${member.authoredName}`,
       authoredName: member.authoredName,
+      effectiveName: member.effectiveName,
+      detail: [],
       location: manifestLocation(member.facet, member.type, member.authoredName),
     }))
   }
@@ -114,6 +128,8 @@ export function collisionClaimants(entry: MaterializationCollisionGroup): Collis
     facet: member.facet,
     label: `server ${member.authoredName}`,
     authoredName: member.authoredName,
+    effectiveName: member.effectiveName,
+    detail: [describeClaimantDeclaration(member.declaration, member.fingerprint)],
     location: serverManifestLocation(member.facet, member.authoredName),
   }))
 }
@@ -132,28 +148,14 @@ export function formatCollisionReport(
   )
 
   for (const entry of groups) {
-    if (entry.kind === 'asset') {
-      const group = entry.group
-      lines.push(`  ${describeNamespace(group.namespace, group.scope)} — "${group.effectiveName}" is claimed by:`)
-      for (const member of group.members) {
-        const via = member.disposition.kind === 'aliased' ? ` (already aliased from "${member.authoredName}")` : ''
-        lines.push(`    • ${member.facet}: ${member.type} "${member.authoredName}" → "${member.effectiveName}"${via}`)
-        lines.push(`        edit ${manifestLocation(member.facet, member.type, member.authoredName)}`)
-        lines.push(`          alias:  ${aliasSnippet(member.authoredName)}`)
-        lines.push(`          omit:   ${omitSnippet(member.authoredName)}`)
-      }
-      lines.push(``)
-      continue
-    }
-    const group = entry.group
-    lines.push(`  MCP servers — "${group.effectiveName}" is claimed by:`)
-    for (const member of group.members) {
-      const via = member.disposition.kind === 'aliased' ? ` (already aliased from "${member.authoredName}")` : ''
-      lines.push(`    • ${member.facet}: server "${member.authoredName}" → "${member.effectiveName}"${via}`)
-      lines.push(`        ${describeDeclaration(member.declaration)}`)
-      lines.push(`        edit ${serverManifestLocation(member.facet, member.authoredName)}`)
-      lines.push(`          alias:  ${aliasSnippet(member.authoredName)}`)
-      lines.push(`          omit:   ${omitSnippet(member.authoredName)}`)
+    lines.push(`  ${describeCollisionGroup(entry)} — "${entry.group.effectiveName}" is claimed by:`)
+    for (const claimant of collisionClaimants(entry)) {
+      const via = aliasedFrom(entry, claimant.authoredName)
+      lines.push(`    • ${claimant.facet}: ${claimant.label} → "${claimant.effectiveName}"${via}`)
+      for (const detail of claimant.detail) lines.push(`        ${detail}`)
+      lines.push(`        edit ${claimant.location}`)
+      lines.push(`          alias:  ${aliasSnippet(claimant.authoredName)}`)
+      lines.push(`          omit:   ${omitSnippet(claimant.authoredName)}`)
     }
     lines.push(``)
   }
@@ -177,7 +179,10 @@ export function formatCollisionReport(
     lines.push(``)
   }
 
-  lines.push(`  facets.json, facets.lock, the install receipt, and your materialized assets were NOT changed.`)
+  lines.push(
+    `  facets.json, facets.lock, the install receipt, your materialized assets, and every tool's`,
+    `  MCP configuration were NOT changed.`,
+  )
 
   return lines.join('\n')
 }
@@ -186,20 +191,47 @@ export function formatCollisionReport(
  * A one-line summary of a declaration, enough to tell two colliding servers
  * apart without reproducing the declaration itself.
  *
- * Deliberately not the full command, arguments, environment, or URL. This
- * report goes to stderr, which is a log file in exactly the situations that
- * produce it, and the complete declaration belongs only on the interactive
- * approval screen. The fingerprint prefix is the tiebreaker when two
- * summaries coincide: it is derived from the whole declaration but reveals
- * none of it.
+ * Deliberately not the full command line, arguments, environment, or URL
+ * path. Both surfaces that call this — this stderr report and the collision
+ * workspace — are ordinary command output, and the complete declaration
+ * belongs on the approval screen, which is the one place whose purpose is
+ * showing a user what they are authorizing.
+ *
+ * The fingerprint prefix is the tiebreaker. Two colliding declarations can
+ * share a command and differ only in arguments or environment, and a user
+ * shown two identical lines learns nothing about which row is which. The
+ * prefix is derived from the whole declaration and reveals none of it.
  */
-function describeDeclaration(declaration: McpServerDeclaration): string {
-  switch (declaration.type) {
-    case 'stdio':
-      return `stdio, command "${declaration.command}"`
-    case 'http':
-      return `http, ${new URL(declaration.url).origin}`
-  }
+export function describeClaimantDeclaration(
+  declaration: McpServerDeclaration,
+  fingerprint: McpServerFingerprint,
+): string {
+  const summary =
+    declaration.type === 'stdio' ? `stdio, command "${declaration.command}"` : `http, ${originOf(declaration.url)}`
+  return `${summary} · ${shortFingerprint(fingerprint)}`
+}
+
+/**
+ * The origin of an absolute HTTP(S) URL, without parsing it.
+ *
+ * `new URL()` throws, and a formatter that throws turns a report about a
+ * collision into a crash. The schema already guarantees the shape; this reads
+ * the part it guarantees and falls back to the whole string rather than
+ * inventing a failure mode.
+ */
+function originOf(url: string): string {
+  return /^https?:\/\/[^/?#]+/i.exec(url)?.[0] ?? url
+}
+
+/** The first few hex digits of a fingerprint, enough to tell two rows apart. */
+function shortFingerprint(fingerprint: McpServerFingerprint): string {
+  return fingerprint.slice('sha256:'.length, 'sha256:'.length + 8)
+}
+
+/** How this claimant already reached the contested name, if by an alias. */
+function aliasedFrom(entry: MaterializationCollisionGroup, authoredName: string): string {
+  const member = entry.group.members.find((candidate) => candidate.authoredName === authoredName)
+  return member?.disposition.kind === 'aliased' ? ` (already aliased from "${authoredName}")` : ''
 }
 
 function aliasSnippet(authoredName: string): string {
@@ -234,6 +266,13 @@ function exampleOverrideBody(groups: readonly MaterializationCollisionGroup[]): 
   return `"${overrideGroupKey(member.type)}": { ${aliasSnippet(member.authoredName)} }`
 }
 
+/** Where in `facets.json` the alias that failed validation is written. */
+export function aliasProblemLocation(problem: MaterializationAliasProblem): string {
+  return problem.kind === 'asset'
+    ? manifestLocation(problem.facet, problem.assetType, problem.authoredName)
+    : serverManifestLocation(problem.facet, problem.authoredName)
+}
+
 /**
  * Write the long-form stderr detail for a materialization failure, if it
  * has one. Returns whether anything was written.
@@ -249,14 +288,14 @@ export function writeMaterializationDetail(failure: RunInstallFailure): boolean 
     case 'MATERIALIZATION_RESOLUTION_INVALID':
       process.stderr.write(
         `${formatCollisionReport(failure.groups, [])}\n${failure.problems
-          .map((problem) => `  • ${problem.facet}: alias "${problem.alias}" ${problem.reason}`)
+          .map((problem) => `  • alias "${problem.alias}" ${problem.reason}\n      at ${aliasProblemLocation(problem)}`)
           .join('\n')}\n`,
       )
       return true
     case 'MATERIALIZATION_ALIAS_INVALID':
       process.stderr.write(
-        `A materialization alias in facets.json is not a legal asset name. Nothing was changed.\n${failure.problems
-          .map((problem) => `  • ${problem.facet}: "${problem.alias}" ${problem.reason}`)
+        `A materialization alias in facets.json is not a legal name. Nothing was changed.\n${failure.problems
+          .map((problem) => `  • "${problem.alias}" ${problem.reason}\n      at ${aliasProblemLocation(problem)}`)
           .join('\n')}\n`,
       )
       return true

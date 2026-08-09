@@ -4,7 +4,15 @@ import { Box, Text, useInput } from 'ink'
 import { useCallback, useMemo, useState } from 'react'
 import { contributionKey, describeContribution } from '../../../../util/contribution.ts'
 import { THEME } from '../../../theme.ts'
-import { CHOICES, type ChoiceKind, ClaimantRow, choiceOf, StatusTag } from './claimant-row.tsx'
+import {
+  CHOICES,
+  type ChoiceKind,
+  ClaimantRow,
+  choiceOf,
+  describeClaimant,
+  describeClaimantKind,
+  StatusTag,
+} from './claimant-row.tsx'
 import {
   type ClaimantModel,
   type CollisionDraft,
@@ -57,7 +65,7 @@ export function CollisionWorkspace({
 
   const revise = useCallback(
     (claimant: ClaimantModel, disposition: MaterializationDisposition) => {
-      setDraft((current) => reviseDraft(request, current, claimant, disposition))
+      setDraft((current) => reviseDraft(request, current, claimant.ref, disposition))
     },
     [request],
   )
@@ -225,13 +233,13 @@ function Overview({ model, index }: { model: ReturnType<typeof evaluateDraft>; i
               <Text bold> {group.title}</Text>
               <Text color={THEME.hint}>
                 {' '}
-                ({group.members.length} asset{group.members.length === 1 ? '' : 's'})
+                ({group.members.length} {describeClaimantKind(group.kind, group.members.length)})
               </Text>
             </Text>
             {group.members.map((member) => (
               <Text key={member.key} color={THEME.hint}>
                 {'      '}
-                {member.facet} {member.type} {member.authoredName}
+                {member.facet} {describeClaimant(member)}
                 {member.effectiveName === null ? ' — omitted' : ` → ${member.effectiveName}`}
               </Text>
             ))}
@@ -291,8 +299,8 @@ function GroupView({
         {group.title}
       </Text>
       <Text color={THEME.hint}>
-        {group.members.length} assets want this name. Give each one an outcome; they only have to differ from each
-        other.
+        {group.members.length} {describeClaimantKind(group.kind, group.members.length)} want this name. Give each one an
+        outcome; they only have to differ from each other.
       </Text>
 
       <Box flexDirection="column" marginTop={1}>

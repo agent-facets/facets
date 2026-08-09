@@ -2,7 +2,12 @@ import type { LockfileDriftEntry, RollbackOutcome, RunInstallFailure, RunInstall
 import { Box, Text } from 'ink'
 import type React from 'react'
 import { describeCompatibilityFailure } from '../../../util/adapter-install-errors.ts'
-import { collisionClaimants, collisionGroupKey, describeCollisionGroup } from '../../../util/collision-report.ts'
+import {
+  aliasProblemLocation,
+  collisionClaimants,
+  collisionGroupKey,
+  describeCollisionGroup,
+} from '../../../util/collision-report.ts'
 import { contributionKey, describeContribution } from '../../../util/contribution.ts'
 import { diskStateSentence } from '../../../util/install-outcome.ts'
 import {
@@ -533,8 +538,16 @@ function failureDetail(failure: RunInstallFailure): React.JSX.Element {
                 <Box key={claimant.key} flexDirection="column">
                   <Text color={THEME.hint}>
                     {'   '}
-                    {claimant.facet} ({claimant.label})
+                    {claimant.facet} ({claimant.label}) → “{claimant.effectiveName}”
                   </Text>
+                  {/* A server's declaration summary, so two claimants sharing
+                      a name are still told apart. Empty for an asset. */}
+                  {claimant.detail.map((detail) => (
+                    <Text key={detail} color={THEME.hint}>
+                      {'     '}
+                      {detail}
+                    </Text>
+                  ))}
                   {/* The exact edit site, derived from the published
                       group mapping so it cannot drift from the schema. */}
                   <Text color={THEME.hint}>
@@ -555,9 +568,9 @@ function failureDetail(failure: RunInstallFailure): React.JSX.Element {
             ✕ invalid materialization alias
           </Text>
           {failure.problems.map((problem) => (
-            <Text key={`${problem.facet}:${problem.alias}`} color={THEME.hint}>
+            <Text key={aliasProblemLocation(problem)} color={THEME.hint}>
               {' '}
-              {problem.facet}: “{problem.alias}” {problem.reason}
+              “{problem.alias}” {problem.reason} — at {aliasProblemLocation(problem)}
             </Text>
           ))}
         </Box>
@@ -569,9 +582,9 @@ function failureDetail(failure: RunInstallFailure): React.JSX.Element {
             ✕ the chosen names still conflict
           </Text>
           {failure.problems.map((problem) => (
-            <Text key={`${problem.facet}:${problem.alias}`} color={THEME.hint}>
+            <Text key={aliasProblemLocation(problem)} color={THEME.hint}>
               {' '}
-              {problem.facet}: “{problem.alias}” {problem.reason}
+              “{problem.alias}” {problem.reason} — at {aliasProblemLocation(problem)}
             </Text>
           ))}
           {failure.groups.map((entry) => (

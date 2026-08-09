@@ -14,6 +14,7 @@ import type { UnsupportedManifestVersion } from '../manifest/project-files.ts'
 import type { RegistryError } from '../registry/index.ts'
 import type { ParseError, Source } from '../sources/facet/types.ts'
 import type { AssetTakeoverResolver } from './asset-takeover.ts'
+import type { MaterializationAliasProblem } from './commit/collision-plan.ts'
 import type { CollisionResolver } from './commit/compose.ts'
 import type { McpConsentPolicy, McpConsentRequest } from './mcp/consent.ts'
 import type { McpConfigurationOutcome, McpConsentRequestSummary, McpInstallOutcomes } from './mcp/outcomes.ts'
@@ -582,7 +583,7 @@ export type RunInstallFailure =
    * all, so no effective set — and therefore no collision report — can be
    * derived from it.
    */
-  | { code: 'MATERIALIZATION_ALIAS_INVALID'; problems: ReadonlyArray<{ facet: string; alias: string; reason: string }> }
+  | { code: 'MATERIALIZATION_ALIAS_INVALID'; problems: ReadonlyArray<MaterializationAliasProblem> }
   /**
    * Two or more assets claim one logical materialized identity and nothing
    * resolved it: frozen mode (which reproduces recorded intent and never
@@ -606,7 +607,7 @@ export type RunInstallFailure =
   | {
       code: 'MATERIALIZATION_RESOLUTION_INVALID'
       groups: ReadonlyArray<MaterializationCollisionGroup>
-      problems: ReadonlyArray<{ facet: string; alias: string; reason: string }>
+      problems: ReadonlyArray<MaterializationAliasProblem>
     }
   /** The user dismissed collision resolution. No state was mutated. */
   | { code: 'MATERIALIZATION_CANCELLED' }

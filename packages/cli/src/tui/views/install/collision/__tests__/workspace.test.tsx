@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import type { CollisionResolution, CollisionResolutionRequest } from '@agent-facets/engine'
-import type { FacetContribution } from '@agent-facets/protocol'
-import { planMaterialization } from '@agent-facets/protocol'
+import type { CollisionFacetContribution, CollisionResolution, CollisionResolutionRequest } from '@agent-facets/engine'
+import { planCollisionIntent } from '@agent-facets/engine'
+import type { McpServerDeclaration } from '@agent-facets/protocol'
 import { render } from 'ink-testing-library'
 import { createElement } from 'react'
 import { stripTerminalControls, visibleTerminalText } from '../../../../../__tests__/helpers/terminal-output.ts'
@@ -21,29 +21,31 @@ function nextTick(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 20))
 }
 
-function skill(facet: string, ...names: string[]): FacetContribution {
-  return { facet, assets: names.map((name) => ({ scope: 'project', type: 'skill', name })) }
+function skill(facet: string, ...names: string[]): CollisionFacetContribution {
+  return { facet, assets: names.map((name) => ({ scope: 'project', type: 'skill', name })), servers: [] }
 }
 
-function requestFor(contributions: FacetContribution[]): CollisionResolutionRequest {
-  const planned = planMaterialization(contributions)
-  if (planned.ok) expect.unreachable()
-  if (planned.reason !== 'collision') expect.unreachable()
+function server(facet: string, ...names: string[]): CollisionFacetContribution {
   return {
-    groups: planned.groups,
-    contributions,
-    staleOverrides: planned.staleOverrides.map((stale) => ({
-      facet: stale.facet,
-      contribution: { kind: 'asset' as const, assetType: stale.type },
-      authoredName: stale.authoredName,
-      disposition: stale.disposition,
+    facet,
+    assets: [],
+    servers: names.map((name) => ({
+      name,
+      declaration: { type: 'stdio', command: `${facet}-cmd` } as McpServerDeclaration,
     })),
   }
 }
 
-function mount(contributions: FacetContribution[]) {
+function requestFor(facets: CollisionFacetContribution[]): CollisionResolutionRequest {
+  const planned = planCollisionIntent(facets, {})
+  if (planned.ok) expect.unreachable()
+  if (planned.reason !== 'collision') expect.unreachable()
+  return { groups: planned.groups, facets, overrides: {}, staleOverrides: planned.staleOverrides }
+}
+
+function mount(facets: CollisionFacetContribution[]) {
   const resolutions: CollisionResolution[] = []
-  const request = requestFor(contributions)
+  const request = requestFor(facets)
   const app = render(
     createElement(CollisionWorkspace, {
       request,
@@ -292,6 +294,120 @@ describe('CollisionWorkspace — conflicts the user creates', () => {
     expect(frame).toContain('still contested with')
 
     await press(app, KEY.escape, KEY.down, KEY.enter)
+    expect(resolutions).toHaveLength(0)
+    app.unmount()
+  })
+})
+
+describe('CollisionWorkspace — MCP server claimants', () => {
+  const SERVERS = [server('alpha', 'filesystem'), server('beta', 'filesystem')]
+
+  test('names servers as servers, with a declaration summary to tell them apart', async () => {
+    const { app } = mount(SERVERS)
+    await nextTick()
+
+    const overview = visibleTerminalText(app.lastFrame() ?? '')
+    expect(overview).toContain('MCP servers')
+    expect(overview).not.toContain('assets')
+
+    await press(app, KEY.enter)
+    const group = visibleTerminalText(app.lastFrame() ?? '')
+    expect(group).toContain('server filesystem')
+    // The summary, not the declaration: enough to tell two rows apart.
+    expect(group).toContain('stdio, command "alpha-cmd"')
+    expect(group).toContain('stdio, command "beta-cmd"')
+    app.unmount()
+  })
+
+  test('a resolved server draft submits a servers override', async () => {
+    const { app, resolutions } = mount(SERVERS)
+    await nextTick()
+
+    // Open the group, alias the first claimant, confirm.
+    await press(app, KEY.enter, KEY.right, KEY.enter)
+    await press(app, ...'\u007f'.repeat(12).split(''))
+    await press(app, ...'alpha-fs'.split(''))
+    await press(app, KEY.enter)
+    await press(app, KEY.escape, KEY.down, KEY.enter)
+
+    const resolution = resolutions[0]
+    if (resolution?.kind !== 'resolved') expect.unreachable()
+    expect(resolution.overrides.alpha).toEqual({ servers: { filesystem: { kind: 'aliased', as: 'alpha-fs' } } })
+    app.unmount()
+  })
+
+  test('omitting every server claimant resolves the group', async () => {
+    const { app, resolutions } = mount(SERVERS)
+    await nextTick()
+
+    await press(app, KEY.enter, KEY.right, KEY.right, KEY.enter, KEY.down, KEY.right, KEY.right, KEY.enter)
+    expect(visibleTerminalText(app.lastFrame() ?? '')).toContain('not configured')
+
+    await press(app, KEY.escape, KEY.down, KEY.enter)
+    const resolution = resolutions[0]
+    if (resolution?.kind !== 'resolved') expect.unreachable()
+    expect(resolution.overrides.alpha).toEqual({ servers: { filesystem: { kind: 'omitted' } } })
+    expect(resolution.overrides.beta).toEqual({ servers: { filesystem: { kind: 'omitted' } } })
+    app.unmount()
+  })
+
+  test('an interrupt mid-edit still cancels', async () => {
+    const { app, resolutions } = mount(SERVERS)
+    await nextTick()
+    await press(app, KEY.enter, KEY.right, KEY.enter)
+    await press(app, KEY.ctrlC)
+
+    expect(resolutions).toEqual([{ kind: 'cancelled' }])
+    app.unmount()
+  })
+
+  test('status stays legible without color on a server row', async () => {
+    const { app } = mount(SERVERS)
+    await nextTick()
+    await press(app, KEY.enter)
+
+    // `stripTerminalControls`, so this is what a piped terminal shows.
+    const plain = stripTerminalControls(app.lastFrame() ?? '')
+    expect(plain).toContain('✕ unresolved')
+    app.unmount()
+  })
+})
+
+describe('CollisionWorkspace — mixed asset and server groups', () => {
+  const MIXED = [
+    skill('alpha', 'review'),
+    skill('beta', 'review'),
+    server('gamma', 'review'),
+    server('delta', 'review'),
+  ]
+
+  test('both groups appear in one overview, each named for its own domain', async () => {
+    const { app } = mount(MIXED)
+    await nextTick()
+
+    const frame = visibleTerminalText(app.lastFrame() ?? '')
+    expect(frame).toContain('2 groups')
+    expect(frame).toContain('2 assets')
+    expect(frame).toContain('2 MCP servers')
+    app.unmount()
+  })
+
+  test('resolving the asset group alone does not enable confirm', async () => {
+    const { app, resolutions } = mount(MIXED)
+    await nextTick()
+
+    // First group is the asset one; alias its first claimant.
+    await press(app, KEY.enter, KEY.right, KEY.enter)
+    await press(app, ...'\u007f'.repeat(10).split(''))
+    await press(app, ...'alpha-review'.split(''))
+    await press(app, KEY.enter)
+    await press(app, KEY.escape)
+
+    const frame = visibleTerminalText(app.lastFrame() ?? '')
+    expect(frame).toContain('resolve every group first')
+
+    // Pressing confirm anyway submits nothing.
+    await press(app, KEY.down, KEY.down, KEY.enter)
     expect(resolutions).toHaveLength(0)
     app.unmount()
   })
