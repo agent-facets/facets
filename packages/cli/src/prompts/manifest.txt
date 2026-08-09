@@ -31,7 +31,10 @@ Field notes
              but are NEVER written to disk at install (archive-only). A path
              must not resolve under skills/.
   facets     Optional. Compose other facets (advanced).
-  servers    Optional. Declare MCP servers (advanced).
+  servers    Optional. Declare MCP servers, keyed by server name. Each value
+             is either { "type": "stdio", "command", optional "args",
+             optional "env" } or { "type": "http", "url" }. Unlike the rest
+             of the manifest, these objects reject unrecognized members.
 
 Supplementary files (README, LICENSE, skill companions)
   - Top-level `files`: archive-only, never materialized on install.
@@ -39,11 +42,13 @@ Supplementary files (README, LICENSE, skill companions)
     materialize and are removed atomically with the skill and cannot list
     SKILL.md itself.
   - Supplementary files are NOT assets: they do not count toward the
-    "at least one asset" rule below, and they carry no description or adapters.
+    "at least one deliverable" rule below, and they carry no description or
+    adapters.
 
 Business rules the JSON Schema below cannot express
-  - A facet must declare at least one asset (skill, agent, command, or facet).
-    Supplementary `files` alone do not satisfy this.
+  - A facet must declare at least one deliverable: a skill, agent, command,
+    composed facet, or MCP server. Supplementary `files` alone do not
+    satisfy this.
   - Asset names must be a single segment (1-64 chars, lowercase
     letters/digits/hyphens, no leading/trailing/consecutive hyphens, no slash).
   - A skill and a command must not share a name (agents are separate).

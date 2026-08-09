@@ -67,7 +67,10 @@ function describeDrift(entry: LockfileDriftEntry): string {
     case 'materialization-drift':
       return `${entry.assetType} "${entry.authoredName}": facets.json says ${describeDisposition(entry.manifest)}, lockfile says ${describeDisposition(entry.locked)}`
     case 'stale-override':
-      return `${describeContribution(entry.contribution)} "${entry.authoredName}" has a materialization override but is not in the locked content`
+      // Says explicitly that the override survived. Frozen mode reports
+      // stale intent instead of pruning it, and a line that only named the
+      // mismatch read as though it had already been cleaned up.
+      return `${describeContribution(entry.contribution)} "${entry.authoredName}" has a materialization override but is not in the locked content (the override was NOT removed)`
     case 'materialization-unrepresentable':
       return `lockfile v${entry.lockfileVersion} cannot record materialization overrides (needs v${entry.requiredVersion})`
   }
@@ -612,7 +615,7 @@ function failureDetail(failure: RunInstallFailure): React.JSX.Element {
         <Box flexDirection="column" marginTop={1}>
           <Text color={THEME.warning} bold>
             ✕ {failure.adapters.length !== 1 ? 'selected adapters cannot' : 'a selected adapter cannot'} configure MCP
-            servers — nothing was changed
+            servers
           </Text>
           {failure.adapters.map((entry) => {
             const described = describeUnsupportedMcpAdapter(entry)
@@ -630,7 +633,7 @@ function failureDetail(failure: RunInstallFailure): React.JSX.Element {
       return (
         <Box flexDirection="column" marginTop={1}>
           <Text color={THEME.warning} bold>
-            ✕ {failure.adapter} could not plan its MCP configuration — nothing was changed
+            ✕ {failure.adapter} could not plan its MCP configuration
           </Text>
           <Text> {describeMcpCapabilityFailure(failure.failure)}</Text>
         </Box>
@@ -639,8 +642,8 @@ function failureDetail(failure: RunInstallFailure): React.JSX.Element {
       return (
         <Box flexDirection="column" marginTop={1}>
           <Text color={THEME.hint}>
-            Cancelled at {failure.adapter}: {failure.asset.type} “{failure.asset.name}” was already there and is not
-            tracked by this project.
+            Cancelled at {failure.adapter}: {failure.asset.scope} {failure.asset.type} “{failure.asset.name}” (wanted by{' '}
+            {failure.facet}) was already there and is not tracked by this project.
           </Text>
         </Box>
       )
@@ -667,7 +670,7 @@ function failureDetail(failure: RunInstallFailure): React.JSX.Element {
       return (
         <Box flexDirection="column" marginTop={1}>
           <Text color={THEME.warning} bold>
-            ✕ MCP server configuration needs your approval — nothing was changed
+            ✕ MCP server configuration needs your approval
           </Text>
           {failure.request.declarations.map((entry) => (
             <Box key={entry.identity.effectiveName} flexDirection="column">

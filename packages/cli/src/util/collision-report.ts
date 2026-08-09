@@ -179,13 +179,22 @@ export function formatCollisionReport(
     lines.push(``)
   }
 
-  lines.push(
-    `  facets.json, facets.lock, the install receipt, your materialized assets, and every tool's`,
-    `  MCP configuration were NOT changed.`,
-  )
+  lines.push(...UNCHANGED_FOOTER)
 
   return lines.join('\n')
 }
+
+/**
+ * The "nothing happened" footer, shared by every pre-mutation report.
+ *
+ * One copy because it is a claim about the same five things every time. Two
+ * copies drift, and the failure mode is a report that quietly stops
+ * mentioning one of them after a later report is edited.
+ */
+export const UNCHANGED_FOOTER: readonly string[] = [
+  `  facets.json, facets.lock, the install receipt, your materialized assets, and every tool's`,
+  `  MCP configuration were NOT changed.`,
+]
 
 /**
  * A one-line summary of a declaration, enough to tell two colliding servers
@@ -238,7 +247,8 @@ function aliasSnippet(authoredName: string): string {
   return `${JSON.stringify(authoredName)}: { "kind": "aliased", "as": ${JSON.stringify(PLACEHOLDER_ALIAS)} }`
 }
 
-function omitSnippet(authoredName: string): string {
+/** The exact JSON member that removes one contribution from the active set. */
+export function omitSnippet(authoredName: string): string {
   return `${JSON.stringify(authoredName)}: { "kind": "omitted" }`
 }
 

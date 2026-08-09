@@ -7,6 +7,7 @@ import type {
   McpUnsupportedAdapter,
 } from '@agent-facets/engine'
 import { adapterInstallCommand } from './adapter-install-errors.ts'
+import { omitSnippet, serverManifestLocation, UNCHANGED_FOOTER } from './collision-report.ts'
 
 /**
  * Shared renderings for MCP configuration failures.
@@ -16,9 +17,10 @@ import { adapterInstallCommand } from './adapter-install-errors.ts'
  * non-interactive stderr report — and a user comparing them should not find
  * three different descriptions of one condition.
  *
- * Nothing here renders a declaration. Commands, arguments, environment
- * assignments, and URLs belong only on the approval surface a user is
- * actively reading; every path through this module can end up in a CI log.
+ * With one deliberate exception — {@link describeDeclarationInFull} and the
+ * consent report built on it — nothing here renders a declaration. Commands,
+ * arguments, environment assignments, and URLs belong only on a surface whose
+ * purpose is showing a user what they would be authorizing.
  */
 
 /** What an unsupported adapter means, and what to do about it. */
@@ -92,6 +94,98 @@ export function describeTakeoverHeading(entry: McpNativeTakeover): string {
 /** Whether a request has anything to say in each of its two sections. */
 export function consentRequestCounts(request: McpConsentRequest): { declarations: number; takeovers: number } {
   return { declarations: request.declarations.length, takeovers: request.takeovers.length }
+}
+
+/**
+ * The full stderr report for a run that needs MCP approval and cannot ask.
+ *
+ * This is the second of the two surfaces allowed to print a declaration, and
+ * it exists for the same reason the collision report does: the rich Ink block
+ * goes to stdout, and the situations that produce this failure — CI, a piped
+ * command, `--frozen-lockfile` — are exactly the ones where stdout is a log
+ * nobody reads. A user deciding whether to pass the approval flag has to be
+ * able to see what it would authorize, and `code=MCP_CONSENT_REQUIRED` alone
+ * asks them to approve a command they were never shown.
+ *
+ * Every claimant gets its own omission location, and none is recommended:
+ * the alternative to approving is omitting, and which server to omit is not
+ * a question this tool has an opinion about.
+ */
+export function formatMcpConsentReport(request: McpConsentRequest, flag: string): string {
+  const lines: string[] = [
+    `MCP server configuration needs approval, and this run has no way to ask for it.`,
+    `Approving lets your coding tools launch these commands or connect to these URLs.`,
+    ``,
+  ]
+
+  if (request.declarations.length > 0) {
+    lines.push(`  Servers to configure:`)
+    for (const entry of request.declarations) {
+      lines.push(`    • ${describeApprovalHeading(entry)}`)
+      for (const line of describeDeclarationInFull(entry.declaration)) lines.push(`        ${line}`)
+      // One location per claimant: an effective identity can be claimed by
+      // several facets, and omitting it means editing every one of them.
+      for (const claimant of entry.claimants) {
+        lines.push(`        omit in ${serverManifestLocation(claimant.facet, claimant.authoredName)}`)
+        lines.push(`          ${omitSnippet(claimant.authoredName)}`)
+      }
+    }
+    lines.push(``)
+  }
+
+  if (request.takeovers.length > 0) {
+    lines.push(`  Existing entries this would take over:`)
+    for (const entry of request.takeovers) {
+      lines.push(`    • ${describeTakeoverHeading(entry)}`)
+      for (const line of describeDeclarationInFull(entry.declaration)) lines.push(`        ${line}`)
+    }
+    lines.push(``)
+  }
+
+  lines.push(
+    `  Re-run with --${flag} to approve everything above, or record an omission in facets.json.`,
+    ``,
+    ...UNCHANGED_FOOTER,
+  )
+  return lines.join('\n')
+}
+
+/**
+ * The full stderr report for selected adapters that cannot configure MCP.
+ *
+ * Carries no declaration, and needs none: neither remedy — upgrade the
+ * adapter, or stop asking for the servers — depends on what a server would
+ * run. The per-adapter split matters, though, because "upgrade it" is wrong
+ * advice for an adapter that answered the question and said no.
+ */
+export function formatUnsupportedMcpAdaptersReport(
+  adapters: readonly McpUnsupportedAdapter[],
+  servers: readonly string[],
+): string {
+  const lines: string[] = [
+    `Some selected adapters cannot configure MCP servers, so installation stopped before`,
+    `writing anything.`,
+    ``,
+  ]
+
+  for (const entry of adapters) {
+    const described = describeUnsupportedMcpAdapter(entry)
+    lines.push(`    • ${described.what}`)
+    lines.push(`        fix: ${described.fix}`)
+  }
+  lines.push(``)
+
+  if (servers.length > 0) {
+    lines.push(`  Servers that need configuring: ${servers.join(', ')}`)
+    lines.push(
+      `  Omitting every one of them in facets.json also resolves this, because an adapter`,
+      `  without MCP support only blocks a run that has MCP work to do.`,
+      ``,
+    )
+  }
+
+  lines.push(...UNCHANGED_FOOTER)
+  return lines.join('\n')
 }
 
 /** One line naming an adapter's breach of the MCP capability contract. */

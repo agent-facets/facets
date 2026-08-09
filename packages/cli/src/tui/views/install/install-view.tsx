@@ -1,11 +1,17 @@
 import type { AssetType } from '@agent-facets/common'
 import type {
   AddPrepareFailure,
+  AssetTakeoverDecision,
+  AssetTakeoverRequest,
+  AssetTakeoverResolver,
   CollisionResolution,
   CollisionResolutionRequest,
   CollisionResolver,
   InstallSummary,
   MaterializationOverrideRef,
+  McpConsentDecision,
+  McpConsentRequest,
+  McpConsentResolver,
   RemovePrepareFailure,
   RunInstallResult,
   StageEvent,
@@ -20,7 +26,9 @@ import { AddPrepareFailureBlock } from './add-prepare-failure-block.tsx'
 import { CollisionWorkspace } from './collision/workspace.tsx'
 import { type FacetState, STAGE_LABELS } from './facet-state.ts'
 import { FailureBlock } from './failure-block.tsx'
+import { McpApprovalScreen } from './mcp/approval.tsx'
 import { RemovePrepareFailureBlock } from './remove-prepare-failure-block.tsx'
+import { AssetTakeoverScreen } from './takeover/screen.tsx'
 
 /**
  * Driver result. The `install` flow returns a `RunInstallResult`. The
@@ -35,27 +43,42 @@ export type InstallViewResult =
   | { ok: false; prepareFailure: AddPrepareFailure }
   | { ok: false; removePrepareFailure: RemovePrepareFailure }
 
+/**
+ * Everything the view can lend a driver for one run.
+ *
+ * An object rather than a positional list because the list only grows —
+ * MCP consent and asset takeover are two more resolvers on the same
+ * mount — and a fourth and fifth positional callback of compatible type
+ * is a swap waiting to happen that the compiler would accept.
+ *
+ * Every resolver here is OFFERED, not imposed. The view can always drive
+ * a screen — it owns the mount — but only the command knows whether this
+ * invocation may prompt at all (an interactive terminal, not frozen
+ * mode, and for MCP not already pre-approved by flag). So the command
+ * decides which of these to forward to the engine; one that is never
+ * forwarded is simply never called.
+ */
+export interface InstallViewHooks {
+  onStage: (event: StageEvent) => void
+  /**
+   * Verbose log sink. Always supplied; the command decides whether to
+   * forward it, because whether `--verbose` was passed is its business
+   * and not the view's.
+   */
+  onLog: (build: () => string) => void
+  resolveCollisions: CollisionResolver
+  resolveMcpConsent: McpConsentResolver
+  resolveAssetTakeover: AssetTakeoverResolver
+}
+
 export interface InstallViewProps {
   /**
-   * Driver: caller supplies a `runInstall`-equivalent closure that takes
-   * an `onStage` callback, an optional `onLog` callback, and a collision
-   * resolver, and returns the result. The view runs it once on mount and
-   * surfaces its events / outcome. When verbose output is enabled, the
-   * caller should thread `onLog` into the engine call; the view routes it
-   * through Ink's stderr writer so it doesn't race the progress bar
-   * repaint.
-   *
-   * The resolver is OFFERED, not imposed. The view can always drive a
-   * workspace — it owns the mount — but only the command knows whether
-   * this invocation may prompt at all (an interactive terminal, and not
-   * frozen mode). So the command decides whether to forward it to the
-   * engine; a resolver that is never passed on is simply never called.
+   * Driver: caller supplies a `runInstall`-equivalent closure. The view
+   * runs it once on mount and surfaces its events / outcome. Verbose
+   * lines routed through {@link InstallViewHooks.onLog} reach Ink's
+   * stderr writer so they don't race the progress-bar repaint.
    */
-  run: (
-    onStage: (event: StageEvent) => void,
-    onLog: ((build: () => string) => void) | undefined,
-    resolveCollisions: CollisionResolver,
-  ) => Promise<InstallViewResult>
+  run: (hooks: InstallViewHooks) => Promise<InstallViewResult>
   /**
    * Header copy hint. `'add'` renders "Adding facets..."; `'install'`
    * renders "Installing facets..."; `'remove'` renders "Removing
@@ -69,8 +92,8 @@ export interface InstallViewProps {
   onComplete?: (result: InstallViewResult) => void
   /**
    * The command's interrupt signal. Watched only to settle a pending
-   * collision prompt: an interrupt raised while the engine is blocked on
-   * the resolver would otherwise leave the promise unsettled forever,
+   * prompt: an interrupt raised while the engine is blocked on a
+   * resolver would otherwise leave the promise unsettled forever,
    * holding the project lock with nothing left to release it.
    */
   signal?: AbortSignal
@@ -131,14 +154,56 @@ type RetainedBundle = Extract<StageEvent, { kind: 'obsolete-bundle-retained' }>
 type ViewPhase =
   | { kind: 'progress' }
   | {
-      kind: 'resolution'
+      kind: 'collision'
       request: CollisionResolutionRequest
       /** Settles the engine's pending call. Idempotent. */
       settle: (resolution: CollisionResolution) => void
     }
+  | {
+      kind: 'mcp-consent'
+      request: McpConsentRequest
+      /** Settles the engine's pending call. Idempotent. */
+      settle: (decision: McpConsentDecision) => void
+    }
+  | {
+      kind: 'asset-takeover'
+      request: AssetTakeoverRequest
+      /** Settles the engine's pending call. Idempotent. */
+      settle: (decision: AssetTakeoverDecision) => void
+    }
   | { kind: 'result'; result: InstallViewResult }
   /** The driver threw rather than returning a structured failure. */
   | { kind: 'crashed'; error: Error }
+
+/**
+ * How an interrupt answers whatever prompt is open.
+ *
+ * Exhaustive rather than a `settle` field common to both prompt arms:
+ * the answers are not the same value and not even the same idea — a
+ * collision is *cancelled*, a consent request is *declined* — so a new
+ * prompt phase should have to state its own, and this refuses to compile
+ * until it does.
+ */
+function abortSettlerFor(phase: ViewPhase): (() => void) | null {
+  switch (phase.kind) {
+    case 'collision':
+      return () => phase.settle({ kind: 'cancelled' })
+    case 'mcp-consent':
+      // Declining is the answer that mutates nothing. The engine reads the
+      // signal before the decision anyway, so the run reports the abort
+      // rather than a refusal the user never gave.
+      return () => phase.settle({ kind: 'declined' })
+    case 'asset-takeover':
+      // Cancelling, not continuing: an interrupt is a request to stop, and
+      // continuing would let the operation write one more file on the way
+      // out. The engine rolls the journal back from here.
+      return () => phase.settle({ kind: 'cancelled' })
+    case 'progress':
+    case 'result':
+    case 'crashed':
+      return null
+  }
+}
 
 export function InstallView({ run, mode, onComplete, signal }: InstallViewProps) {
   const { exit } = useApp()
@@ -293,15 +358,21 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
       case 'mcp-consent-required':
       case 'mcp-consent-accepted':
       case 'mcp-consent-declined':
+        // The approval screen is driven by the resolver, not by these
+        // events: the resolver call carries the full request, while the
+        // event carries only a declaration-free summary. Rendering both
+        // would announce the prompt twice and, worse, invite the summary
+        // to grow into a second display of something already on screen.
+        return
       case 'asset-takeover-required':
       case 'asset-takeover-accepted':
       case 'asset-takeover-cancelled':
+        // Same reason as the consent events: the resolver call carries the
+        // request and drives the screen. The cancelled case is reported by
+        // the failure block, which also knows what the rollback did.
+        return
       case 'mcp-configured':
-        // Deliberately unrendered for now. This view cannot yet reach any of
-        // them: no command supplies a consent policy or a takeover resolver,
-        // so the engine settles both without asking. The approval and
-        // takeover screens, and the MCP half of the summary, arrive together
-        // with that plumbing rather than as a half-wired preview of it.
+        // Still unrendered: the MCP half of the summary is its own change.
         return
       default: {
         // Exhaustiveness guard. Without it a newly added stage event
@@ -346,7 +417,44 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
         setPhase({ kind: 'progress' })
         resolve(resolution)
       }
-      setPhase({ kind: 'resolution', request, settle })
+      setPhase({ kind: 'collision', request, settle })
+    })
+  }, [])
+
+  /**
+   * The same contract as {@link resolveCollisions}, for MCP consent: the
+   * engine is holding the project lock and awaiting this promise, so it
+   * must settle on every path — approve, decline, Esc, Ctrl-C, or an
+   * interrupt — and exactly once.
+   */
+  const resolveMcpConsent = useCallback<McpConsentResolver>((request) => {
+    return new Promise<McpConsentDecision>((resolve) => {
+      let settled = false
+      const settle = (decision: McpConsentDecision) => {
+        if (settled) return
+        settled = true
+        setPhase({ kind: 'progress' })
+        resolve(decision)
+      }
+      setPhase({ kind: 'mcp-consent', request, settle })
+    })
+  }, [])
+
+  /**
+   * The same contract again, for asset takeover. This one opens with the
+   * journal already open, so an unsettled promise strands a half-written
+   * operation rather than merely a lock.
+   */
+  const resolveAssetTakeover = useCallback<AssetTakeoverResolver>((request) => {
+    return new Promise<AssetTakeoverDecision>((resolve) => {
+      let settled = false
+      const settle = (decision: AssetTakeoverDecision) => {
+        if (settled) return
+        settled = true
+        setPhase({ kind: 'progress' })
+        resolve(decision)
+      }
+      setPhase({ kind: 'asset-takeover', request, settle })
     })
   }, [])
 
@@ -354,7 +462,7 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
     if (startedRef.current) return
     startedRef.current = true
     try {
-      const r = await run(onStage, onLog, resolveCollisions)
+      const r = await run({ onStage, onLog, resolveCollisions, resolveMcpConsent, resolveAssetTakeover })
       setElapsedMs(Date.now() - startTimeRef.current)
       onComplete?.(r)
       // Defer exit so React paints the result state before Ink unmounts.
@@ -362,7 +470,7 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
     } catch (error) {
       setPhase({ kind: 'crashed', error: error instanceof Error ? error : new Error(String(error)) })
     }
-  }, [run, onStage, onLog, onComplete, resolveCollisions])
+  }, [run, onStage, onLog, onComplete, resolveCollisions, resolveMcpConsent, resolveAssetTakeover])
 
   useEffect(() => {
     if (phase.kind === 'result') {
@@ -378,15 +486,15 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
   }, [phase, exit, start])
 
   /**
-   * An interrupt while the workspace is open cancels the prompt rather
-   * than killing the process. The engine then returns a structured
-   * cancellation, unwinds, and releases the lock through its own
-   * `finally` — which a hard exit here would have skipped.
+   * An interrupt while a prompt is open answers it rather than killing
+   * the process. The engine then returns a structured outcome, unwinds,
+   * and releases the lock through its own `finally` — which a hard exit
+   * here would have skipped.
    */
   useEffect(() => {
-    if (signal === undefined || phase.kind !== 'resolution') return
-    const { settle } = phase
-    const onAbort = () => settle({ kind: 'cancelled' })
+    if (signal === undefined) return
+    const onAbort = abortSettlerFor(phase)
+    if (onAbort === null) return
     if (signal.aborted) {
       onAbort()
       return
@@ -439,11 +547,17 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
   // Stage label for the progress bar line.
   const stageLabel = currentFacet ? (currentFacet.stage ? STAGE_LABELS[currentFacet.stage] : 'starting') : null
 
-  // The workspace owns the screen while it is open: mixing a live
-  // progress bar into a form the user is typing into repaints under the
+  // A prompt owns the screen while it is open: mixing a live progress bar
+  // into a form the user is reading or typing into repaints under the
   // cursor. Progress resumes, in this same mount, once it closes.
-  if (phase.kind === 'resolution') {
+  if (phase.kind === 'collision') {
     return <CollisionWorkspace request={phase.request} onComplete={phase.settle} />
+  }
+  if (phase.kind === 'mcp-consent') {
+    return <McpApprovalScreen request={phase.request} onComplete={phase.settle} />
+  }
+  if (phase.kind === 'asset-takeover') {
+    return <AssetTakeoverScreen request={phase.request} onComplete={phase.settle} />
   }
 
   return (
@@ -603,12 +717,17 @@ function SuccessSummary({
     summary.mcp.configurations.updated +
     summary.mcp.configurations.repaired +
     summary.mcp.configurations.removed
+  // Adopting an untracked entry writes nothing and still changes who owns
+  // it. Counting only writes would report "no changes" over a takeover the
+  // user was asked to approve moments earlier.
+  const takeoverWork = summary.mcp.takeovers.accepted
   const isNoOp =
     summary.facets.installed === 0 &&
     summary.facets.updated === 0 &&
     summary.facets.repaired === 0 &&
     summary.facets.removed === 0 &&
-    configurationWork === 0
+    configurationWork === 0 &&
+    takeoverWork === 0
   const elapsed = `${(elapsedMs / 1000).toFixed(2)}s`
 
   if (isNoOp) {
@@ -625,6 +744,7 @@ function SuccessSummary({
   const counts = countAssetsByType(result)
   const bundleVizNode = formatColoredBundleViz(counts)
   const notes = materializationNotes(result)
+  const configurations = configurationNotes(result)
 
   const removedNames = result.perFacet
     .filter((o) => o.kind === 'removed' || o.kind === 'removed-untracked')
@@ -669,8 +789,8 @@ function SuccessSummary({
             name they did not publish. Naming both sides makes the
             outcome checkable. */}
         {notes.map((note) => (
-          <Text key={`${note.facet}:${note.type}:${note.authoredName}`} color={THEME.hint}>
-            {note.facet} {note.type} {note.authoredName}
+          <Text key={note.key} color={THEME.hint}>
+            {note.facet} {note.label} {note.authoredName}
             {note.effectiveName === null ? (
               <Text color={THEME.caution}> — omitted</Text>
             ) : (
@@ -679,6 +799,16 @@ function SuccessSummary({
                 <Text color={THEME.success}>{note.effectiveName}</Text>
               </Text>
             )}
+          </Text>
+        ))}
+        {/* Per-identity, because the counts line cannot say WHICH server was
+            repaired or which adapters a removal reached — and those are the
+            two facts a user checks a native config file against. */}
+        {configurations.map((note) => (
+          <Text key={note.key} color={THEME.hint}>
+            MCP server <Text color={THEME.success}>{note.effectiveName}</Text> {note.status} in{' '}
+            {note.adapters.join(', ')}
+            {note.takenOver && <Text color={THEME.caution}> (took over an existing entry)</Text>}
           </Text>
         ))}
         {/* The remedy has to be one the user can still act on. By the time
@@ -708,27 +838,31 @@ interface AssetCounts {
 }
 
 /**
- * How one asset was materialized, for the summary.
+ * How one contribution was materialized, for the summary.
  *
- * `effectiveName: null` means omitted. Only a current lockfile records
- * dispositions at all; a legacy one is authored by definition, which is
- * why this is derived from the lockfile rather than carried separately.
+ * `effectiveName: null` means omitted. Carries its own `key` and `label`
+ * because assets and servers now share this list and come from different
+ * places: an asset's disposition is in the lockfile, while a server's is
+ * deliberately not — so keying by asset type alone let a server named like
+ * a skill collide with it in the rendered list.
  */
 interface MaterializationNote {
+  key: string
   facet: string
-  type: AssetType
+  label: string
   authoredName: string
   effectiveName: string | null
 }
 
-function materializationNotes(result: RunInstallResult & { ok: true }): MaterializationNote[] {
+/** Asset dispositions, which only a current lockfile can express. */
+function assetMaterializationNotes(result: RunInstallResult & { ok: true }): AssetNote[] {
   // Legacy lockfiles cannot express an alias or an omission, so there is
   // nothing to report — not "nothing happened", but "this format has no
   // opinion". Frozen mode returns the lockfile it read, so this branch is
   // reachable in normal use, not just during migration.
   if (result.lockfile.lockfileVersion !== LOCKFILE_VERSION_0_3) return []
 
-  const notes: MaterializationNote[] = []
+  const notes: AssetNote[] = []
   for (const [facet, entry] of Object.entries(result.lockfile.facets)) {
     for (const asset of entry.assets) {
       if (asset.materialization.kind === 'authored') continue
@@ -743,10 +877,88 @@ function materializationNotes(result: RunInstallResult & { ok: true }): Material
   return notes
 }
 
+/** An asset disposition before it is flattened for rendering. */
+interface AssetNote {
+  facet: string
+  type: AssetType
+  authoredName: string
+  effectiveName: string | null
+}
+
+/**
+ * Every alias and omission this run applied, assets and servers together.
+ *
+ * Servers cannot come from the lockfile — declarations and their
+ * dispositions are deliberately absent from it — so they come from the
+ * result's MCP outcomes instead. Rendering them in one list is the point:
+ * to a user, "this name is not what the facet published" is one fact,
+ * whatever kind of thing carries it.
+ */
+function materializationNotes(result: RunInstallResult & { ok: true }): MaterializationNote[] {
+  const notes: MaterializationNote[] = assetMaterializationNotes(result).map((note) => ({
+    key: `asset:${note.type}:${note.facet}:${note.authoredName}`,
+    facet: note.facet,
+    label: note.type,
+    authoredName: note.authoredName,
+    effectiveName: note.effectiveName,
+  }))
+
+  for (const disposition of result.mcp.dispositions) {
+    // `authored` is the absence of a choice; there is nothing to tell.
+    if (disposition.kind === 'authored') continue
+    notes.push({
+      key: `mcp-server:${disposition.facet}:${disposition.authoredName}`,
+      facet: disposition.facet,
+      label: describeContribution({ kind: 'mcp-server' }),
+      authoredName: disposition.authoredName,
+      effectiveName: disposition.kind === 'aliased' ? disposition.effectiveName : null,
+    })
+  }
+  return notes
+}
+
+/**
+ * What reconciling one effective server identity did, per identity rather
+ * than per adapter.
+ *
+ * Collapsed across adapters because the identity is the thing a user
+ * recognizes and the adapters are where it landed. One line per
+ * adapter-identity pair would report the same server three times for a
+ * project with three tools selected.
+ */
+interface ConfigurationNote {
+  key: string
+  effectiveName: string
+  status: string
+  adapters: string[]
+  takenOver: boolean
+}
+
+function configurationNotes(result: RunInstallResult & { ok: true }): ConfigurationNote[] {
+  const byKey = new Map<string, ConfigurationNote>()
+  for (const outcome of result.mcp.configurations) {
+    // `already-absent` is a claim dropped over an entry someone had already
+    // deleted by hand. Reporting it as a removal would credit this run with
+    // work it did not do.
+    if (outcome.kind === 'obsolete' && outcome.status === 'already-absent') continue
+    const status = outcome.kind === 'obsolete' ? 'removed' : outcome.status
+    const takenOver = outcome.kind === 'active' && outcome.takenOver
+    const key = `${outcome.effectiveName}\u0000${status}`
+    const existing = byKey.get(key)
+    if (existing === undefined) {
+      byKey.set(key, { key, effectiveName: outcome.effectiveName, status, adapters: [outcome.adapter], takenOver })
+      continue
+    }
+    existing.adapters.push(outcome.adapter)
+    existing.takenOver ||= takenOver
+  }
+  return [...byKey.values()]
+}
+
 function countAssetsByType(result: RunInstallResult & { ok: true }): AssetCounts {
   const counts: AssetCounts = { skill: 0, agent: 0, command: 0 }
   const omitted = new Set(
-    materializationNotes(result)
+    assetMaterializationNotes(result)
       .filter((note) => note.effectiveName === null)
       .map((note) => `${note.facet}\u0000${note.type}\u0000${note.authoredName}`),
   )
@@ -832,8 +1044,26 @@ function summaryLine(summary: InstallSummary): string {
 
   // Counted separately from assets, because they are: a server-only facet
   // writes no file and would otherwise summarize as having done nothing.
-  const configured = mcp.configurations.added + mcp.configurations.updated + mcp.configurations.repaired
-  if (configured > 0) parts.push(`${configured} server config${configured === 1 ? '' : 's'} written`)
-  if (mcp.configurations.removed > 0) parts.push(`${mcp.configurations.removed} server config removed`)
+  //
+  // Each status is its own count rather than one "written" total. Repaired
+  // in particular is a distinct fact — the declaration did not change, the
+  // native file had drifted — and folding it into "written" tells a user
+  // their project changed when what changed was someone's config file.
+  const servers = [
+    describeServerCount(mcp.configurations.added, 'added'),
+    describeServerCount(mcp.configurations.updated, 'updated'),
+    describeServerCount(mcp.configurations.repaired, 'repaired'),
+    describeServerCount(mcp.configurations.unchanged, 'unchanged'),
+    describeServerCount(mcp.configurations.removed, 'removed'),
+  ].filter((part) => part !== null)
+  parts.push(...servers)
+
+  if (mcp.declarations.aliased > 0) parts.push(`${mcp.declarations.aliased} server aliased`)
+  if (mcp.declarations.omitted > 0) parts.push(`${mcp.declarations.omitted} server omitted`)
   return parts.join(' · ')
+}
+
+function describeServerCount(count: number, status: string): string | null {
+  if (count === 0) return null
+  return `${count} server config${count === 1 ? '' : 's'} ${status}`
 }

@@ -133,15 +133,15 @@ Your choices are written into `facets.json` as durable intent, so the next insta
 
 `Esc` or `Ctrl-C` cancels the whole install. Nothing was written, and re-running lets you make the choices again.
 
-**Without a terminal** — CI, piped output, or `--frozen-lockfile` — nothing is prompted. Every group and every claimant is printed to stderr with the exact `facets.json` location to edit and copy-pasteable alias and omit snippets. No winner is chosen and no alias is invented for you: the placeholder is literally `choose-a-name`. The report ends by stating that `facets.json`, `facets.lock`, the receipt, and your materialized assets were **not** changed.
+**Without a terminal** — CI, piped output, or `--frozen-lockfile` — nothing is prompted. Every group and every claimant is printed to stderr with the exact `facets.json` location to edit and copy-pasteable alias and omit snippets. No winner is chosen and no alias is invented for you: the placeholder is literally `choose-a-name`. The report ends by stating that `facets.json`, `facets.lock`, the receipt, your materialized assets, and every tool's MCP configuration were **not** changed.
 
 ## Cache
 
 Resolved facet content is stored at `$FACET_DIR/cache/<name>@<version>/` (default `~/.facet/cache/`) so subsequent installs of the same identity don't hit the network. Cache hits are re-verified on every use — see [cache self-audit](/specification/integrity). The cache root is part of the facet directory tree; set `FACET_DIR` to change it. See the [environment variables reference](/cli/env).
 
-## Servers
+## MCP servers
 
-A facet that declares `servers:` emits a warning during install  -- the server names are listed but not materialized. Server support is on the [roadmap](/roadmap).
+A facet that declares `servers:` contributes MCP server configuration to every selected adapter. New or changed declarations need your approval before anything is written: interactive runs show the exact command, arguments, and environment assignments -- or the exact URL -- on one approval screen, and non-interactive runs require `--accept-mcp`.
 
 ## See also
 

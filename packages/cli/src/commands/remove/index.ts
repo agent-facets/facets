@@ -3,11 +3,12 @@ import { render } from 'ink'
 import { createElement } from 'react'
 import type { Command } from '../../commands.ts'
 import { InstallView } from '../../tui/views/install/install-view.tsx'
-import { writeMaterializationDetail } from '../../util/collision-report.ts'
 import { type CliError, writeCliError } from '../../util/errors.ts'
+import { writeInstallFailureDetail } from '../../util/install-detail.ts'
 import { canPromptInteractively } from '../../util/interactive.ts'
 import { unsupportedManifestVersionError } from '../../util/unsupported-manifest-version.ts'
 import { ensureAdapters } from '../shared/ensure-adapters.ts'
+import { ACCEPT_MCP_FLAG, INSTALL_PIPELINE_FLAGS, mcpConsentPolicy } from '../shared/flags.ts'
 import { installFailureDetail, installFailureFix } from '../shared/install-failure.ts'
 
 /**
@@ -28,9 +29,7 @@ export const removeCommand: Command = {
   usage: '<facet> [more facets...]',
   aliases: ['rm'],
   implemented: true,
-  flags: {
-    verbose: { type: 'boolean', description: 'Show detailed step output on stderr' },
-  },
+  flags: INSTALL_PIPELINE_FLAGS,
   run: async (args, flags) => {
     if (args.length === 0) {
       writeCliError({
@@ -42,6 +41,7 @@ export const removeCommand: Command = {
     }
 
     const verbose = flags.verbose === true
+    const acceptMcp = flags[ACCEPT_MCP_FLAG] === true
 
     const names = args
     const projectRoot = process.cwd()
@@ -87,15 +87,16 @@ export const removeCommand: Command = {
       createElement(InstallView, {
         mode: 'remove',
         signal: controller.signal,
-        run: async (onStage, onLog, resolveCollisions) => {
+        run: async ({ onStage, onLog, resolveCollisions, resolveMcpConsent, resolveAssetTakeover }) => {
           const result = await runRemove({
             projectRoot,
             names,
             adapters,
             prepared,
             onStage,
-            ...(verbose && onLog ? { onLog } : {}),
-            ...(mayPrompt ? { resolveCollisions } : {}),
+            mcpConsent: mcpConsentPolicy({ acceptMcp, mayPrompt, resolve: resolveMcpConsent }),
+            ...(verbose ? { onLog } : {}),
+            ...(mayPrompt ? { resolveCollisions, resolveAssetTakeover } : {}),
             signal: controller.signal,
           })
           captured = result
@@ -144,7 +145,7 @@ export const removeCommand: Command = {
 
     // Install-phase failure. The delta-based flow never writes the manifest
     // ahead of install — the journal rollback handles asset cleanup.
-    writeMaterializationDetail(captured.install.failure)
+    writeInstallFailureDetail(captured.install.failure)
     writeCliError({
       what: 'remove failed',
       detail: installFailureDetail(captured.install.failure),

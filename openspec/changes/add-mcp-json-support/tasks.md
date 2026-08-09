@@ -128,20 +128,20 @@
 
 ## 15. Consent, takeover, flags, and command output — Research
 
-- [ ] 15.1 Explore: Inspect add/install/remove flag definitions, shared command plumbing, interactive phase/resolver lifecycle, abort settlement, and frozen prompt policy.
-- [ ] 15.2 Explore: Inspect success/failure rendering, verbose logging, help output, stale-intent notices, no-op detection, and all persistent surfaces that must not leak declarations.
-- [ ] 15.3 Propose: Define separate MCP-consent and asset-takeover phases plus result/failure rendering for complete non-interactive diagnostics and configuration outcomes.
+- [x] 15.1 Explore: Inspect add/install/remove flag definitions, shared command plumbing, interactive phase/resolver lifecycle, abort settlement, and frozen prompt policy.
+- [x] 15.2 Explore: Inspect success/failure rendering, verbose logging, help output, stale-intent notices, no-op detection, and all persistent surfaces that must not leak declarations.
+- [x] 15.3 Propose: Define separate MCP-consent and asset-takeover phases plus result/failure rendering for complete non-interactive diagnostics and configuration outcomes.
 
 ## 16. Consent, takeover, flags, and command output — Implementation
 
-- [ ] 16.1 Implement: Define `--accept-mcp` once and expose/thread it through add, install, and remove; honor it without prompting in frozen mode and keep it independent from asset collision/takeover decisions.
-- [ ] 16.2 Implement: Add an MCP-only approval screen showing all exact declarations and a distinct native-takeover section, with approve-all, decline, and abort settlement before any mutation.
-- [ ] 16.3 Implement: Add a separate just-in-time asset takeover screen with Continue selected by default and cancellation/restoration reporting.
-- [ ] 16.4 Implement: Render complete non-interactive MCP-consent and unsupported-adapter failures with every claimant/adapter, actionable upgrade or omission guidance, and explicit no-mutation state.
-- [ ] 16.5 Implement: Extend summaries and stale-intent output for added, updated, unchanged, aliased, omitted, repaired, removed, conflicted, unsupported, and takeover outcomes without treating server-only facets as no-ops.
-- [ ] 16.6 Implement: Remove the obsolete CLI server-warning state, rendering, fixtures, and help/documentation language.
-- [ ] 16.7 Implement: Add command/help, interactive phase, Ctrl-C, non-interactive, frozen, outcome, takeover, and declaration-secrecy tests proving commands/URLs/environment values appear only in approved disclosure surfaces.
-- [ ] 16.8 Verify: Run focused CLI unit and e2e tests plus type checks for add, install, and remove.
+- [x] 16.1 Implement: Define `--accept-mcp` once and expose/thread it through add, install, and remove; honor it without prompting in frozen mode and keep it independent from asset collision/takeover decisions.
+- [x] 16.2 Implement: Add an MCP-only approval screen showing all exact declarations and a distinct native-takeover section, with approve-all, decline, and abort settlement before any mutation.
+- [x] 16.3 Implement: Add a separate just-in-time asset takeover screen with Continue selected by default and cancellation/restoration reporting.
+- [x] 16.4 Implement: Render complete non-interactive MCP-consent and unsupported-adapter failures with every claimant/adapter, actionable upgrade or omission guidance, and explicit no-mutation state.
+- [x] 16.5 Implement: Extend summaries and stale-intent output for added, updated, unchanged, aliased, omitted, repaired, removed, conflicted, unsupported, and takeover outcomes without treating server-only facets as no-ops.
+- [x] 16.6 Implement: Remove the obsolete CLI server-warning state, rendering, fixtures, and help/documentation language.
+- [x] 16.7 Implement: Add command/help, interactive phase, Ctrl-C, non-interactive, frozen, outcome, takeover, and declaration-secrecy tests proving commands/URLs/environment values appear only in approved disclosure surfaces.
+- [x] 16.8 Verify: Run focused CLI unit and e2e tests plus type checks for add, install, and remove.
 
 ## 17. Documentation and release preparation — Research
 

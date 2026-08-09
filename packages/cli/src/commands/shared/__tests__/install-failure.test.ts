@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import type { RollbackOutcome, RunInstallFailure } from '@agent-facets/engine'
+import { assetIdentity, type RollbackOutcome, type RunInstallFailure } from '@agent-facets/engine'
 import { describeDiskState } from '../../../util/install-outcome.ts'
+import { ACCEPT_MCP_FLAG } from '../flags.ts'
 import { installFailureDetail, installFailureFix } from '../install-failure.ts'
 
 /**
@@ -158,5 +159,85 @@ describe('installFailureFix — an unsupported manifest version', () => {
     )
     expect(fix).toContain('upgrade')
     expect(fix).not.toContain('fix the underlying issue')
+  })
+})
+
+describe('installFailureFix — MCP failures', () => {
+  const consentRequired: RunInstallFailure = {
+    code: 'MCP_CONSENT_REQUIRED',
+    request: { declarations: [], takeovers: [] },
+  }
+  const consentDeclined: RunInstallFailure = {
+    code: 'MCP_CONSENT_DECLINED',
+    request: { declarations: [], takeovers: [] },
+  }
+  const unsupported: RunInstallFailure = {
+    code: 'MCP_ADAPTERS_UNSUPPORTED',
+    adapters: [{ kind: 'capability-declined', adapter: 'plain-tool' }],
+    servers: ['docs'],
+  }
+
+  // The flag name is owned by the shared definition. A literal here and a
+  // literal there is how the guidance ends up naming a flag that no command
+  // declares — which is exactly the state this line was in before.
+  test.each(COMMANDS)('consent guidance names the %s command and the flag', (command) => {
+    const fix = installFailureFix(consentRequired, notNeeded, command)
+    expect(fix).toContain(`facet ${command} --${ACCEPT_MCP_FLAG}`)
+  })
+
+  // Two remedies, and only one of them is "upgrade". An adapter that
+  // declared no MCP support will not gain it in a newer release.
+  test('an unsupported adapter is offered both remedies', () => {
+    const fix = installFailureFix(unsupported, notNeeded, 'install')
+    expect(fix).toContain('upgrade')
+    expect(fix).toContain('omit')
+  })
+
+  test('declining derives its disk state from the rollback outcome', () => {
+    expect(installFailureFix(consentDeclined, notNeeded, 'install')).toContain(describeDiskState(notNeeded))
+  })
+
+  // This one lands mid-application, so what is on disk is the load-bearing
+  // half of the report and must never be hardcoded.
+  test.each([notNeeded, succeeded, partial])('a cancelled takeover reports $kind', (rollback) => {
+    const failure: RunInstallFailure = {
+      code: 'ASSET_TAKEOVER_CANCELLED',
+      facet: 'alpha',
+      adapter: 'claude-code',
+      asset: assetIdentity('project', 'skill', 'review'),
+    }
+    expect(installFailureFix(failure, rollback, 'install')).toContain(describeDiskState(rollback))
+  })
+})
+
+describe('installFailureFix — stale materialization intent under frozen mode', () => {
+  const staleServerDrift: RunInstallFailure = {
+    code: 'LOCKFILE_DRIFT',
+    facets: [
+      {
+        name: 'alpha',
+        reason: 'stale-override',
+        contribution: { kind: 'mcp-server' },
+        authoredName: 'filesystem',
+      },
+    ],
+  }
+
+  // The lockfile does not record server intent at all, so "run install to
+  // update the lockfile" sends the user to watch the same failure again.
+  // The choice lives in facets.json.
+  test('points at facets.json rather than at the lockfile', () => {
+    const fix = installFailureFix(staleServerDrift, notNeeded, 'install')
+    expect(fix).toContain('facets.json')
+    expect(fix).not.toContain('lockfile is out of date')
+  })
+
+  test('ordinary drift still points at the lockfile', () => {
+    const fix = installFailureFix(
+      { code: 'LOCKFILE_DRIFT', facets: [{ name: 'alpha', reason: 'missing-lockfile', manifestSpec: '1.*' }] },
+      notNeeded,
+      'install',
+    )
+    expect(fix).toContain('lockfile is out of date')
   })
 })
