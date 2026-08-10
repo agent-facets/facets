@@ -43,7 +43,7 @@ export interface RunMcpServerMatrixOptions {
 /**
  * Run the shared MCP fixture matrix against one adapter's capability.
  *
- * Beyond each case's own expectations, four invariants are asserted for every
+ * Beyond each case's own expectations, five invariants are asserted for every
  * case — they are properties of the capability contract rather than of any
  * individual fixture, so stating them per case would be noise that eventually
  * gets forgotten on the one case that needed it:
@@ -53,20 +53,36 @@ export interface RunMcpServerMatrixOptions {
  * 3. Every changed path was disclosed by `documentPaths` first.
  * 4. Nothing is spawned and nothing is fetched — configuring a server is not
  *    running it.
+ * 5. Nothing outside the project is written. MCP configuration is
+ *    project-scoped, and the home directory is where a tool's user-wide
+ *    config lives — the one place a plausible bug would reach for.
  */
 export function runMcpServerMatrix(options: RunMcpServerMatrixOptions): void {
   describe('MCP server matrix', () => {
     let root: string
+    let home: string
+    let originalHome: string | undefined
+    let originalUserProfile: string | undefined
 
     beforeEach(() => {
       // `realpathSync` because macOS hands out `/var/...` temp paths that
       // resolve to `/private/var/...`; without it, comparing a disclosed
       // document path against the project root is a suffix match at best.
       root = realpathSync(mkdtempSync(join(tmpdir(), 'mcp-matrix-')))
+      home = realpathSync(mkdtempSync(join(tmpdir(), 'mcp-matrix-home-')))
+      originalHome = process.env.HOME
+      originalUserProfile = process.env.USERPROFILE
+      process.env.HOME = home
+      process.env.USERPROFILE = home
     })
 
     afterEach(() => {
+      if (originalHome === undefined) delete process.env.HOME
+      else process.env.HOME = originalHome
+      if (originalUserProfile === undefined) delete process.env.USERPROFILE
+      else process.env.USERPROFILE = originalUserProfile
       rmSync(root, { recursive: true, force: true })
+      rmSync(home, { recursive: true, force: true })
     })
 
     for (const matrixCase of MCP_MATRIX_CASES) {
@@ -138,6 +154,10 @@ export function runMcpServerMatrix(options: RunMcpServerMatrixOptions): void {
           seed.after?.(project)
         } finally {
           restoreGuards()
+          // Project-scoped means project-scoped. A user-wide document the
+          // adapter created would otherwise sit outside every assertion this
+          // harness makes, since they all walk the project tree.
+          expect(snapshot(home)).toEqual(new Map())
         }
       })
     }

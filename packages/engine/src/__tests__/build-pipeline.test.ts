@@ -3,7 +3,7 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { type Adapter, defineAdapter } from '@agent-facets/adapter'
-import type { FacetManifest } from '@agent-facets/protocol'
+import type { FacetManifest, McpServerDeclaration } from '@agent-facets/protocol'
 import { computeContentHash, detectNamingCollisions, validateCompactFacets } from '@agent-facets/protocol'
 import dedent from 'dedent'
 import { parseTar, parseTarGzip } from 'nanotar'
@@ -1331,5 +1331,91 @@ describe('runBuildPipeline — 0.2 supplementary files', () => {
     const manifest = JSON.parse(result.manifestJson)
     expect(manifest.files).toBeDefined()
     expect(manifest.assets).toBeUndefined()
+  })
+})
+
+describe('build pipeline — MCP server declarations', () => {
+  async function writeFacet(dir: string, manifest: Record<string, unknown>): Promise<void> {
+    await Bun.write(join(dir, 'facet.json'), JSON.stringify(manifest, null, 2))
+  }
+
+  const STDIO: McpServerDeclaration = {
+    type: 'stdio',
+    command: 'npx',
+    args: ['-y', 'server-filesystem'],
+    env: { LOG: 'info' },
+  }
+
+  test('a server-only facet builds, with the declaration in the manifest and no entry of its own', async () => {
+    const dir = await createFixtureDir('mcp-server-only')
+    // No skills, no agents, no commands, no composed facets. A declaration is
+    // a deliverable, so this is a complete facet.
+    await writeFacet(dir, { name: 'mcp-tools', version: '1.0.0', servers: { filesystem: STDIO } })
+
+    const result = await runBuildPipeline(dir)
+
+    if (!result.ok) expect.unreachable()
+    expect(result.facetVersion).toBe(0.2)
+    // Declarations travel inside the embedded manifest and add no archive
+    // entry — which is exactly why the lockfile needs no field for them.
+    expect(Object.keys(result.fileHashes)).toEqual(['facet.json'])
+    expect(result.data.servers).toEqual({ filesystem: STDIO })
+  })
+
+  test('an invalid declaration fails validation and preserves prior dist output', async () => {
+    const dir = await createFixtureDir('mcp-invalid-declaration')
+    await Bun.write(join(dir, 'skills/review/SKILL.md'), '# review\n')
+    await writeFacet(dir, {
+      name: 'mcp-tools',
+      version: '1.0.0',
+      skills: { review: { description: 'r' } },
+      // `headers` is outside the closed declaration shape.
+      servers: { filesystem: { ...STDIO, headers: { Authorization: 'Bearer x' } } },
+    })
+    await Bun.write(join(dir, 'dist/prior.txt'), 'keep me')
+
+    const result = await runBuildPipeline(dir)
+
+    if (result.ok) expect.unreachable()
+    expect(await Bun.file(join(dir, 'dist/prior.txt')).text()).toBe('keep me')
+  })
+
+  test('building a declaration neither launches a command nor opens a connection', async () => {
+    const dir = await createFixtureDir('mcp-no-execution')
+    await writeFacet(dir, {
+      name: 'mcp-tools',
+      version: '1.0.0',
+      servers: {
+        filesystem: STDIO,
+        docs: { type: 'http', url: 'https://mcp.example.test/mcp' },
+      },
+    })
+
+    // A declaration names a command and a URL. Validating one must never mean
+    // locating it, starting it, or reaching it — the build has no business
+    // proving a server works, and a network round trip would make offline
+    // builds fail for a reason that has nothing to do with the archive.
+    const originalFetch = globalThis.fetch
+    const originalSpawn = Bun.spawn
+    const originalSpawnSync = Bun.spawnSync
+    const originalWhich = Bun.which
+    const forbid = (what: string) => () => {
+      throw new Error(`build must not ${what}`)
+    }
+    globalThis.fetch = forbid('open a network connection') as unknown as typeof globalThis.fetch
+    Bun.spawn = forbid('spawn a process') as unknown as typeof Bun.spawn
+    Bun.spawnSync = forbid('spawn a process') as unknown as typeof Bun.spawnSync
+    Bun.which = forbid('resolve an executable') as unknown as typeof Bun.which
+
+    try {
+      const result = await runBuildPipeline(dir)
+      if (!result.ok) expect.unreachable()
+      expect(result.data.servers?.docs).toEqual({ type: 'http', url: 'https://mcp.example.test/mcp' })
+    } finally {
+      globalThis.fetch = originalFetch
+      Bun.spawn = originalSpawn
+      Bun.spawnSync = originalSpawnSync
+      Bun.which = originalWhich
+    }
   })
 })

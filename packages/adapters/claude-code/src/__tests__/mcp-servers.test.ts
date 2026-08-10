@@ -36,7 +36,21 @@ function servers(entries: Record<string, string>): string {
 const seeds = {
   'document-absent': { files: {} },
 
-  'absent-untracked': { files: { [DOCUMENT]: servers({ [UNOWNED_NAME]: UNOWNED_ENTRY }) } },
+  // The write path, asserted in full. Every other case compares an entry the
+  // seed already contains, which exercises the reader; only a case that
+  // creates one proves the writer renders the whole declaration -- `env`
+  // included, which nothing else here would notice going missing.
+  'absent-untracked': {
+    files: { [DOCUMENT]: servers({ [UNOWNED_NAME]: UNOWNED_ENTRY }) },
+    after: (project) => {
+      expect(JSON.parse(project.read(DOCUMENT) ?? '{}').mcpServers.fs).toEqual({
+        type: 'stdio',
+        command: 'srv',
+        args: ['--root', '/w'],
+        env: { TOKEN_NAME: 'A' },
+      })
+    },
+  },
 
   'absent-tracked': { files: { [DOCUMENT]: servers({}) } },
 
@@ -59,6 +73,30 @@ const seeds = {
   'divergent-tracked': { files: { [DOCUMENT]: servers({ fs: '{ "command": "stale" }' }) } },
 
   'divergent-untracked': { files: { [DOCUMENT]: servers({ fs: '{ "command": "stale" }' }) } },
+
+  // Same command, same arguments, opposite order.
+  'divergent-argument-order': {
+    files: {
+      [DOCUMENT]: servers({
+        fs: '{ "type": "stdio", "command": "srv", "args": ["/w", "--root"], "env": { "TOKEN_NAME": "A" } }',
+      }),
+    },
+    after: (project) => {
+      expect(JSON.parse(project.read(DOCUMENT) ?? '{}').mcpServers.fs.args).toEqual(['--root', '/w'])
+    },
+  },
+
+  // Same env key, different value.
+  'divergent-environment-value': {
+    files: {
+      [DOCUMENT]: servers({
+        fs: '{ "type": "stdio", "command": "srv", "args": ["--root", "/w"], "env": { "TOKEN_NAME": "B" } }',
+      }),
+    },
+    after: (project) => {
+      expect(JSON.parse(project.read(DOCUMENT) ?? '{}').mcpServers.fs.env).toEqual({ TOKEN_NAME: 'A' })
+    },
+  },
 
   // Portable fields all match; `headers` decides how the connection
   // authenticates, which a credential-free declaration cannot vouch for.

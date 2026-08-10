@@ -34,7 +34,19 @@ function document(entries: Record<string, string>): string {
 const seeds = {
   'document-absent': { files: {} },
 
-  'absent-untracked': { files: { [JSONC]: document({ [UNOWNED_NAME]: UNOWNED_ENTRY }) } },
+  // The write path, asserted in full — see the claude-code seed for why this
+  // one case carries it: the readers are covered everywhere, the writer only
+  // here, and a dropped `environment` would otherwise go unnoticed.
+  'absent-untracked': {
+    files: { [JSONC]: document({ [UNOWNED_NAME]: UNOWNED_ENTRY }) },
+    after: (project) => {
+      expect(JSON.parse(project.read(JSONC) ?? '{}').mcp.fs).toEqual({
+        type: 'local',
+        command: ['srv', '--root', '/w'],
+        environment: { TOKEN_NAME: 'A' },
+      })
+    },
+  },
 
   'absent-tracked': { files: { [JSONC]: document({}) } },
 
@@ -68,6 +80,31 @@ const seeds = {
   'divergent-tracked': { files: { [JSONC]: document({ fs: '{ "type": "local", "command": ["stale"] }' }) } },
 
   'divergent-untracked': { files: { [JSONC]: document({ fs: '{ "type": "local", "command": ["stale"] }' }) } },
+
+  // Same command and arguments, opposite order. OpenCode fuses them into one
+  // array, so order is the only thing that differs.
+  'divergent-argument-order': {
+    files: {
+      [JSONC]: document({
+        fs: '{ "type": "local", "command": ["srv", "/w", "--root"], "environment": { "TOKEN_NAME": "A" } }',
+      }),
+    },
+    after: (project) => {
+      expect(project.read(JSONC) ?? '').toContain('"srv"')
+      expect(project.read(JSONC) ?? '').not.toContain('"/w",\n')
+    },
+  },
+
+  'divergent-environment-value': {
+    files: {
+      [JSONC]: document({
+        fs: '{ "type": "local", "command": ["srv", "--root", "/w"], "environment": { "TOKEN_NAME": "B" } }',
+      }),
+    },
+    after: (project) => {
+      expect(project.read(JSONC) ?? '').toContain('"TOKEN_NAME": "A"')
+    },
+  },
 
   // Portable fields match, but the server is switched off — precisely the
   // behavioral difference the project is asking to correct.

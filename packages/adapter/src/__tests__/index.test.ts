@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test'
+import type { McpServerDeclaration as ProtocolMcpServerDeclaration } from '@agent-facets/protocol/mcp-declaration'
 import {
   ADAPTER_API_VERSION,
   ADAPTER_API_VERSION_ASSETS_ONLY,
   ADAPTER_API_VERSION_PACKAGE_FIELD,
 } from '../api-version.ts'
 import { defineAdapter } from '../define-adapter.ts'
+import type { McpServerDeclaration } from '../mcp-servers.ts'
 import type { AdapterDefinition } from '../types.ts'
 
 /**
@@ -89,6 +91,23 @@ describe('defineAdapter — required field validation', () => {
     // CLI must be able to tell "no MCP support" from "not implemented".
     const adapter = defineAdapter(validDefinition())
     expect(adapter.mcpServers).toBe(false)
+  })
+})
+
+describe('the protocol declaration is the source of truth', () => {
+  // The SDK re-exports protocol's declaration type rather than restating it,
+  // and nothing at runtime can notice the difference — a local structural copy
+  // would compile, ship, and only diverge when protocol next changes. These
+  // assignments fail type-checking the moment the two drift apart.
+  test('the exported declaration type is assignable to and from protocol', () => {
+    type FromProtocol = ProtocolMcpServerDeclaration
+    type FromSdk = McpServerDeclaration
+
+    const stdio: FromProtocol = { type: 'stdio', command: 'srv', args: ['--root'], env: { TOKEN: 'A' } }
+    const asSdk: FromSdk = stdio
+    const backAgain: FromProtocol = asSdk
+
+    expect(backAgain).toEqual(stdio)
   })
 })
 

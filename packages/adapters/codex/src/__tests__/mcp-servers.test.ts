@@ -36,7 +36,18 @@ bearer_token_env_var = "SECRET"
 const seeds = {
   'document-absent': { files: {} },
 
-  'absent-untracked': { files: { [DOCUMENT]: UNOWNED_ENTRY } },
+  // The write path, asserted in full — see the claude-code seed for why this
+  // one case carries it. Asserted as literal text because TOML's env-table
+  // notation is part of what the writer has to get right.
+  'absent-untracked': {
+    files: { [DOCUMENT]: UNOWNED_ENTRY },
+    after: (project) => {
+      const after = project.read(DOCUMENT) ?? ''
+      expect(after).toContain('command = "srv"')
+      expect(after).toMatch(/args = \[\s*"--root",\s*"\/w"\s*]/)
+      expect(after).toContain('TOKEN_NAME = "A"')
+    },
+  },
 
   'absent-tracked': { files: { [DOCUMENT]: '[mcp_servers]\n' } },
 
@@ -68,6 +79,24 @@ command = "srv"
   'divergent-tracked': { files: { [DOCUMENT]: '[mcp_servers.fs]\ncommand = "stale"\n' } },
 
   'divergent-untracked': { files: { [DOCUMENT]: '[mcp_servers.fs]\ncommand = "stale"\n' } },
+
+  'divergent-argument-order': {
+    files: {
+      [DOCUMENT]: '[mcp_servers.fs]\ncommand = "srv"\nargs = ["/w", "--root"]\nenv = { TOKEN_NAME = "A" }\n',
+    },
+    after: (project) => {
+      expect(project.read(DOCUMENT) ?? '').toContain('args = ["--root", "/w"]')
+    },
+  },
+
+  'divergent-environment-value': {
+    files: {
+      [DOCUMENT]: '[mcp_servers.fs]\ncommand = "srv"\nargs = ["--root", "/w"]\nenv = { TOKEN_NAME = "B" }\n',
+    },
+    after: (project) => {
+      expect(project.read(DOCUMENT) ?? '').toContain('TOKEN_NAME = "A"')
+    },
+  },
 
   // Portable fields match, but the entry names an environment variable to
   // authenticate with — a credential-free declaration cannot prove it equal.

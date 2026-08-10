@@ -132,6 +132,40 @@ describe('non-interactive MCP consent', () => {
   })
 })
 
+describe('server collisions', () => {
+  // The collision report is unit-tested, but the property THIS file exists to
+  // prove is that it survives piped stdio -- where the rich block goes to a
+  // stream nobody reads. Asset groups were covered; server groups were not.
+  test('two disagreeing declarations report every claimant and write nothing', async () => {
+    installFakeAdapter(adaptersDir, 'faketool', { mcp: true })
+    const alpha = buildServerFixture('alpha', 'filesystem')
+    const beta = realpathSync(mkdtempSync(join(projectRoot, 'fixture-')))
+    writeFileSync(
+      join(beta, 'facet.json'),
+      JSON.stringify({
+        name: 'beta',
+        version: '0.1.0',
+        servers: { filesystem: { type: 'http', url: 'https://other.example.com/mcp' } },
+      }),
+    )
+
+    const result = await runCli(['add', alpha, `./${beta.split('/').pop()}`, '--accept-mcp'])
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('MCP servers')
+    expect(result.stderr).toContain('alpha')
+    expect(result.stderr).toContain('beta')
+    // The editable location and a copy-pasteable resolution, per claimant.
+    expect(result.stderr).toContain('materialization.servers')
+    expect(result.stderr).toContain('"kind": "omitted"')
+    // No winner is chosen; the alias placeholder stays a placeholder.
+    expect(result.stderr).toContain('choose-a-name')
+    expect(result.stderr).toContain('NOT changed')
+    expect(existsSync(mcpDocumentFor('faketool'))).toBe(false)
+    expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)
+  })
+})
+
 describe('adapters that cannot configure MCP servers', () => {
   test('the failure names the adapter and both remedies', async () => {
     installFakeAdapter(adaptersDir, 'faketool')

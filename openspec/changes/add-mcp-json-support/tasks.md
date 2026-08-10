@@ -162,12 +162,12 @@
 
 ## 19. Cross-cutting acceptance — Research
 
-- [ ] 19.1 Explore: Build a coverage matrix from every requirement and scenario in all nine delta specs to its implementation task and automated or manual verification.
-- [ ] 19.2 Propose: Define final cross-package and end-to-end scenarios for server-only install, alias/omit reproduction, consent locality, native takeover, rollback, frozen reproduction, offline removal, unsupported adapters, migration, and legacy rejection.
+- [x] 19.1 Explore: Build a coverage matrix from every requirement and scenario in all nine delta specs to its implementation task and automated or manual verification.
+- [x] 19.2 Propose: Define final cross-package and end-to-end scenarios for server-only install, alias/omit reproduction, consent locality, native takeover, rollback, frozen reproduction, offline removal, unsupported adapters, migration, and legacy rejection.
 
 ## 20. Cross-cutting acceptance — Implementation
 
-- [ ] 20.1 Implement: Add any missing cross-package/e2e tests from the coverage matrix, including multi-adapter transactions and failure-order assertions before mutation or prompting.
-- [ ] 20.2 Verify: Run `bun openspec validate add-mcp-json-support --strict` and verify the reconciled delta specs remain valid without editing permanent specs during implementation.
-- [ ] 20.3 Verify: Run the complete `bun check` pipeline, including unit, e2e, types, lint, docs, scripts, and package checks; stop and report any failure.
-- [ ] 20.4 Verify: Audit every delta requirement/scenario and every implementation-time follow-up as covered, record any genuinely external sync/archive or Notion cleanup separately, and mark the change implementation-ready.
+- [x] 20.1 Implement: Add any missing cross-package/e2e tests from the coverage matrix, including multi-adapter transactions and failure-order assertions before mutation or prompting.
+- [x] 20.2 Verify: Run `bun openspec validate add-mcp-json-support --strict` and verify the reconciled delta specs remain valid without editing permanent specs during implementation.
+- [x] 20.3 Verify: Run the complete `bun check` pipeline, including unit, e2e, types, lint, docs, scripts, and package checks; stop and report any failure.
+- [x] 20.4 Verify: Audit every delta requirement/scenario and every implementation-time follow-up as covered, record any genuinely external sync/archive or Notion cleanup separately, and mark the change implementation-ready.

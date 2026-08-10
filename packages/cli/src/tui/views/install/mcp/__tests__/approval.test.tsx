@@ -63,3 +63,49 @@ test('moving to approve and confirming approves', async () => {
   expect(decisions).toEqual([{ kind: 'approved' }])
   instance.unmount()
 })
+
+// Approval is all-or-nothing over the displayed set, which only means anything
+// if the set is displayed in full. A screen rendering just the first entry
+// would satisfy every single-declaration fixture while asking the user to
+// approve things they never saw.
+test('every declaration and every takeover is shown, not just the first', async () => {
+  const many: McpConsentRequest = {
+    declarations: [
+      ...REQUEST.declarations,
+      {
+        identity: { kind: 'mcp-server', effectiveName: 'search' },
+        fingerprint: `sha256:${'b'.repeat(64)}`,
+        declaration: { type: 'stdio', command: 'search-mcp', args: ['--index', 'local'] },
+        claimants: [{ facet: 'beta', authoredName: 'search', disposition: { kind: 'authored' } }],
+        standing: { kind: 'declaration-changed' },
+      },
+      {
+        identity: { kind: 'mcp-server', effectiveName: 'issues' },
+        fingerprint: `sha256:${'c'.repeat(64)}`,
+        declaration: { type: 'http', url: 'https://issues.example.com/mcp' },
+        claimants: [{ facet: 'gamma', authoredName: 'issues', disposition: { kind: 'authored' } }],
+        standing: { kind: 'unknown-identity' },
+      },
+    ],
+    takeovers: [
+      ...REQUEST.takeovers,
+      {
+        adapter: 'opencode',
+        identity: { kind: 'mcp-server', effectiveName: 'notes' },
+        existing: 'equivalent',
+        declaration: { type: 'stdio', command: 'notes-mcp' },
+      },
+    ],
+  }
+
+  const instance = render(createElement(McpApprovalScreen, { request: many, onComplete: () => {} }))
+  await tick()
+  const text = visibleTerminalText(instance.lastFrame() ?? '')
+
+  expect(text).toContain('stdio npx -y srv')
+  expect(text).toContain('stdio search-mcp --index local')
+  expect(text).toContain('http https://issues.example.com/mcp')
+  expect(text).toContain('claude-code: docs differs and would be replaced')
+  expect(text).toContain('opencode: notes already matches and would be adopted')
+  instance.unmount()
+})

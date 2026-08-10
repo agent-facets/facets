@@ -53,6 +53,20 @@ export interface RecordingMcpOptions {
    * engine refuses because it has no preimage for it.
    */
   applyUndisclosedPath?: () => string
+  /**
+   * Disclose an extra document path from `prepare` — used to exercise the
+   * engine's containment check on a path outside the project.
+   */
+  prepareExtraDocumentPath?: () => string
+  /**
+   * A log this capability appends to alongside its own `calls`.
+   *
+   * Ordering between asset writes and MCP application is a spec guarantee, and
+   * two separate arrays cannot express it — they have no shared clock. Passing
+   * the adapter's asset log here puts both domains on one timeline so a test
+   * can assert that every asset write precedes `apply`.
+   */
+  log?: string[]
 }
 
 export function recordingMcpCapability(
@@ -60,11 +74,15 @@ export function recordingMcpCapability(
   options: RecordingMcpOptions = {},
 ): McpCapabilityRecorder {
   const calls: string[] = []
+  const record = (entry: string) => {
+    calls.push(entry)
+    options.log?.push(`mcp:${entry}`)
+  }
 
   const capability: McpServerCapability<FakePlan> = {
     async prepare(request: PrepareMcpServersRequest): Promise<PrepareMcpServersResult<FakePlan>> {
       const path = documentPath()
-      calls.push(`prepare:${request.desired.length}`)
+      record(`prepare:${request.desired.length}`)
       if (options.failPrepare !== undefined) return { ok: false, failure: options.failPrepare }
 
       const servers = readServers(path)
@@ -85,8 +103,13 @@ export function recordingMcpCapability(
             : 'divergent',
       })
 
+      const extra = options.prepareExtraDocumentPath?.()
+      // Non-empty by contract: disclosure is what the engine journals against,
+      // so "no documents" is not a thing a preparation can say.
+      const documentPaths: readonly [string, ...string[]] = extra === undefined ? [path] : [path, extra]
+
       if (!mcpOutcomesRequireWrite(outcomes)) {
-        return { ok: true, preparation: { plan: { kind: 'unchanged', path }, documentPaths: [path], outcomes } }
+        return { ok: true, preparation: { plan: { kind: 'unchanged', path }, documentPaths, outcomes } }
       }
 
       const next: Record<string, McpServerDeclaration> = { ...servers.value }
@@ -101,21 +124,21 @@ export function recordingMcpCapability(
 
       return {
         ok: true,
-        preparation: { plan: { kind: 'write', path, servers: next }, documentPaths: [path], outcomes },
+        preparation: { plan: { kind: 'write', path, servers: next }, documentPaths, outcomes },
       }
     },
 
     async apply(request: { plan: FakePlan }): Promise<ApplyMcpServersResult> {
       const plan = request.plan
       if (plan.kind === 'unchanged') {
-        calls.push('apply:unchanged')
+        record('apply:unchanged')
         return { ok: true, status: 'unchanged' }
       }
       if (options.failApply !== undefined) {
-        calls.push('apply:failed')
+        record('apply:failed')
         return { ok: false, failure: options.failApply }
       }
-      calls.push('apply:changed')
+      record('apply:changed')
       mkdirSync(dirname(plan.path), { recursive: true })
       writeFileSync(plan.path, `${JSON.stringify(plan.servers, null, 2)}\n`)
       const undisclosed = options.applyUndisclosedPath?.()

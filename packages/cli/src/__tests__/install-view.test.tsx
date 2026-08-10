@@ -52,6 +52,45 @@ function settle(): Promise<void> {
 }
 
 /**
+ * A promise the test opens when it is ready.
+ *
+ * A fake driver must not hold a render phase open with a timer. The test is
+ * waiting on its own timer, and the two are separated only by the gap between
+ * `render()` returning and React flushing the effect that starts the driver —
+ * sub-millisecond, and on the wrong side of it the driver has already resolved
+ * and repainted before the assertion runs. A gate inverts that: the driver
+ * cannot advance until the test says so, in any scheduling order.
+ */
+function gate(): { readonly wait: Promise<void>; readonly open: () => void } {
+  let open!: () => void
+  const wait = new Promise<void>((resolve) => {
+    open = () => resolve()
+  })
+  return { wait, open }
+}
+
+/**
+ * Poll frames until `predicate` holds.
+ *
+ * The other half of the same problem: a gate stops the driver running ahead of
+ * the assertion, and this stops the assertion running ahead of the paint. A
+ * fixed sleep has to guess how long a render takes; this waits for the thing
+ * it is actually waiting for.
+ */
+async function waitForFrame(
+  instance: { lastFrame: () => string | undefined },
+  predicate: (text: string) => boolean,
+  description: string,
+): Promise<string> {
+  for (let attempt = 0; attempt < 200; attempt++) {
+    const text = visibleTerminalText(instance.lastFrame() ?? '')
+    if (predicate(text)) return text
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+  throw new Error(`timed out waiting for ${description}. Last frame:\n${instance.lastFrame() ?? '(none)'}`)
+}
+
+/**
  * Build a fake `run` driver that emits a canned event sequence and
  * resolves to a canned result. Lets each test exercise a specific
  * render path of `<InstallView />` without spinning up `runInstall`.
@@ -1007,6 +1046,40 @@ describe('InstallView — frozen-lockfile drift', () => {
     expect(frame).toContain('without --frozen-lockfile')
     instance.unmount()
   })
+
+  // The load-bearing half of frozen stale intent: a normal install prunes the
+  // override and says so, frozen refuses and must say the opposite. Reporting
+  // it without that clause would read as "handled".
+  test('a stale server override says the override was not removed', async () => {
+    const failure: RunInstallFailure = {
+      code: 'LOCKFILE_DRIFT',
+      facets: [
+        {
+          name: 'mcp-tools',
+          reason: 'stale-override',
+          contribution: { kind: 'mcp-server' },
+          authoredName: 'gone',
+        },
+      ],
+    }
+    const events: StageEvent[] = [{ kind: 'install-complete', outcome: 'failure' }]
+    const result: RunInstallResult = {
+      ok: false,
+      failure,
+      rollback: { kind: 'not-needed', reason: 'test fixture' },
+    }
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'install',
+        run: makeFakeRun(events, result),
+      }),
+    )
+    await settle()
+    const frame = visibleContentFrame(instance.frames)
+    expect(frame).toContain('gone')
+    expect(frame).toContain('NOT removed')
+    instance.unmount()
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -1062,19 +1135,22 @@ async function tick(): Promise<void> {
 
 describe('InstallView — collision phase machine', () => {
   test('the collision check is a visible stage, not a stall', async () => {
+    const checking = gate()
     const instance = render(
       createElement(InstallView, {
         mode: 'install',
         run: async ({ onStage }) => {
           onStage({ kind: 'install-start', totalFacets: 2 })
           onStage({ kind: 'collision-check' })
-          await tick()
+          await checking.wait
           return successResultSingle
         },
       }),
     )
-    await tick()
-    expect(visibleTerminalText(instance.lastFrame() ?? '')).toContain('Checking for name collisions')
+
+    await waitForFrame(instance, (text) => text.includes('Checking for name collisions'), 'the collision stage')
+
+    checking.open()
     await settle()
     instance.unmount()
   })
@@ -1084,6 +1160,7 @@ describe('InstallView — collision phase machine', () => {
   // several would misdescribe when the check happens — and the spec's
   // single-facet scenario named it while the multi-facet one did not.
   test('the same single global phase is shown for a multi-facet run', async () => {
+    const checking = gate()
     const instance = render(
       createElement(InstallView, {
         mode: 'install',
@@ -1094,23 +1171,28 @@ describe('InstallView — collision phase machine', () => {
             onStage({ kind: 'facet-stage', facet, stage: 'verify' })
           }
           onStage({ kind: 'collision-check' })
-          await tick()
+          await checking.wait
           return successResultSingle
         },
       }),
     )
-    await tick()
 
-    const paused = visibleTerminalText(instance.lastFrame() ?? '')
-    expect(paused).toContain('Checking for name collisions across all facets')
+    const paused = await waitForFrame(
+      instance,
+      (text) => text.includes('Checking for name collisions across all facets'),
+      'the collision stage',
+    )
     // One phase, not one per facet.
     expect(paused.match(/Checking for name collisions/g)).toHaveLength(1)
 
+    checking.open()
     await settle()
     instance.unmount()
   })
 
   test('the collision phase clears once materialization starts', async () => {
+    const checking = gate()
+    const materializing = gate()
     const instance = render(
       createElement(InstallView, {
         mode: 'install',
@@ -1118,19 +1200,25 @@ describe('InstallView — collision phase machine', () => {
           onStage({ kind: 'install-start', totalFacets: 2 })
           onStage({ kind: 'facet-start', facet: 'alpha', specifier: './alpha' })
           onStage({ kind: 'collision-check' })
-          await tick()
+          await checking.wait
           onStage({ kind: 'facet-stage', facet: 'alpha', stage: 'materialize' })
-          await tick()
+          await materializing.wait
           return successResultSingle
         },
       }),
     )
-    await tick()
-    expect(visibleTerminalText(instance.lastFrame() ?? '')).toContain('Checking for name collisions')
 
-    await tick()
-    await tick()
-    expect(visibleTerminalText(instance.lastFrame() ?? '')).not.toContain('Checking for name collisions')
+    // Held open, so the phase cannot have come and gone before this runs.
+    await waitForFrame(instance, (text) => text.includes('Checking for name collisions'), 'the collision stage')
+
+    checking.open()
+    await waitForFrame(
+      instance,
+      (text) => !text.includes('Checking for name collisions'),
+      'the collision stage to clear',
+    )
+
+    materializing.open()
 
     await settle()
     instance.unmount()
@@ -1323,6 +1411,33 @@ describe('InstallView — materialization reporting', () => {
     expect(frame).toContain('gone')
     expect(frame).toContain('alpha')
     expect(frame).toContain('no longer contains')
+    instance.unmount()
+  })
+
+  test('a pruned server override names the server, not an asset type', async () => {
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'install',
+        run: makeFakeRun(
+          [
+            { kind: 'install-start', totalFacets: 1 },
+            {
+              kind: 'stale-override-pruned',
+              facet: 'mcp-tools',
+              contribution: { kind: 'mcp-server' },
+              authoredName: 'gone',
+            },
+          ],
+          successResultSingle,
+        ),
+      }),
+    )
+    await settle()
+
+    const frame = visibleContentFrame(instance.frames)
+    expect(frame).toContain('gone')
+    expect(frame).toContain('mcp-tools')
+    expect(frame).toContain('server')
     instance.unmount()
   })
 })

@@ -40,18 +40,28 @@ interface TestAdapter {
   adapter: Adapter
   io: string[]
   mcpCalls: string[]
+  /**
+   * Asset and MCP calls on one clock, prefixed by domain.
+   *
+   * `io` and `mcpCalls` each answer "what happened in this domain"; only a
+   * shared log can answer "in what order across domains", which is what the
+   * apply-configuration-last guarantee is about.
+   */
+  timeline: string[]
   documentPath: string
 }
 
 /** A `0.2` adapter with a working MCP capability, recording every call. */
 function mcpAdapter(name: string, options: RecordingMcpOptions = {}): TestAdapter {
   const io: string[] = []
+  const timeline: string[] = []
   const baseDir = () => join(projectRoot, `.${name}`)
   const file = (type: string, assetName: string) => join(baseDir(), `${type}s`, `${assetName}.md`)
   const document = () => join(baseDir(), 'mcp.json')
-  const mcp = recordingMcpCapability(document, options)
+  const mcp = recordingMcpCapability(document, { ...options, log: timeline })
   return {
     io,
+    timeline,
     mcpCalls: mcp.calls,
     get documentPath() {
       return document()
@@ -68,6 +78,7 @@ function mcpAdapter(name: string, options: RecordingMcpOptions = {}): TestAdapte
       // equivalent-takeover case untestable.
       async installAsset(request) {
         io.push(`install:${request.assetType}:${request.name}`)
+        timeline.push(`asset:install:${request.assetType}:${request.name}`)
         const p = { file: file(request.assetType, request.name) }
         await installAssetFile(p, request.content, request.metadata as Record<string, unknown> | undefined)
         return { ok: true, primaryPath: p.file }
@@ -85,6 +96,7 @@ function mcpAdapter(name: string, options: RecordingMcpOptions = {}): TestAdapte
       },
       async deleteAsset(request) {
         io.push(`delete:${request.assetType}:${request.name}`)
+        timeline.push(`asset:delete:${request.assetType}:${request.name}`)
         const p = { file: file(request.assetType, request.name) }
         await deleteAssetFile(p)
         return { ok: true, existed: true, deletedPaths: [p.file] }
@@ -308,6 +320,43 @@ describe('mcp — consent', () => {
     expect(asked).toBe(0)
   })
 
+  // Approval reaches the receipt only through a successful commit. If a failed
+  // run could bank it, a user who approved something that then blew up would
+  // never be asked again -- consent would have been obtained for an operation
+  // that never happened.
+  test('a failed operation banks no approval, so the next attempt asks again', async () => {
+    writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
+    const first = mcpAdapter('first')
+    const second = mcpAdapter('second', {
+      failApply: { code: 'io-failed', operation: 'write', path: '/nope', message: 'disk on fire' },
+    })
+
+    let asked = 0
+    const resolve = async () => {
+      asked++
+      return { kind: 'approved' } as const
+    }
+
+    const failed = await runInstall({
+      projectRoot,
+      adapters: [first.adapter, second.adapter],
+      mcpConsent: { kind: 'interactive', resolve },
+    })
+
+    if (failed.ok) expect.unreachable()
+    expect(asked).toBe(1)
+    expect(existsSync(receiptPath(projectRoot))).toBe(false)
+
+    const retry = await runInstall({
+      projectRoot,
+      adapters: [first.adapter],
+      mcpConsent: { kind: 'interactive', resolve },
+    })
+
+    expect(retry.ok).toBe(true)
+    expect(asked).toBe(2)
+  })
+
   test('a changed declaration is asked about again, and says so', async () => {
     const a = serverFixture('alpha', 'filesystem', STDIO)
     writeManifest({ facets: { alpha: a } })
@@ -379,6 +428,192 @@ describe('mcp — consent', () => {
         declaration: STDIO as never,
       },
     ])
+  })
+
+  // Drift at an identity this machine already owns is repair, not takeover.
+  // Warning about it would train users to click through the one prompt that
+  // means someone else's configuration is about to be replaced.
+  test('an entry the receipt already owns is never disclosed as a takeover', async () => {
+    writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
+    const rec = mcpAdapter('rec')
+    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+
+    // Same owned identity, drifted content.
+    writeFileSync(rec.documentPath, `${JSON.stringify({ filesystem: HTTP }, null, 2)}\n`)
+
+    let asked = 0
+    const result = await runInstall({
+      projectRoot,
+      adapters: [rec.adapter],
+      mcpConsent: {
+        kind: 'interactive',
+        resolve: async () => {
+          asked++
+          return { kind: 'approved' }
+        },
+      },
+    })
+
+    expect(result.ok).toBe(true)
+    expect(asked).toBe(0)
+    expect(JSON.parse(readFileSync(rec.documentPath, 'utf8'))).toEqual({ filesystem: STDIO })
+  })
+
+  test('declining a request raised only by a takeover leaves the entry alone', async () => {
+    writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
+    const rec = mcpAdapter('rec')
+    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+
+    // The declaration stays approved, but ownership is gone: what is on disk
+    // is now someone else's entry at a name this project wants.
+    rmSync(receiptPath(projectRoot), { force: true })
+    const before = `${JSON.stringify({ filesystem: HTTP }, null, 2)}\n`
+    writeFileSync(rec.documentPath, before)
+
+    let seen: McpConsentRequest | undefined
+    const result = await runInstall({
+      projectRoot,
+      adapters: [rec.adapter],
+      mcpConsent: {
+        kind: 'interactive',
+        resolve: async (request) => {
+          seen = request
+          return { kind: 'declined' }
+        },
+      },
+    })
+
+    if (result.ok) expect.unreachable()
+    expect(result.failure.code).toBe('MCP_CONSENT_DECLINED')
+    expect(seen?.takeovers).toHaveLength(1)
+    // Consent precedes the journal, so a decline has nothing to undo.
+    expect(result.rollback.kind).toBe('not-needed')
+    expect(readFileSync(rec.documentPath, 'utf8')).toBe(before)
+  })
+
+  test('a receipt predating configuration claims reads existing entries as untracked', async () => {
+    writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
+    const rec = mcpAdapter('rec')
+    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+
+    // Downgrade the receipt to the last version that could not witness
+    // configuration. Its asset ownership survives; its MCP claims cannot.
+    const receipt = JSON.parse(readFileSync(receiptPath(projectRoot), 'utf8'))
+    receipt.receiptVersion = 0.3
+    for (const facet of Object.values(receipt.facets) as Array<Record<string, unknown>>) {
+      delete facet.configurations
+      delete facet.integrity
+    }
+    writeFileSync(receiptPath(projectRoot), `${JSON.stringify(receipt, null, 2)}\n`)
+
+    let seen: McpConsentRequest | undefined
+    const result = await runInstall({
+      projectRoot,
+      adapters: [rec.adapter],
+      mcpConsent: {
+        kind: 'interactive',
+        resolve: async (request) => {
+          seen = request
+          return { kind: 'approved' }
+        },
+      },
+    })
+
+    expect(result.ok).toBe(true)
+    // Unapproved again, and the entry it wrote last time now reads as
+    // somebody else's — which is the honest reading of "no evidence".
+    expect(seen?.declarations).toHaveLength(1)
+    expect(seen?.takeovers).toEqual([
+      {
+        adapter: 'rec',
+        identity: { kind: 'mcp-server', effectiveName: 'filesystem' },
+        existing: 'equivalent',
+        declaration: STDIO as never,
+      },
+    ])
+  })
+})
+
+describe('mcp — one desired set across adapters', () => {
+  // Counting outcomes proves each adapter did something; only reading both
+  // documents proves they did the SAME thing. One project-level desired set is
+  // the guarantee, and two adapters drifting apart would still count as two.
+  test('every selected adapter ends up with the same effective configuration', async () => {
+    writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
+    const one = mcpAdapter('one')
+    const two = mcpAdapter('two')
+
+    expect((await runInstall({ projectRoot, adapters: [one.adapter, two.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+
+    const first = JSON.parse(readFileSync(one.documentPath, 'utf8'))
+    expect(first).toEqual({ filesystem: STDIO })
+    expect(JSON.parse(readFileSync(two.documentPath, 'utf8'))).toEqual(first)
+  })
+
+  test('one disposition applies to every selected adapter', async () => {
+    const a = serverFixture('alpha', 'filesystem', STDIO)
+    const b = serverFixture('beta', 'docs', HTTP)
+    writeManifest({
+      manifestVersion: 0.2,
+      facets: {
+        alpha: { source: a, materialization: { servers: { filesystem: { kind: 'aliased', as: 'fs' } } } },
+        beta: { source: b, materialization: { servers: { docs: { kind: 'omitted' } } } },
+      },
+    })
+    const one = mcpAdapter('one')
+    const two = mcpAdapter('two')
+
+    expect((await runInstall({ projectRoot, adapters: [one.adapter, two.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+
+    // The alias moved the effective name everywhere, and the omission is
+    // absent everywhere. A per-adapter disposition is not representable.
+    const expected = { fs: STDIO }
+    expect(JSON.parse(readFileSync(one.documentPath, 'utf8'))).toEqual(expected)
+    expect(JSON.parse(readFileSync(two.documentPath, 'utf8'))).toEqual(expected)
+  })
+
+  test('changing an alias moves the entry rather than duplicating it', async () => {
+    const a = serverFixture('alpha', 'filesystem', STDIO)
+    writeManifest({ facets: { alpha: a } })
+    const rec = mcpAdapter('rec')
+    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    expect(JSON.parse(readFileSync(rec.documentPath, 'utf8'))).toEqual({ filesystem: STDIO })
+
+    writeManifest({
+      manifestVersion: 0.2,
+      facets: { alpha: { source: a, materialization: { servers: { filesystem: { kind: 'aliased', as: 'fs' } } } } },
+    })
+
+    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    // The old owned identity is gone, not left behind beside the new one.
+    expect(JSON.parse(readFileSync(rec.documentPath, 'utf8'))).toEqual({ fs: STDIO })
+  })
+
+  test('an adapter selected later picks up an identity the project already owns', async () => {
+    writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
+    const one = mcpAdapter('one')
+    expect((await runInstall({ projectRoot, adapters: [one.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+
+    // Ownership is recorded per project, not per adapter, so connecting a
+    // second tool delegates management of what this project already owns --
+    // with no fresh approval, because the declaration is unchanged.
+    const two = mcpAdapter('two')
+    let asked = 0
+    const result = await runInstall({
+      projectRoot,
+      adapters: [one.adapter, two.adapter],
+      mcpConsent: {
+        kind: 'interactive',
+        resolve: async () => {
+          asked++
+          return { kind: 'approved' }
+        },
+      },
+    })
+
+    expect(result.ok).toBe(true)
+    expect(asked).toBe(0)
+    expect(JSON.parse(readFileSync(two.documentPath, 'utf8'))).toEqual({ filesystem: STDIO })
   })
 })
 
@@ -456,6 +691,75 @@ describe('mcp — application and rollback', () => {
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'MCP_CONTRACT_VIOLATION') expect.unreachable()
     expect(result.failure.violation.kind).toBe('undisclosed-changed-path')
+  })
+
+  // A document outside the project is the disclosure the engine must refuse
+  // outright: the whole rollback story rests on preimages the engine captured,
+  // and it will not capture -- or overwrite -- a file outside the tree it owns.
+  test('a document disclosed outside the project is refused before anything is written', async () => {
+    writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
+    const outside = join(fakeHome, 'user-level-mcp.json')
+    const rec = mcpAdapter('rec', { prepareExtraDocumentPath: () => outside })
+
+    const result = await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })
+
+    if (result.ok) expect.unreachable()
+    if (result.failure.code !== 'MCP_CONTRACT_VIOLATION') expect.unreachable()
+    expect(result.failure.violation.kind).toBe('document-outside-project')
+    expect(existsSync(outside)).toBe(false)
+    expect(existsSync(rec.documentPath)).toBe(false)
+    expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)
+  })
+
+  // Ordering across the two domains, on one clock. Two separate logs can each
+  // say what happened within a domain but neither can say which came first,
+  // and "configuration applies after assets" is precisely a claim about that.
+  test('every asset write completes before configuration is applied', async () => {
+    writeManifest({
+      facets: {
+        alpha: serverFixture('alpha', 'filesystem', STDIO),
+        beta: skillFixture('beta', 'review'),
+      },
+    })
+    const rec = mcpAdapter('rec')
+
+    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+
+    const apply = rec.timeline.indexOf('mcp:apply:changed')
+    expect(apply).toBeGreaterThan(-1)
+    const assetWrites = rec.timeline.filter((entry) => entry.startsWith('asset:install:'))
+    expect(assetWrites.length).toBeGreaterThan(0)
+    for (const write of assetWrites) expect(rec.timeline.indexOf(write)).toBeLessThan(apply)
+    // Preparation is the other half of the sandwich: read-only, before the
+    // journal opens, and therefore before the first asset write.
+    expect(rec.timeline.indexOf('mcp:prepare:1')).toBeLessThan(rec.timeline.indexOf(assetWrites[0] as string))
+  })
+
+  test('a failure committing project state restores configuration and assets alike', async () => {
+    writeManifest({
+      facets: {
+        alpha: serverFixture('alpha', 'filesystem', STDIO),
+        beta: skillFixture('beta', 'review'),
+      },
+    })
+    const rec = mcpAdapter('rec')
+    mkdirSync(join(projectRoot, '.rec'), { recursive: true })
+    const before = '{\n\t"legacy": {"type":"stdio","command":"keep-me"}\n}\n'
+    writeFileSync(rec.documentPath, before)
+
+    // A directory where the lockfile's temp file wants to go: the write fails
+    // after configuration has already been applied, which is the only moment
+    // the journal has to walk both domains back.
+    mkdirSync(join(projectRoot, 'facets.lock.tmp'), { recursive: true })
+
+    const result = await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })
+
+    if (result.ok) expect.unreachable()
+    expect(rec.mcpCalls).toContain('apply:changed')
+    expect(result.rollback.kind).toBe('succeeded')
+    expect(readFileSync(rec.documentPath, 'utf8')).toBe(before)
+    expect(existsSync(join(projectRoot, '.rec', 'skills', 'review.md'))).toBe(false)
+    expect(existsSync(receiptPath(projectRoot))).toBe(false)
   })
 })
 
@@ -537,6 +841,94 @@ describe('mcp — frozen reproduction', () => {
     // transaction, so it must leave the intent exactly where it found it.
     expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(manifestBefore)
     expect(readFileSync(rec.documentPath, 'utf8')).toBe(documentBefore)
+  })
+
+  // Frozen cannot prune shared intent, but it may still reconcile machine-local
+  // ownership -- otherwise a pulled removal would strand a server entry this
+  // machine wrote, with no non-frozen run in sight to clean it up.
+  test('frozen removes a receipt-only server orphan and rewrites only the receipt', async () => {
+    const a = serverFixture('alpha', 'filesystem', STDIO)
+    const b = skillFixture('beta', 'review')
+    writeManifest({ facets: { alpha: a, beta: b } })
+    const rec = mcpAdapter('rec')
+    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    expect(JSON.parse(readFileSync(rec.documentPath, 'utf8'))).toEqual({ filesystem: STDIO })
+
+    // The shape a teammate's removal arrives in: both shared files drop the
+    // facet, while this machine's receipt still records what it configured.
+    writeManifest({ facets: { beta: b } })
+    const lockfile = JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8'))
+    delete lockfile.facets.alpha
+    const lockBefore = `${JSON.stringify(lockfile, null, 2)}\n`
+    writeFileSync(join(projectRoot, 'facets.lock'), lockBefore)
+    const manifestBefore = readFileSync(join(projectRoot, 'facets.json'), 'utf8')
+
+    const result = await runInstall({
+      projectRoot,
+      adapters: [rec.adapter],
+      frozenLockfile: true,
+      mcpConsent: ACCEPT,
+    })
+
+    expect(result.ok).toBe(true)
+    expect(JSON.parse(readFileSync(rec.documentPath, 'utf8'))).toEqual({})
+    expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(manifestBefore)
+    expect(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')).toBe(lockBefore)
+    const receipt = JSON.parse(readFileSync(receiptPath(projectRoot), 'utf8'))
+    expect(Object.keys(receipt.facets)).toEqual(['beta'])
+  })
+
+  test('a frozen server conflict changes nothing', async () => {
+    const a = serverFixture('alpha', 'filesystem', STDIO)
+    const b = serverFixture('beta', 'filesystem', HTTP)
+    writeManifest({ facets: { alpha: a, beta: b } })
+    const rec = mcpAdapter('rec')
+
+    const result = await runInstall({
+      projectRoot,
+      adapters: [rec.adapter],
+      frozenLockfile: true,
+      mcpConsent: ACCEPT,
+    })
+
+    if (result.ok) expect.unreachable()
+    // Frozen has no resolver, so a contested effective name can only be
+    // reported. Whichever gate catches it first, nothing may be written.
+    expect(existsSync(rec.documentPath)).toBe(false)
+    expect(existsSync(receiptPath(projectRoot))).toBe(false)
+    expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)
+  })
+
+  // Declarations are not in the lockfile, so nothing about them is pinned
+  // directly -- they ride the facet's integrity. Editing one behind the lock
+  // must therefore fail on integrity, before any native document is touched.
+  test('a tampered declaration blocks configuration before any native write', async () => {
+    const a = serverFixture('alpha', 'filesystem', STDIO)
+    writeManifest({ facets: { alpha: a } })
+    const rec = mcpAdapter('rec')
+    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    rmSync(rec.documentPath, { force: true })
+    const callsBefore = rec.mcpCalls.length
+
+    // Same facet version, different command: the manifest no longer hashes to
+    // what the lockfile recorded.
+    serverFixture('alpha', 'filesystem', { type: 'stdio', command: 'evil-mcp' })
+
+    const result = await runInstall({
+      projectRoot,
+      adapters: [rec.adapter],
+      frozenLockfile: true,
+      mcpConsent: ACCEPT,
+    })
+
+    if (result.ok) expect.unreachable()
+    if (result.failure.code !== 'INTEGRITY_FAILURE') expect.unreachable()
+    if (result.failure.failure.kind !== 'facet') expect.unreachable()
+    expect(result.failure.failure.facet).toBe('alpha')
+    // Verification precedes preparation, so the capability was never reached
+    // at all -- not reached and then rolled back.
+    expect(rec.mcpCalls.slice(callsBefore)).toEqual([])
+    expect(existsSync(rec.documentPath)).toBe(false)
   })
 
   test('a server-only override does not make an older lockfile unrepresentable', async () => {
@@ -647,6 +1039,57 @@ describe('mcp — offline removal', () => {
     // the ordinary pipeline then succeeds.
     expect(reasons).toEqual(['configuration-unwitnessed'])
     expect(removed.ok).toBe(true)
+  })
+
+  // The reason --accept-mcp exists on `remove` at all. A removal that has to
+  // resolve the facets it keeps re-enters the consent path, and without a way
+  // to answer it there is no non-interactive way to finish the removal.
+  test('a removal that must resolve enters the same MCP approval path', async () => {
+    writeManifest({
+      facets: {
+        alpha: skillFixture('alpha', 'review'),
+        beta: serverFixture('beta', 'filesystem', STDIO),
+      },
+    })
+    const rec = mcpAdapter('rec')
+    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+
+    // Drop the machine-local evidence: the kept facet's declaration is no
+    // longer approved, and removal can no longer answer from local state.
+    rmSync(receiptPath(projectRoot), { force: true })
+
+    const blocked = await runRemove({ projectRoot, names: ['alpha'], adapters: [rec.adapter] })
+    if (blocked.ok) expect.unreachable()
+    if (blocked.phase !== 'install') expect.unreachable()
+    expect(blocked.install.failure.code).toBe('MCP_CONSENT_REQUIRED')
+    expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toContain('alpha')
+
+    // With approval supplied, the same removal completes.
+    const allowed = await runRemove({
+      projectRoot,
+      names: ['alpha'],
+      adapters: [rec.adapter],
+      mcpConsent: ACCEPT,
+    })
+    expect(allowed.ok).toBe(true)
+    expect(JSON.parse(readFileSync(rec.documentPath, 'utf8'))).toEqual({ filesystem: STDIO })
+  })
+
+  test('an omitted server is recorded nowhere', async () => {
+    const a = serverFixture('alpha', 'filesystem', STDIO)
+    writeManifest({
+      manifestVersion: 0.2,
+      facets: { alpha: { source: a, materialization: { servers: { filesystem: { kind: 'omitted' } } } } },
+    })
+    const rec = mcpAdapter('rec')
+
+    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+
+    // Never materialized, so there is nothing to own and nothing to approve.
+    // A claim would assert two things that are both false.
+    const receipt = JSON.parse(readFileSync(receiptPath(projectRoot), 'utf8'))
+    expect(receipt.facets.alpha?.configurations ?? []).toEqual([])
+    expect(readIfPresent(rec.documentPath)).toBe(null)
   })
 })
 

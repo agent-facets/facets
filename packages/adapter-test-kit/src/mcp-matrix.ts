@@ -149,6 +149,34 @@ export const MCP_MATRIX_CASES = [
     },
   },
   {
+    // Argument ORDER, nothing else. An adapter comparing args as a set — or
+    // sorting them before comparing — passes every other divergent case while
+    // silently keeping a server that runs with different arguments.
+    id: 'divergent-argument-order',
+    describes: 'treats a reordered argument list as a behavioral difference',
+    desired: [STDIO_SERVER],
+    previouslyOwnedNames: ['fs'],
+    expect: {
+      kind: 'prepared',
+      outcomes: [{ kind: 'divergent', name: 'fs', ownership: 'tracked' }],
+      apply: 'changed',
+    },
+  },
+  {
+    // One environment VALUE. An adapter that compares only env key sets, or
+    // skips env entirely, would call this equivalent and leave the server
+    // pointed at the wrong thing.
+    id: 'divergent-environment-value',
+    describes: 'treats a changed environment value as a behavioral difference',
+    desired: [STDIO_SERVER],
+    previouslyOwnedNames: ['fs'],
+    expect: {
+      kind: 'prepared',
+      outcomes: [{ kind: 'divergent', name: 'fs', ownership: 'tracked' }],
+      apply: 'changed',
+    },
+  },
+  {
     id: 'divergent-untracked',
     describes: 'reports a differing entry the project does not own as an untracked takeover',
     desired: [STDIO_SERVER],
