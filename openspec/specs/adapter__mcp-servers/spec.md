@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Defines the adapter contract for translating portable MCP server declarations into safe, tool-native project configuration. It ensures adapters can plan and apply changes atomically, preserve unrelated configuration, compare native entries semantically, restore prior state after failure, and configure servers without launching or contacting them.
+
+## Requirements
 
 ### Requirement: Portable MCP declarations are translated into native project configuration
 
