@@ -58,7 +58,10 @@ const FacetsEntry = type('string').or(SelectiveFacetsEntry)
  * The facet manifest schema — validates structure and business constraints.
  *
  * Structural validation covers field types and shapes. Narrow constraints enforce:
- * 1. At least one text asset (skills, agents, commands, or facets) must be present
+ * 1. At least one deliverable (skills, agents, commands, facets, or servers)
+ *    must be present. A server-only facet is valid: MCP declarations are a
+ *    deliverable even though they materialize into tool-owned configuration
+ *    rather than a file the project owns.
  * 2. Selective facets entries must include at least one asset type selection
  * 3. Asset names must satisfy the Agent Skills grammar as a SINGLE segment
  *    (validateAssetNameSegment from ./asset-name.ts): 1-64 chars, lowercase

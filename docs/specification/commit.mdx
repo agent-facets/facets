@@ -7,14 +7,14 @@ import { DeltaTip, InstallReceiptTip, CanonicalFingerprintTip, SidecarTip } from
 
 Commit is phase 2 of the [install pipeline](/specification/install): a single transaction that applies the <DeltaTip>delta</DeltaTip> from [Planning](/specification/planning). Its inputs are the on-disk `facets.json` — including the [materialization](/specification/materialization) intent it records — `facets.lock`, the <InstallReceiptTip>install receipt</InstallReceiptTip>, and the delta.
 
-It is never partial. Commit runs in three phases, and the boundary between the second and third is where mutation begins: everything up to and including [Compose](#compose) is read-only, so a failure there leaves the project byte-identical without needing to undo anything. A [removal-only short circuit](#removal-only-short-circuit) skips both read-only phases when this machine's receipt already answers for every remaining facet; it writes nothing until that same boundary. From the first write onward, every write records its inverse in the **journal**, and a failure MUST replay it in reverse to leave the project exactly as it was.
+It is never partial. Commit runs in three phases, and the boundary between the second and third is where mutation begins: everything up to and including [MCP consent](#mcp-configuration) — resolution, composition, adapter capability checks, and read-only native-configuration preparation — is read-only, so a failure or a declined approval there leaves the project byte-identical without needing to undo anything. A [removal-only short circuit](#removal-only-short-circuit) skips both read-only phases when this machine's receipt already answers for every remaining facet; it writes nothing until that same boundary. From the first write onward, every write records its inverse in the **journal**, and a failure MUST replay it in reverse to leave the project exactly as it was.
 
 <CardGroup cols={3}>
   <Card title="Verify" icon="shield-check">
     Cache self-audit, lockfile comparison, or registry confirmation. Tampered content never materializes.
   </Card>
   <Card title="Materialize" icon="download">
-    Assets written to every selected adapter, journaled for rollback.
+    Assets written to every selected adapter, then approved MCP configuration reconciled — all journaled for rollback.
   </Card>
   <Card title="Commit" icon="check">
     `facets.json` + `facets.lock` + receipt written together, atomically.
@@ -38,13 +38,25 @@ It is never partial. Commit runs in three phases, and the boundary between the s
     Every facet in the **desired set** — the manifest's facets after the delta is merged in memory — is [parsed, resolved, and verified](#the-three-phases), in a deterministic order. Nothing is written. The phase stops at the first failure. Skipped entirely by the [removal-only short circuit](#removal-only-short-circuit).
   </Step>
   <Step title="Phase B — Compose">
-    The complete set of verified contributions, plus the project's recorded intent, becomes either one collision-free plan or the complete list of [collisions](#compose) blocking it. Still nothing written.
+    The complete set of verified contributions, plus the project's recorded intent, becomes either one collision-free plan or the complete list of [collisions](#compose) blocking it — across both assets and MCP servers. Still nothing written.
+  </Step>
+  <Step title="Adapter capability check">
+    If the composed plan contains any active MCP declaration, every selected adapter MUST be able to configure MCP servers. Adapters that cannot are collected into **one** failure naming all of them, raised before any approval is requested and before any mutation. See [MCP configuration](#mcp-configuration).
+  </Step>
+  <Step title="Prepare native configuration">
+    Each supporting adapter parses its own native project document and computes its complete MCP change **read-only**, reporting per-server outcomes, every document the change can affect, and an opaque prepared plan. A parse or native planning conflict fails here, still with nothing written. This is also where an untracked entry already occupying a desired server name is discovered — at no extra I/O cost, because the document has just been parsed.
+  </Step>
+  <Step title="MCP approval">
+    Every new or changed declaration, plus every untracked native entry that would be adopted or replaced, is presented as one request. Approval covers the complete set; declining ends the operation with nothing to undo, because the journal has not opened. See [MCP configuration](#mcp-configuration).
   </Step>
   <Step title="Phase C — Apply">
-    The journal opens. Obsolete assets are deleted in one global pass, then every desired asset is [materialized](#materialize) under its effective name. Deleting first is what lets a name move between facets safely.
+    The journal opens. Obsolete assets are deleted in one global pass, then every desired asset is [materialized](#materialize) under its effective name. Deleting first is what lets a name move between facets safely. An occupied destination the receipt does not own triggers a [just-in-time takeover gate](#untracked-destinations) here.
+  </Step>
+  <Step title="Apply native MCP configuration">
+    Each prepared plan is applied as one atomic update per document, **after** all asset writes and immediately before the tri-write — the narrowest window in which a tool watching its own config could observe a server that a later failure would undo. Before each plan is applied, the byte preimages of its disclosed documents are journaled.
   </Step>
   <Step title="Transactional tri-write">
-    The [manifest-write policy](#manifest-write-policy) is applied just before the write, then `facets.json`, `facets.lock`, and the receipt are written together. A failure anywhere rolls back all materialization and leaves all three files unchanged.
+    The [manifest-write policy](#manifest-write-policy) is applied just before the write, then `facets.json`, `facets.lock`, and the receipt are written together. A failure anywhere rolls back all materialization and all native configuration, and leaves all three files unchanged.
   </Step>
 </Steps>
 
@@ -60,6 +72,8 @@ A lockfile must exist, and six conditions MUST all hold:
 - the manifest declares no materialization intent the lockfile does not already record;
 - no effective identity a remaining facet keeps was also claimed by a facet being removed;
 - every remaining materialization is **tracked**: this machine's [install receipt](#machine-local-install-receipt) loaded, records each remaining facet, and agrees with the lockfile about version, materialized assets, dispositions, and owned files.
+
+Configuration claims are carried forward on this path only when the receipt proves each remaining claim is still anchored to the same facet integrity the lockfile records. A receipt written before configuration claims existed proves nothing about them, so it forces ordinary resolution rather than a guess — the CLI will not invent ownership of a server entry it cannot show it wrote.
 
 When they do, commit refines the remaining entries **structurally** instead of resolving them: source, version, integrity, per-file records, and unrecognized fields are carried forward unchanged, and each asset's recorded disposition is attached (an entry written before dispositions existed refines to `authored`). Nothing is fetched, rebuilt, or re-verified — which is what lets `facet remove` work with a cold cache and an unreachable registry even when an unrelated remaining facet is unavailable. Refinement is lossless, so it applies to every readable lockfile version and still writes the current one.
 
@@ -196,9 +210,11 @@ This is the only place lockfile entries are constructed **from resolved state**.
 
 Compose applies the [materialization planner](/specification/materialization#planning-rules) — the same pure rule the CLI uses to recompute status while you edit a collision interactively. Three outcomes are possible:
 
-- **Collision-free** — the plan proceeds to Apply.
+- **Collision-free** — the plan proceeds to the adapter capability check.
 - **Invalid alias** — an override's alias does not satisfy the asset-name grammar. No effective set can be derived from it, so no collision report is possible either; the commit fails.
-- **Collisions** — two or more assets claim one logical identity. Every group and every claimant is reported, never truncated and never resolved by picking a winner.
+- **Collisions** — two or more contributions claim one logical identity. Every group and every claimant is reported, never truncated and never resolved by picking a winner.
+
+Assets and MCP servers compose in the same pass but in separate identity spaces. Server claims are grouped by effective server name after aliases and omissions are applied; claims whose [canonical declaration fingerprints](#machine-local-install-receipt) match compose into one configuration retaining every claimant, while differing fingerprints form a collision group. See [Server collisions](/specification/materialization#server-collisions).
 
 When a collision is found, an interactive caller MAY be offered the chance to resolve it. The resolver returns **overrides, not a winner** — exactly the durable intent a user could have written by hand — and its answer is re-planned as defense in depth before being accepted. There is no automatic retry loop: a resolver that returns a still-colliding answer fails the commit rather than being re-invoked. Cancelling is its own outcome, distinguished from a collision report and from a resolver that returned an unusable answer, so a caller never has to infer intent from an error message. It is still an unsuccessful commit and is surfaced as one — but nothing was written, so there is nothing to undo and nothing to inspect.
 
@@ -210,15 +226,81 @@ Materialization writes assets from verified content into each selected adapter's
 
 A skill is written as an **atomic bundle**: its `SKILL.md` and every owned companion file are staged, committed, and rolled back as one all-or-nothing adapter operation carrying the validated owned-file set — the adapter never infers ownership from disk. Writes are skip-if-identical **per asset**: the write is skipped only when the primary *and* every companion already match on disk, so a single drifted companion (or a changed companion set) forces a repair through the same atomic bundle replacement. A facet whose lockfile entry is unchanged but whose on-disk files needed rewriting is reported as *repaired* (the full outcome taxonomy is documented at [`facet install`](/cli/install#outcomes)). An interrupted install converges on re-run without deleting unowned files. Every write MUST journal its inverse operation for rollback.
 
+### Untracked destinations
+
+A desired effective identity whose destination is already occupied by something the receipt does not own is an **untracked destination**. Desired state authorizes reconciling it, but not silently — the user is told first. The two kinds of destination are disclosed at different moments, for one reason: cost.
+
+- **MCP entries** are disclosed *before* the journal opens, during read-only preparation. The adapter has already parsed the document to plan its change, so occupancy and equality are known for free. Declining therefore has nothing to roll back.
+- **Assets** are disclosed *just in time*, during Apply, at the previous-state read that no-op detection and rollback already require. Searching the whole project for takeovers up front would be an eager scan that buys nothing; cancelling here rolls back the complete journal.
+
+In both cases: continuing adopts equivalent state **without rewriting it**, and replaces divergent state transactionally. A destination the receipt already owns reconciles with no disclosure at all, and a destination the desired set does not name is never inspected or touched.
+
+<Warning>
+The two gates are independent. Approving MCP configuration never approves an asset takeover, and vice versa. They ask different questions about different kinds of state, and one answer must not be spent on the other.
+</Warning>
+
+## MCP configuration
+
+Active MCP server declarations are reconciled into every selected adapter's project-scoped native configuration. The engine never edits `.mcp.json`, `opencode.jsonc`, or `.codex/config.toml` itself: each adapter owns its tool's format and translates the portable declaration into native terminology.
+
+### Capability
+
+Configuring MCP servers requires an adapter implementing API `0.2` that declares MCP support. A selected API `0.1` adapter, or a `0.2` adapter that declares no MCP support, stays perfectly usable for a project with no active declarations. The moment one exists, every such adapter is collected into a single failure that names all of them — raised before approval and before mutation, so the project is untouched. The two cases have different remedies: an API `0.1` adapter needs upgrading, while an adapter that declares no MCP support will not gain it by being updated, so the resolution there is to omit the declarations or deselect the adapter.
+
+### Approval
+
+Approval is **machine-local** and is keyed by `(kind, effective name, declaration fingerprint)`. Before any mutation, every active declaration is compared against the approval evidence in this machine's receipt:
+
+- A declaration whose effective name and fingerprint the receipt already approves does **not** prompt again — including on a plain reproduction, and including when a *second* facet contributes the same declaration at the same name.
+- A changed command, argument order, environment value, transport, URL, or effective name is a new value and requires approval again.
+- Asset ownership in the same receipt confers **no** MCP approval. They are different kinds of evidence.
+
+An interactive caller receives one MCP-only request containing every unapproved declaration with its claimant facets and its exact command, arguments, and environment assignments — or its exact URL — plus a distinct section for every untracked native entry that would be adopted or replaced. Approval accepts the complete set. A non-interactive caller MUST fail with that same complete list unless approval was supplied ahead of time; frozen mode never prompts but MAY use pre-supplied approval.
+
+Approval reaches the receipt only through a **successful** commit. Declining, failing later, or rolling back writes no approval evidence, so the next attempt asks again.
+
+<Note>
+Approval never travels to a teammate. It lives in the machine-local receipt rather than `facets.json`, because version-controlled state must not be able to claim that a different machine consented to executing a command on this one. A colleague who clones fully-approved project state approves it themselves.
+</Note>
+
+### Reconciliation
+
+Each adapter's contract is two operations, and the split is what makes the transaction safe:
+
+1. **Prepare** is read-only. It parses the native document once, preserves unrelated state, detects native conflicts, computes the adapter's own rendering of each desired declaration, classifies every key, discloses every document the change can affect, and returns an opaque plan. The engine never inspects that plan.
+2. **Apply** consumes the plan and performs one atomic update per document, reporting `unchanged` or the paths it changed.
+
+**Native-rendering equality** — computed by the adapter, which is the only component that knows its tool's schema — decides whether an existing entry is adopted without a write. It is semantic: comments, whitespace, member order, and omitted-versus-empty optional collections do not make entries differ, while any value that changes the launch or connection behavior does. An adapter that cannot *prove* equality MUST classify the entry as divergent and let it be replaced, rather than guess.
+
+Adapters supply **no inverse operation**. Before applying a plan, the engine journals the exact bytes of every disclosed document, so rollback restores comments, formatting, and member order exactly. Rollback fidelity never depends on adapter code being correct a second time, or on a semantic inverse reproducing a document's formatting.
+
+Reconciliation preserves everything outside the project's desired set: unrelated tool settings keep their semantic values, server entries the project neither desires nor owns are left completely untouched, and for an owned entry a native field outside the portable model (a timeout, say) survives where the format permits.
+
+<Info>
+Configuring a server never runs it. Materialization does not install the executable, start the process, connect to the URL, check health, collect credentials, or perform OAuth. Whatever authentication the tool requires happens in the tool, after the configuration exists.
+</Info>
+
 ## Lockfile shape
 
 Commit writes `facets.lock` as part of the tri-write: per facet, the tagged source provenance, the exact resolved version, the integrity that was verified when the entry was written (carried forward unchanged by any later rewrite that does not re-resolve the facet), and the contributed assets — each asset carrying its resolved materialization disposition and a per-file `{ path, integrity }` ownership record. Omitted assets are listed too: the lockfile records the resolved asset **set**, not the on-disk set. The full schema is specified in [Lockfile](/specification/lockfile).
 
+The lockfile records **no** MCP declaration, effective server name, server disposition, or approval evidence, and its version is unchanged by MCP support. A facet's integrity already commits to the exact embedded `facet.json` the declaration lives in, so duplicating it here would add a second copy to keep in sync without adding a guarantee. See [Why MCP did not move the lockfile](/specification/lockfile#why-mcp-did-not-move-the-lockfile).
+
 ## Machine-local install receipt
 
-Receipts are per-project, machine-local records (schema `0.3`) stored outside the project's version-controlled tree ([`$FACET_DIR`](/cli/env)`/receipts/`). They record, for each asset actually present on disk, its authored identity, the authored inner-archive paths it owns, and the disposition it was materialized under — both names are needed to delete an aliased asset offline. Omitted assets never appear.
+Receipts are per-project, machine-local records (schema `0.4`) stored outside the project's version-controlled tree ([`$FACET_DIR`](/cli/env)`/receipts/`). They record, for each asset actually present on disk, its authored identity, the authored inner-archive paths it owns, and the disposition it was materialized under — both names are needed to delete an aliased asset offline. Omitted assets never appear.
 
 This lets drift removal clean up correctly — including a skill's owned companions — even when the lockfile no longer mentions the facet, and entirely offline. A legacy primary-only receipt is safely refined rather than rejected, and a receipt written before dispositions existed reads as `authored`. The receipt records ownership, not hashes, and carries its own version axis independent of the lockfile's.
+
+### Configuration claims
+
+A current receipt additionally records one **configuration claim** per active, successfully reconciled MCP server declaration, carrying the authored server name, its materialized disposition, a fingerprint of the declaration's canonical semantic form, and the facet integrity that witnessed the claim. Omitted declarations were never materialized and are unrepresentable as claims.
+
+A claim does two jobs at once: it is the keyed authority to delete that server entry offline, and it is this machine's evidence that the effective declaration was previously [approved](#mcp-configuration).
+
+The **canonical declaration fingerprint** hashes the declaration's meaning, not its spelling. It preserves the declaration kind and argument order, sorts environment keys, and treats an omitted `args` or `env` as equal to an empty one — so reordering environment members does not re-prompt, while reordering arguments does. It is independent of both the authored and effective name. Claims never store commands, arguments, URLs, environment names, or environment values: the receipt can answer *"was this approved?"* without ever holding the declaration itself.
+
+A receipt older than `0.4` keeps its asset ownership but confers **no** configuration ownership and **no** approval. The loader represents that distinction explicitly rather than synthesizing an empty claim set, because "this machine approved nothing" and "this machine approved nothing *yet knows it approved nothing*" are different facts. In practice a pre-`0.4` receipt means every declaration needs approval and every existing native entry reads as untracked occupancy.
 
 <CardGroup cols={2}>
   <Card title="Per-project isolation" icon="folder">
@@ -231,7 +313,7 @@ This lets drift removal clean up correctly — including a skill's owned compani
     Asset entries and per-file ownership paths with crafted names (path traversal, backslashes) are **reported and skipped individually** — each owned path is containment-validated before use, and the rest of the receipt still loads and is processed.
   </Card>
   <Card title="Contained deletion" icon="box">
-    Deletion goes through adapters using validated **asset tuples** — `(scope, type, effective name)` triples, the addressable identity of a materialized asset — never raw filesystem paths taken from the receipt. For a skill, the delete request also carries the validated owned-companion path set, so only owned files are removed, unowned files survive, and emptied directories are pruned.
+    Deletion goes through adapters using validated **asset tuples** — `(scope, type, effective name)` triples, the addressable identity of a materialized asset — never raw filesystem paths taken from the receipt. For a skill, the delete request also carries the validated owned-companion path set, so only owned files are removed, unowned files survive, and emptied directories are pruned. An obsolete configuration claim is deleted the same way: the adapter removes the complete server entry at that effective name, never a raw edit to the document.
   </Card>
 </CardGroup>
 
@@ -240,6 +322,8 @@ This lets drift removal clean up correctly — including a skill's owned compani
 Drift removal is a **single global pass keyed by effective identity**, and it runs at the start of Apply — *before* any asset is written, not after.
 
 The receipt is the **only** source of the previous ownership set. Every historical claim on one effective identity is unioned, and each claim's owned companion paths are stripped using its **own** authored name, because an aliased skill's recorded paths are authored while its bundle lives under the effective name. The desired set is the composed plan's effective identities. The difference is deleted.
+
+Configuration claims are swept in the same pass and by the same rule: an owned effective server identity no remaining desired or carried-forward claim uses has its complete entry removed from every selected adapter. An **untracked** server key is never deleted merely because a facet, an alias, or a lockfile entry disappeared.
 
 The question asked is *"is this effective identity still claimed by any desired asset?"* — not *"is this facet still wanted?"* An identity is retained even when the facet that used to own it is gone, which is what makes **ownership transfer** work: facet A gives up the name `deploy`, facet B claims it, and B's file survives. A per-facet decision would have deleted it.
 
@@ -261,16 +345,18 @@ flowchart TD
 
 <CardGroup cols={2}>
   <Card title="Desired state authorizes writes" icon="pen">
-    Every desired effective identity is reconciled, even if an untracked file already occupies it. Reconciling it is what makes it tracked; the committed receipt records it from then on.
+    Every desired effective identity is reconciled, even if untracked state already occupies it — after its [takeover gate](#untracked-destinations) permits continuing. Reconciling it is what makes it tracked; the committed receipt records it from then on.
   </Card>
   <Card title="Tracked ownership authorizes deletion" icon="trash">
-    Only an identity the receipt records can be deleted. Untracked files at identities the desired set does not name are never addressed, and a lockfile entry alone is not evidence.
+    Only an identity the receipt records can be deleted. Untracked files and untracked server entries at identities the desired set does not name are never addressed, and a lockfile entry alone is not evidence.
   </Card>
 </CardGroup>
 
+One rule, two kinds of state. Assets and MCP configurations differ in where they live and who writes them, but not in who may create or destroy them.
+
 **Reconciled** covers two outcomes, because both establish the same fact. Usually the file is written. When what is already on disk matches the desired content, metadata, and owned companions byte for byte, the write is skipped — rewriting identical bytes would prove nothing a comparison has not already proven — and the identity is recorded as tracked all the same.
 
-Ownership is recorded **per project, not per adapter**. The receipt names `(scope, type, name)`, the same adapter-agnostic shape the lockfile uses, and that one record governs every selected adapter. Connecting an adapter is what delegates management of those identities inside it: a facet's `deploy` skill is this project's `deploy` skill in Claude Code and OpenCode alike, and removing the facet removes it from both.
+Ownership is recorded **per project, not per adapter**. The receipt names `(scope, type, name)`, the same adapter-agnostic shape the lockfile uses, and that one record governs every selected adapter. Connecting an adapter is what delegates management of those identities inside it: a facet's `deploy` skill is this project's `deploy` skill in Claude Code and OpenCode alike, and removing the facet removes it from both. Configuration claims work identically — one claim per project, honored by every selected adapter, with no separate per-adapter evidence.
 
 A receipt that cannot be used at all — absent, unreadable, or self-identifying as a different project — is the same case as an empty one: nothing is tracked, so nothing is deleted, and the run records only what it reconciles. The two readable-failure reasons are reported; a missing receipt is just a first operation and is not. An individual receipt entry that fails validation is reported too, and the files it covered are left in place: a claim the CLI cannot safely act on is not a licence to delete.
 
@@ -288,7 +374,7 @@ The manifest value written for an addition depends on the specifier shape. The p
 
 ## Transactional tri-write
 
-On success, three files MUST be written together: the project manifest, the lockfile, and the receipt. A failure anywhere MUST leave all three exactly as they were.
+On success, three files MUST be written together: the project manifest, the lockfile, and the receipt. A failure anywhere MUST leave all three exactly as they were — and MUST also restore every materialized asset and every native MCP document the operation touched, replaying configuration byte restores and asset inverses in reverse order.
 
 <Note>
 A failed operation leaves the project exactly as it was — no snapshot/restore needed.
@@ -305,7 +391,11 @@ sequenceDiagram
         Commit->>Commit: Phase A — parse + resolve + verify every facet
         Commit->>Commit: Phase B — compose the global plan
     end
+    Commit->>Commit: check adapter MCP capability
+    Commit->>Commit: prepare native MCP change (read-only)
+    Commit->>Commit: obtain MCP approval
     Commit->>Commit: Phase C — delete obsolete, then materialize
+    Commit->>FS: apply prepared MCP plans (preimages journaled)
     alt all succeeded
         Commit->>FS: write facets.json + facets.lock + receipt
     else failed
@@ -323,6 +413,8 @@ Frozen mode (the [`--frozen-lockfile`](/cli/install#param-frozen-lockfile) flag)
 A frozen commit with a non-empty delta (any addition or removal) MUST be rejected immediately. Only a plain `facet install` can run frozen.
 </Warning>
 
+Frozen mode never prompts — for a collision or for MCP approval — but it MAY use approval supplied ahead of time on the command line.
+
 Five gates run before anything is touched, and all of them run **before any network access** — a frozen install can refuse without fetching a byte:
 
 <Steps>
@@ -330,18 +422,24 @@ Five gates run before anything is touched, and all of them run **before any netw
     Every manifest facet MUST have a satisfying lockfile entry, the lockfile MUST NOT pin anything the manifest dropped, and git/local sources MUST match their locked provenance.
   </Step>
   <Step title="Format capability">
-    A `0.2` lockfile has no field in which to record a disposition. If the manifest declares any materialization override against one, the install MUST fail rather than silently ignore the intent. The fix is one non-frozen install to migrate the lockfile.
+    A `0.2` lockfile has no field in which to record an **asset** disposition. If the manifest declares any asset materialization override against one, the install MUST fail rather than silently ignore the intent. The fix is one non-frozen install to migrate the lockfile. A *server* disposition can never trigger this gate, because the lockfile deliberately records no server intent at any version.
   </Step>
   <Step title="Materialization plan over the locked set">
     The [planner](/specification/materialization#planning-rules) runs against the lockfile's recorded assets, so a collision or invalid alias in recorded state is reported before anything is downloaded. Frozen mode never prompts to resolve it.
   </Step>
   <Step title="Stale intent">
-    An override naming an asset the locked version does not contain is blocking drift. A normal install prunes it inside the transaction; frozen mode has no transaction to prune in.
+    An override naming an asset the locked version does not contain, or a server the integrity-pinned facet does not declare, is blocking drift. A normal install prunes it inside the transaction; frozen mode has no transaction to prune in, and reports without removing the override.
   </Step>
   <Step title="Intent vs. recorded disposition">
     For every locked asset, what `facets.json` asks for MUST equal what `facets.lock` records. Editing an alias without re-running a normal install is drift, exactly like editing a version.
   </Step>
 </Steps>
+
+MCP adds its own pre-mutation gates: an unresolved effective-server collision, an unsupported selected adapter, an unparseable native document, an integrity mismatch on a declaration, or an unapproved declaration with no pre-supplied approval all fail before any cleanup or materialization. Only once every frozen check passes may native configuration and the machine-local receipt be reconciled — including removing a receipt-owned server entry the manifest and lockfile no longer desire, which frozen mode does while still leaving both files untouched.
+
+<Note>
+Unlike the asset-disposition gates, the MCP checks may need to fetch locked content: declarations are not in the lockfile, so proving what a locked facet declares can require the facet itself. Every check still happens before any mutation. This is the accepted cost of not duplicating declarations into the lockfile.
+</Note>
 
 | Behavior                         | Frozen mode                                          |
 |----------------------------------|------------------------------------------------------|
@@ -354,6 +452,9 @@ Five gates run before anything is touched, and all of them run **before any netw
 | Collision resolution             | Never prompted — reported                            |
 | Materialization drift            | Rejected (manifest intent ↔ locked disposition)      |
 | Stale overrides                  | Rejected, not pruned                                 |
+| MCP approval                     | Never prompted — pre-supplied approval or failure    |
+| Unsupported MCP adapter          | Rejected before mutation                             |
+| MCP reconciliation               | Allowed once every frozen check passes               |
 | Drift removal                    | Runs; receipt is rewritten                           |
 | Lockfile write                   | Never                                                |
 | Manifest write                   | Never                                                |
@@ -364,4 +465,5 @@ A receipt write is the one thing frozen mode does commit, and the one it can sur
 
 - **Text asset resolution** — text is in the archive. No install-time fetching.
 - **Disk layout** — determined by adapters, not the specification.
-- **Server installation** — `servers` declared by a facet SHOULD be surfaced as a warning; nothing is installed for them.
+- **Server acquisition** — a declaration is connection information, not a package reference. Install never downloads, installs, versions, or resolves the software behind a declared server.
+- **Server lifecycle** — install writes configuration and stops there. It never launches a command, opens a connection, checks health, collects credentials, or performs OAuth. Facets runs no MCP client, host, proxy, or supervisor.

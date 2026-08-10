@@ -74,5 +74,5 @@ Neither step mutates the manifest. An invalid input fails the respective step â€
 
 ## Not in publish
 
-- **Server references**  -- `servers` entries in the manifest are stored as declared but not resolved or published.
+- **MCP server declarations**  -- a [declaration](/specification/manifest#mcp-server-declarations) is manifest content. It travels inside the embedded `facet.json`, is verified with it, and is republished with it like any other field. It is never independently published, versioned, resolved, or fetched: there is no server registry, no standalone server artifact, and no `server.json`. Publish never contacts or launches a declared server. Changing a declaration changes the manifest, so it requires a new facet version like any other content change.
 - **Lockfile generation**  -- the lockfile is an install-time artifact, not a publish-time artifact.

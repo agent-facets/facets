@@ -23,6 +23,24 @@ Bring facets into a project in two moves: connect an adapter for your AI tool, t
 > facet remove viper-plans            # take a facet back out
 > ```
 >
+> A facet may declare MCP servers. Without a TTY those need explicit approval,
+> or the command fails before writing anything:
+>
+> ```sh
+> facet add viper-plans --accept-mcp  # approve the MCP config this would write
+> facet install --accept-mcp
+> facet remove viper-plans --accept-mcp
+> ```
+>
+> The flag approves the whole set the command reports. To refuse one server
+> instead, record an omission in `facets.json` (requires `manifestVersion` 0.2):
+>
+> ```json
+> { "source": "1.*", "materialization": { "servers": { "docs": { "kind": "omitted" } } } }
+> ```
+>
+> Approval is per machine, so a teammate's approval never covers yours.
+>
 > See [`facet add`](/cli/add), [`facet install`](/cli/install),
 > [`facet remove`](/cli/remove), and [`facet adapter install`](/cli/adapters/install).
 
@@ -32,13 +50,15 @@ Bring facets into a project in two moves: connect an adapter for your AI tool, t
 
 ## Connect an adapter
 
-An adapter is the bridge between facets and your AI coding tool  -- it tells the CLI where to place assets on disk so your tool can find them. You need at least one before adding facets.
+An adapter is the bridge between facets and your AI coding tool  -- it tells the CLI where to place assets on disk, and how to write MCP server configuration into that tool's own config file, so your tool can find both. You need at least one before adding facets.
 
 ```sh
 facet adapter install claude-code
 ```
 
 The first-party adapters are `claude-code`, `opencode`, and `codex`. Run [`facet adapter install`](/cli/adapters/install) with no name for an interactive picker, or pass a name to install it directly. Third-party adapters install the same way from an npm package, git URL, or local path.
+
+All three first-party adapters support MCP server configuration. A third-party adapter built against the older adapter API `0.1` still works fine for a project with no MCP servers, but [blocks one that has them](/cli/install#adapters-that-cannot-configure-mcp-servers).
 
 <Tip>
   If you skip this step, `facet add` and `facet install` will launch the adapter picker for you on first use.
@@ -90,9 +110,9 @@ A bare name is pinned to its resolved version in `facets.json`; a wildcard like 
 
 ## What `facet add` writes
 
-Your project now has two version-controlled files  -- commit both so teammates and CI resolve identical versions. (A third, the machine-local install receipt, lives outside your project and is not committed.)
+Your project now has two version-controlled files  -- commit both so teammates and CI resolve identical versions. (A third, the machine-local install receipt, lives outside your project and is not committed. Besides tracking what this machine wrote, it holds your [MCP approvals](#approve-mcp-servers) -- which is exactly why they do not travel to teammates.)
 
-**`facets.json`**  -- the project manifest: which facets belong to the project, at what version, and how you want their assets named. It is the source of truth for your dependencies.
+**`facets.json`**  -- the project manifest: which facets belong to the project, at what version, and how you want their assets and MCP servers named. It is the source of truth for your dependencies.
 
 **`facets.lock`**  -- the lockfile: exact resolved versions, <Tooltip headline="Integrity hash" tip="A content hash of a facet's contents, checked on every install so you get exactly the bytes that were published — tampering or corruption fails the install." cta="How integrity works" href="/specification/integrity">integrity hashes</Tooltip>, and per-file asset records for reproducible installs. It is managed by the CLI; you never hand-edit it.
 
@@ -100,7 +120,7 @@ Your project now has two version-controlled files  -- commit both so teammates a
 
 ```json facets.json
 {
-  "manifestVersion": 0.1,
+  "manifestVersion": 0.2,
   "facets": {
     "cowsay": "1.*",
     "viper-plans": "1.0.0"
@@ -144,7 +164,11 @@ Your project now has two version-controlled files  -- commit both so teammates a
 
 The full schema — every field, the tagged source kinds, and the exact-version rules — is specified in [Lockfile](/specification/lockfile).
 
-Note this facet ships an agent `cowsay` **and** a command `cowsay`. That is legal: skills and commands share one namespace, and agents have their own. What is *not* legal is two facets claiming the same name in the same namespace — see [Two facets, one name](#two-facets-one-name).
+Note this facet ships an agent `cowsay` **and** a command `cowsay`. That is legal: skills and commands share one namespace, agents have their own, and MCP servers are a third space again. What is *not* legal is two facets claiming the same name in the same namespace — see [Two facets, one name](#two-facets-one-name).
+
+<Note>
+  The two files move on independent version axes. This project's `facets.json` is `0.2` — the version that added `materialization.servers` — while `facets.lock` stays at `0.3`. The lockfile deliberately records no MCP declarations, because a facet's integrity hash already covers the `facet.json` they live in.
+</Note>
 
 <Note>
   The lockfile honors the manifest. A pinned entry is reused as long as it still satisfies `facets.json`; when you bump a version or widen a wildcard, `facet install` [re-resolves](/specification/commit#resolve) and updates the lock.
@@ -164,6 +188,16 @@ Note this facet ships an agent `cowsay` **and** a command `cowsay`. That is lega
 ```
 
 A skill's [companion files](/specification/manifest#supplementary-files) land beside its `SKILL.md`, and a skill installs and removes as one atomic bundle. [Archive-only files](/specification/commit#materialize) — a facet's top-level `README.md` or `LICENSE` — ship in the archive but are **never** written into your adapters. Other adapters use their own conventional location (Claude Code under `.claude/`, and so on). These files are `project`-scoped  -- the same `scope` you see in the lockfile  -- so they belong to the checkout, not your machine. `facet remove` deletes them again — including a skill's owned companions, while preserving any files you added into a skill directory yourself — and `facet install` recreates them from the lockfile after a clone. Deletion is driven by your machine's [install receipt](/specification/commit#machine-local-install-receipt): files this machine never installed are left in place rather than removed on the lockfile's word.
+
+If a facet declares MCP servers, those land somewhere else: each tool's own project configuration file, which the adapter owns and edits in place.
+
+| Adapter | Native file |
+| --- | --- |
+| `claude-code` | `.mcp.json` |
+| `opencode` | `opencode.jsonc`, or an existing `opencode.json` |
+| `codex` | `.codex/config.toml` |
+
+These are shared files you may already be using, so reconciliation is deliberately narrow: unrelated settings keep their values, server entries this project does not own are left alone, and comments and formatting are preserved wherever the format allows. Only project-scoped files are touched — no user- or system-wide tool configuration is ever created or modified.
 
 ## Two facets, one name
 
@@ -192,7 +226,7 @@ Your decision is saved to `facets.json`, so it happens once:
 
 ```json facets.json
 {
-  "manifestVersion": 0.1,
+  "manifestVersion": 0.2,
   "facets": {
     "viper-plans": "1.0.0",
     "team-tools": {
@@ -216,8 +250,47 @@ Both skills now install, and your teammates get the same layout from the same ma
 Aliasing renames the file, not the facet. `team-tools` is still `team-tools`, its published skill is still `planning`, and every integrity hash is unchanged — which is why an alias can never smuggle different content in under a familiar name. See [Materialization](/specification/materialization).
 </Note>
 
+Two facets can also collide on an **MCP server** name. The same workspace resolves it, under a `MCP servers` group, and your choice is written to a `servers` group beside the asset ones. Two facets declaring the *same* server identically is not a collision at all — they simply agree, and one entry is configured.
+
 <Warning>
-CI cannot prompt. If a collision reaches an automated run, the install fails and prints every claimant with the exact `facets.json` edit to make. Resolve collisions locally and commit `facets.json` so CI never sees one.
+CI cannot prompt. If a collision reaches an automated run, the install fails and prints every claimant with the exact `facets.json` edit to make. CI cannot approve MCP servers either — that fails the same way unless you pass [`--accept-mcp`](/cli/install#param-accept-mcp). Resolve collisions locally and commit `facets.json` so CI never sees one.
+</Warning>
+
+## Approve MCP servers
+
+Some facets declare [MCP servers](/specification/manifest#mcp-server-declarations). Installing one writes configuration into each connected tool telling it to launch a command or connect to a URL — so the CLI asks first.
+
+The first time you add such a facet, the install pauses on one screen showing every server, the facets that want it, and the exact command, arguments, and environment values (or the exact URL) that would be written. **Decline is selected by default.** Approving writes the configuration; declining exits without changing anything.
+
+You are not asked again for a declaration you already approved. You *are* asked again if the declaration changes — a different command, a reordered argument, a changed environment value or URL.
+
+Approval is **per machine**. It lives in the machine-local install receipt, not in `facets.json`, so a teammate who clones your repo approves it themselves. That is the point: a committed file must not be able to say you agreed to run something.
+
+In CI, pass the flag:
+
+```sh
+facet install --accept-mcp
+```
+
+Without it, an unapproved declaration fails the run before writing anything and prints everything you need to decide: each server, its full declaration, and the exact `facets.json` edit to refuse one instead.
+
+```json facets.json
+"mcp-tools": {
+  "source": "1.*",
+  "materialization": {
+    "servers": { "docs": { "kind": "omitted" } }
+  }
+}
+```
+
+<Note>
+Configuring a server does not run it. Facets never installs, launches, connects to, or signs in to a declared server — your coding tool does that, after the configuration exists. If a server needs authentication, complete it in the tool.
+</Note>
+
+If a server name already exists in a tool's config and this project did not put it there, the same screen tells you so before anything is written, and says whether the existing entry matches or would be replaced.
+
+<Warning>
+An `env` value in a declaration is a literal string that ships inside the published facet. Never author a secret into one — and be suspicious of a facet that does.
 </Warning>
 
 ## Reinstall after a git clone
@@ -231,7 +304,7 @@ facet install
 [`facet install`](/cli/install) fetches and installs every declared facet at the exact versions in the lockfile  -- so you get precisely what is pinned.
 
 <Tip>
-  For CI, add `--frozen-lockfile`. It never re-resolves or writes the lockfile and **fails** if `facets.json` and `facets.lock` disagree  -- catching a forgotten `facet add` or a hand-edited manifest instead of silently mutating the lock. That includes disagreement about asset names: a recorded alias you changed by hand but never installed is drift, exactly like a changed version. Frozen mode also never prompts, so an unresolved name collision fails rather than waiting for input.
+  For CI, add `--frozen-lockfile`. It never re-resolves or writes the lockfile and **fails** if `facets.json` and `facets.lock` disagree  -- catching a forgotten `facet add` or a hand-edited manifest instead of silently mutating the lock. That includes disagreement about asset names: a recorded alias you changed by hand but never installed is drift, exactly like a changed version. Frozen mode also never prompts, so an unresolved name collision fails rather than waiting for input — and so does MCP configuration needing approval, unless you also pass `--accept-mcp`. A `servers` override naming a server the locked facet no longer declares is drift too, and frozen mode reports it without removing it.
 </Tip>
 
 ## Manage what's installed
@@ -259,7 +332,7 @@ facet remove viper-plans          # aliased: facet rm
 facet remove viper-plans rezi     # several at once, in one transaction
 ```
 
-[`facet remove`](/cli/remove) takes a facet out of `facets.json`, deletes the assets it still owns from every connected adapter, and rewrites the lockfile without it. Several removals commit together or not at all. A name that isn't declared is ignored rather than fatal, so re-running a removal is safe and a command whose names are all already gone succeeds as a no-op.
+[`facet remove`](/cli/remove) takes a facet out of `facets.json`, deletes the assets and MCP server entries it still owns from every connected adapter, and rewrites the lockfile without it. A server entry your machine never configured is left alone, and one another declared facet still wants is kept. Several removals commit together or not at all. A name that isn't declared is ignored rather than fatal, so re-running a removal is safe and a command whose names are all already gone succeeds as a no-op.
 
 **Manage adapters:**
 
@@ -268,6 +341,6 @@ facet adapter list                # what's connected
 facet adapter remove opencode     # disconnect one
 ```
 
-See the [adapter reference](/cli/adapters/install) for details.
+See the [adapter reference](/cli/adapters/install) for details. Connecting an adapter later hands it everything this project already owns: the next install materializes those assets and MCP servers into the new tool too, because ownership is recorded per project rather than per adapter.
 
 </Visibility>

@@ -2,7 +2,7 @@
   "$schema": "https://mintlify.com/docs.json",
   "theme": "maple",
   "name": "Agent Facets",
-  "description": "Modular, versioned bundles of skills, agents, and commands that extend AI coding assistants",
+  "description": "Modular, versioned bundles of skills, agents, commands, and MCP servers that extend AI coding assistants",
   "logo": {
     "dark": "/assets/logo-dark.svg",
     "light": "/assets/logo-light.svg",
@@ -11,11 +11,11 @@
   "seo": {
     "metatags": {
       "canonical": "https://docs.agentfacets.io",
-      "description": "Modular, versioned bundles of skills, agents, and commands that extend AI coding assistants",
+      "description": "Modular, versioned bundles of skills, agents, commands, and MCP servers that extend AI coding assistants",
       "language": "en",
       "color-scheme": "light dark",
       "reply-to": "support@agentfacets.io",
-      "og:description": "Modular, versioned bundles of skills, agents, and commands that extend AI coding assistants"
+      "og:description": "Modular, versioned bundles of skills, agents, commands, and MCP servers that extend AI coding assistants"
     }
   },
   "appearance": {

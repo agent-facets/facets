@@ -122,7 +122,35 @@ describe('materialization guidance is present in the prompts', () => {
     // Recording an explicit authored disposition is rejected by the schema,
     // so the prompt must not present it as an option.
     expect(usage).toContain('Do NOT write')
-    expect(usage).toContain('"skills", "agents", and "commands"')
+    expect(usage).toContain('"skills", "agents", "commands", and "servers"')
+  })
+
+  // An agent without a TTY that meets an MCP declaration has exactly two ways
+  // to finish. Naming neither leaves it stuck at a hard failure, so the prompt
+  // must carry both -- and must not imply the flag settles asset questions too.
+  test('usage teaches both non-TTY MCP remedies', () => {
+    const usage = TOPICS.usage.prompt
+    expect(usage).toContain('--accept-mcp')
+    expect(usage).toContain('"servers": { "docs": { "kind": "omitted" } }')
+    expect(usage).toContain('"manifestVersion": 0.2')
+    expect(usage).toContain('MACHINE-LOCAL')
+  })
+
+  test('usage does not present --accept-mcp as an asset remedy', () => {
+    const usage = TOPICS.usage.prompt
+    expect(usage).toContain('does NOT resolve an')
+    expect(usage).toContain('There is no CLI flag for collisions')
+  })
+
+  // The declaration objects are closed, which contradicts the tolerance rule
+  // stated for the rest of the manifest -- an author following the general
+  // rule would ship a manifest that fails validation.
+  test('authoring teaches the closed server declaration shapes', () => {
+    const authoring = TOPICS.authoring.prompt
+    expect(authoring).toContain('"type": "stdio"')
+    expect(authoring).toContain('"type": "http"')
+    expect(authoring).toContain('CLOSED')
+    expect(authoring).toContain('NEVER put a secret')
   })
 
   test('usage does not claim facets.json is a flat string map', () => {

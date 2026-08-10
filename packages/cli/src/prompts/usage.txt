@@ -11,6 +11,10 @@ Add a facet to a project — `facet add`
   Use --verbose for detailed step output on stderr. On failure the install is
   rolled back automatically.
 
+  Use --accept-mcp when a facet declares MCP servers and you have no TTY (see
+  "MCP servers" below). It is also accepted by `facet install` and
+  `facet remove`.
+
   PREFERRED: the facet registry (agentfacets.io)
   The registry is the default, first-choice source. A bare name resolves to a
   published registry facet — reach for this first:
@@ -32,7 +36,10 @@ Add a facet to a project — `facet add`
 The project files
   facets.json – Your dependency list. `facet add` and `facet remove` maintain
                 it; hand-edit it only to record materialization choices (below).
-                It carries a "manifestVersion" the CLI stamps for you.
+                It carries a "manifestVersion" the CLI stamps for you. The
+                current version is 0.2, which is what a "servers" override
+                group requires; 0.1 and unversioned documents are still read
+                and are migrated by the next successful non-frozen install.
 
                 Each entry is EITHER a source specifier string OR an object:
                   "facets": {
@@ -49,13 +56,17 @@ The project files
   facets.lock – The install lockfile, managed by the CLI. Do not hand-edit.
 
 Name collisions — when two facets want the same name
-  Two facets cannot install an asset under the same name. Skills and commands
-  share one namespace; agents have their own. The install detects this before
-  writing anything and stops.
+  Two facets cannot materialize a contribution under the same name. Skills and
+  commands share one namespace; agents have their own; MCP servers are a third,
+  separate space (a server never collides with a skill, command, or agent). The
+  install detects this before writing anything and stops.
+
+  Two facets declaring the SAME MCP server identically is NOT a collision —
+  they agree, and one entry is configured.
 
   Without a TTY (CI, or any automated run) nothing is prompted: the command
   exits non-zero and prints every claimant with the exact facets.json edit.
-  Resolve it by recording a choice per asset, keyed by the AUTHORED name:
+  Resolve it by recording a choice per contribution, keyed by the AUTHORED name:
 
     "team-tools": {
       "source": "1.*",
@@ -63,22 +74,71 @@ Name collisions — when two facets want the same name
         "skills": {
           "planning": { "kind": "aliased", "as": "team-planning" },
           "scratch":  { "kind": "omitted" }
+        },
+        "servers": {
+          "filesystem": { "kind": "aliased", "as": "team-filesystem" }
         }
       }
     }
 
-  Group keys are "skills", "agents", and "commands". Only two kinds are legal
-  here: "aliased" (requires "as") and "omitted". Do NOT write
-  { "kind": "authored" } — installing under the published name is expressed by
-  recording NO override at all, and an explicit "authored" is rejected.
+  Group keys are "skills", "agents", "commands", and "servers". The "servers"
+  group requires "manifestVersion": 0.2 — it is REJECTED in a document that
+  declares 0.1. Only two kinds are legal in any group: "aliased" (requires
+  "as") and "omitted". Do NOT write { "kind": "authored" } — installing under
+  the published name is expressed by recording NO override at all, and an
+  explicit "authored" is rejected.
 
   An alias must satisfy the asset-name grammar: 1-64 chars, lowercase letters,
   digits and hyphens, no leading/trailing hyphen, no consecutive hyphens, no
-  slash. Invalid aliases are rejected, never auto-corrected.
+  slash. Server names and server aliases use the same grammar. Invalid aliases
+  are rejected, never auto-corrected.
 
   Only one claimant has to change — the names just have to differ. Re-run
-  `facet install` after editing. There is no CLI flag for this; the resolver
-  UI (TTY only) and hand-editing facets.json are the two ways to record it.
+  `facet install` after editing. There is no CLI flag for collisions; the
+  resolver UI (TTY only) and hand-editing facets.json are the two ways to
+  record a choice.
+
+MCP servers — when a facet configures a server
+  A facet may declare MCP servers. Installing one writes configuration into
+  every connected tool telling it to launch a command or connect to a URL, so
+  a new or changed declaration requires explicit approval first.
+
+  Approval is MACHINE-LOCAL: it is recorded outside the project, so a
+  teammate's approval (or a green CI run elsewhere) never covers this machine.
+  It is banked only by a run that fully succeeds.
+
+  Without a TTY, an unapproved declaration fails BEFORE anything is written and
+  prints every server with its full declaration. You have exactly two ways
+  forward:
+
+    1. Approve everything reported:
+         facet add <source> --accept-mcp
+         facet install --accept-mcp
+         facet remove <name> --accept-mcp
+
+    2. Refuse specific servers by recording an omission (requires
+       "manifestVersion": 0.2):
+         "mcp-tools": {
+           "source": "1.*",
+           "materialization": { "servers": { "docs": { "kind": "omitted" } } }
+         }
+
+  --accept-mcp approves the COMPLETE set the command reports, including taking
+  over an existing entry this project did not write. It does NOT resolve an
+  asset name collision and does NOT approve an asset takeover.
+
+  Other MCP failures you may hit, all before any mutation:
+    - A selected adapter cannot configure MCP servers. Either it implements
+      adapter API 0.1 (update it: facet adapter install <name>), or it declares
+      no MCP support (updating will not help — remove the adapter or omit the
+      servers).
+    - A tool's native config file cannot be parsed. Repair the named file; it
+      is left byte-for-byte unchanged.
+
+  Do not put secrets in a declaration's "env" — those values are literal
+  strings that ship inside the published facet. Tool-side authentication is
+  the server's own concern; this CLI never launches, connects to, or
+  authenticates to a declared server.
 
 Adapter tooling — `facet adapter`
   Adapters teach facets how to target a specific AI coding tool. Installing an
@@ -88,8 +148,11 @@ Adapter tooling — `facet adapter`
     facet adapter remove <name>           Remove an installed adapter.
 
   This CLI supports adapter API {{ADAPTER_API_SUPPORT_SET}}. An adapter that declares an older or
-  unsupported API fails closed before any project files change. If `facet
-  build`, `facet add`, or `facet install` reports an incompatible adapter:
+  unsupported API fails closed before any project files change. Note that
+  loadability and MCP capability are separate questions: an adapter declaring
+  the older supported API loads and works normally, but cannot configure MCP
+  servers. If `facet build`, `facet add`, or `facet install` reports an
+  incompatible adapter:
     1. Run `facet adapter list` to see each adapter's API and status. Failing
        entries print the exact reinstall command to run.
     2. Reinstall an unsupported first-party adapter: facet adapter install <name>

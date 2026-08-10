@@ -145,20 +145,20 @@
 
 ## 17. Documentation and release preparation — Research
 
-- [ ] 17.1 Explore: Audit every D11 target plus root README and related prompt/help surfaces for text-only framing, obsolete references, old versions, warn-and-skip behavior, and undocumented consent/takeover flows.
-- [ ] 17.2 Explore: Inspect changelog, changeset, package publishing, prepack, and two-cycle adapter rollout conventions for the protocol and Adapter SDK pre-1.0 minor releases.
-- [ ] 17.3 Propose: Define one documentation/release update plan covering user migration, operator security, adapter authors, roadmap status, stale-text removal, and release sequencing.
+- [x] 17.1 Explore: Audit every D11 target plus root README and related prompt/help surfaces for text-only framing, obsolete references, old versions, warn-and-skip behavior, and undocumented consent/takeover flows.
+- [x] 17.2 Explore: Inspect changelog, changeset, package publishing, prepack, and two-cycle adapter rollout conventions for the protocol and Adapter SDK pre-1.0 minor releases.
+- [x] 17.3 Propose: Define one documentation/release update plan covering user migration, operator security, adapter authors, roadmap status, stale-text removal, and release sequencing.
 
 ## 18. Documentation and release preparation — Implementation
 
-- [ ] 18.1 Implement: Update all D11 specification and overview targets for concrete/server-only facets, project manifest `0.2`, aliases/omissions, consent, receipt `0.4`, keyed ownership, unchanged lockfile `0.3`, publishing, and removal of standalone server artifacts.
-- [ ] 18.2 Implement: Update all D11 CLI/guidance targets for `--accept-mcp`, collisions, unsupported adapters, frozen behavior, outcomes, untracked MCP/asset takeover, default continuation, cancellation, rollback, migration, and secret-safe environment usage.
-- [ ] 18.3 Implement: Update custom-adapter and adapter-install guidance for API `0.2`, the exact compatibility window, `mcpServers`, prepare/apply, occupancy/equality, project-only native files, and preservation obligations.
-- [ ] 18.4 Implement: Update D11 roadmap, root README, and the newest-first changelog entry so MCP configuration is presented as shipped and the obsolete reference forms are clearly marked breaking.
-- [ ] 18.5 Implement: Add changesets for the protocol pre-1.0 minor break, Adapter SDK pre-1.0 minor break, and all first-party adapters; document the adapter-first then CLI release handoff without hand-editing generated package changelogs.
-- [ ] 18.6 Implement: Search documentation, prompts, release guidance, and examples beyond D11 for stale server warnings, text-only minimums, project manifest `0.1`, receipt `0.3`, or single-token adapter compatibility, and update only affected current guidance.
-- [ ] 18.7 Implement: Run `bun format` to normalize all implementation, documentation, test, and changeset edits.
-- [ ] 18.8 Verify: Run documentation validation, broken-link checks, changeset status checks, prepack tests, and stale-text searches.
+- [x] 18.1 Implement: Update all D11 specification and overview targets for concrete/server-only facets, project manifest `0.2`, aliases/omissions, consent, receipt `0.4`, keyed ownership, unchanged lockfile `0.3`, publishing, and removal of standalone server artifacts.
+- [x] 18.2 Implement: Update all D11 CLI/guidance targets for `--accept-mcp`, collisions, unsupported adapters, frozen behavior, outcomes, untracked MCP/asset takeover, default continuation, cancellation, rollback, migration, and secret-safe environment usage.
+- [x] 18.3 Implement: Update custom-adapter and adapter-install guidance for API `0.2`, the exact compatibility window, `mcpServers`, prepare/apply, occupancy/equality, project-only native files, and preservation obligations.
+- [x] 18.4 Implement: Update D11 roadmap, root README, and the newest-first changelog entry so MCP configuration is presented as shipped and the obsolete reference forms are clearly marked breaking.
+- [x] 18.5 Implement: Add changesets for the protocol pre-1.0 minor break, Adapter SDK pre-1.0 minor break, and all first-party adapters; document the adapter-first then CLI release handoff without hand-editing generated package changelogs.
+- [x] 18.6 Implement: Search documentation, prompts, release guidance, and examples beyond D11 for stale server warnings, text-only minimums, project manifest `0.1`, receipt `0.3`, or single-token adapter compatibility, and update only affected current guidance.
+- [x] 18.7 Implement: Run `bun format` to normalize all implementation, documentation, test, and changeset edits.
+- [x] 18.8 Verify: Run documentation validation, broken-link checks, changeset status checks, prepack tests, and stale-text searches.
 
 ## 19. Cross-cutting acceptance — Research
 

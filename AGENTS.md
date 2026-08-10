@@ -39,10 +39,12 @@ would survive untouched — that's the test for what belongs here. See
 
 ```
 src/
-├── schemas/        # Arktype schemas (facet, project, lockfile, build, server)
+├── schemas/        # Arktype schemas (facet, project, lockfile, build, mcp-server)
 ├── loaders/        # Pure bytes-validators: validateFacetManifest, resolvePromptsFromMap
 ├── integrity/      # 3-check + 1-check verification, IntegrityResult types
 ├── build/          # Pure: detect-collisions, validate-content, validate-facets, content-hash, parseFacetArchive
+├── materialization/# Generic effective-name planner + MCP server identity/plan wrappers
+├── mcp/            # Canonical declaration encoding + fingerprint
 ├── sources/        # Just version-spec.ts (VersionSpec type + grammar + resolvesToLatest)
 ├── front-matter.ts # YAML front-matter extract/strip
 ├── index.ts        # Curated public API
@@ -62,9 +64,9 @@ belongs here.
 
 ```
 src/
-├── adapters/       # Adapter machinery: bundler, placement, verify, loader, install-service, first-party list
+├── adapters/       # Adapter machinery: bundler, placement, verify, loader, install-service, first-party list, api-compatibility, mcp-support
 ├── sources/        # Source resolvers: parse + clone/fetch (facet + adapter), Source type, ParseError
-├── install/        # Install machinery: journal, lockfile-guard, lockfile-io, materialize, run-install orchestrator
+├── install/        # Install machinery: journal, lockfile-guard, lockfile-io, materialize, run-install orchestrator, asset-takeover, file-preimage, classify-outcome, mcp/ (prepare, consent, apply, outcomes)
 ├── cache/          # ~/.facet/cache/ — content-addressed cache for fetched facet payloads
 ├── manifest/       # Pure JSON mutations + project-files I/O bridge for facets.json
 ├── registry/       # Registry HTTP client: metadata resolution, download/extract, version-spec rendering

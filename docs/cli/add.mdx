@@ -29,7 +29,13 @@ Every accepted form — and what each writes to `facets.json` — is in the [sou
 ## Flags
 
 <ResponseField name="--verbose" type="boolean">
-  Show detailed step output on stderr.
+  Show detailed step output on stderr. Verbose output never reproduces an [MCP server declaration](/cli/install#where-declarations-appear).
+</ResponseField>
+
+<ResponseField name="--accept-mcp" type="boolean">
+  Approve the [MCP server configuration](/cli/install#mcp-servers) this operation would write, without prompting. The sole non-interactive acceptance mechanism, and the same flag `facet install` and `facet remove` accept.
+
+  It does not authorize an [asset takeover](/cli/install#taking-over-an-existing-file) or resolve a name collision.
 </ResponseField>
 
 ## Exit codes
@@ -37,7 +43,7 @@ Every accepted form — and what each writes to `facets.json` — is in the [sou
 | Code | Meaning                                                                              |
 | ---- | ------------------------------------------------------------------------------------ |
 | `0`  | Add and install succeeded.                                                           |
-| `1`  | Failed — parse error, no usable adapter, an unresolved [name collision](/cli/install#name-collisions), a cancelled resolution, or an install failure. Nothing is written unless the failure happened mid-write, in which case the journal rolls it back. |
+| `1`  | Failed — parse error, no usable adapter, an unresolved [name collision](/cli/install#name-collisions), a cancelled resolution, [MCP configuration awaiting approval](/cli/install#in-ci-and-other-non-interactive-runs) or declined, a selected adapter that [cannot configure MCP servers](/cli/install#adapters-that-cannot-configure-mcp-servers), an unparseable native tool config, a cancelled [asset takeover](/cli/install#taking-over-an-existing-file), or an install failure. Nothing is written unless the failure happened mid-write, in which case the journal rolls it back. |
 
 ## What it does
 
@@ -49,17 +55,17 @@ Every accepted form — and what each writes to `facets.json` — is in the [sou
     If none installed: launch the picker when the terminal can prompt, or fail with recovery guidance when it cannot.
   </Step>
   <Step title="Prepare">
-    Read each source's `facet.json` to learn its name. Sources that declare a non-empty `facets: [...]` array are rejected. Load the project manifest if it exists.
+    Read each source's `facet.json` to learn its name. Sources that declare a non-empty `facets: [...]` array are rejected. Load the project manifest if it exists. This is also where a facet's [MCP server declarations](/specification/manifest#mcp-server-declarations) enter the desired set — a facet whose only deliverable is a server is valid and installs with zero assets.
   </Step>
   <Step title="Commit">
-    Delegate to the [install pipeline](/specification/install) with the additions delta. Version resolution, integrity verification, [global collision detection](/specification/commit#compose), and the atomic write follow the [commit phase](/specification/commit) — additions always [re-resolve non-exact specifiers](/specification/commit#resolve), and new lockfile entries require [registry confirmation](/specification/commit#verify) (fails closed offline).
+    Delegate to the [install pipeline](/specification/install) with the additions delta. Version resolution, integrity verification, [global collision detection](/specification/commit#compose), adapter MCP capability checks, read-only native configuration preparation, [MCP approval](/cli/install#mcp-servers), and the atomic write follow the [commit phase](/specification/commit) — additions always [re-resolve non-exact specifiers](/specification/commit#resolve), and new lockfile entries require [registry confirmation](/specification/commit#verify) (fails closed offline).
 
-    Adding a facet is the most common way to hit a name collision: the new facet may want a name an installed facet already uses. See [Name collisions](/cli/install#name-collisions) for how that is resolved and what gets recorded.
+    Adding a facet is the most common way to hit a name collision: the new facet may want a name an installed facet already uses. See [Name collisions](/cli/install#name-collisions) for how that is resolved and what gets recorded. It is also the most common way to meet the MCP approval screen, since a newly added facet's declarations have never been approved on this machine.
   </Step>
 </Steps>
 
 <Tip>
-The manifest, lockfile, and receipt are **never written ahead** of success. A failure before the first write — including an unresolved collision — leaves the project byte-identical with nothing to undo; a failure after it rolls back through the journal.
+The manifest, lockfile, receipt, and every tool's MCP configuration are **never written ahead** of success. A failure before the first write — an unresolved collision, a declined MCP approval, an unsupported adapter — leaves the project byte-identical with nothing to undo; a failure after it rolls back through the journal, restoring native configuration documents to their exact prior bytes.
 </Tip>
 
 ## Source grammar
@@ -144,14 +150,14 @@ facet add viper-plans@1.x            # x-style placeholders — use 1.* or 1.2.*
 
 Running `facet add` against a facet that's already in `facets.json` is supported:
 
-- Same source as before → no-op (lockfile may report `unchanged` or `repaired`). If you have since aliased or omitted one of its assets, it reports `updated` instead — the version did not move, but its materialization did.
+- Same source as before → no-op (lockfile may report `unchanged` or `repaired`). If you have since aliased or omitted one of its assets or servers, it reports `updated` instead — the version did not move, but its materialization did.
 - Different version pin → updates the entry; the install summary shows `(was X → Y)`.
 - Bare re-add (no version) → resolves the newest published version and **pins** it in `facets.json`. A bare add always pins to the resolved exact version, even over an existing wildcard spec.
 - Explicit `@latest`/wildcard re-add → re-resolves to the newest match (the lockfile never pins an explicit non-exact add), but the specifier itself is written verbatim and keeps floating.
 
-In every case, any [materialization overrides](/specification/materialization#recording-intent) already recorded for the facet are preserved. Changing where a facet comes from is not a statement about how its assets should be named. An override naming an asset the new version no longer contains is dropped, and the install tells you which one.
+In every case, any [materialization overrides](/specification/materialization#recording-intent) already recorded for the facet are preserved — asset and `servers` overrides alike. Changing where a facet comes from is not a statement about how its assets and servers should be named. An override naming an asset or server the new version no longer contains is dropped, and the install tells you which one. Under [`--frozen-lockfile`](/cli/install#param-frozen-lockfile) that same stale override is blocking drift and is never pruned.
 
-What gets written per specifier shape is defined by the [manifest-write policy](/specification/commit#manifest-write-policy).
+What gets written per specifier shape is defined by the [manifest-write policy](/specification/commit#manifest-write-policy). A successful non-frozen `add` also stamps the current `"manifestVersion": 0.2`, migrating an older document inside the same transaction.
 
 ## See also
 

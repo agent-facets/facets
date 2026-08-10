@@ -60,13 +60,21 @@ The `--filter=<pkg>...` scope is critical: an unfiltered `turbo build` fans out 
 
 ## Adapter API compatibility rollout
 
-The compatibility-aware CLI selects npm adapter releases by their `facetAdapterApiVersion` metadata and refuses to load installed adapters without a supported declaration. That makes release **ordering** load-bearing the first time the supported API set changes (including its introduction): the SDK and first-party adapter releases MUST be live on npm before the CLI release that requires them, or a plain `facet adapter install <alias>` has no compatible candidate.
+The compatibility-aware CLI selects npm adapter releases by their `facetAdapterApiVersion` metadata and refuses to load installed adapters without a supported declaration. That makes release **ordering** load-bearing on **every** change to the supported API set, not just its introduction.
 
-Checklist (SDK → first-party adapters → CLI):
+Both directions of getting it wrong are bad, in different ways:
 
-1. Land the implementation with changesets for `@agent-facets/adapter` and the first-party adapter packages (`@agent-facets/adapter-claude-code`, `@agent-facets/adapter-opencode`, `@agent-facets/adapter-codex`) **only** — no `agent-facets` changeset yet.
-2. Merge that Version Packages PR. Tags are created and the library pipeline publishes the SDK and adapter releases. npm `latest` advances normally — never move, pin, or withhold dist-tags for compatibility purposes; compatibility selection is entirely the CLI's job.
-3. Verify each adapter's packument declares the API before proceeding:
+- When the set **replaces** a token (`{0.0}` → `{0.1}`), a CLI-first release leaves `facet adapter install <alias>` with no compatible candidate at all.
+- When the set **widens** (`{0.1}` → `{0.1, 0.2}`), a CLI-first release is worse in one respect: nothing looks broken until a user adds a facet that needs the new capability, and the remedy the failure prints (`facet adapter install <name>`) **cannot succeed**, because no release declaring the new API exists yet. A dead-end diagnostic is harder to act on than an honest hard stop.
+
+Adapter-first avoids both. It is safe in every case because an older CLI simply keeps selecting the highest release declaring a token it does support.
+
+Checklist (protocol → SDK + first-party adapters → CLI):
+
+1. If the SDK's contract depends on a new protocol export (as adapter API `0.2` depends on `@agent-facets/protocol/mcp-declaration`), land a **protocol-only** changeset first and let it publish. The SDK bundles protocol, so this is not a build requirement — it is so external consumers of the published spec, including the registry, can adopt the contract before a CLI starts producing artifacts that use it.
+2. Land the implementation with changesets for `@agent-facets/adapter` and the first-party adapter packages (`@agent-facets/adapter-claude-code`, `@agent-facets/adapter-opencode`, `@agent-facets/adapter-codex`) **only** — no `agent-facets` changeset yet. All four must be listed explicitly: each adapter depends on the SDK as a `devDependency`, and changesets does not cascade a bump across dev dependencies.
+3. Merge that Version Packages PR. Tags are created and the library pipeline publishes the SDK and adapter releases. npm `latest` advances normally — never move, pin, or withhold dist-tags for compatibility purposes; compatibility selection is entirely the CLI's job.
+4. Verify each adapter's packument declares the API before proceeding:
 
    ```sh
    npm view @agent-facets/adapter-claude-code facetAdapterApiVersion
@@ -74,10 +82,12 @@ Checklist (SDK → first-party adapters → CLI):
    npm view @agent-facets/adapter-codex facetAdapterApiVersion
    ```
 
-4. Only after all three respond with the expected API version, add the `agent-facets` changeset and merge the second Version Packages PR. Its tag triggers the `release-cli` pipeline, which ships the compatibility-aware CLI.
-5. No action is needed for already-published CLIs (the adapter method contract is unchanged). Users of the new CLI with previously installed, undeclared bundles get fail-closed diagnostics and a `facet adapter install <specifier>` reinstall command.
+5. Only after all three respond with the expected API version, add the `agent-facets` changeset and merge the second Version Packages PR. Its tag triggers the `release-cli` pipeline, which ships the compatibility-aware CLI.
+6. No action is needed for already-published CLIs. Users of the new CLI with previously installed, undeclared bundles get fail-closed diagnostics and a `facet adapter install <specifier>` reinstall command.
 
-Why two Version-PR cycles: `.changeset/config.json` links `agent-facets`, `@agent-facets/adapter`, and `@agent-facets/protocol`, and a single Version PR creates **all** tags at once — the library and CLI pipelines then run in parallel, racing the CLI release against the adapter publishes. Splitting the changesets into two cycles is what enforces the ordering.
+Why separate Version-PR cycles: a single Version PR creates **all** tags at once, and the library and CLI pipelines then run in parallel — racing the CLI release against the adapter publishes. Splitting the changesets across cycles is the only serialization primitive available; there is no linked group in `.changeset/config.json` (`linked` and `fixed` are both empty, so every package versions independently).
+
+> **Freeze `packages/adapters/*` publishes between cycles.** `scripts/prepack.ts` stamps `ADAPTER_API_VERSION` into every first-party adapter tarball at pack time, so once the new constant is on `main`, *any* adapter publish declares the new API — including an unrelated patch or dependency bump. Publishing one ahead of the SDK release that announces it is exactly the ordering this checklist exists to prevent.
 
 ## Seeding New Library/Adapter Packages
 

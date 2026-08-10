@@ -9,19 +9,19 @@ Canonical terms used throughout the specification. Implementations SHOULD use th
 
 <CardGroup cols={2}>
   <Card title="Facet" icon="box" href="/specification#the-facet-artifact">
-    A named, versioned collection of text assets defined by a manifest. What the author creates, what gets published, and what gets installed.
+    A named, versioned collection of text assets and MCP server declarations, defined by a manifest. What the author creates, what gets published, and what gets installed.
   </Card>
   <Card title="Project manifest" icon="files" href="/specification/project-manifest">
-      `facets.json` — the versioned file in a consuming project that declares which facets are installed and how it wants their assets materialized. Distinct from the facet manifest.
+      `facets.json` — the versioned file in a consuming project that declares which facets are installed and how it wants their assets and servers materialized. Distinct from the facet manifest.
     </Card>
   <Card title="Facet manifest" icon="file-code" href="/specification/manifest">
-    `facet.json` — the source of truth for a facet's identity and the text assets it contains.
+    `facet.json` — the source of truth for a facet's identity, the text assets it contains, and the MCP servers it declares.
   </Card>
   <Card title="Facet archive" icon="package" href="/specification/archive">
     The self-contained two-layer `.facet` artifact the author's CLI builds and the registry stores. The transport form between publish and install.
   </Card>
   <Card title="Adapter" icon="plug" href="/cli/adapters/install">
-    An AI coding tool abstraction (OpenCode, Claude Code, Codex). The layer between facet assets and the tool's storage and configuration conventions.
+    An AI coding tool abstraction (OpenCode, Claude Code, Codex). The layer between a facet's contributions and the tool's own conventions — both asset storage and native MCP project configuration.
   </Card>
   <Card title="Registry" icon="database" href="/specification/publish#what-the-registry-does">
     The service that stores published facet archives, serves version metadata, and publishes both integrity hashes per version.
@@ -42,6 +42,8 @@ Canonical terms used throughout the specification. Implementations SHOULD use th
   </Card>
 </CardGroup>
 
+An [MCP server declaration](/specification/manifest#mcp-server-declarations) is a fourth kind of deliverable, but it is **not** an asset type: it materializes into a keyed entry inside a tool-owned configuration document rather than a file the project owns, and it occupies its own identity space.
+
 | Term | Definition | Reference |
 | --- | --- | --- |
 | **Asset tuple** | A `(scope, type, effective name)` triple — the addressable identity an adapter reads, writes, or deletes. Skill ownership also carries a validated owned-companion path set. | [Install receipt](/specification/commit#machine-local-install-receipt) |
@@ -53,6 +55,21 @@ Canonical terms used throughout the specification. Implementations SHOULD use th
 | **Companion file** | A per-skill supplementary file that materializes atomically with its owning skill. | [Supplementary files](/specification/manifest#supplementary-files) |
 | **Archive-only file** | A top-level supplementary file (e.g. `README.md`) that ships in the archive but is never written to disk at install. | [Materialize](/specification/commit#materialize) |
 | **Owned companion path set** | The engine-supplied, containment-validated set of a skill's companion paths handed to the adapter for install, read, and delete. Unioned across every historical claim on one effective identity, so a name taken over from another facet still cleans up that facet's leftovers. | [Materialize](/specification/commit#materialize) |
+
+## MCP configuration
+
+| Term | Definition | Reference |
+| --- | --- | --- |
+| **MCP server declaration** | Portable connection information for a project-scoped MCP server, declared in `facet.json` as a closed `stdio` or `http` object. A deliverable, not an asset type. | [MCP server declarations](/specification/manifest#mcp-server-declarations) |
+| **Effective server name** | The key a declaration is written under in each tool's native configuration. Equals the authored server name unless the project aliased it. | [Two identities](/specification/materialization#two-identities) |
+| **Configuration identity** | `(mcp-server, effective name)` at project scope — the space servers collide in. Separate from every text-asset namespace. | [Namespaces](/specification/materialization#namespaces) |
+| **Canonical declaration fingerprint** | A deterministic hash of a declaration's *meaning*: kind and argument order preserved, environment keys sorted, omitted and empty optional collections equal, both names excluded. Distinct from the archive's canonical fingerprint. | [Configuration claims](/specification/commit#configuration-claims) |
+| **Configuration claim** | A receipt record for one reconciled declaration. Simultaneously the keyed authority to delete that server entry and this machine's evidence that the declaration was approved. Stores no command, URL, or environment data. | [Configuration claims](/specification/commit#configuration-claims) |
+| **Declaration consent** | Machine-local approval, keyed by `(kind, effective name, fingerprint)`, required before a new or changed declaration is materialized. Committed only by a successful operation; never published to teammates. | [MCP configuration](/specification/commit#mcp-configuration) |
+| **Untracked destination** | A desired effective identity already occupied by state the receipt does not own. Disclosed through a takeover gate before adoption or replacement — pre-journal for MCP entries, just-in-time for assets. | [Untracked destinations](/specification/commit#untracked-destinations) |
+| **Native-rendering equality** | The adapter-computed semantic comparison that decides whether an existing entry is adopted without a write. Comments, formatting, and member order do not differ; launch or connection behavior does. Unprovable equality is divergence. | [Reconciliation](/specification/commit#reconciliation) |
+| **Prepare / apply** | The adapter's two-step MCP contract: read-only planning over the complete desired set, then one atomic update per document. Adapters supply no inverse; the engine journals byte preimages. | [Reconciliation](/specification/commit#reconciliation) |
+| **Unsupported MCP adapter** | A selected adapter that cannot configure active declarations — API `0.1`, or API `0.2` declaring no MCP support. All are collected into one pre-mutation failure. | [Capability](/specification/commit#capability) |
 
 ## Identity & versioning
 
@@ -67,11 +84,11 @@ Canonical terms used throughout the specification. Implementations SHOULD use th
 
 | Term | Definition | Reference |
 | --- | --- | --- |
-| **Canonical fingerprint** | `content_integrity` — SHA-256 of the uncompressed inner tar; the trust anchor recorded in the lockfile, cache sidecar, and build manifest. | [Two hashes, two domains](/specification/integrity#two-hashes-two-domains) |
+| **Canonical fingerprint** | `content_integrity` — SHA-256 of the uncompressed inner tar; the trust anchor recorded in the lockfile, cache sidecar, and build manifest. Distinct from the [canonical *declaration* fingerprint](#mcp-configuration), which hashes one MCP declaration's semantics. | [Two hashes, two domains](/specification/integrity#two-hashes-two-domains) |
 | **Transport hash** | `content_hash` — SHA-256 of the uploaded `.facet` tarball; a download-time transit check only, never persisted. | [Two hashes, two domains](/specification/integrity#two-hashes-two-domains) |
 | **Build manifest** | `build-manifest.json`, embedded in the archive's outer layer; the integrity claim and the complete per-entry `files` hash map. | [Archive format](/specification/archive) |
 | **Cache sidecar** | `cache-integrity.json`, stored alongside cached content; the canonical fingerprint plus per-entry hashes. | [Where hashes live](/specification/integrity#where-hashes-live) |
-| **Adapter API version** | The identifier for the adapter contract shape (currently `0.1`); classified by exact match. One of four independent version axes, alongside the archive `facetVersion`, the project manifest version, and the lockfile version. | [Custom adapters](/guides/custom-adapters) |
+| **Adapter API version** | The identifier for the adapter contract shape (currently `0.2`, which adds the MCP server capability); classified by exact match against the CLI's explicit support set, currently `{0.1, 0.2}`. One of five independent version axes, alongside the archive `facetVersion`, the project manifest version, the lockfile version, and the install-receipt version. | [Custom adapters](/guides/custom-adapters) |
 | **Cache self-audit** | Re-verification of cached content against its sidecar on every materialization; a mismatch evicts the slot. | [Commit — Verify](/specification/commit#verify) |
 | **Integrity confirmation** | The registry metadata check required whenever a lockfile entry is created or replaced; fails offline. | [Registry interactions](/specification/commit#registry-interactions) |
 | **One-check reproduction guard** | The single-anchor defense used where no registry confirmation applies: built content must hash to the locked integrity. Reported under a `git` check for git sources (the tag-move defense) and a `lockfile` check elsewhere, e.g. a frozen local source. | [Git and local sources](/specification/commit#git-and-local-sources) |
@@ -90,32 +107,33 @@ Canonical terms used throughout the specification. Implementations SHOULD use th
 | **Desired set** | The manifest's facets after the delta is merged in memory. | [Sequence](/specification/commit#sequence) |
 | **Install lock** | The per-project advisory lock ensuring one install at a time. | [Sequence](/specification/commit#sequence) |
 | **Journal** | The log in which every materialization write records its inverse operation, replayed in reverse on failure. | [Commit](/specification/commit) |
-| **Materialization** | Deciding each asset's effective identity, then writing the result into each selected adapter's storage. | [Materialization](/specification/materialization) |
-| **Disposition** | How a project materializes one authored asset: `authored`, `aliased`, or `omitted`. | [Dispositions](/specification/materialization#dispositions) |
-| **Materialization override** | A project's recorded `aliased` or `omitted` intent for one authored asset, stored in `facets.json`. Authored is the absence of an override. | [Recording intent](/specification/materialization#recording-intent) |
-| **Materialization namespace** | The logical space asset types compete for names in: skills and commands share one, agents have their own. | [Namespaces](/specification/materialization#namespaces) |
-| **Collision group** | Two or more assets claiming one logical identity `(scope, namespace, folded effective name)`. | [Collisions](/specification/materialization#collisions) |
-| **Claimant** | One member of a collision group — the facet, asset, and disposition that arrived at the contested name. | [Collisions](/specification/materialization#collisions) |
-| **Stale override** | An override naming an asset the resolved version no longer contains. Pruned on a successful commit; blocking drift under frozen mode. | [Stale overrides](/specification/materialization#stale-overrides) |
+| **Materialization** | Deciding each contribution's effective identity, then reconciling the result into each selected adapter — asset storage for text assets, native project configuration for MCP servers. | [Materialization](/specification/materialization) |
+| **Disposition** | How a project materializes one authored contribution, asset or server: `authored`, `aliased`, or `omitted`. | [Dispositions](/specification/materialization#dispositions) |
+| **Materialization override** | A project's recorded `aliased` or `omitted` intent for one authored asset or server, stored in `facets.json`. Authored is the absence of an override. | [Recording intent](/specification/materialization#recording-intent) |
+| **Materialization namespace** | The logical space **asset types** compete for names in: skills and commands share one, agents have their own. MCP servers are outside this concept entirely. | [Namespaces](/specification/materialization#namespaces) |
+| **Collision group** | Two or more contributions claiming one logical identity: `(scope, namespace, folded effective name)` for assets, or one effective server name for MCP servers. | [Collisions](/specification/materialization#collisions) |
+| **Claimant** | One member of a collision group — the facet, contribution, and disposition that arrived at the contested name. | [Collisions](/specification/materialization#collisions) |
+| **Stale override** | An override naming an asset or server the resolved version no longer contains. Pruned on a successful commit; blocking drift under frozen mode. | [Stale overrides](/specification/materialization#stale-overrides) |
 | **Ownership transfer** | A name moving between facets across one install. Deletion is keyed by effective identity, so the new owner's file survives. | [Drift removal](/specification/commit#drift-removal) |
-| **Install receipt** | The machine-local, per-project record (schema `0.3`) under `$FACET_DIR/receipts/` recording asset ownership, owned authored paths, and each asset's disposition for offline removal. The sole authority for deletion. Omitted assets never appear. | [Install receipt](/specification/commit#machine-local-install-receipt) |
-| **Tracked materialization** | An asset on disk that the install receipt records. Only tracked identities may be deleted. | [Ownership](/specification/commit#ownership-in-one-rule-each) |
-| **Untracked materialization** | An asset on disk that no receipt record covers — a pulled lockfile you never installed, or a hand-written file. Never deleted; reconciled only when the desired set names its identity, which makes it tracked. | [Ownership](/specification/commit#ownership-in-one-rule-each) |
-| **Reconciled** | Brought to the desired state: written, or verified byte-identical to what would have been written. Either outcome records the identity as tracked. | [Ownership](/specification/commit#ownership-in-one-rule-each) |
+| **Install receipt** | The machine-local, per-project record (schema `0.4`) under `$FACET_DIR/receipts/` recording asset ownership, owned authored paths, each asset's disposition, and one configuration claim per reconciled MCP declaration. The sole authority for deletion. Omitted contributions never appear. A receipt older than `0.4` keeps its asset authority but confers no configuration ownership or approval. | [Install receipt](/specification/commit#machine-local-install-receipt) |
+| **Tracked materialization** | An effective identity — a file on disk or a configured server entry — that the install receipt records. Only tracked identities may be deleted. | [Ownership](/specification/commit#ownership-in-one-rule-each) |
+| **Untracked materialization** | State occupying an effective identity that no receipt record covers — a pulled lockfile you never installed, a hand-written file, or a server entry configured by hand. Never deleted; reconciled only when the desired set names its identity, which makes it tracked. | [Ownership](/specification/commit#ownership-in-one-rule-each) |
+| **Reconciled** | Brought to the desired state: written, or verified equivalent to what would have been written. Either outcome records the identity as tracked. | [Ownership](/specification/commit#ownership-in-one-rule-each) |
 | **Remaining facet** | A facet that stays declared after a removal. The removal-only short circuit requires every remaining materialization to be tracked; that is necessary, not sufficient. | [Removal-only short circuit](/specification/commit#removal-only-short-circuit) |
-| **Drift removal** | Deleting every tracked effective identity no longer claimed by any desired asset, computed from the receipt, entirely offline. Runs before any write. | [Drift removal](/specification/commit#drift-removal) |
+| **Drift removal** | Deleting every tracked effective identity — asset or server — no longer claimed by any desired contribution, computed from the receipt, entirely offline. Runs before any write. | [Drift removal](/specification/commit#drift-removal) |
 | **Orphan-on-pull** | The recoverable state where a teammate's removal reaches you via `git pull`; the receipt still remembers. | [Drift removal](/specification/commit#drift-removal) |
-| **Tri-write** | The atomic commit of `facets.json`, `facets.lock`, and the receipt together; failure leaves all three unchanged. | [Transactional tri-write](/specification/commit#transactional-tri-write) |
-| **Lockfile** | `facets.lock` — resolved installation state: tagged source, exact version, integrity, and per-asset entries carrying a disposition plus per-file `{ path, integrity }` records. | [Lockfile](/specification/lockfile) |
+| **Tri-write** | The atomic commit of `facets.json`, `facets.lock`, and the receipt together; failure leaves all three unchanged and restores every asset and native MCP document the operation touched. | [Transactional tri-write](/specification/commit#transactional-tri-write) |
+| **Lockfile** | `facets.lock` — resolved installation state: tagged source, exact version, integrity, and per-asset entries carrying a disposition plus per-file `{ path, integrity }` records. Records no MCP declaration, server disposition, or approval. | [Lockfile](/specification/lockfile) |
 | **Cache** | The machine-local content-addressed store for fetched facet payloads under `$FACET_DIR/cache/`. | [`facet install`](/cli/install#cache) |
 
 ## Authoring & publishing
 
 | Term | Definition | Reference |
 | --- | --- | --- |
-| **Build** | Producing the canonical `.facet` archive from the author's source tree; never contacts the registry. | [Build](/specification/build) |
+| **Build** | Producing the canonical `.facet` archive from the author's source tree; never contacts the registry, and never contacts or launches a declared MCP server. | [Build](/specification/build) |
 | **Publish** | Verifying the built archive end-to-end and uploading the verified bytes to the registry. | [Publish](/specification/publish) |
 | **Content drift** | Built artifact and source tree share a name and version but differ in manifest content. | [Drift classes](/specification/publish#when-the-built-artifact-has-drifted-from-source) |
 | **Identity drift** | Built artifact and source tree disagree on name or version. | [Drift classes](/specification/publish#when-the-built-artifact-has-drifted-from-source) |
 | **Review queue** | The moderation path where a first-time publish is accepted but held for approval; a success outcome. | [Review queue](/specification/publish#review-queue) |
 | **Personal access token (PAT)** | The revocable `fct_pub_…` credential minted in the web UI that authenticates publishes. | [Authentication](/specification/publish#authentication) |
+| **Server-only facet** | A valid facet whose only deliverable is one or more MCP server declarations. Installs meaningfully with zero materialized assets. | [MCP server declarations](/specification/manifest#mcp-server-declarations) |
