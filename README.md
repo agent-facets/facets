@@ -1,6 +1,6 @@
 # Agent Facets
 
-`facet` is a CLI package manager and toolkit for facets — modular skills, agents, commands, and MCP server declarations that extend AI coding assistants. A facet can declare MCP servers that install configures in each connected tool's own config file (`.mcp.json`, `opencode.jsonc`, `.codex/config.toml`), after you approve them; a facet may even ship servers and nothing else. Facets can also ship non-asset files — a `README.md`, a `LICENSE`, or skill companion files — that travel inside the archive; only skill companions materialize on disk. See the [docs](https://docs.agentfacets.io) for details.
+`facet` is a CLI package manager and toolkit for facets — modular skills, agents, commands, and MCP server declarations that extend AI coding assistants. A facet can declare MCP servers that are installed and configured in each connected tool's own config file (`.mcp.json`, `opencode.jsonc`, `.codex/config.toml`), after you approve them; a facet may even ship servers and nothing else. Facets can also ship non-asset files — a `README.md`, a `LICENSE`, or skill companion files — that travel inside the archive; only skill companions materialize on disk. See the [docs](https://docs.agentfacets.io) for details.
 
 The official registry for Agent Facets is [agentfacets.io](https://agentfacets.io) where you can publish and share facets.
 
@@ -36,10 +36,6 @@ Please see https://docs.agentfacets.io/cli for a detailed reference for the `fac
 # pulling teammate changes:
 facet install
 
-# In CI, or any run without a terminal, approve MCP server configuration
-# up front — otherwise a facet that declares servers fails before writing.
-facet install --accept-mcp
-
 # Update the CLI later
 facet self-update
 ```
@@ -61,7 +57,7 @@ The monorepo also contains private internals that are never published: `@agent-f
 ## Development
 
 ```sh
-mise trust && mist install  # tooling (Bun, lefthook) via mise.toml
+mise trust && mise install  # tooling (Bun, lefthook) via mise.toml
 bun install                 # dependencies + git hooks
 bun dev --version           # run the CLI from source and verify it works
 bun check                   # lint, typecheck, build, and tests

@@ -39,7 +39,7 @@ bun install    # installs workspace dependencies + sets up git hooks
 - Push your branch to your fork, then open a PR against `agent-facets/facets:main`.
 - Keep PRs focused on a single change.
 - Run `bun check` before submitting — CI runs the same command.
-- Add a changeset for any user-facing changes (see below).
+- Add a changeset for changes to published packages (see below).
 
 ## Changesets
 

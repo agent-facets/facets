@@ -21,4 +21,4 @@ Not every PR needs a changeset — changes to docs, CI, or other non-published f
 
 ## For maintainers
 
-When changesets are merged to `main`, CI opens a version PR. Merging that PR creates version tags, which trigger per-package publishing to npm.
+When changesets are merged to `main`, CI opens a version PR. Merging that PR creates version tags, which trigger guarded publishing for eligible public packages.
