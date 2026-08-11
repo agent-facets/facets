@@ -21,4 +21,4 @@ Not every PR needs a changeset — changes to docs, CI, or other non-published f
 
 ## For maintainers
 
-See the [Release Pipeline](https://docs.agentfacets.io/contributing/release-pipeline) docs for the full end-to-end release flow.
+When changesets are merged to `main`, CI opens a version PR. Merging that PR creates version tags, which trigger guarded publishing for eligible public packages.
