@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { readFile } from 'node:fs/promises'
 import type { McpServerCapability } from '@agent-facets/adapter'
 import { ADAPTER_API_VERSION } from '@agent-facets/adapter'
+import { runtimeModuleSpecifiers } from './module-specifiers.ts'
 
 /**
  * The contract every first-party adapter's published bundle must satisfy.
@@ -34,12 +35,7 @@ export function assertDistBundleContract(options: AssertDistBundleOptions): void
 
   test('built bundle resolves nothing outside Node builtins', async () => {
     const source = await readFile(options.bundlePath, 'utf8')
-    // A real scan, not a regex: a bundled dependency can contain a template
-    // literal that reads like an import, and — more importantly — a CommonJS
-    // dependency whose lazy `require('./impl/...')` calls survived bundling
-    // looks fine until the moment that code path runs.
-    const specifiers = new Bun.Transpiler({ loader: 'js' }).scanImports(source)
-    const unresolvable = specifiers.filter((specifier) => !specifier.path.startsWith('node:'))
+    const unresolvable = runtimeModuleSpecifiers(source).filter((specifier) => !specifier.startsWith('node:'))
     expect(unresolvable).toEqual([])
   })
 }

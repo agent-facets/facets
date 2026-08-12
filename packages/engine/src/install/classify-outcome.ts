@@ -59,10 +59,16 @@ export const NO_CONFIGURATION_WORK: FacetConfigurationWork = { intentChanged: fa
  * behalf of every one of them. Splitting the credit would mean picking a
  * winner among claimants that are, by construction, indistinguishable.
  *
- * `introduced` deliberately does not count as an intent change: a declaration
- * this machine has no record of is either a brand-new facet (already
- * `installed`) or one whose configuration never landed, and the second is a
- * repair rather than a change of mind. `unwitnessed` claims nothing at all.
+ * `introduced` counts as an intent change: a current receipt records an entry
+ * for every facet it committed, so a record that covers this facet and holds
+ * no claim for this declaration PROVES the project never asked for it here
+ * before. An already-installed facet that gains its first declaration is
+ * therefore asking for something new, not having a previous request repaired.
+ *
+ * `unrecorded` and `unwitnessed` do not. Neither can prove that history —
+ * the first has no entry for the facet, the second no usable record at all —
+ * and inferring new intent from missing evidence would report repair work as
+ * a change of mind.
  */
 export function facetConfigurationWork(mcp: McpInstallOutcomes): Map<string, FacetConfigurationWork> {
   const work = new Map<string, FacetConfigurationWork>()
@@ -72,7 +78,9 @@ export function facetConfigurationWork(mcp: McpInstallOutcomes): Map<string, Fac
   }
 
   for (const disposition of mcp.dispositions) {
-    if (disposition.change === 'updated') mark(disposition.facet, { intentChanged: true })
+    if (disposition.change === 'updated' || disposition.change === 'introduced') {
+      mark(disposition.facet, { intentChanged: true })
+    }
   }
   // A pruned override is intent that changed too: the project stopped saying
   // something about a declaration, and the facet's entry in `facets.json` is

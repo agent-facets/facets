@@ -87,6 +87,54 @@ describe('McpServerDeclarationSchema — rejected declarations', () => {
   })
 })
 
+describe('McpServerDeclarationSchema — failures locate the invalid field', () => {
+  const pathsFor = (value: unknown): string[][] =>
+    [...errorsFor(value)].map((error) => error.path.map((segment) => String(segment)))
+
+  test('an empty command is reported at the command member', () => {
+    expect(pathsFor({ type: 'stdio', command: '' })).toContainEqual(['command'])
+  })
+
+  test('an invalid URL is reported at the url member', () => {
+    expect(pathsFor({ type: 'http', url: '/mcp' })).toContainEqual(['url'])
+    expect(pathsFor({ type: 'http', url: 'https://user:pass@a.example/mcp' })).toContainEqual(['url'])
+  })
+
+  test('an invalid environment name is reported at its own key', () => {
+    expect(pathsFor({ type: 'stdio', command: 'x', env: { GOOD: 'v', '1BAD': 'v' } })).toContainEqual(['env', '1BAD'])
+  })
+
+  test('every invalid environment name is reported', () => {
+    const paths = pathsFor({ type: 'stdio', command: 'x', env: { '1BAD': 'v', 'A-B': 'v' } })
+    expect(paths).toContainEqual(['env', '1BAD'])
+    expect(paths).toContainEqual(['env', 'A-B'])
+  })
+})
+
+describe('manifest validation locates the invalid declaration member', () => {
+  const manifestPaths = (value: unknown): string[] => {
+    const result = FacetManifestSchema(value)
+    if (!(result instanceof type.errors)) expect.unreachable()
+    return [...result].map((error) => error.path.join('.'))
+  }
+
+  test('an empty command is reported under the server', () => {
+    expect(manifestPaths(manifest({ servers: { fs: { type: 'stdio', command: '' } } }))).toContain('servers.fs.command')
+  })
+
+  test('an invalid URL is reported under the server', () => {
+    expect(manifestPaths(manifest({ servers: { docs: { type: 'http', url: 'ws://a.example' } } }))).toContain(
+      'servers.docs.url',
+    )
+  })
+
+  test('an invalid environment name is reported at its key under the server', () => {
+    expect(
+      manifestPaths(manifest({ servers: { fs: { type: 'stdio', command: 'x', env: { '1BAD': 'v' } } } })),
+    ).toContain('servers.fs.env.1BAD')
+  })
+})
+
 describe('portable name grammars', () => {
   test('server names follow the single-segment asset grammar', () => {
     for (const name of ['a', 'filesystem', 'review2', 'code-review']) {
@@ -306,6 +354,76 @@ describe('planServerMaterialization', () => {
     if (!result.ok) expect.unreachable()
     expect(result.planned[0]?.disposition).not.toBe(override)
     expect(result.configurations[0]?.claimants[0]?.disposition).not.toBe(override)
+  })
+
+  test('the planned declaration is a clone of the input, not the input itself', () => {
+    const declaration: McpServerDeclaration = { type: 'stdio', command: 'x', args: ['--a'], env: { A: '1' } }
+    const result = planServerMaterialization([{ facet: 'a', servers: [{ name: 'fs', declaration }] }])
+    if (!result.ok) expect.unreachable()
+
+    expect(result.planned[0]?.declaration).not.toBe(declaration)
+    expect(result.planned[0]?.declaration).toEqual(declaration)
+  })
+
+  test('every view shares one declaration object per contribution', () => {
+    const result = planServerMaterialization([
+      { facet: 'a', servers: [{ name: 'fs', declaration: stdio('x') }] },
+      { facet: 'b', servers: [{ name: 'fs', declaration: stdio('x') }] },
+    ])
+    if (!result.ok) expect.unreachable()
+
+    // The composed configuration reuses the first claimant's clone rather than
+    // making a third object that could drift from either planned entry.
+    expect(result.configurations[0]?.declaration).toBe(result.planned[0]?.declaration)
+  })
+
+  test('a planned declaration is frozen at runtime, including args and env', () => {
+    const result = planServerMaterialization([
+      {
+        facet: 'a',
+        servers: [{ name: 'fs', declaration: { type: 'stdio', command: 'x', args: ['--a'], env: { A: '1' } } }],
+      },
+    ])
+    if (!result.ok) expect.unreachable()
+    const planned = result.planned[0]?.declaration
+    if (planned?.type !== 'stdio') expect.unreachable()
+
+    expect(Object.isFrozen(planned)).toBe(true)
+    expect(Object.isFrozen(planned.args)).toBe(true)
+    expect(Object.isFrozen(planned.env)).toBe(true)
+  })
+
+  test('mutating the input afterwards changes neither the plan nor its fingerprint', () => {
+    const declaration: McpServerDeclaration = { type: 'stdio', command: 'x', args: ['--a'], env: { A: '1' } }
+    const result = planServerMaterialization([{ facet: 'a', servers: [{ name: 'fs', declaration }] }])
+    if (!result.ok) expect.unreachable()
+    const before = result.configurations[0]?.fingerprint
+    if (before === undefined) expect.unreachable()
+
+    declaration.command = 'y'
+    declaration.args?.push('--b')
+    if (declaration.env) declaration.env.A = '2'
+
+    const planned = result.configurations[0]?.declaration
+    if (planned?.type !== 'stdio') expect.unreachable()
+    expect(planned.command).toBe('x')
+    expect(planned.args).toEqual(['--a'])
+    expect(planned.env).toEqual({ A: '1' })
+    expect(result.configurations[0]?.fingerprint).toBe(before)
+    expect(computeMcpServerFingerprint(planned)).toBe(before)
+  })
+
+  test('collision members carry the same frozen clone as the input allows', () => {
+    const result = planServerMaterialization([
+      { facet: 'a', servers: [{ name: 'fs', declaration: stdio('x') }] },
+      { facet: 'b', servers: [{ name: 'fs', declaration: stdio('y') }] },
+    ])
+    if (result.ok) expect.unreachable()
+    if (result.reason !== 'collision') expect.unreachable()
+
+    for (const member of result.groups[0]?.members ?? []) {
+      expect(Object.isFrozen(member.declaration)).toBe(true)
+    }
   })
 
   test('planning is independent of input order', () => {

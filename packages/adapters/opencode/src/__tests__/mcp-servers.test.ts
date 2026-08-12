@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import type { McpServerCapability } from '@agent-facets/adapter'
 import {
   type McpMatrixCaseId,
+  type McpMatrixProject,
   type McpMatrixSeed,
   OBSOLETE_NAME,
   runMcpServerMatrix,
@@ -29,6 +30,11 @@ function document(entries: Record<string, string>): string {
     .map(([name, entry]) => `    "${name}": ${entry}`)
     .join(',\n')
   return `{\n  "mcp": {\n${members}\n  }\n}\n`
+}
+
+/** The written JSONC document's server map, parsed rather than pattern-matched. */
+function parsedServers(project: McpMatrixProject): Record<string, { command?: string[]; environment?: unknown }> {
+  return JSON.parse((project.read(JSONC) ?? '{}').replaceAll(/^\s*\/\/.*$/gm, '')).mcp ?? {}
 }
 
 const seeds = {
@@ -90,8 +96,11 @@ const seeds = {
       }),
     },
     after: (project) => {
-      expect(project.read(JSONC) ?? '').toContain('"srv"')
-      expect(project.read(JSONC) ?? '').not.toContain('"/w",\n')
+      // Parsed and compared in full: the reversed seed already contains
+      // `"srv"` and already lacks any one formatting-specific substring, so a
+      // substring assertion passes without the writer having corrected
+      // anything.
+      expect(parsedServers(project).fs?.command).toEqual(['srv', '--root', '/w'])
     },
   },
 
@@ -102,7 +111,7 @@ const seeds = {
       }),
     },
     after: (project) => {
-      expect(project.read(JSONC) ?? '').toContain('"TOKEN_NAME": "A"')
+      expect(parsedServers(project).fs?.environment).toEqual({ TOKEN_NAME: 'A' })
     },
   },
 
@@ -196,7 +205,7 @@ const seeds = {
 
 runMcpServerMatrix({ capability: openCodeMcpServers, seeds })
 
-describe('opencode document selection', () => {
+describe('opencode configuration layers', () => {
   let root: string
 
   beforeEach(() => {
@@ -207,11 +216,11 @@ describe('opencode document selection', () => {
     rmSync(root, { recursive: true, force: true })
   })
 
-  async function reconcile(): Promise<readonly string[]> {
+  async function reconcile(previouslyOwnedNames: readonly string[] = []): Promise<readonly string[]> {
     const prepared = await openCodeMcpServers.prepare({
       projectRoot: root,
       desired: [STDIO_SERVER],
-      previouslyOwnedNames: [],
+      previouslyOwnedNames,
     })
     if (!prepared.ok) expect.unreachable()
     const applied = await openCodeMcpServers.apply({ plan: prepared.preparation.plan })
@@ -219,35 +228,91 @@ describe('opencode document selection', () => {
     return prepared.preparation.documentPaths
   }
 
-  test('reconciles the JSONC document and leaves the JSON one alone when both exist', async () => {
+  async function removeAll(previouslyOwnedNames: readonly string[]): Promise<void> {
+    const prepared = await openCodeMcpServers.prepare({ projectRoot: root, desired: [], previouslyOwnedNames })
+    if (!prepared.ok) expect.unreachable()
+    const applied = await openCodeMcpServers.apply({ plan: prepared.preparation.plan })
+    if (!applied.ok) expect.unreachable()
+  }
+
+  const read = (name: string): string => readFileSync(join(root, name), 'utf8')
+  const servers = (name: string): Record<string, { command?: string[] }> =>
+    JSON.parse(read(name).replaceAll(/^\s*\/\/.*$/gm, '')).mcp
+
+  test('both documents are disclosed even when only one exists', async () => {
+    writeFileSync(join(root, JSONC), '{ "mcp": {} }\n')
+
+    const disclosed = await reconcile()
+
+    // A path that does not exist is still a preimage the caller can restore
+    // to, which is what makes creating the other layer recoverable.
+    expect(disclosed).toEqual([join(root, JSONC), join(root, JSON_DOCUMENT)])
+  })
+
+  test('a new entry prefers the JSONC layer when both exist', async () => {
+    writeFileSync(join(root, JSONC), '{ "mcp": {} }\n')
+    writeFileSync(join(root, JSON_DOCUMENT), '{ "mcp": {} }\n')
+
+    await reconcile()
+
+    expect(servers(JSONC).fs?.command).toEqual(['srv', '--root', '/w'])
+    expect(servers(JSON_DOCUMENT).fs).toBeUndefined()
+  })
+
+  test('an entry defined only in the JSON layer is updated there', async () => {
+    // That layer is where the key currently wins, so writing the JSONC file
+    // instead would leave the merged configuration unchanged.
     writeFileSync(join(root, JSONC), '{ "mcp": {} }\n')
     writeFileSync(join(root, JSON_DOCUMENT), '{ "mcp": { "fs": { "type": "local", "command": ["other"] } } }\n')
 
-    const disclosed = await reconcile()
+    await reconcile(['fs'])
 
-    expect(disclosed).toEqual([join(root, JSONC)])
-    expect(readFileSync(join(root, JSONC), 'utf8')).toContain('"srv"')
-    expect(readFileSync(join(root, JSON_DOCUMENT), 'utf8')).toBe(
-      '{ "mcp": { "fs": { "type": "local", "command": ["other"] } } }\n',
-    )
+    expect(servers(JSON_DOCUMENT).fs?.command).toEqual(['srv', '--root', '/w'])
+    expect(servers(JSONC).fs).toBeUndefined()
   })
 
-  test('reconciles an existing JSON document rather than creating a JSONC one beside it', async () => {
+  test('an owned entry defined in both layers is collapsed into the JSONC one', async () => {
+    writeFileSync(join(root, JSONC), '{ "mcp": { "fs": { "type": "local", "command": ["stale"] } } }\n')
+    writeFileSync(join(root, JSON_DOCUMENT), '{ "mcp": { "fs": { "type": "local", "command": ["shadowed"] } } }\n')
+
+    await reconcile(['fs'])
+
+    expect(servers(JSONC).fs?.command).toEqual(['srv', '--root', '/w'])
+    expect(servers(JSON_DOCUMENT).fs).toBeUndefined()
+  })
+
+  test('an obsolete owned entry is removed from the lower layer', async () => {
+    writeFileSync(join(root, JSONC), '{ "mcp": {} }\n')
+    writeFileSync(join(root, JSON_DOCUMENT), '{ "mcp": { "fs": { "type": "local", "command": ["gone"] } } }\n')
+
+    await removeAll(['fs'])
+
+    expect(servers(JSON_DOCUMENT).fs).toBeUndefined()
+  })
+
+  test('an unowned entry survives in either layer', async () => {
+    writeFileSync(join(root, JSONC), '{ "mcp": {} }\n')
+    writeFileSync(join(root, JSON_DOCUMENT), '{ "mcp": { "manual": { "type": "local", "command": ["keep"] } } }\n')
+
+    await reconcile()
+
+    expect(servers(JSON_DOCUMENT).manual?.command).toEqual(['keep'])
+  })
+
+  test('an existing JSON layer is used rather than creating a JSONC one beside it', async () => {
     writeFileSync(join(root, JSON_DOCUMENT), '{ "mcp": {} }\n')
 
-    const disclosed = await reconcile()
+    await reconcile()
 
-    expect(disclosed).toEqual([join(root, JSON_DOCUMENT)])
-    expect(readFileSync(join(root, JSON_DOCUMENT), 'utf8')).toContain('"srv"')
-    expect(() => readFileSync(join(root, JSONC), 'utf8')).toThrow()
+    expect(servers(JSON_DOCUMENT).fs?.command).toEqual(['srv', '--root', '/w'])
+    expect(() => read(JSONC)).toThrow()
   })
 
-  test('creates a JSONC document when neither exists', async () => {
-    const disclosed = await reconcile()
+  test('a JSONC document is created when neither layer exists', async () => {
+    await reconcile()
 
-    expect(disclosed).toEqual([join(root, JSONC)])
-    expect(readFileSync(join(root, JSONC), 'utf8')).toContain('"srv"')
-    expect(() => readFileSync(join(root, JSON_DOCUMENT), 'utf8')).toThrow()
+    expect(servers(JSONC).fs?.command).toEqual(['srv', '--root', '/w'])
+    expect(() => read(JSON_DOCUMENT)).toThrow()
   })
 })
 

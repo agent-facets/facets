@@ -11,7 +11,7 @@ export default defineConfig({
   // self-contained bundle. The CLI loads this file directly at install time
   // without needing a node_modules tree.
   deps: {
-    alwaysBundle: ['@agent-facets/adapter', 'arktype', 'jsonc-parser'],
+    alwaysBundle: ['@agent-facets/adapter', '@agent-facets/adapter-jsonc', 'arktype', 'jsonc-parser'],
   },
   inputOptions: {
     // `jsonc-parser` has no `exports` map, so the default field order resolves

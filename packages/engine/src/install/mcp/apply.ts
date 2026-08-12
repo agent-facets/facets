@@ -1,4 +1,4 @@
-import { capturePreimage, type FilePreimage, restorePreimage } from '../file-preimage.ts'
+import { capturePreimage, type FilePreimage, matchesPreimage, restorePreimage } from '../file-preimage.ts'
 import type { InstallJournal } from '../journal.ts'
 import type { OnLog, RunInstallFailure } from '../types.ts'
 import { insideProject, type PreparedMcpAdapter } from './prepare.ts'
@@ -60,6 +60,33 @@ export async function applyMcpServers(args: ApplyMcpArgs): Promise<ApplyMcpResul
       preimages.set(path, captured.preimage)
     }
 
+    // Armed BEFORE the adapter runs, for every disclosed document rather than
+    // for the ones it later says it changed. Recording afterwards made
+    // restoration conditional on the adapter's own report being both truthful
+    // and complete: an adapter that wrote a document and then failed, omitted
+    // one from `changedPaths`, or named an undisclosed path before a disclosed
+    // one left a real write outside the journal while the failure claimed
+    // everything restorable had been restored.
+    //
+    // The cost is one journal entry per disclosed document. The undo compares
+    // before it writes, so a document nothing touched is left alone — bytes,
+    // modification time, and any tool watching it included.
+    for (const [path, preimage] of preimages) {
+      journal.record({
+        label: `mcp ${adapter}:${path}`,
+        undo: async () => {
+          if (matchesPreimage(preimage)) return
+          const restored = restorePreimage(preimage)
+          if (!restored.ok) {
+            // Must throw: the journal counts an undo as failed only when it
+            // throws, so returning here would report a clean rollback while a
+            // tool's configuration stayed changed.
+            throw new Error(`failed to restore ${path}: ${restored.cause}`)
+          }
+        },
+      })
+    }
+
     const applied = await capability.apply({ plan: preparation.plan })
     if (!applied.ok) {
       return { ok: false, failure: { code: 'MCP_APPLY_FAILED', adapter, failure: applied.failure } }
@@ -70,11 +97,11 @@ export async function applyMcpServers(args: ApplyMcpArgs): Promise<ApplyMcpResul
     }
 
     for (const path of applied.changedPaths) {
-      const preimage = preimages.get(path)
-      if (preimage === undefined || !insideProject(projectRoot, path)) {
+      if (!preimages.has(path) || !insideProject(projectRoot, path)) {
         // The adapter wrote somewhere it never disclosed, so no preimage
         // exists for it. Reported rather than journaled: the caller rolls
-        // back everything that IS restorable, and the failure names the one
+        // back everything that IS restorable — which now includes every
+        // document this adapter disclosed — and the failure names the one
         // thing that is not.
         return {
           ok: false,
@@ -84,18 +111,6 @@ export async function applyMcpServers(args: ApplyMcpArgs): Promise<ApplyMcpResul
           },
         }
       }
-      journal.record({
-        label: `mcp ${adapter}:${path}`,
-        undo: async () => {
-          const restored = restorePreimage(preimage)
-          if (!restored.ok) {
-            // Must throw: the journal counts an undo as failed only when it
-            // throws, so returning here would report a clean rollback while a
-            // tool's configuration stayed changed.
-            throw new Error(`failed to restore ${path}: ${restored.cause}`)
-          }
-        },
-      })
       onLog(() => `[verbose] ${adapter}: wrote MCP configuration (${path})`)
     }
   }

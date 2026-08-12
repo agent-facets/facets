@@ -195,6 +195,9 @@ export { mcpServerKey, planServerMaterialization } from './materialization/serve
 // recording a command, URL, or environment data.
 export type { McpServerFingerprint } from './mcp/fingerprint.ts'
 export { canonicalMcpServerEncoding, computeMcpServerFingerprint, isMcpServerFingerprint } from './mcp/fingerprint.ts'
+// one clone-and-freeze for declarations, so a planned result never shares
+// mutable structure with the input it was derived from.
+export { freezeMcpServerDeclaration } from './mcp/freeze.ts'
 // deterministic ordering — one comparator for every artifact and report whose
 // order is part of its contract, so planner output, the removal-refinement
 // rebuild, and the lockfile writer cannot disagree.
@@ -289,7 +292,11 @@ export {
 // so the Adapter SDK can consume the authoritative contract without inheriting
 // arktype; `mcp-server.ts` holds the validating schema and a compile-time
 // assertion that the two agree.
-export type { McpServerDeclaration, McpServerTransport } from './schemas/mcp-server-declaration.ts'
+export type {
+  McpServerDeclaration,
+  McpServerTransport,
+  ReadonlyMcpServerDeclaration,
+} from './schemas/mcp-server-declaration.ts'
 export { MCP_SERVER_TRANSPORTS } from './schemas/mcp-server-declaration.ts'
 // project manifest (`facets.json`) — versioned schemas plus the accessors
 // read-only consumers use so a compact and an expanded entry are never

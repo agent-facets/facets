@@ -1050,7 +1050,7 @@ This adapter-compatibility preflight SHALL run before archive-version dispatch a
 
 Facet removal of tracked materialization SHALL remain independent of cached facet content and network access, but it SHALL still require compatible selected adapters because deleting materialized assets or MCP configuration invokes each selected adapter's contract. A removal whose remaining desired state is untracked SHALL be permitted to resolve, because it must materialize that state before recording ownership of it.
 
-When active MCP declarations exist, the system SHALL additionally require every selected adapter to implement API `0.2` with MCP server support. A selected API `0.1` adapter or API `0.2` adapter that declares `mcpServers: false` SHALL remain usable when no active declaration exists but SHALL join one complete unsupported-adapter failure when one does.
+When the operation has MCP work to do, the system SHALL additionally require every selected adapter to implement API `0.2` with MCP server support. The operation has MCP work to do when an active declaration exists, and also when no active declaration exists but the receipt still owns an effective MCP identity that this operation must reconcile or delete. A selected API `0.1` adapter or API `0.2` adapter that declares `mcpServers: false` SHALL remain usable only when neither condition holds, and SHALL otherwise join one complete unsupported-adapter failure.
 
 #### Scenario: Adding a facet with an incompatible selected adapter changes nothing
 
@@ -1102,6 +1102,12 @@ When active MCP declarations exist, the system SHALL additionally require every 
 - **WHEN** active MCP declarations exist and selected adapters include API `0.1` or `mcpServers: false`
 - **THEN** the operation SHALL fail before mutation
 - **AND** it SHALL identify every adapter that needs upgrade or server omission
+
+#### Scenario: Receipt-owned cleanup requires MCP support
+
+- **WHEN** no active MCP declaration remains but the receipt still owns an effective server identity this operation must delete
+- **AND** a selected adapter declares API `0.1` or `mcpServers: false`
+- **THEN** the operation SHALL fail before mutation for the same unsupported-adapter reason
 
 #### Scenario: Facet operation does not auto-upgrade an incompatible adapter
 
@@ -1805,6 +1811,8 @@ The system SHALL complete facet verification, effective-name composition, select
 
 When an operation fails after changing one or more native MCP documents, the system SHALL restore every document's exact prior bytes and restore every asset and project-state file changed by the operation. Restoration SHALL preserve comments, formatting, and member order. No new configuration ownership or approval evidence SHALL survive the failed operation.
 
+Restoration SHALL NOT depend on an adapter reporting its own writes correctly. The system SHALL capture each disclosed document's prior bytes and arm their restoration before invoking application, so a disclosed document remains restorable when an adapter changes it and then fails, omits it from the changed documents it reports, or reports an undisclosed document. A write to a document that was never disclosed remains a contract violation the system reports rather than restores.
+
 #### Scenario: Later adapter failure restores earlier configuration
 
 - **WHEN** one selected adapter changes its native document and a later selected adapter fails
@@ -1815,6 +1823,22 @@ When an operation fails after changing one or more native MCP documents, the sys
 - **WHEN** native configuration and assets changed but final project-state commit fails
 - **THEN** every affected file SHALL be restored to its pre-operation state
 - **AND** no new receipt claim SHALL remain
+
+#### Scenario: Adapter writes a disclosed document and then fails
+
+- **WHEN** an adapter changes a document it disclosed and then returns a failure
+- **THEN** that document SHALL be restored to its exact pre-operation bytes
+
+#### Scenario: Adapter omits a disclosed document it changed
+
+- **WHEN** an adapter changes a disclosed document but does not report it among its changed documents
+- **THEN** that document SHALL still be restored to its exact pre-operation bytes when the operation fails
+
+#### Scenario: Undisclosed write is reported with disclosed documents restored
+
+- **WHEN** an adapter reports changing a document it never disclosed
+- **THEN** the operation SHALL fail identifying that document as a contract violation
+- **AND** every disclosed document SHALL be restored to its exact pre-operation bytes
 
 ### Requirement: Installation verifies integrity-pinned server declarations before configuration
 
@@ -1863,6 +1887,8 @@ Frozen installation SHALL derive MCP declarations from the exact integrity-pinne
 
 Installation results SHALL distinguish MCP configurations from text assets and SHALL report added, updated, unchanged, aliased, omitted, removed, conflicted, unsupported, and takeover outcomes. A server-only facet SHALL report meaningful configuration work with zero assets. An alias, omission, or declaration change at the same facet version SHALL count as updated; rewriting approved native drift SHALL count as repaired; a semantic match SHALL count as unchanged.
 
+A declaration this machine can prove was never previously managed for an already-installed facet SHALL also count as new project intent, so its facet SHALL be reported as updated at the same facet version. That proof SHALL require a current machine-local record that covers the facet and records no claim for the declaration. When the machine-local record does not cover the facet, or cannot be read or interpreted, the system SHALL NOT infer new intent from its silence and SHALL classify the resulting native write as repair.
+
 #### Scenario: Server-only result is not a no-op
 
 - **WHEN** a server-only facet adds one native entry
@@ -1882,6 +1908,18 @@ Installation results SHALL distinguish MCP configurations from text assets and S
 
 - **WHEN** a server alias or omission changes at the same facet version
 - **THEN** the facet outcome SHALL be updated rather than repaired
+
+#### Scenario: Proven first declaration is updated
+
+- **WHEN** an already-installed facet declares its first MCP server at the same facet version
+- **AND** a current machine-local record covers that facet and records no claim for the declaration
+- **THEN** the facet outcome SHALL be updated rather than repaired or unchanged
+
+#### Scenario: Unproven first declaration is repair
+
+- **WHEN** an already-installed facet declares its first MCP server at the same facet version
+- **AND** the machine-local record does not cover the facet, or cannot be read or interpreted
+- **THEN** the system SHALL NOT report the facet as updated for that reason alone
 
 ### Requirement: Removing facets reconciles MCP configuration ownership
 

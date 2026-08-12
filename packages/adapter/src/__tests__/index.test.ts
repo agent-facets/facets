@@ -6,8 +6,8 @@ import {
   ADAPTER_API_VERSION_PACKAGE_FIELD,
 } from '../api-version.ts'
 import { defineAdapter } from '../define-adapter.ts'
-import type { McpServerDeclaration } from '../mcp-servers.ts'
-import type { AdapterDefinition } from '../types.ts'
+import type { McpServerContribution, McpServerDeclaration } from '../mcp-servers.ts'
+import type { AdapterDefinition, McpCapableAdapter } from '../types.ts'
 
 /**
  * A minimal valid adapter definition for tests that need a base object.
@@ -108,6 +108,55 @@ describe('the protocol declaration is the source of truth', () => {
     const backAgain: FromProtocol = asSdk
 
     expect(backAgain).toEqual(stdio)
+  })
+
+  test('a contribution accepts a declaration without taking ownership of it', () => {
+    // The capability's contribution is deeply read-only, so an authored
+    // declaration flows in unchanged while an adapter cannot edit the planned
+    // object the fingerprint describes.
+    const declaration: ProtocolMcpServerDeclaration = { type: 'stdio', command: 'srv', args: ['--root'] }
+    const contribution: McpServerContribution = { name: 'fs', declaration }
+
+    expect(contribution.declaration).toEqual(declaration)
+  })
+})
+
+describe('the capability plan survives adapter definition', () => {
+  // The original defect: `mcpServers` was typed at the capability's `unknown`
+  // default, so an inline `apply` could not read the plan its own `prepare`
+  // produced, and nothing checked that the two agreed.
+  test('an inline capability checks prepare and apply against one plan shape', () => {
+    interface Plan {
+      readonly path: string
+    }
+
+    const adapter = defineAdapter({
+      ...validDefinition(),
+      mcpServers: {
+        async prepare() {
+          return {
+            ok: true as const,
+            preparation: { plan: { path: '/p' }, documentPaths: ['/p'] as const, outcomes: [] },
+          }
+        },
+        async apply(request: { readonly plan: Plan }) {
+          // Reading `path` here is the assertion: without the plan type this
+          // is `unknown` and does not compile.
+          return request.plan.path === '/p'
+            ? ({ ok: true, status: 'changed', changedPaths: ['/p'] } as const)
+            : ({ ok: true, status: 'unchanged' } as const)
+        },
+      },
+    })
+
+    if (adapter.mcpServers === false) expect.unreachable()
+    expect(typeof adapter.mcpServers.apply).toBe('function')
+  })
+
+  test('a definition without a plan type still builds', () => {
+    // Bare use keeps erasing to `unknown`, which is what every consumer holds.
+    const adapter: McpCapableAdapter = defineAdapter(validDefinition())
+    expect(adapter.mcpServers).toBe(false)
   })
 })
 

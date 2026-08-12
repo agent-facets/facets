@@ -27,6 +27,7 @@ export {
   validateContainedRelativePath,
 } from './asset-fs.ts'
 export { defineAdapter } from './define-adapter.ts'
+export { isPlainObject, sameStringArray, sameStringRecord } from './mcp-native-values.ts'
 export type { McpNativeMatch, ReconcileMcpServersInput } from './mcp-reconcile.ts'
 export { mcpDeclarationLiterals, mcpOutcomesRequireWrite, reconcileMcpServers } from './mcp-reconcile.ts'
 export type {
@@ -40,7 +41,23 @@ export type {
   McpServerPreparationOutcome,
   PrepareMcpServersRequest,
   PrepareMcpServersResult,
+  ReadonlyMcpServerDeclaration,
 } from './mcp-servers.ts'
+export type {
+  ApplyMcpTextPlanOptions,
+  InterpolationGuard,
+  McpTextPlan,
+  PrepareMcpTextPlanInput,
+  ReadTextResult,
+  TextDocumentEdit,
+} from './mcp-text-plan.ts'
+export {
+  applyMcpTextPlan,
+  asMcpTextPlan,
+  findInterpolationConflict,
+  prepareMcpTextPlan,
+  readTextOrAbsent,
+} from './mcp-text-plan.ts'
 export type { SkillBundlePaths } from './skill-bundle.ts'
 export { deleteSkillBundle, installSkillBundle, readSkillBundle } from './skill-bundle.ts'
 export type {

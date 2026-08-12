@@ -1,18 +1,21 @@
-import { mkdir, readFile } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
   type ApplyMcpServersResult,
-  atomicWriteFileSync,
+  applyMcpTextPlan,
   errorMessage,
-  isMissingFileError,
+  isPlainObject,
   type McpNativeMatch,
   type McpServerCapability,
   type McpServerContribution,
-  type McpServerDeclaration,
-  mcpOutcomesRequireWrite,
+  type McpTextPlan,
   type PrepareMcpServersRequest,
   type PrepareMcpServersResult,
-  reconcileMcpServers,
+  prepareMcpTextPlan,
+  type ReadonlyMcpServerDeclaration,
+  readTextOrAbsent,
+  sameStringArray,
+  sameStringRecord,
 } from '@agent-facets/adapter'
 import { parseDocument, TomlFormat } from '@decimalturn/toml-patch'
 
@@ -93,23 +96,13 @@ const PORTABLE_KEYS: Readonly<Record<'stdio' | 'http', ReadonlySet<string>>> = {
  */
 const INLINE_TABLE_DEPTH = 2
 
-type CodexMcpPlan =
-  | { readonly kind: 'unchanged'; readonly path: string }
-  | { readonly kind: 'write'; readonly path: string; readonly expected: string | null; readonly contents: string }
-
-export const codexMcpServers: McpServerCapability<CodexMcpPlan> = {
-  async prepare(request: PrepareMcpServersRequest): Promise<PrepareMcpServersResult<CodexMcpPlan>> {
+export const codexMcpServers: McpServerCapability<McpTextPlan> = {
+  async prepare(request: PrepareMcpServersRequest): Promise<PrepareMcpServersResult<McpTextPlan>> {
     const path = join(request.projectRoot, ...DOCUMENT_PATH)
 
-    let text: string | null
-    try {
-      text = await readFile(path, 'utf8')
-    } catch (err) {
-      if (!isMissingFileError(err)) {
-        return { ok: false, failure: { code: 'io-failed', operation: 'read', path, message: errorMessage(err) } }
-      }
-      text = null
-    }
+    const read = await readTextOrAbsent(path)
+    if (!read.ok) return { ok: false, failure: read.failure }
+    const text = read.text
 
     let document: ReturnType<typeof parseDocument> | null = null
     let root: Record<string, unknown> = {}
@@ -139,126 +132,59 @@ export const codexMcpServers: McpServerCapability<CodexMcpPlan> = {
       }
     }
     const servers: Record<string, unknown> = rawServers ?? {}
-
-    const outcomes = reconcileMcpServers({
-      desired: request.desired,
-      previouslyOwnedNames: request.previouslyOwnedNames,
-      presentNames: new Set(Object.keys(servers)),
-      compare: (contribution) => compareEntry(servers[contribution.name], contribution.declaration),
-    })
-
-    if (!mcpOutcomesRequireWrite(outcomes)) {
-      return { ok: true, preparation: { plan: { kind: 'unchanged', path }, documentPaths: [path], outcomes } }
-    }
-
     const tracked = new Set(request.previouslyOwnedNames)
     const desiredByName = new Map(request.desired.map((contribution) => [contribution.name, contribution]))
 
-    for (const outcome of outcomes) {
-      switch (outcome.kind) {
-        case 'equivalent':
-          break
-        case 'absent':
-        case 'divergent': {
-          const contribution = desiredByName.get(outcome.name) as McpServerContribution
-          const preserved =
-            outcome.kind === 'divergent' && tracked.has(outcome.name)
-              ? preservableExtensions(servers[outcome.name], contribution.declaration)
-              : {}
-          servers[outcome.name] = renderEntry(contribution.declaration, preserved)
-          break
+    return prepareMcpTextPlan({
+      request,
+      documentPaths: [path],
+      presentNames: new Set(Object.keys(servers)),
+      compare: (contribution) => compareEntry(servers[contribution.name], contribution.declaration),
+      buildEdits: (outcomes) => {
+        for (const outcome of outcomes) {
+          switch (outcome.kind) {
+            case 'equivalent':
+              break
+            case 'absent':
+            case 'divergent': {
+              const contribution = desiredByName.get(outcome.name) as McpServerContribution
+              const preserved =
+                outcome.kind === 'divergent' && tracked.has(outcome.name)
+                  ? preservableExtensions(servers[outcome.name], contribution.declaration)
+                  : {}
+              servers[outcome.name] = renderEntry(contribution.declaration, preserved)
+              break
+            }
+            case 'obsolete-owned':
+              delete servers[outcome.name]
+              break
+          }
         }
-        case 'obsolete-owned':
-          delete servers[outcome.name]
-          break
-      }
-    }
-    root[SERVER_MAP_KEY] = servers
+        root[SERVER_MAP_KEY] = servers
 
-    let contents: string
-    try {
-      const format = text === null ? TomlFormat.default() : TomlFormat.autoDetectFormat(text)
-      format.inlineTableStart = INLINE_TABLE_DEPTH
-      const target = document ?? parseDocument('')
-      target.patch(root, format)
-      contents = target.toTomlString
-    } catch (err) {
-      return { ok: false, failure: { code: 'conflict', path, message: errorMessage(err) } }
-    }
-
-    return {
-      ok: true,
-      preparation: { plan: { kind: 'write', path, expected: text, contents }, documentPaths: [path], outcomes },
-    }
+        try {
+          const format = text === null ? TomlFormat.default() : TomlFormat.autoDetectFormat(text)
+          format.inlineTableStart = INLINE_TABLE_DEPTH
+          const target = document ?? parseDocument('')
+          target.patch(root, format)
+          return { ok: true, edits: [{ path, expected: text, contents: target.toTomlString }] }
+        } catch (err) {
+          return { ok: false, failure: { code: 'conflict', path, message: errorMessage(err) } }
+        }
+      },
+    })
   },
 
   async apply(request: { readonly plan: unknown }): Promise<ApplyMcpServersResult> {
-    const plan = asPlan(request.plan)
-
-    if (plan.kind === 'unchanged') {
-      return { ok: true, status: 'unchanged' }
-    }
-
-    let current: string | null
-    try {
-      current = await readFile(plan.path, 'utf8')
-    } catch (err) {
-      if (!isMissingFileError(err)) {
-        return {
-          ok: false,
-          failure: { code: 'io-failed', operation: 'read', path: plan.path, message: errorMessage(err) },
-        }
-      }
-      current = null
-    }
-
-    if (current !== plan.expected) {
-      return {
-        ok: false,
-        failure: {
-          code: 'conflict',
-          path: plan.path,
-          message: 'the Codex configuration changed after it was inspected; nothing was written',
-        },
-      }
-    }
-
-    try {
+    return applyMcpTextPlan(request.plan, {
+      adapterName: 'codex',
       // The atomic write puts its temporary file beside the target, so the
       // `.codex` directory has to exist before the rename can be same-volume.
-      await mkdir(dirname(plan.path), { recursive: true })
-      atomicWriteFileSync(plan.path, plan.contents)
-    } catch (err) {
-      return {
-        ok: false,
-        failure: { code: 'io-failed', operation: 'write', path: plan.path, message: errorMessage(err) },
-      }
-    }
-
-    return { ok: true, status: 'changed', changedPaths: [plan.path] }
+      beforeWrite: async (path) => {
+        await mkdir(dirname(path), { recursive: true })
+      },
+    })
   },
-}
-
-/**
- * Narrow the opaque plan the engine handed back. A value that fails this check
- * did not come from `prepare`, which is a violated contract rather than a
- * condition a caller could act on.
- */
-function asPlan(value: unknown): CodexMcpPlan {
-  if (isPlainObject(value)) {
-    if (value.kind === 'unchanged' && typeof value.path === 'string') {
-      return { kind: 'unchanged', path: value.path }
-    }
-    if (
-      value.kind === 'write' &&
-      typeof value.path === 'string' &&
-      typeof value.contents === 'string' &&
-      (value.expected === null || typeof value.expected === 'string')
-    ) {
-      return { kind: 'write', path: value.path, expected: value.expected, contents: value.contents }
-    }
-  }
-  throw new Error('codex: apply() received a plan this adapter did not produce')
 }
 
 /**
@@ -269,7 +195,7 @@ function asPlan(value: unknown): CodexMcpPlan {
  * Streamable HTTP because it has a `url`. An entry with both, or neither, is a
  * shape this adapter cannot classify, so it fails closed.
  */
-function compareEntry(existing: unknown, declaration: McpServerDeclaration): McpNativeMatch {
+function compareEntry(existing: unknown, declaration: ReadonlyMcpServerDeclaration): McpNativeMatch {
   if (!isPlainObject(existing)) return 'divergent'
   if (nativeTransport(existing) !== declaration.type) return 'divergent'
 
@@ -307,7 +233,7 @@ function nativeTransport(existing: Record<string, unknown>): 'stdio' | 'http' | 
   return 'unknown'
 }
 
-function preservableExtensions(existing: unknown, declaration: McpServerDeclaration): Record<string, unknown> {
+function preservableExtensions(existing: unknown, declaration: ReadonlyMcpServerDeclaration): Record<string, unknown> {
   if (!isPlainObject(existing)) return {}
   if (nativeTransport(existing) !== declaration.type) return {}
 
@@ -319,7 +245,10 @@ function preservableExtensions(existing: unknown, declaration: McpServerDeclarat
 }
 
 /** Render a portable declaration as a Codex `mcp_servers` entry. */
-function renderEntry(declaration: McpServerDeclaration, preserved: Record<string, unknown>): Record<string, unknown> {
+function renderEntry(
+  declaration: ReadonlyMcpServerDeclaration,
+  preserved: Record<string, unknown>,
+): Record<string, unknown> {
   const entry: Record<string, unknown> = {}
 
   if (declaration.type === 'stdio') {
@@ -335,23 +264,4 @@ function renderEntry(declaration: McpServerDeclaration, preserved: Record<string
   }
 
   return entry
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function sameStringArray(value: unknown, expected: readonly string[]): boolean {
-  if (value === undefined) return expected.length === 0
-  if (!Array.isArray(value) || value.length !== expected.length) return false
-  return value.every((item, index) => item === expected[index])
-}
-
-function sameStringRecord(value: unknown, expected: Readonly<Record<string, string>>): boolean {
-  const expectedKeys = Object.keys(expected)
-  if (value === undefined) return expectedKeys.length === 0
-  if (!isPlainObject(value)) return false
-  const keys = Object.keys(value)
-  if (keys.length !== expectedKeys.length) return false
-  return keys.every((key) => value[key] === expected[key])
 }

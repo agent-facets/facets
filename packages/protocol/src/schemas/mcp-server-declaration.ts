@@ -45,3 +45,27 @@ export type McpServerDeclaration =
       type: 'http'
       url: string
     }
+
+/**
+ * Recursively readonly, distributed across a union.
+ *
+ * Deliberately local and unexported: it exists to derive one type below, and
+ * a general-purpose deep-readonly utility on the published surface would
+ * invite consumers to apply it to shapes it was never checked against.
+ */
+type DeepReadonly<T> = T extends readonly (infer Element)[]
+  ? readonly DeepReadonly<Element>[]
+  : T extends object
+    ? { readonly [Key in keyof T]: DeepReadonly<T[Key]> }
+    : T
+
+/**
+ * A declaration a consumer may read but not modify.
+ *
+ * Derived from {@link McpServerDeclaration} rather than restated, so the two
+ * cannot describe different shapes. Planning results expose this form: the
+ * plan holds one frozen clone per contributed declaration, and its fingerprint
+ * describes exactly that clone, so neither a consumer's edit nor a caller's
+ * later mutation of its own input can leave the two disagreeing.
+ */
+export type ReadonlyMcpServerDeclaration = DeepReadonly<McpServerDeclaration>

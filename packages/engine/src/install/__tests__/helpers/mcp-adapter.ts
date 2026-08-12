@@ -4,9 +4,9 @@ import type {
   ApplyMcpServersResult,
   McpServerCapability,
   McpServerCapabilityFailure,
-  McpServerDeclaration,
   PrepareMcpServersRequest,
   PrepareMcpServersResult,
+  ReadonlyMcpServerDeclaration,
 } from '@agent-facets/adapter'
 import { mcpOutcomesRequireWrite, reconcileMcpServers } from '@agent-facets/adapter'
 
@@ -35,7 +35,7 @@ export interface McpCapabilityRecorder {
 
 type FakePlan =
   | { kind: 'unchanged'; path: string }
-  | { kind: 'write'; path: string; servers: Record<string, McpServerDeclaration> }
+  | { kind: 'write'; path: string; servers: Record<string, ReadonlyMcpServerDeclaration> }
 
 /**
  * Build a capability whose document lives at `documentPath()`.
@@ -46,8 +46,33 @@ type FakePlan =
 export interface RecordingMcpOptions {
   /** Make `prepare` report this failure instead of planning. */
   failPrepare?: McpServerCapabilityFailure
+  /**
+   * Run while `prepare` is in flight, before it returns.
+   *
+   * Preparation is the run's last asynchronous read-only step, so this is how
+   * a test puts an interrupt exactly where one can really land: after the
+   * caller committed to preparing and before it looks at the signal again.
+   */
+  duringPrepare?: () => void
   /** Make `apply` report this failure instead of writing. */
   failApply?: McpServerCapabilityFailure
+  /**
+   * Write the disclosed document and *then* report `failApply` — a buggy
+   * adapter that broke its own atomicity promise. The engine has to have armed
+   * restoration before it called `apply` for that write to be recoverable.
+   */
+  applyWritesBeforeFailure?: boolean
+  /**
+   * Write the disclosed document but report that nothing changed. The other
+   * half of the same problem: a run can succeed with an unjournaled write.
+   */
+  applyOmitsChangedPath?: boolean
+  /**
+   * Report the undisclosed path BEFORE the disclosed one, so a caller that
+   * journals while walking the reported paths stops before reaching the real
+   * one.
+   */
+  applyUndisclosedPathFirst?: boolean
   /**
    * Report a changed path `prepare` never disclosed — the contract breach the
    * engine refuses because it has no preimage for it.
@@ -83,6 +108,7 @@ export function recordingMcpCapability(
     async prepare(request: PrepareMcpServersRequest): Promise<PrepareMcpServersResult<FakePlan>> {
       const path = documentPath()
       record(`prepare:${request.desired.length}`)
+      options.duringPrepare?.()
       if (options.failPrepare !== undefined) return { ok: false, failure: options.failPrepare }
 
       const servers = readServers(path)
@@ -112,7 +138,7 @@ export function recordingMcpCapability(
         return { ok: true, preparation: { plan: { kind: 'unchanged', path }, documentPaths, outcomes } }
       }
 
-      const next: Record<string, McpServerDeclaration> = { ...servers.value }
+      const next: Record<string, ReadonlyMcpServerDeclaration> = { ...servers.value }
       for (const outcome of outcomes) {
         if (outcome.kind === 'obsolete-owned') {
           delete next[outcome.name]
@@ -134,16 +160,26 @@ export function recordingMcpCapability(
         record('apply:unchanged')
         return { ok: true, status: 'unchanged' }
       }
+      const write = (): void => {
+        mkdirSync(dirname(plan.path), { recursive: true })
+        writeFileSync(plan.path, `${JSON.stringify(plan.servers, null, 2)}\n`)
+      }
+
       if (options.failApply !== undefined) {
         record('apply:failed')
+        if (options.applyWritesBeforeFailure === true) write()
         return { ok: false, failure: options.failApply }
       }
       record('apply:changed')
-      mkdirSync(dirname(plan.path), { recursive: true })
-      writeFileSync(plan.path, `${JSON.stringify(plan.servers, null, 2)}\n`)
+      write()
+      if (options.applyOmitsChangedPath === true) {
+        return { ok: true, status: 'unchanged' }
+      }
       const undisclosed = options.applyUndisclosedPath?.()
       if (undisclosed !== undefined) {
-        return { ok: true, status: 'changed', changedPaths: [undisclosed] }
+        return options.applyUndisclosedPathFirst === true
+          ? { ok: true, status: 'changed', changedPaths: [undisclosed, plan.path] }
+          : { ok: true, status: 'changed', changedPaths: [undisclosed] }
       }
       return { ok: true, status: 'changed', changedPaths: [plan.path] }
     },
@@ -154,7 +190,7 @@ export function recordingMcpCapability(
 
 function readServers(
   path: string,
-): { ok: true; value: Record<string, McpServerDeclaration> } | { ok: false; message: string } {
+): { ok: true; value: Record<string, ReadonlyMcpServerDeclaration> } | { ok: false; message: string } {
   let text: string
   try {
     text = readFileSync(path, 'utf8')
@@ -162,7 +198,7 @@ function readServers(
     return { ok: true, value: {} }
   }
   try {
-    return { ok: true, value: JSON.parse(text) as Record<string, McpServerDeclaration> }
+    return { ok: true, value: JSON.parse(text) as Record<string, ReadonlyMcpServerDeclaration> }
   } catch (err) {
     return { ok: false, message: err instanceof Error ? err.message : String(err) }
   }

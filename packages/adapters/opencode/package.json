@@ -23,9 +23,9 @@
   },
   "devDependencies": {
     "@agent-facets/adapter": "workspace:*",
+    "@agent-facets/adapter-jsonc": "workspace:*",
     "@agent-facets/adapter-test-kit": "workspace:*",
     "arktype": "2.2.0",
-    "jsonc-parser": "^3.3.1",
     "tsdown": "^0.22.3",
     "typescript": "^6.0.3"
   },

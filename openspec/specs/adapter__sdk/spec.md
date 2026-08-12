@@ -160,6 +160,29 @@ An adapter definition using API `0.2` SHALL declare `mcpServers` as either `fals
 - **WHEN** a later adapter API adds a different project-configuration feature
 - **THEN** that feature SHALL use a separate capability without widening the MCP server contract
 
+### Requirement: The SDK supplies reusable MCP preparation and application scaffolding
+
+The SDK SHALL provide default MCP preparation and application scaffolding that an adapter author composes rather than reimplements. The scaffolding SHALL cover the parts every adapter answers identically: reading the documents an adapter selects, guarding authored literals against tool interpolation, classifying desired and owned entries, short-circuiting when nothing needs writing, disclosing every document a plan could touch, re-reading and comparing each document immediately before writing, returning a structured conflict when any differs, and writing each affected document atomically. An adapter SHALL supply only its tool-specific parts: which documents to consider, how to parse and validate them, how to compare an existing entry, and how to render an edit.
+
+The scaffolding SHALL support a plan that touches more than one native document, so an adapter whose tool merges several configuration layers is not forced to write its own application path. An adapter SHALL be able to override the default preparation or application when its tool genuinely requires it.
+
+The plan type an adapter's preparation produces SHALL remain visible to its own application operation through adapter definition, so both operations are checked against one plan shape rather than an erased one. At the consumer boundary the plan SHALL remain opaque, and a consumer SHALL NOT be able to read it.
+
+#### Scenario: Author supplies only tool-specific parts
+
+- **WHEN** an adapter author composes the SDK's MCP scaffolding with its document selection, parsing, comparison, and rendering
+- **THEN** the resulting capability SHALL satisfy the complete preparation and application contract without the author reimplementing disclosure, conflict detection, or atomic writing
+
+#### Scenario: Plan type survives adapter definition
+
+- **WHEN** an author defines an adapter whose preparation produces a structured plan
+- **THEN** its application operation SHALL be type-checked against that same plan shape
+
+#### Scenario: Consumer still sees an opaque plan
+
+- **WHEN** a consumer holds a prepared plan
+- **THEN** the plan SHALL remain structurally unreadable to it
+
 ### Requirement: The protocol declaration type is the adapter contract's source of truth
 
 The SDK SHALL consume the published MCP server declaration type from the protocol contract and SHALL NOT redeclare an independent structural copy. Adapter authors SHALL receive one portable declaration shape regardless of target tool.

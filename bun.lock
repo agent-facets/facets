@@ -34,10 +34,17 @@
         "typescript": "^6.0.3",
       },
     },
+    "packages/adapter-jsonc": {
+      "name": "@agent-facets/adapter-jsonc",
+      "dependencies": {
+        "jsonc-parser": "^3.3.1",
+      },
+    },
     "packages/adapter-test-kit": {
       "name": "@agent-facets/adapter-test-kit",
       "devDependencies": {
         "@agent-facets/adapter": "workspace:*",
+        "typescript": "^6.0.3",
       },
     },
     "packages/adapters/claude-code": {
@@ -45,6 +52,7 @@
       "version": "0.10.0",
       "devDependencies": {
         "@agent-facets/adapter": "workspace:*",
+        "@agent-facets/adapter-jsonc": "workspace:*",
         "@agent-facets/adapter-test-kit": "workspace:*",
         "arktype": "2.2.0",
         "tsdown": "^0.22.3",
@@ -69,9 +77,9 @@
       "version": "0.11.0",
       "devDependencies": {
         "@agent-facets/adapter": "workspace:*",
+        "@agent-facets/adapter-jsonc": "workspace:*",
         "@agent-facets/adapter-test-kit": "workspace:*",
         "arktype": "2.2.0",
-        "jsonc-parser": "^3.3.1",
         "tsdown": "^0.22.3",
         "typescript": "^6.0.3",
       },
@@ -172,6 +180,8 @@
     "@agent-facets/adapter-claude-code": ["@agent-facets/adapter-claude-code@workspace:packages/adapters/claude-code"],
 
     "@agent-facets/adapter-codex": ["@agent-facets/adapter-codex@workspace:packages/adapters/codex"],
+
+    "@agent-facets/adapter-jsonc": ["@agent-facets/adapter-jsonc@workspace:packages/adapter-jsonc"],
 
     "@agent-facets/adapter-opencode": ["@agent-facets/adapter-opencode@workspace:packages/adapters/opencode"],
 

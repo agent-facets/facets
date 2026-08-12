@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { McpServerCapability } from '@agent-facets/adapter'
 import {
   type McpMatrixCaseId,
@@ -11,6 +14,14 @@ import adapter from '../index.ts'
 import { claudeCodeMcpServers } from '../mcp-servers.ts'
 
 const DOCUMENT = '.mcp.json'
+
+/**
+ * Claude Code's own interpolation syntax, assembled rather than written out so
+ * this file does not itself contain the placeholder it is testing for.
+ */
+function interpolated(name: string): string {
+  return `${'$'}{${name}}`
+}
 
 /** The canonical native rendering of the matrix's stdio server. */
 const NATIVE_STDIO = '{ "type": "stdio", "command": "srv", "args": ["--root", "/w"], "env": { "TOKEN_NAME": "A" } }'
@@ -189,6 +200,99 @@ runMcpServerMatrix({ capability: claudeCodeMcpServers, seeds })
 describe('claude-code MCP capability', () => {
   test('is declared on the adapter', () => {
     expect(adapter.mcpServers).toBe(claudeCodeMcpServers)
+  })
+
+  test('a one-entry change leaves unrelated formatting byte-identical', async () => {
+    // Reserializing the document would reflow all of this even while preserving
+    // indentation and line endings, which is exactly what the syntax-aware edit
+    // exists to avoid.
+    const root = mkdtempSync(join(tmpdir(), 'claude-mcp-'))
+    const before = [
+      '{',
+      '  "$schema": "https://example.com/mcp.json",',
+      '',
+      '  "permissions": { "allow": ["Bash(ls:*)"], "deny": [] },',
+      '',
+      '  "mcpServers": {',
+      '    "manual": { "command": "do-not-touch", "args": ["a", "b"] }',
+      '  }',
+      '}',
+      '',
+    ].join('\n')
+    writeFileSync(join(root, DOCUMENT), before)
+
+    const prepared = await claudeCodeMcpServers.prepare({
+      projectRoot: root,
+      desired: [{ name: 'fs', declaration: { type: 'stdio', command: 'srv' } }],
+      previouslyOwnedNames: [],
+    })
+    if (!prepared.ok) expect.unreachable()
+    const applied = await claudeCodeMcpServers.apply({ plan: prepared.preparation.plan })
+    expect(applied.ok).toBe(true)
+
+    const after = readFileSync(join(root, DOCUMENT), 'utf8')
+    // Everything outside the edited property keeps its exact layout: the
+    // compact inline object, the blank-line grouping, and the member order. A
+    // full reserialization would have flattened all three.
+    expect(after).toContain('"permissions": { "allow": ["Bash(ls:*)"], "deny": [] }')
+    expect(after).toContain('\n\n  "permissions"')
+    expect(after).toContain('"$schema": "https://example.com/mcp.json",\n')
+    // The unowned entry keeps its meaning; only the entry being written moves.
+    expect(JSON.parse(after).mcpServers.manual).toEqual({ command: 'do-not-touch', args: ['a', 'b'] })
+    expect(JSON.parse(after).mcpServers.fs).toEqual({ type: 'stdio', command: 'srv' })
+
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  test('a byte-order mark survives an edit', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'claude-mcp-bom-'))
+    writeFileSync(join(root, DOCUMENT), '\uFEFF{\n  "mcpServers": {}\n}\n')
+
+    const prepared = await claudeCodeMcpServers.prepare({
+      projectRoot: root,
+      desired: [{ name: 'fs', declaration: { type: 'stdio', command: 'srv' } }],
+      previouslyOwnedNames: [],
+    })
+    if (!prepared.ok) expect.unreachable()
+    await claudeCodeMcpServers.apply({ plan: prepared.preparation.plan })
+
+    const after = readFileSync(join(root, DOCUMENT), 'utf8')
+    expect(after.charCodeAt(0)).toBe(0xfeff)
+    expect(JSON.parse(after.slice(1)).mcpServers.fs.command).toBe('srv')
+
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  test('rejects a declaration Claude Code would interpolate', async () => {
+    const result = await claudeCodeMcpServers.prepare({
+      projectRoot: '/does-not-need-to-exist',
+      desired: [{ name: 'fs', declaration: { type: 'stdio', command: 'srv', env: { TOKEN: interpolated('SECRET') } } }],
+      previouslyOwnedNames: [],
+    })
+
+    if (result.ok) expect.unreachable()
+    expect(result.failure.code).toBe('conflict')
+    if (result.failure.code !== 'conflict') expect.unreachable()
+    expect(result.failure.message).toContain(interpolated('SECRET'))
+  })
+
+  test('every interpolated position is rejected', async () => {
+    const declarations = [
+      { type: 'stdio', command: interpolated('BIN') },
+      { type: 'stdio', command: 'srv', args: [interpolated('FLAG')] },
+      { type: 'stdio', command: 'srv', env: { TOKEN: interpolated('SECRET') } },
+      { type: 'http', url: `https://${interpolated('HOST')}.example.com/mcp` },
+    ] as const
+
+    for (const declaration of declarations) {
+      const result = await claudeCodeMcpServers.prepare({
+        projectRoot: '/does-not-need-to-exist',
+        desired: [{ name: 'fs', declaration }],
+        previouslyOwnedNames: [],
+      })
+      if (result.ok) expect.unreachable()
+      expect(result.failure.code).toBe('conflict')
+    }
   })
 
   test('rejects a plan it did not produce', async () => {

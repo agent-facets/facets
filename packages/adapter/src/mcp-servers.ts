@@ -1,4 +1,4 @@
-import type { McpServerDeclaration } from '@agent-facets/protocol/mcp-declaration'
+import type { McpServerDeclaration, ReadonlyMcpServerDeclaration } from '@agent-facets/protocol/mcp-declaration'
 
 /**
  * The MCP server capability: how an adapter reconciles a project's desired
@@ -30,10 +30,15 @@ import type { McpServerDeclaration } from '@agent-facets/protocol/mcp-declaratio
  * The declaration type is imported from the protocol contract rather than
  * restated here, so an adapter's signature cannot drift from the published
  * declaration shape.
+ *
+ * The declaration is deeply read-only. It is the caller's planned declaration,
+ * shared with the plan's other views and with the fingerprint that proves
+ * approval of it; an adapter that could edit it in place would change what the
+ * user approved after they approved it.
  */
 export interface McpServerContribution {
   readonly name: string
-  readonly declaration: McpServerDeclaration
+  readonly declaration: ReadonlyMcpServerDeclaration
 }
 
 /**
@@ -187,4 +192,4 @@ export interface McpServerCapability<Plan = unknown> {
   apply(request: { readonly plan: Plan }): Promise<ApplyMcpServersResult>
 }
 
-export type { McpServerDeclaration }
+export type { McpServerDeclaration, ReadonlyMcpServerDeclaration }

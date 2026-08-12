@@ -6,6 +6,7 @@ import {
   aliasProblemLocation,
   collisionClaimants,
   collisionGroupKey,
+  describeAlias,
   describeCollisionGroup,
 } from '../../../util/collision-report.ts'
 import { contributionKey, describeContribution } from '../../../util/contribution.ts'
@@ -541,7 +542,7 @@ function failureDetail(failure: RunInstallFailure): React.JSX.Element {
                 <Box key={claimant.key} flexDirection="column">
                   <Text color={THEME.hint}>
                     {'   '}
-                    {claimant.facet} ({claimant.label}) → “{claimant.effectiveName}”
+                    {claimant.facet} ({claimant.label}) → “{claimant.effectiveName}”{describeAlias(claimant)}
                   </Text>
                   {/* A server's declaration summary, so two claimants sharing
                       a name are still told apart. Empty for an asset. */}

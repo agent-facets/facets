@@ -258,6 +258,66 @@ describe('mcp outcomes — intent changes are updates, not repairs', () => {
   })
 })
 
+describe('mcp outcomes — a first declaration on an existing facet', () => {
+  /** Republish the same facet version, now declaring a server. */
+  function addServerToInstalledFacet(): string {
+    return serverFixture('alpha', 'filesystem', STDIO)
+  }
+
+  test('a proven first declaration is new intent, so the facet is updated', async () => {
+    // Installed first WITHOUT a server: the receipt records the facet and no
+    // claim for `filesystem`, which is what proves the declaration is new.
+    writeManifest({ facets: { alpha: skillFixture('alpha', 'review') } })
+    const rec = mcpAdapter('rec')
+    expect((await install({ adapters: [rec.adapter] })).result.ok).toBe(true)
+
+    addServerToInstalledFacet()
+    const { result } = await install({ adapters: [rec.adapter] })
+    const success = succeeded(result)
+
+    expect(success.mcp.dispositions).toEqual([
+      { kind: 'authored', facet: 'alpha', authoredName: 'filesystem', change: 'introduced' },
+    ])
+    expect(success.perFacet).toEqual([{ kind: 'updated', name: 'alpha', oldVersion: '1.0.0', newVersion: '1.0.0' }])
+  })
+
+  test('a proven first declaration whose entry already matches is still updated', async () => {
+    writeManifest({ facets: { alpha: skillFixture('alpha', 'review') } })
+    const rec = mcpAdapter('rec')
+    expect((await install({ adapters: [rec.adapter] })).result.ok).toBe(true)
+
+    // Someone configured the identical server by hand, so reconciliation
+    // writes nothing at all. The project's intent changed regardless.
+    mkdirSync(join(projectRoot, '.rec'), { recursive: true })
+    writeFileSync(rec.documentPath, `${JSON.stringify({ filesystem: STDIO }, null, 2)}\n`)
+
+    addServerToInstalledFacet()
+    const { result } = await install({ adapters: [rec.adapter], mcpConsent: { kind: 'preapproved' } })
+    const success = succeeded(result)
+
+    expect(success.mcp.dispositions[0]?.change).toBe('introduced')
+    expect(success.perFacet).toEqual([{ kind: 'updated', name: 'alpha', oldVersion: '1.0.0', newVersion: '1.0.0' }])
+  })
+
+  test('a first declaration the receipt cannot speak to is not reported as new intent', async () => {
+    writeManifest({ facets: { alpha: skillFixture('alpha', 'review') } })
+    const rec = mcpAdapter('rec')
+    expect((await install({ adapters: [rec.adapter] })).result.ok).toBe(true)
+
+    // No receipt at all: the absence of a claim is silence, not proof.
+    rmSync(receiptPath(projectRoot), { force: true })
+
+    addServerToInstalledFacet()
+    const { result } = await install({ adapters: [rec.adapter], mcpConsent: { kind: 'preapproved' } })
+    const success = succeeded(result)
+
+    expect(success.mcp.dispositions).toEqual([
+      { kind: 'authored', facet: 'alpha', authoredName: 'filesystem', change: 'unrecorded' },
+    ])
+    expect(success.perFacet).toEqual([{ kind: 'repaired', name: 'alpha', version: '1.0.0' }])
+  })
+})
+
 describe('mcp outcomes — evidence this machine does not have', () => {
   test('a receipt that predates configuration claims reports intent as unwitnessed', async () => {
     writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
