@@ -38,6 +38,40 @@ describe('detectJsoncFormatting', () => {
   test('carriage-return line endings are preserved', () => {
     expect(detectJsoncFormatting('{\r\n  "a": 1\r\n}\r\n').eol).toBe('\r\n')
   })
+
+  test('a nested first indented line does not set the unit', () => {
+    // The document's own step is two spaces; the eight-space line is four
+    // levels down and was previously read as one level.
+    const text = '{"outer": {\n        "deep": 1\n  },\n  "mcp": {}\n}\n'
+    expect(detectJsoncFormatting(text)).toEqual({ tabSize: 2, insertSpaces: true, eol: '\n' })
+  })
+
+  test('a hand-aligned comment does not set the unit', () => {
+    // Either side of the members: a comment's indentation is the author's own
+    // alignment and describes no level.
+    expect(detectJsoncFormatting('{\n   // note\n  "mcp": {}\n}\n').tabSize).toBe(2)
+    expect(detectJsoncFormatting('{\n // note\n  "mcp": {}\n}\n').tabSize).toBe(2)
+  })
+
+  test('a lone closing brace does not set the unit', () => {
+    expect(detectJsoncFormatting('{"a": {\n } ,\n  "mcp": {}\n}\n').tabSize).toBe(2)
+  })
+
+  test('a tab-indented document stays tabs even when a comment is aligned with spaces', () => {
+    expect(detectJsoncFormatting('{\n  // note\n\t"mcp": {}\n}\n')).toEqual({
+      tabSize: 2,
+      insertSpaces: false,
+      eol: '\n',
+    })
+  })
+
+  test('a blank line of trailing whitespace describes no member', () => {
+    expect(detectJsoncFormatting('{\n \n    "a": 1\n}\n').tabSize).toBe(4)
+  })
+
+  test('a document with no indented member falls back to two spaces', () => {
+    expect(detectJsoncFormatting('{"mcp":{}}')).toEqual({ tabSize: 2, insertSpaces: true, eol: '\n' })
+  })
 })
 
 describe('editJsoncProperty', () => {

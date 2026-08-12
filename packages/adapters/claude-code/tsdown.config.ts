@@ -3,9 +3,7 @@ import { defineConfig } from 'tsdown'
 export default defineConfig({
   entry: ['src/index.ts'],
   format: ['esm'],
-  dts: {
-    eager: true,
-  },
+  dts: false,
   clean: true,
   // Inline runtime dependencies so the published dist/index.mjs is a fully
   // self-contained bundle. The CLI loads this file directly at install time

@@ -839,6 +839,14 @@ Users SHALL be able to cancel the collision workspace, including by interrupting
 
 When a facet operation cannot interactively resolve an asset or MCP server collision, the system SHALL write one error to stderr, exit non-zero, and identify every group and claimant. Asset claimants SHALL include facet, scope, type, authored name, effective name, and the corresponding typed asset override location. MCP claimants SHALL include facet, authored server name, effective name, declaration summary, and the corresponding `materialization.servers` location.
 
+A declaration summary SHALL carry the transport, the standard-input command or the URL origin, and a fingerprint prefix, and SHALL carry nothing else from the declaration. Two claimants sharing a command SHALL remain distinguishable through that prefix.
+
+#### Scenario: A summary distinguishes without disclosing
+
+- **WHEN** two claimants declare the same command and differ only in arguments or environment
+- **THEN** their summaries SHALL differ
+- **AND** neither SHALL contain an argument, an environment name, an environment value, or a URL path
+
 The error SHALL include syntactically valid alias and omission examples for each claimant kind. It SHALL NOT choose a winner or invent an alias and SHALL state that no project or materialized state changed.
 
 #### Scenario: Non-interactive install reports all groups
@@ -892,9 +900,28 @@ Interactive `add`, `install`, and `remove` operations SHALL display one MCP-conf
 
 The MCP approval screen SHALL NOT include asset collision choices or asset takeover confirmations.
 
-Exactly two surfaces SHALL reproduce declaration contents: this interactive approval screen, and the non-interactive MCP consent failure specified below. Both exist to show a user what approval would authorize, and neither elides any part of it. Every other surface — verbose output, progress, summaries, collision reports, and every other diagnostic — SHALL NOT reproduce declaration contents.
+Exactly two surfaces SHALL reproduce declaration contents *completely*: this interactive approval screen, and the non-interactive MCP consent failure specified below. Both exist to show a user what approval would authorize, and neither elides any part of it.
 
-On both consent surfaces, every command, argument, URL, environment name, and environment value SHALL be rendered through one canonical escaped representation shared by the two surfaces. That representation SHALL be unambiguous: each value SHALL be delimited so that argument boundaries survive, so that two different argument lists cannot render identically, and so that no value can introduce a line break, terminal control sequence, or other character that would let declaration text impersonate surrounding output. Escaping SHALL preserve the complete value rather than redact, truncate, or normalize it.
+Every other surface SHALL reproduce at most the single declaration value that explains a failure or distinguishes one claimant from another, and SHALL NOT reproduce the declaration fields around it. A diagnostic reporting that one value cannot be written SHALL be free to name that value, because a user cannot correct a value they were not shown; a collision summary SHALL be free to name the command or the URL origin, because that is what tells two claimants apart. Arguments, environment names, environment values, and a URL's path, query, and fragment SHALL remain absent from every surface other than the two consent surfaces.
+
+Every reproduced declaration value, on every surface, SHALL be rendered through one canonical escaped representation. That representation SHALL be unambiguous: each value SHALL be delimited so that argument boundaries survive, so that two different argument lists cannot render identically, and so that no value can introduce a line break, terminal control sequence, or other character that would let declaration text impersonate surrounding output. It SHALL restrict its output to printable characters by allowing them rather than by excluding known-dangerous ones, so that a character it has never been told about cannot pass through. Escaping SHALL preserve the complete value rather than redact, truncate, or normalize it.
+
+#### Scenario: A failure names the value that caused it
+
+- **WHEN** an adapter reports that one declaration value cannot be written literally
+- **THEN** the diagnostic SHALL reproduce that value in escaped form
+- **AND** it SHALL NOT reproduce any other field of that declaration
+
+#### Scenario: A declaration cannot forge a diagnostic
+
+- **WHEN** a reproduced value contains a line break or terminal control sequence
+- **THEN** the diagnostic SHALL occupy no additional line and issue no terminal control
+
+#### Scenario: An unfamiliar character is escaped rather than drawn
+
+- **WHEN** a declaration value contains a character outside the printable set the rendering allows
+- **THEN** it SHALL be escaped
+- **AND** the complete value SHALL remain recoverable from the rendering
 
 #### Scenario: Distinct argument lists render differently
 
@@ -936,7 +963,8 @@ On both consent surfaces, every command, argument, URL, environment name, and en
 #### Scenario: Verbose output does not leak declarations
 
 - **WHEN** an operation uses verbose output
-- **THEN** commands, URLs, and environment values SHALL appear only on the two consent surfaces
+- **THEN** arguments and environment values SHALL NOT appear
+- **AND** a complete declaration SHALL appear only on the two consent surfaces
 
 ### Requirement: Non-interactive MCP configuration requires explicit opt-in
 
@@ -1016,7 +1044,7 @@ When active MCP declarations exist and selected adapters include API `0.1` adapt
 
 ### Requirement: Command output reports MCP configuration outcomes
 
-Command summaries SHALL report MCP servers separately from text assets and SHALL identify added, updated, unchanged, aliased, omitted, repaired, removed, conflicted, unsupported, and takeover outcomes. An aliased server SHALL show authored and effective names. A server-only facet SHALL not be presented as a no-op. Declaration contents SHALL remain absent from summaries and from every diagnostic other than the two consent surfaces.
+Command summaries SHALL report MCP servers separately from text assets and SHALL identify added, updated, unchanged, aliased, omitted, repaired, removed, conflicted, unsupported, and takeover outcomes. An aliased server SHALL show authored and effective names. A server-only facet SHALL not be presented as a no-op. Declaration contents SHALL remain absent from summaries, which report outcomes rather than diagnose failures and therefore need no declaration value at all.
 
 #### Scenario: Server-only facet has a meaningful summary
 

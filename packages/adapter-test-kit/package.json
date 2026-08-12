@@ -7,7 +7,7 @@
   },
   "scripts": {
     "types": "tsgo --noEmit",
-    "test": "bun test --pass-with-no-tests"
+    "test": "bun test --path-ignore-patterns '**/*.e2e.test.ts'"
   },
   "devDependencies": {
     "@agent-facets/adapter": "workspace:*",

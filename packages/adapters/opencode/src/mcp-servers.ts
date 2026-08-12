@@ -17,7 +17,13 @@ import {
   sameStringRecord,
   type TextDocumentEdit,
 } from '@agent-facets/adapter'
-import { detectJsoncFormatting, editJsoncProperty, parseJsoncDocument } from '@agent-facets/adapter-jsonc'
+import {
+  detectJsoncFormatting,
+  editJsoncProperty,
+  parseJsoncDocument,
+  restoreJsoncBom,
+  splitJsoncBom,
+} from '@agent-facets/adapter-jsonc'
 
 /**
  * OpenCode MCP server reconciliation.
@@ -80,17 +86,56 @@ const PORTABLE_KEYS: Readonly<Record<'local' | 'remote', ReadonlySet<string>>> =
   remote: new Set(['type', 'url']),
 }
 
+/**
+ * A layer's document as it was found on disk.
+ *
+ * The mark is split off rather than carried inline because every parser here
+ * treats a leading `\uFEFF` as a syntax error, while the file must keep it:
+ * dropping it rewrites a file the user's editor would only mark again. Storing
+ * the split form is what makes "which text do I parse" and "which text do I
+ * compare against" impossible to confuse — the exact original is derived from
+ * these two fields, never stored beside them.
+ */
+type LayerSource =
+  | { readonly kind: 'absent' }
+  | { readonly kind: 'present'; readonly bom: boolean; readonly body: string }
+
 /** One configuration layer, as inspected and as being edited. */
 interface Layer {
   readonly path: string
-  /** The document's exact text when inspected, or `null` when it does not exist. */
-  readonly text: string | null
-  /** The server entries this layer defines. Empty when the document is absent. */
+  readonly source: LayerSource
+  /**
+   * The server entries this layer defined when it was inspected. A snapshot on
+   * purpose: every write-target and shadowing decision is made against the view
+   * OpenCode itself loaded, not against a half-edited document.
+   */
   readonly servers: Record<string, unknown>
-  /** The working text, which starts as the inspected text. */
-  contents: string
-  /** Whether {@link contents} has diverged from {@link text}. */
-  changed: boolean
+  /** The working body, mark-free like {@link LayerSource}'s. */
+  workingBody: string
+}
+
+/** The exact bytes this layer was read from, which a plan compares against. */
+function inspectedText(layer: Layer): string | null {
+  return layer.source.kind === 'absent' ? null : restoreJsoncBom(layer.source.body, layer.source.bom)
+}
+
+/** The body a first edit starts from: the document's own, or a fresh object. */
+function startingBody(source: LayerSource): string {
+  return source.kind === 'absent' ? '{}\n' : source.body
+}
+
+/**
+ * The edit this layer would commit, or `null` when it would commit nothing.
+ *
+ * Derived by comparison rather than tracked by a flag set beside the working
+ * body, so "changed" cannot disagree with the text. It also makes writing an
+ * untouched absent document unrepresentable rather than merely unreached: the
+ * fresh `{}` body only differs from itself once something edits it.
+ */
+function pendingEdit(layer: Layer): TextDocumentEdit | null {
+  if (layer.workingBody === startingBody(layer.source)) return null
+  const bom = layer.source.kind === 'present' && layer.source.bom
+  return { path: layer.path, expected: inspectedText(layer), contents: restoreJsoncBom(layer.workingBody, bom) }
 }
 
 export const openCodeMcpServers: McpServerCapability<McpTextPlan> = {
@@ -112,7 +157,7 @@ export const openCodeMcpServers: McpServerCapability<McpTextPlan> = {
     return prepareMcpTextPlan({
       request,
       documentPaths: [jsonc.path, json.path],
-      interpolation: { pattern: INTERPOLATION_PATTERN, path: jsonc.path },
+      interpolation: { pattern: INTERPOLATION_PATTERN },
       presentNames: new Set(merged.keys()),
       compare: (contribution) => compareEntry(merged.get(contribution.name), contribution.declaration),
       buildEdits: (outcomes) => {
@@ -148,7 +193,8 @@ export const openCodeMcpServers: McpServerCapability<McpTextPlan> = {
 
         const edits: TextDocumentEdit[] = []
         for (const layer of [jsonc, json]) {
-          if (layer.changed) edits.push({ path: layer.path, expected: layer.text, contents: layer.contents })
+          const edit = pendingEdit(layer)
+          if (edit !== null) edits.push(edit)
         }
         return { ok: true, edits }
       },
@@ -199,10 +245,12 @@ type ParseLayerResult =
 
 function parseLayer(path: string, text: string | null): ParseLayerResult {
   if (text === null) {
-    return { ok: true, layer: { path, text: null, servers: {}, contents: '{}\n', changed: false } }
+    const source = { kind: 'absent' } as const
+    return { ok: true, layer: { path, source, servers: {}, workingBody: startingBody(source) } }
   }
 
-  const parsed = parseJsoncDocument(text)
+  const { bom, body } = splitJsoncBom(text)
+  const parsed = parseJsoncDocument(body)
   if (!parsed.ok) {
     return { ok: false, failure: { code: 'parse-failed', path, message: parsed.message } }
   }
@@ -222,7 +270,8 @@ function parseLayer(path: string, text: string | null): ParseLayerResult {
     }
   }
 
-  return { ok: true, layer: { path, text, servers: rawServers ?? {}, contents: text, changed: false } }
+  const source = { kind: 'present', bom, body } as const
+  return { ok: true, layer: { path, source, servers: rawServers ?? {}, workingBody: startingBody(source) } }
 }
 
 /**
@@ -236,20 +285,22 @@ function parseLayer(path: string, text: string | null): ParseLayerResult {
 function writeTargetFor(name: string, jsonc: Layer, json: Layer): Layer {
   if (Object.hasOwn(jsonc.servers, name)) return jsonc
   if (Object.hasOwn(json.servers, name)) return json
-  if (jsonc.text !== null) return jsonc
-  if (json.text !== null) return json
+  if (jsonc.source.kind === 'present') return jsonc
+  if (json.source.kind === 'present') return json
   return jsonc
 }
 
 /**
- * Set or delete one server entry in a layer's working text.
+ * Set or delete one server entry in a layer's working body.
  *
  * Each edit is computed against the text the previous one produced: a
- * syntax-aware edit carries absolute offsets, so they cannot be batched.
+ * syntax-aware edit carries absolute offsets, so they cannot be batched. The
+ * layout is taken from the document as inspected, so a run of edits cannot
+ * drift onto the shape its own first edit produced.
  */
 function setEntry(layer: Layer, name: string, value: Record<string, unknown> | undefined): void {
-  layer.contents = editJsoncProperty(layer.contents, [SERVER_MAP_KEY, name], value, detectJsoncFormatting(layer.text))
-  layer.changed = layer.contents !== layer.text
+  const formatting = detectJsoncFormatting(layer.source.kind === 'absent' ? null : layer.source.body)
+  layer.workingBody = editJsoncProperty(layer.workingBody, [SERVER_MAP_KEY, name], value, formatting)
 }
 
 /**

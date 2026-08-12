@@ -285,7 +285,9 @@ args = [ "--port", "4000" ]
     const applied = await codexMcpServers.apply({ plan: prepared.preparation.plan })
 
     if (applied.ok) expect.unreachable()
-    expect(applied.failure.code).toBe('conflict')
+    if (applied.failure.code !== 'conflict') expect.unreachable()
+    // Drift, not a format refusal: the document is fine, the run is stale.
+    expect(applied.failure).toEqual({ code: 'conflict', reason: 'document-changed', path: configPath })
     expect(readFileSync(configPath, 'utf8')).toBe('[mcp_servers]\n# somebody else got here first\n')
   })
 })

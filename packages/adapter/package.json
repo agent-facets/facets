@@ -12,7 +12,8 @@
   ],
   "exports": {
     ".": "./src/index.ts",
-    "./api-version": "./src/api-version.ts"
+    "./api-version": "./src/api-version.ts",
+    "./terminal": "./src/terminal.ts"
   },
   "scripts": {
     "build": "tsdown",
@@ -42,6 +43,10 @@
       "./api-version": {
         "import": "./dist/api-version.mjs",
         "types": "./dist/api-version.d.mts"
+      },
+      "./terminal": {
+        "import": "./dist/terminal.mjs",
+        "types": "./dist/terminal.d.mts"
       }
     }
   }

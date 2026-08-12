@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test'
+import type { McpServerCapabilityFailure } from '@agent-facets/adapter'
 import type { McpConsentRequest, McpUnsupportedAdapter } from '@agent-facets/engine'
-import { formatMcpConsentReport, formatUnsupportedMcpAdaptersReport } from '../mcp-report.ts'
+import {
+  describeMcpCapabilityFailure,
+  describeMcpCapabilityHint,
+  formatMcpConsentReport,
+  formatUnsupportedMcpAdaptersReport,
+} from '../mcp-report.ts'
 
 const REQUEST: McpConsentRequest = {
   declarations: [
@@ -62,6 +68,94 @@ describe('formatMcpConsentReport', () => {
 
   test('states that nothing was changed', () => {
     expect(report).toContain('MCP configuration were NOT changed.')
+  })
+})
+
+describe('describeMcpCapabilityFailure', () => {
+  test('an interpolated literal names the server and shows the exact value', () => {
+    // The value is what makes this actionable: a user told only that "a value"
+    // would be expanded has to guess which of a command, four arguments, and
+    // six environment entries is the offender.
+    const described = describeMcpCapabilityFailure({
+      code: 'conflict',
+      reason: 'interpolation',
+      serverName: 'fs',
+      value: '{env:TOKEN}',
+    })
+
+    expect(described).toContain('"fs"')
+    expect(described).toContain('"{env:TOKEN}"')
+  })
+
+  test('an interpolated literal names no document', () => {
+    const described = describeMcpCapabilityFailure({
+      code: 'conflict',
+      reason: 'interpolation',
+      serverName: 'fs',
+      value: '{env:TOKEN}',
+    })
+
+    expect(described).not.toContain('opencode')
+    expect(described).not.toContain('/')
+  })
+
+  test('a value cannot add a line or reach the terminal', () => {
+    const hostile = '\u001b[2K\nsudo rm -rf /'
+    const described = describeMcpCapabilityFailure({
+      code: 'conflict',
+      reason: 'interpolation',
+      serverName: 'fs',
+      value: hostile,
+    })
+
+    expect(described).not.toContain('\u001b')
+    expect(described.split('\n')).toHaveLength(1)
+    // Escaped, not elided: the complete value is still there to read.
+    expect(described).toContain('\\u001b[2K\\nsudo rm -rf /')
+  })
+
+  test('a drifted document is described by its path alone', () => {
+    const described = describeMcpCapabilityFailure({
+      code: 'conflict',
+      reason: 'document-changed',
+      path: '/p/opencode.jsonc',
+    })
+
+    expect(described).toBe('/p/opencode.jsonc changed after it was inspected; nothing was written')
+  })
+
+  test('a native-state conflict carries the format-specific detail', () => {
+    const described = describeMcpCapabilityFailure({
+      code: 'conflict',
+      reason: 'native-state',
+      path: '/p/config.toml',
+      detail: 'cannot patch an inline table',
+    })
+
+    expect(described).toContain('/p/config.toml')
+    expect(described).toContain('cannot patch an inline table')
+  })
+})
+
+describe('describeMcpCapabilityHint', () => {
+  test('the reasons whose consequence is not obvious explain themselves', () => {
+    const interpolation: McpServerCapabilityFailure = {
+      code: 'conflict',
+      reason: 'interpolation',
+      serverName: 'fs',
+      value: '{env:T}',
+    }
+    const drift: McpServerCapabilityFailure = { code: 'conflict', reason: 'document-changed', path: '/p/a.json' }
+
+    expect(describeMcpCapabilityHint(interpolation)).toContain('substitute')
+    expect(describeMcpCapabilityHint(drift)).toContain('another process')
+  })
+
+  test('a failure that already explains itself gets no second sentence', () => {
+    expect(describeMcpCapabilityHint({ code: 'parse-failed', path: '/p/a.json', message: 'bad' })).toBeUndefined()
+    expect(
+      describeMcpCapabilityHint({ code: 'conflict', reason: 'native-state', path: '/p/a.toml', detail: 'nope' }),
+    ).toBeUndefined()
   })
 })
 

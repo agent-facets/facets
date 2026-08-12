@@ -220,4 +220,28 @@ describe('declaration secrecy', () => {
     // useless — this is the line between naming a thing and disclosing it.
     expect(result.stdout).toContain('filesystem')
   })
+
+  // A facet author controls every value in a declaration, and two of the
+  // surfaces that reproduce one are failure reports a user reads to decide
+  // what to do. Neither may hand a facet the cursor.
+  test('a declaration cannot issue terminal controls on a consent surface', async () => {
+    installFakeAdapter(adaptersDir, 'faketool', { mcp: true })
+    const repo = realpathSync(mkdtempSync(join(projectRoot, 'fixture-')))
+    writeFileSync(
+      join(repo, 'facet.json'),
+      JSON.stringify({
+        name: 'alpha',
+        version: '0.1.0',
+        servers: {
+          filesystem: { type: 'stdio', command: '\u001b[2K\nforged', args: ['ok'] },
+        },
+      }),
+    )
+
+    const result = await runCli(['add', `./${repo.split('/').pop()}`])
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).not.toContain('\u001b[2K')
+    expect(result.stderr).toContain('\\u001b[2K\\nforged')
+  })
 })

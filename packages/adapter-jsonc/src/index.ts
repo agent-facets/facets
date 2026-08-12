@@ -50,15 +50,55 @@ export function restoreJsoncBom(body: string, bom: boolean): string {
 /**
  * Match the document's own indentation and line endings.
  *
+ * The unit is the *shallowest* indentation the document uses, because that is
+ * the one that is a single level. Taking the first indented line instead reads
+ * whichever line happens to come first — a nested member, a hand-aligned
+ * comment, a closing brace on its own line — and infers a unit from it. That
+ * is not cosmetic: the editor re-indents the whole line an edit lands on using
+ * this size, so a document whose first indented line sits four levels deep
+ * comes back with its `mcp` member shifted to a column no one chose.
+ *
+ * Exactly one unit is inferred, since that is all a syntax-aware edit accepts.
+ * A document that indents inconsistently deeper down keeps every line outside
+ * the edited range byte-for-byte; only the edited range is laid out with this
+ * unit. A tie between equally shallow runs goes to the first, so the answer
+ * does not depend on iteration order.
+ *
  * A brand-new document gets two spaces, which is what both target tools write
  * when they bootstrap a configuration of their own.
  */
 export function detectJsoncFormatting(text: string | null): JsoncFormatting {
   const eol = text?.includes('\r\n') ? '\r\n' : '\n'
-  const indent = text?.match(/\n([ \t]+)\S/)?.[1]
+  const indent = shallowestIndent(text)
   if (indent === undefined) return { tabSize: 2, insertSpaces: true, eol }
   if (indent.startsWith('\t')) return { tabSize: 2, insertSpaces: false, eol }
   return { tabSize: indent.length, insertSpaces: true, eol }
+}
+
+/**
+ * The shortest leading whitespace run on a line that begins a member.
+ *
+ * Three kinds of line are skipped, because none of them is a member and each
+ * one is routinely shallower than the members around it — so counting them
+ * would drag the inferred unit below the document's real step:
+ *
+ *   - Blank and whitespace-only lines carry nothing to be indented.
+ *   - A line starting with `}`, `]`, or `,` closes or separates a structure,
+ *     so it sits at the *parent's* level by construction.
+ *   - A line starting with `/` is a comment, whose indentation the author is
+ *     free to align with anything at all.
+ *
+ * A `\r` before the line break is not part of the indent, which the `[ \t]`
+ * class already ensures.
+ */
+function shallowestIndent(text: string | null): string | undefined {
+  if (text === null || text === undefined) return undefined
+  let shallowest: string | undefined
+  for (const [, indent] of text.matchAll(/\n([ \t]+)(?=[^ \t\r\n\]},/])/g)) {
+    if (indent === undefined) continue
+    if (shallowest === undefined || indent.length < shallowest.length) shallowest = indent
+  }
+  return shallowest
 }
 
 /**

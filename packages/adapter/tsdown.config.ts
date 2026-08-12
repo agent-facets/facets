@@ -1,10 +1,10 @@
 import { defineConfig } from 'tsdown'
 
 export default defineConfig({
-  // `api-version.ts` is a separate, dependency-free entry so compatibility-
-  // aware consumers can import the canonical constants without loading the
-  // full SDK module graph.
-  entry: ['src/index.ts', 'src/api-version.ts'],
+  // `api-version.ts` and `terminal.ts` are separate, dependency-free entries so
+  // a consumer can import the canonical constants, or the canonical escaped
+  // rendering, without loading the full SDK module graph.
+  entry: ['src/index.ts', 'src/api-version.ts', 'src/terminal.ts'],
   format: ['esm'],
   dts: {
     eager: true,

@@ -169,7 +169,7 @@ export const codexMcpServers: McpServerCapability<McpTextPlan> = {
           target.patch(root, format)
           return { ok: true, edits: [{ path, expected: text, contents: target.toTomlString }] }
         } catch (err) {
-          return { ok: false, failure: { code: 'conflict', path, message: errorMessage(err) } }
+          return { ok: false, failure: { code: 'conflict', reason: 'native-state', path, detail: errorMessage(err) } }
         }
       },
     })

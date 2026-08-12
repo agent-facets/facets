@@ -179,7 +179,7 @@ Resolved facet content is stored at `$FACET_DIR/cache/<name>@<version>/` (defaul
 
 A facet that declares [`servers`](/specification/manifest#mcp-server-declarations) contributes MCP server configuration to every selected adapter, written into each tool's own project file — `.mcp.json` for Claude Code, `opencode.jsonc` and `opencode.json` for OpenCode, `.codex/config.toml` for Codex. Only project-scoped files are ever touched; no user- or system-wide tool configuration is created or modified.
 
-OpenCode merges its two configuration files, so both are read and both count as one configuration: a new entry is written to `opencode.jsonc` when it exists, an existing entry is updated in whichever file it currently wins in, and an entry your project owns is removed from every file that defines it. Entries you added yourself are never touched in either file.
+OpenCode merges its two configuration files, so both are read and both count as one configuration. A new entry goes to `opencode.jsonc` when that file exists, otherwise to an existing `opencode.json`, and otherwise into a newly created `opencode.jsonc`. An existing entry is updated in whichever file it currently wins in — and when your project owns an entry defined in both, the `opencode.jsonc` copy is updated and the shadowed `opencode.json` copy is removed in the same change. An entry your project owns is removed from every file that defines it. Entries you added yourself are never touched in either file.
 
 Installing a server **configures** it. Facets never downloads it, launches it, connects to it, checks its health, or authenticates to it. Whatever sign-in the server needs happens inside your coding tool afterwards.
 

@@ -10,6 +10,12 @@ import { runtimeModuleSpecifiers } from './module-specifiers.ts'
  * The CLI loads `dist/index.mjs` directly, with no `node_modules` tree beside
  * it, so a dependency that was not inlined is a runtime failure at install time
  * rather than a build warning. These assertions are the tripwire for that.
+ *
+ * The scan proves no *statically resolvable* specifier escaped bundling. A
+ * computed one — `require(name)`, a template literal, a `createRequire` handle
+ * — is invisible to it and is caught only by running the code, which is why
+ * each adapter's own end-to-end test also drives its write path through the
+ * built bundle.
  */
 export interface AssertDistBundleOptions {
   /** Absolute path to the built `dist/index.mjs`. */

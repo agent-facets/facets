@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { McpServerCapability } from '@agent-facets/adapter'
+import { parseJsoncDocument, splitJsoncBom } from '@agent-facets/adapter-jsonc'
 import {
   type McpMatrixCaseId,
   type McpMatrixProject,
@@ -32,9 +33,35 @@ function document(entries: Record<string, string>): string {
   return `{\n  "mcp": {\n${members}\n  }\n}\n`
 }
 
-/** The written JSONC document's server map, parsed rather than pattern-matched. */
-function parsedServers(project: McpMatrixProject): Record<string, { command?: string[]; environment?: unknown }> {
-  return JSON.parse((project.read(JSONC) ?? '{}').replaceAll(/^\s*\/\/.*$/gm, '')).mcp ?? {}
+/** One entry as OpenCode's own loader would see it. */
+type NativeEntry = Record<string, unknown>
+
+/**
+ * Read a document the way the adapter does.
+ *
+ * Through the shared parser rather than `JSON.parse` over a comment-stripping
+ * regex: OpenCode reads both filenames as JSONC, so a seed may carry block
+ * comments, a trailing comma, or a `//` inside a string value, and each of
+ * those either survives the regex and breaks `JSON.parse` or is mangled by it.
+ * A test reader that is stricter than the code under test fails for reasons
+ * the product does not have.
+ */
+function parseDocument(text: string): Record<string, unknown> {
+  const { body } = splitJsoncBom(text)
+  const parsed = parseJsoncDocument(body)
+  if (!parsed.ok) expect.unreachable()
+  if (typeof parsed.value !== 'object' || parsed.value === null) expect.unreachable()
+  return parsed.value as Record<string, unknown>
+}
+
+/** The document's server map, parsed rather than pattern-matched. */
+function serverMap(text: string): Record<string, NativeEntry | undefined> {
+  return (parseDocument(text).mcp ?? {}) as Record<string, NativeEntry | undefined>
+}
+
+/** The written JSONC document's server map. */
+function parsedServers(project: McpMatrixProject): Record<string, NativeEntry | undefined> {
+  return serverMap(project.read(JSONC) ?? '{}')
 }
 
 const seeds = {
@@ -46,7 +73,7 @@ const seeds = {
   'absent-untracked': {
     files: { [JSONC]: document({ [UNOWNED_NAME]: UNOWNED_ENTRY }) },
     after: (project) => {
-      expect(JSON.parse(project.read(JSONC) ?? '{}').mcp.fs).toEqual({
+      expect(parsedServers(project).fs).toEqual({
         type: 'local',
         command: ['srv', '--root', '/w'],
         environment: { TOKEN_NAME: 'A' },
@@ -133,8 +160,7 @@ const seeds = {
       [JSONC]: document({ ext: '{ "type": "local", "command": ["ext-server", "--old"], "timeout": 45000 }' }),
     },
     after: (project) => {
-      const parsed = JSON.parse(project.read(JSONC) ?? '{}')
-      expect(parsed.mcp.ext).toEqual({ type: 'local', command: ['ext-server', '--new'], timeout: 45000 })
+      expect(parsedServers(project).ext).toEqual({ type: 'local', command: ['ext-server', '--new'], timeout: 45000 })
     },
   },
 
@@ -147,9 +173,9 @@ const seeds = {
       [JSONC]: document({ [OBSOLETE_NAME]: '{ "type": "local", "command": ["gone"] }', [UNOWNED_NAME]: UNOWNED_ENTRY }),
     },
     after: (project) => {
-      const parsed = JSON.parse(project.read(JSONC) ?? '{}')
-      expect(parsed.mcp).not.toHaveProperty(OBSOLETE_NAME)
-      expect(parsed.mcp[UNOWNED_NAME]).toEqual(JSON.parse(UNOWNED_ENTRY))
+      const servers = parsedServers(project)
+      expect(servers).not.toHaveProperty(OBSOLETE_NAME)
+      expect(servers[UNOWNED_NAME]).toEqual(JSON.parse(UNOWNED_ENTRY))
     },
   },
 
@@ -172,9 +198,9 @@ const seeds = {
       }),
     },
     after: (project) => {
-      const parsed = JSON.parse(project.read(JSONC) ?? '{}')
-      expect(Object.keys(parsed.mcp).sort()).toEqual(['api', 'fs', UNOWNED_NAME].sort())
-      expect(parsed.mcp.api).toEqual({ type: 'remote', url: 'https://mcp.example.com/mcp' })
+      const servers = parsedServers(project)
+      expect(Object.keys(servers).sort()).toEqual(['api', 'fs', UNOWNED_NAME].sort())
+      expect(servers.api).toEqual({ type: 'remote', url: 'https://mcp.example.com/mcp' })
     },
   },
 
@@ -236,8 +262,7 @@ describe('opencode configuration layers', () => {
   }
 
   const read = (name: string): string => readFileSync(join(root, name), 'utf8')
-  const servers = (name: string): Record<string, { command?: string[] }> =>
-    JSON.parse(read(name).replaceAll(/^\s*\/\/.*$/gm, '')).mcp
+  const servers = (name: string): Record<string, NativeEntry | undefined> => serverMap(read(name))
 
   test('both documents are disclosed even when only one exists', async () => {
     writeFileSync(join(root, JSONC), '{ "mcp": {} }\n')
@@ -314,6 +339,48 @@ describe('opencode configuration layers', () => {
     expect(servers(JSONC).fs?.command).toEqual(['srv', '--root', '/w'])
     expect(() => read(JSON_DOCUMENT)).toThrow()
   })
+
+  test('a byte-order mark on the JSONC layer survives an edit', async () => {
+    writeFileSync(join(root, JSONC), '\uFEFF{\n  "mcp": {}\n}\n')
+
+    await reconcile()
+
+    expect(read(JSONC).startsWith('\uFEFF')).toBe(true)
+    expect(servers(JSONC).fs?.command).toEqual(['srv', '--root', '/w'])
+  })
+
+  test('a byte-order mark on the JSON layer survives an edit', async () => {
+    writeFileSync(join(root, JSON_DOCUMENT), '\uFEFF{\n  "mcp": {}\n}\n')
+
+    await reconcile()
+
+    expect(read(JSON_DOCUMENT).startsWith('\uFEFF')).toBe(true)
+    expect(servers(JSON_DOCUMENT).fs?.command).toEqual(['srv', '--root', '/w'])
+  })
+
+  test('each layer keeps its own byte-order mark through a two-document change', async () => {
+    // The collapse path writes both layers at once, which is where one shared
+    // flag would put a mark on the file that never had one.
+    writeFileSync(join(root, JSONC), '\uFEFF{ "mcp": { "fs": { "type": "local", "command": ["stale"] } } }\n')
+    writeFileSync(join(root, JSON_DOCUMENT), '{ "mcp": { "fs": { "type": "local", "command": ["shadowed"] } } }\n')
+
+    await reconcile(['fs'])
+
+    expect(read(JSONC).startsWith('\uFEFF')).toBe(true)
+    expect(read(JSON_DOCUMENT).startsWith('\uFEFF')).toBe(false)
+    expect(servers(JSONC).fs?.command).toEqual(['srv', '--root', '/w'])
+    expect(servers(JSON_DOCUMENT).fs).toBeUndefined()
+  })
+
+  test('a nested first indented line does not re-indent the edited member', async () => {
+    writeFileSync(join(root, JSONC), '{\n  "tools": {\n        "deep": true\n  },\n  "mcp": {}\n}\n')
+
+    await reconcile()
+
+    // The `mcp` member keeps the two-space step it was written with rather
+    // than being laid out with the eight-space run further down.
+    expect(read(JSONC)).toContain('\n  "mcp": {')
+  })
 })
 
 describe('opencode MCP capability', () => {
@@ -330,8 +397,17 @@ describe('opencode MCP capability', () => {
         previouslyOwnedNames: [],
       })
       if (prepared.ok) expect.unreachable()
-      expect(prepared.failure.code).toBe('conflict')
-      expect(prepared.failure.message).toContain('{env:TOKEN}')
+      if (prepared.failure.code !== 'conflict') expect.unreachable()
+      if (prepared.failure.reason !== 'interpolation') expect.unreachable()
+      // No document is named: the guard runs before a write target is chosen,
+      // and this failure used to be attributed to the JSONC layer whether or
+      // not that file was the one a write would have touched.
+      expect(prepared.failure).toEqual({
+        code: 'conflict',
+        reason: 'interpolation',
+        serverName: 'fs',
+        value: '{env:TOKEN}',
+      })
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

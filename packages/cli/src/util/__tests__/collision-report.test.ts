@@ -457,3 +457,45 @@ describe('describeClaimantDeclaration — HTTP origins', () => {
     expect(summarize('not a url at all')).toContain('<unparseable url>')
   })
 })
+
+describe('describeClaimantDeclaration — what a claimant cannot forge or leak', () => {
+  const summarize = (declaration: McpServerDeclaration): string =>
+    describeClaimantDeclaration(declaration, computeMcpServerFingerprint(declaration) as McpServerFingerprint)
+
+  test('a command cannot add a line or issue a terminal control', () => {
+    // The command comes from a facet, and this summary sits between two lines
+    // the report wrote. Unescaped, it could erase either of them.
+    const summary = summarize({ type: 'stdio', command: '\u001b[2K\nforged' } as McpServerDeclaration)
+
+    expect(summary).not.toContain('\u001b')
+    expect(summary.split('\n')).toHaveLength(1)
+    expect(summary).toContain('\\u001b[2K\\nforged')
+  })
+
+  test('an origin cannot issue a terminal control either', () => {
+    const summary = summarize({ type: 'http', url: 'https://exa\u001bmple.com/mcp' } as McpServerDeclaration)
+    expect(summary).not.toContain('\u001b')
+  })
+
+  test('everything outside the summary stays out of it', () => {
+    // Arguments, environment names, environment values: none of them is needed
+    // to tell two claimants apart, and the fingerprint already does that.
+    const summary = summarize({
+      type: 'stdio',
+      command: 'npx',
+      args: ['-y', 'secret-package'],
+      env: { TOKEN_NAME: 'hunter2' },
+    } as McpServerDeclaration)
+
+    expect(summary).toContain('"npx"')
+    expect(summary).not.toContain('secret-package')
+    expect(summary).not.toContain('TOKEN_NAME')
+    expect(summary).not.toContain('hunter2')
+  })
+
+  test('two claimants sharing a command are still distinguishable', () => {
+    const first = summarize({ type: 'stdio', command: 'npx', args: ['a'] } as McpServerDeclaration)
+    const second = summarize({ type: 'stdio', command: 'npx', args: ['b'] } as McpServerDeclaration)
+    expect(first).not.toBe(second)
+  })
+})
