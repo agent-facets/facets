@@ -1,12 +1,16 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  CURRENT_LOCKFILE_VERSION,
   CURRENT_PROJECT_MANIFEST_VERSION,
   CurrentProjectManifestSchema,
   facetEntryOverrides,
   facetEntrySource,
   LEGACY_PROJECT_MANIFEST_VERSION,
   LegacyProjectManifestSchema,
+  PROJECT_MANIFEST_VERSION_0_1,
+  ProjectManifest01Schema,
   parseProjectManifestDocument,
+  SUPPORTED_LOCKFILE_VERSIONS,
   SUPPORTED_PROJECT_MANIFEST_VERSIONS,
 } from '@agent-facets/protocol'
 import { type } from 'arktype'
@@ -19,7 +23,7 @@ const legacyManifest = {
 }
 
 const currentManifest = {
-  manifestVersion: 0.1,
+  manifestVersion: CURRENT_PROJECT_MANIFEST_VERSION,
   facets: {
     'facet-a': '1.*',
     'facet-b': {
@@ -40,15 +44,19 @@ const withEntry = (entry: unknown): unknown => ({
 
 describe('project-manifest version constants', () => {
   test('the current version is pinned and legacy is unversioned', () => {
-    expect(CURRENT_PROJECT_MANIFEST_VERSION).toBe(0.1)
+    expect(CURRENT_PROJECT_MANIFEST_VERSION).toBe(0.2)
+    expect(PROJECT_MANIFEST_VERSION_0_1).toBe(0.1)
     expect(LEGACY_PROJECT_MANIFEST_VERSION).toBe('legacy-unversioned')
-    expect(SUPPORTED_PROJECT_MANIFEST_VERSIONS).toEqual([0.1])
+    expect(SUPPORTED_PROJECT_MANIFEST_VERSIONS).toEqual([0.1, 0.2])
   })
 
   test('the project-manifest version is independent of other format axes', () => {
-    // `facets.json` versioning shares no value with the archive or lockfile
-    // axes; asserting the pin here catches an accidental "align them all".
-    expect(CURRENT_PROJECT_MANIFEST_VERSION).not.toBe(0.2)
+    // `facets.json` versioning is its own axis. It currently shares the value
+    // `0.2` with the archive format by coincidence, so the guard is that the
+    // constants stay SEPARATE — reading one where the other belongs must not
+    // typecheck away silently — rather than that they hold different numbers.
+    expect(CURRENT_PROJECT_MANIFEST_VERSION).not.toBe(CURRENT_LOCKFILE_VERSION)
+    expect(SUPPORTED_PROJECT_MANIFEST_VERSIONS).not.toEqual(SUPPORTED_LOCKFILE_VERSIONS)
   })
 })
 
@@ -84,8 +92,9 @@ describe('CurrentProjectManifestSchema — entries', () => {
     expect(CurrentProjectManifestSchema(withEntry('1.*'))).not.toBeInstanceOf(type.errors)
   })
 
-  test('rejects a non-0.1 manifestVersion', () => {
-    expect(CurrentProjectManifestSchema({ ...currentManifest, manifestVersion: 0.2 })).toBeInstanceOf(type.errors)
+  test('rejects any manifestVersion other than the current one', () => {
+    expect(CurrentProjectManifestSchema({ ...currentManifest, manifestVersion: 0.1 })).toBeInstanceOf(type.errors)
+    expect(CurrentProjectManifestSchema({ ...currentManifest, manifestVersion: 0.3 })).toBeInstanceOf(type.errors)
   })
 
   test('rejects an expanded entry without a source', () => {
@@ -132,8 +141,25 @@ describe('CurrentProjectManifestSchema — typed override maps', () => {
     )
   })
 
-  test('rejects an unknown asset-type group', () => {
-    expect(CurrentProjectManifestSchema(expanded({ servers: { db: { kind: 'omitted' } } }))).toBeInstanceOf(type.errors)
+  test('accepts the servers override group', () => {
+    expect(CurrentProjectManifestSchema(expanded({ servers: { db: { kind: 'omitted' } } }))).not.toBeInstanceOf(
+      type.errors,
+    )
+    expect(
+      CurrentProjectManifestSchema(expanded({ servers: { db: { kind: 'aliased', as: 'project-db' } } })),
+    ).not.toBeInstanceOf(type.errors)
+  })
+
+  test('rejects an unknown override group', () => {
+    expect(CurrentProjectManifestSchema(expanded({ serverz: { db: { kind: 'omitted' } } }))).toBeInstanceOf(type.errors)
+  })
+
+  test('rejects a server override key outside the declaration grammar', () => {
+    // Server declarations have only ever existed under the single-segment
+    // grammar, so a key outside it could not name a real server.
+    expect(CurrentProjectManifestSchema(expanded({ servers: { Bad_Name: { kind: 'omitted' } } }))).toBeInstanceOf(
+      type.errors,
+    )
   })
 
   // The test above passed for the wrong reason before undeclared groups were
@@ -194,7 +220,7 @@ describe('parseProjectManifestDocument — exact version dispatch', () => {
     expect(result.data.manifest.facets['facet-a']).toBe('1.*')
   })
 
-  test('parses a current 0.1 document', () => {
+  test('parses a current document', () => {
     const result = parseProjectManifestDocument(JSON.stringify(currentManifest))
     if (!result.ok) expect.unreachable()
     if (result.data.manifestVersion !== CURRENT_PROJECT_MANIFEST_VERSION) expect.unreachable()
@@ -219,26 +245,48 @@ describe('parseProjectManifestDocument — exact version dispatch', () => {
     expect(result.failure.manifestVersion).toBe(LEGACY_PROJECT_MANIFEST_VERSION)
   })
 
-  test('a malformed 0.1 document fails as 0.1 and is never retried as legacy', () => {
-    const input = { manifestVersion: 0.1, facets: { 'facet-b': { source: 'github:a/b', materialization: {} } } }
+  test('a malformed current document fails as current and is never retried as legacy', () => {
+    const input = {
+      manifestVersion: CURRENT_PROJECT_MANIFEST_VERSION,
+      facets: { 'facet-b': { source: 'github:a/b', materialization: {} } },
+    }
     const result = parseProjectManifestDocument(JSON.stringify(input))
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'schema-violation') expect.unreachable()
     expect(result.failure.manifestVersion).toBe(CURRENT_PROJECT_MANIFEST_VERSION)
   })
 
-  test('a compact-only document declaring 0.1 is read as current, not legacy', () => {
+  test('a 0.1 document is read under the frozen 0.1 schema', () => {
     const result = parseProjectManifestDocument(JSON.stringify({ manifestVersion: 0.1, facets: { a: '1.*' } }))
     if (!result.ok) expect.unreachable()
-    expect(result.data.manifestVersion).toBe(CURRENT_PROJECT_MANIFEST_VERSION)
+    expect(result.data.manifestVersion).toBe(PROJECT_MANIFEST_VERSION_0_1)
+  })
+
+  test('a 0.1 document declaring server overrides is rejected, never promoted', () => {
+    const input = {
+      manifestVersion: 0.1,
+      facets: { a: { source: '1.*', materialization: { servers: { fs: { kind: 'omitted' } } } } },
+    }
+    const result = parseProjectManifestDocument(JSON.stringify(input))
+    if (result.ok) expect.unreachable()
+    if (result.failure.code !== 'schema-violation') expect.unreachable()
+    expect(result.failure.manifestVersion).toBe(PROJECT_MANIFEST_VERSION_0_1)
+  })
+
+  test('the frozen 0.1 schema still accepts asset overrides', () => {
+    const input = {
+      manifestVersion: 0.1,
+      facets: { a: { source: '1.*', materialization: { skills: { review: { kind: 'omitted' } } } } },
+    }
+    expect(ProjectManifest01Schema(input)).not.toBeInstanceOf(type.errors)
   })
 
   test('an unsupported version is a structured failure', () => {
-    const result = parseProjectManifestDocument(JSON.stringify({ ...legacyManifest, manifestVersion: 0.2 }))
+    const result = parseProjectManifestDocument(JSON.stringify({ ...legacyManifest, manifestVersion: 0.3 }))
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'unsupported-manifest-version') expect.unreachable()
-    expect(result.failure.observed).toBe(0.2)
-    expect(result.failure.supported).toEqual([0.1])
+    expect(result.failure.observed).toBe(0.3)
+    expect(result.failure.supported).toEqual([0.1, 0.2])
   })
 
   test('a non-numeric version is unsupported with no observed number', () => {
@@ -251,7 +299,7 @@ describe('parseProjectManifestDocument — exact version dispatch', () => {
   // Two conflicting decisions for one asset must not collapse through
   // last-member-wins parsing.
   test('duplicate members are rejected before version dispatch', () => {
-    const text = '{"manifestVersion":0.1,"facets":{"a":"1.*"},"facets":{"b":"2.*"}}'
+    const text = '{"manifestVersion":0.2,"facets":{"a":"1.*"},"facets":{"b":"2.*"}}'
     const result = parseProjectManifestDocument(text)
     if (result.ok) expect.unreachable()
     expect(result.failure.code).toBe('duplicate-members')
@@ -259,7 +307,7 @@ describe('parseProjectManifestDocument — exact version dispatch', () => {
 
   test('a duplicate override key is rejected', () => {
     const text =
-      '{"manifestVersion":0.1,"facets":{"b":{"source":"github:a/b","materialization":' +
+      '{"manifestVersion":0.2,"facets":{"b":{"source":"github:a/b","materialization":' +
       '{"skills":{"review":{"kind":"omitted"},"review":{"kind":"aliased","as":"x"}}}}}}'
     const result = parseProjectManifestDocument(text)
     if (result.ok) expect.unreachable()

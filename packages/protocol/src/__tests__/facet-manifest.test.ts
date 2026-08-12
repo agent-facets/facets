@@ -62,10 +62,8 @@ describe('FacetManifestSchema — valid manifests', () => {
         },
       ],
       servers: {
-        jira: '1.0.0',
-        github: '2.3.0',
-        '@acme/deploy': '0.5.0',
-        slack: { image: 'ghcr.io/acme/slack-bot:v2' },
+        jira: { type: 'stdio', command: 'jira-mcp', args: ['--project', 'ACME'], env: { JIRA_SITE: 'acme' } },
+        slack: { type: 'http', url: 'https://mcp.example.com/slack' },
       },
     }
     const result = FacetManifestSchema(input)
@@ -74,10 +72,15 @@ describe('FacetManifestSchema — valid manifests', () => {
     expect(data.name).toBe('acme-dev')
     expect(data.agents?.reviewer?.description).toBe('Org code reviewer')
     expect(data.agents?.['quick-check']?.description).toBe('Fast lint check')
-    expect(data.servers?.jira).toBe('1.0.0')
-    expect(data.servers?.slack).toEqual({
-      image: 'ghcr.io/acme/slack-bot:v2',
+    // Argument order and literal environment values survive validation
+    // unchanged — nothing about a declaration is normalized.
+    expect(data.servers?.jira).toEqual({
+      type: 'stdio',
+      command: 'jira-mcp',
+      args: ['--project', 'ACME'],
+      env: { JIRA_SITE: 'acme' },
     })
+    expect(data.servers?.slack).toEqual({ type: 'http', url: 'https://mcp.example.com/slack' })
   })
 
   test('manifest with only composed facets is valid', () => {
@@ -159,7 +162,7 @@ describe('FacetManifestSchema — invalid manifests', () => {
     expect(errors.some((e) => e.path.includes('reviewer') && e.path.includes('description'))).toBe(true)
   })
 
-  test('server reference object without image field', () => {
+  test('server declaration without a transport tag', () => {
     const input = {
       name: 'my-facet',
       version: '1.0.0',
@@ -174,16 +177,15 @@ describe('FacetManifestSchema — invalid manifests', () => {
     expect(errors.some((e) => e.path.includes('bad'))).toBe(true)
   })
 
-  test('no text assets → schema error', () => {
+  test('no deliverable at all → schema error', () => {
     const input = {
       name: 'empty',
       version: '1.0.0',
-      servers: { jira: '1.0.0' },
     }
     const result = FacetManifestSchema(input)
     expect(result).toBeInstanceOf(type.errors)
     const errors = result as InstanceType<typeof type.errors>
-    expect(errors.some((e) => e.message.includes('at least one text asset'))).toBe(true)
+    expect(errors.some((e) => e.message.includes('at least one deliverable'))).toBe(true)
   })
 
   test('selective facets entry with no asset selection → schema error', () => {

@@ -2,8 +2,22 @@ import type { LockfileDriftEntry, RollbackOutcome, RunInstallFailure, RunInstall
 import { Box, Text } from 'ink'
 import type React from 'react'
 import { describeCompatibilityFailure } from '../../../util/adapter-install-errors.ts'
-import { describeNamespace, manifestLocation } from '../../../util/collision-report.ts'
+import {
+  aliasProblemLocation,
+  collisionClaimants,
+  collisionGroupKey,
+  describeCollisionGroup,
+} from '../../../util/collision-report.ts'
+import { contributionKey, describeContribution } from '../../../util/contribution.ts'
 import { diskStateSentence } from '../../../util/install-outcome.ts'
+import {
+  describeApprovalHeading,
+  describeDeclarationInFull,
+  describeMcpCapabilityFailure,
+  describeMcpContractViolation,
+  describeTakeoverHeading,
+  describeUnsupportedMcpAdapter,
+} from '../../../util/mcp-report.ts'
 import { THEME } from '../../theme.ts'
 import { UnsupportedManifestVersionBlock } from './unsupported-version-block.tsx'
 
@@ -22,8 +36,9 @@ function describeDisposition(disposition: { kind: string; as?: string }): string
 function driftKey(entry: LockfileDriftEntry): string {
   switch (entry.reason) {
     case 'materialization-drift':
-    case 'stale-override':
       return `${entry.name}:${entry.reason}:${entry.assetType}:${entry.authoredName}`
+    case 'stale-override':
+      return `${entry.name}:${entry.reason}:${contributionKey(entry.contribution)}:${entry.authoredName}`
     default:
       return `${entry.name}:${entry.reason}`
   }
@@ -52,7 +67,10 @@ function describeDrift(entry: LockfileDriftEntry): string {
     case 'materialization-drift':
       return `${entry.assetType} "${entry.authoredName}": facets.json says ${describeDisposition(entry.manifest)}, lockfile says ${describeDisposition(entry.locked)}`
     case 'stale-override':
-      return `${entry.assetType} "${entry.authoredName}" has a materialization override but is not in the locked content`
+      // Says explicitly that the override survived. Frozen mode reports
+      // stale intent instead of pruning it, and a line that only named the
+      // mismatch read as though it had already been cleaned up.
+      return `${describeContribution(entry.contribution)} "${entry.authoredName}" has a materialization override but is not in the locked content (the override was NOT removed)`
     case 'materialization-unrepresentable':
       return `lockfile v${entry.lockfileVersion} cannot record materialization overrides (needs v${entry.requiredVersion})`
   }
@@ -513,29 +531,37 @@ function failureDetail(failure: RunInstallFailure): React.JSX.Element {
           <Text color={THEME.warning} bold>
             ✕ two or more facets want the same name
           </Text>
-          {failure.groups.map((group) => (
-            <Box key={`${group.scope}:${group.namespace}:${group.effectiveName}`} flexDirection="column">
+          {failure.groups.map((entry) => (
+            <Box key={collisionGroupKey(entry)} flexDirection="column">
               <Text>
                 {' '}
-                {describeNamespace(group.namespace, group.scope)} — “{group.effectiveName}” is claimed by:
+                {describeCollisionGroup(entry)} — “{entry.group.effectiveName}” is claimed by:
               </Text>
-              {group.members.map((member) => (
-                <Box key={`${member.facet}:${member.type}:${member.authoredName}`} flexDirection="column">
+              {collisionClaimants(entry).map((claimant) => (
+                <Box key={claimant.key} flexDirection="column">
                   <Text color={THEME.hint}>
                     {'   '}
-                    {member.facet} ({member.type} {member.authoredName})
+                    {claimant.facet} ({claimant.label}) → “{claimant.effectiveName}”
                   </Text>
+                  {/* A server's declaration summary, so two claimants sharing
+                      a name are still told apart. Empty for an asset. */}
+                  {claimant.detail.map((detail) => (
+                    <Text key={detail} color={THEME.hint}>
+                      {'     '}
+                      {detail}
+                    </Text>
+                  ))}
                   {/* The exact edit site, derived from the published
                       group mapping so it cannot drift from the schema. */}
                   <Text color={THEME.hint}>
                     {'     '}
-                    {manifestLocation(member.facet, member.type, member.authoredName)}
+                    {claimant.location}
                   </Text>
                 </Box>
               ))}
             </Box>
           ))}
-          <Text color={THEME.hint}> Record an alias or omission per asset in facets.json, then re-run.</Text>
+          <Text color={THEME.hint}> Record an alias or omission per claimant in facets.json, then re-run.</Text>
         </Box>
       )
     case 'MATERIALIZATION_ALIAS_INVALID':
@@ -545,9 +571,9 @@ function failureDetail(failure: RunInstallFailure): React.JSX.Element {
             ✕ invalid materialization alias
           </Text>
           {failure.problems.map((problem) => (
-            <Text key={`${problem.facet}:${problem.alias}`} color={THEME.hint}>
+            <Text key={aliasProblemLocation(problem)} color={THEME.hint}>
               {' '}
-              {problem.facet}: “{problem.alias}” {problem.reason}
+              “{problem.alias}” {problem.reason} — at {aliasProblemLocation(problem)}
             </Text>
           ))}
         </Box>
@@ -559,19 +585,21 @@ function failureDetail(failure: RunInstallFailure): React.JSX.Element {
             ✕ the chosen names still conflict
           </Text>
           {failure.problems.map((problem) => (
-            <Text key={`${problem.facet}:${problem.alias}`} color={THEME.hint}>
+            <Text key={aliasProblemLocation(problem)} color={THEME.hint}>
               {' '}
-              {problem.facet}: “{problem.alias}” {problem.reason}
+              “{problem.alias}” {problem.reason} — at {aliasProblemLocation(problem)}
             </Text>
           ))}
-          {failure.groups.map((group) => (
-            <Text key={`${group.scope}:${group.namespace}:${group.effectiveName}`} color={THEME.hint}>
+          {failure.groups.map((entry) => (
+            <Text key={collisionGroupKey(entry)} color={THEME.hint}>
               {' '}
               {/* Humanized, like the collision arm above: the raw
                   discriminant (`skill-command`) is an internal name, and it
                   drops the scope entirely. */}
-              {describeNamespace(group.namespace, group.scope)} “{group.effectiveName}” is still claimed by{' '}
-              {group.members.map((m) => m.facet).join(', ')}
+              {describeCollisionGroup(entry)} “{entry.group.effectiveName}” is still claimed by{' '}
+              {collisionClaimants(entry)
+                .map((claimant) => claimant.facet)
+                .join(', ')}
             </Text>
           ))}
         </Box>
@@ -580,6 +608,100 @@ function failureDetail(failure: RunInstallFailure): React.JSX.Element {
       return (
         <Box flexDirection="column" marginTop={1}>
           <Text color={THEME.hint}>Cancelled.</Text>
+        </Box>
+      )
+    case 'MCP_ADAPTERS_UNSUPPORTED':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ {failure.adapters.length !== 1 ? 'selected adapters cannot' : 'a selected adapter cannot'} configure MCP
+            servers
+          </Text>
+          {failure.adapters.map((entry) => {
+            const described = describeUnsupportedMcpAdapter(entry)
+            return (
+              <Box key={entry.adapter} flexDirection="column">
+                <Text> {described.what}</Text>
+                <Text color={THEME.hint}> {described.fix}</Text>
+              </Box>
+            )
+          })}
+          <Text color={THEME.hint}> servers: {failure.servers.join(', ')}</Text>
+        </Box>
+      )
+    case 'MCP_PREPARE_FAILED':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ {failure.adapter} could not plan its MCP configuration
+          </Text>
+          <Text> {describeMcpCapabilityFailure(failure.failure)}</Text>
+        </Box>
+      )
+    case 'ASSET_TAKEOVER_CANCELLED':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.hint}>
+            Cancelled at {failure.adapter}: {failure.asset.scope} {failure.asset.type} “{failure.asset.name}” (wanted by{' '}
+            {failure.facet}) was already there and is not tracked by this project.
+          </Text>
+        </Box>
+      )
+    case 'MCP_APPLY_FAILED':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ {failure.adapter} could not write its MCP configuration
+          </Text>
+          <Text> {describeMcpCapabilityFailure(failure.failure)}</Text>
+        </Box>
+      )
+    case 'MCP_DOCUMENT_UNREADABLE':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ could not read {failure.path} before changing it
+          </Text>
+          <Text> {failure.cause}</Text>
+          <Text color={THEME.hint}> {failure.adapter}'s configuration was left alone rather than written back</Text>
+        </Box>
+      )
+    case 'MCP_CONSENT_REQUIRED':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ MCP server configuration needs your approval
+          </Text>
+          {failure.request.declarations.map((entry) => (
+            <Box key={entry.identity.effectiveName} flexDirection="column">
+              <Text> {describeApprovalHeading(entry)}</Text>
+              {describeDeclarationInFull(entry.declaration).map((line) => (
+                <Text key={line} color={THEME.hint}>
+                  {'   '}
+                  {line}
+                </Text>
+              ))}
+            </Box>
+          ))}
+          {failure.request.takeovers.map((entry) => (
+            <Text key={`${entry.adapter}:${entry.identity.effectiveName}`}> {describeTakeoverHeading(entry)}</Text>
+          ))}
+        </Box>
+      )
+    case 'MCP_CONSENT_DECLINED':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.hint}>Declined. No MCP server configuration was written.</Text>
+        </Box>
+      )
+    case 'MCP_CONTRACT_VIOLATION':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ an adapter broke the MCP configuration contract
+          </Text>
+          <Text> {describeMcpContractViolation(failure.violation)}</Text>
+          <Text color={THEME.hint}> this is an adapter bug; report it to the adapter's author</Text>
         </Box>
       )
     default: {

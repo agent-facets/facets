@@ -3,10 +3,11 @@ import { render } from 'ink'
 import { createElement } from 'react'
 import type { Command } from '../../commands.ts'
 import { InstallView } from '../../tui/views/install/install-view.tsx'
-import { writeMaterializationDetail } from '../../util/collision-report.ts'
 import { writeCliError } from '../../util/errors.ts'
+import { writeInstallFailureDetail } from '../../util/install-detail.ts'
 import { canPromptInteractively } from '../../util/interactive.ts'
 import { ensureAdapters } from '../shared/ensure-adapters.ts'
+import { ACCEPT_MCP_FLAG, INSTALL_PIPELINE_FLAGS, mcpConsentPolicy } from '../shared/flags.ts'
 import { installFailureDetail, installFailureFix } from '../shared/install-failure.ts'
 
 /**
@@ -23,7 +24,7 @@ export const installCommand: Command = {
   description: 'Install all facets from facets.json',
   implemented: true,
   flags: {
-    verbose: { type: 'boolean', description: 'Show detailed step output on stderr' },
+    ...INSTALL_PIPELINE_FLAGS,
     'frozen-lockfile': {
       type: 'boolean',
       description: 'Treat the lockfile as the source of truth; fail on any manifest/lockfile drift',
@@ -40,6 +41,7 @@ export const installCommand: Command = {
 
     const verbose = flags.verbose === true
     const frozenLockfile = flags['frozen-lockfile'] === true
+    const acceptMcp = flags[ACCEPT_MCP_FLAG] === true
 
     const projectRoot = process.cwd()
 
@@ -74,13 +76,16 @@ export const installCommand: Command = {
       createElement(InstallView, {
         mode: 'install',
         signal: controller.signal,
-        run: async (onStage, onLog, resolveCollisions) => {
+        run: async ({ onStage, onLog, resolveCollisions, resolveMcpConsent, resolveAssetTakeover }) => {
           const result = await runInstall({
             projectRoot,
             adapters,
             onStage,
-            ...(verbose && onLog ? { onLog } : {}),
-            ...(mayPrompt ? { resolveCollisions } : {}),
+            // `mayPrompt` already excludes frozen mode, so a frozen run can
+            // reach `preapproved` via the flag but never the prompting arm.
+            mcpConsent: mcpConsentPolicy({ acceptMcp, mayPrompt, resolve: resolveMcpConsent }),
+            ...(verbose ? { onLog } : {}),
+            ...(mayPrompt ? { resolveCollisions, resolveAssetTakeover } : {}),
             signal: controller.signal,
             frozenLockfile,
           })
@@ -130,7 +135,7 @@ export const installCommand: Command = {
       // contexts that produce one without a prompt are exactly the ones
       // where stdout is discarded — so the full report goes to stderr
       // first, leaving `fix:` as the last line.
-      writeMaterializationDetail(captured.failure)
+      writeInstallFailureDetail(captured.failure)
       writeCliError({
         what: 'install failed',
         detail: installFailureDetail(captured.failure),

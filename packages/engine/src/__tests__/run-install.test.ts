@@ -21,6 +21,7 @@ import {
 } from '@agent-facets/protocol'
 import { type } from 'arktype'
 import { type CacheIdentity, cachePath, cachePutVerified, computeDirIntegrity } from '../cache/index.ts'
+import { recordingMcpCapability } from '../install/__tests__/helpers/mcp-adapter.ts'
 import { loadLockfile } from '../install/lockfile-io.ts'
 import { runInstall } from '../install/run-install.ts'
 import type { StageEvent } from '../install/types.ts'
@@ -61,6 +62,10 @@ function buildFakeAdapter(name: string): Adapter {
     name,
     apiVersion: ADAPTER_API_VERSION,
     supportsInstall: true,
+    // A declared capability rather than `false`: a project with an active
+    // server declaration now requires one, and an adapter that declines is a
+    // different scenario with its own tests.
+    mcpServers: recordingMcpCapability(() => join(baseDir, 'mcp.json')).capability,
     buildAssetMetadata: (data) => ({
       ok: true,
       data: (data ?? {}) as Record<string, unknown>,
@@ -112,6 +117,7 @@ function buildNestedFakeAdapter(name: string): Adapter {
     name,
     apiVersion: ADAPTER_API_VERSION,
     supportsInstall: true,
+    mcpServers: false,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
     async installAsset(request) {
       const p = path(request.assetType, request.name)
@@ -151,6 +157,7 @@ function buildBrokenAdapter(name: string, throwOnCall: number): Adapter {
     name,
     apiVersion: ADAPTER_API_VERSION,
     supportsInstall: true,
+    mcpServers: false,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
     async installAsset(request) {
       calls += 1
@@ -193,6 +200,7 @@ function buildBadReadAdapter(name: string): Adapter {
     name,
     apiVersion: ADAPTER_API_VERSION,
     supportsInstall: true,
+    mcpServers: false,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
     async installAsset() {
       throw new Error('should not be reached: readAsset failed first')
@@ -293,7 +301,7 @@ describe('runInstall — local source success path with events', () => {
 
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
-    expect(result.summary.installed).toBe(1)
+    expect(result.summary.facets.installed).toBe(1)
     expect(result.lockfile.facets['viper-plans']?.version).toBe('0.1.0')
     expect(events.find((e) => e.kind === 'install-start')).toBeDefined()
     expect(events.find((e) => e.kind === 'facet-success')).toBeDefined()
@@ -313,7 +321,7 @@ describe('runInstall — local source success path', () => {
     })
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
-    expect(result.summary.installed).toBe(1)
+    expect(result.summary.facets.installed).toBe(1)
     expect(result.lockfile.facets['viper-plans']?.version).toBe('0.1.0')
   })
 
@@ -496,8 +504,13 @@ describe('runInstall — manifest name mismatch', () => {
   })
 })
 
-describe('runInstall — server warnings', () => {
-  test('facet declaring servers emits server-warning event and serverWarnings result', async () => {
+describe('runInstall — concrete MCP declarations', () => {
+  // The warn-and-skip path this block used to cover is gone: a speculative
+  // version-string reference is now a validation failure, not a successful
+  // install carrying a warning. Materialization of concrete declarations is
+  // added later in this change; for now the contract under test is that a
+  // valid declaration no longer blocks or degrades an install.
+  test('a facet declaring a concrete server installs its assets', async () => {
     const fixture = realpathSync(mkdtempSync(join(projectRoot, 'with-servers-')))
     writeFileSync(
       join(fixture, 'facet.json'),
@@ -505,7 +518,7 @@ describe('runInstall — server warnings', () => {
         name: 'with-servers',
         version: '0.1.0',
         skills: { planning: { description: 'planning skill' } },
-        servers: { 'inline-server': '1.0.0' },
+        servers: { 'inline-server': { type: 'stdio', command: 'inline-mcp' } },
       }),
     )
     mkdirSync(join(fixture, 'skills/planning'), { recursive: true })
@@ -516,21 +529,38 @@ describe('runInstall — server warnings', () => {
       JSON.stringify({ facets: { 'with-servers': `./${fixture.split('/').pop()}` } }),
     )
 
-    const events: StageEvent[] = []
     const result = await runInstall({
       projectRoot,
       adapters: [buildFakeAdapter('test')],
-      onStage: (e) => events.push(e),
+      // A declaration authorizes execution, so an unapproved one now stops
+      // the run. This test is about the declaration not *degrading* the
+      // install; approval is exercised on its own.
+      mcpConsent: { kind: 'preapproved' },
     })
     expect(result.ok).toBe(true)
-    if (!result.ok) expect.unreachable()
-    expect(result.serverWarnings).toHaveLength(1)
-    expect(result.serverWarnings[0]).toEqual({
-      facet: 'with-servers',
-      servers: ['inline-server'],
-    })
-    const warningEvent = events.find((e) => e.kind === 'server-warning')
-    expect(warningEvent).toBeDefined()
+  })
+
+  test('a speculative version-string reference fails validation', async () => {
+    const fixture = realpathSync(mkdtempSync(join(projectRoot, 'legacy-servers-')))
+    writeFileSync(
+      join(fixture, 'facet.json'),
+      JSON.stringify({
+        name: 'legacy-servers',
+        version: '0.1.0',
+        skills: { planning: { description: 'planning skill' } },
+        servers: { 'inline-server': '1.0.0' },
+      }),
+    )
+    mkdirSync(join(fixture, 'skills/planning'), { recursive: true })
+    writeFileSync(join(fixture, 'skills/planning/SKILL.md'), '# planning\n')
+
+    writeFileSync(
+      join(projectRoot, 'facets.json'),
+      JSON.stringify({ facets: { 'legacy-servers': `./${fixture.split('/').pop()}` } }),
+    )
+
+    const result = await runInstall({ projectRoot, adapters: [buildFakeAdapter('test')] })
+    expect(result.ok).toBe(false)
   })
 })
 
@@ -568,7 +598,7 @@ describe('runInstall — drift removal', () => {
     })
     expect(second.ok).toBe(true)
     if (!second.ok) expect.unreachable()
-    expect(second.summary.removed).toBe(1)
+    expect(second.summary.facets.removed).toBe(1)
     expect(second.lockfile.facets.orphan).toBeUndefined()
     expect(second.lockfile.facets.keeper).toBeDefined()
     expect(events.find((e) => e.kind === 'drift-removal')).toBeDefined()
@@ -613,8 +643,8 @@ describe('runInstall — lockfile bootstrap and reuse', () => {
     expect(result.lockfile.facets['viper-plans']?.version).toBe('0.1.0')
     // Same content + metadata on disk → skip-if-identical kicks in:
     // the facet reports as unchanged with zero new writes.
-    expect(result.summary.unchanged).toBe(1)
-    expect(result.summary.totalAssets).toBe(0)
+    expect(result.summary.facets.unchanged).toBe(1)
+    expect(result.summary.textAssets.written).toBe(0)
   })
 
   test('repaired: deleted asset is re-written and reported as repaired', async () => {
@@ -641,9 +671,9 @@ describe('runInstall — lockfile bootstrap and reuse', () => {
     })
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
-    expect(result.summary.repaired).toBe(1)
-    expect(result.summary.unchanged).toBe(0)
-    expect(result.summary.totalAssets).toBe(1)
+    expect(result.summary.facets.repaired).toBe(1)
+    expect(result.summary.facets.unchanged).toBe(0)
+    expect(result.summary.textAssets.written).toBe(1)
     expect(existsSync(skillPath)).toBe(true)
   })
 })
@@ -1117,6 +1147,7 @@ describe('runInstall — multi-file skill materialization', () => {
       name,
       apiVersion: ADAPTER_API_VERSION,
       supportsInstall: true,
+      mcpServers: false,
       buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
       async installAsset(request) {
         if (request.assetType === 'skill') {
@@ -1189,12 +1220,12 @@ describe('runInstall — multi-file skill materialization', () => {
 
     const first = await runInstall({ projectRoot, adapters })
     if (!first.ok) expect.unreachable()
-    expect(first.summary.totalAssets).toBe(1)
+    expect(first.summary.textAssets.written).toBe(1)
 
     // Second install with no changes: the whole bundle is identical → skipped.
     const second = await runInstall({ projectRoot, adapters })
     if (!second.ok) expect.unreachable()
-    expect(second.summary.totalAssets).toBe(0)
+    expect(second.summary.textAssets.written).toBe(0)
 
     // Drift a single companion on disk, then reinstall: the bundle is
     // repaired (one write) and the drifted file is restored from source. The
@@ -1204,7 +1235,7 @@ describe('runInstall — multi-file skill materialization', () => {
     const logs: string[] = []
     const third = await runInstall({ projectRoot, adapters, onLog: (b) => logs.push(b()) })
     if (!third.ok) expect.unreachable()
-    expect(third.summary.totalAssets).toBe(1)
+    expect(third.summary.textAssets.written).toBe(1)
     expect(readFileSync(apiPath, 'utf8')).toBe('# api reference\n')
     expect(logs.some((l) => l.includes('drift: skills/planning/references/api.md'))).toBe(true)
   })
@@ -1335,7 +1366,7 @@ describe('runInstall — multi-file skill materialization', () => {
     // survives, and the install reports the bundle as repaired (one write).
     const second = await runInstall({ projectRoot, adapters })
     if (!second.ok) expect.unreachable()
-    expect(second.summary.totalAssets).toBe(1)
+    expect(second.summary.textAssets.written).toBe(1)
     expect(readFileSync(join(skillDir, 'references/api.md'), 'utf8')).toBe('# api reference\n')
     expect(readFileSync(notePath, 'utf8')).toBe('keep me\n')
   })
@@ -1360,7 +1391,7 @@ describe('runInstall — multi-file skill materialization', () => {
     if (!frozen.ok) expect.unreachable()
 
     // Nothing written, and every companion survives.
-    expect(frozen.summary.totalAssets).toBe(0)
+    expect(frozen.summary.textAssets.written).toBe(0)
     expect(frozen.perFacet).toEqual([{ kind: 'unchanged', name: 'viper-plans', version: '0.1.0' }])
     const skillDir = join(projectRoot, '.bundle/skills/planning')
     expect(readFileSync(join(skillDir, 'references/api.md'), 'utf8')).toBe('# api reference\n')

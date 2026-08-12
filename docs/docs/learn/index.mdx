@@ -1,13 +1,13 @@
 ---
 title: Key Concepts
-description: Facets, assets, and the three asset types
+description: Facets, assets, and MCP servers
 ---
 
 This page introduces the core concepts behind Facets. For normative requirements, see the [Specification](/specification).
 
 ## Facets
 
-A **facet** is a versioned collection of [assets](#assets) defined by a [facet manifest](/specification/manifest) (`facet.json`) — the same bundle an author creates locally, publishes to the registry, and installs into a project.
+A **facet** is a versioned collection of [assets](#assets) and [MCP server declarations](#mcp-servers) defined by a [facet manifest](/specification/manifest) (`facet.json`) — the same bundle an author creates locally, publishes to the registry, and installs into a project.
 
 ## Assets
 
@@ -24,3 +24,9 @@ An asset is a discrete unit of content within a facet. A facet bundles any combi
     Personas with a defined role, behavior, and tool access.
   </Card>
 </Columns>
+
+## MCP servers
+
+A facet can also declare [MCP servers](/specification/manifest#mcp-server-declarations) — portable connection information for a tool your assistant should be able to reach. A declaration is not an asset: instead of a file the project owns, it materializes into a keyed entry in each connected tool's own configuration.
+
+Because configuring a server lets your tool run a command or open a connection, installing a new or changed declaration [requires your approval](/cli/install#mcp-servers) first. A facet may declare servers and nothing else.

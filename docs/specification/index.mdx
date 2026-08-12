@@ -4,8 +4,8 @@ description: "The open source Agent Facet specification"
 ---
 
 Facets are an open format and distribution system for modular AI assistant extensions. A facet packages skills, agents,
-and commands into a versioned, distributable unit with a well-defined manifest, integrity model, install pipeline, and
-publish flow.
+commands, and MCP server declarations into a versioned, distributable unit with a well-defined manifest, integrity
+model, install pipeline, and publish flow.
 
 This specification defines the authoritative requirements for the Facets format and protocol. For introductory material,
 see [Introduction](/) and [Key Concepts](/docs/learn).
@@ -33,7 +33,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 ## The facet artifact
 
-A **facet** is a named, versioned collection of text assets — skills, agents, and commands — defined by a manifest. The author's CLI builds it into a self-contained **facet archive** (`.facet`): the manifest plus every text asset. The registry verifies and stores that archive, and consumers receive exactly the bytes the author built — no text is fetched or assembled at install time.
+A **facet** is a named, versioned collection of text assets — skills, agents, and commands — plus portable [MCP server declarations](/specification/manifest#mcp-server-declarations), defined by a manifest. The author's CLI builds it into a self-contained **facet archive** (`.facet`): the manifest plus every text asset. The registry verifies and stores that archive, and consumers receive exactly the bytes the author built — no text is fetched or assembled at install time, and no server is fetched, resolved, or run.
 
 <Info>
 Stale text is safe (suboptimal, not broken). Changed text is a trust concern (prompt injection). That is why content is locked into the archive at build time and every install verifies the published hashes.
@@ -49,20 +49,23 @@ Stale text is safe (suboptimal, not broken). Changed text is a trust concern (pr
     The CLI builds the archive and computes its <Tooltip tip="The canonical fingerprint (content_integrity, over the uncompressed inner tar) and the transport hash (content_hash, over the uploaded tarball) — two distinct, non-interchangeable hashes." cta="See Integrity Model" href="/specification/integrity">integrity hashes</Tooltip>; the registry verifies the upload, stores it, and publishes the hashes. A published version is immutable. See [Build](/specification/build) and [Publish](/specification/publish).
   </Step>
   <Step title="Install">
-    The [plan/commit pipeline](/specification/install) resolves versions, verifies integrity (cache self-audit + lockfile comparison or registry confirmation), materializes assets, and writes manifest + lockfile + receipt atomically.
+    The [plan/commit pipeline](/specification/install) resolves versions, verifies integrity (cache self-audit + lockfile comparison or registry confirmation), obtains [MCP configuration approval](/specification/commit#mcp-configuration), materializes assets, reconciles native MCP configuration, and writes manifest + lockfile + receipt atomically.
   </Step>
   <Step title="Run">
-    Text assets in the assistant's context.
+    Text assets in the assistant's context; configured MCP servers connected by the tool itself.
   </Step>
 </Steps>
 
 ## Security and trust
 
-Facets enable arbitrary text injection into AI assistant contexts.
+Facets enable arbitrary text injection into AI assistant contexts, and an MCP server declaration can additionally cause
+a coding tool to execute a command or open an outbound connection.
 Implementors MUST address:
 
 1. **Content verification** -- hashes MUST be verified at download, on every cache hit, and at lockfile-entry creation. A lockfile entry for a registry facet MUST NOT be created without registry confirmation.
 2. **User consent** -- consumers SHOULD understand what a facet contains before installing it.
+3. **Execution consent** -- a new or changed MCP server declaration MUST be approved before it is materialized. Interactive consumers MUST see the exact command, arguments, and environment assignments, or the exact URL, before anything is written; non-interactive consumers MUST require an explicit opt-in. Approval is **machine-local** evidence: it MUST NOT travel to a teammate through version-controlled project state.
+4. **No server lifecycle** -- materializing a declaration MUST NOT install, launch, probe, or authenticate to the server. Facets stores no credentials and runs no MCP client; connection and authentication remain the target tool's responsibility.
 
 ## Sections
 

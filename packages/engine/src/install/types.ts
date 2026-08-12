@@ -1,17 +1,66 @@
-import type { Adapter } from '@agent-facets/adapter'
+import type { Adapter, McpServerCapabilityFailure } from '@agent-facets/adapter'
 import type { AssetType, Scope, ValidationError } from '@agent-facets/common'
 import type {
   CollisionGroup,
   IntegrityFailure,
   MaterializationDisposition,
-  StaleOverride,
+  ProjectAssetOverride,
+  ServerCollisionGroup,
   SupportedLockfile,
 } from '@agent-facets/protocol'
 import type { AdapterCompatibilityFailure } from '../adapters/api-compatibility.ts'
+import type { McpUnsupportedAdapter } from '../adapters/mcp-support.ts'
 import type { UnsupportedManifestVersion } from '../manifest/project-files.ts'
 import type { RegistryError } from '../registry/index.ts'
 import type { ParseError, Source } from '../sources/facet/types.ts'
+import type { AssetTakeoverResolver } from './asset-takeover.ts'
+import type { MaterializationAliasProblem } from './commit/collision-plan.ts'
 import type { CollisionResolver } from './commit/compose.ts'
+import type { McpConsentPolicy, McpConsentRequest } from './mcp/consent.ts'
+import type { McpConfigurationOutcome, McpConsentRequestSummary, McpInstallOutcomes } from './mcp/outcomes.ts'
+import type { McpContractViolation } from './mcp/prepare.ts'
+
+/**
+ * Which kind of contribution a materialization override names.
+ *
+ * Tagged rather than an `AssetType` widened with a `'server'` member: servers
+ * occupy their own identity space and carry no asset type at all, so the
+ * asset arm is the only one that can hold one. Every consumer that has to
+ * name an override — a prune report, a frozen drift entry, a collision
+ * location — needs exactly this distinction and nothing more.
+ */
+export type ContributionKind = { kind: 'asset'; assetType: AssetType } | { kind: 'mcp-server' }
+
+/** One override, identified by the facet and authored contribution it names. */
+export interface MaterializationOverrideRef {
+  facet: string
+  contribution: ContributionKind
+  /** The AUTHORED name, which is what `facets.json` keys the override by. */
+  authoredName: string
+}
+
+/**
+ * An override naming a contribution the resolved facet no longer has.
+ *
+ * Reported, never fatal: an override is durable project intent, so it
+ * survives a failed operation and is dropped only by a successful commit.
+ */
+export interface StaleMaterializationOverride extends MaterializationOverrideRef {
+  disposition: ProjectAssetOverride
+}
+
+/**
+ * One unresolved effective-name collision, from either identity space.
+ *
+ * Tagged rather than flattened into a single member shape: an asset claimant
+ * has a scope, an asset type, and a materialization namespace, while a server
+ * claimant has a declaration and a fingerprint. A union of those fields with
+ * everything optional would let a renderer read a namespace off a server
+ * group and print nothing where a reason belongs.
+ */
+export type MaterializationCollisionGroup =
+  | { kind: 'asset'; group: CollisionGroup }
+  | { kind: 'mcp-server'; group: ServerCollisionGroup }
 
 declare const EFFECTIVE_NAME: unique symbol
 
@@ -92,16 +141,54 @@ export type FacetOutcome =
 
 /**
  * Aggregate counts for the post-install summary line.
+ *
+ * Grouped by domain rather than flattened. Text assets and MCP configurations
+ * are different work in different places, and a flat shape made one of them
+ * the default: `totalAssets` beside the facet counts read as "everything this
+ * run did", so a facet that configured three servers and wrote no file
+ * summarized as nothing happening. Naming the domain forces every reader to
+ * say which one it means.
  */
 export interface InstallSummary {
-  installed: number
-  updated: number
-  repaired: number
-  unchanged: number
-  removed: number
-  /** Assets actually written across all facets (excludes skipped no-ops). */
-  totalAssets: number
-  removedAssets: number
+  /** Per-facet outcomes, counted by kind. `removed` includes untracked removals. */
+  facets: {
+    installed: number
+    updated: number
+    repaired: number
+    unchanged: number
+    removed: number
+  }
+  /**
+   * Files. Counted per adapter and asset, so one skill across three adapters
+   * is three writes — the same unit the adapters actually worked in.
+   */
+  textAssets: {
+    /** Assets actually written (excludes skipped no-ops). */
+    written: number
+    removed: number
+  }
+  mcp: {
+    /**
+     * Native reconciliation, counted per adapter and effective identity —
+     * the same unit as {@link textAssets}, for the same reason.
+     */
+    configurations: {
+      added: number
+      updated: number
+      repaired: number
+      unchanged: number
+      removed: number
+    }
+    /** Authored declarations by disposition. Counted once, not per adapter. */
+    declarations: {
+      aliased: number
+      omitted: number
+    }
+    /** Untracked native entries this run adopted or replaced with approval. */
+    takeovers: {
+      accepted: number
+    }
+  }
 }
 
 /**
@@ -142,7 +229,6 @@ export type StageEvent =
   | { kind: 'facet-stage'; facet: string; stage: FacetStage }
   | { kind: 'facet-success'; facet: string; outcome: FacetOutcome }
   | { kind: 'facet-failure'; facet: string; failure: RunInstallFailure }
-  | { kind: 'server-warning'; facet: string; servers: ReadonlyArray<string> }
   | { kind: 'drift-removal'; facet: string; oldVersion: string }
   /**
    * A receipt asset entry was rejected during load (path traversal,
@@ -150,6 +236,14 @@ export type StageEvent =
    * receipt's say-so — while the rest of the receipt is processed.
    */
   | { kind: 'receipt-invalid-asset'; facet: string; asset: string; reason: string }
+  /**
+   * A receipt MCP configuration claim was rejected during load (malformed
+   * server name or fingerprint, or two conflicting claims for one server).
+   * The claim is dropped, so its native entry reverts to untracked occupancy
+   * and its declaration needs approval again — neither of which a user could
+   * deduce from a run that otherwise looks routine.
+   */
+  | { kind: 'receipt-invalid-configuration'; facet: string; server: string; reason: string }
   /**
    * A receipt file exists for this project but could not be used — unreadable,
    * or self-identifying as a different project. Every identity it had tracked
@@ -205,14 +299,58 @@ export type StageEvent =
     }
   /**
    * A materialization override was dropped because the resolved facet version
-   * no longer contains the asset it named.
+   * no longer contains the asset or server it named.
    *
    * A dedicated event rather than a verbose log line: this silently changes
    * what `facets.json` says, so a user who never passes `--verbose` still has
    * to be told. Emitted only after the transaction commits — the prune is not
    * real until then.
    */
-  | { kind: 'stale-override-pruned'; facet: string; assetType: AssetType; authoredName: string }
+  | ({ kind: 'stale-override-pruned' } & MaterializationOverrideRef)
+  /**
+   * MCP configuration needs approval, and this run is about to ask for it.
+   *
+   * Carries the summary rather than the request: the exact declarations go to
+   * the approval surface, which is the one place whose purpose is showing them.
+   * A progress event describes what is being decided, not its payload.
+   */
+  | { kind: 'mcp-consent-required'; request: McpConsentRequestSummary }
+  /**
+   * Approval was obtained. `via` separates a human who read the commands from
+   * a flag that stood in for one — the same set of work, authorized two
+   * materially different ways.
+   */
+  | { kind: 'mcp-consent-accepted'; via: 'interactive' | 'preapproved' }
+  /**
+   * The user refused. Emitted before the journal opens, so nothing needs
+   * undoing and the operation ends with every file as it was.
+   */
+  | { kind: 'mcp-consent-declined' }
+  /**
+   * An asset write reached an occupied destination this machine does not own,
+   * and the just-in-time gate is about to ask about it.
+   */
+  | {
+      kind: 'asset-takeover-required'
+      facet: string
+      adapter: string
+      asset: AssetIdentity
+      occupancy: 'equivalent' | 'divergent'
+    }
+  /** The occupied destination was adopted or overwritten. */
+  | { kind: 'asset-takeover-accepted'; facet: string; adapter: string; asset: AssetIdentity }
+  /** The user refused mid-application; the caller rolls the journal back. */
+  | { kind: 'asset-takeover-cancelled'; facet: string; adapter: string; asset: AssetIdentity }
+  /**
+   * One effective MCP identity was reconciled into one adapter's native
+   * configuration.
+   *
+   * Emitted only after the transaction commits, like `stale-override-pruned`
+   * and for the same reason: until the tri-write succeeds the write is still
+   * a candidate for rollback, and reporting it earlier would announce work
+   * that may be undone a moment later.
+   */
+  | { kind: 'mcp-configured'; outcome: McpConfigurationOutcome }
   | { kind: 'adapter-complete'; facet: string; adapter: string }
   | { kind: 'asset-installed'; facet: string; adapter: string; asset: AssetIdentity }
   | { kind: 'asset-deleted'; facet: string; adapter: string; asset: AssetIdentity }
@@ -256,11 +394,11 @@ export type LockfileDriftEntry =
       locked: MaterializationDisposition
     }
   /**
-   * An override names an asset the locked content does not contain. A normal
-   * install prunes it inside its transaction; frozen mode writes nothing, so
-   * it can only report it.
+   * An override names an asset or server the locked content does not contain.
+   * A normal install prunes it inside its transaction; frozen mode writes
+   * nothing, so it can only report it.
    */
-  | { name: string; reason: 'stale-override'; assetType: AssetType; authoredName: string }
+  | { name: string; reason: 'stale-override'; contribution: ContributionKind; authoredName: string }
   /**
    * The manifest records materialization intent the loaded lockfile format
    * cannot express. Reproduction would have to invent the missing half.
@@ -445,7 +583,7 @@ export type RunInstallFailure =
    * all, so no effective set — and therefore no collision report — can be
    * derived from it.
    */
-  | { code: 'MATERIALIZATION_ALIAS_INVALID'; problems: ReadonlyArray<{ facet: string; alias: string; reason: string }> }
+  | { code: 'MATERIALIZATION_ALIAS_INVALID'; problems: ReadonlyArray<MaterializationAliasProblem> }
   /**
    * Two or more assets claim one logical materialized identity and nothing
    * resolved it: frozen mode (which reproduces recorded intent and never
@@ -458,8 +596,8 @@ export type RunInstallFailure =
    */
   | {
       code: 'MATERIALIZATION_COLLISION'
-      groups: ReadonlyArray<CollisionGroup>
-      staleOverrides: ReadonlyArray<StaleOverride>
+      groups: ReadonlyArray<MaterializationCollisionGroup>
+      staleOverrides: ReadonlyArray<StaleMaterializationOverride>
     }
   /**
    * An interactive resolver returned choices that still do not compose. The
@@ -468,11 +606,84 @@ export type RunInstallFailure =
    */
   | {
       code: 'MATERIALIZATION_RESOLUTION_INVALID'
-      groups: ReadonlyArray<CollisionGroup>
-      problems: ReadonlyArray<{ facet: string; alias: string; reason: string }>
+      groups: ReadonlyArray<MaterializationCollisionGroup>
+      problems: ReadonlyArray<MaterializationAliasProblem>
     }
   /** The user dismissed collision resolution. No state was mutated. */
   | { code: 'MATERIALIZATION_CANCELLED' }
+  /**
+   * The user declined to take over an occupied destination this machine does
+   * not own.
+   *
+   * Distinct from `MATERIALIZATION_CANCELLED`, which settles before the
+   * journal opens and has nothing to undo. This one lands mid-application, so
+   * the rollback outcome is the load-bearing half of the report: whether the
+   * work already done was fully restored.
+   */
+  | { code: 'ASSET_TAKEOVER_CANCELLED'; facet: string; adapter: string; asset: AssetIdentity }
+  /**
+   * This operation has MCP configuration work — an active declaration to
+   * reconcile, or a receipt-owned entry to remove — and at least one selected
+   * adapter cannot do it.
+   *
+   * Raised after composition (which is what makes the active set knowable)
+   * and before preparation, consent, or any mutation. Carries every
+   * unsupported adapter, because upgrading one at a time to discover the next
+   * teaches a user nothing about the shape of the problem, and the effective
+   * server names so the remedy can point at the declarations to omit. It
+   * deliberately carries no declaration: neither remedy needs the command a
+   * server would run.
+   */
+  | {
+      code: 'MCP_ADAPTERS_UNSUPPORTED'
+      adapters: ReadonlyArray<McpUnsupportedAdapter>
+      servers: ReadonlyArray<string>
+    }
+  /**
+   * An adapter's read-only MCP preparation reported a structured failure —
+   * an unparseable or unsafely-shaped native document, or a read it could not
+   * perform. Preparation writes nothing, so every inspected document is
+   * unchanged.
+   */
+  | { code: 'MCP_PREPARE_FAILED'; adapter: string; failure: McpServerCapabilityFailure }
+  /**
+   * An adapter's MCP application reported a structured failure. Its own
+   * documents are unchanged (the capability is atomic per document); every
+   * earlier document this run changed is restored from its byte preimage.
+   */
+  | { code: 'MCP_APPLY_FAILED'; adapter: string; failure: McpServerCapabilityFailure }
+  /**
+   * A disclosed configuration document could not be read for its byte
+   * preimage, so the write was refused rather than performed without an undo.
+   * Distinct from a read failure inside preparation: the adapter did nothing
+   * wrong, and the document is one the engine — not the adapter — was reading.
+   */
+  | { code: 'MCP_DOCUMENT_UNREADABLE'; adapter: string; path: string; cause: string }
+  /**
+   * An adapter broke the MCP capability contract in a way that would make
+   * rollback unsound. Distinct from `MCP_PREPARE_FAILED`: the fault is in the
+   * adapter, not in the project's configuration, and no user edit fixes it.
+   */
+  | { code: 'MCP_CONTRACT_VIOLATION'; violation: McpContractViolation }
+  /**
+   * MCP configuration needs approval and this caller cannot give it: a
+   * non-interactive command without `--accept-mcp`, or frozen mode, which
+   * reproduces recorded intent and never collects a new decision.
+   *
+   * Carries the complete request because the remedy is to read it: a user
+   * deciding whether to pass `--accept-mcp` needs the exact commands and URLs
+   * it would authorize. Raised before the journal opens, so nothing changed.
+   */
+  | { code: 'MCP_CONSENT_REQUIRED'; request: McpConsentRequest }
+  /**
+   * The user declined the MCP configuration request.
+   *
+   * Carries the SUMMARY, not the request: the user just read the declarations
+   * and said no, so reprinting them helps nobody, while the identities are
+   * what a report needs to say which servers were left unconfigured. Nothing
+   * was mutated — consent settles before the journal opens.
+   */
+  | { code: 'MCP_CONSENT_DECLINED'; request: McpConsentRequestSummary }
   | { code: 'ABORTED' }
 
 /**
@@ -505,8 +716,8 @@ export type RollbackOutcome =
  * Result of a `runInstall` invocation. Discriminated by `ok`.
  *
  * On success, callers receive the new lockfile (already written to
- * disk), a summary of counts, per-facet outcomes, and any server
- * warnings collected during install.
+ * disk), a summary of counts, per-facet outcomes, and what the run did
+ * to this project's MCP configuration.
  *
  * On failure, callers receive the structured failure plus the
  * `RollbackOutcome` — view layers branch on `rollback.kind`.
@@ -517,7 +728,11 @@ export type RunInstallResult =
       lockfile: SupportedLockfile
       summary: InstallSummary
       perFacet: ReadonlyArray<FacetOutcome>
-      serverWarnings: ReadonlyArray<{ facet: string; servers: ReadonlyArray<string> }>
+      /**
+       * What this operation did to MCP configuration: intent, native
+       * reconciliation, and the approval that authorized it.
+       */
+      mcp: McpInstallOutcomes
     }
   | {
       ok: false
@@ -612,4 +827,26 @@ export interface RunInstallOptions {
    * new decisions.
    */
   resolveCollisions?: CollisionResolver
+  /**
+   * How this invocation may obtain MCP configuration approval.
+   *
+   * Defaults to `unavailable`, which makes "fail with the complete request"
+   * the default rather than a special case — the same discipline that makes
+   * an omitted `resolveCollisions` report instead of guess. Frozen mode may
+   * use `preapproved` but never `interactive`.
+   */
+  mcpConsent?: McpConsentPolicy
+  /**
+   * Optional just-in-time gate for an occupied asset destination this machine
+   * does not own.
+   *
+   * Note the deliberate asymmetry with `resolveCollisions`: an absent
+   * collision resolver FAILS, because a collision has no correct answer
+   * without the user. An absent takeover resolver CONTINUES, because a
+   * takeover does — the behavior every non-interactive caller has today.
+   *
+   * Independent of `mcpConsent` by construction. Approving a server's command
+   * must never be the act that also accepts overwriting a file.
+   */
+  resolveAssetTakeover?: AssetTakeoverResolver
 }

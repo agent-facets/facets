@@ -79,6 +79,44 @@ for your users.
    Both README.md and the extensionless README are ordinary top-level `files`
    entries — there is no README-specific manifest field.
 
+3b) MCP SERVERS — declaring a server a facet expects
+   A facet may declare MCP servers in a top-level `servers` map. `facet modify`
+   does NOT manage servers; edit facet.json directly.
+
+   A declaration is portable CONNECTION INFORMATION, not a package reference.
+   It is exactly one of two closed shapes:
+     "servers": {
+       "filesystem": {
+         "type": "stdio",
+         "command": "npx",
+         "args": ["-y", "@modelcontextprotocol/server-filesystem", "."],
+         "env": { "LOG_LEVEL": "info" }
+       },
+       "docs": { "type": "http", "url": "https://mcp.example.com/docs" }
+     }
+
+   Rules:
+   - `type` is required and selects the shape. Never mix fields across shapes
+     (no `url` on stdio, no `command` on http).
+   - `command` must be non-empty. `args` order is significant and preserved.
+   - `url` must be an absolute http: or https: URL.
+   - `env` names must match [A-Za-z_][A-Za-z0-9_]*; values are LITERAL strings
+     with no substitution.
+   - Server names use the asset-name grammar and live in their own namespace,
+     so a server and a skill may share a name.
+   - Declaration objects are CLOSED: any member outside the selected shape
+     (headers, cwd, shell, ...) is REJECTED. This is a deliberate exception to
+     the manifest's tolerate-unknown-fields rule, because these fields change
+     what executes.
+   - Older speculative forms — a version string, or { "image": ... } — are
+     rejected outright in every manifest format.
+
+   A facet may declare ONLY servers and no assets; that is a valid facet.
+
+   NEVER put a secret, token, or credential in `env`. Those values ship inside
+   the published archive in plain text. Authentication is the consuming tool's
+   job. Building never launches or contacts a declared server.
+
 4) ADAPTER CONFIG — per-asset, per-adapter settings
    Each skill/agent/command may carry an `adapters` block in facet.json: a map
    of adapter name to a free-form config object that the CLI passes through to

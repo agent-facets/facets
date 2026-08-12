@@ -1,10 +1,16 @@
 import { describe, expect, test } from 'bun:test'
-import { ADAPTER_API_VERSION } from '@agent-facets/adapter'
+import { ADAPTER_API_VERSION, ADAPTER_API_VERSION_ASSETS_ONLY } from '@agent-facets/adapter'
 import { classifyApiDeclaration, isWellFormedAdapterApi, SUPPORTED_ADAPTER_APIS } from '../api-compatibility.ts'
 
 describe('SUPPORTED_ADAPTER_APIS', () => {
-  test('is exactly the SDK canonical version', () => {
-    expect(SUPPORTED_ADAPTER_APIS).toEqual([ADAPTER_API_VERSION])
+  test('is exactly the compatibility window: the asset-only and canonical contracts', () => {
+    expect([...SUPPORTED_ADAPTER_APIS].sort()).toEqual([ADAPTER_API_VERSION_ASSETS_ONLY, ADAPTER_API_VERSION].sort())
+  })
+
+  test('excludes the superseded positional contract', () => {
+    // Named as a literal on purpose: '0.0' has no constant anywhere in the
+    // monorepo, and this asserts it never acquires one by way of the set.
+    expect(SUPPORTED_ADAPTER_APIS).not.toContain('0.0')
   })
 })
 
@@ -38,17 +44,30 @@ describe('isWellFormedAdapterApi', () => {
 })
 
 describe('classifyApiDeclaration', () => {
-  test('classifies the supported canonical version as supported', () => {
-    expect(classifyApiDeclaration(ADAPTER_API_VERSION)).toEqual({ kind: 'supported', api: ADAPTER_API_VERSION })
+  test('classifies the canonical version as supported, carrying the MCP contract shape', () => {
+    expect(classifyApiDeclaration(ADAPTER_API_VERSION)).toEqual({
+      kind: 'supported',
+      api: ADAPTER_API_VERSION,
+      contract: 'assets-and-mcp',
+    })
+  })
+
+  test('classifies the superseded asset-only version as supported, carrying the asset-only shape', () => {
+    expect(classifyApiDeclaration(ADAPTER_API_VERSION_ASSETS_ONLY)).toEqual({
+      kind: 'supported',
+      api: ADAPTER_API_VERSION_ASSETS_ONLY,
+      contract: 'assets-only',
+    })
   })
 
   test.each(['9.9', '1.0', '0.0'])('classifies well-formed but unknown %s as unsupported', (value) => {
     expect(classifyApiDeclaration(value)).toEqual({ kind: 'unsupported', api: value })
   })
 
-  test('the superseded positional identifier 0.0 is unsupported by a 0.1-only CLI', () => {
-    // '0.0' is numerically adjacent to '0.1' but names the earlier
-    // positional contract — a different, unsupported wire contract.
+  test('the superseded positional identifier 0.0 stays outside the widened window', () => {
+    // '0.0' is numerically adjacent to both supported tokens but names the
+    // earlier positional contract. Widening the set to two members must not
+    // let proximity or ordering drag it in.
     const result = classifyApiDeclaration('0.0')
     expect(result.kind).toBe('unsupported')
   })

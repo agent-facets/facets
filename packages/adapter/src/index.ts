@@ -1,5 +1,16 @@
-export type { AdapterApiVersion } from './api-version.ts'
-export { ADAPTER_API_VERSION, ADAPTER_API_VERSION_PACKAGE_FIELD } from './api-version.ts'
+/**
+ * Re-exported from `@agent-facets/common` (which the bundler inlines) so an
+ * adapter can satisfy the MCP capability's "one atomic update per document"
+ * requirement without hand-rolling tmp-then-rename or taking a dependency an
+ * adapter author would have to install separately.
+ */
+export { atomicWriteFileSync } from '@agent-facets/common'
+export type { AdapterApiVersion, AdapterApiVersionAssetsOnly } from './api-version.ts'
+export {
+  ADAPTER_API_VERSION,
+  ADAPTER_API_VERSION_ASSETS_ONLY,
+  ADAPTER_API_VERSION_PACKAGE_FIELD,
+} from './api-version.ts'
 export type { AssetPath, ContainedRelativePathResult } from './asset-fs.ts'
 export {
   assembleAssetContent,
@@ -16,6 +27,20 @@ export {
   validateContainedRelativePath,
 } from './asset-fs.ts'
 export { defineAdapter } from './define-adapter.ts'
+export type { McpNativeMatch, ReconcileMcpServersInput } from './mcp-reconcile.ts'
+export { mcpDeclarationLiterals, mcpOutcomesRequireWrite, reconcileMcpServers } from './mcp-reconcile.ts'
+export type {
+  ApplyMcpServersResult,
+  McpServerCapability,
+  McpServerCapabilityFailure,
+  McpServerContribution,
+  McpServerDeclaration,
+  McpServerOwnership,
+  McpServerPreparation,
+  McpServerPreparationOutcome,
+  PrepareMcpServersRequest,
+  PrepareMcpServersResult,
+} from './mcp-servers.ts'
 export type { SkillBundlePaths } from './skill-bundle.ts'
 export { deleteSkillBundle, installSkillBundle, readSkillBundle } from './skill-bundle.ts'
 export type {
@@ -23,12 +48,14 @@ export type {
   AdapterAssetFailure,
   AdapterDefinition,
   AdapterMetadata,
+  AssetOnlyAdapter,
   AssetType,
   CompanionMap,
   DeleteAssetRequest,
   DeleteAssetResult,
   InstallAssetRequest,
   InstallAssetResult,
+  McpCapableAdapter,
   ReadAsset,
   ReadAssetRequest,
   ReadAssetResult,

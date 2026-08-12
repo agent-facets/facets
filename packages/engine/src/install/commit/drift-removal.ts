@@ -1,7 +1,7 @@
 import type { SupportedLockfile } from '@agent-facets/protocol'
 import type { NormalizedFacetEntry } from '../../manifest/mutations.ts'
 import { ownEntry } from '../own-entry.ts'
-import type { ProjectReceiptState } from '../receipt.ts'
+import { assetOwnershipOf, type ProjectReceiptState } from '../receipt.ts'
 import type { FacetOutcome } from '../types.ts'
 
 export interface DriftRemovalArgs {
@@ -34,7 +34,7 @@ export interface DriftRemovalArgs {
  */
 export function removedFacetOutcomes(args: DriftRemovalArgs): FacetOutcome[] {
   const { desiredFacets, receiptState, previousLockfile } = args
-  const tracked = receiptState.kind === 'loaded' ? receiptState.receipt.facets : undefined
+  const tracked = receiptState.kind === 'loaded' ? assetOwnershipOf(receiptState.record) : undefined
 
   const unwantedFromReceipt =
     tracked === undefined ? [] : Object.keys(tracked).filter((name) => ownEntry(desiredFacets, name) === undefined)

@@ -53,9 +53,9 @@ would be replaced. The protocol it depends on would not.
   tree.
 - **Self-update** — detect install method, run the right updater
   (npm/pnpm/yarn/bun/curl). CLI lifecycle management.
-- **Path-based loaders** — `loadManifest(dir)`, `resolvePrompts(rootDir)`,
-  `loadServerManifest(filePath)`. Thin wrappers over Bun's filesystem
-  primitives that read bytes and call protocol's bytes-validators.
+- **Path-based loaders** — `loadManifest(dir)`, `resolvePrompts(rootDir)`.
+  Thin wrappers over Bun's filesystem primitives that read bytes and call
+  protocol's bytes-validators.
 
 ## What does NOT belong here
 

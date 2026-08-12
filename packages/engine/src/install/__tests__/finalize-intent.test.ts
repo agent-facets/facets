@@ -75,10 +75,64 @@ describe('finalizeMaterializationIntent — keys that collide with Object.protot
     }
 
     const pruned = finalizeMaterializationIntent(desiredFacets, accepted, [
-      { facet: 'vendor', type: 'skill', authoredName: '__proto__', disposition: aliased('safe') },
+      {
+        facet: 'vendor',
+        contribution: { kind: 'asset', assetType: 'skill' },
+        authoredName: '__proto__',
+        disposition: aliased('safe'),
+      },
     ])
 
-    expect(pruned).toEqual([{ facet: 'vendor', type: 'skill', authoredName: '__proto__' }])
+    expect(pruned).toEqual([
+      { facet: 'vendor', contribution: { kind: 'asset', assetType: 'skill' }, authoredName: '__proto__' },
+    ])
+    expect(desiredFacets.vendor?.overrides).toBeUndefined()
+  })
+
+  // The whole reason the group list is derived rather than written out: a
+  // servers-only entry counted as zero overrides, so the canonical writer
+  // collapsed it back to a compact source string and the intent vanished.
+  test('a server override survives a prune that does not name it', () => {
+    const desiredFacets: Record<string, NormalizedFacetEntry> = { vendor: { source: './v', overrides: undefined } }
+    const accepted: Record<string, FacetMaterializationOverrides> = {
+      vendor: {
+        skills: record<ProjectAssetOverride>([['gone', aliased('safe')]]),
+        servers: record<ProjectAssetOverride>([['filesystem', aliased('project-filesystem')]]),
+      },
+    }
+
+    const pruned = finalizeMaterializationIntent(desiredFacets, accepted, [
+      {
+        facet: 'vendor',
+        contribution: { kind: 'asset', assetType: 'skill' },
+        authoredName: 'gone',
+        disposition: aliased('safe'),
+      },
+    ])
+
+    expect(pruned).toHaveLength(1)
+    expect(desiredFacets.vendor?.overrides).toEqual({
+      servers: { filesystem: aliased('project-filesystem') },
+    })
+  })
+
+  test('a stale server override is pruned and reported as an MCP server', () => {
+    const desiredFacets: Record<string, NormalizedFacetEntry> = { vendor: { source: './v', overrides: undefined } }
+    const accepted: Record<string, FacetMaterializationOverrides> = {
+      vendor: { servers: record<ProjectAssetOverride>([['filesystem', aliased('project-filesystem')]]) },
+    }
+
+    const pruned = finalizeMaterializationIntent(desiredFacets, accepted, [
+      {
+        facet: 'vendor',
+        contribution: { kind: 'mcp-server' },
+        authoredName: 'filesystem',
+        disposition: aliased('project-filesystem'),
+      },
+    ])
+
+    expect(pruned).toEqual([{ facet: 'vendor', contribution: { kind: 'mcp-server' }, authoredName: 'filesystem' }])
+    // Its last override is gone, so the entry collapses to its compact form.
     expect(desiredFacets.vendor?.overrides).toBeUndefined()
   })
 })

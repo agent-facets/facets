@@ -36,6 +36,7 @@ export {
 } from './adapters/installation.ts'
 export type { InstalledAdapterFailure, LoadAdaptersResult } from './adapters/loader.ts'
 export { loadInstalledAdapters } from './adapters/loader.ts'
+export type { McpUnsupportedAdapter } from './adapters/mcp-support.ts'
 export type {
   PlaceAdapterFailure,
   PlaceAdapterResult,
@@ -146,6 +147,20 @@ export {
   facetReceiptsDir,
   resolveFacetDir,
 } from './facet-dir.ts'
+export type {
+  AssetTakeoverDecision,
+  AssetTakeoverRequest,
+  AssetTakeoverResolver,
+} from './install/asset-takeover.ts'
+// The shared cross-domain naming rule. Exported because the CLI's collision
+// workspace must answer "does this draft plan cleanly?" with the SAME function
+// the engine uses to validate the answer it gets back.
+export type {
+  CollisionFacetContribution,
+  CollisionPlanResult,
+  MaterializationAliasProblem,
+} from './install/commit/collision-plan.ts'
+export { overrideGroupFor, planCollisionIntent } from './install/commit/collision-plan.ts'
 // install machinery
 // The collision-resolver contract. Exported because the interactive
 // workspace lives in the CLI (TTY detection and prompting are display
@@ -164,6 +179,32 @@ export type { LoadLockfileResult } from './install/lockfile-io.ts'
 export { emptyLockfile, FACETS_LOCK_FILE, loadLockfile, writeLockfile } from './install/lockfile-io.ts'
 export type { MaterializeOptions, MaterializeResult } from './install/materialize.ts'
 export { materialize } from './install/materialize.ts'
+// MCP configuration consent. Exported for the same reason the collision
+// resolver is: the screen is a display concern the CLI owns, while what
+// needs approving — and what an approval means — is an engine rule.
+export type {
+  McpApprovalStanding,
+  McpConsentDecision,
+  McpConsentPolicy,
+  McpConsentRequest,
+  McpConsentResolver,
+  McpDeclarationApproval,
+  McpNativeTakeover,
+} from './install/mcp/consent.ts'
+// MCP outcomes. The CLI renders these; the engine decides them.
+export type {
+  McpActiveConfigurationStatus,
+  McpApprovalSummary,
+  McpConfigurationOutcome,
+  McpConsentOutcome,
+  McpConsentRequestSummary,
+  McpDispositionOutcome,
+  McpInstallOutcomes,
+  McpIntentChange,
+  McpTakeoverSummary,
+  PrunedServerIntent,
+} from './install/mcp/outcomes.ts'
+export type { McpContractViolation } from './install/mcp/prepare.ts'
 // Prototype-safe access to records keyed by user-authored names. The CLI's
 // collision draft builds and rewrites exactly such a record before handing it
 // back as the resolver's answer, so it needs the same two primitives the
@@ -185,12 +226,15 @@ export { prepareRemove, runRemove } from './install/run-remove.ts'
 export type {
   Addition,
   AssetIdentity,
+  ContributionKind,
   EffectiveAssetName,
   FacetOutcome,
   FacetStage,
   InstallDelta,
   InstallSummary,
   LockfileDriftEntry,
+  MaterializationCollisionGroup,
+  MaterializationOverrideRef,
   OnLog,
   Removal,
   RollbackOutcome,
@@ -198,6 +242,7 @@ export type {
   RunInstallOptions,
   RunInstallResult,
   StageEvent,
+  StaleMaterializationOverride,
 } from './install/types.ts'
 // `AssetIdentity` names an asset by its EFFECTIVE name, and the brand on
 // that field makes the type unconstructible from a bare string. Adapter
@@ -209,7 +254,6 @@ export { assetIdentity } from './install/types.ts'
 // imports them directly from protocol; we don't re-export them here to
 // avoid two import paths for the same value.
 export { loadManifest, resolvePrompts } from './loaders/facet.ts'
-export { loadServerManifest } from './loaders/server.ts'
 // project manifest — the normalized view the install pipeline reasons about,
 // plus the comment-preserving document that is the only thing serialized.
 export type {

@@ -60,6 +60,7 @@ function recordingAdapter(opts: { failInstallOf?: ReadonlySet<string> } = {}): {
       name: 'rec',
       apiVersion: ADAPTER_API_VERSION,
       supportsInstall: true,
+      mcpServers: false,
       buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
       async installAsset(request) {
         io.push(`install:${request.assetType}:${request.name}`)
@@ -165,7 +166,7 @@ describe('apply — aliased assets materialize under the effective name', () => 
   test('an aliased skill lands under its alias with authored content and companions', async () => {
     const a = skillFixture('alpha', 'review', { companions: { 'refs/api.md': '# api\n' } })
     writeManifest({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: {
         alpha: { source: a, materialization: { skills: { review: { kind: 'aliased', as: 'vendor-review' } } } },
       },
@@ -212,7 +213,7 @@ describe('apply — aliased assets materialize under the effective name', () => 
   test('re-running an aliased install is a no-op, not a perpetual repair', async () => {
     const a = skillFixture('alpha', 'review', { companions: { 'refs/api.md': '# api\n' } })
     writeManifest({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: {
         alpha: { source: a, materialization: { skills: { review: { kind: 'aliased', as: 'vendor-review' } } } },
       },
@@ -225,7 +226,7 @@ describe('apply — aliased assets materialize under the effective name', () => 
 
     // If the companion lookup keyed off the effective name, the bundle would
     // read as "companions missing" and be rewritten every single run.
-    expect(second.summary.totalAssets).toBe(0)
+    expect(second.summary.textAssets.written).toBe(0)
     expect(second.perFacet).toEqual([{ kind: 'unchanged', name: 'alpha', version: '1.0.0' }])
   })
 })
@@ -244,7 +245,7 @@ describe('apply — global ownership reconciliation', () => {
     expect(existsSync(join(skillRoot('review'), 'SKILL.md'))).toBe(true)
 
     writeManifest({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: { beta: { source: b, materialization: { skills: { other: { kind: 'aliased', as: 'review' } } } } },
     })
     const result = await runInstall({ projectRoot, adapters: [adapter] })
@@ -276,6 +277,7 @@ describe('apply — global ownership reconciliation', () => {
     const receipt = readReceipt()
     const claim = (_facet: string, companion: string): Receipt['facets'][string] => ({
       version: '1.0.0',
+      integrity: 'sha256:ghost',
       assets: [
         {
           scope: 'project',
@@ -285,6 +287,7 @@ describe('apply — global ownership reconciliation', () => {
           files: ['skills/shared/SKILL.md', `skills/shared/${companion}`],
         },
       ],
+      configurations: [],
     })
     writeReceipt(projectRoot, {
       version: CURRENT_RECEIPT_VERSION,
@@ -301,13 +304,13 @@ describe('apply — global ownership reconciliation', () => {
     // Both claimants' companions were removed — the union, not just one set.
     expect(existsSync(skillRoot('shared'))).toBe(false)
     // Counted once, not once per claim.
-    expect(result.summary.removedAssets).toBe(1)
+    expect(result.summary.textAssets.removed).toBe(1)
   })
 
   test('changing an alias deletes the old identity and writes the new one', async () => {
     const a = skillFixture('alpha', 'review', { companions: { 'refs/api.md': '# api\n' } })
     const aliased = (as: string) => ({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: { alpha: { source: a, materialization: { skills: { review: { kind: 'aliased', as } } } } },
     })
 
@@ -409,7 +412,7 @@ describe('apply — global ownership reconciliation', () => {
     expect(existsSync(join(skillRoot('review'), 'refs/api.md'))).toBe(true)
 
     writeManifest({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: { alpha: { source: a, materialization: { skills: { review: { kind: 'omitted' } } } } },
     })
     expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
@@ -438,7 +441,7 @@ describe('apply — global ownership reconciliation', () => {
     // Change beta's content so its write is not skipped as identical.
     writeFileSync(join(projectRoot, 'vendor/beta/skills/other/SKILL.md'), '# other v2\n')
     writeManifest({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: {
         alpha: { source: a, materialization: { skills: { review: { kind: 'omitted' } } } },
         beta: b,
@@ -642,11 +645,11 @@ describe('apply — global ownership reconciliation', () => {
     // ...and nothing on disk is touched, because nothing proved ownership.
     expect(io.some((call) => call.startsWith('delete:'))).toBe(false)
     expect(readFileSync(join(skillRoot('review'), 'SKILL.md'), 'utf8')).toContain('# review from alpha')
-    expect(result.summary.removedAssets).toBe(0)
+    expect(result.summary.textAssets.removed).toBe(0)
     // Reported as its own outcome: "removed" would claim the files are gone.
     expect(result.perFacet).toEqual([{ kind: 'removed-untracked', name: 'alpha', oldVersion: '1.0.0' }])
     // Still counted as a removal — a declaration really did leave the project.
-    expect(result.summary.removed).toBe(1)
+    expect(result.summary.facets.removed).toBe(1)
   })
 
   test('a tracked removal reports removed, not removed-untracked', async () => {
@@ -667,7 +670,7 @@ describe('apply — global ownership reconciliation', () => {
 
     expect(result.perFacet).toContainEqual({ kind: 'removed', name: 'alpha', oldVersion: '1.0.0' })
     expect(existsSync(skillRoot('review'))).toBe(false)
-    expect(result.summary.removedAssets).toBe(1)
+    expect(result.summary.textAssets.removed).toBe(1)
   })
 
   test('an obsolete bundle whose primary is gone keeps its companions and says so', async () => {
@@ -709,7 +712,7 @@ describe('apply — global ownership reconciliation', () => {
       companionPaths: ['refs/api.md'],
     })
     // Nothing left disk, so the asset count must not claim otherwise.
-    expect(result.summary.removedAssets).toBe(0)
+    expect(result.summary.textAssets.removed).toBe(0)
   })
 
   test('a failure after a skipped bundle delete needs no inverse and loses nothing', async () => {
@@ -808,7 +811,7 @@ describe('apply — global ownership reconciliation', () => {
   test('an aliased asset is removed offline from the receipt alone', async () => {
     const a = skillFixture('alpha', 'review', { companions: { 'refs/api.md': '# api\n' } })
     writeManifest({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: {
         alpha: { source: a, materialization: { skills: { review: { kind: 'aliased', as: 'vendor-review' } } } },
       },
@@ -849,7 +852,7 @@ describe('apply — frozen reproduction of recorded intent', () => {
   test('recorded dispositions reproduce without prompting or rewriting', async () => {
     const a = skillFixture('alpha', 'review', { companions: { 'refs/api.md': '# api\n' } })
     const { adapter, lock } = await seed({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: {
         alpha: { source: a, materialization: { skills: { review: { kind: 'aliased', as: 'vendor-review' } } } },
       },
@@ -868,7 +871,7 @@ describe('apply — frozen reproduction of recorded intent', () => {
     })
     if (!result.ok) expect.unreachable()
     expect(prompted).toBe(false)
-    expect(result.summary.totalAssets).toBe(0)
+    expect(result.summary.textAssets.written).toBe(0)
     expect(existsSync(join(skillRoot('vendor-review'), 'refs/api.md'))).toBe(true)
     expectUntouched(lock, manifestText)
   })
@@ -878,7 +881,7 @@ describe('apply — frozen reproduction of recorded intent', () => {
     const { adapter, lock } = await seed({ facets: { alpha: a } })
 
     const manifestText = writeManifest({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: {
         alpha: { source: a, materialization: { skills: { review: { kind: 'aliased', as: 'vendor-review' } } } },
       },
@@ -905,7 +908,7 @@ describe('apply — frozen reproduction of recorded intent', () => {
     const { adapter, lock } = await seed({ facets: { alpha: a } })
 
     const manifestText = writeManifest({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: { alpha: { source: a, materialization: { skills: { gone: { kind: 'omitted' } } } } },
     })
     const result = await runInstall({ projectRoot, adapters: [adapter], frozenLockfile: true })
@@ -958,7 +961,7 @@ describe('apply — frozen reproduction of recorded intent', () => {
     const { adapter, lock } = await seed({ facets: { alpha: a, beta: b } })
 
     const manifestText = writeManifest({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: {
         alpha: a,
         beta: { source: b, materialization: { skills: { other: { kind: 'aliased', as: 'review' } } } },
@@ -984,7 +987,7 @@ describe('apply — frozen reproduction of recorded intent', () => {
     // claimant named, exactly as a non-interactive install would get it.
     if (result.failure.code !== 'MATERIALIZATION_COLLISION') expect.unreachable()
     expect(result.failure.groups).toHaveLength(1)
-    expect(result.failure.groups[0]?.members.map((m) => m.facet).sort()).toEqual(['alpha', 'beta'])
+    expect(result.failure.groups[0]?.group.members.map((m) => m.facet).sort()).toEqual(['alpha', 'beta'])
     expect(prompted).toBe(false)
     expectUntouched(lock, manifestText)
   })
@@ -1013,7 +1016,7 @@ describe('apply — frozen reproduction of recorded intent', () => {
     writeFileSync(join(projectRoot, 'facets.lock'), lock)
 
     const manifestText = writeManifest({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: {
         alpha: { source: a, materialization: { skills: { review: { kind: 'aliased', as: 'vendor-review' } } } },
       },
@@ -1127,7 +1130,7 @@ describe('remove — refinement only when local state agrees', () => {
     // is actually on disk.
     recordAliasInLockfile('beta', 'other', 'vendor-other')
     writeManifest({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: {
         alpha: a,
         beta: { source: b, materialization: { skills: { other: { kind: 'aliased', as: 'vendor-other' } } } },
@@ -1161,7 +1164,7 @@ describe('remove — refinement only when local state agrees', () => {
     // that identity are alpha's, and alpha is the facet being removed.
     recordAliasInLockfile('beta', 'other', 'review')
     writeManifest({
-      manifestVersion: 0.1,
+      manifestVersion: 0.2,
       facets: {
         alpha: a,
         beta: { source: b, materialization: { skills: { other: { kind: 'aliased', as: 'review' } } } },

@@ -1,19 +1,25 @@
 import { describe, expect, test } from 'bun:test'
 import type {
+  AssetTakeoverDecision,
+  AssetTakeoverRequest,
+  CollisionFacetContribution,
   CollisionResolution,
   CollisionResolutionRequest,
-  CollisionResolver,
+  InstallSummary,
+  McpConsentDecision,
+  McpConsentRequest,
+  McpInstallOutcomes,
   RollbackOutcome,
   RunInstallFailure,
   RunInstallResult,
   StageEvent,
 } from '@agent-facets/engine'
-import { assetIdentity } from '@agent-facets/engine'
-import type { FacetContribution, IntegrityFailure } from '@agent-facets/protocol'
-import { CURRENT_LOCKFILE_VERSION, LOCKFILE_VERSION_0_3, planMaterialization } from '@agent-facets/protocol'
+import { assetIdentity, planCollisionIntent } from '@agent-facets/engine'
+import type { IntegrityFailure } from '@agent-facets/protocol'
+import { CURRENT_LOCKFILE_VERSION, LOCKFILE_VERSION_0_3 } from '@agent-facets/protocol'
 import { render } from 'ink-testing-library'
 import { createElement } from 'react'
-import { InstallView, type InstallViewResult } from '../tui/views/install/install-view.tsx'
+import { InstallView, type InstallViewHooks, type InstallViewResult } from '../tui/views/install/install-view.tsx'
 import { diskStateSentence } from '../util/install-outcome.ts'
 import {
   describeUnsupportedManifestVersion,
@@ -21,6 +27,20 @@ import {
   UNSUPPORTED_MANIFEST_VERSION_WHAT,
 } from '../util/unsupported-manifest-version.ts'
 import { visibleContentFrame, visibleTerminalText } from './helpers/terminal-output.ts'
+
+/** An operation with no MCP work at all, which is every fixture below. */
+const NO_MCP: McpInstallOutcomes = {
+  consent: { kind: 'not-required' },
+  dispositions: [],
+  configurations: [],
+  prunedIntent: [],
+}
+
+const NO_MCP_COUNTS: InstallSummary['mcp'] = {
+  configurations: { added: 0, updated: 0, repaired: 0, unchanged: 0, removed: 0 },
+  declarations: { aliased: 0, omitted: 0 },
+  takeovers: { accepted: 0 },
+}
 
 /**
  * Wait long enough for the view's `useEffect` chain to finish (run the
@@ -32,6 +52,45 @@ function settle(): Promise<void> {
 }
 
 /**
+ * A promise the test opens when it is ready.
+ *
+ * A fake driver must not hold a render phase open with a timer. The test is
+ * waiting on its own timer, and the two are separated only by the gap between
+ * `render()` returning and React flushing the effect that starts the driver —
+ * sub-millisecond, and on the wrong side of it the driver has already resolved
+ * and repainted before the assertion runs. A gate inverts that: the driver
+ * cannot advance until the test says so, in any scheduling order.
+ */
+function gate(): { readonly wait: Promise<void>; readonly open: () => void } {
+  let open!: () => void
+  const wait = new Promise<void>((resolve) => {
+    open = () => resolve()
+  })
+  return { wait, open }
+}
+
+/**
+ * Poll frames until `predicate` holds.
+ *
+ * The other half of the same problem: a gate stops the driver running ahead of
+ * the assertion, and this stops the assertion running ahead of the paint. A
+ * fixed sleep has to guess how long a render takes; this waits for the thing
+ * it is actually waiting for.
+ */
+async function waitForFrame(
+  instance: { lastFrame: () => string | undefined },
+  predicate: (text: string) => boolean,
+  description: string,
+): Promise<string> {
+  for (let attempt = 0; attempt < 200; attempt++) {
+    const text = visibleTerminalText(instance.lastFrame() ?? '')
+    if (predicate(text)) return text
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+  throw new Error(`timed out waiting for ${description}. Last frame:\n${instance.lastFrame() ?? '(none)'}`)
+}
+
+/**
  * Build a fake `run` driver that emits a canned event sequence and
  * resolves to a canned result. Lets each test exercise a specific
  * render path of `<InstallView />` without spinning up `runInstall`.
@@ -39,8 +98,8 @@ function settle(): Promise<void> {
 function makeFakeRun(
   events: ReadonlyArray<StageEvent>,
   result: RunInstallResult,
-): (onStage: (e: StageEvent) => void, onLog?: (build: () => string) => void) => Promise<RunInstallResult> {
-  return async (onStage, _onLog) => {
+): (hooks: InstallViewHooks) => Promise<RunInstallResult> {
+  return async ({ onStage }) => {
     for (const event of events) {
       onStage(event)
     }
@@ -48,14 +107,18 @@ function makeFakeRun(
   }
 }
 
-/** A no-op successful run, for tests whose subject is a warning event. */
+/** A no-op successful run, for tests whose subject is an event rather than a result. */
 function emptySuccess(): RunInstallResult {
   return {
     ok: true,
     lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
-    summary: { installed: 0, updated: 0, repaired: 0, unchanged: 0, removed: 0, totalAssets: 0, removedAssets: 0 },
+    summary: {
+      facets: { installed: 0, updated: 0, repaired: 0, unchanged: 0, removed: 0 },
+      textAssets: { written: 0, removed: 0 },
+      mcp: NO_MCP_COUNTS,
+    },
     perFacet: [],
-    serverWarnings: [],
+    mcp: NO_MCP,
   }
 }
 
@@ -72,52 +135,40 @@ const successResultSingle: RunInstallResult = {
   ok: true,
   lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
   summary: {
-    installed: 1,
-    updated: 0,
-    repaired: 0,
-    unchanged: 0,
-    removed: 0,
-    totalAssets: 3,
-    removedAssets: 0,
+    facets: { installed: 1, updated: 0, repaired: 0, unchanged: 0, removed: 0 },
+    textAssets: { written: 3, removed: 0 },
+    mcp: NO_MCP_COUNTS,
   },
   perFacet: [{ kind: 'installed', name: 'viper-plans', version: '1.2.3' }],
-  serverWarnings: [],
+  mcp: NO_MCP,
 }
 
 const successResultMulti: RunInstallResult = {
   ok: true,
   lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
   summary: {
-    installed: 2,
-    updated: 1,
-    repaired: 0,
-    unchanged: 0,
-    removed: 0,
-    totalAssets: 9,
-    removedAssets: 0,
+    facets: { installed: 2, updated: 1, repaired: 0, unchanged: 0, removed: 0 },
+    textAssets: { written: 9, removed: 0 },
+    mcp: NO_MCP_COUNTS,
   },
   perFacet: [
     { kind: 'installed', name: 'viper-plans', version: '1.2.3' },
     { kind: 'installed', name: 'rezi', version: '0.5.0' },
     { kind: 'updated', name: 'planner', oldVersion: '1.0.0', newVersion: '2.0.0' },
   ],
-  serverWarnings: [],
+  mcp: NO_MCP,
 }
 
 const successResultNoOp: RunInstallResult = {
   ok: true,
   lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
   summary: {
-    installed: 0,
-    updated: 0,
-    repaired: 0,
-    unchanged: 0,
-    removed: 0,
-    totalAssets: 0,
-    removedAssets: 0,
+    facets: { installed: 0, updated: 0, repaired: 0, unchanged: 0, removed: 0 },
+    textAssets: { written: 0, removed: 0 },
+    mcp: NO_MCP_COUNTS,
   },
   perFacet: [],
-  serverWarnings: [],
+  mcp: NO_MCP,
 }
 
 describe('InstallView — single-facet success', () => {
@@ -186,42 +237,6 @@ describe('InstallView — multi-facet success with update', () => {
   })
 })
 
-describe('InstallView — server warnings', () => {
-  test('renders a warning line when servers are declared', async () => {
-    const events: StageEvent[] = [
-      { kind: 'install-start', totalFacets: 1 },
-      { kind: 'facet-start', facet: 'with-servers', specifier: './fixture' },
-      {
-        kind: 'server-warning',
-        facet: 'with-servers',
-        servers: ['inline-server', 'remote-server'],
-      },
-      {
-        kind: 'facet-success',
-        facet: 'with-servers',
-        outcome: { kind: 'installed', name: 'with-servers', version: '0.1.0' },
-      },
-      { kind: 'install-complete', outcome: 'success' },
-    ]
-    const instance = render(
-      createElement(InstallView, {
-        mode: 'add',
-        run: makeFakeRun(events, successResultSingle),
-      }),
-    )
-    await settle()
-    const frame = visibleContentFrame(instance.frames)
-    expect(frame).toContain('with-servers')
-    expect(frame).toContain('2 servers declared')
-    expect(frame).toContain('inline-server')
-    expect(frame).toContain('remote-server')
-    // Ink wraps the warning message across lines in the test terminal width,
-    // so we check for a substring that survives wrapping.
-    expect(frame).toContain('not yet')
-    instance.unmount()
-  })
-})
-
 describe('InstallView — drift removal', () => {
   test('renders a removal line when a facet is dropped from facets.json', async () => {
     const events: StageEvent[] = [
@@ -233,16 +248,12 @@ describe('InstallView — drift removal', () => {
       ok: true,
       lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
       summary: {
-        installed: 0,
-        updated: 0,
-        repaired: 0,
-        unchanged: 0,
-        removed: 1,
-        totalAssets: 0,
-        removedAssets: 2,
+        facets: { installed: 0, updated: 0, repaired: 0, unchanged: 0, removed: 1 },
+        textAssets: { written: 0, removed: 2 },
+        mcp: NO_MCP_COUNTS,
       },
       perFacet: [{ kind: 'removed', name: 'orphan', oldVersion: '1.0.0' }],
-      serverWarnings: [],
+      mcp: NO_MCP,
     }
     const instance = render(
       createElement(InstallView, {
@@ -267,16 +278,12 @@ describe('InstallView — drift removal', () => {
       ok: true,
       lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
       summary: {
-        installed: 0,
-        updated: 0,
-        repaired: 0,
-        unchanged: 0,
-        removed: 1,
-        totalAssets: 0,
-        removedAssets: 0,
+        facets: { installed: 0, updated: 0, repaired: 0, unchanged: 0, removed: 1 },
+        textAssets: { written: 0, removed: 0 },
+        mcp: NO_MCP_COUNTS,
       },
       perFacet: [{ kind: 'removed-untracked', name: 'orphan', oldVersion: '1.0.0' }],
-      serverWarnings: [],
+      mcp: NO_MCP,
     }
     const instance = render(createElement(InstallView, { mode: 'remove', run: makeFakeRun(events, result) }))
     await settle()
@@ -302,16 +309,12 @@ describe('InstallView — drift removal', () => {
       ok: true,
       lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
       summary: {
-        installed: 0,
-        updated: 0,
-        repaired: 0,
-        unchanged: 0,
-        removed: 0,
-        totalAssets: 0,
-        removedAssets: 0,
+        facets: { installed: 0, updated: 0, repaired: 0, unchanged: 0, removed: 0 },
+        textAssets: { written: 0, removed: 0 },
+        mcp: NO_MCP_COUNTS,
       },
       perFacet: [],
-      serverWarnings: [],
+      mcp: NO_MCP,
     }
     const instance = render(createElement(InstallView, { mode: 'install', run: makeFakeRun(events, result) }))
     await settle()
@@ -500,16 +503,12 @@ describe('InstallView — marketing aesthetic on `add`', () => {
         },
       },
       summary: {
-        installed: 1,
-        updated: 0,
-        repaired: 0,
-        unchanged: 0,
-        removed: 0,
-        totalAssets: 2,
-        removedAssets: 0,
+        facets: { installed: 1, updated: 0, repaired: 0, unchanged: 0, removed: 0 },
+        textAssets: { written: 2, removed: 0 },
+        mcp: NO_MCP_COUNTS,
       },
       perFacet: [{ kind: 'installed', name: 'cowsay', version: '0.1.0' }],
-      serverWarnings: [],
+      mcp: NO_MCP,
     }
     const instance = render(
       createElement(InstallView, {
@@ -559,16 +558,12 @@ describe('InstallView — marketing aesthetic on `add`', () => {
         },
       },
       summary: {
-        installed: 1,
-        updated: 0,
-        repaired: 0,
-        unchanged: 0,
-        removed: 0,
-        totalAssets: 1,
-        removedAssets: 0,
+        facets: { installed: 1, updated: 0, repaired: 0, unchanged: 0, removed: 0 },
+        textAssets: { written: 1, removed: 0 },
+        mcp: NO_MCP_COUNTS,
       },
       perFacet: [{ kind: 'installed', name: 'pure-skills', version: '1.0.0' }],
-      serverWarnings: [],
+      mcp: NO_MCP,
     }
     const instance = render(
       createElement(InstallView, {
@@ -649,20 +644,16 @@ describe('InstallView — marketing aesthetic on `add`', () => {
         },
       },
       summary: {
-        installed: 1,
-        updated: 0,
-        repaired: 0,
-        unchanged: 1,
-        removed: 0,
-        totalAssets: 1,
-        removedAssets: 0,
+        facets: { installed: 1, updated: 0, repaired: 0, unchanged: 1, removed: 0 },
+        textAssets: { written: 1, removed: 0 },
+        mcp: NO_MCP_COUNTS,
       },
       perFacet: [
         { kind: 'installed', name: 'cowsay', version: '0.1.0' },
         // pre-existing — `unchanged` must NOT contribute to the bundle viz
         { kind: 'unchanged', name: 'existing-skill', version: '1.0.0' },
       ],
-      serverWarnings: [],
+      mcp: NO_MCP,
     }
     const instance = render(
       createElement(InstallView, {
@@ -713,16 +704,12 @@ describe('InstallView — marketing aesthetic on `add`', () => {
         },
       },
       summary: {
-        installed: 1,
-        updated: 0,
-        repaired: 0,
-        unchanged: 0,
-        removed: 0,
-        totalAssets: 1,
-        removedAssets: 0,
+        facets: { installed: 1, updated: 0, repaired: 0, unchanged: 0, removed: 0 },
+        textAssets: { written: 1, removed: 0 },
+        mcp: NO_MCP_COUNTS,
       },
       perFacet: [{ kind: 'installed', name: 'cowsay', version: '0.1.0' }],
-      serverWarnings: [],
+      mcp: NO_MCP,
     }
     const instance = render(
       createElement(InstallView, {
@@ -1059,6 +1046,40 @@ describe('InstallView — frozen-lockfile drift', () => {
     expect(frame).toContain('without --frozen-lockfile')
     instance.unmount()
   })
+
+  // The load-bearing half of frozen stale intent: a normal install prunes the
+  // override and says so, frozen refuses and must say the opposite. Reporting
+  // it without that clause would read as "handled".
+  test('a stale server override says the override was not removed', async () => {
+    const failure: RunInstallFailure = {
+      code: 'LOCKFILE_DRIFT',
+      facets: [
+        {
+          name: 'mcp-tools',
+          reason: 'stale-override',
+          contribution: { kind: 'mcp-server' },
+          authoredName: 'gone',
+        },
+      ],
+    }
+    const events: StageEvent[] = [{ kind: 'install-complete', outcome: 'failure' }]
+    const result: RunInstallResult = {
+      ok: false,
+      failure,
+      rollback: { kind: 'not-needed', reason: 'test fixture' },
+    }
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'install',
+        run: makeFakeRun(events, result),
+      }),
+    )
+    await settle()
+    const frame = visibleContentFrame(instance.frames)
+    expect(frame).toContain('gone')
+    expect(frame).toContain('NOT removed')
+    instance.unmount()
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -1070,13 +1091,13 @@ const KEY = { down: '\u001B[B', right: '\u001B[C', enter: '\r', escape: '\u001B'
 function collisionRequest(): CollisionResolutionRequest {
   // Planner contributions are AUTHORED assets — identity only. They carry no
   // disposition or file records, unlike a lockfile entry.
-  const contributions: FacetContribution[] = [
-    { facet: 'alpha', assets: [{ scope: 'project', type: 'skill', name: 'review' }] },
-    { facet: 'beta', assets: [{ scope: 'project', type: 'skill', name: 'review' }] },
+  const facets: CollisionFacetContribution[] = [
+    { facet: 'alpha', assets: [{ scope: 'project', type: 'skill', name: 'review' }], servers: [] },
+    { facet: 'beta', assets: [{ scope: 'project', type: 'skill', name: 'review' }], servers: [] },
   ]
-  const planned = planMaterialization(contributions)
+  const planned = planCollisionIntent(facets, {})
   if (planned.ok || planned.reason !== 'collision') expect.unreachable()
-  return { groups: planned.groups, contributions, staleOverrides: [] }
+  return { groups: planned.groups, facets, overrides: {}, staleOverrides: [] }
 }
 
 const CANCELLED_RESULT: RunInstallResult = {
@@ -1096,11 +1117,7 @@ function makeResolvingRun(
   onResolution: (resolution: CollisionResolution) => void,
   resolvedResult: RunInstallResult = successResultSingle,
 ) {
-  return async (
-    onStage: (e: StageEvent) => void,
-    _onLog: ((build: () => string) => void) | undefined,
-    resolveCollisions: CollisionResolver,
-  ): Promise<RunInstallResult> => {
+  return async ({ onStage, resolveCollisions }: InstallViewHooks): Promise<RunInstallResult> => {
     onStage({ kind: 'install-start', totalFacets: 2 })
     onStage({ kind: 'collision-check' })
     const resolution = await resolveCollisions(request)
@@ -1118,19 +1135,22 @@ async function tick(): Promise<void> {
 
 describe('InstallView — collision phase machine', () => {
   test('the collision check is a visible stage, not a stall', async () => {
+    const checking = gate()
     const instance = render(
       createElement(InstallView, {
         mode: 'install',
-        run: async (onStage) => {
+        run: async ({ onStage }) => {
           onStage({ kind: 'install-start', totalFacets: 2 })
           onStage({ kind: 'collision-check' })
-          await tick()
+          await checking.wait
           return successResultSingle
         },
       }),
     )
-    await tick()
-    expect(visibleTerminalText(instance.lastFrame() ?? '')).toContain('Checking for name collisions')
+
+    await waitForFrame(instance, (text) => text.includes('Checking for name collisions'), 'the collision stage')
+
+    checking.open()
     await settle()
     instance.unmount()
   })
@@ -1140,53 +1160,65 @@ describe('InstallView — collision phase machine', () => {
   // several would misdescribe when the check happens — and the spec's
   // single-facet scenario named it while the multi-facet one did not.
   test('the same single global phase is shown for a multi-facet run', async () => {
+    const checking = gate()
     const instance = render(
       createElement(InstallView, {
         mode: 'install',
-        run: async (onStage) => {
+        run: async ({ onStage }) => {
           onStage({ kind: 'install-start', totalFacets: 2 })
           for (const facet of ['alpha', 'beta']) {
             onStage({ kind: 'facet-start', facet, specifier: `./${facet}` })
             onStage({ kind: 'facet-stage', facet, stage: 'verify' })
           }
           onStage({ kind: 'collision-check' })
-          await tick()
+          await checking.wait
           return successResultSingle
         },
       }),
     )
-    await tick()
 
-    const paused = visibleTerminalText(instance.lastFrame() ?? '')
-    expect(paused).toContain('Checking for name collisions across all facets')
+    const paused = await waitForFrame(
+      instance,
+      (text) => text.includes('Checking for name collisions across all facets'),
+      'the collision stage',
+    )
     // One phase, not one per facet.
     expect(paused.match(/Checking for name collisions/g)).toHaveLength(1)
 
+    checking.open()
     await settle()
     instance.unmount()
   })
 
   test('the collision phase clears once materialization starts', async () => {
+    const checking = gate()
+    const materializing = gate()
     const instance = render(
       createElement(InstallView, {
         mode: 'install',
-        run: async (onStage) => {
+        run: async ({ onStage }) => {
           onStage({ kind: 'install-start', totalFacets: 2 })
           onStage({ kind: 'facet-start', facet: 'alpha', specifier: './alpha' })
           onStage({ kind: 'collision-check' })
-          await tick()
+          await checking.wait
           onStage({ kind: 'facet-stage', facet: 'alpha', stage: 'materialize' })
-          await tick()
+          await materializing.wait
           return successResultSingle
         },
       }),
     )
-    await tick()
-    expect(visibleTerminalText(instance.lastFrame() ?? '')).toContain('Checking for name collisions')
 
-    await tick()
-    await tick()
-    expect(visibleTerminalText(instance.lastFrame() ?? '')).not.toContain('Checking for name collisions')
+    // Held open, so the phase cannot have come and gone before this runs.
+    await waitForFrame(instance, (text) => text.includes('Checking for name collisions'), 'the collision stage')
+
+    checking.open()
+    await waitForFrame(
+      instance,
+      (text) => !text.includes('Checking for name collisions'),
+      'the collision stage to clear',
+    )
+
+    materializing.open()
 
     await settle()
     instance.unmount()
@@ -1309,9 +1341,13 @@ describe('InstallView — materialization reporting', () => {
         },
       },
     },
-    summary: { installed: 1, updated: 0, repaired: 0, unchanged: 0, removed: 0, totalAssets: 1, removedAssets: 0 },
+    summary: {
+      facets: { installed: 1, updated: 0, repaired: 0, unchanged: 0, removed: 0 },
+      textAssets: { written: 1, removed: 0 },
+      mcp: NO_MCP_COUNTS,
+    },
     perFacet: [{ kind: 'installed', name: 'alpha', version: '1.0.0' }],
-    serverWarnings: [],
+    mcp: NO_MCP,
   }
 
   test('shows the authored name beside the effective name, and marks omissions', async () => {
@@ -1356,7 +1392,12 @@ describe('InstallView — materialization reporting', () => {
         run: makeFakeRun(
           [
             { kind: 'install-start', totalFacets: 1 },
-            { kind: 'stale-override-pruned', facet: 'alpha', assetType: 'skill', authoredName: 'gone' },
+            {
+              kind: 'stale-override-pruned',
+              facet: 'alpha',
+              contribution: { kind: 'asset', assetType: 'skill' },
+              authoredName: 'gone',
+            },
           ],
           successResultSingle,
         ),
@@ -1372,6 +1413,33 @@ describe('InstallView — materialization reporting', () => {
     expect(frame).toContain('no longer contains')
     instance.unmount()
   })
+
+  test('a pruned server override names the server, not an asset type', async () => {
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'install',
+        run: makeFakeRun(
+          [
+            { kind: 'install-start', totalFacets: 1 },
+            {
+              kind: 'stale-override-pruned',
+              facet: 'mcp-tools',
+              contribution: { kind: 'mcp-server' },
+              authoredName: 'gone',
+            },
+          ],
+          successResultSingle,
+        ),
+      }),
+    )
+    await settle()
+
+    const frame = visibleContentFrame(instance.frames)
+    expect(frame).toContain('gone')
+    expect(frame).toContain('mcp-tools')
+    expect(frame).toContain('server')
+    instance.unmount()
+  })
 })
 
 describe('InstallView — disposition-only change', () => {
@@ -1382,9 +1450,13 @@ describe('InstallView — disposition-only change', () => {
     const result: RunInstallResult = {
       ok: true,
       lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
-      summary: { installed: 0, updated: 1, repaired: 0, unchanged: 0, removed: 0, totalAssets: 1, removedAssets: 0 },
+      summary: {
+        facets: { installed: 0, updated: 1, repaired: 0, unchanged: 0, removed: 0 },
+        textAssets: { written: 1, removed: 0 },
+        mcp: NO_MCP_COUNTS,
+      },
       perFacet: [{ kind: 'updated', name: 'alpha', oldVersion: '1.0.0', newVersion: '1.0.0' }],
-      serverWarnings: [],
+      mcp: NO_MCP,
     }
     const instance = render(
       createElement(InstallView, {
@@ -1398,6 +1470,491 @@ describe('InstallView — disposition-only change', () => {
     expect(frame).toContain('1 updated')
     expect(frame).not.toContain('repaired')
     expect(frame).not.toContain('1.0.0 → 1.0.0')
+    instance.unmount()
+  })
+})
+
+describe('InstallView — MCP configuration outcomes', () => {
+  // A server-only facet writes no file. Reporting "no changes" over a run
+  // that rewrote a tool's config is exactly what the separate counts exist
+  // to prevent.
+  test('a server-only facet is not a no-op', async () => {
+    const result: RunInstallResult = {
+      ok: true,
+      lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
+      summary: {
+        facets: { installed: 1, updated: 0, repaired: 0, unchanged: 0, removed: 0 },
+        textAssets: { written: 0, removed: 0 },
+        mcp: {
+          configurations: { added: 1, updated: 0, repaired: 0, unchanged: 0, removed: 0 },
+          declarations: { aliased: 0, omitted: 0 },
+          takeovers: { accepted: 0 },
+        },
+      },
+      perFacet: [{ kind: 'installed', name: 'alpha', version: '1.0.0' }],
+      mcp: {
+        consent: { kind: 'not-required' },
+        dispositions: [{ kind: 'authored', facet: 'alpha', authoredName: 'filesystem', change: 'introduced' }],
+        configurations: [
+          {
+            kind: 'active',
+            adapter: 'claude-code',
+            effectiveName: 'filesystem',
+            claimants: ['alpha'],
+            status: 'added',
+            takenOver: false,
+          },
+        ],
+        prunedIntent: [],
+      },
+    }
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'add',
+        run: makeFakeRun([{ kind: 'install-start', totalFacets: 1 }], result),
+      }),
+    )
+    await settle()
+
+    const frame = visibleContentFrame(instance.frames)
+    expect(frame).not.toContain('no changes')
+    expect(frame).toContain('0 assets written')
+    expect(frame).toContain('1 server config added')
+    expect(frame).toContain('MCP server filesystem added in claude-code')
+    instance.unmount()
+  })
+
+  test('an alias shows both names and an omission is named', async () => {
+    const result: RunInstallResult = {
+      ok: true,
+      lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
+      summary: {
+        facets: { installed: 1, updated: 0, repaired: 0, unchanged: 0, removed: 0 },
+        textAssets: { written: 0, removed: 0 },
+        mcp: {
+          configurations: { added: 1, updated: 0, repaired: 0, unchanged: 0, removed: 0 },
+          declarations: { aliased: 1, omitted: 1 },
+          takeovers: { accepted: 0 },
+        },
+      },
+      perFacet: [{ kind: 'installed', name: 'alpha', version: '1.0.0' }],
+      mcp: {
+        consent: { kind: 'not-required' },
+        dispositions: [
+          {
+            kind: 'aliased',
+            facet: 'alpha',
+            authoredName: 'filesystem',
+            effectiveName: 'project-filesystem',
+            change: 'introduced',
+          },
+          { kind: 'omitted', facet: 'alpha', authoredName: 'docs', change: 'introduced' },
+        ],
+        configurations: [
+          {
+            kind: 'active',
+            adapter: 'claude-code',
+            effectiveName: 'project-filesystem',
+            claimants: ['alpha'],
+            status: 'added',
+            takenOver: false,
+          },
+        ],
+        prunedIntent: [],
+      },
+    }
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'add',
+        run: makeFakeRun([{ kind: 'install-start', totalFacets: 1 }], result),
+      }),
+    )
+    await settle()
+
+    const frame = visibleContentFrame(instance.frames)
+    expect(frame).toContain('alpha MCP server filesystem')
+    expect(frame).toContain('project-filesystem')
+    expect(frame).toContain('alpha MCP server docs')
+    expect(frame).toContain('omitted')
+    instance.unmount()
+  })
+
+  // Drift repair and a fresh write are different facts about the user's
+  // project, and one of them means someone else edited the config file.
+  test('a drift-only rewrite reads as repaired, not written', async () => {
+    const result: RunInstallResult = {
+      ok: true,
+      lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
+      summary: {
+        facets: { installed: 0, updated: 0, repaired: 1, unchanged: 0, removed: 0 },
+        textAssets: { written: 0, removed: 0 },
+        mcp: {
+          configurations: { added: 0, updated: 0, repaired: 1, unchanged: 0, removed: 0 },
+          declarations: { aliased: 0, omitted: 0 },
+          takeovers: { accepted: 0 },
+        },
+      },
+      perFacet: [{ kind: 'repaired', name: 'alpha', version: '1.0.0' }],
+      mcp: {
+        consent: { kind: 'not-required' },
+        dispositions: [],
+        configurations: [
+          {
+            kind: 'active',
+            adapter: 'claude-code',
+            effectiveName: 'filesystem',
+            claimants: ['alpha'],
+            status: 'repaired',
+            takenOver: false,
+          },
+        ],
+        prunedIntent: [],
+      },
+    }
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'install',
+        run: makeFakeRun([{ kind: 'install-start', totalFacets: 1 }], result),
+      }),
+    )
+    await settle()
+
+    const frame = visibleContentFrame(instance.frames)
+    expect(frame).toContain('1 server config repaired')
+    expect(frame).toContain('MCP server filesystem repaired in claude-code')
+    instance.unmount()
+  })
+
+  test('a removed server names the adapters it was removed from', async () => {
+    const result: RunInstallResult = {
+      ok: true,
+      lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
+      summary: {
+        facets: { installed: 0, updated: 0, repaired: 0, unchanged: 0, removed: 1 },
+        textAssets: { written: 0, removed: 0 },
+        mcp: {
+          configurations: { added: 0, updated: 0, repaired: 0, unchanged: 0, removed: 1 },
+          declarations: { aliased: 0, omitted: 0 },
+          takeovers: { accepted: 0 },
+        },
+      },
+      perFacet: [{ kind: 'removed', name: 'alpha', oldVersion: '1.0.0' }],
+      mcp: {
+        consent: { kind: 'not-required' },
+        dispositions: [],
+        configurations: [
+          {
+            kind: 'obsolete',
+            adapter: 'claude-code',
+            effectiveName: 'filesystem',
+            previousClaimants: ['alpha'],
+            status: 'removed',
+          },
+          {
+            kind: 'obsolete',
+            adapter: 'opencode',
+            effectiveName: 'filesystem',
+            previousClaimants: ['alpha'],
+            status: 'removed',
+          },
+        ],
+        prunedIntent: [],
+      },
+    }
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'remove',
+        run: makeFakeRun([{ kind: 'install-start', totalFacets: 1 }], result),
+      }),
+    )
+    await settle()
+
+    const frame = visibleContentFrame(instance.frames)
+    expect(frame).toContain('MCP server filesystem removed in claude-code, opencode')
+    instance.unmount()
+  })
+
+  // Adopting an untracked entry writes nothing and still changes who owns
+  // it — the one case where "unchanged" and "nothing happened" differ.
+  test('an adopted untracked entry is unchanged but not a no-op', async () => {
+    const result: RunInstallResult = {
+      ok: true,
+      lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
+      summary: {
+        facets: { installed: 0, updated: 0, repaired: 0, unchanged: 1, removed: 0 },
+        textAssets: { written: 0, removed: 0 },
+        mcp: {
+          configurations: { added: 0, updated: 0, repaired: 0, unchanged: 1, removed: 0 },
+          declarations: { aliased: 0, omitted: 0 },
+          takeovers: { accepted: 1 },
+        },
+      },
+      perFacet: [{ kind: 'unchanged', name: 'alpha', version: '1.0.0' }],
+      mcp: {
+        consent: { kind: 'not-required' },
+        dispositions: [],
+        configurations: [
+          {
+            kind: 'active',
+            adapter: 'claude-code',
+            effectiveName: 'filesystem',
+            claimants: ['alpha'],
+            status: 'unchanged',
+            takenOver: true,
+          },
+        ],
+        prunedIntent: [],
+      },
+    }
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'install',
+        run: makeFakeRun([{ kind: 'install-start', totalFacets: 1 }], result),
+      }),
+    )
+    await settle()
+
+    const frame = visibleContentFrame(instance.frames)
+    expect(frame).not.toContain('no changes')
+    expect(frame).toContain('1 server config unchanged')
+    expect(frame).toContain('took over an existing entry')
+    instance.unmount()
+  })
+})
+
+// --- MCP consent and asset takeover phases ---
+
+const CONSENT_REQUEST: McpConsentRequest = {
+  declarations: [
+    {
+      identity: { kind: 'mcp-server', effectiveName: 'filesystem' },
+      fingerprint: `sha256:${'a'.repeat(64)}`,
+      declaration: { type: 'stdio', command: 'npx', args: ['-y', 'srv'], env: { TOKEN_NAME: 'hunter2' } },
+      claimants: [{ facet: 'alpha', authoredName: 'filesystem', disposition: { kind: 'authored' } }],
+      standing: { kind: 'unknown-identity' },
+    },
+  ],
+  takeovers: [],
+}
+
+/**
+ * A driver shaped like the engine's consent path: emit progress, block on
+ * the resolver, then continue or fail based on the answer.
+ */
+function makeConsentingRun(onDecision: (decision: McpConsentDecision) => void) {
+  return async ({ onStage, resolveMcpConsent }: InstallViewHooks): Promise<RunInstallResult> => {
+    onStage({ kind: 'install-start', totalFacets: 1 })
+    const decision = await resolveMcpConsent(CONSENT_REQUEST)
+    onDecision(decision)
+    if (decision.kind === 'declined') {
+      return {
+        ok: false,
+        failure: { code: 'MCP_CONSENT_DECLINED', request: { declarations: [], takeovers: [] } },
+        rollback: { kind: 'not-needed', reason: 'consent settles before the journal opens' },
+      }
+    }
+    onStage({ kind: 'facet-start', facet: 'alpha', specifier: './alpha' })
+    return successResultSingle
+  }
+}
+
+describe('InstallView — MCP consent phase', () => {
+  test('the approval screen replaces progress and returns to it once answered', async () => {
+    const decisions: McpConsentDecision[] = []
+    const instance = render(
+      createElement(InstallView, { mode: 'install', run: makeConsentingRun((d) => decisions.push(d)) }),
+    )
+    await tick()
+
+    const prompt = visibleTerminalText(instance.lastFrame() ?? '')
+    expect(prompt).toContain('MCP server configuration needs your approval')
+    expect(prompt).toContain('stdio npx -y srv')
+    // The progress bar must not repaint underneath a screen the user is
+    // reading; the prompt owns the mount while it is open.
+    expect(prompt).not.toContain('Installing facets:')
+
+    instance.stdin.write('\u001B[C')
+    await tick()
+    instance.stdin.write('\r')
+    await tick()
+
+    expect(decisions).toEqual([{ kind: 'approved' }])
+    await settle()
+    instance.unmount()
+  })
+
+  // Enter alone must not authorize execution: it is the key a user is
+  // already pressing their way through an install with.
+  test('confirming without navigating declines', async () => {
+    const decisions: McpConsentDecision[] = []
+    const instance = render(
+      createElement(InstallView, { mode: 'install', run: makeConsentingRun((d) => decisions.push(d)) }),
+    )
+    await tick()
+    instance.stdin.write('\r')
+    await tick()
+
+    expect(decisions).toEqual([{ kind: 'declined' }])
+    await settle()
+    expect(visibleContentFrame(instance.frames)).not.toContain('Install complete')
+    instance.unmount()
+  })
+
+  // An unsettled promise strands the engine holding the project lock, so an
+  // interrupt has to answer the prompt rather than kill the render.
+  test('an interrupt while the screen is open settles it', async () => {
+    const decisions: McpConsentDecision[] = []
+    const controller = new AbortController()
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'install',
+        signal: controller.signal,
+        run: makeConsentingRun((d) => decisions.push(d)),
+      }),
+    )
+    await tick()
+    expect(decisions).toHaveLength(0)
+
+    controller.abort()
+    await tick()
+
+    expect(decisions).toEqual([{ kind: 'declined' }])
+    await settle()
+    instance.unmount()
+  })
+
+  test('ctrl-c while the screen is open settles it', async () => {
+    const decisions: McpConsentDecision[] = []
+    const instance = render(
+      createElement(InstallView, { mode: 'install', run: makeConsentingRun((d) => decisions.push(d)) }),
+    )
+    await tick()
+    instance.stdin.write('\u0003')
+    await tick()
+
+    expect(decisions).toEqual([{ kind: 'declined' }])
+    await settle()
+    instance.unmount()
+  })
+})
+
+describe('InstallView — asset takeover phase', () => {
+  const TAKEOVER_REQUEST: AssetTakeoverRequest = {
+    facet: 'alpha',
+    adapter: 'claude-code',
+    asset: assetIdentity('project', 'skill', 'review'),
+    authoredName: 'review',
+    occupancy: 'divergent',
+  }
+
+  function makeTakeoverRun(onDecision: (decision: AssetTakeoverDecision) => void) {
+    return async ({ onStage, resolveAssetTakeover }: InstallViewHooks): Promise<RunInstallResult> => {
+      onStage({ kind: 'install-start', totalFacets: 1 })
+      const decision = await resolveAssetTakeover(TAKEOVER_REQUEST)
+      onDecision(decision)
+      if (decision.kind === 'cancelled') {
+        return {
+          ok: false,
+          failure: {
+            code: 'ASSET_TAKEOVER_CANCELLED',
+            facet: 'alpha',
+            adapter: 'claude-code',
+            asset: assetIdentity('project', 'skill', 'review'),
+          },
+          rollback: { kind: 'succeeded', entriesUndone: 2 },
+        }
+      }
+      return successResultSingle
+    }
+  }
+
+  test('the screen names the destination and continues by default', async () => {
+    const decisions: AssetTakeoverDecision[] = []
+    const instance = render(
+      createElement(InstallView, { mode: 'install', run: makeTakeoverRun((d) => decisions.push(d)) }),
+    )
+    await tick()
+    expect(visibleTerminalText(instance.lastFrame() ?? '')).toContain('project skill review')
+
+    instance.stdin.write('\r')
+    await tick()
+    expect(decisions).toEqual([{ kind: 'continue' }])
+    await settle()
+    instance.unmount()
+  })
+
+  // Cancelling here lands mid-journal, so the report has to say what the
+  // rollback did rather than claim nothing happened.
+  test('cancelling reports what was restored', async () => {
+    const decisions: AssetTakeoverDecision[] = []
+    const instance = render(
+      createElement(InstallView, { mode: 'install', run: makeTakeoverRun((d) => decisions.push(d)) }),
+    )
+    await tick()
+    instance.stdin.write('\u001B[C')
+    await tick()
+    instance.stdin.write('\r')
+    await tick()
+
+    expect(decisions).toEqual([{ kind: 'cancelled' }])
+    await settle()
+    const frame = visibleContentFrame(instance.frames)
+    expect(frame).toContain('restored')
+    expect(frame).not.toContain('nothing was written')
+    instance.unmount()
+  })
+
+  // An interrupt is a request to stop. Answering it with the default would
+  // let the operation write one more file on the way out.
+  test('an interrupt cancels rather than continuing', async () => {
+    const decisions: AssetTakeoverDecision[] = []
+    const controller = new AbortController()
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'install',
+        signal: controller.signal,
+        run: makeTakeoverRun((d) => decisions.push(d)),
+      }),
+    )
+    await tick()
+    controller.abort()
+    await tick()
+
+    expect(decisions).toEqual([{ kind: 'cancelled' }])
+    await settle()
+    instance.unmount()
+  })
+})
+
+describe('InstallView — declaration secrecy', () => {
+  const SECRETS = ['npx', 'srv', 'hunter2', 'TOKEN_NAME']
+
+  // The approval screen is one of only two surfaces allowed to show a
+  // declaration. Everything the run prints afterwards is ordinary command
+  // output that can end up in a scrollback or a CI log.
+  test('a declaration does not survive into the success summary', async () => {
+    const instance = render(createElement(InstallView, { mode: 'install', run: makeConsentingRun(() => {}) }))
+    await tick()
+    instance.stdin.write('\u001B[C')
+    await tick()
+    instance.stdin.write('\r')
+    await settle()
+
+    const frame = visibleContentFrame(instance.frames)
+    for (const secret of SECRETS) expect(frame).not.toContain(secret)
+    instance.unmount()
+  })
+
+  // Declining carries the SUMMARY, not the request: the user just read the
+  // declarations and said no, so reprinting them helps nobody.
+  test('declining does not reprint the declaration', async () => {
+    const instance = render(createElement(InstallView, { mode: 'install', run: makeConsentingRun(() => {}) }))
+    await tick()
+    instance.stdin.write('\r')
+    await settle()
+
+    const frame = visibleContentFrame(instance.frames)
+    for (const secret of SECRETS) expect(frame).not.toContain(secret)
     instance.unmount()
   })
 })

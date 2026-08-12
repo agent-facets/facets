@@ -36,6 +36,10 @@ Please see https://docs.agentfacets.io/cli for a detailed reference for the `fac
 # pulling teammate changes:
 facet install
 
+# In CI, or any run without a terminal, approve MCP server configuration
+# up front — otherwise a facet that declares servers fails before writing.
+facet install --accept-mcp
+
 # Update the CLI later
 facet self-update
 ```

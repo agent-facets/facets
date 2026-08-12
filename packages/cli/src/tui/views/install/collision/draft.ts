@@ -1,28 +1,25 @@
 import type { AssetType, Scope } from '@agent-facets/common'
-import type { CollisionResolutionRequest } from '@agent-facets/engine'
-import { ownEntry, ownRecord } from '@agent-facets/engine'
 import type {
-  CollisionGroup,
+  CollisionFacetContribution,
+  CollisionResolutionRequest,
+  MaterializationCollisionGroup,
+  StaleMaterializationOverride,
+} from '@agent-facets/engine'
+import { overrideGroupFor, ownEntry, ownRecord, planCollisionIntent } from '@agent-facets/engine'
+import type {
   FacetMaterializationOverrides,
   MaterializationDisposition,
-  StaleOverride,
+  McpServerDeclaration,
+  McpServerFingerprint,
 } from '@agent-facets/protocol'
-import {
-  compareCodeUnits,
-  isMaterialized,
-  materializedNameOf,
-  overrideFor,
-  overrideGroupKey,
-  planMaterialization,
-  validateAssetNameSegment,
-} from '@agent-facets/protocol'
+import { compareCodeUnits, isMaterialized, materializedNameOf, validateAssetNameSegment } from '@agent-facets/protocol'
 import type { CollisionStatus } from '../collision-status.ts'
 
 /**
  * The collision workspace's state, and the pure rule that turns it into
  * something renderable.
  *
- * Two properties drive the whole design:
+ * Three properties drive the whole design:
  *
  *  1. **There is exactly one draft, and it is the same shape the engine
  *     consumes.** The draft IS a `Record<facet, overrides>` — the same
@@ -30,35 +27,54 @@ import type { CollisionStatus } from '../collision-status.ts'
  *     There is no parallel "UI choice" model to keep in sync, so the
  *     thing shown and the thing submitted cannot disagree.
  *
- *  2. **Collision truth comes from the protocol planner, always.** This
+ *  2. **Collision truth comes from the shared planner, always.** This
  *     module never decides what collides. It arranges the planner's
- *     answer for display. That is what keeps the live preview and the
- *     engine's final validation from ever disagreeing — a disagreement
- *     would show a green confirm button that then fails the install.
+ *     answer for display, and it calls the SAME function the engine calls
+ *     to validate the submitted draft. That is what keeps the live preview
+ *     and the final validation from disagreeing — a disagreement would show
+ *     a green confirm button that then fails the install.
+ *
+ *  3. **Assets and MCP servers are separate identity spaces, and stay
+ *     separate here.** A skill named `review` and a server named `review`
+ *     never contend. The planner guarantees it; this module preserves it by
+ *     never merging a group from one domain with a group from the other.
  */
-
-/** One asset a facet contributes, addressed by its authored identity. */
-export interface ClaimantRef {
-  facet: string
-  scope: Scope
-  type: AssetType
-  authoredName: string
-}
 
 /**
- * Stable identity for a claimant. NUL-joined because it cannot occur in a
- * facet name, an asset name, or a scope, so no combination of legal
- * values can forge another claimant's key.
+ * One contributor to a contested name.
+ *
+ * Tagged, not a widened struct: a server has no scope and no asset type, and
+ * an asset has no declaration. A single shape with all of those optional
+ * would let a renderer read an asset type off a server row and print nothing
+ * where a kind belongs.
+ */
+export type ClaimantRef =
+  | { kind: 'asset'; facet: string; scope: Scope; type: AssetType; authoredName: string }
+  | {
+      kind: 'mcp-server'
+      facet: string
+      authoredName: string
+      declaration: McpServerDeclaration
+      fingerprint: McpServerFingerprint
+    }
+
+/**
+ * Stable identity for a claimant. NUL-joined and domain-prefixed, because
+ * neither separator nor prefix can occur in a facet name, an asset name, a
+ * scope, or a server name — so no combination of legal values can forge
+ * another claimant's key, in either domain.
  */
 export function claimantKey(ref: ClaimantRef): string {
-  return `${ref.facet}\u0000${ref.scope}\u0000${ref.type}\u0000${ref.authoredName}`
+  return ref.kind === 'asset'
+    ? `asset\u0000${ref.facet}\u0000${ref.scope}\u0000${ref.type}\u0000${ref.authoredName}`
+    : `mcp-server\u0000${ref.facet}\u0000${ref.authoredName}`
 }
 
 export interface CollisionDraft {
   /**
-   * Complete project intent. Handed to the engine verbatim, so facets and
-   * assets the workspace never displays keep the overrides they arrived
-   * with.
+   * Complete project intent. Handed to the engine verbatim, so facets,
+   * assets, and servers the workspace never displays keep the overrides they
+   * arrived with.
    */
   readonly overrides: Readonly<Record<string, FacetMaterializationOverrides>>
   /**
@@ -76,21 +92,26 @@ export interface CollisionDraft {
   readonly claimants: ReadonlyMap<string, ClaimantRef>
 }
 
-/** A claimant as displayed: its current choice, name, and standing. */
-export interface ClaimantModel extends ClaimantRef {
+/** What a claimant looks like once the planner has ruled on the draft. */
+export interface ClaimantModel {
+  ref: ClaimantRef
   key: string
+  facet: string
+  authoredName: string
   disposition: MaterializationDisposition
   /** Empty when omitted — there is no effective name to show. */
   effectiveName: string | null
   status: CollisionStatus
   /** Other claimants contesting this name right now, for navigation. */
   conflictsWith: readonly string[]
-  /** Why the current alias is not a legal asset name, if it isn't. */
+  /** Why the current alias is not a legal name, if it isn't. */
   aliasError: string | null
 }
 
 export interface DisplayGroup {
   key: string
+  /** Which identity space this group lives in. Groups never mix. */
+  kind: ClaimantRef['kind']
   /**
    * What to call this group on screen. Always non-empty.
    *
@@ -113,12 +134,12 @@ export interface DisplayGroup {
 export interface WorkspaceModel {
   groups: readonly DisplayGroup[]
   /**
-   * Whether the complete draft plans cleanly. This is the planner's
-   * verdict, not a count of green rows: the confirm gate and the engine's
-   * final check then answer the same question the same way.
+   * Whether the complete draft plans cleanly, in BOTH domains. This is the
+   * planner's verdict, not a count of green rows: the confirm gate and the
+   * engine's final check then answer the same question the same way.
    */
   confirmable: boolean
-  staleOverrides: readonly StaleOverride[]
+  staleOverrides: readonly StaleMaterializationOverride[]
 }
 
 /** Seed a draft from the overrides the project already has. */
@@ -126,10 +147,11 @@ export function createDraft(request: CollisionResolutionRequest): CollisionDraft
   // Null-prototype, because the keys are facet names straight out of
   // `facets.json`. A facet named `__proto__` assigned into a plain `{}`
   // creates no own key and replaces the map's prototype instead.
-  const overrides = ownRecord<FacetMaterializationOverrides>()
-  for (const contribution of request.contributions) {
-    if (contribution.overrides !== undefined) overrides[contribution.facet] = contribution.overrides
-  }
+  //
+  // Seeded from the project's COMPLETE intent, not just the colliding facets:
+  // the resolver's answer is a whole intent document, so an override this
+  // workspace never displays would be erased by omission.
+  const overrides = ownRecord<FacetMaterializationOverrides>(request.overrides)
   return {
     overrides,
     edited: new Set(),
@@ -155,11 +177,12 @@ export function reviseDraft(
   const edited = new Set(draft.edited)
   edited.add(claimantKey(ref))
 
-  // An alias can pull in an asset that was never colliding. Surface it
+  // An alias can pull in a contribution that was never colliding. Surface it
   // immediately: the user has to be able to reach the other side of a
-  // conflict they just created.
+  // conflict they just created. The complete set is re-planned, so an MCP
+  // alias surfaces the MCP claimant it landed on.
   const claimants = new Map(draft.claimants)
-  const planned = planMaterialization(contributionsWith(request, overrides))
+  const planned = planCollisionIntent(request.facets, overrides)
   if (!planned.ok && planned.reason === 'collision') {
     for (const [key, value] of claimantsOf(planned.groups)) {
       if (!claimants.has(key)) claimants.set(key, value)
@@ -171,38 +194,38 @@ export function reviseDraft(
 
 /** Arrange the planner's current verdict for display. */
 export function evaluateDraft(request: CollisionResolutionRequest, draft: CollisionDraft): WorkspaceModel {
-  const planned = planMaterialization(contributionsWith(request, draft.overrides))
+  const planned = planCollisionIntent(request.facets, draft.overrides)
 
   const currentGroups = !planned.ok && planned.reason === 'collision' ? planned.groups : []
 
-  // Defensive, not expected: the workspace commits an alias only after
-  // the same validator accepts it, and the engine rejects an unparseable
+  // Defensive, not expected: the workspace commits an alias only after the
+  // same validator accepts it, and the engine rejects an unparseable
   // persisted alias before ever opening a resolver. Kept so that a draft
-  // holding a bad alias explains itself instead of showing a green row
-  // beside a disabled confirm button.
+  // holding a bad alias explains itself instead of showing a green row beside
+  // a disabled confirm button.
+  //
+  // Keyed by what an OVERRIDE is keyed by — facet, group, authored name — and
+  // deliberately not by scope, which no override carries. An asset problem
+  // therefore attaches to every scope contributing that authored name, which
+  // is exactly the set of rows the one bad alias would affect.
   const aliasErrors = new Map<string, string>()
   if (!planned.ok && planned.reason === 'invalid-alias') {
     for (const problem of planned.problems) {
-      const scope = scopeOf(request, problem.facet, problem.type, problem.authoredName)
-      if (scope === null) continue
-      aliasErrors.set(
-        claimantKey({ facet: problem.facet, scope, type: problem.type, authoredName: problem.authoredName }),
-        problem.reason,
-      )
+      aliasErrors.set(aliasProblemKey(problem), problem.reason)
     }
   }
 
   // Which claimants are contesting a name right now, and with whom.
   const conflictsWith = new Map<string, string[]>()
   const contestedNameOf = new Map<string, string>()
-  for (const group of currentGroups) {
-    const keys = group.members.map((member) => claimantKey(member))
+  for (const entry of currentGroups) {
+    const keys = membersOf(entry).map((member) => claimantKey(member))
     for (const key of keys) {
       conflictsWith.set(
         key,
         keys.filter((other) => other !== key),
       )
-      contestedNameOf.set(key, group.effectiveName)
+      contestedNameOf.set(key, entry.group.effectiveName)
     }
   }
 
@@ -221,6 +244,7 @@ export function evaluateDraft(request: CollisionResolutionRequest, draft: Collis
     const origin = component.origin.join(', ')
     return {
       key: component.key,
+      kind: component.kind,
       title: titleFor(contested, origin, members),
       origin,
       contested,
@@ -232,7 +256,10 @@ export function evaluateDraft(request: CollisionResolutionRequest, draft: Collis
   return {
     groups,
     confirmable: planned.ok,
-    staleOverrides: planned.ok ? planned.staleOverrides : request.staleOverrides,
+    // Both domains, on every path. Reporting only the domain that happened to
+    // plan would make a server's leftover choice vanish the moment an asset
+    // collision was resolved.
+    staleOverrides: planned.ok || planned.reason === 'collision' ? planned.staleOverrides : request.staleOverrides,
   }
 }
 
@@ -249,6 +276,28 @@ export function choiceFor(draft: CollisionDraft, ref: ClaimantRef): Materializat
 // ---------------------------------------------------------------------------
 // internals
 // ---------------------------------------------------------------------------
+
+/** The claimant an invalid-alias problem belongs to, as a claimant key. */
+function aliasProblemKey(problem: {
+  kind: 'asset' | 'mcp-server'
+  facet: string
+  authoredName: string
+  assetType?: AssetType
+}): string {
+  // Assets: scope is absent from both the problem and the override that
+  // caused it, so the key is matched on the remaining segments. See
+  // `claimantMatchesAliasProblem`.
+  return problem.kind === 'asset'
+    ? `asset-alias\u0000${problem.facet}\u0000${problem.assetType}\u0000${problem.authoredName}`
+    : `mcp-server\u0000${problem.facet}\u0000${problem.authoredName}`
+}
+
+/** The alias-error key a claimant would be reported under. */
+function aliasKeyOf(ref: ClaimantRef): string {
+  return ref.kind === 'asset'
+    ? `asset-alias\u0000${ref.facet}\u0000${ref.type}\u0000${ref.authoredName}`
+    : `mcp-server\u0000${ref.facet}\u0000${ref.authoredName}`
+}
 
 /**
  * The heading for one group: what is contested now, else what brought these
@@ -273,14 +322,16 @@ function modelFor(
   const key = claimantKey(ref)
   const disposition = choiceFor(draft, ref)
   const conflicts = conflictsWith.get(key) ?? []
-  const aliasError = aliasErrors.get(key) ?? null
+  const aliasError = aliasErrors.get(aliasKeyOf(ref)) ?? null
 
   return {
-    ...ref,
+    ref,
     key,
+    facet: ref.facet,
+    authoredName: ref.authoredName,
     disposition,
     effectiveName: isMaterialized(disposition) ? materializedNameOf(ref.authoredName, disposition) : null,
-    status: statusFor({ key, conflicts, aliasError, draft, conflictsWith }),
+    status: statusFor({ conflicts, aliasError, edited: draft.edited, key }),
     conflictsWith: conflicts,
     aliasError,
   }
@@ -293,22 +344,21 @@ function modelFor(
  * and one their own edits produced: the first says "you must decide
  * something", the second says "your decision isn't finished". A group
  * counts as edited if ANY of its claimants was touched — otherwise the
- * asset someone else's alias landed on would stay red and read as an
+ * claimant someone else's alias landed on would stay red and read as an
  * unrelated pre-existing problem.
  */
 function statusFor(args: {
   key: string
   conflicts: readonly string[]
   aliasError: string | null
-  draft: CollisionDraft
-  conflictsWith: ReadonlyMap<string, readonly string[]>
+  edited: ReadonlySet<string>
 }): CollisionStatus {
-  const { key, conflicts, aliasError, draft } = args
+  const { key, conflicts, aliasError, edited } = args
   // An alias that isn't a legal name blocks confirmation, so it can never
   // read as settled — even though the planner reports no group for it.
   if (aliasError !== null) return 'unresolved'
   if (conflicts.length === 0) return 'resolved'
-  const touched = [key, ...conflicts].some((member) => draft.edited.has(member))
+  const touched = [key, ...conflicts].some((member) => edited.has(member))
   return touched ? 'draft-conflict' : 'unresolved'
 }
 
@@ -326,6 +376,26 @@ function worstStatus(statuses: readonly CollisionStatus[]): CollisionStatus {
   return worst
 }
 
+/** Every claimant of one tagged group, as refs. */
+function membersOf(entry: MaterializationCollisionGroup): ClaimantRef[] {
+  if (entry.kind === 'asset') {
+    return entry.group.members.map((member) => ({
+      kind: 'asset' as const,
+      facet: member.facet,
+      scope: member.scope,
+      type: member.type,
+      authoredName: member.authoredName,
+    }))
+  }
+  return entry.group.members.map((member) => ({
+    kind: 'mcp-server' as const,
+    facet: member.facet,
+    authoredName: member.authoredName,
+    declaration: member.declaration,
+    fingerprint: member.fingerprint,
+  }))
+}
+
 /**
  * Partition claimants into the groups the user works through.
  *
@@ -334,12 +404,17 @@ function worstStatus(statuses: readonly CollisionStatus[]): CollisionStatus {
  * contested name, because both relations move: aliasing one claimant onto
  * another group's name genuinely merges two problems into one decision,
  * and the user has to see them together to solve either.
+ *
+ * Only groups from the SAME identity space are ever unioned — which is free
+ * here, since a group's members all come from one domain and no group spans
+ * both. A skill and a server sharing a name are two rows the user resolves
+ * independently, because that is what the planner says they are.
  */
 function groupClaimants(
-  originalGroups: readonly CollisionGroup[],
-  currentGroups: readonly CollisionGroup[],
+  originalGroups: readonly MaterializationCollisionGroup[],
+  currentGroups: readonly MaterializationCollisionGroup[],
   claimants: ReadonlyMap<string, ClaimantRef>,
-): ReadonlyArray<{ key: string; origin: string[]; members: ClaimantRef[] }> {
+): ReadonlyArray<{ key: string; kind: ClaimantRef['kind']; origin: string[]; members: ClaimantRef[] }> {
   const parent = new Map<string, string>()
   const find = (key: string): string => {
     let root = key
@@ -355,8 +430,8 @@ function groupClaimants(
   for (const key of claimants.keys()) parent.set(key, key)
 
   const originNames = new Map<string, Set<string>>()
-  for (const group of [...originalGroups, ...currentGroups]) {
-    const keys = group.members.map((member) => claimantKey(member))
+  for (const entry of [...originalGroups, ...currentGroups]) {
+    const keys = membersOf(entry).map((member) => claimantKey(member))
     const first = keys[0]
     if (first === undefined) continue
     for (const key of keys) {
@@ -364,12 +439,12 @@ function groupClaimants(
       union(first, key)
     }
   }
-  for (const group of originalGroups) {
-    const first = group.members[0]
+  for (const entry of originalGroups) {
+    const first = membersOf(entry)[0]
     if (first === undefined) continue
     const root = find(claimantKey(first))
     const names = originNames.get(root) ?? new Set<string>()
-    names.add(group.effectiveName)
+    names.add(entry.group.effectiveName)
     originNames.set(root, names)
   }
 
@@ -394,84 +469,78 @@ function groupClaimants(
   return [...byRoot.entries()]
     .map(([root, members]) => ({
       key: root,
+      // Safe: every union above joins keys drawn from one group, and a group
+      // has members from exactly one domain, so a component is single-domain
+      // by construction.
+      kind: (members[0] as ClaimantRef).kind,
       origin: [...(foldedOrigins.get(root) ?? new Set<string>())].sort(compareCodeUnits),
       members,
     }))
     .sort((a, b) => compareCodeUnits(a.origin.join(', '), b.origin.join(', ')) || compareCodeUnits(a.key, b.key))
 }
 
-function claimantsOf(groups: readonly CollisionGroup[]): Map<string, ClaimantRef> {
+function claimantsOf(groups: readonly MaterializationCollisionGroup[]): Map<string, ClaimantRef> {
   const claimants = new Map<string, ClaimantRef>()
-  for (const group of groups) {
-    for (const member of group.members) {
-      const ref: ClaimantRef = {
-        facet: member.facet,
-        scope: member.scope,
-        type: member.type,
-        authoredName: member.authoredName,
-      }
+  for (const entry of groups) {
+    for (const ref of membersOf(entry)) {
       claimants.set(claimantKey(ref), ref)
     }
   }
   return claimants
 }
 
-function contributionsWith(
-  request: CollisionResolutionRequest,
-  overrides: Readonly<Record<string, FacetMaterializationOverrides>>,
-) {
-  return request.contributions.map((contribution) => ({
-    ...contribution,
-    // Own-property read for the same reason `draftOverrideFor` uses one: a
-    // facet named `constructor` would otherwise hand the planner `Object`.
-    overrides: ownEntry(overrides, contribution.facet),
-  }))
-}
-
 /**
  * The draft's current choice for one claimant.
  *
- * Both lookups are own-property reads, via {@link ownEntry} and the published
- * {@link overrideFor}: facet names and asset names are ordinary strings, so an
- * indexed read for `constructor` or `__proto__` would return an inherited
- * value where the type promises a disposition or `undefined`.
+ * Both lookups are own-property reads: facet names, asset names, and server
+ * names are ordinary strings, so an indexed read for `constructor` or
+ * `__proto__` would return an inherited value where the type promises a
+ * disposition or `undefined`. Only the middle level — the override group — is
+ * a closed literal union and therefore safe to index directly.
  */
 function draftOverrideFor(
   overrides: Readonly<Record<string, FacetMaterializationOverrides>>,
   ref: ClaimantRef,
 ): MaterializationDisposition | undefined {
-  return overrideFor(ownEntry(overrides, ref.facet), ref.type, ref.authoredName)
+  const facet = ownEntry(overrides, ref.facet)
+  if (facet === undefined) return undefined
+  const entries = facet[groupOf(ref)]
+  return entries === undefined ? undefined : ownEntry(entries, ref.authoredName)
+}
+
+/** The `facets.json` override group this claimant's choice is written to. */
+function groupOf(ref: ClaimantRef) {
+  return overrideGroupFor(ref.kind === 'asset' ? { kind: 'asset', assetType: ref.type } : { kind: 'mcp-server' })
 }
 
 /**
  * The draft with one claimant's choice recorded, as a fresh map.
  *
  * Every copy is null-prototyped and every lookup is an own read, because both
- * levels are keyed by names from `facets.json`: the facet map by facet name,
- * the asset map by authored asset name. Only the middle level — `skills` /
- * `agents` / `commands` — is a closed literal union and therefore safe to
- * index directly. Writing `assets[name] = disposition` into a plain object for
- * an asset named `__proto__` recorded nothing, and the empty-group check below
- * then deleted the group the user had just edited.
+ * outer levels are keyed by names from `facets.json`: the facet map by facet
+ * name, the inner map by authored asset or server name. Writing
+ * `entries[name] = disposition` into a plain object for a name spelled
+ * `__proto__` recorded nothing, and the empty-group check below then deleted
+ * the group the user had just edited.
  */
 function withOverride(
   overrides: Readonly<Record<string, FacetMaterializationOverrides>>,
   ref: ClaimantRef,
   disposition: MaterializationDisposition,
 ): Record<string, FacetMaterializationOverrides> {
-  const group = overrideGroupKey(ref.type)
+  const group = groupOf(ref)
   const next = ownRecord(overrides)
   const facet: FacetMaterializationOverrides = { ...ownEntry(next, ref.facet) }
-  const assets = ownRecord(facet[group])
+  const entries = ownRecord(facet[group])
 
   if (disposition.kind === 'authored') {
-    delete assets[ref.authoredName]
+    delete entries[ref.authoredName]
   } else {
-    assets[ref.authoredName] = disposition
+    entries[ref.authoredName] = disposition
   }
 
-  if (Object.keys(assets).length === 0) delete facet[group]
-  else facet[group] = assets
+  if (Object.keys(entries).length === 0) delete facet[group]
+  else facet[group] = entries
 
   if (Object.keys(facet).length === 0) delete next[ref.facet]
   else next[ref.facet] = facet
@@ -480,32 +549,17 @@ function withOverride(
 }
 
 /**
- * Recover a claimant's scope from the authored contributions.
+ * Deterministic row order: assets before servers, then by facet and name.
  *
- * `InvalidAlias` carries no scope — it is a complaint about a string, not
- * about a placement — so the scope is looked up rather than assumed.
- * Returns null instead of defaulting: silently guessing `project` would
- * attach the error to a different claimant the day a second scope exists.
+ * The domain leads because a mixed group cannot occur — so within any group
+ * this is a constant — while the overview lists groups whose members must
+ * still sort predictably for a reader comparing two runs.
  */
-function scopeOf(
-  request: CollisionResolutionRequest,
-  facet: string,
-  type: AssetType,
-  authoredName: string,
-): Scope | null {
-  for (const contribution of request.contributions) {
-    if (contribution.facet !== facet) continue
-    for (const asset of contribution.assets) {
-      if (asset.type === type && asset.name === authoredName) return asset.scope
-    }
-  }
-  return null
-}
-
 function compareClaimants(a: ClaimantModel, b: ClaimantModel): number {
   return (
+    compareCodeUnits(a.ref.kind, b.ref.kind) ||
     compareCodeUnits(a.facet, b.facet) ||
-    compareCodeUnits(a.type, b.type) ||
+    compareCodeUnits(a.ref.kind === 'asset' ? a.ref.type : '', b.ref.kind === 'asset' ? b.ref.type : '') ||
     compareCodeUnits(a.authoredName, b.authoredName)
   )
 }
@@ -514,8 +568,17 @@ function unique(values: readonly string[]): string[] {
   return [...new Set(values)].sort(compareCodeUnits)
 }
 
-/** Validate an alias exactly as the planner will. */
+/**
+ * Validate an alias exactly as the planner will.
+ *
+ * One validator for both domains, because there is one grammar: the published
+ * server-name check delegates to this very function, so a divergence here
+ * would be a divergence from itself.
+ */
 export function validateAlias(value: string): string | null {
   const result = validateAssetNameSegment(value)
   return result.ok ? null : result.reason
 }
+
+/** Re-exported so the workspace can name the contribution kinds it renders. */
+export type { CollisionFacetContribution }

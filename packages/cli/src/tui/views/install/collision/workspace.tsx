@@ -2,8 +2,17 @@ import type { CollisionResolution, CollisionResolutionRequest } from '@agent-fac
 import type { MaterializationDisposition } from '@agent-facets/protocol'
 import { Box, Text, useInput } from 'ink'
 import { useCallback, useMemo, useState } from 'react'
+import { contributionKey, describeContribution } from '../../../../util/contribution.ts'
 import { THEME } from '../../../theme.ts'
-import { CHOICES, type ChoiceKind, ClaimantRow, choiceOf, StatusTag } from './claimant-row.tsx'
+import {
+  CHOICES,
+  type ChoiceKind,
+  ClaimantRow,
+  choiceOf,
+  describeClaimant,
+  describeClaimantKind,
+  StatusTag,
+} from './claimant-row.tsx'
 import {
   type ClaimantModel,
   type CollisionDraft,
@@ -56,7 +65,7 @@ export function CollisionWorkspace({
 
   const revise = useCallback(
     (claimant: ClaimantModel, disposition: MaterializationDisposition) => {
-      setDraft((current) => reviseDraft(request, current, claimant, disposition))
+      setDraft((current) => reviseDraft(request, current, claimant.ref, disposition))
     },
     [request],
   )
@@ -224,13 +233,13 @@ function Overview({ model, index }: { model: ReturnType<typeof evaluateDraft>; i
               <Text bold> {group.title}</Text>
               <Text color={THEME.hint}>
                 {' '}
-                ({group.members.length} asset{group.members.length === 1 ? '' : 's'})
+                ({group.members.length} {describeClaimantKind(group.kind, group.members.length)})
               </Text>
             </Text>
             {group.members.map((member) => (
               <Text key={member.key} color={THEME.hint}>
                 {'      '}
-                {member.facet} {member.type} {member.authoredName}
+                {member.facet} {describeClaimant(member)}
                 {member.effectiveName === null ? ' — omitted' : ` → ${member.effectiveName}`}
               </Text>
             ))}
@@ -241,9 +250,12 @@ function Overview({ model, index }: { model: ReturnType<typeof evaluateDraft>; i
       {staleOverrides.length > 0 && (
         <Box flexDirection="column" marginTop={1}>
           {staleOverrides.map((stale) => (
-            <Text key={`${stale.facet}:${stale.type}:${stale.authoredName}`} color={THEME.caution}>
-              ⚠ {stale.facet} has a leftover choice for {stale.type} {stale.authoredName}, which this version no longer
-              contains.
+            <Text
+              key={`${stale.facet}:${contributionKey(stale.contribution)}:${stale.authoredName}`}
+              color={THEME.caution}
+            >
+              ⚠ {stale.facet} has a leftover choice for {describeContribution(stale.contribution)} {stale.authoredName},
+              which this version no longer contains.
             </Text>
           ))}
         </Box>
@@ -287,8 +299,8 @@ function GroupView({
         {group.title}
       </Text>
       <Text color={THEME.hint}>
-        {group.members.length} assets want this name. Give each one an outcome; they only have to differ from each
-        other.
+        {group.members.length} {describeClaimantKind(group.kind, group.members.length)} want this name. Give each one an
+        outcome; they only have to differ from each other.
       </Text>
 
       <Box flexDirection="column" marginTop={1}>

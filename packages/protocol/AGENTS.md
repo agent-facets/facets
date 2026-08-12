@@ -17,7 +17,7 @@ service whose API surface they describe — not by this package.
 ## What belongs here
 
 - **Schemas** for every facet artifact format: `facet.json`,
-  `facets.json`, `facets.lock`, `build-manifest.json`, server manifest.
+  `facets.json`, `facets.lock`, `build-manifest.json`.
 - **Bytes-validators** for those schemas — pure functions on
   `Uint8Array | string` that return `Validated<T>` (typed value or
   structured errors). No disk I/O.

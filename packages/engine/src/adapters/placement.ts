@@ -213,7 +213,7 @@ export async function placeAdapterManaged(
     const receipt: InstallationReceipt = {
       schemaVersion: INSTALLATION_SCHEMA_VERSION,
       activeGeneration: generationId,
-      apiVersion: verified.verified.apiVersion,
+      apiVersion: verified.verified.adapter.apiVersion,
       source: provenance.source,
     }
     try {

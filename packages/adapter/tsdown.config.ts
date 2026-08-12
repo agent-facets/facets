@@ -11,6 +11,18 @@ export default defineConfig({
   },
   clean: true,
   deps: {
-    alwaysBundle: ['@agent-facets/common'],
+    // Both are development-only dependencies whose *types* appear in this
+    // package's public surface, so they must be inlined into the generated
+    // declarations — a published adapter author installs neither.
+    //
+    // `@agent-facets/protocol` contributes only `McpServerDeclaration`, which
+    // is a plain structural type, so nothing of protocol's runtime graph
+    // (arktype, nanotar, yaml) reaches the emitted JavaScript or the emitted
+    // declarations. `dist.e2e.test.ts` pins that invariant.
+    //
+    // Deliberately the single top-level list: setting `deps.dts.alwaysBundle`
+    // would *replace* this list for `.d.ts` importers rather than extend it,
+    // silently re-externalizing `@agent-facets/common`.
+    alwaysBundle: ['@agent-facets/common', '@agent-facets/protocol'],
   },
 })

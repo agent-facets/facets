@@ -38,6 +38,7 @@ import { defineAdapter } from '${adapterSdkPath}'
 
 export default defineAdapter({
   name: '${adapterName}',
+  mcpServers: false,
   buildAssetMetadata(data) {
     const input = (data ?? {})
     if (input.custom !== undefined && typeof input.custom !== 'string') {

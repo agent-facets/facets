@@ -5,6 +5,150 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-08-10" description="Facets can declare MCP servers; consent before configuration; adapter API 0.2; breaking format bumps" tags={["CLI", "Breaking", "New Feature"]} rss={{
+  title: "Facets can declare MCP servers, with consent before anything is configured",
+  description: "A facet can now declare concrete MCP servers in facet.json, and installing it configures them in every connected tool -- .mcp.json for Claude Code, opencode.jsonc for OpenCode, .codex/config.toml for Codex. A declaration is portable connection information, not a package reference: either a stdio server with a command, ordered args, and literal env assignments, or an http server with an absolute URL. Declaration objects are closed, so an unrecognized member like headers or cwd is rejected rather than ignored. A facet whose only deliverable is a server is now valid. Because configuring a server lets your coding tool run a command or open a connection, a new or changed declaration requires explicit approval before anything is written. Interactive runs show one screen with the exact command, arguments, and environment values or the exact URL, with Decline selected by default. Non-interactive runs fail before mutation and print the full list; pass the new --accept-mcp flag on add, install, or remove to approve, or record an omission in facets.json to refuse one. Approval is machine-local: it lives in the install receipt, never in committed project files, so a teammate who clones approved state approves it themselves. Servers can be aliased or omitted per project like assets, and two facets declaring different servers at one name is a collision resolved in the same workspace -- while two facets declaring the same server identically simply agree. Breaking: the old speculative server reference forms (a version string, or an object with image) are now rejected in both current and legacy manifests, with no fallback and no warning; republish with a concrete declaration. Breaking: facets.json advances to manifestVersion 0.2, which adds the servers override group; 0.1 and unversioned documents still read and migrate. Breaking: the machine-local install receipt advances to 0.4 to record configuration ownership and approval; earlier receipts keep asset authority but confer neither. Breaking: the adapter API advances to 0.2 with a required mcpServers field, and the CLI now supports exactly the set 0.1 and 0.2 -- a 0.1 adapter still works for projects with no MCP servers. facets.lock deliberately stays at 0.3, because a facet's integrity already covers the facet.json its declarations live in. Facets never installs, launches, connects to, or authenticates to a declared server, and never writes user-wide or system-wide tool configuration."
+}}>
+  ## Facets can declare MCP servers
+
+  A facet can now declare [MCP servers](/specification/manifest#mcp-server-declarations)
+  in `facet.json`, and installing it configures them in every connected
+  tool. A declaration is portable **connection information** — not a
+  package reference. There is no server registry, no version range, and
+  no image.
+
+  ```json facet.json
+  {
+    "servers": {
+      "filesystem": {
+        "type": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]
+      },
+      "docs": { "type": "http", "url": "https://mcp.example.com/docs" }
+    }
+  }
+  ```
+
+  Each adapter translates that into its own tool's project file —
+  `.mcp.json`, `opencode.jsonc`, `.codex/config.toml` — preserving your
+  unrelated settings, comments, and any server entry the project does not
+  own. Only project-scoped files are touched.
+
+  Declaration objects are **closed**: an unrecognized member such as
+  `headers`, `cwd`, or `shell` is rejected rather than ignored. Silently
+  dropping a field that changes what executes is exactly the failure this
+  prevents. A facet whose only deliverable is a server is now valid, and
+  installs meaningfully with zero assets.
+
+  ## Approval before anything is configured
+
+  Configuring a server lets your coding tool run a command or open a
+  connection, so a new or changed declaration needs your approval first.
+  Interactive runs pause on one screen showing the exact command,
+  arguments, and environment assignments — or the exact URL — with
+  **Decline** selected by default.
+
+  Non-interactive runs fail *before* writing anything and print the full
+  list. The new `--accept-mcp` flag approves it, on all three pipeline
+  commands:
+
+  ```sh
+  facet install --accept-mcp
+  facet add mcp-tools --accept-mcp
+  facet remove old-facet --accept-mcp
+  ```
+
+  It is on `remove` because a removal that must resolve the facets you are
+  *keeping* re-enters the same consent path — without the flag such a
+  removal has no way to finish in CI.
+
+  To refuse one server instead of approving everything, record an omission:
+
+  ```json facets.json
+  "mcp-tools": {
+    "source": "1.*",
+    "materialization": { "servers": { "docs": { "kind": "omitted" } } }
+  }
+  ```
+
+  Approval is **machine-local**. It lives in the install receipt, never in
+  `facets.json` or `facets.lock`, so a teammate who clones fully-approved
+  state approves it on their own machine. A committed file must not be able
+  to claim you consented to running something. A run that fails or rolls
+  back banks nothing.
+
+  You are not re-asked for a declaration you already approved — including
+  when a second facet declares the same server identically. You *are*
+  asked again when the command, argument order, an environment value, the
+  transport, the URL, or the effective name changes.
+
+  If a server name already exists in a tool's config and this project did
+  not put it there, the same screen says so before anything is written, and
+  whether the existing entry matches or would be replaced.
+
+  ## Aliasing, omission, and collisions
+
+  Servers are aliased and omitted per project exactly like assets, under a
+  new `servers` group in `facets.json`. Two facets declaring **different**
+  servers at one effective name is a collision, resolved in the same
+  interactive workspace and reported the same way in CI. Two facets
+  declaring the **same** server identically is not a collision at all —
+  they agree, and one entry is configured with both recorded as claimants.
+
+  Servers occupy their own namespace: a server named `deploy` never
+  collides with a skill, command, or agent named `deploy`.
+
+  ## Configuration is written, never run
+
+  Facets does not install, launch, connect to, health-check, or
+  authenticate to a declared server, and stores no credentials. Whatever
+  sign-in a server needs happens in your coding tool afterwards.
+
+  Author note: `env` values are literal strings that ship inside the
+  published archive. Never put a secret in one.
+
+  ## Breaking: old server reference forms are rejected
+
+  **Breaking:** the earlier speculative forms — a version string, or an
+  object with `image` — now fail validation in **both** current and legacy
+  manifests. There is no fallback and no skip warning; the previous
+  warn-and-skip path is gone. Republish with a concrete declaration.
+
+  ## Breaking: format versions
+
+  **Breaking:** `facets.json` advances to `manifestVersion` `0.2`, which
+  adds the `servers` override group. Version `0.1` and unversioned
+  documents still read, and a successful non-frozen install migrates them.
+  A `servers` group inside a document declaring `0.1` is rejected rather
+  than tolerated.
+
+  **Breaking:** the machine-local install receipt advances to `0.4` to
+  record configuration ownership and approval. Earlier receipts keep their
+  asset authority but confer neither, so the first install after upgrading
+  asks for approval once. Nothing to commit — the receipt is not in your
+  project.
+
+  **Breaking:** the adapter API advances to `0.2`, adding a required
+  `mcpServers: false | McpServerCapability` field. The CLI now supports
+  exactly `{0.1, 0.2}`: a `0.1` adapter still works for a project with no
+  MCP servers, and only blocks one that has them. Custom adapter authors
+  should read the updated [adapter guide](/guides/custom-adapters#mcp-server-configuration).
+
+  `facets.lock` **stays at `0.3`**, deliberately. A facet's integrity hash
+  already covers the `facet.json` its declarations live in, so recording
+  them again would add a second copy that can disagree. See
+  [why](/specification/lockfile#why-mcp-did-not-move-the-lockfile).
+
+  ## Rollout
+
+  Ships in stages: `@agent-facets/protocol` publishes the declaration
+  schema and manifest `0.2`, then the adapter SDK and all three
+  first-party adapters publish API `0.2`, then a CLI release turns it on.
+  Existing CLIs keep selecting compatible `0.1` adapter releases until you
+  update.
+</Update>
+
 <Update label="2026-07-31" description="agent-facets 0.30.0 ships collision resolution; receipt hardening; facet instructions refresh" tags={["CLI", "Improvement", "Fix"]} rss={{
   title: "agent-facets 0.30.0 ships collision resolution; receipt hardening; facet instructions refresh",
   description: "The cross-facet name collision resolution and asset aliasing work described in the 2026-07-27 entry is now published to npm as agent-facets@0.30.0 and @agent-facets/protocol@0.30.0 -- run facet self-update to pick it up. This release also hardens install-receipt behavior on the edges: an install that materializes assets but cannot write the receipt reports the assets it wrote as untracked instead of claiming a clean success, a receipt entry that fails validation is surfaced rather than silently replaced, and the removal-resolution report now names which gate sent facet remove down the ordinary (network-requiring) path so a failure naming a facet you are keeping is not a mystery. Ctrl-C is honored during facet remove: before anything is deleted nothing is written, and after deletion the deletes are rolled back rather than committed. Separately: facet instructions has been refreshed for the 0.29 and 0.30 CLIs. The default overview now opens with a generated index of every instruction topic (derived from a single typed topic registry, so it cannot drift), and the topic prompts now cover README and supplementary-file authoring, single-segment asset naming and the shared skill/command namespace, and adapter API 0.1 compatibility recovery."

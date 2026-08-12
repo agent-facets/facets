@@ -1,14 +1,16 @@
 import {
-  ASSET_DIRECTORY,
-  ASSET_TYPES,
   CURRENT_PROJECT_MANIFEST_VERSION,
   type FacetMaterializationOverrides,
   facetEntryOverrides,
   facetEntrySource,
   type LEGACY_PROJECT_MANIFEST_VERSION,
+  MATERIALIZATION_OVERRIDE_GROUPS,
+  type MaterializationOverrideGroup,
+  type PROJECT_MANIFEST_VERSION_0_1,
   type ProjectAssetOverride,
   type ProjectManifestParseFailure,
   parseProjectManifestDocument,
+  SERVER_OVERRIDE_GROUP,
 } from '@agent-facets/protocol'
 import { parse as parseCommentJson, stringify as stringifyCommentJson } from 'comment-json'
 
@@ -47,8 +49,20 @@ export interface NormalizedFacetEntry {
   overrides: FacetMaterializationOverrides | undefined
 }
 
-/** The exact schema a manifest's bytes validated under. */
-export type LoadedManifestVersion = typeof LEGACY_PROJECT_MANIFEST_VERSION | typeof CURRENT_PROJECT_MANIFEST_VERSION
+/**
+ * The exact schema a manifest's bytes validated under.
+ *
+ * Every readable version is a member, not just the one a normal write
+ * emits: this records what was READ. Migration is the difference between
+ * this value and {@link CURRENT_PROJECT_MANIFEST_VERSION}, so collapsing a
+ * readable-but-superseded version into the current tag would erase the only
+ * evidence that a document needs migrating — and would let frozen mode,
+ * which must never migrate, believe it had already read current bytes.
+ */
+export type LoadedManifestVersion =
+  | typeof LEGACY_PROJECT_MANIFEST_VERSION
+  | typeof PROJECT_MANIFEST_VERSION_0_1
+  | typeof CURRENT_PROJECT_MANIFEST_VERSION
 
 /**
  * The live comment-json document. Structurally typed rather than imported
@@ -232,18 +246,37 @@ export function emptyProjectManifest(): NormalizedProjectManifest {
   }
 }
 
-/**
- * The manifest override groups, in canonical asset-type order.
- *
- * Derived from the published asset-type list rather than written out, so a
- * new asset type cannot gain a group that this module then fails to iterate.
- */
-const OVERRIDE_GROUPS = ASSET_TYPES.map((type) => ASSET_DIRECTORY[type])
-
-/** How many overrides an entry declares across every asset type. */
+/** How many overrides an entry declares across every recognized group. */
 export function countOverrides(overrides: FacetMaterializationOverrides | undefined): number {
+  return countOverridesIn(overrides, MATERIALIZATION_OVERRIDE_GROUPS)
+}
+
+/**
+ * How many overrides an entry declares in its ASSET groups only.
+ *
+ * Separate from {@link countOverrides} because one caller — the frozen
+ * lockfile-format gate — is asking a narrower question: can this lockfile
+ * VERSION record the dispositions this entry declares? Servers are absent
+ * from the lockfile at every version by design, so a server alias is not
+ * something an older lockfile fails to express; counting it there reported a
+ * migration the user could not perform and that would not have helped.
+ */
+export function countAssetOverrides(overrides: FacetMaterializationOverrides | undefined): number {
+  return countOverridesIn(overrides, ASSET_OVERRIDE_GROUPS)
+}
+
+/**
+ * The asset half of the override groups, derived from the full list so a new
+ * asset type joins it automatically and a new non-asset group cannot.
+ */
+const ASSET_OVERRIDE_GROUPS = MATERIALIZATION_OVERRIDE_GROUPS.filter((group) => group !== SERVER_OVERRIDE_GROUP)
+
+function countOverridesIn(
+  overrides: FacetMaterializationOverrides | undefined,
+  groups: readonly MaterializationOverrideGroup[],
+): number {
   if (overrides === undefined) return 0
-  return OVERRIDE_GROUPS.reduce((total, group) => total + Object.keys(overrides[group] ?? {}).length, 0)
+  return groups.reduce((total, group) => total + Object.keys(overrides[group] ?? {}).length, 0)
 }
 
 /**
@@ -332,7 +365,7 @@ function reconcileOverrides(expanded: { materialization?: unknown }, desired: Fa
   }
   const document = expanded.materialization as Record<string, unknown>
 
-  for (const group of OVERRIDE_GROUPS) {
+  for (const group of MATERIALIZATION_OVERRIDE_GROUPS) {
     const desiredGroup = desired[group]
     if (desiredGroup === undefined || Object.keys(desiredGroup).length === 0) {
       // The canonical form of "no overrides of this type" is an absent group,

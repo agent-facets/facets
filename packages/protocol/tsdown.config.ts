@@ -1,7 +1,10 @@
 import { defineConfig } from 'tsdown'
 
 export default defineConfig({
-  entry: ['src/index.ts'],
+  // `mcp-server-declaration.ts` is a separate, dependency-free entry so the
+  // Adapter SDK can inline the portable declaration type into its published
+  // declarations without dragging arktype's type graph along with it.
+  entry: { index: 'src/index.ts', 'mcp-declaration': 'src/schemas/mcp-server-declaration.ts' },
   format: ['esm'],
   dts: {
     eager: true,

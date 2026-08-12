@@ -102,25 +102,31 @@ describe('loadManifest', () => {
     }
   })
 
-  test('no text assets → business-rule error', async () => {
-    const dir = await createFixtureDir('no-text')
-    await writeFixture(
-      dir,
-      'facet.json',
-      JSON.stringify({
-        name: 'empty-facet',
-        version: '1.0.0',
-        servers: {
-          jira: '1.0.0',
-        },
-      }),
-    )
+  test('no deliverable at all → business-rule error', async () => {
+    const dir = await createFixtureDir('no-deliverable')
+    await writeFixture(dir, 'facet.json', JSON.stringify({ name: 'empty-facet', version: '1.0.0' }))
 
     const result = await loadManifest(dir)
     expect(result.ok).toBe(false)
     if (!result.ok) {
-      expect(result.errors.at(0)?.message).toContain('at least one text asset')
+      expect(result.errors.at(0)?.message).toContain('at least one deliverable')
     }
+  })
+
+  test('a server is a sufficient deliverable on its own', async () => {
+    const dir = await createFixtureDir('server-only')
+    await writeFixture(
+      dir,
+      'facet.json',
+      JSON.stringify({
+        name: 'server-only',
+        version: '1.0.0',
+        servers: { filesystem: { type: 'stdio', command: 'npx', args: ['-y', 'filesystem-mcp'] } },
+      }),
+    )
+
+    const result = await loadManifest(dir)
+    expect(result.ok).toBe(true)
   })
 
   test('full manifest loads successfully', async () => {
@@ -150,10 +156,8 @@ describe('loadManifest', () => {
         },
         facets: ['base@1.0.0'],
         servers: {
-          jira: '1.0.0',
-          slack: {
-            image: 'ghcr.io/acme/slack-bot:v2',
-          },
+          jira: { type: 'stdio', command: 'jira-mcp', args: ['--project', 'ACME'] },
+          slack: { type: 'http', url: 'https://mcp.example.com/slack' },
         },
       }),
     )
@@ -163,9 +167,7 @@ describe('loadManifest', () => {
     if (result.ok) {
       expect(result.data.name).toBe('acme-dev')
       expect(result.data.agents?.reviewer?.description).toBe('Code reviewer')
-      expect(result.data.servers?.slack).toEqual({
-        image: 'ghcr.io/acme/slack-bot:v2',
-      })
+      expect(result.data.servers?.slack).toEqual({ type: 'http', url: 'https://mcp.example.com/slack' })
     }
   })
 })

@@ -116,7 +116,7 @@ async function handleInstallPicker(): Promise<number> {
 function apiColumn(inspection: InstalledAdapterInspection): string {
   switch (inspection.kind) {
     case 'compatible':
-      return `api ${inspection.verified.apiVersion}`
+      return `api ${inspection.verified.adapter.apiVersion}`
     case 'incompatible':
       switch (inspection.failure.kind) {
         case 'api-missing':

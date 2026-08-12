@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
 import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
 import { CURRENT_LOCKFILE_VERSION, LOCKFILE_VERSION_0_2, type ProjectFacetEntry } from '@agent-facets/protocol'
+import { SUPPORTED_ADAPTER_APIS } from '../../adapters/api-compatibility.ts'
 import type { StageEvent } from '../types.ts'
 
 /**
@@ -98,6 +99,7 @@ function path(type, name) { return join(process.cwd(), '.${name}', type + 's', n
 export default {
   name: '${name}',
   apiVersion: '${ADAPTER_API_VERSION}',
+  mcpServers: false,
   supportsInstall: true,
   buildAssetMetadata(data) { return { ok: true, data: data || {} } },
   async installAsset(req) {
@@ -491,7 +493,7 @@ describe('runRemove — a remaining facet is unavailable', () => {
       name: 'cowsay',
       oldVersion: '0.1.1',
     })
-    expect(result.install.summary.removedAssets).toBe(0)
+    expect(result.install.summary.textAssets.removed).toBe(0)
     // The facet that stays was rewritten, and is tracked from now on.
     expect(existsSync(assetPath('test-adapter', 'planner'))).toBe(true)
     const receipt = JSON.parse(readFileSync(receiptPath(projectRoot), 'utf8'))
@@ -614,7 +616,7 @@ describe('runRemove — adapter compatibility is not bypassed', () => {
     if (result.phase !== 'install') expect.unreachable()
     if (result.install.failure.code !== 'ADAPTER_INCOMPATIBLE') expect.unreachable()
     expect(result.install.failure.failures).toEqual([
-      { kind: 'api-unsupported', adapter: 'future-adapter', found: '9.9', supported: [ADAPTER_API_VERSION] },
+      { kind: 'api-unsupported', adapter: 'future-adapter', found: '9.9', supported: SUPPORTED_ADAPTER_APIS },
     ])
     expect(result.install.rollback.kind).toBe('not-needed')
 
@@ -648,7 +650,7 @@ describe('runRemove — adapter compatibility is not bypassed', () => {
     if (result.phase !== 'install') expect.unreachable()
     if (result.install.failure.code !== 'ADAPTER_INCOMPATIBLE') expect.unreachable()
     expect(result.install.failure.failures).toEqual([
-      { kind: 'api-unsupported', adapter: 'legacy-positional', found: '0.0', supported: [ADAPTER_API_VERSION] },
+      { kind: 'api-unsupported', adapter: 'legacy-positional', found: '0.0', supported: SUPPORTED_ADAPTER_APIS },
     ])
 
     // Nothing deleted; every project file byte-for-byte unchanged.

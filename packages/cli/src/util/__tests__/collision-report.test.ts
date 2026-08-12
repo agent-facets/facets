@@ -1,6 +1,23 @@
 import { describe, expect, test } from 'bun:test'
-import type { CollisionGroup, StaleOverride } from '@agent-facets/protocol'
-import { formatCollisionReport, manifestLocation, PLACEHOLDER_ALIAS } from '../collision-report.ts'
+import type { MaterializationCollisionGroup, StaleMaterializationOverride } from '@agent-facets/engine'
+import type {
+  CollisionGroup,
+  McpServerDeclaration,
+  McpServerFingerprint,
+  ServerCollisionGroup,
+} from '@agent-facets/protocol'
+import { computeMcpServerFingerprint } from '@agent-facets/protocol'
+import {
+  formatCollisionReport,
+  manifestLocation,
+  PLACEHOLDER_ALIAS,
+  serverManifestLocation,
+} from '../collision-report.ts'
+
+/** Tag asset-domain fixtures for the cross-domain report. */
+function assetGroups(...groups: CollisionGroup[]): MaterializationCollisionGroup[] {
+  return groups.map((group) => ({ kind: 'asset', group }))
+}
 
 const TWO_WAY: CollisionGroup[] = [
   {
@@ -68,7 +85,7 @@ describe('manifestLocation', () => {
 
 describe('formatCollisionReport', () => {
   test('names every group and every claimant', () => {
-    const report = formatCollisionReport([...TWO_WAY, SECOND_GROUP], [])
+    const report = formatCollisionReport(assetGroups(...TWO_WAY, SECOND_GROUP), [])
 
     expect(report).toContain('"review"')
     expect(report).toContain('"auditor"')
@@ -79,14 +96,14 @@ describe('formatCollisionReport', () => {
   })
 
   test('gives every claimant its own manifest location', () => {
-    const report = formatCollisionReport(TWO_WAY, [])
+    const report = formatCollisionReport(assetGroups(...TWO_WAY), [])
 
     expect(report).toContain('facets["alpha"].materialization.skills["review"]')
     expect(report).toContain('facets["beta"].materialization.commands["review"]')
   })
 
   test('offers an alias and an omission snippet for each claimant', () => {
-    const report = formatCollisionReport(TWO_WAY, [])
+    const report = formatCollisionReport(assetGroups(...TWO_WAY), [])
     const aliasLines = report.split('\n').filter((line) => line.includes('"kind": "aliased"'))
     const omitLines = report.split('\n').filter((line) => line.includes('"kind": "omitted"'))
 
@@ -95,7 +112,7 @@ describe('formatCollisionReport', () => {
   })
 
   test('the snippets it prints are parseable JSON', () => {
-    const report = formatCollisionReport(TWO_WAY, [])
+    const report = formatCollisionReport(assetGroups(...TWO_WAY), [])
     const snippets = report
       .split('\n')
       .map((line) => line.trim())
@@ -114,11 +131,11 @@ describe('formatCollisionReport', () => {
     // The spec requires syntactically valid examples, so the placeholder
     // cannot be something like `<your-name>`.
     expect(PLACEHOLDER_ALIAS).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/)
-    expect(formatCollisionReport(TWO_WAY, [])).toContain(PLACEHOLDER_ALIAS)
+    expect(formatCollisionReport(assetGroups(...TWO_WAY), [])).toContain(PLACEHOLDER_ALIAS)
   })
 
   test('does not prefer a claimant or invent a resolution', () => {
-    const report = formatCollisionReport(TWO_WAY, []).toLowerCase()
+    const report = formatCollisionReport(assetGroups(...TWO_WAY), []).toLowerCase()
 
     for (const word of ['winner', 'preferred', 'takes precedence', 'wins', 'recommend']) {
       expect(report).not.toContain(word)
@@ -160,7 +177,7 @@ describe('formatCollisionReport', () => {
   }
 
   test('states that nothing was changed', () => {
-    const report = formatCollisionReport(TWO_WAY, [])
+    const report = formatCollisionReport(assetGroups(...TWO_WAY), [])
 
     expect(report).toContain('facets.json')
     expect(report).toContain('facets.lock')
@@ -170,21 +187,145 @@ describe('formatCollisionReport', () => {
 
   test('explains that skills and commands share one namespace', () => {
     // Without this, a skill colliding with a command reads as a bug.
-    expect(formatCollisionReport(TWO_WAY, [])).toContain('skills and commands')
-    expect(formatCollisionReport([SECOND_GROUP], [])).toContain('project agents')
+    expect(formatCollisionReport(assetGroups(...TWO_WAY), [])).toContain('skills and commands')
+    expect(formatCollisionReport(assetGroups(SECOND_GROUP), [])).toContain('project agents')
   })
 
   test('lists stale overrides when there are any', () => {
-    const stale: StaleOverride[] = [
-      { facet: 'alpha', type: 'skill', authoredName: 'gone', disposition: { kind: 'omitted' } },
+    const stale: StaleMaterializationOverride[] = [
+      {
+        facet: 'alpha',
+        contribution: { kind: 'asset', assetType: 'skill' },
+        authoredName: 'gone',
+        disposition: { kind: 'omitted' },
+      },
     ]
-    const report = formatCollisionReport(TWO_WAY, stale)
+    const report = formatCollisionReport(assetGroups(...TWO_WAY), stale)
 
     expect(report).toContain('no longer contain')
     expect(report).toContain('"gone"')
   })
 
   test('omits the stale-override section entirely when there are none', () => {
-    expect(formatCollisionReport(TWO_WAY, [])).not.toContain('no longer contain')
+    expect(formatCollisionReport(assetGroups(...TWO_WAY), [])).not.toContain('no longer contain')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// MCP server claimants
+// ---------------------------------------------------------------------------
+
+function declaration(command: string): McpServerDeclaration {
+  return { type: 'stdio', command } as McpServerDeclaration
+}
+
+function serverMember(facet: string, command: string, effectiveName = 'filesystem') {
+  const decl = declaration(command)
+  return {
+    facet,
+    authoredName: 'filesystem',
+    effectiveName,
+    declaration: decl,
+    fingerprint: computeMcpServerFingerprint(decl) as McpServerFingerprint,
+    disposition: { kind: 'authored' } as const,
+  }
+}
+
+const SERVER_GROUP: ServerCollisionGroup = {
+  effectiveName: 'filesystem',
+  members: [serverMember('alpha', 'alpha-cmd'), serverMember('beta', 'beta-cmd')],
+}
+
+function serverGroups(...groups: ServerCollisionGroup[]): MaterializationCollisionGroup[] {
+  return groups.map((group) => ({ kind: 'mcp-server', group }))
+}
+
+describe('formatCollisionReport — MCP server claimants', () => {
+  const report = formatCollisionReport(serverGroups(SERVER_GROUP), [])
+
+  test('names the group as MCP servers and lists every claimant', () => {
+    expect(report).toContain('MCP servers — "filesystem" is claimed by:')
+    expect(report).toContain('alpha: server filesystem → "filesystem"')
+    expect(report).toContain('beta: server filesystem → "filesystem"')
+  })
+
+  test('summarizes each declaration without reproducing it', () => {
+    expect(report).toContain('stdio, command "alpha-cmd"')
+    expect(report).toContain('stdio, command "beta-cmd"')
+  })
+
+  test('the fingerprint prefix tells two claimants apart', () => {
+    const [first, second] = SERVER_GROUP.members
+    if (first === undefined || second === undefined) expect.unreachable()
+    for (const member of [first, second]) {
+      expect(report).toContain(member.fingerprint.slice('sha256:'.length, 'sha256:'.length + 8))
+    }
+  })
+
+  test('points at the exact materialization.servers location', () => {
+    expect(report).toContain(serverManifestLocation('alpha', 'filesystem'))
+    expect(report).toContain('facets["alpha"].materialization.servers["filesystem"]')
+  })
+
+  test('offers a valid alias and omission snippet for every claimant', () => {
+    const snippets = report.split('\n').filter((line) => line.includes('alias:') || line.includes('omit:'))
+    expect(snippets).toHaveLength(4)
+    for (const line of snippets) {
+      const body = line.slice(line.indexOf('"'))
+      expect(() => JSON.parse(`{${body}}`)).not.toThrow()
+    }
+  })
+
+  test('the shape example uses the servers group', () => {
+    expect(report).toContain('"servers": {')
+  })
+
+  test('prefers no claimant', () => {
+    // Each claimant gets the identical pair of snippets, so nothing in the
+    // report reads as a recommendation about which facet should yield.
+    const alpha = report.split('alpha:')[1]?.split('beta:')[0] ?? ''
+    const beta = report.split('beta:')[1] ?? ''
+    expect(alpha).toContain(PLACEHOLDER_ALIAS)
+    expect(beta).toContain(PLACEHOLDER_ALIAS)
+    expect(report).not.toContain('alpha-filesystem')
+  })
+
+  test('states that native configuration was not changed either', () => {
+    expect(report).toContain('MCP configuration were NOT changed')
+  })
+})
+
+describe('formatCollisionReport — mixed asset and server groups', () => {
+  const report = formatCollisionReport([...assetGroups(...TWO_WAY), ...serverGroups(SERVER_GROUP)], [])
+
+  test('reports both domains in one failure', () => {
+    expect(report).toContain('project skills and commands — "review" is claimed by:')
+    expect(report).toContain('MCP servers — "filesystem" is claimed by:')
+  })
+
+  test('every claimant from both domains gets a location', () => {
+    expect(report).toContain(manifestLocation('alpha', 'skill', 'review'))
+    expect(report).toContain(serverManifestLocation('alpha', 'filesystem'))
+  })
+
+  test('asset claimants carry their scope', () => {
+    expect(report).toContain('project skill review')
+  })
+})
+
+describe('formatCollisionReport — names that collide with Object.prototype', () => {
+  test('a server named __proto__ is quoted, not interpreted', () => {
+    const group: ServerCollisionGroup = {
+      effectiveName: '__proto__',
+      members: SERVER_GROUP.members.map((member) => ({
+        ...member,
+        authoredName: '__proto__',
+        effectiveName: '__proto__',
+      })),
+    }
+    const report = formatCollisionReport(serverGroups(group), [])
+
+    expect(report).toContain('facets["alpha"].materialization.servers["__proto__"]')
+    expect(Object.keys(Object.prototype)).toEqual([])
   })
 })

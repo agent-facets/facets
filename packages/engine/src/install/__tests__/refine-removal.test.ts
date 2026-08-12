@@ -3,6 +3,7 @@ import {
   CURRENT_LOCKFILE_VERSION,
   type CurrentLockfileFacet,
   canonicalPrimaryPath,
+  type McpServerFingerprint,
   type SupportedLockfile,
 } from '@agent-facets/protocol'
 import type { NormalizedFacetEntry } from '../../manifest/mutations.ts'
@@ -106,13 +107,17 @@ function receiptFor(lockfile: SupportedLockfile, opts: { without?: string } = {}
   const facets: Array<[string, ReceiptFacetEntry]> = []
   for (const [name, entry] of Object.entries(lockfile.facets)) {
     if (name === opts.without) continue
-    facets.push([name, receiptEntryForLockedFacet(entry)])
+    facets.push([name, receiptEntryForLockedFacet(entry, [])])
   }
   return { version: CURRENT_RECEIPT_VERSION, path: '/tmp/project', facets: record(facets) }
 }
 
 function loaded(receipt: Receipt): ProjectReceiptState {
-  return { kind: 'loaded', receipt, invalidEntries: [] }
+  return {
+    kind: 'loaded',
+    record: { authority: 'assets-and-configuration', path: receipt.path, facets: receipt.facets },
+    invalidEntries: [],
+  }
 }
 
 /** No usable local evidence, whatever the reason. Ownership is zero. */
@@ -509,5 +514,221 @@ describe('refineRemoval — a receipt that cannot witness anything', () => {
     if (result.kind !== 'not-applicable') expect.unreachable()
     if (result.reason.code !== 'receipt-unwitnessable') expect.unreachable()
     expect(result.reason.reason).toBe(reason)
+  })
+})
+
+/**
+ * The configuration half of the same proof.
+ *
+ * A removal writes nothing, so every question it asks about MCP servers has
+ * to be answerable from the receipt's own claims. Where it is not — the
+ * receipt predates claims, the manifest asks for something the claims do not
+ * record, or the claims disagree with each other — the operation falls back
+ * to ordinary resolution rather than guessing.
+ */
+describe('refineRemoval — configuration claims', () => {
+  const FINGERPRINT: McpServerFingerprint = `sha256:${'b'.repeat(64)}`
+
+  function withClaims(
+    entry: CurrentLockfileFacet,
+    claims: ReadonlyArray<{
+      name: string
+      materialization: ReceiptFacetEntry['configurations'][number]['materialization']
+    }>,
+  ): ReceiptFacetEntry {
+    return receiptEntryForLockedFacet(
+      entry,
+      claims.map((claim) => ({
+        kind: 'mcp-server' as const,
+        name: claim.name,
+        materialization: claim.materialization,
+        fingerprint: FINGERPRINT,
+      })),
+    )
+  }
+
+  const previousLockfile = lockfileOf([
+    ['keep', entryWith([{ name: 'review' }])],
+    ['gone', entryWith([{ name: 'dropped' }])],
+  ])
+
+  function stateOf(keep: ReceiptFacetEntry, gone?: ReceiptFacetEntry): ProjectReceiptState {
+    const entries: Array<[string, ReceiptFacetEntry]> = [['keep', keep]]
+    if (gone !== undefined) entries.push(['gone', gone])
+    return loaded({ version: CURRENT_RECEIPT_VERSION, path: '/tmp/project', facets: record(entries) })
+  }
+
+  test('carries a remaining facet’s claims forward verbatim', () => {
+    const keep = withClaims(previousLockfile.facets.keep as CurrentLockfileFacet, [
+      { name: 'filesystem', materialization: { kind: 'authored' } },
+    ])
+    const result = refineRemoval({
+      desiredFacets: desiredOnly(['keep']),
+      previousLockfile,
+      lockfileExisted: true,
+      receiptState: stateOf(keep),
+    })
+
+    if (result.kind !== 'refined') expect.unreachable()
+    expect(result.refinement.receiptFacets.keep?.configurations).toEqual(keep.configurations)
+    // Still claimed, so nothing may be deleted.
+    expect(result.refinement.obsoleteConfigurations).toEqual([])
+    expect(result.refinement.retainedConfigurations.map((c) => c.identity.effectiveName)).toEqual(['filesystem'])
+  })
+
+  test('a claim only the dropped facet held becomes deletable', () => {
+    const keep = withClaims(previousLockfile.facets.keep as CurrentLockfileFacet, [])
+    const gone = withClaims(previousLockfile.facets.gone as CurrentLockfileFacet, [
+      { name: 'filesystem', materialization: { kind: 'authored' } },
+    ])
+    const result = refineRemoval({
+      desiredFacets: desiredOnly(['keep']),
+      previousLockfile,
+      lockfileExisted: true,
+      receiptState: stateOf(keep, gone),
+    })
+
+    if (result.kind !== 'refined') expect.unreachable()
+    expect(result.refinement.obsoleteConfigurations.map((o) => o.effectiveName)).toEqual(['filesystem'])
+  })
+
+  test('a claim a remaining facet shares with the dropped one is retained', () => {
+    const keep = withClaims(previousLockfile.facets.keep as CurrentLockfileFacet, [
+      { name: 'filesystem', materialization: { kind: 'authored' } },
+    ])
+    const gone = withClaims(previousLockfile.facets.gone as CurrentLockfileFacet, [
+      { name: 'filesystem', materialization: { kind: 'authored' } },
+    ])
+    const result = refineRemoval({
+      desiredFacets: desiredOnly(['keep']),
+      previousLockfile,
+      lockfileExisted: true,
+      receiptState: stateOf(keep, gone),
+    })
+
+    if (result.kind !== 'refined') expect.unreachable()
+    expect(result.refinement.obsoleteConfigurations).toEqual([])
+  })
+
+  test('an alias the manifest asks for but the claims do not record falls back', () => {
+    const keep = withClaims(previousLockfile.facets.keep as CurrentLockfileFacet, [])
+    const desiredFacets = record<NormalizedFacetEntry>([
+      ['keep', { source: './vendor/keep', overrides: { servers: { filesystem: { kind: 'aliased', as: 'fs' } } } }],
+    ])
+
+    const result = refineRemoval({
+      desiredFacets,
+      previousLockfile,
+      lockfileExisted: true,
+      receiptState: stateOf(keep),
+    })
+
+    if (result.kind !== 'not-applicable') expect.unreachable()
+    if (result.reason.code !== 'remaining-server-intent-unwitnessed') expect.unreachable()
+    expect(result.reason.authoredName).toBe('filesystem')
+  })
+
+  test('a claim the manifest now aliases differently falls back', () => {
+    const keep = withClaims(previousLockfile.facets.keep as CurrentLockfileFacet, [
+      { name: 'filesystem', materialization: { kind: 'authored' } },
+    ])
+    const desiredFacets = record<NormalizedFacetEntry>([
+      ['keep', { source: './vendor/keep', overrides: { servers: { filesystem: { kind: 'aliased', as: 'fs' } } } }],
+    ])
+
+    const result = refineRemoval({
+      desiredFacets,
+      previousLockfile,
+      lockfileExisted: true,
+      receiptState: stateOf(keep),
+    })
+
+    if (result.kind !== 'not-applicable') expect.unreachable()
+    expect(result.reason.code).toBe('remaining-server-intent-unrecorded')
+  })
+
+  test('a claim the manifest now omits falls back', () => {
+    const keep = withClaims(previousLockfile.facets.keep as CurrentLockfileFacet, [
+      { name: 'filesystem', materialization: { kind: 'authored' } },
+    ])
+    const desiredFacets = record<NormalizedFacetEntry>([
+      ['keep', { source: './vendor/keep', overrides: { servers: { filesystem: { kind: 'omitted' } } } }],
+    ])
+
+    const result = refineRemoval({
+      desiredFacets,
+      previousLockfile,
+      lockfileExisted: true,
+      receiptState: stateOf(keep),
+    })
+
+    if (result.kind !== 'not-applicable') expect.unreachable()
+    expect(result.reason.code).toBe('remaining-server-intent-unrecorded')
+  })
+
+  test('an omission with no claim is consistent', () => {
+    const keep = withClaims(previousLockfile.facets.keep as CurrentLockfileFacet, [])
+    const desiredFacets = record<NormalizedFacetEntry>([
+      ['keep', { source: './vendor/keep', overrides: { servers: { filesystem: { kind: 'omitted' } } } }],
+    ])
+
+    const result = refineRemoval({
+      desiredFacets,
+      previousLockfile,
+      lockfileExisted: true,
+      receiptState: stateOf(keep),
+    })
+
+    expect(result.kind).toBe('refined')
+  })
+
+  test('a retained identity the receipt recorded twice, differently, falls back', () => {
+    // Two claims at one effective name with different fingerprints: the entry
+    // on disk says whatever the last write said, and nothing here can put the
+    // remaining claimant's version back.
+    const keep = receiptEntryForLockedFacet(previousLockfile.facets.keep as CurrentLockfileFacet, [
+      { kind: 'mcp-server', name: 'filesystem', materialization: { kind: 'authored' }, fingerprint: FINGERPRINT },
+    ])
+    const gone = receiptEntryForLockedFacet(previousLockfile.facets.gone as CurrentLockfileFacet, [
+      {
+        kind: 'mcp-server',
+        name: 'filesystem',
+        materialization: { kind: 'authored' },
+        fingerprint: `sha256:${'c'.repeat(64)}` as McpServerFingerprint,
+      },
+    ])
+
+    const result = refineRemoval({
+      desiredFacets: desiredOnly(['keep']),
+      previousLockfile,
+      lockfileExisted: true,
+      receiptState: stateOf(keep, gone),
+    })
+
+    if (result.kind !== 'not-applicable') expect.unreachable()
+    if (result.reason.code !== 'retained-server-identity-contested') expect.unreachable()
+    expect(result.reason.effectiveName).toBe('filesystem')
+  })
+
+  test.each([1, 0.2, 0.3] as const)('a receipt at version %p cannot witness configuration', (version) => {
+    const result = refineRemoval({
+      desiredFacets: desiredOnly(['keep']),
+      previousLockfile,
+      lockfileExisted: true,
+      receiptState: {
+        kind: 'loaded',
+        record: {
+          authority: 'assets-only',
+          refinedFrom: version,
+          path: '/tmp/project',
+          facets: record([['keep', { version: '1.0.0', assets: [] }]]),
+        },
+        invalidEntries: [],
+      },
+    })
+
+    if (result.kind !== 'not-applicable') expect.unreachable()
+    if (result.reason.code !== 'configuration-unwitnessed') expect.unreachable()
+    expect(result.reason.refinedFrom).toBe(version)
   })
 })

@@ -1,12 +1,14 @@
-import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CurrentLockfile, CurrentLockfileFacet } from '@agent-facets/protocol'
 import { applyDesiredFacets, type ManifestDocument, type NormalizedFacetEntry } from '../../manifest/mutations.ts'
 import { writeProjectManifest } from '../../manifest/project-files.ts'
+import { capturePreimage, describeError, type FilePreimage, restorePreimage } from '../file-preimage.ts'
 import { FACETS_LOCK_FILE, writeLockfile } from '../lockfile-io.ts'
-import { ownRecord } from '../own-entry.ts'
+import { ownEntry, ownRecord } from '../own-entry.ts'
 import {
+  CURRENT_RECEIPT_VERSION,
   type Receipt,
+  type ReceiptConfigurationClaim,
   type ReceiptFacetEntry,
   receiptEntryForLockedFacet,
   receiptPath,
@@ -34,27 +36,42 @@ import type { OnLog, RunInstallFailure } from '../types.ts'
  * the real file permanently.
  */
 export type MaterializedReceiptState =
-  | { kind: 'written'; facetEntries: Readonly<Record<string, CurrentLockfileFacet>> }
+  | {
+      kind: 'written'
+      facetEntries: Readonly<Record<string, CurrentLockfileFacet>>
+      /**
+       * The MCP configuration claims this run reconciled, keyed by facet.
+       * Separate from `facetEntries` because the lockfile records no
+       * declarations, so there is nothing in a locked entry to derive a claim
+       * from — it can only come from what was actually applied.
+       */
+      configurations: Readonly<Record<string, readonly ReceiptConfigurationClaim[]>>
+    }
   | { kind: 'carried-forward'; facets: Readonly<Record<string, ReceiptFacetEntry>> }
 
 /**
  * Derive the new receipt from what this run actually put on disk. The receipt
- * records `{ version, assets[] }` per facet, each asset carrying the owned
- * inner-archive file paths — a self-sufficient, offline-capable deletion
- * record for future drift removal. It mirrors paths, never hashes.
+ * records, per facet, the resolved integrity plus the assets and MCP
+ * configuration claims it owns — a self-sufficient, offline-capable deletion
+ * record for future drift removal. It mirrors asset paths, never hashes, and
+ * declaration fingerprints, never declarations.
+ *
+ * Takes the project PATH rather than a previous receipt: every field of the
+ * new record comes from this run, so a previous one could only contribute
+ * claims this run has no evidence for.
  */
-export function buildUpdatedReceipt(receipt: Receipt, state: MaterializedReceiptState): Receipt {
+export function buildUpdatedReceipt(projectPath: string, state: MaterializedReceiptState): Receipt {
   const facets: Record<string, ReceiptFacetEntry> = ownRecord()
   if (state.kind === 'carried-forward') {
     for (const [name, entry] of Object.entries(state.facets)) {
       facets[name] = entry
     }
-    return { ...receipt, facets }
+    return { version: CURRENT_RECEIPT_VERSION, path: projectPath, facets }
   }
   for (const [name, entry] of Object.entries(state.facetEntries)) {
-    facets[name] = receiptEntryForLockedFacet(entry)
+    facets[name] = receiptEntryForLockedFacet(entry, ownEntry(state.configurations, name) ?? [])
   }
-  return { ...receipt, facets }
+  return { version: CURRENT_RECEIPT_VERSION, path: projectPath, facets }
 }
 
 /**
@@ -188,7 +205,12 @@ export function commitProjectFiles(args: TriWriteArgs): TriWriteResult {
       args.onLog?.(() => `[verbose]   wrote ${write.file} (${write.path})`)
     } catch (error) {
       for (const image of preImages) {
-        restorePreImage(image)
+        // Best-effort: this restore runs on a disk that just failed a write,
+        // so it may fail too. The structured failure below still reports the
+        // commit as failed and the caller still replays the journal, and a
+        // partially-restored file is no worse than the mid-trio state the
+        // restore is repairing.
+        restorePreimage(image)
       }
       return {
         ok: false,
@@ -204,21 +226,12 @@ export function commitProjectFiles(args: TriWriteArgs): TriWriteResult {
 }
 
 /**
- * Byte pre-image of a project file. `bytes: null` records absence —
- * restoring an absent pre-image deletes the file.
- */
-interface FilePreImage {
-  path: string
-  bytes: Buffer | null
-}
-
-/**
  * Everything the trio needs that can fail before its first write: the
  * receipt's location, and a pre-image of each of the three files.
  */
 function prepareTriWrite(
   projectRoot: string,
-): { ok: true; receiptFile: string; preImages: FilePreImage[] } | { ok: false; failure: RunInstallFailure } {
+): { ok: true; receiptFile: string; preImages: FilePreimage[] } | { ok: false; failure: RunInstallFailure } {
   let receiptFile: string
   try {
     receiptFile = receiptPath(projectRoot)
@@ -233,60 +246,13 @@ function prepareTriWrite(
     }
   }
 
-  const preImages: FilePreImage[] = []
+  const preImages: FilePreimage[] = []
   for (const path of [join(projectRoot, 'facets.json'), join(projectRoot, FACETS_LOCK_FILE), receiptFile]) {
-    const captured = capturePreImage(path)
+    const captured = capturePreimage(path)
     if (!captured.ok) {
       return { ok: false, failure: { code: 'LOCKFILE_WRITE_FAILED', path, cause: captured.cause } }
     }
-    preImages.push(captured.image)
+    preImages.push(captured.preimage)
   }
   return { ok: true, receiptFile, preImages }
-}
-
-/**
- * Read a file's current bytes, or record that it does not exist.
- *
- * Only the "not there" errno family means absence. Every other read failure —
- * EACCES, EIO, a path that turned into a directory — is reported, because
- * treating it as absence would arm a restore that DELETES a file this run
- * could not read, turning an unreadable manifest into a lost one.
- */
-function capturePreImage(path: string): { ok: true; image: FilePreImage } | { ok: false; cause: string } {
-  try {
-    return { ok: true, image: { path, bytes: readFileSync(path) } }
-  } catch (error) {
-    if (isMissingFile(error)) return { ok: true, image: { path, bytes: null } }
-    return { ok: false, cause: `could not read the current contents: ${describeError(error)}` }
-  }
-}
-
-/** ENOENT/ENOTDIR — the "file is not there" errno family. */
-function isMissingFile(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null || !('code' in error)) return false
-  const code = (error as NodeJS.ErrnoException).code
-  return code === 'ENOENT' || code === 'ENOTDIR'
-}
-
-function describeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
-/**
- * Best-effort restore. The restore runs on a disk that just failed a
- * write, so it may fail too; swallowing here is deliberate — the
- * journal rollback and the structured failure still report the commit
- * as failed, and a partially-restored file is no worse than the
- * mid-trio state the restore is repairing.
- */
-function restorePreImage(image: FilePreImage): void {
-  try {
-    if (image.bytes === null) {
-      rmSync(image.path, { force: true })
-    } else {
-      writeFileSync(image.path, image.bytes)
-    }
-  } catch {
-    // Best-effort by design (see doc comment).
-  }
 }

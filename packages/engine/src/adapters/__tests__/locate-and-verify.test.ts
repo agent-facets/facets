@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { ADAPTER_API_VERSION } from '@agent-facets/adapter'
+import { SUPPORTED_ADAPTER_APIS } from '../api-compatibility.ts'
 import { locateAndVerifyAdapter } from '../install-service.ts'
 
 /**
@@ -19,6 +20,7 @@ function validAdapterModule(name: string): string {
   return `export default {
   name: '${name}',
   apiVersion: '${ADAPTER_API_VERSION}',
+  mcpServers: false,
   buildAssetMetadata: () => ({ ok: true, data: {} }),
   installAsset: async () => undefined,
   readAsset: async () => ({ content: '' }),
@@ -49,7 +51,7 @@ describe('locateAndVerifyAdapter — fallback eligibility', () => {
       const result = await locateAndVerifyAdapter(dir)
       if (!result.ok) expect.unreachable()
       expect(result.verified.adapter.name).toBe('fallback-adapter')
-      expect(result.verified.apiVersion).toBe(ADAPTER_API_VERSION)
+      expect(result.verified.adapter.apiVersion).toBe(ADAPTER_API_VERSION)
       await result.cleanup()
     } finally {
       await rm(dir, { recursive: true, force: true }).catch(() => {})
@@ -79,7 +81,7 @@ describe('locateAndVerifyAdapter — fallback eligibility', () => {
         kind: 'api-unsupported',
         adapter: 'future-adapter',
         found: '9.9',
-        supported: [ADAPTER_API_VERSION],
+        supported: SUPPORTED_ADAPTER_APIS,
       })
     } finally {
       await rm(dir, { recursive: true, force: true }).catch(() => {})

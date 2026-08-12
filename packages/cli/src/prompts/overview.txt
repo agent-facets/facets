@@ -2,10 +2,11 @@ facet — instructions for AI agents
 
 {{TOPIC_INDEX}}
 
-This CLI manages "facets": portable bundles of skills, agents, and commands
-(plus optional supplementary files like README.md) for AI coding tools. As an
-agent you will do one of two things with it. Decide which, then read the
-matching topic before acting.
+This CLI manages "facets": portable bundles of skills, agents, commands, and
+MCP server declarations (plus optional supplementary files like README.md) for
+AI coding tools. A facet may ship any combination of those, including only MCP
+servers. As an agent you will do one of two things with it. Decide which, then
+read the matching topic before acting.
 
   AUTHORING a facet  — you are writing or changing a facet (its facet.json and
                        its skill/agent/command files). Run:
@@ -19,14 +20,16 @@ matching topic before acting.
 The three artifact files
   facet.json   The authoring manifest. Declares a facet's identity (name,
                version), its assets (skills, agents, commands) with their
-               descriptions and optional per-adapter config, and any
-               supplementary files it ships. You edit this when AUTHORING.
+               descriptions and optional per-adapter config, any MCP servers
+               it declares, and any supplementary files it ships. You edit
+               this when AUTHORING.
                See: facet instructions manifest
   facets.json  A consuming project's dependency list: which facets it installs,
-               and how it wants their assets named. Each entry is either a
-               source string or an object carrying materialization choices, so
-               read both forms. You touch this when USING facets (via
-               `facet add`, or by hand to resolve a name collision).
+               and how it wants their assets and MCP servers named. Each entry
+               is either a source string or an object carrying materialization
+               choices, so read both forms. You touch this when USING facets
+               (via `facet add`, or by hand to resolve a name collision or
+               refuse an MCP server).
                See: facet instructions usage
   facets.lock  The install lockfile. Managed by the CLI; do not hand-edit.
 

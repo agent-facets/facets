@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test'
+import { SUPPORTED_ADAPTER_APIS } from '@agent-facets/engine'
 import { FacetManifestSchema } from '@agent-facets/protocol'
 import {
   DEFAULT_TOPIC,
   INSTRUCTION_TOPICS,
   isInstructionTopic,
   promptFor,
+  renderAdapterApiSupportSet,
   renderTopicIndex,
   TOPICS,
 } from '../../../prompts/index.ts'
@@ -51,10 +53,20 @@ describe('topic index', () => {
     expect(overview.indexOf('Instruction topics')).toBeLessThan(overview.indexOf('AUTHORING a facet'))
   })
 
-  test('non-overview prompts are returned verbatim (no marker substitution)', () => {
+  test('no rendered prompt still carries an unsubstituted marker', () => {
+    // Weaker than "returned verbatim", which stopped being true once a
+    // second topic gained a generated value — but it tests the thing that
+    // actually matters: a marker must never reach a reader.
     for (const topic of INSTRUCTION_TOPICS) {
-      if (topic === 'overview') continue
-      expect(promptFor(topic)).toBe(TOPICS[topic].prompt)
+      expect(promptFor(topic)).not.toContain('{{')
+    }
+  })
+
+  test('prompts without markers are returned verbatim', () => {
+    for (const topic of INSTRUCTION_TOPICS) {
+      const raw = TOPICS[topic].prompt
+      if (raw.includes('{{')) continue
+      expect(promptFor(topic)).toBe(raw)
     }
   })
 })
@@ -77,9 +89,16 @@ describe('0.29 guidance is present in the prompts', () => {
     expect(manifest).toContain('--- JSON Schema (generated) ---')
   })
 
-  test('usage covers adapter API 0.1 recovery guidance', () => {
-    const usage = TOPICS.usage.prompt
-    expect(usage).toContain('adapter API 0.1')
+  test('usage covers adapter API recovery guidance for the whole support set', () => {
+    // Rendered, not raw: the support set is generated from engine's single
+    // declaration, so asserting the raw prompt would only prove a marker
+    // exists — and asserting a literal would be the duplication the marker
+    // was introduced to remove.
+    const usage = promptFor('usage')
+    expect(usage).toContain(`adapter API ${renderAdapterApiSupportSet()}`)
+    for (const api of SUPPORTED_ADAPTER_APIS) {
+      expect(usage).toContain(api)
+    }
     expect(usage).toContain('facet adapter list')
   })
 })
@@ -103,7 +122,35 @@ describe('materialization guidance is present in the prompts', () => {
     // Recording an explicit authored disposition is rejected by the schema,
     // so the prompt must not present it as an option.
     expect(usage).toContain('Do NOT write')
-    expect(usage).toContain('"skills", "agents", and "commands"')
+    expect(usage).toContain('"skills", "agents", "commands", and "servers"')
+  })
+
+  // An agent without a TTY that meets an MCP declaration has exactly two ways
+  // to finish. Naming neither leaves it stuck at a hard failure, so the prompt
+  // must carry both -- and must not imply the flag settles asset questions too.
+  test('usage teaches both non-TTY MCP remedies', () => {
+    const usage = TOPICS.usage.prompt
+    expect(usage).toContain('--accept-mcp')
+    expect(usage).toContain('"servers": { "docs": { "kind": "omitted" } }')
+    expect(usage).toContain('"manifestVersion": 0.2')
+    expect(usage).toContain('MACHINE-LOCAL')
+  })
+
+  test('usage does not present --accept-mcp as an asset remedy', () => {
+    const usage = TOPICS.usage.prompt
+    expect(usage).toContain('does NOT resolve an')
+    expect(usage).toContain('There is no CLI flag for collisions')
+  })
+
+  // The declaration objects are closed, which contradicts the tolerance rule
+  // stated for the rest of the manifest -- an author following the general
+  // rule would ship a manifest that fails validation.
+  test('authoring teaches the closed server declaration shapes', () => {
+    const authoring = TOPICS.authoring.prompt
+    expect(authoring).toContain('"type": "stdio"')
+    expect(authoring).toContain('"type": "http"')
+    expect(authoring).toContain('CLOSED')
+    expect(authoring).toContain('NEVER put a secret')
   })
 
   test('usage does not claim facets.json is a flat string map', () => {

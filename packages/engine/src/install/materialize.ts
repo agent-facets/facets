@@ -9,7 +9,8 @@ import type {
 import { type Scope, splitFrontMatter } from '@agent-facets/common'
 import { type MaterializedAsset, type ResolvedFacetManifest, skillRootPath } from '@agent-facets/protocol'
 import { type AdapterCompatibilityFailure, compatibilityFailureFor } from '../adapters/api-compatibility.ts'
-import { ownedCompanionPathsFor, type PreviousOwnership } from './commit/ownership.ts'
+import type { AssetTakeoverResolver } from './asset-takeover.ts'
+import { ownedCompanionPathsFor, ownershipFor, type PreviousOwnership } from './commit/ownership.ts'
 import type { InstallJournal } from './journal.ts'
 import { type AssetIdentity, assetIdentity, type OnLog, type StageEvent } from './types.ts'
 import { authoredCompanionKey, type SkillCompanionBytes } from './verified-asset-plan.ts'
@@ -42,6 +43,16 @@ export interface MaterializeOptions {
    */
   companionBytes?: Map<string, SkillCompanionBytes>
   journal: InstallJournal
+  /**
+   * Interactive gate for an occupied destination this machine does not own.
+   *
+   * Absent means continue — the opposite default from the collision
+   * resolver, and deliberately so: a collision has no correct answer without
+   * the user, while a takeover has one that preserves existing behavior.
+   * Frozen mode and non-interactive callers therefore reconcile exactly as
+   * they always have, by never being handed one.
+   */
+  resolveAssetTakeover?: AssetTakeoverResolver
   onLog?: OnLog
   /** Structured progress events for view layers. */
   onStage?: (event: StageEvent) => void
@@ -87,6 +98,13 @@ export type MaterializeFailure =
   | { kind: 'read-failed'; adapter: string; asset: AssetIdentity; cause: string }
   | { kind: 'install-failed'; adapter: string; asset: AssetIdentity; cause: string }
   | { kind: 'delete-failed'; adapter: string; asset: AssetIdentity; cause: string }
+  /**
+   * The user declined to take over an occupied, untracked destination.
+   * Unlike a collision cancellation this lands mid-journal, so the caller
+   * replays it — the rollback outcome is half of what the user needs to be
+   * told.
+   */
+  | { kind: 'takeover-cancelled'; adapter: string; asset: AssetIdentity }
 
 /**
  * Result of one `materialize` call. Errors are values, not control
@@ -193,12 +211,57 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
       // Skip only when the primary AND every companion already match on disk.
       // A single drifted companion (or a changed companion set) forces a
       // repair through the atomic bundle replacement below.
-      if (
-        previous &&
+      const identical =
+        previous !== null &&
         previous.content === candidateSplit.content &&
         JSON.stringify(previous.metadata ?? {}) === JSON.stringify(mergedCandidateMetadata) &&
         companionsIdentical(previous.companions, companions)
-      ) {
+
+      // The just-in-time takeover gate. Reached only when something is
+      // already at this destination AND this machine's receipt does not own
+      // it — an owned identity reconciles without a warning, and an empty one
+      // is a creation. Both facts are already in hand from the read above and
+      // the ownership index, so nothing extra is inspected.
+      //
+      // Placed before the skip because an equivalent untracked destination is
+      // still being adopted: the bytes do not change, but this machine is
+      // about to start claiming a file someone else put there.
+      if (previous !== null && ownershipFor(opts.previousOwnership, asset) === undefined) {
+        const occupancy = identical ? 'equivalent' : 'divergent'
+        opts.onStage?.({
+          kind: 'asset-takeover-required',
+          facet: opts.facetName,
+          adapter: adapter.name,
+          asset: target,
+          occupancy,
+        })
+        const decision = opts.resolveAssetTakeover
+          ? await opts.resolveAssetTakeover({
+              facet: opts.facetName,
+              adapter: adapter.name,
+              asset: target,
+              authoredName: asset.authoredName,
+              occupancy,
+            })
+          : { kind: 'continue' as const }
+        if (decision.kind === 'cancelled') {
+          opts.onStage?.({
+            kind: 'asset-takeover-cancelled',
+            facet: opts.facetName,
+            adapter: adapter.name,
+            asset: target,
+          })
+          return { ok: false, failure: { kind: 'takeover-cancelled', adapter: adapter.name, asset: target } }
+        }
+        opts.onStage?.({
+          kind: 'asset-takeover-accepted',
+          facet: opts.facetName,
+          adapter: adapter.name,
+          asset: target,
+        })
+      }
+
+      if (identical) {
         opts.onLog?.(() => `[verbose]     =${describeTarget(asset)} (skipped)`)
         skipped++
         continue

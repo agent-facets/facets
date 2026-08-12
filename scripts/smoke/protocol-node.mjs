@@ -478,11 +478,36 @@ check('an expanded entry in an unversioned document is rejected, not promoted', 
   assert.equal(result.failure.manifestVersion, 'legacy-unversioned')
 })
 
+check('a 0.2 document carries server materialization overrides', () => {
+  const doc = {
+    manifestVersion: 0.2,
+    facets: {
+      c: { source: '1.*', materialization: { servers: { filesystem: { kind: 'aliased', as: 'team-fs' } } } },
+    },
+  }
+  const result = parseProjectManifestDocument(JSON.stringify(doc))
+  assert.equal(result.ok, true)
+  assert.equal(result.data.manifestVersion, 0.2)
+  assert.equal(result.data.manifest.facets.c.materialization.servers.filesystem.as, 'team-fs')
+})
+
+// The servers group is the whole reason 0.2 exists, so a 0.1 document must not
+// be allowed to carry one -- accepting it would silently discard the intent.
+check('a servers group is rejected in a 0.1 document', () => {
+  const doc = {
+    manifestVersion: 0.1,
+    facets: { c: { source: '1.*', materialization: { servers: { filesystem: { kind: 'omitted' } } } } },
+  }
+  const result = parseProjectManifestDocument(JSON.stringify(doc))
+  assert.equal(result.ok, false)
+  assert.equal(result.failure.code, 'schema-violation')
+})
+
 check('an unsupported manifestVersion is a structured failure', () => {
-  const result = parseProjectManifestDocument(JSON.stringify({ manifestVersion: 0.2, facets: {} }))
+  const result = parseProjectManifestDocument(JSON.stringify({ manifestVersion: 0.3, facets: {} }))
   assert.equal(result.ok, false)
   assert.equal(result.failure.code, 'unsupported-manifest-version')
-  assert.equal(result.failure.observed, 0.2)
+  assert.equal(result.failure.observed, 0.3)
 })
 
 console.log('=== lockfile 0.3 (dispositions, exact dispatch) ===')

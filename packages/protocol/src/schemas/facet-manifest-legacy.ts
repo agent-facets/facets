@@ -46,8 +46,6 @@ const LegacySelectiveFacetsEntry = type({
 
 const LegacyFacetsEntry = type('string').or(LegacySelectiveFacetsEntry)
 
-const LegacyServerReference = type('string').or({ image: 'string' })
-
 export const LegacyFacetManifestSchema = type({
   name: 'string',
   version: 'string',
@@ -58,8 +56,18 @@ export const LegacyFacetManifestSchema = type({
   'agents?': type.Record('string', LegacyAgentDescriptor),
   'commands?': type.Record('string', LegacyCommandDescriptor),
   'facets?': LegacyFacetsEntry.array(),
-  'servers?': type.Record('string', LegacyServerReference),
 }).narrow((data, ctx) => {
+  // A legacy archive may not carry MCP servers in any form. The only server
+  // shapes a `0.1` manifest could ever have contained are the speculative
+  // version-string and `{ image }` references, which no longer exist in any
+  // supported format. Rejecting the key outright — rather than dropping it
+  // from the schema and letting unknown-field tolerance swallow it — means a
+  // legacy archive carrying a server reference fails as invalid instead of
+  // installing while silently discarding a declaration the author wrote.
+  if (Object.hasOwn(data, 'servers')) {
+    ctx.mustBe('a legacy manifest without a "servers" declaration')
+  }
+
   const facetName = validateFacetName(data.name)
   if (!facetName.ok) {
     ctx.mustBe(`a valid facet name: ${facetName.reason}`)

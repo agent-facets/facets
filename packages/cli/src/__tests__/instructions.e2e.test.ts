@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { renderAdapterApiSupportSet } from '../prompts/index.ts'
 import { spawnCli } from './helpers/cli-process.ts'
 
 const runCli = (...args: string[]) => spawnCli(args)
@@ -38,7 +39,7 @@ describe('facet instructions', () => {
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('agentfacets.io')
     expect(result.stdout).toContain('facet add viper-plans')
-    expect(result.stdout).toContain('adapter API 0.1')
+    expect(result.stdout).toContain(`adapter API ${renderAdapterApiSupportSet()}`)
     expect(result.stdout).toContain('facet adapter list')
   })
 

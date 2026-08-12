@@ -7,6 +7,9 @@ import {
   LEGACY_PROJECT_MANIFEST_VERSION,
   type LegacyProjectManifest,
   LegacyProjectManifestSchema,
+  PROJECT_MANIFEST_VERSION_0_1,
+  type ProjectManifest01,
+  ProjectManifest01Schema,
   SUPPORTED_PROJECT_MANIFEST_VERSIONS,
 } from '../schemas/project-manifest.ts'
 import { findDuplicateJsonMembers, mapArkErrors, parseJson } from './validate.ts'
@@ -25,7 +28,10 @@ export type ProjectManifestParseFailure =
   /** The document selected a supported schema but violates it. */
   | {
       code: 'schema-violation'
-      manifestVersion: typeof LEGACY_PROJECT_MANIFEST_VERSION | typeof CURRENT_PROJECT_MANIFEST_VERSION
+      manifestVersion:
+        | typeof LEGACY_PROJECT_MANIFEST_VERSION
+        | typeof PROJECT_MANIFEST_VERSION_0_1
+        | typeof CURRENT_PROJECT_MANIFEST_VERSION
       errors: ValidationError[]
     }
 
@@ -37,6 +43,7 @@ export type ProjectManifestParseFailure =
  */
 export type ParsedProjectManifest =
   | { manifestVersion: typeof LEGACY_PROJECT_MANIFEST_VERSION; manifest: LegacyProjectManifest }
+  | { manifestVersion: typeof PROJECT_MANIFEST_VERSION_0_1; manifest: ProjectManifest01 }
   | { manifestVersion: typeof CURRENT_PROJECT_MANIFEST_VERSION; manifest: CurrentProjectManifest }
 
 export type ParseProjectManifestResult =
@@ -52,15 +59,17 @@ export type ParseProjectManifestResult =
  *      conflicting materialization decisions for one asset cannot collapse
  *      through parser-specific last-member-wins behavior.
  *   3. Dispatch on `manifestVersion`: ABSENT selects the legacy unversioned
- *      schema, exactly numeric `0.1` selects the current schema, and any
- *      other declared value is a structured unsupported-version failure
- *      carrying the observed and supported versions.
+ *      schema, exactly numeric `0.1` selects the frozen preceding schema,
+ *      exactly numeric `0.2` selects the current schema, and any other
+ *      declared value is a structured unsupported-version failure carrying
+ *      the observed and supported versions.
  *
  * There is NO fallback or shape-sniffing between generations. A document
- * declaring `0.1` that violates the current schema fails as a `0.1`
- * violation and is never retried as legacy; an unversioned document
- * containing an expanded entry fails as legacy and is never promoted to
- * current.
+ * declaring `0.1` that violates the `0.1` schema fails as a `0.1` violation
+ * and is never retried as `0.2` or as legacy — so a `0.1` document declaring
+ * `materialization.servers` is rejected rather than silently promoted; an
+ * unversioned document containing an expanded entry fails as legacy and is
+ * never promoted to a versioned schema.
  *
  * This validator is deliberately comment-unaware: it answers "is this
  * document valid, and what does it mean". A producer that must preserve
@@ -99,6 +108,21 @@ export function parseProjectManifestDocument(bytes: Uint8Array | string): ParseP
       }
     }
     return { ok: true, data: { manifestVersion: LEGACY_PROJECT_MANIFEST_VERSION, manifest: validated } }
+  }
+
+  if (observedVersion === PROJECT_MANIFEST_VERSION_0_1) {
+    const validated = ProjectManifest01Schema(jsonResult.data)
+    if (validated instanceof type.errors) {
+      return {
+        ok: false,
+        failure: {
+          code: 'schema-violation',
+          manifestVersion: PROJECT_MANIFEST_VERSION_0_1,
+          errors: mapArkErrors(validated),
+        },
+      }
+    }
+    return { ok: true, data: { manifestVersion: PROJECT_MANIFEST_VERSION_0_1, manifest: validated } }
   }
 
   if (observedVersion === CURRENT_PROJECT_MANIFEST_VERSION) {

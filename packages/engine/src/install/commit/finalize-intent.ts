@@ -1,15 +1,14 @@
-import type { AssetType } from '@agent-facets/common'
 import {
-  ASSET_DIRECTORY,
   ASSET_TYPES,
   type FacetMaterializationOverrides,
-  overrideFor,
-  overridesForType,
+  type MaterializationOverrideGroup,
+  overrideGroupKey,
   type ProjectAssetOverride,
-  type StaleOverride,
+  SERVER_OVERRIDE_GROUP,
 } from '@agent-facets/protocol'
 import type { NormalizedFacetEntry } from '../../manifest/mutations.ts'
 import { ownEntry, ownRecord } from '../own-entry.ts'
+import type { ContributionKind, MaterializationOverrideRef, StaleMaterializationOverride } from '../types.ts'
 
 /**
  * Finalize the project's materialization intent for the commit.
@@ -20,29 +19,61 @@ import { ownEntry, ownRecord } from '../own-entry.ts'
  *   1. **Persist the accepted overrides.** They may be the ones already on
  *      disk, or the ones an interactive resolver chose. Compose returns one
  *      map either way, so the writer never has to know which happened.
- *   2. **Prune stale overrides.** An override naming an asset the resolved
- *      facet version no longer contains is dropped — but only here, on the
- *      way into a successful transaction. An override is durable project
- *      intent, so a failed operation must leave it exactly where it was.
+ *   2. **Prune stale overrides.** An override naming an asset or server the
+ *      resolved facet version no longer contains is dropped — but only here,
+ *      on the way into a successful transaction. An override is durable
+ *      project intent, so a failed operation must leave it exactly where it
+ *      was.
  *
  * Both mutate the in-memory desired set only. Nothing reaches disk until the
  * tri-write, which is what makes "pruned only on success" true by
  * construction rather than by remembering to undo something.
  */
 
-/** An override that was dropped, and the identity it named. */
-export interface PrunedOverride {
-  facet: string
-  type: AssetType
-  authoredName: string
+/** An override that was dropped, and the contribution it named. */
+export type PrunedOverride = MaterializationOverrideRef
+
+/**
+ * Every override group, paired with the contribution kind it holds.
+ *
+ * Derived from the published asset-type list plus the server group, exactly
+ * as the schema's group set is, so this cannot describe a different set of
+ * groups than the document accepts. Carrying the contribution kind alongside
+ * the key is what lets the rebuild below report a prune without inferring the
+ * kind back out of a string.
+ */
+const OVERRIDE_GROUPS: readonly {
+  readonly group: MaterializationOverrideGroup
+  readonly contribution: ContributionKind
+}[] = [
+  ...ASSET_TYPES.map((assetType) => ({
+    group: overrideGroupKey(assetType),
+    contribution: { kind: 'asset', assetType } as const,
+  })),
+  { group: SERVER_OVERRIDE_GROUP, contribution: { kind: 'mcp-server' } as const },
+]
+
+/** The document key an override group uses, per contribution kind. */
+function groupKeyOf(contribution: ContributionKind): MaterializationOverrideGroup {
+  switch (contribution.kind) {
+    case 'asset':
+      return overrideGroupKey(contribution.assetType)
+    case 'mcp-server':
+      return SERVER_OVERRIDE_GROUP
+  }
 }
 
-function staleKey(facet: string, type: AssetType, authoredName: string): string {
-  return `${facet}\u0000${type}\u0000${authoredName}`
+function staleKey(facet: string, group: string, authoredName: string): string {
+  return `${facet}\u0000${group}\u0000${authoredName}`
 }
 
 /**
  * Rebuild one facet's override map without its stale entries.
+ *
+ * Iterates every group the schema recognizes rather than only the asset ones:
+ * a group this function does not visit is not merely left unpruned, it is
+ * dropped from the rebuilt object entirely and therefore erased from
+ * `facets.json` by the next successful write.
  *
  * Returns `undefined` when nothing survives: the canonical form of a facet
  * with no overrides is its compact source string, and `applyDesiredFacets`
@@ -55,33 +86,30 @@ function pruneFacetOverrides(
   stale: ReadonlySet<string>,
   pruned: PrunedOverride[],
 ): FacetMaterializationOverrides | undefined {
-  const next: {
-    skills?: Record<string, ProjectAssetOverride>
-    agents?: Record<string, ProjectAssetOverride>
-    commands?: Record<string, ProjectAssetOverride>
-  } = {}
+  const next: Partial<Record<MaterializationOverrideGroup, Record<string, ProjectAssetOverride>>> = {}
   let kept = 0
 
-  for (const type of ASSET_TYPES) {
-    const record = overridesForType(overrides, type)
+  for (const { group, contribution } of OVERRIDE_GROUPS) {
+    const record = overrides[group]
     if (record === undefined) continue
-    // Null-prototype: keyed by authored asset name, which `constructor` and
-    // `__proto__` are both legal values of. A retained override written into a plain
-    // object under the latter would be dropped from the manifest silently.
+    // Null-prototype: keyed by authored name, which `constructor` and
+    // `__proto__` are both legal values of. A retained override written into
+    // a plain object under the latter would be dropped from the manifest
+    // silently.
     const retained = ownRecord<ProjectAssetOverride>()
     let retainedCount = 0
     for (const authoredName of Object.keys(record)) {
-      const disposition = overrideFor(overrides, type, authoredName)
+      const disposition = ownEntry(record, authoredName)
       if (disposition === undefined) continue
-      if (stale.has(staleKey(facet, type, authoredName))) {
-        pruned.push({ facet, type, authoredName })
+      if (stale.has(staleKey(facet, group, authoredName))) {
+        pruned.push({ facet, contribution, authoredName })
         continue
       }
       retained[authoredName] = disposition
       retainedCount += 1
     }
     if (retainedCount > 0) {
-      next[ASSET_DIRECTORY[type]] = retained
+      next[group] = retained
       kept += retainedCount
     }
   }
@@ -103,9 +131,11 @@ function pruneFacetOverrides(
 export function finalizeMaterializationIntent(
   desiredFacets: Record<string, NormalizedFacetEntry>,
   accepted: Readonly<Record<string, FacetMaterializationOverrides>>,
-  staleOverrides: readonly StaleOverride[],
+  staleOverrides: readonly StaleMaterializationOverride[],
 ): readonly PrunedOverride[] {
-  const stale = new Set(staleOverrides.map((s) => staleKey(s.facet, s.type, s.authoredName)))
+  const stale = new Set(
+    staleOverrides.map((entry) => staleKey(entry.facet, groupKeyOf(entry.contribution), entry.authoredName)),
+  )
   const pruned: PrunedOverride[] = []
 
   for (const [facet, entry] of Object.entries(desiredFacets)) {

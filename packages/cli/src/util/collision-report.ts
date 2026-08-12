@@ -1,7 +1,13 @@
 import type { AssetType, Scope } from '@agent-facets/common'
-import type { RunInstallFailure } from '@agent-facets/engine'
-import type { CollisionGroup, MaterializationNamespace, StaleOverride } from '@agent-facets/protocol'
-import { overrideGroupKey } from '@agent-facets/protocol'
+import type {
+  MaterializationAliasProblem,
+  MaterializationCollisionGroup,
+  RunInstallFailure,
+  StaleMaterializationOverride,
+} from '@agent-facets/engine'
+import type { MaterializationNamespace, McpServerDeclaration, McpServerFingerprint } from '@agent-facets/protocol'
+import { overrideGroupKey, SERVER_OVERRIDE_GROUP } from '@agent-facets/protocol'
+import { describeContribution } from './contribution.ts'
 
 /**
  * The complete, copy-pasteable account of a materialization collision.
@@ -59,27 +65,97 @@ export function describeNamespace(namespace: MaterializationNamespace, scope: Sc
   }
 }
 
+/** Where in `facets.json` a choice for this server is written. */
+export function serverManifestLocation(facet: string, authoredName: string): string {
+  return `facets[${JSON.stringify(facet)}].materialization.${SERVER_OVERRIDE_GROUP}[${JSON.stringify(authoredName)}]`
+}
+
+/** A stable React/list key for one collision group. */
+export function collisionGroupKey(entry: MaterializationCollisionGroup): string {
+  return entry.kind === 'asset'
+    ? `asset:${entry.group.scope}:${entry.group.namespace}:${entry.group.effectiveName}`
+    : `mcp-server:${entry.group.effectiveName}`
+}
+
+/** The heading naming what is being contested, and by which name. */
+export function describeCollisionGroup(entry: MaterializationCollisionGroup): string {
+  return entry.kind === 'asset' ? describeNamespace(entry.group.namespace, entry.group.scope) : 'MCP servers'
+}
+
+/** One claimant, flattened for rendering. */
+export interface CollisionClaimant {
+  key: string
+  facet: string
+  /** What the claimant is, in the user's words — including its scope, for an asset. */
+  label: string
+  authoredName: string
+  /** The name it is claiming. Always present: a collision is a claim on one. */
+  effectiveName: string
+  /**
+   * Extra lines about this claimant, rendered under it. Empty for an asset,
+   * one declaration summary for a server.
+   *
+   * A list rather than an optional string: "no extra detail" and "a detail
+   * that happens to be empty" are the same thing to a renderer, and a
+   * `string | undefined` invites a caller to print `undefined`.
+   */
+  detail: readonly string[]
+  /** The exact `facets.json` path a choice is written to. */
+  location: string
+}
+
+/**
+ * Every claimant of a group, in one shape.
+ *
+ * Shared so the Ink block and the stderr report cannot disagree about which
+ * claimants exist or where a user edits them — the two surfaces render the
+ * same failure, and only one of them is visible in CI.
+ */
+export function collisionClaimants(entry: MaterializationCollisionGroup): CollisionClaimant[] {
+  if (entry.kind === 'asset') {
+    return entry.group.members.map((member) => ({
+      key: `${member.facet}:${member.scope}:${member.type}:${member.authoredName}`,
+      facet: member.facet,
+      label: `${member.scope} ${member.type} ${member.authoredName}`,
+      authoredName: member.authoredName,
+      effectiveName: member.effectiveName,
+      detail: [],
+      location: manifestLocation(member.facet, member.type, member.authoredName),
+    }))
+  }
+  return entry.group.members.map((member) => ({
+    key: `${member.facet}:mcp-server:${member.authoredName}`,
+    facet: member.facet,
+    label: `server ${member.authoredName}`,
+    authoredName: member.authoredName,
+    effectiveName: member.effectiveName,
+    detail: [describeClaimantDeclaration(member.declaration, member.fingerprint)],
+    location: serverManifestLocation(member.facet, member.authoredName),
+  }))
+}
+
 /** The full stderr report for an unresolved collision. */
 export function formatCollisionReport(
-  groups: readonly CollisionGroup[],
-  staleOverrides: readonly StaleOverride[],
+  groups: readonly MaterializationCollisionGroup[],
+  staleOverrides: readonly StaleMaterializationOverride[],
 ): string {
   const lines: string[] = []
 
   lines.push(
     `Two or more facets want the same name, so installation stopped before writing anything.`,
-    `Every asset below needs one choice: keep its name, give it a different one, or leave it out.`,
+    `Every claimant below needs one choice: keep its name, give it a different one, or leave it out.`,
     ``,
   )
 
-  for (const group of groups) {
-    lines.push(`  ${describeNamespace(group.namespace, group.scope)} — "${group.effectiveName}" is claimed by:`)
-    for (const member of group.members) {
-      const via = member.disposition.kind === 'aliased' ? ` (already aliased from "${member.authoredName}")` : ''
-      lines.push(`    • ${member.facet}: ${member.type} "${member.authoredName}" → "${member.effectiveName}"${via}`)
-      lines.push(`        edit ${manifestLocation(member.facet, member.type, member.authoredName)}`)
-      lines.push(`          alias:  ${aliasSnippet(member.authoredName)}`)
-      lines.push(`          omit:   ${omitSnippet(member.authoredName)}`)
+  for (const entry of groups) {
+    lines.push(`  ${describeCollisionGroup(entry)} — "${entry.group.effectiveName}" is claimed by:`)
+    for (const claimant of collisionClaimants(entry)) {
+      const via = aliasedFrom(entry, claimant.authoredName)
+      lines.push(`    • ${claimant.facet}: ${claimant.label} → "${claimant.effectiveName}"${via}`)
+      for (const detail of claimant.detail) lines.push(`        ${detail}`)
+      lines.push(`        edit ${claimant.location}`)
+      lines.push(`          alias:  ${aliasSnippet(claimant.authoredName)}`)
+      lines.push(`          omit:   ${omitSnippet(claimant.authoredName)}`)
     }
     lines.push(``)
   }
@@ -96,23 +172,83 @@ export function formatCollisionReport(
   )
 
   if (staleOverrides.length > 0) {
-    lines.push(`  Also note — these recorded choices name assets the resolved versions no longer contain:`)
+    lines.push(`  Also note — these recorded choices name contributions the resolved versions no longer contain:`)
     for (const stale of staleOverrides) {
-      lines.push(`    • ${stale.facet}: ${stale.type} "${stale.authoredName}"`)
+      lines.push(`    • ${stale.facet}: ${describeContribution(stale.contribution)} "${stale.authoredName}"`)
     }
     lines.push(``)
   }
 
-  lines.push(`  facets.json, facets.lock, the install receipt, and your materialized assets were NOT changed.`)
+  lines.push(...UNCHANGED_FOOTER)
 
   return lines.join('\n')
+}
+
+/**
+ * The "nothing happened" footer, shared by every pre-mutation report.
+ *
+ * One copy because it is a claim about the same five things every time. Two
+ * copies drift, and the failure mode is a report that quietly stops
+ * mentioning one of them after a later report is edited.
+ */
+export const UNCHANGED_FOOTER: readonly string[] = [
+  `  facets.json, facets.lock, the install receipt, your materialized assets, and every tool's`,
+  `  MCP configuration were NOT changed.`,
+]
+
+/**
+ * A one-line summary of a declaration, enough to tell two colliding servers
+ * apart without reproducing the declaration itself.
+ *
+ * Deliberately not the full command line, arguments, environment, or URL
+ * path. Both surfaces that call this — this stderr report and the collision
+ * workspace — are ordinary command output, and the complete declaration
+ * belongs on the approval screen, which is the one place whose purpose is
+ * showing a user what they are authorizing.
+ *
+ * The fingerprint prefix is the tiebreaker. Two colliding declarations can
+ * share a command and differ only in arguments or environment, and a user
+ * shown two identical lines learns nothing about which row is which. The
+ * prefix is derived from the whole declaration and reveals none of it.
+ */
+export function describeClaimantDeclaration(
+  declaration: McpServerDeclaration,
+  fingerprint: McpServerFingerprint,
+): string {
+  const summary =
+    declaration.type === 'stdio' ? `stdio, command "${declaration.command}"` : `http, ${originOf(declaration.url)}`
+  return `${summary} · ${shortFingerprint(fingerprint)}`
+}
+
+/**
+ * The origin of an absolute HTTP(S) URL, without parsing it.
+ *
+ * `new URL()` throws, and a formatter that throws turns a report about a
+ * collision into a crash. The schema already guarantees the shape; this reads
+ * the part it guarantees and falls back to the whole string rather than
+ * inventing a failure mode.
+ */
+function originOf(url: string): string {
+  return /^https?:\/\/[^/?#]+/i.exec(url)?.[0] ?? url
+}
+
+/** The first few hex digits of a fingerprint, enough to tell two rows apart. */
+function shortFingerprint(fingerprint: McpServerFingerprint): string {
+  return fingerprint.slice('sha256:'.length, 'sha256:'.length + 8)
+}
+
+/** How this claimant already reached the contested name, if by an alias. */
+function aliasedFrom(entry: MaterializationCollisionGroup, authoredName: string): string {
+  const member = entry.group.members.find((candidate) => candidate.authoredName === authoredName)
+  return member?.disposition.kind === 'aliased' ? ` (already aliased from "${authoredName}")` : ''
 }
 
 function aliasSnippet(authoredName: string): string {
   return `${JSON.stringify(authoredName)}: { "kind": "aliased", "as": ${JSON.stringify(PLACEHOLDER_ALIAS)} }`
 }
 
-function omitSnippet(authoredName: string): string {
+/** The exact JSON member that removes one contribution from the active set. */
+export function omitSnippet(authoredName: string): string {
   return `${JSON.stringify(authoredName)}: { "kind": "omitted" }`
 }
 
@@ -123,14 +259,28 @@ function omitSnippet(authoredName: string): string {
  * concrete. It is not a suggestion about which facet should yield —
  * every claimant already got the identical pair of snippets above.
  */
-function exampleFacet(groups: readonly CollisionGroup[]): string {
-  return groups[0]?.members[0]?.facet ?? 'your-facet'
+function exampleFacet(groups: readonly MaterializationCollisionGroup[]): string {
+  return groups[0]?.group.members[0]?.facet ?? 'your-facet'
 }
 
-function exampleOverrideBody(groups: readonly CollisionGroup[]): string {
-  const member = groups[0]?.members[0]
+function exampleOverrideBody(groups: readonly MaterializationCollisionGroup[]): string {
+  const first = groups[0]
+  if (first === undefined) return `"skills": { ${aliasSnippet('asset-name')} }`
+  if (first.kind === 'mcp-server') {
+    const member = first.group.members[0]
+    if (member === undefined) return `"${SERVER_OVERRIDE_GROUP}": { ${aliasSnippet('server-name')} }`
+    return `"${SERVER_OVERRIDE_GROUP}": { ${aliasSnippet(member.authoredName)} }`
+  }
+  const member = first.group.members[0]
   if (member === undefined) return `"skills": { ${aliasSnippet('asset-name')} }`
   return `"${overrideGroupKey(member.type)}": { ${aliasSnippet(member.authoredName)} }`
+}
+
+/** Where in `facets.json` the alias that failed validation is written. */
+export function aliasProblemLocation(problem: MaterializationAliasProblem): string {
+  return problem.kind === 'asset'
+    ? manifestLocation(problem.facet, problem.assetType, problem.authoredName)
+    : serverManifestLocation(problem.facet, problem.authoredName)
 }
 
 /**
@@ -148,14 +298,14 @@ export function writeMaterializationDetail(failure: RunInstallFailure): boolean 
     case 'MATERIALIZATION_RESOLUTION_INVALID':
       process.stderr.write(
         `${formatCollisionReport(failure.groups, [])}\n${failure.problems
-          .map((problem) => `  • ${problem.facet}: alias "${problem.alias}" ${problem.reason}`)
+          .map((problem) => `  • alias "${problem.alias}" ${problem.reason}\n      at ${aliasProblemLocation(problem)}`)
           .join('\n')}\n`,
       )
       return true
     case 'MATERIALIZATION_ALIAS_INVALID':
       process.stderr.write(
-        `A materialization alias in facets.json is not a legal asset name. Nothing was changed.\n${failure.problems
-          .map((problem) => `  • ${problem.facet}: "${problem.alias}" ${problem.reason}`)
+        `A materialization alias in facets.json is not a legal name. Nothing was changed.\n${failure.problems
+          .map((problem) => `  • "${problem.alias}" ${problem.reason}\n      at ${aliasProblemLocation(problem)}`)
           .join('\n')}\n`,
       )
       return true

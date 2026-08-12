@@ -7,10 +7,10 @@ import {
   type SupportedLockfileVersion,
   sameDisposition,
 } from '@agent-facets/protocol'
-import { countOverrides, type NormalizedFacetEntry } from '../manifest/mutations.ts'
+import { countAssetOverrides, type NormalizedFacetEntry } from '../manifest/mutations.ts'
 import { detectLockfileDrift } from './detect-lockfile-drift.ts'
 import { ownEntry } from './own-entry.ts'
-import type { LockfileDriftEntry, RunInstallFailure } from './types.ts'
+import type { LockfileDriftEntry, RunInstallFailure, StaleMaterializationOverride } from './types.ts'
 
 /**
  * The frozen-lockfile consistency gate.
@@ -62,7 +62,11 @@ export function checkFrozenConsistency(args: FrozenGateArgs): RunInstallFailure 
   if (lockfileVersion !== LOCKFILE_VERSION_0_3) {
     const unrepresentable: LockfileDriftEntry[] = []
     for (const [name, entry] of Object.entries(facets)) {
-      if (countOverrides(entry.overrides) === 0) continue
+      // Asset groups only: this gate asks whether the lockfile VERSION can
+      // record what the entry declares, and no lockfile version records a
+      // server disposition. Counting one here reported an unrepresentable
+      // materialization whose "fix" — migrate to `0.3` — would change nothing.
+      if (countAssetOverrides(entry.overrides) === 0) continue
       unrepresentable.push({
         name,
         reason: 'materialization-unrepresentable',
@@ -96,7 +100,14 @@ export function checkFrozenConsistency(args: FrozenGateArgs): RunInstallFailure 
     if (planned.reason === 'invalid-alias') {
       return {
         code: 'MATERIALIZATION_ALIAS_INVALID',
-        problems: planned.problems.map((p) => ({ facet: p.facet, alias: p.alias, reason: p.reason })),
+        problems: planned.problems.map((problem) => ({
+          kind: 'asset' as const,
+          facet: problem.facet,
+          assetType: problem.type,
+          authoredName: problem.authoredName,
+          alias: problem.alias,
+          reason: problem.reason,
+        })),
       }
     }
     // Unresolved collisions in recorded state. Frozen mode never prompts, so
@@ -104,8 +115,13 @@ export function checkFrozenConsistency(args: FrozenGateArgs): RunInstallFailure 
     // just delivered before anything was downloaded.
     return {
       code: 'MATERIALIZATION_COLLISION',
-      groups: planned.groups,
-      staleOverrides: planned.staleOverrides,
+      groups: planned.groups.map((group) => ({ kind: 'asset' as const, group })),
+      staleOverrides: planned.staleOverrides.map((stale) => ({
+        facet: stale.facet,
+        contribution: { kind: 'asset', assetType: stale.type },
+        authoredName: stale.authoredName,
+        disposition: stale.disposition,
+      })),
     }
   }
 
@@ -114,7 +130,7 @@ export function checkFrozenConsistency(args: FrozenGateArgs): RunInstallFailure 
   const drift: LockfileDriftEntry[] = planned.staleOverrides.map((stale) => ({
     name: stale.facet,
     reason: 'stale-override' as const,
-    assetType: stale.type,
+    contribution: { kind: 'asset', assetType: stale.type },
     authoredName: stale.authoredName,
   }))
 
@@ -142,4 +158,36 @@ export function checkFrozenConsistency(args: FrozenGateArgs): RunInstallFailure 
   }
 
   return null
+}
+
+/**
+ * The frozen server-intent gate, run after resolution.
+ *
+ * It cannot join {@link checkFrozenConsistency}: that gate answers from the
+ * manifest and lockfile alone, and a server declaration lives inside the
+ * integrity-pinned `facet.json`. Whether an override still names something
+ * the facet declares is simply unanswerable before the archive is fetched and
+ * verified — the price of keeping declarations out of a shared lockfile.
+ *
+ * What it must preserve is the ordering: this runs before the journal opens
+ * and before any cleanup, so a frozen run that is going to refuse has not
+ * deleted anything first. A normal install prunes a stale override inside its
+ * transaction; frozen mode has no transaction to prune in, so it reports.
+ */
+export function checkFrozenServerIntent(
+  staleOverrides: readonly StaleMaterializationOverride[],
+): RunInstallFailure | null {
+  const drift: LockfileDriftEntry[] = staleOverrides
+    // Asset staleness is already reported by the pre-fetch gate above, from
+    // the locked set. Reporting it again here would double-count it.
+    .filter((stale) => stale.contribution.kind === 'mcp-server')
+    .map((stale) => ({
+      name: stale.facet,
+      reason: 'stale-override' as const,
+      contribution: stale.contribution,
+      authoredName: stale.authoredName,
+    }))
+
+  if (drift.length === 0) return null
+  return { code: 'LOCKFILE_DRIFT', facets: drift }
 }

@@ -4,7 +4,9 @@ import type {
   FacetContribution,
   FacetMaterializationOverrides,
   MaterializedAsset,
-  StaleOverride,
+  McpServerIdentity,
+  ProjectAssetOverride,
+  ServerClaimant,
   SupportedLockfile,
   SupportedLockfileFacet,
 } from '@agent-facets/protocol'
@@ -12,21 +14,30 @@ import {
   collisionKey,
   compareCodeUnits,
   lockedDispositionOf,
+  materializedNameOf,
+  mcpServerKey,
   planMaterialization,
+  SERVER_OVERRIDE_GROUP,
   sameDisposition,
 } from '@agent-facets/protocol'
 import type { NormalizedFacetEntry } from '../../manifest/mutations.ts'
 import { buildPreviousOwnership, type PreviousOwnership } from '../commit/ownership.ts'
+import {
+  buildPreviousMcpOwnership,
+  obsoleteMcpOwnership,
+  type PreviousMcpOwnership,
+} from '../commit/server-ownership.ts'
 import { detectLockfileDrift } from '../detect-lockfile-drift.ts'
 import { ownEntry, ownRecord } from '../own-entry.ts'
 import {
   materializedDispositionOf,
   ownedPathsForLockedAsset,
+  type PreConfigurationReceiptVersion,
   type ProjectReceiptState,
   type ReceiptAsset,
   type ReceiptFacetEntry,
 } from '../receipt.ts'
-import type { FacetOutcome, LockfileDriftEntry } from '../types.ts'
+import type { FacetOutcome, LockfileDriftEntry, StaleMaterializationOverride } from '../types.ts'
 
 /**
  * Removal without resolution.
@@ -77,6 +88,14 @@ import type { FacetOutcome, LockfileDriftEntry } from '../types.ts'
 export type RemainingReceiptDisagreement =
   /** The receipt records a different resolved version than the lockfile. */
   | { kind: 'version'; recorded: string; locked: string }
+  /**
+   * The receipt records different facet content than the lockfile pins. The
+   * version string can repeat across a `git pull` or a mutated local path;
+   * integrity cannot, and it is the only offline evidence that this facet's
+   * declarations are still the ones the recorded claims were witnessed
+   * against.
+   */
+  | { kind: 'integrity'; recorded: string; locked: string }
   /** The lockfile says this asset is materialized; the receipt never saw it. */
   | { kind: 'asset-unrecorded'; scope: Scope; assetType: AssetType; authoredName: string }
   /** Both know the asset, but disagree about the name it was written under. */
@@ -110,6 +129,16 @@ export type RefineNotApplicable =
   /** No receipt to witness with, so nothing on disk is tracked. */
   | { code: 'receipt-unwitnessable'; reason: 'missing' | 'corrupt' | 'path-mismatch' }
   /**
+   * The receipt predates configuration claims. Its asset ownership is intact,
+   * but it cannot say whether a remaining facet declares MCP servers, because
+   * declarations live only inside the integrity-protected `facet.json` this
+   * path deliberately does not fetch. Carrying it forward would commit a
+   * record asserting that nothing is configured, which is a claim rather than
+   * an observation. One ordinary operation rewrites the receipt at the
+   * current version and this stops applying.
+   */
+  | { code: 'configuration-unwitnessed'; refinedFrom: PreConfigurationReceiptVersion }
+  /**
    * A remaining facet's materialization is untracked: the receipt says nothing
    * about it. Its assets must be written before they can be claimed, so the
    * ordinary pipeline runs.
@@ -126,6 +155,43 @@ export type RefineNotApplicable =
    * record. Honoring it means writing assets, which removal does not do.
    */
   | { code: 'remaining-intent-unrecorded'; facet: string; assetType: AssetType; authoredName: string }
+  /**
+   * A remaining facet's server intent disagrees with what this machine
+   * recorded configuring. Honoring it means renaming or removing a native
+   * entry, which is a write — so it belongs on the ordinary path.
+   */
+  | { code: 'remaining-server-intent-unrecorded'; facet: string; authoredName: string }
+  /**
+   * A remaining facet declares a server alias the receipt has no claim for.
+   * Whether that is stale intent (the facet no longer declares the server) or
+   * an alias never reconciled is only answerable from the facet's manifest,
+   * which this path does not fetch.
+   */
+  | { code: 'remaining-server-intent-unwitnessed'; facet: string; authoredName: string }
+  /**
+   * The receipt recorded more than one declaration at an effective server
+   * identity a remaining claimant keeps. The native entry belongs to whichever
+   * claim was written last, and this path has no way to write the remaining
+   * one over it.
+   */
+  | { code: 'retained-server-identity-contested'; effectiveName: string; remaining: readonly string[] }
+
+/**
+ * An effective MCP identity this removal keeps, proven from local state.
+ *
+ * Deliberately NOT a `PlannedServerConfiguration`: that type carries the
+ * declaration, and only a fetch can supply one. Reusing it here would force
+ * this path to invent a declaration or cast one into existence, turning
+ * "offline removal never reads a manifest" from a fact the types enforce into
+ * a convention a future edit could break.
+ */
+export interface RetainedServerConfiguration {
+  identity: McpServerIdentity
+  /** The addressable ownership key for {@link identity}. */
+  key: string
+  /** Every remaining facet that still claims it. */
+  claimants: readonly ServerClaimant[]
+}
 
 /** Everything the commit needs, derived without a single fetch. */
 export interface RefinedRemoval {
@@ -147,8 +213,23 @@ export interface RefinedRemoval {
   receiptFacets: Record<string, ReceiptFacetEntry>
   /** The remaining facets' persisted intent, unchanged. */
   overrides: Readonly<Record<string, FacetMaterializationOverrides>>
-  /** Remaining overrides naming assets the locked content no longer has. */
-  staleOverrides: readonly StaleOverride[]
+  /** Remaining overrides naming contributions the locked content no longer has. */
+  staleOverrides: readonly StaleMaterializationOverride[]
+  /**
+   * What this machine had configured before the removal. Returned for the
+   * same reason `previousOwnership` is: the gates were checked against this
+   * index, and rebuilding it in the caller could only differ by disagreeing
+   * with a decision already made.
+   */
+  previousMcpOwnership: ReadonlyMap<string, PreviousMcpOwnership>
+  /** The effective server identities remaining claims still cover. */
+  retainedConfigurations: readonly RetainedServerConfiguration[]
+  /**
+   * The receipt-owned server identities this removal is authorized to delete
+   * — computed here, from the same two proven values, so the caller cannot
+   * widen it into something the gates never checked.
+   */
+  obsoleteConfigurations: readonly PreviousMcpOwnership[]
   /** Remaining facets, reported as untouched. */
   outcomes: readonly FacetOutcome[]
 }
@@ -177,7 +258,14 @@ export function refineRemoval(args: RefineRemovalArgs): RefineRemovalResult {
   if (receiptState.kind === 'unavailable') {
     return { kind: 'not-applicable', reason: { code: 'receipt-unwitnessable', reason: receiptState.reason } }
   }
-  const receipt = receiptState.receipt
+  // Only a record that could have witnessed configuration may be carried
+  // forward. The type enforces it: an `assets-only` record has no claim field
+  // to copy, so there is no way to write one from here even by mistake.
+  const record = receiptState.record
+  if (record.authority !== 'assets-and-configuration') {
+    return { kind: 'not-applicable', reason: { code: 'configuration-unwitnessed', refinedFrom: record.refinedFrom } }
+  }
+  const witnessedFacets = record.facets
 
   // Collect the remaining entries up front. Doing it here rather than during
   // the rebuild means every later step holds a real entry, so there is no
@@ -269,7 +357,7 @@ export function refineRemoval(args: RefineRemovalArgs): RefineRemovalResult {
     // one from the locked entry would claim files this machine has no evidence
     // it wrote — which the next run would then read as permission to delete
     // them. A facet it DOES mention must agree exactly.
-    const recorded = ownEntry(receipt.facets, name)
+    const recorded = ownEntry(witnessedFacets, name)
     if (recorded === undefined) {
       return { kind: 'not-applicable', reason: { code: 'remaining-untracked', facet: name } }
     }
@@ -280,6 +368,14 @@ export function refineRemoval(args: RefineRemovalArgs): RefineRemovalResult {
         reason: { code: 'remaining-receipt-disagrees', facet: name, disagreement: witnessed.disagreement },
       }
     }
+    // Server intent must already BE the recorded intent, for the same reason
+    // asset intent must: renaming or withdrawing a native entry is a write,
+    // and this path performs none. Checked against the receipt CLAIM rather
+    // than the lockfile, because the lockfile records no server at any
+    // version — the claim is the only local witness there is.
+    const serverIntent = witnessServerIntent(name, ownEntry(desiredFacets, name)?.overrides, witnessed.entry)
+    if (serverIntent !== null) return { kind: 'not-applicable', reason: serverIntent }
+
     receiptFacets[name] = witnessed.entry
 
     facetEntries[name] = {
@@ -299,6 +395,17 @@ export function refineRemoval(args: RefineRemovalArgs): RefineRemovalResult {
     outcomes.push({ kind: 'unchanged', name, version: entry.version })
   }
 
+  // The configuration half of the same proof. Retained identities come from
+  // the carried claims — the only offline evidence of what is configured —
+  // and everything the receipt owns that no retained claim covers is what may
+  // be deleted. Both are derived here so the delete pass diffs exactly what
+  // the gates above accepted.
+  const previousMcpOwnership = buildPreviousMcpOwnership(receiptState)
+  const retainedConfigurations = retainedServerConfigurations(receiptFacets)
+  const contestedServer = contestedRetainedServer(previousMcpOwnership, retainedConfigurations)
+  if (contestedServer !== null) return { kind: 'not-applicable', reason: contestedServer }
+  const obsoleteConfigurations = obsoleteMcpOwnership(previousMcpOwnership, retainedConfigurations)
+
   return {
     kind: 'refined',
     refinement: {
@@ -306,11 +413,120 @@ export function refineRemoval(args: RefineRemovalArgs): RefineRemovalResult {
       materialized: planned.plan.materialized,
       previousOwnership,
       receiptFacets,
+      previousMcpOwnership,
+      retainedConfigurations,
+      obsoleteConfigurations,
       overrides,
-      staleOverrides: planned.staleOverrides,
+      staleOverrides: planned.staleOverrides.map((stale) => ({
+        facet: stale.facet,
+        contribution: { kind: 'asset', assetType: stale.type },
+        authoredName: stale.authoredName,
+        disposition: stale.disposition,
+      })),
       outcomes,
     },
   }
+}
+
+/**
+ * Check one remaining facet's declared server intent against the claims this
+ * machine recorded for it.
+ *
+ * Both directions matter. An override the receipt cannot account for might be
+ * stale intent or an alias that was never reconciled, and telling those apart
+ * needs the facet's manifest. A claim the manifest no longer asks for means
+ * the user changed their mind about a name that is currently on disk. Neither
+ * is answerable — or actionable — without writing, so both take the ordinary
+ * path.
+ */
+function witnessServerIntent(
+  facet: string,
+  overrides: FacetMaterializationOverrides | undefined,
+  recorded: ReceiptFacetEntry,
+): RefineNotApplicable | null {
+  const declared = overrides?.[SERVER_OVERRIDE_GROUP] ?? {}
+  const claims = new Map(recorded.configurations.map((claim) => [claim.name, claim]))
+
+  for (const claim of recorded.configurations) {
+    const override = ownEntry(declared, claim.name)
+    if (override === undefined) {
+      // No override means authored materialization; a claim recorded under an
+      // alias therefore disagrees with what the manifest now asks for.
+      if (claim.materialization.kind === 'authored') continue
+      return { code: 'remaining-server-intent-unrecorded', facet, authoredName: claim.name }
+    }
+    if (override.kind === 'omitted' || !sameDisposition(claim.materialization, override)) {
+      return { code: 'remaining-server-intent-unrecorded', facet, authoredName: claim.name }
+    }
+  }
+
+  for (const authoredName of Object.keys(declared).sort(compareCodeUnits)) {
+    const override = ownEntry(declared, authoredName) as ProjectAssetOverride | undefined
+    // An omission with no claim is consistent: an omitted server is never
+    // recorded, so its absence is exactly what the manifest asks for.
+    if (override === undefined || override.kind === 'omitted') continue
+    if (claims.has(authoredName)) continue
+    return { code: 'remaining-server-intent-unwitnessed', facet, authoredName }
+  }
+
+  return null
+}
+
+/**
+ * Fold the carried claims of every remaining facet into effective identities.
+ *
+ * This is the desired set for a removal: derived from what the receipt
+ * witnesses, never from a declaration this run did not read.
+ */
+function retainedServerConfigurations(
+  receiptFacets: Readonly<Record<string, ReceiptFacetEntry>>,
+): RetainedServerConfiguration[] {
+  const byKey = new Map<string, { identity: McpServerIdentity; key: string; claimants: ServerClaimant[] }>()
+  for (const facet of Object.keys(receiptFacets).sort(compareCodeUnits)) {
+    const entry = ownEntry(receiptFacets, facet)
+    if (entry === undefined) continue
+    for (const claim of entry.configurations) {
+      const effectiveName = materializedNameOf(claim.name, claim.materialization)
+      const key = mcpServerKey(effectiveName)
+      const existing = byKey.get(key)
+      const claimant: ServerClaimant = {
+        facet,
+        authoredName: claim.name,
+        disposition: claim.materialization,
+      }
+      if (existing === undefined) {
+        byKey.set(key, { identity: { kind: 'mcp-server', effectiveName }, key, claimants: [claimant] })
+        continue
+      }
+      existing.claimants.push(claimant)
+    }
+  }
+  return [...byKey.values()].sort((a, b) => compareCodeUnits(a.key, b.key))
+}
+
+/**
+ * A retained effective server identity the receipt recorded disagreeing
+ * declarations at, or `null` when every retained identity was recorded once.
+ *
+ * Identical declarations compose — that is the whole reason two facets may
+ * claim one server name — so several claimants are not a problem. Several
+ * FINGERPRINTS are: the native entry says whatever the last claim written
+ * said, and this path cannot write the remaining one over it.
+ */
+function contestedRetainedServer(
+  previous: ReadonlyMap<string, PreviousMcpOwnership>,
+  retained: readonly RetainedServerConfiguration[],
+): RefineNotApplicable | null {
+  for (const configuration of retained) {
+    const ownership = previous.get(configuration.key)
+    if (ownership === undefined || ownership.fingerprints.length <= 1) continue
+    return {
+      code: 'retained-server-identity-contested',
+      effectiveName: configuration.identity.effectiveName,
+      remaining: configuration.claimants.map((claimant) => claimant.facet),
+    }
+  }
+  return null
 }
 
 /**
@@ -367,6 +583,9 @@ function witnessRemaining(recorded: ReceiptFacetEntry, locked: SupportedLockfile
   if (recorded.version !== locked.version) {
     return { ok: false, disagreement: { kind: 'version', recorded: recorded.version, locked: locked.version } }
   }
+  if (recorded.integrity !== locked.integrity) {
+    return { ok: false, disagreement: { kind: 'integrity', recorded: recorded.integrity, locked: locked.integrity } }
+  }
   const assets: ReceiptAsset[] = []
   for (const asset of locked.assets) {
     const disposition = materializedDispositionOf(asset)
@@ -384,7 +603,19 @@ function witnessRemaining(recorded: ReceiptFacetEntry, locked: SupportedLockfile
     }
     assets.push(witnessed)
   }
-  return { ok: true, entry: { version: recorded.version, assets } }
+  // Claims are carried verbatim. The facet remains desired and its integrity
+  // matches the locked entry, so the declarations behind these fingerprints
+  // are provably the ones that were reconciled — which is exactly the proof
+  // that makes carrying them forward an observation rather than a guess.
+  return {
+    ok: true,
+    entry: {
+      version: recorded.version,
+      integrity: recorded.integrity,
+      assets,
+      configurations: recorded.configurations,
+    },
+  }
 }
 
 /** Set equality over owned paths. Order is not part of what either side means. */

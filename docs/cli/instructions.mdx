@@ -28,11 +28,11 @@ The default topic is `overview`. It opens with a generated index of every instru
 </ResponseField>
 
 <ResponseField name="authoring" type="topic">
-  Writing facets: scaffold → modify → verify, including README and supplementary-file authoring and per-asset adapter configuration.
+  Writing facets: scaffold → modify → verify, including README and supplementary-file authoring, MCP server declarations, and per-asset adapter configuration.
 </ResponseField>
 
 <ResponseField name="usage" type="topic">
-  Project management: add/update/remove facets (registry-first), the shape of `facets.json` including materialization overrides, how to resolve a name collision without a TTY, and installing adapter tooling (including adapter API `0.1` recovery).
+  Project management: add/update/remove facets (registry-first), the shape of `facets.json` including materialization overrides, how to resolve a name collision without a TTY, how to approve or omit MCP servers without a TTY, and installing adapter tooling (including adapter API compatibility recovery).
 </ResponseField>
 
 ```sh
@@ -51,7 +51,7 @@ facet instructions usage      # how to use facets in a project
 
 ## The manifest schema is generated
 
-The `manifest` topic appends the `facet.json` **JSON Schema generated at runtime from the schema definition** — it is never a hand-maintained copy, so it always matches the CLI you are running. The narrow business rules the schema cannot express (at least one asset, single-segment asset names, a skill and command not sharing a name, exact and collision-free supplementary `files` paths, a valid facet name) are described in prose alongside it; run [`facet build --verify`](/cli/authoring/build) to check them against a real facet.
+The `manifest` topic appends the `facet.json` **JSON Schema generated at runtime from the schema definition** — it is never a hand-maintained copy, so it always matches the CLI you are running. The narrow business rules the schema cannot express (at least one deliverable — asset, composed facet, or MCP server — single-segment asset and server names, a skill and command not sharing a name, exact and collision-free supplementary `files` paths, a valid facet name) are described in prose alongside it; run [`facet build --verify`](/cli/authoring/build) to check them against a real facet.
 
 ## Related commands
 

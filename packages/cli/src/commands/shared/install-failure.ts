@@ -4,6 +4,7 @@ import {
   describeUnsupportedManifestVersion,
   UNSUPPORTED_MANIFEST_VERSION_FIX,
 } from '../../util/unsupported-manifest-version.ts'
+import { ACCEPT_MCP_FLAG } from './flags.ts'
 
 /**
  * The `detail:` line for a failed install-pipeline run.
@@ -64,7 +65,35 @@ export function installFailureFix(
       // manifest that is not wrong.
       return UNSUPPORTED_MANIFEST_VERSION_FIX
     case 'LOCKFILE_DRIFT':
-      return "lockfile is out of date; run 'facet install' (without --frozen-lockfile) or 'facet add' to update it"
+      // A stale override is the one drift the lockfile cannot fix, because it
+      // is not recorded there: the choice lives in facets.json and names a
+      // contribution the locked content no longer has. Sending the user to
+      // re-run install would have them watch the same failure again.
+      return failure.facets.some((entry) => entry.reason === 'stale-override')
+        ? `remove the materialization choices listed above from facets.json, or re-run 'facet ${command}' without --frozen-lockfile to drop them automatically`
+        : "lockfile is out of date; run 'facet install' (without --frozen-lockfile) or 'facet add' to update it"
+    case 'MCP_ADAPTERS_UNSUPPORTED':
+      // Two remedies, and which one applies is per adapter — the detail block
+      // above names each. This line says only that both exist, so a user who
+      // reads it alone does not conclude that upgrading is always the answer.
+      return `upgrade the adapters listed above, or omit their server declarations in facets.json, then re-run 'facet ${command}'`
+    case 'ASSET_TAKEOVER_CANCELLED':
+      // The disk state is the point: this cancellation happened after writes,
+      // so "nothing happened" would be wrong and "re-run" alone would be
+      // unhelpful without saying what state the tree is in.
+      return `${describeDiskState(rollback)}. Re-run 'facet ${command}' and continue, or move the existing file aside first`
+    case 'MCP_CONSENT_REQUIRED':
+      return `review the servers listed above, then re-run 'facet ${command} --${ACCEPT_MCP_FLAG}' to approve them, or omit them in facets.json`
+    case 'MCP_CONSENT_DECLINED':
+      return `${describeDiskState(rollback)}. Re-run 'facet ${command}' to review the servers again, or omit them in facets.json`
+    case 'MCP_PREPARE_FAILED':
+    case 'MCP_APPLY_FAILED':
+    case 'MCP_DOCUMENT_UNREADABLE':
+      return `${describeDiskState(rollback)}; repair the configuration document named above, then re-run 'facet ${command}'`
+    case 'MCP_CONTRACT_VIOLATION':
+      // Nothing the user can edit; sending them to their own files would be
+      // a wild goose chase.
+      return 'report this to the adapter’s author; no project file needs changing'
     default:
       // Most codes that land here failed BEFORE the journal opened —
       // `LOCK_HELD`, `FACETS_JSON_NOT_FOUND`, `FROZEN_WITH_DELTA`,

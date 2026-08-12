@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test'
-import { ADAPTER_API_VERSION, ADAPTER_API_VERSION_PACKAGE_FIELD } from '../api-version.ts'
+import type { McpServerDeclaration as ProtocolMcpServerDeclaration } from '@agent-facets/protocol/mcp-declaration'
+import {
+  ADAPTER_API_VERSION,
+  ADAPTER_API_VERSION_ASSETS_ONLY,
+  ADAPTER_API_VERSION_PACKAGE_FIELD,
+} from '../api-version.ts'
 import { defineAdapter } from '../define-adapter.ts'
+import type { McpServerDeclaration } from '../mcp-servers.ts'
 import type { AdapterDefinition } from '../types.ts'
 
 /**
@@ -10,6 +16,7 @@ import type { AdapterDefinition } from '../types.ts'
 function validDefinition(): AdapterDefinition {
   return {
     name: 'test-adapter',
+    mcpServers: false,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
     async installAsset() {
       return { ok: true, primaryPath: '/tmp/test' }
@@ -51,13 +58,68 @@ describe('defineAdapter — required field validation', () => {
     const def = { ...validDefinition(), buildAssetMetadata: 'not-a-function' as any }
     expect(() => defineAdapter(def)).toThrow(/"buildAssetMetadata" is required/)
   })
+
+  test('throws when mcpServers is missing', () => {
+    const { mcpServers: _omitted, ...def } = validDefinition()
+    // biome-ignore lint/suspicious/noExplicitAny: intentional type hole for runtime validation test
+    expect(() => defineAdapter(def as any)).toThrow(/"mcpServers" is required/)
+  })
+
+  test('throws when mcpServers is true rather than a capability', () => {
+    // The exact shape this field exists to make unrepresentable: a bare
+    // "yes I support MCP" with nothing behind it.
+    // biome-ignore lint/suspicious/noExplicitAny: intentional type hole for runtime validation test
+    const def = { ...validDefinition(), mcpServers: true as any }
+    expect(() => defineAdapter(def)).toThrow(/"mcpServers" is required/)
+  })
+
+  test('throws when the MCP capability is partial', () => {
+    // biome-ignore lint/suspicious/noExplicitAny: intentional type hole for runtime validation test
+    const def = { ...validDefinition(), mcpServers: { async prepare() {} } as any }
+    expect(() => defineAdapter(def)).toThrow(/"mcpServers" is required/)
+  })
+
+  test('a complete MCP capability is accepted and preserved', () => {
+    const capability = { async prepare() {}, async apply() {} }
+    // biome-ignore lint/suspicious/noExplicitAny: the stub operations do not satisfy the full result types
+    const adapter = defineAdapter({ ...validDefinition(), mcpServers: capability as any })
+    expect(adapter.mcpServers as unknown).toBe(capability)
+  })
+
+  test('mcpServers false is preserved rather than stubbed', () => {
+    // Unlike the asset methods, an absent capability gets no fallback: the
+    // CLI must be able to tell "no MCP support" from "not implemented".
+    const adapter = defineAdapter(validDefinition())
+    expect(adapter.mcpServers).toBe(false)
+  })
+})
+
+describe('the protocol declaration is the source of truth', () => {
+  // The SDK re-exports protocol's declaration type rather than restating it,
+  // and nothing at runtime can notice the difference — a local structural copy
+  // would compile, ship, and only diverge when protocol next changes. These
+  // assignments fail type-checking the moment the two drift apart.
+  test('the exported declaration type is assignable to and from protocol', () => {
+    type FromProtocol = ProtocolMcpServerDeclaration
+    type FromSdk = McpServerDeclaration
+
+    const stdio: FromProtocol = { type: 'stdio', command: 'srv', args: ['--root'], env: { TOKEN: 'A' } }
+    const asSdk: FromSdk = stdio
+    const backAgain: FromProtocol = asSdk
+
+    expect(backAgain).toEqual(stdio)
+  })
 })
 
 describe('canonical adapter API constants', () => {
   // The one place tests anchor the spec literals — everywhere else compares
   // against the exported constants.
-  test('ADAPTER_API_VERSION is 0.1', () => {
-    expect(ADAPTER_API_VERSION).toBe('0.1')
+  test('ADAPTER_API_VERSION is 0.2', () => {
+    expect(ADAPTER_API_VERSION).toBe('0.2')
+  })
+
+  test('ADAPTER_API_VERSION_ASSETS_ONLY is 0.1', () => {
+    expect(ADAPTER_API_VERSION_ASSETS_ONLY).toBe('0.1')
   })
 
   test('ADAPTER_API_VERSION_PACKAGE_FIELD is facetAdapterApiVersion', () => {
@@ -132,6 +194,9 @@ describe('defineAdapter — stub fallbacks for missing asset methods', () => {
   function buildMinimal(overrides: Partial<AdapterDefinition> = {}): AdapterDefinition {
     const minimal = {
       name: 'stubbed-adapter',
+      // Present because it is required — these tests are about the *asset*
+      // methods, which do get stub fallbacks.
+      mcpServers: false,
       buildAssetMetadata: (data: unknown) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
       ...overrides,
     }
@@ -173,6 +238,7 @@ describe('defineAdapter — stub fallbacks for missing asset methods', () => {
 
     const adapter = defineAdapter({
       name: 'impl-adapter',
+      mcpServers: false,
       buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
       async installAsset() {
         installCalled = true

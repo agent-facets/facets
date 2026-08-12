@@ -15,6 +15,7 @@ import {
   type SkillBundlePaths,
 } from '@agent-facets/adapter'
 import { type } from 'arktype'
+import { openCodeMcpServers } from './mcp-servers.ts'
 
 /**
  * OpenCode per-asset metadata schema.
@@ -49,6 +50,8 @@ const OpenCodeMetadataSchema = type({
 export default defineAdapter({
   name: 'opencode',
   supportsInstall: true,
+
+  mcpServers: openCodeMcpServers,
 
   buildAssetMetadata(data) {
     const result = OpenCodeMetadataSchema(data)

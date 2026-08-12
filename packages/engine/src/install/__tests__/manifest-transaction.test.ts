@@ -12,7 +12,7 @@ import { loadInstalledAdapters } from '../../adapters/loader.ts'
 import { parseFacetSource } from '../../sources/facet/parse-source.ts'
 import { runAdd } from '../add/index.ts'
 import { acquireInstallLock } from '../lockfile-guard.ts'
-import { CURRENT_RECEIPT_VERSION, receiptPath } from '../receipt.ts'
+import { CURRENT_RECEIPT_VERSION, RECEIPT_VERSION_0_3, receiptPath } from '../receipt.ts'
 import { runRemove } from '../remove/index.ts'
 import { runInstall } from '../run-install.ts'
 
@@ -69,6 +69,7 @@ function path(type, name) { return join(process.cwd(), '.${name}', type + 's', n
 export default {
   name: '${name}',
   apiVersion: '${ADAPTER_API_VERSION}',
+  mcpServers: false,
   supportsInstall: true,
   buildAssetMetadata(data) { return { ok: true, data: data || {} } },
   async installAsset(req) {
@@ -199,7 +200,7 @@ describe('a facet key colliding with Object.prototype', () => {
     const a = buildFixture('alpha', '1.0.0')
     // Written as text: `{ __proto__: … }` in JS source sets the prototype
     // rather than creating a member.
-    const before = writeManifest(`{"manifestVersion":0.1,"facets":{"__proto__":${JSON.stringify(a)}}}`)
+    const before = writeManifest(`{"manifestVersion":0.2,"facets":{"__proto__":${JSON.stringify(a)}}}`)
 
     const result = await install()
     if (result.ok) expect.unreachable()
@@ -222,7 +223,7 @@ describe('legacy migration is transactional', () => {
     expect(result.ok).toBe(true)
 
     const written = parseManifest()
-    expect(written.manifestVersion).toBe(0.1)
+    expect(written.manifestVersion).toBe(0.2)
     expect(written.facets).toEqual({ alpha: a, beta: b })
   })
 
@@ -230,7 +231,7 @@ describe('legacy migration is transactional', () => {
     const a = buildFixture('alpha', '1.0.0')
     const result = await add(a)
     expect(result.ok).toBe(true)
-    expect(parseManifest().manifestVersion).toBe(0.1)
+    expect(parseManifest().manifestVersion).toBe(0.2)
   })
 
   // A failed operation must leave the file exactly as it was — not a
@@ -281,7 +282,7 @@ describe('malformed manifests fail before any mutation', () => {
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'FACETS_JSON_UNSUPPORTED_VERSION') expect.unreachable()
     expect(result.failure.observed).toBe(0.9)
-    expect(result.failure.supported).toEqual([0.1])
+    expect(result.failure.supported).toEqual([0.1, 0.2])
     expect(readManifest()).toBe(before)
   })
 
@@ -306,7 +307,7 @@ describe('expanded entries survive unrelated operations', () => {
     writeManifest(
       `${JSON.stringify(
         {
-          manifestVersion: 0.1,
+          manifestVersion: 0.2,
           facets: {
             alpha: {
               source: a,
@@ -391,7 +392,7 @@ describe('comments survive the real install pipeline', () => {
     expect(raw).toContain('file header')
     expect(raw).toContain('about alpha')
     expect(raw).toContain('about beta')
-    expect(parseManifest().manifestVersion).toBe(0.1)
+    expect(parseManifest().manifestVersion).toBe(0.2)
   })
 
   test('an add preserves comments on untouched entries', async () => {
@@ -454,10 +455,39 @@ describe('every command writes the current formats, and only frozen mode does no
     expect(readReceipt().version).toBe(CURRENT_RECEIPT_VERSION)
   }
 
-  test('facet add writes manifest 0.1, lockfile 0.3, and receipt 0.3', async () => {
+  test('facet add writes the current manifest, lockfile, and receipt formats', async () => {
     const a = buildFixture('alpha', '1.0.0')
     expect((await add(a)).ok).toBe(true)
     expectCurrentFormats()
+  })
+
+  // The next successful write emits the current receipt format, never an
+  // intermediate one — the property that bounds how long a project stays on
+  // a receipt that cannot witness configuration.
+  test('an earlier receipt is rewritten at the current version by the next success', async () => {
+    const a = buildFixture('alpha', '1.0.0')
+    expect((await add(a)).ok).toBe(true)
+
+    const current = readReceipt()
+    const downgraded = {
+      version: RECEIPT_VERSION_0_3,
+      path: current.path,
+      facets: Object.fromEntries(
+        Object.entries(current.facets as Record<string, { version: string; assets: unknown }>).map(([name, entry]) => [
+          name,
+          { version: entry.version, assets: entry.assets },
+        ]),
+      ),
+    }
+    writeFileSync(receiptPath(projectRoot), `${JSON.stringify(downgraded, null, 2)}\n`)
+
+    expect((await install()).ok).toBe(true)
+
+    expect(readReceipt().version).toBe(CURRENT_RECEIPT_VERSION)
+    // Asset ownership survived the round trip; only configuration authority
+    // was absent, and this run reconciled none to record.
+    expect(readReceipt().facets.alpha.assets).toHaveLength(1)
+    expect(readReceipt().facets.alpha.configurations).toEqual([])
   })
 
   test('facet install writes the current formats', async () => {

@@ -5,6 +5,7 @@ import { ASSET_DIRECTORY, portableCollisionKey } from '../materialization/identi
 import { materializationNamespace } from '../materialization/namespace.ts'
 import { validateAssetNameSegment } from './asset-name.ts'
 import { validateFacetName } from './facet-name.ts'
+import { McpServerDeclarationSchema, validateMcpServerName } from './mcp-server.ts'
 
 // --- Sub-schemas ---
 
@@ -51,16 +52,16 @@ const SelectiveFacetsEntry = type({
 /** Facets entry: compact string ("name@version") or selective object */
 const FacetsEntry = type('string').or(SelectiveFacetsEntry)
 
-/** Server reference: source-mode (floor version string) or ref-mode (OCI image object) */
-const ServerReference = type('string').or({ image: 'string' })
-
 // --- Main schema ---
 
 /**
  * The facet manifest schema — validates structure and business constraints.
  *
  * Structural validation covers field types and shapes. Narrow constraints enforce:
- * 1. At least one text asset (skills, agents, commands, or facets) must be present
+ * 1. At least one deliverable (skills, agents, commands, facets, or servers)
+ *    must be present. A server-only facet is valid: MCP declarations are a
+ *    deliverable even though they materialize into tool-owned configuration
+ *    rather than a file the project owns.
  * 2. Selective facets entries must include at least one asset type selection
  * 3. Asset names must satisfy the Agent Skills grammar as a SINGLE segment
  *    (validateAssetNameSegment from ./asset-name.ts): 1-64 chars, lowercase
@@ -98,7 +99,12 @@ export const FacetManifestSchema = type({
   'agents?': type.Record('string', AgentDescriptor),
   'commands?': type.Record('string', CommandDescriptor),
   'facets?': FacetsEntry.array(),
-  'servers?': type.Record('string', ServerReference),
+  // Concrete, portable MCP server declarations (design D1). Each value is a
+  // closed tagged union — the only place in this manifest where unrecognized
+  // members are rejected, because every field affects process execution or
+  // network access. Speculative version-string and `{ image }` references are
+  // no longer representable.
+  'servers?': type.Record('string', McpServerDeclarationSchema),
   // Top-level supplementary files: exact repo-relative paths for archive-only
   // files (README.md, LICENSE, ...). Shipped and hashed, never materialized.
   // Must not resolve under skills/ — skill companions have exactly one
@@ -116,14 +122,20 @@ export const FacetManifestSchema = type({
     ctx.mustBe(`a valid facet name: ${facetName.reason}`)
   }
 
-  // Constraint 1: at least one text asset
+  // Constraint 1: at least one deliverable. A concrete MCP server declaration
+  // is a deliverable in its own right, so a server-only facet is valid: the
+  // declaration ships inside the integrity-protected manifest and needs no
+  // text asset to carry it. The legacy `0.1` schema keeps the older
+  // text-asset-only rule, which is correct there because legacy manifests
+  // cannot declare servers at all.
   const hasSkills = data.skills && Object.keys(data.skills).length > 0
   const hasAgents = data.agents && Object.keys(data.agents).length > 0
   const hasCommands = data.commands && Object.keys(data.commands).length > 0
   const hasFacets = data.facets && data.facets.length > 0
+  const hasServers = data.servers && Object.keys(data.servers).length > 0
 
-  if (!hasSkills && !hasAgents && !hasCommands && !hasFacets) {
-    ctx.mustBe('Manifest must include at least one text asset (skills, agents, commands, or facets)')
+  if (!hasSkills && !hasAgents && !hasCommands && !hasFacets && !hasServers) {
+    ctx.mustBe('Manifest must include at least one deliverable (skills, agents, commands, facets, or servers)')
   }
 
   // Constraint 2: selective facets entries must select at least one asset type
@@ -162,6 +174,22 @@ export const FacetManifestSchema = type({
       const check = validateAssetNameSegment(key)
       if (!check.ok) {
         ctx.mustBe(`${ASSET_DIRECTORY[assetType]} name "${key}" ${check.reason}`)
+      }
+    }
+  }
+
+  // Constraint 4: server names use the same single-segment grammar as asset
+  // names so exactly one spelling is portable across a JSON object key, a
+  // JSONC object key, and a TOML table key. Servers deliberately occupy a
+  // namespace SEPARATE from every text asset, so they are validated here and
+  // excluded from the shared-namespace check below: a facet may declare both
+  // skill `review` and server `review`, because their materialization
+  // identities never address the same thing.
+  if (data.servers) {
+    for (const key of Object.keys(data.servers)) {
+      const check = validateMcpServerName(key)
+      if (!check.ok) {
+        ctx.mustBe(`servers name "${key}" ${check.reason}`)
       }
     }
   }

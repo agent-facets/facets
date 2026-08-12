@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
+import { ADAPTER_API_VERSION, ADAPTER_API_VERSION_ASSETS_ONLY } from '@agent-facets/adapter/api-version'
+import { SUPPORTED_ADAPTER_APIS } from '../api-compatibility.ts'
 import { inspectInstalledAdapter, inspectInstalledAdapters } from '../inspect.ts'
 import { GENERATIONS_DIR_NAME, INSTALLATION_RECEIPT_NAME, type InstallationSource } from '../installation.ts'
 import { loadInstalledAdapters } from '../loader.ts'
@@ -45,6 +46,7 @@ async function makeBundle(
 export default {
   name: '${name}',
   ${api}
+  mcpServers: false,
   buildAssetMetadata: () => ({ ok: true, data: { marker: '${opts.marker ?? 'default'}' } }),
   installAsset: async () => undefined,
   readAsset: async () => ({ content: '' }),
@@ -63,7 +65,7 @@ const source: InstallationSource = {
   integrity: { kind: 'sri', value: 'sha512-test' },
 }
 
-async function installManaged(name: string, bundle: string, apiVersion = ADAPTER_API_VERSION): Promise<string> {
+async function installManaged(name: string, bundle: string, apiVersion: string = ADAPTER_API_VERSION): Promise<string> {
   const result = await placeAdapterManaged(name, bundle, { apiVersion, source }, baseDir)
   if (!result.ok) expect.unreachable(`test bug: managed install failed (${result.failure.kind})`)
   return result.receipt.activeGeneration
@@ -75,7 +77,7 @@ describe('inspectInstalledAdapter — managed', () => {
     const inspection = await inspectInstalledAdapter('my-adapter', baseDir)
     if (inspection.kind !== 'compatible') expect.unreachable()
     expect(inspection.managed).toBe(true)
-    expect(inspection.verified.apiVersion).toBe(ADAPTER_API_VERSION)
+    expect(inspection.verified.adapter.apiVersion).toBe(ADAPTER_API_VERSION)
     expect(inspection.repair).toEqual({ kind: 'managed', specifier: 'my-adapter@1.0.0' })
   })
 
@@ -97,39 +99,61 @@ describe('inspectInstalledAdapter — managed', () => {
       kind: 'api-unsupported',
       adapter: 'my-adapter',
       found: '9.9',
-      supported: [ADAPTER_API_VERSION],
+      supported: SUPPORTED_ADAPTER_APIS,
     })
     // The bundle was never imported.
     expect(await Bun.file(sideEffectFile).exists()).toBe(false)
   })
 
-  test('receipt/runtime disagreement is incompatible', async () => {
-    // Fabricate the managed layout directly (never imported before) so
-    // the runtime declaration genuinely differs from the receipt's.
-    // With a single supported API the disagreement classifies as
-    // api-unsupported (support check precedes metadata equality).
+  /**
+   * Fabricate a managed layout directly (never imported before) so the runtime
+   * declaration genuinely differs from the receipt's.
+   */
+  async function installDrifted(receiptApi: string, runtimeApi: string): Promise<void> {
     const genDir = join(baseDir, 'my-adapter', GENERATIONS_DIR_NAME, 'gen-fixture-drift')
     await mkdir(genDir, { recursive: true })
     await Bun.write(
       join(genDir, 'adapter.js'),
-      // '0.0' is the superseded positional contract: well-formed but
-      // unsupported by a 0.1-only CLI, so support check (which precedes
-      // metadata equality) classifies it api-unsupported.
-      await Bun.file(await makeBundle('my-adapter', { apiVersion: '0.0' })).text(),
+      await Bun.file(await makeBundle('my-adapter', { apiVersion: runtimeApi })).text(),
     )
     await Bun.write(
       join(baseDir, 'my-adapter', INSTALLATION_RECEIPT_NAME),
       JSON.stringify({
         schemaVersion: 1,
         activeGeneration: 'gen-fixture-drift',
-        apiVersion: ADAPTER_API_VERSION,
+        apiVersion: receiptApi,
         source,
       }),
     )
+  }
+
+  test('receipt/runtime disagreement on an unsupported runtime is api-unsupported', async () => {
+    // '0.0' is the superseded positional contract: well-formed but outside
+    // the window, so the support check — which precedes metadata equality —
+    // classifies it first.
+    await installDrifted(ADAPTER_API_VERSION, '0.0')
 
     const inspection = await inspectInstalledAdapter('my-adapter', baseDir)
     if (inspection.kind !== 'incompatible') expect.unreachable()
     expect(inspection.failure.kind).toBe('api-unsupported')
+  })
+
+  test('receipt/runtime disagreement between two supported tokens is a metadata mismatch', async () => {
+    // Only reachable now that the window holds more than one token: both
+    // sides pass the support check, so the disagreement itself is the fault.
+    await installDrifted(ADAPTER_API_VERSION_ASSETS_ONLY, ADAPTER_API_VERSION)
+
+    const inspection = await inspectInstalledAdapter('my-adapter', baseDir)
+    if (inspection.kind !== 'incompatible') expect.unreachable()
+    expect(inspection.failure.kind).toBe('api-metadata-mismatch')
+  })
+
+  test('an asset-only installation stays loadable', async () => {
+    const bundle = await makeBundle('legacy-adapter', { apiVersion: ADAPTER_API_VERSION_ASSETS_ONLY })
+    await installManaged('legacy-adapter', bundle, ADAPTER_API_VERSION_ASSETS_ONLY)
+    const inspection = await inspectInstalledAdapter('legacy-adapter', baseDir)
+    if (inspection.kind !== 'compatible') expect.unreachable()
+    expect(inspection.verified.adapter.apiVersion).toBe(ADAPTER_API_VERSION_ASSETS_ONLY)
   })
 
   test('invalid receipt classifies as broken and keeps a repair source', async () => {
@@ -196,7 +220,7 @@ describe('inspectInstalledAdapter — unmanaged', () => {
     await placeAdapter('legacy', await makeBundle('legacy', { apiVersion: null }), baseDir)
     const inspection = await inspectInstalledAdapter('legacy', baseDir)
     if (inspection.kind !== 'incompatible') expect.unreachable()
-    expect(inspection.failure).toEqual({ kind: 'api-missing', adapter: 'legacy', supported: [ADAPTER_API_VERSION] })
+    expect(inspection.failure).toEqual({ kind: 'api-missing', adapter: 'legacy', supported: SUPPORTED_ADAPTER_APIS })
   })
 
   test('malformed unmanaged declaration is incompatible (api-malformed)', async () => {
@@ -225,6 +249,24 @@ describe('loadInstalledAdapters — fail-closed aggregation', () => {
     const result = await loadInstalledAdapters(baseDir)
     if (!result.ok) expect.unreachable()
     expect(result.adapters.map((adapter) => adapter.name)).toEqual(['alpha', 'beta'])
+  })
+
+  test('adapters on either supported contract load together', async () => {
+    // The compatibility window in one assertion: a project may hold one
+    // upgraded and one not-yet-upgraded adapter and still install.
+    await installManaged('current', await makeBundle('current'))
+    await installManaged(
+      'legacy',
+      await makeBundle('legacy', { apiVersion: ADAPTER_API_VERSION_ASSETS_ONLY }),
+      ADAPTER_API_VERSION_ASSETS_ONLY,
+    )
+
+    const result = await loadInstalledAdapters(baseDir)
+    if (!result.ok) expect.unreachable()
+    expect(result.adapters.map((adapter) => [adapter.name, adapter.apiVersion])).toEqual([
+      ['current', ADAPTER_API_VERSION],
+      ['legacy', ADAPTER_API_VERSION_ASSETS_ONLY],
+    ])
   })
 
   test('a single incompatible entry fails the whole load with all failures collected', async () => {

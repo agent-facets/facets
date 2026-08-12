@@ -1,0 +1,64 @@
+{
+  "change": "add-mcp-json-support",
+  "schema": "spec-driven",
+  "entries": {
+    "proposal": {
+      "artifactId": "proposal",
+      "mainPaths": ["proposal.md"],
+      "adversarialPaths": ["adversarial/artifacts/proposal.md"],
+      "reviewPath": "adversarial/reviews/proposal-review.md",
+      "dependencies": [],
+      "status": "reconciled",
+      "authoredAt": "2026-07-31T19:55:00Z",
+      "comparedAt": "2026-07-31T20:05:00Z",
+      "reconciledAt": "2026-08-01T00:32:15Z",
+      "notes": "Adopted explicit consent, legacy 0.1 preservation, server-only facets, durable omission with aliasing deferred, no headers or portable variable substitution, receipt-only versioning expectation, sharper adapter boundary, and expanded docs impact. Retained fail-closed unsupported-adapter behavior and the adapter__configuration capability name; rejected partial materialization and adapter__mcp naming."
+    },
+    "design": {
+      "artifactId": "design",
+      "mainPaths": ["design.md"],
+      "adversarialPaths": ["adversarial/artifacts/design.md"],
+      "reviewPath": "adversarial/reviews/design-review.md",
+      "dependencies": ["proposal"],
+      "status": "reconciled",
+      "authoredAt": "2026-08-01T18:01:45Z",
+      "comparedAt": "2026-08-01T18:05:30Z",
+      "reconciledAt": "2026-08-02T18:19:57Z",
+      "notes": "Adopted the byte-preimage rollback hybrid (prepare discloses document paths, engine journals byte restores, adapter inverse dropped), the explicit {'0.1','0.2'} supported-API set with exact-token semantics, minimum-content-rule mechanics in D1, a changelog entry in D11, and three new open questions (Codex feasibility blocking, adoption equality, OpenCode file precedence). Rejected the project-wide omit list, hard API bump, read+apply adapter shape, declaration-hash-only removal anchoring, and --allow-mcp-on-install-only; main retained for omission storage, consent surface, format discrimination, reporting, and docs breadth."
+    },
+    "specs": {
+      "artifactId": "specs",
+      "mainPaths": ["specs/**/*.md"],
+      "adversarialPaths": [
+        "adversarial/artifacts/specs/adapter__mcp-servers/spec.md",
+        "adversarial/artifacts/specs/protocol__schemas/spec.md",
+        "adversarial/artifacts/specs/authoring__facets/spec.md",
+        "adversarial/artifacts/specs/authoring__servers/spec.md",
+        "adversarial/artifacts/specs/installation/spec.md",
+        "adversarial/artifacts/specs/adapter__sdk/spec.md",
+        "adversarial/artifacts/specs/adapter__management/spec.md",
+        "adversarial/artifacts/specs/adapter__assets/spec.md",
+        "adversarial/artifacts/specs/cli/spec.md"
+      ],
+      "reviewPath": "adversarial/reviews/specs-review.md",
+      "dependencies": ["proposal"],
+      "status": "reconciled",
+      "authoredAt": "2026-08-06T00:45:00Z",
+      "comparedAt": "2026-08-06T01:00:03Z",
+      "reconciledAt": "2026-08-06T02:36:30Z",
+      "notes": "Adopted full permanent-text reconstruction for the receipt and adapter-compatibility requirements; added teammate-consent, user-scope, previous-manifest server-group, and sole MCP-flag coverage; centralized the concrete adapter API support set; and removed duplicate asset-takeover and lockfile-shape requirements. Retained main's interactive collision, fingerprint, frozen-mode, non-execution, closed-object, and migration coverage."
+    },
+    "tasks": {
+      "artifactId": "tasks",
+      "mainPaths": ["tasks.md"],
+      "adversarialPaths": ["adversarial/artifacts/tasks.md"],
+      "reviewPath": "adversarial/reviews/tasks-review.md",
+      "dependencies": ["specs", "design"],
+      "status": "reconciled",
+      "authoredAt": "2026-08-06T03:55:00Z",
+      "comparedAt": "2026-08-06T04:10:00Z",
+      "reconciledAt": "2026-08-06T04:10:01Z",
+      "notes": "Adopted explicit current-schema rejection of version-string and { image } references, deterministic sha256-prefixed fingerprints, receipt 0.4 no-intermediate-format emission, and exact OpenCode file precedence. Retained main's 20-block structure, release preparation, acceptance matrix, and repository-specific test coverage."
+    }
+  }
+}

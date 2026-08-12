@@ -1,21 +1,12 @@
 import type { AssetType, Scope } from '@agent-facets/common'
-import { compareCodeUnits } from '../ordering.ts'
-import { validateAssetNameSegment } from '../schemas/asset-name.ts'
 import type {
   MaterializationDisposition,
   MaterializedDisposition,
   ProjectAssetOverride,
 } from '../schemas/materialization.ts'
-import { cloneDisposition } from '../schemas/materialization.ts'
 import type { FacetMaterializationOverrides } from '../schemas/project-manifest.ts'
-import {
-  ASSET_DIRECTORY,
-  ASSET_TYPES,
-  adapterKey,
-  collisionKey,
-  compareAssetTypes,
-  portableCollisionKey,
-} from './identity.ts'
+import { type MaterializedName, planEffectiveNames } from './effective-name.ts'
+import { ASSET_DIRECTORY, ASSET_TYPE_ORDER, ASSET_TYPES, adapterKey } from './identity.ts'
 import { type MaterializationNamespace, materializationNamespace } from './namespace.ts'
 
 /**
@@ -178,6 +169,37 @@ export type PlanMaterializationResult =
       staleOverrides: readonly StaleOverride[]
     }
 
+/** What a generic name claim carries for the asset domain. */
+interface AssetClaim {
+  scope: Scope
+  type: AssetType
+}
+
+/**
+ * Separator for the composite identity space. Must match the leading
+ * separator {@link collisionKey} uses, so the generic core's identity keys
+ * and this domain's published collision keys stay the same strings.
+ */
+const SPACE_SEPARATOR = '\u0000'
+
+/** The override groups swept for stale asset intent, in canonical order. */
+const ASSET_GROUPS: readonly string[] = ASSET_TYPES.map((type) => ASSET_DIRECTORY[type])
+
+/**
+ * The asset type an override group belongs to.
+ *
+ * Total by construction: the only groups handed to the core are the ones
+ * derived from {@link ASSET_DIRECTORY} just above, so every group the core
+ * can report back has an entry here.
+ */
+const ASSET_TYPE_BY_GROUP: Readonly<Record<string, AssetType>> = Object.fromEntries(
+  ASSET_TYPES.map((type) => [ASSET_DIRECTORY[type], type]),
+)
+
+function assetTypeOfGroup(group: string): AssetType {
+  return ASSET_TYPE_BY_GROUP[group] as AssetType
+}
+
 /**
  * The override map for one asset type, if the facet declared any.
  *
@@ -240,147 +262,96 @@ export function overrideFor(
  * structure with it.
  */
 export function planMaterialization(contributions: readonly FacetContribution[]): PlanMaterializationResult {
-  // 1. Deterministic ordering. Sorting up front means every downstream list
-  //    inherits a stable order without re-sorting, and makes the result
-  //    independent of how the caller happened to enumerate facets.
-  const orderedFacets = [...contributions].sort((a, b) => compareCodeUnits(a.facet, b.facet))
+  const result = planEffectiveNames<AssetClaim>(
+    contributions.map((contribution) => ({
+      owner: contribution.facet,
+      claims: contribution.assets.map((asset) => ({
+        owner: contribution.facet,
+        group: ASSET_DIRECTORY[asset.type],
+        groupOrder: ASSET_TYPE_ORDER[asset.type],
+        authoredName: asset.name,
+        // Exactly the leading fields of `collisionKey`: a skill and a command
+        // share a space, an agent does not, and no two scopes ever do.
+        space: [asset.scope, materializationNamespace(asset.type)].join(SPACE_SEPARATOR),
+        value: { scope: asset.scope, type: asset.type },
+      })),
+      overrides: contribution.overrides,
+    })),
+    {
+      groups: ASSET_GROUPS,
+      // Text assets never compose: two claims on one effective identity are
+      // two files with one path, so any duplicate is a collision.
+      contested: (members) => members.length > 1,
+    },
+  )
 
-  const planned: PlannedAsset[] = []
-  const materialized: MaterializedAsset[] = []
-  const staleOverrides: StaleOverride[] = []
-  const invalidAliases: InvalidAlias[] = []
+  if (!result.ok && result.reason === 'invalid-alias') {
+    return {
+      ok: false,
+      reason: 'invalid-alias',
+      problems: result.problems.map((problem) => ({
+        facet: problem.owner,
+        type: assetTypeOfGroup(problem.group),
+        authoredName: problem.authoredName,
+        alias: problem.alias,
+        reason: problem.reason,
+      })),
+    }
+  }
 
-  for (const contribution of orderedFacets) {
-    const orderedAssets = [...contribution.assets].sort(
-      (a, b) => compareAssetTypes(a.type, b.type) || compareCodeUnits(a.name, b.name),
-    )
+  const staleOverrides: StaleOverride[] = result.stale.map((entry) => ({
+    facet: entry.owner,
+    type: assetTypeOfGroup(entry.group),
+    authoredName: entry.authoredName,
+    disposition: entry.disposition,
+  }))
 
-    // 2/3. Resolve each authored asset's disposition.
-    const matchedOverrideKeys = new Set<string>()
-    for (const asset of orderedAssets) {
-      const override = overrideFor(contribution.overrides, asset.type, asset.name)
-      matchedOverrideKeys.add(`${asset.type}\u0000${asset.name}`)
-
-      const disposition: MaterializationDisposition = override ?? { kind: 'authored' }
-
-      if (disposition.kind === 'aliased') {
-        const check = validateAssetNameSegment(disposition.as)
-        if (!check.ok) {
-          invalidAliases.push({
-            facet: contribution.facet,
-            type: asset.type,
-            authoredName: asset.name,
-            alias: disposition.as,
-            reason: check.reason,
-          })
-          continue
+  if (!result.ok) {
+    return {
+      ok: false,
+      reason: 'collision',
+      groups: result.groups.map((group) => {
+        const first = group.members[0] as MaterializedName<AssetClaim>
+        return {
+          scope: first.claim.value.scope,
+          namespace: materializationNamespace(first.claim.value.type),
+          effectiveName: group.effectiveName,
+          // Projected explicitly rather than passed through: a collision
+          // member is a claim under review, not a planned write, so it must
+          // not carry the adapter key only a surviving member would have.
+          members: group.members.map((member) => ({
+            facet: member.claim.owner,
+            scope: member.claim.value.scope,
+            type: member.claim.value.type,
+            authoredName: member.claim.authoredName,
+            effectiveName: member.effectiveName,
+            disposition: member.disposition,
+          })),
         }
-      }
-
-      // Cloned per output collection, not once: the caller's override object
-      // must not be reachable from the result, and `plan.assets` and
-      // `plan.materialized` must not alias each other either.
-      planned.push({
-        facet: contribution.facet,
-        scope: asset.scope,
-        type: asset.type,
-        authoredName: asset.name,
-        disposition: cloneDisposition(disposition),
-      })
-
-      // 4. Omitted assets leave the effective set entirely.
-      if (disposition.kind === 'omitted') continue
-
-      const effectiveName = disposition.kind === 'aliased' ? disposition.as : asset.name
-      materialized.push({
-        facet: contribution.facet,
-        scope: asset.scope,
-        type: asset.type,
-        authoredName: asset.name,
-        effectiveName,
-        disposition: cloneDisposition(disposition),
-        adapterKey: adapterKey(asset.scope, asset.type, effectiveName),
-      })
-    }
-
-    // 2 (cont). An override that matched no authored asset is stale. Ordered
-    // by type then authored name so the report is stable.
-    for (const type of ASSET_TYPES) {
-      const record = overridesForType(contribution.overrides, type)
-      if (record === undefined) continue
-      for (const authoredName of Object.keys(record).sort(compareCodeUnits)) {
-        if (matchedOverrideKeys.has(`${type}\u0000${authoredName}`)) continue
-        const disposition = overrideFor(contribution.overrides, type, authoredName)
-        if (disposition === undefined) continue
-        staleOverrides.push({
-          facet: contribution.facet,
-          type,
-          authoredName,
-          disposition: cloneDisposition(disposition),
-        })
-      }
+      }),
+      staleOverrides,
     }
   }
 
-  // An alias that cannot be interpreted makes the whole draft meaningless —
-  // there is no effective set to check for collisions.
-  if (invalidAliases.length > 0) {
-    return { ok: false, reason: 'invalid-alias', problems: invalidAliases }
-  }
+  const assets: PlannedAsset[] = result.planned.map((entry) => ({
+    facet: entry.claim.owner,
+    scope: entry.claim.value.scope,
+    type: entry.claim.value.type,
+    authoredName: entry.claim.authoredName,
+    disposition: entry.disposition,
+  }))
 
-  // 5. Group the effective set by logical identity.
-  const byCollisionKey = new Map<string, MaterializedAsset[]>()
-  for (const asset of materialized) {
-    const key = collisionKey(asset.scope, asset.type, asset.effectiveName)
-    const existing = byCollisionKey.get(key)
-    if (existing) {
-      existing.push(asset)
-    } else {
-      byCollisionKey.set(key, [asset])
-    }
-  }
+  const materialized: MaterializedAsset[] = result.materialized.map((entry) => ({
+    facet: entry.claim.owner,
+    scope: entry.claim.value.scope,
+    type: entry.claim.value.type,
+    authoredName: entry.claim.authoredName,
+    effectiveName: entry.effectiveName,
+    disposition: entry.disposition,
+    adapterKey: adapterKey(entry.claim.value.scope, entry.claim.value.type, entry.effectiveName),
+  }))
 
-  const groups: CollisionGroup[] = []
-  for (const claimants of byCollisionKey.values()) {
-    if (claimants.length < 2) continue
-    const ordered = [...claimants].sort(
-      (a, b) =>
-        compareCodeUnits(a.facet, b.facet) ||
-        compareAssetTypes(a.type, b.type) ||
-        compareCodeUnits(a.authoredName, b.authoredName),
-    )
-    // Projected explicitly rather than passed through: a collision member is
-    // a claim under review, not a planned write, so it must not carry the
-    // adapter key that only a member surviving into a plan would have.
-    const members: CollisionMember[] = ordered.map((a) => ({
-      facet: a.facet,
-      scope: a.scope,
-      type: a.type,
-      authoredName: a.authoredName,
-      effectiveName: a.effectiveName,
-      disposition: cloneDisposition(a.disposition),
-    }))
-    const first = ordered[0] as MaterializedAsset
-    groups.push({
-      scope: first.scope,
-      namespace: materializationNamespace(first.type),
-      effectiveName: first.effectiveName,
-      members,
-    })
-  }
-
-  if (groups.length > 0) {
-    groups.sort(
-      (a, b) =>
-        compareCodeUnits(a.scope, b.scope) ||
-        compareCodeUnits(a.namespace, b.namespace) ||
-        compareCodeUnits(portableCollisionKey(a.effectiveName), portableCollisionKey(b.effectiveName)),
-    )
-    return { ok: false, reason: 'collision', groups, staleOverrides }
-  }
-
-  // 6. Collision-free: a plan exists.
-  return { ok: true, plan: { assets: planned, materialized }, staleOverrides }
+  return { ok: true, plan: { assets, materialized }, staleOverrides }
 }
 
 /**

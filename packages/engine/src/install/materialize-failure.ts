@@ -31,6 +31,13 @@ export function materializeFailureToRunInstall(facet: string, failure: Materiali
         asset: failure.asset,
         cause: failure.cause,
       }
+    case 'takeover-cancelled':
+      return {
+        code: 'ASSET_TAKEOVER_CANCELLED',
+        facet,
+        adapter: failure.adapter,
+        asset: failure.asset,
+      }
     case 'delete-failed':
       return {
         code: 'ADAPTER_DELETE_FAILED',

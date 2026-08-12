@@ -1,10 +1,10 @@
 import type { Adapter } from '@agent-facets/adapter'
 import type { CurrentLockfileFacet, MaterializedAsset } from '@agent-facets/protocol'
-import { classifyOutcome } from '../classify-outcome.ts'
+import type { AssetTakeoverResolver } from '../asset-takeover.ts'
 import type { InstallJournal } from '../journal.ts'
 import { materialize } from '../materialize.ts'
 import { materializeFailureToRunInstall } from '../materialize-failure.ts'
-import type { FacetOutcome, OnLog, RunInstallFailure, StageEvent } from '../types.ts'
+import type { OnLog, RunInstallFailure, StageEvent } from '../types.ts'
 import type { ComposedPlan } from './compose.ts'
 import type { PreviousOwnership } from './ownership.ts'
 import type { ResolvedFacetRecord } from './resolve-all.ts'
@@ -12,7 +12,15 @@ import type { ResolvedFacetRecord } from './resolve-all.ts'
 export interface InstallLoopSuccess {
   /** The lockfile entries resolved this run, keyed by facet name. */
   newFacetEntries: Record<string, CurrentLockfileFacet>
-  perFacet: FacetOutcome[]
+  /**
+   * Assets written per facet, keyed by facet name.
+   *
+   * Evidence rather than a verdict. A facet's outcome also depends on whether
+   * its MCP declarations had to be reconciled, and that happens after every
+   * asset is on disk — so this loop reports what it did and the orchestrator
+   * classifies once both halves are known.
+   */
+  assetWrites: ReadonlyMap<string, number>
   /** Assets actually written across all facets (skipped no-ops don't count). */
   totalAssets: number
 }
@@ -32,6 +40,11 @@ export interface InstallLoopArgs {
   previousOwnership: ReadonlyMap<string, PreviousOwnership>
   adapters: ReadonlyArray<Adapter>
   journal: InstallJournal
+  /**
+   * Interactive gate for an occupied destination this machine does not own.
+   * Forwarded verbatim; absence means continue.
+   */
+  resolveAssetTakeover?: AssetTakeoverResolver
   signal?: AbortSignal
   onStage: (event: StageEvent) => void
   onLog: OnLog
@@ -50,12 +63,12 @@ export interface InstallLoopArgs {
  * only reports; it never unwinds.
  */
 export async function installFacets(args: InstallLoopArgs): Promise<InstallLoopResult> {
-  const { resolved, plan, previousOwnership, adapters, journal, signal, onStage, onLog } = args
+  const { resolved, plan, previousOwnership, adapters, journal, resolveAssetTakeover, signal, onStage, onLog } = args
 
   // Entries come from Compose, which is where dispositions were decided.
   // Apply reports what it wrote; it does not re-derive what should be locked.
   const newFacetEntries: Record<string, CurrentLockfileFacet> = { ...plan.facetEntries }
-  const perFacet: FacetOutcome[] = []
+  const assetWrites = new Map<string, number>()
   let totalAssets = 0
 
   // Assets to write, per facet, carrying both identities. Omitted assets are
@@ -74,7 +87,7 @@ export async function installFacets(args: InstallLoopArgs): Promise<InstallLoopR
   }
 
   for (const record of resolved) {
-    const { facet: facetName, previousEntry } = record
+    const facetName = record.facet
     if (signal?.aborted) {
       return { ok: false, failure: { code: 'ABORTED' } }
     }
@@ -88,6 +101,7 @@ export async function installFacets(args: InstallLoopArgs): Promise<InstallLoopR
       previousOwnership,
       companionBytes: record.companionBytes,
       journal,
+      ...(resolveAssetTakeover ? { resolveAssetTakeover } : {}),
       onLog,
       onStage,
     })
@@ -98,16 +112,8 @@ export async function installFacets(args: InstallLoopArgs): Promise<InstallLoopR
     }
 
     totalAssets += materializeResult.written
-
-    // Classify against the COMPOSED entry, not the resolved version alone:
-    // an alias or omission changes the facet's state at an unchanged
-    // version, and only the composed entry carries that.
-    const composedEntry = plan.facetEntries[facetName]
-    if (composedEntry === undefined) continue
-    const outcome = classifyOutcome(facetName, previousEntry, composedEntry, materializeResult.written)
-    perFacet.push(outcome)
-    onStage({ kind: 'facet-success', facet: facetName, outcome })
+    assetWrites.set(facetName, materializeResult.written)
   }
 
-  return { ok: true, value: { newFacetEntries, perFacet, totalAssets } }
+  return { ok: true, value: { newFacetEntries, assetWrites, totalAssets } }
 }

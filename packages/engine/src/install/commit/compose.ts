@@ -1,17 +1,25 @@
 import type {
-  CollisionGroup,
   CurrentLockfileAssetEntry,
   CurrentLockfileFacet,
-  FacetContribution,
   FacetMaterializationOverrides,
   MaterializationDisposition,
   MaterializedAsset,
-  StaleOverride,
+  PlannedServer,
+  PlannedServerConfiguration,
 } from '@agent-facets/protocol'
-import { planMaterialization } from '@agent-facets/protocol'
 import type { NormalizedFacetEntry } from '../../manifest/mutations.ts'
-import { ownEntry, ownRecord } from '../own-entry.ts'
-import type { RunInstallFailure, StageEvent } from '../types.ts'
+import { ownRecord } from '../own-entry.ts'
+import type {
+  MaterializationCollisionGroup,
+  RunInstallFailure,
+  StageEvent,
+  StaleMaterializationOverride,
+} from '../types.ts'
+import {
+  type CollisionFacetContribution,
+  type MaterializationAliasProblem,
+  planCollisionIntent,
+} from './collision-plan.ts'
 import type { ResolvedFacetRecord } from './resolve-all.ts'
 
 /**
@@ -34,16 +42,25 @@ import type { ResolvedFacetRecord } from './resolve-all.ts'
 
 /** What a collision resolver is shown, and what it may change. */
 export interface CollisionResolutionRequest {
-  /** Every unresolved group. Never truncated — one pass, not one at a time. */
-  groups: readonly CollisionGroup[]
+  /**
+   * Every unresolved group, from both identity spaces. Never truncated — one
+   * pass, not one at a time, and not one domain at a time either.
+   */
+  groups: readonly MaterializationCollisionGroup[]
   /**
    * Every authored contribution, so a workspace can offer a choice on any
-   * asset — including ones that are not currently colliding but could
-   * absorb a name.
+   * asset or server — including ones that are not currently colliding but
+   * could absorb a name.
    */
-  contributions: readonly FacetContribution[]
-  /** Overrides naming assets the resolved versions no longer contain. */
-  staleOverrides: readonly StaleOverride[]
+  facets: readonly CollisionFacetContribution[]
+  /**
+   * The project's current intent, complete. A resolver returns a map of the
+   * same shape, so anything it does not mention is erased — which is why it
+   * starts from everything rather than from the colliding facets only.
+   */
+  overrides: Readonly<Record<string, FacetMaterializationOverrides>>
+  /** Overrides naming assets or servers the resolved versions no longer contain. */
+  staleOverrides: readonly StaleMaterializationOverride[]
 }
 
 /**
@@ -59,6 +76,30 @@ export type CollisionResolution =
 
 export type CollisionResolver = (request: CollisionResolutionRequest) => Promise<CollisionResolution>
 
+/**
+ * The MCP half of a collision-free plan.
+ *
+ * Kept beside the asset half rather than folded into it. The two domains
+ * share one planning rule and one override document, but nothing else: a
+ * server contributes no lockfile entry, occupies its own identity space, and
+ * composes rather than contests when two facets declare it identically.
+ * Merging them would mean widening `MaterializedAsset` — and therefore
+ * `AssetType` — to describe something that is not an asset.
+ */
+export interface ComposedMcpServers {
+  /**
+   * Every authored declaration with its resolved disposition, INCLUDING
+   * omitted ones. Reporting needs to say "omitted" about a server, which is
+   * unanswerable from the active set alone.
+   */
+  planned: readonly PlannedServer[]
+  /**
+   * The active effective configurations to reconcile, one per identity, each
+   * carrying every facet that claims it.
+   */
+  configurations: readonly PlannedServerConfiguration[]
+}
+
 /** A collision-free global plan. */
 export interface ComposedPlan {
   /** Current lockfile entries with dispositions applied, keyed by facet. */
@@ -69,14 +110,17 @@ export interface ComposedPlan {
    * integrity) alongside its effective name and adapter key (for placement).
    */
   materialized: readonly MaterializedAsset[]
+  /** The MCP configurations to reconcile, planned in their own identity space. */
+  mcpServers: ComposedMcpServers
   /** The overrides to persist: those loaded, or those a resolver chose. */
   overrides: Readonly<Record<string, FacetMaterializationOverrides>>
   /**
-   * Overrides naming assets absent from the resolved facet versions.
-   * Reported, never fatal: an override is durable project intent, so it
-   * survives a failed operation and is pruned only by a successful commit.
+   * Overrides naming assets or servers absent from the resolved facet
+   * versions. Reported, never fatal: an override is durable project intent,
+   * so it survives a failed operation and is pruned only by a successful
+   * commit.
    */
-  staleOverrides: readonly StaleOverride[]
+  staleOverrides: readonly StaleMaterializationOverride[]
 }
 
 export type ComposeResult = { ok: true; plan: ComposedPlan } | { ok: false; failure: RunInstallFailure }
@@ -99,8 +143,15 @@ export interface ComposeArgs {
   onStage: (event: StageEvent) => void
 }
 
-/** The contributions the planner reasons over, in resolve-all's order. */
-function contributionsOf(args: ComposeArgs): FacetContribution[] {
+/**
+ * The complete authored set the planner reasons over, in resolve-all's order.
+ *
+ * Every facet appears, including one that contributes nothing: the planner's
+ * stale sweep is driven by the override map, so a facet whose only override
+ * names a contribution it no longer publishes has to be visible here for that
+ * override to be reported at all.
+ */
+function facetContributionsOf(args: ComposeArgs): CollisionFacetContribution[] {
   return args.resolved.map((record) => ({
     facet: record.facet,
     assets: record.plan.assets.map((asset) => ({
@@ -108,7 +159,7 @@ function contributionsOf(args: ComposeArgs): FacetContribution[] {
       type: asset.type,
       name: asset.name,
     })),
-    overrides: ownEntry(args.desiredFacets, record.facet)?.overrides,
+    servers: record.servers,
   }))
 }
 
@@ -153,45 +204,42 @@ function dispositionKey(facet: string, scope: string, type: string, authoredName
 }
 
 /**
- * Run the planner over one override set and project its result into the
- * pieces Compose needs. Shared by the initial pass and the post-resolver
- * defense-in-depth pass so the two cannot diverge.
+ * Run the shared cross-domain rule over one override set and project its
+ * result into the pieces Compose needs.
+ *
+ * The rule itself lives in `collision-plan.ts` because the interactive
+ * workspace runs the same one after every edit. This wrapper only adds what
+ * Compose alone needs: lockfile entries built from the resolved records.
  */
 function planWith(
   resolved: readonly ResolvedFacetRecord[],
-  contributions: readonly FacetContribution[],
+  facets: readonly CollisionFacetContribution[],
   overrides: Readonly<Record<string, FacetMaterializationOverrides>>,
 ):
   | { ok: true; plan: ComposedPlan }
-  | { ok: false; reason: 'collision'; groups: readonly CollisionGroup[]; staleOverrides: readonly StaleOverride[] }
-  | { ok: false; reason: 'invalid-alias'; problems: readonly { facet: string; alias: string; reason: string }[] } {
-  const withOverrides = contributions.map((contribution) => ({
-    ...contribution,
-    overrides: ownEntry(overrides, contribution.facet),
-  }))
-  const result = planMaterialization(withOverrides)
-  if (!result.ok) {
-    if (result.reason === 'invalid-alias') {
-      return { ok: false, reason: 'invalid-alias', problems: result.problems }
+  | {
+      ok: false
+      reason: 'collision'
+      groups: readonly MaterializationCollisionGroup[]
+      staleOverrides: readonly StaleMaterializationOverride[]
     }
-    return { ok: false, reason: 'collision', groups: result.groups, staleOverrides: result.staleOverrides }
-  }
+  | { ok: false; reason: 'invalid-alias'; problems: readonly MaterializationAliasProblem[] } {
+  const planned = planCollisionIntent(facets, overrides)
+  if (!planned.ok) return planned
 
   const dispositions = new Map<string, MaterializationDisposition>()
-  for (const planned of result.plan.assets) {
-    dispositions.set(
-      dispositionKey(planned.facet, planned.scope, planned.type, planned.authoredName),
-      planned.disposition,
-    )
+  for (const asset of planned.assets.assets) {
+    dispositions.set(dispositionKey(asset.facet, asset.scope, asset.type, asset.authoredName), asset.disposition)
   }
 
   return {
     ok: true,
     plan: {
       facetEntries: lockfileEntriesFor(resolved, dispositions),
-      materialized: result.plan.materialized,
+      materialized: planned.assets.materialized,
+      mcpServers: planned.servers,
       overrides,
-      staleOverrides: result.staleOverrides,
+      staleOverrides: planned.staleOverrides,
     },
   }
 }
@@ -201,7 +249,7 @@ export async function compose(args: ComposeArgs): Promise<ComposeResult> {
 
   onStage({ kind: 'collision-check' })
 
-  const contributions = contributionsOf(args)
+  const facets = facetContributionsOf(args)
   // Null-prototype: the keys are facet names from `facets.json`, and this is
   // where the map the resolver later edits and returns is born. A facet named
   // `__proto__` assigned into a plain `{}` would vanish here rather than in
@@ -211,7 +259,7 @@ export async function compose(args: ComposeArgs): Promise<ComposeResult> {
     if (entry.overrides !== undefined) loadedOverrides[facet] = entry.overrides
   }
 
-  const first = planWith(resolved, contributions, loadedOverrides)
+  const first = planWith(resolved, facets, loadedOverrides)
   if (first.ok) {
     return { ok: true, plan: first.plan }
   }
@@ -219,9 +267,10 @@ export async function compose(args: ComposeArgs): Promise<ComposeResult> {
     return { ok: false, failure: { code: 'MATERIALIZATION_ALIAS_INVALID', problems: first.problems } }
   }
 
-  // Collisions. Frozen mode reproduces recorded intent and never collects
-  // new decisions, so it reports rather than resolves — the same report a
-  // non-interactive command gets.
+  // Collisions. Frozen mode reproduces recorded intent and never collects new
+  // decisions, so it reports rather than resolves — the same report a
+  // non-interactive command gets. A caller with no resolver gets the same,
+  // because guessing a winner is the one thing this step must never do.
   if (frozenLockfile || resolveCollisions === undefined) {
     return {
       ok: false,
@@ -235,7 +284,8 @@ export async function compose(args: ComposeArgs): Promise<ComposeResult> {
 
   const resolution = await resolveCollisions({
     groups: first.groups,
-    contributions,
+    facets,
+    overrides: loadedOverrides,
     staleOverrides: first.staleOverrides,
   })
   if (resolution.kind === 'cancelled') {
@@ -246,7 +296,7 @@ export async function compose(args: ComposeArgs): Promise<ComposeResult> {
   // the same pure rule. The resolver is NOT reopened on failure — an
   // automatic retry loop would let a broken resolver spin indefinitely, and
   // the user has already been shown the groups once.
-  const second = planWith(resolved, contributions, resolution.overrides)
+  const second = planWith(resolved, facets, resolution.overrides)
   if (second.ok) {
     return { ok: true, plan: second.plan }
   }

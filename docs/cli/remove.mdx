@@ -9,7 +9,7 @@ description: Remove one or more facets from the project
 facet remove <facet> [more facets...]
 ```
 
-Removes one or more facets from `facets.json`, deletes the assets they still own from every connected adapter, and rewrites `facets.lock` without them  -- in a single command. "Still own" is decided by your machine's [install receipt](/specification/commit#machine-local-install-receipt): a facet this machine never installed loses its declaration but keeps its files. The inverse of [`facet add`](/cli/add). Aliased as `facet rm`.
+Removes one or more facets from `facets.json`, deletes the assets and MCP server entries they still own from every connected adapter, and rewrites `facets.lock` without them  -- in a single command. "Still own" is decided by your machine's [install receipt](/specification/commit#machine-local-install-receipt): a facet this machine never installed loses its declaration but keeps its files. The inverse of [`facet add`](/cli/add). Aliased as `facet rm`.
 
 ## Examples
 
@@ -27,7 +27,15 @@ facet remove viper-plans rezi
 ## Flags
 
 <ResponseField name="--verbose" type="boolean">
-  Show detailed step output on stderr.
+  Show detailed step output on stderr. Verbose output never reproduces an [MCP server declaration](/cli/install#where-declarations-appear).
+</ResponseField>
+
+<ResponseField name="--accept-mcp" type="boolean">
+  Approve the [MCP server configuration](/cli/install#mcp-servers) this operation would write, without prompting.
+
+  `remove` accepts it for the same reason `add` and `install` do: a removal that has to resolve the facets you are **keeping** re-enters the full install pipeline, and those facets' declarations may need approval. Without this flag such a removal has no way to finish non-interactively.
+
+  It does not authorize an [asset takeover](/cli/install#taking-over-an-existing-file) or resolve a name collision.
 </ResponseField>
 
 ## Exit codes
@@ -35,7 +43,7 @@ facet remove viper-plans rezi
 | Code | Meaning                                                                              |
 | ---- | ------------------------------------------------------------------------------------ |
 | `0`  | Removal succeeded, or all requested names were already absent from `facets.json` (no-op). Names still declared under the lock are removed together; names already gone are ignored. |
-| `1`  | Failed — no names given, no `facets.json`, no adapter connected in a non-interactive shell, an unresolved [name collision](/cli/install#name-collisions), a cancelled resolution, or an install failure. Nothing is modified unless the failure happened mid-write, in which case the journal rolls it back. |
+| `1`  | Failed — no names given, no `facets.json`, no adapter connected in a non-interactive shell, an unresolved [name collision](/cli/install#name-collisions), a cancelled resolution, [MCP configuration awaiting approval](/cli/install#in-ci-and-other-non-interactive-runs) or declined, a selected adapter that [cannot configure MCP servers](/cli/install#adapters-that-cannot-configure-mcp-servers), an unparseable native tool config, or an install failure. Nothing is modified unless the failure happened mid-write, in which case the journal rolls it back. |
 
 ## What it does
 
@@ -44,22 +52,26 @@ facet remove viper-plans rezi
     A missing or invalid manifest fails before any change — and before adapter discovery, so you get the manifest error rather than "no adapters installed".
   </Step>
   <Step title="Connect an adapter">
-    Removal deletes assets from every connected adapter, so it needs one just like [`facet add`](/cli/add) does. A project with none opens the picker in a terminal and fails in CI. This happens for every request, including one whose names all look undeclared: only the commit, holding the project lock, can know whether that is still true.
+    Removal deletes assets and MCP server entries from every connected adapter, so it needs one just like [`facet add`](/cli/add) does. A project with none opens the picker in a terminal and fails in CI. This happens for every request, including one whose names all look undeclared: only the commit, holding the project lock, can know whether that is still true. If the facets you are keeping still declare MCP servers, every selected adapter must also be able to [configure them](/cli/install#adapters-that-cannot-configure-mcp-servers).
   </Step>
   <Step title="Commit">
     Delegate to the [install pipeline](/specification/install) with the removals delta. Removal is [receipt-driven](/specification/commit#drift-removal); when your machine's receipt accounts for the facets you are keeping, their lockfile entries are [refined in place rather than re-fetched](/specification/commit#removal-only-short-circuit) and nothing goes over the network; the manifest, lockfile, and receipt are [written together](/specification/commit#transactional-tri-write).
 
     Deletion is keyed by the name each asset was **materialized** under, not by the facet that owned it. A name another declared facet still claims is kept, so removing a facet never deletes an asset that has since transferred to a different one. Assets you [omitted](/specification/materialization#dispositions) were never written, so there is nothing to delete for them. Only files your machine's receipt records are deleted: if this machine never installed the facet — you pulled a teammate's `facets.lock` and never ran an install — removing it updates `facets.json` and `facets.lock`, leaves the files alone, and says so. Clean those up by hand; nothing tracks them.
+
+    MCP servers follow the same rule. An effective server entry is deleted only when your receipt records that this machine configured it **and** no facet you are keeping still claims that identity. The complete entry is removed from every selected adapter, and the summary names the server and the adapters it left. An entry the receipt never claimed — one you or a teammate wrote by hand — is never deleted just because a facet, an alias, or a lockfile entry disappeared. Servers you omitted were never configured, so there is nothing to delete for them either.
   </Step>
   <Step title="On any failure">
     The journal rolls back all changes. Nothing is written ahead of success.
   </Step>
 </Steps>
 
-Removing a facet discards the materialization overrides recorded for it. Overrides on the facets that remain are durable and are **not** reverted, even if the removal frees the name they were working around — undoing them is a decision, so it stays yours. Delete the `materialization` block from `facets.json` and re-run [`facet install`](/cli/install) to go back to published names.
+Removing a facet discards the materialization overrides recorded for it, including its `servers` group. Overrides on the facets that remain are durable and are **not** reverted, even if the removal frees the name they were working around — undoing them is a decision, so it stays yours. Delete the `materialization` block from `facets.json` and re-run [`facet install`](/cli/install) to go back to published names.
 
 <Note>
-Removal does not re-fetch a facet it is keeping. When your machine's receipt already accounts for every facet you are keeping, removal completes with a cold cache and an unreachable registry. It falls back to the [full install pipeline](/specification/commit#removal-only-short-circuit) when local state cannot answer — no lockfile at all, a kept facet that was never locked, one whose entry drifted, a collision already recorded among the facets you are keeping, a name a removed facet shared with one you are keeping, a receipt that is absent, corrupt, or path-mismatched, a kept facet your receipt does not record or does not match, or manifest intent the lockfile does not record. In those cases the removal materializes what you are keeping and only then records ownership of it, so it needs the content: reachable, it succeeds; fully offline, it fails rather than deleting files nothing proves this machine wrote. That fallback is also what can surface a name collision that was never resolved: in a terminal you get the same resolver [`facet install`](/cli/install#name-collisions) uses; in CI it fails with the report.
+Removal does not re-fetch a facet it is keeping. When your machine's receipt already accounts for every facet you are keeping, removal completes with a cold cache and an unreachable registry. It falls back to the [full install pipeline](/specification/commit#removal-only-short-circuit) when local state cannot answer — no lockfile at all, a kept facet that was never locked, one whose entry drifted, a collision already recorded among the facets you are keeping, a name a removed facet shared with one you are keeping, a receipt that is absent, corrupt, or path-mismatched, a kept facet your receipt does not record or does not match, manifest intent the lockfile does not record, or a receipt predating MCP configuration claims. In those cases the removal materializes what you are keeping and only then records ownership of it, so it needs the content: reachable, it succeeds; fully offline, it fails rather than deleting files nothing proves this machine wrote.
+
+That fallback is also what can surface work a plain removal would never do: an unresolved name collision (in a terminal you get the same resolver [`facet install`](/cli/install#name-collisions) uses; in CI it fails with the report), and [MCP approval](/cli/install#mcp-servers) for the declarations of the facets you are keeping. Server configuration claims are carried forward offline only when your receipt proves each remaining claim is still anchored to the same facet integrity; a receipt written before configuration claims existed proves nothing about them and forces the full path rather than inventing ownership.
 </Note>
 
 ## See also

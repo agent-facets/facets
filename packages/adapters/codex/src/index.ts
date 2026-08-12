@@ -21,6 +21,7 @@ import {
 } from '@agent-facets/adapter'
 import { type } from 'arktype'
 import { parse as parseToml, stringify as stringifyToml } from 'smol-toml'
+import { codexMcpServers } from './mcp-servers.ts'
 
 /**
  * Codex per-asset metadata schema.
@@ -67,6 +68,8 @@ const CodexMetadataSchema = type({
 export default defineAdapter({
   name: 'codex',
   supportsInstall: true,
+
+  mcpServers: codexMcpServers,
 
   buildAssetMetadata(data) {
     const result = CodexMetadataSchema(data)

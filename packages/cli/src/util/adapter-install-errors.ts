@@ -18,7 +18,7 @@ import { quoteShellArg } from './shell-quote.ts'
  * fix lines. Targets are user/source-derived (receipt specifiers, local
  * paths, package names) and must paste back into a shell safely.
  */
-function adapterInstallCommand(target: string): string {
+export function adapterInstallCommand(target: string): string {
   return `facet adapter install ${quoteShellArg(target)}`
 }
 
@@ -265,6 +265,12 @@ function describeVerifyFailure(
         what: `adapter "${failure.adapter}" does not implement the adapter contract`,
         detail: failure.detail,
         fix: 'rebuild the adapter with the @agent-facets/adapter SDK factory (defineAdapter)',
+      }
+    case 'invalid-capability':
+      return {
+        what: `adapter "${failure.adapter}" declares adapter API ${failure.api} but does not implement it`,
+        detail: failure.detail,
+        fix: 'declare "mcpServers" as false or a complete { prepare, apply } capability, then rebuild the adapter',
       }
   }
 }

@@ -21,6 +21,25 @@ An adapter is a small TypeScript library. You write one file, build it, and inst
 >   (`{ ok: true, … }` or `{ ok: false, failure }`) — expected failures are
 >   values, never thrown. Without these the adapter is metadata-only and
 >   hidden from the install picker.
+> - `mcpServers` (**required**) — `false`, or a complete MCP server capability
+>   `{ prepare, apply }`. It is a union, not a boolean plus optional methods,
+>   so a partial capability cannot be expressed. `false` is a legitimate
+>   permanent answer; the adapter then blocks any project with active MCP
+>   declarations rather than silently skipping them.
+>   - `prepare(request)` is **read-only**: parse your tool's project config,
+>     classify every desired server (`absent` / `equivalent` / `divergent`,
+>     each with `ownership`, plus `obsolete-owned`), disclose every document
+>     the change could touch in `documentPaths`, and return an opaque `plan`.
+>     Write nothing — not even when the document does not exist yet.
+>   - `apply({ plan })` performs one atomic update per document and returns
+>     `unchanged` or `changed` + `changedPaths` (a subset of what you
+>     disclosed). There is **no** inverse method: the engine journals byte
+>     preimages and restores them itself.
+>   - Ownership comes from `previouslyOwnedNames` in the request. Never infer
+>     it from the document. `name` is already the effective name.
+>   - Classify as `divergent` whenever you cannot *prove* semantic equality.
+>   - Preserve unrelated settings and any server entry that is neither desired
+>     nor owned.
 >
 > Use the SDK's skill-bundle helpers (`installSkillBundle` /
 > `readSkillBundle` / `deleteSkillBundle`) for the multi-file skill variant,
@@ -30,13 +49,16 @@ An adapter is a small TypeScript library. You write one file, build it, and inst
 > `'skill' | 'agent' | 'command'`.
 >
 > `defineAdapter()` stamps the adapter API version (`apiVersion`, currently
-> `0.1`) onto the returned adapter — do NOT set it yourself; the input type
-> excludes it. `0.1` identifies the tagged request/result method contract;
-> the earlier positional contract (`0.0`) is unsupported by a `0.1` CLI and
-> must be migrated. When publishing to npm, the published `package.json`
-> MUST declare `"facetAdapterApiVersion": "0.1"` (the canonical constants
-> live at `@agent-facets/adapter/api-version`) or the CLI will never select
-> the release.
+> `0.2`) onto the returned adapter — do NOT set it yourself; the input type
+> excludes it, and a value supplied through untyped input is ignored. `0.2`
+> identifies the tagged request/result asset contract plus the `mcpServers`
+> capability; `0.1` is the asset-only contract; the earlier positional
+> contract (`0.0`) is unsupported. The current CLI supports exactly
+> `{0.1, 0.2}` — membership is exact, never ordering or proximity. When
+> publishing to npm, the published `package.json` MUST declare
+> `"facetAdapterApiVersion": "0.2"` (the canonical constants live at
+> `@agent-facets/adapter/api-version`) and it MUST match what your bundle
+> stamps at runtime, or verification fails.
 >
 > Build with `tsdown`/`tsc`, then install:
 >
@@ -52,12 +74,18 @@ An adapter is a small TypeScript library. You write one file, build it, and inst
 
 ## How an adapter fits in
 
-When you run `facet install`, the CLI resolves each facet's assets and hands the ones the project wants materialized to every installed adapter. The adapter decides **where** on disk each asset goes and **how** it's formatted, so the target tool picks it up. That's the entire job: translate a facet asset into files your tool understands.
+When you run `facet install`, the CLI resolves each facet's contributions and hands the ones the project wants materialized to every installed adapter. The adapter decides **where** on disk each asset goes and **how** it's formatted, so the target tool picks it up.
 
-An adapter implements a small contract from the SDK. Two methods matter most:
+There are two halves to the job:
+
+- **Assets** — translate a facet's skills, agents, and commands into files your tool reads. You own the layout.
+- **MCP servers** — translate portable server declarations into your tool's own project configuration. You own the format, and you edit a file the user may already be using.
+
+An adapter implements a small contract from the SDK:
 
 - `buildAssetMetadata` validates the per-asset metadata an author put in `facet.json` (the `adapters.<name>` block) and enriches it with your defaults.
 - `installAsset` writes the asset to disk. Its siblings `readAsset` and `deleteAsset` complete the lifecycle.
+- `mcpServers` declares whether you configure MCP servers, and if so, how. It is **required** — see [MCP server configuration](#mcp-server-configuration).
 
 ## Scaffold the package
 
@@ -109,6 +137,10 @@ function skillPaths(name: string): SkillBundlePaths {
 export default defineAdapter({
   name: 'my-tool',
   supportsInstall: true,
+
+  // Required. `false` is a complete, permanent answer: this adapter does not
+  // configure MCP servers. See "MCP server configuration" below to implement it.
+  mcpServers: false,
 
   // Validate the author's `adapters.my-tool` block at build time.
   // Returns errors if it's invalid; the CLI writes front matter itself.
@@ -186,7 +218,9 @@ Everything an adapter can implement, from [`@agent-facets/adapter`](https://gith
 </ResponseField>
 
 <ResponseField name="apiVersion" type="string">
-  The adapter API contract the adapter was built against — **stamped automatically by `defineAdapter()`** (currently `0.1`, the tagged request/result contract). You cannot set it in your definition; the input type excludes it. The CLI refuses to load adapters whose declared API it doesn't support, so an adapter built against the earlier positional contract (`0.0`) must be rebuilt against a `0.1` SDK release and reinstalled.
+  The adapter API contract the adapter was built against — **stamped automatically by `defineAdapter()`** (currently `0.2`: the tagged request/result asset contract plus the MCP server capability). You cannot set it in your definition; the input type excludes it, and a value forced through untyped input is ignored rather than honored.
+
+  The CLI classifies a declared API as missing, malformed, unsupported, or supported, and supported means **membership in an explicit set** — currently `{0.1, 0.2}`. Compatibility is never inferred from the CLI version, the SDK package version, your package version, or semver ordering, and numeric proximity confers nothing: `0.0` is not "nearly `0.1`". An adapter built against the positional `0.0` contract must be rebuilt and reinstalled.
 </ResponseField>
 
 <ResponseField name="buildAssetMetadata(data)" type="Validated<AdapterMetadata>" required>
@@ -195,6 +229,12 @@ Everything an adapter can implement, from [`@agent-facets/adapter`](https://gith
 
 <ResponseField name="supportsInstall" type="boolean">
   Set to `true` only when all three I/O methods below are implemented. It makes the adapter selectable in the install picker; a metadata-only adapter omits it and stays hidden.
+</ResponseField>
+
+<ResponseField name="mcpServers" type="false | McpServerCapability" required>
+  Whether this adapter configures MCP servers, and how. See [MCP server configuration](#mcp-server-configuration) for the full capability. It is a **union**, deliberately: a boolean plus optional methods could disagree with itself, so a partially implemented capability is unrepresentable rather than merely discouraged.
+
+  The field is MCP-specific. A future project-configuration feature gets its own capability rather than widening this one.
 </ResponseField>
 
 <ResponseField name="installAsset(request: InstallAssetRequest)" type="Promise<InstallAssetResult>">
@@ -212,8 +252,75 @@ Everything an adapter can implement, from [`@agent-facets/adapter`](https://gith
 Every request carries `scope` (`'system'`, `'user'`, or `'project'` — decide your on-disk layout per scope) and `name`, tagged by `assetType` (`'skill'`, `'agent'`, or `'command'`). `name` is always the effective name (see above); by the time a request reaches you the effective set is guaranteed collision-free, so you never have to arbitrate between two assets wanting one path. Expected failures are structured values (`not-found`, `invalid-companion-path`, `unsupported-scope`, `not-implemented`, `io-failed`), never thrown errors.
 
 <Tip>
-  You can ship a **metadata-only** adapter: implement just `name` and `buildAssetMetadata`, and omit `supportsInstall`. It validates manifest config during builds without materializing anything  -- useful while you're still figuring out a tool's on-disk layout.
+  You can ship a **metadata-only** adapter: implement just `name`, `buildAssetMetadata`, and `mcpServers: false`, and omit `supportsInstall`. It validates manifest config during builds without materializing anything  -- useful while you're still figuring out a tool's on-disk layout.
 </Tip>
+
+## MCP server configuration
+
+A facet can declare [MCP servers](/specification/manifest#mcp-server-declarations). Adapter API `0.2` adds one capability for turning those portable declarations into your tool's own project configuration.
+
+```ts
+mcpServers: false | { prepare, apply }
+```
+
+`false` says your tool has no MCP configuration to write. That is a complete answer, not a stub: a project with no active declarations installs normally, and a project with them fails with a clear message naming your adapter.
+
+<Note>
+Declarations come from `@agent-facets/protocol` — import the type, never restate its shape. One portable declaration reaches every adapter; you translate it, rather than copying another tool's file format.
+</Note>
+
+### Prepare, then apply
+
+The capability is deliberately split, and both halves operate on the **complete** desired set rather than one server at a time.
+
+<ResponseField name="prepare(request)" type="Promise<PrepareResult>" required>
+  Strictly read-only. Parse your tool's project document **once**, work out the whole change, and write nothing — including when the document does not exist yet. Describe the prospective file instead of creating it.
+
+  The request carries `projectRoot`, the complete `desired` contribution set, and `previouslyOwnedNames`: the effective names the engine has verified this project owns. Take ownership from that list only. Never infer it from the document, a naming convention, or a marker comment.
+
+  Return structured `outcomes` — one per key — using `absent`, `equivalent`, or `divergent` (each carrying `ownership: 'tracked' | 'untracked'`), plus `obsolete-owned` (carrying `occupancy`) for an owned entry the desired set no longer names. Also return `documentPaths` (every document this change could affect, complete and non-empty) and an opaque `plan`.
+
+  A parse or validation failure is a **value**, not a throw: `io-failed`, `parse-failed`, `validation-failed`, or `conflict`. The document must be left byte-for-byte unchanged.
+</ResponseField>
+
+<ResponseField name="apply({ plan })" type="Promise<ApplyResult>" required>
+  Consume the plan and perform **one atomic update per document**. Return `unchanged`, or `changed` with `changedPaths`. Every changed path MUST have been disclosed by `prepare` — the engine treats an undisclosed write as a contract violation, because it journaled preimages only for what you disclosed.
+
+  A handled failure must leave the document unchanged.
+</ResponseField>
+
+The plan is **opaque**. The engine stores it and hands it back; it never inspects it and never edits your tool's file itself.
+
+### Why there is no inverse method
+
+You are never asked to undo your own edit. Before applying a plan the engine captures the exact bytes of every document you disclosed and journals a byte-for-byte restore. Rollback therefore preserves comments, formatting, and member order without depending on adapter code being correct a second time, or on a semantic inverse reproducing a document it never parsed.
+
+This is also why `documentPaths` must be complete and must include a file that does not exist yet: "absent" is a restorable preimage too.
+
+### Equality decides whether anything is written
+
+You compute equality, because you are the only component that knows your tool's schema. Compare the existing entry against **your own native rendering** of the desired declaration:
+
+- Comments, whitespace, member ordering, and omitted-versus-empty optional collections are **not** differences.
+- Anything that changes the launch or connection behavior **is** a difference.
+- If you cannot *prove* equality, report `divergent`. Failing safe means an unnecessary rewrite; guessing means silently keeping a server that behaves differently from what the user approved.
+
+An `equivalent` entry is adopted with no write at all.
+
+### What you must preserve
+
+You are editing a file the user owns and may already be using:
+
+- Unrelated settings keep their semantic values.
+- A server entry that is neither desired nor owned is left **completely** untouched.
+- For an owned entry, native fields outside the portable model (a timeout, say) survive where your format allows.
+- Use a syntax-aware edit and an atomic write. Semantic preservation is mandatory; comment and formatting preservation is best-effort and should be maximized.
+
+Write **project-scoped configuration only**. Never create or modify a user-wide or system-wide tool file. For reference, the first-party adapters use `.mcp.json` (Claude Code), `opencode.jsonc` — falling back to an existing `opencode.json`, creating `opencode.jsonc` when neither exists (OpenCode), and `.codex/config.toml` (Codex).
+
+<Warning>
+Configuring a server is not running one. Never launch the command, connect to the URL, health-check, collect credentials, or perform OAuth. Authentication belongs to the tool, after the configuration exists.
+</Warning>
 
 ## Bundle it
 
@@ -266,7 +373,9 @@ facet add cowsay            # installs into every connected adapter, yours inclu
 
 Check that files landed where your path helpers put them. From here, harden `buildAssetMetadata` with a real schema and flesh out the on-disk layout your tool expects.
 
-`facet adapter list` also shows each adapter's declared adapter API and whether the CLI supports it. If a CLI update ever changes the supported API set, rebuild your adapter against a matching SDK release and reinstall it — the list output prints the exact reinstall command next to any incompatible entry.
+`facet adapter list` also shows each adapter's declared adapter API and whether the CLI supports it. When a CLI release changes the supported API set, rebuild your adapter against a matching SDK release and reinstall it — the list output prints the exact reinstall command next to any incompatible entry.
+
+Note that `supported` answers whether the adapter **loads**, not whether it can configure MCP servers. An adapter declaring `0.1`, or `0.2` with `mcpServers: false`, lists as supported and works normally — it only blocks a project that has active MCP declarations.
 
 ## Publish to npm
 
@@ -274,11 +383,17 @@ Installing by bare name (`facet adapter install my-adapter`) resolves through np
 
 ```json package.json
 {
-  "facetAdapterApiVersion": "0.1"
+  "facetAdapterApiVersion": "0.2"
 }
 ```
 
-Declare the adapter API version your SDK release stamps at runtime (currently `0.1`). The CLI skips releases where this field is missing, malformed, or unsupported — a release without it is never selected, and a field that disagrees with the runtime `apiVersion` stamped by `defineAdapter()` fails verification after download. A CLI that supports only `0.1` skips releases still declaring the earlier positional `0.0`, and an older `0.0` CLI conversely keeps selecting your highest compatible `0.0` release — so publish your `0.1` release before requiring a `0.1`-only CLI. The canonical values are exported from `@agent-facets/adapter/api-version` (`ADAPTER_API_VERSION` and `ADAPTER_API_VERSION_PACKAGE_FIELD`), so release tooling can inject the field instead of hardcoding it.
+Declare the adapter API version your SDK release stamps at runtime (currently `0.2`). The CLI skips releases where this field is missing, malformed, or unsupported — a release without it is never selected, and a field that disagrees with the runtime `apiVersion` stamped by `defineAdapter()` fails verification after download.
+
+Selection is by **package version** among compatible releases; the supported API tokens are an unordered set, so `0.2` is not preferred over `0.1` — the highest satisfying release that declares *either* wins. The npm `latest` dist-tag is never consulted, so you never need to move, pin, or withhold it for compatibility.
+
+That is what makes publishing safe in either order for consumers: a CLI supporting only `{0.1}` keeps selecting your highest `0.1` release and ignores the `0.2` one. The exception is an **exact** request (`facet adapter install my-adapter@1.4.0`), which is never substituted — it fails if that specific release is incompatible with the CLI asking.
+
+The canonical values are exported from `@agent-facets/adapter/api-version` (`ADAPTER_API_VERSION`, `ADAPTER_API_VERSION_ASSETS_ONLY`, and `ADAPTER_API_VERSION_PACKAGE_FIELD`), so release tooling can inject the field instead of hardcoding it.
 
 ## Share it upstream
 

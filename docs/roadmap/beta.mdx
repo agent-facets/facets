@@ -4,7 +4,7 @@ sidebarTitle: Beta
 description: Goals for the public beta
 ---
 
-The open beta begins when the features below ship. The [alpha](/roadmap/alpha) already covers the full author → publish → install loop; the beta rounds out the ecosystem.
+The open beta begins when the features below ship. The [alpha](/roadmap/alpha) already covers the full author → publish → install loop, plus MCP server configuration; the beta rounds out the ecosystem with an upgrade flow, registry introspection, and composition.
 
 ## Planned
 
@@ -20,9 +20,9 @@ The open beta begins when the features below ship. The [alpha](/roadmap/alpha) a
   A facet that declares `facets: [...]` composes text from other published facets. The manifest format reserves the field today; installs reject it until server-side composition ships.
 </ResponseField>
 
-<ResponseField name="MCP server support" type="format">
-  Facets will be able to reference MCP servers so a single install can wire up tools as well as text. The manifest reserves a `servers` field today; declarations warn at install and are not materialized.
-</ResponseField>
+<Note>
+  **MCP server support has shipped.** A facet can declare concrete [MCP servers](/specification/manifest#mcp-server-declarations), and installing one configures them in every connected tool after you approve them. See [`facet install`](/cli/install#mcp-servers).
+</Note>
 
 ## Hardening
 

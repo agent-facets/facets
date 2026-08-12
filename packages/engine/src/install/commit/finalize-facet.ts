@@ -1,7 +1,9 @@
-import type { FacetManifest, LockfileSource, ResolvedFacetManifest } from '@agent-facets/protocol'
+import type { AuthoredServer, FacetManifest, LockfileSource, ResolvedFacetManifest } from '@agent-facets/protocol'
+import { compareCodeUnits } from '@agent-facets/protocol'
 import { loadManifest, resolvePrompts } from '../../loaders/facet.ts'
 import { getRegistryBaseUrl } from '../../registry/index.ts'
 import type { Source } from '../../sources/facet/types.ts'
+import { ownEntry } from '../own-entry.ts'
 import type { RunInstallFailure, StageEvent } from '../types.ts'
 
 /**
@@ -16,7 +18,7 @@ export type LoadFacetContentResult =
       ok: true
       manifest: FacetManifest
       resolved: ResolvedFacetManifest
-      serversDeclared: ReadonlyArray<string>
+      servers: ReadonlyArray<AuthoredServer>
     }
   | { ok: false; failure: RunInstallFailure }
 
@@ -60,7 +62,15 @@ export async function loadFacetContent(
     return { ok: false, failure: { code: 'COMPOSITION_REJECTED', facet: facetName } }
   }
 
-  const serversDeclared = rawManifest.data.servers ? Object.keys(rawManifest.data.servers) : []
+  // Deterministic authored-name order, so the planner's input — and every
+  // report derived from it — does not inherit JSON member order.
+  const declarations = rawManifest.data.servers ?? {}
+  const servers: AuthoredServer[] = Object.keys(declarations)
+    .sort(compareCodeUnits)
+    .flatMap((name) => {
+      const declaration = ownEntry(declarations, name)
+      return declaration === undefined ? [] : [{ name, declaration }]
+    })
 
   const resolved = await resolvePrompts(rawManifest.data, sourceDir)
   if (!resolved.ok) {
@@ -70,7 +80,7 @@ export async function loadFacetContent(
     }
   }
 
-  return { ok: true, manifest: rawManifest.data, resolved: resolved.data, serversDeclared }
+  return { ok: true, manifest: rawManifest.data, resolved: resolved.data, servers }
 }
 
 /**

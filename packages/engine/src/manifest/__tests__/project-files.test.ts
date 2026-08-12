@@ -26,7 +26,7 @@ describe('loadProjectManifest', () => {
     expect(result.existed).toBe(false)
     expect(result.manifest.facets).toEqual({})
     // A manifest this system creates is never legacy.
-    expect(result.manifest.document.manifestVersion).toBe(0.1)
+    expect(result.manifest.document.manifestVersion).toBe(0.2)
   })
 
   test('reads and normalizes a legacy unversioned manifest', () => {
@@ -42,7 +42,7 @@ describe('loadProjectManifest', () => {
     writeFileSync(
       join(projectRoot, 'facets.json'),
       JSON.stringify({
-        manifestVersion: 0.1,
+        manifestVersion: 0.2,
         facets: {
           a: '1.*',
           b: { source: 'github:a/b#main', materialization: { skills: { review: { kind: 'omitted' } } } },
@@ -51,7 +51,7 @@ describe('loadProjectManifest', () => {
     )
     const result = loadProjectManifest(projectRoot)
     if (!result.ok) expect.unreachable()
-    expect(result.manifest.loadedVersion).toBe(0.1)
+    expect(result.manifest.loadedVersion).toBe(0.2)
     expect(result.manifest.facets.a).toEqual({ source: '1.*', overrides: undefined })
     expect(result.manifest.facets.b?.source).toBe('github:a/b#main')
     expect(result.manifest.facets.b?.overrides?.skills?.review).toEqual({ kind: 'omitted' })
@@ -75,13 +75,13 @@ describe('loadProjectManifest', () => {
   // An unsupported version must reach the caller as data, not prose: the
   // remedy (upgrade the CLI) differs from a malformed document's.
   test('an unsupported manifestVersion carries the observed and supported versions', () => {
-    writeFileSync(join(projectRoot, 'facets.json'), '{"manifestVersion":0.2,"facets":{}}')
+    writeFileSync(join(projectRoot, 'facets.json'), '{"manifestVersion":0.3,"facets":{}}')
     const result = loadProjectManifest(projectRoot)
     if (result.ok) expect.unreachable()
     if (result.reason !== 'invalid') expect.unreachable()
     if (result.failure.code !== 'unsupported-manifest-version') expect.unreachable()
-    expect(result.failure.observed).toBe(0.2)
-    expect(result.failure.supported).toEqual([0.1])
+    expect(result.failure.observed).toBe(0.3)
+    expect(result.failure.supported).toEqual([0.1, 0.2])
   })
 
   // JSON has one number type and no coercion at the dispatch boundary, so
@@ -96,7 +96,7 @@ describe('loadProjectManifest', () => {
     if (result.reason !== 'invalid') expect.unreachable()
     if (result.failure.code !== 'unsupported-manifest-version') expect.unreachable()
     expect(result.failure.observed).toBeUndefined()
-    expect(result.failure.supported).toEqual([0.1])
+    expect(result.failure.supported).toEqual([0.1, 0.2])
   })
 
   test('an expanded entry in an unversioned manifest is rejected, not promoted', () => {
@@ -176,7 +176,7 @@ describe('writeProjectManifest', () => {
     applyDesiredFacets(manifest.document, { v: entry('github:a/b#main') })
     writeProjectManifest(projectRoot, manifest.document)
     const raw = read()
-    expect(JSON.parse(raw)).toEqual({ manifestVersion: 0.1, facets: { v: 'github:a/b#main' } })
+    expect(JSON.parse(raw)).toEqual({ manifestVersion: 0.2, facets: { v: 'github:a/b#main' } })
     expect(raw).toContain('  "facets"')
   })
 
