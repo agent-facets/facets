@@ -1,6 +1,6 @@
 ## Purpose
 
-Defines the adapter contract for translating portable MCP server declarations into safe, tool-native project configuration. It ensures adapters can plan and apply changes atomically, preserve unrelated configuration, compare native entries semantically, restore prior state after failure, and configure servers without launching or contacting them.
+Defines the adapter contract for translating portable MCP server declarations into safe, tool-native project configuration. It ensures adapters can plan changes without mutation, preserve unrelated configuration, compare native entries semantically, and describe exact document transitions the system commits atomically and can restore after failure, all without launching or contacting a server.
 
 ## Requirements
 
@@ -27,7 +27,7 @@ An adapter that supports MCP servers SHALL translate the complete desired projec
 
 The first-party adapters SHALL reconcile project-scoped MCP server maps at their tools' documented project locations. Claude Code SHALL use `.mcp.json`. Codex SHALL use trusted-project `.codex/config.toml` and its project MCP server tables.
 
-OpenCode merges `opencode.json` and `opencode.jsonc`, so the OpenCode adapter SHALL treat both as one configuration and SHALL inspect and disclose both. It SHALL classify occupancy and equality against the merged per-key view in which a key defined in `opencode.jsonc` wins. It SHALL create a new entry in `opencode.jsonc` when that document exists, otherwise in an existing `opencode.json`, and SHALL create `opencode.jsonc` when neither exists. It SHALL update an existing entry in the layer where that key currently wins. When one owned key is defined in both layers, it SHALL update the `opencode.jsonc` definition and remove the shadowed `opencode.json` definition in the same change. It SHALL remove an obsolete owned key from every layer that defines it. It SHALL leave entries it neither desires nor owns untouched in both layers.
+OpenCode merges `opencode.json` and `opencode.jsonc`, so the OpenCode adapter SHALL treat both as one configuration and SHALL inspect both, planning a change only for the layers it actually changes. It SHALL classify occupancy and equality against the merged per-key view in which a key defined in `opencode.jsonc` wins. It SHALL create a new entry in `opencode.jsonc` when that document exists, otherwise in an existing `opencode.json`, and SHALL create `opencode.jsonc` when neither exists. It SHALL update an existing entry in the layer where that key currently wins. When one owned key is defined in both layers, it SHALL update the `opencode.jsonc` definition and remove the shadowed `opencode.json` definition in the same change. It SHALL remove an obsolete owned key from every layer that defines it. It SHALL leave entries it neither desires nor owns untouched in both layers.
 
 #### Scenario: Claude Code uses its project server map
 
@@ -38,7 +38,7 @@ OpenCode merges `opencode.json` and `opencode.jsonc`, so the OpenCode adapter SH
 
 - **WHEN** both `opencode.jsonc` and `opencode.json` exist and a desired server is absent from both
 - **THEN** the OpenCode adapter SHALL create the entry in the `mcp` map of `opencode.jsonc`
-- **AND** it SHALL disclose both documents
+- **AND** it SHALL NOT plan a change for the unchanged `opencode.json`
 
 #### Scenario: OpenCode falls back to existing JSON
 
@@ -76,15 +76,26 @@ OpenCode merges `opencode.json` and `opencode.jsonc`, so the OpenCode adapter SH
 - **WHEN** any adapter materializes MCP configuration
 - **THEN** no user-wide or system-wide tool configuration file SHALL be created or modified
 
-### Requirement: The complete MCP change is prepared without mutation
+### Requirement: The complete MCP change is planned without mutation
 
-A supporting adapter SHALL be able to inspect its native project configuration and compute the complete desired MCP server change without modifying any file. Preparation SHALL report every affected document and structured per-server outcomes that distinguish absent entries, equivalent entries, divergent entries, and occupied entries whose effective identities are or are not already owned. A parse or native validation failure SHALL leave the document unchanged.
+A supporting adapter SHALL be able to inspect its native project configuration and compute the complete desired MCP server change without modifying any file. A plan SHALL report structured per-server outcomes that distinguish absent entries, equivalent entries, divergent entries, and occupied entries whose effective identities are or are not already owned. A parse or native validation failure SHALL leave the document unchanged.
 
-#### Scenario: Preparation reports complete outcomes
+A plan SHALL report either that nothing needs writing, or the complete set of document changes that realizes the desired state. Each planned change SHALL name an absolute path, the exact state that document was observed in — including the absence of a document that does not yet exist — and the exact bytes to commit. A document the plan does not change SHALL NOT appear in it: inspecting a file is not a reason to own it, and a file this run leaves alone is one no later restoration may overwrite.
+
+#### Scenario: A plan reports complete outcomes
 
 - **WHEN** desired servers include one absent entry, one equivalent entry, and one divergent entry
-- **THEN** the adapter SHALL report all three outcomes in one prepared result
-- **AND** it SHALL identify every native document the change can affect
+- **THEN** the adapter SHALL report all three outcomes in one plan
+
+#### Scenario: An inspected but unchanged document is not part of the plan
+
+- **WHEN** an adapter inspects several configuration layers and only one needs writing
+- **THEN** the plan SHALL contain a change for that layer alone
+
+#### Scenario: A planned change states what it was computed from
+
+- **WHEN** a plan would write a document that already exists
+- **THEN** that change SHALL carry the exact state the document was observed in
 
 #### Scenario: Invalid native document fails read-only
 
@@ -92,47 +103,42 @@ A supporting adapter SHALL be able to inspect its native project configuration a
 - **THEN** preparation SHALL return structured failure data
 - **AND** the document SHALL remain byte-for-byte unchanged
 
-#### Scenario: Preparation does not write a new document
+#### Scenario: Planning does not write a new document
 
 - **WHEN** the target document does not yet exist
-- **THEN** preparation SHALL describe the prospective document without creating it
+- **THEN** the plan SHALL describe the prospective document without creating it
+- **AND** it SHALL record the document's absence as the state the change was computed from
 
-### Requirement: MCP changes are applied atomically per native document
+### Requirement: A planned MCP change commits as one batch
 
-A supporting adapter SHALL apply a prepared complete server set as one atomic update to each affected native document. A handled parse, validation, conflict, or write failure SHALL leave that document unchanged. A desired state already present semantically SHALL perform no write. Expected failures SHALL be returned as structured values rather than requiring callers to parse error messages.
+A planned complete server set SHALL commit as one batch across every document it touches: either every planned document change lands, or none of them is left behind. A desired state already present semantically SHALL plan no write at all. Expected failures SHALL be returned as structured values rather than requiring callers to parse error messages.
 
-A prepared plan SHALL carry the exact prior text of every document it would write, including the absence of a document that does not yet exist. Immediately before writing, application SHALL re-read each such document and compare it with that recorded prior text. When any of them differs, application SHALL write nothing at all and SHALL return a structured conflict identifying the document. No locking, merging, or rebasing is required: a document another process changed after preparation is reported rather than overwritten.
+Immediately before each document is written, its current state SHALL be compared with the state the plan was computed from. When it differs, nothing SHALL be written and the operation SHALL report a structured concurrency conflict naming the document. No locking, merging, or rebasing is required: a document another process changed after planning is reported rather than overwritten.
 
-Conflicts SHALL be distinguishable by reason, and each reason SHALL carry only the facts that reason has. A concurrent-modification conflict SHALL identify the document it drifted on. A conflict arising because the native format cannot represent the desired state SHALL identify the document and the format-specific detail. An interpolation conflict SHALL identify the server and the offending value and SHALL NOT name a document, because it is decided before any write target is selected. No conflict SHALL carry preformatted display text in place of these fields.
-
-#### Scenario: Concurrent modification is distinguishable from an unrepresentable change
-
-- **WHEN** a caller receives a conflict
-- **THEN** it SHALL be able to tell a document that changed after inspection from a native format that cannot represent the desired state
-- **AND** each SHALL carry the document it concerns
+Adapter conflicts SHALL be distinguishable by reason, and each reason SHALL carry only the facts that reason has. A conflict arising because the native format cannot represent the desired state SHALL identify the document and the format-specific detail. An interpolation conflict SHALL identify the server and the offending value and SHALL NOT name a document, because it is decided before any write target is selected. No conflict SHALL carry preformatted display text in place of these fields.
 
 #### Scenario: Complete server batch commits together
 
-- **WHEN** a prepared change adds, updates, and removes several server entries in one document
+- **WHEN** a planned change adds, updates, and removes several server entries in one document
 - **THEN** the resulting document SHALL contain the complete desired set or the complete prior set
 - **AND** it SHALL NOT expose a handled partial update
 
 #### Scenario: No-op performs no write
 
 - **WHEN** every desired server entry is already semantically equivalent and no owned entry is obsolete
-- **THEN** the adapter SHALL report the document unchanged
+- **THEN** the plan SHALL report the document unchanged
+- **AND** the document's bytes and modification time SHALL be untouched
 
 #### Scenario: Concurrent edit is reported instead of overwritten
 
-- **WHEN** a native document a prepared plan would write differs from the text preparation recorded for it
-- **THEN** application SHALL write no document
-- **AND** it SHALL return a structured conflict identifying that document
+- **WHEN** a native document a plan would write differs from the state the plan was computed from
+- **THEN** no document SHALL be written
+- **AND** the operation SHALL report a structured conflict identifying that document
 
-#### Scenario: Handled write failure preserves prior document
+#### Scenario: An unrepresentable change names the document and the format detail
 
-- **WHEN** a write fails while applying a prepared batch
-- **THEN** the adapter SHALL return structured failure data
-- **AND** the prior native document SHALL remain available unchanged
+- **WHEN** a native format cannot express the desired state
+- **THEN** the adapter SHALL report a conflict carrying the document and its own format-layer detail
 
 ### Requirement: Unrelated native configuration is preserved
 
@@ -222,7 +228,9 @@ The check SHALL NOT depend on state carried by the pattern an adapter supplies, 
 
 ### Requirement: Failed operations restore tool configuration exactly
 
-When a later failure aborts an operation after a native MCP document changed, the system SHALL restore the document's exact prior bytes, including comments, formatting, and member order. Restoration across multiple documents SHALL leave every affected document in its pre-operation state.
+When a later failure aborts an operation after a native MCP document changed, the system SHALL restore the document's exact prior bytes, including comments, formatting, and member order. Restoration across multiple documents SHALL leave every affected document in its pre-operation state. An adapter SHALL NOT be asked to undo its own edit: restoration works from the exact prior state the plan recorded, so it never depends on an adapter reproducing formatting it never saw.
+
+A document the operation did not change SHALL NOT be restored, rewritten, or have its modification time touched.
 
 #### Scenario: Later adapter failure restores earlier document
 

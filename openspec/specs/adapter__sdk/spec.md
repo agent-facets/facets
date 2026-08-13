@@ -1,18 +1,18 @@
 ## Purpose
 
-An adapter is an AI coding tool (OpenCode, Claude Code, Codex, etc.) that wraps an LLM and consumes skills, agents, and commands. Adapter authors use the Adapter SDK to describe how their tool validates per-asset metadata and where/how assets are stored, so the system can validate manifests against specific adapters and delegate all asset I/O to the adapter that owns it.
+An adapter is an AI coding tool (OpenCode, Claude Code, Codex, etc.) that wraps an LLM and consumes skills, agents, and commands. Adapter authors use the Adapter SDK to describe how their tool validates per-asset metadata and where/how assets are stored, so the system can validate manifests against specific adapters and delegate every decision about what should change to the adapter that owns it, while the system performs the writes.
 ## Requirements
 ### Requirement: Adapter authors can define an adapter using the SDK
 
-An adapter author SHALL be able to create an adapter by importing the SDK and calling a factory function with a definition object. The factory SHALL validate the definition shape and return an adapter object. The definition SHALL accept a name, a function to build per-asset adapter metadata, asset install/read/delete methods, and the required `mcpServers` support field.
+An adapter author SHALL be able to create an adapter by importing the SDK and calling a factory function with a definition object. The factory SHALL validate the definition shape and return an adapter object. The definition SHALL accept a name, a function to build per-asset adapter metadata, the required `assets` capability, and the required `mcpServers` capability.
 
-The SDK SHALL expose `0.2` as the canonical adapter API identifier for the tagged asset contract plus the MCP server capability. Every adapter returned by the current factory SHALL carry that identifier in a required, readonly `apiVersion` field. The factory definition SHALL NOT require or accept an author-supplied API identifier, so adapter authors cannot create a conflicting declaration and do not repeat the SDK-owned value. If a value is nonetheless supplied for `apiVersion`, such as through untyped input, the factory SHALL ignore it; the returned adapter SHALL always carry the SDK's canonical identifier and SHALL NOT reflect the author-supplied value.
+The SDK SHALL expose `0.3` as the canonical adapter API identifier for the read-only planning contract: tagged asset planning plus the MCP server planning capability. Every adapter returned by the current factory SHALL carry that identifier in a required, readonly `apiVersion` field. The factory definition SHALL NOT require or accept an author-supplied API identifier, so adapter authors cannot create a conflicting declaration and do not repeat the SDK-owned value. If a value is nonetheless supplied for `apiVersion`, such as through untyped input, the factory SHALL ignore it; the returned adapter SHALL always carry the SDK's canonical identifier and SHALL NOT reflect the author-supplied value.
 
 #### Scenario: Author creates a valid adapter
 
 - **WHEN** an author calls the factory function with a complete definition
 - **THEN** the factory SHALL return a valid adapter object with all provided properties, methods, and capability declaration
-- **AND** the returned adapter SHALL declare the canonical adapter API `0.2`
+- **AND** the returned adapter SHALL declare the canonical adapter API `0.3`
 
 #### Scenario: Author provides an invalid definition
 
@@ -28,17 +28,21 @@ The SDK SHALL expose `0.2` as the canonical adapter API identifier for the tagge
 #### Scenario: Consumer reads the canonical API identifier
 
 - **WHEN** an adapter publisher or compatibility-aware consumer imports the SDK's canonical adapter API identifier
-- **THEN** the exported value SHALL be `0.2`
+- **THEN** the exported value SHALL be `0.3`
 
-### Requirement: The SDK provides default behavior for missing methods
+### Requirement: The SDK refuses an incomplete capability rather than stubbing it
 
-The factory function SHALL provide default behavior for asset methods that an adapter author has omitted. When an adapter author omits `installAsset`, `readAsset`, or `deleteAsset`, the factory SHALL provide a throw-on-call stub in its place so the returned adapter always satisfies the interface shape. This is a defensive runtime check for non-TypeScript consumers; TypeScript consumers receive a compile-time error when asset methods are missing.
+The factory function SHALL reject a capability that is present but incomplete, naming the missing operation. It SHALL NOT substitute a stub: a capability is something a consumer must know about *before* it plans a transaction, so an adapter that appears to support an operation and then refuses it would be discovered only once work had already begun. Declaring a capability as `false` SHALL remain a complete and valid answer.
 
-#### Scenario: Author omits an asset method
+#### Scenario: Author supplies an incomplete capability
 
-- **WHEN** an author calls the factory function without providing one or more of `installAsset`, `readAsset`, or `deleteAsset`
-- **THEN** the factory SHALL return a valid adapter object
-- **AND** the omitted method SHALL throw a clear error when invoked, naming the method that was not implemented
+- **WHEN** an author calls the factory function with a capability object missing one of its operations
+- **THEN** the factory SHALL reject the definition, naming the missing operation
+
+#### Scenario: Author declines a capability outright
+
+- **WHEN** an author declares a capability as `false`
+- **THEN** the factory SHALL return a valid adapter that reports no support for it
 
 ### Requirement: The facet manifest uses "adapters" for per-asset adapter metadata
 
@@ -92,27 +96,26 @@ First-party adapters (for AI coding tools maintained by the project) SHALL be in
 
 An adapter API identifier SHALL use the canonical `MAJOR.MINOR` decimal form without signs, suffixes, build metadata, or leading zeroes other than zero itself. Compatibility-aware consumers SHALL distinguish missing, malformed, unsupported, and supported identifiers. They SHALL determine compatibility by membership in an explicit exact-token support set and SHALL NOT infer compatibility from CLI versions, SDK package versions, adapter package versions, or semantic-version ordering.
 
-Adapter API `0.2` SHALL identify the tagged asset request/result contract plus the MCP server capability. Adapter API `0.1` SHALL continue identifying the tagged asset-only contract. The earlier positional method contract SHALL remain identified by `0.0`. Whether a consumer supports `0.1`, `0.2`, or another exact contract identifier SHALL be determined solely by membership in that consumer's explicit support set; widening the set SHALL NOT change an existing token's meaning. Package metadata and runtime declarations for one adapter release SHALL still agree by exact token.
+Adapter API `0.3` SHALL identify the read-only planning contract. Adapter APIs `0.0`, `0.1`, and `0.2` SHALL remain identifiers of superseded contracts in which the adapter performed its own filesystem writes. Whether a consumer supports an exact contract identifier SHALL be determined solely by membership in that consumer's explicit support set; changing the set SHALL NOT change an existing token's meaning. Package metadata and runtime declarations for one adapter release SHALL still agree by exact token.
 
 #### Scenario: Current exact identifier is compatible
 
-- **WHEN** an adapter declares API `0.2`
-- **AND** the consumer's explicit support set contains `0.2`
+- **WHEN** an adapter declares API `0.3`
+- **AND** the consumer's explicit support set contains `0.3`
 - **THEN** the adapter API SHALL be classified as supported
 
-#### Scenario: Previous tagged identifier remains compatible
+#### Scenario: Previous tagged identifier is unsupported
 
-- **WHEN** an adapter declares API `0.1`
-- **AND** the consumer's explicit support set contains `0.1`
-- **THEN** the adapter API SHALL be classified as supported
-- **AND** the adapter SHALL retain the asset-only `0.1` contract
+- **WHEN** an adapter declares API `0.1` or `0.2`
+- **AND** the consumer's explicit support set does not contain it
+- **THEN** the adapter API SHALL be classified as unsupported
 
 #### Scenario: Superseded positional identifier is unsupported
 
 - **WHEN** an adapter declares the positional-contract API `0.0`
 - **AND** the consumer's explicit support set excludes `0.0`
 - **THEN** the adapter API SHALL be classified as unsupported
-- **AND** numeric proximity to `0.1` SHALL NOT make it compatible
+- **AND** numeric proximity to a supported token SHALL NOT make it compatible
 
 #### Scenario: Different well-formed identifier is unsupported
 
@@ -127,18 +130,18 @@ Adapter API `0.2` SHALL identify the tagged asset request/result contract plus t
 
 #### Scenario: Package and runtime tokens must agree
 
-- **WHEN** an adapter package declares API `0.1` in package metadata but its runtime adapter declares `0.2`
+- **WHEN** an adapter package declares API `0.2` in package metadata but its runtime adapter declares `0.3`
 - **THEN** verification SHALL fail rather than selecting either contract
 
 #### Scenario: API identifier is independent of package versions
 
-- **WHEN** the CLI, an adapter package, or the Adapter SDK package changes semantic version without changing the `0.2` adapter call contract
-- **THEN** the adapter API identifier SHALL remain `0.2`
+- **WHEN** the CLI, an adapter package, or the Adapter SDK package changes semantic version without changing the `0.3` adapter call contract
+- **THEN** the adapter API identifier SHALL remain `0.3`
 - **AND** the package-version change SHALL NOT imply a different adapter API compatibility result
 
 ### Requirement: Adapter authors declare MCP server support as one complete capability
 
-An adapter definition using API `0.2` SHALL declare `mcpServers` as either `false` or a complete MCP server capability. The capability SHALL contain the complete read-only preparation and atomic application contract; support SHALL NOT be representable as a boolean that can disagree with optional operations. The field SHALL be MCP-specific, and future non-asset project-configuration features SHALL use independent capabilities.
+An adapter definition using API `0.3` SHALL declare both `assets` and `mcpServers` as either `false` or a complete capability. Each capability SHALL contain its complete set of operations; support SHALL NOT be representable as a boolean that can disagree with optional operations. A capability missing an operation SHALL be rejected when the adapter is defined and again when its bundle is verified. The field SHALL be MCP-specific, and future non-asset project-configuration features SHALL use independent capabilities.
 
 #### Scenario: Adapter declares complete MCP support
 
@@ -160,42 +163,35 @@ An adapter definition using API `0.2` SHALL declare `mcpServers` as either `fals
 - **WHEN** a later adapter API adds a different project-configuration feature
 - **THEN** that feature SHALL use a separate capability without widening the MCP server contract
 
-### Requirement: The SDK supplies reusable MCP preparation and application scaffolding
+### Requirement: The SDK supplies reusable MCP planning scaffolding
 
-The SDK SHALL provide default MCP preparation and application scaffolding that an adapter author composes rather than reimplements. The scaffolding SHALL cover the parts every adapter answers identically: reading the documents an adapter selects, guarding authored literals against tool interpolation, classifying desired and owned entries, short-circuiting when nothing needs writing, disclosing every document a plan could touch, re-reading and comparing each document immediately before writing, returning a structured conflict when any differs, and writing each affected document atomically. An adapter SHALL supply only its tool-specific parts: which documents to consider, how to parse and validate them, how to compare an existing entry, and how to render an edit.
+The SDK SHALL provide default MCP planning scaffolding that an adapter author composes rather than reimplements. The scaffolding SHALL cover the parts every adapter answers identically: reading the documents an adapter selects, capturing each document's exact observed state — including the absence of one that does not exist — guarding authored literals against tool interpolation, classifying desired and owned entries, short-circuiting when nothing needs writing, and returning the exact per-document changes that realize the desired state. An adapter SHALL supply only its tool-specific parts: which documents to consider, how to parse and validate them, how to compare an existing entry, and how to render an edit.
 
-The scaffolding SHALL support a plan that touches more than one native document, so an adapter whose tool merges several configuration layers is not forced to write its own application path. An adapter SHALL be able to override the default preparation or application when its tool genuinely requires it.
+The scaffolding SHALL support a plan that changes more than one native document, so an adapter whose tool merges several configuration layers is not forced to write its own path. It SHALL exclude from the plan any document whose rendered bytes match the state it was read in, so inspecting a document is never a reason to write it.
 
-The scaffolding SHALL reject an edit naming a document the adapter did not disclose, before the plan becomes applicable. A caller journals restorable state only for the disclosed set, so an undisclosed write could not be undone; detecting it after the write has already happened is too late.
+The scaffolding SHALL NOT write, and SHALL NOT expose an operation that writes. Concurrency detection and restoration belong to the consumer that performs the write, which applies them uniformly to every file it commits rather than once per adapter.
 
 The SDK SHALL also provide the canonical escaped rendering for any declaration value reaching a terminal, so that an adapter's structured failure data and a consumer's display of it cannot disagree about what is safe to print.
 
-#### Scenario: An undisclosed edit never becomes an applicable plan
+#### Scenario: An unchanged document is excluded from the plan
 
-- **WHEN** an adapter renders an edit for a document absent from the set it disclosed
-- **THEN** preparation SHALL reject it rather than return a plan a caller could apply
+- **WHEN** an adapter inspects several configuration layers and only one needs writing
+- **THEN** the plan SHALL contain a change for that layer alone
 
 #### Scenario: One escaped rendering is available to every adapter
 
 - **WHEN** an adapter author needs to reproduce a declaration value safely
 - **THEN** the SDK SHALL supply that rendering rather than requiring the author to implement one
 
-The plan type an adapter's preparation produces SHALL remain visible to its own application operation through adapter definition, so both operations are checked against one plan shape rather than an erased one. At the consumer boundary the plan SHALL remain opaque, and a consumer SHALL NOT be able to read it.
-
 #### Scenario: Author supplies only tool-specific parts
 
 - **WHEN** an adapter author composes the SDK's MCP scaffolding with its document selection, parsing, comparison, and rendering
-- **THEN** the resulting capability SHALL satisfy the complete preparation and application contract without the author reimplementing disclosure, conflict detection, or atomic writing
+- **THEN** the resulting capability SHALL satisfy the complete planning contract without the author reimplementing state capture, no-op elimination, or change rendering
 
-#### Scenario: Plan type survives adapter definition
+#### Scenario: Planned changes are exact file transitions
 
-- **WHEN** an author defines an adapter whose preparation produces a structured plan
-- **THEN** its application operation SHALL be type-checked against that same plan shape
-
-#### Scenario: Consumer still sees an opaque plan
-
-- **WHEN** a consumer holds a prepared plan
-- **THEN** the plan SHALL remain structurally unreadable to it
+- **WHEN** an adapter's planning produces a change for a document
+- **THEN** that change SHALL name an absolute path, the exact state the document was observed in, and the exact bytes to commit
 
 ### Requirement: The protocol declaration type is the adapter contract's source of truth
 
@@ -206,21 +202,17 @@ The SDK SHALL consume the published MCP server declaration type from the protoco
 - **WHEN** the published MCP declaration contract changes in a future breaking release
 - **THEN** adapter capability types SHALL reflect that authoritative declaration contract rather than retain a stale duplicate
 
-### Requirement: Adapter API `0.1` remains usable without active MCP declarations
+### Requirement: An adapter without MCP support remains usable for a project without MCP servers
 
-A selected adapter implementing API `0.1` SHALL remain usable when the desired project state contains no active MCP server declaration. When active declarations exist, every selected `0.1` adapter and every selected `0.2` adapter declaring `mcpServers: false` SHALL be reported together as unable to materialize the desired state before any write.
+A selected adapter declaring no MCP server support SHALL remain usable when the desired project state contains no active MCP server declaration. When active declarations exist, every selected adapter declaring no MCP support SHALL be reported together as unable to materialize the desired state before any write.
 
-#### Scenario: Previous adapter serves a text-only project
+#### Scenario: An adapter without MCP support serves a text-only project
 
-- **WHEN** a project has no active MCP server declaration and a selected adapter implements API `0.1`
-- **THEN** installation SHALL proceed using its tagged asset contract
+- **WHEN** a project has no active MCP server declaration and a selected adapter declares no MCP support
+- **THEN** installation SHALL proceed using its asset planning capability
 
-#### Scenario: Previous adapter cannot serve active MCP declarations
+#### Scenario: An adapter without MCP support cannot serve active declarations
 
-- **WHEN** a project has an active MCP server declaration and a selected adapter implements API `0.1`
-- **THEN** installation SHALL fail before mutation and identify the adapter as requiring upgrade
-
-#### Scenario: Current adapter may explicitly lack MCP support
-
-- **WHEN** a project has an active MCP declaration and a selected `0.2` adapter declares `mcpServers: false`
-- **THEN** the adapter SHALL appear in the same complete unsupported-adapter failure
+- **WHEN** a project has an active MCP server declaration and a selected adapter declares no MCP support
+- **THEN** installation SHALL fail before mutation and identify every such adapter
+- **AND** the remedy SHALL be to omit the declarations or deselect the adapter, not to upgrade it

@@ -1,10 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
-import {
-  ADAPTER_API_VERSION,
-  ADAPTER_API_VERSION_ASSETS_ONLY,
-  ADAPTER_API_VERSION_PACKAGE_FIELD,
-} from '@agent-facets/adapter/api-version'
+import { ADAPTER_API_VERSION, ADAPTER_API_VERSION_PACKAGE_FIELD } from '@agent-facets/adapter/api-version'
 import { SUPPORTED_ADAPTER_APIS } from '../../../adapters/api-compatibility.ts'
 import { downloadNpmRelease, resolveNpmAdapter } from '../npm.ts'
 import type { NpmVersionRequest } from '../specifier.ts'
@@ -126,45 +122,6 @@ describe('resolveNpmAdapter — compatible selection', () => {
     expect(result.release.apiVersion).toBe(ADAPTER_API_VERSION)
     expect(result.release.tarballUrl).toBe(`${baseUrl}/tarballs/good.tgz`)
     expect(result.release.dist.integrity).toBe(goodSri)
-  })
-
-  test('highest package version wins across supported tokens', async () => {
-    // Both tokens are in the window, so neither is "more compatible" than
-    // the other. Package version is the only ranking key.
-    packuments.set('mixed-window', {
-      versions: {
-        '1.0.0': { api: ADAPTER_API_VERSION },
-        '2.0.0': { api: ADAPTER_API_VERSION_ASSETS_ONLY },
-      },
-    })
-    const result = await resolveNpmAdapter('mixed-window', implicit, opts())
-    if (!result.ok) expect.unreachable()
-    expect(result.release.version).toBe('2.0.0')
-    expect(result.release.apiVersion).toBe(ADAPTER_API_VERSION_ASSETS_ONLY)
-  })
-
-  test('the newer supported token does not outrank a higher package version either', async () => {
-    // The mirror image of the previous case, so a passing result cannot be
-    // explained by an accidental preference for the asset-only token.
-    packuments.set('mixed-window-reversed', {
-      versions: {
-        '1.0.0': { api: ADAPTER_API_VERSION_ASSETS_ONLY },
-        '2.0.0': { api: ADAPTER_API_VERSION },
-      },
-    })
-    const result = await resolveNpmAdapter('mixed-window-reversed', implicit, opts())
-    if (!result.ok) expect.unreachable()
-    expect(result.release.version).toBe('2.0.0')
-    expect(result.release.apiVersion).toBe(ADAPTER_API_VERSION)
-  })
-
-  test('an asset-only release stays installable during the window', async () => {
-    packuments.set('asset-only-only', {
-      versions: { '1.0.0': { api: ADAPTER_API_VERSION_ASSETS_ONLY } },
-    })
-    const result = await resolveNpmAdapter('asset-only-only', implicit, opts())
-    if (!result.ok) expect.unreachable()
-    expect(result.release.version).toBe('1.0.0')
   })
 
   test('a newer positional 0.0 release is skipped for an older supported one', async () => {

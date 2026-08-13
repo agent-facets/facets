@@ -1,18 +1,28 @@
-import { join } from 'node:path'
+import { mkdirSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import type { FileMutation, FileState } from '@agent-facets/common'
+import { inspectFileState } from '@agent-facets/common'
 import type { CurrentLockfile, CurrentLockfileFacet } from '@agent-facets/protocol'
-import { applyDesiredFacets, type ManifestDocument, type NormalizedFacetEntry } from '../../manifest/mutations.ts'
-import { writeProjectManifest } from '../../manifest/project-files.ts'
-import { capturePreimage, describeError, type FilePreimage, restorePreimage } from '../file-preimage.ts'
-import { FACETS_LOCK_FILE, writeLockfile } from '../lockfile-io.ts'
+import { facetReceiptsDir } from '../../facet-dir.ts'
+import type { FileTransaction } from '../../fs/index.ts'
+import { jsonFileText } from '../../json-file-text.ts'
+import {
+  applyDesiredFacets,
+  FACETS_JSON_FILE,
+  type ManifestDocument,
+  type NormalizedFacetEntry,
+  serializeProjectManifest,
+} from '../../manifest/mutations.ts'
+import { canonicalLockfileText, FACETS_LOCK_FILE } from '../lockfile-io.ts'
 import { ownEntry, ownRecord } from '../own-entry.ts'
 import {
   CURRENT_RECEIPT_VERSION,
+  canonicalProjectPath,
   type Receipt,
   type ReceiptConfigurationClaim,
   type ReceiptFacetEntry,
   receiptEntryForLockedFacet,
   receiptPath,
-  writeReceipt,
 } from '../receipt.ts'
 import type { OnLog, RunInstallFailure } from '../types.ts'
 
@@ -31,9 +41,7 @@ import type { OnLog, RunInstallFailure } from '../types.ts'
  * Tagged rather than "a map of lockfile entries, and separately a promise
  * that they were written": a path that materializes nothing could otherwise
  * hand over entries it never applied, and the receipt would then claim an
- * effective identity no file on this machine has. Ownership reconciliation
- * trusts the receipt, so that claim is not a cosmetic inaccuracy — it strands
- * the real file permanently.
+ * effective identity no file on this machine has.
  */
 export type MaterializedReceiptState =
   | {
@@ -55,10 +63,6 @@ export type MaterializedReceiptState =
  * configuration claims it owns — a self-sufficient, offline-capable deletion
  * record for future drift removal. It mirrors asset paths, never hashes, and
  * declaration fingerprints, never declarations.
- *
- * Takes the project PATH rather than a previous receipt: every field of the
- * new record comes from this run, so a previous one could only contribute
- * claims this run has no evidence for.
  */
 export function buildUpdatedReceipt(projectPath: string, state: MaterializedReceiptState): Receipt {
   const facets: Record<string, ReceiptFacetEntry> = ownRecord()
@@ -84,8 +88,7 @@ export function buildUpdatedReceipt(projectPath: string, state: MaterializedRece
  *     machine-local bookkeeping. But the consequence outlives the command —
  *     every identity this run wrote is now untracked, so nothing can clean it
  *     up later — which is why the reason travels in the result instead of
- *     being swallowed. Only frozen mode can produce it; the non-frozen trio
- *     rolls back instead.
+ *     being swallowed.
  */
 export type TriWriteResult =
   | { ok: true; receipt: 'persisted' }
@@ -96,18 +99,9 @@ export type TriWriteResult =
  * What this commit does to the locked set (`facets.json` + `facets.lock`).
  *
  *   - `write` — a normal install. Both files are rewritten, and the
- *     lockfile is always the CURRENT schema: this is where a `0.2` document
- *     migrates forward, after every artifact this run resolved has passed
- *     verification — or, on the removal-only refinement path, after the
- *     remaining entries have been carried forward from local state without
- *     being re-resolved at all.
+ *     lockfile is always the CURRENT schema.
  *   - `retain` — frozen mode. Neither file is touched, so the lockfile on
  *     disk keeps whatever version it was loaded under.
- *
- * Frozen carries no lockfile value at all, rather than a value flagged
- * "don't write me". Previously the caller synthesized one with the loaded
- * version and inherited entries purely to satisfy the parameter, producing
- * a document that could not have been written and was never meant to be.
  */
 export type LockedSetCommit = { kind: 'write'; newLockfile: CurrentLockfile } | { kind: 'retain' }
 
@@ -121,117 +115,46 @@ export interface TriWriteArgs {
   desiredFacets: Readonly<Record<string, NormalizedFacetEntry>>
   lockedSet: LockedSetCommit
   newReceipt: Receipt
+  /**
+   * The exact states these files were loaded in.
+   *
+   * The commit is conditional on them: a manifest a teammate's editor rewrote
+   * while this install was resolving is not the manifest this plan was
+   * computed from, and writing over it would discard their edit as silently
+   * as it would discard ours.
+   */
+  loadedStates: ProjectFileStates
+  transaction: FileTransaction
   onLog?: OnLog
 }
 
 /**
- * The commit's final write step.
+ * The machine-local receipt's state, or the fact that it could not be read.
  *
- * Frozen mode writes the receipt ONLY — materialization state
- * converges, but the locked set (manifest + lockfile) is never
- * written. A receipt write failure under frozen does not fail the
- * operation — the locked set it reproduced is intact — but it is
- * reported through the result rather than swallowed, because the files
- * this run wrote are untracked from here on.
- *
- * Non-frozen mode writes all three files — `facets.json`,
- * `facets.lock`, and the receipt — as one transaction. Disk I/O can
- * fail (EACCES, ENOSPC, EIO) at any point in the trio; a mid-trio
- * failure must not leave the manifest written while the lockfile and
- * receipt are not. Byte pre-images of all three files (or their
- * absence) are captured immediately before the first write; on any
- * failure every file is restored byte-for-byte (files that did not
- * exist are deleted) and the failure is reported as
- * `LOCKFILE_WRITE_FAILED` so the caller can roll back materialization.
+ * Separated from the other two because the consequence differs: a project
+ * whose manifest cannot be read has nothing to install from, while a receipt
+ * that cannot be read costs only bookkeeping — and frozen mode, which
+ * reproduces a locked set it has already verified, must not fail over it.
  */
-export function commitProjectFiles(args: TriWriteArgs): TriWriteResult {
-  const { projectRoot, lockedSet, newReceipt } = args
+export type ReceiptFileState = { readable: true; state: FileState } | { readable: false; cause: string }
 
-  if (lockedSet.kind === 'retain') {
-    try {
-      writeReceipt(projectRoot, newReceipt)
-    } catch (error) {
-      return { ok: true, receipt: 'unpersisted', cause: describeError(error) }
-    }
-    args.onLog?.(() => `[verbose]   wrote receipt (${receiptPath(projectRoot)}) [frozen]`)
-    return { ok: true, receipt: 'persisted' }
-  }
-
-  // Resolve the receipt path and capture pre-images right before the trio, so
-  // a mid-trio failure can restore all three files exactly as they were.
-  //
-  // Both steps can fail on a disk that has moved under the run — an
-  // unresolvable project root, a file that exists but cannot be read — and
-  // both used to escape as a throw, out of a function whose contract is to
-  // return and at a point where materialization has already happened. The
-  // caller never got the chance to replay the journal. They are failures like
-  // any other write failure now.
-  const prepared = prepareTriWrite(projectRoot)
-  if (!prepared.ok) return { ok: false, failure: prepared.failure }
-  const { receiptFile, preImages } = prepared
-
-  // Each write is wrapped individually so a mid-trio failure identifies
-  // which file threw. The pre-image restore always runs for all three
-  // files regardless of which one failed, preserving the all-or-nothing
-  // guarantee.
-  const writes: Array<{ file: 'manifest' | 'lockfile' | 'receipt'; path: string; fn: () => void }> = [
-    {
-      file: 'manifest',
-      path: join(projectRoot, 'facets.json'),
-      fn: () => {
-        // In-place mutation, not reconstruction: comment-json keeps comment
-        // metadata on non-enumerable symbols that an object spread would
-        // silently drop. This also stamps the current `manifestVersion`,
-        // migrating a legacy document as part of the same transaction.
-        applyDesiredFacets(args.manifestDocument, args.desiredFacets)
-        writeProjectManifest(projectRoot, args.manifestDocument)
-      },
-    },
-    {
-      file: 'lockfile',
-      path: join(projectRoot, FACETS_LOCK_FILE),
-      fn: () => writeLockfile(projectRoot, lockedSet.newLockfile),
-    },
-    {
-      file: 'receipt',
-      path: receiptFile,
-      fn: () => writeReceipt(projectRoot, newReceipt),
-    },
-  ]
-
-  for (const write of writes) {
-    try {
-      write.fn()
-      args.onLog?.(() => `[verbose]   wrote ${write.file} (${write.path})`)
-    } catch (error) {
-      for (const image of preImages) {
-        // Best-effort: this restore runs on a disk that just failed a write,
-        // so it may fail too. The structured failure below still reports the
-        // commit as failed and the caller still replays the journal, and a
-        // partially-restored file is no worse than the mid-trio state the
-        // restore is repairing.
-        restorePreimage(image)
-      }
-      return {
-        ok: false,
-        failure: {
-          code: 'LOCKFILE_WRITE_FAILED',
-          path: write.path,
-          cause: error instanceof Error ? error.message : String(error),
-        },
-      }
-    }
-  }
-  return { ok: true, receipt: 'persisted' }
+/** The three project files, as they stood when this run read them. */
+export interface ProjectFileStates {
+  manifest: FileState
+  lockfile: FileState
+  receipt: ReceiptFileState
 }
 
 /**
- * Everything the trio needs that can fail before its first write: the
- * receipt's location, and a pre-image of each of the three files.
+ * Read the exact current state of the three project files.
+ *
+ * Called once, before the run mutates anything, so the commit can state the
+ * precondition it was computed from. A file that cannot be inspected is
+ * reported now rather than at commit time, when assets are already on disk.
  */
-function prepareTriWrite(
+export function readProjectFileStates(
   projectRoot: string,
-): { ok: true; receiptFile: string; preImages: FilePreimage[] } | { ok: false; failure: RunInstallFailure } {
+): { ok: true; states: ProjectFileStates; receiptFile: string } | { ok: false; failure: RunInstallFailure } {
   let receiptFile: string
   try {
     receiptFile = receiptPath(projectRoot)
@@ -241,18 +164,146 @@ function prepareTriWrite(
       failure: {
         code: 'LOCKFILE_WRITE_FAILED',
         path: projectRoot,
-        cause: `could not resolve the receipt path: ${describeError(error)}`,
+        cause: `could not resolve the receipt path: ${error instanceof Error ? error.message : String(error)}`,
       },
     }
   }
 
-  const preImages: FilePreimage[] = []
-  for (const path of [join(projectRoot, 'facets.json'), join(projectRoot, FACETS_LOCK_FILE), receiptFile]) {
-    const captured = capturePreimage(path)
-    if (!captured.ok) {
-      return { ok: false, failure: { code: 'LOCKFILE_WRITE_FAILED', path, cause: captured.cause } }
+  const locked: Array<[key: 'manifest' | 'lockfile', path: string]> = [
+    ['manifest', join(projectRoot, FACETS_JSON_FILE)],
+    ['lockfile', join(projectRoot, FACETS_LOCK_FILE)],
+  ]
+  const states: Partial<Pick<ProjectFileStates, 'manifest' | 'lockfile'>> = {}
+  for (const [key, path] of locked) {
+    const inspected = inspectFileState(path)
+    if (!inspected.ok) {
+      return {
+        ok: false,
+        failure: { code: 'LOCKFILE_WRITE_FAILED', path, cause: `could not read the current contents of ${path}` },
+      }
     }
-    preImages.push(captured.preimage)
+    states[key] = inspected.state
   }
-  return { ok: true, receiptFile, preImages }
+
+  const inspectedReceipt = inspectFileState(receiptFile)
+  const receipt: ReceiptFileState = inspectedReceipt.ok
+    ? { readable: true, state: inspectedReceipt.state }
+    : { readable: false, cause: `could not read the current contents of ${receiptFile}` }
+
+  const { manifest, lockfile } = states
+  if (manifest === undefined || lockfile === undefined) {
+    // Unreachable: the loop assigns both keys or returns.
+    throw new Error('readProjectFileStates: expected one state per locked-set file')
+  }
+  return { ok: true, states: { manifest, lockfile, receipt }, receiptFile }
+}
+
+const encoder = new TextEncoder()
+
+/**
+ * The commit's final write step.
+ *
+ * Frozen mode writes the receipt ONLY — materialization state converges, but
+ * the locked set (manifest + lockfile) is never written. A receipt write
+ * failure under frozen does not fail the operation — the locked set it
+ * reproduced is intact — but it is reported through the result rather than
+ * swallowed, because the files this run wrote are untracked from here on.
+ *
+ * Non-frozen mode commits all three files as ONE batch. Either all of them
+ * land or none does: a manifest written while the lockfile is not describes a
+ * project state that never existed, and the batch is what makes that
+ * unrepresentable rather than merely unlikely.
+ */
+export function commitProjectFiles(args: TriWriteArgs): TriWriteResult {
+  const { projectRoot, lockedSet, newReceipt, loadedStates, transaction } = args
+
+  const receiptFile = receiptPath(projectRoot)
+  const canonical = canonicalProjectPath(projectRoot)
+  const receiptBytes = encoder.encode(jsonFileText({ ...newReceipt, path: canonical }))
+
+  // The receipts directory is machine-local bookkeeping outside the project,
+  // created up front so the batch's own boundary can be the directory itself.
+  try {
+    mkdirSync(facetReceiptsDir(), { recursive: true })
+  } catch (error) {
+    const cause = error instanceof Error ? error.message : String(error)
+    if (lockedSet.kind === 'retain') return { ok: true, receipt: 'unpersisted', cause }
+    return { ok: false, failure: { code: 'LOCKFILE_WRITE_FAILED', path: receiptFile, cause } }
+  }
+
+  if (!loadedStates.receipt.readable) {
+    // Frozen mode reproduced a locked set it already verified; refusing over
+    // machine-local bookkeeping would fail a correct reproduction. Non-frozen
+    // has a locked set to write and a rollback to run, so it reports.
+    if (lockedSet.kind === 'retain') return { ok: true, receipt: 'unpersisted', cause: loadedStates.receipt.cause }
+    return {
+      ok: false,
+      failure: { code: 'LOCKFILE_WRITE_FAILED', path: receiptFile, cause: loadedStates.receipt.cause },
+    }
+  }
+
+  const receiptMutation: FileMutation = {
+    kind: 'write',
+    path: receiptFile,
+    boundary: dirname(receiptFile),
+    expected: loadedStates.receipt.state,
+    contents: receiptBytes,
+  }
+
+  if (lockedSet.kind === 'retain') {
+    const applied = transaction.apply({ kind: 'mutate', mutations: [receiptMutation] })
+    if (!applied.ok) {
+      return { ok: true, receipt: 'unpersisted', cause: describeTransactionRefusal(receiptFile) }
+    }
+    args.onLog?.(() => `[verbose]   wrote receipt (${receiptFile}) [frozen]`)
+    return { ok: true, receipt: 'persisted' }
+  }
+
+  // In-place mutation, not reconstruction: comment-json keeps comment metadata
+  // on non-enumerable symbols that an object spread would silently drop. This
+  // also stamps the current `manifestVersion`, migrating a legacy document as
+  // part of the same transaction.
+  applyDesiredFacets(args.manifestDocument, args.desiredFacets)
+
+  const manifestPath = join(projectRoot, FACETS_JSON_FILE)
+  const lockfilePath = join(projectRoot, FACETS_LOCK_FILE)
+  const applied = transaction.apply({
+    kind: 'mutate',
+    mutations: [
+      {
+        kind: 'write',
+        path: manifestPath,
+        boundary: projectRoot,
+        expected: loadedStates.manifest,
+        contents: encoder.encode(serializeProjectManifest(args.manifestDocument)),
+      },
+      {
+        kind: 'write',
+        path: lockfilePath,
+        boundary: projectRoot,
+        expected: loadedStates.lockfile,
+        contents: encoder.encode(canonicalLockfileText(lockedSet.newLockfile)),
+      },
+      receiptMutation,
+    ],
+  })
+  if (!applied.ok) {
+    return {
+      ok: false,
+      failure: {
+        code: 'FILESYSTEM_TRANSACTION_FAILED',
+        subject: { kind: 'project-files' },
+        failure: applied.failure,
+      },
+    }
+  }
+
+  for (const path of applied.applied) {
+    args.onLog?.(() => `[verbose]   wrote ${path}`)
+  }
+  return { ok: true, receipt: 'persisted' }
+}
+
+function describeTransactionRefusal(path: string): string {
+  return `the receipt at ${path} could not be written`
 }

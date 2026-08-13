@@ -1,28 +1,31 @@
-import { capturePreimage, type FilePreimage, matchesPreimage, restorePreimage } from '../file-preimage.ts'
-import type { InstallJournal } from '../journal.ts'
+import type { FileTransaction } from '../../fs/index.ts'
 import type { OnLog, RunInstallFailure } from '../types.ts'
-import { insideProject, type PreparedMcpAdapter } from './prepare.ts'
+import type { PreparedMcpAdapter } from './prepare.ts'
 
 /**
- * Apply prepared MCP plans, with a byte-exact undo for every document
- * actually changed.
+ * Commit the MCP document changes each adapter planned.
  *
- * Runs after every asset write and immediately before the tri-write. That
- * ordering is deliberate: a tool watching its own configuration should see a
- * server appear as late as possible in an operation that might still fail,
- * and the assets a server's tooling might reference are already on disk by
- * the time it does.
+ * Runs after every asset write and immediately before the project-file
+ * commit. That ordering is deliberate: a tool watching its own configuration
+ * should see a server appear as late as possible in an operation that might
+ * still fail, and the assets a server's tooling might reference are already on
+ * disk by the time it does.
  *
- * Adapters supply no inverse operations. Rollback fidelity is the engine's:
- * it captures each disclosed document's exact prior bytes before the write
- * and journals a restore, so putting a JSONC file back does not depend on an
- * adapter reproducing comments it never saw.
+ * Adapters supply no inverse operations, and none is needed. Each planned
+ * mutation carries the document's exact prior state, so the transaction
+ * refuses the write if something else edited the file in the meantime and can
+ * restore the original bytes afterwards — without an adapter having to
+ * reproduce comments and formatting it never saw.
+ *
+ * Two adapters whose plans touch one document are handled by the transaction's
+ * coalescing rather than by anything here: the first original is retained and
+ * the latest committed state replaces the previous one, so a rollback returns
+ * the document to where it stood before this run.
  */
 
 export interface ApplyMcpArgs {
   prepared: readonly PreparedMcpAdapter[]
-  projectRoot: string
-  journal: InstallJournal
+  transaction: FileTransaction
   signal?: AbortSignal | undefined
   onLog: OnLog
 }
@@ -30,90 +33,71 @@ export interface ApplyMcpArgs {
 export type ApplyMcpResult = { ok: true } | { ok: false; failure: RunInstallFailure }
 
 export async function applyMcpServers(args: ApplyMcpArgs): Promise<ApplyMcpResult> {
-  const { prepared, projectRoot, journal, signal, onLog } = args
+  const { prepared, transaction, signal, onLog } = args
 
-  for (const { adapter, capability, preparation } of prepared) {
+  for (const { adapter, capability, request, plan } of prepared) {
     // Checked per adapter, mirroring the per-facet checkpoint in the write
     // pass: an interrupt during a three-adapter apply must not write all
     // three before anyone notices.
     if (signal?.aborted) return { ok: false, failure: { code: 'ABORTED' } }
 
-    // Capture every DISCLOSED document, not just the ones that will change:
-    // which ones change is only known after `apply` returns, and a preimage
-    // read afterwards would record the post-write bytes.
-    //
-    // Deliberately not deduplicated across adapters. If two adapters disclose
-    // one path, the second capture holds the first adapter's written bytes,
-    // and LIFO replay walks back through them to the original — which is the
-    // correct final state, arrived at without the engine having to model
-    // shared documents.
-    const preimages = new Map<string, FilePreimage>()
-    for (const path of preparation.documentPaths) {
-      if (preimages.has(path)) continue
-      const captured = capturePreimage(path)
-      if (!captured.ok) {
-        // Refuse to let the adapter write. A document this run cannot read is
-        // one it cannot put back, and an unrestorable write is worse than a
-        // failed operation.
-        return { ok: false, failure: { code: 'MCP_DOCUMENT_UNREADABLE', adapter, path, cause: captured.cause } }
-      }
-      preimages.set(path, captured.preimage)
-    }
-
-    // Armed BEFORE the adapter runs, for every disclosed document rather than
-    // for the ones it later says it changed. Recording afterwards made
-    // restoration conditional on the adapter's own report being both truthful
-    // and complete: an adapter that wrote a document and then failed, omitted
-    // one from `changedPaths`, or named an undisclosed path before a disclosed
-    // one left a real write outside the journal while the failure claimed
-    // everything restorable had been restored.
-    //
-    // The cost is one journal entry per disclosed document. The undo compares
-    // before it writes, so a document nothing touched is left alone — bytes,
-    // modification time, and any tool watching it included.
-    for (const [path, preimage] of preimages) {
-      journal.record({
-        label: `mcp ${adapter}:${path}`,
-        undo: async () => {
-          if (matchesPreimage(preimage)) return
-          const restored = restorePreimage(preimage)
-          if (!restored.ok) {
-            // Must throw: the journal counts an undo as failed only when it
-            // throws, so returning here would report a clean rollback while a
-            // tool's configuration stayed changed.
-            throw new Error(`failed to restore ${path}: ${restored.cause}`)
-          }
-        },
-      })
-    }
-
-    const applied = await capability.apply({ plan: preparation.plan })
-    if (!applied.ok) {
-      return { ok: false, failure: { code: 'MCP_APPLY_FAILED', adapter, failure: applied.failure } }
-    }
-    if (applied.status === 'unchanged') {
+    if (plan.action.kind === 'unchanged') {
       onLog(() => `[verbose] ${adapter}: MCP configuration already matched; nothing written`)
       continue
     }
 
-    for (const path of applied.changedPaths) {
-      if (!preimages.has(path) || !insideProject(projectRoot, path)) {
-        // The adapter wrote somewhere it never disclosed, so no preimage
-        // exists for it. Reported rather than journaled: the caller rolls
-        // back everything that IS restorable — which now includes every
-        // document this adapter disclosed — and the failure names the one
-        // thing that is not.
-        return {
-          ok: false,
-          failure: {
-            code: 'MCP_CONTRACT_VIOLATION',
-            violation: { kind: 'undisclosed-changed-path', adapter, path },
-          },
-        }
+    // Re-planned immediately before its own commit. An earlier adapter may
+    // have written a document this one also targets, which would make the
+    // first plan's precondition stale — and the transaction would rightly
+    // refuse it. Re-planning against the committed state is what lets two
+    // adapters share a document without either one applying a stale plan.
+    const replanned = await capability.plan(request)
+    if (!replanned.ok) {
+      return { ok: false, failure: { code: 'MCP_APPLY_FAILED', adapter, failure: replanned.failure } }
+    }
+    // The user approved a set of outcomes, not a set of bytes. If re-planning
+    // reaches a different conclusion about what this run does to any server,
+    // the approval no longer covers it and the operation stops rather than
+    // applying something nobody agreed to.
+    if (!sameOutcomes(plan.outcomes, replanned.plan.outcomes)) {
+      return {
+        ok: false,
+        failure: { code: 'MCP_CONTRACT_VIOLATION', violation: { kind: 'outcomes-changed', adapter } },
       }
+    }
+
+    if (replanned.plan.action.kind === 'unchanged') {
+      onLog(() => `[verbose] ${adapter}: MCP configuration already matched; nothing written`)
+      continue
+    }
+
+    const applied = transaction.apply(replanned.plan.action)
+    if (!applied.ok) {
+      return {
+        ok: false,
+        failure: {
+          code: 'FILESYSTEM_TRANSACTION_FAILED',
+          subject: { kind: 'mcp', adapter },
+          failure: applied.failure,
+        },
+      }
+    }
+    for (const path of applied.applied) {
       onLog(() => `[verbose] ${adapter}: wrote MCP configuration (${path})`)
     }
   }
 
   return { ok: true }
+}
+
+/** Whether two outcome lists describe the same work, entry for entry. */
+function sameOutcomes(
+  before: readonly PreparedMcpAdapter['plan']['outcomes'][number][],
+  after: readonly PreparedMcpAdapter['plan']['outcomes'][number][],
+): boolean {
+  if (before.length !== after.length) return false
+  return before.every((outcome, index) => {
+    const other = after[index]
+    return other !== undefined && JSON.stringify(outcome) === JSON.stringify(other)
+  })
 }

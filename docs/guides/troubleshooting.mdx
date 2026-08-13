@@ -34,13 +34,15 @@ Common errors, what causes them, and how to fix them. Each entry mirrors the CLI
     ```
   </Accordion>
 
-  <Accordion title='"adapter incompatible" / "unsupported adapter API" (build, add, remove, install fail before writing)'>
-    **Cause:** every installed adapter declares the adapter API contract it was built against, and each CLI release supports an exact set — currently `0.1` (tagged assets only) and `0.2` (tagged assets plus MCP server configuration). A bundle installed before API versioning has **no** declaration; a bundle built against the earlier positional contract declares `0.0`, which is outside the supported set; other bundles can carry a malformed declaration, declare an API this CLI doesn't support, or disagree with the npm metadata they were selected by. All these cases fail closed: `facet build`, `facet add`, `facet remove`, and `facet install` stop **before** invoking any adapter method or writing project files.
+  <Accordion title='"adapter incompatible" / "unsupported adapter API" (build, add, remove, install fail before writing)' id='adapter-incompatible'>
+    **Cause:** every installed adapter declares the adapter API contract it was built against, and each CLI release supports an exact set — currently just `0.3` (the read-only planning contract). Bundles declaring `0.0`, `0.1`, or `0.2` wrote files themselves and owned their own rollback, so this CLI cannot offer them the guarantees it now makes about exact restoration and concurrency; they are unsupported. A bundle installed before API versioning has **no** declaration; others can carry a malformed declaration or disagree with the npm metadata they were selected by. All these cases fail closed: `facet build`, `facet add`, `facet remove`, and `facet install` stop **before** invoking any adapter method or writing project files.
 
-    Membership is exact, never ordering: `0.0` is not "close enough" to `0.1`.
+    Upgrading the CLI across this boundary makes every previously installed adapter unsupported at once, including the first-party ones. Reinstall each — the listing prints the exact command.
+
+    Membership is exact, never ordering: `0.2` is not "close enough" to `0.3`.
 
     <Note>
-    This is a *loadability* problem. An adapter declaring `0.1` loads and works normally — it just [cannot configure MCP servers](#mcp-adapters), which is a different failure with a different fix.
+    This is a *loadability* problem. An adapter that loads may still [not configure MCP servers](#mcp-adapters), which is a different failure with a different fix.
     </Note>
 
     **Fix:** list your installed adapters to see each one's declared API and status, then run the reinstall command printed next to the incompatible entry:
@@ -152,24 +154,47 @@ Common errors, what causes them, and how to fix them. Each entry mirrors the CLI
   </Accordion>
 
   <Accordion title='"selected adapters cannot configure MCP servers"' id='mcp-adapters'>
-    **Cause:** the project has active MCP declarations and at least one selected adapter cannot write them. The failure lists every such adapter and happens before any approval or mutation. There are two distinct cases:
+    **Cause:** the project has active MCP declarations and at least one selected adapter declares no MCP support. The failure lists every such adapter and happens before any approval or mutation.
 
-    - The adapter implements adapter API `0.1`, which has no MCP support.
-    - The adapter implements `0.2` but declares no MCP support.
+    **Fix:** updating the adapter will not help — declaring no MCP support is a deliberate answer, not a missing feature. Either [`facet adapter remove`](/cli/adapters/remove) the adapter, or omit the server declarations so the project has no MCP work to do:
 
-    **Fix:** for the first, update the adapter — a newer release may support MCP:
-
-    ```sh
-    facet adapter install my-adapter
+    ```json facets.json
+    "mcp-tools": {
+      "source": "1.*",
+      "materialization": { "servers": { "docs": { "kind": "omitted" } } }
+    }
     ```
 
-    For the second, updating will not help: that adapter has declined MCP support deliberately. Either [`facet adapter remove`](/cli/adapters/remove) it, or omit the server declarations so the project has no MCP work to do.
+    <Note>
+    This is different from an adapter that [cannot be loaded at all](#adapter-incompatible). That one *is* fixed by reinstalling.
+    </Note>
   </Accordion>
 
   <Accordion title="A tool's MCP config file cannot be read or written">
     **Cause:** an adapter could not parse, validate, or write its native project configuration — `.mcp.json`, `opencode.jsonc`, or `.codex/config.toml`. The usual cause is a hand edit that left the file syntactically invalid.
 
     **Fix:** open the named file and repair it, then re-run. The failure is detected while **reading**, before any asset is written, and the document is left byte-for-byte unchanged. If a write did fail partway through a larger operation, everything is rolled back — including restoring each config file's exact prior bytes, comments and formatting included.
+  </Accordion>
+
+  <Accordion title='"some files could not be returned to their previous state" after a failure'>
+    **Cause:** the command failed and rolled back, but at least one file could not be put back. Every change is recorded as an exact `before → after` pair, and rollback classifies each file against what the run actually left there. The report names each one:
+
+    ```
+    Some files were changed by something else while this ran and were left as they are:
+      .claude/skills/review/SKILL.md — changed by something else after this run wrote it; left as it is
+      (7 other file(s) were restored)
+    ```
+
+    The two kinds of line mean opposite things:
+
+    - **"changed by something else … left as it is"** — nothing is wrong with your file. Your editor, another agent, or a concurrent command wrote it after this run did, so the rollback declined to overwrite that work. Their content is intact.
+    - **"could not be restored: …"** — the restore itself failed, usually a permissions or disk problem. This one needs you.
+
+    **Fix:** for a preserved edit, nothing — decide whether you still want the change and re-run `facet install` when you do. For a genuine restore failure, resolve the named cause and re-run; install reconciles each file against its recorded integrity and repairs what it owns without touching files you added yourself.
+
+    <Note>
+    Facets never prompts to force-overwrite a contested file, in a terminal or in CI. Being asked to choose between two versions of a file during a failure — before you can compare them — is not a decision anyone can make well.
+    </Note>
   </Accordion>
 
   <Accordion title='A takeover prompt appeared, or an install was cancelled at one'>

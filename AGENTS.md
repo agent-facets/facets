@@ -66,7 +66,8 @@ belongs here.
 src/
 ├── adapters/       # Adapter machinery: bundler, placement, verify, loader, install-service, first-party list, api-compatibility, mcp-support
 ├── sources/        # Source resolvers: parse + clone/fetch (facet + adapter), Source type, ParseError
-├── install/        # Install machinery: journal, lockfile-guard, lockfile-io, materialize, run-install orchestrator, asset-takeover, file-preimage, classify-outcome, mcp/ (prepare, consent, apply, outcomes)
+├── fs/             # File transition transaction kernel: syscalls, directories, transaction (apply/rollback/journal), describe
+├── install/        # Install machinery: lockfile-guard, lockfile-io, materialize, run-install orchestrator, asset-takeover, classify-outcome, commit/ (tri-write, install-loop), mcp/ (prepare, consent, apply, outcomes)
 ├── cache/          # ~/.facet/cache/ — content-addressed cache for fetched facet payloads
 ├── manifest/       # Pure JSON mutations + project-files I/O bridge for facets.json
 ├── registry/       # Registry HTTP client: metadata resolution, download/extract, version-spec rendering

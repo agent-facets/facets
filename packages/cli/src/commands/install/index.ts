@@ -135,7 +135,7 @@ export const installCommand: Command = {
       // contexts that produce one without a prompt are exactly the ones
       // where stdout is discarded — so the full report goes to stderr
       // first, leaving `fix:` as the last line.
-      writeInstallFailureDetail(captured.failure)
+      writeInstallFailureDetail(captured.failure, captured.rollback)
       writeCliError({
         what: 'install failed',
         detail: installFailureDetail(captured.failure),

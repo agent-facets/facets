@@ -58,7 +58,7 @@ facet adapter install claude-code
 
 The first-party adapters are `claude-code`, `opencode`, and `codex`. Run [`facet adapter install`](/cli/adapters/install) with no name for an interactive picker, or pass a name to install it directly. Third-party adapters install the same way from an npm package, git URL, or local path.
 
-All three first-party adapters support MCP server configuration. A third-party adapter built against the older adapter API `0.1` still works fine for a project with no MCP servers, but [blocks one that has them](/cli/install#adapters-that-cannot-configure-mcp-servers).
+All three first-party adapters support MCP server configuration. A third-party adapter that declares no MCP support still works fine for a project with no MCP servers, but [blocks one that has them](/cli/install#adapters-that-cannot-configure-mcp-servers).
 
 <Tip>
   If you skip this step, `facet add` and `facet install` will launch the adapter picker for you on first use.

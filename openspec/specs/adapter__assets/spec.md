@@ -1,6 +1,6 @@
 ## Purpose
 
-Each adapter is a full abstraction layer over its AI coding tool's storage. The system never reads or writes asset files directly — all asset operations go through the adapter's install, read, and delete methods. This lets each adapter own its tool's directory structure, file format, frontmatter conventions, and metadata handling, and lets the system remain tool-agnostic.
+Each adapter is a full abstraction layer over its AI coding tool's storage. The system never decides where an asset lives or how it is encoded — an adapter answers both. An adapter decides what should change and states it as exact per-file transitions; the system performs every write. This lets each adapter own its tool's directory structure, file format, front-matter conventions, and metadata handling, while every write in the system is subject to one set of guarantees about concurrency, atomicity, and restoration.
 ## Requirements
 ### Requirement: Adapters build per-asset metadata with validation and defaults
 
@@ -23,18 +23,41 @@ An adapter SHALL accept raw per-asset metadata from a facet manifest, validate i
 - **WHEN** an adapter builds metadata from input that omits optional fields
 - **THEN** the enriched metadata SHALL include the adapter's default values for those fields
 
-### Requirement: Adapters provide asset installation
+### Requirement: Adapters plan asset installation without mutating anything
 
-An adapter SHALL accept an installation request whose content shape is determined by asset type. Every installation request SHALL identify its scope and asset name. A skill request SHALL carry the primary `SKILL.md` text, per-asset metadata, a canonical map from companion paths relative to the skill root to opaque bytes, and the caller-verified set of previously-owned companion paths; an empty companion map and an empty previously-owned set SHALL each be valid. Adapters SHALL NOT persist ownership metadata or infer ownership from disk contents. Each request SHALL carry both, from separate sources: the content to write comes from the caller's verified resolved state, while the previously-owned paths a write may remove come exclusively from the caller's machine-local record of what it materialized. An adapter SHALL treat the supplied owned set as the complete extent of what it may remove, and SHALL NOT widen it by convention, by filename pattern, or by any legacy storage format. Agent and command requests SHALL each carry one text content value and per-asset metadata and SHALL NOT carry companions or ownership sets. No installation request SHALL represent archive-only supplementary files.
+An adapter SHALL accept an installation planning request whose content shape is determined by asset type. Every planning request SHALL identify the project it targets, its scope, and its asset name. The project SHALL be supplied on every request regardless of scope; an adapter SHALL NOT derive it from the process working directory, so a caller installing into a project it is not running inside resolves the same destinations as one that is. A skill request SHALL carry the primary `SKILL.md` text, per-asset metadata, a canonical map from companion paths relative to the skill root to opaque bytes, and the caller-verified set of previously-owned companion paths; an empty companion map and an empty previously-owned set SHALL each be valid. Adapters SHALL NOT persist ownership metadata or infer ownership from disk contents. Each request SHALL carry both, from separate sources: the content to write comes from the caller's verified resolved state, while the previously-owned paths a write may remove come exclusively from the caller's machine-local record of what it materialized. An adapter SHALL treat the supplied owned set as the complete extent of what it may remove, and SHALL NOT widen it by convention, by filename pattern, or by any legacy storage format. Agent and command requests SHALL each carry one text content value and per-asset metadata and SHALL NOT carry companions or ownership sets. No installation request SHALL represent archive-only supplementary files.
 
-The adapter SHALL own path resolution, containment, directory creation, metadata assembly, storage format, and rollback. Before any filesystem access, every supplied companion path — new or previously owned — SHALL be validated as relative, canonical, and confined below the resolved skill root; a request containing a malformed or escaping path SHALL be rejected without reading, writing, or deleting anything. Skill installation SHALL replace the complete owned bundle atomically: the new primary and companions SHALL all commit, with previously-owned companion paths absent from the new request removed, or the prior bundle SHALL remain intact. Removal during replacement SHALL be limited to the supplied previously-owned set. Companion bytes SHALL be stored verbatim; metadata or front-matter transformation SHALL apply only to the primary file. Unowned files SHALL NOT be removed. Expected failures SHALL be returned as structured results. Atomicity SHALL cover handled failures within one operation; recovery from an interrupted operation is the caller's idempotent re-install, so installation SHALL remain idempotent and convergent.
+The adapter SHALL own path resolution, containment, storage format, metadata assembly, and deciding which owned files are obsolete. It SHALL NOT write, delete, or create anything: planning SHALL leave every inspected file byte-for-byte unchanged, including its modification time.
+
+A plan SHALL report either that the asset already matches its desired state, or the complete set of file changes that would realize it. Each planned change SHALL name an absolute path, the exact state that path was observed in, and — for a write — the exact bytes to commit. Each planned change SHALL also carry the directory it is authorized to work inside; every planned path SHALL be strictly below it. A file already holding its desired bytes SHALL contribute no change, so re-planning an unchanged asset yields no work at all.
+
+Skill installation SHALL plan the complete owned bundle as one set of changes: the new primary, the new companions, and the removal of previously-owned companion paths absent from the new request. Removal SHALL be limited to the supplied previously-owned set. Companion bytes SHALL be stored verbatim; metadata or front-matter transformation SHALL apply only to the primary file. Unowned files SHALL NOT be removed.
+
+Before any filesystem access, every supplied companion path — new or previously owned — SHALL be validated as relative, canonical, and confined below the resolved skill root; a request containing a malformed or escaping path SHALL be rejected without reading anything. Expected failures SHALL be returned as structured results.
 
 #### Scenario: Install a skill with companions
 
 - **WHEN** a skill request contains primary content and companions `references/api.md` and `assets/logo.png`
-- **THEN** the adapter SHALL store the primary and both companions below that skill's storage location
-- **AND** companion bytes SHALL be byte-identical to the request
+- **THEN** the plan SHALL contain a write for the primary and for both companions below that skill's storage location
+- **AND** planned companion bytes SHALL be byte-identical to the request
 - **AND** primary metadata SHALL NOT be inserted into companion files
+
+#### Scenario: Planning writes nothing
+
+- **WHEN** an adapter plans any installation
+- **THEN** no file SHALL be created, modified, or removed
+- **AND** no inspected file's modification time SHALL change
+
+#### Scenario: An unchanged asset plans no change
+
+- **WHEN** the destination already holds exactly the bytes the request would write
+- **THEN** the plan SHALL report the asset as already matching
+- **AND** the plan SHALL contain no file change
+
+#### Scenario: A planned change states what it was computed from
+
+- **WHEN** a plan contains a write to an occupied destination
+- **THEN** that change SHALL carry the exact state the destination was observed in
 
 #### Scenario: Install a skill with no companions
 
@@ -53,10 +76,10 @@ The adapter SHALL own path resolution, containment, directory creation, metadata
 - **AND** remove the omitted owned companion
 - **AND** preserve every file not named in the previously-owned set
 
-#### Scenario: Failed skill installation leaves no partial bundle
+#### Scenario: A refused bundle change leaves no partial bundle
 
-- **WHEN** writing, deleting, or committing any part of a skill bundle fails
-- **THEN** the adapter SHALL return structured failure data
+- **WHEN** any part of a planned skill bundle cannot be committed
+- **THEN** the operation SHALL report structured failure data
 - **AND** the complete prior bundle SHALL remain intact
 
 #### Scenario: Escaping companion path is rejected
@@ -69,38 +92,52 @@ The adapter SHALL own path resolution, containment, directory creation, metadata
 - **WHEN** an agent or command is installed
 - **THEN** its request SHALL contain exactly one primary text value and no companion map
 
-### Requirement: Adapters provide asset reading
+### Requirement: Adapters report what a destination already holds
 
-An adapter SHALL accept a type-specific read request at a given scope. Every read request SHALL identify its scope, asset type, and asset name. A skill read request SHALL additionally carry the caller-verified owned companion path set; reading a skill SHALL return canonical logical primary content, stored metadata, and the bytes of exactly the requested owned companion paths. The adapter SHALL NOT enumerate the skill directory to discover companions, so unowned files can never be swept into a read result. Every requested companion path SHALL be validated as relative, canonical, and confined below the skill root before any filesystem access. Reading an agent or command SHALL return canonical logical primary content and metadata without companions. Canonical primary content SHALL exclude adapter-specific storage encoding so callers can compare it with portable integrity records.
+A plan SHALL report whether the destination was absent, already equivalent to the desired asset, or occupied by something that differs. An adapter that cannot prove equivalence SHALL report a difference; unprovable equality SHALL fail safe. Equivalence SHALL be decided on the adapter's own storage semantics, so a document whose meaning is unchanged but whose formatting or key order differs MAY be reported as equivalent and left untouched.
 
-#### Scenario: Read an existing multi-file skill
+The adapter SHALL NOT enumerate an asset directory to discover what it owns. Ownership arrives on every request, and the supplied set SHALL be the complete extent of what may be inspected as owned or removed.
 
-- **WHEN** the system reads an installed skill supplying its two owned companion paths
-- **THEN** the adapter SHALL return canonical primary content, metadata, and both requested companion byte values
+#### Scenario: An occupied destination is distinguished from an absent one
 
-#### Scenario: Read returns only requested owned companions
+- **WHEN** a plan targets a destination that already contains a file
+- **THEN** the plan SHALL report the destination as occupied rather than absent
+
+#### Scenario: Unprovable equality is reported as a difference
+
+- **WHEN** an adapter cannot prove that existing content is equivalent to the desired asset
+- **THEN** the plan SHALL report a difference
+
+#### Scenario: A directory is never enumerated to discover ownership
 
 - **WHEN** a skill directory contains an unowned `notes.txt` absent from the request's owned path set
-- **THEN** the read result SHALL NOT include `notes.txt`
+- **THEN** no plan SHALL read, change, or remove `notes.txt`
 
-#### Scenario: Read transformed primary content canonically
+### Requirement: Adapters plan asset removal without mutating anything
 
-- **WHEN** an adapter stores front matter or other adapter-specific encoding around a primary asset
-- **THEN** its read result SHALL return the canonical logical content without that encoding
+An adapter SHALL accept a type-specific removal planning request at a given scope. Every removal request SHALL identify the project it targets, its scope, asset type, and asset name. A skill removal request SHALL additionally carry the caller-verified owned companion path set.
 
-#### Scenario: Read a non-existent asset
+A removal plan SHALL report either that nothing is there, or the complete set of file removals that takes the asset away: the primary plus exactly the supplied owned companion paths. Each planned removal SHALL name an absolute path and the exact state that path was observed in. Every other file SHALL be preserved. Directories left empty by removing owned files SHALL be pruned, bounded by the adapter's authorized directory and never removing it.
+
+A skill whose primary file is already gone SHALL still have its owned companions planned for removal: each has an exact observed state of its own, so removing them remains reversible.
+
+Before any filesystem access, every supplied owned path SHALL be validated as relative, canonical, and confined below the resolved skill root; a request containing a malformed or escaping path SHALL be rejected without reading anything.
+
+#### Scenario: Remove an existing multi-file skill
+
+- **WHEN** removal targets a skill and the request supplies its two owned companion paths
+- **THEN** the plan SHALL contain a removal for the primary and for both supplied owned files
+
+#### Scenario: A bundle whose primary is gone still removes its owned companions
+
+- **WHEN** a skill's primary file is already absent and its owned companions are present
+- **THEN** the plan SHALL contain a removal for each present owned companion
+
+#### Scenario: Removing an absent asset plans nothing
 
 - **WHEN** the requested asset does not exist at that scope
-- **THEN** the adapter SHALL return a structured not-found result
-
-### Requirement: Adapters provide asset deletion
-
-An adapter SHALL accept a type-specific deletion request at a given scope. Every deletion request SHALL identify its scope, asset type, and asset name. A skill deletion request SHALL additionally carry the caller-verified owned companion path set; deleting a skill SHALL remove its primary file and exactly the supplied owned companion paths as one atomic operation, SHALL preserve every other file, and SHALL prune only directories left empty by owned-file removal. Before any filesystem access, every supplied owned path SHALL be validated as relative, canonical, and confined below the resolved skill root; a request containing a malformed or escaping path SHALL be rejected without deleting anything. Deleting an agent or command SHALL remove its single primary asset. Expected deletion failures and missing assets SHALL be returned as structured results.
-
-#### Scenario: Delete an existing multi-file skill
-
-- **WHEN** deletion targets a skill and the request supplies its two owned companion paths
-- **THEN** the adapter SHALL remove the primary and both supplied owned files as one operation
+- **THEN** the plan SHALL report that nothing is there
+- **AND** the plan SHALL contain no file change
 
 #### Scenario: Escaping owned path is rejected before deletion
 
@@ -114,28 +151,23 @@ An adapter SHALL accept a type-specific deletion request at a given scope. Every
 - **THEN** skill deletion SHALL leave `notes.txt` unchanged
 - **AND** SHALL leave any directory needed to contain it
 
-#### Scenario: Failed deletion restores the prior bundle
+#### Scenario: A refused removal restores the prior bundle
 
-- **WHEN** deletion fails after one owned file has been staged for removal
-- **THEN** the adapter SHALL return structured failure data
-- **AND** the prior complete bundle SHALL remain available
+- **WHEN** a planned removal cannot be completed after one owned file has already been removed
+- **THEN** the operation SHALL report structured failure data
+- **AND** every removed file SHALL be restored to its exact prior bytes
 
-#### Scenario: Delete a non-existent asset
+### Requirement: Adapter planning is the only interface for asset storage decisions
 
-- **WHEN** the requested asset does not exist at that scope
-- **THEN** the adapter SHALL return a structured not-found result
+The system SHALL decide every primary text-asset and skill-companion storage question through the selected adapter's planning operations. It SHALL NOT choose asset paths, storage encodings, or metadata conventions itself, and SHALL NOT inspect adapter asset directories to discover what is there. The adapter SHALL own its tool's asset storage format, roots, path resolution, metadata conventions, and skill-bundle composition. Archive-only supplementary files SHALL never be passed to an adapter. Keyed entries inside shared tool-owned project configuration SHALL use their dedicated capability rather than masquerading as text assets.
 
-### Requirement: Asset methods are the only interface for asset storage
+An adapter SHALL declare whether it materializes assets at all. An adapter that declares no asset capability SHALL still validate manifest metadata and SHALL NOT be offered as an installation target.
 
-The system SHALL perform every primary text-asset and skill-companion storage operation through the selected adapter's install, read, and delete operations. It SHALL NOT directly inspect or modify adapter asset directories. The adapter SHALL own its tool's asset storage format, roots, path resolution, metadata conventions, and skill-bundle lifecycle. Archive-only supplementary files SHALL never be passed to an adapter. Keyed entries inside shared tool-owned project configuration SHALL use their dedicated capability rather than masquerading as text assets or passing through asset methods.
-
-The tagged request/result shapes of the asset install, read, and delete operations SHALL be implemented by adapter APIs `0.1` and `0.2`. A consumer SHALL NOT invoke them on an adapter declaring the superseded positional API `0.0`.
-
-#### Scenario: System delegates primary and companion installation
+#### Scenario: System delegates primary and companion planning
 
 - **WHEN** a skill primary and companions must be installed for an adapter
-- **THEN** the system SHALL submit one skill installation request
-- **AND** it SHALL NOT write any requested file directly into the adapter tree
+- **THEN** the system SHALL submit one skill planning request
+- **AND** it SHALL NOT choose any file path itself
 
 #### Scenario: Archive-only supplementary file is withheld
 
@@ -149,7 +181,7 @@ The tagged request/result shapes of the asset install, read, and delete operatio
 
 ### Requirement: Untracked occupied asset destinations require just-in-time confirmation
 
-When an interactive installation reaches a desired effective asset identity whose destination is occupied but not covered by machine-local ownership, the system SHALL disclose the destination and ask whether to continue before adopting or replacing it. Continue SHALL be the default. Equivalent content SHALL be adopted without rewriting it; divergent content SHALL be replaced only after continuation. Cancellation SHALL roll back every prior mutation in the operation. Non-interactive callers SHALL continue automatically, preserving the existing reconciliation behavior.
+When an interactive installation reaches a desired effective asset identity whose destination is occupied but not covered by machine-local ownership, the system SHALL disclose the destination and ask whether to continue before adopting or replacing it. Continue SHALL be the default. Equivalent content SHALL be adopted without rewriting it; divergent content SHALL be replaced only after continuation. Cancellation SHALL restore every file the operation already changed to its exact prior bytes. Non-interactive callers SHALL continue automatically, preserving the existing reconciliation behavior.
 
 The confirmation SHALL remain separate from MCP declaration consent and MCP configuration takeover. Supplying MCP approval SHALL NOT approve an asset takeover. Receipt-owned destinations SHALL reconcile without a takeover confirmation, and destinations outside the desired set SHALL NOT be inspected merely to search for takeovers.
 

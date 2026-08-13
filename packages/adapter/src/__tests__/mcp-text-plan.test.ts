@@ -1,15 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import type { McpServerContribution, PrepareMcpServersRequest } from '../mcp-servers.ts'
+import { regularFile } from '@agent-facets/common'
+import type { McpServerContribution, PlanMcpServersRequest } from '../mcp-servers.ts'
 import {
-  applyMcpTextPlan,
   findInterpolationConflict,
-  type McpTextPlan,
+  type McpTextDocument,
   type PrepareMcpTextPlanInput,
   prepareMcpTextPlan,
-  type TextDocumentEdit,
 } from '../mcp-text-plan.ts'
 
 /**
@@ -18,7 +14,7 @@ import {
  * These are the guarantees a third-party adapter author is entitled to assume
  * and cannot check themselves: that a guard fails closed regardless of the
  * pattern they hand it, and that an edit they render for a document they never
- * disclosed is refused before it can become an unrestorable write.
+ * inspected is refused before it can become an unrestorable write.
  */
 
 function contribution(name: string, declaration: McpServerContribution['declaration']): McpServerContribution {
@@ -37,20 +33,23 @@ function interpolated(name: string): string {
   return `${'$'}{${name}}`
 }
 
-function request(desired: readonly McpServerContribution[]): PrepareMcpServersRequest {
+function request(desired: readonly McpServerContribution[]): PlanMcpServersRequest {
   return { projectRoot: '/project', desired, previouslyOwnedNames: [] }
+}
+
+const encode = (text: string): Uint8Array => new TextEncoder().encode(text)
+
+function document(path: string, contents?: string): McpTextDocument {
+  return { path, state: contents === undefined ? { kind: 'absent' } : regularFile(encode(contents), 0o644) }
 }
 
 function planInput(overrides: Partial<PrepareMcpTextPlanInput> = {}): PrepareMcpTextPlanInput {
   return {
     request: request([contribution('fs', stdio('srv'))]),
-    documentPaths: ['/project/a.json'],
+    documents: [document('/project/a.json')],
     presentNames: new Set<string>(),
     compare: () => 'equivalent',
-    buildEdits: () => ({
-      ok: true,
-      edits: [{ path: '/project/a.json', expected: null, contents: '{}\n' }],
-    }),
+    buildEdits: () => ({ ok: true, edits: [{ path: '/project/a.json', contents: '{}\n' }] }),
     ...overrides,
   }
 }
@@ -59,9 +58,7 @@ describe('findInterpolationConflict', () => {
   test('an interpolated literal names the server and the exact value', () => {
     const conflict = findInterpolationConflict(
       [contribution('fs', stdio('srv', [], { TOKEN: interpolated('SECRET') }))],
-      {
-        pattern: /\$\{[^}]*\}/,
-      },
+      { pattern: /\$\{[^}]*\}/ },
     )
 
     if (conflict === undefined) expect.unreachable()
@@ -73,8 +70,7 @@ describe('findInterpolationConflict', () => {
 
   test('the failure names no document', () => {
     // The guard runs before a write target is chosen, so any path it reported
-    // would be a guess — and OpenCode's guess used to be a file it might never
-    // write.
+    // would be a guess.
     const conflict = findInterpolationConflict([contribution('fs', stdio(interpolated('A')))], {
       pattern: /\$\{[^}]*\}/,
     })
@@ -124,8 +120,6 @@ describe('findInterpolationConflict', () => {
   })
 
   test('flags that change what the source means are preserved', () => {
-    // `u` alters escape semantics, so dropping it would change which values
-    // match. Only `g` and `y` are removed.
     const conflict = findInterpolationConflict([contribution('fs', stdio('\u{1f600}'))], { pattern: /\p{Emoji}/gu })
     if (conflict === undefined) expect.unreachable()
     if (conflict.code !== 'conflict' || conflict.reason !== 'interpolation') expect.unreachable()
@@ -148,58 +142,81 @@ describe('prepareMcpTextPlan', () => {
     expect(result.failure.value).toBe('{env:SECRET}')
   })
 
-  test('an undisclosed edit is refused rather than planned', () => {
+  test('an edit for an uninspected document is refused rather than planned', () => {
     expect(() =>
       prepareMcpTextPlan(
         planInput({
           presentNames: new Set(['fs']),
           compare: () => 'divergent',
-          buildEdits: () => ({
-            ok: true,
-            edits: [{ path: '/project/elsewhere.json', expected: null, contents: '{}\n' }],
-          }),
+          buildEdits: () => ({ ok: true, edits: [{ path: '/project/elsewhere.json', contents: '{}\n' }] }),
         }),
       ),
-    ).toThrow(/undisclosed document/)
+    ).toThrow(/uninspected document/)
   })
 
-  test('a disclosed subset of the documents is accepted', () => {
+  test('a mutation carries the exact state its document was inspected in', () => {
     const result = prepareMcpTextPlan(
       planInput({
-        documentPaths: ['/project/a.json', '/project/b.json'],
+        documents: [document('/project/a.json', '{"mcp":{}}\n')],
         presentNames: new Set(['fs']),
         compare: () => 'divergent',
-        buildEdits: () => ({
-          ok: true,
-          edits: [{ path: '/project/b.json', expected: null, contents: '{}\n' }],
-        }),
+        buildEdits: () => ({ ok: true, edits: [{ path: '/project/a.json', contents: '{"mcp":{"fs":{}}}\n' }] }),
       }),
     )
 
     if (!result.ok) expect.unreachable()
-    const plan = result.preparation.plan
-    if (plan.kind !== 'write') expect.unreachable()
-    expect(plan.edits.map((edit: TextDocumentEdit) => edit.path)).toEqual(['/project/b.json'])
+    if (result.plan.action.kind !== 'mutate') expect.unreachable()
+    const [mutation] = result.plan.action.mutations
+    if (mutation.expected.kind !== 'regular-file') expect.unreachable()
+    expect(new TextDecoder().decode(mutation.expected.contents)).toBe('{"mcp":{}}\n')
+    expect(mutation.boundary).toBe('/project')
   })
 
-  test('every disclosed document may be edited at once', () => {
+  test('several inspected documents may be edited as one batch', () => {
     const result = prepareMcpTextPlan(
       planInput({
-        documentPaths: ['/project/a.json', '/project/b.json'],
+        documents: [document('/project/a.json'), document('/project/b.json')],
         presentNames: new Set(['fs']),
         compare: () => 'divergent',
         buildEdits: () => ({
           ok: true,
           edits: [
-            { path: '/project/a.json', expected: null, contents: '{}\n' },
-            { path: '/project/b.json', expected: null, contents: '{}\n' },
+            { path: '/project/a.json', contents: 'a\n' },
+            { path: '/project/b.json', contents: 'b\n' },
           ],
         }),
       }),
     )
 
     if (!result.ok) expect.unreachable()
-    expect(result.preparation.documentPaths).toEqual(['/project/a.json', '/project/b.json'])
+    if (result.plan.action.kind !== 'mutate') expect.unreachable()
+    expect(result.plan.action.mutations.map((mutation) => mutation.path)).toEqual([
+      '/project/a.json',
+      '/project/b.json',
+    ])
+  })
+
+  test('an edit whose rendered text matches the document is dropped', () => {
+    // Adapters re-render a whole layer to change one entry. Writing identical
+    // bytes back would journal a transition this run never made.
+    const result = prepareMcpTextPlan(
+      planInput({
+        documents: [document('/project/a.json', 'same\n'), document('/project/b.json', 'old\n')],
+        presentNames: new Set(['fs']),
+        compare: () => 'divergent',
+        buildEdits: () => ({
+          ok: true,
+          edits: [
+            { path: '/project/a.json', contents: 'same\n' },
+            { path: '/project/b.json', contents: 'new\n' },
+          ],
+        }),
+      }),
+    )
+
+    if (!result.ok) expect.unreachable()
+    if (result.plan.action.kind !== 'mutate') expect.unreachable()
+    expect(result.plan.action.mutations.map((mutation) => mutation.path)).toEqual(['/project/b.json'])
   })
 
   test('nothing to write short-circuits before edits are built', () => {
@@ -212,41 +229,21 @@ describe('prepareMcpTextPlan', () => {
     )
 
     if (!result.ok) expect.unreachable()
-    expect(result.preparation.plan.kind).toBe('unchanged')
-  })
-})
-
-describe('applyMcpTextPlan', () => {
-  test('a drifted document is reported by path alone', async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'adapter-text-plan-'))
-    try {
-      const path = join(directory, 'doc.json')
-      writeFileSync(path, 'current\n')
-      const plan: McpTextPlan = {
-        kind: 'write',
-        documentPaths: [path],
-        edits: [{ path, expected: 'inspected\n', contents: 'desired\n' }],
-      }
-
-      const applied = await applyMcpTextPlan(plan, { adapterName: 'test' })
-
-      if (applied.ok) expect.unreachable()
-      expect(applied.failure).toEqual({ code: 'conflict', reason: 'document-changed', path })
-      expect(await Bun.file(path).text()).toBe('current\n')
-    } finally {
-      rmSync(directory, { recursive: true, force: true })
-    }
+    expect(result.plan.action.kind).toBe('unchanged')
   })
 
-  test('a plan carrying an undisclosed edit is not a plan this SDK produced', async () => {
-    // The opaque plan crosses a boundary the type system cannot follow, so the
-    // disclosure invariant is re-established on the way back in.
-    const forged = {
-      kind: 'write',
-      documentPaths: ['/project/a.json'],
-      edits: [{ path: '/project/elsewhere.json', expected: null, contents: '{}\n' }],
-    }
+  test('outcomes survive even when every rendered edit turns out to be a no-op', () => {
+    const result = prepareMcpTextPlan(
+      planInput({
+        documents: [document('/project/a.json', 'identical\n')],
+        presentNames: new Set(['fs']),
+        compare: () => 'divergent',
+        buildEdits: () => ({ ok: true, edits: [{ path: '/project/a.json', contents: 'identical\n' }] }),
+      }),
+    )
 
-    await expect(applyMcpTextPlan(forged, { adapterName: 'test' })).rejects.toThrow(/did not produce/)
+    if (!result.ok) expect.unreachable()
+    expect(result.plan.action.kind).toBe('unchanged')
+    expect(result.plan.outcomes.map((outcome) => outcome.kind)).toEqual(['divergent'])
   })
 })

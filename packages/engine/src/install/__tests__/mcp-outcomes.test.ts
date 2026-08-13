@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
-import { ADAPTER_API_VERSION, deleteAssetFile, installAssetFile, readAssetFile } from '@agent-facets/adapter'
+import { ADAPTER_API_VERSION, planSingleFileInstall, planSingleFileRemoval } from '@agent-facets/adapter'
 import { receiptPath } from '../receipt.ts'
 import { runRemove } from '../remove/index.ts'
 import { runInstall } from '../run-install.ts'
@@ -46,28 +46,19 @@ function mcpAdapter(name: string, options: RecordingMcpOptions = {}): TestAdapte
     adapter: {
       name,
       apiVersion: ADAPTER_API_VERSION,
-      supportsInstall: true,
       mcpServers: mcp.capability,
       buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
-      async installAsset(request) {
-        const p = { file: file(request.assetType, request.name) }
-        await installAssetFile(p, request.content, request.metadata as Record<string, unknown> | undefined)
-        return { ok: true, primaryPath: p.file }
-      },
-      async readAsset(request) {
-        try {
-          const { content, metadata } = await readAssetFile({ file: file(request.assetType, request.name) })
-          return request.assetType === 'skill'
-            ? { ok: true, asset: { assetType: 'skill', content, metadata, companions: {} } }
-            : { ok: true, asset: { assetType: request.assetType, content, metadata } }
-        } catch {
-          return { ok: false, failure: { code: 'not-found' } }
-        }
-      },
-      async deleteAsset(request) {
-        const p = { file: file(request.assetType, request.name) }
-        await deleteAssetFile(p)
-        return { ok: true, existed: true, deletedPaths: [p.file] }
+      assets: {
+        async planInstall(request) {
+          return planSingleFileInstall(
+            { file: file(request.assetType, request.name), boundary: baseDir() },
+            request.content,
+            request.metadata as Record<string, unknown>,
+          )
+        },
+        async planRemoval(request) {
+          return planSingleFileRemoval({ file: file(request.assetType, request.name), boundary: baseDir() })
+        },
       },
     },
   }
@@ -497,14 +488,14 @@ describe('mcp outcomes — events', () => {
     // written its document — so this is a real rollback, not a refusal before
     // the first mutation.
     const second = mcpAdapter('second', {
-      failApply: { code: 'io-failed', operation: 'write', path: '/nope', message: 'disk on fire' },
+      failApply: { code: 'io-failed', path: '/nope', message: 'disk on fire' },
     })
 
     const { result, events } = await install({ adapters: [first.adapter, second.adapter] })
 
     if (result.ok) expect.unreachable()
     expect(result.failure.code).toBe('MCP_APPLY_FAILED')
-    expect(result.rollback.kind).toBe('succeeded')
+    expect(result.rollback.kind).toBe('complete')
     expect(events.map((event) => event.kind)).not.toContain('mcp-configured')
     // The restore put the first adapter's document back to not existing.
     expect(existsSync(first.documentPath)).toBe(false)

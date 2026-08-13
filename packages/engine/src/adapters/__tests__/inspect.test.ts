@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ADAPTER_API_VERSION, ADAPTER_API_VERSION_ASSETS_ONLY } from '@agent-facets/adapter/api-version'
+import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
 import { SUPPORTED_ADAPTER_APIS } from '../api-compatibility.ts'
 import { inspectInstalledAdapter, inspectInstalledAdapters } from '../inspect.ts'
 import { GENERATIONS_DIR_NAME, INSTALLATION_RECEIPT_NAME, type InstallationSource } from '../installation.ts'
@@ -48,9 +48,7 @@ export default {
   ${api}
   mcpServers: false,
   buildAssetMetadata: () => ({ ok: true, data: { marker: '${opts.marker ?? 'default'}' } }),
-  installAsset: async () => undefined,
-  readAsset: async () => ({ content: '' }),
-  deleteAsset: async () => undefined,
+  assets: { planInstall: async () => undefined, planRemoval: async () => undefined },
 }
 `,
   )
@@ -69,6 +67,22 @@ async function installManaged(name: string, bundle: string, apiVersion: string =
   const result = await placeAdapterManaged(name, bundle, { apiVersion, source }, baseDir)
   if (!result.ok) expect.unreachable(`test bug: managed install failed (${result.failure.kind})`)
   return result.receipt.activeGeneration
+}
+
+/**
+ * An installation this CLI could not create: the receipt records a contract
+ * that is no longer supported.
+ *
+ * Written directly because that is the only way it exists — a machine that
+ * installed the adapter under an older CLI. Placement verifies before it
+ * writes, so the supported path cannot produce one.
+ */
+async function installRecordedAs(name: string, apiVersion: string): Promise<void> {
+  const generation = await installManaged(name, await makeBundle(name))
+  await Bun.write(
+    join(baseDir, name, INSTALLATION_RECEIPT_NAME),
+    JSON.stringify({ schemaVersion: 1, activeGeneration: generation, apiVersion, source }),
+  )
 }
 
 describe('inspectInstalledAdapter — managed', () => {
@@ -138,22 +152,14 @@ describe('inspectInstalledAdapter — managed', () => {
     expect(inspection.failure.kind).toBe('api-unsupported')
   })
 
-  test('receipt/runtime disagreement between two supported tokens is a metadata mismatch', async () => {
-    // Only reachable now that the window holds more than one token: both
-    // sides pass the support check, so the disagreement itself is the fault.
-    await installDrifted(ADAPTER_API_VERSION_ASSETS_ONLY, ADAPTER_API_VERSION)
-
-    const inspection = await inspectInstalledAdapter('my-adapter', baseDir)
-    if (inspection.kind !== 'incompatible') expect.unreachable()
-    expect(inspection.failure.kind).toBe('api-metadata-mismatch')
-  })
-
-  test('an asset-only installation stays loadable', async () => {
-    const bundle = await makeBundle('legacy-adapter', { apiVersion: ADAPTER_API_VERSION_ASSETS_ONLY })
-    await installManaged('legacy-adapter', bundle, ADAPTER_API_VERSION_ASSETS_ONLY)
+  test('an installation recorded against a superseded contract is rejected before it is imported', async () => {
+    // The receipt alone decides this: an adapter that wrote its own files and
+    // owned its own rollback cannot be offered the guarantees this CLI now
+    // makes, so it must not be loaded to find that out.
+    await installRecordedAs('legacy-adapter', '0.2')
     const inspection = await inspectInstalledAdapter('legacy-adapter', baseDir)
-    if (inspection.kind !== 'compatible') expect.unreachable()
-    expect(inspection.verified.adapter.apiVersion).toBe(ADAPTER_API_VERSION_ASSETS_ONLY)
+    if (inspection.kind !== 'incompatible') expect.unreachable()
+    expect(inspection.failure.kind).toBe('api-unsupported')
   })
 
   test('invalid receipt classifies as broken and keeps a repair source', async () => {
@@ -251,22 +257,16 @@ describe('loadInstalledAdapters — fail-closed aggregation', () => {
     expect(result.adapters.map((adapter) => adapter.name)).toEqual(['alpha', 'beta'])
   })
 
-  test('adapters on either supported contract load together', async () => {
-    // The compatibility window in one assertion: a project may hold one
-    // upgraded and one not-yet-upgraded adapter and still install.
+  test('one adapter on a superseded contract fails the whole load', async () => {
+    // Fail-closed, and deliberately not "load the ones that work": a project
+    // materialized through some of its adapters and not others is a state no
+    // later run can describe, let alone clean up.
     await installManaged('current', await makeBundle('current'))
-    await installManaged(
-      'legacy',
-      await makeBundle('legacy', { apiVersion: ADAPTER_API_VERSION_ASSETS_ONLY }),
-      ADAPTER_API_VERSION_ASSETS_ONLY,
-    )
+    await installRecordedAs('legacy', '0.2')
 
     const result = await loadInstalledAdapters(baseDir)
-    if (!result.ok) expect.unreachable()
-    expect(result.adapters.map((adapter) => [adapter.name, adapter.apiVersion])).toEqual([
-      ['current', ADAPTER_API_VERSION],
-      ['legacy', ADAPTER_API_VERSION_ASSETS_ONLY],
-    ])
+    if (result.ok) expect.unreachable()
+    expect(result.failures.map((failure) => failure.name)).toEqual(['legacy'])
   })
 
   test('a single incompatible entry fails the whole load with all failures collected', async () => {

@@ -1,30 +1,38 @@
 import { ADAPTER_API_VERSION } from './api-version.ts'
 import type { McpServerCapability } from './mcp-servers.ts'
-import type { AdapterDefinition, McpCapableAdapter } from './types.ts'
+import type { Adapter, AdapterDefinition, AssetCapability } from './types.ts'
 
 /**
- * Whether a value is a complete MCP server capability.
+ * Whether a value is a complete asset capability.
  *
- * "Complete" is the only accepted form. A capability with `prepare` but no
- * `apply` would be an adapter that can promise a change it cannot commit, so
- * it is rejected at definition time rather than discovered mid-transaction.
- * The check is structural because an author may reach this factory from
- * untyped JavaScript, where the type system's guarantee does not apply.
+ * "Complete" is the only accepted form. A capability that can plan an install
+ * but not a removal is an adapter that can put files on disk and never take
+ * them off, so it is rejected at definition time rather than discovered when a
+ * facet is removed. The check is structural because an author may reach this
+ * factory from untyped JavaScript, where the type system's guarantee does not
+ * apply.
  */
-function isCompleteMcpServerCapability<Plan>(value: unknown): value is McpServerCapability<Plan> {
-  if (typeof value !== 'object' || value === null) {
-    return false
-  }
+function isCompleteAssetCapability(value: unknown): value is AssetCapability {
+  if (typeof value !== 'object' || value === null) return false
   const capability = value as Record<string, unknown>
-  return typeof capability.prepare === 'function' && typeof capability.apply === 'function'
+  return typeof capability.planInstall === 'function' && typeof capability.planRemoval === 'function'
+}
+
+/** Whether a value is a complete MCP server capability. */
+function isCompleteMcpServerCapability(value: unknown): value is McpServerCapability {
+  if (typeof value !== 'object' || value === null) return false
+  return typeof (value as Record<string, unknown>).plan === 'function'
 }
 
 /**
  * Create an adapter from a definition object.
  *
- * Validates the definition shape and provides stub defaults for optional
- * CRUD methods. Returns a frozen `Adapter` object stamped with the SDK's
- * canonical adapter API version (`ADAPTER_API_VERSION`).
+ * Validates the definition shape and returns a frozen `Adapter` stamped with
+ * the SDK's canonical adapter API version (`ADAPTER_API_VERSION`).
+ *
+ * Both capabilities are required fields with an explicit `false`. There are no
+ * stub defaults: a capability the CLI must know about *before* it plans a
+ * transaction cannot be discovered by calling it and being refused.
  *
  * @example
  * ```ts
@@ -32,14 +40,15 @@ function isCompleteMcpServerCapability<Plan>(value: unknown): value is McpServer
  *
  * export default defineAdapter({
  *   name: 'opencode',
+ *   assets: false,
+ *   mcpServers: false,
  *   buildAssetMetadata(data) {
  *     // validate and enrich metadata using arktype or any other library
  *   },
  * })
  * ```
  */
-export function defineAdapter<Plan = unknown>(definition: AdapterDefinition<Plan>): McpCapableAdapter<Plan> {
-  // Validate required fields
+export function defineAdapter(definition: AdapterDefinition): Adapter {
   if (!definition.name || typeof definition.name !== 'string') {
     throw new Error('defineAdapter: "name" is required and must be a non-empty string')
   }
@@ -48,51 +57,29 @@ export function defineAdapter<Plan = unknown>(definition: AdapterDefinition<Plan
     throw new Error('defineAdapter: "buildAssetMetadata" is required and must be a function')
   }
 
-  // Unlike the asset methods below, an omitted or partial `mcpServers` gets no
-  // stub fallback. A not-implemented stub is the right answer for an operation
-  // the CLI can route around; MCP support is a capability the CLI has to know
-  // about *before* it plans a transaction, so an adapter must state it.
-  if (definition.mcpServers !== false && !isCompleteMcpServerCapability<Plan>(definition.mcpServers)) {
+  if (definition.assets !== false && !isCompleteAssetCapability(definition.assets)) {
     throw new Error(
-      'defineAdapter: "mcpServers" is required and must be either false or an object with "prepare" and "apply" functions',
+      'defineAdapter: "assets" is required and must be either false or an object with "planInstall" and "planRemoval" functions',
     )
   }
 
-  const adapter: McpCapableAdapter<Plan> = {
+  if (definition.mcpServers !== false && !isCompleteMcpServerCapability(definition.mcpServers)) {
+    throw new Error(
+      'defineAdapter: "mcpServers" is required and must be either false or an object with a "plan" function',
+    )
+  }
+
+  const adapter: Adapter = {
     name: definition.name,
 
-    // SDK-owned: always the canonical value, even if a non-TypeScript
-    // caller sneaks an `apiVersion` past the input type.
+    // SDK-owned: always the canonical value, even if a non-TypeScript caller
+    // sneaks an `apiVersion` past the input type.
     apiVersion: ADAPTER_API_VERSION,
 
-    supportsInstall: definition.supportsInstall,
-
+    assets: definition.assets,
     mcpServers: definition.mcpServers,
 
     buildAssetMetadata: definition.buildAssetMetadata.bind(definition),
-
-    // CRUD stubs — adapters that omit an operation return a structured
-    // not-implemented failure instead of throwing (errors are values).
-    installAsset:
-      definition.installAsset?.bind(definition) ??
-      (async () => ({
-        ok: false as const,
-        failure: { code: 'not-implemented' as const, method: 'installAsset' as const },
-      })),
-
-    readAsset:
-      definition.readAsset?.bind(definition) ??
-      (async () => ({
-        ok: false as const,
-        failure: { code: 'not-implemented' as const, method: 'readAsset' as const },
-      })),
-
-    deleteAsset:
-      definition.deleteAsset?.bind(definition) ??
-      (async () => ({
-        ok: false as const,
-        failure: { code: 'not-implemented' as const, method: 'deleteAsset' as const },
-      })),
   }
 
   return Object.freeze(adapter)

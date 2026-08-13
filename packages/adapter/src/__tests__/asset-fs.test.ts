@@ -1,255 +1,137 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-  assembleAssetContent,
-  deleteAssetFile,
-  installAssetFile,
-  readAssetFile,
-  splitAssetContent,
-} from '../asset-fs.ts'
+import { assembleAssetContent, planSingleFileInstall, planSingleFileRemoval, splitAssetContent } from '../asset-fs.ts'
 
-let workDir: string
+let root: string
 
 beforeEach(() => {
-  workDir = mkdtempSync(join(tmpdir(), 'asset-fs-test-'))
+  root = realpathSync(mkdtempSync(join(tmpdir(), 'facet-asset-plan-')))
 })
 
 afterEach(() => {
-  rmSync(workDir, { recursive: true, force: true })
+  rmSync(root, { recursive: true, force: true })
 })
 
-describe('installAssetFile', () => {
-  test('creates nested parent directories and writes body verbatim when no metadata', async () => {
-    const file = join(workDir, 'deeply/nested/skill/SKILL.md')
-    await installAssetFile({ file }, '# plan body')
-    expect(readFileSync(file, 'utf8')).toBe('# plan body')
+const decode = (bytes: Uint8Array): string => new TextDecoder().decode(bytes)
+
+describe('planSingleFileInstall', () => {
+  test('plans a create when nothing is there', () => {
+    const file = join(root, 'agents', 'reviewer.md')
+    const result = planSingleFileInstall({ file, boundary: root }, '# body\n', { name: 'reviewer' })
+
+    if (!result.ok) expect.unreachable()
+    expect(result.plan.occupancy).toBe('absent')
+    if (result.plan.action.kind !== 'mutate') expect.unreachable()
+    const [mutation] = result.plan.action.mutations
+    expect(mutation.kind).toBe('write')
+    expect(mutation.path).toBe(file)
+    expect(mutation.expected.kind).toBe('absent')
   })
 
-  test('prepends YAML front-matter when metadata is non-empty', async () => {
-    const file = join(workDir, 'skill.md')
-    await installAssetFile({ file }, '# plan body', {
-      name: 'planning',
-      description: 'plan things',
-    })
-    const raw = readFileSync(file, 'utf8')
-    expect(raw).toContain('---\n')
-    expect(raw).toContain('name: planning')
-    expect(raw).toContain('description: plan things')
-    expect(raw).toContain('# plan body')
+  test('writes nothing when the file already holds exactly these bytes', () => {
+    const file = join(root, 'reviewer.md')
+    writeFileSync(file, assembleAssetContent('# body\n', { name: 'reviewer' }))
+
+    const result = planSingleFileInstall({ file, boundary: root }, '# body\n', { name: 'reviewer' })
+
+    if (!result.ok) expect.unreachable()
+    expect(result.plan.occupancy).toBe('equivalent')
+    expect(result.plan.action.kind).toBe('unchanged')
   })
 
-  test('overwrites existing content unconditionally', async () => {
-    const file = join(workDir, 'skill.md')
-    writeFileSync(file, 'old content')
-    await installAssetFile({ file }, 'new body', { name: 'new' })
-    expect(readFileSync(file, 'utf8')).toContain('new body')
-    expect(readFileSync(file, 'utf8')).not.toContain('old content')
+  test('reports divergence and carries the exact prior state', () => {
+    const file = join(root, 'reviewer.md')
+    writeFileSync(file, 'hand written\n')
+    chmodSync(file, 0o640)
+
+    const result = planSingleFileInstall({ file, boundary: root }, '# body\n', { name: 'reviewer' })
+
+    if (!result.ok) expect.unreachable()
+    expect(result.plan.occupancy).toBe('divergent')
+    if (result.plan.action.kind !== 'mutate') expect.unreachable()
+    const [mutation] = result.plan.action.mutations
+    if (mutation.expected.kind !== 'regular-file') expect.unreachable()
+    expect(decode(mutation.expected.contents)).toBe('hand written\n')
+    expect(mutation.expected.mode).toBe(0o640)
   })
 
-  test('does not add front-matter when metadata is omitted', async () => {
-    const file = join(workDir, 'skill.md')
-    await installAssetFile({ file }, 'just body')
-    expect(readFileSync(file, 'utf8')).toBe('just body')
+  test('refuses to plan through a directory standing at the target', () => {
+    const file = join(root, 'occupied')
+    mkdirSync(file)
+
+    const result = planSingleFileInstall({ file, boundary: root }, 'x', undefined)
+
+    if (result.ok) expect.unreachable()
+    expect(result.failure.code).toBe('unsupported-object')
   })
 
-  test('does not add front-matter when metadata is an empty object', async () => {
-    const file = join(workDir, 'skill.md')
-    await installAssetFile({ file }, 'just body', {})
-    expect(readFileSync(file, 'utf8')).toBe('just body')
-  })
+  test('planning writes nothing to disk', () => {
+    const file = join(root, 'untouched.md')
+    writeFileSync(file, 'before\n')
+    const before = statSync(file)
 
-  test('merges caller metadata over body-embedded front-matter', async () => {
-    const file = join(workDir, 'skill.md')
-    const bodyWithFM = '---\nexisting: true\nname: from-body\n---\n# body'
-    await installAssetFile({ file }, bodyWithFM, { name: 'from-caller' })
-    const raw = readFileSync(file, 'utf8')
-    expect(raw).toContain('name: from-caller')
-    expect(raw).toContain('existing: true')
-    expect(raw).toContain('# body')
-  })
-})
+    planSingleFileInstall({ file, boundary: root }, '# other\n', { name: 'x' })
 
-describe('readAssetFile', () => {
-  test('returns body-only when the file has no front-matter', async () => {
-    const file = join(workDir, 'skill.md')
-    await installAssetFile({ file }, 'just body')
-    expect(await readAssetFile({ file })).toEqual({ content: 'just body' })
-  })
-
-  test('splits front-matter and body', async () => {
-    const file = join(workDir, 'skill.md')
-    await installAssetFile({ file }, '# body', { name: 'planning', description: 'plan' })
-    const result = await readAssetFile({ file })
-    expect(result.content.trim()).toBe('# body')
-    expect(result.metadata).toEqual({ name: 'planning', description: 'plan' })
-  })
-
-  test('throws when the file is absent', async () => {
-    await expect(readAssetFile({ file: join(workDir, 'missing.md') })).rejects.toThrow()
-  })
-
-  test('tolerates malformed YAML by falling back to body-only', async () => {
-    const file = join(workDir, 'skill.md')
-    writeFileSync(file, '---\n{not valid: yaml:: at all\n---\n# body')
-    const result = await readAssetFile({ file })
-    // Either falls back to raw or returns empty metadata — both are acceptable
-    // so long as we don't throw.
-    expect(result).toBeTruthy()
+    const after = statSync(file)
+    expect(after.mtimeMs).toBe(before.mtimeMs)
+    expect(after.ino).toBe(before.ino)
   })
 })
 
-describe('deleteAssetFile', () => {
-  test('removes the asset file', async () => {
-    const file = join(workDir, 'skill.md')
-    await installAssetFile({ file }, 'body')
-    await deleteAssetFile({ file })
-    expect(existsSync(file)).toBe(false)
+describe('planSingleFileRemoval', () => {
+  test('reports absence rather than planning an empty batch', () => {
+    const result = planSingleFileRemoval({ file: join(root, 'gone.md'), boundary: root })
+
+    if (!result.ok) expect.unreachable()
+    expect(result.plan.kind).toBe('absent')
   })
 
-  test('leaves an adjacent .meta.json file alone', async () => {
-    // Metadata has always been written into the asset file's own front
-    // matter; this SDK has never produced a `<asset>.meta.json`. A file with
-    // that name is therefore somebody else's, and deleting an asset is not a
-    // licence to remove the files next to it.
-    const file = join(workDir, 'skill.md')
-    const neighbor = `${file}.meta.json`
-    await installAssetFile({ file }, 'body')
-    writeFileSync(neighbor, '{"mine":true}')
+  test('plans one deletion carrying the exact prior state', () => {
+    const file = join(root, 'present.md')
+    writeFileSync(file, 'contents\n')
 
-    await deleteAssetFile({ file })
+    const result = planSingleFileRemoval({ file, boundary: root })
 
-    expect(existsSync(file)).toBe(false)
-    expect(readFileSync(neighbor, 'utf8')).toBe('{"mine":true}')
-  })
-
-  test('is a no-op when the asset is absent', async () => {
-    const missingPath = join(workDir, 'missing.md')
-    await expect(deleteAssetFile({ file: missingPath })).resolves.toBe(missingPath)
+    if (!result.ok) expect.unreachable()
+    if (result.plan.kind !== 'remove') expect.unreachable()
+    const [mutation] = result.plan.action.mutations
+    expect(mutation.kind).toBe('delete')
+    if (mutation.expected.kind !== 'regular-file') expect.unreachable()
+    expect(decode(mutation.expected.contents)).toBe('contents\n')
   })
 })
 
-describe('deleteAssetFile — empty-directory pruning', () => {
-  test('prunes the skill folder when it becomes empty after deletion', async () => {
-    const file = join(workDir, 'skills/planning/SKILL.md')
-    await installAssetFile({ file }, '# planning')
-    await deleteAssetFile({ file, pruneBoundary: workDir })
-    expect(existsSync(file)).toBe(false)
-    expect(existsSync(join(workDir, 'skills/planning'))).toBe(false)
+describe('front-matter round trip', () => {
+  test('assemble → split returns the original body and metadata', () => {
+    const assembled = assembleAssetContent('# heading\n\nbody\n', { name: 'planning', description: 'plan things' })
+    const split = splitAssetContent(assembled)
+
+    expect(split.content).toBe('# heading\n\nbody\n')
+    expect(split.metadata).toEqual({ name: 'planning', description: 'plan things' })
   })
 
-  test('preserves the skill folder when it still contains an unrelated file', async () => {
-    const file = join(workDir, 'skills/planning/SKILL.md')
-    await installAssetFile({ file }, '# planning')
-    const sibling = join(workDir, 'skills/planning/notes.md')
-    writeFileSync(sibling, 'keep me')
-    await deleteAssetFile({ file, pruneBoundary: workDir })
-    expect(existsSync(file)).toBe(false)
-    expect(existsSync(sibling)).toBe(true)
-    expect(existsSync(join(workDir, 'skills/planning'))).toBe(true)
+  test('emits no separator newline between the fence and the body', () => {
+    const assembled = assembleAssetContent('# body\n', { name: 'x' })
+    expect(assembled).toBe('---\nname: x\n---\n# body\n')
   })
 
-  test('prunes nested namespace parents when they all become empty', async () => {
-    const file = join(workDir, 'skills/vendor/planning/SKILL.md')
-    await installAssetFile({ file }, '# planning')
-    await deleteAssetFile({ file, pruneBoundary: workDir })
-    expect(existsSync(join(workDir, 'skills/vendor/planning'))).toBe(false)
-    expect(existsSync(join(workDir, 'skills/vendor'))).toBe(false)
-    expect(existsSync(join(workDir, 'skills'))).toBe(false)
+  test('a body with no metadata is stored verbatim', () => {
+    expect(assembleAssetContent('# body\n', {})).toBe('# body\n')
   })
 
-  test('stops pruning at a nested namespace parent that still has a sibling', async () => {
-    const file = join(workDir, 'skills/vendor/planning/SKILL.md')
-    await installAssetFile({ file }, '# planning')
-    const siblingSkill = join(workDir, 'skills/vendor/other/SKILL.md')
-    await installAssetFile({ file: siblingSkill }, '# other')
-    await deleteAssetFile({ file, pruneBoundary: workDir })
-    expect(existsSync(join(workDir, 'skills/vendor/planning'))).toBe(false)
-    expect(existsSync(join(workDir, 'skills/vendor'))).toBe(true)
-    expect(existsSync(siblingSkill)).toBe(true)
+  test("caller metadata wins over the body's own front matter", () => {
+    const assembled = assembleAssetContent('---\nname: authored\ntools: [grep]\n---\n# body\n', { name: 'effective' })
+    const split = splitAssetContent(assembled)
+
+    expect(split.metadata).toEqual({ name: 'effective', tools: ['grep'] })
+    expect(split.content).toBe('# body\n')
   })
 
-  test('never removes the configured boundary directory itself', async () => {
-    const file = join(workDir, 'agents/reviewer.md')
-    await installAssetFile({ file }, '# reviewer')
-    await deleteAssetFile({ file, pruneBoundary: workDir })
-    // agents/ becomes empty and is pruned, but the boundary (workDir) stays.
-    expect(existsSync(join(workDir, 'agents'))).toBe(false)
-    expect(existsSync(workDir)).toBe(true)
-  })
-
-  test('remains idempotent when the file and parents are already absent', async () => {
-    const file = join(workDir, 'skills/planning/SKILL.md')
-    await installAssetFile({ file }, '# planning')
-    await deleteAssetFile({ file, pruneBoundary: workDir })
-    // Second delete of an already-gone asset + already-pruned dirs.
-    await expect(deleteAssetFile({ file, pruneBoundary: workDir })).resolves.toBe(file)
-    expect(existsSync(join(workDir, 'skills'))).toBe(false)
-  })
-
-  test('does no directory pruning when no boundary is supplied', async () => {
-    const file = join(workDir, 'skills/planning/SKILL.md')
-    await installAssetFile({ file }, '# planning')
-    await deleteAssetFile({ file })
-    expect(existsSync(file)).toBe(false)
-    // Empty directory is left behind — back-compat with boundary-less callers.
-    expect(existsSync(join(workDir, 'skills/planning'))).toBe(true)
-  })
-})
-
-describe('assembleAssetContent / splitAssetContent — round-trip', () => {
-  // Inverse-property contract: split(assemble(body, metadata)) === { content: body, metadata }.
-  // If this ever drifts, every consumer that compares a write-then-read-
-  // back asset (e.g. `materialize`'s skip-if-identical check) will report
-  // false drift on every install — see the runaway "repaired" loop.
-
-  test('inverse: simple body recovers byte-for-byte', () => {
-    const body = '# body'
-    const metadata = { name: 'planning', description: 'plan' }
-    const split = splitAssetContent(assembleAssetContent(body, metadata))
-    expect(split.metadata).toEqual(metadata)
-    expect(split.content).toBe(body)
-  })
-
-  test('inverse: body with trailing newline recovers byte-for-byte', () => {
-    const body = '# heading\n\nparagraph\n'
-    const metadata = { name: 'planning', description: 'plan' }
-    const split = splitAssetContent(assembleAssetContent(body, metadata))
-    expect(split.content).toBe(body)
-    expect(split.metadata).toEqual(metadata)
-  })
-
-  test('inverse: body that already starts with a newline recovers byte-for-byte', () => {
-    const body = '\n# heading\n'
-    const metadata = { name: 'planning' }
-    const split = splitAssetContent(assembleAssetContent(body, metadata))
-    expect(split.content).toBe(body)
-    expect(split.metadata).toEqual(metadata)
-  })
-
-  test('inverse: empty body recovers as empty', () => {
-    const body = ''
-    const metadata = { name: 'planning' }
-    const split = splitAssetContent(assembleAssetContent(body, metadata))
-    expect(split.content).toBe(body)
-    expect(split.metadata).toEqual(metadata)
-  })
-
-  test('inverse: extras-rich metadata recovers byte-for-byte', () => {
-    const body = '# planning content\n'
-    const metadata = {
-      customField: 'hello',
-      enabled: true,
-      name: 'planning',
-      description: 'planning skill',
-    }
-    const split = splitAssetContent(assembleAssetContent(body, metadata))
-    expect(split.content).toBe(body)
-    expect(split.metadata).toEqual(metadata)
-  })
-
-  test('split returns {content: raw} when there is no front-matter', () => {
-    expect(splitAssetContent('plain body')).toEqual({ content: 'plain body' })
+  test('assembling the same request twice produces identical bytes', () => {
+    const once = assembleAssetContent('# body\n', { name: 'x', description: 'y' })
+    const twice = assembleAssetContent('# body\n', { name: 'x', description: 'y' })
+    expect(once).toBe(twice)
   })
 })

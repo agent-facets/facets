@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import type { PlannedServerConfiguration } from '@agent-facets/protocol'
 import { CURRENT_LOCKFILE_VERSION, preserveLockfileExtensions } from '@agent-facets/protocol'
 import { type AdapterCompatibilityFailure, compatibilityFailureFor } from '../adapters/api-compatibility.ts'
+import { FileTransaction } from '../fs/index.ts'
 import { FACETS_JSON_FILE, type NormalizedProjectManifest } from '../manifest/mutations.ts'
 import { loadProjectManifest, manifestLoadFailure } from '../manifest/project-files.ts'
 import { classifyOutcome, facetConfigurationWork, NO_CONFIGURATION_WORK } from './classify-outcome.ts'
@@ -18,12 +19,16 @@ import {
   obsoleteMcpOwnership,
   previouslyOwnedServerNames,
 } from './commit/server-ownership.ts'
-import { buildUpdatedReceipt, commitProjectFiles, type LockedSetCommit } from './commit/tri-write.ts'
+import {
+  buildUpdatedReceipt,
+  commitProjectFiles,
+  type LockedSetCommit,
+  readProjectFileStates,
+} from './commit/tri-write.ts'
 import { checkFrozenConsistency, checkFrozenServerIntent } from './frozen-gates.ts'
-import { InstallJournal } from './journal.ts'
 import { acquireInstallLock } from './lockfile-guard.ts'
 import { FACETS_LOCK_FILE, loadLockfile } from './lockfile-io.ts'
-import { deleteObsoleteAssets, type RetainedObsoleteBundle } from './materialize.ts'
+import { deleteObsoleteAssets } from './materialize.ts'
 import { materializeFailureToRunInstall } from './materialize-failure.ts'
 import { applyMcpServers } from './mcp/apply.ts'
 import { deriveMcpConsent, type McpConsentPolicy, settleMcpConsent } from './mcp/consent.ts'
@@ -92,7 +97,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     return {
       ok: false,
       failure: { code: 'LOCK_HELD', path: lockResult.path, heldByPid: lockResult.heldByPid },
-      rollback: { kind: 'not-needed', reason: 'failed before install lock acquired' },
+      rollback: { kind: 'not-needed', reason: 'pre-lock' },
     }
   }
   const installLock = lockResult.lock
@@ -187,6 +192,17 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       onLog(() => `[warn] install receipt unreadable (${receiptState.reason}); nothing on disk is tracked`)
       onStage({ kind: 'receipt-unavailable', reason: receiptState.reason })
     }
+
+    // The exact states of the three files this run may commit, read once,
+    // under the lock, before anything is resolved. The commit is conditional
+    // on them: a manifest a teammate's editor rewrote while this install was
+    // fetching is not the manifest the plan was computed from, and writing
+    // over it would discard their edit as silently as it would discard ours.
+    const projectFiles = readProjectFileStates(projectRoot)
+    if (!projectFiles.ok) {
+      return failureNoMutation(projectFiles.failure)
+    }
+    const loadedStates = projectFiles.states
 
     // 3b. Delta conflict check. The same facet name in both additions
     //     and removals is an illegal state the CLI should never produce;
@@ -341,7 +357,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       // rebuilt here: the gates that authorized this path were checked against
       // that index, and a second build could only differ by disagreeing with
       // the decision already made.
-      const journal = new InstallJournal()
+      const transaction = new FileTransaction()
       const previousOwnership = refined.previousOwnership
       const removed = removedFacetOutcomes({ desiredFacets: merged.desiredFacets, receiptState, previousLockfile })
       for (const outcome of removed) {
@@ -352,23 +368,28 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       }
 
       const obsolete = obsoleteOwnership(previousOwnership, refined.materialized)
-      const deletion = await deleteObsoleteAssets({ adapters: [...adapters], obsolete, journal, onLog })
+      const deletion = await deleteObsoleteAssets({
+        projectRoot,
+        adapters: [...adapters],
+        obsolete,
+        transaction,
+        onLog,
+      })
       if (!deletion.ok) {
         const failure = materializeFailureToRunInstall(deletion.facets[0] ?? '', deletion.failure)
-        return await rollbackAndFail(journal, failure, onLog)
+        return rollbackAndFail(transaction, failure, onLog)
       }
 
       // Remove the obsolete native entries, journaled with their exact prior
       // bytes like every other configuration write.
       const refinedApplied = await applyMcpServers({
         prepared: refinedMcp.prepared,
-        projectRoot,
-        journal,
+        transaction,
         signal,
         onLog,
       })
       if (!refinedApplied.ok) {
-        return await rollbackAndFail(journal, refinedApplied.failure, onLog)
+        return rollbackAndFail(transaction, refinedApplied.failure, onLog)
       }
 
       // Second checkpoint: the deletes are done and the tri-write is next, so
@@ -376,7 +397,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       // last safe moment — the tri-write is the transaction boundary, and the
       // journal cannot undo a committed one.
       if (signal?.aborted) {
-        return await rollbackAndFail(journal, { code: 'ABORTED' }, onLog)
+        return rollbackAndFail(transaction, { code: 'ABORTED' }, onLog)
       }
 
       const newLockfile = preserveLockfileExtensions(previousLockfile, {
@@ -396,13 +417,14 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
         // Nothing was written, so the receipt can only be PRUNED — never
         // re-derived from lockfile entries this run did not apply.
         newReceipt: buildUpdatedReceipt(receiptPath, { kind: 'carried-forward', facets: refined.receiptFacets }),
+        loadedStates,
+        transaction,
         onLog,
       })
       if (!committed.ok) {
-        return await rollbackAndFail(journal, committed.failure, onLog)
+        return rollbackAndFail(transaction, committed.failure, onLog)
       }
       onStage({ kind: 'lockfile-write', path: join(projectRoot, FACETS_LOCK_FILE) })
-      reportRetainedBundles(deletion.retained)
       for (const entry of prunedIntent) {
         onStage({
           kind: 'stale-override-pruned',
@@ -567,7 +589,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     // 7. The first mutation is now imminent, so the rollback ledger opens
     //    here. Every entry it accumulates corresponds to a write that
     //    actually happened.
-    const journal = new InstallJournal()
+    const transaction = new FileTransaction()
 
     // 7a. Index what this machine can PROVE it has, keyed by EFFECTIVE adapter
     //     identity rather than by facet. Both halves of Apply read it: the
@@ -598,18 +620,19 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     //    identity still claimed by any desired asset is retained outright.
     const obsolete = obsoleteOwnership(previousOwnership, plan.materialized)
     const deletion = await deleteObsoleteAssets({
+      projectRoot,
       adapters: [...adapters],
       obsolete,
-      journal,
+      transaction,
       onLog,
     })
     if (!deletion.ok) {
       const failure = materializeFailureToRunInstall(deletion.facets[0] ?? '', deletion.failure)
-      return await rollbackAndFail(journal, failure, onLog)
+      return rollbackAndFail(transaction, failure, onLog)
     }
 
     if (signal?.aborted) {
-      return await rollbackAndFail(journal, { code: 'ABORTED' }, onLog)
+      return rollbackAndFail(transaction, { code: 'ABORTED' }, onLog)
     }
 
     // 9. Apply, pass 2: write every desired asset under its effective name.
@@ -617,8 +640,9 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       resolved,
       plan,
       previousOwnership,
+      projectRoot,
       adapters,
-      journal,
+      transaction,
       // Frozen mode reproduces recorded intent and never collects a new
       // decision, so the gate is withheld and reconciliation continues
       // exactly as it did before — the same rule the collision resolver and
@@ -629,7 +653,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       onLog,
     })
     if (!loop.ok) {
-      return await rollbackAndFail(journal, loop.failure, onLog)
+      return rollbackAndFail(transaction, loop.failure, onLog)
     }
     const { newFacetEntries, assetWrites, totalAssets } = loop.value
 
@@ -640,13 +664,12 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     //     in one LIFO replay.
     const appliedMcp = await applyMcpServers({
       prepared: preparedMcp.prepared,
-      projectRoot,
-      journal,
+      transaction,
       signal,
       onLog,
     })
     if (!appliedMcp.ok) {
-      return await rollbackAndFail(journal, appliedMcp.failure, onLog)
+      return rollbackAndFail(transaction, appliedMcp.failure, onLog)
     }
 
     // What this run actually reconciled. Every active configuration was —
@@ -660,7 +683,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       preparedMcp.prepared.length > 0 ? plan.mcpServers.configurations : []
 
     if (signal?.aborted) {
-      return await rollbackAndFail(journal, { code: 'ABORTED' }, onLog)
+      return rollbackAndFail(transaction, { code: 'ABORTED' }, onLog)
     }
 
     // 9. Transactional tri-write: manifest + lockfile + receipt (receipt
@@ -713,10 +736,12 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       desiredFacets: merged.desiredFacets,
       lockedSet,
       newReceipt,
+      loadedStates,
+      transaction,
       onLog,
     })
     if (!written.ok) {
-      return await rollbackAndFail(journal, written.failure, onLog)
+      return rollbackAndFail(transaction, written.failure, onLog)
     }
     if (written.receipt === 'unpersisted') {
       onLog(() => `[warn] install receipt could not be written (${written.cause}); this run's assets stay untracked`)
@@ -725,7 +750,6 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     if (!frozenLockfile) {
       onStage({ kind: 'lockfile-write', path: join(projectRoot, FACETS_LOCK_FILE) })
     }
-    reportRetainedBundles(deletion.retained)
 
     // Reported only now: before the write, the prune had not happened, and a
     // failed transaction leaves every override on disk untouched.
@@ -815,18 +839,6 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
    * was already gone. Called only after the project files commit: before that
    * the removal can still roll back, and the files are still tracked.
    */
-  function reportRetainedBundles(retained: readonly RetainedObsoleteBundle[]): void {
-    for (const bundle of retained) {
-      onStage({
-        kind: 'obsolete-bundle-retained',
-        adapter: bundle.adapter,
-        scope: bundle.scope,
-        assetName: bundle.effectiveName,
-        facets: bundle.facets,
-        companionPaths: bundle.companionPaths,
-      })
-    }
-  }
 
   /**
    * Announce every effective identity this operation reconciled, after the
@@ -852,7 +864,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       failure,
       rollback: {
         kind: 'not-needed',
-        reason: 'failed after lock acquired but before any disk mutations',
+        reason: 'post-lock-no-mutation',
       },
     }
   }

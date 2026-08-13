@@ -1,7 +1,4 @@
-import type { Adapter, AdapterApiVersionAssetsOnly, McpServerCapability } from '@agent-facets/adapter'
-// Subpath import: dependency-free, so this stays out of the full SDK runtime
-// graph for the same reason `api-compatibility.ts` does.
-import { ADAPTER_API_VERSION_ASSETS_ONLY } from '@agent-facets/adapter/api-version'
+import type { Adapter, McpServerCapability } from '@agent-facets/adapter'
 
 /**
  * Whether a selected adapter can reconcile MCP configuration.
@@ -17,17 +14,13 @@ import { ADAPTER_API_VERSION_ASSETS_ONLY } from '@agent-facets/adapter/api-versi
 /**
  * Why one selected adapter cannot do MCP work.
  *
- * Two arms rather than one shape with an optional API token, because the
- * remedies genuinely differ: an asset-only adapter predates the question and
- * may gain support in a later release, while `mcpServers: false` is a
- * deliberate statement that this tool has no MCP configuration to write.
- * Upgrading the second one will never help.
+ * One arm, because every loadable adapter states its answer: `mcpServers:
+ * false` is a deliberate declaration that this tool has no MCP configuration
+ * to write, and no upgrade changes that. An adapter that merely predates the
+ * question is not loadable at all — that is an API compatibility failure, with
+ * a different remedy, reported before this check runs.
  */
-export type McpUnsupportedAdapter =
-  /** Published against the superseded asset-only contract. */
-  | { kind: 'asset-only-api'; adapter: string; apiVersion: AdapterApiVersionAssetsOnly }
-  /** Current contract, explicitly declining MCP support. */
-  | { kind: 'capability-declined'; adapter: string }
+export type McpUnsupportedAdapter = { kind: 'capability-declined'; adapter: string }
 
 /** One selected adapter that can reconcile MCP configuration. */
 export interface McpCapableSelection {
@@ -51,11 +44,6 @@ export type McpAdapterSupport =
 /**
  * Classify every selected adapter's MCP support.
  *
- * Narrows on the `apiVersion` tag rather than probing for an `mcpServers`
- * field: the adapter union is tagged precisely so this question is answered
- * by the type system, and a structural probe would silently accept a `0.1`
- * adapter that happened to carry an unrelated member of that name.
- *
  * Selection order is preserved, so a report lists adapters in the order the
  * caller chose them.
  */
@@ -64,10 +52,6 @@ export function classifyMcpSupport(adapters: readonly Adapter[]): McpAdapterSupp
   const unsupported: McpUnsupportedAdapter[] = []
 
   for (const adapter of adapters) {
-    if (adapter.apiVersion === ADAPTER_API_VERSION_ASSETS_ONLY) {
-      unsupported.push({ kind: 'asset-only-api', adapter: adapter.name, apiVersion: adapter.apiVersion })
-      continue
-    }
     if (adapter.mcpServers === false) {
       unsupported.push({ kind: 'capability-declined', adapter: adapter.name })
       continue

@@ -20,7 +20,7 @@ Every asset has two names, and conflating them is the mistake this model exists 
 </ResponseField>
 
 <ResponseField name="effective name" type="chosen by the project">
-  The name the asset is materialized under: the file an [adapter](/specification/terminology#core-concepts) reads, writes, and deletes. It equals the authored name unless the consuming project aliased it.
+  The name the asset is materialized under: the file an [adapter](/specification/terminology#core-concepts) resolves and plans against. It equals the authored name unless the consuming project aliased it.
 </ResponseField>
 
 An aliased skill therefore lives on disk under its **effective** name while its recorded file paths remain **authored**:

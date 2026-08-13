@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { McpServerCapability } from '@agent-facets/adapter'
 import {
+  commitPlannedAction,
   type McpMatrixCaseId,
   type McpMatrixSeed,
   OBSOLETE_NAME,
@@ -234,14 +234,13 @@ describe('claude-code MCP capability', () => {
       ].join('\n')
       writeFileSync(join(root, DOCUMENT), before)
 
-      const prepared = await claudeCodeMcpServers.prepare({
+      const planned = await claudeCodeMcpServers.plan({
         projectRoot: root,
         desired: [{ name: 'fs', declaration: { type: 'stdio', command: 'srv' } }],
         previouslyOwnedNames: [],
       })
-      if (!prepared.ok) expect.unreachable()
-      const applied = await claudeCodeMcpServers.apply({ plan: prepared.preparation.plan })
-      expect(applied.ok).toBe(true)
+      if (!planned.ok) expect.unreachable()
+      commitPlannedAction(planned.plan.action)
 
       const after = readFileSync(join(root, DOCUMENT), 'utf8')
       // Everything outside the edited property keeps its exact layout: the
@@ -258,13 +257,13 @@ describe('claude-code MCP capability', () => {
     test('a byte-order mark survives an edit', async () => {
       writeFileSync(join(root, DOCUMENT), '\uFEFF{\n  "mcpServers": {}\n}\n')
 
-      const prepared = await claudeCodeMcpServers.prepare({
+      const planned = await claudeCodeMcpServers.plan({
         projectRoot: root,
         desired: [{ name: 'fs', declaration: { type: 'stdio', command: 'srv' } }],
         previouslyOwnedNames: [],
       })
-      if (!prepared.ok) expect.unreachable()
-      await claudeCodeMcpServers.apply({ plan: prepared.preparation.plan })
+      if (!planned.ok) expect.unreachable()
+      commitPlannedAction(planned.plan.action)
 
       const after = readFileSync(join(root, DOCUMENT), 'utf8')
       expect(after.charCodeAt(0)).toBe(0xfeff)
@@ -294,7 +293,7 @@ describe('claude-code MCP capability', () => {
     ] as const
 
     for (const { declaration, offender } of cases) {
-      const result = await claudeCodeMcpServers.prepare({
+      const result = await claudeCodeMcpServers.plan({
         projectRoot: '/does-not-need-to-exist',
         desired: [{ name: 'fs', declaration }],
         previouslyOwnedNames: [],
@@ -305,12 +304,5 @@ describe('claude-code MCP capability', () => {
       expect(result.failure.serverName).toBe('fs')
       expect(result.failure.value).toBe(offender)
     }
-  })
-
-  test('rejects a plan it did not produce', async () => {
-    // The engine holds the plan as `unknown`, so this is the shape an untyped
-    // caller can actually reach `apply` with.
-    const asEngineSeesIt: McpServerCapability<unknown> = claudeCodeMcpServers
-    await expect(asEngineSeesIt.apply({ plan: { kind: 'nonsense' } })).rejects.toThrow('did not produce')
   })
 })

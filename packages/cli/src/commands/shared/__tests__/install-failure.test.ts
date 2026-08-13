@@ -15,9 +15,28 @@ import { installFailureDetail, installFailureFix } from '../install-failure.ts'
 
 const COMMANDS: Array<'add' | 'install' | 'remove'> = ['add', 'install', 'remove']
 
-const notNeeded: RollbackOutcome = { kind: 'not-needed', reason: 'no journal was created' }
-const succeeded: RollbackOutcome = { kind: 'succeeded', entriesUndone: 3 }
-const partial: RollbackOutcome = { kind: 'partial-failure', entriesUndone: 2, failures: 1 }
+const notNeeded: RollbackOutcome = { kind: 'not-needed', reason: 'post-lock-no-mutation' }
+const succeeded: RollbackOutcome = {
+  kind: 'complete',
+  restored: ['/tmp/a'],
+  alreadyRestored: [],
+  removedDirectories: [],
+}
+const partial: RollbackOutcome = {
+  kind: 'incomplete',
+  restored: ['/tmp/a'],
+  alreadyRestored: [],
+  removedDirectories: [],
+  issues: [
+    {
+      kind: 'restore-failed',
+      path: '/tmp/stuck.md',
+      original: { kind: 'absent' },
+      committed: { kind: 'absent' },
+      failure: { operation: 'commit', path: '/tmp/stuck.md', message: 'EIO' },
+    },
+  ],
+}
 
 const aborted: RunInstallFailure = { code: 'ABORTED' }
 const cancelled: RunInstallFailure = { code: 'MATERIALIZATION_CANCELLED' }
@@ -42,7 +61,7 @@ describe('installFailureFix — an aborted run', () => {
 
   test('partial rollback still outranks everything', () => {
     const fix = installFailureFix(aborted, partial, 'install')
-    expect(fix).toContain('partial state may remain')
+    expect(fix).toContain(describeDiskState(partial))
   })
 
   test.each(COMMANDS)('names the %s command on both rollback outcomes', (command) => {
@@ -231,18 +250,6 @@ describe('installFailureFix — one remedy per conflict reason', () => {
     expect(fix).not.toContain('document')
   })
 
-  test('a drifted document is a re-run, not a repair', () => {
-    const fix = installFailureFix(
-      prepareFailed({ code: 'conflict', reason: 'document-changed', path: '/p/opencode.jsonc' }),
-      succeeded,
-      'install',
-    )
-
-    expect(fix).toContain('/p/opencode.jsonc')
-    expect(fix).toContain('changed by something else')
-    expect(fix).not.toContain('repair')
-  })
-
   test('a native-state conflict names the document to repair', () => {
     const fix = installFailureFix(
       prepareFailed({ code: 'conflict', reason: 'native-state', path: '/p/config.toml', detail: 'inline table' }),
@@ -254,14 +261,19 @@ describe('installFailureFix — one remedy per conflict reason', () => {
   })
 
   test.each([notNeeded, succeeded, partial])('a document-bearing reason still reports $kind', (rollback) => {
-    const failure = prepareFailed({ code: 'conflict', reason: 'document-changed', path: '/p/opencode.jsonc' })
+    const failure = prepareFailed({
+      code: 'conflict',
+      reason: 'native-state',
+      path: '/p/opencode.jsonc',
+      detail: 'cannot express the change',
+    })
     expect(installFailureFix(failure, rollback, 'install')).toContain(describeDiskState(rollback))
   })
 
   test.each(COMMANDS)('every reason names the %s command', (command) => {
     const failures: McpServerCapabilityFailure[] = [
       { code: 'conflict', reason: 'interpolation', serverName: 'fs', value: '{env:T}' },
-      { code: 'conflict', reason: 'document-changed', path: '/p/a.json' },
+      { code: 'conflict', reason: 'native-state', path: '/p/a.json', detail: 'cannot express the change' },
       { code: 'conflict', reason: 'native-state', path: '/p/a.json', detail: 'nope' },
       { code: 'parse-failed', path: '/p/a.json', message: 'bad' },
     ]
@@ -343,10 +355,47 @@ describe('installFailureFix — stale materialization intent under frozen mode',
 
   test('a rollback failure still outranks every drift remedy', () => {
     const partial: RollbackOutcome = {
-      kind: 'partial-failure',
-      entriesUndone: 1,
-      failures: 1,
+      kind: 'incomplete',
+      restored: ['/tmp/a'],
+      alreadyRestored: [],
+      removedDirectories: [],
+      issues: [
+        {
+          kind: 'conflict',
+          path: '/tmp/contested.md',
+          original: { kind: 'absent' },
+          committed: { kind: 'absent' },
+          observed: { kind: 'absent' },
+        },
+      ],
     }
-    expect(installFailureFix(mixed('stale-first'), partial, 'install')).toContain('inspect the project tree')
+    expect(installFailureFix(mixed('stale-first'), partial, 'install')).toContain('changed by something else')
+  })
+})
+
+describe('installFailureFix — a preserved concurrent edit is not a failure', () => {
+  test('a conflict-only rollback sends the user to review, not to hunt for damage', () => {
+    // The run declined to overwrite somebody else's change. Telling them to
+    // inspect the tree for partial state would describe a bug that did not
+    // happen — and would bury the one thing they need to look at.
+    const conflicted: RollbackOutcome = {
+      kind: 'incomplete',
+      restored: ['/tmp/a'],
+      alreadyRestored: [],
+      removedDirectories: [],
+      issues: [
+        {
+          kind: 'conflict',
+          path: '/tmp/contested.md',
+          original: { kind: 'absent' },
+          committed: { kind: 'absent' },
+          observed: { kind: 'absent' },
+        },
+      ],
+    }
+
+    const fix = installFailureFix(aborted, conflicted, 'install')
+    expect(fix).toContain('changed by something else')
+    expect(fix).not.toContain('inspect')
   })
 })

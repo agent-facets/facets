@@ -1,5 +1,5 @@
-import type { AssetType, Scope, Validated, ValidationError } from '@agent-facets/common'
-import type { AdapterApiVersion, AdapterApiVersionAssetsOnly } from './api-version.ts'
+import type { AssetType, FileMutationAction, FileState, Scope, Validated, ValidationError } from '@agent-facets/common'
+import type { AdapterApiVersion } from './api-version.ts'
 import type { McpServerCapability } from './mcp-servers.ts'
 
 /**
@@ -19,274 +19,217 @@ export type AdapterMetadata = Record<string, unknown>
 export type CompanionMap = Record<string, Uint8Array>
 
 /**
- * Install request, tagged by asset type.
+ * A batch of file mutations plus the outcome they realize.
+ *
+ * `unchanged` is a first-class answer rather than an empty batch, so "already
+ * correct" and "needs these writes" can never be confused for one another.
+ */
+export type MutateAction = Extract<FileMutationAction, { kind: 'mutate' }>
+
+/**
+ * Where an adapter is allowed to place an asset.
+ *
+ * `projectRoot` is supplied on every request regardless of scope, and is the
+ * ONLY definition of "this project" an adapter may use. An adapter that
+ * derived it from the process working directory would resolve project-scoped
+ * assets against a different tree than the one the caller is installing into —
+ * silently, and only for callers that are not a shell sitting in the project.
+ */
+export interface AssetRequestContext {
+  readonly projectRoot: string
+  readonly scope: Scope
+}
+
+/**
+ * Install/reconcile planning request, tagged by asset type.
  *
  * The skill variant is the only one that can carry companion files:
  * `companions` is the complete new bundle beyond `SKILL.md`, and
  * `ownedCompanionPaths` is the caller-verified set of companion paths a
  * previous install owned, taken from the caller's own record of what it
  * materialized — never from shared, version-controlled project state.
- * Replacement removes exactly the owned paths absent from the new bundle;
- * unowned files are never touched. Adapters never persist ownership or
- * infer it from disk — ownership data arrives on every request, and the
- * supplied set is the complete extent of what may be removed. An adapter
- * must not widen it by convention, filename pattern, or storage format.
- *
- * Agent and command variants structurally cannot carry companions or
- * ownership sets, and no variant exists for archive-only supplementary
- * files (they never reach adapters).
+ * The plan removes exactly the owned paths absent from the new bundle;
+ * unowned files are never touched. Adapters never persist ownership, never
+ * infer it from disk, and never enumerate a directory to discover it —
+ * ownership data arrives on every request, and the supplied set is the
+ * complete extent of what may be removed.
  */
-export type InstallAssetRequest =
+export type PlanAssetInstallRequest = AssetRequestContext &
+  (
+    | {
+        readonly assetType: 'skill'
+        readonly name: string
+        /** Primary `SKILL.md` text (front-matter transformation applies here only). */
+        readonly content: string
+        readonly metadata: unknown
+        /** New companion bundle, paths relative to the skill root. `{}` is legal. */
+        readonly companions: CompanionMap
+        /** Caller-verified previously-owned companion paths. `[]` is legal. */
+        readonly ownedCompanionPaths: readonly string[]
+      }
+    | { readonly assetType: 'agent'; readonly name: string; readonly content: string; readonly metadata: unknown }
+    | { readonly assetType: 'command'; readonly name: string; readonly content: string; readonly metadata: unknown }
+  )
+
+/** Removal planning request, tagged by asset type. */
+export type PlanAssetRemovalRequest = AssetRequestContext &
+  (
+    | {
+        readonly assetType: 'skill'
+        readonly name: string
+        /** Owned companion paths to remove alongside the primary. `[]` is legal. */
+        readonly ownedCompanionPaths: readonly string[]
+      }
+    | { readonly assetType: 'agent'; readonly name: string }
+    | { readonly assetType: 'command'; readonly name: string }
+  )
+
+/**
+ * What the planner found where the asset belongs.
+ *
+ * This is the caller's takeover input: adopting a file that already holds
+ * equivalent content is still adopting a file somebody else may have written,
+ * so `equivalent` has to be distinguishable from `absent` even though neither
+ * produces a divergent write.
+ */
+export type AssetOccupancy = 'absent' | 'equivalent' | 'divergent'
+
+/**
+ * A planned install.
+ *
+ * `equivalent` is bound to `unchanged` and the other two to `mutate`, so an
+ * outcome can never contradict the work it claims. An adapter that cannot
+ * *prove* equivalence reports `divergent`; guessing would silently keep
+ * content that differs from what the user approved.
+ */
+export type AssetInstallPlan =
   | {
-      readonly assetType: 'skill'
-      readonly scope: Scope
-      readonly name: string
-      /** Primary `SKILL.md` text (front-matter transformation applies here only). */
-      readonly content: string
-      readonly metadata: unknown
-      /** New companion bundle, paths relative to the skill root. `{}` is legal. */
-      readonly companions: CompanionMap
-      /** Caller-verified previously-owned companion paths. `[]` is legal. */
-      readonly ownedCompanionPaths: readonly string[]
+      readonly occupancy: 'equivalent'
+      readonly action: { readonly kind: 'unchanged' }
+      /** Absolute path of the primary file — used for verbose reporting. */
+      readonly primaryPath: string
     }
   | {
-      readonly assetType: 'agent'
-      readonly scope: Scope
-      readonly name: string
-      readonly content: string
-      readonly metadata: unknown
-    }
-  | {
-      readonly assetType: 'command'
-      readonly scope: Scope
-      readonly name: string
-      readonly content: string
-      readonly metadata: unknown
+      readonly occupancy: 'absent' | 'divergent'
+      readonly action: MutateAction
+      readonly primaryPath: string
     }
 
 /**
- * Read request, tagged by asset type.
+ * A planned removal.
  *
- * A skill read carries the caller-verified owned companion path set to
- * return. The adapter must not enumerate the skill directory — it reads
- * exactly the requested owned paths, so unowned files can never be swept
- * into a read result.
+ * `absent` is not a failure: removing something already gone is success, and
+ * a plan that expressed it as an empty batch would be indistinguishable from
+ * an adapter that forgot to plan anything.
  */
-export type ReadAssetRequest =
-  | {
-      readonly assetType: 'skill'
-      readonly scope: Scope
-      readonly name: string
-      /** Owned companion paths whose bytes should be returned. `[]` is legal. */
-      readonly ownedCompanionPaths: readonly string[]
-    }
-  | { readonly assetType: 'agent'; readonly scope: Scope; readonly name: string }
-  | { readonly assetType: 'command'; readonly scope: Scope; readonly name: string }
+export type AssetRemovalPlan =
+  | { readonly kind: 'absent'; readonly primaryPath: string }
+  | { readonly kind: 'remove'; readonly action: MutateAction; readonly primaryPath: string }
 
 /**
- * Delete request, tagged by asset type.
+ * Structured failure data for adapter planning.
  *
- * A skill delete carries the caller-verified owned companion path set;
- * the adapter removes the primary plus exactly those paths as one atomic
- * operation, preserving every other file and pruning only directories
- * left empty by owned-file removal.
+ * Planning is read-only, so there is no write, delete, or rollback failure to
+ * report — and deliberately no `not-implemented`: an adapter states whether it
+ * has an asset capability at all, rather than accepting a request it will
+ * refuse.
  */
-export type DeleteAssetRequest =
-  | {
-      readonly assetType: 'skill'
-      readonly scope: Scope
-      readonly name: string
-      /** Owned companion paths to delete alongside the primary. `[]` is legal. */
-      readonly ownedCompanionPaths: readonly string[]
-    }
-  | { readonly assetType: 'agent'; readonly scope: Scope; readonly name: string }
-  | { readonly assetType: 'command'; readonly scope: Scope; readonly name: string }
-
-/**
- * Structured failure data for adapter asset operations.
- *
- * Expected failures are values, not thrown errors — the caller branches
- * on `code`. Adapters convert their internal I/O exceptions into
- * `io-failed`; anything thrown past this boundary is a programmer bug.
- */
-export type AdapterAssetFailure =
-  /** The requested asset does not exist at that scope. */
-  | { readonly code: 'not-found' }
+export type AdapterPlanFailure =
   /**
    * A supplied companion path (new or owned) is malformed or escapes the
-   * skill root. Detected before any filesystem access; the whole request
-   * is rejected without reading, writing, or deleting anything.
+   * skill root. Detected before any filesystem access; the whole request is
+   * rejected without reading anything.
    */
   | { readonly code: 'invalid-companion-path'; readonly path: string; readonly reason: string }
   /** The adapter does not support the requested scope. */
   | { readonly code: 'unsupported-scope'; readonly scope: Scope }
-  /** The adapter does not implement this operation. */
-  | { readonly code: 'not-implemented'; readonly method: 'installAsset' | 'readAsset' | 'deleteAsset' }
-  /** A filesystem operation failed. `operation: 'rollback'` means the
-   * failure occurred while restoring the prior bundle after another
-   * failure — the bundle may be partial and needs re-install to converge. */
-  | {
-      readonly code: 'io-failed'
-      readonly operation: 'read' | 'write' | 'delete' | 'rollback'
-      readonly path?: string
-      readonly message: string
-    }
+  /** A file could not be read while establishing the current state. */
+  | { readonly code: 'io-failed'; readonly path: string; readonly message: string }
+  /**
+   * Something that is not a plain file occupies a path the plan would target,
+   * so no exact state — and therefore no restorable transition — exists for it.
+   */
+  | { readonly code: 'unsupported-object'; readonly path: string; readonly detail: string }
+  /** The adapter's storage format cannot represent the requested content. */
+  | { readonly code: 'unrepresentable'; readonly path: string; readonly detail: string }
 
-/** Result of an install operation. */
-export type InstallAssetResult =
-  | {
-      readonly ok: true
-      /** Absolute path of the written primary file — used for verbose logging. */
-      readonly primaryPath: string
-    }
-  | { readonly ok: false; readonly failure: AdapterAssetFailure }
+export type PlanAssetInstallResult =
+  | { readonly ok: true; readonly plan: AssetInstallPlan }
+  | { readonly ok: false; readonly failure: AdapterPlanFailure }
+
+export type PlanAssetRemovalResult =
+  | { readonly ok: true; readonly plan: AssetRemovalPlan }
+  | { readonly ok: false; readonly failure: AdapterPlanFailure }
 
 /**
- * A successfully read asset, tagged by type. The skill variant carries the
- * bytes of exactly the owned companion paths that were requested and exist.
- * `content` is canonical logical primary content: adapter-specific storage
- * encoding (front-matter wrapping, TOML fields, …) is stripped so callers
- * can compare it with portable integrity records.
+ * How an adapter materializes text assets.
+ *
+ * One capability object rather than three optional methods beside a
+ * `supportsInstall` boolean: that shape could state support and then be
+ * missing the method that provides it. `false` means this adapter validates
+ * manifest metadata but materializes nothing.
+ *
+ * Both operations are strictly read-only. They inspect, decide, and return
+ * exact per-file transitions; the caller performs every write, journals both
+ * endpoints, and owns rollback. An adapter is never asked to undo its own
+ * work, so undo fidelity no longer depends on adapter code being correct
+ * twice — or on a semantic inverse reproducing formatting it never saw.
  */
-export type ReadAsset =
-  | {
-      readonly assetType: 'skill'
-      readonly content: string
-      readonly metadata?: AdapterMetadata
-      readonly companions: CompanionMap
-    }
-  | { readonly assetType: 'agent'; readonly content: string; readonly metadata?: AdapterMetadata }
-  | { readonly assetType: 'command'; readonly content: string; readonly metadata?: AdapterMetadata }
-
-/** Result of a read operation. */
-export type ReadAssetResult =
-  | { readonly ok: true; readonly asset: ReadAsset }
-  | { readonly ok: false; readonly failure: AdapterAssetFailure }
-
-/** Result of a delete operation. */
-export type DeleteAssetResult =
-  | {
-      readonly ok: true
-      /** False when the asset did not exist (delete is idempotent — that is success). */
-      readonly existed: boolean
-      /** Absolute paths of every file removed — used for verbose logging. */
-      readonly deletedPaths: readonly string[]
-    }
-  | { readonly ok: false; readonly failure: AdapterAssetFailure }
+export interface AssetCapability {
+  planInstall(request: PlanAssetInstallRequest): Promise<PlanAssetInstallResult>
+  planRemoval(request: PlanAssetRemovalRequest): Promise<PlanAssetRemovalResult>
+}
 
 /**
  * The full adapter contract. Returned by `defineAdapter()`.
  *
- * An adapter is an AI coding tool (OpenCode, Claude Code, Codex, etc.)
- * that wraps around an LLM. The adapter is a full abstraction layer
- * over its tool's storage and configuration.
- *
- * All three asset operations take tagged requests and return tagged
- * results. A skill install is one all-or-nothing operation over the
- * complete bundle: the new primary and companions all commit (with
- * previously-owned paths absent from the new bundle removed), or the
- * prior bundle remains intact. Recovery from an interrupted process is
- * the caller's idempotent re-install, so operations must be convergent.
+ * An adapter is an AI coding tool (OpenCode, Claude Code, Codex, …) that wraps
+ * around an LLM. The adapter is a full abstraction layer over its tool's
+ * storage and configuration: it owns path resolution, scope handling,
+ * containment rules, storage format, metadata rendering, and deciding which
+ * owned files are obsolete. It does not own writing.
  */
-interface AdapterAssetContract {
-  /** Unique adapter name (e.g., "opencode", "claude-code", "codex") */
-  readonly name: string
-
-  /**
-   * When true, this adapter exposes real filesystem I/O (installAsset,
-   * readAsset, deleteAsset) and is selectable in the install picker.
-   * Absent or false: adapter is hidden from picker (users cannot
-   * materialize facets via this adapter). Set to true only when all
-   * three I/O methods are implemented and tested.
-   */
-  readonly supportsInstall?: boolean
-
-  /**
-   * Validate and enrich per-asset adapter metadata from a facet manifest.
-   * Takes raw metadata, validates it against the adapter's schema,
-   * applies adapter-specific defaults, and returns the enriched object.
-   */
-  buildAssetMetadata(data: unknown): Validated<AdapterMetadata>
-
-  /** Install (or replace) an asset. See {@link InstallAssetRequest}. */
-  installAsset(request: InstallAssetRequest): Promise<InstallAssetResult>
-
-  /** Read an asset's canonical content. See {@link ReadAssetRequest}. */
-  readAsset(request: ReadAssetRequest): Promise<ReadAssetResult>
-
-  /** Delete an asset. See {@link DeleteAssetRequest}. */
-  deleteAsset(request: DeleteAssetRequest): Promise<DeleteAssetResult>
-}
-
-/**
- * An adapter published against the superseded asset-only contract.
- *
- * This SDK cannot produce one — `defineAdapter()` always stamps the current
- * identifier. The type exists because such adapters are already published and
- * remain loadable during the compatibility window, so consumers need a way to
- * talk about them. It has no `mcpServers` member at all: a `0.1` adapter does
- * not decline MCP support, it predates the question.
- */
-export interface AssetOnlyAdapter extends AdapterAssetContract {
-  readonly apiVersion: AdapterApiVersionAssetsOnly
-}
-
-/**
- * An adapter implementing the current contract: the tagged asset methods plus
- * a stated MCP server capability.
- *
- * `Plan` is the adapter's own prepared-plan type. It is carried here — rather
- * than fixed at the capability's `unknown` default — so an author writing
- * `prepare` and `apply` inline gets both checked against one plan shape. It
- * defaults to `unknown`, which is what every consumer holds: the engine's
- * {@link Adapter} union erases it, so a consumer still cannot read a plan.
- */
-export interface McpCapableAdapter<Plan = unknown> extends AdapterAssetContract {
+export interface Adapter {
   /**
    * The adapter API contract identifier this adapter implements.
    *
    * Stamped by `defineAdapter()` from the SDK's canonical
-   * `ADAPTER_API_VERSION` — adapter authors do not (and cannot) supply
-   * it; the factory's input type (`AdapterDefinition`) excludes it.
+   * `ADAPTER_API_VERSION` — adapter authors do not (and cannot) supply it.
    */
   readonly apiVersion: AdapterApiVersion
+
+  /** Unique adapter name (e.g., "opencode", "claude-code", "codex"). */
+  readonly name: string
+
+  /** Whether this adapter materializes text assets, and how. */
+  readonly assets: false | AssetCapability
 
   /**
    * Whether this adapter can reconcile MCP servers into its tool's native
    * project configuration, and if so, how.
    *
-   * Required, and deliberately one field rather than a boolean beside optional
-   * methods: a `supportsMcp: true` that could sit next to a missing `apply` is
-   * a representable lie. `false` is an explicit, unambiguous "this tool has no
-   * MCP configuration I can write" — it is not the same as "not implemented
-   * yet", and the CLI reports it as such when a project actually has servers.
-   *
-   * The capability is MCP-specific on purpose. A future project-configuration
-   * feature gets its own field with its own identity, composition, and consent
-   * rules rather than being bolted onto this one.
+   * `false` is an explicit, unambiguous "this tool has no MCP configuration I
+   * can write" — not "not implemented yet" — and the CLI reports it as such
+   * when a project actually has servers.
    */
-  readonly mcpServers: false | McpServerCapability<Plan>
-}
+  readonly mcpServers: false | McpServerCapability
 
-/**
- * Any adapter a current consumer may hold.
- *
- * Tagged by `apiVersion`, so "which contract is this?" is answered by an
- * exhaustive switch rather than by probing for fields. Widening a support set
- * to accept another contract means adding an arm here, which makes every
- * consumer that must handle it fail to compile — the intended outcome.
- */
-export type Adapter = AssetOnlyAdapter | McpCapableAdapter
+  /**
+   * Validate and enrich per-asset adapter metadata from a facet manifest.
+   * Takes raw metadata, validates it against the adapter's schema, applies
+   * adapter-specific defaults, and returns the enriched object.
+   */
+  buildAssetMetadata(data: unknown): Validated<AdapterMetadata>
+}
 
 /**
  * The author-facing definition accepted by `defineAdapter()`.
  *
- * Identical to the current adapter contract except the SDK-owned `apiVersion`
- * field is excluded — the factory stamps the canonical value, so an author
- * cannot declare a conflicting API identifier. There is no definition type for
- * the superseded contract: this SDK only builds current adapters.
+ * Identical to the adapter contract except the SDK-owned `apiVersion` field is
+ * excluded — the factory stamps the canonical value, so an author cannot
+ * declare a conflicting API identifier.
  */
-export type AdapterDefinition<Plan = unknown> = Omit<McpCapableAdapter<Plan>, 'apiVersion'>
+export type AdapterDefinition = Omit<Adapter, 'apiVersion'>
 
 // Re-export common types for convenience — SDK consumers don't need to install common
-export type { AssetType, Scope, Validated, ValidationError }
+export type { AssetType, FileMutationAction, FileState, Scope, Validated, ValidationError }

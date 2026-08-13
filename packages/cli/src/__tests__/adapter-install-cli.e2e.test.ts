@@ -112,6 +112,7 @@ import { defineAdapter } from '${ADAPTER_SDK_SOURCE}'
 
 export default defineAdapter({
   name: '${opts.name}',
+  assets: false,
   mcpServers: false,
   buildAssetMetadata(data) {
     return { ok: true, data: (data ?? {}) }

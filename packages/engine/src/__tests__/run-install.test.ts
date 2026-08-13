@@ -5,12 +5,10 @@ import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
 import {
   ADAPTER_API_VERSION,
-  deleteAssetFile,
-  deleteSkillBundle,
-  installAssetFile,
-  installSkillBundle,
-  readAssetFile,
-  readSkillBundle,
+  planSingleFileInstall,
+  planSingleFileRemoval,
+  planSkillBundleInstall,
+  planSkillBundleRemoval,
 } from '@agent-facets/adapter'
 import type { BuildManifest, Lockfile02 } from '@agent-facets/protocol'
 import {
@@ -23,6 +21,7 @@ import { type } from 'arktype'
 import { type CacheIdentity, cachePath, cachePutVerified, computeDirIntegrity } from '../cache/index.ts'
 import { recordingMcpCapability } from '../install/__tests__/helpers/mcp-adapter.ts'
 import { loadLockfile } from '../install/lockfile-io.ts'
+import { receiptPath } from '../install/receipt.ts'
 import { runInstall } from '../install/run-install.ts'
 import type { StageEvent } from '../install/types.ts'
 
@@ -61,7 +60,6 @@ function buildFakeAdapter(name: string): Adapter {
   const adapter: Adapter = {
     name,
     apiVersion: ADAPTER_API_VERSION,
-    supportsInstall: true,
     // A declared capability rather than `false`: a project with an active
     // server declaration now requires one, and an adapter that declines is a
     // different scenario with its own tests.
@@ -70,29 +68,17 @@ function buildFakeAdapter(name: string): Adapter {
       ok: true,
       data: (data ?? {}) as Record<string, unknown>,
     }),
-    async installAsset(request) {
-      const p = path(request.assetType, request.name)
-      await installAssetFile(p, request.content, request.metadata as Record<string, unknown> | undefined)
-      return { ok: true, primaryPath: p.file }
-    },
-    async readAsset(request) {
-      try {
-        const { content, metadata } = await readAssetFile(path(request.assetType, request.name))
-        return {
-          ok: true,
-          asset:
-            request.assetType === 'skill'
-              ? { assetType: 'skill', content, metadata, companions: {} }
-              : { assetType: request.assetType, content, metadata },
-        }
-      } catch {
-        return { ok: false, failure: { code: 'not-found' } }
-      }
-    },
-    async deleteAsset(request) {
-      const p = path(request.assetType, request.name)
-      await deleteAssetFile(p)
-      return { ok: true, existed: true, deletedPaths: [p.file] }
+    assets: {
+      async planInstall(request) {
+        return planSingleFileInstall(
+          { file: path(request.assetType, request.name).file, boundary: baseDir },
+          request.content,
+          request.metadata as Record<string, unknown>,
+        )
+      },
+      async planRemoval(request) {
+        return planSingleFileRemoval({ file: path(request.assetType, request.name).file, boundary: baseDir })
+      },
     },
   }
   return adapter
@@ -116,105 +102,74 @@ function buildNestedFakeAdapter(name: string): Adapter {
   return {
     name,
     apiVersion: ADAPTER_API_VERSION,
-    supportsInstall: true,
     mcpServers: false,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
-    async installAsset(request) {
-      const p = path(request.assetType, request.name)
-      await installAssetFile(p, request.content, request.metadata as Record<string, unknown> | undefined)
-      return { ok: true, primaryPath: p.file }
-    },
-    async readAsset(request) {
-      try {
-        const { content, metadata } = await readAssetFile(path(request.assetType, request.name))
-        return {
-          ok: true,
-          asset:
-            request.assetType === 'skill'
-              ? { assetType: 'skill', content, metadata, companions: {} }
-              : { assetType: request.assetType, content, metadata },
-        }
-      } catch {
-        return { ok: false, failure: { code: 'not-found' } }
-      }
-    },
-    async deleteAsset(request) {
-      const p = path(request.assetType, request.name)
-      await deleteAssetFile(p)
-      return { ok: true, existed: true, deletedPaths: [p.file] }
+    assets: {
+      async planInstall(request) {
+        return planSingleFileInstall(
+          { file: path(request.assetType, request.name).file, boundary: baseDir },
+          request.content,
+          request.metadata as Record<string, unknown>,
+        )
+      },
+      async planRemoval(request) {
+        return planSingleFileRemoval({ file: path(request.assetType, request.name).file, boundary: baseDir })
+      },
     },
   }
 }
 
 /**
- * Adapter that throws on the Nth `installAsset` call. Used to exercise
+ * Adapter that throws on the Nth planned install. Used to exercise
  * mid-install rollback and partial-write recovery.
  */
 function buildBrokenAdapter(name: string, throwOnCall: number): Adapter {
   let calls = 0
   const baseDir = join(projectRoot, `.${name}`)
+  const file = (request: { assetType: string; name: string }) =>
+    join(baseDir, `${request.assetType}s`, `${request.name}.md`)
   return {
     name,
     apiVersion: ADAPTER_API_VERSION,
-    supportsInstall: true,
     mcpServers: false,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
-    async installAsset(request) {
-      calls += 1
-      if (calls >= throwOnCall) throw new Error(`${name}: boom on call ${calls}`)
-      const file = join(baseDir, `${request.assetType}s`, `${request.name}.md`)
-      mkdirSync(join(baseDir, `${request.assetType}s`), { recursive: true })
-      writeFileSync(file, request.content)
-      return { ok: true, primaryPath: file }
+    assets: {
+      async planInstall(request) {
+        calls += 1
+        if (calls >= throwOnCall) throw new Error(`${name}: boom on call ${calls}`)
+        return planSingleFileInstall(
+          { file: file(request), boundary: baseDir },
+          request.content,
+          request.metadata as Record<string, unknown>,
+        )
+      },
+      async planRemoval(request) {
+        return planSingleFileRemoval({ file: file(request), boundary: baseDir })
+      },
     },
-    async readAsset(request) {
-      const file = join(baseDir, `${request.assetType}s`, `${request.name}.md`)
-      if (!existsSync(file)) {
-        return { ok: false, failure: { code: 'not-found' } }
-      }
-      const content = readFileSync(file, 'utf8')
-      return {
-        ok: true,
-        asset:
-          request.assetType === 'skill'
-            ? { assetType: 'skill', content, companions: {} }
-            : { assetType: request.assetType, content },
-      }
-    },
-    async deleteAsset(request) {
-      const file = join(baseDir, `${request.assetType}s`, `${request.name}.md`)
-      const existed = existsSync(file)
-      if (existed) rmSync(file)
-      return { ok: true, existed, deletedPaths: existed ? [file] : [] }
-    },
-  } as Adapter
+  }
 }
 
 /**
- * Adapter whose `readAsset` throws a non-ENOENT error. Reproduces F14:
- * a permission failure (or any non-ENOENT) reading the previous content
- * must abort the install before any journal entry is recorded.
+ * Adapter whose planning reports a structured failure. A planning failure
+ * aborts the install before anything is written, so no transition is ever
+ * journaled on a guess about what was on disk.
  */
 function buildBadReadAdapter(name: string): Adapter {
   return {
     name,
     apiVersion: ADAPTER_API_VERSION,
-    supportsInstall: true,
     mcpServers: false,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
-    async installAsset() {
-      throw new Error('should not be reached: readAsset failed first')
+    assets: {
+      async planInstall() {
+        return { ok: false, failure: { code: 'io-failed', path: '/nope', message: 'EACCES: permission denied' } }
+      },
+      async planRemoval() {
+        return { ok: true, plan: { kind: 'absent', primaryPath: '/nope' } }
+      },
     },
-    async readAsset() {
-      return {
-        ok: false,
-        failure: { code: 'io-failed', operation: 'read', message: 'EACCES: permission denied' },
-      }
-    },
-    async deleteAsset() {
-      return { ok: true, existed: false, deletedPaths: [] }
-    },
-  } as Adapter
+  }
 }
 
 /**
@@ -870,13 +825,12 @@ describe('runInstall — lockfile write failure rolls back', () => {
     const relPath = `./${fixture.split('/').pop()}`
     writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify({ facets: { 'viper-plans': relPath } }))
 
-    // Sabotage the lockfile write by pre-creating `facets.lock.tmp` as
-    // a *directory*. The atomic write path is `writeFileSync(tmp)`
-    // then `renameSync(tmp, path)`; opening a directory for write
-    // fails with EISDIR. We can't sabotage `facets.lock` directly
-    // because `loadLockfile` reads it first and would surface a
-    // different error before we ever reach the write.
-    mkdirSync(join(projectRoot, 'facets.lock.tmp'), { recursive: true })
+    // Sabotage the receipt: a directory where the file belongs cannot be
+    // inspected, so the commit reports rather than writing a locked set whose
+    // ownership record it could never persist. The staged temporary file is
+    // uniquely named now, so the old `facets.lock.tmp` trick no longer
+    // reaches anything.
+    mkdirSync(receiptPath(projectRoot), { recursive: true })
 
     const adapter = buildFakeAdapter('test')
     const result = await runInstall({
@@ -888,22 +842,17 @@ describe('runInstall — lockfile write failure rolls back', () => {
     if (result.ok) expect.unreachable()
     expect(result.failure.code).toBe('LOCKFILE_WRITE_FAILED')
     if (result.failure.code !== 'LOCKFILE_WRITE_FAILED') expect.unreachable()
-    expect(result.failure.path).toBe(join(projectRoot, 'facets.lock'))
     expect(result.failure.cause.length).toBeGreaterThan(0)
 
-    // Rollback succeeded: the asset that was materialized before the
-    // lockfile write should be undone. `kind: 'succeeded'` distinguishes
-    // a real rollback from `not-needed`.
-    expect(result.rollback.kind).toBe('succeeded')
-    if (result.rollback.kind === 'succeeded') {
-      expect(result.rollback.entriesUndone).toBeGreaterThan(0)
-    }
+    // A real rollback ran: the asset materialized before the commit is undone.
+    if (result.rollback.kind !== 'complete') expect.unreachable()
+    expect(result.rollback.restored.length).toBeGreaterThan(0)
     expect(existsSync(join(projectRoot, '.test/skills/planning.md'))).toBe(false)
   })
 })
 
-describe('runInstall — F14: non-ENOENT read error aborts before any journal record', () => {
-  test('readAsset throwing EACCES aborts install with no journal entries to roll back', async () => {
+describe('runInstall — a planning failure aborts before any file is touched', () => {
+  test('a reported planning failure aborts the install with nothing to roll back', async () => {
     const fixture = buildLocalFixture('viper-plans')
     writeFileSync(
       join(projectRoot, 'facets.json'),
@@ -916,24 +865,17 @@ describe('runInstall — F14: non-ENOENT read error aborts before any journal re
     })
     expect(result.ok).toBe(false)
     if (result.ok) expect.unreachable()
-    // Post-#3-cluster-A: read failures get their own dedicated code so
-    // the CLI can render a different message ("we couldn't even read
-    // the existing file" vs. "the install write itself failed"). The
-    // adapter name is preserved end-to-end (no more `'unknown'` literal).
-    expect(result.failure.code).toBe('ADAPTER_READ_FAILED')
-    if (result.failure.code === 'ADAPTER_READ_FAILED') {
+    // A planning failure is an install failure: nothing was written, and the
+    // adapter name survives end-to-end so the report can name it.
+    expect(result.failure.code).toBe('ADAPTER_INSTALL_FAILED')
+    if (result.failure.code === 'ADAPTER_INSTALL_FAILED') {
       expect(result.failure.adapter).toBe('bad-read')
-      expect(result.failure.cause).toMatch(/EACCES|simulated/)
+      expect(result.failure.cause).toMatch(/EACCES|permission/)
     }
-    // The read failure happens inside `materialize`, which goes through
-    // `rollbackAndFail`. The journal recorded zero entries before the
-    // failure (the read error is the F14 guard preventing any write from
-    // being attempted), so rollback "succeeds" with `entriesUndone: 0`
-    // — a real rollback that had nothing to undo.
-    expect(result.rollback.kind).toBe('succeeded')
-    if (result.rollback.kind === 'succeeded') {
-      expect(result.rollback.entriesUndone).toBe(0)
-    }
+    // Planning is read-only, so the transaction holds nothing: a rollback
+    // that restores no file is the honest report, not a failure.
+    if (result.rollback.kind !== 'complete') expect.unreachable()
+    expect(result.rollback.restored).toEqual([])
     // No lockfile.
     expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)
   })
@@ -1140,46 +1082,36 @@ describe('runInstall — multi-file skill materialization', () => {
     const skillPaths = (n: string) => ({
       root: join(baseDir, 'skills', n),
       primaryFile: join(baseDir, 'skills', n, 'SKILL.md'),
-      pruneBoundary: baseDir,
+      boundary: baseDir,
     })
     const flatPath = (type: string, n: string) => ({ file: join(baseDir, `${type}s`, `${n}.md`) })
     return {
       name,
       apiVersion: ADAPTER_API_VERSION,
-      supportsInstall: true,
       mcpServers: false,
       buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
-      async installAsset(request) {
-        if (request.assetType === 'skill') {
-          return installSkillBundle(skillPaths(request.name), {
-            content: request.content,
-            metadata: request.metadata as Record<string, unknown> | undefined,
-            companions: request.companions,
-            ownedCompanionPaths: request.ownedCompanionPaths,
-          })
-        }
-        const p = flatPath(request.assetType, request.name)
-        await installAssetFile(p, request.content, request.metadata as Record<string, unknown> | undefined)
-        return { ok: true, primaryPath: p.file }
-      },
-      async readAsset(request) {
-        if (request.assetType === 'skill') {
-          return readSkillBundle(skillPaths(request.name), request.ownedCompanionPaths)
-        }
-        try {
-          const { content, metadata } = await readAssetFile(flatPath(request.assetType, request.name))
-          return { ok: true, asset: { assetType: request.assetType, content, metadata } }
-        } catch {
-          return { ok: false, failure: { code: 'not-found' } }
-        }
-      },
-      async deleteAsset(request) {
-        if (request.assetType === 'skill') {
-          return deleteSkillBundle(skillPaths(request.name), request.ownedCompanionPaths)
-        }
-        const p = flatPath(request.assetType, request.name)
-        await deleteAssetFile(p)
-        return { ok: true, existed: true, deletedPaths: [p.file] }
+      assets: {
+        async planInstall(request) {
+          if (request.assetType === 'skill') {
+            return planSkillBundleInstall(skillPaths(request.name), {
+              content: request.content,
+              metadata: request.metadata as Record<string, unknown>,
+              companions: request.companions,
+              ownedCompanionPaths: request.ownedCompanionPaths,
+            })
+          }
+          return planSingleFileInstall(
+            { file: flatPath(request.assetType, request.name).file, boundary: baseDir },
+            request.content,
+            request.metadata as Record<string, unknown>,
+          )
+        },
+        async planRemoval(request) {
+          if (request.assetType === 'skill') {
+            return planSkillBundleRemoval(skillPaths(request.name), request.ownedCompanionPaths)
+          }
+          return planSingleFileRemoval({ file: flatPath(request.assetType, request.name).file, boundary: baseDir })
+        },
       },
     }
   }
@@ -1237,7 +1169,7 @@ describe('runInstall — multi-file skill materialization', () => {
     if (!third.ok) expect.unreachable()
     expect(third.summary.textAssets.written).toBe(1)
     expect(readFileSync(apiPath, 'utf8')).toBe('# api reference\n')
-    expect(logs.some((l) => l.includes('drift: skills/planning/references/api.md'))).toBe(true)
+    expect(logs.some((l) => l.includes('references/api.md'))).toBe(true)
   })
 
   test('an unowned file in the skill directory survives an update', async () => {

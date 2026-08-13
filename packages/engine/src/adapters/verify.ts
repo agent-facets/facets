@@ -1,4 +1,4 @@
-import type { Adapter, AssetOnlyAdapter, McpCapableAdapter } from '@agent-facets/adapter'
+import type { Adapter } from '@agent-facets/adapter'
 import {
   type AdapterCompatibilityFailure,
   classifyApiDeclaration,
@@ -45,8 +45,12 @@ export type VerifyAdapterFailure =
 /** Result of `verifyAdapter`. Discriminated by `ok`; never throws for expected failures. */
 export type VerifyAdapterResult = { ok: true; verified: VerifiedAdapter } | { ok: false; failure: VerifyAdapterFailure }
 
-/** The asset contract methods every supported adapter object must expose. */
-const REQUIRED_METHODS = ['buildAssetMetadata', 'installAsset', 'readAsset', 'deleteAsset'] as const
+/**
+ * The methods every supported adapter object must expose regardless of which
+ * capabilities it declares. Materialization now lives behind those
+ * capabilities, so only metadata validation is unconditional.
+ */
+const REQUIRED_METHODS = ['buildAssetMetadata'] as const
 
 /**
  * Read a property off an untrusted imported object.
@@ -134,7 +138,7 @@ export async function verifyAdapter(
     }
   }
 
-  // 6. Name and asset method shape — common to every supported contract
+  // 6. Name and the one method every adapter must expose
   if (typeof declaredName !== 'string' || !declaredName) {
     return { ok: false, failure: { kind: 'invalid-name', bundlePath } }
   }
@@ -153,67 +157,64 @@ export async function verifyAdapter(
     }
   }
 
-  // 7. Contract-specific shape. Dispatched on the shape the classified API
-  // promises, so this switch cannot fall out of step with the support set.
-  switch (classified.contract) {
-    case 'assets-only':
-      // The asset-only contract has no further members. An adapter that
-      // happens to carry extra fields is still a valid asset-only adapter;
-      // its API declaration is what says they mean nothing here.
-      return { ok: true, verified: { adapter: candidate as AssetOnlyAdapter } }
-
-    case 'assets-and-mcp': {
-      const read = safeRead(adapter, 'mcpServers')
-      if (!read.ok) {
-        return {
-          ok: false,
-          failure: {
-            kind: 'invalid-capability',
-            adapter: declaredName,
-            bundlePath,
-            api: classified.api,
-            detail: '"mcpServers" could not be read',
-          },
-        }
+  // 7. Both capabilities. Each is `false` or complete — a partial one would be
+  // an adapter that states support and is missing the method providing it.
+  for (const capability of CAPABILITIES) {
+    const read = safeRead(adapter, capability.field)
+    if (!read.ok) {
+      return {
+        ok: false,
+        failure: {
+          kind: 'invalid-capability',
+          adapter: declaredName,
+          bundlePath,
+          api: classified.api,
+          detail: `"${capability.field}" could not be read`,
+        },
       }
-      const capabilityFailure = checkMcpServersShape(read.value)
-      if (capabilityFailure !== null) {
-        return {
-          ok: false,
-          failure: {
-            kind: 'invalid-capability',
-            adapter: declaredName,
-            bundlePath,
-            api: classified.api,
-            detail: capabilityFailure,
-          },
-        }
+    }
+    const detail = checkCapabilityShape(read.value, capability.field, capability.operations)
+    if (detail !== null) {
+      return {
+        ok: false,
+        failure: { kind: 'invalid-capability', adapter: declaredName, bundlePath, api: classified.api, detail },
       }
-      return { ok: true, verified: { adapter: candidate as McpCapableAdapter } }
     }
   }
+
+  return { ok: true, verified: { adapter: candidate as Adapter } }
 }
 
 /**
- * Validate the `mcpServers` member of an adapter declaring the current
- * contract. Returns null when valid, otherwise a diagnostic detail.
+ * The capability members a current adapter declares, and what each must expose
+ * when it is not `false`.
+ *
+ * One table rather than two near-identical checks: the rule is the same for
+ * both, and stating it twice is how they drift.
+ */
+const CAPABILITIES = [
+  { field: 'assets', operations: ['planInstall', 'planRemoval'] },
+  { field: 'mcpServers', operations: ['plan'] },
+] as const
+
+/**
+ * Validate one capability member. Returns null when valid, otherwise a
+ * diagnostic detail.
  *
  * Partial capabilities are rejected here as well as in the SDK factory,
  * because a bundle can be built by anything — the factory's guarantee covers
  * adapters built with the factory, and this covers the rest.
  */
-function checkMcpServersShape(value: unknown): string | null {
-  if (value === false) {
-    return null
-  }
+function checkCapabilityShape(value: unknown, field: string, operations: readonly string[]): string | null {
+  if (value === false) return null
   if (typeof value !== 'object' || value === null) {
-    return '"mcpServers" must be false or a capability object'
+    return `"${field}" must be false or a capability object`
   }
   const capability = value as Record<string, unknown>
-  for (const operation of ['prepare', 'apply'] as const) {
+  for (const operation of operations) {
     const read = safeRead(capability, operation)
     if (!read.ok || typeof read.value !== 'function') {
-      return `"mcpServers.${operation}" is not a function`
+      return `"${field}.${operation}" is not a function`
     }
   }
   return null

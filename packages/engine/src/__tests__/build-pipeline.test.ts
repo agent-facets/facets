@@ -141,14 +141,16 @@ const mockAdapter = defineAdapter({
   name: 'mock-adapter',
   mcpServers: false,
   buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
-  async installAsset() {
-    return { ok: true as const, primaryPath: '/dev/null' }
-  },
-  async readAsset() {
-    return { ok: true as const, asset: { assetType: 'command' as const, content: 'Your asset sir...' } }
-  },
-  async deleteAsset() {
-    return { ok: true as const, existed: false, deletedPaths: [] }
+  assets: {
+    async planInstall() {
+      return {
+        ok: true as const,
+        plan: { occupancy: 'equivalent' as const, action: { kind: 'unchanged' as const }, primaryPath: '/dev/null' },
+      }
+    },
+    async planRemoval() {
+      return { ok: true as const, plan: { kind: 'absent' as const, primaryPath: '/dev/null' } }
+    },
   },
 })
 
@@ -160,14 +162,16 @@ const rejectingAdapter = defineAdapter({
     ok: false,
     errors: [{ path: 'tools', message: 'Invalid tools config', expected: 'Record<string, boolean>', actual: 'string' }],
   }),
-  async installAsset() {
-    return { ok: true as const, primaryPath: '/dev/null' }
-  },
-  async readAsset() {
-    return { ok: true as const, asset: { assetType: 'command' as const, content: 'Your asset sir...' } }
-  },
-  async deleteAsset() {
-    return { ok: true as const, existed: false, deletedPaths: [] }
+  assets: {
+    async planInstall() {
+      return {
+        ok: true as const,
+        plan: { occupancy: 'equivalent' as const, action: { kind: 'unchanged' as const }, primaryPath: '/dev/null' },
+      }
+    },
+    async planRemoval() {
+      return { ok: true as const, plan: { kind: 'absent' as const, primaryPath: '/dev/null' } }
+    },
   },
 })
 
@@ -494,14 +498,20 @@ describe('runBuildPipeline', () => {
       name: 'mock-adapter',
       mcpServers: false,
       buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
-      async installAsset() {
-        return { ok: true as const, primaryPath: '/dev/null' }
-      },
-      async readAsset() {
-        return { ok: true as const, asset: { assetType: 'command' as const, content: 'Your asset sir...' } }
-      },
-      async deleteAsset() {
-        return { ok: true as const, existed: false, deletedPaths: [] }
+      assets: {
+        async planInstall() {
+          return {
+            ok: true as const,
+            plan: {
+              occupancy: 'equivalent' as const,
+              action: { kind: 'unchanged' as const },
+              primaryPath: '/dev/null',
+            },
+          }
+        },
+        async planRemoval() {
+          return { ok: true as const, plan: { kind: 'absent' as const, primaryPath: '/dev/null' } }
+        },
       },
     })
 
@@ -543,14 +553,20 @@ describe('runBuildPipeline', () => {
           },
         ],
       }),
-      async installAsset() {
-        return { ok: true as const, primaryPath: '/dev/null' }
-      },
-      async readAsset() {
-        return { ok: true as const, asset: { assetType: 'command' as const, content: 'Your asset sir...' } }
-      },
-      async deleteAsset() {
-        return { ok: true as const, existed: false, deletedPaths: [] }
+      assets: {
+        async planInstall() {
+          return {
+            ok: true as const,
+            plan: {
+              occupancy: 'equivalent' as const,
+              action: { kind: 'unchanged' as const },
+              primaryPath: '/dev/null',
+            },
+          }
+        },
+        async planRemoval() {
+          return { ok: true as const, plan: { kind: 'absent' as const, primaryPath: '/dev/null' } }
+        },
       },
     })
 
@@ -619,14 +635,20 @@ describe('runBuildPipeline', () => {
         enrichedData = { model: input.model ?? 'auto' }
         return { ok: true, data: enrichedData }
       },
-      async installAsset() {
-        return { ok: true as const, primaryPath: '/dev/null' }
-      },
-      async readAsset() {
-        return { ok: true as const, asset: { assetType: 'command' as const, content: 'Your asset sir...' } }
-      },
-      async deleteAsset() {
-        return { ok: true as const, existed: false, deletedPaths: [] }
+      assets: {
+        async planInstall() {
+          return {
+            ok: true as const,
+            plan: {
+              occupancy: 'equivalent' as const,
+              action: { kind: 'unchanged' as const },
+              primaryPath: '/dev/null',
+            },
+          }
+        },
+        async planRemoval() {
+          return { ok: true as const, plan: { kind: 'absent' as const, primaryPath: '/dev/null' } }
+        },
       },
     })
 
@@ -1034,20 +1056,18 @@ describe('runBuildPipeline — adapter API preflight', () => {
     return {
       name,
       apiVersion,
-      supportsInstall: true,
       buildAssetMetadata: () => {
         throw new Error('contract method invoked despite incompatibility')
       },
-      async installAsset() {
-        throw new Error('contract method invoked despite incompatibility')
+      assets: {
+        async planInstall() {
+          throw new Error('contract method invoked despite incompatibility')
+        },
+        async planRemoval() {
+          throw new Error('contract method invoked despite incompatibility')
+        },
       },
-      async readAsset() {
-        throw new Error('contract method invoked despite incompatibility')
-      },
-      async deleteAsset() {
-        throw new Error('contract method invoked despite incompatibility')
-      },
-    } as Adapter
+    } as unknown as Adapter
   }
 
   async function validFixture(name: string): Promise<string> {

@@ -11,6 +11,10 @@ import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
  * deliberately trivial — this fixture exists to exercise the ENGINE's
  * ordering, consent, and rollback behavior, not to re-test any real tool's
  * schema, which the first-party adapters cover themselves.
+ *
+ * Every capability here is read-only: it inspects, decides, and returns exact
+ * per-file transitions. The CLI's transaction performs the writes, which is
+ * precisely what these tests are about.
  */
 export function installFakeAdapter(adaptersDir: string, name: string, options: { mcp?: boolean } = {}): void {
   const dir = join(adaptersDir, name)
@@ -18,10 +22,27 @@ export function installFakeAdapter(adaptersDir: string, name: string, options: {
   writeFileSync(
     join(dir, 'adapter.js'),
     `
-import { mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { join } from 'node:path'
 
-function path(type, name) { return join(process.cwd(), '.${name}', type + 's', name + '.md') }
+const encoder = new TextEncoder()
+
+function base(req) { return join(req.projectRoot, '.${name}') }
+function path(req) { return join(base(req), req.assetType + 's', req.name + '.md') }
+
+/** The exact state of a path: absent, or its bytes plus permission bits. */
+function stateOf(file) {
+  if (!existsSync(file)) return { kind: 'absent' }
+  const stats = statSync(file)
+  if (!stats.isFile()) return null
+  return { kind: 'regular-file', contents: new Uint8Array(readFileSync(file)), mode: stats.mode & 0o7777 }
+}
+
+function sameBytes(state, contents) {
+  if (state.kind !== 'regular-file' || state.contents.length !== contents.length) return false
+  for (let i = 0; i < contents.length; i++) if (state.contents[i] !== contents[i]) return false
+  return true
+}
 
 const mcpDoc = (root) => join(root, '.${name}-mcp.json')
 function readMcp(root) {
@@ -31,8 +52,9 @@ function readMcp(root) {
 }
 
 const mcpCapability = {
-  async prepare({ projectRoot, desired, previouslyOwnedNames }) {
+  async plan({ projectRoot, desired, previouslyOwnedNames }) {
     const doc = readMcp(projectRoot)
+    const before = JSON.stringify(doc)
     const outcomes = []
     for (const contribution of desired) {
       const existing = doc.servers[contribution.name]
@@ -50,28 +72,74 @@ const mcpCapability = {
         name: owned,
         occupancy: doc.servers[owned] === undefined ? 'absent' : 'present',
       })
+      delete doc.servers[owned]
+    }
+    for (const contribution of desired) doc.servers[contribution.name] = contribution.declaration
+
+    const after = JSON.stringify(doc)
+    if (before === after) return { ok: true, plan: { outcomes, action: { kind: 'unchanged' } } }
+
+    const file = mcpDoc(projectRoot)
+    const expected = stateOf(file)
+    if (expected === null) {
+      return { ok: false, failure: { code: 'validation-failed', path: file, message: 'not a plain file' } }
     }
     return {
       ok: true,
-      preparation: {
-        plan: { projectRoot, desired, previouslyOwnedNames },
-        documentPaths: [mcpDoc(projectRoot)],
+      plan: {
         outcomes,
+        action: {
+          kind: 'mutate',
+          mutations: [
+            { kind: 'write', path: file, boundary: projectRoot, expected, contents: encoder.encode(after) },
+          ],
+        },
       },
     }
   },
-  async apply({ plan }) {
-    const doc = readMcp(plan.projectRoot)
-    const before = JSON.stringify(doc)
-    const desiredNames = plan.desired.map((c) => c.name)
-    for (const owned of plan.previouslyOwnedNames) {
-      if (!desiredNames.includes(owned)) delete doc.servers[owned]
+}
+
+const assets = {
+  async planInstall(req) {
+    const file = path(req)
+    const expected = stateOf(file)
+    if (expected === null) {
+      return { ok: false, failure: { code: 'unsupported-object', path: file, detail: 'not a plain file' } }
     }
-    for (const contribution of plan.desired) doc.servers[contribution.name] = contribution.declaration
-    const after = JSON.stringify(doc)
-    if (before === after) return { ok: true, status: 'unchanged' }
-    writeFileSync(mcpDoc(plan.projectRoot), after)
-    return { ok: true, status: 'changed', changedPaths: [mcpDoc(plan.projectRoot)] }
+    const contents = encoder.encode(req.content)
+    if (sameBytes(expected, contents)) {
+      return { ok: true, plan: { occupancy: 'equivalent', action: { kind: 'unchanged' }, primaryPath: file } }
+    }
+    return {
+      ok: true,
+      plan: {
+        occupancy: expected.kind === 'absent' ? 'absent' : 'divergent',
+        primaryPath: file,
+        action: {
+          kind: 'mutate',
+          mutations: [{ kind: 'write', path: file, boundary: base(req), expected, contents }],
+        },
+      },
+    }
+  },
+  async planRemoval(req) {
+    const file = path(req)
+    const expected = stateOf(file)
+    if (expected === null) {
+      return { ok: false, failure: { code: 'unsupported-object', path: file, detail: 'not a plain file' } }
+    }
+    if (expected.kind === 'absent') return { ok: true, plan: { kind: 'absent', primaryPath: file } }
+    return {
+      ok: true,
+      plan: {
+        kind: 'remove',
+        primaryPath: file,
+        action: {
+          kind: 'mutate',
+          mutations: [{ kind: 'delete', path: file, boundary: base(req), expected }],
+        },
+      },
+    }
   },
 }
 
@@ -79,28 +147,8 @@ export default {
   name: '${name}',
   apiVersion: '${ADAPTER_API_VERSION}',
   mcpServers: ${options.mcp === true ? 'mcpCapability' : 'false'},
-  supportsInstall: true,
+  assets,
   buildAssetMetadata(data) { return { ok: true, data: data || {} } },
-  async installAsset(req) {
-    const file = path(req.assetType, req.name)
-    mkdirSync(dirname(file), { recursive: true })
-    writeFileSync(file, req.content)
-    return { ok: true, primaryPath: file }
-  },
-  async readAsset(req) {
-    const file = path(req.assetType, req.name)
-    if (!existsSync(file)) return { ok: false, failure: { code: 'not-found' } }
-    const content = readFileSync(file, 'utf8')
-    return { ok: true, asset: req.assetType === 'skill'
-      ? { assetType: 'skill', content, metadata: {}, companions: {} }
-      : { assetType: req.assetType, content, metadata: {} } }
-  },
-  async deleteAsset(req) {
-    const file = path(req.assetType, req.name)
-    const existed = existsSync(file)
-    rmSync(file, { force: true })
-    return { ok: true, existed, deletedPaths: existed ? [file] : [] }
-  },
 }
 `,
   )

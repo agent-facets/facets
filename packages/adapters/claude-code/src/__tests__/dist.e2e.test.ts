@@ -9,7 +9,12 @@ import { expect, test } from 'bun:test'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { assertDistBundleContract, loadDistMcpCapability, STDIO_SERVER } from '@agent-facets/adapter-test-kit'
+import {
+  assertDistBundleContract,
+  commitPlannedAction,
+  loadDistMcpCapability,
+  STDIO_SERVER,
+} from '@agent-facets/adapter-test-kit'
 import sourceAdapter from '../index.ts'
 
 const bundlePath = join(import.meta.dir, '../../dist/index.mjs')
@@ -21,16 +26,15 @@ test('bundled capability reads a native document', async () => {
   const root = mkdtempSync(join(tmpdir(), 'claude-code-dist-'))
   try {
     await Bun.write(join(root, '.mcp.json'), '{ "mcpServers": {} }\n')
-    const prepared = await capability.prepare({
+    const planned = await capability.plan({
       projectRoot: root,
       desired: [STDIO_SERVER],
       previouslyOwnedNames: [],
     })
-    if (!prepared.ok) expect.unreachable()
-    expect(prepared.preparation.outcomes).toEqual([{ kind: 'absent', name: 'fs', ownership: 'untracked' }])
+    if (!planned.ok) expect.unreachable()
+    expect(planned.plan.outcomes).toEqual([{ kind: 'absent', name: 'fs', ownership: 'untracked' }])
 
-    const applied = await capability.apply({ plan: prepared.preparation.plan })
-    if (!applied.ok) expect.unreachable()
+    commitPlannedAction(planned.plan.action)
     expect(JSON.parse(readFileSync(join(root, '.mcp.json'), 'utf8')).mcpServers.fs.command).toBe('srv')
   } finally {
     rmSync(root, { recursive: true, force: true })

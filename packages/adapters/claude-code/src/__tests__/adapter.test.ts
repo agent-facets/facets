@@ -1,301 +1,243 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { ADAPTER_API_VERSION } from '@agent-facets/adapter'
+import { dirname, join } from 'node:path'
+import { ADAPTER_API_VERSION, type AssetCapability } from '@agent-facets/adapter'
+import { commitPlannedAction } from '@agent-facets/adapter-test-kit'
 import adapter from '../index.ts'
 
-describe('claude-code adapter — identity', () => {
-  test('has correct name', () => {
+/**
+ * The adapter plans; it never writes. Every test here commits the plan itself,
+ * which is also how the engine works — and is what makes "planning changed
+ * nothing" checkable rather than assumed.
+ */
+
+let projectRoot: string
+let home: string
+let originalHome: string | undefined
+
+beforeEach(() => {
+  projectRoot = realpathSync(mkdtempSync(join(tmpdir(), 'claude-project-')))
+  home = realpathSync(mkdtempSync(join(tmpdir(), 'claude-home-')))
+  originalHome = process.env.HOME
+  process.env.HOME = home
+})
+
+afterEach(() => {
+  if (originalHome === undefined) delete process.env.HOME
+  else process.env.HOME = originalHome
+  rmSync(projectRoot, { recursive: true, force: true })
+  rmSync(home, { recursive: true, force: true })
+})
+
+const assets: AssetCapability = (() => {
+  const capability = adapter.assets
+  if (capability === false) throw new Error('claude-code must declare an asset capability')
+  return capability
+})()
+
+async function install(request: Parameters<typeof assets.planInstall>[0]): Promise<string> {
+  const result = await assets.planInstall(request)
+  if (!result.ok) expect.unreachable()
+  commitPlannedAction(result.plan.action)
+  return result.plan.primaryPath
+}
+
+const read = (path: string): string => readFileSync(path, 'utf8')
+const encode = (text: string): Uint8Array => new TextEncoder().encode(text)
+
+describe('adapter identity', () => {
+  test('declares the canonical adapter API', () => {
     expect(adapter.name).toBe('claude-code')
-  })
-
-  test('declares install support', () => {
-    expect(adapter.supportsInstall).toBe(true)
-  })
-
-  test('declares the canonical adapter API version', () => {
     expect(adapter.apiVersion).toBe(ADAPTER_API_VERSION)
   })
 })
 
-describe('claude-code adapter — buildAssetMetadata', () => {
-  test('accepts valid metadata', () => {
-    const result = adapter.buildAssetMetadata({
-      tools: { Bash: true, Read: false },
-      permissions: { allow: true },
-    })
-    if (!result.ok) expect.unreachable()
-    expect(result.data).toEqual({
-      tools: { Bash: true, Read: false },
-      permissions: { allow: true },
-    })
-  })
-
-  test('accepts empty metadata', () => {
-    const result = adapter.buildAssetMetadata({})
-    expect(result.ok).toBe(true)
-  })
-
-  test('rejects invalid tools', () => {
-    const result = adapter.buildAssetMetadata({ tools: 'not-a-record' })
-    expect(result.ok).toBe(false)
-  })
-
-  test('rejects invalid permissions', () => {
-    const result = adapter.buildAssetMetadata({ permissions: 42 })
-    expect(result.ok).toBe(false)
-  })
-})
-
-describe('claude-code adapter — project-scope I/O round-trip', () => {
-  let originalCwd: string
-  let workDir: string
-
-  beforeEach(() => {
-    originalCwd = process.cwd()
-    workDir = mkdtempSync(join(tmpdir(), 'claude-code-adapter-test-'))
-    process.chdir(workDir)
-  })
-
-  afterEach(() => {
-    process.chdir(originalCwd)
-    rmSync(workDir, { recursive: true, force: true })
-  })
-
-  test('skill installs at .claude/skills/<name>/SKILL.md', async () => {
-    const result = await adapter.installAsset({
-      assetType: 'skill',
-      scope: 'project',
-      name: 'planning',
-      content: '# plan',
-      metadata: {},
-      companions: {},
-      ownedCompanionPaths: [],
-    })
-    if (!result.ok) expect.unreachable()
-    const path = join(workDir, '.claude/skills/planning/SKILL.md')
-    // macOS tmpdir may resolve through /private — compare the suffix
-    expect(result.primaryPath.endsWith('.claude/skills/planning/SKILL.md')).toBe(true)
-    expect(readFileSync(path, 'utf8')).toBe('# plan')
-  })
-
-  test('skill installs companions below the skill root with verbatim bytes', async () => {
-    const result = await adapter.installAsset({
-      assetType: 'skill',
-      scope: 'project',
-      name: 'planning',
-      content: '# plan',
-      metadata: {},
-      companions: { 'references/api.md': new TextEncoder().encode('# api') },
-      ownedCompanionPaths: [],
-    })
-    if (!result.ok) expect.unreachable()
-    const companion = join(workDir, '.claude/skills/planning/references/api.md')
-    expect(readFileSync(companion, 'utf8')).toBe('# api')
-  })
-
-  test('agent installs at .claude/agents/<name>.md', async () => {
-    const result = await adapter.installAsset({
+describe('project layout', () => {
+  test('resolves project scope from the request, not the process directory', async () => {
+    const primaryPath = await install({
       assetType: 'agent',
+      projectRoot,
       scope: 'project',
       name: 'reviewer',
-      content: 'agent body',
+      content: '# reviewer\n',
       metadata: {},
     })
-    if (!result.ok) expect.unreachable()
-    expect(readFileSync(join(workDir, '.claude/agents/reviewer.md'), 'utf8')).toBe('agent body')
+
+    expect(primaryPath).toBe(join(projectRoot, '.claude', 'agents', 'reviewer.md'))
+    expect(existsSync(join(process.cwd(), '.claude'))).toBe(false)
   })
 
-  test('command installs at .claude/commands/<name>.md', async () => {
-    const result = await adapter.installAsset({
+  test('places a command under the project tree', async () => {
+    const primaryPath = await install({
       assetType: 'command',
+      projectRoot,
       scope: 'project',
-      name: 'plan',
-      content: 'command body',
+      name: 'review-pr',
+      content: '# review\n',
       metadata: {},
     })
-    if (!result.ok) expect.unreachable()
-    expect(readFileSync(join(workDir, '.claude/commands/plan.md'), 'utf8')).toBe('command body')
+    expect(primaryPath).toBe(join(projectRoot, '.claude', 'commands', 'review-pr.md'))
   })
 
-  test('writes YAML front-matter with name + description + adapter extras on the primary only', async () => {
-    await adapter.installAsset({
+  test('places a skill bundle under the project tree', async () => {
+    const primaryPath = await install({
       assetType: 'skill',
+      projectRoot,
       scope: 'project',
       name: 'planning',
-      content: '# plan',
-      metadata: { name: 'planning', description: 'plan things', tools: { Bash: true } },
-      companions: { 'notes.md': new TextEncoder().encode('companion body') },
-      ownedCompanionPaths: [],
-    })
-    const raw = readFileSync(join(workDir, '.claude/skills/planning/SKILL.md'), 'utf8')
-    expect(raw).toContain('name: planning')
-    expect(raw).toContain('description: plan things')
-    expect(raw).toContain('Bash: true')
-    expect(raw).toContain('# plan')
-    // Companion bytes are verbatim — no front-matter injected
-    expect(readFileSync(join(workDir, '.claude/skills/planning/notes.md'), 'utf8')).toBe('companion body')
-  })
-
-  test('readAsset round-trips body, metadata, and requested owned companions', async () => {
-    await adapter.installAsset({
-      assetType: 'skill',
-      scope: 'project',
-      name: 'planning',
-      content: '# plan',
-      metadata: { name: 'planning', description: 'plan things' },
-      companions: { 'references/api.md': new TextEncoder().encode('# api') },
-      ownedCompanionPaths: [],
-    })
-    const result = await adapter.readAsset({
-      assetType: 'skill',
-      scope: 'project',
-      name: 'planning',
-      ownedCompanionPaths: ['references/api.md'],
-    })
-    if (!result.ok) expect.unreachable()
-    if (result.asset.assetType !== 'skill') expect.unreachable()
-    expect(result.asset.content.trim()).toBe('# plan')
-    expect(result.asset.metadata).toEqual({ name: 'planning', description: 'plan things' })
-    expect(new TextDecoder().decode(result.asset.companions['references/api.md'])).toBe('# api')
-  })
-
-  test('readAsset never sweeps unowned files into the result', async () => {
-    await adapter.installAsset({
-      assetType: 'skill',
-      scope: 'project',
-      name: 'planning',
-      content: '# plan',
+      content: '# planning\n',
       metadata: {},
-      companions: {},
+      companions: { 'references/api.md': encode('api\n') },
       ownedCompanionPaths: [],
     })
-    writeFileSync(join(workDir, '.claude/skills/planning/notes.txt'), 'user notes')
-    const result = await adapter.readAsset({
-      assetType: 'skill',
-      scope: 'project',
-      name: 'planning',
-      ownedCompanionPaths: [],
-    })
-    if (!result.ok) expect.unreachable()
-    if (result.asset.assetType !== 'skill') expect.unreachable()
-    expect(result.asset.companions).toEqual({})
+
+    expect(primaryPath).toBe(join(projectRoot, '.claude', 'skills', 'planning', 'SKILL.md'))
+    expect(read(join(projectRoot, '.claude', 'skills', 'planning', 'references', 'api.md'))).toBe('api\n')
   })
 
-  test('readAsset returns not-found for a missing asset', async () => {
-    const result = await adapter.readAsset({ assetType: 'agent', scope: 'project', name: 'never-installed' })
-    if (result.ok) expect.unreachable()
-    expect(result.failure.code).toBe('not-found')
-  })
-
-  test('deleteAsset removes the skill bundle and preserves unowned files', async () => {
-    await adapter.installAsset({
-      assetType: 'skill',
-      scope: 'project',
-      name: 'planning',
-      content: '# plan',
-      metadata: {},
-      companions: { 'references/api.md': new TextEncoder().encode('# api') },
-      ownedCompanionPaths: [],
-    })
-    writeFileSync(join(workDir, '.claude/skills/planning/notes.txt'), 'user notes')
-    const result = await adapter.deleteAsset({
-      assetType: 'skill',
-      scope: 'project',
-      name: 'planning',
-      ownedCompanionPaths: ['references/api.md'],
-    })
-    if (!result.ok) expect.unreachable()
-    expect(result.existed).toBe(true)
-    expect(existsSync(join(workDir, '.claude/skills/planning/SKILL.md'))).toBe(false)
-    expect(existsSync(join(workDir, '.claude/skills/planning/references'))).toBe(false)
-    expect(readFileSync(join(workDir, '.claude/skills/planning/notes.txt'), 'utf8')).toBe('user notes')
-  })
-
-  test('deleteAsset is success with existed: false when asset is absent', async () => {
-    const result = await adapter.deleteAsset({
-      assetType: 'skill',
-      scope: 'project',
-      name: 'never-installed',
-      ownedCompanionPaths: [],
-    })
-    if (!result.ok) expect.unreachable()
-    expect(result.existed).toBe(false)
-  })
-
-  test('installAsset rejects an escaping companion path without writing anything', async () => {
-    const result = await adapter.installAsset({
-      assetType: 'skill',
-      scope: 'project',
-      name: 'planning',
-      content: '# plan',
-      metadata: {},
-      companions: { '../../escape.md': new TextEncoder().encode('x') },
-      ownedCompanionPaths: [],
-    })
-    if (result.ok) expect.unreachable()
-    expect(result.failure.code).toBe('invalid-companion-path')
-    expect(existsSync(join(workDir, '.claude/skills/planning/SKILL.md'))).toBe(false)
-  })
-
-  test('installAsset overwrites unconditionally (idempotent by contract)', async () => {
-    const request = (content: string) =>
-      ({
-        assetType: 'skill',
-        scope: 'project',
-        name: 'planning',
-        content,
-        metadata: {},
-        companions: {},
-        ownedCompanionPaths: [],
-      }) as const
-    await adapter.installAsset(request('v1'))
-    await adapter.installAsset(request('v2'))
-    expect(readFileSync(join(workDir, '.claude/skills/planning/SKILL.md'), 'utf8')).toBe('v2')
-  })
-})
-
-describe('claude-code adapter — user-scope base dir', () => {
-  const originalHome = process.env.HOME
-  let fakeHome: string
-
-  beforeEach(() => {
-    fakeHome = mkdtempSync(join(tmpdir(), 'claude-code-home-'))
-    process.env.HOME = fakeHome
-  })
-
-  afterEach(() => {
-    if (originalHome === undefined) delete process.env.HOME
-    else process.env.HOME = originalHome
-    rmSync(fakeHome, { recursive: true, force: true })
-  })
-
-  test('user scope writes under ~/.claude', async () => {
-    const result = await adapter.installAsset({
-      assetType: 'skill',
-      scope: 'user',
-      name: 'planning',
-      content: '# plan',
-      metadata: {},
-      companions: {},
-      ownedCompanionPaths: [],
-    })
-    if (!result.ok) expect.unreachable()
-    expect(readFileSync(join(fakeHome, '.claude/skills/planning/SKILL.md'), 'utf8')).toBe('# plan')
-  })
-})
-
-describe('claude-code adapter — unsupported scope', () => {
-  test('system scope returns a structured unsupported-scope failure', async () => {
-    const result = await adapter.installAsset({
+  test('user scope lands under the home directory, not the project', async () => {
+    const primaryPath = await install({
       assetType: 'agent',
-      scope: 'system',
-      name: 'x',
-      content: 'y',
+      projectRoot,
+      scope: 'user',
+      name: 'reviewer',
+      content: '# reviewer\n',
       metadata: {},
     })
+
+    expect(primaryPath).toBe(join(home, '.claude', 'agents', 'reviewer.md'))
+  })
+
+  test('system scope is refused with a structured failure', async () => {
+    const result = await assets.planInstall({
+      assetType: 'agent',
+      projectRoot,
+      scope: 'system',
+      name: 'reviewer',
+      content: '',
+      metadata: {},
+    })
+
     if (result.ok) expect.unreachable()
     expect(result.failure).toEqual({ code: 'unsupported-scope', scope: 'system' })
+  })
+})
+
+describe('planning', () => {
+  test('metadata is rendered as YAML front matter', async () => {
+    const primaryPath = await install({
+      assetType: 'agent',
+      projectRoot,
+      scope: 'project',
+      name: 'reviewer',
+      content: '# body\n',
+      metadata: { name: 'reviewer', tools: { grep: true } },
+    })
+
+    const written = read(primaryPath)
+    expect(written.startsWith('---\n')).toBe(true)
+    expect(written).toContain('name: reviewer')
+    expect(written.endsWith('---\n# body\n')).toBe(true)
+  })
+
+  test('re-planning an unchanged asset produces no mutation at all', async () => {
+    const request = {
+      assetType: 'agent',
+      projectRoot,
+      scope: 'project',
+      name: 'reviewer',
+      content: '# body\n',
+      metadata: { name: 'reviewer' },
+    } as const
+
+    await install(request)
+    const second = await assets.planInstall(request)
+
+    if (!second.ok) expect.unreachable()
+    expect(second.plan.occupancy).toBe('equivalent')
+    expect(second.plan.action.kind).toBe('unchanged')
+  })
+
+  test('an occupied destination is reported as divergent with its exact prior bytes', async () => {
+    const file = join(projectRoot, '.claude', 'agents', 'reviewer.md')
+    mkdirSync(dirname(file), { recursive: true })
+    writeFileSync(file, 'hand written\n')
+
+    const result = await assets.planInstall({
+      assetType: 'agent',
+      projectRoot,
+      scope: 'project',
+      name: 'reviewer',
+      content: '# body\n',
+      metadata: {},
+    })
+
+    if (!result.ok) expect.unreachable()
+    expect(result.plan.occupancy).toBe('divergent')
+    if (result.plan.action.kind !== 'mutate') expect.unreachable()
+    const [mutation] = result.plan.action.mutations
+    if (mutation.expected.kind !== 'regular-file') expect.unreachable()
+    expect(new TextDecoder().decode(mutation.expected.contents)).toBe('hand written\n')
+  })
+
+  test('planning writes nothing', async () => {
+    await assets.planInstall({
+      assetType: 'skill',
+      projectRoot,
+      scope: 'project',
+      name: 'planning',
+      content: '# planning\n',
+      metadata: {},
+      companions: {},
+      ownedCompanionPaths: [],
+    })
+
+    expect(existsSync(join(projectRoot, '.claude'))).toBe(false)
+  })
+})
+
+describe('removal', () => {
+  test('removes a skill primary and exactly the owned companions', async () => {
+    await install({
+      assetType: 'skill',
+      projectRoot,
+      scope: 'project',
+      name: 'planning',
+      content: '# planning\n',
+      metadata: {},
+      companions: { 'notes.md': encode('notes\n') },
+      ownedCompanionPaths: [],
+    })
+    const root = join(projectRoot, '.claude', 'skills', 'planning')
+    writeFileSync(join(root, 'mine.md'), 'not ours\n')
+
+    const result = await assets.planRemoval({
+      assetType: 'skill',
+      projectRoot,
+      scope: 'project',
+      name: 'planning',
+      ownedCompanionPaths: ['notes.md'],
+    })
+
+    if (!result.ok) expect.unreachable()
+    if (result.plan.kind !== 'remove') expect.unreachable()
+    commitPlannedAction(result.plan.action)
+
+    expect(existsSync(join(root, 'SKILL.md'))).toBe(false)
+    expect(existsSync(join(root, 'notes.md'))).toBe(false)
+    expect(read(join(root, 'mine.md'))).toBe('not ours\n')
+  })
+
+  test('removing an absent asset is reported as absence, not failure', async () => {
+    const result = await assets.planRemoval({
+      assetType: 'command',
+      projectRoot,
+      scope: 'project',
+      name: 'never-installed',
+    })
+
+    if (!result.ok) expect.unreachable()
+    expect(result.plan.kind).toBe('absent')
   })
 })

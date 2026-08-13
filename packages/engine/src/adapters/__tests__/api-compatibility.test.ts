@@ -1,16 +1,18 @@
 import { describe, expect, test } from 'bun:test'
-import { ADAPTER_API_VERSION, ADAPTER_API_VERSION_ASSETS_ONLY } from '@agent-facets/adapter'
+import { ADAPTER_API_VERSION } from '@agent-facets/adapter'
 import { classifyApiDeclaration, isWellFormedAdapterApi, SUPPORTED_ADAPTER_APIS } from '../api-compatibility.ts'
 
 describe('SUPPORTED_ADAPTER_APIS', () => {
-  test('is exactly the compatibility window: the asset-only and canonical contracts', () => {
-    expect([...SUPPORTED_ADAPTER_APIS].sort()).toEqual([ADAPTER_API_VERSION_ASSETS_ONLY, ADAPTER_API_VERSION].sort())
+  test('is exactly the planning contract', () => {
+    expect([...SUPPORTED_ADAPTER_APIS]).toEqual([ADAPTER_API_VERSION])
   })
 
-  test('excludes the superseded positional contract', () => {
-    // Named as a literal on purpose: '0.0' has no constant anywhere in the
-    // monorepo, and this asserts it never acquires one by way of the set.
-    expect(SUPPORTED_ADAPTER_APIS).not.toContain('0.0')
+  test.each(['0.0', '0.1', '0.2'])('excludes the superseded contract %s', (value) => {
+    // Named as literals on purpose: none of these has a constant anywhere in
+    // the monorepo, and this asserts none of them acquires one by way of the
+    // set. Under each of them the adapter performed its own writes and owned
+    // its own rollback, which is exactly what this CLI can no longer offer.
+    expect(SUPPORTED_ADAPTER_APIS).not.toContain(value)
   })
 })
 
@@ -44,32 +46,18 @@ describe('isWellFormedAdapterApi', () => {
 })
 
 describe('classifyApiDeclaration', () => {
-  test('classifies the canonical version as supported, carrying the MCP contract shape', () => {
-    expect(classifyApiDeclaration(ADAPTER_API_VERSION)).toEqual({
-      kind: 'supported',
-      api: ADAPTER_API_VERSION,
-      contract: 'assets-and-mcp',
-    })
+  test('classifies the canonical version as supported', () => {
+    expect(classifyApiDeclaration(ADAPTER_API_VERSION)).toEqual({ kind: 'supported', api: ADAPTER_API_VERSION })
   })
 
-  test('classifies the superseded asset-only version as supported, carrying the asset-only shape', () => {
-    expect(classifyApiDeclaration(ADAPTER_API_VERSION_ASSETS_ONLY)).toEqual({
-      kind: 'supported',
-      api: ADAPTER_API_VERSION_ASSETS_ONLY,
-      contract: 'assets-only',
-    })
-  })
-
-  test.each(['9.9', '1.0', '0.0'])('classifies well-formed but unknown %s as unsupported', (value) => {
+  test.each(['9.9', '1.0', '0.0', '0.1', '0.2'])('classifies well-formed but unknown %s as unsupported', (value) => {
     expect(classifyApiDeclaration(value)).toEqual({ kind: 'unsupported', api: value })
   })
 
-  test('the superseded positional identifier 0.0 stays outside the widened window', () => {
-    // '0.0' is numerically adjacent to both supported tokens but names the
-    // earlier positional contract. Widening the set to two members must not
-    // let proximity or ordering drag it in.
-    const result = classifyApiDeclaration('0.0')
-    expect(result.kind).toBe('unsupported')
+  test('numeric proximity to the supported token confers nothing', () => {
+    // '0.2' is one step below the supported contract and names the last one
+    // in which the adapter wrote files itself. Adjacency must not drag it in.
+    expect(classifyApiDeclaration('0.2').kind).toBe('unsupported')
   })
 
   test.each(['0.0.1', '+0.0', '00.1', '0.0-beta', ''])('classifies invalid string %j as malformed', (value) => {

@@ -1,32 +1,31 @@
 import { describe, expect, test } from 'bun:test'
 import type { McpServerDeclaration as ProtocolMcpServerDeclaration } from '@agent-facets/protocol/mcp-declaration'
-import {
-  ADAPTER_API_VERSION,
-  ADAPTER_API_VERSION_ASSETS_ONLY,
-  ADAPTER_API_VERSION_PACKAGE_FIELD,
-} from '../api-version.ts'
+import { ADAPTER_API_VERSION, ADAPTER_API_VERSION_PACKAGE_FIELD } from '../api-version.ts'
 import { defineAdapter } from '../define-adapter.ts'
 import type { McpServerContribution, McpServerDeclaration } from '../mcp-servers.ts'
-import type { AdapterDefinition, McpCapableAdapter } from '../types.ts'
+import type { Adapter, AdapterDefinition, AssetCapability } from '../types.ts'
 
 /**
  * A minimal valid adapter definition for tests that need a base object.
  * Overrides any individual field by spreading this then assigning.
  */
+function assetCapability(): AssetCapability {
+  return {
+    async planInstall() {
+      return { ok: true, plan: { occupancy: 'equivalent', action: { kind: 'unchanged' }, primaryPath: '/tmp/test' } }
+    },
+    async planRemoval() {
+      return { ok: true, plan: { kind: 'absent', primaryPath: '/tmp/test' } }
+    },
+  }
+}
+
 function validDefinition(): AdapterDefinition {
   return {
     name: 'test-adapter',
+    assets: assetCapability(),
     mcpServers: false,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
-    async installAsset() {
-      return { ok: true, primaryPath: '/tmp/test' }
-    },
-    async readAsset() {
-      return { ok: true, asset: { assetType: 'agent', content: 'test' } }
-    },
-    async deleteAsset() {
-      return { ok: true, existed: true, deletedPaths: ['/tmp/test'] }
-    },
   }
 }
 
@@ -59,6 +58,26 @@ describe('defineAdapter — required field validation', () => {
     expect(() => defineAdapter(def)).toThrow(/"buildAssetMetadata" is required/)
   })
 
+  test('throws when assets is missing', () => {
+    const { assets: _omitted, ...def } = validDefinition()
+    // biome-ignore lint/suspicious/noExplicitAny: intentional type hole for runtime validation test
+    expect(() => defineAdapter(def as any)).toThrow(/"assets" is required/)
+  })
+
+  test('throws when assets is true rather than a capability', () => {
+    // biome-ignore lint/suspicious/noExplicitAny: intentional type hole for runtime validation test
+    const def = { ...validDefinition(), assets: true as any }
+    expect(() => defineAdapter(def)).toThrow(/"assets" is required/)
+  })
+
+  test('throws when an asset capability can plan an install but not a removal', () => {
+    // An adapter that could put files on disk and never take them off would be
+    // discovered at `facet remove`, long after the files exist.
+    // biome-ignore lint/suspicious/noExplicitAny: intentional type hole for runtime validation test
+    const def = { ...validDefinition(), assets: { async planInstall() {} } as any }
+    expect(() => defineAdapter(def)).toThrow(/"assets" is required/)
+  })
+
   test('throws when mcpServers is missing', () => {
     const { mcpServers: _omitted, ...def } = validDefinition()
     // biome-ignore lint/suspicious/noExplicitAny: intentional type hole for runtime validation test
@@ -66,251 +85,84 @@ describe('defineAdapter — required field validation', () => {
   })
 
   test('throws when mcpServers is true rather than a capability', () => {
-    // The exact shape this field exists to make unrepresentable: a bare
-    // "yes I support MCP" with nothing behind it.
     // biome-ignore lint/suspicious/noExplicitAny: intentional type hole for runtime validation test
     const def = { ...validDefinition(), mcpServers: true as any }
     expect(() => defineAdapter(def)).toThrow(/"mcpServers" is required/)
   })
 
-  test('throws when the MCP capability is partial', () => {
-    // biome-ignore lint/suspicious/noExplicitAny: intentional type hole for runtime validation test
-    const def = { ...validDefinition(), mcpServers: { async prepare() {} } as any }
-    expect(() => defineAdapter(def)).toThrow(/"mcpServers" is required/)
-  })
-
-  test('a complete MCP capability is accepted and preserved', () => {
-    const capability = { async prepare() {}, async apply() {} }
-    // biome-ignore lint/suspicious/noExplicitAny: the stub operations do not satisfy the full result types
+  test('accepts a complete MCP capability', () => {
+    const capability = { async plan() {} }
+    // biome-ignore lint/suspicious/noExplicitAny: capability stub for shape assertion
     const adapter = defineAdapter({ ...validDefinition(), mcpServers: capability as any })
     expect(adapter.mcpServers as unknown).toBe(capability)
   })
 
-  test('mcpServers false is preserved rather than stubbed', () => {
-    // Unlike the asset methods, an absent capability gets no fallback: the
-    // CLI must be able to tell "no MCP support" from "not implemented".
-    const adapter = defineAdapter(validDefinition())
+  test('a declined capability is preserved rather than stubbed', () => {
+    const adapter = defineAdapter({ ...validDefinition(), assets: false, mcpServers: false })
+    expect(adapter.assets).toBe(false)
     expect(adapter.mcpServers).toBe(false)
   })
 })
 
-describe('the protocol declaration is the source of truth', () => {
-  // The SDK re-exports protocol's declaration type rather than restating it,
-  // and nothing at runtime can notice the difference — a local structural copy
-  // would compile, ship, and only diverge when protocol next changes. These
-  // assignments fail type-checking the moment the two drift apart.
-  test('the exported declaration type is assignable to and from protocol', () => {
-    type FromProtocol = ProtocolMcpServerDeclaration
-    type FromSdk = McpServerDeclaration
-
-    const stdio: FromProtocol = { type: 'stdio', command: 'srv', args: ['--root'], env: { TOKEN: 'A' } }
-    const asSdk: FromSdk = stdio
-    const backAgain: FromProtocol = asSdk
-
-    expect(backAgain).toEqual(stdio)
+describe('adapter API identifier', () => {
+  test('the SDK stamps the canonical identifier', () => {
+    expect(defineAdapter(validDefinition()).apiVersion).toBe(ADAPTER_API_VERSION)
   })
 
-  test('a contribution accepts a declaration without taking ownership of it', () => {
-    // The capability's contribution is deeply read-only, so an authored
-    // declaration flows in unchanged while an adapter cannot edit the planned
-    // object the fingerprint describes.
-    const declaration: ProtocolMcpServerDeclaration = { type: 'stdio', command: 'srv', args: ['--root'] }
-    const contribution: McpServerContribution = { name: 'fs', declaration }
-
-    expect(contribution.declaration).toEqual(declaration)
-  })
-})
-
-describe('the capability plan survives adapter definition', () => {
-  // The original defect: `mcpServers` was typed at the capability's `unknown`
-  // default, so an inline `apply` could not read the plan its own `prepare`
-  // produced, and nothing checked that the two agreed.
-  test('an inline capability checks prepare and apply against one plan shape', () => {
-    interface Plan {
-      readonly path: string
-    }
-
-    const adapter = defineAdapter({
-      ...validDefinition(),
-      mcpServers: {
-        async prepare() {
-          return {
-            ok: true as const,
-            preparation: { plan: { path: '/p' }, documentPaths: ['/p'] as const, outcomes: [] },
-          }
-        },
-        async apply(request: { readonly plan: Plan }) {
-          // Reading `path` here is the assertion: without the plan type this
-          // is `unknown` and does not compile.
-          return request.plan.path === '/p'
-            ? ({ ok: true, status: 'changed', changedPaths: ['/p'] } as const)
-            : ({ ok: true, status: 'unchanged' } as const)
-        },
-      },
-    })
-
-    if (adapter.mcpServers === false) expect.unreachable()
-    expect(typeof adapter.mcpServers.apply).toBe('function')
+  test('an author-supplied identifier is ignored, never honored', () => {
+    // biome-ignore lint/suspicious/noExplicitAny: simulating untyped JavaScript input
+    const def = { ...validDefinition(), apiVersion: '0.1' } as any
+    expect(defineAdapter(def).apiVersion).toBe(ADAPTER_API_VERSION)
   })
 
-  test('a definition without a plan type still builds', () => {
-    // Bare use keeps erasing to `unknown`, which is what every consumer holds.
-    const adapter: McpCapableAdapter = defineAdapter(validDefinition())
-    expect(adapter.mcpServers).toBe(false)
-  })
-})
-
-describe('canonical adapter API constants', () => {
-  // The one place tests anchor the spec literals — everywhere else compares
-  // against the exported constants.
-  test('ADAPTER_API_VERSION is 0.2', () => {
-    expect(ADAPTER_API_VERSION).toBe('0.2')
+  test('the canonical identifier names the planning contract', () => {
+    expect(ADAPTER_API_VERSION).toBe('0.3')
   })
 
-  test('ADAPTER_API_VERSION_ASSETS_ONLY is 0.1', () => {
-    expect(ADAPTER_API_VERSION_ASSETS_ONLY).toBe('0.1')
-  })
-
-  test('ADAPTER_API_VERSION_PACKAGE_FIELD is facetAdapterApiVersion', () => {
+  test('the package-metadata field name is exported for release tooling', () => {
     expect(ADAPTER_API_VERSION_PACKAGE_FIELD).toBe('facetAdapterApiVersion')
   })
 })
 
-describe('defineAdapter — API version stamping', () => {
-  test('stamps the canonical API version onto the returned adapter', () => {
-    const adapter = defineAdapter(validDefinition())
-    expect(adapter.apiVersion).toBe(ADAPTER_API_VERSION)
-  })
-
-  test('the definition type excludes apiVersion', () => {
-    // @ts-expect-error — apiVersion is SDK-owned; authors cannot supply it
-    const definition: Parameters<typeof defineAdapter>[0] = { ...validDefinition(), apiVersion: '9.9' }
-    // Runtime still stamps the canonical value even when the type is bypassed
-    expect(defineAdapter(definition).apiVersion).toBe(ADAPTER_API_VERSION)
-  })
-
-  test('a conflicting runtime apiVersion smuggled past the types is overwritten', () => {
-    // biome-ignore lint/suspicious/noExplicitAny: intentional type hole to prove the stamp wins at runtime
-    const definition = { ...validDefinition(), apiVersion: '1.0' } as any
-    const adapter = defineAdapter(definition)
-    expect(adapter.apiVersion).toBe(ADAPTER_API_VERSION)
-  })
-})
-
-describe('defineAdapter — returned adapter shape', () => {
-  test('preserves name', () => {
-    const adapter = defineAdapter({ ...validDefinition(), name: 'my-adapter' })
-    expect(adapter.name).toBe('my-adapter')
-  })
-
-  test('buildAssetMetadata is callable after creation', () => {
-    const adapter = defineAdapter(validDefinition())
-    const result = adapter.buildAssetMetadata({ foo: 'bar' })
-    if (!result.ok) expect.unreachable()
-    expect(result.data).toEqual({ foo: 'bar' })
-  })
-
-  test('returns a frozen object', () => {
+describe('adapter shape', () => {
+  test('the returned adapter is frozen', () => {
     const adapter = defineAdapter(validDefinition())
     expect(Object.isFrozen(adapter)).toBe(true)
   })
 
-  test('buildAssetMetadata is bound to the definition (preserves "this")', () => {
-    const definition: AdapterDefinition & { defaultValue: string } = {
+  test('buildAssetMetadata is bound to the definition', () => {
+    const definition: AdapterDefinition = {
       ...validDefinition(),
-      name: 'bound-adapter',
-      defaultValue: 'from-definition',
-      buildAssetMetadata(this: { defaultValue: string }, _data: unknown) {
-        // Reference `this` to prove the binding was preserved
-        return {
-          ok: true as const,
-          data: { defaulted: this.defaultValue },
-        }
+      buildAssetMetadata(this: { marker: string } & AdapterDefinition) {
+        return { ok: true, data: { marker: this.marker } }
       },
     }
-    const adapter = defineAdapter(definition)
+    Object.assign(definition, { marker: 'kept' })
 
-    // Extract the method and call it without a receiver — if it wasn't bound,
-    // `this` would be undefined and the call would throw.
-    const buildMeta = adapter.buildAssetMetadata
-    const result = buildMeta({})
+    const result = defineAdapter(definition).buildAssetMetadata({})
     if (!result.ok) expect.unreachable()
-    expect(result.data).toEqual({ defaulted: 'from-definition' })
+    expect(result.data).toEqual({ marker: 'kept' })
+  })
+
+  test('an adapter exposes exactly the contract members', () => {
+    const adapter: Adapter = defineAdapter(validDefinition())
+    expect(Object.keys(adapter).sort()).toEqual(['apiVersion', 'assets', 'buildAssetMetadata', 'mcpServers', 'name'])
   })
 })
 
-describe('defineAdapter — stub fallbacks for missing asset methods', () => {
-  function buildMinimal(overrides: Partial<AdapterDefinition> = {}): AdapterDefinition {
-    const minimal = {
-      name: 'stubbed-adapter',
-      // Present because it is required — these tests are about the *asset*
-      // methods, which do get stub fallbacks.
-      mcpServers: false,
-      buildAssetMetadata: (data: unknown) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
-      ...overrides,
-    }
-    // biome-ignore lint/suspicious/noExplicitAny: intentionally construct a partial definition to test stub fallbacks
-    return minimal as any
-  }
-
-  test('installAsset falls back to a structured not-implemented result when omitted', async () => {
-    const adapter = defineAdapter(buildMinimal())
-    const result = await adapter.installAsset({
-      assetType: 'agent',
-      scope: 'project',
-      name: 'foo',
-      content: 'content',
-      metadata: {},
-    })
-    if (result.ok) expect.unreachable()
-    expect(result.failure).toEqual({ code: 'not-implemented', method: 'installAsset' })
+describe('protocol declaration identity', () => {
+  test('the SDK re-exports the protocol declaration type rather than restating it', () => {
+    // Assignable in both directions: one type, two names. A structural copy
+    // would drift the moment the protocol adds a field.
+    const protocolValue: ProtocolMcpServerDeclaration = { type: 'stdio', command: 'srv' }
+    const sdkValue: McpServerDeclaration = protocolValue
+    const roundTripped: ProtocolMcpServerDeclaration = sdkValue
+    expect(roundTripped).toBe(protocolValue)
   })
 
-  test('readAsset falls back to a structured not-implemented result when omitted', async () => {
-    const adapter = defineAdapter(buildMinimal())
-    const result = await adapter.readAsset({ assetType: 'agent', scope: 'project', name: 'foo' })
-    if (result.ok) expect.unreachable()
-    expect(result.failure).toEqual({ code: 'not-implemented', method: 'readAsset' })
-  })
-
-  test('deleteAsset falls back to a structured not-implemented result when omitted', async () => {
-    const adapter = defineAdapter(buildMinimal())
-    const result = await adapter.deleteAsset({ assetType: 'agent', scope: 'project', name: 'foo' })
-    if (result.ok) expect.unreachable()
-    expect(result.failure).toEqual({ code: 'not-implemented', method: 'deleteAsset' })
-  })
-
-  test('provided asset methods are used instead of the stub fallback', async () => {
-    let installCalled = false
-    let readCalled = false
-    let deleteCalled = false
-
-    const adapter = defineAdapter({
-      name: 'impl-adapter',
-      mcpServers: false,
-      buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
-      async installAsset() {
-        installCalled = true
-        return { ok: true, primaryPath: '/tmp/foo' }
-      },
-      async readAsset() {
-        readCalled = true
-        return { ok: true, asset: { assetType: 'command', content: 'real-content' } }
-      },
-      async deleteAsset() {
-        deleteCalled = true
-        return { ok: true, existed: false, deletedPaths: [] }
-      },
-    })
-
-    await adapter.installAsset({ assetType: 'command', scope: 'project', name: 'foo', content: 'c', metadata: {} })
-    const read = await adapter.readAsset({ assetType: 'command', scope: 'project', name: 'foo' })
-    await adapter.deleteAsset({ assetType: 'command', scope: 'project', name: 'foo' })
-
-    expect(installCalled).toBe(true)
-    expect(readCalled).toBe(true)
-    expect(deleteCalled).toBe(true)
-    if (!read.ok) expect.unreachable()
-    expect(read.asset.content).toBe('real-content')
+  test('a contribution carries the declaration unchanged', () => {
+    const declaration: McpServerDeclaration = { type: 'http', url: 'https://example.test/mcp' }
+    const contribution: McpServerContribution = { name: 'remote', declaration }
+    expect(contribution.declaration).toBe(declaration)
   })
 })

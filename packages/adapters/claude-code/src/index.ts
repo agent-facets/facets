@@ -1,18 +1,15 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import {
-  type DeleteAssetRequest,
+  type AssetCapability,
+  type AssetFileTarget,
+  type AssetRequestContext,
   defineAdapter,
-  deleteSingleFileAsset,
-  deleteSkillBundle,
-  type InstallAssetRequest,
-  installSingleFileAsset,
-  installSkillBundle,
-  type ReadAssetRequest,
-  readSingleFileAsset,
-  readSkillBundle,
-  type Scope,
-  type SkillBundlePaths,
+  planSingleFileInstall,
+  planSingleFileRemoval,
+  planSkillBundleInstall,
+  planSkillBundleRemoval,
+  type SkillBundleTarget,
 } from '@agent-facets/adapter'
 import { type } from 'arktype'
 import { claudeCodeMcpServers } from './mcp-servers.ts'
@@ -24,13 +21,95 @@ const ClaudeCodeMetadataSchema = type({
 })
 
 /**
+ * Claude Code's conventional layout:
+ *
+ *   user scope    → ~/.claude
+ *   project scope → <projectRoot>/.claude
+ *
+ *   skill   → skills/<name>/SKILL.md (+ companions below skills/<name>/)
+ *   agent   → agents/<name>.md
+ *   command → commands/<name>.md
+ *
+ * The project root comes from the request, never from the process working
+ * directory: the caller may be installing into a tree it is not sitting in,
+ * and deriving it locally would silently materialize assets somewhere else.
+ *
+ * `system` scope is unsupported; returns `null` so callers get a structured
+ * `unsupported-scope` failure.
+ */
+function baseDirFor(context: AssetRequestContext): string | null {
+  switch (context.scope) {
+    case 'user': {
+      const home = process.env.HOME ?? homedir()
+      return join(home, '.claude')
+    }
+    case 'project':
+      return join(context.projectRoot, '.claude')
+    case 'system':
+      return null
+  }
+}
+
+/**
+ * The base directory doubles as the mutation boundary: everything this adapter
+ * plans lives strictly inside its own tree, and the tree itself is never
+ * created or removed by an install.
+ */
+function fileTarget(baseDir: string, directory: string, name: string): AssetFileTarget {
+  return { file: join(baseDir, directory, `${name}.md`), boundary: baseDir }
+}
+
+function skillTarget(baseDir: string, name: string): SkillBundleTarget {
+  const root = join(baseDir, 'skills', name)
+  return { root, primaryFile: join(root, 'SKILL.md'), boundary: baseDir }
+}
+
+const assets: AssetCapability = {
+  async planInstall(request) {
+    const baseDir = baseDirFor(request)
+    if (baseDir === null) {
+      return { ok: false, failure: { code: 'unsupported-scope', scope: request.scope } }
+    }
+    const metadata = request.metadata as Record<string, unknown>
+    switch (request.assetType) {
+      case 'skill':
+        return planSkillBundleInstall(skillTarget(baseDir, request.name), {
+          content: request.content,
+          metadata,
+          companions: request.companions,
+          ownedCompanionPaths: request.ownedCompanionPaths,
+        })
+      case 'agent':
+        return planSingleFileInstall(fileTarget(baseDir, 'agents', request.name), request.content, metadata)
+      case 'command':
+        return planSingleFileInstall(fileTarget(baseDir, 'commands', request.name), request.content, metadata)
+    }
+  },
+
+  async planRemoval(request) {
+    const baseDir = baseDirFor(request)
+    if (baseDir === null) {
+      return { ok: false, failure: { code: 'unsupported-scope', scope: request.scope } }
+    }
+    switch (request.assetType) {
+      case 'skill':
+        return planSkillBundleRemoval(skillTarget(baseDir, request.name), request.ownedCompanionPaths)
+      case 'agent':
+        return planSingleFileRemoval(fileTarget(baseDir, 'agents', request.name))
+      case 'command':
+        return planSingleFileRemoval(fileTarget(baseDir, 'commands', request.name))
+    }
+  },
+}
+
+/**
  * Claude Code adapter — defines the conventions for Claude Code,
  * Anthropic's AI coding tool.
  */
 export default defineAdapter({
   name: 'claude-code',
-  supportsInstall: true,
 
+  assets,
   mcpServers: claudeCodeMcpServers,
 
   buildAssetMetadata(data) {
@@ -50,96 +129,4 @@ export default defineAdapter({
 
     return { ok: true, data: result as Record<string, unknown> }
   },
-
-  async installAsset(request: InstallAssetRequest) {
-    const baseDir = baseDirFor(request.scope)
-    if (baseDir === null) {
-      return { ok: false as const, failure: { code: 'unsupported-scope' as const, scope: request.scope } }
-    }
-    switch (request.assetType) {
-      case 'skill':
-        return installSkillBundle(skillPaths(baseDir, request.name), {
-          content: request.content,
-          metadata: request.metadata as Record<string, unknown>,
-          companions: request.companions,
-          ownedCompanionPaths: request.ownedCompanionPaths,
-        })
-      case 'agent':
-        return installSingleFileAsset(
-          { file: join(baseDir, 'agents', `${request.name}.md`) },
-          request.content,
-          request.metadata as Record<string, unknown>,
-        )
-      case 'command':
-        return installSingleFileAsset(
-          { file: join(baseDir, 'commands', `${request.name}.md`) },
-          request.content,
-          request.metadata as Record<string, unknown>,
-        )
-    }
-  },
-
-  async readAsset(request: ReadAssetRequest) {
-    const baseDir = baseDirFor(request.scope)
-    if (baseDir === null) {
-      return { ok: false as const, failure: { code: 'unsupported-scope' as const, scope: request.scope } }
-    }
-    switch (request.assetType) {
-      case 'skill':
-        return readSkillBundle(skillPaths(baseDir, request.name), request.ownedCompanionPaths)
-      case 'agent':
-        return readSingleFileAsset({ file: join(baseDir, 'agents', `${request.name}.md`) }, 'agent')
-      case 'command':
-        return readSingleFileAsset({ file: join(baseDir, 'commands', `${request.name}.md`) }, 'command')
-    }
-  },
-
-  async deleteAsset(request: DeleteAssetRequest) {
-    const baseDir = baseDirFor(request.scope)
-    if (baseDir === null) {
-      return { ok: false as const, failure: { code: 'unsupported-scope' as const, scope: request.scope } }
-    }
-    switch (request.assetType) {
-      case 'skill':
-        return deleteSkillBundle(skillPaths(baseDir, request.name), request.ownedCompanionPaths)
-      case 'agent':
-        return deleteSingleFileAsset({ file: join(baseDir, 'agents', `${request.name}.md`), pruneBoundary: baseDir })
-      case 'command':
-        return deleteSingleFileAsset({ file: join(baseDir, 'commands', `${request.name}.md`), pruneBoundary: baseDir })
-    }
-  },
 })
-
-/**
- * Claude Code's conventional layout:
- *
- *   user scope    → ~/.claude
- *   project scope → <cwd>/.claude
- *
- *   skill   → skills/<name>/SKILL.md (+ companions below skills/<name>/)
- *   agent   → agents/<name>.md
- *   command → commands/<name>.md
- *
- * `<name>` may contain forward slashes for facet-namespacing (e.g.,
- * `viper-plans/planning` → `skills/viper-plans/planning/SKILL.md`).
- *
- * `system` scope is unsupported; returns `null` so callers can produce a
- * structured `unsupported-scope` failure.
- */
-function baseDirFor(scope: Scope): string | null {
-  switch (scope) {
-    case 'user': {
-      const home = process.env.HOME ?? homedir()
-      return join(home, '.claude')
-    }
-    case 'project':
-      return join(process.cwd(), '.claude')
-    case 'system':
-      return null
-  }
-}
-
-function skillPaths(baseDir: string, name: string): SkillBundlePaths {
-  const root = join(baseDir, 'skills', name)
-  return { root, primaryFile: join(root, 'SKILL.md'), pruneBoundary: baseDir }
-}

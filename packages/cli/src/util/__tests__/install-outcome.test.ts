@@ -10,9 +10,23 @@ import { describeDiskState, diskStateSentence } from '../install-outcome.ts'
  */
 
 const ALL: RollbackOutcome[] = [
-  { kind: 'not-needed', reason: 'failed before any disk mutation' },
-  { kind: 'succeeded', entriesUndone: 3 },
-  { kind: 'partial-failure', entriesUndone: 2, failures: 1 },
+  { kind: 'not-needed', reason: 'post-lock-no-mutation' },
+  { kind: 'complete', restored: ['/tmp/a'], alreadyRestored: [], removedDirectories: [] },
+  {
+    kind: 'incomplete',
+    restored: ['/tmp/a'],
+    alreadyRestored: [],
+    removedDirectories: [],
+    issues: [
+      {
+        kind: 'conflict',
+        path: '/tmp/contested.md',
+        original: { kind: 'absent' },
+        committed: { kind: 'absent' },
+        observed: { kind: 'absent' },
+      },
+    ],
+  },
 ]
 
 describe('describeDiskState', () => {
@@ -27,16 +41,44 @@ describe('describeDiskState', () => {
   })
 
   test('an incomplete rollback says state may remain, with the counts', () => {
-    const described = describeDiskState({ kind: 'partial-failure', entriesUndone: 2, failures: 1 })
-    expect(described).toContain('partial state may remain')
-    expect(described).toContain('1 rollback failure')
-    expect(described).toContain('2 entries')
+    const described = describeDiskState({
+      kind: 'incomplete',
+      restored: ['/tmp/a'],
+      alreadyRestored: [],
+      removedDirectories: [],
+      issues: [
+        {
+          kind: 'conflict',
+          path: '/tmp/contested.md',
+          original: { kind: 'absent' },
+          committed: { kind: 'absent' },
+          observed: { kind: 'absent' },
+        },
+      ],
+    })
+    expect(described).toContain('could not be returned')
+    expect(described).toContain('could not be returned')
+    expect(described).toContain('previous state')
   })
 
   test('counts are singularized', () => {
-    const described = describeDiskState({ kind: 'partial-failure', entriesUndone: 1, failures: 2 })
-    expect(described).toContain('2 rollback failures')
-    expect(described).toContain('1 entry')
+    const described = describeDiskState({
+      kind: 'incomplete',
+      restored: ['/tmp/a'],
+      alreadyRestored: [],
+      removedDirectories: [],
+      issues: [
+        {
+          kind: 'conflict',
+          path: '/tmp/contested.md',
+          original: { kind: 'absent' },
+          committed: { kind: 'absent' },
+          observed: { kind: 'absent' },
+        },
+      ],
+    })
+    expect(described).toContain('1 file could not be returned')
+    expect(described).toContain('1 file')
   })
 
   // Every arm must produce something a user can act on. An arm added to

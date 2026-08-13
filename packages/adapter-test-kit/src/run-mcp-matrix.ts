@@ -7,13 +7,13 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
-  statSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative } from 'node:path'
 import type { McpServerCapability } from '@agent-facets/adapter'
+import { commitMutations, currentFileState } from './apply-plan.ts'
 import { MCP_MATRIX_CASES, type McpMatrixCaseId } from './mcp-matrix.ts'
 
 /** The native document(s) a case starts from, keyed by path relative to the project root. */
@@ -36,7 +36,7 @@ export interface McpMatrixProject {
 }
 
 export interface RunMcpServerMatrixOptions {
-  readonly capability: McpServerCapability<unknown>
+  readonly capability: McpServerCapability
   readonly seeds: Readonly<Record<McpMatrixCaseId, McpMatrixSeed>>
 }
 
@@ -48,14 +48,19 @@ export interface RunMcpServerMatrixOptions {
  * individual fixture, so stating them per case would be noise that eventually
  * gets forgotten on the one case that needed it:
  *
- * 1. `prepare` changes nothing on disk.
- * 2. `documentPaths` is non-empty and stays inside the project.
- * 3. Every changed path was disclosed by `documentPaths` first.
+ * 1. `plan` changes nothing on disk. Planning is read-only, always.
+ * 2. Every planned path is absolute and stays inside the project.
+ * 3. Every planned write carries the state the document was actually in, so
+ *    the caller can detect a concurrent edit and restore exact prior bytes.
  * 4. Nothing is spawned and nothing is fetched — configuring a server is not
  *    running it.
  * 5. Nothing outside the project is written. MCP configuration is
  *    project-scoped, and the home directory is where a tool's user-wide
  *    config lives — the one place a plausible bug would reach for.
+ *
+ * The harness applies the plan itself rather than importing the engine's
+ * transaction: what is under test here is the adapter's plan, and a local
+ * applier keeps the adapter packages from depending on the engine to be tested.
  */
 export function runMcpServerMatrix(options: RunMcpServerMatrixOptions): void {
   describe('MCP server matrix', () => {
@@ -108,7 +113,7 @@ export function runMcpServerMatrix(options: RunMcpServerMatrixOptions): void {
 
         const restoreGuards = forbidExecutionAndNetwork()
         try {
-          const preparation = await options.capability.prepare({
+          const planned = await options.capability.plan({
             projectRoot: root,
             desired: matrixCase.desired,
             previouslyOwnedNames: matrixCase.previouslyOwnedNames,
@@ -117,40 +122,33 @@ export function runMcpServerMatrix(options: RunMcpServerMatrixOptions): void {
           expect(snapshot(root)).toEqual(seeded)
 
           if (matrixCase.expect.kind === 'prepare-failed') {
-            if (preparation.ok) expect.unreachable()
-            expect(preparation.failure.code).toBe(matrixCase.expect.code)
+            if (planned.ok) expect.unreachable()
+            expect(planned.failure.code).toBe(matrixCase.expect.code)
             return
           }
 
-          if (!preparation.ok) expect.unreachable()
-          const { plan, documentPaths, outcomes } = preparation.preparation
+          if (!planned.ok) expect.unreachable()
+          const { action, outcomes } = planned.plan
 
           expect(outcomes).toEqual(matrixCase.expect.outcomes)
-          expect(documentPaths.length).toBeGreaterThan(0)
-          for (const path of documentPaths) {
-            expect(isAbsolute(path)).toBe(true)
-            expect(relative(root, path).startsWith('..')).toBe(false)
+          expect(action.kind).toBe(matrixCase.expect.apply === 'changed' ? 'mutate' : 'unchanged')
+
+          if (action.kind === 'unchanged') {
+            seed.after?.(project)
+            return
           }
 
-          const before = documentPaths.map((path) => [path, identity(path)] as const)
-
-          const applied = await options.capability.apply({ plan })
-          if (!applied.ok) expect.unreachable()
-          expect(applied.status).toBe(matrixCase.expect.apply)
-
-          if (applied.status === 'changed') {
-            for (const path of applied.changedPaths) {
-              expect(documentPaths).toContain(path)
-            }
-          } else {
-            // "Unchanged" is a claim about the filesystem, not just a label:
-            // an adapter that rewrote identical bytes would still change the
-            // inode, and one that touched the file would change the mtime.
-            for (const [path, snapshotBefore] of before) {
-              expect(identity(path)).toEqual(snapshotBefore)
-            }
+          for (const mutation of action.mutations) {
+            expect(isAbsolute(mutation.path)).toBe(true)
+            expect(relative(root, mutation.path).startsWith('..')).toBe(false)
+            expect(mutation.boundary).toBe(root)
+            // The planned precondition must be what is genuinely on disk, or
+            // the caller's concurrency check would reject a correct plan — and
+            // its rollback would restore bytes that were never there.
+            expect(mutation.expected).toEqual(currentFileState(mutation.path))
           }
 
+          commitMutations(action.mutations)
           seed.after?.(project)
         } finally {
           restoreGuards()
@@ -162,17 +160,6 @@ export function runMcpServerMatrix(options: RunMcpServerMatrixOptions): void {
       })
     }
   })
-}
-
-/** A document's write identity: absent, or its bytes plus inode and mtime. */
-type DocumentIdentity =
-  | { readonly present: false }
-  | { readonly present: true; readonly text: string; readonly ino: number; readonly mtimeMs: number }
-
-function identity(path: string): DocumentIdentity {
-  if (!existsSync(path)) return { present: false }
-  const stats = statSync(path)
-  return { present: true, text: readFileSync(path, 'utf8'), ino: stats.ino, mtimeMs: stats.mtimeMs }
 }
 
 function readIfPresent(path: string): string | null {

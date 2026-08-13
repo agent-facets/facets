@@ -217,8 +217,8 @@ export function classifyMcpConfigurations(args: ClassifyMcpConfigurationsArgs): 
   )
   const outcomes: McpConfigurationOutcome[] = []
 
-  for (const { adapter, preparation } of args.prepared) {
-    for (const outcome of preparation.outcomes) {
+  for (const { adapter, plan } of args.prepared) {
+    for (const outcome of plan.outcomes) {
       if (outcome.kind === 'obsolete-owned') {
         const ownership = args.previousOwnership.get(mcpServerKey(outcome.name))
         outcomes.push({

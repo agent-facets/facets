@@ -1,6 +1,6 @@
 import type { McpServerCapabilityFailure } from '@agent-facets/adapter'
-import type { RollbackOutcome, RunInstallFailure } from '@agent-facets/engine'
-import { describeDiskState } from '../../util/install-outcome.ts'
+import type { FileTransactionFailure, RollbackOutcome, RunInstallFailure } from '@agent-facets/engine'
+import { describeDiskState, hasPreservedConflicts } from '../../util/install-outcome.ts'
 import {
   describeUnsupportedManifestVersion,
   UNSUPPORTED_MANIFEST_VERSION_FIX,
@@ -86,8 +86,6 @@ function mcpCapabilityFix(
   switch (failure.reason) {
     case 'interpolation':
       return `edit or omit "${failure.serverName}" in facets.json so it declares no value that tool would expand, then re-run 'facet ${command}'`
-    case 'document-changed':
-      return `${state}; ${failure.path} was changed by something else mid-run — re-run 'facet ${command}'`
     case 'native-state':
       return `${state}; repair ${failure.path} so the desired servers can be written, then re-run 'facet ${command}'`
   }
@@ -98,10 +96,14 @@ export function installFailureFix(
   rollback: RollbackOutcome,
   command: 'add' | 'install' | 'remove',
 ): string {
-  // Partial rollback outranks everything: whatever caused the failure
-  // matters less than the fact that undoing it did not fully succeed.
-  if (rollback.kind === 'partial-failure') {
-    return `${describeDiskState(rollback)}; inspect the project tree before re-running 'facet ${command}'`
+  // An incomplete rollback outranks everything: whatever caused the failure
+  // matters less than the fact that some file is not back where it started.
+  // A preserved concurrent edit is called out separately — the run protected
+  // somebody's change, and telling them to hunt for damage would be wrong.
+  if (rollback.kind === 'incomplete') {
+    return hasPreservedConflicts(rollback.issues)
+      ? `review the files listed above — each was changed by something else and was left alone — then re-run 'facet ${command}'`
+      : `${describeDiskState(rollback)}; inspect the files listed above before re-running 'facet ${command}'`
   }
 
   switch (failure.code) {
@@ -145,8 +147,8 @@ export function installFailureFix(
     case 'MCP_PREPARE_FAILED':
     case 'MCP_APPLY_FAILED':
       return mcpCapabilityFix(failure.failure, rollback, command)
-    case 'MCP_DOCUMENT_UNREADABLE':
-      return `${describeDiskState(rollback)}; repair the configuration document named above, then re-run 'facet ${command}'`
+    case 'FILESYSTEM_TRANSACTION_FAILED':
+      return `${describeDiskState(rollback)}; ${transactionFix(failure.failure)}, then re-run 'facet ${command}'`
     case 'MCP_CONTRACT_VIOLATION':
       // Nothing the user can edit; sending them to their own files would be
       // a wild goose chase.
@@ -158,5 +160,26 @@ export function installFailureFix(
       // "rollback complete" told all of them a rollback had run while the
       // Ink block on stdout said nothing was written, from the same result.
       return `${describeDiskState(rollback)}; fix the underlying issue and re-run 'facet ${command}'`
+  }
+}
+
+/**
+ * What to do about a refused or failed file change.
+ *
+ * A drifted file and an unwritable one call for opposite responses — re-run
+ * versus repair — so the remedy is chosen from the failure rather than from a
+ * single sentence that would have to fit both.
+ */
+function transactionFix(failure: FileTransactionFailure): string {
+  switch (failure.kind) {
+    case 'preflight':
+    case 'conflict':
+      return 'something else changed a file mid-run'
+    case 'invalid-batch':
+      return "report this to the adapter's author; no project file needs changing"
+    case 'inspect-failed':
+    case 'verify-mismatch':
+    case 'operation':
+      return 'repair the file named above'
   }
 }

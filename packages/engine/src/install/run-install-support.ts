@@ -1,4 +1,4 @@
-import type { InstallJournal } from './journal.ts'
+import type { FileTransaction } from '../fs/index.ts'
 import type { McpInstallOutcomes } from './mcp/outcomes.ts'
 import type { FacetOutcome, InstallSummary, OnLog, RunInstallFailure, RunInstallResult } from './types.ts'
 
@@ -57,20 +57,26 @@ function summarizeMcp(mcp: McpInstallOutcomes): InstallSummary['mcp'] {
 }
 
 /**
- * Roll back the journal and return the failure. Called whenever a
- * mutation has been recorded and we need to undo it.
+ * Return every file this run changed to the state it was in, then report the
+ * failure alongside what that achieved.
+ *
+ * Called whenever a mutation may have landed. The rollback never throws and
+ * never stops early: a file another process took ownership of is left alone
+ * and reported, and every other file is still restored.
  */
-export async function rollbackAndFail(
-  journal: InstallJournal,
+export function rollbackAndFail(
+  transaction: FileTransaction,
   failure: RunInstallFailure,
   onLog: OnLog,
-): Promise<RunInstallResult> {
-  const rollback = await journal.rollback({ onLog })
-  return {
-    ok: false,
-    failure,
-    rollback: rollback.ok
-      ? { kind: 'succeeded', entriesUndone: rollback.entriesUndone }
-      : { kind: 'partial-failure', entriesUndone: rollback.entriesUndone, failures: rollback.failures },
+): RunInstallResult {
+  const outcome = transaction.rollback()
+  for (const path of outcome.restored) {
+    onLog(() => `[verbose] restored ${path}`)
   }
+  if (outcome.kind === 'incomplete') {
+    for (const issue of outcome.issues) {
+      onLog(() => `[verbose] could not restore ${issue.path} (${issue.kind})`)
+    }
+  }
+  return { ok: false, failure, rollback: outcome }
 }

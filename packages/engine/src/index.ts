@@ -148,6 +148,13 @@ export {
   resolveFacetDir,
 } from './facet-dir.ts'
 export type {
+  FileRollbackIssue,
+  FileRollbackOutcome,
+  FileTransactionFailure,
+  FileTransition,
+} from './fs/index.ts'
+export { describeRollbackIssue, describeTransactionFailure } from './fs/index.ts'
+export type {
   AssetTakeoverDecision,
   AssetTakeoverRequest,
   AssetTakeoverResolver,
@@ -171,8 +178,6 @@ export type {
   CollisionResolutionRequest,
   CollisionResolver,
 } from './install/commit/compose.ts'
-export type { JournalEntry, JournalRollbackOptions, JournalRollbackResult } from './install/journal.ts'
-export { InstallJournal } from './install/journal.ts'
 export type { AcquireLockError, AcquireLockResult, InstallLock } from './install/lockfile-guard.ts'
 export { acquireInstallLock, computeLockPath } from './install/lockfile-guard.ts'
 export type { LoadLockfileResult } from './install/lockfile-io.ts'
@@ -235,6 +240,7 @@ export type {
   LockfileDriftEntry,
   MaterializationCollisionGroup,
   MaterializationOverrideRef,
+  NoMutationReason,
   OnLog,
   Removal,
   RollbackOutcome,
@@ -243,6 +249,7 @@ export type {
   RunInstallResult,
   StageEvent,
   StaleMaterializationOverride,
+  TransactionSubject,
 } from './install/types.ts'
 // `AssetIdentity` names an asset by its EFFECTIVE name, and the brand on
 // that field makes the type unconstructible from a bare string. Adapter

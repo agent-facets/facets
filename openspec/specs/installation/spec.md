@@ -547,7 +547,7 @@ The receipt SHALL be the sole authority for materialized ownership. A receipt th
 
 Receipt ownership SHALL be adapter-agnostic project ownership. A recorded identity SHALL be managed in every selected adapter, and selecting an adapter SHALL delegate management of the identities the project's receipt records within that adapter's storage. The system SHALL NOT record ownership per adapter, and SHALL NOT require separate evidence per adapter before reconciling or deleting a recorded identity.
 
-The receipt, lockfile, project manifest, materialized assets, and native MCP configuration SHALL commit together: within one operation, handled failures SHALL roll back all of them, and an interruption that prevents rollback SHALL be recoverable by re-running installation, whose per-file integrity reconciliation converges disk, lockfile, and receipt without deleting unowned files. Receipt-driven deletion SHALL aggregate duplicate historical claims by effective adapter identity, delete each obsolete identity at most once, and pass each skill's validated authored companion ownership into the adapter deletion request so removal after a pulled lockfile drops an entry deletes exactly the recorded owned files without cache or network access. Deletion SHALL be limited to state the operation can restore: because a skill bundle is addressed through its primary, an absent primary leaves the recorded companions unreadable as a rollback preimage, so the system SHALL leave those recorded paths untouched rather than perform a deletion a later failure could not undo. The claim SHALL still be dropped when the operation commits, and the paths left behind SHALL be reported as untracked, because a command that reports a removal SHALL NOT leave the user unaware that files remain. The receipt SHALL determine what is currently materialized when pulled version-control changes remove lockfile entries. In frozen-lockfile mode, receipt-driven cleanup SHALL begin only after the frozen consistency check passes. If that check rejects an orphaned lockfile entry, installation SHALL fail before cleanup changes any materialized state. Receipt data SHALL be treated as untrusted: project identity, record shape, and path containment within the selected adapter's storage SHALL be validated before deletion. Invalid or escaping records SHALL be reported and SHALL NOT cause deletion; files not recorded as owned SHALL never be deleted.
+The receipt, lockfile, project manifest, materialized assets, and native MCP configuration SHALL commit together: within one operation, handled failures SHALL roll back all of them, and an interruption that prevents rollback SHALL be recoverable by re-running installation, whose per-file integrity reconciliation converges disk, lockfile, and receipt without deleting unowned files. Receipt-driven deletion SHALL aggregate duplicate historical claims by effective adapter identity, delete each obsolete identity at most once, and pass each skill's validated authored companion ownership into the adapter deletion request so removal after a pulled lockfile drops an entry deletes exactly the recorded owned files without cache or network access. Deletion SHALL be limited to state the operation can restore. Every recorded owned file SHALL be removable on its own terms: each is inspected individually and its exact prior bytes recorded, so a recorded skill whose primary file is already gone SHALL still have its recorded companions removed, and a later failure SHALL restore them byte for byte. The receipt SHALL determine what is currently materialized when pulled version-control changes remove lockfile entries. In frozen-lockfile mode, receipt-driven cleanup SHALL begin only after the frozen consistency check passes. If that check rejects an orphaned lockfile entry, installation SHALL fail before cleanup changes any materialized state. Receipt data SHALL be treated as untrusted: project identity, record shape, and path containment within the selected adapter's storage SHALL be validated before deletion. Invalid or escaping records SHALL be reported and SHALL NOT cause deletion; files not recorded as owned SHALL never be deleted.
 
 #### Scenario: Pulled change cleans up a multi-file skill
 
@@ -563,12 +563,11 @@ The receipt, lockfile, project manifest, materialized assets, and native MCP con
 - **THEN** the next operation SHALL remove that complete server entry from every selected adapter
 - **AND** no network or cache content SHALL be required for the deletion
 
-#### Scenario: A recorded bundle whose primary is gone is retained rather than half-deleted
+#### Scenario: A recorded bundle whose primary is gone still has its companions removed
 
-- **WHEN** an obsolete recorded skill's primary is absent, so its recorded companions cannot be captured for rollback
-- **THEN** the system SHALL NOT issue a deletion for that identity
-- **AND** the committed receipt SHALL drop the claim regardless
-- **AND** the operation SHALL report the recorded paths it left behind as untracked and requiring manual cleanup
+- **WHEN** an obsolete recorded skill's primary is absent and its recorded companions are present
+- **THEN** the system SHALL remove each present recorded companion
+- **AND** a later failure in the same operation SHALL restore each of them to its exact prior bytes
 
 #### Scenario: Interrupted install converges on re-run
 
@@ -1023,6 +1022,77 @@ When a facet declares dependencies on other facets (composition), the system SHA
 - **AND** the error SHALL identify the composing facet by name
 - **AND** the error SHALL state that facet composition is not supported
 
+### Requirement: Every file an operation changes is restorable to its exact prior state
+
+Before an operation changes a file, it SHALL record that file's exact prior state and the exact state it is about to produce. Only files the operation actually changes SHALL be recorded: a file merely inspected to decide what to change SHALL NOT be, so a concurrent edit to it SHALL survive the operation's failure untouched.
+
+Immediately before each change, the file's current state SHALL be compared with the state the change was computed from. When it differs, the change SHALL be refused and reported as a concurrency conflict rather than applied over it.
+
+When an operation fails, each recorded file SHALL be classified against what the operation left there:
+
+- a file still holding what the operation wrote SHALL be restored to its exact prior bytes and permissions;
+- a file already back at its prior state SHALL be left untouched, including its modification time;
+- a file holding anything else SHALL be preserved exactly as it is and reported as a conflict, because something else now owns those bytes.
+
+Restoration SHALL continue past every conflict and every failure, so one contested file SHALL NOT strand the operation's other changes on disk. The report SHALL name every file that could not be returned to its prior state, and SHALL distinguish a deliberately preserved concurrent edit from a restoration that genuinely failed.
+
+A file changed more than once in one operation SHALL be restored to the state it held before the operation began, not to an intermediate one — including when different adapters change the same file.
+
+Only regular files SHALL be written or restored. A path occupied by a symlink, directory, device, socket, or hard-linked file, or reached through a symlinked directory below the authorized boundary, SHALL fail before anything is written.
+
+This record SHALL cover handled failures within one operation. It is deliberately NOT durable across process death: a killed or power-lost process SHALL be recovered by re-running installation, whose per-file integrity reconciliation converges disk, lockfile, and receipt without deleting unowned files. Persisting the record for crash replay is intentionally deferred, because a replayed record is only safe if it can still prove what it wrote, which is the same evidence a re-run recomputes anyway.
+
+#### Scenario: A file only inspected is never restored over
+
+- **WHEN** an operation reads a file to compute a change but does not change it
+- **AND** something else edits that file before the operation fails
+- **THEN** the failed operation SHALL leave that file exactly as the other writer left it
+
+#### Scenario: A concurrent edit to a written file is preserved and reported
+
+- **WHEN** something else changes a file after the operation wrote it
+- **AND** the operation then fails
+- **THEN** that file SHALL keep the other writer's content
+- **AND** the operation SHALL report it as a conflict naming the path
+
+#### Scenario: One conflict does not strand the rest
+
+- **WHEN** one recorded file conflicts and others do not
+- **THEN** every non-conflicting file SHALL be restored to its exact prior state
+
+#### Scenario: Repeated changes restore to the original
+
+- **WHEN** an operation changes one file twice, or two adapters change the same file
+- **THEN** a failure SHALL restore the state that file held before the operation began
+
+#### Scenario: An unsupported filesystem object fails before any write
+
+- **WHEN** a planned path is occupied by something other than a regular file
+- **THEN** the operation SHALL fail before writing anything
+
+### Requirement: Directories an operation created are cleaned up conservatively
+
+Directories SHALL be tracked separately from files. After a failed operation restores its files, it SHALL remove only directories it can prove it created and that are still empty and still the directories it made. Removal SHALL be bounded by the authorized directory, which SHALL never be removed, and SHALL never be recursive, so any remaining file — the user's or anyone else's — prevents it.
+
+A directory that existed before the operation SHALL never be removed, even if it is empty. A directory left empty by removing a file the operation owned MAY be removed on success, bounded the same way. Restoring a removed file SHALL recreate the directories needed to hold it.
+
+The guarantee covers exact file bytes, file permission bits, and directory existence. Exact directory permissions and timestamps are NOT covered.
+
+#### Scenario: Only directories the operation created are removed
+
+- **WHEN** a failed operation created a directory to hold a file it wrote
+- **THEN** rollback SHALL remove that directory
+
+#### Scenario: A pre-existing empty directory survives
+
+- **WHEN** an empty directory existed before the operation
+- **THEN** rollback SHALL leave it in place
+
+#### Scenario: An unowned file prevents cleanup
+
+- **WHEN** a directory the operation created also holds a file the operation does not own
+- **THEN** rollback SHALL leave both the directory and that file untouched
+
 ### Requirement: Failed installs leave the project unchanged
 
 The project manifest, the lockfile, and the receipt SHALL be written together as a single transactional commit at the end of a successful operation. The system SHALL NOT write the manifest ahead of resolving and materializing a change. When an install, add, or remove operation fails for any reason, the manifest, the lockfile, and the receipt on disk SHALL all remain exactly as they were before the operation. The user SHALL NOT be left with a project whose manifest references a facet that was never installed, nor with a lockfile or receipt that records a state that was never materialized.
@@ -1046,11 +1116,11 @@ The project manifest, the lockfile, and the receipt SHALL be written together as
 
 Before adding, removing, or installing facets, the system SHALL verify that every selected installed adapter declares an API in the current exact adapter API support set. If a selected adapter is missing its declaration, has a malformed or unsupported declaration, conflicts with its recorded package declaration, or cannot be loaded as a valid adapter, the operation SHALL fail before invoking any adapter contract method or writing project or materialized state. The failure SHALL identify every incompatible selected adapter and provide the best available compatible-install command. The system SHALL NOT automatically upgrade or replace an incompatible adapter during a facet operation.
 
-This adapter-compatibility preflight SHALL run before archive-version dispatch and before any per-file integrity reconciliation, so an adapter declaring the superseded positional API `0.0` SHALL cause the current CLI to fail on the adapter — with reinstall guidance — before the archive's `facetVersion` is examined. The adapter API axis and the archive-format axis SHALL be classified independently.
+This adapter-compatibility preflight SHALL run before archive-version dispatch and before any per-file integrity reconciliation, so an adapter declaring a superseded API SHALL cause the current CLI to fail on the adapter — with reinstall guidance — before the archive's `facetVersion` is examined. The adapter API axis and the archive-format axis SHALL be classified independently.
 
 Facet removal of tracked materialization SHALL remain independent of cached facet content and network access, but it SHALL still require compatible selected adapters because deleting materialized assets or MCP configuration invokes each selected adapter's contract. A removal whose remaining desired state is untracked SHALL be permitted to resolve, because it must materialize that state before recording ownership of it.
 
-When the operation has MCP work to do, the system SHALL additionally require every selected adapter to implement API `0.2` with MCP server support. The operation has MCP work to do when an active declaration exists, and also when no active declaration exists but the receipt still owns an effective MCP identity that this operation must reconcile or delete. A selected API `0.1` adapter or API `0.2` adapter that declares `mcpServers: false` SHALL remain usable only when neither condition holds, and SHALL otherwise join one complete unsupported-adapter failure.
+When the operation has MCP work to do, the system SHALL additionally require every selected adapter to declare MCP server support. The operation has MCP work to do when an active declaration exists, and also when no active declaration exists but the receipt still owns an effective MCP identity that this operation must reconcile or delete. A selected adapter declaring no MCP support SHALL remain usable only when neither condition holds, and SHALL otherwise join one complete unsupported-adapter failure.
 
 #### Scenario: Adding a facet with an incompatible selected adapter changes nothing
 
@@ -1092,21 +1162,21 @@ When the operation has MCP work to do, the system SHALL additionally require eve
 - **AND** every selected installed adapter loads as a valid adapter and declares an API in the current exact support set
 - **THEN** the operation SHALL proceed through the applicable fetch, integrity verification, materialization, and project-state update requirements
 
-#### Scenario: Previous tagged adapter serves asset-only desired state
+#### Scenario: Supported adapter serves asset-only desired state
 
 - **WHEN** every selected adapter belongs to the current exact support set and no active MCP declaration exists
 - **THEN** the operation SHALL proceed through applicable asset behavior
 
 #### Scenario: Active MCP declaration requires MCP support
 
-- **WHEN** active MCP declarations exist and selected adapters include API `0.1` or `mcpServers: false`
+- **WHEN** active MCP declarations exist and a selected adapter declares no MCP support
 - **THEN** the operation SHALL fail before mutation
-- **AND** it SHALL identify every adapter that needs upgrade or server omission
+- **AND** it SHALL identify every adapter whose declarations must be omitted or which must be deselected
 
 #### Scenario: Receipt-owned cleanup requires MCP support
 
 - **WHEN** no active MCP declaration remains but the receipt still owns an effective server identity this operation must delete
-- **AND** a selected adapter declares API `0.1` or `mcpServers: false`
+- **AND** a selected adapter declares no MCP support
 - **THEN** the operation SHALL fail before mutation for the same unsupported-adapter reason
 
 #### Scenario: Facet operation does not auto-upgrade an incompatible adapter
@@ -1117,7 +1187,7 @@ When the operation has MCP work to do, the system SHALL additionally require eve
 
 ### Requirement: Removing a facet uninstalls it
 
-When a user removes a facet from a project, the system SHALL drop the facet from the project manifest, reconcile its effective materialized ownership across every selected adapter, and update the lockfile and receipt so neither records the facet—all in a single operation. A user SHALL NOT need to run a separate install step after removing. The ownership to reconcile SHALL be taken from the receipt alone, so deleting a tracked materialization SHALL require neither cache nor network access, and an untracked one SHALL delete nothing on disk. Whether the command as a whole completes without cache or network access SHALL additionally depend on the remaining desired state being fully tracked, per the refinement rules below. The system SHALL delete a recorded effective adapter identity only when no desired asset retains it, SHALL delete each obsolete identity once, and SHALL aggregate historical duplicate claims so a retained desired asset is never deleted. Skill deletion SHALL supply the validated authored companion ownership in the adapter deletion request and SHALL remove the primary and every obsolete owned companion atomically while leaving unowned files untouched. When the recorded primary is already absent, no read can capture the recorded companions for rollback, so the system SHALL leave them in place, drop the claim, and report them as untracked rather than delete what it could not restore.
+When a user removes a facet from a project, the system SHALL drop the facet from the project manifest, reconcile its effective materialized ownership across every selected adapter, and update the lockfile and receipt so neither records the facet—all in a single operation. A user SHALL NOT need to run a separate install step after removing. The ownership to reconcile SHALL be taken from the receipt alone, so deleting a tracked materialization SHALL require neither cache nor network access, and an untracked one SHALL delete nothing on disk. Whether the command as a whole completes without cache or network access SHALL additionally depend on the remaining desired state being fully tracked, per the refinement rules below. The system SHALL delete a recorded effective adapter identity only when no desired asset retains it, SHALL delete each obsolete identity once, and SHALL aggregate historical duplicate claims so a retained desired asset is never deleted. Skill deletion SHALL supply the validated authored companion ownership in the adapter deletion request and SHALL remove the primary and every obsolete owned companion atomically while leaving unowned files untouched. Each recorded owned file SHALL be inspected on its own terms, so a recorded primary that is already absent SHALL NOT prevent its recorded companions from being removed: every companion carries its own exact observed state, and a later failure SHALL restore each of them byte for byte.
 
 A non-frozen removal-only operation SHALL NOT fetch, rebuild, or reverify a remaining facet whose locked entry already answers the operation. It SHALL instead refine the remaining locked entries structurally from local state: it SHALL confirm locally that every remaining facet has a locked entry still matching its manifest source and specifier, SHALL plan over the remaining locked asset set so an already-recorded collision among the facets that stay is still reported, SHALL carry each remaining entry's source, version, integrity, file records, and unrecognized fields forward unchanged, and SHALL attach each remaining asset's recorded disposition — refining an entry that predates dispositions to authored materialization. Refinement is lossless, so it SHALL be permitted for every supported lockfile version, and the resulting lockfile SHALL be written at the current version. A frozen operation SHALL NOT refine, because it SHALL NOT rewrite the lockfile at all. Remaining materialized assets SHALL NOT be rewritten or deleted, and lockfile entries for facets the manifest no longer declares SHALL be dropped.
 
@@ -1131,7 +1201,7 @@ Whether an operation is removal-only SHALL be decided from the requested change,
 
 Refinement SHALL apply only when local state answers the operation completely. The system SHALL fall back to ordinary resolution rather than guessing when any of the following holds: the project has no lockfile at all; a remaining facet has no locked entry; its locked entry no longer matches its manifest source or specifier; the remaining locked set does not plan cleanly; an identity a remaining facet retains was also claimed by a facet the operation drops; this machine's receipt cannot be loaded; this machine's receipt does not record a remaining facet; this machine's receipt disagrees with a remaining facet's locked entry; or the manifest declares materialization intent the lockfile does not record. Each of those cases requires content this machine may not have, and each would otherwise be resolved by writing an asset, which removal does not do. The offline guarantee therefore covers fully tracked, witnessed state; a removal whose remaining desired state is untracked SHALL require resolution and SHALL fail rather than delete untracked files when that resolution is unavailable.
 
-Before deleting any materialized asset, the system SHALL verify that every selected installed adapter loads as a valid adapter and declares an API supported by the CLI. When a selected adapter has a missing, malformed, unsupported, or metadata-inconsistent API declaration, or cannot be loaded as a valid adapter, removal SHALL fail before deleting any materialized asset and SHALL leave the project manifest, lockfile, receipt, and materialized assets unchanged. An adapter declaring the superseded positional API `0.0` SHALL be unsupported by a CLI whose supported set is the tagged-contract API `0.1` and SHALL trigger this failure. This compatibility precondition SHALL require neither cache access nor network access; once the adapter incompatibility is repaired, a removal whose remaining materializations are all tracked SHALL remain able to use the receipt without either resource.
+Before deleting any materialized asset, the system SHALL verify that every selected installed adapter loads as a valid adapter and declares an API supported by the CLI. When a selected adapter has a missing, malformed, unsupported, or metadata-inconsistent API declaration, or cannot be loaded as a valid adapter, removal SHALL fail before deleting any materialized asset and SHALL leave the project manifest, lockfile, receipt, and materialized assets unchanged. An adapter declaring an API outside the CLI's current exact support set — including every superseded contract in which the adapter performed its own writes — SHALL be unsupported and SHALL trigger this failure. This compatibility precondition SHALL require neither cache access nor network access; once the adapter incompatibility is repaired, a removal whose remaining materializations are all tracked SHALL remain able to use the receipt without either resource.
 
 #### Scenario: Removing a declared facet uninstalls it
 
@@ -1550,7 +1620,7 @@ When resolution is unavailable, cancelled, or forbidden by frozen mode, the syst
 
 ### Requirement: Materialized ownership is reconciled against the complete effective set
 
-The system SHALL plan deletion and replacement from the complete tracked previous ownership and complete desired effective set. Previous ownership SHALL be read from the receipt alone. A materialized identity SHALL be deleted only when the receipt records it and no desired asset still claims its adapter identity. Cross-facet ownership transfer SHALL replace content without leaving the retained identity deleted. Duplicate historical claims SHALL be aggregated, each obsolete identity SHALL be deleted at most once per adapter, and all recorded owned companions absent from the new owner SHALL be removed while unowned files remain untouched — except where the obsolete identity's primary is already absent, which leaves its recorded companions uncapturable for rollback and SHALL therefore leave them in place and untracked rather than delete them irreversibly.
+The system SHALL plan deletion and replacement from the complete tracked previous ownership and complete desired effective set. Previous ownership SHALL be read from the receipt alone. A materialized identity SHALL be deleted only when the receipt records it and no desired asset still claims its adapter identity. Cross-facet ownership transfer SHALL replace content without leaving the retained identity deleted. Duplicate historical claims SHALL be aggregated, each obsolete identity SHALL be deleted at most once per adapter, and all recorded owned companions absent from the new owner SHALL be removed while unowned files remain untouched. An obsolete identity whose primary is already absent SHALL still have its recorded companions removed, because each is inspected and recorded individually and is therefore restorable on its own.
 
 Changing an alias SHALL delete the old effective identity and reconcile the new one transactionally. Changing to omitted SHALL delete prior ownership; removing omission SHALL materialize the asset. A disposition-only change SHALL be reported as updated, while disk-only drift SHALL remain repaired.
 
@@ -1565,10 +1635,11 @@ Changing an alias SHALL delete the old effective identity and reconcile the new 
 - **WHEN** an alias changes from `vendor-review` to `partner-review`
 - **THEN** the old owned files SHALL be deleted and the new effective identity SHALL be reconciled in one operation
 
-#### Scenario: An alias change cannot half-delete a bundle whose primary is gone
+#### Scenario: An alias change removes a bundle whose primary is gone
 
 - **WHEN** an alias changes and the old effective identity's primary is already absent
-- **THEN** the old recorded companions SHALL be left in place and reported as untracked
+- **THEN** the old recorded companions SHALL still be removed
+- **AND** a later failure in the same operation SHALL restore each of them to its exact prior bytes
 - **AND** the new effective identity SHALL still be reconciled and recorded
 
 #### Scenario: Historical duplicate claims do not delete a retained identity
@@ -1811,7 +1882,9 @@ The system SHALL complete facet verification, effective-name composition, select
 
 When an operation fails after changing one or more native MCP documents, the system SHALL restore every document's exact prior bytes and restore every asset and project-state file changed by the operation. Restoration SHALL preserve comments, formatting, and member order. No new configuration ownership or approval evidence SHALL survive the failed operation.
 
-Restoration SHALL NOT depend on an adapter reporting its own writes correctly. The system SHALL capture each disclosed document's prior bytes and arm their restoration before invoking application, so a disclosed document remains restorable when an adapter changes it and then fails, omits it from the changed documents it reports, or reports an undisclosed document. A write to a document that was never disclosed remains a contract violation the system reports rather than restores.
+Restoration SHALL NOT depend on adapter behavior at all. Adapters perform no writes, so the system SHALL record each document it writes as an exact prior-state-to-committed-state transition and SHALL restore from that record. A document an adapter inspected but did not plan a change for SHALL NOT be recorded, SHALL NOT be restored, and SHALL NOT be written, so a concurrent edit to it SHALL survive the failed operation untouched.
+
+A document that still holds what this operation committed SHALL be restored to its exact prior bytes. A document that already holds its prior state SHALL be left untouched. A document holding neither SHALL be preserved and reported by path rather than overwritten, and restoration SHALL continue through every remaining recorded document.
 
 #### Scenario: Later adapter failure restores earlier configuration
 
@@ -1824,21 +1897,19 @@ Restoration SHALL NOT depend on an adapter reporting its own writes correctly. T
 - **THEN** every affected file SHALL be restored to its pre-operation state
 - **AND** no new receipt claim SHALL remain
 
-#### Scenario: Adapter writes a disclosed document and then fails
+#### Scenario: An inspected but unchanged document is never restored
 
-- **WHEN** an adapter changes a document it disclosed and then returns a failure
-- **THEN** that document SHALL be restored to its exact pre-operation bytes
+- **WHEN** an adapter inspects a configuration document without planning a change to it
+- **AND** another process edits that document while the operation runs
+- **AND** the operation later fails
+- **THEN** that document SHALL retain the other process's edit
 
-#### Scenario: Adapter omits a disclosed document it changed
+#### Scenario: An externally changed document is preserved rather than overwritten
 
-- **WHEN** an adapter changes a disclosed document but does not report it among its changed documents
-- **THEN** that document SHALL still be restored to its exact pre-operation bytes when the operation fails
-
-#### Scenario: Undisclosed write is reported with disclosed documents restored
-
-- **WHEN** an adapter reports changing a document it never disclosed
-- **THEN** the operation SHALL fail identifying that document as a contract violation
-- **AND** every disclosed document SHALL be restored to its exact pre-operation bytes
+- **WHEN** a document this operation wrote is changed again by something else before the operation fails
+- **THEN** the system SHALL leave that document as it found it
+- **AND** it SHALL report that document by path
+- **AND** every other changed document SHALL still be restored to its exact prior bytes
 
 ### Requirement: Installation verifies integrity-pinned server declarations before configuration
 

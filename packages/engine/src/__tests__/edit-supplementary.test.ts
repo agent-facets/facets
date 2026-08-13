@@ -343,7 +343,7 @@ describe('applyEditOperations', () => {
     const result = await applyEditOperations(ops, dir)
     expect(result.ok).toBe(false)
     if (result.ok) expect.unreachable()
-    expect(result.rollbackOk).toBe(true)
+    expect(result.rollback.kind).toBe('complete')
     // The deleted README is restored to its original bytes.
     expect(readFileSync(join(dir, 'README.md'), 'utf8')).toBe('# keep me')
     expect(readFileSync(join(dir, 'facet.json'), 'utf8')).toBe('ORIGINAL')
@@ -360,7 +360,7 @@ describe('applyEditOperations', () => {
     const result = await applyEditOperations(ops, dir)
     expect(result.ok).toBe(false)
     if (result.ok) expect.unreachable()
-    expect(result.rollbackOk).toBe(true)
+    expect(result.rollback.kind).toBe('complete')
     expect(readFileSync(join(dir, 'facet.json'), 'utf8')).toBe('ORIGINAL')
   })
 })

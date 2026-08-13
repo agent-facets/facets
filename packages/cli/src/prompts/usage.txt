@@ -128,10 +128,8 @@ MCP servers — when a facet configures a server
   asset name collision and does NOT approve an asset takeover.
 
   Other MCP failures you may hit, all before any mutation:
-    - A selected adapter cannot configure MCP servers. Either it implements
-      adapter API 0.1 (update it: facet adapter install <name>), or it declares
-      no MCP support (updating will not help — remove the adapter or omit the
-      servers).
+    - A selected adapter declares no MCP support. Updating will not help —
+      remove the adapter or omit the servers.
     - A tool's native config file cannot be parsed. Repair the named file; it
       is left byte-for-byte unchanged.
 
@@ -149,9 +147,10 @@ Adapter tooling — `facet adapter`
 
   This CLI supports adapter API {{ADAPTER_API_SUPPORT_SET}}. An adapter that declares an older or
   unsupported API fails closed before any project files change. Note that
-  loadability and MCP capability are separate questions: an adapter declaring
-  the older supported API loads and works normally, but cannot configure MCP
-  servers. If `facet build`, `facet add`, or `facet install` reports an
+  loadability and MCP capability are separate questions: an adapter can load
+  and work normally while declaring no MCP support, in which case it cannot
+  configure MCP servers and reinstalling it will not change that.
+  If `facet build`, `facet add`, or `facet install` reports an
   incompatible adapter:
     1. Run `facet adapter list` to see each adapter's API and status. Failing
        entries print the exact reinstall command to run.

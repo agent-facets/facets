@@ -58,41 +58,26 @@ function buildFixture(name: string, skill: string): string {
 function installFakeAdapter(name: string): void {
   const dir = join(adaptersDir, name)
   mkdirSync(dir, { recursive: true })
-  const assetFsImport = require.resolve('@agent-facets/adapter')
+  const sdk = require.resolve('@agent-facets/adapter')
   writeFileSync(
     join(dir, 'adapter.js'),
     `
-import { installAssetFile, readAssetFile, deleteAssetFile } from '${assetFsImport}'
+import { planSingleFileInstall, planSingleFileRemoval } from '${sdk}'
 import { join } from 'node:path'
-function path(type, name) { return join(process.cwd(), '.${name}', type + 's', name + '.md') }
+function base(req) { return join(req.projectRoot, '.${name}') }
+function file(req) { return join(base(req), req.assetType + 's', req.name + '.md') }
 export default {
   name: '${name}',
   apiVersion: '${ADAPTER_API_VERSION}',
   mcpServers: false,
-  supportsInstall: true,
   buildAssetMetadata(data) { return { ok: true, data: data || {} } },
-  async installAsset(req) {
-    const file = path(req.assetType, req.name)
-    await installAssetFile({ file }, req.content, req.metadata)
-    return { ok: true, primaryPath: file }
-  },
-  async readAsset(req) {
-    try {
-      const r = await readAssetFile({ file: path(req.assetType, req.name) })
-      return {
-        ok: true,
-        asset: req.assetType === 'skill'
-          ? { assetType: 'skill', content: r.content, metadata: r.metadata, companions: {} }
-          : { assetType: req.assetType, content: r.content, metadata: r.metadata },
-      }
-    } catch {
-      return { ok: false, failure: { code: 'not-found' } }
-    }
-  },
-  async deleteAsset(req) {
-    const file = path(req.assetType, req.name)
-    await deleteAssetFile({ file })
-    return { ok: true, existed: true, deletedPaths: [file] }
+  assets: {
+    async planInstall(req) {
+      return planSingleFileInstall({ file: file(req), boundary: base(req) }, req.content, req.metadata)
+    },
+    async planRemoval(req) {
+      return planSingleFileRemoval({ file: file(req), boundary: base(req) })
+    },
   },
 }
 `,
@@ -114,7 +99,7 @@ function readLockfileFacets(): Record<string, unknown> {
 async function installableAdapters() {
   const loaded = await loadInstalledAdapters()
   if (!loaded.ok) expect.unreachable('test bug: fixture adapters failed to load')
-  return loaded.adapters.filter((a) => a.supportsInstall === true)
+  return loaded.adapters.filter((a) => a.assets !== false)
 }
 
 async function install() {

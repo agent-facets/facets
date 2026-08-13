@@ -43,3 +43,22 @@ export type AssetType = 'skill' | 'agent' | 'command'
  * Classifies the scope for adapter interactions
  */
 export type Scope = 'system' | 'user' | 'project'
+
+/**
+ * A list that is non-empty by type.
+ *
+ * Used by result arms whose whole reason for existing is that they carry at
+ * least one item — a "some things could not be restored" arm holding nothing
+ * is an illegal state, and a runtime length check is not enforcement.
+ */
+export type NonEmptyArray<T> = readonly [T, ...T[]]
+
+/**
+ * Narrow an accumulated list to its non-empty type.
+ *
+ * A guard rather than a cast, so the one place that decides "there is at least
+ * one of these" is a real runtime check the compiler then trusts.
+ */
+export function isNonEmpty<T>(items: readonly T[]): items is NonEmptyArray<T> {
+  return items.length > 0
+}

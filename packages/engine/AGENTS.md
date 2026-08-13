@@ -30,9 +30,14 @@ would be replaced. The protocol it depends on would not.
   the parsed `Source` discriminant is engine-internal. Only the
   `VersionSpec` slice (which appears in published artifacts) lives in
   protocol.
-- **Install pipeline orchestrator** — `runInstall`, journal,
-  lockfile-guard, lockfile-io, materialize. Drives the install flow on
-  a developer's machine.
+- **Install pipeline orchestrator** — `runInstall`, lockfile-guard,
+  lockfile-io, materialize. Drives the install flow on a developer's
+  machine.
+- **File transition transaction** — `src/fs/`. The one mechanism every
+  install-time write goes through: exact `A → B` per-file transitions,
+  batch preflight and commit, coalescing, classified rollback, and
+  conservative cleanup of directories it created. Adapters plan; this
+  writes.
 - **Build pipeline orchestrator** — `runBuildPipeline`, `writeBuildOutput`.
   Wires protocol's primitives (validators, content-hash, tar layout)
   into a CLI workflow with progress events.

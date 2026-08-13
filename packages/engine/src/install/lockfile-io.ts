@@ -153,7 +153,18 @@ function summarizeErrors(errors: ReadonlyArray<{ message: string }>): string {
  * work only for the writer to undo it.
  */
 export function writeLockfile(projectRoot: string, lockfile: CurrentLockfile): void {
-  const path = join(projectRoot, FACETS_LOCK_FILE)
+  atomicWriteFileSync(join(projectRoot, FACETS_LOCK_FILE), canonicalLockfileText(lockfile))
+}
+
+/**
+ * The exact bytes a lockfile serializes to.
+ *
+ * Split from the writer because the install commit needs the text without
+ * performing the write: it hands the bytes to the transaction, which is what
+ * makes the lockfile land in the same all-or-nothing batch as the manifest
+ * and the receipt.
+ */
+export function canonicalLockfileText(lockfile: CurrentLockfile): string {
   // Null-prototype: re-materializing the map is the last place a facet can
   // silently disappear on its way to disk, and `__proto__` is a legal key of
   // the schema's `Record<string, …>`.
@@ -162,7 +173,7 @@ export function writeLockfile(projectRoot: string, lockfile: CurrentLockfile): v
     sortedFacets[key] = entry
   }
   const canonical: CurrentLockfile = { ...lockfile, facets: sortedFacets }
-  atomicWriteFileSync(path, jsonFileText(canonical))
+  return jsonFileText(canonical)
 }
 
 /**

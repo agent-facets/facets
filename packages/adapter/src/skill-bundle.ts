@@ -1,135 +1,124 @@
-import { lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
+import type { FileMutation, FileState } from '@agent-facets/common'
 import {
   assembleAssetContent,
-  errorMessage,
-  isMissingFileError,
-  pruneEmptyParents,
-  splitAssetContent,
+  encodeText,
+  isStrictlyInside,
+  readFileState,
+  stateHoldsBytes,
   validateContainedRelativePath,
 } from './asset-fs.ts'
 import type {
-  AdapterAssetFailure,
+  AdapterPlanFailure,
+  AssetOccupancy,
   CompanionMap,
-  DeleteAssetResult,
-  InstallAssetResult,
-  ReadAssetResult,
+  PlanAssetInstallResult,
+  PlanAssetRemovalResult,
 } from './types.ts'
 
 /**
- * Atomic skill-bundle helpers for adapter implementations.
+ * Planning helpers for skill bundles: a primary `SKILL.md` plus the companion
+ * files a previous install owned.
  *
- * A skill is a multi-file bundle: one primary file (`SKILL.md`, subject to
- * front-matter/metadata transformation) plus zero or more companion files
- * (opaque bytes, stored verbatim) below the skill root. These helpers
- * centralize the security-sensitive machinery — companion-path containment,
- * snapshot/rollback staging, ownership-set-based deletion, and
- * empty-directory pruning — so adapters built on them inherit correct
- * behavior.
+ * A skill is the one asset whose materialization spans several files, and the
+ * three of them are one logical change: the new primary, the new companions,
+ * and the removal of owned companions the new bundle no longer contains. They
+ * are returned as a single batch so the caller applies them atomically — a
+ * handled failure can never leave half a bundle behind.
  *
- * Atomicity model: every mutation snapshots the prior state of each file
- * it will touch; a handled failure mid-operation rolls the touched files
- * back, leaving the prior bundle intact. This covers handled failures
- * within one operation — it is not a durable write-ahead log. Recovery
- * from a process crash is the caller's idempotent re-install.
- *
- * Ownership is caller-supplied per operation. These helpers never
- * enumerate the skill directory and never touch a path that isn't the
- * primary file, a new-bundle companion, or a member of the supplied
- * owned-path set — so unowned files can never be read, deleted, or
- * swept into results.
+ * Ownership is supplied, never discovered. These helpers read exactly the
+ * paths they are given and never enumerate the skill directory, so a file a
+ * user dropped in beside the bundle is never read, never planned over, and
+ * never swept into a removal.
  */
 
-/** Filesystem locations for one skill bundle. */
-export interface SkillBundlePaths {
+/** Where a skill bundle lives, and which tree the adapter may work inside. */
+export interface SkillBundleTarget {
   /** Absolute path of the skill root directory (e.g. `<base>/skills/<name>`). */
   readonly root: string
   /** Absolute path of the primary file (e.g. `<root>/SKILL.md`). Must be inside `root`. */
   readonly primaryFile: string
   /**
-   * Absolute path of the adapter-controlled base directory. Directories
-   * left empty by owned-file removal are pruned upward, stopping before
-   * this boundary. When absent, pruning stops at (and includes nothing
-   * above) the skill root's parent.
+   * Absolute path of the adapter-controlled base directory. Every mutation
+   * must fall strictly inside it; it is never created or removed.
    */
-  readonly pruneBoundary?: string
+  readonly boundary: string
+}
+
+/** What a skill install plans to put on disk. */
+export interface SkillBundleContent {
+  /** Primary file text, before front-matter assembly. */
+  readonly content: string
+  readonly metadata?: Record<string, unknown> | undefined
+  /** The complete new companion bundle, keyed relative to the skill root. */
+  readonly companions: CompanionMap
+  /** Caller-verified companion paths a previous install owned. */
+  readonly ownedCompanionPaths: readonly string[]
 }
 
 /**
- * True when `abs` is a strict descendant of `root` (not equal, not outside),
- * using the platform path separator. On Windows `root`/`abs` are
- * backslash-separated, so a hardcoded `/` boundary check would reject every
- * legitimate companion; `relative`/`isAbsolute` are separator-agnostic.
+ * A portable collision key: NFC-normalized and case-folded, so two paths that
+ * are distinct byte sequences but name one file on a case-insensitive volume
+ * are caught before one silently overwrites the other.
  */
-function isStrictlyBelow(abs: string, root: string): boolean {
-  const rel = relative(root, abs)
-  return rel.length > 0 && !rel.startsWith('..') && !isAbsolute(rel)
-}
-
-/**
- * A portable collision key for a companion path: NFC-normalized and
- * case-folded so paths that are distinct byte sequences but resolve to the
- * same file on a case-insensitive (Windows, default macOS) volume are
- * detected as duplicates before any write silently overwrites the other.
- */
-function companionCollisionKey(relPath: string): string {
+function collisionKey(relPath: string): string {
   return relPath.normalize('NFC').toLowerCase()
 }
 
+interface ResolvedCompanions {
+  readonly ok: true
+  /** Relative path → absolute path, in supplied order. */
+  readonly resolved: Map<string, string>
+}
+
 /**
- * Validate every supplied companion path (new-bundle keys and owned paths)
- * and resolve them below the skill root — before any mutating filesystem
- * access. Enforces, in order:
+ * Validate every supplied companion path and resolve it below the skill root.
+ *
+ * Enforces, in order:
  *
  *  - the resolved primary is a strict descendant of the skill root (a public
  *    SDK caller could otherwise point `primaryFile` at an external file);
- *  - each companion is textually relative/canonical/contained;
- *  - the primary filename (`SKILL.md`) is never a companion — it would
- *    overwrite the assembled primary or delete it as "stale";
+ *  - each companion is textually relative, canonical, and contained;
+ *  - the primary filename is never a companion — it would overwrite the
+ *    assembled primary or delete it as "stale";
  *  - no two companions collide by portable case-fold/NFC form;
  *  - the resolved companion is a strict descendant of the root (defense in
- *    depth against a textual-validator bug);
- *  - no already-existing parent directory of a companion is a symlink, so a
- *    later `mkdir`/`writeFile` cannot follow a link outside the root.
+ *    depth against a textual-validator bug).
  *
- * Returns a failure on the first violation without reading, writing, or
- * deleting anything mutating (symlink checks are read-only `lstat`s).
+ * Symlinked intermediate directories are deliberately NOT checked here. The
+ * caller re-inspects every path and refuses to write through a symlinked
+ * component beneath the boundary, so duplicating the walk would mean two
+ * implementations of one rule that could disagree.
  */
-async function resolveCompanionPaths(
-  paths: SkillBundlePaths,
+function resolveCompanionPaths(
+  target: SkillBundleTarget,
   supplied: Iterable<string>,
-): Promise<{ ok: true; resolved: Map<string, string> } | { ok: false; failure: AdapterAssetFailure }> {
-  const root = resolve(paths.root)
-
-  // The primary file itself must live below the skill root.
-  const primaryAbs = resolve(paths.primaryFile)
-  if (!isStrictlyBelow(primaryAbs, root)) {
+): ResolvedCompanions | { ok: false; failure: AdapterPlanFailure } {
+  const root = resolve(target.root)
+  const primaryAbs = resolve(target.primaryFile)
+  if (!isStrictlyInside(primaryAbs, root)) {
     return {
       ok: false,
       failure: {
         code: 'invalid-companion-path',
-        path: paths.primaryFile,
+        path: target.primaryFile,
         reason: 'primary file escapes the skill root',
       },
     }
   }
   const primaryName = basename(primaryAbs)
 
-  const resolvedMap = new Map<string, string>()
-  const seenKeys = new Map<string, string>()
+  const resolved = new Map<string, string>()
+  const seen = new Map<string, string>()
   for (const relPath of supplied) {
+    if (resolved.has(relPath)) continue
+
     const check = validateContainedRelativePath(relPath)
     if (!check.ok) {
       return { ok: false, failure: { code: 'invalid-companion-path', path: relPath, reason: check.reason } }
     }
 
     const abs = resolve(join(root, relPath))
-
-    // A companion may not target the primary file itself. Otherwise the write
-    // loop overwrites the assembled primary with opaque bytes, or the
-    // stale-owned sweep deletes a primary that was just written. A companion
-    // named SKILL.md in a sub-directory (references/SKILL.md) is fine — it
-    // resolves to a different path than the primary.
     if (abs === primaryAbs) {
       return {
         ok: false,
@@ -140,21 +129,15 @@ async function resolveCompanionPaths(
         },
       }
     }
-
-    // Defense-in-depth: the textual validation above already guarantees
-    // containment; this re-checks the resolved form so a validator bug
-    // can't silently become a traversal.
-    if (!isStrictlyBelow(abs, root)) {
+    if (!isStrictlyInside(abs, root)) {
       return {
         ok: false,
         failure: { code: 'invalid-companion-path', path: relPath, reason: 'path escapes the skill root' },
       }
     }
 
-    // Portable case-fold / NFC duplicate detection: two spellings that map to
-    // one file on a case-insensitive volume would silently overwrite.
-    const key = companionCollisionKey(relPath)
-    const clash = seenKeys.get(key)
+    const key = collisionKey(relPath)
+    const clash = seen.get(key)
     if (clash !== undefined && clash !== relPath) {
       return {
         ok: false,
@@ -165,285 +148,134 @@ async function resolveCompanionPaths(
         },
       }
     }
-    seenKeys.set(key, relPath)
-
-    // Reject symlinked existing parents: a lexically valid companion under a
-    // symlinked directory (references -> /elsewhere) would let a later write
-    // escape the root. Walk the existing parent chain and reject any symlink.
-    const parentIssue = await rejectSymlinkedParents(abs, root)
-    if (parentIssue !== undefined) {
-      return { ok: false, failure: { code: 'invalid-companion-path', path: relPath, reason: parentIssue } }
-    }
-
-    resolvedMap.set(relPath, abs)
+    seen.set(key, relPath)
+    resolved.set(relPath, abs)
   }
-  return { ok: true, resolved: resolvedMap }
+  return { ok: true, resolved }
 }
 
 /**
- * Walk from `abs`'s parent up to (but not including) `root`, rejecting any
- * intermediate component that exists and is itself a symlink — the escape
- * vector where a directory *inside* the skill root (e.g. `references ->
- * /elsewhere`) would let a later `mkdir`/`writeFile` land outside the root.
+ * Plan the complete replacement of a skill bundle.
  *
- * Non-existent parents are fine — `mkdir` will create them inside the root.
- * The skill root itself and its ancestors are deliberately not checked: the
- * root may legitimately sit under a symlinked ancestor (e.g. macOS `/var ->
- * /private/var`), and that says nothing about companion containment. Purely
- * read-only (`lstat`, which does not follow links).
+ * The batch contains, in order: the primary, every companion whose bytes
+ * differ, and a deletion for every owned companion the new bundle drops. An
+ * unchanged file contributes nothing — not a no-op write — so re-installing a
+ * skill touches no modification times and journals nothing.
  */
-async function rejectSymlinkedParents(abs: string, root: string): Promise<string | undefined> {
-  let current = dirname(abs)
-  const chain: string[] = []
-  while (current !== root && isStrictlyBelow(current, root)) {
-    chain.push(current)
-    current = dirname(current)
-  }
-  for (const dir of chain) {
-    let info: Awaited<ReturnType<typeof lstat>>
-    try {
-      info = await lstat(dir)
-    } catch {
-      // Does not exist yet — safe, mkdir will create it inside the root.
-      continue
-    }
-    if (info.isSymbolicLink()) {
-      return `parent directory "${dir}" is a symbolic link`
-    }
-  }
-  return undefined
-}
+export function planSkillBundleInstall(target: SkillBundleTarget, bundle: SkillBundleContent): PlanAssetInstallResult {
+  const newPaths = Object.keys(bundle.companions)
+  const resolvedResult = resolveCompanionPaths(target, [...newPaths, ...bundle.ownedCompanionPaths])
+  if (!resolvedResult.ok) return resolvedResult
+  const { resolved } = resolvedResult
 
-/** Prior state of one file: exact bytes, or null when it did not exist. */
-type Snapshot = Map<string, Uint8Array | null>
+  const mutations: FileMutation[] = []
+  let differs = false
 
-async function snapshotFile(snapshot: Snapshot, absPath: string): Promise<void> {
-  if (snapshot.has(absPath)) return
-  try {
-    snapshot.set(absPath, new Uint8Array(await readFile(absPath)))
-  } catch (err) {
-    if (isMissingFileError(err)) {
-      snapshot.set(absPath, null)
-      return
+  const primaryState = readFileState(target.primaryFile)
+  if (!primaryState.ok) return primaryState
+  const primaryBytes = encodeText(assembleAssetContent(bundle.content, bundle.metadata))
+  if (!stateHoldsBytes(primaryState.state, primaryBytes)) {
+    differs = true
+    mutations.push({
+      kind: 'write',
+      path: target.primaryFile,
+      boundary: target.boundary,
+      expected: primaryState.state,
+      contents: primaryBytes,
+    })
+  }
+
+  for (const relPath of newPaths) {
+    const abs = resolved.get(relPath)
+    const contents = bundle.companions[relPath]
+    if (abs === undefined || contents === undefined) continue
+    const state = readFileState(abs)
+    if (!state.ok) return state
+    if (stateHoldsBytes(state.state, contents)) continue
+    differs = true
+    mutations.push({ kind: 'write', path: abs, boundary: target.boundary, expected: state.state, contents })
+  }
+
+  // Exactly the owned paths the new bundle no longer contains. Anything the
+  // caller did not name as owned is somebody else's file and is untouched.
+  const retained = new Set(newPaths.map(collisionKey))
+  for (const relPath of bundle.ownedCompanionPaths) {
+    if (retained.has(collisionKey(relPath))) continue
+    const abs = resolved.get(relPath)
+    if (abs === undefined) continue
+    const state = readFileState(abs)
+    if (!state.ok) return state
+    if (state.state.kind !== 'regular-file') continue
+    differs = true
+    mutations.push({ kind: 'delete', path: abs, boundary: target.boundary, expected: state.state })
+  }
+
+  if (!differs) {
+    return {
+      ok: true,
+      plan: { occupancy: 'equivalent', action: { kind: 'unchanged' }, primaryPath: target.primaryFile },
     }
-    throw err
+  }
+
+  const [first, ...rest] = mutations
+  if (first === undefined) {
+    return {
+      ok: true,
+      plan: { occupancy: 'equivalent', action: { kind: 'unchanged' }, primaryPath: target.primaryFile },
+    }
+  }
+
+  // A bundle whose primary is absent is a fresh install even when a stray
+  // owned companion survives from a previous one; the user is not being asked
+  // to give up a skill they can see.
+  const occupancy: Exclude<AssetOccupancy, 'equivalent'> = primaryState.state.kind === 'absent' ? 'absent' : 'divergent'
+  return {
+    ok: true,
+    plan: { occupancy, action: { kind: 'mutate', mutations: [first, ...rest] }, primaryPath: target.primaryFile },
   }
 }
 
 /**
- * Best-effort restore of every snapshotted file: previously-existing files
- * get their exact prior bytes back; files that did not exist are removed.
- * Returns the first restore error, if any.
- */
-async function restoreSnapshot(snapshot: Snapshot): Promise<{ path: string; message: string } | undefined> {
-  let firstError: { path: string; message: string } | undefined
-  for (const [absPath, prior] of snapshot) {
-    try {
-      if (prior === null) {
-        await rm(absPath, { force: true })
-      } else {
-        await mkdir(dirname(absPath), { recursive: true })
-        await writeFile(absPath, prior)
-      }
-    } catch (err) {
-      firstError ??= { path: absPath, message: errorMessage(err) }
-    }
-  }
-  return firstError
-}
-
-function ioFailure(operation: 'read' | 'write' | 'delete', path: string, err: unknown): AdapterAssetFailure {
-  return { code: 'io-failed', operation, path, message: errorMessage(err) }
-}
-
-function rollbackFailure(inner: { path: string; message: string }): AdapterAssetFailure {
-  return { code: 'io-failed', operation: 'rollback', path: inner.path, message: inner.message }
-}
-
-/**
- * Install (or replace) a complete skill bundle atomically.
+ * Plan the removal of a skill bundle: the primary plus exactly the
+ * caller-supplied owned companions, and nothing else.
  *
- * Writes the primary (with front-matter assembly — the only file metadata
- * transformation applies to) and every companion verbatim, then removes
- * previously-owned companion paths absent from the new bundle. On any
- * handled failure the prior state of every touched file is restored, so
- * no partial bundle is left behind. Empty directories left by stale-owned
- * removal are pruned.
+ * A bundle whose primary is already gone is still removable — the owned
+ * companions have exact states of their own, so they can be deleted and, if
+ * the operation later fails, restored byte for byte.
  */
-export async function installSkillBundle(
-  paths: SkillBundlePaths,
-  options: {
-    readonly content: string
-    readonly metadata?: Record<string, unknown>
-    readonly companions: CompanionMap
-    readonly ownedCompanionPaths: readonly string[]
-  },
-): Promise<InstallAssetResult> {
-  const newPaths = Object.keys(options.companions)
-  const validated = await resolveCompanionPaths(paths, new Set([...newPaths, ...options.ownedCompanionPaths]))
-  if (!validated.ok) return { ok: false, failure: validated.failure }
-  const { resolved } = validated
-
-  const newSet = new Set(newPaths)
-  const staleOwned = options.ownedCompanionPaths.filter((p) => !newSet.has(p))
-
-  const snapshot: Snapshot = new Map()
-  // Track the path being read so a snapshot failure names the real file,
-  // not always the primary.
-  let currentPath = paths.primaryFile
-  try {
-    // Snapshot everything we will touch before mutating anything.
-    await snapshotFile(snapshot, paths.primaryFile)
-    for (const relPath of newPaths) {
-      // biome-ignore lint/style/noNonNullAssertion: resolved contains every validated path
-      currentPath = resolved.get(relPath)!
-      await snapshotFile(snapshot, currentPath)
-    }
-    for (const relPath of staleOwned) {
-      // biome-ignore lint/style/noNonNullAssertion: resolved contains every validated path
-      currentPath = resolved.get(relPath)!
-      await snapshotFile(snapshot, currentPath)
-    }
-  } catch (err) {
-    return { ok: false, failure: ioFailure('read', currentPath, err) }
-  }
-
-  // Mutate: primary, companions, stale-owned removal.
-  currentPath = paths.primaryFile
-  try {
-    await mkdir(dirname(paths.primaryFile), { recursive: true })
-    await writeFile(paths.primaryFile, assembleAssetContent(options.content, options.metadata), 'utf8')
-    for (const [relPath, bytes] of Object.entries(options.companions)) {
-      // biome-ignore lint/style/noNonNullAssertion: resolved contains every validated path
-      const abs = resolved.get(relPath)!
-      currentPath = abs
-      await mkdir(dirname(abs), { recursive: true })
-      await writeFile(abs, bytes)
-    }
-  } catch (err) {
-    const failure = ioFailure('write', currentPath, err)
-    const restoreError = await restoreSnapshot(snapshot)
-    return { ok: false, failure: restoreError ? rollbackFailure(restoreError) : failure }
-  }
-
-  const deletedDirs: string[] = []
-  try {
-    for (const relPath of staleOwned) {
-      // biome-ignore lint/style/noNonNullAssertion: resolved contains every validated path
-      const abs = resolved.get(relPath)!
-      currentPath = abs
-      await rm(abs, { force: true })
-      deletedDirs.push(dirname(abs))
-    }
-  } catch (err) {
-    const failure = ioFailure('delete', currentPath, err)
-    const restoreError = await restoreSnapshot(snapshot)
-    return { ok: false, failure: restoreError ? rollbackFailure(restoreError) : failure }
-  }
-
-  await pruneDirs(deletedDirs, paths)
-  return { ok: true, primaryPath: paths.primaryFile }
-}
-
-/**
- * Read a skill bundle: canonical primary content (storage encoding
- * stripped via front-matter split) plus the bytes of exactly the
- * requested owned companion paths that exist on disk. Owned paths absent
- * from disk are simply omitted from the returned map — that omission is
- * the caller's drift signal. Never enumerates the skill directory.
- */
-export async function readSkillBundle(
-  paths: SkillBundlePaths,
+export function planSkillBundleRemoval(
+  target: SkillBundleTarget,
   ownedCompanionPaths: readonly string[],
-): Promise<ReadAssetResult> {
-  const validated = await resolveCompanionPaths(paths, ownedCompanionPaths)
-  if (!validated.ok) return { ok: false, failure: validated.failure }
+): PlanAssetRemovalResult {
+  const resolvedResult = resolveCompanionPaths(target, ownedCompanionPaths)
+  if (!resolvedResult.ok) return resolvedResult
 
-  let raw: string
-  try {
-    raw = await readFile(paths.primaryFile, 'utf8')
-  } catch (err) {
-    if (isMissingFileError(err)) return { ok: false, failure: { code: 'not-found' } }
-    return { ok: false, failure: ioFailure('read', paths.primaryFile, err) }
-  }
-  const { content, metadata } = splitAssetContent(raw)
-
-  // Prototype-free map: an owned companion legitimately named `__proto__`
-  // (or `constructor`, etc.) must become a real entry, not invoke an
-  // inherited setter and vanish from the result — which a reconciliation
-  // pass would then read as missing.
-  const companions: Record<string, Uint8Array> = Object.create(null)
-  for (const [relPath, abs] of validated.resolved) {
-    try {
-      companions[relPath] = new Uint8Array(await readFile(abs))
-    } catch (err) {
-      if (isMissingFileError(err)) continue
-      return { ok: false, failure: ioFailure('read', abs, err) }
-    }
+  const mutations: FileMutation[] = []
+  const addDeletion = (path: string, state: FileState): void => {
+    if (state.kind !== 'regular-file') return
+    mutations.push({ kind: 'delete', path, boundary: target.boundary, expected: state })
   }
 
-  return { ok: true, asset: { assetType: 'skill', content, metadata, companions } }
-}
+  const primaryState = readFileState(target.primaryFile)
+  if (!primaryState.ok) return primaryState
+  addDeletion(target.primaryFile, primaryState.state)
 
-/**
- * Delete a skill bundle atomically: the primary file plus exactly the
- * supplied owned companion paths. Every other file is preserved, and only
- * directories left empty by owned-file removal are pruned. On a handled
- * failure mid-deletion the already-removed files are restored from their
- * snapshots, so the prior bundle remains available.
- */
-export async function deleteSkillBundle(
-  paths: SkillBundlePaths,
-  ownedCompanionPaths: readonly string[],
-): Promise<DeleteAssetResult> {
-  const validated = await resolveCompanionPaths(paths, ownedCompanionPaths)
-  if (!validated.ok) return { ok: false, failure: validated.failure }
-
-  const targets: string[] = [paths.primaryFile, ...validated.resolved.values()]
-
-  // Track the exact path being touched so a failure attributes the error to
-  // the real file — a companion, not always the primary.
-  let currentPath = paths.primaryFile
-  const snapshot: Snapshot = new Map()
-  try {
-    for (const abs of targets) {
-      currentPath = abs
-      await snapshotFile(snapshot, abs)
-    }
-  } catch (err) {
-    return { ok: false, failure: ioFailure('read', currentPath, err) }
+  for (const abs of resolvedResult.resolved.values()) {
+    const state = readFileState(abs)
+    if (!state.ok) return state
+    addDeletion(abs, state.state)
   }
 
-  const existed = [...snapshot.values()].some((bytes) => bytes !== null)
-
-  const deletedPaths: string[] = []
-  const deletedDirs: string[] = []
-  try {
-    for (const abs of targets) {
-      if (snapshot.get(abs) === null) continue
-      currentPath = abs
-      await rm(abs, { force: true })
-      deletedPaths.push(abs)
-      deletedDirs.push(dirname(abs))
-    }
-  } catch (err) {
-    const failure = ioFailure('delete', currentPath, err)
-    const restoreError = await restoreSnapshot(snapshot)
-    return { ok: false, failure: restoreError ? rollbackFailure(restoreError) : failure }
+  const [first, ...rest] = mutations
+  if (first === undefined) {
+    return { ok: true, plan: { kind: 'absent', primaryPath: target.primaryFile } }
   }
-
-  await pruneDirs(deletedDirs, paths)
-  return { ok: true, existed, deletedPaths }
-}
-
-/**
- * Prune empty directories upward from each deletion site. The boundary is
- * `pruneBoundary` when supplied (so the skill root itself can be removed
- * once emptied), otherwise the skill root's parent.
- */
-async function pruneDirs(startDirs: readonly string[], paths: SkillBundlePaths): Promise<void> {
-  const boundary = paths.pruneBoundary ?? dirname(resolve(paths.root))
-  for (const dir of new Set(startDirs)) {
-    await pruneEmptyParents(dir, boundary)
+  return {
+    ok: true,
+    plan: {
+      kind: 'remove',
+      primaryPath: target.primaryFile,
+      action: { kind: 'mutate', mutations: [first, ...rest] },
+    },
   }
 }

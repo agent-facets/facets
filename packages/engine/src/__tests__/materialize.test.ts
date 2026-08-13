@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
-import { ADAPTER_API_VERSION, deleteAssetFile, installAssetFile, readAssetFile } from '@agent-facets/adapter'
+import { ADAPTER_API_VERSION, planSingleFileInstall, planSingleFileRemoval } from '@agent-facets/adapter'
 import type { ResolvedFacetManifest } from '@agent-facets/protocol'
 import { adapterKey, type MaterializedAsset } from '@agent-facets/protocol'
 import { SUPPORTED_ADAPTER_APIS } from '../adapters/api-compatibility.ts'
+import { FileTransaction } from '../fs/index.ts'
 import type { PreviousOwnership } from '../install/commit/ownership.ts'
-import { InstallJournal } from '../install/journal.ts'
 import { materialize } from '../install/materialize.ts'
 
 /**
@@ -79,52 +79,25 @@ function buildRecordingAdapter(name: string): {
   calls: Array<{ name: string; metadata: unknown }>
 } {
   const calls: Array<{ name: string; metadata: unknown }> = []
+  const baseDir = () => join(projectRoot, `.${name}`)
+  const file = (type: string, n: string) => join(baseDir(), `${type}s`, `${n}.md`)
   const adapter: Adapter = {
     name,
     apiVersion: ADAPTER_API_VERSION,
-    supportsInstall: true,
     mcpServers: false,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
-    async installAsset(request) {
-      calls.push({ name: request.name, metadata: request.metadata })
-      const file = join(projectRoot, `.${name}`, `${request.assetType}s`, `${request.name}.md`)
-      mkdirSync(join(projectRoot, `.${name}`, `${request.assetType}s`), { recursive: true })
-      // Persist content + metadata as a composite so readAsset can
-      // round-trip them, exercising the materialize skip-if-identical
-      // compare path.
-      const blob = JSON.stringify({ content: request.content, metadata: request.metadata ?? {} })
-      writeFileSync(file, blob)
-      return { ok: true, primaryPath: file }
-    },
-    async readAsset(request) {
-      const file = join(projectRoot, `.${name}`, `${request.assetType}s`, `${request.name}.md`)
-      if (!existsSync(file)) {
-        return { ok: false, failure: { code: 'not-found' } }
-      }
-      const blob = readFileSync(file, 'utf8')
-      let content = blob
-      let metadata: Record<string, unknown> | undefined
-      try {
-        const parsed = JSON.parse(blob) as { content: string; metadata?: Record<string, unknown> }
-        content = parsed.content
-        metadata = parsed.metadata
-      } catch {
-        // Hand-edited file (e.g., the "user edit" test); return raw bytes
-        // so the compare path observes the drift.
-      }
-      return {
-        ok: true,
-        asset:
-          request.assetType === 'skill'
-            ? { assetType: 'skill', content, metadata, companions: {} }
-            : { assetType: request.assetType, content, metadata },
-      }
-    },
-    async deleteAsset(request) {
-      const file = join(projectRoot, `.${name}`, `${request.assetType}s`, `${request.name}.md`)
-      const existed = existsSync(file)
-      if (existed) rmSync(file)
-      return { ok: true, existed, deletedPaths: existed ? [file] : [] }
+    assets: {
+      async planInstall(request) {
+        calls.push({ name: request.name, metadata: request.metadata })
+        return planSingleFileInstall(
+          { file: file(request.assetType, request.name), boundary: baseDir() },
+          request.content,
+          request.metadata as Record<string, unknown>,
+        )
+      },
+      async planRemoval(request) {
+        return planSingleFileRemoval({ file: file(request.assetType, request.name), boundary: baseDir() })
+      },
     },
   }
   return { adapter, calls }
@@ -144,39 +117,24 @@ function buildSdkAdapter(name: string): {
 } {
   let installCalls = 0
   const baseDir = () => join(projectRoot, `.${name}`)
-  const path = (type: string, n: string) => ({
-    file: join(baseDir(), `${type}s`, `${n}.md`),
-  })
+  const file = (type: string, n: string) => join(baseDir(), `${type}s`, `${n}.md`)
   const adapter: Adapter = {
     name,
     apiVersion: ADAPTER_API_VERSION,
-    supportsInstall: true,
     mcpServers: false,
     buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
-    async installAsset(request) {
-      installCalls++
-      const p = path(request.assetType, request.name)
-      await installAssetFile(p, request.content, request.metadata as Record<string, unknown> | undefined)
-      return { ok: true, primaryPath: p.file }
-    },
-    async readAsset(request) {
-      try {
-        const { content, metadata } = await readAssetFile(path(request.assetType, request.name))
-        return {
-          ok: true,
-          asset:
-            request.assetType === 'skill'
-              ? { assetType: 'skill', content, metadata, companions: {} }
-              : { assetType: request.assetType, content, metadata },
-        }
-      } catch {
-        return { ok: false, failure: { code: 'not-found' } }
-      }
-    },
-    async deleteAsset(request) {
-      const p = path(request.assetType, request.name)
-      await deleteAssetFile(p)
-      return { ok: true, existed: true, deletedPaths: [p.file] }
+    assets: {
+      async planInstall(request) {
+        installCalls++
+        return planSingleFileInstall(
+          { file: file(request.assetType, request.name), boundary: baseDir() },
+          request.content,
+          request.metadata as Record<string, unknown>,
+        )
+      },
+      async planRemoval(request) {
+        return planSingleFileRemoval({ file: file(request.assetType, request.name), boundary: baseDir() })
+      },
     },
   }
   return {
@@ -184,7 +142,7 @@ function buildSdkAdapter(name: string): {
     get installCalls() {
       return installCalls
     },
-  } as { adapter: Adapter; installCalls: number }
+  }
 }
 
 describe('materialize — skip-if-identical via real SDK round-trip', () => {
@@ -212,7 +170,8 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
       adapters: [fixture.adapter],
       previousOwnership: new Map(),
       newAssets,
-      journal: new InstallJournal(),
+      projectRoot,
+      transaction: new FileTransaction(),
     })
     if (!first.ok) expect.unreachable()
     expect(first.written).toBe(1)
@@ -226,7 +185,8 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
       adapters: [fixture.adapter],
       previousOwnership: ownershipIndex(newAssets),
       newAssets,
-      journal: new InstallJournal(),
+      projectRoot,
+      transaction: new FileTransaction(),
     })
     if (!second.ok) expect.unreachable()
     expect(second.written).toBe(0)
@@ -258,7 +218,8 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
       adapters: [fixture.adapter],
       previousOwnership: new Map(),
       newAssets,
-      journal: new InstallJournal(),
+      projectRoot,
+      transaction: new FileTransaction(),
     })
     if (!first.ok) expect.unreachable()
     expect(first.written).toBe(1)
@@ -282,7 +243,8 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
       adapters: [fixture.adapter],
       previousOwnership: ownershipIndex(newAssets),
       newAssets,
-      journal: new InstallJournal(),
+      projectRoot,
+      transaction: new FileTransaction(),
     })
     if (!second.ok) expect.unreachable()
     expect(second.written).toBe(0)
@@ -315,7 +277,8 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
       adapters: [fixture.adapter],
       previousOwnership: new Map(),
       newAssets,
-      journal: new InstallJournal(),
+      projectRoot,
+      transaction: new FileTransaction(),
     })
     const second = await materialize({
       facetName: 'viper-plans',
@@ -323,7 +286,8 @@ describe('materialize — skip-if-identical via real SDK round-trip', () => {
       adapters: [fixture.adapter],
       previousOwnership: ownershipIndex(newAssets),
       newAssets,
-      journal: new InstallJournal(),
+      projectRoot,
+      transaction: new FileTransaction(),
     })
     if (!second.ok) expect.unreachable()
     expect(second.written).toBe(0)
@@ -348,7 +312,8 @@ describe('materialize — skip-if-identical', () => {
       adapters: [adapter],
       previousOwnership: new Map(),
       newAssets,
-      journal: new InstallJournal(),
+      projectRoot,
+      transaction: new FileTransaction(),
     })
     if (!first.ok) expect.unreachable()
     expect(first.written).toBe(1)
@@ -362,13 +327,15 @@ describe('materialize — skip-if-identical', () => {
       adapters: [adapter],
       previousOwnership: ownershipIndex(newAssets),
       newAssets,
-      journal: new InstallJournal(),
+      projectRoot,
+      transaction: new FileTransaction(),
     })
     if (!second.ok) expect.unreachable()
     expect(second.written).toBe(0)
     expect(second.skipped).toBe(1)
-    // Still only 1 install call total — the second materialize didn't write.
-    expect(calls).toHaveLength(1)
+    // Planning ran twice — it is read-only and cheap — but the second plan
+    // concluded there was nothing to do, so nothing was written.
+    expect(calls).toHaveLength(2)
   })
 
   test('returns written:1 when on-disk content differs (e.g., user edited the file)', async () => {
@@ -387,7 +354,8 @@ describe('materialize — skip-if-identical', () => {
       adapters: [adapter],
       previousOwnership: new Map(),
       newAssets,
-      journal: new InstallJournal(),
+      projectRoot,
+      transaction: new FileTransaction(),
     })
     expect(calls).toHaveLength(1)
 
@@ -401,7 +369,8 @@ describe('materialize — skip-if-identical', () => {
       adapters: [adapter],
       previousOwnership: ownershipIndex(newAssets),
       newAssets,
-      journal: new InstallJournal(),
+      projectRoot,
+      transaction: new FileTransaction(),
     })
     if (!second.ok) expect.unreachable()
     expect(second.written).toBe(1)
@@ -441,7 +410,8 @@ describe('materialize — skip-if-identical', () => {
       adapters: [adapter],
       previousOwnership: new Map(),
       newAssets,
-      journal: new InstallJournal(),
+      projectRoot,
+      transaction: new FileTransaction(),
     })
     const second = await materialize({
       facetName: 'viper-plans',
@@ -449,7 +419,8 @@ describe('materialize — skip-if-identical', () => {
       adapters: [adapter],
       previousOwnership: ownershipIndex(newAssets),
       newAssets,
-      journal: new InstallJournal(),
+      projectRoot,
+      transaction: new FileTransaction(),
     })
     if (!second.ok) expect.unreachable()
     expect(second.written).toBe(1)
@@ -483,7 +454,6 @@ describe('materialize — adapter-extras cannot override computed identity', () 
 
     const { adapter, calls } = buildRecordingAdapter('recorder')
     const newAssets = authoredPlan('viper-plans', manifest)
-    const journal = new InstallJournal()
 
     await materialize({
       facetName: 'viper-plans',
@@ -491,7 +461,8 @@ describe('materialize — adapter-extras cannot override computed identity', () 
       adapters: [adapter],
       previousOwnership: new Map(),
       newAssets,
-      journal,
+      projectRoot,
+      transaction: new FileTransaction(),
     })
 
     expect(calls).toHaveLength(1)
@@ -514,18 +485,16 @@ describe('materialize — adapter API invariant check', () => {
     const incompatible = {
       name: 'future-adapter',
       apiVersion: '9.9',
-      supportsInstall: true,
       buildAssetMetadata: () => {
         throw new Error('contract method invoked despite incompatibility')
       },
-      async installAsset() {
-        throw new Error('contract method invoked despite incompatibility')
-      },
-      async readAsset() {
-        throw new Error('contract method invoked despite incompatibility')
-      },
-      async deleteAsset() {
-        throw new Error('contract method invoked despite incompatibility')
+      assets: {
+        async planInstall() {
+          throw new Error('contract method invoked despite incompatibility')
+        },
+        async planRemoval() {
+          throw new Error('contract method invoked despite incompatibility')
+        },
       },
     } as unknown as Adapter
 
@@ -535,7 +504,8 @@ describe('materialize — adapter API invariant check', () => {
       adapters: [incompatible],
       previousOwnership: new Map(),
       newAssets: authoredPlan('viper-plans', manifest),
-      journal: new InstallJournal(),
+      projectRoot,
+      transaction: new FileTransaction(),
     })
     if (result.ok) expect.unreachable()
     if (result.failure.kind !== 'incompatible-adapter') expect.unreachable()
@@ -559,18 +529,16 @@ describe('materialize — adapter API invariant check', () => {
     const positional = {
       name: 'legacy-positional',
       apiVersion: '0.0',
-      supportsInstall: true,
       buildAssetMetadata: () => {
         throw new Error('contract method invoked despite incompatibility')
       },
-      async installAsset() {
-        throw new Error('contract method invoked despite incompatibility')
-      },
-      async readAsset() {
-        throw new Error('contract method invoked despite incompatibility')
-      },
-      async deleteAsset() {
-        throw new Error('contract method invoked despite incompatibility')
+      assets: {
+        async planInstall() {
+          throw new Error('contract method invoked despite incompatibility')
+        },
+        async planRemoval() {
+          throw new Error('contract method invoked despite incompatibility')
+        },
       },
     } as unknown as Adapter
 
@@ -580,7 +548,8 @@ describe('materialize — adapter API invariant check', () => {
       adapters: [positional],
       previousOwnership: new Map(),
       newAssets: authoredPlan('viper-plans', manifest),
-      journal: new InstallJournal(),
+      projectRoot,
+      transaction: new FileTransaction(),
     })
     if (result.ok) expect.unreachable()
     if (result.failure.kind !== 'incompatible-adapter') expect.unreachable()
@@ -593,14 +562,8 @@ describe('materialize — adapter API invariant check', () => {
   })
 })
 
-describe('materialize — journal undo surfaces structured adapter failures', () => {
-  test('a failed inverse op is counted by journal.rollback (not silently swallowed)', async () => {
-    // Two-asset facet: the first install succeeds and records a delete-undo;
-    // the second install fails, so materialize returns `install-failed`. When
-    // the caller rolls back, the first asset's inverse delete returns a
-    // structured `{ ok: false }`. Before the fix, the undo closure ignored
-    // `result.ok`, so the journal reported a clean rollback while the asset
-    // was never removed. Now the undo throws, and the journal counts it.
+describe('materialize — a failed batch leaves nothing behind', () => {
+  test('a plan refused mid-facet rolls the earlier asset back and journals nothing', async () => {
     const manifest: ResolvedFacetManifest = {
       name: 'viper-plans',
       version: '0.1.0',
@@ -610,102 +573,54 @@ describe('materialize — journal undo surfaces structured adapter failures', ()
       },
     }
 
-    let installCount = 0
+    // Alpha plans and commits; beta refuses. The transaction holds alpha's
+    // transition, so the caller can put it back — which is the whole reason
+    // the adapter no longer needs an inverse operation of its own.
+    let planCount = 0
+    const baseDir = join(projectRoot, '.flaky')
     const adapter: Adapter = {
       name: 'flaky',
       apiVersion: ADAPTER_API_VERSION,
-      supportsInstall: true,
       mcpServers: false,
       buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
-      async installAsset(request) {
-        installCount++
-        // First forward install (alpha) succeeds; second forward install
-        // (beta) fails, triggering rollback of alpha.
-        if (installCount === 2) {
-          return { ok: false, failure: { code: 'io-failed', operation: 'write', path: request.name, message: 'boom' } }
-        }
-        return { ok: true, primaryPath: join(projectRoot, `${request.name}.md`) }
-      },
-      async readAsset() {
-        // No previous state — both assets are new, so the recorded undo is a
-        // delete.
-        return { ok: false, failure: { code: 'not-found' } }
-      },
-      async deleteAsset() {
-        // The inverse of a new-asset install. Fail it to prove the undo is
-        // counted rather than swallowed.
-        return { ok: false, failure: { code: 'io-failed', operation: 'delete', path: 'alpha', message: 'cannot undo' } }
+      assets: {
+        async planInstall(request) {
+          planCount++
+          if (planCount === 2) {
+            return { ok: false, failure: { code: 'io-failed', path: request.name, message: 'boom' } }
+          }
+          return planSingleFileInstall(
+            { file: join(baseDir, 'skills', `${request.name}.md`), boundary: baseDir },
+            request.content,
+            request.metadata as Record<string, unknown>,
+          )
+        },
+        async planRemoval(request) {
+          return planSingleFileRemoval({ file: join(baseDir, 'skills', `${request.name}.md`), boundary: baseDir })
+        },
       },
     }
 
-    const journal = new InstallJournal()
-    const newAssets = authoredPlan('viper-plans', manifest)
-    const result = await materialize({
-      facetName: 'viper-plans',
-      manifest,
-      adapters: [adapter],
-      previousOwnership: new Map(),
-      newAssets,
-      journal,
-    })
-    if (result.ok) expect.unreachable()
-    expect(result.failure.kind).toBe('install-failed')
-
-    // The successful alpha install left one delete-undo on the journal.
-    expect(journal.size()).toBe(1)
-    const rollback = await journal.rollback()
-    expect(rollback.failures).toBe(1)
-    expect(rollback.ok).toBe(false)
-  })
-
-  test('a successful inverse op replays cleanly', async () => {
-    const manifest: ResolvedFacetManifest = {
-      name: 'viper-plans',
-      version: '0.1.0',
-      skills: {
-        alpha: { description: 'a', prompt: '# a\n' },
-        beta: { description: 'b', prompt: '# b\n' },
-      },
-    }
-
-    let installCount = 0
-    const deleted: string[] = []
-    const adapter: Adapter = {
-      name: 'flaky',
-      apiVersion: ADAPTER_API_VERSION,
-      supportsInstall: true,
-      mcpServers: false,
-      buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
-      async installAsset(request) {
-        installCount++
-        if (installCount === 2) {
-          return { ok: false, failure: { code: 'io-failed', operation: 'write', path: request.name, message: 'boom' } }
-        }
-        return { ok: true, primaryPath: join(projectRoot, `${request.name}.md`) }
-      },
-      async readAsset() {
-        return { ok: false, failure: { code: 'not-found' } }
-      },
-      async deleteAsset(request) {
-        deleted.push(request.name)
-        return { ok: true, existed: true, deletedPaths: [join(projectRoot, `${request.name}.md`)] }
-      },
-    }
-
-    const journal = new InstallJournal()
+    const transaction = new FileTransaction()
     const result = await materialize({
       facetName: 'viper-plans',
       manifest,
       adapters: [adapter],
       previousOwnership: new Map(),
       newAssets: authoredPlan('viper-plans', manifest),
-      journal,
+      projectRoot,
+      transaction,
     })
     if (result.ok) expect.unreachable()
+    expect(result.failure.kind).toBe('plan-failed')
 
-    const rollback = await journal.rollback()
-    expect(rollback.failures).toBe(0)
-    expect(rollback.ok).toBe(true)
-    expect(deleted).toContain('alpha')
+    // Alpha is on disk and journaled; rolling back removes it and leaves the
+    // directory it created behind it clean.
+    expect(existsSync(join(baseDir, 'skills', 'alpha.md'))).toBe(true)
+    expect(transaction.journal()).toHaveLength(1)
+
+    expect(transaction.rollback().kind).toBe('complete')
+    expect(existsSync(join(baseDir, 'skills', 'alpha.md'))).toBe(false)
+    expect(existsSync(baseDir)).toBe(false)
   })
 })

@@ -18,7 +18,7 @@ function frameFor(failure: McpServerCapabilityFailure, code: 'MCP_PREPARE_FAILED
   const result = {
     ok: false,
     failure: { code, adapter: 'opencode', failure },
-    rollback: { kind: 'not-needed', reason: 'no journal was created' },
+    rollback: { kind: 'not-needed', reason: 'post-lock-no-mutation' },
   } as Extract<RunInstallResult, { ok: false }>
 
   const instance = render(createElement(FailureBlock, { result }))
@@ -43,18 +43,6 @@ describe('FailureBlock — MCP conflict reasons', () => {
     expect(text).toContain('"{env:TOKEN}"')
     expect(text).toContain('substitute')
     expect(text).not.toContain('opencode.jsonc')
-  })
-
-  test('a drifted document names the file and says nothing was written', () => {
-    const text = frameFor(
-      { code: 'conflict', reason: 'document-changed', path: '/p/opencode.jsonc' },
-      'MCP_APPLY_FAILED',
-    )
-
-    expect(text).toContain('opencode could not write its MCP configuration')
-    expect(text).toContain('/p/opencode.jsonc')
-    expect(text).toContain('nothing was written')
-    expect(text).toContain('another process')
   })
 
   test('a native-state conflict reports the adapter’s own detail once', () => {

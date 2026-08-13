@@ -132,16 +132,6 @@ interface RejectedReceiptEntry {
 }
 
 /**
- * A skill bundle left on disk because its primary file was already gone.
- *
- * The engine's event, not a hand-copied subset of it. A local interface has
- * to be widened by hand every time the event gains a field, and the field it
- * silently dropped last time — `scope` — was the one that told the user which
- * directory the retained paths are relative to.
- */
-type RetainedBundle = Extract<StageEvent, { kind: 'obsolete-bundle-retained' }>
-
-/**
  * What the single Ink mount is currently showing.
  *
  * Tagged rather than a set of booleans because the resolution phase
@@ -221,7 +211,6 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
   const [receiptUnpersisted, setReceiptUnpersisted] = useState<string | null>(null)
   const [removalResolutionReason, setRemovalResolutionReason] = useState<string | null>(null)
   const [rejectedReceiptEntries, setRejectedReceiptEntries] = useState<RejectedReceiptEntry[]>([])
-  const [retainedBundles, setRetainedBundles] = useState<RetainedBundle[]>([])
   const [elapsedMs, setElapsedMs] = useState(0)
   const startedRef = useRef(false)
   const startTimeRef = useRef(Date.now())
@@ -340,11 +329,6 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
               'that server’s configuration is no longer tracked, and its declaration will need approval again',
           },
         ])
-        return
-      case 'obsolete-bundle-retained':
-        // The removal succeeded, so the summary will say the facet is gone —
-        // but these files are still on disk with nothing left tracking them.
-        setRetainedBundles((prev) => [...prev, event])
         return
       case 'drift-removal':
       case 'asset-installed':
@@ -646,25 +630,6 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
             ⚠ this project’s install receipt could not be written ({receiptUnpersisted}) — the assets this run wrote are
             untracked, so a later removal will leave them in place.
           </Text>
-        </Box>
-      )}
-
-      {/* Cleanup we deliberately did not attempt. The primary was already
-          gone, so the bytes could not be captured for rollback, and deleting
-          what we cannot restore would make a later failure unrecoverable.
-          The claim is dropped either way, so whatever is left is untracked. */}
-      {retainedBundles.length > 0 && (
-        <Box flexDirection="column" marginLeft={2}>
-          {/* Keyed by scope as well: an adapter resolves one directory per
-              scope, so the same skill name can be retained twice in one run,
-              and those are two different directories to go clean up. */}
-          {retainedBundles.map((bundle) => (
-            <Text key={`${bundle.scope}:${bundle.adapter}:${bundle.assetName}`} color={THEME.caution}>
-              ⚠ skill “{bundle.assetName}” in {bundle.adapter}’s {bundle.scope} scope was missing its SKILL.md, so its
-              recorded files ({bundle.companionPaths.join(', ')}) were left untouched rather than deleted without a way
-              to restore them. They are no longer tracked — remove whatever remains manually.
-            </Text>
-          ))}
         </Box>
       )}
 

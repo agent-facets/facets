@@ -94,41 +94,26 @@ function buildFixture(parent: string, name: string, version: string, skill = 'pl
 function installFakeAdapter(baseDir: string, name: string): void {
   const dir = join(baseDir, name)
   mkdirSync(dir, { recursive: true })
-  const assetFsImport = require.resolve('@agent-facets/adapter')
+  const sdk = require.resolve('@agent-facets/adapter')
   writeFileSync(
     join(dir, 'adapter.js'),
     `
-import { installAssetFile, readAssetFile, deleteAssetFile } from '${assetFsImport}'
+import { planSingleFileInstall, planSingleFileRemoval } from '${sdk}'
 import { join } from 'node:path'
-function path(type, name) { return join(process.cwd(), '.${name}', type + 's', name + '.md') }
+function base(req) { return join(req.projectRoot, '.${name}') }
+function file(req) { return join(base(req), req.assetType + 's', req.name + '.md') }
 export default {
   name: '${name}',
   apiVersion: '${ADAPTER_API_VERSION}',
   mcpServers: false,
-  supportsInstall: true,
   buildAssetMetadata(data) { return { ok: true, data: data || {} } },
-  async installAsset(req) {
-    const file = path(req.assetType, req.name)
-    await installAssetFile({ file }, req.content, req.metadata)
-    return { ok: true, primaryPath: file }
-  },
-  async readAsset(req) {
-    try {
-      const r = await readAssetFile({ file: path(req.assetType, req.name) })
-      return {
-        ok: true,
-        asset: req.assetType === 'skill'
-          ? { assetType: 'skill', content: r.content, metadata: r.metadata, companions: {} }
-          : { assetType: req.assetType, content: r.content, metadata: r.metadata },
-      }
-    } catch {
-      return { ok: false, failure: { code: 'not-found' } }
-    }
-  },
-  async deleteAsset(req) {
-    const file = path(req.assetType, req.name)
-    await deleteAssetFile({ file })
-    return { ok: true, existed: true, deletedPaths: [file] }
+  assets: {
+    async planInstall(req) {
+      return planSingleFileInstall({ file: file(req), boundary: base(req) }, req.content, req.metadata)
+    },
+    async planRemoval(req) {
+      return planSingleFileRemoval({ file: file(req), boundary: base(req) })
+    },
   },
 }
 `,
@@ -154,7 +139,7 @@ async function install(
   const adapters = loadResult.adapters
   return runInstall({
     projectRoot,
-    adapters: adapters.filter((a) => a.supportsInstall === true),
+    adapters: adapters.filter((a) => a.assets !== false),
     delta:
       opts.additions || opts.removals ? { additions: opts.additions ?? [], removals: opts.removals ?? [] } : undefined,
     frozenLockfile: opts.frozen,
@@ -364,7 +349,7 @@ describe('runInstall — offline removal via the receipt asset list', () => {
 // --- W1: transactional tri-write ------------------------------------------------------
 
 describe('runInstall — tri-write failure restores all three files (W1)', () => {
-  test('a mid-trio lockfile write failure restores manifest, lockfile, and receipt byte-for-byte', async () => {
+  test('a project file changed mid-run is refused, leaving all three untouched', async () => {
     await seedInstalledProject()
     const [facetsFile, lockFile, receiptFile] = triFiles()
     if (facetsFile === undefined || lockFile === undefined || receiptFile === undefined) expect.unreachable()
@@ -374,10 +359,13 @@ describe('runInstall — tri-write failure restores all three files (W1)', () =>
       receipt: readFileSync(receiptFile, 'utf8'),
     }
 
-    // Sabotage the SECOND write of the trio: `facets.lock.tmp` as a
-    // directory makes the atomic lockfile write throw EISDIR after
-    // facets.json has already been written.
-    mkdirSync(join(projectRoot, 'facets.lock.tmp'), { recursive: true })
+    // A directory where the receipt belongs: the commit cannot establish an
+    // exact prior state for it, so the whole batch is refused rather than
+    // half-applied. The three files commit together or not at all, which is
+    // what makes "the manifest was written but the lockfile was not"
+    // unreachable rather than merely unlikely.
+    rmSync(receiptFile)
+    mkdirSync(receiptFile, { recursive: true })
 
     const hello = buildFixture(fakeHome, 'hello', '0.1.0', 'greeting')
     fixtureForVersion = (v) => (v === '0.1.0' ? hello : null)
@@ -385,13 +373,10 @@ describe('runInstall — tri-write failure restores all three files (W1)', () =>
 
     if (result.ok) expect.unreachable()
     expect(result.failure.code).toBe('LOCKFILE_WRITE_FAILED')
-    expect(result.rollback.kind).toBe('succeeded')
 
-    // All three files restored byte-for-byte — including the manifest,
-    // which had already been written when the lockfile write failed.
+    // The manifest and lockfile never moved.
     expect(readFileSync(facetsFile, 'utf8')).toBe(before.facets)
     expect(readFileSync(lockFile, 'utf8')).toBe(before.lock)
-    expect(readFileSync(receiptFile, 'utf8')).toBe(before.receipt)
     // The new facet's materialized asset was rolled back; the existing
     // facet's asset is untouched.
     expect(existsSync(join(projectRoot, '.test-adapter/skills/greeting.md'))).toBe(false)

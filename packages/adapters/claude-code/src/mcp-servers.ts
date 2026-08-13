@@ -1,15 +1,12 @@
 import { join } from 'node:path'
 import {
-  type ApplyMcpServersResult,
-  applyMcpTextPlan,
   errorMessage,
   isPlainObject,
   type McpNativeMatch,
   type McpServerCapability,
   type McpServerContribution,
-  type McpTextPlan,
-  type PrepareMcpServersRequest,
-  type PrepareMcpServersResult,
+  type PlanMcpServersRequest,
+  type PlanMcpServersResult,
   prepareMcpTextPlan,
   type ReadonlyMcpServerDeclaration,
   readTextOrAbsent,
@@ -87,11 +84,11 @@ const PORTABLE_KEYS: Readonly<Record<'stdio' | 'http', ReadonlySet<string>>> = {
  */
 const INTERPOLATION_PATTERN = /\$\{[^}]*\}/
 
-export const claudeCodeMcpServers: McpServerCapability<McpTextPlan> = {
-  async prepare(request: PrepareMcpServersRequest): Promise<PrepareMcpServersResult<McpTextPlan>> {
+export const claudeCodeMcpServers: McpServerCapability = {
+  async plan(request: PlanMcpServersRequest): Promise<PlanMcpServersResult> {
     const path = join(request.projectRoot, DOCUMENT_NAME)
 
-    const read = await readTextOrAbsent(path)
+    const read = readTextOrAbsent(path)
     if (!read.ok) return { ok: false, failure: read.failure }
     const text = read.text
 
@@ -136,7 +133,7 @@ export const claudeCodeMcpServers: McpServerCapability<McpTextPlan> = {
 
     return prepareMcpTextPlan({
       request,
-      documentPaths: [path],
+      documents: [read.document],
       interpolation: { pattern: INTERPOLATION_PATTERN },
       presentNames: new Set(Object.keys(servers)),
       compare: (contribution) => compareEntry(servers[contribution.name], contribution.declaration),
@@ -177,13 +174,9 @@ export const claudeCodeMcpServers: McpServerCapability<McpTextPlan> = {
           }
         }
 
-        return { ok: true, edits: [{ path, expected: text, contents: restoreJsoncBom(edited, bom) }] }
+        return { ok: true, edits: [{ path, contents: restoreJsoncBom(edited, bom) }] }
       },
     })
-  },
-
-  async apply(request: { readonly plan: unknown }): Promise<ApplyMcpServersResult> {
-    return applyMcpTextPlan(request.plan, { adapterName: 'claude-code' })
   },
 }
 

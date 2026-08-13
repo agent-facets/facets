@@ -43,41 +43,22 @@ function installFakeAdapter(baseDir: string, name: string): void {
   writeFileSync(
     join(dir, 'adapter.js'),
     `
-import { installAssetFile, readAssetFile, deleteAssetFile } from '${assetFsImport}'
+import { planSingleFileInstall, planSingleFileRemoval } from '${assetFsImport}'
 import { join } from 'node:path'
-
-function path(type, name) {
-  return join(process.cwd(), '.${name}', type + 's', name + '.md')
-}
-
+function base(req) { return join(req.projectRoot, '.${name}') }
+function file(req) { return join(base(req), req.assetType + 's', req.name + '.md') }
 export default {
   name: '${name}',
   apiVersion: '${ADAPTER_API_VERSION}',
   mcpServers: false,
-  supportsInstall: true,
   buildAssetMetadata(data) { return { ok: true, data: data || {} } },
-  async installAsset(req) {
-    const file = path(req.assetType, req.name)
-    await installAssetFile({ file }, req.content, req.metadata)
-    return { ok: true, primaryPath: file }
-  },
-  async readAsset(req) {
-    try {
-      const r = await readAssetFile({ file: path(req.assetType, req.name) })
-      return {
-        ok: true,
-        asset: req.assetType === 'skill'
-          ? { assetType: 'skill', content: r.content, metadata: r.metadata, companions: {} }
-          : { assetType: req.assetType, content: r.content, metadata: r.metadata },
-      }
-    } catch {
-      return { ok: false, failure: { code: 'not-found' } }
-    }
-  },
-  async deleteAsset(req) {
-    const file = path(req.assetType, req.name)
-    await deleteAssetFile({ file })
-    return { ok: true, existed: true, deletedPaths: [file] }
+  assets: {
+    async planInstall(req) {
+      return planSingleFileInstall({ file: file(req), boundary: base(req) }, req.content, req.metadata)
+    },
+    async planRemoval(req) {
+      return planSingleFileRemoval({ file: file(req), boundary: base(req) })
+    },
   },
 }
 `,
@@ -332,41 +313,26 @@ describe('facet install — what an adapter is asked to write', () => {
     writeFileSync(
       join(dir, 'adapter.js'),
       `
-import { installAssetFile, readAssetFile, deleteAssetFile } from '${assetFsImport}'
 import { appendFileSync } from 'node:fs'
+import { planSingleFileInstall, planSingleFileRemoval } from '${assetFsImport}'
 import { join } from 'node:path'
-
-function path(type, name) { return join(process.cwd(), '.${name}', type + 's', name + '.md') }
-function record(kind, req) {
-  appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({
-    kind, assetType: req.assetType, name: req.name, content: req.content ?? null,
-  }) + '\\n')
-}
-
+function base(req) { return join(req.projectRoot, '.${name}') }
+function file(req) { return join(base(req), req.assetType + 's', req.name + '.md') }
+function log(entry) { appendFileSync('${logPath}', JSON.stringify(entry) + String.fromCharCode(10)) }
 export default {
   name: '${name}',
   apiVersion: '${ADAPTER_API_VERSION}',
   mcpServers: false,
-  supportsInstall: true,
   buildAssetMetadata(data) { return { ok: true, data: data || {} } },
-  async installAsset(req) {
-    record('install', req)
-    const file = path(req.assetType, req.name)
-    await installAssetFile({ file }, req.content, req.metadata)
-    return { ok: true, primaryPath: file }
-  },
-  async readAsset(req) {
-    record('read', req)
-    try {
-      const r = await readAssetFile({ file: path(req.assetType, req.name) })
-      return { ok: true, asset: { assetType: 'skill', content: r.content, metadata: r.metadata, companions: {} } }
-    } catch { return { ok: false, failure: { code: 'not-found' } } }
-  },
-  async deleteAsset(req) {
-    record('delete', req)
-    const file = path(req.assetType, req.name)
-    await deleteAssetFile({ file })
-    return { ok: true, existed: true, deletedPaths: [file] }
+  assets: {
+    async planInstall(req) {
+      log({ kind: 'install', name: req.name, content: req.content })
+      return planSingleFileInstall({ file: file(req), boundary: base(req) }, req.content, req.metadata)
+    },
+    async planRemoval(req) {
+      log({ kind: 'delete', name: req.name, content: null })
+      return planSingleFileRemoval({ file: file(req), boundary: base(req) })
+    },
   },
 }
 `,

@@ -186,11 +186,11 @@ The npm `latest` distribution tag SHALL continue to advance according to normal 
 - **THEN** the system SHALL select the highest package version
 - **AND** it SHALL NOT rank one supported API token above the other
 
-#### Scenario: Positional-only release is skipped
+#### Scenario: Superseded-contract release is skipped
 
-- **WHEN** a package publishes a newer release declaring `0.0` and an older release declaring `0.2`
-- **THEN** the system SHALL select the compatible `0.2` release
-- **AND** it SHALL NOT select the positional release
+- **WHEN** a package publishes a newer release declaring `0.2` and an older release declaring `0.3`
+- **THEN** the system SHALL select the compatible `0.3` release
+- **AND** it SHALL NOT select the release declaring the superseded contract
 
 #### Scenario: Wildcard constrains compatible selection
 
@@ -307,19 +307,27 @@ When an adapter cannot be selected, verified, or loaded because its API declarat
 
 ### Requirement: The current CLI supports an explicit exact adapter API set
 
-The current CLI's adapter API support set SHALL be exactly `{0.1, 0.2}` during the compatibility window. Every verification, loading, listing, npm selection, and package-versus-runtime agreement check SHALL use exact-token membership. The set SHALL NOT be interpreted as a range or ordering, and widening it SHALL NOT weaken any individual exact-token check.
+The current CLI's adapter API support set SHALL be exactly `{0.3}`. Every verification, loading, listing, npm selection, and package-versus-runtime agreement check SHALL use exact-token membership. The set SHALL NOT be interpreted as a range or ordering, and changing it SHALL NOT weaken any individual exact-token check.
 
-#### Scenario: Both tagged contracts are supported
+The set holds one token because the superseded contracts are not merely older: under them an adapter performed its own writes and owned its own rollback, so no caller can offer them the guarantees this system now makes about exact restoration, concurrency detection, and batch atomicity. Accepting one would mean silently dropping those guarantees for whatever it materialized.
 
-- **WHEN** installed adapters declare API `0.1` and API `0.2`
-- **THEN** the CLI SHALL classify both exact tokens as supported
+#### Scenario: The planning contract is supported
+
+- **WHEN** an installed adapter declares API `0.3`
+- **THEN** the CLI SHALL classify that exact token as supported
 
 #### Scenario: Positional API remains outside the set
 
 - **WHEN** an adapter declares API `0.0`
 - **THEN** the CLI SHALL classify it as well-formed but unsupported
 
-#### Scenario: Supported package and runtime tokens must still agree
+#### Scenario: An adapter that wrote its own files is unsupported
 
-- **WHEN** package metadata declares `0.1` and the loaded runtime declares `0.2`
-- **THEN** verification SHALL fail even though both tokens belong to the support set
+- **WHEN** an installed adapter declares API `0.1` or `0.2`
+- **THEN** the CLI SHALL classify it as well-formed but unsupported
+- **AND** the diagnostic SHALL name a reinstall as the remedy
+
+#### Scenario: A superseded declaration is rejected before the bundle is imported
+
+- **WHEN** an installation's retained metadata records an unsupported adapter API
+- **THEN** the CLI SHALL classify it as incompatible without importing its bundle
