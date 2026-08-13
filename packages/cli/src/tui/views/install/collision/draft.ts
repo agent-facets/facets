@@ -9,8 +9,8 @@ import { overrideGroupFor, ownEntry, ownRecord, planCollisionIntent } from '@age
 import type {
   FacetMaterializationOverrides,
   MaterializationDisposition,
-  McpServerDeclaration,
   McpServerFingerprint,
+  ReadonlyMcpServerDeclaration,
 } from '@agent-facets/protocol'
 import { compareCodeUnits, isMaterialized, materializedNameOf, validateAssetNameSegment } from '@agent-facets/protocol'
 import type { CollisionStatus } from '../collision-status.ts'
@@ -54,7 +54,7 @@ export type ClaimantRef =
       kind: 'mcp-server'
       facet: string
       authoredName: string
-      declaration: McpServerDeclaration
+      declaration: ReadonlyMcpServerDeclaration
       fingerprint: McpServerFingerprint
     }
 

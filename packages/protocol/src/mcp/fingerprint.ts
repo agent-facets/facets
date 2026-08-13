@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { compareCodeUnits } from '../ordering.ts'
-import type { McpServerDeclaration } from '../schemas/mcp-server-declaration.ts'
+import type { ReadonlyMcpServerDeclaration } from '../schemas/mcp-server-declaration.ts'
 
 /**
  * Canonical semantic fingerprint for a portable MCP server declaration.
@@ -67,7 +67,7 @@ export function isMcpServerFingerprint(value: string): value is McpServerFingerp
  * other implementation of the specification that needs to reproduce the
  * digest — the encoding is normative, not an implementation detail.
  */
-export function canonicalMcpServerEncoding(declaration: McpServerDeclaration): string {
+export function canonicalMcpServerEncoding(declaration: ReadonlyMcpServerDeclaration): string {
   switch (declaration.type) {
     case 'stdio': {
       const args = declaration.args ?? []
@@ -83,7 +83,7 @@ export function canonicalMcpServerEncoding(declaration: McpServerDeclaration): s
  * Deterministic `sha256:<hex>` fingerprint of a declaration's canonical
  * semantic form.
  */
-export function computeMcpServerFingerprint(declaration: McpServerDeclaration): McpServerFingerprint {
+export function computeMcpServerFingerprint(declaration: ReadonlyMcpServerDeclaration): McpServerFingerprint {
   const hex = createHash('sha256').update(canonicalMcpServerEncoding(declaration), 'utf8').digest('hex')
   return `sha256:${hex}`
 }

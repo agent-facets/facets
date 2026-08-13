@@ -32,9 +32,9 @@ describe('formatMcpConsentReport', () => {
   // in CI is the discarded stream, so a caller deciding whether to pass the
   // flag would otherwise be approving something they were never shown.
   test('discloses each declaration in full', () => {
-    expect(report).toContain('stdio npx -y srv')
-    expect(report).toContain('env TOKEN_NAME=A')
-    expect(report).toContain('http https://mcp.example.com/mcp')
+    expect(report).toContain('stdio "npx" "-y" "srv"')
+    expect(report).toContain('env "TOKEN_NAME"="A"')
+    expect(report).toContain('http "https://mcp.example.com/mcp"')
   })
 
   test('names every claimant of a shared identity', () => {

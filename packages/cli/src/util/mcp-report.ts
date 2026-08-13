@@ -1,4 +1,4 @@
-import type { McpServerCapabilityFailure, McpServerDeclaration } from '@agent-facets/adapter'
+import type { McpServerCapabilityFailure, ReadonlyMcpServerDeclaration } from '@agent-facets/adapter'
 import type {
   McpConsentRequest,
   McpContractViolation,
@@ -8,6 +8,7 @@ import type {
 } from '@agent-facets/engine'
 import { adapterInstallCommand } from './adapter-install-errors.ts'
 import { omitSnippet, serverManifestLocation, UNCHANGED_FOOTER } from './collision-report.ts'
+import { consentCommandLine, consentEnvironmentAssignment, consentLiteral } from './consent-literal.ts'
 
 /**
  * Shared renderings for MCP configuration failures.
@@ -67,12 +68,17 @@ export function describeMcpCapabilityFailure(failure: McpServerCapabilityFailure
  * only ever rendered on a consent surface — the approval screen, or the
  * failure that exists to tell a non-interactive caller what `--accept-mcp`
  * would authorize. A user cannot approve execution from an elision.
+ *
+ * Every value goes through {@link consentLiteral}, so the rendering is
+ * complete AND unambiguous: argument boundaries survive, two different argv
+ * arrays cannot produce one line, and nothing in a declaration can add a line
+ * or issue a terminal control.
  */
-export function describeDeclarationInFull(declaration: McpServerDeclaration): string[] {
-  if (declaration.type === 'http') return [`http ${declaration.url}`]
-  const lines = [`stdio ${[declaration.command, ...(declaration.args ?? [])].join(' ')}`]
+export function describeDeclarationInFull(declaration: ReadonlyMcpServerDeclaration): string[] {
+  if (declaration.type === 'http') return [`http ${consentLiteral(declaration.url)}`]
+  const lines = [`stdio ${consentCommandLine(declaration.command, declaration.args ?? [])}`]
   for (const [key, value] of Object.entries(declaration.env ?? {})) {
-    lines.push(`env ${key}=${value}`)
+    lines.push(`env ${consentEnvironmentAssignment(key, value)}`)
   }
   return lines
 }

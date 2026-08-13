@@ -101,6 +101,22 @@ function validateHttpUrl(value: string): { ok: true } | { ok: false; reason: str
 }
 
 /**
+ * The command and URL constraints live on their own field schemas rather than
+ * on the declaration object.
+ *
+ * An object-level narrow reports its failure at the declaration itself, so a
+ * caller receives `servers.<name>` and has to read prose to learn which member
+ * was wrong. Applied here, the same rule produces `servers.<name>.command` or
+ * `servers.<name>.url` — a path a caller can act on without parsing a message.
+ */
+const McpCommand = type('string').narrow((value, ctx) => (value === '' ? ctx.mustBe('a non-empty command') : true))
+
+const McpHttpUrl = type('string').narrow((value, ctx) => {
+  const check = validateHttpUrl(value)
+  return check.ok ? true : ctx.mustBe(check.reason)
+})
+
+/**
  * A locally launched server. `command` is the executable as the tool will
  * invoke it; `args` preserves authored order, because argument order changes
  * behavior. Facets never locates, installs, or starts the command — the
@@ -111,23 +127,24 @@ function validateHttpUrl(value: string): { ok: true } | { ok: false; reason: str
  */
 const StdioMcpServerDeclaration = type({
   type: "'stdio'",
-  command: 'string',
+  command: McpCommand,
   'args?': 'string[]',
   'env?': type.Record('string', 'string'),
   '+': 'reject',
 }).narrow((data, ctx) => {
-  if (data.command === '') {
-    return ctx.mustBe('a non-empty command')
+  if (data.env === undefined) return true
+
+  let valid = true
+  for (const name of Object.keys(data.env)) {
+    const check = validateMcpEnvironmentName(name)
+    if (check.ok) continue
+    // The invalid KEY is the failure's location, so the error is reported at
+    // `env.<name>` rather than at the declaration with the name quoted into a
+    // sentence. Every invalid key is reported, not just the first.
+    ctx.reject({ expected: `an environment name that ${check.reason}`, relativePath: ['env', name] })
+    valid = false
   }
-  if (data.env) {
-    for (const name of Object.keys(data.env)) {
-      const check = validateMcpEnvironmentName(name)
-      if (!check.ok) {
-        ctx.mustBe(`environment name "${name}" ${check.reason}`)
-      }
-    }
-  }
-  return true
+  return valid
 })
 
 /**
@@ -137,14 +154,8 @@ const StdioMcpServerDeclaration = type({
  */
 const HttpMcpServerDeclaration = type({
   type: "'http'",
-  url: 'string',
+  url: McpHttpUrl,
   '+': 'reject',
-}).narrow((data, ctx) => {
-  const check = validateHttpUrl(data.url)
-  if (!check.ok) {
-    return ctx.mustBe(check.reason)
-  }
-  return true
 })
 
 /**

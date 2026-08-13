@@ -240,4 +240,52 @@ describe('installFailureFix — stale materialization intent under frozen mode',
     )
     expect(fix).toContain('lockfile is out of date')
   })
+
+  // The frozen gates collect stale overrides and materialization drift into
+  // ONE failure, so a mixed reason set is reachable. Removing the stale
+  // choices by hand leaves the rest of the drift unrecorded, and the next run
+  // fails again for the other half.
+  const staleEntry = {
+    name: 'alpha',
+    reason: 'stale-override',
+    contribution: { kind: 'mcp-server' },
+    authoredName: 'filesystem',
+  } as const
+  const driftEntry = { name: 'beta', reason: 'missing-lockfile', manifestSpec: '1.*' } as const
+
+  const mixed = (order: 'stale-first' | 'drift-first'): RunInstallFailure => ({
+    code: 'LOCKFILE_DRIFT',
+    facets: order === 'stale-first' ? [staleEntry, driftEntry] : [driftEntry, staleEntry],
+  })
+
+  for (const order of ['stale-first', 'drift-first'] as const) {
+    test(`a mixed reason set recommends the run that fixes both (${order})`, () => {
+      for (const command of ['add', 'install', 'remove'] as const) {
+        const fix = installFailureFix(mixed(order), notNeeded, command)
+        expect(fix).toContain('--frozen-lockfile')
+        expect(fix).toContain(`facet ${command}`)
+        // Not the stale-only advice: editing facets.json alone does not
+        // record the lockfile half.
+        expect(fix).not.toContain('remove the materialization choices')
+      }
+    })
+  }
+
+  test('stale-only advice needs every reason to be stale', () => {
+    for (const command of ['add', 'install', 'remove'] as const) {
+      expect(installFailureFix(staleServerDrift, notNeeded, command)).toContain('remove the materialization choices')
+      expect(installFailureFix(mixed('stale-first'), notNeeded, command)).not.toContain(
+        'remove the materialization choices',
+      )
+    }
+  })
+
+  test('a rollback failure still outranks every drift remedy', () => {
+    const partial: RollbackOutcome = {
+      kind: 'partial-failure',
+      entriesUndone: 1,
+      failures: 1,
+    }
+    expect(installFailureFix(mixed('stale-first'), partial, 'install')).toContain('inspect the project tree')
+  })
 })

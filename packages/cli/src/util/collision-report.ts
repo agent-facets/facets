@@ -5,7 +5,11 @@ import type {
   RunInstallFailure,
   StaleMaterializationOverride,
 } from '@agent-facets/engine'
-import type { MaterializationNamespace, McpServerDeclaration, McpServerFingerprint } from '@agent-facets/protocol'
+import type {
+  MaterializationNamespace,
+  McpServerFingerprint,
+  ReadonlyMcpServerDeclaration,
+} from '@agent-facets/protocol'
 import { overrideGroupKey, SERVER_OVERRIDE_GROUP } from '@agent-facets/protocol'
 import { describeContribution } from './contribution.ts'
 
@@ -102,6 +106,17 @@ export interface CollisionClaimant {
   detail: readonly string[]
   /** The exact `facets.json` path a choice is written to. */
   location: string
+  /**
+   * The authored name this claimant was aliased FROM, or `false` when it was
+   * not aliased.
+   *
+   * Carried here rather than looked up again by a renderer. Authored names are
+   * not unique across a group — two facets may both author `review` — so a
+   * second lookup by name alone can attach this annotation to the wrong
+   * claimant, or drop it from the one that actually has it. This projection
+   * already knows which member it came from, so it answers the question once.
+   */
+  aliasedFrom: false | string
 }
 
 /**
@@ -121,6 +136,7 @@ export function collisionClaimants(entry: MaterializationCollisionGroup): Collis
       effectiveName: member.effectiveName,
       detail: [],
       location: manifestLocation(member.facet, member.type, member.authoredName),
+      aliasedFrom: aliasedFrom(member),
     }))
   }
   return entry.group.members.map((member) => ({
@@ -131,6 +147,7 @@ export function collisionClaimants(entry: MaterializationCollisionGroup): Collis
     effectiveName: member.effectiveName,
     detail: [describeClaimantDeclaration(member.declaration, member.fingerprint)],
     location: serverManifestLocation(member.facet, member.authoredName),
+    aliasedFrom: aliasedFrom(member),
   }))
 }
 
@@ -150,8 +167,7 @@ export function formatCollisionReport(
   for (const entry of groups) {
     lines.push(`  ${describeCollisionGroup(entry)} — "${entry.group.effectiveName}" is claimed by:`)
     for (const claimant of collisionClaimants(entry)) {
-      const via = aliasedFrom(entry, claimant.authoredName)
-      lines.push(`    • ${claimant.facet}: ${claimant.label} → "${claimant.effectiveName}"${via}`)
+      lines.push(`    • ${claimant.facet}: ${claimant.label} → "${claimant.effectiveName}"${describeAlias(claimant)}`)
       for (const detail of claimant.detail) lines.push(`        ${detail}`)
       lines.push(`        edit ${claimant.location}`)
       lines.push(`          alias:  ${aliasSnippet(claimant.authoredName)}`)
@@ -212,7 +228,7 @@ export const UNCHANGED_FOOTER: readonly string[] = [
  * prefix is derived from the whole declaration and reveals none of it.
  */
 export function describeClaimantDeclaration(
-  declaration: McpServerDeclaration,
+  declaration: ReadonlyMcpServerDeclaration,
   fingerprint: McpServerFingerprint,
 ): string {
   const summary =
@@ -221,15 +237,25 @@ export function describeClaimantDeclaration(
 }
 
 /**
- * The origin of an absolute HTTP(S) URL, without parsing it.
+ * The origin of an absolute HTTP(S) URL.
  *
- * `new URL()` throws, and a formatter that throws turns a report about a
- * collision into a crash. The schema already guarantees the shape; this reads
- * the part it guarantees and falls back to the whole string rather than
- * inventing a failure mode.
+ * Parsed with the same WHATWG rules the schema validated it under, because a
+ * regex over the raw text does not implement those rules and the difference
+ * leaks. `https://example.com\secret-token` is a valid URL whose path is
+ * `/secret-token`, but a character class of "not `/?#`" runs straight through
+ * the backslash; leading whitespace misses an anchored pattern entirely. Both
+ * used to fall back to returning the whole string — on a surface whose entire
+ * promise is that it does not print the path.
+ *
+ * A formatter must not throw, so a value that somehow reaches this unvalidated
+ * becomes a fixed sentinel rather than an echo of itself.
  */
 function originOf(url: string): string {
-  return /^https?:\/\/[^/?#]+/i.exec(url)?.[0] ?? url
+  try {
+    return new URL(url).origin
+  } catch {
+    return '<unparseable url>'
+  }
 }
 
 /** The first few hex digits of a fingerprint, enough to tell two rows apart. */
@@ -237,10 +263,14 @@ function shortFingerprint(fingerprint: McpServerFingerprint): string {
   return fingerprint.slice('sha256:'.length, 'sha256:'.length + 8)
 }
 
+/** The authored name a member was aliased from, taken from that exact member. */
+function aliasedFrom(member: { disposition: { kind: string }; authoredName: string }): false | string {
+  return member.disposition.kind === 'aliased' ? member.authoredName : false
+}
+
 /** How this claimant already reached the contested name, if by an alias. */
-function aliasedFrom(entry: MaterializationCollisionGroup, authoredName: string): string {
-  const member = entry.group.members.find((candidate) => candidate.authoredName === authoredName)
-  return member?.disposition.kind === 'aliased' ? ` (already aliased from "${authoredName}")` : ''
+export function describeAlias(claimant: CollisionClaimant): string {
+  return claimant.aliasedFrom === false ? '' : ` (already aliased from "${claimant.aliasedFrom}")`
 }
 
 function aliasSnippet(authoredName: string): string {

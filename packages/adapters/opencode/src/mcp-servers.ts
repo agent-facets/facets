@@ -1,52 +1,65 @@
-import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   type ApplyMcpServersResult,
-  atomicWriteFileSync,
-  errorMessage,
-  isMissingFileError,
+  applyMcpTextPlan,
+  isPlainObject,
   type McpNativeMatch,
   type McpServerCapability,
   type McpServerCapabilityFailure,
   type McpServerContribution,
-  type McpServerDeclaration,
-  mcpDeclarationLiterals,
-  mcpOutcomesRequireWrite,
+  type McpTextPlan,
   type PrepareMcpServersRequest,
   type PrepareMcpServersResult,
-  reconcileMcpServers,
+  prepareMcpTextPlan,
+  type ReadonlyMcpServerDeclaration,
+  readTextOrAbsent,
+  sameStringArray,
+  sameStringRecord,
+  type TextDocumentEdit,
 } from '@agent-facets/adapter'
-import { applyEdits, type FormattingOptions, modify, type ParseError, parse as parseJsonc } from 'jsonc-parser'
+import { detectJsoncFormatting, editJsoncProperty, parseJsoncDocument } from '@agent-facets/adapter-jsonc'
 
 /**
  * OpenCode MCP server reconciliation.
  *
- * ## Which document
+ * ## Two documents, one configuration
  *
  * OpenCode loads `opencode.json` and then `opencode.jsonc` from the same
- * directory and deep-merges them in that order, so when both exist the JSONC
- * file wins. This adapter therefore reconciles `opencode.jsonc` when it exists,
- * falls back to an existing `opencode.json`, and creates `opencode.jsonc` when
- * neither does. Writing to the losing file would be a silent no-op from the
- * user's point of view — the entry would be there, and OpenCode would still
- * ignore it.
+ * directory and deep-merges them in that order, so a key defined in both is
+ * the JSONC one. That merge is the configuration; neither file is it on its
+ * own. So this adapter reads BOTH, classifies against the merged per-key view,
+ * and discloses both paths.
+ *
+ * Reading only the JSONC file was a real defect, not a simplification: an
+ * obsolete owned server living only in `opencode.json` looked absent, so
+ * removal skipped it and OpenCode went on loading a server the project had
+ * deleted.
+ *
+ * Writes then target the layer that makes the change effective:
+ *
+ *   - A new entry goes to `opencode.jsonc` when that file exists, otherwise to
+ *     an existing `opencode.json`, otherwise into a newly created
+ *     `opencode.jsonc`.
+ *   - An existing entry is updated in the layer where it currently wins.
+ *   - An owned entry defined in BOTH layers is updated in `opencode.jsonc` and
+ *     its shadowed `opencode.json` copy is removed in the same change, so the
+ *     merged view cannot silently disagree with either file.
+ *   - An obsolete owned entry is deleted from every layer that defines it.
+ *
+ * An entry the project neither desires nor owns is never touched, in either
+ * layer.
  *
  * ## Why JSONC, and why minimal edits
  *
  * OpenCode parses *both* filenames as JSONC, and its own `opencode mcp add`
- * edits configuration with jsonc-parser's `modify`/`applyEdits`. This adapter
- * does the same, for the same reason: those produce a minimal text edit rather
- * than a re-serialization, so comments, member order, indentation, and trailing
- * commas everywhere outside the one entry being changed survive byte-for-byte.
- * A parse-then-stringify round trip would reflow a hand-formatted config on the
- * first install.
+ * edits configuration with a syntax-aware editor. This adapter does the same,
+ * for the same reason: a targeted edit is a minimal text change rather than a
+ * re-serialization, so comments, member order, indentation, and trailing
+ * commas everywhere outside the one entry being changed survive.
  */
 
 /** Candidate documents, in the order OpenCode's own merge makes authoritative. */
 const DOCUMENT_NAMES = ['opencode.jsonc', 'opencode.json'] as const
-
-/** Created when neither candidate exists. */
-const DEFAULT_DOCUMENT_NAME = DOCUMENT_NAMES[0]
 
 /** The top-level member OpenCode reads servers from. */
 const SERVER_MAP_KEY = 'mcp'
@@ -67,235 +80,176 @@ const PORTABLE_KEYS: Readonly<Record<'local' | 'remote', ReadonlySet<string>>> =
   remote: new Set(['type', 'url']),
 }
 
-/**
- * The prepared plan: the selected document, its exact prior text (or `null`
- * when it does not exist), and the complete text to commit.
- */
-type OpenCodeMcpPlan =
-  | { readonly kind: 'unchanged'; readonly path: string }
-  | { readonly kind: 'write'; readonly path: string; readonly expected: string | null; readonly contents: string }
+/** One configuration layer, as inspected and as being edited. */
+interface Layer {
+  readonly path: string
+  /** The document's exact text when inspected, or `null` when it does not exist. */
+  readonly text: string | null
+  /** The server entries this layer defines. Empty when the document is absent. */
+  readonly servers: Record<string, unknown>
+  /** The working text, which starts as the inspected text. */
+  contents: string
+  /** Whether {@link contents} has diverged from {@link text}. */
+  changed: boolean
+}
 
-export const openCodeMcpServers: McpServerCapability<OpenCodeMcpPlan> = {
-  async prepare(request: PrepareMcpServersRequest): Promise<PrepareMcpServersResult<OpenCodeMcpPlan>> {
-    const selected = await selectDocument(request.projectRoot)
-    if (!selected.ok) return { ok: false, failure: selected.failure }
-    const { path, text } = selected
+export const openCodeMcpServers: McpServerCapability<McpTextPlan> = {
+  async prepare(request: PrepareMcpServersRequest): Promise<PrepareMcpServersResult<McpTextPlan>> {
+    const read = await readLayers(request.projectRoot)
+    if (!read.ok) return { ok: false, failure: read.failure }
+    const [jsonc, json] = read.layers
 
-    for (const contribution of request.desired) {
-      const literal = mcpDeclarationLiterals(contribution.declaration).find((value) =>
-        INTERPOLATION_PATTERN.test(value),
-      )
-      if (literal !== undefined) {
-        return {
-          ok: false,
-          failure: {
-            code: 'conflict',
-            path,
-            message: `server "${contribution.name}" declares a value OpenCode would interpolate rather than use literally: ${literal}`,
-          },
-        }
-      }
-    }
-
-    let document: Record<string, unknown> = {}
-    if (text !== null) {
-      const errors: ParseError[] = []
-      const parsed: unknown = parseJsonc(text, errors, { allowTrailingComma: true })
-      if (errors.length > 0) {
-        return { ok: false, failure: { code: 'parse-failed', path, message: describeParseErrors(text, errors) } }
-      }
-      if (!isPlainObject(parsed)) {
-        return {
-          ok: false,
-          failure: { code: 'validation-failed', path, message: 'document root must be a JSON object' },
-        }
-      }
-      document = parsed
-    }
-
-    const rawServers = document[SERVER_MAP_KEY]
-    if (rawServers !== undefined && !isPlainObject(rawServers)) {
-      return {
-        ok: false,
-        failure: {
-          code: 'validation-failed',
-          path,
-          message: `"${SERVER_MAP_KEY}" must be an object mapping server names to entries`,
-        },
-      }
-    }
-    const servers: Record<string, unknown> = rawServers ?? {}
-
-    const outcomes = reconcileMcpServers({
-      desired: request.desired,
-      previouslyOwnedNames: request.previouslyOwnedNames,
-      presentNames: new Set(Object.keys(servers)),
-      compare: (contribution) => compareEntry(servers[contribution.name], contribution.declaration),
-    })
-
-    if (!mcpOutcomesRequireWrite(outcomes)) {
-      return { ok: true, preparation: { plan: { kind: 'unchanged', path }, documentPaths: [path], outcomes } }
+    // The merged per-key view OpenCode itself sees: the lower layer first, then
+    // the winning one over it.
+    const merged = new Map<string, unknown>()
+    for (const layer of [json, jsonc]) {
+      for (const [name, entry] of Object.entries(layer.servers)) merged.set(name, entry)
     }
 
     const tracked = new Set(request.previouslyOwnedNames)
     const desiredByName = new Map(request.desired.map((contribution) => [contribution.name, contribution]))
 
-    // Each edit is computed against the text the previous one produced:
-    // jsonc-parser's edits carry absolute offsets, so they cannot be batched.
-    let contents = text ?? '{}\n'
-    const formatting = detectFormatting(text)
-
-    for (const outcome of outcomes) {
-      switch (outcome.kind) {
-        case 'equivalent':
-          break
-        case 'absent':
-        case 'divergent': {
-          const contribution = desiredByName.get(outcome.name) as McpServerContribution
-          const preserved =
-            outcome.kind === 'divergent' && tracked.has(outcome.name)
-              ? preservableExtensions(servers[outcome.name], contribution.declaration)
-              : {}
-          contents = editDocument(
-            contents,
-            [SERVER_MAP_KEY, outcome.name],
-            renderEntry(contribution.declaration, preserved),
-            formatting,
-          )
-          break
-        }
-        case 'obsolete-owned':
-          if (outcome.occupancy === 'present') {
-            contents = editDocument(contents, [SERVER_MAP_KEY, outcome.name], undefined, formatting)
+    return prepareMcpTextPlan({
+      request,
+      documentPaths: [jsonc.path, json.path],
+      interpolation: { pattern: INTERPOLATION_PATTERN, path: jsonc.path },
+      presentNames: new Set(merged.keys()),
+      compare: (contribution) => compareEntry(merged.get(contribution.name), contribution.declaration),
+      buildEdits: (outcomes) => {
+        for (const outcome of outcomes) {
+          switch (outcome.kind) {
+            case 'equivalent':
+              break
+            case 'absent':
+            case 'divergent': {
+              const contribution = desiredByName.get(outcome.name) as McpServerContribution
+              const preserved =
+                outcome.kind === 'divergent' && tracked.has(outcome.name)
+                  ? preservableExtensions(merged.get(outcome.name), contribution.declaration)
+                  : {}
+              const target = writeTargetFor(outcome.name, jsonc, json)
+              setEntry(target, outcome.name, renderEntry(contribution.declaration, preserved))
+              // A copy in the losing layer would keep shadowing this one on
+              // every future read, so the two would drift apart silently.
+              if (target === jsonc && Object.hasOwn(json.servers, outcome.name)) {
+                setEntry(json, outcome.name, undefined)
+              }
+              break
+            }
+            case 'obsolete-owned':
+              // Deleted from every layer that defines it: the merged view is
+              // only free of the entry when no layer still carries it.
+              for (const layer of [jsonc, json]) {
+                if (Object.hasOwn(layer.servers, outcome.name)) setEntry(layer, outcome.name, undefined)
+              }
+              break
           }
-          break
-      }
-    }
+        }
 
-    return {
-      ok: true,
-      preparation: { plan: { kind: 'write', path, expected: text, contents }, documentPaths: [path], outcomes },
-    }
+        const edits: TextDocumentEdit[] = []
+        for (const layer of [jsonc, json]) {
+          if (layer.changed) edits.push({ path: layer.path, expected: layer.text, contents: layer.contents })
+        }
+        return { ok: true, edits }
+      },
+    })
   },
 
   async apply(request: { readonly plan: unknown }): Promise<ApplyMcpServersResult> {
-    const plan = asPlan(request.plan)
-
-    if (plan.kind === 'unchanged') {
-      return { ok: true, status: 'unchanged' }
-    }
-
-    let current: string | null
-    try {
-      current = await readFile(plan.path, 'utf8')
-    } catch (err) {
-      if (!isMissingFileError(err)) {
-        return {
-          ok: false,
-          failure: { code: 'io-failed', operation: 'read', path: plan.path, message: errorMessage(err) },
-        }
-      }
-      current = null
-    }
-
-    if (current !== plan.expected) {
-      return {
-        ok: false,
-        failure: {
-          code: 'conflict',
-          path: plan.path,
-          message: 'the OpenCode configuration changed after it was inspected; nothing was written',
-        },
-      }
-    }
-
-    try {
-      atomicWriteFileSync(plan.path, plan.contents)
-    } catch (err) {
-      return {
-        ok: false,
-        failure: { code: 'io-failed', operation: 'write', path: plan.path, message: errorMessage(err) },
-      }
-    }
-
-    return { ok: true, status: 'changed', changedPaths: [plan.path] }
+    return applyMcpTextPlan(request.plan, { adapterName: 'opencode' })
   },
 }
 
-type SelectDocumentResult =
-  | { readonly ok: true; readonly path: string; readonly text: string | null }
+type ReadLayersResult =
+  | { readonly ok: true; readonly layers: readonly [Layer, Layer] }
   | { readonly ok: false; readonly failure: McpServerCapabilityFailure }
 
 /**
- * Pick the one document to reconcile.
+ * Read and parse both layers.
  *
- * When both filenames exist only the JSONC one is read, disclosed, or written —
- * the JSON file is left exactly as it was, because OpenCode already treats it
- * as the losing half of the merge.
+ * Both are always disclosed, including one that does not exist: "absent" is a
+ * preimage the caller can restore to, and a run that creates the JSONC file
+ * has to be able to put its absence back.
  */
-async function selectDocument(projectRoot: string): Promise<SelectDocumentResult> {
+async function readLayers(projectRoot: string): Promise<ReadLayersResult> {
+  const layers: Layer[] = []
+
   for (const name of DOCUMENT_NAMES) {
     const path = join(projectRoot, name)
-    try {
-      return { ok: true, path, text: await readFile(path, 'utf8') }
-    } catch (err) {
-      if (!isMissingFileError(err)) {
-        return { ok: false, failure: { code: 'io-failed', operation: 'read', path, message: errorMessage(err) } }
-      }
-    }
+    const read = await readTextOrAbsent(path)
+    if (!read.ok) return { ok: false, failure: read.failure }
+
+    const parsed = parseLayer(path, read.text)
+    if (!parsed.ok) return { ok: false, failure: parsed.failure }
+    layers.push(parsed.layer)
   }
-  return { ok: true, path: join(projectRoot, DEFAULT_DOCUMENT_NAME), text: null }
+
+  const [jsonc, json] = layers
+  // Unreachable: `DOCUMENT_NAMES` has exactly two entries and the loop pushes
+  // one layer per entry or returns.
+  if (jsonc === undefined || json === undefined) {
+    throw new Error('opencode: expected one layer per candidate document')
+  }
+  return { ok: true, layers: [jsonc, json] }
 }
 
-function editDocument(
-  text: string,
-  path: readonly [string, string],
-  value: Record<string, unknown> | undefined,
-  formatting: FormattingOptions,
-): string {
-  return applyEdits(text, modify(text, [...path], value, { formattingOptions: formatting }))
+type ParseLayerResult =
+  | { readonly ok: true; readonly layer: Layer }
+  | { readonly ok: false; readonly failure: McpServerCapabilityFailure }
+
+function parseLayer(path: string, text: string | null): ParseLayerResult {
+  if (text === null) {
+    return { ok: true, layer: { path, text: null, servers: {}, contents: '{}\n', changed: false } }
+  }
+
+  const parsed = parseJsoncDocument(text)
+  if (!parsed.ok) {
+    return { ok: false, failure: { code: 'parse-failed', path, message: parsed.message } }
+  }
+  if (!isPlainObject(parsed.value)) {
+    return { ok: false, failure: { code: 'validation-failed', path, message: 'document root must be a JSON object' } }
+  }
+
+  const rawServers = parsed.value[SERVER_MAP_KEY]
+  if (rawServers !== undefined && !isPlainObject(rawServers)) {
+    return {
+      ok: false,
+      failure: {
+        code: 'validation-failed',
+        path,
+        message: `"${SERVER_MAP_KEY}" must be an object mapping server names to entries`,
+      },
+    }
+  }
+
+  return { ok: true, layer: { path, text, servers: rawServers ?? {}, contents: text, changed: false } }
 }
 
 /**
- * Match the document's own indentation so an inserted entry does not look
- * pasted in. A brand-new document gets two spaces, matching what OpenCode
- * writes when it bootstraps a config.
+ * The layer a write must target for this name to take effect.
+ *
+ * An existing key is updated where it currently wins; a new one goes to the
+ * preferred existing document, or to a newly created JSONC file when neither
+ * exists. Writing anywhere else would leave the merged view unchanged, which
+ * from the user's point of view is a silent no-op.
  */
-function detectFormatting(text: string | null): FormattingOptions {
-  const eol = text?.includes('\r\n') ? '\r\n' : '\n'
-  const indent = text?.match(/\n([ \t]+)\S/)?.[1]
-  if (indent === undefined) return { tabSize: 2, insertSpaces: true, eol }
-  if (indent.startsWith('\t')) return { tabSize: 2, insertSpaces: false, eol }
-  return { tabSize: indent.length, insertSpaces: true, eol }
-}
-
-function describeParseErrors(text: string, errors: readonly ParseError[]): string {
-  const first = errors[0]
-  if (first === undefined) return 'invalid JSONC'
-  const line = text.slice(0, first.offset).split('\n').length
-  return `invalid JSONC at line ${line} (offset ${first.offset})`
+function writeTargetFor(name: string, jsonc: Layer, json: Layer): Layer {
+  if (Object.hasOwn(jsonc.servers, name)) return jsonc
+  if (Object.hasOwn(json.servers, name)) return json
+  if (jsonc.text !== null) return jsonc
+  if (json.text !== null) return json
+  return jsonc
 }
 
 /**
- * Narrow the opaque plan the engine handed back. A value that fails this check
- * did not come from `prepare`, which is a violated contract rather than a
- * condition a caller could act on.
+ * Set or delete one server entry in a layer's working text.
+ *
+ * Each edit is computed against the text the previous one produced: a
+ * syntax-aware edit carries absolute offsets, so they cannot be batched.
  */
-function asPlan(value: unknown): OpenCodeMcpPlan {
-  if (isPlainObject(value)) {
-    if (value.kind === 'unchanged' && typeof value.path === 'string') {
-      return { kind: 'unchanged', path: value.path }
-    }
-    if (
-      value.kind === 'write' &&
-      typeof value.path === 'string' &&
-      typeof value.contents === 'string' &&
-      (value.expected === null || typeof value.expected === 'string')
-    ) {
-      return { kind: 'write', path: value.path, expected: value.expected, contents: value.contents }
-    }
-  }
-  throw new Error('opencode: apply() received a plan this adapter did not produce')
+function setEntry(layer: Layer, name: string, value: Record<string, unknown> | undefined): void {
+  layer.contents = editJsoncProperty(layer.contents, [SERVER_MAP_KEY, name], value, detectJsoncFormatting(layer.text))
+  layer.changed = layer.contents !== layer.text
 }
 
 /**
@@ -308,7 +262,7 @@ function asPlan(value: unknown): OpenCodeMcpPlan {
  * `['npx -y srv']` is a single argument that happens to contain spaces and is
  * a different launch.
  */
-function compareEntry(existing: unknown, declaration: McpServerDeclaration): McpNativeMatch {
+function compareEntry(existing: unknown, declaration: ReadonlyMcpServerDeclaration): McpNativeMatch {
   if (!isPlainObject(existing)) return 'divergent'
 
   const nativeType = nativeTypeFor(declaration.type)
@@ -347,15 +301,15 @@ function isSafeExtension(key: string, value: unknown): boolean {
   return false
 }
 
-function nativeTypeFor(transport: McpServerDeclaration['type']): 'local' | 'remote' {
+function nativeTypeFor(transport: ReadonlyMcpServerDeclaration['type']): 'local' | 'remote' {
   return transport === 'stdio' ? 'local' : 'remote'
 }
 
-function commandArray(declaration: Extract<McpServerDeclaration, { type: 'stdio' }>): string[] {
+function commandArray(declaration: Extract<ReadonlyMcpServerDeclaration, { type: 'stdio' }>): string[] {
   return [declaration.command, ...(declaration.args ?? [])]
 }
 
-function preservableExtensions(existing: unknown, declaration: McpServerDeclaration): Record<string, unknown> {
+function preservableExtensions(existing: unknown, declaration: ReadonlyMcpServerDeclaration): Record<string, unknown> {
   if (!isPlainObject(existing)) return {}
   if (existing.type !== nativeTypeFor(declaration.type)) return {}
 
@@ -370,7 +324,10 @@ function preservableExtensions(existing: unknown, declaration: McpServerDeclarat
  * Render a portable declaration in OpenCode's native shape. `environment` is
  * emitted only when non-empty, matching what `opencode mcp add` writes.
  */
-function renderEntry(declaration: McpServerDeclaration, preserved: Record<string, unknown>): Record<string, unknown> {
+function renderEntry(
+  declaration: ReadonlyMcpServerDeclaration,
+  preserved: Record<string, unknown>,
+): Record<string, unknown> {
   const entry: Record<string, unknown> = { type: nativeTypeFor(declaration.type) }
 
   if (declaration.type === 'stdio') {
@@ -387,23 +344,4 @@ function renderEntry(declaration: McpServerDeclaration, preserved: Record<string
   }
 
   return entry
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function sameStringArray(value: unknown, expected: readonly string[]): boolean {
-  if (value === undefined) return expected.length === 0
-  if (!Array.isArray(value) || value.length !== expected.length) return false
-  return value.every((item, index) => item === expected[index])
-}
-
-function sameStringRecord(value: unknown, expected: Readonly<Record<string, string>>): boolean {
-  const expectedKeys = Object.keys(expected)
-  if (value === undefined) return expectedKeys.length === 0
-  if (!isPlainObject(value)) return false
-  const keys = Object.keys(value)
-  if (keys.length !== expectedKeys.length) return false
-  return keys.every((key) => value[key] === expected[key])
 }

@@ -1,4 +1,4 @@
-import type { McpServerContribution, McpServerDeclaration, McpServerPreparationOutcome } from './mcp-servers.ts'
+import type { McpServerContribution, McpServerPreparationOutcome, ReadonlyMcpServerDeclaration } from './mcp-servers.ts'
 
 /**
  * The format-independent half of MCP preparation.
@@ -88,7 +88,7 @@ export function reconcileMcpServers(input: ReconcileMcpServersInput): readonly M
  * Server names are excluded: they are constrained to a portable grammar that
  * contains no interpolation syntax in any supported format.
  */
-export function mcpDeclarationLiterals(declaration: McpServerDeclaration): readonly string[] {
+export function mcpDeclarationLiterals(declaration: ReadonlyMcpServerDeclaration): readonly string[] {
   if (declaration.type === 'http') return [declaration.url]
   return [declaration.command, ...(declaration.args ?? []), ...Object.values(declaration.env ?? {})]
 }

@@ -25,18 +25,20 @@ An adapter that supports MCP servers SHALL translate the complete desired projec
 
 ### Requirement: First-party MCP configuration locations are deterministic
 
-The first-party adapters SHALL reconcile project-scoped MCP server maps at their tools' documented project locations. Claude Code SHALL use `.mcp.json`. OpenCode SHALL use an existing `opencode.jsonc` when present, otherwise an existing `opencode.json`, and SHALL create `opencode.jsonc` when neither exists; `opencode.jsonc` SHALL be canonical when both exist. Codex SHALL use trusted-project `.codex/config.toml` and its project MCP server tables.
+The first-party adapters SHALL reconcile project-scoped MCP server maps at their tools' documented project locations. Claude Code SHALL use `.mcp.json`. Codex SHALL use trusted-project `.codex/config.toml` and its project MCP server tables.
+
+OpenCode merges `opencode.json` and `opencode.jsonc`, so the OpenCode adapter SHALL treat both as one configuration and SHALL inspect and disclose both. It SHALL classify occupancy and equality against the merged per-key view in which a key defined in `opencode.jsonc` wins. It SHALL create a new entry in `opencode.jsonc` when that document exists, otherwise in an existing `opencode.json`, and SHALL create `opencode.jsonc` when neither exists. It SHALL update an existing entry in the layer where that key currently wins. When one owned key is defined in both layers, it SHALL update the `opencode.jsonc` definition and remove the shadowed `opencode.json` definition in the same change. It SHALL remove an obsolete owned key from every layer that defines it. It SHALL leave entries it neither desires nor owns untouched in both layers.
 
 #### Scenario: Claude Code uses its project server map
 
 - **WHEN** the Claude Code adapter reconciles project servers
 - **THEN** it SHALL update the `mcpServers` map in project `.mcp.json`
 
-#### Scenario: OpenCode prefers JSONC
+#### Scenario: OpenCode prefers JSONC for a new entry
 
-- **WHEN** both `opencode.jsonc` and `opencode.json` exist
-- **THEN** the OpenCode adapter SHALL reconcile the `mcp` map in `opencode.jsonc`
-- **AND** it SHALL leave `opencode.json` unchanged
+- **WHEN** both `opencode.jsonc` and `opencode.json` exist and a desired server is absent from both
+- **THEN** the OpenCode adapter SHALL create the entry in the `mcp` map of `opencode.jsonc`
+- **AND** it SHALL disclose both documents
 
 #### Scenario: OpenCode falls back to existing JSON
 
@@ -47,6 +49,22 @@ The first-party adapters SHALL reconcile project-scoped MCP server maps at their
 
 - **WHEN** neither OpenCode project document exists
 - **THEN** the OpenCode adapter SHALL create `opencode.jsonc`
+
+#### Scenario: OpenCode removes an obsolete entry from the lower layer
+
+- **WHEN** an obsolete owned server is defined only in `opencode.json` while `opencode.jsonc` also exists
+- **THEN** the OpenCode adapter SHALL remove that entry from `opencode.json`
+
+#### Scenario: OpenCode collapses a shadowed owned entry
+
+- **WHEN** one owned server is defined in both OpenCode documents and its declaration changed
+- **THEN** the adapter SHALL update the `opencode.jsonc` definition
+- **AND** it SHALL remove the shadowed `opencode.json` definition in the same change
+
+#### Scenario: OpenCode leaves unowned lower-layer entries alone
+
+- **WHEN** `opencode.json` defines a server the project neither desires nor owns
+- **THEN** the adapter SHALL leave that entry unchanged
 
 #### Scenario: Codex uses trusted project configuration
 
@@ -83,6 +101,8 @@ A supporting adapter SHALL be able to inspect its native project configuration a
 
 A supporting adapter SHALL apply a prepared complete server set as one atomic update to each affected native document. A handled parse, validation, conflict, or write failure SHALL leave that document unchanged. A desired state already present semantically SHALL perform no write. Expected failures SHALL be returned as structured values rather than requiring callers to parse error messages.
 
+A prepared plan SHALL carry the exact prior text of every document it would write, including the absence of a document that does not yet exist. Immediately before writing, application SHALL re-read each such document and compare it with that recorded prior text. When any of them differs, application SHALL write nothing at all and SHALL return a structured conflict identifying the document. No locking, merging, or rebasing is required: a document another process changed after preparation is reported rather than overwritten.
+
 #### Scenario: Complete server batch commits together
 
 - **WHEN** a prepared change adds, updates, and removes several server entries in one document
@@ -93,6 +113,12 @@ A supporting adapter SHALL apply a prepared complete server set as one atomic up
 
 - **WHEN** every desired server entry is already semantically equivalent and no owned entry is obsolete
 - **THEN** the adapter SHALL report the document unchanged
+
+#### Scenario: Concurrent edit is reported instead of overwritten
+
+- **WHEN** a native document a prepared plan would write differs from the text preparation recorded for it
+- **THEN** application SHALL write no document
+- **AND** it SHALL return a structured conflict identifying that document
 
 #### Scenario: Handled write failure preserves prior document
 
@@ -121,7 +147,7 @@ MCP reconciliation SHALL preserve semantic settings outside the portable MCP mod
 
 ### Requirement: Native-rendering equality controls no-write adoption
 
-Each supporting adapter SHALL compare an existing entry with the adapter-native rendering of the desired portable declaration. Comments, formatting, member ordering, and normalized omission versus empty optional collections SHALL NOT make entries divergent. A native value that changes launch or connection behavior SHALL make them divergent. An adapter that cannot prove semantic equality SHALL classify the entry as divergent.
+Each supporting adapter SHALL compare an existing entry with the adapter-native rendering of the desired portable declaration. Comments, formatting, and member ordering SHALL NOT make entries divergent. An omitted optional collection and an empty one SHALL be treated as equal only where the adapter knows its tool's native format gives the two representations identical behavior; where a native representation changes launch or connection semantics, the entries SHALL remain divergent. A native value that changes launch or connection behavior SHALL make them divergent. An adapter that cannot prove semantic equality SHALL classify the entry as divergent.
 
 #### Scenario: Formatting-only difference is equivalent
 
@@ -137,6 +163,29 @@ Each supporting adapter SHALL compare an existing entry with the adapter-native 
 
 - **WHEN** an adapter cannot determine whether a native field changes the desired behavior
 - **THEN** it SHALL classify the entry as divergent rather than equivalent
+
+#### Scenario: Behavior-changing empty collection stays divergent
+
+- **WHEN** an adapter's native format gives an omitted optional collection and an empty one different launch or connection behavior
+- **THEN** the adapter SHALL NOT treat the two representations as equal
+
+### Requirement: Authored literal values are persisted as supplied
+
+A portable declaration's values are literal, so an adapter SHALL write each authored command, argument, environment name, environment value, and URL to tool-native configuration exactly as supplied. Facets does not collect, synthesize, or manage authentication, and it SHALL NOT attempt secret detection, redaction, substitution, or any other rewriting of an authored literal.
+
+Several target tools expand their own configuration values. Before writing, an adapter whose tool performs such expansion SHALL check every authored literal for that tool's interpolation syntax, and SHALL return a structured conflict identifying the server and value rather than write a literal its tool would replace.
+
+#### Scenario: Authored environment value is written verbatim
+
+- **WHEN** a declaration carries a literal environment value that resembles a credential
+- **THEN** the adapter SHALL write that exact value into tool-native configuration
+- **AND** it SHALL NOT redact, mask, or relocate it
+
+#### Scenario: Interpolated literal is a conflict
+
+- **WHEN** an authored command, argument, environment value, or URL contains syntax the target tool would expand rather than use literally
+- **THEN** the adapter SHALL return a structured conflict naming the server and the offending value
+- **AND** it SHALL write nothing
 
 ### Requirement: Failed operations restore tool configuration exactly
 

@@ -237,7 +237,7 @@ A declaration is exactly one of two shapes, selected by its required `type` tag.
       Selects the Streamable HTTP shape.
     </ResponseField>
     <ResponseField name="url" type="string" required>
-      An absolute `http:` or `https:` URL. Relative URLs and other schemes (`file:`, `ws:`, `wss:`) are rejected.
+      An absolute `http:` or `https:` URL. Relative URLs and other schemes (`file:`, `ws:`, `wss:`) are rejected, as are URLs carrying embedded credentials (`https://user:token@host/...`) — a declaration ships inside a published artifact and carries no secrets.
     </ResponseField>
   </Expandable>
 </ResponseField>

@@ -1,10 +1,10 @@
 import type { McpServerPreparationOutcome } from '@agent-facets/adapter'
 import {
   compareCodeUnits,
-  type McpServerDeclaration,
   type McpServerFingerprint,
   type McpServerIdentity,
   type PlannedServerConfiguration,
+  type ReadonlyMcpServerDeclaration,
   type ServerClaimant,
 } from '@agent-facets/protocol'
 import { isDeclarationApproved, type PreviousMcpOwnership } from '../commit/server-ownership.ts'
@@ -44,7 +44,7 @@ export interface McpDeclarationApproval {
    * authorize a command from a hash — and one of only two places a
    * declaration is allowed to travel outward.
    */
-  declaration: McpServerDeclaration
+  declaration: ReadonlyMcpServerDeclaration
   /** Every facet claiming this identity, in the planner's order. */
   claimants: readonly ServerClaimant[]
   standing: McpApprovalStanding
@@ -62,7 +62,7 @@ export interface McpNativeTakeover {
    */
   existing: 'equivalent' | 'divergent'
   /** The declaration that would be adopted or written at this identity. */
-  declaration: McpServerDeclaration
+  declaration: ReadonlyMcpServerDeclaration
 }
 
 /**

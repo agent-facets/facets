@@ -1,10 +1,11 @@
 import { computeMcpServerFingerprint, type McpServerFingerprint } from '../mcp/fingerprint.ts'
+import { freezeMcpServerDeclaration } from '../mcp/freeze.ts'
 import type {
   MaterializationDisposition,
   MaterializedDisposition,
   ProjectAssetOverride,
 } from '../schemas/materialization.ts'
-import type { McpServerDeclaration } from '../schemas/mcp-server-declaration.ts'
+import type { ReadonlyMcpServerDeclaration } from '../schemas/mcp-server-declaration.ts'
 import type { FacetMaterializationOverrides } from '../schemas/project-manifest.ts'
 import { SERVER_OVERRIDE_GROUP } from '../schemas/project-manifest.ts'
 import { type MaterializedName, planEffectiveNames } from './effective-name.ts'
@@ -61,7 +62,11 @@ export function mcpServerKey(effectiveName: string): string {
 export interface AuthoredServer {
   /** The name the publisher declared. Never an alias. */
   name: string
-  declaration: McpServerDeclaration
+  /**
+   * Accepted as read-only: the planner clones what it is given, so a caller
+   * may pass a declaration it still owns and keep using it afterwards.
+   */
+  declaration: ReadonlyMcpServerDeclaration
 }
 
 /** One facet's server contributions, with the project's intent for them. */
@@ -76,7 +81,7 @@ export interface ServerContribution {
 export interface PlannedServer {
   facet: string
   authoredName: string
-  declaration: McpServerDeclaration
+  declaration: ReadonlyMcpServerDeclaration
   fingerprint: McpServerFingerprint
   /** All three arms — an omitted server is still planned, just not configured. */
   disposition: MaterializationDisposition
@@ -100,7 +105,7 @@ export interface PlannedServerConfiguration {
   identity: McpServerIdentity
   /** The addressable ownership key for {@link identity}. */
   key: string
-  declaration: McpServerDeclaration
+  declaration: ReadonlyMcpServerDeclaration
   fingerprint: McpServerFingerprint
   /** Always at least one, deterministically ordered. */
   claimants: readonly ServerClaimant[]
@@ -111,7 +116,7 @@ export interface ServerCollisionMember {
   facet: string
   authoredName: string
   effectiveName: string
-  declaration: McpServerDeclaration
+  declaration: ReadonlyMcpServerDeclaration
   fingerprint: McpServerFingerprint
   disposition: MaterializationDisposition
 }
@@ -158,7 +163,7 @@ export type PlanServerMaterializationResult =
 
 /** What a generic name claim carries for the server domain. */
 interface ServerClaim {
-  declaration: McpServerDeclaration
+  declaration: ReadonlyMcpServerDeclaration
   fingerprint: McpServerFingerprint
 }
 
@@ -176,19 +181,23 @@ export function planServerMaterialization(
   const result = planEffectiveNames<ServerClaim>(
     contributions.map((contribution) => ({
       owner: contribution.facet,
-      claims: contribution.servers.map((server) => ({
-        owner: contribution.facet,
-        group: SERVER_OVERRIDE_GROUP,
-        // One group, so the order among groups is constant and the effective
-        // ordering falls through to the authored name.
-        groupOrder: 0,
-        authoredName: server.name,
-        space: SERVER_SPACE,
-        value: {
-          declaration: server.declaration,
-          fingerprint: computeMcpServerFingerprint(server.declaration),
-        },
-      })),
+      claims: contribution.servers.map((server) => {
+        // Cloned exactly once per contributed declaration, and fingerprinted
+        // from the clone. Every view below shares this one frozen object, so
+        // the plan cannot become internally inconsistent and cannot be
+        // desynchronized from its fingerprint by a mutation of the input.
+        const declaration = freezeMcpServerDeclaration(server.declaration)
+        return {
+          owner: contribution.facet,
+          group: SERVER_OVERRIDE_GROUP,
+          // One group, so the order among groups is constant and the effective
+          // ordering falls through to the authored name.
+          groupOrder: 0,
+          authoredName: server.name,
+          space: SERVER_SPACE,
+          value: { declaration, fingerprint: computeMcpServerFingerprint(declaration) },
+        }
+      }),
       overrides: contribution.overrides,
     })),
     {

@@ -31,6 +31,39 @@ export function installFailureDetail(failure: RunInstallFailure): string {
  * the rollback branch with three different phrasings of the same fact.
  * The only genuine variation is which command to re-run.
  */
+/**
+ * The remedy for a lockfile-drift failure, which depends on the WHOLE reason
+ * set rather than on any one entry.
+ *
+ * A stale override is the one drift the lockfile cannot fix, because it is not
+ * recorded there: the choice lives in `facets.json` and names a contribution
+ * the locked content no longer has. Every other reason is fixed by recording
+ * the current state in the lockfile.
+ *
+ * So a mixed failure needs both, and the stale-only advice — "remove these
+ * choices from facets.json" — would leave the rest of the drift in place and
+ * the next run failing for the other half. Selecting it because *some* entry
+ * was stale is the defect this replaces; the ordinary non-frozen run is the
+ * one action that does both jobs, so it is what a mixed failure recommends.
+ */
+function lockfileDriftFix(
+  facets: readonly { readonly reason: string }[],
+  command: 'add' | 'install' | 'remove',
+): string {
+  const stale = facets.filter((entry) => entry.reason === 'stale-override').length
+
+  // An empty set cannot happen through the frozen gates, which only report
+  // drift they found — but "no reasons" is not evidence of stale intent, so it
+  // takes the ordinary advice rather than the narrower one.
+  if (stale === 0 || facets.length === 0) {
+    return "lockfile is out of date; run 'facet install' (without --frozen-lockfile) or 'facet add' to update it"
+  }
+  if (stale === facets.length) {
+    return `remove the materialization choices listed above from facets.json, or re-run 'facet ${command}' without --frozen-lockfile to drop them automatically`
+  }
+  return `re-run 'facet ${command}' without --frozen-lockfile: that records the lockfile drift listed above and drops the stale materialization choices in the same run`
+}
+
 export function installFailureFix(
   failure: RunInstallFailure,
   rollback: RollbackOutcome,
@@ -65,13 +98,7 @@ export function installFailureFix(
       // manifest that is not wrong.
       return UNSUPPORTED_MANIFEST_VERSION_FIX
     case 'LOCKFILE_DRIFT':
-      // A stale override is the one drift the lockfile cannot fix, because it
-      // is not recorded there: the choice lives in facets.json and names a
-      // contribution the locked content no longer has. Sending the user to
-      // re-run install would have them watch the same failure again.
-      return failure.facets.some((entry) => entry.reason === 'stale-override')
-        ? `remove the materialization choices listed above from facets.json, or re-run 'facet ${command}' without --frozen-lockfile to drop them automatically`
-        : "lockfile is out of date; run 'facet install' (without --frozen-lockfile) or 'facet add' to update it"
+      return lockfileDriftFix(failure.facets, command)
     case 'MCP_ADAPTERS_UNSUPPORTED':
       // Two remedies, and which one applies is per adapter — the detail block
       // above names each. This line says only that both exist, so a user who

@@ -36,14 +36,18 @@ import type { PreparedMcpAdapter } from './prepare.ts'
  * How this project's intent for one authored declaration compares with what
  * this machine last reconciled.
  *
- *   - `introduced` — nothing was recorded here for it before.
+ *   - `introduced` — a current record covers this facet and holds no claim for
+ *     this declaration, which PROVES the declaration is new project intent.
  *   - `updated`    — the declaration, its alias, or its omission changed.
  *   - `unchanged`  — same declaration, same disposition.
+ *   - `unrecorded` — the record covers no history for this facet at all, so a
+ *     missing claim proves nothing. Separate from `introduced` because the two
+ *     look identical at the claim level and mean opposite things: one is new
+ *     intent, the other is a gap where evidence would be.
  *   - `unwitnessed`— this machine has no usable record of what it last did, so
- *     the comparison is genuinely unanswerable. Distinct from `introduced`,
- *     which asserts something a corrupt or pre-`0.4` receipt cannot support.
+ *     the comparison is unanswerable for every facet at once.
  */
-export type McpIntentChange = 'introduced' | 'updated' | 'unchanged' | 'unwitnessed'
+export type McpIntentChange = 'introduced' | 'updated' | 'unchanged' | 'unrecorded' | 'unwitnessed'
 
 /**
  * One authored declaration and what the project decided about it.
@@ -62,6 +66,8 @@ export type McpDispositionOutcome =
  *
  * `witnessed` with an empty map is a real and common answer — a project whose
  * receipt is simply absent has definitively never reconciled anything here.
+ * It still records no history for any individual facet, which is why a claim
+ * missing from it reads as `unrecorded` rather than as proof of new intent.
  * `unwitnessed` is the narrower case where a record exists but cannot speak:
  * a pre-`0.4` receipt, or one too damaged to read.
  */
@@ -97,7 +103,13 @@ function intentChangeOf(baseline: McpIntentBaseline, planned: PlannedServer): Mc
     // server and the project has since withdrawn it.
     return prior === undefined ? 'unchanged' : 'updated'
   }
-  if (prior === undefined) return 'introduced'
+  if (prior === undefined) {
+    // The receipt records an entry for every facet it committed, including one
+    // that reconciled no servers. So "this facet is in the record" is what
+    // turns an absent claim into proof that nothing was managed here before;
+    // without it, the absence is just silence.
+    return baseline.claims.has(planned.facet) ? 'introduced' : 'unrecorded'
+  }
   const same = sameDisposition(prior.materialization, planned.disposition) && prior.fingerprint === planned.fingerprint
   return same ? 'unchanged' : 'updated'
 }

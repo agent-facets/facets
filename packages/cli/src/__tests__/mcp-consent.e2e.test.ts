@@ -80,8 +80,9 @@ describe('non-interactive MCP consent', () => {
     expect(result.exitCode).toBe(1)
     // The exact thing the flag would authorize. A user cannot approve
     // execution from a failure code.
-    expect(result.stderr).toContain(`stdio ${COMMAND} -y ${ARGUMENT}`)
-    expect(result.stderr).toContain(`env ${ENV_NAME}=${ENV_VALUE}`)
+    // Delimited per value: the boundaries are part of what is being approved.
+    expect(result.stderr).toContain(`stdio "${COMMAND}" "-y" "${ARGUMENT}"`)
+    expect(result.stderr).toContain(`env "${ENV_NAME}"="${ENV_VALUE}"`)
     expect(result.stderr).toContain('filesystem')
     expect(result.stderr).toContain('from alpha')
     // The alternative to approving, at the exact path it is written.

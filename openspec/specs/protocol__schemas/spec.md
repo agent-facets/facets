@@ -422,7 +422,11 @@ A `files` key in a `0.1` build manifest or an `assets` key in a `0.2` build mani
 
 The published facet-manifest schema SHALL accept project-scoped MCP server declarations as a closed tagged union. A standard-input declaration SHALL require `type: "stdio"` and a non-empty `command`, MAY contain an ordered `args` array and a map of literal-string `env` assignments, and SHALL NOT contain fields from the HTTP arm. A Streamable HTTP declaration SHALL require `type: "http"` and an absolute `http:` or `https:` `url`, and SHALL NOT contain fields from the standard-input arm. Server names SHALL satisfy the current portable single-segment name grammar and SHALL occupy a namespace separate from text assets.
 
+An HTTP `url` SHALL NOT carry embedded user information. A URL whose username or password component is non-empty SHALL be rejected, because a portable declaration carries no credentials and the URL is reproduced verbatim in an integrity-protected, publishable artifact.
+
 Environment names SHALL use a portable ASCII environment-name grammar that starts with an ASCII letter or underscore and continues with ASCII letters, digits, or underscores. Declaration values SHALL remain literal; the schema SHALL NOT define headers, credentials, OAuth, variable substitution, working directories, shell behavior, or tool-specific policy.
+
+A rejection SHALL identify the invalid field structurally rather than only in prose, so a caller need not parse a message to locate it. A rejected `command` SHALL be reported at the declaration's `command` member, a rejected `url` at its `url` member, and a rejected environment name at that exact key within the declaration's `env` map.
 
 #### Scenario: Valid standard-input declaration is accepted
 
@@ -444,10 +448,20 @@ Environment names SHALL use a portable ASCII environment-name grammar that start
 - **WHEN** a standard-input declaration has an empty command or an HTTP declaration uses a relative, `file:`, `ws:`, or `wss:` URL
 - **THEN** the system SHALL reject the declaration and identify the invalid field
 
+#### Scenario: URL with embedded credentials is rejected
+
+- **WHEN** an HTTP declaration uses a URL carrying a username or password component, such as `https://user:token@example.com/mcp`
+- **THEN** the system SHALL reject the declaration and identify the `url` field
+
 #### Scenario: Invalid server or environment name is rejected
 
 - **WHEN** a server name contains uppercase letters, a slash, an underscore, or an invalid hyphen placement, or an environment name begins with a digit or contains a hyphen
 - **THEN** the system SHALL reject the manifest without normalizing the invalid name
+
+#### Scenario: Environment-name failure identifies its key
+
+- **WHEN** a standard-input declaration's `env` map contains one invalid environment name among valid ones
+- **THEN** the structured error SHALL locate the failure at that key within the declaration's `env` map
 
 #### Scenario: Server and text asset may share a name
 

@@ -8,6 +8,8 @@ import type {
 } from '@agent-facets/protocol'
 import { computeMcpServerFingerprint } from '@agent-facets/protocol'
 import {
+  collisionClaimants,
+  describeClaimantDeclaration,
   formatCollisionReport,
   manifestLocation,
   PLACEHOLDER_ALIAS,
@@ -327,5 +329,131 @@ describe('formatCollisionReport — names that collide with Object.prototype', (
 
     expect(report).toContain('facets["alpha"].materialization.servers["__proto__"]')
     expect(Object.keys(Object.prototype)).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Claimant identity and declaration summaries
+// ---------------------------------------------------------------------------
+
+describe('collisionClaimants — alias annotation follows the exact member', () => {
+  test('two MCP claimants sharing an authored name keep their own dispositions', () => {
+    // The defect this covers: looking a claimant back up by authored name
+    // alone picks the first match, so the annotation lands on whichever member
+    // happens to come first rather than on the one that was aliased.
+    const aliased = {
+      ...serverMember('alpha', 'alpha-cmd'),
+      disposition: { kind: 'aliased', as: 'filesystem' } as const,
+    }
+    const authored = serverMember('beta', 'beta-cmd')
+    const group: ServerCollisionGroup = { effectiveName: 'filesystem', members: [authored, aliased] }
+
+    const claimants = collisionClaimants(serverGroups(group)[0] as MaterializationCollisionGroup)
+
+    expect(claimants.map((claimant) => [claimant.facet, claimant.aliasedFrom])).toEqual([
+      ['beta', false],
+      ['alpha', 'filesystem'],
+    ])
+  })
+
+  test('reversing member order does not move the annotation', () => {
+    const aliased = {
+      ...serverMember('alpha', 'alpha-cmd'),
+      disposition: { kind: 'aliased', as: 'filesystem' } as const,
+    }
+    const authored = serverMember('beta', 'beta-cmd')
+    const forward: ServerCollisionGroup = { effectiveName: 'filesystem', members: [aliased, authored] }
+    const reversed: ServerCollisionGroup = { effectiveName: 'filesystem', members: [authored, aliased] }
+
+    const annotationFor = (group: ServerCollisionGroup, facet: string): false | string =>
+      collisionClaimants(serverGroups(group)[0] as MaterializationCollisionGroup).find(
+        (claimant) => claimant.facet === facet,
+      )?.aliasedFrom ?? false
+
+    expect(annotationFor(forward, 'alpha')).toBe('filesystem')
+    expect(annotationFor(reversed, 'alpha')).toBe('filesystem')
+    expect(annotationFor(forward, 'beta')).toBe(false)
+    expect(annotationFor(reversed, 'beta')).toBe(false)
+  })
+
+  test('two asset claimants sharing an authored name keep their own dispositions', () => {
+    const group: CollisionGroup = {
+      scope: 'project',
+      namespace: 'skill-command',
+      effectiveName: 'review',
+      members: [
+        {
+          facet: 'alpha',
+          scope: 'project',
+          type: 'skill',
+          authoredName: 'review',
+          effectiveName: 'review',
+          disposition: { kind: 'authored' },
+        },
+        {
+          facet: 'beta',
+          scope: 'project',
+          type: 'command',
+          authoredName: 'review',
+          effectiveName: 'review',
+          // A no-op alias is legal, and shares the authored name with the row
+          // above it.
+          disposition: { kind: 'aliased', as: 'review' },
+        },
+      ],
+    }
+
+    const claimants = collisionClaimants(assetGroups(group)[0] as MaterializationCollisionGroup)
+
+    expect(claimants.map((claimant) => [claimant.facet, claimant.aliasedFrom])).toEqual([
+      ['alpha', false],
+      ['beta', 'review'],
+    ])
+    const report = formatCollisionReport(assetGroups(group), [])
+    expect(report).toContain('beta: project command review → "review" (already aliased from "review")')
+    expect(report).toContain('alpha: project skill review → "review"\n')
+  })
+})
+
+describe('describeClaimantDeclaration — HTTP origins', () => {
+  const summarize = (url: string): string => {
+    const decl = { type: 'http', url } as McpServerDeclaration
+    return describeClaimantDeclaration(decl, computeMcpServerFingerprint(decl) as McpServerFingerprint)
+  }
+
+  test('the path never reaches the summary', () => {
+    expect(summarize('https://example.com/mcp/secret-token')).toContain('https://example.com')
+    expect(summarize('https://example.com/mcp/secret-token')).not.toContain('secret-token')
+  })
+
+  test('a backslash is a path separator, not part of the host', () => {
+    // Accepted by WHATWG parsing and by the schema; the old regex read the
+    // backslash as an ordinary host character and echoed the whole value.
+    expect(summarize('https://example.com\\secret-token')).not.toContain('secret-token')
+  })
+
+  test('surrounding whitespace is stripped rather than defeating the parse', () => {
+    expect(summarize('  https://example.com/mcp  ')).toContain('https://example.com')
+    expect(summarize('  https://example.com/mcp  ')).not.toContain('/mcp')
+  })
+
+  test('scheme and host case are normalized', () => {
+    expect(summarize('HTTPS://Example.COM/mcp')).toContain('https://example.com')
+  })
+
+  test('an explicit non-default port is kept', () => {
+    expect(summarize('http://example.com:8080/mcp')).toContain('http://example.com:8080')
+  })
+
+  test('a default port is elided', () => {
+    expect(summarize('https://example.com:443/mcp')).toContain('https://example.com')
+    expect(summarize('https://example.com:443/mcp')).not.toContain(':443')
+  })
+
+  test('an unparseable value becomes a sentinel rather than an echo', () => {
+    // Defensive: the schema rejects this, so reaching it means something
+    // upstream changed. It must still not print the value.
+    expect(summarize('not a url at all')).not.toContain('not a url at all')
+    expect(summarize('not a url at all')).toContain('<unparseable url>')
   })
 })

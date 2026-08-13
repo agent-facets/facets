@@ -18,5 +18,6 @@ export {
   STDIO_SERVER_MINIMAL,
   UNOWNED_NAME,
 } from './mcp-matrix.ts'
+export { declarationModuleSpecifiers, runtimeModuleSpecifiers } from './module-specifiers.ts'
 export type { McpMatrixProject, McpMatrixSeed, RunMcpServerMatrixOptions } from './run-mcp-matrix.ts'
 export { runMcpServerMatrix } from './run-mcp-matrix.ts'

@@ -323,6 +323,15 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
         return failureNoMutation(refinedMcp.failure)
       }
 
+      // Preparation is asynchronous and reads every selected adapter's native
+      // configuration, so an interrupt can land inside it. Without this second
+      // checkpoint the next observation is after the delete pass, which turns
+      // "nothing was written" into "the project was restored" for a Ctrl-C
+      // that arrived while the run was still read-only.
+      if (signal?.aborted) {
+        return failureNoMutation({ code: 'ABORTED' })
+      }
+
       // The steps below mirror the resolve path's Apply and commit, minus the
       // write pass: nothing is materialized, because refinement has confirmed
       // every remaining asset is already on disk under the identity it keeps.
@@ -504,6 +513,14 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     })
     if (!preparedMcp.ok) {
       return failureNoMutation(preparedMcp.failure)
+    }
+
+    // Same checkpoint as the refined path, and for the same reason. The
+    // existing check below covers only an abort during the approval screen, so
+    // an operation whose consent was already satisfied went from this
+    // asynchronous read straight into the journal and the delete pass.
+    if (signal?.aborted) {
+      return failureNoMutation({ code: 'ABORTED' })
     }
 
     // 7c. MCP configuration consent. Approval authorizes execution — a

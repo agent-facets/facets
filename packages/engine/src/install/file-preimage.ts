@@ -67,6 +67,25 @@ export function restorePreimage(preimage: FilePreimage): RestorePreimageResult {
   }
 }
 
+/**
+ * Whether a file still matches its preimage.
+ *
+ * Lets a caller arm a restore for a document that may never be written without
+ * paying for a rewrite — and, more usefully, without changing the file's
+ * modification time and waking a tool that watches its own configuration.
+ * An unreadable file is reported as differing, so the restore still runs and
+ * either succeeds or reports its own failure.
+ */
+export function matchesPreimage(preimage: FilePreimage): boolean {
+  try {
+    const bytes = readFileSync(preimage.path)
+    return preimage.kind === 'present' && bytes.equals(preimage.bytes)
+  } catch (error) {
+    if (isMissingFile(error)) return preimage.kind === 'absent'
+    return false
+  }
+}
+
 /** ENOENT/ENOTDIR — the "file is not there" errno family. */
 export function isMissingFile(error: unknown): boolean {
   if (typeof error !== 'object' || error === null || !('code' in error)) return false

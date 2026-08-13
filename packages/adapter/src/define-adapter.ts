@@ -11,7 +11,7 @@ import type { AdapterDefinition, McpCapableAdapter } from './types.ts'
  * The check is structural because an author may reach this factory from
  * untyped JavaScript, where the type system's guarantee does not apply.
  */
-function isCompleteMcpServerCapability(value: unknown): value is McpServerCapability {
+function isCompleteMcpServerCapability<Plan>(value: unknown): value is McpServerCapability<Plan> {
   if (typeof value !== 'object' || value === null) {
     return false
   }
@@ -38,7 +38,7 @@ function isCompleteMcpServerCapability(value: unknown): value is McpServerCapabi
  * })
  * ```
  */
-export function defineAdapter(definition: AdapterDefinition): McpCapableAdapter {
+export function defineAdapter<Plan = unknown>(definition: AdapterDefinition<Plan>): McpCapableAdapter<Plan> {
   // Validate required fields
   if (!definition.name || typeof definition.name !== 'string') {
     throw new Error('defineAdapter: "name" is required and must be a non-empty string')
@@ -52,13 +52,13 @@ export function defineAdapter(definition: AdapterDefinition): McpCapableAdapter 
   // stub fallback. A not-implemented stub is the right answer for an operation
   // the CLI can route around; MCP support is a capability the CLI has to know
   // about *before* it plans a transaction, so an adapter must state it.
-  if (definition.mcpServers !== false && !isCompleteMcpServerCapability(definition.mcpServers)) {
+  if (definition.mcpServers !== false && !isCompleteMcpServerCapability<Plan>(definition.mcpServers)) {
     throw new Error(
       'defineAdapter: "mcpServers" is required and must be either false or an object with "prepare" and "apply" functions',
     )
   }
 
-  const adapter: McpCapableAdapter = {
+  const adapter: McpCapableAdapter<Plan> = {
     name: definition.name,
 
     // SDK-owned: always the canonical value, even if a non-TypeScript

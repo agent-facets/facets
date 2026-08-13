@@ -177,7 +177,9 @@ Resolved facet content is stored at `$FACET_DIR/cache/<name>@<version>/` (defaul
 
 ## MCP servers
 
-A facet that declares [`servers`](/specification/manifest#mcp-server-declarations) contributes MCP server configuration to every selected adapter, written into each tool's own project file — `.mcp.json` for Claude Code, `opencode.jsonc` (or an existing `opencode.json`) for OpenCode, `.codex/config.toml` for Codex. Only project-scoped files are ever touched; no user- or system-wide tool configuration is created or modified.
+A facet that declares [`servers`](/specification/manifest#mcp-server-declarations) contributes MCP server configuration to every selected adapter, written into each tool's own project file — `.mcp.json` for Claude Code, `opencode.jsonc` and `opencode.json` for OpenCode, `.codex/config.toml` for Codex. Only project-scoped files are ever touched; no user- or system-wide tool configuration is created or modified.
+
+OpenCode merges its two configuration files, so both are read and both count as one configuration: a new entry is written to `opencode.jsonc` when it exists, an existing entry is updated in whichever file it currently wins in, and an entry your project owns is removed from every file that defines it. Entries you added yourself are never touched in either file.
 
 Installing a server **configures** it. Facets never downloads it, launches it, connects to it, checks its health, or authenticates to it. Whatever sign-in the server needs happens inside your coding tool afterwards.
 
@@ -238,6 +240,10 @@ Omitting every declared server also resolves this: with no active declarations, 
 ### Where declarations appear
 
 A declaration's command, arguments, environment values, and URL are shown on exactly two surfaces: the interactive approval screen, and the non-interactive report that asks you to approve. They never appear in `--verbose` output, in success summaries, or in other diagnostics, which name servers by identity only. That keeps the contents of a declaration out of scrollback and CI logs.
+
+On both surfaces every value is shown quoted and escaped — `"srv" "--root" "/w"`, `"TOKEN"="a b"`. Nothing is hidden or shortened; the quoting is what keeps one argument containing a space distinguishable from two arguments, and what stops a value from adding a line or issuing a terminal escape of its own.
+
+The non-interactive report also lists every existing entry the run would take over: the adapter, the effective name, whether the entry already matches or differs, and the full declaration that would be adopted or written. It ends by stating that nothing was changed.
 
 <Warning>
 `env` values are literal strings that ship inside the published facet. Never put a token, key, or other secret in one. Authenticate inside your coding tool instead.

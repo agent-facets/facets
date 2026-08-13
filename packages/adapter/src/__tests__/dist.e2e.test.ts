@@ -15,25 +15,24 @@
  *
  * Requires `bun run build` first — wired via the `test:e2e` script.
  */
-import { expect, test } from 'bun:test'
+import { describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
+// Reached by path rather than by package specifier on purpose. The test kit
+// already depends on this package, so declaring the reverse edge would make the
+// two mutually dependent and the task graph cyclic. Both scanners still have
+// exactly one implementation, and it lives beside the adapters that share it.
+import { declarationModuleSpecifiers, runtimeModuleSpecifiers } from '../../../adapter-test-kit/src/index.ts'
 
 const DIST_DIR = join(import.meta.dir, '../../dist')
 
-/** Module specifiers in `import`/`export ... from` statements, comments excluded. */
-function moduleSpecifiers(source: string): string[] {
-  const withoutComments = source.replaceAll(/\/\*[\s\S]*?\*\//g, '').replaceAll(/\/\/[^\n]*/g, '')
-  return [...withoutComments.matchAll(/\bfrom\s*["']([^"']+)["']/g)].map((match) => match[1] ?? '')
-}
-
 test('published declarations import nothing but the sibling api-version entry', async () => {
   const declarations = await Bun.file(join(DIST_DIR, 'index.d.mts')).text()
-  expect(moduleSpecifiers(declarations)).toEqual(['./api-version.mjs'])
+  expect(declarationModuleSpecifiers(declarations)).toEqual(['./api-version.mjs'])
 })
 
 test('published JavaScript pulls in no workspace or validator runtime', async () => {
   const bundle = await Bun.file(join(DIST_DIR, 'index.mjs')).text()
-  const external = moduleSpecifiers(bundle).filter((specifier) => !specifier.startsWith('.'))
+  const external = runtimeModuleSpecifiers(bundle).filter((specifier) => !specifier.startsWith('.'))
   // `yaml` is the SDK's one declared runtime dependency; node builtins are
   // always fair game. Anything else means a workspace package or one of its
   // dependencies escaped bundling.
@@ -45,5 +44,31 @@ test('the api-version entry stays dependency-free', async () => {
   // Release tooling imports this entry by relative path with no node_modules
   // resolution available, so it must not reach for anything.
   const declarations = await Bun.file(join(DIST_DIR, 'api-version.d.mts')).text()
-  expect(moduleSpecifiers(declarations)).toEqual([])
+  expect(declarationModuleSpecifiers(declarations)).toEqual([])
+})
+
+describe('the declaration scanner sees every reference form', () => {
+  // Guards the guard. Each of these appeared, or could appear, in emitted
+  // declarations, and a `from "..."` regex sees only the first.
+  test('an inlined type node is detected', () => {
+    const source = 'export declare const x: import("arktype/internal/deep").Foo\n'
+    expect(declarationModuleSpecifiers(source)).toEqual(['arktype/internal/deep'])
+  })
+
+  test('a bare import statement is detected', () => {
+    expect(declarationModuleSpecifiers('import "side-effect-pkg"\n')).toEqual(['side-effect-pkg'])
+  })
+
+  test('a typeof import query is detected', () => {
+    expect(declarationModuleSpecifiers('export type Y = typeof import("bare-pkg")\n')).toEqual(['bare-pkg'])
+  })
+
+  test('type-only and re-export forms are detected', () => {
+    const source = 'import type { A } from "./a.mjs"\nexport * from "./b.mjs"\n'
+    expect(declarationModuleSpecifiers(source)).toEqual(['./a.mjs', './b.mjs'])
+  })
+
+  test('an import-shaped string is not a reference', () => {
+    expect(declarationModuleSpecifiers('export declare const s: "import(\\"not-a-module\\")"\n')).toEqual([])
+  })
 })

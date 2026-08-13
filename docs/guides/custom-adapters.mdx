@@ -316,7 +316,11 @@ You are editing a file the user owns and may already be using:
 - For an owned entry, native fields outside the portable model (a timeout, say) survive where your format allows.
 - Use a syntax-aware edit and an atomic write. Semantic preservation is mandatory; comment and formatting preservation is best-effort and should be maximized.
 
-Write **project-scoped configuration only**. Never create or modify a user-wide or system-wide tool file. For reference, the first-party adapters use `.mcp.json` (Claude Code), `opencode.jsonc` — falling back to an existing `opencode.json`, creating `opencode.jsonc` when neither exists (OpenCode), and `.codex/config.toml` (Codex).
+Write **project-scoped configuration only**. Never create or modify a user-wide or system-wide tool file. For reference, the first-party adapters use `.mcp.json` (Claude Code), both `opencode.jsonc` and `opencode.json` as one merged configuration (OpenCode), and `.codex/config.toml` (Codex).
+
+If your tool expands placeholders inside its own configuration values, check every authored command, argument, environment value, and URL for that syntax before writing and return a structured `conflict` when you find one. A portable declaration is literal, so writing a value your tool would substitute would launch something other than what the user approved. Claude Code (`${VAR}`) and OpenCode (`{env:...}`, `{file:...}`) both do this.
+
+Most of this is scaffolding you should not write yourself. The SDK's `prepareMcpTextPlan` and `applyMcpTextPlan` handle the interpolation guard, classification, the no-write short-circuit, document disclosure, the re-read-and-compare that turns a concurrent edit into a `conflict`, and the atomic write — including for a plan that touches more than one file. You supply the tool-specific parts: which documents to read, how to parse them, how to compare an entry, and how to render an edit.
 
 <Warning>
 Configuring a server is not running one. Never launch the command, connect to the URL, health-check, collect credentials, or perform OAuth. Authentication belongs to the tool, after the configuration exists.

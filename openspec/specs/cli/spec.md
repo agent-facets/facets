@@ -890,7 +890,27 @@ When a successful non-frozen operation removes an override whose authored asset 
 
 Interactive `add`, `install`, and `remove` operations SHALL display one MCP-configuration-only approval screen when active declarations are new or changed for the current machine. The screen SHALL identify every effective server, claimant facet, and exact command with arguments and environment assignments or exact URL. A distinct section SHALL identify every untracked native entry that will be adopted or replaced and the affected adapter. Approval SHALL accept the complete displayed set; declining SHALL exit non-zero and leave all state unchanged.
 
-The MCP approval screen SHALL NOT include asset collision choices or asset takeover confirmations. Declaration contents SHALL NOT be reproduced in verbose or persistent diagnostic output outside this approval screen.
+The MCP approval screen SHALL NOT include asset collision choices or asset takeover confirmations.
+
+Exactly two surfaces SHALL reproduce declaration contents: this interactive approval screen, and the non-interactive MCP consent failure specified below. Both exist to show a user what approval would authorize, and neither elides any part of it. Every other surface — verbose output, progress, summaries, collision reports, and every other diagnostic — SHALL NOT reproduce declaration contents.
+
+On both consent surfaces, every command, argument, URL, environment name, and environment value SHALL be rendered through one canonical escaped representation shared by the two surfaces. That representation SHALL be unambiguous: each value SHALL be delimited so that argument boundaries survive, so that two different argument lists cannot render identically, and so that no value can introduce a line break, terminal control sequence, or other character that would let declaration text impersonate surrounding output. Escaping SHALL preserve the complete value rather than redact, truncate, or normalize it.
+
+#### Scenario: Distinct argument lists render differently
+
+- **WHEN** one declaration carries a single argument containing a space and another carries two separate arguments with the same characters
+- **THEN** the two consent renderings SHALL differ
+
+#### Scenario: Control characters cannot forge output
+
+- **WHEN** a declaration value contains a newline, carriage return, or terminal control sequence
+- **THEN** the consent rendering SHALL escape it so it occupies no additional line and issues no terminal control
+- **AND** the complete value SHALL remain present in escaped form
+
+#### Scenario: Empty and whitespace arguments stay visible
+
+- **WHEN** a declaration carries an empty argument or an argument that is only whitespace
+- **THEN** the consent rendering SHALL show it as a distinct delimited argument
 
 #### Scenario: Complete command declaration is displayed
 
@@ -916,16 +936,24 @@ The MCP approval screen SHALL NOT include asset collision choices or asset takeo
 #### Scenario: Verbose output does not leak declarations
 
 - **WHEN** an operation uses verbose output
-- **THEN** commands, URLs, and environment values SHALL appear only in the interactive approval display
+- **THEN** commands, URLs, and environment values SHALL appear only on the two consent surfaces
 
 ### Requirement: Non-interactive MCP configuration requires explicit opt-in
 
 The `add`, `install`, and `remove` commands SHALL each accept `--accept-mcp` as the sole non-interactive MCP acceptance mechanism. No second MCP override flag SHALL be introduced. A non-interactive operation with unapproved declarations or MCP native-entry takeovers SHALL fail before mutation unless the flag is supplied. Frozen installation SHALL never prompt and MAY use the same pre-supplied flag. The flag SHALL NOT authorize asset takeover.
 
+That failure is the second consent surface, so it SHALL disclose the complete set the flag would authorize. For every unapproved declaration it SHALL identify the effective name, every claimant facet, and the complete escaped declaration. For every untracked native entry it would take over it SHALL identify the adapter, the effective identity, whether the existing entry is equivalent or divergent, and the complete escaped declaration. It SHALL state that no state changed.
+
 #### Scenario: Add without opt-in reports every declaration
 
 - **WHEN** non-interactive `add` encounters unapproved declarations without `--accept-mcp`
 - **THEN** it SHALL fail with every effective name, claimant facet, and complete command or URL
+- **AND** it SHALL state that no state changed
+
+#### Scenario: Failure discloses every takeover
+
+- **WHEN** a non-interactive operation without `--accept-mcp` would take over untracked native entries
+- **THEN** the failure SHALL identify each takeover's adapter, effective identity, equivalent or divergent status, and complete escaped declaration
 - **AND** it SHALL state that no state changed
 
 #### Scenario: Install with opt-in proceeds
@@ -978,12 +1006,17 @@ When active MCP declarations exist and selected adapters include API `0.1` adapt
 
 #### Scenario: Omitted declarations avoid the failure
 
-- **WHEN** every authored server is omitted and no active declaration remains
+- **WHEN** every authored server is omitted, no active declaration remains, and the receipt owns no effective server identity needing reconciliation or deletion
 - **THEN** an adapter without MCP support SHALL NOT fail the operation for that reason
+
+#### Scenario: Pending receipt cleanup still fails
+
+- **WHEN** every authored server is omitted but the receipt still owns an effective server identity this operation must delete
+- **THEN** an adapter without MCP support SHALL fail the operation before mutation
 
 ### Requirement: Command output reports MCP configuration outcomes
 
-Command summaries SHALL report MCP servers separately from text assets and SHALL identify added, updated, unchanged, aliased, omitted, repaired, removed, conflicted, unsupported, and takeover outcomes. An aliased server SHALL show authored and effective names. A server-only facet SHALL not be presented as a no-op. Declaration contents SHALL remain absent from summaries and diagnostics.
+Command summaries SHALL report MCP servers separately from text assets and SHALL identify added, updated, unchanged, aliased, omitted, repaired, removed, conflicted, unsupported, and takeover outcomes. An aliased server SHALL show authored and effective names. A server-only facet SHALL not be presented as a no-op. Declaration contents SHALL remain absent from summaries and from every diagnostic other than the two consent surfaces.
 
 #### Scenario: Server-only facet has a meaningful summary
 

@@ -1768,7 +1768,7 @@ describe('InstallView — MCP consent phase', () => {
 
     const prompt = visibleTerminalText(instance.lastFrame() ?? '')
     expect(prompt).toContain('MCP server configuration needs your approval')
-    expect(prompt).toContain('stdio npx -y srv')
+    expect(prompt).toContain('stdio "npx" "-y" "srv"')
     // The progress bar must not repaint underneath a screen the user is
     // reading; the prompt owns the mount while it is open.
     expect(prompt).not.toContain('Installing facets:')

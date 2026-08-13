@@ -234,8 +234,14 @@ export interface AssetOnlyAdapter extends AdapterAssetContract {
 /**
  * An adapter implementing the current contract: the tagged asset methods plus
  * a stated MCP server capability.
+ *
+ * `Plan` is the adapter's own prepared-plan type. It is carried here — rather
+ * than fixed at the capability's `unknown` default — so an author writing
+ * `prepare` and `apply` inline gets both checked against one plan shape. It
+ * defaults to `unknown`, which is what every consumer holds: the engine's
+ * {@link Adapter} union erases it, so a consumer still cannot read a plan.
  */
-export interface McpCapableAdapter extends AdapterAssetContract {
+export interface McpCapableAdapter<Plan = unknown> extends AdapterAssetContract {
   /**
    * The adapter API contract identifier this adapter implements.
    *
@@ -259,7 +265,7 @@ export interface McpCapableAdapter extends AdapterAssetContract {
    * feature gets its own field with its own identity, composition, and consent
    * rules rather than being bolted onto this one.
    */
-  readonly mcpServers: false | McpServerCapability
+  readonly mcpServers: false | McpServerCapability<Plan>
 }
 
 /**
@@ -280,7 +286,7 @@ export type Adapter = AssetOnlyAdapter | McpCapableAdapter
  * cannot declare a conflicting API identifier. There is no definition type for
  * the superseded contract: this SDK only builds current adapters.
  */
-export type AdapterDefinition = Omit<McpCapableAdapter, 'apiVersion'>
+export type AdapterDefinition<Plan = unknown> = Omit<McpCapableAdapter<Plan>, 'apiVersion'>
 
 // Re-export common types for convenience — SDK consumers don't need to install common
 export type { AssetType, Scope, Validated, ValidationError }

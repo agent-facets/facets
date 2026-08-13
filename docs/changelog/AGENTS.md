@@ -1,15 +1,15 @@
 # Changelog authoring rules
 
 These rules govern how changelog entries are written and structured in
-`docs/changelog/index.md`. They are distilled from [Mintlify's changelog
+`docs/changelog/index.mdx`. They are distilled from [Mintlify's changelog
 docs](https://www.mintlify.com/docs/create/changelogs) and [Mintlify's
 five-principles guide](https://www.mintlify.com/blog/five-changelog-principles-from-best-developer-brands).
 
 ## File layout
 
 - **Single source of truth**: all changelog content lives in
-  `docs/changelog/index.md`. Never create additional per-date files (e.g.
-  `2026-04-20.md`)  -- they fragment the changelog, duplicate nav entries, and
+  `docs/changelog/index.mdx`. Never create additional per-date files (e.g.
+  `2026-04-20.mdx`)  -- they fragment the changelog, duplicate nav entries, and
   create orphan pages.
 - **One changelog tab in `docs/docs.json`**: the Changelog tab must point only
   to `changelog/index`. Do not add a second tab.
@@ -123,7 +123,7 @@ goes at the top of the file.
 
 ## Checklist for a new entry
 
-- [ ] Added to the top of `docs/changelog/index.md`.
+- [ ] Added to the top of `docs/changelog/index.mdx`.
 - [ ] `label="YYYY-MM-DD"` uses today's date (or the ship date).
 - [ ] No other `<Update>` in the file uses the same `label`  -- if one exists,
       merge into it instead of creating a new entry.
@@ -134,5 +134,5 @@ goes at the top of the file.
 - [ ] Body explains the user-facing impact and shows usage (code samples,
       commands, realistic examples) where relevant.
 - [ ] Links to CLI reference or docs pages where appropriate.
-- [ ] No duplicate `docs/changelog/*.md` files; no second Changelog tab in
+- [ ] No duplicate `docs/changelog/*.mdx` files; no second Changelog tab in
       `docs/docs.json`.

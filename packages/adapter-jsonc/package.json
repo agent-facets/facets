@@ -1,5 +1,5 @@
 {
-  "name": "@agent-facets/adapter-test-kit",
+  "name": "@agent-facets/adapter-jsonc",
   "private": true,
   "type": "module",
   "exports": {
@@ -9,8 +9,7 @@
     "types": "tsgo --noEmit",
     "test": "bun test --pass-with-no-tests"
   },
-  "devDependencies": {
-    "@agent-facets/adapter": "workspace:*",
-    "typescript": "^6.0.3"
+  "dependencies": {
+    "jsonc-parser": "^3.3.1"
   }
 }
