@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CURRENT_LOCKFILE_VERSION, compareCodeUnits, LOCKFILE_VERSION_0_2 } from '@agent-facets/protocol'
@@ -24,6 +24,35 @@ describe('loadLockfile — empty/missing', () => {
     expect(result.parsed.lockfile.facets).toEqual({})
     expect(result.parsed.lockfile.lockfileVersion).toBe(CURRENT_LOCKFILE_VERSION)
     expect(result.parsed.lockfileVersion).toBe(CURRENT_LOCKFILE_VERSION)
+  })
+
+  test('missing file carries the absent state', () => {
+    const result = loadLockfile(projectRoot)
+    if (!result.ok) expect.unreachable()
+    if (result.existed) expect.unreachable()
+    expect(result.state).toEqual({ kind: 'absent' })
+  })
+})
+
+// The state a load reports is the commit's write precondition, so it has to
+// describe the bytes that were parsed.
+describe('loadLockfile — the state it was parsed from', () => {
+  test('carries the exact bytes it parsed', () => {
+    const text = `${JSON.stringify({ lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} }, null, 2)}\n`
+    writeFileSync(join(projectRoot, FACETS_LOCK_FILE), text)
+
+    const result = loadLockfile(projectRoot)
+    if (!result.ok) expect.unreachable()
+    if (!result.existed) expect.unreachable()
+    expect(new TextDecoder().decode(result.state.contents)).toBe(text)
+  })
+
+  test('reports a path occupied by something other than a plain file', () => {
+    mkdirSync(join(projectRoot, FACETS_LOCK_FILE))
+
+    const result = loadLockfile(projectRoot)
+    if (result.ok) expect.unreachable()
+    expect(result.error).toContain('directory')
   })
 })
 

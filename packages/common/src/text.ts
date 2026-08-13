@@ -16,3 +16,15 @@ export function normalizeLineEndings(raw: string): string {
     .replace(/\r\n/g, '\n')
     .replace(/\r/g, '\n')
 }
+
+/**
+ * Decode a file's bytes as text, keeping a leading byte-order mark.
+ *
+ * `ignoreBOM` reads backwards: it leaves the mark in the string rather than
+ * consuming it. Silently eating it would make a document that starts with one
+ * indistinguishable from one that does not — so a parser could not put it
+ * back, and a validator that rejects it would start accepting it.
+ */
+export function decodeFileText(bytes: Uint8Array): string {
+  return new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes)
+}

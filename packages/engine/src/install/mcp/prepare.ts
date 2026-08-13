@@ -5,10 +5,12 @@ import type {
   McpServersPlan,
   PlanMcpServersRequest,
 } from '@agent-facets/adapter'
+import { isNonEmpty } from '@agent-facets/common'
 import { compareCodeUnits, type PlannedServerConfiguration } from '@agent-facets/protocol'
 import { classifyMcpSupport } from '../../adapters/mcp-support.ts'
 import type { PreviousMcpOwnership } from '../commit/server-ownership.ts'
 import type { OnLog, RunInstallFailure } from '../types.ts'
+import { detectMcpDocumentOverlap, validateDisclosedDocuments } from './documents.ts'
 
 /**
  * Read-only MCP planning: ask every selected adapter what it *would* change,
@@ -26,12 +28,17 @@ import type { OnLog, RunInstallFailure } from '../types.ts'
  *
  * Kept separate from {@link McpServerCapabilityFailure}: those describe the
  * adapter's world failing (unparseable document, unreadable file) and are
- * expected. This describes the adapter itself misbehaving — reaching a
- * different conclusion about what an operation does between the moment the
- * user approved it and the moment it runs. Reporting that as the former would
- * tell a user to fix their configuration when the bug is in an adapter.
+ * expected. This describes the adapter itself misbehaving. Reporting one as
+ * the other would tell a user to fix their configuration when the bug is in
+ * an adapter — and none of these is reachable from a typed adapter at all.
  */
-export type McpContractViolation = { kind: 'outcomes-changed'; adapter: string }
+export type McpContractViolation =
+  /** A plan named none of the documents it was computed from. */
+  | { kind: 'documents-undisclosed'; adapter: string }
+  /** A disclosed document is not an absolute, normalized, distinct path. */
+  | { kind: 'document-path-invalid'; adapter: string; path: string; detail: string }
+  /** A plan would write a document it never disclosed reading. */
+  | { kind: 'mutation-undisclosed'; adapter: string; path: string }
 
 /** One adapter's plan, held until the apply step. */
 export interface PreparedMcpAdapter {
@@ -121,6 +128,11 @@ export async function prepareMcpServers(args: PrepareMcpArgs): Promise<PrepareMc
     // boundary it is authorized to work inside, and the transaction refuses a
     // path that is not strictly below it — one rule, enforced for every file
     // this system writes rather than for MCP documents specifically.
+    const violation = validateDisclosedDocuments({ adapter, plan: result.plan })
+    if (violation !== null) {
+      return { ok: false, failure: { code: 'MCP_CONTRACT_VIOLATION', violation } }
+    }
+
     onLog(
       () =>
         `[verbose] ${adapter}: planned ${result.plan.outcomes.length} MCP outcome(s), ${
@@ -128,6 +140,14 @@ export async function prepareMcpServers(args: PrepareMcpArgs): Promise<PrepareMc
         } document change(s)`,
     )
     prepared.push({ adapter, capability, request, plan: result.plan })
+  }
+
+  // Two adapters reconciling one document cannot both be given a plan that
+  // survives the other's write. Refused here — before consent, before any
+  // mutation — because there is no ordering of the two that works.
+  const overlaps = detectMcpDocumentOverlap(prepared)
+  if (isNonEmpty(overlaps)) {
+    return { ok: false, failure: { code: 'MCP_DOCUMENT_OVERLAP', overlaps } }
   }
 
   return { ok: true, prepared }

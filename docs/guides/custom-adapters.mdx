@@ -311,6 +311,8 @@ The capability operates on the **complete** desired set rather than one server a
 
   Return structured `outcomes` — one per key — using `absent`, `equivalent`, or `divergent` (each carrying `ownership: 'tracked' | 'untracked'`), plus `obsolete-owned` (carrying `occupancy`) for an owned entry the desired set no longer names. Return an `action` alongside them: `{ kind: 'unchanged' }`, or `{ kind: 'mutate', mutations }` where each mutation names the document, the exact state you inspected it in, and the exact bytes to commit.
 
+  Return `documentPaths` too: every file you read to reach that conclusion, **including when you change none of them**. It is how the CLI knows, before approving anything, that no two selected adapters manage the same file. It confers no ownership — a file listed there and not changed is never written, journaled, or restored.
+
   A parse or validation failure is a **value**, not a throw: `io-failed`, `parse-failed`, `validation-failed`, or `conflict`. The document must be left byte-for-byte unchanged.
 
   A `conflict` carries a `reason`, and each reason carries only its own facts — `interpolation` names the server and the offending value (no document: nothing has been written anywhere), and `native-state` names the document plus your format layer's detail. Neither carries a preformatted sentence; the CLI writes the wording and escapes the value.
@@ -322,9 +324,11 @@ You are never asked to write, and never asked to undo. The engine commits your m
 
 - a document something else edited after you inspected it is **refused**, not overwritten — you no longer need a `document-changed` conflict of your own;
 - a later failure restores the exact prior bytes, preserving comments, formatting, and member order without depending on your code being correct a second time;
-- a document you inspected but did not change is **not** part of the plan, so nothing restores it, rewrites it, or touches its modification time.
+- a document you inspected but did not change is **not** among your mutations, so nothing restores it, rewrites it, or touches its modification time.
 
-That last point is why a plan lists only what it changes. Inspecting a file has never been a reason to own it.
+That last point is why a plan's *mutations* list only what changes. Inspecting a file has never been a reason to own it — which is exactly why `documentPaths` is a separate list that grants nothing.
+
+Your plan is also recomputed immediately before it is committed, every time, including when it changed nothing. If the second answer differs, the CLI stops and tells the user their tool's configuration changed mid-run. Nothing is expected of you there beyond planning honestly twice.
 
 ### Equality decides whether anything is written
 
@@ -346,6 +350,10 @@ You are editing a file the user owns and may already be using:
 - Use a syntax-aware edit and an atomic write. Semantic preservation is mandatory; comment and formatting preservation is best-effort and should be maximized.
 
 Write **project-scoped configuration only**. Never create or modify a user-wide or system-wide tool file. For reference, the first-party adapters use `.mcp.json` (Claude Code), both `opencode.jsonc` and `opencode.json` as one merged configuration (OpenCode), and `.codex/config.toml` (Codex).
+
+<Warning>
+Two selected adapters may not manage the same file. If your tool reads a configuration file another supported tool also reads, say so in your README: a user who selects both gets a failure telling them to deselect one, because there is no ordering in which both plans survive the other's write.
+</Warning>
 
 If your tool expands placeholders inside its own configuration values, check every authored command, argument, environment value, and URL for that syntax before writing and return a structured `conflict` when you find one. A portable declaration is literal, so writing a value your tool would substitute would launch something other than what the user approved. Claude Code (`${VAR}`) and OpenCode (`{env:...}`, `{file:...}`) both do this.
 

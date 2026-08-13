@@ -2,7 +2,11 @@ import type { RollbackOutcome, RunInstallFailure } from '@agent-facets/engine'
 import { ACCEPT_MCP_FLAG } from '../commands/shared/flags.ts'
 import { writeMaterializationDetail } from './collision-report.ts'
 import { describeRollbackIssue, hasPreservedConflicts } from './install-outcome.ts'
-import { formatMcpConsentReport, formatUnsupportedMcpAdaptersReport } from './mcp-report.ts'
+import {
+  formatMcpConsentReport,
+  formatMcpDocumentOverlapReport,
+  formatUnsupportedMcpAdaptersReport,
+} from './mcp-report.ts'
 
 /**
  * Write the long-form stderr detail for a failed install-pipeline run, if
@@ -28,6 +32,9 @@ export function writeInstallFailureDetail(failure: RunInstallFailure, rollback: 
       return true
     case 'MCP_ADAPTERS_UNSUPPORTED':
       process.stderr.write(`${formatUnsupportedMcpAdaptersReport(failure.adapters, failure.servers)}\n`)
+      return true
+    case 'MCP_DOCUMENT_OVERLAP':
+      process.stderr.write(`${formatMcpDocumentOverlapReport(failure.overlaps)}\n`)
       return true
     default:
       return writeMaterializationDetail(failure) || wroteRollback

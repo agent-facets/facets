@@ -77,9 +77,10 @@ const mcpCapability = {
     for (const contribution of desired) doc.servers[contribution.name] = contribution.declaration
 
     const after = JSON.stringify(doc)
-    if (before === after) return { ok: true, plan: { outcomes, action: { kind: 'unchanged' } } }
-
     const file = mcpDoc(projectRoot)
+    const documentPaths = [file]
+    if (before === after) return { ok: true, plan: { outcomes, documentPaths, action: { kind: 'unchanged' } } }
+
     const expected = stateOf(file)
     if (expected === null) {
       return { ok: false, failure: { code: 'validation-failed', path: file, message: 'not a plain file' } }
@@ -88,6 +89,7 @@ const mcpCapability = {
       ok: true,
       plan: {
         outcomes,
+        documentPaths,
         action: {
           kind: 'mutate',
           mutations: [

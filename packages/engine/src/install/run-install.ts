@@ -2,7 +2,7 @@ import { join } from 'node:path'
 import type { PlannedServerConfiguration } from '@agent-facets/protocol'
 import { CURRENT_LOCKFILE_VERSION, preserveLockfileExtensions } from '@agent-facets/protocol'
 import { type AdapterCompatibilityFailure, compatibilityFailureFor } from '../adapters/api-compatibility.ts'
-import { FileTransaction } from '../fs/index.ts'
+import { batchResidue, FileTransaction, NO_ROLLBACK } from '../fs/index.ts'
 import { FACETS_JSON_FILE, type NormalizedProjectManifest } from '../manifest/mutations.ts'
 import { loadProjectManifest, manifestLoadFailure } from '../manifest/project-files.ts'
 import { classifyOutcome, facetConfigurationWork, NO_CONFIGURATION_WORK } from './classify-outcome.ts'
@@ -22,8 +22,8 @@ import {
 import {
   buildUpdatedReceipt,
   commitProjectFiles,
+  describeUnpersistedReceipt,
   type LockedSetCommit,
-  readProjectFileStates,
 } from './commit/tri-write.ts'
 import { checkFrozenConsistency, checkFrozenServerIntent } from './frozen-gates.ts'
 import { acquireInstallLock } from './lockfile-guard.ts'
@@ -45,7 +45,7 @@ import {
 } from './mcp/outcomes.ts'
 import { prepareMcpServers } from './mcp/prepare.ts'
 import { ownEntry } from './own-entry.ts'
-import { receiptProjectPath, resolveProjectReceipt } from './receipt.ts'
+import { readProjectReceipt } from './receipt.ts'
 import { refineRemoval } from './remove/refine.ts'
 import { rollbackAndFail, summarize } from './run-install-support.ts'
 import type {
@@ -163,8 +163,13 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     // deletion. An unusable receipt claims nothing rather than borrowing the
     // lockfile's claims. Invalid asset entries (escape paths) are reported and
     // skipped — the rest of the receipt is still processed (W2 / design D6).
-    const receiptState = resolveProjectReceipt(projectRoot)
-    const receiptPath = receiptProjectPath(receiptState)
+    const receiptRead = readProjectReceipt(projectRoot)
+    if (!receiptRead.ok) {
+      return failureNoMutation({ code: 'LOCKFILE_WRITE_FAILED', path: projectRoot, cause: receiptRead.cause })
+    }
+    const receiptState = receiptRead.state
+    const receiptPath = receiptState.kind === 'loaded' ? receiptState.record.path : receiptRead.canonical
+    const receiptTarget = { path: receiptRead.path, canonical: receiptRead.canonical, file: receiptRead.file }
     if (receiptState.kind === 'loaded') {
       for (const invalid of receiptState.invalidEntries) {
         if (invalid.kind === 'asset') {
@@ -192,17 +197,6 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       onLog(() => `[warn] install receipt unreadable (${receiptState.reason}); nothing on disk is tracked`)
       onStage({ kind: 'receipt-unavailable', reason: receiptState.reason })
     }
-
-    // The exact states of the three files this run may commit, read once,
-    // under the lock, before anything is resolved. The commit is conditional
-    // on them: a manifest a teammate's editor rewrote while this install was
-    // fetching is not the manifest the plan was computed from, and writing
-    // over it would discard their edit as silently as it would discard ours.
-    const projectFiles = readProjectFileStates(projectRoot)
-    if (!projectFiles.ok) {
-      return failureNoMutation(projectFiles.failure)
-    }
-    const loadedStates = projectFiles.states
 
     // 3b. Delta conflict check. The same facet name in both additions
     //     and removals is an illegal state the CLI should never produce;
@@ -417,7 +411,9 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
         // Nothing was written, so the receipt can only be PRUNED — never
         // re-derived from lockfile entries this run did not apply.
         newReceipt: buildUpdatedReceipt(receiptPath, { kind: 'carried-forward', facets: refined.receiptFacets }),
-        loadedStates,
+        manifestState: manifestResult.state,
+        lockfileState: lockfileResult.state,
+        receipt: receiptTarget,
         transaction,
         onLog,
       })
@@ -736,7 +732,9 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       desiredFacets: merged.desiredFacets,
       lockedSet,
       newReceipt,
-      loadedStates,
+      manifestState: manifestResult.state,
+      lockfileState: lockfileResult.state,
+      receipt: receiptTarget,
       transaction,
       onLog,
     })
@@ -744,8 +742,10 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       return rollbackAndFail(transaction, written.failure, onLog)
     }
     if (written.receipt === 'unpersisted') {
-      onLog(() => `[warn] install receipt could not be written (${written.cause}); this run's assets stay untracked`)
-      onStage({ kind: 'receipt-unpersisted', cause: written.cause })
+      const cause = describeUnpersistedReceipt(written.cause)
+      const residue = written.cause.kind === 'batch-failed' ? batchResidue(written.cause.batch) : NO_ROLLBACK
+      onLog(() => `[warn] install receipt could not be written (${cause}); this run's assets stay untracked`)
+      onStage({ kind: 'receipt-unpersisted', cause, residue })
     }
     if (!frozenLockfile) {
       onStage({ kind: 'lockfile-write', path: join(projectRoot, FACETS_LOCK_FILE) })

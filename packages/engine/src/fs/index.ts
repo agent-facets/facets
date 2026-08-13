@@ -5,11 +5,14 @@ export {
 } from './describe.ts'
 export type { CreatedDirectory, EnsureDirectoriesResult } from './directories.ts'
 export { ensureDirectories, inspectAncestors, pruneCreatedDirectories } from './directories.ts'
+export { canonicalPathKey } from './path-key.ts'
+export { batchResidue, mergeRollbackOutcomes, NO_ROLLBACK } from './rollback.ts'
 export type { FileOperation, FileOperationFailure, FsSyscalls } from './syscalls.ts'
 export { DEFAULT_NEW_FILE_MODE, nodeFsSyscalls, operationFailure } from './syscalls.ts'
 export type {
   AbortedFailure,
   ApplyBatchResult,
+  FailedBatch,
   FileRollbackIssue,
   FileRollbackOutcome,
   FileTransactionFailure,

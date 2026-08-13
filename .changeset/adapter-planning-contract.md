@@ -16,7 +16,9 @@ This buys guarantees no adapter could offer on its own, and now applies uniforml
 
 **Breaking: `installAsset`, `readAsset`, and `deleteAsset` are replaced by `assets: false | { planInstall, planRemoval }`.** `supportsInstall` is gone — an adapter states its asset capability the same way it states MCP support, so "claims support" and "implements support" can no longer disagree.
 
-**Breaking: the MCP capability is `mcpServers: false | { plan }`.** `apply` is gone, as is the opaque plan type, the `documentPaths` disclosure list, and the `conflict/document-changed` reason. Concurrency is detected once, by the CLI, for every file it writes. A document an adapter inspects but does not change is no longer journaled or restored.
+**Breaking: the MCP capability is `mcpServers: false | { plan }`.** `apply` is gone, as is the opaque plan type and the `conflict/document-changed` reason. Concurrency is detected once, by the CLI, for every file it writes. A document an adapter inspects but does not change is no longer journaled or restored.
+
+**`plan` returns `documentPaths`: every file it was computed from, including when it changes none of them.** The list grants nothing — a file named there and not changed is never written, journaled, or restored. It exists so the CLI can establish, before it asks for approval, that no two selected adapters manage the same configuration file; two that do now fail with both named, because neither ordering leaves both plans applicable. Every plan is also recomputed immediately before its own commit, including one that concluded nothing needed writing, so a document edited while the approval screen was open is reported rather than quietly reported as configured.
 
 **Breaking: every asset request carries `projectRoot`, at every scope.** Adapters must not derive the project from the process working directory: a caller installing into a tree it is not running inside would otherwise materialize assets somewhere else.
 

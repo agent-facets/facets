@@ -16,16 +16,19 @@ import type { FileMutation, FileState } from '@agent-facets/common'
 import { inspectFileState } from '@agent-facets/common'
 import { nodeFsSyscalls } from '../syscalls.ts'
 import { FileTransaction } from '../transaction.ts'
-import { bytes, faultAfter, faultBefore, makeTempRoot, removeTempRoot } from './helpers.ts'
+import { bytes, faultAfter, faultBefore, makeTempRoot, occupyOnMkdir, removeTempRoot } from './helpers.ts'
 
 let root: string
+let outside: string
 
 beforeEach(() => {
   root = makeTempRoot('facet-fs-txn-')
+  outside = makeTempRoot('facet-fs-outside-')
 })
 
 afterEach(() => {
   removeTempRoot(root)
+  removeTempRoot(outside)
 })
 
 /** The state a planner would have observed. */
@@ -253,6 +256,59 @@ describe('batch atomicity', () => {
   })
 })
 
+/**
+ * The preflight walks a path's ancestors, but stops at the first component
+ * that does not exist yet — the write creates the rest. Everything from there
+ * to the staging open is guarded by directory creation alone.
+ */
+describe('losing the mkdir race mid-batch', () => {
+  test('refuses to write through a symlink that appeared below the boundary', () => {
+    const component = join(root, 'agents')
+    const file = join(component, 'reviewer.md')
+    const sys = occupyOnMkdir(
+      (path) => path === component,
+      (path) => symlinkSync(outside, path),
+    )
+
+    const transaction = new FileTransaction(sys)
+    const result = transaction.apply(
+      mutate({ kind: 'write', path: file, boundary: root, expected: { kind: 'absent' }, contents: bytes('body\n') }),
+    )
+
+    if (result.ok) expect.unreachable()
+    if (result.stage !== 'aborted') expect.unreachable()
+    if (result.failure.kind !== 'inspect-failed') expect.unreachable()
+    expect(result.failure.failure.reason).toBe('symlinked-ancestor')
+    expect(result.rollback.kind).toBe('complete')
+    expect(existsSync(join(outside, 'reviewer.md'))).toBe(false)
+    expect(transaction.hasMutations()).toBe(false)
+  })
+
+  test('refuses on the rollback path too, where no ancestor walk precedes it', () => {
+    mkdirSync(join(root, 'nested'))
+    const file = join(root, 'nested', 'doc.md')
+    writeFileSync(file, 'body\n')
+
+    // Deleting the file sweeps the directory it emptied, so the rollback has
+    // to recreate it — the one call site with no preflight in front of it.
+    const sys = occupyOnMkdir(
+      (path) => path === join(root, 'nested'),
+      (path) => symlinkSync(outside, path),
+    )
+    const transaction = new FileTransaction(sys)
+    expect(transaction.apply(mutate(remove(file))).ok).toBe(true)
+    expect(existsSync(join(root, 'nested'))).toBe(false)
+
+    const outcome = transaction.rollback()
+
+    if (outcome.kind !== 'incomplete') expect.unreachable()
+    const issue = outcome.issues[0]
+    if (issue.kind !== 'inspect-failed') expect.unreachable()
+    expect(issue.failure.reason).toBe('symlinked-ancestor')
+    expect(existsSync(join(outside, 'doc.md'))).toBe(false)
+  })
+})
+
 describe('coalescing repeated mutations of one path', () => {
   test('A → B → C collapses to A → C', () => {
     const file = join(root, 'config.json')
@@ -470,6 +526,23 @@ describe('directory cleanup', () => {
     expect(existsSync(file)).toBe(false)
     expect(existsSync(join(root, 'made'))).toBe(true)
     expect(read(stranger)).toBe('not ours\n')
+  })
+
+  test('sweeps directories a refused walk created before it stopped', () => {
+    const blocked = join(root, 'made', 'blocked')
+    const file = join(blocked, 'asset.md')
+    // `made` is created, then the walk is refused at `blocked`.
+    const sys = faultBefore('mkdir', (path) => path === blocked)
+
+    const transaction = new FileTransaction(sys)
+    const result = transaction.apply(
+      mutate({ kind: 'write', path: file, boundary: root, expected: { kind: 'absent' }, contents: bytes('x') }),
+    )
+
+    if (result.ok) expect.unreachable()
+    if (result.stage !== 'aborted') expect.unreachable()
+    expect(result.rollback.removedDirectories).toContain(join(root, 'made'))
+    expect(existsSync(join(root, 'made'))).toBe(false)
   })
 
   test('a directory recreated by someone else is no longer ours to remove', () => {

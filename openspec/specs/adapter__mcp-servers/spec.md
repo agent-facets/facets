@@ -80,7 +80,9 @@ OpenCode merges `opencode.json` and `opencode.jsonc`, so the OpenCode adapter SH
 
 A supporting adapter SHALL be able to inspect its native project configuration and compute the complete desired MCP server change without modifying any file. A plan SHALL report structured per-server outcomes that distinguish absent entries, equivalent entries, divergent entries, and occupied entries whose effective identities are or are not already owned. A parse or native validation failure SHALL leave the document unchanged.
 
-A plan SHALL report either that nothing needs writing, or the complete set of document changes that realizes the desired state. Each planned change SHALL name an absolute path, the exact state that document was observed in — including the absence of a document that does not yet exist — and the exact bytes to commit. A document the plan does not change SHALL NOT appear in it: inspecting a file is not a reason to own it, and a file this run leaves alone is one no later restoration may overwrite.
+A plan SHALL report either that nothing needs writing, or the complete set of document changes that realizes the desired state. Each planned change SHALL name an absolute path, the exact state that document was observed in — including the absence of a document that does not yet exist — and the exact bytes to commit. A document the plan does not change SHALL NOT be among its changes: inspecting a file is not a reason to own it, and a file this run leaves alone is one no later restoration may overwrite.
+
+Separately from its changes, a plan SHALL name every configuration document it was computed from, including when it changes none of them. That disclosure SHALL confer no ownership: a document named there and not changed SHALL NOT be recorded, written, or restored. It exists so the system can determine, before anything is approved or written, that no two selected adapters reconcile one file.
 
 #### Scenario: A plan reports complete outcomes
 
@@ -91,6 +93,13 @@ A plan SHALL report either that nothing needs writing, or the complete set of do
 
 - **WHEN** an adapter inspects several configuration layers and only one needs writing
 - **THEN** the plan SHALL contain a change for that layer alone
+- **AND** the plan SHALL still name both layers as documents it was computed from
+
+#### Scenario: A plan that changes nothing still says what it read
+
+- **WHEN** every desired server is already present and equivalent
+- **THEN** the plan SHALL report that nothing needs writing
+- **AND** it SHALL still name the documents it reached that conclusion from
 
 #### Scenario: A planned change states what it was computed from
 
@@ -139,6 +148,28 @@ Adapter conflicts SHALL be distinguishable by reason, and each reason SHALL carr
 
 - **WHEN** a native format cannot express the desired state
 - **THEN** the adapter SHALL report a conflict carrying the document and its own format-layer detail
+
+### Requirement: One selected adapter reconciles each configuration document
+
+No two selected adapters SHALL reconcile the same tool configuration file. Two adapters sharing one file have no workable ordering: each plans against a document the other rewrites, so whichever writes second would apply a plan computed from content that is no longer there. When selected adapters are found to share a file, the operation SHALL fail before any approval is requested and before any mutation, and the failure SHALL name every adapter involved and the file each named. Paths that differ only by normalization or letter case SHALL be treated as one file, because a case-folding filesystem treats them as one.
+
+The remedy SHALL be to deselect an adapter rather than to upgrade one: both adapters are behaving correctly, and no release changes the answer.
+
+#### Scenario: Two adapters sharing a file stop the operation
+
+- **WHEN** two selected adapters reconcile the same configuration file
+- **THEN** the operation SHALL fail before requesting MCP approval and before any mutation
+- **AND** the failure SHALL name both adapters and the file
+
+#### Scenario: Every claimant is named
+
+- **WHEN** three selected adapters reconcile one configuration file
+- **THEN** the failure SHALL name all three rather than the first pair
+
+#### Scenario: Adapters with their own files are unaffected
+
+- **WHEN** each selected adapter reconciles a different configuration file
+- **THEN** the operation SHALL proceed normally
 
 ### Requirement: Unrelated native configuration is preserved
 

@@ -15,7 +15,13 @@ export {
   isNotFound,
   nodeFileReadSyscalls,
 } from './file-inspect.ts'
-export type { FileMutation, FileMutationAction, FileState, RegularFileState } from './file-mutation.ts'
+export type {
+  AbsentFileState,
+  FileMutation,
+  FileMutationAction,
+  FileState,
+  RegularFileState,
+} from './file-mutation.ts'
 export {
   ABSENT_FILE,
   bytesEqual,
@@ -24,6 +30,6 @@ export {
   regularFile,
 } from './file-mutation.ts'
 export { splitFrontMatter } from './front-matter.ts'
-export { normalizeLineEndings } from './text.ts'
+export { decodeFileText, normalizeLineEndings } from './text.ts'
 export type { AssetType, NonEmptyArray, Scope, Validated, ValidationError } from './types.ts'
 export { isNonEmpty } from './types.ts'

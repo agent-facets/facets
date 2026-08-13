@@ -1,5 +1,5 @@
 import type { Adapter, McpServerCapabilityFailure } from '@agent-facets/adapter'
-import type { AssetType, Scope, ValidationError } from '@agent-facets/common'
+import type { AssetType, NonEmptyArray, Scope, ValidationError } from '@agent-facets/common'
 import type {
   CollisionGroup,
   IntegrityFailure,
@@ -10,7 +10,7 @@ import type {
 } from '@agent-facets/protocol'
 import type { AdapterCompatibilityFailure } from '../adapters/api-compatibility.ts'
 import type { McpUnsupportedAdapter } from '../adapters/mcp-support.ts'
-import type { FileRollbackOutcome, FileTransactionFailure } from '../fs/index.ts'
+import type { FailedBatch, FileRollbackOutcome } from '../fs/index.ts'
 import type { UnsupportedManifestVersion } from '../manifest/project-files.ts'
 import type { RegistryError } from '../registry/index.ts'
 import type { ParseError, Source } from '../sources/facet/types.ts'
@@ -18,6 +18,7 @@ import type { AssetTakeoverResolver } from './asset-takeover.ts'
 import type { MaterializationAliasProblem } from './commit/collision-plan.ts'
 import type { CollisionResolver } from './commit/compose.ts'
 import type { McpConsentPolicy, McpConsentRequest } from './mcp/consent.ts'
+import type { McpDocumentOverlap } from './mcp/documents.ts'
 import type { McpConfigurationOutcome, McpConsentRequestSummary, McpInstallOutcomes } from './mcp/outcomes.ts'
 import type { McpContractViolation } from './mcp/prepare.ts'
 
@@ -262,8 +263,13 @@ export type StageEvent =
    * untracked. Surfaced without `--verbose` for the same reason
    * `receipt-unavailable` is — a silent success that quietly gives up
    * deletion authority is the one outcome a user cannot deduce later.
+   *
+   * `residue` is what the attempt to write it left behind. Usually nothing;
+   * when the write landed and then could not be undone, the paths involved,
+   * because a success that leaves a file it could not put back still owes the
+   * user those paths.
    */
-  | { kind: 'receipt-unpersisted'; cause: string }
+  | { kind: 'receipt-unpersisted'; cause: string; residue: FileRollbackOutcome }
   /**
    * A removal could not be answered from local state and fell back to
    * ordinary resolution. `reason` is the gate that refused, verbatim.
@@ -503,11 +509,17 @@ export type RunInstallFailure =
    * the path, or a syscall failed. `subject` names what the change was for so
    * a report can be specific without the failure shape being duplicated three
    * times.
+   *
+   * `batch` carries the failure AND, when the batch aborted, what its own
+   * immediate unwind achieved. That unwind is never journaled — an aborted
+   * batch merges nothing — so this is the only account of those paths that
+   * will ever exist, and dropping it is how a run ends up reporting a clean
+   * rollback over a file it left changed.
    */
   | {
       code: 'FILESYSTEM_TRANSACTION_FAILED'
       subject: TransactionSubject
-      failure: FileTransactionFailure
+      batch: FailedBatch
     }
   /** The adapter's read-only planning reported a structured failure. */
   | {
@@ -654,6 +666,25 @@ export type RunInstallFailure =
    * adapter, not in the project's configuration, and no user edit fixes it.
    */
   | { code: 'MCP_CONTRACT_VIOLATION'; violation: McpContractViolation }
+  /**
+   * Two or more selected adapters reconcile the same native document.
+   *
+   * Neither ordering works: each plans against a document the other rewrites,
+   * so whichever writes second applies a plan computed from bytes that are
+   * gone. Raised before approval and before any mutation, and carrying every
+   * group so the remedy can be decided once.
+   */
+  | { code: 'MCP_DOCUMENT_OVERLAP'; overlaps: NonEmptyArray<McpDocumentOverlap> }
+  /**
+   * Re-planning immediately before the write reached a different conclusion
+   * about what this run does.
+   *
+   * Not an adapter fault: it read its document again and reported what it
+   * found. Something outside this run changed that document — plausibly while
+   * the approval prompt was open — so what would be written is no longer what
+   * was approved. Nothing of this adapter's was written.
+   */
+  | { code: 'MCP_NATIVE_STATE_DRIFT'; adapter: string; documents: ReadonlyArray<string> }
   /**
    * MCP configuration needs approval and this caller cannot give it: a
    * non-interactive command without `--accept-mcp`, or frozen mode, which
