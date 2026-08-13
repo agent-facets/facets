@@ -5,6 +5,64 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-08-13" description="agent-facets 0.31.0 ships MCP server configuration end-to-end; hardened conflict, terminal, and file-format handling" tags={["CLI", "Improvement"]} rss={{
+  title: "agent-facets 0.31.0 on npm: MCP server configuration is live end-to-end",
+  description: "agent-facets@0.31.0, @agent-facets/protocol@0.31.0, @agent-facets/adapter@0.29.0, and the first-party Claude Code (0.10.0), Codex (0.8.0), and OpenCode (0.11.0) adapters are now on npm. This is the CLI release that turns on the MCP server configuration feature previewed in the 2026-08-10 entry: `facet add`, `facet install`, and `facet remove` now translate concrete stdio and Streamable HTTP server declarations in facet.json into project-scoped .mcp.json (Claude Code), opencode.jsonc or opencode.json (OpenCode), and .codex/config.toml (Codex). Interactive runs show one MCP approval screen with Decline selected by default; non-interactive and frozen runs need --accept-mcp. Run `facet self-update` to pick it up. This release also hardens the surrounding surfaces: collision reports now name each conflicting adapter key explicitly, terminal output escapes control characters and preserves BOMs and existing indentation when rewriting JSON/JSONC/TOML config, opencode.jsonc rewrites keep comment placement stable, and the install failure block reports the specific gate that stopped the run instead of a generic error."
+}}>
+  ## `agent-facets@0.31.0` on npm
+
+  MCP server configuration is now live end-to-end. The CLI release that
+  turns on the feature previewed in the [2026-08-10 entry](#2026-08-10)
+  is published:
+
+  - `agent-facets@0.31.0`
+  - `@agent-facets/protocol@0.31.0`
+  - `@agent-facets/adapter@0.29.0`
+  - `@agent-facets/adapter-claude-code@0.10.0`
+  - `@agent-facets/adapter-codex@0.8.0`
+  - `@agent-facets/adapter-opencode@0.11.0`
+
+  Run [`facet self-update`](/cli/self-update) to pick it up.
+
+  With this release, a facet declaring
+  [MCP servers](/specification/manifest#mcp-server-declarations) in
+  `facet.json` is configured in every connected tool on install --
+  `.mcp.json` for Claude Code, `opencode.jsonc` or `opencode.json` for
+  OpenCode, `.codex/config.toml` for Codex. Interactive runs pause on the
+  MCP approval screen with **Decline** selected by default; non-interactive
+  and frozen runs need [`--accept-mcp`](/cli/install#accept-mcp) on `facet
+  add`, `facet install`, or `facet remove`.
+
+  ## Hardening across the MCP stack
+
+  A round of fixes lands alongside the release:
+
+  - **Conflict reports name the exact key.** Cross-facet collisions and
+    MCP takeover prompts now identify each conflicting adapter key by
+    name, so a report never leaves you guessing which entry a facet is
+    claiming.
+  - **Terminal output escapes control characters.** Server names,
+    commands, arguments, and environment values shown on the approval
+    screen and in failure reports are escaped, so a hostile declaration
+    cannot rewrite what your terminal renders.
+  - **BOM and indentation preservation.** Rewrites of `.mcp.json`,
+    `opencode.jsonc`/`opencode.json`, and `.codex/config.toml` keep any
+    existing byte-order mark and reuse the file's own indentation,
+    instead of forcing a reformat every time an entry is added or removed.
+  - **`opencode.jsonc` comments stay where you put them.** The JSONC
+    rewriter preserves comment placement across a reconciliation, so a
+    project-owned edit does not shuffle notes attached to unrelated
+    settings.
+  - **Install failures name the gate.** When an install stops before
+    writing, the failure block now names the specific gate that halted
+    it (missing MCP approval, unsupported adapter API, collision, drift)
+    rather than a generic message.
+
+  See [`facet install`](/cli/install) and
+  [Custom adapters](/guides/custom-adapters#mcp-server-configuration)
+  for the current surface.
+</Update>
+
 <Update label="2026-08-10" description="Facets can declare MCP servers; consent before configuration; adapter API 0.2; breaking format bumps" tags={["CLI", "Breaking", "New Feature"]} rss={{
   title: "Facets can declare MCP servers, with consent before anything is configured",
   description: "A facet can now declare concrete MCP servers in facet.json, and installing it configures them in every connected tool -- .mcp.json for Claude Code, opencode.jsonc for OpenCode, .codex/config.toml for Codex. A declaration is portable connection information, not a package reference: either a stdio server with a command, ordered args, and literal env assignments, or an http server with an absolute URL. Declaration objects are closed, so an unrecognized member like headers or cwd is rejected rather than ignored. A facet whose only deliverable is a server is now valid. Because configuring a server lets your coding tool run a command or open a connection, a new or changed declaration requires explicit approval before anything is written. Interactive runs show one screen with the exact command, arguments, and environment values or the exact URL, with Decline selected by default. Non-interactive runs fail before mutation and print the full list; pass the new --accept-mcp flag on add, install, or remove to approve, or record an omission in facets.json to refuse one. Approval is machine-local: it lives in the install receipt, never in committed project files, so a teammate who clones approved state approves it themselves. Servers can be aliased or omitted per project like assets, and two facets declaring different servers at one name is a collision resolved in the same workspace -- while two facets declaring the same server identically simply agree. Breaking: the old speculative server reference forms (a version string, or an object with image) are now rejected in both current and legacy manifests, with no fallback and no warning; republish with a concrete declaration. Breaking: facets.json advances to manifestVersion 0.2, which adds the servers override group; 0.1 and unversioned documents still read and migrate. Breaking: the machine-local install receipt advances to 0.4 to record configuration ownership and approval; earlier receipts keep asset authority but confer neither. Breaking: the adapter API advances to 0.2 with a required mcpServers field, and the CLI now supports exactly the set 0.1 and 0.2 -- a 0.1 adapter still works for projects with no MCP servers. facets.lock deliberately stays at 0.3, because a facet's integrity already covers the facet.json its declarations live in. Facets never installs, launches, connects to, or authenticates to a declared server, and never writes user-wide or system-wide tool configuration."
