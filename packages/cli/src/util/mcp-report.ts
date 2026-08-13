@@ -1,4 +1,9 @@
-import type { McpServerCapabilityFailure, ReadonlyMcpServerDeclaration } from '@agent-facets/adapter'
+import type {
+  McpConflictFailure,
+  McpServerCapabilityFailure,
+  ReadonlyMcpServerDeclaration,
+} from '@agent-facets/adapter'
+import { terminalCommandLine, terminalEnvironmentAssignment, terminalLiteral } from '@agent-facets/adapter/terminal'
 import type {
   McpConsentRequest,
   McpContractViolation,
@@ -8,7 +13,6 @@ import type {
 } from '@agent-facets/engine'
 import { adapterInstallCommand } from './adapter-install-errors.ts'
 import { omitSnippet, serverManifestLocation, UNCHANGED_FOOTER } from './collision-report.ts'
-import { consentCommandLine, consentEnvironmentAssignment, consentLiteral } from './consent-literal.ts'
 
 /**
  * Shared renderings for MCP configuration failures.
@@ -18,10 +22,12 @@ import { consentCommandLine, consentEnvironmentAssignment, consentLiteral } from
  * non-interactive stderr report — and a user comparing them should not find
  * three different descriptions of one condition.
  *
- * With one deliberate exception — {@link describeDeclarationInFull} and the
- * consent report built on it — nothing here renders a declaration. Commands,
- * arguments, environment assignments, and URLs belong only on a surface whose
- * purpose is showing a user what they would be authorizing.
+ * Only {@link describeDeclarationInFull} and the consent report built on it
+ * reproduce a declaration *completely*; a diagnostic here reproduces at most
+ * the single value that explains the failure, and never the fields around it.
+ * Both go through the SDK's canonical escaped rendering, which is also what
+ * the adapters' own failure data is rendered with, so one value cannot appear
+ * two ways depending on which surface a user is looking at.
  */
 
 /** What an unsupported adapter means, and what to do about it. */
@@ -47,7 +53,15 @@ export function describeUnsupportedMcpAdapter(entry: McpUnsupportedAdapter): Uns
   }
 }
 
-/** One line naming what an adapter's MCP preparation or application hit. */
+/**
+ * One line naming what an adapter's MCP preparation or application hit.
+ *
+ * The three conflict reasons get three sentences because they are three
+ * conditions with three remedies. They shared one sentence while they shared
+ * one shape, and it was wrong for two of them: a drifted document can hold the
+ * desired servers perfectly well, and an interpolated literal is not about a
+ * document at all.
+ */
 export function describeMcpCapabilityFailure(failure: McpServerCapabilityFailure): string {
   switch (failure.code) {
     case 'io-failed':
@@ -57,7 +71,42 @@ export function describeMcpCapabilityFailure(failure: McpServerCapabilityFailure
     case 'validation-failed':
       return `${failure.path} is not in a shape it can safely edit: ${failure.message}`
     case 'conflict':
-      return `${failure.path} cannot hold the desired servers without destroying native state: ${failure.message}`
+      return describeMcpConflict(failure)
+  }
+}
+
+/**
+ * The sub-line that says why the condition matters, where the line above it
+ * does not already say so.
+ *
+ * `undefined` for the failures whose own description is the whole story — a
+ * parse error and a native-format refusal both already carry the adapter's
+ * account of what is wrong, and a second sentence restating it in weaker terms
+ * makes the block longer without making it clearer.
+ */
+export function describeMcpCapabilityHint(failure: McpServerCapabilityFailure): string | undefined {
+  if (failure.code !== 'conflict') return undefined
+  switch (failure.reason) {
+    case 'interpolation':
+      return 'that tool would substitute the value before running the server, so what ran would not be what was approved'
+    case 'document-changed':
+      return 'another process edited it after it was inspected, so nothing was written to it'
+    case 'native-state':
+      return undefined
+  }
+}
+
+function describeMcpConflict(failure: McpConflictFailure): string {
+  switch (failure.reason) {
+    case 'interpolation':
+      // The offending value is the whole point of the diagnostic — a user
+      // cannot fix a declaration they are only told is wrong — so it is shown
+      // exactly, escaped, and with nothing else from the declaration beside it.
+      return `server "${failure.serverName}" declares a value it would expand rather than use literally: ${terminalLiteral(failure.value)}`
+    case 'document-changed':
+      return `${failure.path} changed after it was inspected; nothing was written`
+    case 'native-state':
+      return `${failure.path} cannot hold the desired servers without destroying native state: ${failure.detail}`
   }
 }
 
@@ -69,16 +118,16 @@ export function describeMcpCapabilityFailure(failure: McpServerCapabilityFailure
  * failure that exists to tell a non-interactive caller what `--accept-mcp`
  * would authorize. A user cannot approve execution from an elision.
  *
- * Every value goes through {@link consentLiteral}, so the rendering is
+ * Every value goes through the SDK's `terminalLiteral`, so the rendering is
  * complete AND unambiguous: argument boundaries survive, two different argv
  * arrays cannot produce one line, and nothing in a declaration can add a line
  * or issue a terminal control.
  */
 export function describeDeclarationInFull(declaration: ReadonlyMcpServerDeclaration): string[] {
-  if (declaration.type === 'http') return [`http ${consentLiteral(declaration.url)}`]
-  const lines = [`stdio ${consentCommandLine(declaration.command, declaration.args ?? [])}`]
+  if (declaration.type === 'http') return [`http ${terminalLiteral(declaration.url)}`]
+  const lines = [`stdio ${terminalCommandLine(declaration.command, declaration.args ?? [])}`]
   for (const [key, value] of Object.entries(declaration.env ?? {})) {
-    lines.push(`env ${consentEnvironmentAssignment(key, value)}`)
+    lines.push(`env ${terminalEnvironmentAssignment(key, value)}`)
   }
   return lines
 }

@@ -1,3 +1,4 @@
+import type { McpServerCapabilityFailure } from '@agent-facets/adapter'
 import type { RollbackOutcome, RunInstallFailure } from '@agent-facets/engine'
 import { describeDiskState } from '../../util/install-outcome.ts'
 import {
@@ -64,6 +65,34 @@ function lockfileDriftFix(
   return `re-run 'facet ${command}' without --frozen-lockfile: that records the lockfile drift listed above and drops the stale materialization choices in the same run`
 }
 
+/**
+ * The remedy for an adapter's own MCP failure, which depends on what it hit.
+ *
+ * "Repair the configuration document" was the shared answer while every one of
+ * these carried a document path, and it is wrong for two of the three: a
+ * document another process edited mid-run is not damaged, and an interpolated
+ * literal is a problem with the declaration in `facets.json` — there is no
+ * document to send the user to, and the one previously named was a guess.
+ */
+function mcpCapabilityFix(
+  failure: McpServerCapabilityFailure,
+  rollback: RollbackOutcome,
+  command: 'add' | 'install' | 'remove',
+): string {
+  const state = describeDiskState(rollback)
+  if (failure.code !== 'conflict') {
+    return `${state}; repair ${failure.path}, then re-run 'facet ${command}'`
+  }
+  switch (failure.reason) {
+    case 'interpolation':
+      return `edit or omit "${failure.serverName}" in facets.json so it declares no value that tool would expand, then re-run 'facet ${command}'`
+    case 'document-changed':
+      return `${state}; ${failure.path} was changed by something else mid-run — re-run 'facet ${command}'`
+    case 'native-state':
+      return `${state}; repair ${failure.path} so the desired servers can be written, then re-run 'facet ${command}'`
+  }
+}
+
 export function installFailureFix(
   failure: RunInstallFailure,
   rollback: RollbackOutcome,
@@ -115,6 +144,7 @@ export function installFailureFix(
       return `${describeDiskState(rollback)}. Re-run 'facet ${command}' to review the servers again, or omit them in facets.json`
     case 'MCP_PREPARE_FAILED':
     case 'MCP_APPLY_FAILED':
+      return mcpCapabilityFix(failure.failure, rollback, command)
     case 'MCP_DOCUMENT_UNREADABLE':
       return `${describeDiskState(rollback)}; repair the configuration document named above, then re-run 'facet ${command}'`
     case 'MCP_CONTRACT_VIOLATION':

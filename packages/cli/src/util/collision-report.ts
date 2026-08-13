@@ -1,3 +1,4 @@
+import { terminalLiteral } from '@agent-facets/adapter/terminal'
 import type { AssetType, Scope } from '@agent-facets/common'
 import type {
   MaterializationAliasProblem,
@@ -222,6 +223,12 @@ export const UNCHANGED_FOOTER: readonly string[] = [
  * belongs on the approval screen, which is the one place whose purpose is
  * showing a user what they are authorizing.
  *
+ * The two values that do appear go through the SDK's canonical escaped
+ * rendering, the same one the consent surfaces use. A command comes from a
+ * facet, and an unescaped one on a failure surface can erase the line above
+ * it or recolor the heading that introduces it — a claimant impersonating the
+ * report that is asking the user to choose between claimants.
+ *
  * The fingerprint prefix is the tiebreaker. Two colliding declarations can
  * share a command and differ only in arguments or environment, and a user
  * shown two identical lines learns nothing about which row is which. The
@@ -232,7 +239,9 @@ export function describeClaimantDeclaration(
   fingerprint: McpServerFingerprint,
 ): string {
   const summary =
-    declaration.type === 'stdio' ? `stdio, command "${declaration.command}"` : `http, ${originOf(declaration.url)}`
+    declaration.type === 'stdio'
+      ? `stdio, command ${terminalLiteral(declaration.command)}`
+      : `http, ${terminalLiteral(originOf(declaration.url))}`
   return `${summary} · ${shortFingerprint(fingerprint)}`
 }
 

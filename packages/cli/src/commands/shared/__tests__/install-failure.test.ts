@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import type { McpServerCapabilityFailure } from '@agent-facets/adapter'
 import { assetIdentity, type RollbackOutcome, type RunInstallFailure } from '@agent-facets/engine'
 import { describeDiskState } from '../../../util/install-outcome.ts'
 import { ACCEPT_MCP_FLAG } from '../flags.ts'
@@ -207,6 +208,66 @@ describe('installFailureFix — MCP failures', () => {
       asset: assetIdentity('project', 'skill', 'review'),
     }
     expect(installFailureFix(failure, rollback, 'install')).toContain(describeDiskState(rollback))
+  })
+})
+
+describe('installFailureFix — one remedy per conflict reason', () => {
+  function prepareFailed(failure: McpServerCapabilityFailure): RunInstallFailure {
+    return { code: 'MCP_PREPARE_FAILED', adapter: 'opencode', failure }
+  }
+
+  // The declaration is the problem, so the remedy is the manifest. Sending a
+  // user to "the configuration document named above" — the old shared line —
+  // named a document this failure does not have.
+  test('an interpolated literal sends the user to facets.json, not to a document', () => {
+    const fix = installFailureFix(
+      prepareFailed({ code: 'conflict', reason: 'interpolation', serverName: 'fs', value: '{env:TOKEN}' }),
+      notNeeded,
+      'install',
+    )
+
+    expect(fix).toContain('facets.json')
+    expect(fix).toContain('"fs"')
+    expect(fix).not.toContain('document')
+  })
+
+  test('a drifted document is a re-run, not a repair', () => {
+    const fix = installFailureFix(
+      prepareFailed({ code: 'conflict', reason: 'document-changed', path: '/p/opencode.jsonc' }),
+      succeeded,
+      'install',
+    )
+
+    expect(fix).toContain('/p/opencode.jsonc')
+    expect(fix).toContain('changed by something else')
+    expect(fix).not.toContain('repair')
+  })
+
+  test('a native-state conflict names the document to repair', () => {
+    const fix = installFailureFix(
+      prepareFailed({ code: 'conflict', reason: 'native-state', path: '/p/config.toml', detail: 'inline table' }),
+      succeeded,
+      'install',
+    )
+
+    expect(fix).toContain('repair /p/config.toml')
+  })
+
+  test.each([notNeeded, succeeded, partial])('a document-bearing reason still reports $kind', (rollback) => {
+    const failure = prepareFailed({ code: 'conflict', reason: 'document-changed', path: '/p/opencode.jsonc' })
+    expect(installFailureFix(failure, rollback, 'install')).toContain(describeDiskState(rollback))
+  })
+
+  test.each(COMMANDS)('every reason names the %s command', (command) => {
+    const failures: McpServerCapabilityFailure[] = [
+      { code: 'conflict', reason: 'interpolation', serverName: 'fs', value: '{env:T}' },
+      { code: 'conflict', reason: 'document-changed', path: '/p/a.json' },
+      { code: 'conflict', reason: 'native-state', path: '/p/a.json', detail: 'nope' },
+      { code: 'parse-failed', path: '/p/a.json', message: 'bad' },
+    ]
+    for (const failure of failures) {
+      expect(installFailureFix(prepareFailed(failure), notNeeded, command)).toContain(`facet ${command}`)
+    }
   })
 })
 

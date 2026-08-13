@@ -1,3 +1,4 @@
+import type { McpServerCapabilityFailure } from '@agent-facets/adapter'
 import type { LockfileDriftEntry, RollbackOutcome, RunInstallFailure, RunInstallResult } from '@agent-facets/engine'
 import { Box, Text } from 'ink'
 import type React from 'react'
@@ -15,6 +16,7 @@ import {
   describeApprovalHeading,
   describeDeclarationInFull,
   describeMcpCapabilityFailure,
+  describeMcpCapabilityHint,
   describeMcpContractViolation,
   describeTakeoverHeading,
   describeUnsupportedMcpAdapter,
@@ -112,6 +114,19 @@ function RollbackNote({ rollback }: { rollback: RollbackOutcome }): React.JSX.El
     )
   }
   return <Text color={THEME.hint}> {diskStateSentence(rollback)}</Text>
+}
+
+/**
+ * Why an adapter's MCP failure matters, when the line above it does not say.
+ *
+ * A component rather than an inline conditional because both MCP capability
+ * arms need it and neither should have to remember whether this particular
+ * failure has a hint at all.
+ */
+function McpCapabilityHint({ failure }: { failure: McpServerCapabilityFailure }): React.JSX.Element | null {
+  const hint = describeMcpCapabilityHint(failure)
+  if (hint === undefined) return null
+  return <Text color={THEME.hint}> {hint}</Text>
 }
 
 /**
@@ -637,6 +652,7 @@ function failureDetail(failure: RunInstallFailure): React.JSX.Element {
             ✕ {failure.adapter} could not plan its MCP configuration
           </Text>
           <Text> {describeMcpCapabilityFailure(failure.failure)}</Text>
+          <McpCapabilityHint failure={failure.failure} />
         </Box>
       )
     case 'ASSET_TAKEOVER_CANCELLED':
@@ -655,6 +671,7 @@ function failureDetail(failure: RunInstallFailure): React.JSX.Element {
             ✕ {failure.adapter} could not write its MCP configuration
           </Text>
           <Text> {describeMcpCapabilityFailure(failure.failure)}</Text>
+          <McpCapabilityHint failure={failure.failure} />
         </Box>
       )
     case 'MCP_DOCUMENT_UNREADABLE':

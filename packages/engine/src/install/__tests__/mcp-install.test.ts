@@ -674,7 +674,7 @@ describe('mcp — application and rollback', () => {
     writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
     const first = mcpAdapter('first')
     const second = mcpAdapter('second', {
-      failApply: { code: 'conflict', path: '/nope', message: 'cannot represent' },
+      failApply: { code: 'conflict', reason: 'native-state', path: '/nope', detail: 'cannot represent' },
     })
 
     const result = await runInstall({

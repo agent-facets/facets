@@ -166,6 +166,20 @@ The SDK SHALL provide default MCP preparation and application scaffolding that a
 
 The scaffolding SHALL support a plan that touches more than one native document, so an adapter whose tool merges several configuration layers is not forced to write its own application path. An adapter SHALL be able to override the default preparation or application when its tool genuinely requires it.
 
+The scaffolding SHALL reject an edit naming a document the adapter did not disclose, before the plan becomes applicable. A caller journals restorable state only for the disclosed set, so an undisclosed write could not be undone; detecting it after the write has already happened is too late.
+
+The SDK SHALL also provide the canonical escaped rendering for any declaration value reaching a terminal, so that an adapter's structured failure data and a consumer's display of it cannot disagree about what is safe to print.
+
+#### Scenario: An undisclosed edit never becomes an applicable plan
+
+- **WHEN** an adapter renders an edit for a document absent from the set it disclosed
+- **THEN** preparation SHALL reject it rather than return a plan a caller could apply
+
+#### Scenario: One escaped rendering is available to every adapter
+
+- **WHEN** an adapter author needs to reproduce a declaration value safely
+- **THEN** the SDK SHALL supply that rendering rather than requiring the author to implement one
+
 The plan type an adapter's preparation produces SHALL remain visible to its own application operation through adapter definition, so both operations are checked against one plan shape rather than an erased one. At the consumer boundary the plan SHALL remain opaque, and a consumer SHALL NOT be able to read it.
 
 #### Scenario: Author supplies only tool-specific parts

@@ -32,6 +32,7 @@ export type { McpNativeMatch, ReconcileMcpServersInput } from './mcp-reconcile.t
 export { mcpDeclarationLiterals, mcpOutcomesRequireWrite, reconcileMcpServers } from './mcp-reconcile.ts'
 export type {
   ApplyMcpServersResult,
+  McpConflictFailure,
   McpServerCapability,
   McpServerCapabilityFailure,
   McpServerContribution,
@@ -60,6 +61,7 @@ export {
 } from './mcp-text-plan.ts'
 export type { SkillBundlePaths } from './skill-bundle.ts'
 export { deleteSkillBundle, installSkillBundle, readSkillBundle } from './skill-bundle.ts'
+export { terminalCommandLine, terminalEnvironmentAssignment, terminalLiteral } from './terminal.ts'
 export type {
   Adapter,
   AdapterAssetFailure,

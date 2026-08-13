@@ -103,6 +103,14 @@ A supporting adapter SHALL apply a prepared complete server set as one atomic up
 
 A prepared plan SHALL carry the exact prior text of every document it would write, including the absence of a document that does not yet exist. Immediately before writing, application SHALL re-read each such document and compare it with that recorded prior text. When any of them differs, application SHALL write nothing at all and SHALL return a structured conflict identifying the document. No locking, merging, or rebasing is required: a document another process changed after preparation is reported rather than overwritten.
 
+Conflicts SHALL be distinguishable by reason, and each reason SHALL carry only the facts that reason has. A concurrent-modification conflict SHALL identify the document it drifted on. A conflict arising because the native format cannot represent the desired state SHALL identify the document and the format-specific detail. An interpolation conflict SHALL identify the server and the offending value and SHALL NOT name a document, because it is decided before any write target is selected. No conflict SHALL carry preformatted display text in place of these fields.
+
+#### Scenario: Concurrent modification is distinguishable from an unrepresentable change
+
+- **WHEN** a caller receives a conflict
+- **THEN** it SHALL be able to tell a document that changed after inspection from a native format that cannot represent the desired state
+- **AND** each SHALL carry the document it concerns
+
 #### Scenario: Complete server batch commits together
 
 - **WHEN** a prepared change adds, updates, and removes several server entries in one document
@@ -129,6 +137,23 @@ A prepared plan SHALL carry the exact prior text of every document it would writ
 ### Requirement: Unrelated native configuration is preserved
 
 MCP reconciliation SHALL preserve semantic settings outside the portable MCP model and SHALL preserve server entries whose effective names are neither desired nor owned by the project. For an owned desired entry, native fields outside the portable model SHALL survive when they can be preserved without changing the desired launch or connection behavior. Adapters SHOULD maximize comment and formatting preservation.
+
+A document's encoding preamble is part of that document. An adapter whose parser cannot accept a leading byte-order mark SHALL remove it before parsing and restore it when writing, per document, so a marked document stays marked and an unmarked one stays unmarked. An adapter SHALL infer a document's indentation from the shallowest level that document actually uses, so that an edit does not re-lay-out lines it was not asked to change.
+
+#### Scenario: A byte-order mark survives an edit
+
+- **WHEN** a native document begins with a byte-order mark and one entry is written
+- **THEN** the written document SHALL still begin with that mark
+
+#### Scenario: One layer's mark does not spread to another
+
+- **WHEN** a tool merges two configuration documents and only one of them carries a byte-order mark
+- **THEN** a change writing both SHALL leave each document's mark exactly as it found it
+
+#### Scenario: A deeply indented line does not set the document's indentation
+
+- **WHEN** the first indented line of a document is nested more deeply than the member being edited
+- **THEN** the edit SHALL preserve the indentation of the member it writes rather than adopting the deeper line's width
 
 #### Scenario: Unrelated tool setting survives
 
@@ -173,7 +198,9 @@ Each supporting adapter SHALL compare an existing entry with the adapter-native 
 
 A portable declaration's values are literal, so an adapter SHALL write each authored command, argument, environment name, environment value, and URL to tool-native configuration exactly as supplied. Facets does not collect, synthesize, or manage authentication, and it SHALL NOT attempt secret detection, redaction, substitution, or any other rewriting of an authored literal.
 
-Several target tools expand their own configuration values. Before writing, an adapter whose tool performs such expansion SHALL check every authored literal for that tool's interpolation syntax, and SHALL return a structured conflict identifying the server and value rather than write a literal its tool would replace.
+Several target tools expand their own configuration values. Before writing, an adapter whose tool performs such expansion SHALL check every authored literal for that tool's interpolation syntax, and SHALL return a structured conflict identifying the server and value rather than write a literal its tool would replace. That conflict SHALL carry the offending value exactly as authored, and SHALL NOT attribute the failure to any native document: the declaration is unwritable for that tool wherever it would land.
+
+The check SHALL NOT depend on state carried by the pattern an adapter supplies, so that a guard cannot report a clean result for a value it would otherwise reject.
 
 #### Scenario: Authored environment value is written verbatim
 
@@ -185,7 +212,13 @@ Several target tools expand their own configuration values. Before writing, an a
 
 - **WHEN** an authored command, argument, environment value, or URL contains syntax the target tool would expand rather than use literally
 - **THEN** the adapter SHALL return a structured conflict naming the server and the offending value
+- **AND** that conflict SHALL name no native document
 - **AND** it SHALL write nothing
+
+#### Scenario: Every interpolated declaration in a batch is rejected
+
+- **WHEN** several desired servers each carry a value the target tool would expand
+- **THEN** each one checked SHALL be reported as a conflict rather than passing the guard
 
 ### Requirement: Failed operations restore tool configuration exactly
 

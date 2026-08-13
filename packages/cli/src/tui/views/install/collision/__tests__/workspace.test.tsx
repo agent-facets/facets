@@ -319,6 +319,39 @@ describe('CollisionWorkspace — MCP server claimants', () => {
     app.unmount()
   })
 
+  test('the row shows the summary and nothing else from the declaration', async () => {
+    // The workspace model carries the whole declaration, so the restraint is
+    // the renderer's alone — worth an assertion rather than a comment.
+    const detailed: CollisionFacetContribution[] = [
+      {
+        facet: 'alpha',
+        assets: [],
+        servers: [
+          {
+            name: 'filesystem',
+            declaration: {
+              type: 'stdio',
+              command: 'alpha-cmd',
+              args: ['secret-package'],
+              env: { TOKEN_NAME: 'hunter2' },
+            } as McpServerDeclaration,
+          },
+        ],
+      },
+      server('beta', 'filesystem'),
+    ]
+    const { app } = mount(detailed)
+    await nextTick()
+
+    await press(app, KEY.enter)
+    const group = visibleTerminalText(app.lastFrame() ?? '')
+    expect(group).toContain('stdio, command "alpha-cmd"')
+    expect(group).not.toContain('secret-package')
+    expect(group).not.toContain('TOKEN_NAME')
+    expect(group).not.toContain('hunter2')
+    app.unmount()
+  })
+
   test('a resolved server draft submits a servers override', async () => {
     const { app, resolutions } = mount(SERVERS)
     await nextTick()

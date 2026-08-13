@@ -137,7 +137,7 @@ export const claudeCodeMcpServers: McpServerCapability<McpTextPlan> = {
     return prepareMcpTextPlan({
       request,
       documentPaths: [path],
-      interpolation: { pattern: INTERPOLATION_PATTERN, path },
+      interpolation: { pattern: INTERPOLATION_PATTERN },
       presentNames: new Set(Object.keys(servers)),
       compare: (contribution) => compareEntry(servers[contribution.name], contribution.declaration),
       buildEdits: (outcomes) => {

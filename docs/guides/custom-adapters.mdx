@@ -281,10 +281,12 @@ The capability is deliberately split, and both halves operate on the **complete*
   Return structured `outcomes` — one per key — using `absent`, `equivalent`, or `divergent` (each carrying `ownership: 'tracked' | 'untracked'`), plus `obsolete-owned` (carrying `occupancy`) for an owned entry the desired set no longer names. Also return `documentPaths` (every document this change could affect, complete and non-empty) and an opaque `plan`.
 
   A parse or validation failure is a **value**, not a throw: `io-failed`, `parse-failed`, `validation-failed`, or `conflict`. The document must be left byte-for-byte unchanged.
+
+  A `conflict` carries a `reason`, and each reason carries only its own facts — `interpolation` names the server and the offending value (no document: nothing has been written anywhere), `document-changed` names the drifted document, and `native-state` names the document plus your format layer's detail. None of them carries a preformatted sentence; the CLI writes the wording and escapes the value.
 </ResponseField>
 
 <ResponseField name="apply({ plan })" type="Promise<ApplyResult>" required>
-  Consume the plan and perform **one atomic update per document**. Return `unchanged`, or `changed` with `changedPaths`. Every changed path MUST have been disclosed by `prepare` — the engine treats an undisclosed write as a contract violation, because it journaled preimages only for what you disclosed.
+  Consume the plan and perform **one atomic update per document**. Return `unchanged`, or `changed` with `changedPaths`. Every changed path MUST have been disclosed by `prepare` — the engine treats an undisclosed write as a contract violation, because it journaled preimages only for what you disclosed. If you build on the SDK scaffolding it refuses an undisclosed edit while preparing, before the plan is applicable at all.
 
   A handled failure must leave the document unchanged.
 </ResponseField>
@@ -320,7 +322,11 @@ Write **project-scoped configuration only**. Never create or modify a user-wide 
 
 If your tool expands placeholders inside its own configuration values, check every authored command, argument, environment value, and URL for that syntax before writing and return a structured `conflict` when you find one. A portable declaration is literal, so writing a value your tool would substitute would launch something other than what the user approved. Claude Code (`${VAR}`) and OpenCode (`{env:...}`, `{file:...}`) both do this.
 
-Most of this is scaffolding you should not write yourself. The SDK's `prepareMcpTextPlan` and `applyMcpTextPlan` handle the interpolation guard, classification, the no-write short-circuit, document disclosure, the re-read-and-compare that turns a concurrent edit into a `conflict`, and the atomic write — including for a plan that touches more than one file. You supply the tool-specific parts: which documents to read, how to parse them, how to compare an entry, and how to render an edit.
+Preserve the file's encoding preamble too: if your parser cannot accept a leading byte-order mark, strip it before parsing and put it back when writing, per document. Dropping it rewrites a file the user's editor will only mark again on their next save.
+
+Most of this is scaffolding you should not write yourself. The SDK's `prepareMcpTextPlan` and `applyMcpTextPlan` handle the interpolation guard, classification, the no-write short-circuit, document disclosure, the refusal of an edit you did not disclose, the re-read-and-compare that turns a concurrent edit into a `conflict`, and the atomic write — including for a plan that touches more than one file. You supply the tool-specific parts: which documents to read, how to parse them, how to compare an entry, and how to render an edit.
+
+If you need to put a declaration value in front of a user yourself, import `terminalLiteral` (or `terminalCommandLine` / `terminalEnvironmentAssignment`) from `@agent-facets/adapter/terminal` — a dependency-free entry point. It is the same rendering the CLI's consent screens use: printable ASCII only, complete, and reversible, so a value cannot add a line or issue a terminal control.
 
 <Warning>
 Configuring a server is not running one. Never launch the command, connect to the URL, health-check, collect credentials, or perform OAuth. Authentication belongs to the tool, after the configuration exists.
@@ -397,7 +403,7 @@ Selection is by **package version** among compatible releases; the supported API
 
 That is what makes publishing safe in either order for consumers: a CLI supporting only `{0.1}` keeps selecting your highest `0.1` release and ignores the `0.2` one. The exception is an **exact** request (`facet adapter install my-adapter@1.4.0`), which is never substituted — it fails if that specific release is incompatible with the CLI asking.
 
-The canonical values are exported from `@agent-facets/adapter/api-version` (`ADAPTER_API_VERSION`, `ADAPTER_API_VERSION_ASSETS_ONLY`, and `ADAPTER_API_VERSION_PACKAGE_FIELD`), so release tooling can inject the field instead of hardcoding it.
+The canonical values are exported from `@agent-facets/adapter/api-version` (`ADAPTER_API_VERSION`, `ADAPTER_API_VERSION_ASSETS_ONLY`, and `ADAPTER_API_VERSION_PACKAGE_FIELD`), so release tooling can inject the field instead of hardcoding it. That entry and `@agent-facets/adapter/terminal` are both dependency-free, so importing either one costs you nothing at runtime.
 
 ## Share it upstream
 

@@ -120,8 +120,46 @@ export type McpServerCapabilityFailure =
   | { readonly code: 'parse-failed'; readonly path: string; readonly message: string }
   /** The document parsed, but its MCP section is not a shape the adapter can safely edit. */
   | { readonly code: 'validation-failed'; readonly path: string; readonly message: string }
-  /** The desired state cannot be represented in this document without destroying native state. */
-  | { readonly code: 'conflict'; readonly path: string; readonly message: string }
+  | McpConflictFailure
+
+/**
+ * The desired state cannot be written, for one of three unrelated reasons.
+ *
+ * Split by `reason` rather than carried as one arm with a path and a sentence,
+ * because the three do not share their facts. An interpolation conflict is
+ * about a declaration and has no document — the previous shape forced an
+ * adapter to name one, and OpenCode named a file it might not even write. A
+ * drifted document is fully described by its path, so a message beside it is a
+ * second copy of the same fact. Only a native-format refusal has something to
+ * add that the SDK cannot regenerate.
+ *
+ * None of the three carries prose meant for display. Every field is data, and
+ * the surface that shows it decides the wording — including how to render a
+ * value safely, which a preformatted message has already gotten wrong by the
+ * time a caller sees it.
+ */
+export type McpConflictFailure =
+  /**
+   * An authored literal contains syntax the target tool would expand rather
+   * than use literally, so it cannot be written faithfully anywhere.
+   */
+  | {
+      readonly code: 'conflict'
+      readonly reason: 'interpolation'
+      readonly serverName: string
+      /** The offending value exactly as authored, unescaped and unredacted. */
+      readonly value: string
+    }
+  /** A document changed between preparation and application; nothing was written. */
+  | { readonly code: 'conflict'; readonly reason: 'document-changed'; readonly path: string }
+  /** The native format cannot represent the change without destroying native state. */
+  | {
+      readonly code: 'conflict'
+      readonly reason: 'native-state'
+      readonly path: string
+      /** What the adapter's own format layer reported. */
+      readonly detail: string
+    }
 
 /**
  * A successful read-only preparation.

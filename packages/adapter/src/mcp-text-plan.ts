@@ -96,6 +96,9 @@ function readTextPlan(value: unknown): McpTextPlan | undefined {
     // first one replaced, so the plan's own preflight could never be true for
     // both. Rejected here rather than discovered mid-write.
     if (edits.some((edit) => edit.path === path)) return undefined
+    // An edit outside the plan's own disclosed set is a document no caller
+    // journaled a preimage for, so writing it would be unrestorable.
+    if (!documentPaths.includes(path)) return undefined
     edits.push({ path, expected, contents })
   }
 
@@ -138,14 +141,7 @@ export async function applyMcpTextPlan(
     const current = await readTextOrAbsent(edit.path)
     if (!current.ok) return { ok: false, failure: current.failure }
     if (current.text !== edit.expected) {
-      return {
-        ok: false,
-        failure: {
-          code: 'conflict',
-          path: edit.path,
-          message: `${edit.path} changed after it was inspected; nothing was written`,
-        },
-      }
+      return { ok: false, failure: { code: 'conflict', reason: 'document-changed', path: edit.path } }
     }
   }
 
@@ -189,8 +185,6 @@ export async function readTextOrAbsent(path: string): Promise<ReadTextResult> {
 export interface InterpolationGuard {
   /** Matches any value the tool would substitute rather than use literally. */
   readonly pattern: RegExp
-  /** The document the conflict is reported against. */
-  readonly path: string
 }
 
 /**
@@ -201,21 +195,38 @@ export interface InterpolationGuard {
  * command, receive a substituted secret, or dial a different endpoint. Failing
  * closed here is the only answer that keeps the written configuration equal to
  * the approved declaration.
+ *
+ * No document is named. The declaration is unwritable for this tool wherever
+ * it would land, and a guard consulted before a write target is even chosen
+ * has no path to report that would not be a guess.
  */
 export function findInterpolationConflict(
   desired: readonly McpServerContribution[],
   guard: InterpolationGuard,
 ): McpServerCapabilityFailure | undefined {
+  const pattern = statelessPattern(guard.pattern)
   for (const contribution of desired) {
-    const literal = mcpDeclarationLiterals(contribution.declaration).find((value) => guard.pattern.test(value))
+    const literal = mcpDeclarationLiterals(contribution.declaration).find((value) => pattern.test(value))
     if (literal === undefined) continue
-    return {
-      code: 'conflict',
-      path: guard.path,
-      message: `server "${contribution.name}" declares a value this tool would interpolate rather than use literally: ${literal}`,
-    }
+    return { code: 'conflict', reason: 'interpolation', serverName: contribution.name, value: literal }
   }
   return undefined
+}
+
+/**
+ * The same pattern, without the flags that make `test` stateful.
+ *
+ * `RegExp.prototype.test` on a global or sticky pattern advances `lastIndex`
+ * and resumes from there on the next call, so scanning several literals with
+ * one adapter-supplied object would skip matches — a guard that fails *open*,
+ * silently, and only for some inputs. Rebuilt rather than reset because the
+ * pattern belongs to the caller: a guard that mutated it would export its own
+ * bookkeeping into an adapter's module state. Every other flag is preserved,
+ * `u` and `v` especially, since they change what the source means.
+ */
+function statelessPattern(pattern: RegExp): RegExp {
+  const flags = pattern.flags.replaceAll(/[gy]/g, '')
+  return flags === pattern.flags ? pattern : new RegExp(pattern.source, flags)
 }
 
 /** What an adapter supplies to turn its parsed documents into a prepared plan. */
@@ -278,6 +289,16 @@ export function prepareMcpTextPlan(input: PrepareMcpTextPlanInput): PrepareMcpSe
     // — it would drop the work silently — so this is the adapter's own
     // contract, checked here rather than trusted.
     throw new Error('prepareMcpTextPlan: outcomes require a write but no document edit was produced')
+  }
+
+  for (const edit of built.edits) {
+    if (input.documentPaths.includes(edit.path)) continue
+    // The caller journals preimages for the disclosed set and nothing else, so
+    // an edit naming a document outside it is a write that could never be
+    // rolled back. Caught here, before the plan is applicable, rather than by
+    // the caller after the bytes are already on disk. Same class as the throw
+    // above: the adapter broke its own contract, and no caller can act on it.
+    throw new Error(`prepareMcpTextPlan: buildEdits produced an edit for an undisclosed document: ${edit.path}`)
   }
 
   return preparation({ kind: 'write', documentPaths: input.documentPaths, edits: [first, ...rest] }, outcomes)
