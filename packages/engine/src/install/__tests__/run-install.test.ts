@@ -146,41 +146,26 @@ function buildFixture(parent: string, name: string, version: string): string {
 function installFakeAdapter(baseDir: string, name: string): void {
   const dir = join(baseDir, name)
   mkdirSync(dir, { recursive: true })
-  const assetFsImport = require.resolve('@agent-facets/adapter')
+  const sdk = require.resolve('@agent-facets/adapter')
   writeFileSync(
     join(dir, 'adapter.js'),
     `
-import { installAssetFile, readAssetFile, deleteAssetFile } from '${assetFsImport}'
+import { planSingleFileInstall, planSingleFileRemoval } from '${sdk}'
 import { join } from 'node:path'
-function path(type, name) { return join(process.cwd(), '.${name}', type + 's', name + '.md') }
+function base(req) { return join(req.projectRoot, '.${name}') }
+function file(req) { return join(base(req), req.assetType + 's', req.name + '.md') }
 export default {
   name: '${name}',
   apiVersion: '${ADAPTER_API_VERSION}',
   mcpServers: false,
-  supportsInstall: true,
   buildAssetMetadata(data) { return { ok: true, data: data || {} } },
-  async installAsset(req) {
-    const file = path(req.assetType, req.name)
-    await installAssetFile({ file }, req.content, req.metadata)
-    return { ok: true, primaryPath: file }
-  },
-  async readAsset(req) {
-    try {
-      const r = await readAssetFile({ file: path(req.assetType, req.name) })
-      return {
-        ok: true,
-        asset: req.assetType === 'skill'
-          ? { assetType: 'skill', content: r.content, metadata: r.metadata, companions: {} }
-          : { assetType: req.assetType, content: r.content, metadata: r.metadata },
-      }
-    } catch {
-      return { ok: false, failure: { code: 'not-found' } }
-    }
-  },
-  async deleteAsset(req) {
-    const file = path(req.assetType, req.name)
-    await deleteAssetFile({ file })
-    return { ok: true, existed: true, deletedPaths: [file] }
+  assets: {
+    async planInstall(req) {
+      return planSingleFileInstall({ file: file(req), boundary: base(req) }, req.content, req.metadata)
+    },
+    async planRemoval(req) {
+      return planSingleFileRemoval({ file: file(req), boundary: base(req) })
+    },
   },
 }
 `,
@@ -251,7 +236,7 @@ async function install() {
   const loadResult = await loadInstalledAdapters()
   if (!loadResult.ok) expect.unreachable('test bug: installed fixture adapters failed to load')
   const adapters = loadResult.adapters
-  return runInstall({ projectRoot, adapters: adapters.filter((a) => a.supportsInstall === true) })
+  return runInstall({ projectRoot, adapters: adapters.filter((a) => a.assets !== false) })
 }
 
 async function installFrozen() {
@@ -260,7 +245,7 @@ async function installFrozen() {
   const adapters = loadResult.adapters
   return runInstall({
     projectRoot,
-    adapters: adapters.filter((a) => a.supportsInstall === true),
+    adapters: adapters.filter((a) => a.assets !== false),
     frozenLockfile: true,
   })
 }
@@ -302,7 +287,7 @@ describe('runInstall — DELTA_CONFLICT (#23)', () => {
     const adapters = loadResult.adapters
     const result = await runInstall({
       projectRoot,
-      adapters: adapters.filter((a) => a.supportsInstall === true),
+      adapters: adapters.filter((a) => a.assets !== false),
       delta: {
         additions: [
           {
@@ -588,20 +573,18 @@ describe('runInstall — ADAPTER_INCOMPATIBLE preflight', () => {
     return {
       name,
       apiVersion,
-      supportsInstall: true,
       buildAssetMetadata: () => {
         throw new Error('contract method invoked despite incompatibility')
       },
-      async installAsset() {
-        throw new Error('contract method invoked despite incompatibility')
+      assets: {
+        async planInstall() {
+          throw new Error('contract method invoked despite incompatibility')
+        },
+        async planRemoval() {
+          throw new Error('contract method invoked despite incompatibility')
+        },
       },
-      async readAsset() {
-        throw new Error('contract method invoked despite incompatibility')
-      },
-      async deleteAsset() {
-        throw new Error('contract method invoked despite incompatibility')
-      },
-    } as Adapter
+    } as unknown as Adapter
   }
 
   test('fails on the no-mutation path before any facet processing or write', async () => {

@@ -5,12 +5,10 @@ import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
 import {
   ADAPTER_API_VERSION,
-  deleteAssetFile,
-  deleteSkillBundle,
-  installAssetFile,
-  installSkillBundle,
-  readAssetFile,
-  readSkillBundle,
+  planSingleFileInstall,
+  planSingleFileRemoval,
+  planSkillBundleInstall,
+  planSkillBundleRemoval,
 } from '@agent-facets/adapter'
 import type { CollisionResolution } from '../commit/compose.ts'
 import { CURRENT_RECEIPT_VERSION, type Receipt, receiptPath, writeReceipt } from '../receipt.ts'
@@ -46,61 +44,48 @@ function flatFile(type: string, name: string): string {
   return join(base(), `${type}s`, `${name}.md`)
 }
 
-/** An adapter that stores real skill bundles and records every request. */
+/** An adapter that plans real skill bundles and records every request. */
 function recordingAdapter(opts: { failInstallOf?: ReadonlySet<string> } = {}): { adapter: Adapter; io: string[] } {
   const io: string[] = []
   const paths = (name: string) => ({
     root: skillRoot(name),
     primaryFile: join(skillRoot(name), 'SKILL.md'),
-    pruneBoundary: base(),
+    boundary: base(),
   })
   return {
     io,
     adapter: {
       name: 'rec',
       apiVersion: ADAPTER_API_VERSION,
-      supportsInstall: true,
       mcpServers: false,
       buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
-      async installAsset(request) {
-        io.push(`install:${request.assetType}:${request.name}`)
-        if (opts.failInstallOf?.has(request.name)) {
-          return { ok: false, failure: { code: 'io-failed', operation: 'write', message: 'simulated write failure' } }
-        }
-        if (request.assetType === 'skill') {
-          return await installSkillBundle(paths(request.name), {
-            content: request.content,
-            metadata: request.metadata as Record<string, unknown> | undefined,
-            companions: request.companions,
-            ownedCompanionPaths: request.ownedCompanionPaths,
-          })
-        }
-        const file = flatFile(request.assetType, request.name)
-        mkdirSync(join(file, '..'), { recursive: true })
-        await installAssetFile({ file }, request.content, request.metadata as Record<string, unknown> | undefined)
-        return { ok: true, primaryPath: file }
-      },
-      async readAsset(request) {
-        io.push(`read:${request.assetType}:${request.name}`)
-        if (request.assetType === 'skill') {
-          return await readSkillBundle(paths(request.name), request.ownedCompanionPaths)
-        }
-        try {
-          const r = await readAssetFile({ file: flatFile(request.assetType, request.name) })
-          return { ok: true, asset: { assetType: request.assetType, content: r.content, metadata: r.metadata } }
-        } catch {
-          return { ok: false, failure: { code: 'not-found' } }
-        }
-      },
-      async deleteAsset(request) {
-        io.push(`delete:${request.assetType}:${request.name}`)
-        if (request.assetType === 'skill') {
-          return await deleteSkillBundle(paths(request.name), request.ownedCompanionPaths)
-        }
-        const file = flatFile(request.assetType, request.name)
-        const existed = existsSync(file)
-        await deleteAssetFile({ file })
-        return { ok: true, existed, deletedPaths: existed ? [file] : [] }
+      assets: {
+        async planInstall(request) {
+          io.push(`install:${request.assetType}:${request.name}`)
+          if (opts.failInstallOf?.has(request.name)) {
+            return { ok: false, failure: { code: 'io-failed', path: request.name, message: 'simulated plan failure' } }
+          }
+          if (request.assetType === 'skill') {
+            return planSkillBundleInstall(paths(request.name), {
+              content: request.content,
+              metadata: request.metadata as Record<string, unknown>,
+              companions: request.companions,
+              ownedCompanionPaths: request.ownedCompanionPaths,
+            })
+          }
+          return planSingleFileInstall(
+            { file: flatFile(request.assetType, request.name), boundary: base() },
+            request.content,
+            request.metadata as Record<string, unknown>,
+          )
+        },
+        async planRemoval(request) {
+          io.push(`delete:${request.assetType}:${request.name}`)
+          if (request.assetType === 'skill') {
+            return planSkillBundleRemoval(paths(request.name), request.ownedCompanionPaths)
+          }
+          return planSingleFileRemoval({ file: flatFile(request.assetType, request.name), boundary: base() })
+        },
       },
     },
   }
@@ -452,7 +437,7 @@ describe('apply — global ownership reconciliation', () => {
     const result = await runInstall({ projectRoot, adapters: [adapter] })
     if (result.ok) expect.unreachable()
     expect(result.failure.code).toBe('ADAPTER_INSTALL_FAILED')
-    expect(result.rollback.kind).toBe('succeeded')
+    expect(result.rollback.kind).toBe('complete')
 
     // Deletion preceded the failed write, and was undone.
     expect(io.indexOf('delete:skill:review')).toBeLessThan(io.indexOf('install:skill:other'))
@@ -487,7 +472,7 @@ describe('apply — global ownership reconciliation', () => {
     const { adapter } = recordingAdapter({ failInstallOf: new Set(['other']) })
     const result = await runInstall({ projectRoot, adapters: [adapter] })
     if (result.ok) expect.unreachable()
-    expect(result.rollback.kind).toBe('succeeded')
+    expect(result.rollback.kind).toBe('complete')
 
     expect(existsSync(join(skillRoot('review'), 'refs/new.md'))).toBe(false)
     expect(readFileSync(join(skillRoot('review'), 'refs/api.md'), 'utf8')).toBe('# api\n')
@@ -502,7 +487,7 @@ describe('apply — global ownership reconciliation', () => {
     const { adapter } = recordingAdapter({ failInstallOf: new Set(['other']) })
     const result = await runInstall({ projectRoot, adapters: [adapter] })
     if (result.ok) expect.unreachable()
-    expect(result.rollback.kind).toBe('succeeded')
+    expect(result.rollback.kind).toBe('complete')
 
     // Nothing this run created may survive it — the undo of a create is a
     // delete of everything it wrote, not just the primary.
@@ -534,10 +519,14 @@ describe('apply — global ownership reconciliation', () => {
     const { adapter } = recordingAdapter({ failInstallOf: new Set(['other']) })
     const result = await runInstall({ projectRoot, adapters: [adapter] })
     if (result.ok) expect.unreachable()
-    expect(result.rollback.kind).toBe('succeeded')
+    expect(result.rollback.kind).toBe('complete')
 
     expect(existsSync(join(skillRoot('review'), 'SKILL.md'))).toBe(false)
-    expect(existsSync(join(skillRoot('review'), 'refs/api.md'))).toBe(false)
+    // Byte-exact restoration, not convergence: the companion the repair
+    // deleted had an exact state of its own, so the rollback puts it back.
+    // An earlier design could only converge on absent here, because the
+    // bundle read was addressed through a primary that was already gone.
+    expect(readFileSync(join(skillRoot('review'), 'refs/api.md'), 'utf8')).toBe('# api\n')
   })
 
   test('an unreadable receipt path fails the commit and rolls materialization back', async () => {
@@ -553,7 +542,7 @@ describe('apply — global ownership reconciliation', () => {
     const result = await runInstall({ projectRoot, adapters: [adapter] })
     if (result.ok) expect.unreachable()
     expect(result.failure.code).toBe('LOCKFILE_WRITE_FAILED')
-    expect(result.rollback.kind).toBe('succeeded')
+    expect(result.rollback.kind).toBe('complete')
 
     // The write pass ran and was undone; no project file was touched.
     expect(existsSync(skillRoot('review'))).toBe(false)
@@ -673,11 +662,11 @@ describe('apply — global ownership reconciliation', () => {
     expect(result.summary.textAssets.removed).toBe(1)
   })
 
-  test('an obsolete bundle whose primary is gone keeps its companions and says so', async () => {
-    // The bundle reads as `not-found` because a bundle is addressed through
-    // its primary, so nothing captured the companion bytes the receipt still
-    // claims. Deleting them would be a mutation with no inverse: a later
-    // failure would report a clean rollback with the bytes gone for good.
+  test('an obsolete bundle whose primary is gone still removes its owned companions', async () => {
+    // The companions have exact states of their own, so removing them is a
+    // transition that can be undone — which is what makes it safe. Retaining
+    // them, as an earlier design had to, left untracked files behind for the
+    // user to find and clean up by hand.
     const a = skillFixture('alpha', 'review', { companions: { 'refs/api.md': '# api\n' } })
     writeManifest({ facets: { alpha: a } })
     const { adapter, io } = recordingAdapter()
@@ -687,35 +676,37 @@ describe('apply — global ownership reconciliation', () => {
 
     writeManifest({ facets: {} })
     io.length = 0
-    const events: StageEvent[] = []
-    const result = await runInstall({ projectRoot, adapters: [adapter], onStage: (e) => events.push(e) })
+    const result = await runInstall({ projectRoot, adapters: [adapter] })
     if (!result.ok) expect.unreachable()
 
-    // No delete was attempted, and the companion is byte-for-byte intact.
-    expect(io.some((call) => call.startsWith('delete:'))).toBe(false)
-    expect(readFileSync(join(skillRoot('review'), 'refs/api.md'), 'utf8')).toBe('# api\n')
-    expect(existsSync(join(skillRoot('review'), 'SKILL.md'))).toBe(false)
-
-    // The declaration and the claim are gone regardless, which is exactly why
-    // the retained files have to be announced: nothing tracks them now.
+    expect(existsSync(join(skillRoot('review'), 'refs/api.md'))).toBe(false)
     const lock = JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8'))
     expect(lock.facets.alpha).toBeUndefined()
     expect(readReceipt().facets.alpha).toBeUndefined()
-    expect(events).toContainEqual({
-      kind: 'obsolete-bundle-retained',
-      adapter: 'rec',
-      // Carried through from the ownership record: the companion paths below
-      // are skill-root-relative, and the scope is what says which root.
-      scope: 'project',
-      assetName: 'review',
-      facets: ['alpha'],
-      companionPaths: ['refs/api.md'],
-    })
-    // Nothing left disk, so the asset count must not claim otherwise.
-    expect(result.summary.textAssets.removed).toBe(0)
   })
 
-  test('a failure after a skipped bundle delete needs no inverse and loses nothing', async () => {
+  test('a tracked removal reports removed, not removed-untracked', async () => {
+    // The control for the test above: same operation, receipt intact. Without
+    // it, a bug that reported every removal as untracked would pass.
+    const a = skillFixture('alpha', 'review')
+    const b = skillFixture('beta', 'other')
+    writeManifest({ facets: { alpha: a, beta: b } })
+    const { adapter } = recordingAdapter()
+    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      delta: { additions: [], removals: [{ facetName: 'alpha' }] },
+    })
+    if (!result.ok) expect.unreachable()
+
+    expect(result.perFacet).toContainEqual({ kind: 'removed', name: 'alpha', oldVersion: '1.0.0' })
+    expect(existsSync(skillRoot('review'))).toBe(false)
+    expect(result.summary.textAssets.removed).toBe(1)
+  })
+
+  test('a failure after an orphaned-companion delete restores the bytes it removed', async () => {
     const a = skillFixture('alpha', 'review', { companions: { 'refs/api.md': '# api\n' } })
     writeManifest({ facets: { alpha: a } })
     const { adapter } = recordingAdapter()
@@ -726,23 +717,23 @@ describe('apply — global ownership reconciliation', () => {
     }
 
     rmSync(join(skillRoot('review'), 'SKILL.md'))
-    // Fail the first write of the trio, after the delete pass has run.
-    mkdirSync(join(projectRoot, 'facets.json.tmp'), { recursive: true })
+    // A directory where the receipt belongs, so the commit is refused after
+    // the delete pass has already run.
+    rmSync(receiptPath(projectRoot))
+    mkdirSync(receiptPath(projectRoot), { recursive: true })
 
     writeManifest({ facets: {} })
     const events: StageEvent[] = []
     const result = await runInstall({ projectRoot, adapters: [adapter], onStage: (e) => events.push(e) })
     if (result.ok) expect.unreachable()
 
-    // Nothing to undo, because nothing was destroyed — the rollback is clean
-    // by construction rather than by a preimage we could not have captured.
-    expect(result.rollback).toEqual({ kind: 'succeeded', entriesUndone: 0 })
+    // The companion WAS deleted, and putting it back is exactly what having
+    // its exact prior bytes buys: the removal never committed, so the file is
+    // still tracked and must still be there.
+    expect(result.rollback.kind).toBe('complete')
     expect(readFileSync(join(skillRoot('review'), 'refs/api.md'), 'utf8')).toBe('# api\n')
     expect(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')).toBe(before.lock)
-    expect(readFileSync(receiptPath(projectRoot), 'utf8')).toBe(before.receipt)
-    // The removal never committed, so the files are still tracked: warning
-    // the user that they are orphaned here would be a lie.
-    expect(events.some((e) => e.kind === 'obsolete-bundle-retained')).toBe(false)
+    expect(events.length).toBeGreaterThan(0)
   })
 
   test.each([
@@ -1197,7 +1188,7 @@ describe('remove — refinement only when local state agrees', () => {
     // The offline guarantee: only the removed identity is touched at all, and
     // nothing is written. (The read is the delete pass snapshotting it for
     // rollback.)
-    expect(io).toEqual(['read:skill:review', 'delete:skill:review'])
+    expect(io).toEqual(['delete:skill:review'])
     expect(readFileSync(join(skillRoot('other'), 'refs/api.md'), 'utf8')).toBe(remainingBefore)
     expect(existsSync(skillRoot('review'))).toBe(false)
     expect(readReceipt().facets.beta?.assets[0]?.files).toEqual(['skills/other/SKILL.md', 'skills/other/refs/api.md'])
@@ -1261,13 +1252,17 @@ describe('remove — cancellation on the refined path', () => {
     // Ctrl-C lands while the delete pass is running: the delete succeeds, and
     // the checkpoint after it is what turns that into a rollback instead of a
     // commit.
+    const capability = adapter.assets
+    if (capability === false) expect.unreachable()
     const abortingAdapter: Adapter = {
       ...adapter,
-      deleteAsset: async (request) => {
-        const result = await adapter.deleteAsset?.(request)
-        controller.abort()
-        if (result === undefined) expect.unreachable()
-        return result
+      assets: {
+        ...capability,
+        planRemoval: async (request) => {
+          const result = await capability.planRemoval(request)
+          controller.abort()
+          return result
+        },
       },
     }
 
@@ -1281,8 +1276,8 @@ describe('remove — cancellation on the refined path', () => {
 
     if (result.ok) expect.unreachable()
     expect(result.failure.code).toBe('ABORTED')
-    if (result.rollback.kind !== 'succeeded') expect.unreachable()
-    expect(result.rollback.entriesUndone).toBeGreaterThan(0)
+    if (result.rollback.kind !== 'complete') expect.unreachable()
+    expect(result.rollback.restored.length).toBeGreaterThan(0)
 
     // The bundle the delete pass removed is back, companion included, and the
     // project files were never committed.

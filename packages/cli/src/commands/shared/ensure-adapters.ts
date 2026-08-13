@@ -27,15 +27,16 @@ export async function ensureAdapters(): Promise<ReadonlyArray<Adapter> | null> {
     return null
   }
   const adapters = loaded.adapters
-  const installable = adapters.filter((a) => a.supportsInstall === true)
+  const installable = adapters.filter((a) => a.assets !== false)
   if (installable.length > 0) return installable
 
   if (adapters.length > 0) {
     const stale = adapters.map((a) => a.name).join(', ')
     writeCliError({
       what: `installed adapters do not support install yet: ${stale}`,
-      detail: 'these adapters were bundled before install support shipped; the capability flag is missing',
-      fix: "update each with 'facet adapter install <name>' to pull a version with install support",
+      detail:
+        'these adapters declare no asset capability, so they can validate manifest config but materialize nothing',
+      fix: "update each with 'facet adapter install <name>' to pull a version that materializes assets",
     })
     return null
   }
@@ -43,11 +44,11 @@ export async function ensureAdapters(): Promise<ReadonlyArray<Adapter> | null> {
   // Zero installable adapters. TTY → picker; non-TTY → fail.
   const result = await pickAndInstallAdapters()
   if (result.ok) {
-    const installableAfter = result.adapters.filter((a) => a.supportsInstall === true)
+    const installableAfter = result.adapters.filter((a) => a.assets !== false)
     if (installableAfter.length === 0) {
       writeCliError({
         what: 'no adapters with install support after picker',
-        detail: 'the selected adapter(s) bundled an old SDK without install support',
+        detail: 'the selected adapter(s) declare no asset capability',
         fix: 'pick a different adapter or update one with install support',
       })
       return null

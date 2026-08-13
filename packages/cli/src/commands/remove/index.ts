@@ -145,7 +145,7 @@ export const removeCommand: Command = {
 
     // Install-phase failure. The delta-based flow never writes the manifest
     // ahead of install — the journal rollback handles asset cleanup.
-    writeInstallFailureDetail(captured.install.failure)
+    writeInstallFailureDetail(captured.install.failure, captured.install.rollback)
     writeCliError({
       what: 'remove failed',
       detail: installFailureDetail(captured.install.failure),

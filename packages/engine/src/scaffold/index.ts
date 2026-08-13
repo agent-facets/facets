@@ -238,11 +238,13 @@ function scaffoldMutations(opts: ScaffoldOptions, targetDir: string): FsMutation
  * result-shaped for the edit apply path, which can recover.
  */
 export async function writeScaffold(opts: ScaffoldOptions, targetDir: string): Promise<string[]> {
-  const result = applyFsTransaction(scaffoldMutations(opts, targetDir))
+  const result = applyFsTransaction(scaffoldMutations(opts, targetDir), targetDir)
   if (!result.ok) {
     throw new Error(
       `scaffold write failed at ${result.failedPath}: ${result.reason}` +
-        (result.rollback.ok ? '' : ` (rollback incomplete: ${result.rollback.failedPaths.join(', ')})`),
+        (result.rollback.kind === 'complete'
+          ? ''
+          : ` (rollback incomplete: ${result.rollback.issues.map((issue) => issue.path).join(', ')})`),
     )
   }
   return previewScaffoldFiles(opts)

@@ -1,17 +1,18 @@
 import type {
   Adapter,
-  AdapterAssetFailure,
+  AdapterPlanFailure,
+  AssetCapability,
+  AssetInstallPlan,
+  AssetRemovalPlan,
   CompanionMap,
-  DeleteAssetRequest,
-  InstallAssetRequest,
-  ReadAssetRequest,
+  PlanAssetInstallRequest,
+  PlanAssetRemovalRequest,
 } from '@agent-facets/adapter'
-import { type Scope, splitFrontMatter } from '@agent-facets/common'
-import { type MaterializedAsset, type ResolvedFacetManifest, skillRootPath } from '@agent-facets/protocol'
+import type { MaterializedAsset, ResolvedFacetManifest } from '@agent-facets/protocol'
 import { type AdapterCompatibilityFailure, compatibilityFailureFor } from '../adapters/api-compatibility.ts'
+import type { FileTransaction, FileTransactionFailure } from '../fs/index.ts'
 import type { AssetTakeoverResolver } from './asset-takeover.ts'
 import { ownedCompanionPathsFor, ownershipFor, type PreviousOwnership } from './commit/ownership.ts'
-import type { InstallJournal } from './journal.ts'
 import { type AssetIdentity, assetIdentity, type OnLog, type StageEvent } from './types.ts'
 import { authoredCompanionKey, type SkillCompanionBytes } from './verified-asset-plan.ts'
 
@@ -19,7 +20,15 @@ export interface MaterializeOptions {
   /** Facet name — used to tag per-adapter progress events. */
   facetName: string
   manifest: ResolvedFacetManifest
-  /** Adapters already filtered to those with supportsInstall === true. */
+  /**
+   * The project this run is installing into.
+   *
+   * Handed to every adapter request, including user-scope ones. It is the only
+   * definition of "this project" an adapter may use: one that derived its own
+   * from the process working directory would resolve project-scoped assets
+   * against a different tree than the manifest, lockfile, and receipt.
+   */
+  projectRoot: string
   adapters: Adapter[]
   /**
    * The assets to write, carrying both identities: the authored name that
@@ -42,15 +51,14 @@ export interface MaterializeOptions {
    * map means "no companions" (single-file behavior).
    */
   companionBytes?: Map<string, SkillCompanionBytes>
-  journal: InstallJournal
+  /** The run's filesystem transaction. Every mutation goes through it. */
+  transaction: FileTransaction
   /**
    * Interactive gate for an occupied destination this machine does not own.
    *
    * Absent means continue — the opposite default from the collision
    * resolver, and deliberately so: a collision has no correct answer without
    * the user, while a takeover has one that preserves existing behavior.
-   * Frozen mode and non-interactive callers therefore reconcile exactly as
-   * they always have, by never being handed one.
    */
   resolveAssetTakeover?: AssetTakeoverResolver
   onLog?: OnLog
@@ -65,97 +73,73 @@ export interface MaterializeOptions {
  * entry didn't change — e.g., a user manually deleted the on-disk file).
  */
 export interface MaterializeCounts {
-  /** Assets actually written to an adapter. Excludes skipped no-ops. */
+  /** Assets whose plan changed at least one file. */
   written: number
-  /** Assets skipped because content + metadata matched on disk. */
+  /** Assets already in their desired state, so nothing was planned. */
   skipped: number
 }
 
 /**
- * Discriminated failure for `materialize`. Each kind preserves the
- * adapter name (the smoking-gun problem with the previous throw-based
- * shape was the caller fabricating `'unknown'` as the adapter — the
- * info was right there but lost in the throw boundary).
+ * Discriminated failure for `materialize`.
  *
- *   - `unsupported-adapter` — caller passed an adapter whose
- *     `supportsInstall !== true`. Defense-in-depth beyond the picker
- *     filter; loud failure beats silent no-op.
- *   - `incompatible-adapter` — caller passed an adapter that does not
- *     declare a CLI-supported API. Invariant check only: the primary
- *     gates are the command-level fail-closed load and the runInstall
- *     preflight; reaching this arm means an upstream gate was bypassed.
- *   - `read-failed` — `adapter.readAsset` returned a failure other than
- *     `not-found` (or threw, which is an adapter bug). `not-found` is
- *     the one "asset didn't exist" signal we trust; anything else means
- *     we don't know whether the asset existed, so the journal must not
- *     record a delete-undo based on an assumption of absence.
- *   - `install-failed` — `adapter.installAsset` returned a failure or threw.
- *   - `delete-failed` — `adapter.deleteAsset` returned a failure or threw.
+ *   - `unsupported-adapter` — the adapter declares no asset capability, so it
+ *     cannot materialize anything. Defense-in-depth beyond the picker filter;
+ *     loud failure beats silent no-op.
+ *   - `incompatible-adapter` — the adapter does not declare a CLI-supported
+ *     API. Invariant check only: the primary gates are the command-level
+ *     fail-closed load and the runInstall preflight.
+ *   - `plan-failed` — the adapter's read-only planning reported a structured
+ *     failure. Nothing was written: planning never writes.
+ *   - `transaction-failed` — the plan was refused or could not be applied.
+ *     Refusal means nothing was armed; an abort means the batch was already
+ *     returned to its pre-batch state.
+ *   - `takeover-cancelled` — the user declined to adopt an occupied,
+ *     untracked destination.
  */
 export type MaterializeFailure =
   | { kind: 'unsupported-adapter'; adapter: string }
   | { kind: 'incompatible-adapter'; failure: AdapterCompatibilityFailure }
-  | { kind: 'read-failed'; adapter: string; asset: AssetIdentity; cause: string }
-  | { kind: 'install-failed'; adapter: string; asset: AssetIdentity; cause: string }
-  | { kind: 'delete-failed'; adapter: string; asset: AssetIdentity; cause: string }
-  /**
-   * The user declined to take over an occupied, untracked destination.
-   * Unlike a collision cancellation this lands mid-journal, so the caller
-   * replays it — the rollback outcome is half of what the user needs to be
-   * told.
-   */
+  | {
+      kind: 'plan-failed'
+      operation: 'install' | 'removal'
+      adapter: string
+      asset: AssetIdentity
+      cause: string
+    }
+  | { kind: 'transaction-failed'; adapter: string; asset: AssetIdentity; failure: FileTransactionFailure }
   | { kind: 'takeover-cancelled'; adapter: string; asset: AssetIdentity }
 
 /**
- * Result of one `materialize` call. Errors are values, not control
- * flow — the caller pattern-matches on `failure.kind` and routes each
- * to the matching `RunInstallFailure` code (`ADAPTER_UNSUPPORTED`,
- * `ADAPTER_READ_FAILED`, `ADAPTER_INSTALL_FAILED`, `ADAPTER_DELETE_FAILED`).
+ * Result of one `materialize` call. Errors are values, not control flow — the
+ * caller pattern-matches on `failure.kind` and routes each to the matching
+ * `RunInstallFailure` code.
  */
 export type MaterializeResult = ({ ok: true } & MaterializeCounts) | { ok: false; failure: MaterializeFailure }
 
 /**
- * Apply the install + delete operations across all selected adapters and
- * record inverse operations on the journal so a rollback can replay them.
+ * Plan every asset across all selected adapters and commit each plan through
+ * the run's filesystem transaction.
  *
- * Per-asset, before writing, the adapter's current on-disk content is
- * compared to what we would write (content + metadata as JSON). If
- * identical, the write is skipped and no journal entry is recorded —
- * the asset was already in its desired state, and there's nothing to
- * undo. The skip count is reported in the returned `MaterializeResult`
- * so the caller can label outcomes accurately ("repaired" vs.
- * "unchanged") in summaries.
- *
- * Returns a discriminated `MaterializeResult` — never throws on a
- * documented failure mode. The caller is responsible for driving
- * rollback via `journal.rollback()` and emitting the failure as a
- * `RunInstallFailure`.
+ * The adapter decides *what* should change; the transaction decides whether
+ * the file is still in the state that decision was made from, performs the
+ * change, and remembers both endpoints so a later failure can put the file
+ * back byte for byte. An asset already in its desired state produces no
+ * mutation at all — not a rewrite of identical bytes — so re-installing
+ * touches no modification times and journals nothing.
  */
 export async function materialize(opts: MaterializeOptions): Promise<MaterializeResult> {
   let written = 0
   let skipped = 0
 
   for (const adapter of opts.adapters) {
-    // Adjustment S — runtime supportsInstall check (defense-in-depth beyond
-    // the picker filter). Fail loud rather than silent no-op.
-    if (adapter.supportsInstall !== true) {
-      return { ok: false, failure: { kind: 'unsupported-adapter', adapter: adapter.name } }
-    }
-
-    // Invariant check only — the primary compatibility gates run at the
-    // command level and in the runInstall preflight, both before any
-    // materialization write. Reaching this arm means a gate was bypassed.
-    const incompatibility = compatibilityFailureFor(adapter.name, adapter.apiVersion)
-    if (incompatibility !== null) {
-      return { ok: false, failure: { kind: 'incompatible-adapter', failure: incompatibility } }
-    }
+    const resolved = assetCapabilityFor(adapter)
+    if (!resolved.ok) return { ok: false, failure: resolved.failure }
+    const capability = resolved.capability
 
     opts.onLog?.(() => `[verbose]   installing ${opts.facetName}@${opts.manifest.version} → ${adapter.name}`)
 
     for (const asset of opts.newAssets) {
       const target = adapterTargetFor(asset)
-      const content = contentFor(opts.manifest, asset)
-      const metadata = buildAssetMetadata(opts.manifest, asset, adapter.name)
       // NEW companion bytes for this skill, keyed by AUTHORED identity (empty
       // for companion-less skills and non-skill assets); PREVIOUS owned paths
       // keyed by EFFECTIVE identity, so taking a name over from another facet
@@ -164,70 +148,38 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
         opts.companionBytes?.get(authoredCompanionKey(asset.scope, asset.type, asset.authoredName)) ?? {}
       const ownedCompanionPaths = ownedCompanionPathsFor(opts.previousOwnership, asset)
 
-      // Capture original state for rollback (F14). Treating any failure
-      // as "didn't exist" would let the journal's delete-undo silently
-      // delete a pre-existing asset we never read successfully. Narrow to
-      // the structured `not-found` only and surface everything else as
-      // `read-failed` — install fails loud before we write anything.
-      const readOutcome = await readPrevious(adapter, target, ownedCompanionPaths)
-      if (!readOutcome.ok) {
+      const planned = await planInstall(capability, {
+        projectRoot: opts.projectRoot,
+        target,
+        content: contentFor(opts.manifest, asset),
+        metadata: buildAssetMetadata(opts.manifest, asset, adapter.name),
+        companions,
+        ownedCompanionPaths,
+      })
+      if (!planned.ok) {
         return {
           ok: false,
-          failure: { kind: 'read-failed', adapter: adapter.name, asset: target, cause: readOutcome.cause },
+          failure: {
+            kind: 'plan-failed',
+            operation: 'install',
+            adapter: adapter.name,
+            asset: target,
+            cause: planned.cause,
+          },
         }
       }
-      const previous = readOutcome.previous
+      const plan = planned.plan
 
-      // Skip-if-identical: when the on-disk content + metadata already
-      // matches what we would write, no work is needed and no journal
-      // entry is recorded (there's nothing to undo).
+      // The just-in-time takeover gate. Reached only when something is already
+      // at this destination AND this machine's receipt does not own it — an
+      // owned identity reconciles without a warning, and an empty one is a
+      // creation.
       //
-      // The identity is still recorded as owned afterwards, including when
-      // nothing on disk was tracked before. Ownership follows from having
-      // RECONCILED the identity to the desired state, and a byte-for-byte
-      // comparison establishes that as conclusively as a write does —
-      // rewriting identical bytes would prove nothing the comparison has not.
-      //
-      // The candidate (`content`, `metadata`) we hand to `installAsset`
-      // is NOT what lands on disk byte-for-byte. The adapter SDK's
-      // `assembleAssetContent` splits any author-supplied front matter
-      // out of `content` and merges it under the caller's `metadata`
-      // (caller wins on key collisions), then re-emits a `--- yaml ---
-      // body` file. To compare apples-to-apples with what `readAsset`
-      // returns, we replay that merge here:
-      //   - body is the post-split candidate body (via the same
-      //     `splitFrontMatter` primitive the adapter SDK uses)
-      //   - metadata is the same merge the SDK would do
-      // The on-disk `previous.content` and `previous.metadata` reflect
-      // that merged shape, so equality holds iff a no-op write is safe.
-      //
-      // We import `splitFrontMatter` from `common` rather than
-      // `splitAssetContent` from the adapter SDK to keep the adapter SDK
-      // a type-only dep of engine: a value import from the SDK pulls
-      // `yaml` into engine's runtime graph and collides with `Bun.build`
-      // when the CLI's adapter integration tests bundle the same source.
-      const candidateSplit = splitFrontMatter(content)
-      const mergedCandidateMetadata = { ...(candidateSplit.metadata ?? {}), ...metadata }
-      // Skip only when the primary AND every companion already match on disk.
-      // A single drifted companion (or a changed companion set) forces a
-      // repair through the atomic bundle replacement below.
-      const identical =
-        previous !== null &&
-        previous.content === candidateSplit.content &&
-        JSON.stringify(previous.metadata ?? {}) === JSON.stringify(mergedCandidateMetadata) &&
-        companionsIdentical(previous.companions, companions)
-
-      // The just-in-time takeover gate. Reached only when something is
-      // already at this destination AND this machine's receipt does not own
-      // it — an owned identity reconciles without a warning, and an empty one
-      // is a creation. Both facts are already in hand from the read above and
-      // the ownership index, so nothing extra is inspected.
-      //
-      // Placed before the skip because an equivalent untracked destination is
-      // still being adopted: the bytes do not change, but this machine is
-      // about to start claiming a file someone else put there.
-      if (previous !== null && ownershipFor(opts.previousOwnership, asset) === undefined) {
-        const occupancy = identical ? 'equivalent' : 'divergent'
+      // Placed before the no-op check because an equivalent untracked
+      // destination is still being adopted: the bytes do not change, but this
+      // machine is about to start claiming a file someone else put there.
+      if (plan.occupancy !== 'absent' && ownershipFor(opts.previousOwnership, asset) === undefined) {
+        const occupancy = plan.occupancy
         opts.onStage?.({
           kind: 'asset-takeover-required',
           facet: opts.facetName,
@@ -261,87 +213,30 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
         })
       }
 
-      if (identical) {
+      if (plan.action.kind === 'unchanged') {
         opts.onLog?.(() => `[verbose]     =${describeTarget(asset)} (skipped)`)
         skipped++
         continue
       }
 
-      // Sigil: `+` new asset (didn't exist before), `~` repaired/updated (existed but changed)
-      const sigil = previous === null ? '+' : '~'
-
-      // Path-specific drift reporting (design D10, task 9.7): when an existing
-      // bundle is being repaired, name the exact companion paths that differ
-      // (drifted, added, or removed) rather than only the owning asset. The
-      // path is the one on disk, so it is rooted at the EFFECTIVE name.
-      if (previous !== null && asset.type === 'skill') {
-        for (const path of driftedCompanionPaths(previous.companions, companions)) {
-          opts.onLog?.(
-            () => `[verbose]     ~${describeTarget(asset)} drift: ${skillRootPath(asset.effectiveName)}${path}`,
-          )
-        }
+      // Sigil: `+` new asset (didn't exist before), `~` repaired/updated.
+      const sigil = plan.occupancy === 'absent' ? '+' : '~'
+      // Path-specific reporting: the batch names the exact files that change,
+      // so a repaired bundle reports the drifted companion rather than only
+      // the owning asset.
+      for (const mutation of plan.action.mutations) {
+        opts.onLog?.(() => `[verbose]     ${sigil}${describeTarget(asset)} ${mutation.kind}: ${mutation.path}`)
       }
 
-      let writtenPath: string | undefined
-      try {
-        const result = await adapter.installAsset(
-          installRequestFor(target, content, metadata, companions, ownedCompanionPaths),
-        )
-        if (!result.ok) {
-          return {
-            ok: false,
-            failure: {
-              kind: 'install-failed',
-              adapter: adapter.name,
-              asset: target,
-              cause: describeAssetFailure(result.failure),
-            },
-          }
-        }
-        writtenPath = result.primaryPath
-      } catch (err) {
+      const applied = opts.transaction.apply(plan.action)
+      if (!applied.ok) {
         return {
           ok: false,
-          failure: {
-            kind: 'install-failed',
-            adapter: adapter.name,
-            asset: target,
-            cause: err instanceof Error ? err.message : String(err),
-          },
+          failure: { kind: 'transaction-failed', adapter: adapter.name, asset: target, failure: applied.failure },
         }
       }
-      opts.onLog?.(() => `[verbose]     ${sigil}${describeTarget(asset)}${writtenPath ? ` → ${writtenPath}` : ''}`)
+      opts.onLog?.(() => `[verbose]     ${sigil}${describeTarget(asset)} → ${plan.primaryPath}`)
       written++
-
-      // Rollback preimage: restore the COMPLETE prior bundle (primary +
-      // previously-owned companion bytes), or delete a freshly-created asset.
-      //
-      // The owned set handed to the inverse op is the union of every path this
-      // write could have touched: the paths it was allowed to REMOVE (the
-      // receipt's owned set) and the paths it actually WROTE (the new
-      // companions). The second half is load-bearing. An undo that named only
-      // the prior owned set would restore the old primary while leaving every
-      // companion this operation added on disk — stranded beside a bundle that
-      // no longer references them, and permanently untracked, because a failed
-      // transaction commits no receipt to claim them by.
-      const touchedOwned = unionPaths(ownedCompanionPaths, Object.keys(companions))
-      opts.journal.record({
-        label: `install ${adapter.name}:${target.type}:${target.name}`,
-        undo: async () => {
-          if (previous) {
-            await runUndoInstall(
-              adapter,
-              target,
-              previous.content,
-              previous.metadata ?? {},
-              previous.companions,
-              touchedOwned,
-            )
-          } else {
-            await runUndoDelete(adapter, target, touchedOwned)
-          }
-        },
-      })
     }
 
     opts.onStage?.({ kind: 'adapter-complete', facet: opts.facetName, adapter: adapter.name })
@@ -353,11 +248,11 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
 /**
  * The adapter-facing identity of a planned asset: its EFFECTIVE name.
  *
- * Every adapter request, journal label, and failure report addresses the file
- * on disk, which is named by the project's disposition — not by the
- * publisher. Content, description, adapter extras, companion bytes, and
- * integrity all stay authored and are looked up from `asset.authoredName`
- * directly, so the two domains never share a variable.
+ * Every adapter request, log line, and failure report addresses the file on
+ * disk, which is named by the project's disposition — not by the publisher.
+ * Content, description, adapter extras, companion bytes, and integrity all
+ * stay authored and are looked up from `asset.authoredName` directly, so the
+ * two domains never share a variable.
  */
 function adapterTargetFor(asset: MaterializedAsset): AssetIdentity {
   return assetIdentity(asset.scope, asset.type, asset.effectiveName)
@@ -371,40 +266,19 @@ function describeTarget(asset: MaterializedAsset): string {
 }
 
 export interface DeleteObsoleteOptions {
-  /** Adapters already filtered to those with supportsInstall === true. */
+  projectRoot: string
   adapters: Adapter[]
   /**
    * Effective identities to delete, already proven unclaimed by the desired
    * set. See {@link obsoleteOwnership}.
    */
   obsolete: readonly PreviousOwnership[]
-  journal: InstallJournal
+  transaction: FileTransaction
   onLog?: OnLog
 }
 
-/**
- * An obsolete skill bundle whose cleanup was deliberately skipped because its
- * primary file was already gone, leaving the recorded companion paths on disk
- * and no longer tracked. Carries everything a view layer needs to tell the
- * user what to clean up by hand.
- *
- * `type` is a literal rather than an `AssetType` because only a skill bundle
- * has companions to retain — a single-file asset that reads as absent has
- * nothing left to delete.
- */
-export interface RetainedObsoleteBundle {
-  adapter: string
-  scope: Scope
-  type: 'skill'
-  effectiveName: string
-  /** Every facet that claimed this identity. */
-  facets: readonly string[]
-  /** Recorded companion paths, relative to the skill root. */
-  companionPaths: readonly string[]
-}
-
 export type DeleteObsoleteResult =
-  | { ok: true; deleted: number; retained: readonly RetainedObsoleteBundle[] }
+  | { ok: true; deleted: number }
   | { ok: false; failure: MaterializeFailure; facets: readonly string[] }
 
 /**
@@ -426,287 +300,162 @@ export type DeleteObsoleteResult =
  */
 export async function deleteObsoleteAssets(opts: DeleteObsoleteOptions): Promise<DeleteObsoleteResult> {
   let deleted = 0
-  const retained: RetainedObsoleteBundle[] = []
 
   for (const adapter of opts.adapters) {
-    if (adapter.supportsInstall !== true) {
-      return { ok: false, failure: { kind: 'unsupported-adapter', adapter: adapter.name }, facets: [] }
-    }
-    const incompatibility = compatibilityFailureFor(adapter.name, adapter.apiVersion)
-    if (incompatibility !== null) {
-      return { ok: false, failure: { kind: 'incompatible-adapter', failure: incompatibility }, facets: [] }
-    }
+    const resolved = assetCapabilityFor(adapter)
+    if (!resolved.ok) return { ok: false, failure: resolved.failure, facets: [] }
+    const capability = resolved.capability
 
     for (const ownership of opts.obsolete) {
       const target = assetIdentity(ownership.scope, ownership.type, ownership.effectiveName)
-      const ownedCompanionPaths = ownership.ownedCompanionPaths
 
-      // Same F14 guard as the write pass: only a structured `not-found` is
-      // trusted as "absent", because a journal entry recorded on a guess
-      // would restore an asset that never existed.
-      const readOutcome = await readPrevious(adapter, target, ownedCompanionPaths)
-      if (!readOutcome.ok) {
-        return {
-          ok: false,
-          failure: { kind: 'read-failed', adapter: adapter.name, asset: target, cause: readOutcome.cause },
-          facets: ownership.facets,
-        }
-      }
-      const previous = readOutcome.previous
-
-      // A skill whose primary is gone reads as wholly absent — the bundle read
-      // checks the primary first and never reaches the companions — so we hold
-      // no preimage for the companion bytes the receipt still claims. Deleting
-      // them anyway would be a mutation with no journal inverse: a later
-      // failure would roll everything else back and report a clean rollback
-      // while those bytes were gone for good. Keep them instead. They stop
-      // being tracked either way, so the honest outcome is to leave the files
-      // and say so, not to destroy what we cannot restore.
-      if (previous === null && ownership.type === 'skill' && ownedCompanionPaths.length > 0) {
-        retained.push({
-          adapter: adapter.name,
-          scope: ownership.scope,
-          type: 'skill',
-          effectiveName: ownership.effectiveName,
-          facets: ownership.facets,
-          companionPaths: [...ownedCompanionPaths].sort(),
-        })
-        opts.onLog?.(() => `[verbose]     ?${target.type}:${target.name} (primary missing — companions retained)`)
-        continue
-      }
-
-      let deletedPath: string | undefined
-      try {
-        const result = await adapter.deleteAsset(deleteRequestFor(target, ownedCompanionPaths))
-        if (!result.ok) {
-          return {
-            ok: false,
-            failure: {
-              kind: 'delete-failed',
-              adapter: adapter.name,
-              asset: target,
-              cause: describeAssetFailure(result.failure),
-            },
-            facets: ownership.facets,
-          }
-        }
-        deletedPath = result.deletedPaths[0]
-        // Count what actually existed rather than what was planned: a
-        // receipt entry for an already-removed file is not a removal.
-        if (result.existed) deleted++
-      } catch (err) {
+      const planned = await planRemoval(capability, {
+        projectRoot: opts.projectRoot,
+        target,
+        ownedCompanionPaths: ownership.ownedCompanionPaths,
+      })
+      if (!planned.ok) {
         return {
           ok: false,
           failure: {
-            kind: 'delete-failed',
+            kind: 'plan-failed',
+            operation: 'removal',
             adapter: adapter.name,
             asset: target,
-            cause: err instanceof Error ? err.message : String(err),
+            cause: planned.cause,
           },
           facets: ownership.facets,
         }
       }
-      opts.onLog?.(() => `[verbose]     -${target.type}:${target.name}${deletedPath ? ` → ${deletedPath}` : ''}`)
 
-      if (previous) {
-        opts.journal.record({
-          label: `delete ${adapter.name}:${target.type}:${target.name}`,
-          undo: async () => {
-            await runUndoInstall(
-              adapter,
-              target,
-              previous.content,
-              previous.metadata ?? {},
-              previous.companions,
-              Object.keys(previous.companions),
-            )
-          },
-        })
+      // Already gone. A receipt entry for a file that is not there is not a
+      // removal, so it is neither counted nor journaled.
+      if (planned.plan.kind === 'absent') continue
+
+      for (const mutation of planned.plan.action.mutations) {
+        opts.onLog?.(() => `[verbose]     -${target.type}:${target.name} → ${mutation.path}`)
       }
+
+      const applied = opts.transaction.apply(planned.plan.action)
+      if (!applied.ok) {
+        return {
+          ok: false,
+          failure: { kind: 'transaction-failed', adapter: adapter.name, asset: target, failure: applied.failure },
+          facets: ownership.facets,
+        }
+      }
+      deleted++
     }
   }
 
-  return { ok: true, deleted, retained }
+  return { ok: true, deleted }
 }
 
 /**
- * Bridge from the engine's asset entry to the adapter's tagged install
- * request. A skill request carries the new companion bundle (verbatim bytes
- * keyed skill-root-relative) plus the engine-verified set of previously-owned
- * companion paths, so the adapter replaces exactly the owned paths absent from
- * the new bundle and never touches unowned files. An empty companion map and
- * empty owned set reproduce the single-file behavior.
- */
-function installRequestFor(
-  asset: AssetIdentity,
-  content: string,
-  metadata: unknown,
-  companions: CompanionMap,
-  ownedCompanionPaths: readonly string[],
-): InstallAssetRequest {
-  if (asset.type === 'skill') {
-    return {
-      assetType: 'skill',
-      scope: asset.scope,
-      name: asset.name,
-      content,
-      metadata,
-      companions,
-      ownedCompanionPaths,
-    }
-  }
-  return { assetType: asset.type, scope: asset.scope, name: asset.name, content, metadata }
-}
-
-function readRequestFor(asset: AssetIdentity, ownedCompanionPaths: readonly string[]): ReadAssetRequest {
-  if (asset.type === 'skill') {
-    return { assetType: 'skill', scope: asset.scope, name: asset.name, ownedCompanionPaths }
-  }
-  return { assetType: asset.type, scope: asset.scope, name: asset.name }
-}
-
-function deleteRequestFor(asset: AssetIdentity, ownedCompanionPaths: readonly string[]): DeleteAssetRequest {
-  if (asset.type === 'skill') {
-    return { assetType: 'skill', scope: asset.scope, name: asset.name, ownedCompanionPaths }
-  }
-  return { assetType: asset.type, scope: asset.scope, name: asset.name }
-}
-
-/** The captured prior state of an asset — its primary content, metadata, and
- * (for skills) the bytes of its previously-owned companions. Used for
- * skip-if-identical comparison and full-bundle rollback preimages. */
-interface PreviousAsset {
-  content: string
-  metadata?: Record<string, unknown>
-  companions: CompanionMap
-}
-
-/**
- * Read an asset's previous state for rollback capture, including its
- * previously-owned companion bytes for skills. The structured `not-found` is
- * the one "asset didn't exist" signal we trust — every other failure (and any
- * throw, which is an adapter bug) means `previous` is unknown, so the caller
- * must fail loud instead of assuming absence.
+ * The adapter's asset capability, or the failure explaining why it has none.
  *
- * `ownedCompanionPaths` is the engine-verified previously-owned set, which
- * comes from the install receipt and nothing else; the read returns exactly
- * those companions that exist, so unowned files are never swept into the
- * preimage.
+ * Both checks are invariants rather than primary gates: the picker filters on
+ * the capability and the runInstall preflight checks the API, both before any
+ * materialization. Reaching either arm means an upstream gate was bypassed.
  */
-async function readPrevious(
+function assetCapabilityFor(
   adapter: Adapter,
-  asset: AssetIdentity,
-  ownedCompanionPaths: readonly string[],
-): Promise<{ ok: true; previous: PreviousAsset | null } | { ok: false; cause: string }> {
+): { ok: true; capability: AssetCapability } | { ok: false; failure: MaterializeFailure } {
+  if (adapter.assets === false) {
+    return { ok: false, failure: { kind: 'unsupported-adapter', adapter: adapter.name } }
+  }
+  const incompatibility = compatibilityFailureFor(adapter.name, adapter.apiVersion)
+  if (incompatibility !== null) {
+    return { ok: false, failure: { kind: 'incompatible-adapter', failure: incompatibility } }
+  }
+  return { ok: true, capability: adapter.assets }
+}
+
+interface InstallPlanInput {
+  projectRoot: string
+  target: AssetIdentity
+  content: string
+  metadata: unknown
+  companions: CompanionMap
+  ownedCompanionPaths: readonly string[]
+}
+
+type PlanInstallOutcome = { ok: true; plan: AssetInstallPlan } | { ok: false; cause: string }
+
+/**
+ * Ask the adapter to plan an install, converting a thrown adapter bug into the
+ * same structured shape as a reported failure. Planning is read-only, so
+ * neither outcome has left anything behind.
+ */
+async function planInstall(capability: AssetCapability, input: InstallPlanInput): Promise<PlanInstallOutcome> {
   try {
-    const result = await adapter.readAsset(readRequestFor(asset, ownedCompanionPaths))
-    if (result.ok) {
-      const companions = result.asset.assetType === 'skill' ? result.asset.companions : {}
-      return { ok: true, previous: { content: result.asset.content, metadata: result.asset.metadata, companions } }
-    }
-    if (result.failure.code === 'not-found') return { ok: true, previous: null }
-    return { ok: false, cause: describeAssetFailure(result.failure) }
+    const result = await capability.planInstall(installRequestFor(input))
+    return result.ok ? { ok: true, plan: result.plan } : { ok: false, cause: describePlanFailure(result.failure) }
+  } catch (err) {
+    return { ok: false, cause: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+interface RemovalPlanInput {
+  projectRoot: string
+  target: AssetIdentity
+  ownedCompanionPaths: readonly string[]
+}
+
+type PlanRemovalOutcome = { ok: true; plan: AssetRemovalPlan } | { ok: false; cause: string }
+
+async function planRemoval(capability: AssetCapability, input: RemovalPlanInput): Promise<PlanRemovalOutcome> {
+  try {
+    const result = await capability.planRemoval(removalRequestFor(input))
+    return result.ok ? { ok: true, plan: result.plan } : { ok: false, cause: describePlanFailure(result.failure) }
   } catch (err) {
     return { ok: false, cause: err instanceof Error ? err.message : String(err) }
   }
 }
 
 /**
- * Run an inverse install during rollback. The adapter contract returns
- * structured failures rather than throwing, but the journal counts an undo
- * as failed only when it *throws*. So a `{ ok: false }` inverse op — which
- * leaves on-disk state un-restored — must be surfaced as a throw here, or
- * `InstallJournal.rollback()` would report a clean rollback while an asset
- * was never restored. A thrown adapter bug propagates unchanged.
+ * Bridge from the engine's asset entry to the adapter's tagged planning
+ * request. A skill request carries the new companion bundle (verbatim bytes
+ * keyed skill-root-relative) plus the engine-verified set of previously-owned
+ * companion paths, so the plan removes exactly the owned paths absent from the
+ * new bundle and never touches unowned files.
  */
-async function runUndoInstall(
-  adapter: Adapter,
-  asset: AssetIdentity,
-  content: string,
-  metadata: Record<string, unknown>,
-  companions: CompanionMap,
-  ownedCompanionPaths: readonly string[],
-): Promise<void> {
-  const result = await adapter.installAsset(
-    installRequestFor(asset, content, metadata, companions, ownedCompanionPaths),
-  )
-  if (!result.ok) {
-    throw new Error(
-      `undo install ${adapter.name}:${asset.type}:${asset.name} failed: ${describeAssetFailure(result.failure)}`,
-    )
+function installRequestFor(input: InstallPlanInput): PlanAssetInstallRequest {
+  const base = { projectRoot: input.projectRoot, scope: input.target.scope, name: input.target.name }
+  if (input.target.type === 'skill') {
+    return {
+      ...base,
+      assetType: 'skill',
+      content: input.content,
+      metadata: input.metadata,
+      companions: input.companions,
+      ownedCompanionPaths: input.ownedCompanionPaths,
+    }
   }
+  return { ...base, assetType: input.target.type, content: input.content, metadata: input.metadata }
 }
 
-/** Inverse delete during rollback. Same throw-on-`{ ok: false }` rule as {@link runUndoInstall}. */
-async function runUndoDelete(
-  adapter: Adapter,
-  asset: AssetIdentity,
-  ownedCompanionPaths: readonly string[],
-): Promise<void> {
-  const result = await adapter.deleteAsset(deleteRequestFor(asset, ownedCompanionPaths))
-  if (!result.ok) {
-    throw new Error(
-      `undo delete ${adapter.name}:${asset.type}:${asset.name} failed: ${describeAssetFailure(result.failure)}`,
-    )
+function removalRequestFor(input: RemovalPlanInput): PlanAssetRemovalRequest {
+  const base = { projectRoot: input.projectRoot, scope: input.target.scope, name: input.target.name }
+  if (input.target.type === 'skill') {
+    return { ...base, assetType: 'skill', ownedCompanionPaths: input.ownedCompanionPaths }
   }
+  return { ...base, assetType: input.target.type }
 }
 
-/** Deduplicated, deterministically ordered union of two owned-path sets. */
-function unionPaths(a: readonly string[], b: readonly string[]): string[] {
-  return [...new Set([...a, ...b])].sort()
-}
-
-/**
- * Compare two companion maps for byte-exact equality. Used by
- * skip-if-identical so a drifted or added/removed companion forces a repair
- * through the atomic bundle replacement.
- */
-function companionsIdentical(a: CompanionMap, b: CompanionMap): boolean {
-  const aKeys = Object.keys(a)
-  const bKeys = Object.keys(b)
-  if (aKeys.length !== bKeys.length) return false
-  for (const key of aKeys) {
-    if (!bytesEqual(a[key], b[key])) return false
-  }
-  return true
-}
-
-function bytesEqual(a: Uint8Array | undefined, b: Uint8Array | undefined): boolean {
-  if (a === undefined || b === undefined || a.length !== b.length) return false
-  for (let i = 0; i < a.length; i++) {
-    if (a[i] !== b[i]) return false
-  }
-  return true
-}
-
-/**
- * The skill-root-relative companion paths that differ between the previously
- * installed bundle and the new one — drifted (bytes changed), added, or
- * removed. Sorted for stable, reviewable output. Used for path-specific drift
- * reporting.
- */
-function driftedCompanionPaths(previous: CompanionMap, next: CompanionMap): string[] {
-  const paths = new Set<string>([...Object.keys(previous), ...Object.keys(next)])
-  const drifted: string[] = []
-  for (const path of paths) {
-    if (!bytesEqual(previous[path], next[path])) drifted.push(path)
-  }
-  return drifted.sort()
-}
-
-/** Render a structured adapter failure as a one-line cause string. */
-function describeAssetFailure(failure: AdapterAssetFailure): string {
+/** Render a structured adapter planning failure as a one-line cause string. */
+function describePlanFailure(failure: AdapterPlanFailure): string {
   switch (failure.code) {
-    case 'not-found':
-      return 'asset not found'
     case 'invalid-companion-path':
       return `invalid companion path "${failure.path}": ${failure.reason}`
     case 'unsupported-scope':
       return `scope "${failure.scope}" is not supported by this adapter`
-    case 'not-implemented':
-      return `adapter does not implement ${failure.method}`
     case 'io-failed':
-      return `${failure.operation} failed${failure.path ? ` at ${failure.path}` : ''}: ${failure.message}`
+      return `could not read ${failure.path}: ${failure.message}`
+    case 'unsupported-object':
+      return `${failure.path} cannot be written through: ${failure.detail}`
+    case 'unrepresentable':
+      return `${failure.path} cannot be represented in this adapter's format: ${failure.detail}`
   }
 }
 
@@ -718,11 +467,6 @@ function describeAssetFailure(failure: AdapterAssetFailure): string {
  * disagree about which key to use. Aliasing deliberately cannot reach this
  * function: an alias changes where an asset lands, never what a publisher
  * declared, so the manifest is only ever indexed by the authored name.
- *
- * The plan being materialized was derived from this same manifest by
- * `buildVerifiedAssetPlan`, so a miss cannot happen for a well-formed record.
- * Absence therefore degrades to empty content rather than inventing a failure
- * mode the pipeline cannot produce.
  */
 function declarationFor(
   manifest: ResolvedFacetManifest,

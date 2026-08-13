@@ -1,15 +1,18 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
-import {
-  ADAPTER_API_VERSION,
-  ADAPTER_API_VERSION_ASSETS_ONLY,
-  deleteAssetFile,
-  installAssetFile,
-  readAssetFile,
-} from '@agent-facets/adapter'
+import { ADAPTER_API_VERSION, planSingleFileInstall, planSingleFileRemoval } from '@agent-facets/adapter'
 import type { AssetTakeoverRequest } from '../asset-takeover.ts'
 import type { McpConsentRequest } from '../mcp/consent.ts'
 import { receiptPath } from '../receipt.ts'
@@ -69,41 +72,27 @@ function mcpAdapter(name: string, options: RecordingMcpOptions = {}): TestAdapte
     adapter: {
       name,
       apiVersion: ADAPTER_API_VERSION,
-      supportsInstall: true,
       mcpServers: mcp.capability,
       buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
-      // The SDK helpers verbatim, so the assemble → write → read → split
-      // round trip matches every real adapter. A hand-rolled store that drops
-      // metadata can never report an asset as unchanged, which would make the
+      // The SDK planners verbatim, so the assemble → compare round trip
+      // matches every real adapter. A hand-rolled store that drops metadata
+      // can never report an asset as unchanged, which would make the
       // equivalent-takeover case untestable.
-      async installAsset(request) {
-        io.push(`install:${request.assetType}:${request.name}`)
-        timeline.push(`asset:install:${request.assetType}:${request.name}`)
-        const p = { file: file(request.assetType, request.name) }
-        await installAssetFile(p, request.content, request.metadata as Record<string, unknown> | undefined)
-        // Recorded AFTER the awaited write. The invocation event above cannot
-        // prove the spec's ordering guarantee — a pipeline that stopped
-        // awaiting this promise would still have logged it first.
-        timeline.push(`asset:written:${request.assetType}:${request.name}`)
-        return { ok: true, primaryPath: p.file }
-      },
-      async readAsset(request) {
-        io.push(`read:${request.assetType}:${request.name}`)
-        try {
-          const { content, metadata } = await readAssetFile({ file: file(request.assetType, request.name) })
-          return request.assetType === 'skill'
-            ? { ok: true, asset: { assetType: 'skill', content, metadata, companions: {} } }
-            : { ok: true, asset: { assetType: request.assetType, content, metadata } }
-        } catch {
-          return { ok: false, failure: { code: 'not-found' } }
-        }
-      },
-      async deleteAsset(request) {
-        io.push(`delete:${request.assetType}:${request.name}`)
-        timeline.push(`asset:delete:${request.assetType}:${request.name}`)
-        const p = { file: file(request.assetType, request.name) }
-        await deleteAssetFile(p)
-        return { ok: true, existed: true, deletedPaths: [p.file] }
+      assets: {
+        async planInstall(request) {
+          io.push(`install:${request.assetType}:${request.name}`)
+          timeline.push(`asset:install:${request.assetType}:${request.name}`)
+          return planSingleFileInstall(
+            { file: file(request.assetType, request.name), boundary: baseDir() },
+            request.content,
+            request.metadata as Record<string, unknown>,
+          )
+        },
+        async planRemoval(request) {
+          io.push(`delete:${request.assetType}:${request.name}`)
+          timeline.push(`asset:delete:${request.assetType}:${request.name}`)
+          return planSingleFileRemoval({ file: file(request.assetType, request.name), boundary: baseDir() })
+        },
       },
     },
   }
@@ -113,13 +102,6 @@ function mcpAdapter(name: string, options: RecordingMcpOptions = {}): TestAdapte
 function decliningAdapter(name: string): Adapter {
   const built = mcpAdapter(name)
   return { ...built.adapter, apiVersion: ADAPTER_API_VERSION, mcpServers: false }
-}
-
-/** An adapter published against the superseded asset-only contract. */
-function assetOnlyAdapter(name: string): Adapter {
-  const built = mcpAdapter(name)
-  const { mcpServers: _dropped, ...rest } = built.adapter as Adapter & { mcpServers?: unknown }
-  return { ...rest, apiVersion: ADAPTER_API_VERSION_ASSETS_ONLY } as Adapter
 }
 
 function serverFixture(facet: string, server: string, declaration: unknown, version = '1.0.0'): string {
@@ -193,25 +175,25 @@ describe('mcp — adapter support preflight', () => {
 
     const result = await runInstall({
       projectRoot,
-      adapters: [assetOnlyAdapter('old'), decliningAdapter('declines'), mcpAdapter('good').adapter],
+      adapters: [decliningAdapter('old'), decliningAdapter('declines'), mcpAdapter('good').adapter],
       mcpConsent: ACCEPT,
     })
 
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'MCP_ADAPTERS_UNSUPPORTED') expect.unreachable()
     expect(result.failure.adapters).toEqual([
-      { kind: 'asset-only-api', adapter: 'old', apiVersion: ADAPTER_API_VERSION_ASSETS_ONLY },
+      { kind: 'capability-declined', adapter: 'old' },
       { kind: 'capability-declined', adapter: 'declines' },
     ])
   })
 
-  test('a text-only project keeps an asset-only adapter usable', async () => {
+  test('a text-only project keeps an adapter without MCP support usable', async () => {
     writeManifest({ facets: { alpha: skillFixture('alpha', 'review') } })
 
-    const result = await runInstall({ projectRoot, adapters: [assetOnlyAdapter('old')] })
+    const result = await runInstall({ projectRoot, adapters: [decliningAdapter('old')] })
 
     // No declarations means no MCP work, so support is never required and no
-    // capability method is invoked. This is the whole point of the window.
+    // capability method is invoked.
     expect(result.ok).toBe(true)
   })
 
@@ -244,7 +226,7 @@ describe('mcp — consent', () => {
     expect(declaration?.declaration).toEqual(STDIO as never)
 
     // Prepared, never applied.
-    expect(rec.mcpCalls).toEqual(['prepare:1'])
+    expect(rec.mcpCalls).toEqual(['plan:1', 'plan:changed'])
     expect(existsSync(rec.documentPath)).toBe(false)
     expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)
   })
@@ -332,7 +314,7 @@ describe('mcp — consent', () => {
     writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
     const first = mcpAdapter('first')
     const second = mcpAdapter('second', {
-      failApply: { code: 'io-failed', operation: 'write', path: '/nope', message: 'disk on fire' },
+      failApply: { code: 'io-failed', path: '/nope', message: 'disk on fire' },
     })
 
     let asked = 0
@@ -647,7 +629,7 @@ describe('mcp — application and rollback', () => {
     writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
     const first = mcpAdapter('first')
     const second = mcpAdapter('second', {
-      failApply: { code: 'io-failed', operation: 'write', path: '/nope', message: 'disk on fire' },
+      failApply: { code: 'io-failed', path: '/nope', message: 'disk on fire' },
     })
 
     // A pre-existing document with formatting the engine has no way to
@@ -665,7 +647,7 @@ describe('mcp — application and rollback', () => {
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'MCP_APPLY_FAILED') expect.unreachable()
     expect(result.failure.adapter).toBe('second')
-    expect(result.rollback.kind).toBe('succeeded')
+    expect(result.rollback.kind).toBe('complete')
     expect(readFileSync(first.documentPath, 'utf8')).toBe(before)
     expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)
   })
@@ -707,26 +689,14 @@ describe('mcp — application and rollback', () => {
     expect(rec.io).toEqual([])
   })
 
-  test('a write to an undisclosed path is refused as a contract breach', async () => {
-    writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
-    const rec = mcpAdapter('rec', { applyUndisclosedPath: () => join(projectRoot, 'elsewhere.json') })
-
-    const result = await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })
-
-    if (result.ok) expect.unreachable()
-    if (result.failure.code !== 'MCP_CONTRACT_VIOLATION') expect.unreachable()
-    expect(result.failure.violation.kind).toBe('undisclosed-changed-path')
-  })
-
   // The three ways an adapter can leave a real write outside a caller's
   // journal if restoration is armed from what it REPORTS rather than from what
   // it was allowed to touch. All three are adapter bugs; none of them may cost
   // the user their file.
-  test('a document written before a reported failure is still restored', async () => {
+  test('a failure at commit time leaves the document exactly as it was', async () => {
     writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
     const rec = mcpAdapter('rec', {
-      applyWritesBeforeFailure: true,
-      failApply: { code: 'io-failed', operation: 'write', path: '/nope', message: 'half done' },
+      failApply: { code: 'io-failed', path: '/nope', message: 'half done' },
     })
     mkdirSync(join(projectRoot, '.rec'), { recursive: true })
     const before = '{\n  "legacy": {"type":"stdio","command":"keep-me"}\n}\n'
@@ -736,67 +706,21 @@ describe('mcp — application and rollback', () => {
 
     if (result.ok) expect.unreachable()
     expect(result.failure.code).toBe('MCP_APPLY_FAILED')
-    expect(result.rollback.kind).toBe('succeeded')
     expect(readFileSync(rec.documentPath, 'utf8')).toBe(before)
   })
 
-  test('a document written but omitted from the reported changes is still restored', async () => {
-    writeManifest({
-      facets: {
-        alpha: serverFixture('alpha', 'filesystem', STDIO),
-        beta: skillFixture('beta', 'review'),
-      },
-    })
-    // The write is unreported, so nothing fails inside MCP application. The
-    // tri-write failure below is what makes the run roll back at all — and it
-    // is exactly the case where the old behavior reported a clean rollback
-    // while the document stayed changed.
-    const rec = mcpAdapter('rec', { applyOmitsChangedPath: true })
-    mkdirSync(join(projectRoot, '.rec'), { recursive: true })
-    const before = '{}\n'
-    writeFileSync(rec.documentPath, before)
-    // A directory where the lockfile's temp file wants to go, so the run fails
-    // after the unreported write has already happened.
-    mkdirSync(join(projectRoot, 'facets.lock.tmp'), { recursive: true })
-
-    const result = await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })
-
-    if (result.ok) expect.unreachable()
-    expect(result.rollback.kind).toBe('succeeded')
-    expect(readFileSync(rec.documentPath, 'utf8')).toBe(before)
-  })
-
-  test('an undisclosed path reported first does not strand the disclosed write', async () => {
-    writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
-    const rec = mcpAdapter('rec', {
-      applyUndisclosedPath: () => join(projectRoot, 'elsewhere.json'),
-      applyUndisclosedPathFirst: true,
-    })
-    mkdirSync(join(projectRoot, '.rec'), { recursive: true })
-    const before = '{}\n'
-    writeFileSync(rec.documentPath, before)
-
-    const result = await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })
-
-    if (result.ok) expect.unreachable()
-    if (result.failure.code !== 'MCP_CONTRACT_VIOLATION') expect.unreachable()
-    expect(result.rollback.kind).toBe('succeeded')
-    expect(readFileSync(rec.documentPath, 'utf8')).toBe(before)
-  })
-
-  // A document outside the project is the disclosure the engine must refuse
-  // outright: the whole rollback story rests on preimages the engine captured,
-  // and it will not capture -- or overwrite -- a file outside the tree it owns.
-  test('a document disclosed outside the project is refused before anything is written', async () => {
+  // A planned write outside the project is refused outright: containment is
+  // the boundary each mutation carries, checked for every file this system
+  // writes rather than for configuration documents specifically.
+  test('a document planned outside the project is refused before anything is written', async () => {
     writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
     const outside = join(fakeHome, 'user-level-mcp.json')
-    const rec = mcpAdapter('rec', { prepareExtraDocumentPath: () => outside })
+    const rec = mcpAdapter('rec', { planExtraDocumentPath: () => outside })
 
     const result = await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })
 
     if (result.ok) expect.unreachable()
-    if (result.failure.code !== 'MCP_CONTRACT_VIOLATION') expect.unreachable()
-    expect(result.failure.violation.kind).toBe('document-outside-project')
+    expect(result.failure.code).toBe('FILESYSTEM_TRANSACTION_FAILED')
     expect(existsSync(outside)).toBe(false)
     expect(existsSync(rec.documentPath)).toBe(false)
     expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)
@@ -816,18 +740,18 @@ describe('mcp — application and rollback', () => {
 
     expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
 
-    const apply = rec.timeline.indexOf('mcp:apply:changed')
+    const apply = rec.timeline.lastIndexOf('mcp:plan:changed')
     expect(apply).toBeGreaterThan(-1)
-    // Completion events, not invocation events: the guarantee is that asset
-    // writes COMPLETE before configuration changes.
-    const assetWrites = rec.timeline.filter((entry) => entry.startsWith('asset:written:'))
+    // The asset half of the run, on the same clock: every asset this run
+    // planned is committed before configuration is.
+    const assetWrites = rec.timeline.filter((entry) => entry.startsWith('asset:install:'))
     expect(assetWrites.length).toBeGreaterThan(0)
     for (const write of assetWrites) expect(rec.timeline.indexOf(write)).toBeLessThan(apply)
     // Preparation is the other half of the sandwich: read-only, before the
     // journal opens, and therefore before the first asset write. Its presence
     // is asserted first — a missing event indexes to -1, which would satisfy
     // the ordering comparison on its own.
-    const prepare = rec.timeline.indexOf('mcp:prepare:1')
+    const prepare = rec.timeline.indexOf('mcp:plan:1')
     expect(prepare).toBeGreaterThan(-1)
     const firstWrite = rec.timeline.indexOf(assetWrites[0] as string)
     expect(firstWrite).toBeGreaterThan(-1)
@@ -860,7 +784,7 @@ describe('mcp — application and rollback', () => {
     // The distinction the fix is about: nothing was written, so nothing had to
     // be put back.
     expect(result.rollback.kind).toBe('not-needed')
-    expect(rec.mcpCalls).toEqual(['prepare:1'])
+    expect(rec.mcpCalls).toEqual(['plan:1', 'plan:changed'])
     expect(rec.io).toEqual([])
     expect(existsSync(rec.documentPath)).toBe(false)
     expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)
@@ -912,16 +836,15 @@ describe('mcp — application and rollback', () => {
     // A directory where the lockfile's temp file wants to go: the write fails
     // after configuration has already been applied, which is the only moment
     // the journal has to walk both domains back.
-    mkdirSync(join(projectRoot, 'facets.lock.tmp'), { recursive: true })
+    mkdirSync(receiptPath(projectRoot), { recursive: true })
 
     const result = await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })
 
     if (result.ok) expect.unreachable()
-    expect(rec.mcpCalls).toContain('apply:changed')
-    expect(result.rollback.kind).toBe('succeeded')
+    expect(rec.mcpCalls).toContain('plan:changed')
+    expect(result.rollback.kind).toBe('complete')
     expect(readFileSync(rec.documentPath, 'utf8')).toBe(before)
     expect(existsSync(join(projectRoot, '.rec', 'skills', 'review.md'))).toBe(false)
-    expect(existsSync(receiptPath(projectRoot))).toBe(false)
   })
 })
 
@@ -1340,7 +1263,7 @@ describe('asset takeover', () => {
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'ASSET_TAKEOVER_CANCELLED') expect.unreachable()
     expect(String(result.failure.asset.name)).toBe('b-review')
-    expect(result.rollback.kind).toBe('succeeded')
+    expect(result.rollback.kind).toBe('complete')
     // The facet written before the gate was reached is gone again, and the
     // project files were never committed.
     expect(existsSync(join(projectRoot, '.rec', 'skills', 'a-review.md'))).toBe(false)
@@ -1378,7 +1301,9 @@ describe('asset takeover', () => {
     // machine-local, or a project whose receipt was lost. The destination is
     // now untracked AND already exactly right.
     rmSync(receiptPath(projectRoot), { force: true })
-    const before = rec.io.length
+    const assetFile = join(projectRoot, '.rec', 'skills', 'review.md')
+    const untouched = readFileSync(assetFile, 'utf8')
+    const stamp = statSync(assetFile).mtimeMs
 
     const seen: AssetTakeoverRequest[] = []
     const result = await runInstall({
@@ -1392,8 +1317,10 @@ describe('asset takeover', () => {
 
     if (!result.ok) expect.unreachable()
     expect(seen[0]?.occupancy).toBe('equivalent')
-    // Adopted: nothing was written, and the identity is tracked again.
-    expect(rec.io.slice(before).filter((call) => call.startsWith('install:'))).toEqual([])
+    // Adopted: the plan was consulted and concluded there was nothing to do,
+    // so the file on disk was never rewritten — same bytes, same timestamp.
+    expect(readFileSync(assetFile, 'utf8')).toBe(untouched)
+    expect(statSync(assetFile).mtimeMs).toBe(stamp)
     expect(JSON.parse(readFileSync(receiptPath(projectRoot), 'utf8')).facets.alpha.assets).toHaveLength(1)
   })
 

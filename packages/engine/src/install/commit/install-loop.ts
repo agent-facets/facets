@@ -1,7 +1,7 @@
 import type { Adapter } from '@agent-facets/adapter'
 import type { CurrentLockfileFacet, MaterializedAsset } from '@agent-facets/protocol'
+import type { FileTransaction } from '../../fs/index.ts'
 import type { AssetTakeoverResolver } from '../asset-takeover.ts'
-import type { InstallJournal } from '../journal.ts'
 import { materialize } from '../materialize.ts'
 import { materializeFailureToRunInstall } from '../materialize-failure.ts'
 import type { OnLog, RunInstallFailure, StageEvent } from '../types.ts'
@@ -38,8 +38,10 @@ export interface InstallLoopArgs {
    * each write which owned companion paths its replacement may remove.
    */
   previousOwnership: ReadonlyMap<string, PreviousOwnership>
+  /** The project this run is installing into, handed to every adapter request. */
+  projectRoot: string
   adapters: ReadonlyArray<Adapter>
-  journal: InstallJournal
+  transaction: FileTransaction
   /**
    * Interactive gate for an occupied destination this machine does not own.
    * Forwarded verbatim; absence means continue.
@@ -51,7 +53,7 @@ export interface InstallLoopArgs {
 }
 
 /**
- * Materialize every resolved facet under the journal.
+ * Materialize every resolved facet through the run's transaction.
  *
  * The second half of what used to be one interleaved loop. Everything this
  * touches was already fetched and verified by {@link resolveAll}, so a
@@ -63,7 +65,18 @@ export interface InstallLoopArgs {
  * only reports; it never unwinds.
  */
 export async function installFacets(args: InstallLoopArgs): Promise<InstallLoopResult> {
-  const { resolved, plan, previousOwnership, adapters, journal, resolveAssetTakeover, signal, onStage, onLog } = args
+  const {
+    resolved,
+    plan,
+    previousOwnership,
+    projectRoot,
+    adapters,
+    transaction,
+    resolveAssetTakeover,
+    signal,
+    onStage,
+    onLog,
+  } = args
 
   // Entries come from Compose, which is where dispositions were decided.
   // Apply reports what it wrote; it does not re-derive what should be locked.
@@ -100,7 +113,8 @@ export async function installFacets(args: InstallLoopArgs): Promise<InstallLoopR
       newAssets: materializedByFacet.get(facetName) ?? [],
       previousOwnership,
       companionBytes: record.companionBytes,
-      journal,
+      projectRoot,
+      transaction,
       ...(resolveAssetTakeover ? { resolveAssetTakeover } : {}),
       onLog,
       onStage,

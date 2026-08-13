@@ -35,8 +35,7 @@ export function assertDistBundleContract(options: AssertDistBundleOptions): void
     // Two module instances never share object identity, so the assertion is on
     // shape — which is also exactly what the SDK's completeness check looks at.
     const capability = await loadDistMcpCapability(options.bundlePath)
-    expect(typeof capability.prepare).toBe('function')
-    expect(typeof capability.apply).toBe('function')
+    expect(typeof capability.plan).toBe('function')
   })
 
   test('built bundle resolves nothing outside Node builtins', async () => {
@@ -50,11 +49,11 @@ export function assertDistBundleContract(options: AssertDistBundleOptions): void
  * The MCP capability as the *bundle* exposes it, so a caller can exercise it
  * against a document only an inlined parser could read.
  */
-export async function loadDistMcpCapability(bundlePath: string): Promise<McpServerCapability<unknown>> {
+export async function loadDistMcpCapability(bundlePath: string): Promise<McpServerCapability> {
   const adapter = await loadAdapter(bundlePath)
   const capability = adapter.mcpServers
   if (typeof capability !== 'object' || capability === null) expect.unreachable()
-  return capability as McpServerCapability<unknown>
+  return capability as McpServerCapability
 }
 
 async function loadAdapter(bundlePath: string): Promise<{ name?: string; apiVersion?: string; mcpServers?: unknown }> {

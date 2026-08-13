@@ -7,14 +7,14 @@ import { DeltaTip, InstallReceiptTip, CanonicalFingerprintTip, SidecarTip } from
 
 Commit is phase 2 of the [install pipeline](/specification/install): a single transaction that applies the <DeltaTip>delta</DeltaTip> from [Planning](/specification/planning). Its inputs are the on-disk `facets.json` — including the [materialization](/specification/materialization) intent it records — `facets.lock`, the <InstallReceiptTip>install receipt</InstallReceiptTip>, and the delta.
 
-It is never partial. Commit runs in three phases, and the boundary between the second and third is where mutation begins: everything up to and including [MCP consent](#mcp-configuration) — resolution, composition, adapter capability checks, and read-only native-configuration preparation — is read-only, so a failure or a declined approval there leaves the project byte-identical without needing to undo anything. A [removal-only short circuit](#removal-only-short-circuit) skips both read-only phases when this machine's receipt already answers for every remaining facet; it writes nothing until that same boundary. From the first write onward, every write records its inverse in the **journal**, and a failure MUST replay it in reverse to leave the project exactly as it was.
+It is never partial. Commit runs in three phases, and the boundary between the second and third is where mutation begins: everything up to and including [MCP consent](#mcp-configuration) — resolution, composition, adapter capability checks, and read-only native-configuration preparation — is read-only, so a failure or a declined approval there leaves the project byte-identical without needing to undo anything. A [removal-only short circuit](#removal-only-short-circuit) skips both read-only phases when this machine's receipt already answers for every remaining facet; it writes nothing until that same boundary. From the first write onward, every change is recorded in the **transition journal** as an exact `before → after` pair, and a failure MUST use it to put every file back byte for byte.
 
 <CardGroup cols={3}>
   <Card title="Verify" icon="shield-check">
     Cache self-audit, lockfile comparison, or registry confirmation. Tampered content never materializes.
   </Card>
   <Card title="Materialize" icon="download">
-    Assets written to every selected adapter, then approved MCP configuration reconciled — all journaled for rollback.
+    Assets written to every selected adapter, then approved MCP configuration reconciled — every change journaled with both its endpoints.
   </Card>
   <Card title="Commit" icon="check">
     `facets.json` + `facets.lock` + receipt written together, atomically.
@@ -43,17 +43,17 @@ It is never partial. Commit runs in three phases, and the boundary between the s
   <Step title="Adapter capability check">
     If the composed plan contains any active MCP declaration, every selected adapter MUST be able to configure MCP servers. Adapters that cannot are collected into **one** failure naming all of them, raised before any approval is requested and before any mutation. See [MCP configuration](#mcp-configuration).
   </Step>
-  <Step title="Prepare native configuration">
-    Each supporting adapter parses its own native project document and computes its complete MCP change **read-only**, reporting per-server outcomes, every document the change can affect, and an opaque prepared plan. A parse or native planning conflict fails here, still with nothing written. This is also where an untracked entry already occupying a desired server name is discovered — at no extra I/O cost, because the document has just been parsed.
+  <Step title="Plan native configuration">
+    Each supporting adapter parses its own native project document and computes its complete MCP change **read-only**, reporting per-server outcomes and the exact transitions for the documents it actually changes. A parse or native planning conflict fails here, still with nothing written. This is also where an untracked entry already occupying a desired server name is discovered — at no extra I/O cost, because the document has just been parsed.
   </Step>
   <Step title="MCP approval">
-    Every new or changed declaration, plus every untracked native entry that would be adopted or replaced, is presented as one request. Approval covers the complete set; declining ends the operation with nothing to undo, because the journal has not opened. See [MCP configuration](#mcp-configuration).
+    Every new or changed declaration, plus every untracked native entry that would be adopted or replaced, is presented as one request. Approval covers the complete set; declining ends the operation with nothing to undo, because nothing has been written. See [MCP configuration](#mcp-configuration).
   </Step>
   <Step title="Phase C — Apply">
-    The journal opens. Obsolete assets are deleted in one global pass, then every desired asset is [materialized](#materialize) under its effective name. Deleting first is what lets a name move between facets safely. An occupied destination the receipt does not own triggers a [just-in-time takeover gate](#untracked-destinations) here.
+    The first write happens here. Obsolete assets are deleted in one global pass, then every desired asset is [materialized](#materialize) under its effective name. Deleting first is what lets a name move between facets safely. An occupied destination the receipt does not own triggers a [just-in-time takeover gate](#untracked-destinations) here.
   </Step>
-  <Step title="Apply native MCP configuration">
-    Each prepared plan is applied as one atomic update per document, **after** all asset writes and immediately before the tri-write — the narrowest window in which a tool watching its own config could observe a server that a later failure would undo. Before each plan is applied, the byte preimages of its disclosed documents are journaled.
+  <Step title="Commit native MCP configuration">
+    Each planned change is committed as one batch, **after** all asset writes and immediately before the tri-write — the narrowest window in which a tool watching its own config could observe a server that a later failure would undo. Each document's planned state is re-checked immediately before it is written, and both endpoints of every write enter the journal.
   </Step>
   <Step title="Transactional tri-write">
     The [manifest-write policy](#manifest-write-policy) is applied just before the write, then `facets.json`, `facets.lock`, and the receipt are written together. A failure anywhere rolls back all materialization and all native configuration, and leaves all three files unchanged.
@@ -113,7 +113,7 @@ flowchart LR
     subgraph B["Phase B — Compose (read-only)"]
         C["Plan materialization"]
     end
-    subgraph C2["Phase C — Apply (journaled)"]
+    subgraph C2["Phase C — Apply (journaled as A → B)"]
         D["Delete obsolete"] --> M["Materialize"]
     end
     A --> B --> C2
@@ -224,14 +224,27 @@ A frozen or non-interactive commit MUST report rather than resolve. Frozen mode 
 
 Materialization writes assets from verified content into each selected adapter's storage, under each asset's **effective** name. Every adapter request, journal label, and failure report addresses the file on disk, which is named by the project's disposition — not by the publisher. Content lookup, canonical paths, and integrity stay anchored to the authored name; see [Two identities](/specification/materialization#two-identities). An omitted asset never reaches an adapter at all.
 
-A skill is written as an **atomic bundle**: its `SKILL.md` and every owned companion file are staged, committed, and rolled back as one all-or-nothing adapter operation carrying the validated owned-file set — the adapter never infers ownership from disk. Writes are skip-if-identical **per asset**: the write is skipped only when the primary *and* every companion already match on disk, so a single drifted companion (or a changed companion set) forces a repair through the same atomic bundle replacement. A facet whose lockfile entry is unchanged but whose on-disk files needed rewriting is reported as *repaired* (the full outcome taxonomy is documented at [`facet install`](/cli/install#outcomes)). An interrupted install converges on re-run without deleting unowned files. Every write MUST journal its inverse operation for rollback.
+The adapter decides *what* should change and returns exact per-file transitions; the engine performs every write. A skill is planned as an **atomic bundle**: its `SKILL.md`, every owned companion, and the removal of owned companions the new bundle drops are one batch that commits together or not at all — the adapter never infers ownership from disk. A file already holding the bytes the plan would write contributes no change at all, so re-installing an unchanged asset touches no modification time. A single drifted companion still forces a repair, through the same batch. A facet whose lockfile entry is unchanged but whose on-disk files needed rewriting is reported as *repaired* (the full outcome taxonomy is documented at [`facet install`](/cli/install#outcomes)). An interrupted install converges on re-run without deleting unowned files.
+
+### The transition journal
+
+Every change the engine performs is recorded as `A → B`: the exact state the file was in, and the exact state this run produced. Four rules follow from that shape:
+
+- **Only real changes are journaled.** A file read to compute a change — but not changed — never enters the journal, so a concurrent edit to it survives a rollback untouched.
+- **The precondition is checked immediately before the write.** If the file no longer holds the state the plan was computed from, the write is refused and reported as a conflict rather than applied over somebody else's change.
+- **Rollback compares against `B`, not just `A`.** A file still holding what this run wrote is restored to `A`. A file already back at `A` is left alone, mtime included. A file holding anything else is **preserved and reported** — never overwritten. Rollback continues past every such conflict, so one contested file cannot strand the rest.
+- **Repeated changes collapse.** `A → B` then `B → C` is journaled as `A → C`, including when different adapters change the same file, so a rollback returns it to where it stood before the run began.
+
+Directories are tracked separately and cleaned up conservatively: rollback removes only directories this run can prove it created, that are still empty, and are still the directories it made. A directory that existed beforehand always survives, and any remaining file prevents removal. The guarantee covers exact file bytes, file permission bits, and directory existence — not directory permissions or timestamps.
+
+The journal covers **handled failures within one run**. It lives in memory and is deliberately not replayed after a crash: a killed or power-lost process is recovered by re-running the install, whose [per-file integrity reconciliation](#materialize) converges disk, lockfile, and receipt without deleting unowned files. A persisted journal would have to prove what it wrote before it could safely undo anything — which is the evidence a re-run recomputes anyway.
 
 ### Untracked destinations
 
 A desired effective identity whose destination is already occupied by something the receipt does not own is an **untracked destination**. Desired state authorizes reconciling it, but not silently — the user is told first. The two kinds of destination are disclosed at different moments, for one reason: cost.
 
-- **MCP entries** are disclosed *before* the journal opens, during read-only preparation. The adapter has already parsed the document to plan its change, so occupancy and equality are known for free. Declining therefore has nothing to roll back.
-- **Assets** are disclosed *just in time*, during Apply, at the previous-state read that no-op detection and rollback already require. Searching the whole project for takeovers up front would be an eager scan that buys nothing; cancelling here rolls back the complete journal.
+- **MCP entries** are disclosed *before* the first write, during read-only planning. The adapter has already parsed the document to plan its change, so occupancy and equality are known for free. Declining therefore has nothing to roll back.
+- **Assets** are disclosed *just in time*, during Apply, from the occupancy the adapter's plan already reports. Searching the whole project for takeovers up front would be an eager scan that buys nothing; cancelling here restores every file the run has already changed.
 
 In both cases: continuing adopts equivalent state **without rewriting it**, and replaces divergent state transactionally. A destination the receipt already owns reconciles with no disclosure at all, and a destination the desired set does not name is never inspected or touched.
 
@@ -245,7 +258,7 @@ Active MCP server declarations are reconciled into every selected adapter's proj
 
 ### Capability
 
-Configuring MCP servers requires an adapter implementing API `0.2` that declares MCP support. A selected API `0.1` adapter, or a `0.2` adapter that declares no MCP support, stays perfectly usable for a project with no active declarations. The moment one exists, every such adapter is collected into a single failure that names all of them — raised before approval and before mutation, so the project is untouched. The two cases have different remedies: an API `0.1` adapter needs upgrading, while an adapter that declares no MCP support will not gain it by being updated, so the resolution there is to omit the declarations or deselect the adapter.
+Configuring MCP servers requires an adapter that declares MCP support. One that does not stays perfectly usable for a project with no active declarations. The moment one exists, every such adapter is collected into a single failure that names all of them — raised before approval and before mutation, so the project is untouched. A newer release will not change that answer, so the resolution is to omit the declarations or deselect the adapter.
 
 ### Approval
 
@@ -265,14 +278,13 @@ Approval never travels to a teammate. It lives in the machine-local receipt rath
 
 ### Reconciliation
 
-Each adapter's contract is two operations, and the split is what makes the transaction safe:
+Each adapter's contract is one read-only operation, and that is what makes the transaction safe. **Plan** parses the native document once, preserves unrelated state, detects native conflicts, computes the adapter's own rendering of each desired declaration, classifies every key, and returns those outcomes alongside the exact document changes that would realize them. It writes nothing — not even when the document does not exist yet.
 
-1. **Prepare** is read-only. It parses the native document once, preserves unrelated state, detects native conflicts, computes the adapter's own rendering of each desired declaration, classifies every key, discloses every document the change can affect, and returns an opaque plan. The engine never inspects that plan.
-2. **Apply** consumes the plan and performs one atomic update per document, reporting `unchanged` or the paths it changed.
+Each planned change carries the document's exact inspected state, so the engine can refuse it if something else edited the file, and can put the original bytes back if a later step fails. A document the adapter inspected but does not change is not part of the plan, and is therefore never journaled, never restored, and never touched.
 
 **Native-rendering equality** — computed by the adapter, which is the only component that knows its tool's schema — decides whether an existing entry is adopted without a write. It is semantic: comments, whitespace, member order, and omitted-versus-empty optional collections do not make entries differ, while any value that changes the launch or connection behavior does. An adapter that cannot *prove* equality MUST classify the entry as divergent and let it be replaced, rather than guess.
 
-Adapters supply **no inverse operation**. Before applying a plan, the engine journals the exact bytes of every disclosed document, so rollback restores comments, formatting, and member order exactly. Rollback fidelity never depends on adapter code being correct a second time, or on a semantic inverse reproducing a document's formatting.
+Adapters supply **no inverse operation**, and no write. The engine commits each change and journals both its endpoints, so rollback restores comments, formatting, and member order exactly. Rollback fidelity never depends on adapter code being correct a second time, or on a semantic inverse reproducing a document's formatting.
 
 Reconciliation preserves everything outside the project's desired set: unrelated tool settings keep their semantic values, server entries the project neither desires nor owns are left completely untouched, and for an owned entry a native field outside the portable model (a timeout, say) survives where the format permits.
 
@@ -392,14 +404,14 @@ sequenceDiagram
         Commit->>Commit: Phase B — compose the global plan
     end
     Commit->>Commit: check adapter MCP capability
-    Commit->>Commit: prepare native MCP change (read-only)
+    Commit->>Commit: plan native MCP change (read-only)
     Commit->>Commit: obtain MCP approval
     Commit->>Commit: Phase C — delete obsolete, then materialize
-    Commit->>FS: apply prepared MCP plans (preimages journaled)
+    Commit->>FS: commit planned MCP changes (A → B journaled)
     alt all succeeded
         Commit->>FS: write facets.json + facets.lock + receipt
     else failed
-        Commit->>Commit: journal rollback
+        Commit->>Commit: restore every changed file
         Note right of Commit: project unchanged
     end
 ```

@@ -52,7 +52,7 @@ describe('unsupported manifestVersion wording', () => {
       unsupportedManifestVersionError(detail).fix,
       installFailureFix(
         { code: 'FACETS_JSON_UNSUPPORTED_VERSION', ...detail },
-        { kind: 'not-needed', reason: 'test fixture' },
+        { kind: 'not-needed', reason: 'post-lock-no-mutation' },
         'install',
       ),
     ]

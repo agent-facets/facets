@@ -11,7 +11,6 @@ import type {
   McpNativeTakeover,
   McpUnsupportedAdapter,
 } from '@agent-facets/engine'
-import { adapterInstallCommand } from './adapter-install-errors.ts'
 import { omitSnippet, serverManifestLocation, UNCHANGED_FOOTER } from './collision-report.ts'
 
 /**
@@ -38,11 +37,6 @@ export interface UnsupportedMcpAdapterDescription {
 
 export function describeUnsupportedMcpAdapter(entry: McpUnsupportedAdapter): UnsupportedMcpAdapterDescription {
   switch (entry.kind) {
-    case 'asset-only-api':
-      return {
-        what: `${entry.adapter} implements adapter API ${entry.apiVersion}, which has no MCP server support`,
-        fix: `upgrade it: ${adapterInstallCommand(entry.adapter)}`,
-      }
     case 'capability-declined':
       return {
         what: `${entry.adapter} declares no MCP server support`,
@@ -65,7 +59,7 @@ export function describeUnsupportedMcpAdapter(entry: McpUnsupportedAdapter): Uns
 export function describeMcpCapabilityFailure(failure: McpServerCapabilityFailure): string {
   switch (failure.code) {
     case 'io-failed':
-      return `could not ${failure.operation} ${failure.path}: ${failure.message}`
+      return `could not read ${failure.path}: ${failure.message}`
     case 'parse-failed':
       return `${failure.path} could not be parsed: ${failure.message}`
     case 'validation-failed':
@@ -89,8 +83,6 @@ export function describeMcpCapabilityHint(failure: McpServerCapabilityFailure): 
   switch (failure.reason) {
     case 'interpolation':
       return 'that tool would substitute the value before running the server, so what ran would not be what was approved'
-    case 'document-changed':
-      return 'another process edited it after it was inspected, so nothing was written to it'
     case 'native-state':
       return undefined
   }
@@ -103,8 +95,6 @@ function describeMcpConflict(failure: McpConflictFailure): string {
       // cannot fix a declaration they are only told is wrong — so it is shown
       // exactly, escaped, and with nothing else from the declaration beside it.
       return `server "${failure.serverName}" declares a value it would expand rather than use literally: ${terminalLiteral(failure.value)}`
-    case 'document-changed':
-      return `${failure.path} changed after it was inspected; nothing was written`
     case 'native-state':
       return `${failure.path} cannot hold the desired servers without destroying native state: ${failure.detail}`
   }
@@ -246,9 +236,7 @@ export function formatUnsupportedMcpAdaptersReport(
 /** One line naming an adapter's breach of the MCP capability contract. */
 export function describeMcpContractViolation(violation: McpContractViolation): string {
   switch (violation.kind) {
-    case 'document-outside-project':
-      return `${violation.adapter} disclosed a configuration document outside the project: ${violation.path}`
-    case 'undisclosed-changed-path':
-      return `${violation.adapter} changed a document it never disclosed: ${violation.path}`
+    case 'outcomes-changed':
+      return `${violation.adapter} reached a different conclusion about what to configure between approval and writing`
   }
 }

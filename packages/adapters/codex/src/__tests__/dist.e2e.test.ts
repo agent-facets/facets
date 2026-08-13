@@ -9,7 +9,12 @@ import { expect, test } from 'bun:test'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { assertDistBundleContract, loadDistMcpCapability, STDIO_SERVER } from '@agent-facets/adapter-test-kit'
+import {
+  assertDistBundleContract,
+  commitPlannedAction,
+  loadDistMcpCapability,
+  STDIO_SERVER,
+} from '@agent-facets/adapter-test-kit'
 import sourceAdapter from '../index.ts'
 
 const bundlePath = join(import.meta.dir, '../../dist/index.mjs')
@@ -22,14 +27,13 @@ test('bundled TOML editor preserves comments after bundling', async () => {
   const configPath = join(root, '.codex', 'config.toml')
   try {
     await Bun.write(configPath, '# keep me\nmodel = "gpt-5.6"\n')
-    const prepared = await capability.prepare({
+    const planned = await capability.plan({
       projectRoot: root,
       desired: [STDIO_SERVER],
       previouslyOwnedNames: [],
     })
-    if (!prepared.ok) expect.unreachable()
-    const applied = await capability.apply({ plan: prepared.preparation.plan })
-    if (!applied.ok) expect.unreachable()
+    if (!planned.ok) expect.unreachable()
+    commitPlannedAction(planned.plan.action)
 
     // A value-model TOML round trip would have dropped this comment; only the
     // inlined syntax-aware editor keeps it.

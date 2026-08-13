@@ -1,15 +1,13 @@
 import { join } from 'node:path'
 import {
-  type ApplyMcpServersResult,
-  applyMcpTextPlan,
   isPlainObject,
   type McpNativeMatch,
   type McpServerCapability,
   type McpServerCapabilityFailure,
   type McpServerContribution,
-  type McpTextPlan,
-  type PrepareMcpServersRequest,
-  type PrepareMcpServersResult,
+  type McpTextDocument,
+  type PlanMcpServersRequest,
+  type PlanMcpServersResult,
   prepareMcpTextPlan,
   type ReadonlyMcpServerDeclaration,
   readTextOrAbsent,
@@ -103,6 +101,12 @@ type LayerSource =
 /** One configuration layer, as inspected and as being edited. */
 interface Layer {
   readonly path: string
+  /**
+   * The document's exact state when it was inspected. Carried so a plan can
+   * state the precondition it was computed from, and so the caller can restore
+   * these very bytes if the operation fails.
+   */
+  readonly document: McpTextDocument
   readonly source: LayerSource
   /**
    * The server entries this layer defined when it was inspected. A snapshot on
@@ -115,7 +119,7 @@ interface Layer {
 }
 
 /** The exact bytes this layer was read from, which a plan compares against. */
-function inspectedText(layer: Layer): string | null {
+function _inspectedText(layer: Layer): string | null {
   return layer.source.kind === 'absent' ? null : restoreJsoncBom(layer.source.body, layer.source.bom)
 }
 
@@ -135,12 +139,12 @@ function startingBody(source: LayerSource): string {
 function pendingEdit(layer: Layer): TextDocumentEdit | null {
   if (layer.workingBody === startingBody(layer.source)) return null
   const bom = layer.source.kind === 'present' && layer.source.bom
-  return { path: layer.path, expected: inspectedText(layer), contents: restoreJsoncBom(layer.workingBody, bom) }
+  return { path: layer.path, contents: restoreJsoncBom(layer.workingBody, bom) }
 }
 
-export const openCodeMcpServers: McpServerCapability<McpTextPlan> = {
-  async prepare(request: PrepareMcpServersRequest): Promise<PrepareMcpServersResult<McpTextPlan>> {
-    const read = await readLayers(request.projectRoot)
+export const openCodeMcpServers: McpServerCapability = {
+  async plan(request: PlanMcpServersRequest): Promise<PlanMcpServersResult> {
+    const read = readLayers(request.projectRoot)
     if (!read.ok) return { ok: false, failure: read.failure }
     const [jsonc, json] = read.layers
 
@@ -156,7 +160,7 @@ export const openCodeMcpServers: McpServerCapability<McpTextPlan> = {
 
     return prepareMcpTextPlan({
       request,
-      documentPaths: [jsonc.path, json.path],
+      documents: [jsonc.document, json.document],
       interpolation: { pattern: INTERPOLATION_PATTERN },
       presentNames: new Set(merged.keys()),
       compare: (contribution) => compareEntry(merged.get(contribution.name), contribution.declaration),
@@ -200,10 +204,6 @@ export const openCodeMcpServers: McpServerCapability<McpTextPlan> = {
       },
     })
   },
-
-  async apply(request: { readonly plan: unknown }): Promise<ApplyMcpServersResult> {
-    return applyMcpTextPlan(request.plan, { adapterName: 'opencode' })
-  },
 }
 
 type ReadLayersResult =
@@ -217,15 +217,15 @@ type ReadLayersResult =
  * preimage the caller can restore to, and a run that creates the JSONC file
  * has to be able to put its absence back.
  */
-async function readLayers(projectRoot: string): Promise<ReadLayersResult> {
+function readLayers(projectRoot: string): ReadLayersResult {
   const layers: Layer[] = []
 
   for (const name of DOCUMENT_NAMES) {
     const path = join(projectRoot, name)
-    const read = await readTextOrAbsent(path)
+    const read = readTextOrAbsent(path)
     if (!read.ok) return { ok: false, failure: read.failure }
 
-    const parsed = parseLayer(path, read.text)
+    const parsed = parseLayer(read.document, read.text)
     if (!parsed.ok) return { ok: false, failure: parsed.failure }
     layers.push(parsed.layer)
   }
@@ -243,10 +243,11 @@ type ParseLayerResult =
   | { readonly ok: true; readonly layer: Layer }
   | { readonly ok: false; readonly failure: McpServerCapabilityFailure }
 
-function parseLayer(path: string, text: string | null): ParseLayerResult {
+function parseLayer(document: McpTextDocument, text: string | null): ParseLayerResult {
+  const path = document.path
   if (text === null) {
     const source = { kind: 'absent' } as const
-    return { ok: true, layer: { path, source, servers: {}, workingBody: startingBody(source) } }
+    return { ok: true, layer: { path, document, source, servers: {}, workingBody: startingBody(source) } }
   }
 
   const { bom, body } = splitJsoncBom(text)
@@ -271,7 +272,7 @@ function parseLayer(path: string, text: string | null): ParseLayerResult {
   }
 
   const source = { kind: 'present', bom, body } as const
-  return { ok: true, layer: { path, source, servers: rawServers ?? {}, workingBody: startingBody(source) } }
+  return { ok: true, layer: { path, document, source, servers: rawServers ?? {}, workingBody: startingBody(source) } }
 }
 
 /**

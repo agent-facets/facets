@@ -30,7 +30,9 @@ export const editCommand: Command = {
         const applied = await applyEditOperations(result.operations, rootDir)
         if (!applied.ok) {
           applyError = `Failed to apply changes at ${applied.failedPath}: ${applied.reason}${
-            applied.rollbackOk ? ' (rolled back)' : ' (rollback incomplete)'
+            applied.rollback.kind === 'complete'
+              ? ' (rolled back)'
+              : ` (rollback incomplete: ${applied.rollback.issues.map((issue) => issue.path).join(', ')})`
           }`
         }
       },

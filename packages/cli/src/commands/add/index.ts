@@ -151,7 +151,7 @@ export const addCommand: Command = {
     // Install-phase failure. The delta-based flow never writes the manifest
     // ahead of install, so there's nothing to restore — the journal rollback
     // handles asset cleanup.
-    writeInstallFailureDetail(captured.install.failure)
+    writeInstallFailureDetail(captured.install.failure, captured.install.rollback)
     writeCliError({
       what: 'add failed',
       detail: installFailureDetail(captured.install.failure),

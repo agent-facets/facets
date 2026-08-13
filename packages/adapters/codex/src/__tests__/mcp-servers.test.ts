@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { McpServerCapability } from '@agent-facets/adapter'
 import {
+  commitPlannedAction,
+  currentFileState,
   type McpMatrixCaseId,
   type McpMatrixSeed,
   OBSOLETE_NAME,
@@ -228,15 +229,14 @@ startup_timeout_sec = 10.0   # native extension: must survive the update
 `
     await Bun.write(configPath, before)
 
-    const prepared = await codexMcpServers.prepare({
+    const planned = await codexMcpServers.plan({
       projectRoot: root,
       desired: [{ name: 'docs', declaration: { type: 'stdio', command: 'docs-server', args: ['--port', '4000'] } }],
       previouslyOwnedNames: ['docs'],
     })
-    if (!prepared.ok) expect.unreachable()
-    const applied = await codexMcpServers.apply({ plan: prepared.preparation.plan })
-    if (!applied.ok) expect.unreachable()
-    expect(applied.status).toBe('changed')
+    if (!planned.ok) expect.unreachable()
+    expect(planned.plan.action.kind).toBe('mutate')
+    commitPlannedAction(planned.plan.action)
 
     expect(readFileSync(configPath, 'utf8')).toBe(`# Codex config — hand-written
 model = "gpt-5.6"            # keep this trailing comment
@@ -257,50 +257,41 @@ args = [ "--port", "4000" ]
   })
 
   test('creates the .codex directory only when committing, never while planning', async () => {
-    const prepared = await codexMcpServers.prepare({
+    const planned = await codexMcpServers.plan({
       projectRoot: root,
       desired: [STDIO_SERVER],
       previouslyOwnedNames: [],
     })
-    if (!prepared.ok) expect.unreachable()
+    if (!planned.ok) expect.unreachable()
     expect(existsSync(join(root, '.codex'))).toBe(false)
 
-    const applied = await codexMcpServers.apply({ plan: prepared.preparation.plan })
-    if (!applied.ok) expect.unreachable()
+    commitPlannedAction(planned.plan.action)
     expect(statSync(join(root, '.codex')).isDirectory()).toBe(true)
   })
 
-  test('reports a document that changed after planning rather than overwriting it', async () => {
+  test('states the exact document bytes a write is conditional on', async () => {
+    // Concurrency is no longer the adapter's problem: it reports the state it
+    // planned against, and the caller refuses the write if the document moved.
     const configPath = join(root, DOCUMENT)
     await Bun.write(configPath, '[mcp_servers]\n')
 
-    const prepared = await codexMcpServers.prepare({
+    const planned = await codexMcpServers.plan({
       projectRoot: root,
       desired: [STDIO_SERVER],
       previouslyOwnedNames: [],
     })
-    if (!prepared.ok) expect.unreachable()
+    if (!planned.ok) expect.unreachable()
+    if (planned.plan.action.kind !== 'mutate') expect.unreachable()
 
-    await Bun.write(configPath, '[mcp_servers]\n# somebody else got here first\n')
-    const applied = await codexMcpServers.apply({ plan: prepared.preparation.plan })
-
-    if (applied.ok) expect.unreachable()
-    if (applied.failure.code !== 'conflict') expect.unreachable()
-    // Drift, not a format refusal: the document is fine, the run is stale.
-    expect(applied.failure).toEqual({ code: 'conflict', reason: 'document-changed', path: configPath })
-    expect(readFileSync(configPath, 'utf8')).toBe('[mcp_servers]\n# somebody else got here first\n')
+    const [mutation] = planned.plan.action.mutations
+    expect(mutation.path).toBe(configPath)
+    expect(mutation.expected).toEqual(currentFileState(configPath))
+    expect(readFileSync(configPath, 'utf8')).toBe('[mcp_servers]\n')
   })
 })
 
 describe('codex MCP capability', () => {
   test('is declared on the adapter', () => {
     expect(adapter.mcpServers).toBe(codexMcpServers)
-  })
-
-  test('rejects a plan it did not produce', async () => {
-    // The engine holds the plan as `unknown`, so this is the shape an untyped
-    // caller can actually reach `apply` with.
-    const asEngineSeesIt: McpServerCapability<unknown> = codexMcpServers
-    await expect(asEngineSeesIt.apply({ plan: { kind: 'nonsense' } })).rejects.toThrow('did not produce')
   })
 })

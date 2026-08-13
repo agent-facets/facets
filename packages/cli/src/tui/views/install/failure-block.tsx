@@ -1,5 +1,12 @@
 import type { McpServerCapabilityFailure } from '@agent-facets/adapter'
-import type { LockfileDriftEntry, RollbackOutcome, RunInstallFailure, RunInstallResult } from '@agent-facets/engine'
+import type {
+  LockfileDriftEntry,
+  RollbackOutcome,
+  RunInstallFailure,
+  RunInstallResult,
+  TransactionSubject,
+} from '@agent-facets/engine'
+import { describeTransactionFailure } from '@agent-facets/engine'
 import { Box, Text } from 'ink'
 import type React from 'react'
 import { describeCompatibilityFailure } from '../../../util/adapter-install-errors.ts'
@@ -11,7 +18,7 @@ import {
   describeCollisionGroup,
 } from '../../../util/collision-report.ts'
 import { contributionKey, describeContribution } from '../../../util/contribution.ts'
-import { diskStateSentence } from '../../../util/install-outcome.ts'
+import { describeRollbackIssue, diskStateSentence } from '../../../util/install-outcome.ts'
 import {
   describeApprovalHeading,
   describeDeclarationInFull,
@@ -105,11 +112,16 @@ export function FailureBlock({ result }: { result: Extract<RunInstallResult, { o
  * disagree, and no failure arm has to remember to say it.
  */
 function RollbackNote({ rollback }: { rollback: RollbackOutcome }): React.JSX.Element {
-  if (rollback.kind === 'partial-failure') {
+  if (rollback.kind === 'incomplete') {
     return (
       <Box flexDirection="column" marginTop={1}>
         <Text color={THEME.warning}>⚠ {diskStateSentence(rollback)}</Text>
-        <Text color={THEME.hint}> Some adapter writes could not be undone. Inspect the project tree.</Text>
+        {rollback.issues.map((issue) => (
+          <Text key={issue.path} color={THEME.hint}>
+            {'  '}
+            {describeRollbackIssue(issue)}
+          </Text>
+        ))}
       </Box>
     )
   }
@@ -407,13 +419,13 @@ function failureDetail(failure: RunInstallFailure): React.JSX.Element {
           })}
         </Box>
       )
-    case 'ADAPTER_READ_FAILED':
+    case 'FILESYSTEM_TRANSACTION_FAILED':
       return (
         <Box flexDirection="column" marginTop={1}>
           <Text color={THEME.warning} bold>
-            ✕ adapter {failure.adapter} could not read {failure.asset.type}:{failure.asset.name} for {failure.facet}
+            ✕ {describeTransactionSubject(failure.subject)} could not be written
           </Text>
-          <Text> {failure.cause}</Text>
+          <Text> {describeTransactionFailure(failure.failure)}</Text>
         </Box>
       )
     case 'ADAPTER_INSTALL_FAILED':
@@ -674,16 +686,6 @@ function failureDetail(failure: RunInstallFailure): React.JSX.Element {
           <McpCapabilityHint failure={failure.failure} />
         </Box>
       )
-    case 'MCP_DOCUMENT_UNREADABLE':
-      return (
-        <Box flexDirection="column" marginTop={1}>
-          <Text color={THEME.warning} bold>
-            ✕ could not read {failure.path} before changing it
-          </Text>
-          <Text> {failure.cause}</Text>
-          <Text color={THEME.hint}> {failure.adapter}'s configuration was left alone rather than written back</Text>
-        </Box>
-      )
     case 'MCP_CONSENT_REQUIRED':
       return (
         <Box flexDirection="column" marginTop={1}>
@@ -729,5 +731,17 @@ function failureDetail(failure: RunInstallFailure): React.JSX.Element {
       const _exhaustive: never = failure
       return _exhaustive
     }
+  }
+}
+
+/** What a failed batch of file changes was for, in one phrase. */
+function describeTransactionSubject(subject: TransactionSubject): string {
+  switch (subject.kind) {
+    case 'asset':
+      return `${subject.asset.scope} ${subject.asset.type} “${subject.asset.name}” for ${subject.facet} (${subject.adapter})`
+    case 'mcp':
+      return `${subject.adapter}'s MCP configuration`
+    case 'project-files':
+      return "the project's manifest, lockfile, and install receipt"
   }
 }

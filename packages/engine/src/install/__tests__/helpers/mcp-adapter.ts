@@ -1,24 +1,24 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
 import type {
-  ApplyMcpServersResult,
+  FileMutation,
+  FileState,
   McpServerCapability,
   McpServerCapabilityFailure,
-  PrepareMcpServersRequest,
-  PrepareMcpServersResult,
+  PlanMcpServersRequest,
+  PlanMcpServersResult,
   ReadonlyMcpServerDeclaration,
 } from '@agent-facets/adapter'
 import { mcpOutcomesRequireWrite, reconcileMcpServers } from '@agent-facets/adapter'
+import { inspectFileState } from '@agent-facets/common'
 
 /**
  * A minimal but honest MCP capability for engine tests.
  *
- * Honest in the ways the engine actually depends on: it prepares read-only,
- * discloses the one document it would touch before writing it, reports
- * `unchanged` when nothing needs to move, and derives ownership strictly from
- * `previouslyOwnedNames`. That makes it usable as a stand-in wherever a test
- * needs a `0.2` adapter that can carry MCP work, without importing a
- * first-party adapter's native format into engine's test suite.
+ * Honest in the ways the engine actually depends on: it plans read-only,
+ * reports `unchanged` when nothing needs to move, states the exact state each
+ * document was inspected in, and derives ownership strictly from
+ * `previouslyOwnedNames`. That makes it usable wherever a test needs an
+ * adapter that can carry MCP work, without importing a first-party adapter's
+ * native format into engine's test suite.
  *
  * The document is deliberately a plain JSON map of name to declaration. The
  * native shape is each adapter's business; what engine tests care about is
@@ -26,70 +26,40 @@ import { mcpOutcomesRequireWrite, reconcileMcpServers } from '@agent-facets/adap
  * that a rollback can put the old ones back.
  */
 
-/** What the fake wrote, so a test can assert on the sequence. */
+/** What the fake planned, so a test can assert on the sequence. */
 export interface McpCapabilityRecorder {
   capability: McpServerCapability
-  /** `prepare:<n desired>` / `apply:changed` / `apply:unchanged`, in order. */
+  /** `plan:<n desired>` then `plan:changed` / `plan:unchanged`, in order. */
   calls: string[]
 }
 
-type FakePlan =
-  | { kind: 'unchanged'; path: string }
-  | { kind: 'write'; path: string; servers: Record<string, ReadonlyMcpServerDeclaration> }
-
-/**
- * Build a capability whose document lives at `documentPath()`.
- *
- * The path is a thunk because engine tests create their project root in
- * `beforeEach`, after the adapter literal has already been written.
- */
 export interface RecordingMcpOptions {
-  /** Make `prepare` report this failure instead of planning. */
+  /** Make `plan` report this failure instead of planning. */
   failPrepare?: McpServerCapabilityFailure
   /**
-   * Run while `prepare` is in flight, before it returns.
+   * Run while `plan` is in flight, before it returns.
    *
-   * Preparation is the run's last asynchronous read-only step, so this is how
-   * a test puts an interrupt exactly where one can really land: after the
-   * caller committed to preparing and before it looks at the signal again.
+   * Planning is the run's last asynchronous read-only step, so this is how a
+   * test puts an interrupt exactly where one can really land: after the caller
+   * committed to planning and before it looks at the signal again.
    */
   duringPrepare?: () => void
-  /** Make `apply` report this failure instead of writing. */
+  /**
+   * Make the SECOND plan — the one taken immediately before committing —
+   * report this failure. The first still succeeds, so consent is collected
+   * against a plan the run then cannot carry out.
+   */
   failApply?: McpServerCapabilityFailure
   /**
-   * Write the disclosed document and *then* report `failApply` — a buggy
-   * adapter that broke its own atomicity promise. The engine has to have armed
-   * restoration before it called `apply` for that write to be recoverable.
+   * Plan a write to this path as well. Used to exercise the transaction's
+   * containment check on a path outside the project.
    */
-  applyWritesBeforeFailure?: boolean
-  /**
-   * Write the disclosed document but report that nothing changed. The other
-   * half of the same problem: a run can succeed with an unjournaled write.
-   */
-  applyOmitsChangedPath?: boolean
-  /**
-   * Report the undisclosed path BEFORE the disclosed one, so a caller that
-   * journals while walking the reported paths stops before reaching the real
-   * one.
-   */
-  applyUndisclosedPathFirst?: boolean
-  /**
-   * Report a changed path `prepare` never disclosed — the contract breach the
-   * engine refuses because it has no preimage for it.
-   */
-  applyUndisclosedPath?: () => string
-  /**
-   * Disclose an extra document path from `prepare` — used to exercise the
-   * engine's containment check on a path outside the project.
-   */
-  prepareExtraDocumentPath?: () => string
+  planExtraDocumentPath?: () => string
   /**
    * A log this capability appends to alongside its own `calls`.
    *
    * Ordering between asset writes and MCP application is a spec guarantee, and
-   * two separate arrays cannot express it — they have no shared clock. Passing
-   * the adapter's asset log here puts both domains on one timeline so a test
-   * can assert that every asset write precedes `apply`.
+   * two separate arrays cannot express it — they have no shared clock.
    */
   log?: string[]
 }
@@ -103,15 +73,25 @@ export function recordingMcpCapability(
     calls.push(entry)
     options.log?.push(`mcp:${entry}`)
   }
+  let planCount = 0
 
-  const capability: McpServerCapability<FakePlan> = {
-    async prepare(request: PrepareMcpServersRequest): Promise<PrepareMcpServersResult<FakePlan>> {
+  const capability: McpServerCapability = {
+    async plan(request: PlanMcpServersRequest): Promise<PlanMcpServersResult> {
       const path = documentPath()
-      record(`prepare:${request.desired.length}`)
+      planCount++
+      record(`plan:${request.desired.length}`)
       options.duringPrepare?.()
       if (options.failPrepare !== undefined) return { ok: false, failure: options.failPrepare }
+      // The second plan is the pre-commit one: failing there is how a test
+      // reaches the state where consent was given and the write still cannot
+      // happen.
+      if (options.failApply !== undefined && planCount > 1) return { ok: false, failure: options.failApply }
 
-      const servers = readServers(path)
+      const inspected = inspectFileState(path)
+      if (!inspected.ok) {
+        return { ok: false, failure: { code: 'io-failed', path, message: inspected.failure.reason } }
+      }
+      const servers = readServers(inspected.state)
       if (!servers.ok) {
         return { ok: false, failure: { code: 'parse-failed', path, message: servers.message } }
       }
@@ -129,13 +109,9 @@ export function recordingMcpCapability(
             : 'divergent',
       })
 
-      const extra = options.prepareExtraDocumentPath?.()
-      // Non-empty by contract: disclosure is what the engine journals against,
-      // so "no documents" is not a thing a preparation can say.
-      const documentPaths: readonly [string, ...string[]] = extra === undefined ? [path] : [path, extra]
-
       if (!mcpOutcomesRequireWrite(outcomes)) {
-        return { ok: true, preparation: { plan: { kind: 'unchanged', path }, documentPaths, outcomes } }
+        record('plan:unchanged')
+        return { ok: true, plan: { outcomes, action: { kind: 'unchanged' } } }
       }
 
       const next: Record<string, ReadonlyMcpServerDeclaration> = { ...servers.value }
@@ -148,40 +124,28 @@ export function recordingMcpCapability(
         if (contribution !== undefined) next[outcome.name] = contribution.declaration
       }
 
-      return {
-        ok: true,
-        preparation: { plan: { kind: 'write', path, servers: next }, documentPaths, outcomes },
+      record('plan:changed')
+      const contents = new TextEncoder().encode(`${JSON.stringify(next, null, 2)}\n`)
+      const extra = options.planExtraDocumentPath?.()
+      const first: FileMutation = {
+        kind: 'write',
+        path,
+        boundary: request.projectRoot,
+        expected: inspected.state,
+        contents,
       }
-    },
-
-    async apply(request: { plan: FakePlan }): Promise<ApplyMcpServersResult> {
-      const plan = request.plan
-      if (plan.kind === 'unchanged') {
-        record('apply:unchanged')
-        return { ok: true, status: 'unchanged' }
+      const mutations: [FileMutation, ...FileMutation[]] = [first]
+      if (extra !== undefined) {
+        const extraState = inspectFileState(extra)
+        mutations.push({
+          kind: 'write',
+          path: extra,
+          boundary: request.projectRoot,
+          expected: extraState.ok ? extraState.state : { kind: 'absent' },
+          contents,
+        })
       }
-      const write = (): void => {
-        mkdirSync(dirname(plan.path), { recursive: true })
-        writeFileSync(plan.path, `${JSON.stringify(plan.servers, null, 2)}\n`)
-      }
-
-      if (options.failApply !== undefined) {
-        record('apply:failed')
-        if (options.applyWritesBeforeFailure === true) write()
-        return { ok: false, failure: options.failApply }
-      }
-      record('apply:changed')
-      write()
-      if (options.applyOmitsChangedPath === true) {
-        return { ok: true, status: 'unchanged' }
-      }
-      const undisclosed = options.applyUndisclosedPath?.()
-      if (undisclosed !== undefined) {
-        return options.applyUndisclosedPathFirst === true
-          ? { ok: true, status: 'changed', changedPaths: [undisclosed, plan.path] }
-          : { ok: true, status: 'changed', changedPaths: [undisclosed] }
-      }
-      return { ok: true, status: 'changed', changedPaths: [plan.path] }
+      return { ok: true, plan: { outcomes, action: { kind: 'mutate', mutations } } }
     },
   }
 
@@ -189,15 +153,11 @@ export function recordingMcpCapability(
 }
 
 function readServers(
-  path: string,
+  state: FileState,
 ): { ok: true; value: Record<string, ReadonlyMcpServerDeclaration> } | { ok: false; message: string } {
-  let text: string
+  if (state.kind === 'absent') return { ok: true, value: {} }
   try {
-    text = readFileSync(path, 'utf8')
-  } catch {
-    return { ok: true, value: {} }
-  }
-  try {
+    const text = new TextDecoder().decode(state.contents)
     return { ok: true, value: JSON.parse(text) as Record<string, ReadonlyMcpServerDeclaration> }
   } catch (err) {
     return { ok: false, message: err instanceof Error ? err.message : String(err) }

@@ -218,7 +218,7 @@ You then have two ways forward: re-run with [`--accept-mcp`](#param-accept-mcp) 
 
 If a desired server name already has an entry that this project's receipt does not own — you configured it by hand, or a teammate did — it is disclosed in a distinct section of the same approval screen, before anything is written. Each line names the adapter and says whether the existing entry `already matches and would be adopted` or `differs and would be replaced`.
 
-An equivalent entry is adopted **without rewriting the document**; a divergent one is replaced transactionally. An entry the receipt already owns reconciles with no disclosure, and an entry outside your desired set is never touched at all. Because this happens before the journal opens, declining has nothing to undo.
+An equivalent entry is adopted **without rewriting the document**; a divergent one is replaced transactionally. An entry the receipt already owns reconciles with no disclosure, and an entry outside your desired set is never touched at all. Because this happens before the first write, declining has nothing to undo.
 
 ### Taking over an existing file
 
@@ -230,10 +230,9 @@ Assets have their own, separate takeover prompt, and it behaves differently on p
 
 ### Adapters that cannot configure MCP servers
 
-Configuring servers needs an adapter built against adapter API `0.2` with MCP support. When active declarations exist and a selected adapter cannot serve them, the install fails before approval and before any mutation, naming **every** such adapter. There are two cases and two different fixes:
+Configuring servers needs an adapter that declares MCP support. When active declarations exist and a selected adapter cannot serve them, the install fails before approval and before any mutation, naming **every** such adapter.
 
-- The adapter implements API `0.1`, which has no MCP support → update it with [`facet adapter install`](/cli/adapters/install).
-- The adapter implements `0.2` but declares no MCP support → a newer release will not change that; omit the declarations or deselect the adapter.
+The adapter declares no MCP support, and a newer release will not change that: omit the declarations in `facets.json`, or deselect the adapter.
 
 Omitting every declared server also resolves this: with no active declarations, an adapter without MCP support is perfectly usable.
 

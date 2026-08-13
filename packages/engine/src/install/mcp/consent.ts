@@ -174,8 +174,8 @@ export function deriveMcpConsent(args: DeriveMcpConsentArgs): McpConsentRequirem
 
   const byName = new Map(args.configurations.map((c) => [c.identity.effectiveName, c]))
   const takeovers: McpNativeTakeover[] = []
-  for (const { adapter, preparation } of args.prepared) {
-    for (const outcome of preparation.outcomes) {
+  for (const { adapter, plan } of args.prepared) {
+    for (const outcome of plan.outcomes) {
       const existing = untrackedOccupancy(outcome)
       if (existing === null) continue
       const configuration = byName.get(outcome.name)

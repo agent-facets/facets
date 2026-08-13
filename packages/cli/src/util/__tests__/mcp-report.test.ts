@@ -114,14 +114,16 @@ describe('describeMcpCapabilityFailure', () => {
     expect(described).toContain('\\u001b[2K\\nsudo rm -rf /')
   })
 
-  test('a drifted document is described by its path alone', () => {
+  test('a native-format refusal names the document and the format layer detail', () => {
     const described = describeMcpCapabilityFailure({
       code: 'conflict',
-      reason: 'document-changed',
+      reason: 'native-state',
       path: '/p/opencode.jsonc',
+      detail: 'cannot express the change',
     })
 
-    expect(described).toBe('/p/opencode.jsonc changed after it was inspected; nothing was written')
+    expect(described).toContain('/p/opencode.jsonc')
+    expect(described).toContain('cannot express the change')
   })
 
   test('a native-state conflict carries the format-specific detail', () => {
@@ -145,10 +147,15 @@ describe('describeMcpCapabilityHint', () => {
       serverName: 'fs',
       value: '{env:T}',
     }
-    const drift: McpServerCapabilityFailure = { code: 'conflict', reason: 'document-changed', path: '/p/a.json' }
+    const drift: McpServerCapabilityFailure = {
+      code: 'conflict',
+      reason: 'native-state',
+      path: '/p/a.json',
+      detail: 'cannot express the change',
+    }
 
     expect(describeMcpCapabilityHint(interpolation)).toContain('substitute')
-    expect(describeMcpCapabilityHint(drift)).toContain('another process')
+    expect(describeMcpCapabilityHint(drift)).toBeUndefined()
   })
 
   test('a failure that already explains itself gets no second sentence', () => {
@@ -161,7 +168,7 @@ describe('describeMcpCapabilityHint', () => {
 
 describe('formatUnsupportedMcpAdaptersReport', () => {
   const adapters: McpUnsupportedAdapter[] = [
-    { kind: 'asset-only-api', adapter: 'legacy-tool', apiVersion: '0.1' },
+    { kind: 'capability-declined', adapter: 'legacy-tool' },
     { kind: 'capability-declined', adapter: 'plain-tool' },
   ]
   const report = formatUnsupportedMcpAdaptersReport(adapters, ['docs', 'filesystem'])
@@ -174,7 +181,7 @@ describe('formatUnsupportedMcpAdaptersReport', () => {
   // "Upgrade it" is wrong advice for an adapter that answered the question
   // and said no, so the two remedies must not be collapsed into one line.
   test('gives the remedy that actually applies to each adapter', () => {
-    expect(report).toContain('upgrade it:')
+    expect(report).toContain('omit the server declarations')
     expect(report).toContain('omit the server declarations in facets.json, or deselect this adapter')
   })
 

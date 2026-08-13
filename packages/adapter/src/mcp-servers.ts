@@ -1,22 +1,22 @@
+import type { FileMutationAction } from '@agent-facets/common'
 import type { McpServerDeclaration, ReadonlyMcpServerDeclaration } from '@agent-facets/protocol/mcp-declaration'
 
 /**
  * The MCP server capability: how an adapter reconciles a project's desired
  * MCP servers into its tool's own native project configuration.
  *
- * The shape of this contract is driven by three requirements that the asset
- * methods do not have to satisfy:
+ * The shape of this contract is driven by three requirements:
  *
  * 1. **Batch, not per-server.** Every desired server for one project lands in
  *    the same native document. Applying them one at a time would mean one
  *    parse/serialize cycle per server and a window in which the document holds
  *    a partial set.
- * 2. **Plan before mutate.** The engine has to ask "what would this change?"
- *    and show the answer to the user *before* anything is written, so
- *    preparation is strictly read-only and yields a plan the engine holds onto.
+ * 2. **Plan, never mutate.** The adapter inspects, computes the whole change,
+ *    and returns exact per-file transitions. The caller shows them to the user
+ *    if approval is needed, performs the writes, and journals both endpoints.
  * 3. **No inverse operations.** Rollback is byte-exact restoration performed by
- *    the engine, which journals the preimage of every document `prepare`
- *    disclosed. An adapter is never asked to undo its own edit — undo fidelity
+ *    the caller, which recorded the precise prior bytes of every document it
+ *    wrote. An adapter is never asked to undo its own edit — undo fidelity
  *    would otherwise depend on adapter code being correct twice, and on a
  *    semantic inverse reproducing comments and formatting it never saw.
  */
@@ -27,14 +27,10 @@ import type { McpServerDeclaration, ReadonlyMcpServerDeclaration } from '@agent-
  *
  * `name` is already the *effective* name — aliases and collisions are resolved
  * upstream, so an adapter never sees an authored name and never resolves one.
- * The declaration type is imported from the protocol contract rather than
- * restated here, so an adapter's signature cannot drift from the published
- * declaration shape.
  *
  * The declaration is deeply read-only. It is the caller's planned declaration,
- * shared with the plan's other views and with the fingerprint that proves
- * approval of it; an adapter that could edit it in place would change what the
- * user approved after they approved it.
+ * shared with the fingerprint that proves approval of it; an adapter that could
+ * edit it in place would change what the user approved after they approved it.
  */
 export interface McpServerContribution {
   readonly name: string
@@ -42,20 +38,19 @@ export interface McpServerContribution {
 }
 
 /**
- * The complete desired MCP state for one project, handed to `prepare`.
+ * The complete desired MCP state for one project, handed to `plan`.
  *
  * `desired` is exhaustive: a server absent from it is not desired, and
  * `previouslyOwnedNames` is the caller-verified set of effective names a prior
  * successful operation recorded for this adapter. Those two together are what
- * let `prepare` classify occupancy — an entry the document has, the desired set
+ * let planning classify occupancy — an entry the document has, the desired set
  * lacks, and this list names is obsolete and owned; an entry no list names is
  * someone else's and is never touched.
  *
  * The adapter must not infer ownership from the document, from a naming
- * convention, or from a marker comment. Ownership arrives on every request and
- * the supplied set is the complete extent of what may be removed.
+ * convention, or from a marker comment.
  */
-export interface PrepareMcpServersRequest {
+export interface PlanMcpServersRequest {
   readonly projectRoot: string
   readonly desired: readonly McpServerContribution[]
   readonly previouslyOwnedNames: readonly string[]
@@ -72,7 +67,7 @@ export interface PrepareMcpServersRequest {
 export type McpServerOwnership = 'tracked' | 'untracked'
 
 /**
- * What preparation found for one server name, and what applying the plan would
+ * What planning found for one server name, and what applying the plan would
  * therefore do to it.
  *
  * The three desired-state arms are distinguished because they drive different
@@ -95,27 +90,23 @@ export type McpServerPreparationOutcome =
   /**
    * An owned entry the desired set no longer names; applying the plan removes
    * it. `occupancy` is `absent` when the entry is already gone — the claim is
-   * still reported so the engine can drop the ownership record.
+   * still reported so the caller can drop the ownership record.
    */
   | { readonly kind: 'obsolete-owned'; readonly name: string; readonly occupancy: 'present' | 'absent' }
 
 /**
- * Structured failure data for MCP capability operations.
+ * Structured failure data for MCP capability planning.
  *
  * Expected failures are values, not thrown errors — the caller branches on
  * `code`. Adapters convert their internal exceptions into these; anything
  * thrown past this boundary is a programmer bug.
  *
- * There is deliberately no rollback failure code: adapters do not roll back.
+ * There is deliberately no write or rollback failure code: adapters neither
+ * write nor roll back.
  */
 export type McpServerCapabilityFailure =
-  /** A filesystem operation failed. */
-  | {
-      readonly code: 'io-failed'
-      readonly operation: 'read' | 'write'
-      readonly path: string
-      readonly message: string
-    }
+  /** A document could not be read while establishing its current state. */
+  | { readonly code: 'io-failed'; readonly path: string; readonly message: string }
   /** The native document exists but could not be parsed. */
   | { readonly code: 'parse-failed'; readonly path: string; readonly message: string }
   /** The document parsed, but its MCP section is not a shape the adapter can safely edit. */
@@ -123,20 +114,17 @@ export type McpServerCapabilityFailure =
   | McpConflictFailure
 
 /**
- * The desired state cannot be written, for one of three unrelated reasons.
+ * The desired state cannot be written, for one of two unrelated reasons.
  *
  * Split by `reason` rather than carried as one arm with a path and a sentence,
- * because the three do not share their facts. An interpolation conflict is
- * about a declaration and has no document — the previous shape forced an
- * adapter to name one, and OpenCode named a file it might not even write. A
- * drifted document is fully described by its path, so a message beside it is a
- * second copy of the same fact. Only a native-format refusal has something to
- * add that the SDK cannot regenerate.
+ * because the two do not share their facts. An interpolation conflict is about
+ * a declaration and has no document; only a native-format refusal has something
+ * to add that the SDK cannot regenerate.
  *
- * None of the three carries prose meant for display. Every field is data, and
- * the surface that shows it decides the wording — including how to render a
- * value safely, which a preformatted message has already gotten wrong by the
- * time a caller sees it.
+ * A document changed by another process between planning and writing is NOT
+ * here: the caller re-checks every exact prior state immediately before it
+ * writes, so concurrency is detected once, in one place, for every kind of file
+ * this system touches.
  */
 export type McpConflictFailure =
   /**
@@ -150,8 +138,6 @@ export type McpConflictFailure =
       /** The offending value exactly as authored, unescaped and unredacted. */
       readonly value: string
     }
-  /** A document changed between preparation and application; nothing was written. */
-  | { readonly code: 'conflict'; readonly reason: 'document-changed'; readonly path: string }
   /** The native format cannot represent the change without destroying native state. */
   | {
       readonly code: 'conflict'
@@ -162,72 +148,34 @@ export type McpConflictFailure =
     }
 
 /**
- * A successful read-only preparation.
+ * A successful read-only plan.
  *
- * `documentPaths` is the complete set of native documents applying `plan`
- * could touch, disclosed *before* any mutation so the engine can journal their
- * byte preimages. A path is listed even when the document does not exist yet —
- * "absent" is a preimage the engine can restore to. The list is non-empty:
- * an adapter that reconciles nothing still names the document it inspected.
- *
- * `plan` is opaque. The engine stores it and hands it back to `apply`; it never
- * inspects, serializes, or reorders it, so an adapter may put whatever it likes
- * in there — including the parsed document it already holds, which is what
- * makes `apply` a single write rather than a second parse.
+ * `action` carries the exact per-file transitions applying this plan performs.
+ * There is no separate document disclosure list: a document the plan does not
+ * mutate is not journaled and not restored, precisely because nothing this run
+ * does can change it. Inspecting a file has never been a reason to own it.
  */
-export interface McpServerPreparation<Plan> {
-  readonly plan: Plan
-  readonly documentPaths: readonly [string, ...string[]]
+export interface McpServersPlan {
   readonly outcomes: readonly McpServerPreparationOutcome[]
+  readonly action: FileMutationAction
 }
 
-/** Result of `prepare`. On failure, every inspected document is unchanged. */
-export type PrepareMcpServersResult<Plan> =
-  | { readonly ok: true; readonly preparation: McpServerPreparation<Plan> }
-  | { readonly ok: false; readonly failure: McpServerCapabilityFailure }
-
-/**
- * Result of `apply`.
- *
- * `unchanged` and `changed` are separate arms rather than a boolean beside an
- * always-present path list, so "nothing was written" cannot be reported
- * alongside a non-empty set of changed paths. Every path in `changedPaths`
- * must have appeared in the preparation's `documentPaths` — the engine cannot
- * restore a document whose preimage it was never given.
- *
- * On failure the affected documents are unchanged; the operation is atomic per
- * document, so a handled write failure never leaves a partial set behind.
- */
-export type ApplyMcpServersResult =
-  | { readonly ok: true; readonly status: 'unchanged' }
-  | { readonly ok: true; readonly status: 'changed'; readonly changedPaths: readonly [string, ...string[]] }
+/** Result of `plan`. On failure, every inspected document is unchanged. */
+export type PlanMcpServersResult =
+  | { readonly ok: true; readonly plan: McpServersPlan }
   | { readonly ok: false; readonly failure: McpServerCapabilityFailure }
 
 /**
  * The complete MCP server capability.
  *
- * An adapter either implements both operations or declares `mcpServers: false`.
- * There is no partial state: a capability object missing `apply` is not a
- * capability, and the SDK factory refuses to build one.
+ * One operation, because there is nothing left for a second one to do: the
+ * caller owns writing, so "prepare" and "apply" collapsed into planning.
  *
- * `Plan` is the adapter's own prepared-plan type. It defaults to `unknown` at
- * the consumer boundary, which is precisely the point — the engine holds a
- * value it structurally cannot read.
+ * Planning never launches, connects to, health-checks, or authenticates a
+ * declared server; materializing configuration is not running it.
  */
-export interface McpServerCapability<Plan = unknown> {
-  /**
-   * Inspect native project configuration and compute the complete desired
-   * change. Writes nothing, creates nothing, and runs nothing.
-   */
-  prepare(request: PrepareMcpServersRequest): Promise<PrepareMcpServersResult<Plan>>
-
-  /**
-   * Commit a prepared plan as one atomic update per affected document.
-   *
-   * Never launches, connects to, health-checks, or authenticates a declared
-   * server; materializing configuration is not running it.
-   */
-  apply(request: { readonly plan: Plan }): Promise<ApplyMcpServersResult>
+export interface McpServerCapability {
+  plan(request: PlanMcpServersRequest): Promise<PlanMcpServersResult>
 }
 
 export type { McpServerDeclaration, ReadonlyMcpServerDeclaration }

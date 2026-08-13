@@ -57,8 +57,7 @@ describe('describeCompatibilityFailure — the whole support set reaches the use
     }
   })
 
-  test('a multi-token set renders as a comma-separated list', () => {
-    expect(SUPPORTED_ADAPTER_APIS.length).toBeGreaterThan(1)
+  test('the support set renders however many tokens it holds', () => {
     const rendered = describeCompatibilityFailure({
       kind: 'api-missing',
       adapter: 'nameless',
@@ -67,18 +66,18 @@ describe('describeCompatibilityFailure — the whole support set reaches the use
     expect(rendered.detail).toContain(SUPPORTED_ADAPTER_APIS.join(', '))
   })
 
-  test('a metadata mismatch between two supported tokens still lists both', () => {
-    const [first, second] = SUPPORTED_ADAPTER_APIS
-    if (first === undefined || second === undefined) expect.unreachable()
+  test('a metadata mismatch lists both declarations', () => {
+    const [supported] = SUPPORTED_ADAPTER_APIS
+    if (supported === undefined) expect.unreachable()
     const rendered = describeCompatibilityFailure({
       kind: 'api-metadata-mismatch',
       adapter: 'split-brain',
-      packageDeclared: first,
-      runtimeDeclared: second,
+      packageDeclared: '0.2',
+      runtimeDeclared: supported,
       supported: SUPPORTED_ADAPTER_APIS,
     })
-    expect(rendered.detail).toContain(first)
-    expect(rendered.detail).toContain(second)
+    expect(rendered.detail).toContain('0.2')
+    expect(rendered.detail).toContain(supported)
   })
 })
 

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ADAPTER_API_VERSION, ADAPTER_API_VERSION_ASSETS_ONLY } from '@agent-facets/adapter'
+import { ADAPTER_API_VERSION } from '@agent-facets/adapter'
 import { SUPPORTED_ADAPTER_APIS } from '../api-compatibility.ts'
 import { verifyAdapter } from '../verify.ts'
 
@@ -16,12 +16,12 @@ import { verifyAdapter } from '../verify.ts'
 
 const THROWING_METHODS = `
   buildAssetMetadata() { throw new Error('contract method invoked during verification') },
-  async installAsset() { throw new Error('contract method invoked during verification') },
-  async readAsset() { throw new Error('contract method invoked during verification') },
-  async deleteAsset() { throw new Error('contract method invoked during verification') },
+  assets: {
+    async planInstall() { throw new Error('contract method invoked during verification') },
+    async planRemoval() { throw new Error('contract method invoked during verification') },
+  },
   mcpServers: {
-    async prepare() { throw new Error('contract method invoked during verification') },
-    async apply() { throw new Error('contract method invoked during verification') },
+    async plan() { throw new Error('contract method invoked during verification') },
   },
 `
 
@@ -41,12 +41,8 @@ function adapterSource(fields: string): string {
   return `export default {\n${fields}\n${THROWING_METHODS}\n}`
 }
 
-/**
- * A bundle shaped like the superseded asset-only contract: the four asset
- * methods and no `mcpServers` member at all. Not "declines MCP support" —
- * predates the question.
- */
-function assetOnlyAdapterSource(fields: string): string {
+/** A bundle with assets but no `mcpServers` member at all. */
+function withoutMcpSource(fields: string): string {
   const assetMethods = THROWING_METHODS.slice(0, THROWING_METHODS.indexOf('  mcpServers:'))
   return `export default {\n${fields}\n${assetMethods}\n}`
 }
@@ -170,29 +166,29 @@ describe('verifyAdapter — ordered checks', () => {
     // but one release cannot be two contracts, and picking either would
     // mean verifying a shape the other half of the release never promised.
     await withBundle(adapterSource(`  name: 'split-brain', apiVersion: '${ADAPTER_API_VERSION}',`), async (path) => {
-      const result = await verifyAdapter(path, { expectedApiVersion: ADAPTER_API_VERSION_ASSETS_ONLY })
+      const result = await verifyAdapter(path, { expectedApiVersion: '0.2' })
       if (result.ok) expect.unreachable()
       if (result.failure.kind !== 'incompatible') expect.unreachable()
       expect(result.failure.failure).toEqual({
         kind: 'api-metadata-mismatch',
         adapter: 'split-brain',
-        packageDeclared: ADAPTER_API_VERSION_ASSETS_ONLY,
+        packageDeclared: '0.2',
         runtimeDeclared: ADAPTER_API_VERSION,
         supported: SUPPORTED_ADAPTER_APIS,
       })
     })
   })
 
-  test('5: the reverse disagreement fails the same way', async () => {
-    await withBundle(
-      assetOnlyAdapterSource(`  name: 'split-brain', apiVersion: '${ADAPTER_API_VERSION_ASSETS_ONLY}',`),
-      async (path) => {
-        const result = await verifyAdapter(path, { expectedApiVersion: ADAPTER_API_VERSION })
-        if (result.ok) expect.unreachable()
-        if (result.failure.kind !== 'incompatible') expect.unreachable()
-        expect(result.failure.failure.kind).toBe('api-metadata-mismatch')
-      },
-    )
+  test('5: an unsupported runtime token is unsupported, not a metadata mismatch', async () => {
+    // The support check runs first on purpose: an adapter this CLI cannot
+    // load is not a packaging disagreement to reconcile, and telling a user
+    // the two declarations differ would send them to fix the wrong thing.
+    await withBundle(withoutMcpSource(`  name: 'split-brain', apiVersion: '0.2',`), async (path) => {
+      const result = await verifyAdapter(path, { expectedApiVersion: ADAPTER_API_VERSION })
+      if (result.ok) expect.unreachable()
+      if (result.failure.kind !== 'incompatible') expect.unreachable()
+      expect(result.failure.failure.kind).toBe('api-unsupported')
+    })
   })
 
   test('6: missing name fails with invalid-name', async () => {
@@ -205,13 +201,27 @@ describe('verifyAdapter — ordered checks', () => {
 
   test('6: missing contract method fails with invalid-shape', async () => {
     await withBundle(
-      `export default { name: 'incomplete', apiVersion: '${ADAPTER_API_VERSION}', buildAssetMetadata() {}, async installAsset() {}, async readAsset() {} }`,
+      `export default { name: 'incomplete', apiVersion: '${ADAPTER_API_VERSION}', mcpServers: false,
+       assets: { async planInstall() {}, async planRemoval() {} } }`,
       async (path) => {
         const result = await verifyAdapter(path)
         if (result.ok) expect.unreachable()
         if (result.failure.kind !== 'invalid-shape') expect.unreachable()
         expect(result.failure.adapter).toBe('incomplete')
-        expect(result.failure.detail).toContain('deleteAsset')
+        expect(result.failure.detail).toContain('buildAssetMetadata')
+      },
+    )
+  })
+
+  test('7: an incomplete asset capability fails as invalid-capability', async () => {
+    await withBundle(
+      `export default { name: 'half', apiVersion: '${ADAPTER_API_VERSION}', mcpServers: false,
+       buildAssetMetadata() {}, assets: { async planInstall() {} } }`,
+      async (path) => {
+        const result = await verifyAdapter(path)
+        if (result.ok) expect.unreachable()
+        if (result.failure.kind !== 'invalid-capability') expect.unreachable()
+        expect(result.failure.detail).toContain('planRemoval')
       },
     )
   })
@@ -235,45 +245,28 @@ describe('verifyAdapter — ordered checks', () => {
     })
   })
 
-  test('7: an asset-only bundle verifies without an mcpServers member', async () => {
-    // The whole point of the compatibility window: an adapter published
-    // before MCP existed still loads, and its missing capability field is
-    // not a defect.
-    await withBundle(
-      assetOnlyAdapterSource(`  name: 'legacy', apiVersion: '${ADAPTER_API_VERSION_ASSETS_ONLY}',`),
-      async (path) => {
-        const result = await verifyAdapter(path)
-        if (!result.ok) expect.unreachable()
-        expect(result.verified.adapter.apiVersion).toBe(ADAPTER_API_VERSION_ASSETS_ONLY)
-      },
-    )
-  })
-
   test('7: a current bundle without mcpServers fails as invalid-capability', async () => {
-    await withBundle(
-      assetOnlyAdapterSource(`  name: 'incomplete', apiVersion: '${ADAPTER_API_VERSION}',`),
-      async (path) => {
-        const result = await verifyAdapter(path)
-        if (result.ok) expect.unreachable()
-        if (result.failure.kind !== 'invalid-capability') expect.unreachable()
-        expect(result.failure.adapter).toBe('incomplete')
-        expect(result.failure.api).toBe(ADAPTER_API_VERSION)
-        expect(result.failure.detail).toContain('mcpServers')
-      },
-    )
+    await withBundle(withoutMcpSource(`  name: 'incomplete', apiVersion: '${ADAPTER_API_VERSION}',`), async (path) => {
+      const result = await verifyAdapter(path)
+      if (result.ok) expect.unreachable()
+      if (result.failure.kind !== 'invalid-capability') expect.unreachable()
+      expect(result.failure.adapter).toBe('incomplete')
+      expect(result.failure.api).toBe(ADAPTER_API_VERSION)
+      expect(result.failure.detail).toContain('mcpServers')
+    })
   })
 
   test('7: a partial MCP capability fails as invalid-capability', async () => {
     // A bundle need not come from the SDK factory, so the factory's
     // completeness guarantee is re-established here on untrusted input.
     await withBundle(
-      `export default { name: 'partial', apiVersion: '${ADAPTER_API_VERSION}', mcpServers: { async prepare() {} },
-       buildAssetMetadata() {}, async installAsset() {}, async readAsset() {}, async deleteAsset() {} }`,
+      `export default { name: 'partial', apiVersion: '${ADAPTER_API_VERSION}', mcpServers: {},
+       buildAssetMetadata() {}, assets: { async planInstall() {}, async planRemoval() {} } }`,
       async (path) => {
         const result = await verifyAdapter(path)
         if (result.ok) expect.unreachable()
         if (result.failure.kind !== 'invalid-capability') expect.unreachable()
-        expect(result.failure.detail).toContain('apply')
+        expect(result.failure.detail).toContain('plan')
       },
     )
   })
@@ -281,7 +274,7 @@ describe('verifyAdapter — ordered checks', () => {
   test('7: a current bundle declining MCP support verifies', async () => {
     await withBundle(
       `export default { name: 'declines', apiVersion: '${ADAPTER_API_VERSION}', mcpServers: false,
-       buildAssetMetadata() {}, async installAsset() {}, async readAsset() {}, async deleteAsset() {} }`,
+       buildAssetMetadata() {}, assets: { async planInstall() {}, async planRemoval() {} } }`,
       async (path) => {
         const result = await verifyAdapter(path)
         if (!result.ok) expect.unreachable()
@@ -297,7 +290,7 @@ describe('verifyAdapter — ordered checks', () => {
     // to trust this object would itself be bypassed.
     await withBundle(
       `export default { get name() { throw new Error('hostile') }, apiVersion: '${ADAPTER_API_VERSION}',
-       mcpServers: false, buildAssetMetadata() {}, async installAsset() {}, async readAsset() {}, async deleteAsset() {} }`,
+       mcpServers: false, buildAssetMetadata() {}, assets: { async planInstall() {}, async planRemoval() {} } }`,
       async (path) => {
         const result = await verifyAdapter(path)
         if (result.ok) expect.unreachable()
@@ -310,7 +303,7 @@ describe('verifyAdapter — ordered checks', () => {
     await withBundle(
       `export default { name: 'hostile', apiVersion: '${ADAPTER_API_VERSION}',
        get mcpServers() { throw new Error('hostile') },
-       buildAssetMetadata() {}, async installAsset() {}, async readAsset() {}, async deleteAsset() {} }`,
+       buildAssetMetadata() {}, assets: { async planInstall() {}, async planRemoval() {} } }`,
       async (path) => {
         const result = await verifyAdapter(path)
         if (result.ok) expect.unreachable()

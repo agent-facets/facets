@@ -10,6 +10,7 @@ import type {
 } from '@agent-facets/protocol'
 import type { AdapterCompatibilityFailure } from '../adapters/api-compatibility.ts'
 import type { McpUnsupportedAdapter } from '../adapters/mcp-support.ts'
+import type { FileRollbackOutcome, FileTransactionFailure } from '../fs/index.ts'
 import type { UnsupportedManifestVersion } from '../manifest/project-files.ts'
 import type { RegistryError } from '../registry/index.ts'
 import type { ParseError, Source } from '../sources/facet/types.ts'
@@ -274,30 +275,6 @@ export type StageEvent =
    */
   | { kind: 'removal-resolution-required'; reason: string }
   /**
-   * An obsolete skill bundle was left on disk because its primary file was
-   * already missing, so the recorded companion bytes could not be captured for
-   * rollback. The claim is dropped from the receipt regardless, which makes
-   * whatever remains untracked — the one thing the user cannot deduce from a
-   * command that otherwise reports a successful removal.
-   *
-   * Emitted only after the transaction commits: until then the removal is not
-   * real, and the files are still tracked.
-   *
-   * `scope` is load-bearing, not decoration: an adapter resolves a different
-   * directory per scope, so without it `companionPaths` — which are relative
-   * to a skill root — name a location the user cannot find. Two same-named
-   * bundles retained in different scopes are also two distinct warnings, and
-   * a scope-free event collapses them into one indistinguishable pair.
-   */
-  | {
-      kind: 'obsolete-bundle-retained'
-      adapter: string
-      scope: Scope
-      assetName: string
-      facets: ReadonlyArray<string>
-      companionPaths: ReadonlyArray<string>
-    }
-  /**
    * A materialization override was dropped because the resolved facet version
    * no longer contains the asset or server it named.
    *
@@ -406,6 +383,20 @@ export type LockfileDriftEntry =
   | { name: string; reason: 'materialization-unrepresentable'; lockfileVersion: number; requiredVersion: number }
 
 /**
+ * What a batch of file changes was for.
+ *
+ * The transaction itself understands only files, which is what makes it
+ * reusable — but a user reading a failure needs to know whether the file that
+ * would not budge was an asset, a tool's configuration, or the project's own
+ * bookkeeping. That context travels here rather than being reconstructed from
+ * a path.
+ */
+export type TransactionSubject =
+  | { kind: 'asset'; facet: string; adapter: string; asset: AssetIdentity }
+  | { kind: 'mcp'; adapter: string }
+  | { kind: 'project-files' }
+
+/**
  * Discriminated failure type for `runInstall`. Every failure mode
  * carries the structured fields a view layer needs to render the
  * failure without parsing message strings.
@@ -503,18 +494,22 @@ export type RunInstallFailure =
    */
   | { code: 'ADAPTER_INCOMPATIBLE'; failures: ReadonlyArray<AdapterCompatibilityFailure> }
   /**
-   * `adapter.readAsset` threw something other than ENOENT. The asset's
-   * pre-install state is unknown, so we abort before writing rather
-   * than risk a delete-undo on an asset we can't observe.
+   * A planned file change was refused or could not be applied.
+   *
+   * One code for every kind of file this system writes — assets, native
+   * configuration documents, and the project's own manifest, lockfile, and
+   * receipt — because the reasons are the same in each case: the file drifted
+   * after the plan was computed, something that is not a plain file occupies
+   * the path, or a syscall failed. `subject` names what the change was for so
+   * a report can be specific without the failure shape being duplicated three
+   * times.
    */
   | {
-      code: 'ADAPTER_READ_FAILED'
-      facet: string
-      adapter: string
-      asset: AssetIdentity
-      cause: string
+      code: 'FILESYSTEM_TRANSACTION_FAILED'
+      subject: TransactionSubject
+      failure: FileTransactionFailure
     }
-  /** `adapter.installAsset` threw. */
+  /** The adapter's read-only planning reported a structured failure. */
   | {
       code: 'ADAPTER_INSTALL_FAILED'
       facet: string
@@ -647,18 +642,12 @@ export type RunInstallFailure =
    */
   | { code: 'MCP_PREPARE_FAILED'; adapter: string; failure: McpServerCapabilityFailure }
   /**
-   * An adapter's MCP application reported a structured failure. Its own
-   * documents are unchanged (the capability is atomic per document); every
-   * earlier document this run changed is restored from its byte preimage.
+   * Re-planning an adapter's MCP change immediately before committing it
+   * reported a structured failure. Nothing of this adapter's was written;
+   * every earlier document this run changed is restored from its exact prior
+   * bytes.
    */
   | { code: 'MCP_APPLY_FAILED'; adapter: string; failure: McpServerCapabilityFailure }
-  /**
-   * A disclosed configuration document could not be read for its byte
-   * preimage, so the write was refused rather than performed without an undo.
-   * Distinct from a read failure inside preparation: the adapter did nothing
-   * wrong, and the document is one the engine — not the adapter — was reading.
-   */
-  | { code: 'MCP_DOCUMENT_UNREADABLE'; adapter: string; path: string; cause: string }
   /**
    * An adapter broke the MCP capability contract in a way that would make
    * rollback unsound. Distinct from `MCP_PREPARE_FAILED`: the fault is in the
@@ -687,30 +676,25 @@ export type RunInstallFailure =
   | { code: 'ABORTED' }
 
 /**
- * Outcome of the rollback step on a failed install. Three semantically
- * distinct arms encoded explicitly so view layers can render each
- * differently — pre-#9 these all collapsed into `{ ok: true }` and the
- * "we rolled back N entries" information was lost across the boundary.
+ * Why an operation had nothing to undo.
  *
- *   - `not-needed` — no rollback was attempted because there was
- *     nothing to undo. The `reason` string distinguishes pre-lock
- *     failures (failed before acquiring the install lock; e.g.
- *     `facets.json` missing) from post-lock-no-mutation failures
- *     (lock acquired but no journal entries recorded yet). Default
- *     rendering can collapse both to "no rollback needed"; verbose
- *     mode can surface the distinction.
- *   - `succeeded` — a real rollback ran and replayed every recorded
- *     journal entry in reverse. `entriesUndone` counts them.
- *   - `partial-failure` — the rollback ran but at least one inverse
- *     op threw. `entriesUndone` is the count that successfully
- *     replayed; `failures` is the count that didn't. View layers
- *     surface this as the canonical "manual cleanup may be needed"
- *     message.
+ * A closed set rather than a sentence: the two cases mean different things to
+ * a user — one failed before the run could touch anything, the other failed
+ * after acquiring the lock but before the first mutation — and a free-form
+ * string is something no view layer can branch on.
  */
-export type RollbackOutcome =
-  | { kind: 'not-needed'; reason: string }
-  | { kind: 'succeeded'; entriesUndone: number }
-  | { kind: 'partial-failure'; entriesUndone: number; failures: number }
+export type NoMutationReason = 'pre-lock' | 'post-lock-no-mutation'
+
+/**
+ * What a failed run left on disk.
+ *
+ * `not-needed` is this system's own arm; the other two come from the
+ * filesystem transaction unchanged, so what the CLI reports about a rollback
+ * is exactly what the transaction observed rather than a lossy re-encoding of
+ * it. `incomplete` carries at least one issue by type, so "something is still
+ * out there" cannot be reported with nothing out there.
+ */
+export type RollbackOutcome = { kind: 'not-needed'; reason: NoMutationReason } | FileRollbackOutcome
 
 /**
  * Result of a `runInstall` invocation. Discriminated by `ok`.

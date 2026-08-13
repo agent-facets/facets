@@ -1,6 +1,7 @@
 import { mkdir, rename, rmdir, unlink } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { FACET_MANIFEST_FILE } from '@agent-facets/protocol'
+import type { FileRollbackOutcome } from '../fs/index.ts'
 import { applyFsTransaction, type FsMutation } from '../fs-transaction.ts'
 import { jsonFileText } from '../json-file-text.ts'
 import { agentTemplate, commandTemplate, skillTemplate } from '../scaffold/index.ts'
@@ -8,8 +9,16 @@ import type { ModifyFileOp } from './apply-modify.ts'
 import type { AssetManifestKey } from './scanner.ts'
 import type { EditOperation } from './types.ts'
 
-/** Result of a transactional edit apply. Expected failures are data, not throws. */
-export type EditApplyResult = { ok: true } | { ok: false; failedPath: string; reason: string; rollbackOk: boolean }
+/**
+ * Result of a transactional edit apply. Expected failures are data, not throws.
+ *
+ * `rollback` is the transaction's own outcome rather than a boolean: when a
+ * restore is contested — because something else changed a file after this
+ * command wrote it — the user needs the path, and a flag cannot carry one.
+ */
+export type EditApplyResult =
+  | { ok: true }
+  | { ok: false; failedPath: string; reason: string; rollback: FileRollbackOutcome }
 
 /**
  * Apply a queued edit-operation list to disk as one transaction: the final
@@ -52,9 +61,9 @@ export async function applyEditOperations(operations: EditOperation[], rootDir: 
     }
   }
 
-  const result = applyFsTransaction(mutations)
+  const result = applyFsTransaction(mutations, rootDir)
   if (result.ok) return { ok: true }
-  return { ok: false, failedPath: result.failedPath, reason: result.reason, rollbackOk: result.rollback.ok }
+  return { ok: false, failedPath: result.failedPath, reason: result.reason, rollback: result.rollback }
 }
 
 /** Conventional primary path for an asset (absolute). */

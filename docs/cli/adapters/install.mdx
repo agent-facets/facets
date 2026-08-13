@@ -80,7 +80,7 @@ Version selectors use the Facet grammar: exact `1.2.3`, major wildcard `1.*`, mi
 
 ## Compatible resolution
 
-Every adapter declares the adapter API contract it was built against, and each CLI release supports an exact set of adapter APIs — currently `0.1` (tagged assets only) and `0.2` (tagged assets plus MCP server configuration). An adapter declaring the earlier positional `0.0` is outside that set and unsupported; an older CLI whose set excludes `0.2` keeps selecting the highest release it does support, so the lines advance independently. Membership is exact and unordered: neither supported token outranks the other, and numeric proximity to one confers nothing.
+Every adapter declares the adapter API contract it was built against, and each CLI release supports an exact set of adapter APIs — currently just `0.3` (the read-only planning contract, where the adapter decides what changes and the CLI performs every write). Adapters declaring `0.0`, `0.1`, or `0.2` wrote files themselves and are unsupported. An older CLI whose set excludes `0.3` keeps selecting the highest release it does support, so the lines advance independently. Membership is exact and unordered, and numeric proximity confers nothing.
 
 For npm installs, the CLI reads the package's version metadata (the `facetAdapterApiVersion` field each release publishes) and selects the **highest stable release** that both satisfies your version selector and declares a supported API:
 
@@ -94,7 +94,7 @@ When no release in the requested set is compatible, the install fails with the n
 Git and local sources don't participate in compatible resolution — the version-selector grammar and highest-compatible-release selection apply only to npm installs. A Git `#ref` still pins exactly what gets built (a tag, branch, or commit), and both Git and local sources are built as supplied and must pass the same runtime compatibility verification before installation.
 
 <Note>
-Being installable is not the same as being able to configure MCP servers. An adapter declaring `0.1`, or `0.2` with no MCP support, installs and works normally — it only blocks a project that has active [MCP server declarations](/cli/install#adapters-that-cannot-configure-mcp-servers), and those two cases have different fixes. All three first-party adapters declare `0.2` with MCP support.
+Being installable is not the same as being able to configure MCP servers. An adapter with no MCP support installs and works normally — it only blocks a project that has active [MCP server declarations](/cli/install#adapters-that-cannot-configure-mcp-servers). All three first-party adapters declare `0.3` with MCP support.
 </Note>
 
 ## See also

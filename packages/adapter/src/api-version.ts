@@ -12,30 +12,22 @@
 
 /**
  * The adapter API contract identifier this SDK stamps into every adapter
- * returned by `defineAdapter()`. Identifies the tagged request/result asset
- * method contract **plus** the required MCP server capability.
+ * returned by `defineAdapter()`. Identifies the read-only *planning* contract:
+ * an adapter computes exact per-file state transitions and returns them, and
+ * the caller performs every write.
  *
  * The exact-token compatibility machinery cannot inspect method signatures or
  * probe for fields, so every contract change is signalled by this identifier
- * and never inferred. That is why adding `mcpServers` required a new token
- * rather than a runtime feature check.
- */
-export const ADAPTER_API_VERSION = '0.2' as const
-
-/**
- * The superseded asset-only contract: the same tagged request/result asset
- * methods, with no MCP server capability.
+ * and never inferred.
  *
- * This SDK no longer stamps it — `defineAdapter()` always produces
- * {@link ADAPTER_API_VERSION}. It exists as a named constant because adapters
- * published against it remain loadable during the compatibility window, and
- * the literal `'0.1'` should appear in exactly one place across the monorepo.
- *
- * Older still is the positional method contract, identified by `0.0`. It has
- * no constant here: nothing supports it, and naming it would invite someone to
- * add it to a support set.
+ * Superseded tokens deliberately have no constants here. `0.0` named the
+ * positional method contract; `0.1` and `0.2` named contracts in which the
+ * adapter itself mutated the filesystem and was responsible for undoing its
+ * own work. No caller can offer those the guarantees this one makes — exact
+ * byte restoration, concurrency preflight, batch atomicity — so naming them
+ * would only invite someone to add them back to a support set.
  */
-export const ADAPTER_API_VERSION_ASSETS_ONLY = '0.1' as const
+export const ADAPTER_API_VERSION = '0.3' as const
 
 /**
  * The top-level `package.json` field where a published npm adapter release
@@ -46,6 +38,3 @@ export const ADAPTER_API_VERSION_PACKAGE_FIELD = 'facetAdapterApiVersion' as con
 
 /** The adapter API identifier type produced by this SDK. */
 export type AdapterApiVersion = typeof ADAPTER_API_VERSION
-
-/** The superseded asset-only adapter API identifier type. */
-export type AdapterApiVersionAssetsOnly = typeof ADAPTER_API_VERSION_ASSETS_ONLY

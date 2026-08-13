@@ -388,78 +388,6 @@ describe('InstallView — drift removal', () => {
     expect(frame).toContain('untracked')
     instance.unmount()
   })
-
-  test('warns when a bundle was left behind because its primary was missing', async () => {
-    // The summary says the facet was removed; these files are still there.
-    const instance = render(
-      createElement(InstallView, {
-        mode: 'remove',
-        run: makeFakeRun(
-          [
-            { kind: 'install-start', totalFacets: 0 },
-            {
-              kind: 'obsolete-bundle-retained',
-              adapter: 'claude-code',
-              scope: 'project',
-              assetName: 'review',
-              facets: ['alpha'],
-              companionPaths: ['refs/api.md'],
-            },
-            { kind: 'install-complete', outcome: 'success' },
-          ],
-          emptySuccess(),
-        ),
-      }),
-    )
-    await settle()
-    const frame = visibleContentFrame(instance.frames)
-    expect(frame).toContain('review')
-    expect(frame).toContain('refs/api.md')
-    expect(frame).toContain('no longer tracked')
-    instance.unmount()
-  })
-
-  test('names the scope of each retained bundle so same-named ones stay distinguishable', async () => {
-    // One adapter resolves a different directory per scope, so these are two
-    // separate piles of files to clean up. Without the scope the two warnings
-    // are the same sentence twice, pointing at an unspecified skill root.
-    const instance = render(
-      createElement(InstallView, {
-        mode: 'remove',
-        run: makeFakeRun(
-          [
-            { kind: 'install-start', totalFacets: 0 },
-            {
-              kind: 'obsolete-bundle-retained',
-              adapter: 'claude-code',
-              scope: 'project',
-              assetName: 'review',
-              facets: ['alpha'],
-              companionPaths: ['refs/project.md'],
-            },
-            {
-              kind: 'obsolete-bundle-retained',
-              adapter: 'claude-code',
-              scope: 'user',
-              assetName: 'review',
-              facets: ['alpha'],
-              companionPaths: ['refs/user.md'],
-            },
-            { kind: 'install-complete', outcome: 'success' },
-          ],
-          emptySuccess(),
-        ),
-      }),
-    )
-    await settle()
-    const frame = visibleContentFrame(instance.frames)
-    expect(frame).toContain('project scope')
-    expect(frame).toContain('user scope')
-    // Both rows rendered — a scope-free React key would have collapsed them.
-    expect(frame).toContain('refs/project.md')
-    expect(frame).toContain('refs/user.md')
-    instance.unmount()
-  })
 })
 
 describe('InstallView — marketing aesthetic on `add`', () => {
@@ -765,7 +693,7 @@ describe('InstallView — integrity failure', () => {
     const result: RunInstallResult = {
       ok: false,
       failure,
-      rollback: { kind: 'not-needed', reason: 'test fixture' },
+      rollback: { kind: 'not-needed', reason: 'post-lock-no-mutation' },
     }
     const instance = render(
       createElement(InstallView, {
@@ -779,7 +707,7 @@ describe('InstallView — integrity failure', () => {
     expect(frame).toContain('check: B')
     expect(frame).toContain(integrityFailure.expected)
     expect(frame).toContain(integrityFailure.observed)
-    expect(frame).toContain(diskStateSentence({ kind: 'not-needed', reason: 'test fixture' }))
+    expect(frame).toContain(diskStateSentence({ kind: 'not-needed', reason: 'post-lock-no-mutation' }))
     instance.unmount()
   })
 
@@ -802,7 +730,7 @@ describe('InstallView — integrity failure', () => {
     const result: RunInstallResult = {
       ok: false,
       failure,
-      rollback: { kind: 'not-needed', reason: 'test fixture' },
+      rollback: { kind: 'not-needed', reason: 'post-lock-no-mutation' },
     }
     const instance = render(createElement(InstallView, { mode: 'add', run: makeFakeRun(events, result) }))
     await settle()
@@ -834,7 +762,7 @@ describe('InstallView — parse error failure', () => {
     const result: RunInstallResult = {
       ok: false,
       failure,
-      rollback: { kind: 'not-needed', reason: 'test fixture' },
+      rollback: { kind: 'not-needed', reason: 'post-lock-no-mutation' },
     }
     const instance = render(
       createElement(InstallView, {
@@ -857,9 +785,23 @@ describe('InstallView — aborted', () => {
   // claim "Rolled back to pre-install state" for every one of them, and the
   // `not-needed` case was the common one (Ctrl-C during fetch).
   const rollbacks: RollbackOutcome[] = [
-    { kind: 'not-needed', reason: 'test fixture' },
-    { kind: 'succeeded', entriesUndone: 3 },
-    { kind: 'partial-failure', entriesUndone: 0, failures: 2 },
+    { kind: 'not-needed', reason: 'post-lock-no-mutation' },
+    { kind: 'complete', restored: ['/tmp/a'], alreadyRestored: [], removedDirectories: [] },
+    {
+      kind: 'incomplete',
+      restored: ['/tmp/a'],
+      alreadyRestored: [],
+      removedDirectories: [],
+      issues: [
+        {
+          kind: 'conflict',
+          path: '/tmp/contested.md',
+          original: { kind: 'absent' },
+          committed: { kind: 'absent' },
+          observed: { kind: 'absent' },
+        },
+      ],
+    },
   ]
 
   test.each(rollbacks)('states what $kind rollback left on disk', async (rollback) => {
@@ -905,7 +847,7 @@ describe('InstallView — unsupported manifest version', () => {
     const result: RunInstallResult = {
       ok: false,
       failure,
-      rollback: { kind: 'not-needed', reason: 'test fixture' },
+      rollback: { kind: 'not-needed', reason: 'post-lock-no-mutation' },
     }
     const instance = render(
       createElement(InstallView, {
@@ -959,7 +901,21 @@ describe('InstallView — partial rollback failure surfaces', () => {
       { kind: 'facet-start', facet: 'viper-plans', specifier: './fixture' },
       { kind: 'facet-failure', facet: 'viper-plans', failure },
     ]
-    const rollback: RollbackOutcome = { kind: 'partial-failure', entriesUndone: 0, failures: 2 }
+    const rollback: RollbackOutcome = {
+      kind: 'incomplete',
+      restored: ['/tmp/a'],
+      alreadyRestored: [],
+      removedDirectories: [],
+      issues: [
+        {
+          kind: 'conflict',
+          path: '/tmp/contested.md',
+          original: { kind: 'absent' },
+          committed: { kind: 'absent' },
+          observed: { kind: 'absent' },
+        },
+      ],
+    }
     const result: RunInstallResult = { ok: false, failure, rollback }
     const instance = render(
       createElement(InstallView, {
@@ -970,7 +926,7 @@ describe('InstallView — partial rollback failure surfaces', () => {
     await settle()
     const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain(diskStateSentence(rollback))
-    expect(frame).toContain('Some adapter writes could not be undone')
+    expect(frame).toContain('changed by something else')
     expect(frame).toContain('disk full')
     instance.unmount()
   })
@@ -1028,7 +984,7 @@ describe('InstallView — frozen-lockfile drift', () => {
     const result: RunInstallResult = {
       ok: false,
       failure,
-      rollback: { kind: 'not-needed', reason: 'test fixture' },
+      rollback: { kind: 'not-needed', reason: 'post-lock-no-mutation' },
     }
     const instance = render(
       createElement(InstallView, {
@@ -1066,7 +1022,7 @@ describe('InstallView — frozen-lockfile drift', () => {
     const result: RunInstallResult = {
       ok: false,
       failure,
-      rollback: { kind: 'not-needed', reason: 'test fixture' },
+      rollback: { kind: 'not-needed', reason: 'post-lock-no-mutation' },
     }
     const instance = render(
       createElement(InstallView, {
@@ -1103,7 +1059,7 @@ function collisionRequest(): CollisionResolutionRequest {
 const CANCELLED_RESULT: RunInstallResult = {
   ok: false,
   failure: { code: 'MATERIALIZATION_CANCELLED' },
-  rollback: { kind: 'not-needed', reason: 'no journal was created' },
+  rollback: { kind: 'not-needed', reason: 'post-lock-no-mutation' },
 }
 
 /**
@@ -1283,7 +1239,7 @@ describe('InstallView — collision phase machine', () => {
     expect(resolutions).toEqual([{ kind: 'cancelled' }])
     const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain('Cancelled')
-    expect(frame).toContain(diskStateSentence({ kind: 'not-needed', reason: 'test fixture' }))
+    expect(frame).toContain(diskStateSentence({ kind: 'not-needed', reason: 'post-lock-no-mutation' }))
     expect(frame).not.toContain('Install complete.')
     instance.unmount()
   })
@@ -1750,7 +1706,7 @@ function makeConsentingRun(onDecision: (decision: McpConsentDecision) => void) {
       return {
         ok: false,
         failure: { code: 'MCP_CONSENT_DECLINED', request: { declarations: [], takeovers: [] } },
-        rollback: { kind: 'not-needed', reason: 'consent settles before the journal opens' },
+        rollback: { kind: 'not-needed', reason: 'post-lock-no-mutation' },
       }
     }
     onStage({ kind: 'facet-start', facet: 'alpha', specifier: './alpha' })
@@ -1861,7 +1817,7 @@ describe('InstallView — asset takeover phase', () => {
             adapter: 'claude-code',
             asset: assetIdentity('project', 'skill', 'review'),
           },
-          rollback: { kind: 'succeeded', entriesUndone: 2 },
+          rollback: { kind: 'complete', restored: ['/tmp/a', '/tmp/b'], alreadyRestored: [], removedDirectories: [] },
         }
       }
       return successResultSingle

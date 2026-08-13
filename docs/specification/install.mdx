@@ -12,11 +12,11 @@ Installation is a single pipeline with two phases. **[Planning](/specification/p
 
 Before the pipeline runs, **every installed adapter's** declared adapter API MUST be inspected against the CLI's supported set. An incompatible or broken installed adapter MUST fail the operation before planning begins — before any adapter method is invoked and before any project write — with per-adapter diagnostics and the best available reinstall command for each entry. The commit phase then re-checks the adapters selected for the operation as defense-in-depth: the same incompatibility MUST fail at [Load state and gate](/specification/commit), before any facet is resolved and therefore before any Git or local facet build can invoke adapter metadata methods.
 
-When the desired state contains active MCP server declarations, every selected adapter MUST additionally support MCP server configuration. Adapters that cannot — those implementing the asset-only adapter API, or declaring no MCP support — MUST be collected into one failure raised before any approval is requested and before any mutation.
+When the desired state contains active MCP server declarations, every selected adapter MUST additionally support MCP server configuration. Adapters that cannot — those declaring no MCP support — MUST be collected into one failure raised before any approval is requested and before any mutation.
 
-The [adapter API](/guides/custom-adapters), the [archive `facetVersion`](/specification/archive), the [project manifest version](/specification/project-manifest), the [lockfile version](/specification/lockfile), and the [install receipt version](/specification/commit#machine-local-install-receipt) are five independent version axes, each classified separately by exact match. They happen to share release trains; they are not one version in five places. The adapter-compatibility preflight runs **before** archive-version dispatch, so a positional `0.0` adapter fails on the adapter axis — with reinstall guidance — before a facet's `facetVersion` is even examined.
+The [adapter API](/guides/custom-adapters), the [archive `facetVersion`](/specification/archive), the [project manifest version](/specification/project-manifest), the [lockfile version](/specification/lockfile), and the [install receipt version](/specification/commit#machine-local-install-receipt) are five independent version axes, each classified separately by exact match. They happen to share release trains; they are not one version in five places. The adapter-compatibility preflight runs **before** archive-version dispatch, so an adapter declaring a superseded contract fails on the adapter axis — with reinstall guidance — before a facet's `facetVersion` is even examined.
 
-Project state MUST NOT be written unless every check passes. Everything through MCP approval is read-only, so a failure there — an unresolved name collision, a cancelled resolution, a declined approval, an unsupported adapter, an unparseable native configuration document — leaves the project byte-identical with nothing to undo. From the first write onward, a failure MUST roll back all materialization via the journal, restore every native MCP document to its exact prior bytes, and leave the project exactly as it was.
+Project state MUST NOT be written unless every check passes. Everything through MCP approval is read-only, so a failure there — an unresolved name collision, a cancelled resolution, a declined approval, an unsupported adapter, an unparseable native configuration document — leaves the project byte-identical with nothing to undo. From the first write onward, every change is recorded as an exact `before → after` transition, and a failure MUST use those records to restore every file it changed — assets, native MCP documents, and project state alike — to its exact prior bytes.
 
 What install materializes — and what it does not — is a first-class part of the contract:
 
@@ -42,7 +42,7 @@ flowchart LR
     CMD["Command<br/>(add / remove / install)"] --> PLAN["Phase 1: Planning<br/>build the delta"]
     PLAN --> COMMIT["Phase 2: Commit<br/>resolve all · compose · apply"]
     COMMIT -->|all checks pass| OK["Tri-write:<br/>facets.json + facets.lock + receipt"]
-    COMMIT -->|any failure| RB["Journal rollback<br/>project unchanged"]
+    COMMIT -->|any failure| RB["Restore every changed file<br/>project unchanged"]
 ```
 
 <Info>

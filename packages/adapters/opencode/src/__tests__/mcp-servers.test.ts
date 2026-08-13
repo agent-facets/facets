@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { McpServerCapability } from '@agent-facets/adapter'
 import { parseJsoncDocument, splitJsoncBom } from '@agent-facets/adapter-jsonc'
 import {
+  commitPlannedAction,
   type McpMatrixCaseId,
   type McpMatrixProject,
   type McpMatrixSeed,
@@ -243,35 +243,34 @@ describe('opencode configuration layers', () => {
   })
 
   async function reconcile(previouslyOwnedNames: readonly string[] = []): Promise<readonly string[]> {
-    const prepared = await openCodeMcpServers.prepare({
+    const planned = await openCodeMcpServers.plan({
       projectRoot: root,
       desired: [STDIO_SERVER],
       previouslyOwnedNames,
     })
-    if (!prepared.ok) expect.unreachable()
-    const applied = await openCodeMcpServers.apply({ plan: prepared.preparation.plan })
-    if (!applied.ok) expect.unreachable()
-    return prepared.preparation.documentPaths
+    if (!planned.ok) expect.unreachable()
+    commitPlannedAction(planned.plan.action)
+    return planned.plan.action.kind === 'mutate' ? planned.plan.action.mutations.map((m) => m.path) : []
   }
 
   async function removeAll(previouslyOwnedNames: readonly string[]): Promise<void> {
-    const prepared = await openCodeMcpServers.prepare({ projectRoot: root, desired: [], previouslyOwnedNames })
-    if (!prepared.ok) expect.unreachable()
-    const applied = await openCodeMcpServers.apply({ plan: prepared.preparation.plan })
-    if (!applied.ok) expect.unreachable()
+    const planned = await openCodeMcpServers.plan({ projectRoot: root, desired: [], previouslyOwnedNames })
+    if (!planned.ok) expect.unreachable()
+    commitPlannedAction(planned.plan.action)
   }
 
   const read = (name: string): string => readFileSync(join(root, name), 'utf8')
   const servers = (name: string): Record<string, NativeEntry | undefined> => serverMap(read(name))
 
-  test('both documents are disclosed even when only one exists', async () => {
+  test('only the layer that actually changes is planned', async () => {
     writeFileSync(join(root, JSONC), '{ "mcp": {} }\n')
 
-    const disclosed = await reconcile()
+    const mutated = await reconcile()
 
-    // A path that does not exist is still a preimage the caller can restore
-    // to, which is what makes creating the other layer recoverable.
-    expect(disclosed).toEqual([join(root, JSONC), join(root, JSON_DOCUMENT)])
+    // The layer nothing writes is not journaled: inspecting a document has
+    // never been a reason to own it, and a rollback that rewrote it could
+    // overwrite an edit this run never made.
+    expect(mutated).toEqual([join(root, JSONC)])
   })
 
   test('a new entry prefers the JSONC layer when both exist', async () => {
@@ -391,7 +390,7 @@ describe('opencode MCP capability', () => {
   test('refuses a declaration OpenCode would interpolate instead of using literally', async () => {
     const root = mkdtempSync(join(tmpdir(), 'opencode-mcp-'))
     try {
-      const prepared = await openCodeMcpServers.prepare({
+      const prepared = await openCodeMcpServers.plan({
         projectRoot: root,
         desired: [{ name: 'fs', declaration: { type: 'stdio', command: 'srv', env: { T: '{env:TOKEN}' } } }],
         previouslyOwnedNames: [],
@@ -411,12 +410,5 @@ describe('opencode MCP capability', () => {
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
-  })
-
-  test('rejects a plan it did not produce', async () => {
-    // The engine holds the plan as `unknown`, so this is the shape an untyped
-    // caller can actually reach `apply` with.
-    const asEngineSeesIt: McpServerCapability<unknown> = openCodeMcpServers
-    await expect(asEngineSeesIt.apply({ plan: { kind: 'nonsense' } })).rejects.toThrow('did not produce')
   })
 })

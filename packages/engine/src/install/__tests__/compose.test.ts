@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
-import { ADAPTER_API_VERSION } from '@agent-facets/adapter'
+import { ADAPTER_API_VERSION, planSingleFileInstall, planSingleFileRemoval } from '@agent-facets/adapter'
 import type { CollisionResolution, CollisionResolutionRequest } from '../commit/compose.ts'
 import { receiptPath } from '../receipt.ts'
 import { runInstall } from '../run-install.ts'
@@ -42,32 +42,21 @@ function recordingAdapter(name: string): { adapter: Adapter; io: string[]; mcpDo
     adapter: {
       name,
       apiVersion: ADAPTER_API_VERSION,
-      supportsInstall: true,
       mcpServers: mcp.capability,
       buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
-      async installAsset(request) {
-        io.push(`install:${request.assetType}:${request.name}`)
-        const p = file(request.assetType, request.name)
-        mkdirSync(join(p, '..'), { recursive: true })
-        writeFileSync(p, request.content)
-        return { ok: true, primaryPath: p }
-      },
-      async readAsset(request) {
-        io.push(`read:${request.assetType}:${request.name}`)
-        let content: string
-        try {
-          content = readFileSync(file(request.assetType, request.name), 'utf8')
-        } catch {
-          return { ok: false, failure: { code: 'not-found' } }
-        }
-        return request.assetType === 'skill'
-          ? { ok: true, asset: { assetType: 'skill', content, metadata: {}, companions: {} } }
-          : { ok: true, asset: { assetType: request.assetType, content, metadata: {} } }
-      },
-      async deleteAsset(request) {
-        io.push(`delete:${request.assetType}:${request.name}`)
-        rmSync(file(request.assetType, request.name), { force: true })
-        return { ok: true, existed: true, deletedPaths: [] }
+      assets: {
+        async planInstall(request) {
+          io.push(`install:${request.assetType}:${request.name}`)
+          return planSingleFileInstall(
+            { file: file(request.assetType, request.name), boundary: projectRoot },
+            request.content,
+            request.metadata as Record<string, unknown>,
+          )
+        },
+        async planRemoval(request) {
+          io.push(`delete:${request.assetType}:${request.name}`)
+          return planSingleFileRemoval({ file: file(request.assetType, request.name), boundary: projectRoot })
+        },
       },
     },
   }
@@ -646,17 +635,15 @@ describe('compose — persisting and pruning intent', () => {
     const failing: Adapter = {
       name: 'failing',
       apiVersion: ADAPTER_API_VERSION,
-      supportsInstall: true,
       mcpServers: false,
       buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
-      async installAsset() {
-        return { ok: false, failure: { code: 'io-failed', operation: 'write', message: 'disk on fire' } }
-      },
-      async readAsset() {
-        return { ok: false, failure: { code: 'not-found' } }
-      },
-      async deleteAsset() {
-        return { ok: true, existed: false, deletedPaths: [] }
+      assets: {
+        async planInstall() {
+          return { ok: false, failure: { code: 'io-failed', path: '/dev/null', message: 'disk on fire' } }
+        },
+        async planRemoval() {
+          return { ok: true, plan: { kind: 'absent', primaryPath: '/dev/null' } }
+        },
       },
     }
 
@@ -710,18 +697,16 @@ describe('compose — ordering against other failures', () => {
     const incompatible = {
       name: 'old',
       apiVersion: '0.0',
-      supportsInstall: true,
       buildAssetMetadata: () => {
         throw new Error('contract method invoked despite incompatibility')
       },
-      async installAsset() {
-        throw new Error('contract method invoked despite incompatibility')
-      },
-      async readAsset() {
-        throw new Error('contract method invoked despite incompatibility')
-      },
-      async deleteAsset() {
-        throw new Error('contract method invoked despite incompatibility')
+      assets: {
+        async planInstall() {
+          throw new Error('contract method invoked despite incompatibility')
+        },
+        async planRemoval() {
+          throw new Error('contract method invoked despite incompatibility')
+        },
       },
     } as unknown as Adapter
 

@@ -1,7 +1,5 @@
-import { readFile } from 'node:fs/promises'
-import { atomicWriteFileSync } from '@agent-facets/common'
-import { errorMessage, isMissingFileError } from './asset-fs.ts'
-import { isPlainObject } from './mcp-native-values.ts'
+import type { FileMutation, FileState } from '@agent-facets/common'
+import { encodeText, readFileState, stateHoldsBytes } from './asset-fs.ts'
 import {
   type McpNativeMatch,
   mcpDeclarationLiterals,
@@ -9,24 +7,21 @@ import {
   reconcileMcpServers,
 } from './mcp-reconcile.ts'
 import type {
-  ApplyMcpServersResult,
   McpServerCapabilityFailure,
   McpServerContribution,
-  McpServerPreparation,
   McpServerPreparationOutcome,
-  PrepareMcpServersRequest,
-  PrepareMcpServersResult,
+  PlanMcpServersRequest,
+  PlanMcpServersResult,
 } from './mcp-servers.ts'
+import type { AdapterPlanFailure } from './types.ts'
 
 /**
  * The format-independent half of an MCP capability.
  *
  * Every tool this SDK targets keeps its MCP servers in a text document, and
- * every adapter therefore does the same work around its own parser: read, guard
- * the authored literals, classify what is present against what is desired,
- * stop when nothing needs writing, disclose the documents a write could touch,
- * re-read them immediately before writing so a concurrent edit is reported
- * rather than clobbered, and write each one atomically.
+ * every adapter therefore does the same work around its own parser: read,
+ * guard the authored literals, classify what is present against what is
+ * desired, stop when nothing needs writing, and render the new text.
  *
  * Only four things are genuinely tool-specific — which documents to consider,
  * how to parse them, how to compare one entry, and how to render an edit — so
@@ -38,146 +33,70 @@ import type {
  * writes are one change.
  */
 
+/** A document the adapter inspected, with the exact state it was in. */
+export interface McpTextDocument {
+  readonly path: string
+  readonly state: FileState
+}
+
 /** One document a plan would write. */
 export interface TextDocumentEdit {
   readonly path: string
-  /** The document's exact text when it was inspected, or `null` if absent. */
-  readonly expected: string | null
   /** The complete text to commit. */
   readonly contents: string
 }
 
-/**
- * A prepared change to one or more text documents.
- *
- * `documentPaths` is every document the adapter inspected, which is what the
- * caller journals preimages for. It is deliberately wider than the edits: a
- * layered configuration is classified against documents a given run may not
- * end up writing, and a caller that was never told about one cannot restore it.
- */
-export type McpTextPlan =
-  | { readonly kind: 'unchanged'; readonly documentPaths: readonly [string, ...string[]] }
-  | {
-      readonly kind: 'write'
-      readonly documentPaths: readonly [string, ...string[]]
-      readonly edits: readonly [TextDocumentEdit, ...TextDocumentEdit[]]
-    }
-
-/**
- * Narrow the opaque plan the caller handed back.
- *
- * A value that fails this check did not come from `prepare`. That is a
- * violated contract rather than a condition a caller could act on, which is
- * the one case where throwing is the honest answer.
- */
-export function asMcpTextPlan(value: unknown, adapterName: string): McpTextPlan {
-  const plan = readTextPlan(value)
-  if (plan === undefined) {
-    throw new Error(`${adapterName}: apply() received a plan this adapter did not produce`)
-  }
-  return plan
-}
-
-function readTextPlan(value: unknown): McpTextPlan | undefined {
-  if (!isPlainObject(value)) return undefined
-  const documentPaths = readNonEmptyStrings(value.documentPaths)
-  if (documentPaths === undefined) return undefined
-
-  if (value.kind === 'unchanged') return { kind: 'unchanged', documentPaths }
-  if (value.kind !== 'write' || !Array.isArray(value.edits) || value.edits.length === 0) return undefined
-
-  const edits: TextDocumentEdit[] = []
-  for (const candidate of value.edits) {
-    if (!isPlainObject(candidate)) return undefined
-    const { path, expected, contents } = candidate
-    if (typeof path !== 'string' || typeof contents !== 'string') return undefined
-    if (expected !== null && typeof expected !== 'string') return undefined
-    // A path written twice would make the second write depend on text the
-    // first one replaced, so the plan's own preflight could never be true for
-    // both. Rejected here rather than discovered mid-write.
-    if (edits.some((edit) => edit.path === path)) return undefined
-    // An edit outside the plan's own disclosed set is a document no caller
-    // journaled a preimage for, so writing it would be unrestorable.
-    if (!documentPaths.includes(path)) return undefined
-    edits.push({ path, expected, contents })
-  }
-
-  const [first, ...rest] = edits
-  if (first === undefined) return undefined
-  return { kind: 'write', documentPaths, edits: [first, ...rest] }
-}
-
-function readNonEmptyStrings(value: unknown): readonly [string, ...string[]] | undefined {
-  if (!Array.isArray(value)) return undefined
-  if (!value.every((entry) => typeof entry === 'string')) return undefined
-  const [first, ...rest] = value as string[]
-  return first === undefined ? undefined : [first, ...rest]
-}
-
-/** Hook for work a document needs before it can be written, such as its directory. */
-export interface ApplyMcpTextPlanOptions {
-  readonly adapterName: string
-  /** Called once per edited document, immediately before its write. */
-  readonly beforeWrite?: (path: string) => Promise<void>
-}
-
-/**
- * Commit a prepared text plan.
- *
- * Every edited document is re-read and compared *before* any of them is
- * written. Checking each one immediately before its own write would leave a
- * two-document change half-applied when the second document turned out to have
- * drifted, and the caller's rollback would then be undoing a write this
- * adapter should never have made.
- */
-export async function applyMcpTextPlan(
-  plan: unknown,
-  options: ApplyMcpTextPlanOptions,
-): Promise<ApplyMcpServersResult> {
-  const narrowed = asMcpTextPlan(plan, options.adapterName)
-  if (narrowed.kind === 'unchanged') return { ok: true, status: 'unchanged' }
-
-  for (const edit of narrowed.edits) {
-    const current = await readTextOrAbsent(edit.path)
-    if (!current.ok) return { ok: false, failure: current.failure }
-    if (current.text !== edit.expected) {
-      return { ok: false, failure: { code: 'conflict', reason: 'document-changed', path: edit.path } }
-    }
-  }
-
-  const changed: string[] = []
-  for (const edit of narrowed.edits) {
-    try {
-      await options.beforeWrite?.(edit.path)
-      atomicWriteFileSync(edit.path, edit.contents)
-    } catch (err) {
-      return {
-        ok: false,
-        failure: { code: 'io-failed', operation: 'write', path: edit.path, message: errorMessage(err) },
-      }
-    }
-    changed.push(edit.path)
-  }
-
-  const [first, ...rest] = changed
-  // Unreachable: the plan's edit list is non-empty by construction, and every
-  // edit either pushes a path or returns above.
-  if (first === undefined) return { ok: true, status: 'unchanged' }
-  return { ok: true, status: 'changed', changedPaths: [first, ...rest] }
-}
-
-/** A document's text, or the fact that it does not exist. */
+/** A document's text, its exact state, or the fact that it does not exist. */
 export type ReadTextResult =
-  | { readonly ok: true; readonly text: string | null }
+  | { readonly ok: true; readonly text: string | null; readonly document: McpTextDocument }
   | { readonly ok: false; readonly failure: McpServerCapabilityFailure }
 
-/** Read one document, treating absence as a value rather than a failure. */
-export async function readTextOrAbsent(path: string): Promise<ReadTextResult> {
-  try {
-    return { ok: true, text: await readFile(path, 'utf8') }
-  } catch (err) {
-    if (isMissingFileError(err)) return { ok: true, text: null }
-    return { ok: false, failure: { code: 'io-failed', operation: 'read', path, message: errorMessage(err) } }
+/**
+ * Read one document, treating absence as a value rather than a failure.
+ *
+ * Returns the exact state alongside the decoded text: the text is what the
+ * adapter's parser needs, and the state is what a caller needs to detect a
+ * concurrent edit and to put the bytes back if the operation fails.
+ */
+export function readTextOrAbsent(path: string): ReadTextResult {
+  const state = readFileState(path)
+  if (!state.ok) {
+    // An unsupported object where a configuration document belongs is a
+    // validation problem, not an I/O one: the file is readable in principle
+    // and the tool's configuration simply is not what this adapter can edit.
+    return {
+      ok: false,
+      failure:
+        state.failure.code === 'io-failed'
+          ? { code: 'io-failed', path, message: state.failure.message }
+          : { code: 'validation-failed', path, message: describeUnusablePath(state.failure) },
+    }
+  }
+  if (state.state.kind === 'absent') {
+    return { ok: true, text: null, document: { path, state: state.state } }
+  }
+  return {
+    ok: true,
+    // `ignoreBOM` keeps a leading byte-order mark in the string instead of
+    // silently consuming it. Adapters split it off and put it back so a user's
+    // editor does not re-add it on their next save; a decoder that ate it here
+    // would make that preservation impossible and invisible.
+    text: new TextDecoder('utf-8', { ignoreBOM: true }).decode(state.state.contents),
+    document: { path, state: state.state },
+  }
+}
+
+function describeUnusablePath(failure: AdapterPlanFailure): string {
+  switch (failure.code) {
+    case 'unsupported-object':
+    case 'unrepresentable':
+      return failure.detail
+    case 'invalid-companion-path':
+      return failure.reason
+    case 'unsupported-scope':
+      return `scope ${failure.scope} is not supported`
+    case 'io-failed':
+      return failure.message
   }
 }
 
@@ -220,20 +139,18 @@ export function findInterpolationConflict(
  * and resumes from there on the next call, so scanning several literals with
  * one adapter-supplied object would skip matches — a guard that fails *open*,
  * silently, and only for some inputs. Rebuilt rather than reset because the
- * pattern belongs to the caller: a guard that mutated it would export its own
- * bookkeeping into an adapter's module state. Every other flag is preserved,
- * `u` and `v` especially, since they change what the source means.
+ * pattern belongs to the caller.
  */
 function statelessPattern(pattern: RegExp): RegExp {
   const flags = pattern.flags.replaceAll(/[gy]/g, '')
   return flags === pattern.flags ? pattern : new RegExp(pattern.source, flags)
 }
 
-/** What an adapter supplies to turn its parsed documents into a prepared plan. */
+/** What an adapter supplies to turn its parsed documents into a plan. */
 export interface PrepareMcpTextPlanInput {
-  readonly request: PrepareMcpServersRequest
-  /** Every document inspected, disclosed so the caller can journal preimages. */
-  readonly documentPaths: readonly [string, ...string[]]
+  readonly request: PlanMcpServersRequest
+  /** Every document inspected, with the exact state each was in. Non-empty. */
+  readonly documents: readonly [McpTextDocument, ...McpTextDocument[]]
   /** The tool's interpolation syntax, when it has one. */
   readonly interpolation?: InterpolationGuard | undefined
   /** Every effective server name the tool's merged configuration currently defines. */
@@ -261,8 +178,13 @@ export interface PrepareMcpTextPlanInput {
  * guard literals before comparing anything, classify against the merged view,
  * short-circuit when nothing needs a write, and only then ask the adapter to
  * render edits.
+ *
+ * An edit whose rendered text equals what the document already holds is
+ * dropped. Adapters legitimately re-render a whole layer to change one entry,
+ * and writing back identical bytes would journal a transition this run did not
+ * make and wake every tool watching that file.
  */
-export function prepareMcpTextPlan(input: PrepareMcpTextPlanInput): PrepareMcpServersResult<McpTextPlan> {
+export function prepareMcpTextPlan(input: PrepareMcpTextPlanInput): PlanMcpServersResult {
   if (input.interpolation !== undefined) {
     const conflict = findInterpolationConflict(input.request.desired, input.interpolation)
     if (conflict !== undefined) return { ok: false, failure: conflict }
@@ -276,38 +198,40 @@ export function prepareMcpTextPlan(input: PrepareMcpTextPlanInput): PrepareMcpSe
   })
 
   if (!mcpOutcomesRequireWrite(outcomes)) {
-    return preparation({ kind: 'unchanged', documentPaths: input.documentPaths }, outcomes)
+    return { ok: true, plan: { outcomes, action: { kind: 'unchanged' } } }
   }
 
   const built = input.buildEdits(outcomes)
   if (!built.ok) return { ok: false, failure: built.failure }
 
-  const [first, ...rest] = built.edits
-  if (first === undefined) {
-    // An adapter that reports work and then renders no edit would produce a
-    // plan claiming a write it cannot perform. Reported as unchanged is worse
-    // — it would drop the work silently — so this is the adapter's own
-    // contract, checked here rather than trusted.
-    throw new Error('prepareMcpTextPlan: outcomes require a write but no document edit was produced')
-  }
-
+  const states = new Map(input.documents.map((document) => [document.path, document.state]))
+  const mutations: FileMutation[] = []
   for (const edit of built.edits) {
-    if (input.documentPaths.includes(edit.path)) continue
-    // The caller journals preimages for the disclosed set and nothing else, so
-    // an edit naming a document outside it is a write that could never be
-    // rolled back. Caught here, before the plan is applicable, rather than by
-    // the caller after the bytes are already on disk. Same class as the throw
-    // above: the adapter broke its own contract, and no caller can act on it.
-    throw new Error(`prepareMcpTextPlan: buildEdits produced an edit for an undisclosed document: ${edit.path}`)
+    const expected = states.get(edit.path)
+    if (expected === undefined) {
+      // The adapter rendered an edit for a document it never reported reading,
+      // so no exact prior state exists for it. Caught here, before the plan is
+      // applicable, rather than by the caller after the bytes are on disk.
+      // The adapter broke its own contract, and no caller can act on it.
+      throw new Error(`prepareMcpTextPlan: buildEdits produced an edit for an uninspected document: ${edit.path}`)
+    }
+    const contents = encodeText(edit.contents)
+    if (stateHoldsBytes(expected, contents)) continue
+    mutations.push({
+      kind: 'write',
+      path: edit.path,
+      boundary: input.request.projectRoot,
+      expected,
+      contents,
+    })
   }
 
-  return preparation({ kind: 'write', documentPaths: input.documentPaths, edits: [first, ...rest] }, outcomes)
-}
-
-function preparation(
-  plan: McpTextPlan,
-  outcomes: readonly McpServerPreparationOutcome[],
-): PrepareMcpServersResult<McpTextPlan> {
-  const value: McpServerPreparation<McpTextPlan> = { plan, documentPaths: plan.documentPaths, outcomes }
-  return { ok: true, preparation: value }
+  const [first, ...rest] = mutations
+  if (first === undefined) {
+    // Every rendered edit turned out to be byte-identical to what is already
+    // there. The outcomes still describe real adoption work for the caller to
+    // report; the filesystem simply has nothing to do.
+    return { ok: true, plan: { outcomes, action: { kind: 'unchanged' } } }
+  }
+  return { ok: true, plan: { outcomes, action: { kind: 'mutate', mutations: [first, ...rest] } } }
 }

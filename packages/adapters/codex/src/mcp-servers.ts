@@ -1,16 +1,12 @@
-import { mkdir } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import {
-  type ApplyMcpServersResult,
-  applyMcpTextPlan,
   errorMessage,
   isPlainObject,
   type McpNativeMatch,
   type McpServerCapability,
   type McpServerContribution,
-  type McpTextPlan,
-  type PrepareMcpServersRequest,
-  type PrepareMcpServersResult,
+  type PlanMcpServersRequest,
+  type PlanMcpServersResult,
   prepareMcpTextPlan,
   type ReadonlyMcpServerDeclaration,
   readTextOrAbsent,
@@ -96,11 +92,11 @@ const PORTABLE_KEYS: Readonly<Record<'stdio' | 'http', ReadonlySet<string>>> = {
  */
 const INLINE_TABLE_DEPTH = 2
 
-export const codexMcpServers: McpServerCapability<McpTextPlan> = {
-  async prepare(request: PrepareMcpServersRequest): Promise<PrepareMcpServersResult<McpTextPlan>> {
+export const codexMcpServers: McpServerCapability = {
+  async plan(request: PlanMcpServersRequest): Promise<PlanMcpServersResult> {
     const path = join(request.projectRoot, ...DOCUMENT_PATH)
 
-    const read = await readTextOrAbsent(path)
+    const read = readTextOrAbsent(path)
     if (!read.ok) return { ok: false, failure: read.failure }
     const text = read.text
 
@@ -137,7 +133,7 @@ export const codexMcpServers: McpServerCapability<McpTextPlan> = {
 
     return prepareMcpTextPlan({
       request,
-      documentPaths: [path],
+      documents: [read.document],
       presentNames: new Set(Object.keys(servers)),
       compare: (contribution) => compareEntry(servers[contribution.name], contribution.declaration),
       buildEdits: (outcomes) => {
@@ -167,21 +163,10 @@ export const codexMcpServers: McpServerCapability<McpTextPlan> = {
           format.inlineTableStart = INLINE_TABLE_DEPTH
           const target = document ?? parseDocument('')
           target.patch(root, format)
-          return { ok: true, edits: [{ path, expected: text, contents: target.toTomlString }] }
+          return { ok: true, edits: [{ path, contents: target.toTomlString }] }
         } catch (err) {
           return { ok: false, failure: { code: 'conflict', reason: 'native-state', path, detail: errorMessage(err) } }
         }
-      },
-    })
-  },
-
-  async apply(request: { readonly plan: unknown }): Promise<ApplyMcpServersResult> {
-    return applyMcpTextPlan(request.plan, {
-      adapterName: 'codex',
-      // The atomic write puts its temporary file beside the target, so the
-      // `.codex` directory has to exist before the rename can be same-volume.
-      beforeWrite: async (path) => {
-        await mkdir(dirname(path), { recursive: true })
       },
     })
   },

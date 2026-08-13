@@ -721,21 +721,33 @@ Whether a requested name is declared SHALL be decided by the commit, under the p
 - **AND** the system SHALL silently ignore the undeclared names
 - **AND** the process SHALL exit with code 0 if all declared facets were removed successfully
 
-### Requirement: Remove reports rollback outcome on failure
+### Requirement: A failed operation reports what it left on disk, by path
 
-When a remove operation fails after the project manifest has been modified, the rendered view SHALL indicate whether the project was fully restored to its pre-operation state or whether some state may remain, and the process SHALL exit with a non-zero code.
+When an add, install, or remove operation fails, the command SHALL report whether the project was fully restored, and the process SHALL exit with a non-zero code. When any file could not be returned to its prior state, the command SHALL name every such file on the error stream.
 
-#### Scenario: Failed removal that fully rolls back
+The report SHALL distinguish a file deliberately left alone — because something else changed it after this run wrote it — from one whose restoration genuinely failed, and SHALL give each the remedy that applies to it. A preserved concurrent edit SHALL NOT be described as damage to hunt for.
 
-- **WHEN** a remove operation fails and the system fully restores the project to its pre-operation state
+The command SHALL NOT prompt about a contested file, and SHALL NOT offer to overwrite one, in interactive or non-interactive use alike. Whatever the other writer left SHALL remain exactly as they left it.
+
+An interactive option to force restoration over a contested file is intentionally deferred rather than omitted by oversight. Adding one would ask a user to choose between two states during failure handling, on the least informed footing they will ever have; reporting the path lets them compare the two deliberately afterward. Reporting is therefore the floor a later option would build on, never something it would replace.
+
+#### Scenario: Failed operation that fully rolls back
+
+- **WHEN** an operation fails and every file it changed is restored
 - **THEN** the rendered view SHALL indicate that the project state is unchanged
 - **AND** the process SHALL exit with a non-zero code
 
-#### Scenario: Failed removal that cannot fully roll back
+#### Scenario: Failed operation that could not restore a file
 
-- **WHEN** a remove operation fails and the system cannot fully restore the project
-- **THEN** the rendered view SHALL warn the user that some state may remain
+- **WHEN** an operation fails and a file could not be returned to its prior state
+- **THEN** the command SHALL name that file on the error stream
 - **AND** the process SHALL exit with a non-zero code
+
+#### Scenario: A preserved concurrent edit is reported without a prompt
+
+- **WHEN** something else changed a file after the run wrote it, and the run then failed
+- **THEN** the command SHALL name that file and say it was left as it is
+- **AND** the command SHALL NOT ask whether to overwrite it
 
 ### Requirement: Remove accepts verbose output
 
@@ -1025,7 +1037,7 @@ When interactive asset materialization reaches a desired destination occupied by
 
 ### Requirement: Unsupported MCP adapters are reported completely
 
-When active MCP declarations exist and selected adapters include API `0.1` adapters or API `0.2` adapters without MCP support, the command SHALL fail before prompting or mutation. One error SHALL identify every unsupported selected adapter and SHALL direct the user to upgrade the adapter or omit the active server declarations.
+When active MCP declarations exist and any selected adapter declares no MCP support, the command SHALL fail before prompting or mutation. One error SHALL identify every unsupported selected adapter and SHALL direct the user to omit the active server declarations or deselect the adapter.
 
 #### Scenario: Every unsupported adapter is listed
 
