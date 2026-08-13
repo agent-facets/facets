@@ -45,7 +45,8 @@ export const DEFAULT_TIMEOUT_CONFIG: Readonly<TimeoutConfig> = Object.freeze({
  * re-issue) sees it.
  */
 export function createTimeoutMiddleware(cfg: Partial<TimeoutConfig> = {}): Middleware {
-  const deadlineMs = cfg.deadlineMs ?? DEFAULT_DEADLINE_MS
+  const config = { ...DEFAULT_TIMEOUT_CONFIG, ...cfg } as const
+  const deadlineMs = config.deadlineMs
   return {
     onRequest({ request }) {
       const deadlineSignal = AbortSignal.timeout(deadlineMs)
