@@ -5,6 +5,85 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-08-14" description="Adapter SDK 0.30.0 ships adapter API 0.3: adapters plan, the CLI writes" tags={["CLI", "Improvement"]} rss={{
+  title: "Adapter SDK 0.30.0: adapters plan, the CLI writes",
+  description: "@agent-facets/adapter@0.30.0 is published on npm alongside the first-party adapter refresh: @agent-facets/adapter-claude-code@0.11.0, @agent-facets/adapter-codex@0.9.0, and @agent-facets/adapter-opencode@0.12.0. This release introduces adapter API 0.3, in which adapters no longer write to disk: they return exact per-file transitions (the observed state and the bytes to commit) and the CLI performs every write through one filesystem transaction. That gives byte-exact rollback for assets, native MCP configuration, and the project's manifest, lockfile, and receipt -- comments, member order, and TOML/YAML formatting all survive a failure exactly as authored. A file the run only inspected is never journaled, and a file already holding the planned bytes contributes no change, so a re-install touches no modification time. Two adapters that manage the same MCP configuration file now fail with both named before any write, and every plan is re-checked immediately before commit so a document edited while the approval screen was open is reported rather than silently reported as configured. This is a coordinated release for adapter authors; the matching CLI release ships next."
+}}>
+  ## Adapter SDK 0.30.0 with adapter API `0.3`
+
+  Adapter authors have new releases on npm:
+
+  - `@agent-facets/adapter@0.30.0`
+  - `@agent-facets/adapter-claude-code@0.11.0`
+  - `@agent-facets/adapter-codex@0.9.0`
+  - `@agent-facets/adapter-opencode@0.12.0`
+
+  ## Adapters plan, the CLI writes
+
+  Under [adapter API `0.3`](/guides/custom-adapters), adapters are strictly
+  read-only. An adapter inspects your project, decides what should change,
+  and returns exact per-file transitions — an absolute path, the state it
+  observed that path in, and the bytes to commit. The CLI performs every
+  write through one filesystem transaction. This applies uniformly to
+  assets, native MCP configuration, and the project's own `facets.json`,
+  `facets.lock`, and receipt.
+
+  What you get in practice:
+
+  - **Byte-exact rollback.** A failure restores the precise prior bytes
+    and permission bits. Comments, member order, and TOML/YAML formatting
+    come back exactly as authored — restoration no longer depends on
+    re-rendering an asset from parsed data.
+  - **No phantom drift.** A file already holding the bytes a plan would
+    write contributes no change, so a re-install touches no modification
+    time.
+  - **Inspected files stay untouched on rollback.** A file the run only
+    read is never journaled, so a concurrent edit to it survives a
+    rollback.
+  - **Preconditions are checked immediately before each write.** A file
+    something else moved between planning and writing is refused and
+    reported, never clobbered.
+
+  ## Safer MCP configuration
+
+  Two connected adapters may no longer manage the same MCP configuration
+  file. The [`plan`](/guides/custom-adapters#mcp-server-configuration)
+  contract now returns every document it was computed from, and the CLI
+  fails before approval with both adapters named when two claim the same
+  file. See [Troubleshooting](/guides/troubleshooting) for the resolution
+  path.
+
+  Every plan is also recomputed immediately before its own commit,
+  including one that concluded nothing needed writing. A document edited
+  while the [approval screen](/cli/install#accept-mcp) was open is
+  reported as `MCP_NATIVE_STATE_DRIFT` mid-run rather than silently
+  reported as configured.
+
+  ## For adapter authors
+
+  Adapter API `0.3` is a **breaking replacement** of the adapter contract,
+  not a widening. If you maintain a custom adapter, the surface has
+  changed:
+
+  - `installAsset` / `readAsset` / `deleteAsset` are replaced by
+    `assets: false | { planInstall, planRemoval }`.
+  - `supportsInstall` is gone — an adapter states its asset capability the
+    same way it states MCP support.
+  - The MCP capability is `mcpServers: false | { plan }`. `apply`, the
+    opaque plan type, and the `conflict/document-changed` reason are
+    removed; concurrency is detected once, by the CLI.
+  - Every asset request carries `projectRoot`.
+
+  The [Custom adapters guide](/guides/custom-adapters) documents the new
+  planner-based SDK helpers.
+
+  ## Coordinated with the next CLI release
+
+  These adapter packages pair with the next CLI release. The current CLI
+  on npm (`agent-facets@0.31.0`, [shipped yesterday](#2026-08-13))
+  continues to work with the previously released first-party adapters.
+</Update>
+
 <Update label="2026-08-13" description="agent-facets 0.31.0 ships MCP server configuration end-to-end; hardened conflict, terminal, and file-format handling" tags={["CLI", "Improvement"]} rss={{
   title: "agent-facets 0.31.0 on npm: MCP server configuration is live end-to-end",
   description: "agent-facets@0.31.0, @agent-facets/protocol@0.31.0, @agent-facets/adapter@0.29.0, and the first-party Claude Code (0.10.0), Codex (0.8.0), and OpenCode (0.11.0) adapters are now on npm. This is the CLI release that turns on the MCP server configuration feature previewed in the 2026-08-10 entry: `facet add`, `facet install`, and `facet remove` now translate concrete stdio and Streamable HTTP server declarations in facet.json into project-scoped .mcp.json (Claude Code), opencode.jsonc or opencode.json (OpenCode), and .codex/config.toml (Codex). Interactive runs show one MCP approval screen with Decline selected by default; non-interactive and frozen runs need --accept-mcp. Run `facet self-update` to pick it up. This release also hardens the surrounding surfaces: collision reports now name each conflicting adapter key explicitly, terminal output escapes control characters and preserves BOMs and existing indentation when rewriting JSON/JSONC/TOML config, opencode.jsonc rewrites keep comment placement stable, and the install failure block reports the specific gate that stopped the run instead of a generic error."
