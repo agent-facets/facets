@@ -64,12 +64,12 @@ The compatibility-aware CLI selects npm adapter releases by their `facetAdapterA
 
 Both directions of getting it wrong are bad, in different ways:
 
-- When the set **replaces** a token (`{0.1, 0.2}` → `{0.3}`), a CLI-first release leaves `facet adapter install <alias>` with no compatible candidate at all — including for the three first-party adapters. Every user upgrading the CLI is stranded, and the reinstall command the CLI's own diagnostic prints cannot succeed.
+- When the set **replaces** a token (`{0.1, 0.2}` → `{0.3}`), a CLI-first release leaves `facet adapter add <alias>` with no compatible candidate at all — including for the three first-party adapters. Every user upgrading the CLI is stranded, and the reinstall command the CLI's own diagnostic prints cannot succeed.
 - When the set **widens** (`{0.1}` → `{0.1, 0.2}`), a CLI-first release is worse in one respect: nothing looks broken until a user adds a facet that needs the new capability, and the remedy the failure prints **cannot succeed** either. A dead-end diagnostic is harder to act on than an honest hard stop.
 
 Adapter-first avoids both. For a **widening** it is safe because an older CLI simply keeps selecting the highest release declaring a token it does support. For a **replacement** it is the only order that works at all: the new adapter releases must exist on npm before any CLI that requires them ships, or the first thing the new CLI does is refuse every adapter on the machine.
 
-> **A replacement is a hard cutover for users, by design.** Every already-installed adapter — first-party included — becomes `unsupported` the moment the new CLI runs, and each needs one `facet adapter install <name>`. That is the intended behavior when the contract change is one no caller can paper over; make sure `docs/guides/troubleshooting.mdx` and the changelog say so plainly before the CLI ships.
+> **A replacement is a hard cutover for users, by design.** Every already-installed adapter — first-party included — becomes `unsupported` the moment the new CLI runs, and each needs one `facet adapter add <name>`. That is the intended behavior when the contract change is one no caller can paper over; make sure `docs/guides/troubleshooting.mdx` and the changelog say so plainly before the CLI ships.
 
 Checklist (protocol → SDK + first-party adapters → CLI):
 
@@ -89,7 +89,7 @@ Checklist (protocol → SDK + first-party adapters → CLI):
    ```
 
 5. Only after all three respond with the expected API version, move the parked changeset from `scripts/release/deferred/` into `.changeset/` and merge the second Version Packages PR. Its tag triggers the `release-cli` pipeline, which ships the compatibility-aware CLI.
-6. No action is needed for already-published CLIs. Users of the new CLI with previously installed, undeclared bundles get fail-closed diagnostics and a `facet adapter install <specifier>` reinstall command.
+6. No action is needed for already-published CLIs. Users of the new CLI with previously installed, undeclared bundles get fail-closed diagnostics and a `facet adapter add <specifier>` reinstall command.
 
 Why separate Version-PR cycles: a single Version PR creates **all** tags at once, and the library and CLI pipelines then run in parallel — racing the CLI release against the adapter publishes. Splitting the changesets across cycles is the only serialization primitive available; there is no linked group in `.changeset/config.json` (`linked` and `fixed` are both empty, so every package versions independently).
 

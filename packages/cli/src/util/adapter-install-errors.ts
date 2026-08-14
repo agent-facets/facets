@@ -11,16 +11,7 @@ import type {
   RepairSource,
   VerifyAdapterFailure,
 } from '@agent-facets/engine'
-import { quoteShellArg } from './shell-quote.ts'
-
-/**
- * Single rendering seam for `facet adapter install <target>` commands in
- * fix lines. Targets are user/source-derived (receipt specifiers, local
- * paths, package names) and must paste back into a shell safely.
- */
-export function adapterInstallCommand(target: string): string {
-  return `facet adapter install ${quoteShellArg(target)}`
-}
+import { adapterAddCommand } from './adapter-command.ts'
 
 /**
  * Map an `AdapterInstallFailure` to the `{ what, detail, fix }` triple
@@ -81,11 +72,11 @@ export function formatPlacementWarning(warning: PlacementWarning): string {
 export function repairCommand(repair: RepairSource): string {
   switch (repair.kind) {
     case 'managed':
-      return adapterInstallCommand(repair.specifier)
+      return adapterAddCommand(repair.specifier)
     case 'first-party-alias':
-      return adapterInstallCommand(repair.alias)
+      return adapterAddCommand(repair.alias)
     case 'unmanaged-name':
-      return adapterInstallCommand(repair.name)
+      return adapterAddCommand(repair.name)
   }
 }
 
@@ -300,19 +291,19 @@ export function describeCompatibilityFailure(
       return {
         what: `adapter "${failure.adapter}" does not declare an adapter API version`,
         detail: `this CLI supports adapter API ${supported}; undeclared adapters are incompatible`,
-        fix: `install a release built with a current @agent-facets/adapter SDK: ${adapterInstallCommand(installTarget)}`,
+        fix: `install a release built with a current @agent-facets/adapter SDK: ${adapterAddCommand(installTarget)}`,
       }
     case 'api-malformed':
       return {
         what: `adapter "${failure.adapter}" declares a malformed adapter API version`,
         detail: `found "${failure.found}"; this CLI supports adapter API ${supported}`,
-        fix: `install a release with a valid API declaration: ${adapterInstallCommand(installTarget)}`,
+        fix: `install a release with a valid API declaration: ${adapterAddCommand(installTarget)}`,
       }
     case 'api-unsupported':
       return {
         what: `adapter "${failure.adapter}" declares unsupported adapter API ${failure.found}`,
         detail: `this CLI supports adapter API ${supported}`,
-        fix: `install a compatible release: ${adapterInstallCommand(installTarget)}`,
+        fix: `install a compatible release: ${adapterAddCommand(installTarget)}`,
       }
     case 'api-metadata-mismatch':
       return {
@@ -462,7 +453,7 @@ function describeNoCompatibleRelease(failure: {
  * would contradict the detail line.
  */
 function noCompatibleReleaseFix(request: NpmVersionRequest, packageName: string, considered: boolean): string {
-  const bareInstall = adapterInstallCommand(packageName)
+  const bareInstall = adapterAddCommand(packageName)
   if (considered) {
     return request.kind === 'exact'
       ? `that exact version is incompatible; try \`${bareInstall}\` for the highest compatible release`

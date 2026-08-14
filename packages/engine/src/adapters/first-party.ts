@@ -1,6 +1,6 @@
 /**
  * First-party adapters known to the CLI. Drives the zero-adapter install
- * picker (both `facet adapter install` no-arg and `facet install` zero-
+ * picker (both `facet adapter add` no-arg and `facet install` zero-
  * adapter paths) so partners see a curated list of the tools we officially
  * support in closed alpha.
  *

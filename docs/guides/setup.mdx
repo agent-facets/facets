@@ -42,10 +42,10 @@ What you need before adding, authoring, or publishing facets. If you just want t
   </Step>
 
   <Step title="Connect an adapter (required before adding facets)">
-    A facet is only useful once it's materialized into an AI tool, which the <Tooltip tip="An adapter is the bridge between facet and a specific AI coding tool.">adapter</Tooltip> handles. Install one per machine with [`facet adapter install`](/cli/adapters/install):
+    A facet is only useful once it's materialized into an AI tool, which the <Tooltip tip="An adapter is the bridge between facet and a specific AI coding tool.">adapter</Tooltip> handles. Install one per machine with [`facet adapter add`](/cli/adapters/add):
 
     ```sh
-    facet adapter install claude-code   # or: opencode, codex
+    facet adapter add claude-code   # or: opencode, codex
     facet adapter list
     ```
 

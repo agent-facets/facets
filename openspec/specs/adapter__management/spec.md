@@ -4,7 +4,7 @@ Users install, list, and remove adapters (AI coding tool integrations) through t
 ## Requirements
 ### Requirement: Users can install adapters from multiple sources
 
-The system SHALL provide a command to install adapters. The command SHALL accept specifiers in multiple formats: built-in names for first-party adapters, npm package names, Git URLs using standard Git protocols, and local filesystem paths.
+The system SHALL provide a command to install adapters, named `facet adapter add`. The command SHALL accept specifiers in multiple formats: built-in names for first-party adapters, npm package names, Git URLs using standard Git protocols, and local filesystem paths.
 
 #### Scenario: Install a first-party adapter by name
 
@@ -264,7 +264,7 @@ A managed installation SHALL retain its original source specifier, verified adap
 
 - **WHEN** a managed npm adapter is later found incompatible or broken
 - **THEN** its retained provenance SHALL include the original install specifier, resolved package name and version, verified adapter API, and registry integrity
-- **AND** the CLI SHALL be able to present `facet adapter install <specifier>` as the repair command
+- **AND** the CLI SHALL be able to present `facet adapter add <specifier>` as the repair command
 
 #### Scenario: Git or local installation retains source-specific provenance
 

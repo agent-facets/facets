@@ -249,7 +249,7 @@ describe('resolveEntryPoint', () => {
  * tree whose dependencies are already satisfied (an installed workspace,
  * a zero-dep adapter) must bundle without spawning a package manager —
  * an unconditional install would re-enter the enclosing workspace's
- * lifecycle scripts (the repo's own postinstall → adapter install →
+ * lifecycle scripts (the repo's own postinstall → adapter add →
  * bun install recursion). The fallback install must still fire for a
  * standalone source dir with uninstalled dependencies.
  *

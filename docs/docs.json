@@ -43,6 +43,13 @@
     "dark": "#4C1D95"
   },
   "favicon": "/assets/favicon.ico",
+  "redirects": [
+    {
+      "source": "/cli/adapters/install",
+      "destination": "/cli/adapters/add",
+      "permanent": true
+    }
+  ],
   "navigation": {
     "tabs": [
       {
@@ -89,7 +96,7 @@
           {
             "group": "Adapters",
             "icon": "wrench",
-            "pages": ["cli/adapters/install", "cli/adapters/list", "cli/adapters/remove"]
+            "pages": ["cli/adapters/add", "cli/adapters/list", "cli/adapters/remove"]
           },
           {
             "group": "Authentication",

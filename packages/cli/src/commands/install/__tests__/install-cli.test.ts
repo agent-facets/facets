@@ -142,7 +142,7 @@ describe('facet install — CLI error paths', () => {
     expect(code).toBe(1)
     expect(stderr).toContain('no adapters installed')
     expect(stderr).toContain('non-interactive environment')
-    expect(stderr).toContain('facet adapter install <name>')
+    expect(stderr).toContain('facet adapter add <name>')
   })
 
   test('exits 1 with usage error on positional argument', async () => {
@@ -185,7 +185,7 @@ describe('facet install — incompatible installed adapter gate', () => {
     expect(code).toBe(1)
     expect(stderr).toContain('future-adapter')
     expect(stderr).toContain('9.9')
-    expect(stderr).toContain('facet adapter install future-adapter')
+    expect(stderr).toContain('facet adapter add future-adapter')
     expect(stderr).not.toContain('No AI tools are connected yet')
     // Nothing was installed or written.
     expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)

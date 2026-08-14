@@ -1,17 +1,21 @@
 ---
-title: facet adapter install
+title: facet adapter add
 description: Installs an adapter
 ---
 
 ## Usage
 
 ```sh
-facet adapter install [specifier]
+facet adapter add [specifier]
 ```
 
 Installs an adapter from the given specifier. An adapter is a way for the `facet` system to talk to external tools, most often AI coding harnesses (OpenCode, Claude Code, Codex, etc.). Adapters define where assets and configuration live on disk.
 
 Run with no specifier to choose from an interactive picker of the first-party adapters (TTY only) — in a non-interactive shell the no-argument form fails with a structured error and exit `1`.
+
+<Note>
+`facet adapter install` is a deprecated alias of `add`. It still installs exactly the same way and exits with the same code; it just prints a deprecation notice on stderr first. Prefer `add`, which mirrors the top-level split: [`facet add`](/cli/add) takes a specifier, [`facet install`](/cli/install) takes none.
+</Note>
 
 ## Built-in adapters
 
@@ -34,7 +38,7 @@ A per-install `--target-dir` flag is intentionally not supported: later invocati
 
 ## What it does
 
-The install flow stages and verifies a candidate before it ever touches the existing installation:
+The flow stages and verifies a candidate before it ever touches the existing installation:
 
 1. Download (or clone/copy) the source and bundle it into a self-contained `adapter.js` in temporary storage.
 2. Verify the bundle: it must export a valid adapter that declares a supported adapter API. For npm sources the runtime declaration must also match the package metadata used for selection.
@@ -49,31 +53,31 @@ Any failure **before** activation leaves the existing installation untouched —
 <CodeGroup>
 
 ```sh Built-in name
-facet adapter install opencode
+facet adapter add opencode
 # resolves to the first-party npm package
 ```
 
 ```sh npm package
-facet adapter install @acme/adapter-custom          # highest compatible release
-facet adapter install @acme/adapter-custom@1.2.3    # exact version — fails if incompatible
-facet adapter install @acme/adapter-custom@1.*      # highest compatible in the range
-facet adapter install opencode@latest               # explicit latest = highest compatible
+facet adapter add @acme/adapter-custom          # highest compatible release
+facet adapter add @acme/adapter-custom@1.2.3    # exact version — fails if incompatible
+facet adapter add @acme/adapter-custom@1.*      # highest compatible in the range
+facet adapter add opencode@latest               # explicit latest = highest compatible
 ```
 
 ```sh Git URL
-facet adapter install git+https://github.com/user/repo.git#v1.0.0
+facet adapter add git+https://github.com/user/repo.git#v1.0.0
 # clones the repository; optional #ref pins a tag, branch, or commit
 ```
 
 ```sh Local path
-facet adapter install ./path/to/adapter
+facet adapter add ./path/to/adapter
 # uses a local directory
 ```
 
 </CodeGroup>
 
 <Note>
-Adapter specifiers accept `git+` URLs even though facet sources for [`facet add`](/cli/add) reject them — adapter installs and facet installs follow different source rules.
+Adapter specifiers accept `git+` URLs even though facet sources for [`facet add`](/cli/add) reject them — adapters and facets follow different source rules.
 </Note>
 
 Version selectors use the Facet grammar: exact `1.2.3`, major wildcard `1.*`, minor wildcard `1.2.*`, `*`, or `latest`. npm range syntax (`^1.2.3`, `~1.2.3`, comparators, hyphen/OR/x-ranges, prerelease tags) is rejected with an error listing the supported forms.

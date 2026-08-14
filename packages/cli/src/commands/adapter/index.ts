@@ -6,6 +6,14 @@ import {
 } from '@agent-facets/engine'
 import type { Command } from '../../commands.ts'
 import {
+  ADAPTER_ADD_SUBCOMMAND,
+  ADAPTER_INSTALL_DEPRECATION_WARNING,
+  ADAPTER_INSTALL_SUBCOMMAND,
+  ADAPTER_SUBCOMMAND_LIST,
+  ADAPTER_SUBCOMMAND_USAGE,
+  adapterAddCommandFor,
+} from '../../util/adapter-command.ts'
+import {
   describeAdapterInstallFailure,
   formatPlacementWarning,
   repairCommand,
@@ -17,31 +25,41 @@ import { pickAndInstallAdapters } from './pick-and-install.ts'
  * `facet adapter` command — manages adapter installations.
  *
  * Subcommands:
- * - `facet adapter install <specifier>` — Install an adapter
+ * - `facet adapter add <specifier>` — Install an adapter
  * - `facet adapter list` — List installed adapters
  * - `facet adapter remove <name>` — Remove an installed adapter
+ *
+ * `facet adapter install` remains accepted as a deprecated alias of
+ * `add`. Subcommand aliases cannot go through `Command.aliases`, which
+ * the router resolves for top-level names only, so the alias is a case
+ * in this switch — which is also what lets it warn before delegating.
  */
 export const adapterCommand: Command = {
   name: 'adapter',
   description: 'Manage adapter installations',
-  usage: '<install|list|remove> [args]',
+  usage: `${ADAPTER_SUBCOMMAND_USAGE} [args]`,
   implemented: true,
 
   async run(args, _flags) {
     const subcommand = args[0]
 
     switch (subcommand) {
-      case 'install':
-        return handleInstall(args.slice(1))
+      case ADAPTER_ADD_SUBCOMMAND:
+        return handleAdd(args.slice(1))
+      case ADAPTER_INSTALL_SUBCOMMAND:
+        // Deprecated alias. The notice is the only difference: stdout,
+        // side effects, and the exit code come from the canonical path.
+        console.error(ADAPTER_INSTALL_DEPRECATION_WARNING)
+        return handleAdd(args.slice(1))
       case 'list':
         return handleList()
       case 'remove':
         return handleRemove(args.slice(1))
       default: {
         if (subcommand) {
-          console.error(`Unknown adapter subcommand "${subcommand}". Use install, list, or remove.`)
+          console.error(`Unknown adapter subcommand "${subcommand}". Use ${ADAPTER_SUBCOMMAND_LIST}.`)
         } else {
-          console.error('Usage: facet adapter <install|list|remove> [args]')
+          console.error(`Usage: facet adapter ${ADAPTER_SUBCOMMAND_USAGE} [args]`)
         }
         return 1
       }
@@ -54,11 +72,11 @@ export const adapterCommand: Command = {
  * `installAdapter()` service (Adjustment Q) that maps progress stages to
  * console.log lines.
  */
-async function handleInstall(args: string[]): Promise<number> {
+async function handleAdd(args: string[]): Promise<number> {
   const specifier = args[0]
   if (!specifier) {
     // No-arg path: launch the shared zero-adapter picker (Adjustment A).
-    return handleInstallPicker()
+    return handleAddPicker()
   }
 
   const result = await installAdapter(specifier, {
@@ -93,14 +111,14 @@ async function handleInstall(args: string[]): Promise<number> {
   return 0
 }
 
-async function handleInstallPicker(): Promise<number> {
+async function handleAddPicker(): Promise<number> {
   const result = await pickAndInstallAdapters()
   if (result.ok) return 0
   if (result.reason === 'non-tty') {
     writeCliError({
       what: 'no adapters installed',
       detail: 'this is a non-interactive environment; the picker cannot run here',
-      fix: "run 'facet adapter install <name>' with an explicit adapter (e.g. claude-code, opencode)",
+      fix: `run '${adapterAddCommandFor('<name>')}' with an explicit adapter (e.g. claude-code, opencode)`,
     })
     return 1
   }
@@ -159,7 +177,7 @@ async function handleList(): Promise<number> {
   if (inspections.length === 0) {
     console.log('No adapters installed.')
     console.log('')
-    console.log('Install one with: facet adapter install <specifier>')
+    console.log(`Add one with: ${adapterAddCommandFor('<specifier>')}`)
     return 0
   }
 

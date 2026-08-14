@@ -3,7 +3,7 @@ title: Build a Custom Adapter
 description: Write custom adapters for AI coding tools
 ---
 
-An <Tooltip headline="Adapter" tip={<span>The bridge between facets and an AI coding tool. It tells <code>facet</code> where and how to write a facet's assets on disk so the tool can find them.</span>} cta="Adapter reference" href="/cli/adapters/install">adapter</Tooltip> teaches the `facet` CLI how to install assets into a specific AI coding tool. The first-party adapters cover Claude Code, OpenCode, and Codex; this guide shows how to build your own using the [`@agent-facets/adapter`](https://github.com/agent-facets/facets/tree/main/packages/adapter) SDK.
+An <Tooltip headline="Adapter" tip={<span>The bridge between facets and an AI coding tool. It tells <code>facet</code> where and how to write a facet's assets on disk so the tool can find them.</span>} cta="Adapter reference" href="/cli/adapters/add">adapter</Tooltip> teaches the `facet` CLI how to install assets into a specific AI coding tool. The first-party adapters cover Claude Code, OpenCode, and Codex; this guide shows how to build your own using the [`@agent-facets/adapter`](https://github.com/agent-facets/facets/tree/main/packages/adapter) SDK.
 
 An adapter is a small TypeScript library. You write one file, build it, and install it locally  -- from a directory, from GitHub, or (once published) by name.
 
@@ -75,9 +75,9 @@ An adapter is a small TypeScript library. You write one file, build it, and inst
 > Build with `tsdown`/`tsc`, then install:
 >
 > ```sh
-> facet adapter install ./my-adapter                        # local directory
-> facet adapter install git+https://github.com/you/repo.git # from GitHub
-> facet adapter install my-adapter                           # by npm name, once published
+> facet adapter add ./my-adapter                        # local directory
+> facet adapter add git+https://github.com/you/repo.git # from GitHub
+> facet adapter add my-adapter                          # by npm name, once published
 > ```
 
 </Visibility>
@@ -369,7 +369,7 @@ Configuring a server is not running one. Never launch the command, connect to th
 
 ## Bundle it
 
-`facet adapter install` re-bundles your adapter into a self-contained `adapter.js`, but it needs a clean single-module entry to start from. Compile your package first  -- for example with `tsdown` (what the first-party adapters use) or `tsc`:
+`facet adapter add` re-bundles your adapter into a self-contained `adapter.js`, but it needs a clean single-module entry to start from. Compile your package first  -- for example with `tsdown` (what the first-party adapters use) or `tsc`:
 
 ```sh
 bunx tsdown src/index.ts
@@ -379,32 +379,32 @@ Point your `package.json` `exports`/`main` at the compiled entry so the CLI can 
 
 ## Install your adapter
 
-`facet adapter install` accepts your adapter three ways:
+`facet adapter add` accepts your adapter three ways:
 
 <CodeGroup>
 
 ```sh Local directory
 # Fastest while developing — installs from a local build.
-facet adapter install ./my-adapter
+facet adapter add ./my-adapter
 ```
 
 ```sh Git repository
 # Note the git+ prefix; add #ref to pin a tag or branch.
-facet adapter install git+https://github.com/you/my-adapter.git
-facet adapter install git+https://github.com/you/my-adapter.git#v1.0.0
+facet adapter add git+https://github.com/you/my-adapter.git
+facet adapter add git+https://github.com/you/my-adapter.git#v1.0.0
 ```
 
 ```sh npm package
 # By package name, once you've published it.
-facet adapter install my-adapter
+facet adapter add my-adapter
 ```
 
 </CodeGroup>
 
-The CLI downloads the source, bundles it into `adapter.js`, verifies it exports a valid adapter, and places it in `$FACET_DIR/adapters/<name>/` (default `~/.facet`). See [`facet adapter install`](/cli/adapters/install) for every specifier format.
+The CLI downloads the source, bundles it into `adapter.js`, verifies it exports a valid adapter, and places it in `$FACET_DIR/adapters/<name>/` (default `~/.facet`). See [`facet adapter add`](/cli/adapters/add) for every specifier format.
 
 <Tip>
-  During development, `facet adapter install ./my-adapter` picks up your latest local build immediately. Reinstall after each rebuild to test changes end-to-end.
+  During development, `facet adapter add ./my-adapter` picks up your latest local build immediately. Reinstall after each rebuild to test changes end-to-end.
 </Tip>
 
 ## Verify it works
@@ -424,7 +424,7 @@ Note that `supported` answers whether the adapter **loads**, not whether it can 
 
 ## Publish to npm
 
-Installing by bare name (`facet adapter install my-adapter`) resolves through npm, and the CLI selects a release **before downloading it** by reading one required field from your published `package.json`:
+Installing by bare name (`facet adapter add my-adapter`) resolves through npm, and the CLI selects a release **before downloading it** by reading one required field from your published `package.json`:
 
 ```json package.json
 {
@@ -436,7 +436,7 @@ Declare the adapter API version your SDK release stamps at runtime (currently `0
 
 Selection is by **package version** among compatible releases; the supported API tokens are an unordered set, so numeric ordering confers nothing — the highest satisfying release that declares a supported token wins. The npm `latest` dist-tag is never consulted, so you never need to move, pin, or withhold it for compatibility.
 
-That is what makes publishing safe for consumers on older CLIs: a CLI supporting only `{0.2}` keeps selecting your highest `0.2` release and ignores the `0.3` one. The exception is an **exact** request (`facet adapter install my-adapter@1.4.0`), which is never substituted — it fails if that specific release is incompatible with the CLI asking.
+That is what makes publishing safe for consumers on older CLIs: a CLI supporting only `{0.2}` keeps selecting your highest `0.2` release and ignores the `0.3` one. The exception is an **exact** request (`facet adapter add my-adapter@1.4.0`), which is never substituted — it fails if that specific release is incompatible with the CLI asking.
 
 The canonical values are exported from `@agent-facets/adapter/api-version` (`ADAPTER_API_VERSION` and `ADAPTER_API_VERSION_PACKAGE_FIELD`), so release tooling can inject the field instead of hardcoding it. That entry and `@agent-facets/adapter/terminal` are both dependency-free, so importing either one costs you nothing at runtime.
 
@@ -444,6 +444,6 @@ The canonical values are exported from `@agent-facets/adapter/api-version` (`ADA
 
 Built an adapter for a major AI coding assistant? Contributions are welcome. If your adapter targets a widely used tool, open a pull request on the [facets repository](https://github.com/agent-facets/facets) to share it upstream as a first-party adapter.
 
-A first-party adapter is installable by name (`facet adapter install <name>`) via the CLI, so everyone using that tool benefits.
+A first-party adapter is installable by name (`facet adapter add <name>`) via the CLI, so everyone using that tool benefits.
 
 </Visibility>

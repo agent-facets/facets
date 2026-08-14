@@ -56,7 +56,7 @@ Reads `facets.json`, fetches and materializes every facet declared there, and wr
 
 <Steps>
   <Step title="Validate the project">
-    `facets.json` must exist, and at least one **install-capable** adapter must be installed. If none are, the picker launches when the terminal can prompt; otherwise the command exits pointing at [`facet adapter install`](/cli/adapters/install). Installed-but-incompatible adapters fail here rather than falling through to the picker.
+    `facets.json` must exist, and at least one **install-capable** adapter must be installed. If none are, the picker launches when the terminal can prompt; otherwise the command exits pointing at [`facet adapter add`](/cli/adapters/add). Installed-but-incompatible adapters fail here rather than falling through to the picker.
   </Step>
   <Step title="Run the install pipeline">
     Runs the [install pipeline](/specification/install) with an empty delta: acquire the install lock, resolve and [verify](/specification/commit#verify) *every* declared facet ([honoring satisfying lockfile pins](/specification/commit#resolve)), [compose one global plan](/specification/commit#compose) checking for name collisions, check that every selected adapter can configure any active MCP servers, ask each adapter to [prepare](/specification/commit#reconciliation) its native MCP change read-only, obtain [MCP approval](#mcp-servers), then [remove drift](/specification/commit#drift-removal) and materialize assets into every adapter, apply the prepared MCP changes, and finally [write manifest + lockfile + receipt atomically](/specification/commit#transactional-tri-write).
@@ -251,5 +251,5 @@ The non-interactive report also lists every existing entry the run would take ov
 ## See also
 
 - [`facet add`](/cli/add)  -- adds a new facet to `facets.json` and installs it in one step.
-- [`facet adapter install`](/cli/adapters/install)  -- install adapters that `facet install` materializes facets into.
+- [`facet adapter add`](/cli/adapters/add)  -- install adapters that `facet install` materializes facets into.
 - [Installation specification](/specification/install)  -- the two-phase pipeline this command runs.

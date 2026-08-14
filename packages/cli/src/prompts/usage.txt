@@ -141,9 +141,12 @@ MCP servers — when a facet configures a server
 Adapter tooling — `facet adapter`
   Adapters teach facets how to target a specific AI coding tool. Installing an
   adapter is project setup, not authoring.
-    facet adapter install <specifier>     Install an adapter.
+    facet adapter add <specifier>         Install an adapter.
     facet adapter list                    List installed adapters.
     facet adapter remove <name>           Remove an installed adapter.
+
+  `facet adapter install` still works as a deprecated alias of `add`; it
+  behaves identically and prints a deprecation notice on stderr.
 
   This CLI supports adapter API {{ADAPTER_API_SUPPORT_SET}}. An adapter that declares an older or
   unsupported API fails closed before any project files change. Note that
@@ -154,7 +157,7 @@ Adapter tooling — `facet adapter`
   incompatible adapter:
     1. Run `facet adapter list` to see each adapter's API and status. Failing
        entries print the exact reinstall command to run.
-    2. Reinstall an unsupported first-party adapter: facet adapter install <name>
+    2. Reinstall an unsupported first-party adapter: facet adapter add <name>
     3. For a CUSTOM adapter, rebuild it against the current
        @agent-facets/adapter SDK first, then reinstall from that source.
 

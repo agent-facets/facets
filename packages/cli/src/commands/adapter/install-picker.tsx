@@ -8,7 +8,7 @@ import { THEME } from '../../tui/theme.ts'
  *
  * Rendered in both entry paths where the user needs to pick which AI tool
  * adapter to install:
- *   - `facet adapter install` invoked with no argument.
+ *   - `facet adapter add` invoked with no argument.
  *   - `facet install` run in a project with no adapters installed.
  *
  * Header text is identical in both paths ("No AI tools are connected yet.")

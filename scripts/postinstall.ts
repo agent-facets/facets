@@ -3,7 +3,7 @@
  *
  * Runs three steps in sequence:
  *   1. lefthook install        — git hooks
- *   2. facet adapter install   — install the opencode adapter
+ *   2. facet adapter add       — install the opencode adapter
  *   3. facet install           — install repo facets
  *
  * Each step's stdout/stderr is captured and only printed if the step
@@ -49,7 +49,7 @@ const steps: Step[] = [
     // deadlock the release CI that publishes the first compatible
     // release). The local path bundles and verifies the same adapter
     // source this checkout was built against.
-    run: () => $`bun dev adapter install ./packages/adapters/opencode`.quiet().then(() => undefined),
+    run: () => $`bun dev adapter add ./packages/adapters/opencode`.quiet().then(() => undefined),
   },
   {
     label: 'facets',

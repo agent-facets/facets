@@ -86,7 +86,7 @@ export async function bundleAdapter(sourceDir: string): Promise<BundleResult> {
  * succeeds without spawning a package manager. This ordering is
  * load-bearing: an unconditional `bun install` here resolves the
  * enclosing workspace root and re-runs its lifecycle scripts, so the
- * repo's own `postinstall → facet adapter install ./packages/adapters/…
+ * repo's own `postinstall → facet adapter add ./packages/adapters/…
  * → bun install → postinstall` chain would recurse indefinitely.
  *
  * Only when that first build fails (typically a standalone source dir
