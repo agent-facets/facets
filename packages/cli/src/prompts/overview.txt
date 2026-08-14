@@ -43,7 +43,7 @@ Command index
   facet remove         Remove a facet from the project (alias: facet rm).
   facet list           List declared facets and their resolved versions.
   facet search         Search the registry.
-  facet adapter        Install / list / remove adapter tooling.
+  facet adapter        Add / list / remove adapter tooling.
   facet publish        Publish a built facet to the registry.
   facet login          Authenticate with the registry (also: logout, whoami).
   facet self-update    Update the CLI itself.

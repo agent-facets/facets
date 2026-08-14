@@ -14,10 +14,10 @@ Lists all installed adapters by inspecting the adapter base directory, `$FACET_D
 ```text
 Installed adapters:
   claude-code  api 0.3      supported
-  legacy-tool  api 0.2      unsupported — reinstall: facet adapter install legacy-tool
-  codex        api 0.0      unsupported — reinstall: facet adapter install codex
-  opencode     api missing  unsupported — reinstall: facet adapter install opencode
-  my-tool      api unknown  broken (bundle failed to load) — reinstall: facet adapter install my-tool
+  legacy-tool  api 0.2      unsupported — reinstall: facet adapter add legacy-tool
+  codex        api 0.0      unsupported — reinstall: facet adapter add codex
+  opencode     api missing  unsupported — reinstall: facet adapter add opencode
+  my-tool      api unknown  broken (bundle failed to load) — reinstall: facet adapter add my-tool
 ```
 
 ## Output columns
@@ -29,7 +29,7 @@ Installed adapters:
 `supported` means the adapter **loads**. It does not mean the adapter can configure MCP servers: a supported adapter may still decline MCP support. If an install fails because an adapter [cannot configure MCP servers](/cli/install#adapters-that-cannot-configure-mcp-servers), that failure names the adapter and the right fix — this listing will show it as `supported`.
 </Note>
 
-Listing stays available when entries are incompatible or broken — run it to find the best available `facet adapter install <specifier>` command next to each failing entry.
+Listing stays available when entries are incompatible or broken — run it to find the best available `facet adapter add <specifier>` command next to each failing entry.
 
 <Note>
 If an adapter was originally installed with an **exact** npm version, such as `my-adapter@1.2.3`, its printed command preserves that exact pin. Re-running it fails again when that release is incompatible rather than silently upgrading. Drop or change the exact selector — use the bare package name, `@latest`, or a wider selector such as `1.*` — so the CLI can select the highest compatible release. Git and local commands rebuild the same supplied source, so that source must itself be updated when incompatible.
@@ -43,5 +43,5 @@ If an adapter was originally installed with an **exact** npm version, such as `m
 
 ## See also
 
-- [`facet adapter install`](/cli/adapters/install) -- install an adapter.
+- [`facet adapter add`](/cli/adapters/add) -- install an adapter.
 - [`facet adapter remove`](/cli/adapters/remove) -- remove an installed adapter.

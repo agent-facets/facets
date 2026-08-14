@@ -36,7 +36,7 @@ export type PickAndInstallResult =
  * Mount the adapter picker, install whatever the user selects, and
  * return the freshly-loaded set of installed adapters. Used by:
  *
- *   - `facet adapter install` (no-arg path) — the original caller.
+ *   - `facet adapter add` (no-arg path) — the original caller.
  *   - `facet add` when the project has zero installed adapters and
  *     stdout is a TTY.
  *

@@ -25,7 +25,7 @@ export const INSTALLATION_SCHEMA_VERSION = 1
  * Tagged source provenance. Source-specific fields live only on their
  * variant so impossible npm/git/local combinations cannot be
  * constructed. `specifier` is always the original user input — the
- * repair command renders `facet adapter install <specifier>`.
+ * repair command renders `facet adapter add <specifier>`.
  */
 export type InstallationSource =
   | {

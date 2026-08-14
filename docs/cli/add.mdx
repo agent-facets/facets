@@ -11,7 +11,7 @@ facet add <source> [more sources...]
 
 Adds the named facet(s) to `facets.json` and immediately installs them into every connected adapter. There is no separate "install after add" step  -- `facet add` is the single command for bringing a new facet into a project.
 
-Every source specifier is validated first. If the project then has no adapters installed, `facet add` launches the adapter picker — but only when the terminal can prompt. Otherwise it exits with an error pointing at `facet adapter install`.
+Every source specifier is validated first. If the project then has no adapters installed, `facet add` launches the adapter picker — but only when the terminal can prompt. Otherwise it exits with an error pointing at `facet adapter add`.
 
 ## Examples
 
@@ -162,4 +162,4 @@ What gets written per specifier shape is defined by the [manifest-write policy](
 ## See also
 
 - [`facet install`](/cli/install)  -- re-runs the install pipeline against the current `facets.json` and lockfile, useful after a fresh `git clone` or to reapply assets after manual edits.
-- [`facet adapter install`](/cli/adapters/install)  -- install adapters into your machine.
+- [`facet adapter add`](/cli/adapters/add)  -- install adapters into your machine.

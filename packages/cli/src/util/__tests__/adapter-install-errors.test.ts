@@ -141,19 +141,17 @@ describe('describeNoCompatibleRelease — fix branches on newestConsidered', () 
 
 describe('repairCommand — shell-safe specifiers', () => {
   test('renders an ordinary managed specifier unquoted', () => {
-    expect(repairCommand({ kind: 'managed', specifier: 'my-adapter@1.2.3' })).toBe(
-      'facet adapter install my-adapter@1.2.3',
-    )
+    expect(repairCommand({ kind: 'managed', specifier: 'my-adapter@1.2.3' })).toBe('facet adapter add my-adapter@1.2.3')
   })
 
   test('quotes a managed local-path specifier containing whitespace', () => {
     expect(repairCommand({ kind: 'managed', specifier: './My Adapters/tool' })).toBe(
-      "facet adapter install './My Adapters/tool'",
+      "facet adapter add './My Adapters/tool'",
     )
   })
 
   test('quotes an unmanaged name containing whitespace', () => {
-    expect(repairCommand({ kind: 'unmanaged-name', name: 'weird name' })).toBe("facet adapter install 'weird name'")
+    expect(repairCommand({ kind: 'unmanaged-name', name: 'weird name' })).toBe("facet adapter add 'weird name'")
   })
 })
 
@@ -165,7 +163,7 @@ describe('describeCompatibilityFailure — install target', () => {
       found: '9.9',
       supported: SUPPORTED_ADAPTER_APIS,
     })
-    expect(described.fix).toContain('facet adapter install future-adapter')
+    expect(described.fix).toContain('facet adapter add future-adapter')
   })
 
   test('prefers an explicit install target over the adapter identity', () => {
@@ -177,7 +175,7 @@ describe('describeCompatibilityFailure — install target', () => {
       },
       'my-adapter',
     )
-    expect(described.fix).toContain('facet adapter install my-adapter')
+    expect(described.fix).toContain('facet adapter add my-adapter')
     expect(described.fix).not.toContain('/tmp/')
   })
 })
@@ -200,7 +198,7 @@ describe('describeAdapterInstallFailure — nameless bundle verify failure', () 
     // Diagnostic identity still names the bundle the failure came from.
     expect(described.what).toContain(bundlePath)
     // The actionable command uses the user's original specifier.
-    expect(described.fix).toContain('facet adapter install my-adapter')
+    expect(described.fix).toContain('facet adapter add my-adapter')
     expect(described.fix).not.toContain(bundlePath)
   })
 })

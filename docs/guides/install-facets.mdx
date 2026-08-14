@@ -16,7 +16,7 @@ Bring facets into a project in two moves: connect an adapter for your AI tool, t
 > The short version:
 >
 > ```sh
-> facet adapter install claude-code   # connect your AI tool (once per machine)
+> facet adapter add claude-code       # connect your AI tool (once per machine)
 > facet add viper-plans               # registry-first: a bare name is a registry facet
 > facet add viper-plans@1.2.3         # or pin a version
 > facet install                       # after a git clone: materialize from the lockfile
@@ -42,7 +42,7 @@ Bring facets into a project in two moves: connect an adapter for your AI tool, t
 > Approval is per machine, so a teammate's approval never covers yours.
 >
 > See [`facet add`](/cli/add), [`facet install`](/cli/install),
-> [`facet remove`](/cli/remove), and [`facet adapter install`](/cli/adapters/install).
+> [`facet remove`](/cli/remove), and [`facet adapter add`](/cli/adapters/add).
 
 </Visibility>
 
@@ -53,10 +53,10 @@ Bring facets into a project in two moves: connect an adapter for your AI tool, t
 An adapter is the bridge between facets and your AI coding tool  -- it tells the CLI where to place assets on disk, and how to write MCP server configuration into that tool's own config file, so your tool can find both. You need at least one before adding facets.
 
 ```sh
-facet adapter install claude-code
+facet adapter add claude-code
 ```
 
-The first-party adapters are `claude-code`, `opencode`, and `codex`. Run [`facet adapter install`](/cli/adapters/install) with no name for an interactive picker, or pass a name to install it directly. Third-party adapters install the same way from an npm package, git URL, or local path.
+The first-party adapters are `claude-code`, `opencode`, and `codex`. Run [`facet adapter add`](/cli/adapters/add) with no name for an interactive picker, or pass a name to install it directly. Third-party adapters install the same way from an npm package, git URL, or local path.
 
 All three first-party adapters support MCP server configuration. A third-party adapter that declares no MCP support still works fine for a project with no MCP servers, but [blocks one that has them](/cli/install#adapters-that-cannot-configure-mcp-servers).
 
@@ -341,6 +341,6 @@ facet adapter list                # what's connected
 facet adapter remove opencode     # disconnect one
 ```
 
-See the [adapter reference](/cli/adapters/install) for details. Connecting an adapter later hands it everything this project already owns: the next install materializes those assets and MCP servers into the new tool too, because ownership is recorded per project rather than per adapter.
+See the [adapter reference](/cli/adapters/add) for details. Connecting an adapter later hands it everything this project already owns: the next install materializes those assets and MCP servers into the new tool too, because ownership is recorded per project rather than per adapter.
 
 </Visibility>

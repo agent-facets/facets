@@ -266,7 +266,7 @@ describe('facet add — incompatible installed adapter gate', () => {
     const { result: code, stderr } = await withTTY(true, () => captureStderr(() => addCommand.run([relPath], {})))
     expect(code).toBe(1)
     expect(stderr).toContain('future-adapter')
-    expect(stderr).toContain('facet adapter install future-adapter')
+    expect(stderr).toContain('facet adapter add future-adapter')
     expect(stderr).not.toContain('No AI tools are connected yet')
     // No project files were created.
     expect(existsSync(join(projectRoot, 'facets.json'))).toBe(false)

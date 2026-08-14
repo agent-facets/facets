@@ -305,6 +305,45 @@ The system SHALL register an `install` command that brings the project on disk i
 - **THEN** the system SHALL print a usage error directing the user to `add` for adding new facets
 - **AND** the process SHALL exit with code 1
 
+### Requirement: Adapter command is registered
+
+The system SHALL register an `adapter` command that manages the adapter tooling installed on the machine, exposing the subcommands `add`, `list`, and `remove`. `add` SHALL be the canonical name for installing an adapter and SHALL accept an optional source specifier, matching the top-level split where the command that takes a specifier is named `add` and the command that takes none is named `install`.
+
+The system SHALL also accept `install` as a deprecated alias of `add`, so users with muscle memory for the former name succeed; both names SHALL invoke identical behavior. An operational invocation of the alias SHALL additionally emit a deprecation notice naming the canonical name. That notice SHALL be written to stderr, so it cannot corrupt output a caller consumes from stdout, and it SHALL NOT change the command's exit code.
+
+Advertised usage, per-command help, and recovery guidance SHALL name only the canonical subcommands, and every repair or recovery command the CLI renders for an adapter SHALL name `add` rather than the deprecated alias.
+
+#### Scenario: Adapter command is available in help
+
+- **WHEN** a user runs the CLI with `--help`
+- **THEN** the help output SHALL list the `adapter` command with its description
+
+#### Scenario: Adapter add installs the named adapter
+
+- **WHEN** a user runs `adapter add` with a source specifier
+- **THEN** the system SHALL install the adapter identified by that specifier
+- **AND** the system SHALL NOT emit a deprecation notice
+
+#### Scenario: Deprecated install alias produces identical behavior
+
+- **WHEN** a user runs `adapter install` with the same arguments as a corresponding `adapter add` invocation
+- **THEN** the system SHALL produce the same stdout output, the same side effects, and the same exit code as `adapter add`
+- **AND** the system SHALL write a deprecation notice to stderr naming `adapter add` as the command to use instead
+
+#### Scenario: Usage lists only the canonical subcommands
+
+- **WHEN** a user runs `adapter` with no subcommand
+- **THEN** the system SHALL print a usage error listing `add`, `list`, and `remove`
+- **AND** the usage error SHALL NOT advertise the deprecated alias
+- **AND** the process SHALL exit with code 1
+
+#### Scenario: Unknown adapter subcommand names the canonical set
+
+- **WHEN** a user runs `adapter` with a subcommand that is neither registered nor the deprecated alias
+- **THEN** the system SHALL print an error identifying the unknown subcommand
+- **AND** the error SHALL name `add`, `list`, and `remove` as the available subcommands
+- **AND** the process SHALL exit with code 1
+
 ### Requirement: Add and install render a unified progress view
 
 The `add` and `install` commands SHALL present progress through a single shared rendering. A user watching either command SHALL see the same shape of output: a per-facet section that names each facet, indicates its current stage, and shows whether it succeeded, failed, or is in progress, followed by a final summary that lists each affected facet on its own line.

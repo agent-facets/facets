@@ -87,7 +87,7 @@ describe('facet build — incompatible installed adapter gate', () => {
     expect(stderr).toContain('future-adapter')
     expect(stderr).toContain('9.9')
     expect(stderr).toContain(ADAPTER_API_VERSION)
-    expect(stderr).toContain('facet adapter install future-adapter')
+    expect(stderr).toContain('facet adapter add future-adapter')
 
     // Secondary check: no dist/ output. Under --verify writeBuildOutput is
     // skipped regardless, so this alone can't prove ordering — the throwing

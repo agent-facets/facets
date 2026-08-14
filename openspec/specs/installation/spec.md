@@ -1189,7 +1189,7 @@ When the operation has MCP work to do, the system SHALL additionally require eve
 
 - **WHEN** a facet operation detects an incompatible selected adapter or missing MCP support
 - **THEN** the system SHALL NOT download or activate a replacement adapter automatically
-- **AND** the failure SHALL direct the user to an explicit adapter install command
+- **AND** the failure SHALL direct the user to an explicit `facet adapter add` command
 
 ### Requirement: Removing a facet uninstalls it
 

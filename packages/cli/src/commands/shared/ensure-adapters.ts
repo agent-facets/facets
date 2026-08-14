@@ -1,5 +1,6 @@
 import type { Adapter } from '@agent-facets/adapter'
 import { loadInstalledAdapters } from '@agent-facets/engine'
+import { adapterAddCommandFor } from '../../util/adapter-command.ts'
 import { describeInstalledAdapterFailure } from '../../util/adapter-install-errors.ts'
 import { writeCliError } from '../../util/errors.ts'
 import { pickAndInstallAdapters } from '../adapter/pick-and-install.ts'
@@ -36,7 +37,7 @@ export async function ensureAdapters(): Promise<ReadonlyArray<Adapter> | null> {
       what: `installed adapters do not support install yet: ${stale}`,
       detail:
         'these adapters declare no asset capability, so they can validate manifest config but materialize nothing',
-      fix: "update each with 'facet adapter install <name>' to pull a version that materializes assets",
+      fix: `update each with '${adapterAddCommandFor('<name>')}' to pull a version that materializes assets`,
     })
     return null
   }
@@ -60,7 +61,7 @@ export async function ensureAdapters(): Promise<ReadonlyArray<Adapter> | null> {
     writeCliError({
       what: 'no adapters installed',
       detail: 'this is a non-interactive environment; the picker cannot run here',
-      fix: "run 'facet adapter install <name>' first (e.g. claude-code, opencode)",
+      fix: `run '${adapterAddCommandFor('<name>')}' first (e.g. claude-code, opencode)`,
     })
   } else if (result.reason === 'aborted') {
     process.stderr.write('Aborted: no adapters installed.\n')

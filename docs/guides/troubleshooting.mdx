@@ -26,10 +26,10 @@ Common errors, what causes them, and how to fix them. Each entry mirrors the CLI
   <Accordion title='"no adapters installed" when running facet add (non-interactive)'>
     **Cause:** a facet has to be materialized into at least one adapter, but none is connected. In a real terminal `facet add` shows a picker; in a non-interactive shell (CI, piped stdin) it exits with an error instead.
 
-    **Fix:** install an adapter first with [`facet adapter install`](/cli/adapters/install):
+    **Fix:** install an adapter first with [`facet adapter add`](/cli/adapters/add):
 
     ```sh
-    facet adapter install claude-code
+    facet adapter add claude-code
     facet adapter list
     ```
   </Accordion>
@@ -49,11 +49,11 @@ Common errors, what causes them, and how to fix them. Each entry mirrors the CLI
 
     ```sh
     facet adapter list
-    # my-adapter  api missing  unsupported — reinstall: facet adapter install my-adapter
-    facet adapter install my-adapter
+    # my-adapter  api missing  unsupported — reinstall: facet adapter add my-adapter
+    facet adapter add my-adapter
     ```
 
-    Reinstalling selects the newest release compatible with this CLI. See [compatible resolution](/cli/adapters/install#compatible-resolution) for how selection works, and note that [`facet adapter remove`](/cli/adapters/remove) always works regardless of compatibility.
+    Reinstalling selects the newest release compatible with this CLI. See [compatible resolution](/cli/adapters/add#compatible-resolution) for how selection works, and note that [`facet adapter remove`](/cli/adapters/remove) always works regardless of compatibility.
   </Accordion>
 
   <Accordion title='"unsupported archive format" on install'>
