@@ -36,7 +36,7 @@ export function materializeFailureToRunInstall(facet: string, failure: Materiali
       return {
         code: 'FILESYSTEM_TRANSACTION_FAILED',
         subject: { kind: 'asset', facet, adapter: failure.adapter, asset: failure.asset },
-        failure: failure.failure,
+        batch: failure.batch,
       }
     case 'takeover-cancelled':
       return {

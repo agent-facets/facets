@@ -1,4 +1,4 @@
-import type { FileMutation, FileState } from '@agent-facets/common'
+import { decodeFileText, type FileMutation, type FileState } from '@agent-facets/common'
 import { encodeText, readFileState, stateHoldsBytes } from './asset-fs.ts'
 import {
   type McpNativeMatch,
@@ -77,11 +77,11 @@ export function readTextOrAbsent(path: string): ReadTextResult {
   }
   return {
     ok: true,
-    // `ignoreBOM` keeps a leading byte-order mark in the string instead of
-    // silently consuming it. Adapters split it off and put it back so a user's
-    // editor does not re-add it on their next save; a decoder that ate it here
-    // would make that preservation impossible and invisible.
-    text: new TextDecoder('utf-8', { ignoreBOM: true }).decode(state.state.contents),
+    // The decode keeps a leading byte-order mark rather than silently
+    // consuming it. Adapters split it off and put it back so a user's editor
+    // does not re-add it on their next save; a decoder that ate it here would
+    // make that preservation impossible and invisible.
+    text: decodeFileText(state.state.contents),
     document: { path, state: state.state },
   }
 }
@@ -197,8 +197,10 @@ export function prepareMcpTextPlan(input: PrepareMcpTextPlanInput): PlanMcpServe
     compare: input.compare,
   })
 
+  const documentPaths = disclosedPaths(input.documents)
+
   if (!mcpOutcomesRequireWrite(outcomes)) {
-    return { ok: true, plan: { outcomes, action: { kind: 'unchanged' } } }
+    return { ok: true, plan: { outcomes, documentPaths, action: { kind: 'unchanged' } } }
   }
 
   const built = input.buildEdits(outcomes)
@@ -231,7 +233,18 @@ export function prepareMcpTextPlan(input: PrepareMcpTextPlanInput): PlanMcpServe
     // Every rendered edit turned out to be byte-identical to what is already
     // there. The outcomes still describe real adoption work for the caller to
     // report; the filesystem simply has nothing to do.
-    return { ok: true, plan: { outcomes, action: { kind: 'unchanged' } } }
+    return { ok: true, plan: { outcomes, documentPaths, action: { kind: 'unchanged' } } }
   }
-  return { ok: true, plan: { outcomes, action: { kind: 'mutate', mutations: [first, ...rest] } } }
+  return { ok: true, plan: { outcomes, documentPaths, action: { kind: 'mutate', mutations: [first, ...rest] } } }
+}
+
+/**
+ * Every document the adapter reported reading.
+ *
+ * Derived from the same list the mutations' preconditions come from, so a
+ * plan cannot disclose one set of documents and be computed from another.
+ */
+function disclosedPaths(documents: readonly [McpTextDocument, ...McpTextDocument[]]): readonly [string, ...string[]] {
+  const [first, ...rest] = documents
+  return [first.path, ...rest.map((document) => document.path)]
 }

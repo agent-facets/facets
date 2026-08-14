@@ -5,6 +5,7 @@ import {
   describeMcpCapabilityFailure,
   describeMcpCapabilityHint,
   formatMcpConsentReport,
+  formatMcpDocumentOverlapReport,
   formatUnsupportedMcpAdaptersReport,
 } from '../mcp-report.ts'
 
@@ -198,5 +199,34 @@ describe('formatUnsupportedMcpAdaptersReport', () => {
   test('discloses no declaration', () => {
     expect(report).not.toContain('npx')
     expect(report).not.toContain('https://')
+  })
+})
+
+describe('formatMcpDocumentOverlapReport', () => {
+  const report = formatMcpDocumentOverlapReport([
+    {
+      claimants: [
+        { adapter: 'one', path: '/p/.mcp.json' },
+        { adapter: 'two', path: '/p/.mcp.json' },
+        { adapter: 'three', path: '/p/.MCP.json' },
+      ],
+    },
+  ])
+
+  test('names every adapter and every spelling of the file', () => {
+    expect(report).toContain('one, two, and three')
+    expect(report).toContain('/p/.mcp.json')
+    expect(report).toContain('/p/.MCP.json')
+  })
+
+  // Both adapters work. Which tool owns the file is the user's call, and
+  // nothing they can install changes the answer.
+  test('offers deselection rather than an upgrade', () => {
+    expect(report).toContain('Deselect one of the adapters')
+    expect(report).not.toContain('upgrade')
+  })
+
+  test('states that nothing was changed', () => {
+    expect(report).toContain('MCP configuration were NOT changed.')
   })
 })

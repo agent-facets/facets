@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { applyDesiredFacets, emptyProjectManifest, type NormalizedFacetEntry } from '../mutations.ts'
@@ -27,6 +27,45 @@ describe('loadProjectManifest', () => {
     expect(result.manifest.facets).toEqual({})
     // A manifest this system creates is never legacy.
     expect(result.manifest.document.manifestVersion).toBe(0.2)
+  })
+
+  // The state is a later commit's write precondition, so it has to describe
+  // the very bytes that were parsed.
+  test('carries the absent state when facets.json does not exist', () => {
+    const result = loadProjectManifest(projectRoot)
+    if (!result.ok) expect.unreachable()
+    if (result.existed) expect.unreachable()
+    expect(result.state).toEqual({ kind: 'absent' })
+  })
+
+  test('carries the exact bytes it parsed', () => {
+    const text = '{"manifestVersion":0.2,"facets":{"a":"1.*"}}\n'
+    writeFileSync(join(projectRoot, 'facets.json'), text)
+
+    const result = loadProjectManifest(projectRoot)
+    if (!result.ok) expect.unreachable()
+    if (!result.existed) expect.unreachable()
+    expect(new TextDecoder().decode(result.state.contents)).toBe(text)
+  })
+
+  // A decoder that ate the mark would start accepting a document this CLI has
+  // always rejected, then rewrite it without the mark.
+  test('still rejects a manifest that begins with a byte-order mark', () => {
+    writeFileSync(join(projectRoot, 'facets.json'), '\uFEFF{"manifestVersion":0.2,"facets":{}}')
+
+    const result = loadProjectManifest(projectRoot)
+    if (result.ok) expect.unreachable()
+    if (result.reason !== 'invalid') expect.unreachable()
+    expect(result.failure.code).toBe('invalid-json')
+  })
+
+  test('reports a path occupied by something other than a plain file as a read failure', () => {
+    mkdirSync(join(projectRoot, 'facets.json'))
+
+    const result = loadProjectManifest(projectRoot)
+    if (result.ok) expect.unreachable()
+    if (result.reason !== 'read') expect.unreachable()
+    expect(result.error).toContain('directory')
   })
 
   test('reads and normalizes a legacy unversioned manifest', () => {

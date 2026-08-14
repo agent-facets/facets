@@ -148,12 +148,19 @@ export {
   resolveFacetDir,
 } from './facet-dir.ts'
 export type {
+  FailedBatch,
   FileRollbackIssue,
   FileRollbackOutcome,
   FileTransactionFailure,
   FileTransition,
 } from './fs/index.ts'
-export { describeRollbackIssue, describeTransactionFailure } from './fs/index.ts'
+export {
+  batchResidue,
+  describeRollbackIssue,
+  describeTransactionFailure,
+  mergeRollbackOutcomes,
+  NO_ROLLBACK,
+} from './fs/index.ts'
 export type {
   AssetTakeoverDecision,
   AssetTakeoverRequest,
@@ -196,6 +203,7 @@ export type {
   McpDeclarationApproval,
   McpNativeTakeover,
 } from './install/mcp/consent.ts'
+export type { McpDocumentClaimant, McpDocumentOverlap } from './install/mcp/documents.ts'
 // MCP outcomes. The CLI renders these; the engine decides them.
 export type {
   McpActiveConfigurationStatus,

@@ -43,7 +43,7 @@ export interface RunMcpServerMatrixOptions {
 /**
  * Run the shared MCP fixture matrix against one adapter's capability.
  *
- * Beyond each case's own expectations, five invariants are asserted for every
+ * Beyond each case's own expectations, six invariants are asserted for every
  * case — they are properties of the capability contract rather than of any
  * individual fixture, so stating them per case would be noise that eventually
  * gets forgotten on the one case that needed it:
@@ -57,6 +57,9 @@ export interface RunMcpServerMatrixOptions {
  * 5. Nothing outside the project is written. MCP configuration is
  *    project-scoped, and the home directory is where a tool's user-wide
  *    config lives — the one place a plausible bug would reach for.
+ * 6. Every document the plan was computed from is disclosed, including when
+ *    the plan changes nothing — that list is how the caller knows, before
+ *    approving anything, that no two adapters reconcile one file.
  *
  * The harness applies the plan itself rather than importing the engine's
  * transaction: what is under test here is the adapter's plan, and a local
@@ -132,6 +135,19 @@ export function runMcpServerMatrix(options: RunMcpServerMatrixOptions): void {
 
           expect(outcomes).toEqual(matrixCase.expect.outcomes)
           expect(action.kind).toBe(matrixCase.expect.apply === 'changed' ? 'mutate' : 'unchanged')
+
+          const { documentPaths } = planned.plan
+          expect(documentPaths.length).toBeGreaterThan(0)
+          for (const path of documentPaths) {
+            expect(isAbsolute(path)).toBe(true)
+            expect(relative(root, path).startsWith('..')).toBe(false)
+          }
+          expect(new Set(documentPaths).size).toBe(documentPaths.length)
+          if (action.kind === 'mutate') {
+            for (const mutation of action.mutations) {
+              expect(documentPaths).toContain(mutation.path)
+            }
+          }
 
           if (action.kind === 'unchanged') {
             seed.after?.(project)

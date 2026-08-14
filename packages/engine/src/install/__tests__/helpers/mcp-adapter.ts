@@ -55,6 +55,8 @@ export interface RecordingMcpOptions {
    * containment check on a path outside the project.
    */
   planExtraDocumentPath?: () => string
+  /** Disclose no documents at all, as an untyped adapter could. */
+  undiscloseDocuments?: boolean
   /**
    * A log this capability appends to alongside its own `calls`.
    *
@@ -109,9 +111,14 @@ export function recordingMcpCapability(
             : 'divergent',
       })
 
+      const documentPaths = (options.undiscloseDocuments === true ? [] : [path]) as unknown as readonly [
+        string,
+        ...string[],
+      ]
+
       if (!mcpOutcomesRequireWrite(outcomes)) {
         record('plan:unchanged')
-        return { ok: true, plan: { outcomes, action: { kind: 'unchanged' } } }
+        return { ok: true, plan: { outcomes, documentPaths, action: { kind: 'unchanged' } } }
       }
 
       const next: Record<string, ReadonlyMcpServerDeclaration> = { ...servers.value }
@@ -135,6 +142,7 @@ export function recordingMcpCapability(
         contents,
       }
       const mutations: [FileMutation, ...FileMutation[]] = [first]
+      const disclosed = [...documentPaths]
       if (extra !== undefined) {
         const extraState = inspectFileState(extra)
         mutations.push({
@@ -144,8 +152,16 @@ export function recordingMcpCapability(
           expected: extraState.ok ? extraState.state : { kind: 'absent' },
           contents,
         })
+        disclosed.push(extra)
       }
-      return { ok: true, plan: { outcomes, action: { kind: 'mutate', mutations } } }
+      return {
+        ok: true,
+        plan: {
+          outcomes,
+          documentPaths: disclosed as unknown as readonly [string, ...string[]],
+          action: { kind: 'mutate', mutations },
+        },
+      }
     },
   }
 

@@ -14,7 +14,7 @@ import type {
   RunInstallResult,
   StageEvent,
 } from '@agent-facets/engine'
-import { assetIdentity, planCollisionIntent } from '@agent-facets/engine'
+import { assetIdentity, NO_ROLLBACK, planCollisionIntent } from '@agent-facets/engine'
 import type { IntegrityFailure } from '@agent-facets/protocol'
 import { CURRENT_LOCKFILE_VERSION, LOCKFILE_VERSION_0_3 } from '@agent-facets/protocol'
 import { render } from 'ink-testing-library'
@@ -375,7 +375,7 @@ describe('InstallView — drift removal', () => {
         run: makeFakeRun(
           [
             { kind: 'install-start', totalFacets: 0 },
-            { kind: 'receipt-unpersisted', cause: 'EACCES' },
+            { kind: 'receipt-unpersisted', cause: 'EACCES', residue: NO_ROLLBACK },
             { kind: 'install-complete', outcome: 'success' },
           ],
           emptySuccess(),
@@ -386,6 +386,46 @@ describe('InstallView — drift removal', () => {
     const frame = visibleContentFrame(instance.frames)
     expect(frame).toContain('could not be written')
     expect(frame).toContain('untracked')
+    instance.unmount()
+  })
+
+  // The run succeeded, and still left a file it could not put back. Reporting
+  // the success without the path would strand the user with neither.
+  test('names a receipt path the failed write could not put back', async () => {
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'install',
+        run: makeFakeRun(
+          [
+            { kind: 'install-start', totalFacets: 0 },
+            {
+              kind: 'receipt-unpersisted',
+              cause: 'EIO',
+              residue: {
+                kind: 'incomplete',
+                restored: [],
+                alreadyRestored: [],
+                removedDirectories: [],
+                issues: [
+                  {
+                    kind: 'restore-failed',
+                    path: '/facet/receipts/proj-abc.json',
+                    original: { kind: 'absent' },
+                    committed: { kind: 'absent' },
+                    failure: { operation: 'delete', path: '/facet/receipts/proj-abc.json', message: 'EIO' },
+                  },
+                ],
+              },
+            },
+            { kind: 'install-complete', outcome: 'success' },
+          ],
+          emptySuccess(),
+        ),
+      }),
+    )
+    await settle()
+    const frame = visibleContentFrame(instance.frames)
+    expect(frame).toContain('could not be put back')
     instance.unmount()
   })
 })

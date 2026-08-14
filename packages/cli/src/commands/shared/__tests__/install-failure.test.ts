@@ -217,6 +217,37 @@ describe('installFailureFix — MCP failures', () => {
     expect(installFailureFix(consentDeclined, notNeeded, 'install')).toContain(describeDiskState(notNeeded))
   })
 
+  // Upgrading fixes nothing here: both adapters work, and only the user can
+  // decide which tool owns the file.
+  test('sharing one document sends the user to the adapter selection', () => {
+    const failure: RunInstallFailure = {
+      code: 'MCP_DOCUMENT_OVERLAP',
+      overlaps: [
+        {
+          claimants: [
+            { adapter: 'one', path: '/p/.mcp.json' },
+            { adapter: 'two', path: '/p/.mcp.json' },
+          ],
+        },
+      ],
+    }
+    const fix = installFailureFix(failure, notNeeded, 'install')
+    expect(fix).toContain('deselect')
+    expect(fix).not.toContain('upgrade')
+  })
+
+  test.each([notNeeded, succeeded, partial])('native-state drift reports $kind', (rollback) => {
+    const failure: RunInstallFailure = {
+      code: 'MCP_NATIVE_STATE_DRIFT',
+      adapter: 'claude-code',
+      documents: ['/p/.mcp.json'],
+    }
+    const fix = installFailureFix(failure, rollback, 'install')
+    expect(fix).toContain(describeDiskState(rollback))
+    // Not an adapter bug: the adapter reported what it found.
+    expect(fix).not.toContain('adapter')
+  })
+
   // This one lands mid-application, so what is on disk is the load-bearing
   // half of the report and must never be hardcoded.
   test.each([notNeeded, succeeded, partial])('a cancelled takeover reports $kind', (rollback) => {

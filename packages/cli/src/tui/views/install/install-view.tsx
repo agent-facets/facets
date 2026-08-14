@@ -208,7 +208,7 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
   const [checkingCollisions, setCheckingCollisions] = useState(false)
   const [prunedOverrides, setPrunedOverrides] = useState<PrunedOverride[]>([])
   const [receiptUnavailable, setReceiptUnavailable] = useState<'corrupt' | 'path-mismatch' | null>(null)
-  const [receiptUnpersisted, setReceiptUnpersisted] = useState<string | null>(null)
+  const [receiptUnpersisted, setReceiptUnpersisted] = useState<{ cause: string; unresolved: string[] } | null>(null)
   const [removalResolutionReason, setRemovalResolutionReason] = useState<string | null>(null)
   const [rejectedReceiptEntries, setRejectedReceiptEntries] = useState<RejectedReceiptEntry[]>([])
   const [elapsedMs, setElapsedMs] = useState(0)
@@ -294,7 +294,10 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
         setReceiptUnavailable(event.reason)
         return
       case 'receipt-unpersisted':
-        setReceiptUnpersisted(event.cause)
+        setReceiptUnpersisted({
+          cause: event.cause,
+          unresolved: event.residue.kind === 'incomplete' ? event.residue.issues.map((issue) => issue.path) : [],
+        })
         return
       case 'removal-resolution-required':
         // Only interesting if the run then fails — see the render below.
@@ -627,9 +630,15 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
       {receiptUnpersisted !== null && (
         <Box flexDirection="column" marginLeft={2}>
           <Text color={THEME.caution}>
-            ⚠ this project’s install receipt could not be written ({receiptUnpersisted}) — the assets this run wrote are
-            untracked, so a later removal will leave them in place.
+            ⚠ this project’s install receipt could not be written ({receiptUnpersisted.cause}) — the assets this run
+            wrote are untracked, so a later removal will leave them in place.
           </Text>
+          {receiptUnpersisted.unresolved.map((path) => (
+            <Text key={path} color={THEME.caution}>
+              {'   '}
+              {path} could not be put back
+            </Text>
+          ))}
         </Box>
       )}
 

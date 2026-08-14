@@ -10,7 +10,7 @@ import type {
 } from '@agent-facets/adapter'
 import type { MaterializedAsset, ResolvedFacetManifest } from '@agent-facets/protocol'
 import { type AdapterCompatibilityFailure, compatibilityFailureFor } from '../adapters/api-compatibility.ts'
-import type { FileTransaction, FileTransactionFailure } from '../fs/index.ts'
+import type { FailedBatch, FileTransaction } from '../fs/index.ts'
 import type { AssetTakeoverResolver } from './asset-takeover.ts'
 import { ownedCompanionPathsFor, ownershipFor, type PreviousOwnership } from './commit/ownership.ts'
 import { type AssetIdentity, assetIdentity, type OnLog, type StageEvent } from './types.ts'
@@ -106,7 +106,7 @@ export type MaterializeFailure =
       asset: AssetIdentity
       cause: string
     }
-  | { kind: 'transaction-failed'; adapter: string; asset: AssetIdentity; failure: FileTransactionFailure }
+  | { kind: 'transaction-failed'; adapter: string; asset: AssetIdentity; batch: FailedBatch }
   | { kind: 'takeover-cancelled'; adapter: string; asset: AssetIdentity }
 
 /**
@@ -232,7 +232,7 @@ export async function materialize(opts: MaterializeOptions): Promise<Materialize
       if (!applied.ok) {
         return {
           ok: false,
-          failure: { kind: 'transaction-failed', adapter: adapter.name, asset: target, failure: applied.failure },
+          failure: { kind: 'transaction-failed', adapter: adapter.name, asset: target, batch: applied },
         }
       }
       opts.onLog?.(() => `[verbose]     ${sigil}${describeTarget(asset)} → ${plan.primaryPath}`)
@@ -340,7 +340,7 @@ export async function deleteObsoleteAssets(opts: DeleteObsoleteOptions): Promise
       if (!applied.ok) {
         return {
           ok: false,
-          failure: { kind: 'transaction-failed', adapter: adapter.name, asset: target, failure: applied.failure },
+          failure: { kind: 'transaction-failed', adapter: adapter.name, asset: target, batch: applied },
           facets: ownership.facets,
         }
       }

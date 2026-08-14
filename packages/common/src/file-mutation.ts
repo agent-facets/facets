@@ -33,6 +33,9 @@ export type FileState =
 /** The `regular-file` arm, for callers that have already excluded absence. */
 export type RegularFileState = Extract<FileState, { kind: 'regular-file' }>
 
+/** The `absent` arm, for callers that have already excluded presence. */
+export type AbsentFileState = Extract<FileState, { kind: 'absent' }>
+
 /**
  * One intended change to one path.
  *

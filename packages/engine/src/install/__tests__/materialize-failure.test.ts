@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { batchResidue, type FailedBatch } from '../../fs/index.ts'
 import { materializeFailureToRunInstall } from '../materialize-failure.ts'
 import { assetIdentity } from '../types.ts'
 
@@ -45,24 +46,51 @@ describe('materializeFailureToRunInstall', () => {
   })
 
   test('a refused file change → FILESYSTEM_TRANSACTION_FAILED naming what it was for', () => {
-    const failure = {
-      kind: 'conflict' as const,
-      path: '/tmp/x.md',
-      expected: { kind: 'absent' as const },
-      observed: { kind: 'absent' as const },
-    }
+    const batch = {
+      stage: 'refused' as const,
+      failure: { kind: 'preflight' as const, issues: [{ kind: 'inspect-failed' as const, path: '/tmp/x.md' }] },
+    } as unknown as FailedBatch
     expect(
-      materializeFailureToRunInstall('cowsay', {
-        kind: 'transaction-failed',
-        adapter: 'opencode',
-        asset,
-        failure,
-      }),
+      materializeFailureToRunInstall('cowsay', { kind: 'transaction-failed', adapter: 'opencode', asset, batch }),
     ).toEqual({
       code: 'FILESYSTEM_TRANSACTION_FAILED',
       subject: { kind: 'asset', facet: 'cowsay', adapter: 'opencode', asset },
-      failure,
+      batch,
     })
+  })
+
+  // The residue an aborted batch already unwound has to survive the mapping:
+  // it is the only account of those paths there will ever be.
+  test('an aborted batch carries its own unwind through', () => {
+    const batch: FailedBatch = {
+      stage: 'aborted',
+      failure: { kind: 'conflict', path: '/tmp/x.md', expected: { kind: 'absent' }, observed: { kind: 'absent' } },
+      rollback: {
+        kind: 'incomplete',
+        restored: [],
+        alreadyRestored: [],
+        removedDirectories: [],
+        issues: [
+          {
+            kind: 'restore-failed',
+            path: '/tmp/left.md',
+            original: { kind: 'absent' },
+            committed: { kind: 'absent' },
+            failure: { operation: 'delete', path: '/tmp/left.md', message: 'EACCES' },
+          },
+        ],
+      },
+    }
+
+    const mapped = materializeFailureToRunInstall('cowsay', {
+      kind: 'transaction-failed',
+      adapter: 'opencode',
+      asset,
+      batch,
+    })
+
+    if (mapped.code !== 'FILESYSTEM_TRANSACTION_FAILED') expect.unreachable()
+    expect(batchResidue(mapped.batch)).toBe(batch.rollback)
   })
 
   test('takeover-cancelled → ASSET_TAKEOVER_CANCELLED', () => {

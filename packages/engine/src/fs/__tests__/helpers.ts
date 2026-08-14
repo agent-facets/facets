@@ -80,5 +80,42 @@ export function faultBefore(
   }
 }
 
+/**
+ * Wrap the real syscalls so `mkdir` loses the race for a name.
+ *
+ * `plant` runs inside the faked `mkdir`, before it throws `EEXIST`, so what
+ * it puts at the path is a real filesystem object by the time the code under
+ * test looks again. Only `mkdir` is faked; every observation that follows is
+ * genuine.
+ *
+ * `lstatAfter` fails the inspection that follows the lost race, and only that
+ * one — faking `lstat` outright would break the check BEFORE the mkdir too,
+ * which is not the code this exercises.
+ */
+export function occupyOnMkdir(
+  match: (path: string) => boolean,
+  plant: (path: string) => void,
+  { times = 1, lstatAfter }: { times?: number; lstatAfter?: { code: string } } = {},
+): FsSyscalls {
+  let remaining = times
+  const raced = new Set<string>()
+  return {
+    ...nodeFsSyscalls,
+    mkdir(path) {
+      if (remaining > 0 && match(path)) {
+        remaining--
+        plant(path)
+        raced.add(path)
+        throw errnoError('EEXIST', 'mkdir lost the race for this name')
+      }
+      nodeFsSyscalls.mkdir(path)
+    },
+    lstat(path) {
+      if (lstatAfter !== undefined && raced.has(path)) throw errnoError(lstatAfter.code)
+      return nodeFsSyscalls.lstat(path)
+    },
+  }
+}
+
 export const bytes = (text: string): Uint8Array => new TextEncoder().encode(text)
 export const text = (value: Uint8Array): string => new TextDecoder().decode(value)

@@ -1,4 +1,10 @@
-import type { FileTransaction } from '../fs/index.ts'
+import {
+  batchResidue,
+  type FileRollbackOutcome,
+  type FileTransaction,
+  mergeRollbackOutcomes,
+  NO_ROLLBACK,
+} from '../fs/index.ts'
 import type { McpInstallOutcomes } from './mcp/outcomes.ts'
 import type { FacetOutcome, InstallSummary, OnLog, RunInstallFailure, RunInstallResult } from './types.ts'
 
@@ -69,7 +75,10 @@ export function rollbackAndFail(
   failure: RunInstallFailure,
   onLog: OnLog,
 ): RunInstallResult {
-  const outcome = transaction.rollback()
+  // Chronological: a batch that aborted unwound itself before this function
+  // was reached, and nothing of that batch is in the journal being drained
+  // now — so its account has to be folded in here or it is lost.
+  const outcome = mergeRollbackOutcomes(failureResidue(failure), transaction.rollback())
   for (const path of outcome.restored) {
     onLog(() => `[verbose] restored ${path}`)
   }
@@ -79,4 +88,9 @@ export function rollbackAndFail(
     }
   }
   return { ok: false, failure, rollback: outcome }
+}
+
+/** What a failure already unwound before the journal rollback ran. */
+function failureResidue(failure: RunInstallFailure): FileRollbackOutcome {
+  return failure.code === 'FILESYSTEM_TRANSACTION_FAILED' ? batchResidue(failure.batch) : NO_ROLLBACK
 }

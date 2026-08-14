@@ -22,9 +22,19 @@
  * crafted names that could cause path traversal.
  */
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
+import { mkdirSync, realpathSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { type AssetType, atomicWriteFileSync, type Scope, validateAssetName } from '@agent-facets/common'
+import {
+  type AssetType,
+  atomicWriteFileSync,
+  decodeFileText,
+  describeInspectFailure,
+  errorMessage,
+  type FileState,
+  inspectFileState,
+  type Scope,
+  validateAssetName,
+} from '@agent-facets/common'
 import {
   canonicalPrimaryPath,
   isMaterialized,
@@ -492,43 +502,98 @@ export function canonicalProjectPath(projectDir: string): string {
  * Never throws.
  */
 export function loadReceipt(projectDir: string): LoadReceiptResult {
+  const read = readProjectReceipt(projectDir)
+  if (!read.ok) return { ok: false, reason: 'corrupt' }
+  if (read.state.kind === 'loaded') {
+    return { ok: true, record: read.state.record, invalidEntries: read.state.invalidEntries }
+  }
+  return { ok: false, reason: read.state.reason }
+}
+
+/**
+ * The receipt file's exact state, or the fact that it could not be read.
+ *
+ * Kept apart from {@link ProjectReceiptState} because the two answer
+ * different questions about one file. That one asks what this run may DELETE,
+ * and a receipt it cannot interpret answers "nothing". This one asks what the
+ * commit may WRITE OVER, and a readable but meaningless receipt answers
+ * "exactly these bytes".
+ */
+export type ProjectReceiptFile = { readable: true; state: FileState } | { readable: false; cause: string }
+
+/** Everything one read of the receipt establishes. */
+export type ReadProjectReceiptResult =
+  | {
+      ok: true
+      /** The receipt file's location. */
+      path: string
+      /** The canonical project directory this receipt is keyed by. */
+      canonical: string
+      file: ProjectReceiptFile
+      state: ProjectReceiptState
+    }
+  | { ok: false; cause: string }
+
+/**
+ * Read this machine's receipt once, for both of the things a run needs from
+ * it — what it may delete, and what its commit may overwrite.
+ *
+ * Never throws: an unresolvable project path is the one failure that leaves
+ * nothing to report, because without a canonical path there is neither a
+ * receipt to interpret nor a location to write one to.
+ */
+export function readProjectReceipt(projectDir: string): ReadProjectReceiptResult {
   let canonical: string
   let filePath: string
   try {
     canonical = realpathSync(projectDir)
     filePath = receiptPath(projectDir)
-  } catch {
+  } catch (error) {
     // realpathSync throws when the path doesn't exist or is otherwise
     // unresolvable (dangling symlink, permission denied). Nothing can be
     // witnessed without a canonical path to witness it against.
-    return { ok: false, reason: 'corrupt' }
+    return { ok: false, cause: `could not resolve the receipt path: ${errorMessage(error)}` }
   }
 
-  if (!existsSync(filePath)) {
-    return { ok: false, reason: 'missing' }
+  const inspected = inspectFileState(filePath)
+  if (!inspected.ok) {
+    return {
+      ok: true,
+      path: filePath,
+      canonical,
+      file: { readable: false, cause: describeInspectFailure(inspected.failure) },
+      // Unreadable proves exactly as much as unparseable: nothing.
+      state: { kind: 'unavailable', reason: 'corrupt', projectPath: canonical },
+    }
   }
 
-  let raw: string
-  try {
-    raw = readFileSync(filePath, 'utf8')
-  } catch {
-    return { ok: false, reason: 'corrupt' }
+  return {
+    ok: true,
+    path: filePath,
+    canonical,
+    file: { readable: true, state: inspected.state },
+    state: receiptStateFromFile(inspected.state, canonical),
   }
+}
+
+/** What a receipt file's bytes prove about what this machine materialized. */
+function receiptStateFromFile(state: FileState, canonical: string): ProjectReceiptState {
+  if (state.kind === 'absent') return { kind: 'unavailable', reason: 'missing', projectPath: canonical }
 
   let parsed: unknown
   try {
-    parsed = JSON.parse(raw)
+    parsed = JSON.parse(decodeFileText(state.contents))
   } catch {
-    return { ok: false, reason: 'corrupt' }
+    return { kind: 'unavailable', reason: 'corrupt', projectPath: canonical }
   }
 
   const dispatched = dispatchReceiptVersion(parsed)
-  if (dispatched === null) return { ok: false, reason: 'corrupt' }
+  if (dispatched === null) return { kind: 'unavailable', reason: 'corrupt', projectPath: canonical }
 
   // Self-identification check: the embedded path must match the
   // project being operated on.
   if (dispatched.path !== canonical) {
-    return { ok: false, reason: 'path-mismatch' }
+    return { kind: 'unavailable', reason: 'path-mismatch', projectPath: canonical }
   }
 
   // Null-prototype throughout: a receipt facet key is an arbitrary string
@@ -543,7 +608,7 @@ export function loadReceipt(projectDir: string): LoadReceiptResult {
       facets[facetName] = { version: entry.version, assets: validatedAssets(facetName, entry.assets, invalidEntries) }
     }
     return {
-      ok: true,
+      kind: 'loaded',
       record: { authority: 'assets-only', refinedFrom: dispatched.refinedFrom, path: canonical, facets },
       invalidEntries,
     }
@@ -559,7 +624,7 @@ export function loadReceipt(projectDir: string): LoadReceiptResult {
     }
   }
   return {
-    ok: true,
+    kind: 'loaded',
     record: { authority: 'assets-and-configuration', path: canonical, facets },
     invalidEntries,
   }
@@ -851,9 +916,9 @@ export function materializedDispositionOf(asset: SupportedLockfileAssetEntry): M
  * same as an unreadable file, because both leave nothing to witness with.
  */
 export function resolveProjectReceipt(projectDir: string): ProjectReceiptState {
-  const result = loadReceipt(projectDir)
-  if (result.ok) return { kind: 'loaded', record: result.record, invalidEntries: result.invalidEntries }
-  return { kind: 'unavailable', reason: result.reason, projectPath: bestEffortPath(projectDir) }
+  const read = readProjectReceipt(projectDir)
+  if (read.ok) return read.state
+  return { kind: 'unavailable', reason: 'corrupt', projectPath: bestEffortPath(projectDir) }
 }
 
 /**

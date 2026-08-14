@@ -8,6 +8,7 @@ import type {
   McpConsentRequest,
   McpContractViolation,
   McpDeclarationApproval,
+  McpDocumentOverlap,
   McpNativeTakeover,
   McpUnsupportedAdapter,
 } from '@agent-facets/engine'
@@ -236,7 +237,55 @@ export function formatUnsupportedMcpAdaptersReport(
 /** One line naming an adapter's breach of the MCP capability contract. */
 export function describeMcpContractViolation(violation: McpContractViolation): string {
   switch (violation.kind) {
-    case 'outcomes-changed':
-      return `${violation.adapter} reached a different conclusion about what to configure between approval and writing`
+    case 'documents-undisclosed':
+      return `${violation.adapter} planned its MCP configuration without naming any file it read`
+    case 'document-path-invalid':
+      return `${violation.adapter} named ${violation.path}, which ${violation.detail}`
+    case 'mutation-undisclosed':
+      return `${violation.adapter} would write ${violation.path} without having reported reading it`
   }
+}
+
+/** One line naming the adapters that share a native document. */
+export function describeMcpDocumentOverlap(overlap: McpDocumentOverlap): string {
+  const adapters = overlap.claimants.map((claimant) => claimant.adapter)
+  const paths = [...new Set(overlap.claimants.map((claimant) => claimant.path))]
+  return `${formatList(adapters)} all configure ${formatList(paths)}`
+}
+
+/**
+ * The full stderr report for adapters that share one native document.
+ *
+ * The remedy is a choice only the user can make — which tool should own the
+ * file — so the report names the adapters and stops, rather than picking one.
+ */
+export function formatMcpDocumentOverlapReport(overlaps: readonly McpDocumentOverlap[]): string {
+  const lines: string[] = [
+    `More than one selected adapter configures the same file, so installation stopped`,
+    `before writing anything.`,
+    ``,
+  ]
+
+  for (const overlap of overlaps) {
+    lines.push(`    • ${describeMcpDocumentOverlap(overlap)}`)
+  }
+  lines.push(
+    ``,
+    `  Facets does not support two adapters reconciling one MCP configuration file:`,
+    `  each plans against a document the other rewrites, so whichever writes second`,
+    `  would apply a plan computed from bytes that are already gone.`,
+    ``,
+    `  Deselect one of the adapters named above, then re-run.`,
+    ``,
+  )
+
+  lines.push(...UNCHANGED_FOOTER)
+  return lines.join('\n')
+}
+
+/** `a`, `a and b`, `a, b, and c`. */
+function formatList(values: readonly string[]): string {
+  if (values.length <= 1) return values[0] ?? ''
+  if (values.length === 2) return `${values[0]} and ${values[1]}`
+  return `${values.slice(0, -1).join(', ')}, and ${values[values.length - 1]}`
 }

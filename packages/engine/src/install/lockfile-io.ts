@@ -1,6 +1,12 @@
-import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { atomicWriteFileSync } from '@agent-facets/common'
+import {
+  type AbsentFileState,
+  atomicWriteFileSync,
+  decodeFileText,
+  describeInspectFailure,
+  inspectFileState,
+  type RegularFileState,
+} from '@agent-facets/common'
 import {
   CURRENT_LOCKFILE_VERSION,
   type CurrentLockfile,
@@ -58,41 +64,41 @@ const WITHDRAWN_ALPHA_LOCKFILE_VERSION = 1
  * produced by {@link emptyLockfile}, not read from disk — a new project
  * never starts on an earlier schema. The `existed: true` arm carries
  * whatever version was actually on disk.
+ *
+ * `state` is the commit's write precondition, from the same read as `parsed`
+ * and for the same reason as the manifest's.
  */
 export type LoadLockfileResult =
   | {
       ok: true
       existed: false
+      state: AbsentFileState
       parsed: { lockfileVersion: typeof CURRENT_LOCKFILE_VERSION; lockfile: CurrentLockfile }
     }
-  | { ok: true; existed: true; parsed: ParsedLockfile }
+  | { ok: true; existed: true; state: RegularFileState; parsed: ParsedLockfile }
   | { ok: false; error: string }
 
 export function loadLockfile(projectRoot: string): LoadLockfileResult {
   const path = join(projectRoot, FACETS_LOCK_FILE)
-  if (!existsSync(path)) {
+  const inspected = inspectFileState(path)
+  if (!inspected.ok) {
+    return { ok: false, error: `failed to read ${FACETS_LOCK_FILE}: ${describeInspectFailure(inspected.failure)}` }
+  }
+  if (inspected.state.kind === 'absent') {
     return {
       ok: true,
       existed: false,
+      state: inspected.state,
       parsed: { lockfileVersion: CURRENT_LOCKFILE_VERSION, lockfile: emptyLockfile() },
     }
   }
-  let raw: string
-  try {
-    raw = readFileSync(path, 'utf8')
-  } catch (err) {
-    return {
-      ok: false,
-      error: `failed to read ${FACETS_LOCK_FILE}: ${err instanceof Error ? err.message : String(err)}`,
-    }
-  }
 
-  const parsed = parseLockfileDocument(raw)
+  const parsed = parseLockfileDocument(decodeFileText(inspected.state.contents))
   if (!parsed.ok) {
     return { ok: false, error: describeLockfileFailure(parsed.failure) }
   }
 
-  return { ok: true, existed: true, parsed: parsed.data }
+  return { ok: true, existed: true, state: inspected.state, parsed: parsed.data }
 }
 
 /**

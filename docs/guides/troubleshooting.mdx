@@ -176,6 +176,18 @@ Common errors, what causes them, and how to fix them. Each entry mirrors the CLI
     **Fix:** open the named file and repair it, then re-run. The failure is detected while **reading**, before any asset is written, and the document is left byte-for-byte unchanged. If a write did fail partway through a larger operation, everything is rolled back — including restoring each config file's exact prior bytes, comments and formatting included.
   </Accordion>
 
+  <Accordion title='"two selected adapters configure the same file"' id='mcp-shared-file'>
+    **Cause:** two connected adapters manage the same MCP configuration file. Facets does not support that: each plans its change against the file as it stands, so whichever writes second would apply a plan computed from content the first already replaced. The run stops before approval and before anything is written.
+
+    **Fix:** [`facet adapter remove`](/cli/adapters/remove) one of the adapters named in the message. Upgrading will not help — both adapters are working correctly, and which tool should own the file is a decision only you can make.
+  </Accordion>
+
+  <Accordion title="A tool's MCP config changed while the command was running">
+    **Cause:** a run re-checks every adapter's MCP plan immediately before writing it, including one that had concluded there was nothing to do. Something changed the named file in between — your editor, the tool itself, or a concurrent command — so what would be written is no longer what you approved.
+
+    **Fix:** re-run. Nothing was written, and the second run plans against the file as it now stands. This is not an adapter bug: the adapter re-read the file and reported what it found.
+  </Accordion>
+
   <Accordion title='"some files could not be returned to their previous state" after a failure'>
     **Cause:** the command failed and rolled back, but at least one file could not be put back. Every change is recorded as an exact `before → after` pair, and rollback classifies each file against what the run actually left there. The report names each one:
 

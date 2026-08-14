@@ -1,6 +1,12 @@
-import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { atomicWriteFileSync } from '@agent-facets/common'
+import {
+  type AbsentFileState,
+  atomicWriteFileSync,
+  decodeFileText,
+  describeInspectFailure,
+  inspectFileState,
+  type RegularFileState,
+} from '@agent-facets/common'
 import type { ProjectManifestParseFailure } from '@agent-facets/protocol'
 import {
   emptyProjectManifest,
@@ -17,8 +23,18 @@ import {
  * bytes back — never mutating parsed JSON directly.
  */
 
+/**
+ * A loaded manifest, and the state of the bytes it was parsed from.
+ *
+ * `state` is the precondition a later commit writes against. It comes from
+ * the same read as `manifest` because observing the file again would let a
+ * writer who landed in between supply the precondition for a plan derived
+ * from the bytes they replaced — the concurrent edit this system exists to
+ * refuse rather than discard.
+ */
 export type LoadProjectManifestResult =
-  | { ok: true; manifest: NormalizedProjectManifest; existed: boolean }
+  | { ok: true; existed: false; state: AbsentFileState; manifest: NormalizedProjectManifest }
+  | { ok: true; existed: true; state: RegularFileState; manifest: NormalizedProjectManifest }
   | { ok: false; reason: 'read'; error: string }
   | { ok: false; reason: 'invalid'; failure: ProjectManifestParseFailure }
 
@@ -30,29 +46,29 @@ export type LoadProjectManifestResult =
  * a filesystem read error and a schema/version rejection call for different
  * guidance, and an unsupported `manifestVersion` must reach the caller as
  * structured data so it can report the observed and supported versions.
+ *
+ * A path occupied by something other than a plain file fails here rather than
+ * at commit time, when assets would already be on disk.
  */
 export function loadProjectManifest(projectRoot: string): LoadProjectManifestResult {
   const path = join(projectRoot, FACETS_JSON_FILE)
-  if (!existsSync(path)) {
-    return { ok: true, manifest: emptyProjectManifest(), existed: false }
-  }
-
-  let raw: string
-  try {
-    raw = readFileSync(path, 'utf8')
-  } catch (err) {
+  const inspected = inspectFileState(path)
+  if (!inspected.ok) {
     return {
       ok: false,
       reason: 'read',
-      error: `failed to read ${FACETS_JSON_FILE}: ${err instanceof Error ? err.message : String(err)}`,
+      error: `failed to read ${FACETS_JSON_FILE}: ${describeInspectFailure(inspected.failure)}`,
     }
   }
+  if (inspected.state.kind === 'absent') {
+    return { ok: true, existed: false, state: inspected.state, manifest: emptyProjectManifest() }
+  }
 
-  const parsed = parseProjectManifest(raw)
+  const parsed = parseProjectManifest(decodeFileText(inspected.state.contents))
   if (!parsed.ok) {
     return { ok: false, reason: 'invalid', failure: parsed.failure }
   }
-  return { ok: true, manifest: parsed.manifest, existed: true }
+  return { ok: true, existed: true, state: inspected.state, manifest: parsed.manifest }
 }
 
 /**

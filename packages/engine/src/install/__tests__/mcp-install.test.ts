@@ -55,12 +55,12 @@ interface TestAdapter {
 }
 
 /** A `0.2` adapter with a working MCP capability, recording every call. */
-function mcpAdapter(name: string, options: RecordingMcpOptions = {}): TestAdapter {
+function mcpAdapter(name: string, options: RecordingMcpOptions = {}, sharedDocument?: () => string): TestAdapter {
   const io: string[] = []
   const timeline: string[] = []
   const baseDir = () => join(projectRoot, `.${name}`)
   const file = (type: string, assetName: string) => join(baseDir(), `${type}s`, `${assetName}.md`)
-  const document = () => join(baseDir(), 'mcp.json')
+  const document = sharedDocument ?? (() => join(baseDir(), 'mcp.json'))
   const mcp = recordingMcpCapability(document, { ...options, log: timeline })
   return {
     io,
@@ -621,6 +621,169 @@ describe('mcp — one desired set across adapters', () => {
     expect(result.ok).toBe(true)
     expect(asked).toBe(0)
     expect(JSON.parse(readFileSync(two.documentPath, 'utf8'))).toEqual({ filesystem: STDIO })
+  })
+})
+
+describe('mcp — one adapter per native document', () => {
+  const shared = () => join(projectRoot, '.shared', 'mcp.json')
+
+  test('two adapters configuring one document fail before consent is asked', async () => {
+    writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
+    let asked = 0
+
+    const result = await runInstall({
+      projectRoot,
+      adapters: [mcpAdapter('one', {}, shared).adapter, mcpAdapter('two', {}, shared).adapter],
+      mcpConsent: {
+        kind: 'interactive',
+        resolve: async () => {
+          asked++
+          return { kind: 'approved' }
+        },
+      },
+    })
+
+    if (result.ok) expect.unreachable()
+    if (result.failure.code !== 'MCP_DOCUMENT_OVERLAP') expect.unreachable()
+    expect(result.failure.overlaps).toHaveLength(1)
+    expect(result.failure.overlaps[0]?.claimants.map((claimant) => claimant.adapter)).toEqual(['one', 'two'])
+    // Approving a set of writes that cannot both be applied would be asking
+    // the user to authorize a contradiction.
+    expect(asked).toBe(0)
+    expect(result.rollback.kind).toBe('not-needed')
+    expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)
+    expect(existsSync(receiptPath(projectRoot))).toBe(false)
+  })
+
+  test('every claimant is named, not just the first two', async () => {
+    writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
+
+    const result = await runInstall({
+      projectRoot,
+      adapters: [
+        mcpAdapter('one', {}, shared).adapter,
+        mcpAdapter('two', {}, shared).adapter,
+        mcpAdapter('three', {}, shared).adapter,
+      ],
+      mcpConsent: ACCEPT,
+    })
+
+    if (result.ok) expect.unreachable()
+    if (result.failure.code !== 'MCP_DOCUMENT_OVERLAP') expect.unreachable()
+    expect(result.failure.overlaps[0]?.claimants.map((claimant) => claimant.adapter)).toEqual(['one', 'two', 'three'])
+  })
+
+  test('two spellings of one name on a folding volume are the same document', async () => {
+    writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
+
+    const result = await runInstall({
+      projectRoot,
+      adapters: [
+        mcpAdapter('one', {}, () => join(projectRoot, '.shared', 'mcp.json')).adapter,
+        mcpAdapter('two', {}, () => join(projectRoot, '.shared', 'MCP.json')).adapter,
+      ],
+      mcpConsent: ACCEPT,
+    })
+
+    if (result.ok) expect.unreachable()
+    if (result.failure.code !== 'MCP_DOCUMENT_OVERLAP') expect.unreachable()
+    // Each adapter is reported in the spelling it actually used.
+    expect(result.failure.overlaps[0]?.claimants.map((claimant) => claimant.path)).toEqual([
+      join(projectRoot, '.shared', 'mcp.json'),
+      join(projectRoot, '.shared', 'MCP.json'),
+    ])
+  })
+
+  test('separate documents are not an overlap', async () => {
+    writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
+
+    const result = await runInstall({
+      projectRoot,
+      adapters: [mcpAdapter('one').adapter, mcpAdapter('two').adapter],
+      mcpConsent: ACCEPT,
+    })
+
+    expect(result.ok).toBe(true)
+  })
+
+  test('an adapter that discloses nothing is an adapter bug, not a project problem', async () => {
+    writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
+
+    const result = await runInstall({
+      projectRoot,
+      adapters: [mcpAdapter('rec', { undiscloseDocuments: true }).adapter],
+      mcpConsent: ACCEPT,
+    })
+
+    if (result.ok) expect.unreachable()
+    if (result.failure.code !== 'MCP_CONTRACT_VIOLATION') expect.unreachable()
+    expect(result.failure.violation).toEqual({ kind: 'documents-undisclosed', adapter: 'rec' })
+    expect(existsSync(join(projectRoot, 'facets.lock'))).toBe(false)
+  })
+
+  // The field is not optional in the type, and an adapter built from anything
+  // other than TypeScript can still omit it entirely. Reading it as though it
+  // were there turns the check meant to catch that into a crash.
+  test('a plan built without the field at all is reported, not thrown', async () => {
+    writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
+    const rec = mcpAdapter('rec')
+    const capability = rec.adapter.mcpServers
+    if (capability === false) expect.unreachable()
+    const untyped = {
+      ...rec.adapter,
+      mcpServers: {
+        plan: async (request: Parameters<typeof capability.plan>[0]) => {
+          const planned = await capability.plan(request)
+          if (!planned.ok) return planned
+          const { documentPaths: _dropped, ...rest } = planned.plan
+          return { ok: true as const, plan: rest as typeof planned.plan }
+        },
+      },
+    }
+
+    const result = await runInstall({ projectRoot, adapters: [untyped], mcpConsent: ACCEPT })
+
+    if (result.ok) expect.unreachable()
+    if (result.failure.code !== 'MCP_CONTRACT_VIOLATION') expect.unreachable()
+    expect(result.failure.violation).toEqual({ kind: 'documents-undisclosed', adapter: 'rec' })
+  })
+})
+
+describe('mcp — re-planned immediately before the write', () => {
+  test('a plan that changed nothing is still re-planned', async () => {
+    writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
+    const rec = mcpAdapter('rec')
+    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+
+    rec.mcpCalls.length = 0
+    // Nothing to do this time: the document already holds the desired set.
+    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+
+    expect(rec.mcpCalls.filter((entry) => entry.startsWith('plan:1'))).toHaveLength(2)
+    expect(JSON.parse(readFileSync(rec.documentPath, 'utf8'))).toEqual({ filesystem: STDIO })
+  })
+
+  test('a document edited after that plan is drift, not an adapter fault', async () => {
+    writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
+    const first = mcpAdapter('rec')
+    expect((await runInstall({ projectRoot, adapters: [first.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+
+    // The second run finds the desired set already there, so its plan changes
+    // nothing — and something removes the entry before that plan is committed.
+    let plans = 0
+    const rec = mcpAdapter('rec', {
+      duringPrepare: () => {
+        plans++
+        if (plans === 2) writeFileSync(first.documentPath, `${JSON.stringify({}, null, 2)}\n`)
+      },
+    })
+
+    const result = await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })
+
+    if (result.ok) expect.unreachable()
+    if (result.failure.code !== 'MCP_NATIVE_STATE_DRIFT') expect.unreachable()
+    expect(result.failure.adapter).toBe('rec')
+    expect(result.failure.documents).toEqual([first.documentPath])
   })
 })
 

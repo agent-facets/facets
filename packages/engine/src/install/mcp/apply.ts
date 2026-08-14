@@ -17,10 +17,9 @@ import type { PreparedMcpAdapter } from './prepare.ts'
  * restore the original bytes afterwards — without an adapter having to
  * reproduce comments and formatting it never saw.
  *
- * Two adapters whose plans touch one document are handled by the transaction's
- * coalescing rather than by anything here: the first original is retained and
- * the latest committed state replaces the previous one, so a rollback returns
- * the document to where it stood before this run.
+ * Two adapters reconciling one document are refused during preparation, so
+ * nothing here has to reason about a document another adapter is also about
+ * to write.
  */
 
 export interface ApplyMcpArgs {
@@ -41,36 +40,36 @@ export async function applyMcpServers(args: ApplyMcpArgs): Promise<ApplyMcpResul
     // three before anyone notices.
     if (signal?.aborted) return { ok: false, failure: { code: 'ABORTED' } }
 
-    if (plan.action.kind === 'unchanged') {
-      onLog(() => `[verbose] ${adapter}: MCP configuration already matched; nothing written`)
-      continue
-    }
-
-    // Re-planned immediately before its own commit. An earlier adapter may
-    // have written a document this one also targets, which would make the
-    // first plan's precondition stale — and the transaction would rightly
-    // refuse it. Re-planning against the committed state is what lets two
-    // adapters share a document without either one applying a stale plan.
+    // Re-planned immediately before its own commit, including when the first
+    // plan changed nothing. "Nothing to do" is a conclusion about a document,
+    // and the document can have been edited since — during the approval
+    // prompt, or by the tool itself — so accepting the old answer would let a
+    // run report a server as configured that no longer is.
     const replanned = await capability.plan(request)
     if (!replanned.ok) {
       return { ok: false, failure: { code: 'MCP_APPLY_FAILED', adapter, failure: replanned.failure } }
     }
-    // The user approved a set of outcomes, not a set of bytes. If re-planning
-    // reaches a different conclusion about what this run does to any server,
-    // the approval no longer covers it and the operation stops rather than
-    // applying something nobody agreed to.
-    if (!sameOutcomes(plan.outcomes, replanned.plan.outcomes)) {
+    // The user approved a set of outcomes, not a set of bytes. A different
+    // conclusion now means something outside this run changed the document:
+    // the approval no longer covers what would be written, and the adapter is
+    // reporting the state it finds rather than misbehaving.
+    if (
+      !sameOutcomes(plan.outcomes, replanned.plan.outcomes) ||
+      !sameDocuments(plan.documentPaths, replanned.plan.documentPaths)
+    ) {
       return {
         ok: false,
-        failure: { code: 'MCP_CONTRACT_VIOLATION', violation: { kind: 'outcomes-changed', adapter } },
+        failure: {
+          code: 'MCP_NATIVE_STATE_DRIFT',
+          adapter,
+          documents: [...replanned.plan.documentPaths],
+        },
       }
     }
 
-    if (replanned.plan.action.kind === 'unchanged') {
-      onLog(() => `[verbose] ${adapter}: MCP configuration already matched; nothing written`)
-      continue
-    }
-
+    // Handed over even when it changes nothing: the transaction treats that
+    // as the no-op it is, and one path through here is one fewer place for
+    // "already matched" to mean something subtly different.
     const applied = transaction.apply(replanned.plan.action)
     if (!applied.ok) {
       return {
@@ -78,9 +77,12 @@ export async function applyMcpServers(args: ApplyMcpArgs): Promise<ApplyMcpResul
         failure: {
           code: 'FILESYSTEM_TRANSACTION_FAILED',
           subject: { kind: 'mcp', adapter },
-          failure: applied.failure,
+          batch: applied,
         },
       }
+    }
+    if (applied.applied.length === 0) {
+      onLog(() => `[verbose] ${adapter}: MCP configuration already matched; nothing written`)
     }
     for (const path of applied.applied) {
       onLog(() => `[verbose] ${adapter}: wrote MCP configuration (${path})`)
@@ -90,14 +92,30 @@ export async function applyMcpServers(args: ApplyMcpArgs): Promise<ApplyMcpResul
   return { ok: true }
 }
 
+type McpOutcome = PreparedMcpAdapter['plan']['outcomes'][number]
+
 /** Whether two outcome lists describe the same work, entry for entry. */
-function sameOutcomes(
-  before: readonly PreparedMcpAdapter['plan']['outcomes'][number][],
-  after: readonly PreparedMcpAdapter['plan']['outcomes'][number][],
-): boolean {
+function sameOutcomes(before: readonly McpOutcome[], after: readonly McpOutcome[]): boolean {
   if (before.length !== after.length) return false
   return before.every((outcome, index) => {
     const other = after[index]
-    return other !== undefined && JSON.stringify(outcome) === JSON.stringify(other)
+    return other !== undefined && sameOutcome(outcome, other)
   })
+}
+
+/**
+ * Field by field rather than by serializing both sides: two adapters — or one
+ * adapter across two calls — need not build these objects in the same key
+ * order, and a comparison that depends on that would report drift nobody
+ * caused.
+ */
+function sameOutcome(a: McpOutcome, b: McpOutcome): boolean {
+  if (a.kind !== b.kind || a.name !== b.name) return false
+  if (a.kind === 'obsolete-owned') return b.kind === 'obsolete-owned' && a.occupancy === b.occupancy
+  return b.kind !== 'obsolete-owned' && a.ownership === b.ownership
+}
+
+/** Whether a re-plan read the same documents, in the same order. */
+function sameDocuments(before: readonly string[], after: readonly string[]): boolean {
+  return before.length === after.length && before.every((path, index) => path === after[index])
 }

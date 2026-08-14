@@ -22,7 +22,13 @@ its absence from `.changeset/` is.
 
 **Preconditions are checked immediately before each write.** A file something else moved between planning and writing is refused and reported, never clobbered. Rollback removes only directories the run created that are still empty and still the directories it made; a pre-existing directory always survives, and any remaining file prevents removal.
 
-**A failed operation reports what it left on disk, by path.** The report distinguishes a file deliberately left alone from one whose restoration genuinely failed, and gives each its own remedy. Facets never prompts to force-overwrite a contested file, interactively or otherwise.
+**A failed operation reports what it left on disk, by path.** The report distinguishes a file deliberately left alone from one whose restoration genuinely failed, and gives each its own remedy, and it covers files stranded while the operation was failing as well as those the rollback afterwards could not put back. No file is ever reported as both restored and unrecoverable. Facets never prompts to force-overwrite a contested file, interactively or otherwise.
+
+**Two connected adapters may not manage the same MCP configuration file.** Each plans its change against the file as it stands, so whichever wrote second would apply a plan computed from content the first replaced. A project whose selected adapters share a file now fails before approval and before any write, naming every adapter involved; the remedy is to deselect one, not to upgrade.
+
+**A tool's MCP configuration is re-checked immediately before it is written**, including when the plan concluded there was nothing to do. A document edited while the approval screen was open is reported as changed mid-run rather than silently reported as configured.
+
+**The manifest, lockfile, and receipt are written against the exact bytes this run read**, not against a later look at the same files. An edit landing between the two is refused and reported, where before it could be adopted as the state the run's own plan was computed from — and overwritten.
 
 **Breaking: the supported adapter API is now exactly `{0.3}`.** Every already-installed adapter — first-party included — reports `unsupported` until reinstalled, and `facet adapter list` prints the exact command per entry. Under `0.1` and `0.2` an adapter performed its own writes and owned its own rollback, which cannot deliver the guarantees above. An adapter declaring no MCP support still cannot configure servers, and that answer no longer changes with a newer release, so the failure names the adapters whose declarations must be omitted or which must be deselected.
 

@@ -940,7 +940,10 @@ describe('apply — frozen reproduction of recorded intent', () => {
     // The repair happened; the locked set is untouched; the loss is reported.
     expect(existsSync(join(skillRoot('review'), 'SKILL.md'))).toBe(true)
     expectUntouched(lock, manifestText)
-    expect(events.some((event) => event.kind === 'receipt-unpersisted')).toBe(true)
+    const reported = events.find((event) => event.kind === 'receipt-unpersisted')
+    if (reported?.kind !== 'receipt-unpersisted') expect.unreachable()
+    // Nothing was written here, so there is nothing left behind to name.
+    expect(reported.residue.kind).toBe('complete')
   })
 
   test('a collision in recorded state fails before anything is resolved', async () => {

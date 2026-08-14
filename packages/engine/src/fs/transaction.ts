@@ -22,6 +22,7 @@ import {
   pruneCreatedDirectories,
   pruneEmptiedAncestors,
 } from './directories.ts'
+import { canonicalPathKey } from './path-key.ts'
 import {
   DEFAULT_NEW_FILE_MODE,
   type FileOperationFailure,
@@ -163,15 +164,25 @@ export type FileRollbackOutcome =
       readonly issues: NonEmptyArray<FileRollbackIssue>
     }
 
+/**
+ * Why a batch did not complete and, when it aborted, what its own unwind
+ * achieved.
+ *
+ * One value rather than a failure plus an optional rollback: a refused batch
+ * armed nothing, so a rollback field on it could only ever be empty, and an
+ * aborted batch always unwound, so an absent one would be a lie. Carrying
+ * both facts together is what lets a caller hand the whole thing onward
+ * without deciding which half matters — and an aborted batch's unwind is the
+ * only account of those paths that will ever exist, since nothing about it
+ * reaches the journal.
+ */
+export type FailedBatch =
+  | { readonly stage: 'refused'; readonly failure: RefusedFailure }
+  | { readonly stage: 'aborted'; readonly failure: AbortedFailure; readonly rollback: FileRollbackOutcome }
+
 export type ApplyBatchResult =
   | { readonly ok: true; readonly applied: readonly string[]; readonly skipped: readonly string[] }
-  | { readonly ok: false; readonly stage: 'refused'; readonly failure: RefusedFailure }
-  | {
-      readonly ok: false
-      readonly stage: 'aborted'
-      readonly failure: AbortedFailure
-      readonly rollback: FileRollbackOutcome
-    }
+  | ({ readonly ok: false } & FailedBatch)
 
 /**
  * Deterministic interleaving points, for tests only.
@@ -214,11 +225,6 @@ interface JournalEntry {
 }
 
 type ApplyOneResult = { ok: true } | { ok: false; failure: AbortedFailure }
-
-/** NFC + case fold, for detecting two spellings of one file on a folding volume. */
-function foldKey(path: string): string {
-  return path.normalize('NFC').toLowerCase()
-}
 
 export class FileTransaction {
   private readonly transitions = new Map<string, JournalEntry>()
@@ -459,12 +465,15 @@ export class FileTransaction {
     created: CreatedDirectory[],
   ): ApplyOneResult {
     const ensured = ensureDirectories(mutation.path, mutation.boundary, this.sys)
-    if (!ensured.ok) {
-      return 'failure' in ensured
-        ? { ok: false, failure: { kind: 'operation', failure: ensured.failure } }
-        : { ok: false, failure: { kind: 'inspect-failed', path: mutation.path, failure: ensured.inspection } }
-    }
+    // Recorded before the outcome is read: a refused walk still made whatever
+    // it got through, and this batch's unwind is the only thing that can
+    // remove it.
     created.push(...ensured.created)
+    if (!ensured.ok) {
+      return ensured.reason === 'operation'
+        ? { ok: false, failure: { kind: 'operation', failure: ensured.failure } }
+        : { ok: false, failure: { kind: 'inspect-failed', path: mutation.path, failure: ensured.failure } }
+    }
 
     // Replacement preserves the replaced file's permissions; a new file takes
     // whatever the process default produces, discovered rather than assumed.
@@ -651,26 +660,31 @@ export class FileTransaction {
       return { kind: 'restored' }
     }
 
+    // Directories recreated to hold a restored file are not recorded as ours:
+    // this transaction is unwinding, not accumulating new cleanup obligations.
+    // They are swept on the spot if the restore they were made for does not
+    // land, rather than left standing empty around a file that is not there.
     const ensured = ensureDirectories(path, boundary, this.sys)
     if (!ensured.ok) {
-      return 'failure' in ensured
+      pruneCreatedDirectories(ensured.created, this.sys)
+      return ensured.reason === 'operation'
         ? { kind: 'issue', issue: { kind: 'restore-failed', path, original, committed, failure: ensured.failure } }
         : {
             kind: 'issue',
-            issue: { kind: 'inspect-failed', path, original, committed, failure: ensured.inspection },
+            issue: { kind: 'inspect-failed', path, original, committed, failure: ensured.failure },
           }
     }
-    // Directories recreated to hold a restored file are not recorded as ours:
-    // this transaction is unwinding, not accumulating new cleanup obligations.
 
     const staged = this.stage(path, original.contents, original.mode)
     if (!staged.ok) {
+      pruneCreatedDirectories(ensured.created, this.sys)
       return { kind: 'issue', issue: { kind: 'restore-failed', path, original, committed, failure: staged.failure } }
     }
     try {
       this.sys.rename(staged.path, path)
     } catch (error) {
       this.discardStaged(staged.path)
+      pruneCreatedDirectories(ensured.created, this.sys)
       return {
         kind: 'issue',
         issue: { kind: 'restore-failed', path, original, committed, failure: operationFailure('commit', path, error) },
@@ -766,7 +780,7 @@ export function validateBatch(mutations: readonly FileMutation[]): ValidateBatch
     // A case-folding volume makes two spellings one file; a case-sensitive one
     // makes them two. Rejecting the collision is the only answer that behaves
     // identically on both, and silently merging them would lose an original.
-    const folded = foldKey(resolvedPath)
+    const folded = canonicalPathKey(resolvedPath)
     const collision = byFold.get(folded)
     if (collision !== undefined) {
       failures.push({ reason: 'duplicate-path', path, collidesWith: collision, by: 'case-fold' })

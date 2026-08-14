@@ -25,6 +25,7 @@ import {
   describeMcpCapabilityFailure,
   describeMcpCapabilityHint,
   describeMcpContractViolation,
+  describeMcpDocumentOverlap,
   describeTakeoverHeading,
   describeUnsupportedMcpAdapter,
 } from '../../../util/mcp-report.ts'
@@ -425,7 +426,7 @@ function failureDetail(failure: RunInstallFailure): React.JSX.Element {
           <Text color={THEME.warning} bold>
             ✕ {describeTransactionSubject(failure.subject)} could not be written
           </Text>
-          <Text> {describeTransactionFailure(failure.failure)}</Text>
+          <Text> {describeTransactionFailure(failure.batch.failure)}</Text>
         </Box>
       )
     case 'ADAPTER_INSTALL_FAILED':
@@ -722,6 +723,35 @@ function failureDetail(failure: RunInstallFailure): React.JSX.Element {
           </Text>
           <Text> {describeMcpContractViolation(failure.violation)}</Text>
           <Text color={THEME.hint}> this is an adapter bug; report it to the adapter's author</Text>
+        </Box>
+      )
+    case 'MCP_DOCUMENT_OVERLAP':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ two selected adapters configure the same file
+          </Text>
+          {failure.overlaps.map((overlap) => (
+            <Text key={overlap.claimants.map((claimant) => claimant.adapter).join('+')}>
+              {' '}
+              {describeMcpDocumentOverlap(overlap)}
+            </Text>
+          ))}
+          <Text color={THEME.hint}> configuring one MCP file from two adapters is not supported</Text>
+        </Box>
+      )
+    case 'MCP_NATIVE_STATE_DRIFT':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ {failure.adapter}'s MCP configuration changed while this run was working
+          </Text>
+          {failure.documents.map((path) => (
+            <Text key={path} color={THEME.hint}>
+              {'  '}
+              {path}
+            </Text>
+          ))}
         </Box>
       )
     default: {

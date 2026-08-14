@@ -16,6 +16,14 @@ import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
  */
 
 let onAcquire: (() => void) | null = null
+let afterManifestParse: (() => void) | null = null
+let afterLockfileParse: (() => void) | null = null
+let afterReceiptRead: (() => void) | null = null
+
+/** Fire a one-shot hook, then hand back to the real implementation. */
+function fire(hook: (() => void) | null): void {
+  hook?.()
+}
 
 const realGuard = await import('../lockfile-guard.ts')
 // Captured BEFORE the mock is registered. `mock.module` patches the live
@@ -29,6 +37,47 @@ mock.module('../lockfile-guard.ts', () => ({
     onAcquire = null
     hook?.()
     return realAcquireInstallLock(root)
+  },
+}))
+
+// Each hook below fires just after one project file is parsed. An edit landing
+// there is what a later, separate observation of that file would adopt as the
+// state the plan was computed from.
+const realLockfileIo = await import('../lockfile-io.ts')
+const realLoadLockfile = realLockfileIo.loadLockfile
+mock.module('../lockfile-io.ts', () => ({
+  ...realLockfileIo,
+  loadLockfile: (root: string) => {
+    const hook = afterManifestParse
+    afterManifestParse = null
+    fire(hook)
+    return realLoadLockfile(root)
+  },
+}))
+
+const realReceipt = await import('../receipt.ts')
+const realReadProjectReceipt = realReceipt.readProjectReceipt
+mock.module('../receipt.ts', () => ({
+  ...realReceipt,
+  readProjectReceipt: (dir: string) => {
+    const hook = afterLockfileParse
+    afterLockfileParse = null
+    fire(hook)
+    return realReadProjectReceipt(dir)
+  },
+}))
+
+// The adapter-compatibility preflight runs after all three files are read and
+// before anything is written.
+const realCompatibility = await import('../../adapters/api-compatibility.ts')
+const realCompatibilityFailureFor = realCompatibility.compatibilityFailureFor
+mock.module('../../adapters/api-compatibility.ts', () => ({
+  ...realCompatibility,
+  compatibilityFailureFor: (...args: Parameters<typeof realCompatibilityFailureFor>) => {
+    const hook = afterReceiptRead
+    afterReceiptRead = null
+    fire(hook)
+    return realCompatibilityFailureFor(...args)
   },
 }))
 
@@ -129,10 +178,16 @@ beforeEach(() => {
   process.chdir(projectRoot)
   installFakeAdapter('test-adapter')
   onAcquire = null
+  afterManifestParse = null
+  afterLockfileParse = null
+  afterReceiptRead = null
 })
 
 afterEach(() => {
   onAcquire = null
+  afterManifestParse = null
+  afterLockfileParse = null
+  afterReceiptRead = null
   process.chdir(originalCwd)
   if (originalHome === undefined) delete process.env.HOME
   else process.env.HOME = originalHome
@@ -158,6 +213,81 @@ describe('runInstall — a commit landing before the lock is acquired', () => {
 
     expect(Object.keys(readManifestFacets()).sort()).toEqual(['alpha', 'beta'])
     expect(Object.keys(readLockfileFacets()).sort()).toEqual(['alpha', 'beta'])
+  })
+})
+
+// Taking the lock first closes the window BEFORE the read. These cover the
+// one after it: a precondition observed later would name a concurrent
+// writer's bytes and authorize overwriting them.
+describe('runInstall — a commit landing after a project file is parsed', () => {
+  test('a manifest edited after it is parsed is refused, not overwritten', async () => {
+    const alpha = buildFixture('alpha', 'alpha-skill')
+    const beta = buildFixture('beta', 'beta-skill')
+    writeManifest({ alpha })
+
+    afterManifestParse = () => writeManifest({ alpha, beta })
+
+    const result = await install()
+    if (result.ok) expect.unreachable()
+    expect(result.failure.code).toBe('FILESYSTEM_TRANSACTION_FAILED')
+    expect(Object.keys(readManifestFacets()).sort()).toEqual(['alpha', 'beta'])
+  })
+
+  test('a lockfile edited after it is parsed is refused, not overwritten', async () => {
+    const alpha = buildFixture('alpha', 'alpha-skill')
+    const beta = buildFixture('beta', 'beta-skill')
+    writeManifest({ alpha })
+    if (!(await install()).ok) expect.unreachable('test bug: fixture install failed')
+
+    // A run whose bytes already match writes nothing, and nothing written is
+    // nothing to conflict over — so give this one a real change to commit.
+    writeManifest({ alpha, beta })
+
+    const lockfile = join(projectRoot, 'facets.lock')
+    // A teammate's newer CLI writing a field this one does not know about.
+    // Unrecognized top-level fields are preserved by contract, so a commit
+    // derived from the pre-edit parse would silently drop it.
+    afterLockfileParse = () => {
+      const parsed = JSON.parse(readFileSync(lockfile, 'utf8'))
+      writeFileSync(lockfile, `${JSON.stringify({ ...parsed, futureField: 'from a newer CLI' }, null, 2)}\n`)
+    }
+
+    const result = await install()
+    if (result.ok) expect.unreachable()
+    expect(result.failure.code).toBe('FILESYSTEM_TRANSACTION_FAILED')
+    expect(JSON.parse(readFileSync(lockfile, 'utf8')).futureField).toBe('from a newer CLI')
+  })
+
+  test('a receipt edited after it is read is refused, not overwritten', async () => {
+    const alpha = buildFixture('alpha', 'alpha-skill')
+    const beta = buildFixture('beta', 'beta-skill')
+    writeManifest({ alpha })
+    if (!(await install()).ok) expect.unreachable('test bug: fixture install failed')
+
+    // Same reason as above: this run must have a receipt worth writing.
+    writeManifest({ alpha, beta })
+
+    const receiptFile = realReceipt.receiptPath(projectRoot)
+    // Same meaning, different bytes — which is all a precondition compares.
+    afterReceiptRead = () => {
+      const parsed = JSON.parse(readFileSync(receiptFile, 'utf8'))
+      writeFileSync(receiptFile, `${JSON.stringify(parsed, null, 4)}\n`)
+    }
+
+    const marker = readFileSync(receiptFile, 'utf8')
+    const result = await install()
+    if (result.ok) expect.unreachable()
+    expect(result.failure.code).toBe('FILESYSTEM_TRANSACTION_FAILED')
+    expect(readFileSync(receiptFile, 'utf8')).not.toBe(marker)
+  })
+
+  test('an install nobody raced still commits', async () => {
+    const alpha = buildFixture('alpha', 'alpha-skill')
+    writeManifest({ alpha })
+
+    const result = await install()
+    expect(result.ok).toBe(true)
+    expect(Object.keys(readLockfileFacets())).toEqual(['alpha'])
   })
 })
 

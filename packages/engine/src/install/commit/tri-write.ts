@@ -1,10 +1,9 @@
 import { mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { FileMutation, FileState } from '@agent-facets/common'
-import { inspectFileState } from '@agent-facets/common'
 import type { CurrentLockfile, CurrentLockfileFacet } from '@agent-facets/protocol'
 import { facetReceiptsDir } from '../../facet-dir.ts'
-import type { FileTransaction } from '../../fs/index.ts'
+import { describeTransactionFailure, type FailedBatch, type FileTransaction } from '../../fs/index.ts'
 import { jsonFileText } from '../../json-file-text.ts'
 import {
   applyDesiredFacets,
@@ -17,12 +16,11 @@ import { canonicalLockfileText, FACETS_LOCK_FILE } from '../lockfile-io.ts'
 import { ownEntry, ownRecord } from '../own-entry.ts'
 import {
   CURRENT_RECEIPT_VERSION,
-  canonicalProjectPath,
+  type ProjectReceiptFile,
   type Receipt,
   type ReceiptConfigurationClaim,
   type ReceiptFacetEntry,
   receiptEntryForLockedFacet,
-  receiptPath,
 } from '../receipt.ts'
 import type { OnLog, RunInstallFailure } from '../types.ts'
 
@@ -92,8 +90,19 @@ export function buildUpdatedReceipt(projectPath: string, state: MaterializedRece
  */
 export type TriWriteResult =
   | { ok: true; receipt: 'persisted' }
-  | { ok: true; receipt: 'unpersisted'; cause: string }
+  | { ok: true; receipt: 'unpersisted'; cause: UnpersistedReceipt }
   | { ok: false; failure: RunInstallFailure }
+
+/**
+ * Why the receipt did not land.
+ *
+ * Tagged because only one of these had a chance to change the file: a write
+ * that never ran cannot have left anything behind, and one that ran and
+ * aborted always has an account of what it did.
+ */
+export type UnpersistedReceipt =
+  | { kind: 'not-attempted'; detail: string }
+  | { kind: 'batch-failed'; batch: FailedBatch }
 
 /**
  * What this commit does to the locked set (`facets.json` + `facets.lock`).
@@ -116,86 +125,40 @@ export interface TriWriteArgs {
   lockedSet: LockedSetCommit
   newReceipt: Receipt
   /**
-   * The exact states these files were loaded in.
+   * The state `facets.json` held when this run PARSED it — not when it later
+   * looked again.
    *
-   * The commit is conditional on them: a manifest a teammate's editor rewrote
-   * while this install was resolving is not the manifest this plan was
-   * computed from, and writing over it would discard their edit as silently
-   * as it would discard ours.
+   * A manifest a teammate's editor rewrote while this install was resolving
+   * is not the manifest {@link manifestDocument} was built from, and writing
+   * over it would discard their edit as silently as it would discard ours.
    */
-  loadedStates: ProjectFileStates
+  manifestState: FileState
+  /** The state `facets.lock` held when this run parsed it, for the same reason. */
+  lockfileState: FileState
+  /** Where this run's receipt goes, and the state it may be written over. */
+  receipt: ReceiptCommitTarget
   transaction: FileTransaction
   onLog?: OnLog
 }
 
 /**
- * The machine-local receipt's state, or the fact that it could not be read.
+ * The machine-local receipt's location and the state a commit may write over.
  *
- * Separated from the other two because the consequence differs: a project
+ * `file` is unreadable-tolerant where the other two files are not: a project
  * whose manifest cannot be read has nothing to install from, while a receipt
- * that cannot be read costs only bookkeeping — and frozen mode, which
- * reproduces a locked set it has already verified, must not fail over it.
- */
-export type ReceiptFileState = { readable: true; state: FileState } | { readable: false; cause: string }
-
-/** The three project files, as they stood when this run read them. */
-export interface ProjectFileStates {
-  manifest: FileState
-  lockfile: FileState
-  receipt: ReceiptFileState
-}
-
-/**
- * Read the exact current state of the three project files.
+ * that cannot be read costs only bookkeeping — and frozen mode, reproducing a
+ * locked set it already verified, must not fail over it.
  *
- * Called once, before the run mutates anything, so the commit can state the
- * precondition it was computed from. A file that cannot be inspected is
- * reported now rather than at commit time, when assets are already on disk.
+ * The path and canonical directory travel with it because resolving either
+ * can fail, and it must not fail here, where materialization has already
+ * happened.
  */
-export function readProjectFileStates(
-  projectRoot: string,
-): { ok: true; states: ProjectFileStates; receiptFile: string } | { ok: false; failure: RunInstallFailure } {
-  let receiptFile: string
-  try {
-    receiptFile = receiptPath(projectRoot)
-  } catch (error) {
-    return {
-      ok: false,
-      failure: {
-        code: 'LOCKFILE_WRITE_FAILED',
-        path: projectRoot,
-        cause: `could not resolve the receipt path: ${error instanceof Error ? error.message : String(error)}`,
-      },
-    }
-  }
-
-  const locked: Array<[key: 'manifest' | 'lockfile', path: string]> = [
-    ['manifest', join(projectRoot, FACETS_JSON_FILE)],
-    ['lockfile', join(projectRoot, FACETS_LOCK_FILE)],
-  ]
-  const states: Partial<Pick<ProjectFileStates, 'manifest' | 'lockfile'>> = {}
-  for (const [key, path] of locked) {
-    const inspected = inspectFileState(path)
-    if (!inspected.ok) {
-      return {
-        ok: false,
-        failure: { code: 'LOCKFILE_WRITE_FAILED', path, cause: `could not read the current contents of ${path}` },
-      }
-    }
-    states[key] = inspected.state
-  }
-
-  const inspectedReceipt = inspectFileState(receiptFile)
-  const receipt: ReceiptFileState = inspectedReceipt.ok
-    ? { readable: true, state: inspectedReceipt.state }
-    : { readable: false, cause: `could not read the current contents of ${receiptFile}` }
-
-  const { manifest, lockfile } = states
-  if (manifest === undefined || lockfile === undefined) {
-    // Unreachable: the loop assigns both keys or returns.
-    throw new Error('readProjectFileStates: expected one state per locked-set file')
-  }
-  return { ok: true, states: { manifest, lockfile, receipt }, receiptFile }
+export interface ReceiptCommitTarget {
+  /** The receipt file's location. */
+  path: string
+  /** The canonical project path the receipt identifies itself by. */
+  canonical: string
+  file: ProjectReceiptFile
 }
 
 const encoder = new TextEncoder()
@@ -215,11 +178,10 @@ const encoder = new TextEncoder()
  * unrepresentable rather than merely unlikely.
  */
 export function commitProjectFiles(args: TriWriteArgs): TriWriteResult {
-  const { projectRoot, lockedSet, newReceipt, loadedStates, transaction } = args
+  const { projectRoot, lockedSet, newReceipt, receipt, transaction } = args
 
-  const receiptFile = receiptPath(projectRoot)
-  const canonical = canonicalProjectPath(projectRoot)
-  const receiptBytes = encoder.encode(jsonFileText({ ...newReceipt, path: canonical }))
+  const receiptFile = receipt.path
+  const receiptBytes = encoder.encode(jsonFileText({ ...newReceipt, path: receipt.canonical }))
 
   // The receipts directory is machine-local bookkeeping outside the project,
   // created up front so the batch's own boundary can be the directory itself.
@@ -227,18 +189,20 @@ export function commitProjectFiles(args: TriWriteArgs): TriWriteResult {
     mkdirSync(facetReceiptsDir(), { recursive: true })
   } catch (error) {
     const cause = error instanceof Error ? error.message : String(error)
-    if (lockedSet.kind === 'retain') return { ok: true, receipt: 'unpersisted', cause }
+    if (lockedSet.kind === 'retain') return { ok: true, receipt: 'unpersisted', cause: notAttempted(cause) }
     return { ok: false, failure: { code: 'LOCKFILE_WRITE_FAILED', path: receiptFile, cause } }
   }
 
-  if (!loadedStates.receipt.readable) {
+  if (!receipt.file.readable) {
     // Frozen mode reproduced a locked set it already verified; refusing over
     // machine-local bookkeeping would fail a correct reproduction. Non-frozen
     // has a locked set to write and a rollback to run, so it reports.
-    if (lockedSet.kind === 'retain') return { ok: true, receipt: 'unpersisted', cause: loadedStates.receipt.cause }
+    if (lockedSet.kind === 'retain') {
+      return { ok: true, receipt: 'unpersisted', cause: notAttempted(receipt.file.cause) }
+    }
     return {
       ok: false,
-      failure: { code: 'LOCKFILE_WRITE_FAILED', path: receiptFile, cause: loadedStates.receipt.cause },
+      failure: { code: 'LOCKFILE_WRITE_FAILED', path: receiptFile, cause: receipt.file.cause },
     }
   }
 
@@ -246,14 +210,14 @@ export function commitProjectFiles(args: TriWriteArgs): TriWriteResult {
     kind: 'write',
     path: receiptFile,
     boundary: dirname(receiptFile),
-    expected: loadedStates.receipt.state,
+    expected: receipt.file.state,
     contents: receiptBytes,
   }
 
   if (lockedSet.kind === 'retain') {
     const applied = transaction.apply({ kind: 'mutate', mutations: [receiptMutation] })
     if (!applied.ok) {
-      return { ok: true, receipt: 'unpersisted', cause: describeTransactionRefusal(receiptFile) }
+      return { ok: true, receipt: 'unpersisted', cause: { kind: 'batch-failed', batch: applied } }
     }
     args.onLog?.(() => `[verbose]   wrote receipt (${receiptFile}) [frozen]`)
     return { ok: true, receipt: 'persisted' }
@@ -274,14 +238,14 @@ export function commitProjectFiles(args: TriWriteArgs): TriWriteResult {
         kind: 'write',
         path: manifestPath,
         boundary: projectRoot,
-        expected: loadedStates.manifest,
+        expected: args.manifestState,
         contents: encoder.encode(serializeProjectManifest(args.manifestDocument)),
       },
       {
         kind: 'write',
         path: lockfilePath,
         boundary: projectRoot,
-        expected: loadedStates.lockfile,
+        expected: args.lockfileState,
         contents: encoder.encode(canonicalLockfileText(lockedSet.newLockfile)),
       },
       receiptMutation,
@@ -293,7 +257,7 @@ export function commitProjectFiles(args: TriWriteArgs): TriWriteResult {
       failure: {
         code: 'FILESYSTEM_TRANSACTION_FAILED',
         subject: { kind: 'project-files' },
-        failure: applied.failure,
+        batch: applied,
       },
     }
   }
@@ -304,6 +268,11 @@ export function commitProjectFiles(args: TriWriteArgs): TriWriteResult {
   return { ok: true, receipt: 'persisted' }
 }
 
-function describeTransactionRefusal(path: string): string {
-  return `the receipt at ${path} could not be written`
+function notAttempted(detail: string): UnpersistedReceipt {
+  return { kind: 'not-attempted', detail }
+}
+
+/** One line saying why the receipt is not there, in the caller's words. */
+export function describeUnpersistedReceipt(cause: UnpersistedReceipt): string {
+  return cause.kind === 'not-attempted' ? cause.detail : describeTransactionFailure(cause.batch.failure)
 }

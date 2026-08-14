@@ -148,11 +148,16 @@ export function installFailureFix(
     case 'MCP_APPLY_FAILED':
       return mcpCapabilityFix(failure.failure, rollback, command)
     case 'FILESYSTEM_TRANSACTION_FAILED':
-      return `${describeDiskState(rollback)}; ${transactionFix(failure.failure)}, then re-run 'facet ${command}'`
+      return `${describeDiskState(rollback)}; ${transactionFix(failure.batch.failure)}, then re-run 'facet ${command}'`
     case 'MCP_CONTRACT_VIOLATION':
       // Nothing the user can edit; sending them to their own files would be
       // a wild goose chase.
       return 'report this to the adapter’s author; no project file needs changing'
+    case 'MCP_DOCUMENT_OVERLAP':
+      // Which tool should own the file is a choice only the user can make.
+      return `deselect one of the adapters listed above, then re-run 'facet ${command}'`
+    case 'MCP_NATIVE_STATE_DRIFT':
+      return `${describeDiskState(rollback)}. Review the file listed above, then re-run 'facet ${command}'`
     default:
       // Most codes that land here failed BEFORE the journal opened —
       // `LOCK_HELD`, `FACETS_JSON_NOT_FOUND`, `FROZEN_WITH_DELTA`,

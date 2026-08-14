@@ -1,8 +1,10 @@
 import { type FileMutation, inspectFileState } from '@agent-facets/common'
 import {
+  batchResidue,
   describeTransactionFailure,
   type FileRollbackOutcome,
   FileTransaction,
+  NO_ROLLBACK,
   transactionFailurePath,
 } from './fs/index.ts'
 
@@ -57,7 +59,7 @@ export function applyFsTransaction(mutations: readonly FsMutation[], boundary: s
         ok: false,
         failedPath: mutation.path,
         reason: `${mutation.path} could not be inspected before writing`,
-        rollback: { kind: 'complete', restored: [], alreadyRestored: [], removedDirectories: [] },
+        rollback: NO_ROLLBACK,
       }
     }
     if (mutation.kind === 'delete') {
@@ -76,16 +78,12 @@ export function applyFsTransaction(mutations: readonly FsMutation[], boundary: s
   const applied = transaction.apply({ kind: 'mutate', mutations: [first, ...rest] })
   if (applied.ok) return { ok: true }
 
-  // A refused batch armed nothing, so there is nothing to unwind; an aborted
-  // one already restored its own savepoint. Either way the tree is as it was.
-  const rollback: FileRollbackOutcome =
-    applied.stage === 'aborted'
-      ? applied.rollback
-      : { kind: 'complete', restored: [], alreadyRestored: [], removedDirectories: [] }
+  // A refused batch armed nothing; an aborted one already unwound its own
+  // savepoint, and its account of that is the only one there will be.
   return {
     ok: false,
     failedPath: transactionFailurePath(applied.failure) ?? boundary,
     reason: describeTransactionFailure(applied.failure),
-    rollback,
+    rollback: batchResidue(applied),
   }
 }

@@ -151,12 +151,30 @@ export type McpConflictFailure =
  * A successful read-only plan.
  *
  * `action` carries the exact per-file transitions applying this plan performs.
- * There is no separate document disclosure list: a document the plan does not
- * mutate is not journaled and not restored, precisely because nothing this run
- * does can change it. Inspecting a file has never been a reason to own it.
+ * A document the plan does not mutate is absent from it, and is therefore not
+ * journaled and not restored — inspecting a file has never been a reason to
+ * own it.
+ *
+ * `documentPaths` is the separate, weaker fact — and confers no ownership:
+ * appearing there never causes a document to be journaled, written, or
+ * restored.
  */
 export interface McpServersPlan {
   readonly outcomes: readonly McpServerPreparationOutcome[]
+  /**
+   * Every native document this plan was computed from, changed or not.
+   *
+   * Two tools that keep their MCP servers in one file cannot both be
+   * reconciled: each adapter plans against a document the other is about to
+   * rewrite, so whichever commits second applies a plan computed from bytes
+   * that are gone. The caller compares these lists across selected adapters
+   * and refuses before anything is approved or written — which it can only do
+   * if a plan that changes nothing still says what it read.
+   *
+   * Non-empty by type: reaching a conclusion about a tool's configuration
+   * means having read something.
+   */
+  readonly documentPaths: readonly [string, ...string[]]
   readonly action: FileMutationAction
 }
 

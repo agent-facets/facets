@@ -1034,7 +1034,7 @@ When an operation fails, each recorded file SHALL be classified against what the
 - a file already back at its prior state SHALL be left untouched, including its modification time;
 - a file holding anything else SHALL be preserved exactly as it is and reported as a conflict, because something else now owns those bytes.
 
-Restoration SHALL continue past every conflict and every failure, so one contested file SHALL NOT strand the operation's other changes on disk. The report SHALL name every file that could not be returned to its prior state, and SHALL distinguish a deliberately preserved concurrent edit from a restoration that genuinely failed.
+Restoration SHALL continue past every conflict and every failure, so one contested file SHALL NOT strand the operation's other changes on disk. The report SHALL name every file that could not be returned to its prior state, and SHALL distinguish a deliberately preserved concurrent edit from a restoration that genuinely failed. That report SHALL cover every file the operation could not put back, including files restored during the failure itself rather than during the restoration that follows it; a file SHALL NOT be reported as restored and as unrecoverable by the same report.
 
 A file changed more than once in one operation SHALL be restored to the state it held before the operation began, not to an intermediate one — including when different adapters change the same file.
 
@@ -1059,6 +1059,12 @@ This record SHALL cover handled failures within one operation. It is deliberatel
 
 - **WHEN** one recorded file conflicts and others do not
 - **THEN** every non-conflicting file SHALL be restored to its exact prior state
+
+#### Scenario: A file stranded while the operation was failing is still reported
+
+- **WHEN** an operation fails and cannot put back a file it changed during that failure
+- **THEN** the report SHALL name that file
+- **AND** the operation SHALL NOT report that the project was fully restored
 
 #### Scenario: Repeated changes restore to the original
 
@@ -1861,7 +1867,20 @@ When an active effective server name already occupies an entry in a selected ada
 
 ### Requirement: MCP configuration is prepared before mutation and applied after assets
 
-The system SHALL complete facet verification, effective-name composition, selected-adapter capability checks, native MCP document parsing, and all MCP approval before the first mutation. A parse failure, native conflict, unsupported selected adapter, unresolved desired-state collision, or declined approval SHALL leave all project and adapter state unchanged. Native MCP changes SHALL be applied after desired asset writes and immediately before final project-state commit.
+The system SHALL complete facet verification, effective-name composition, selected-adapter capability checks, native MCP document parsing, the check that no two selected adapters reconcile one configuration file, and all MCP approval before the first mutation. A parse failure, native conflict, unsupported selected adapter, two adapters sharing a configuration file, unresolved desired-state collision, or declined approval SHALL leave all project and adapter state unchanged. Native MCP changes SHALL be applied after desired asset writes and immediately before final project-state commit.
+
+Immediately before each selected adapter's change is committed, its complete MCP plan SHALL be recomputed, including when the earlier plan concluded that nothing needed writing. "Nothing to do" is a conclusion about a document, and a document can change after it is reached — while approval is being collected, or by the tool itself. When a recomputed plan reaches a different conclusion about any server, or was computed from a different set of documents, the operation SHALL fail and SHALL report that the tool's configuration changed while the operation was running, naming the documents. That failure SHALL NOT be attributed to the adapter, which reported the state it found. Recomputed conclusions SHALL be compared by content and by the adapter's own semantics; file modification times SHALL NOT be treated as evidence.
+
+#### Scenario: A plan that changed nothing is still recomputed before completion
+
+- **WHEN** an adapter's MCP plan concluded that nothing needed writing
+- **THEN** that plan SHALL be recomputed immediately before the operation completes
+
+#### Scenario: A configuration changed during the operation is reported, not ignored
+
+- **WHEN** something else changes a tool's MCP configuration after the operation planned against it
+- **THEN** the operation SHALL fail and name the changed document
+- **AND** the failure SHALL NOT be reported as an adapter defect
 
 #### Scenario: Invalid native configuration blocks asset writes
 
