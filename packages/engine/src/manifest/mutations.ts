@@ -223,7 +223,7 @@ export function parseProjectManifest(raw: string): ParseProjectManifestResult {
 
 /**
  * Serialize a manifest document, preserving its comment metadata. Uses
- * 2-space indentation to match ADR-006.
+ * 2-space indentation to match `jsonFileText`.
  *
  * Deliberately does NOT go through engine's `jsonFileText` helper: it must
  * serialize via comment-json to preserve comments, so it upholds the same

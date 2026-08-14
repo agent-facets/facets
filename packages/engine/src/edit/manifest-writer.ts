@@ -5,7 +5,7 @@ import { jsonFileText } from '../json-file-text.ts'
 
 /**
  * Writes a facet manifest to disk as `facet.json`.
- * Uses `jsonFileText` (2-space indent per ADR-006, trailing newline).
+ * Uses `jsonFileText` (2-space indent, trailing newline).
  */
 export async function writeManifest(manifest: FacetManifest, rootDir: string): Promise<void> {
   const path = join(rootDir, FACET_MANIFEST_FILE)

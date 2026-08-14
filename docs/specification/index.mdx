@@ -56,6 +56,10 @@ Stale text is safe (suboptimal, not broken). Changed text is a trust concern (pr
   </Step>
 </Steps>
 
+## Generated JSON
+
+Every JSON file the CLI generates — [`facets.json`](/specification/project-manifest), [`facets.lock`](/specification/lockfile), the [install receipt](/specification/commit#machine-local-install-receipt), build manifests, scaffolded [`facet.json`](/specification/manifest), and cache integrity sidecars — uses 2-space indentation and ends with exactly one trailing newline. Open a generated file in an editor that appends a final newline, save it, and there is no diff. `facets.json` is written through a comment-preserving serializer, so hand-written annotations survive every write. A coding tool's own native configuration is out of scope: those documents keep the formatting the tool gave them.
+
 ## Security and trust
 
 Facets enable arbitrary text injection into AI assistant contexts, and an MCP server declaration can additionally cause

@@ -143,10 +143,6 @@ See `packages/common/AGENTS.md` for the rule on what does and doesn't belong her
 | `scripts/`      | Repo-level utility scripts                           |
 | `openspec/`     | OpenSpec change management (specs, schemas, changes) |
 
-## Strategy
-
-Strategic Decision Records (SDRs) and Architectural Decision Records (ADRs) live in Notion. The authoritative databases and views are configured in `.opencode/notion.json` (keys: `sdrs`, `sdr_events`, `sdr_relationships`, `adrs`, `adr_events`). Consult these when you need strategic or architectural context for decisions affecting this project. See also Article III of `openspec/config.yaml` for ADR authority.
-
 ## Bun
 
 Default to using Bun instead of Node.js.

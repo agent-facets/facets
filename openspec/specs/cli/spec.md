@@ -1082,3 +1082,25 @@ Command summaries SHALL report MCP servers separately from text assets and SHALL
 
 - **WHEN** native configuration already matches semantically
 - **THEN** the summary SHALL classify it as unchanged
+
+### Requirement: Generated JSON files are byte-stable
+
+Every JSON document the system generates SHALL use two-space indentation and SHALL end with exactly one trailing newline, so a generated file opened in an editor that appends a final newline needs no fix-up and produces no diff. This SHALL hold for the project manifest, the lockfile, the machine-local install receipt, build manifests, scaffolded facet manifests, and cache integrity records alike, and SHALL hold identically on every rewrite.
+
+A write to the project manifest SHALL additionally preserve the comments a user wrote in it. Documents the system does not generate — a coding tool's own native configuration — SHALL be outside this requirement's scope, because their formatting belongs to the tool that created them.
+
+#### Scenario: A generated file needs no editor fix-up
+
+- **WHEN** a user opens a JSON file the system generated and saves it in an editor that appends a trailing newline
+- **THEN** the saved file SHALL be byte-for-byte unchanged
+
+#### Scenario: A rewrite reproduces the same formatting
+
+- **WHEN** the system rewrites a JSON document it generates
+- **THEN** the rewritten document SHALL carry the same two-space indentation and single trailing newline as its first write
+
+#### Scenario: Hand-written project manifest comments survive a write
+
+- **WHEN** a user annotates `facets.json` with comments and then runs a command that writes the manifest
+- **THEN** the written manifest SHALL retain those comments
+- **AND** it SHALL end with exactly one trailing newline

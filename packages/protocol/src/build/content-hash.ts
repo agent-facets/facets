@@ -26,7 +26,7 @@ export interface ArchiveEntry {
 
 /**
  * Computes a SHA-256 content hash of the given content.
- * Returns the hash in ADR-004 format: `sha256:<hex>`.
+ * Returns the hash in the canonical integrity format: `sha256:<hex>`.
  */
 export function computeContentHash(content: string | Uint8Array): string {
   const hex = createHash('sha256').update(content).digest('hex')
