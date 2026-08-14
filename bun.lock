@@ -23,7 +23,7 @@
     },
     "packages/adapter": {
       "name": "@agent-facets/adapter",
-      "version": "0.29.0",
+      "version": "0.30.0",
       "dependencies": {
         "yaml": "2.9.0",
       },
@@ -49,7 +49,7 @@
     },
     "packages/adapters/claude-code": {
       "name": "@agent-facets/adapter-claude-code",
-      "version": "0.10.0",
+      "version": "0.11.0",
       "devDependencies": {
         "@agent-facets/adapter": "workspace:*",
         "@agent-facets/adapter-jsonc": "workspace:*",
@@ -61,7 +61,7 @@
     },
     "packages/adapters/codex": {
       "name": "@agent-facets/adapter-codex",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "devDependencies": {
         "@agent-facets/adapter": "workspace:*",
         "@agent-facets/adapter-test-kit": "workspace:*",
@@ -74,7 +74,7 @@
     },
     "packages/adapters/opencode": {
       "name": "@agent-facets/adapter-opencode",
-      "version": "0.11.0",
+      "version": "0.12.0",
       "devDependencies": {
         "@agent-facets/adapter": "workspace:*",
         "@agent-facets/adapter-jsonc": "workspace:*",
