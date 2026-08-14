@@ -5,7 +5,7 @@
     "url": "https://github.com/agent-facets/facets",
     "directory": "packages/adapters/claude-code"
   },
-  "version": "0.10.0",
+  "version": "0.11.0",
   "type": "module",
   "files": [
     "dist"
