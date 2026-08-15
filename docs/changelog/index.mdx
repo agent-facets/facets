@@ -5,6 +5,95 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-08-15" description="agent-facets 0.32.0 turns on adapter API 0.3 end-to-end and renames facet adapter install to facet adapter add" tags={["CLI", "Improvement", "Breaking"]} rss={{
+  title: "agent-facets 0.32.0 on npm: adapter API 0.3 end-to-end",
+  description: "agent-facets@0.32.0 is now on npm. This is the CLI release that pairs with yesterday's adapter SDK 0.30.0: every write to your project -- assets, native MCP configuration, and facets.json, facets.lock, and the receipt -- now goes through one filesystem transaction, so a failure restores the exact prior bytes and permission bits and a re-install that would produce the same bytes touches no modification time. Two connected adapters that manage the same MCP configuration file now fail before approval with both adapters named, and every plan is re-checked immediately before commit so a document edited while the approval screen was open is reported rather than silently reported as configured. facet adapter install is renamed to facet adapter add; the old spelling keeps working as a deprecated alias. Breaking: the supported adapter API is now exactly {0.3}, so every already-installed adapter -- first-party included -- reports unsupported in facet adapter list until reinstalled, and the CLI prints the exact facet adapter add command per entry. Run facet self-update to pick it up, then reinstall each adapter the list flags."
+}}>
+  ## `agent-facets@0.32.0` on npm
+
+  The CLI release that pairs with [yesterday's adapter SDK 0.30.0](#2026-08-14) is published:
+
+  - `agent-facets@0.32.0`
+
+  Run [`facet self-update`](/cli/self-update) to pick it up.
+
+  ## Adapter API `0.3` end-to-end
+
+  Every file `facet add`, `facet install`, and `facet remove` change --
+  assets, native MCP configuration, and the project's own `facets.json`,
+  `facets.lock`, and receipt -- now commits through one filesystem
+  transaction:
+
+  - **Byte-exact rollback.** A failed run restores the exact prior bytes
+    and permission bits. YAML front matter and TOML formatting come back
+    as authored instead of being re-rendered from parsed data.
+  - **No phantom drift.** A file already holding the bytes a plan would
+    write contributes no change, so a re-install touches no modification
+    time.
+  - **Contested files are preserved, not clobbered.** A file this run
+    wrote and something else then changed is reported by path, and
+    rollback continues past it so one contested file cannot strand the
+    rest.
+  - **Failed runs report what they left on disk.** The report
+    distinguishes a file deliberately left alone from one whose
+    restoration genuinely failed, and gives each its own remedy. No file
+    is ever reported as both restored and unrecoverable.
+
+  ## Safer MCP configuration
+
+  Two connected adapters may no longer manage the same MCP configuration
+  file. A project whose selected adapters share a file fails before
+  approval and before any write, with every adapter involved named. The
+  remedy is to deselect one, not to upgrade. See
+  [Troubleshooting](/guides/troubleshooting) for the resolution path.
+
+  Every plan is also recomputed immediately before its own commit,
+  including one that concluded nothing needed writing. A document edited
+  while the [approval screen](/cli/install#accept-mcp) was open is
+  reported as changed mid-run rather than silently reported as
+  configured.
+
+  ## `facet adapter install` is now `facet adapter add`
+
+  The [`facet adapter add`](/cli/adapters/add) verb matches the split it
+  mirrors at the top level: `add` takes a specifier and installs what you
+  name, `install` takes none. Every reinstall command the CLI prints --
+  next to a failing entry in [`facet adapter list`](/cli/adapters/list),
+  and in the compatibility diagnostics that stop `facet build`, `facet
+  add`, `facet remove`, and `facet install` -- now names `facet adapter
+  add`.
+
+  The old spelling keeps working as a deprecated alias. It runs the same
+  code, produces the same stdout, and exits with the same code; the only
+  difference is one deprecation notice on stderr.
+
+  ## Breaking: reinstall every adapter
+
+  The supported adapter API is now exactly `{0.3}`. Every
+  already-installed adapter -- first-party included -- reports
+  `unsupported` in [`facet adapter list`](/cli/adapters/list) until
+  reinstalled, and the CLI prints the exact command per entry. After
+  `facet self-update`, run:
+
+  ```sh
+  facet adapter list
+  ```
+
+  Then run the printed `facet adapter add <name>` command for each entry
+  the list flags. First-party names are `claude-code`, `codex`, and
+  `opencode`.
+
+  An adapter declaring no MCP support still cannot configure servers, and
+  that answer no longer changes with a newer release. If a selected
+  adapter declares no MCP support, the failure names the adapters whose
+  declarations must be omitted or which must be deselected.
+
+  The `obsolete-bundle-retained` outcome is also removed: a skill bundle
+  whose primary is already gone now has its owned companions removed,
+  because each carries its own exact observed state and is individually
+  restorable.
+</Update>
+
 <Update label="2026-08-14" description="Adapter SDK 0.30.0 ships adapter API 0.3: adapters plan, the CLI writes" tags={["CLI", "Improvement"]} rss={{
   title: "Adapter SDK 0.30.0: adapters plan, the CLI writes",
   description: "@agent-facets/adapter@0.30.0 is published on npm alongside the first-party adapter refresh: @agent-facets/adapter-claude-code@0.11.0, @agent-facets/adapter-codex@0.9.0, and @agent-facets/adapter-opencode@0.12.0. This release introduces adapter API 0.3, in which adapters no longer write to disk: they return exact per-file transitions (the observed state and the bytes to commit) and the CLI performs every write through one filesystem transaction. That gives byte-exact rollback for assets, native MCP configuration, and the project's manifest, lockfile, and receipt -- comments, member order, and TOML/YAML formatting all survive a failure exactly as authored. A file the run only inspected is never journaled, and a file already holding the planned bytes contributes no change, so a re-install touches no modification time. Two adapters that manage the same MCP configuration file now fail with both named before any write, and every plan is re-checked immediately before commit so a document edited while the approval screen was open is reported rather than silently reported as configured. This is a coordinated release for adapter authors; the matching CLI release ships next."
