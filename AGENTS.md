@@ -2,12 +2,12 @@
 
 ## CircleCI Project
 
-| Key            | Value                                         |
-| -------------- | --------------------------------------------- |
-| Project Name   | facets                                        |
+| Key            | Value                                                    |
+|----------------|----------------------------------------------------------|
+| Project Name   | facets                                                   |
 | Project Slug   | `circleci/TXx3MQGFf8BTw9fgSHwVWi/RfHfmwgTVFBrv4ZDBMMifk` |
-| Git Remote URL | `git@github.com:agent-facets/facets.git`       |
-| Default Branch | `main`                                        |
+| Git Remote URL | `git@github.com:agent-facets/facets.git`                 |
+| Default Branch | `main`                                                   |
 
 </CircleCI>
 
