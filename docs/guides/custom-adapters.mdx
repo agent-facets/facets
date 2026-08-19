@@ -349,7 +349,9 @@ You are editing a file the user owns and may already be using:
 - For an owned entry, native fields outside the portable model (a timeout, say) survive where your format allows.
 - Use a syntax-aware edit and an atomic write. Semantic preservation is mandatory; comment and formatting preservation is best-effort and should be maximized.
 
-Write **project-scoped configuration only**. Never create or modify a user-wide or system-wide tool file. For reference, the first-party adapters use `.mcp.json` (Claude Code), both `opencode.jsonc` and `opencode.json` as one merged configuration (OpenCode), and `.codex/config.toml` (Codex).
+Write **project-scoped configuration only**. Never create or modify a user-wide or system-wide tool file. For reference, the first-party adapters use `.mcp.json` (Claude Code), the four documents OpenCode merges — `.opencode/opencode.jsonc`, `.opencode/opencode.json`, `opencode.jsonc`, `opencode.json` — as one configuration (OpenCode), and `.codex/config.toml` (Codex).
+
+If your tool merges several configuration layers, read them all and classify against the merged view, then write to one of them. Reading only the file you would write is how an obsolete entry in another layer survives a removal and keeps a server your user deleted.
 
 <Warning>
 Two selected adapters may not manage the same file. If your tool reads a configuration file another supported tool also reads, say so in your README: a user who selects both gets a failure telling them to deselect one, because there is no ordering in which both plans survive the other's write.

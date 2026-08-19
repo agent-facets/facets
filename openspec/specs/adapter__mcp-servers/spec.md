@@ -27,43 +27,50 @@ An adapter that supports MCP servers SHALL translate the complete desired projec
 
 The first-party adapters SHALL reconcile project-scoped MCP server maps at their tools' documented project locations. Claude Code SHALL use `.mcp.json`. Codex SHALL use trusted-project `.codex/config.toml` and its project MCP server tables.
 
-OpenCode merges `opencode.json` and `opencode.jsonc`, so the OpenCode adapter SHALL treat both as one configuration and SHALL inspect both, planning a change only for the layers it actually changes. It SHALL classify occupancy and equality against the merged per-key view in which a key defined in `opencode.jsonc` wins. It SHALL create a new entry in `opencode.jsonc` when that document exists, otherwise in an existing `opencode.json`, and SHALL create `opencode.jsonc` when neither exists. It SHALL update an existing entry in the layer where that key currently wins. When one owned key is defined in both layers, it SHALL update the `opencode.jsonc` definition and remove the shadowed `opencode.json` definition in the same change. It SHALL remove an obsolete owned key from every layer that defines it. It SHALL leave entries it neither desires nor owns untouched in both layers.
+OpenCode merges four project-scoped documents, in decreasing precedence: `.opencode/opencode.jsonc`, `.opencode/opencode.json`, `opencode.jsonc`, and `opencode.json`. The OpenCode adapter SHALL treat all four as one configuration and SHALL inspect all four, planning a change only for the documents it actually changes. It SHALL classify occupancy and equality against the merged per-key view in which the highest-precedence document defining a key wins.
+
+The OpenCode adapter SHALL choose one write target per run: the highest-precedence document that already defines an `mcp` member, otherwise the highest-precedence document that exists, otherwise `.opencode/opencode.jsonc`, which it SHALL create. A document defining an empty `mcp` member SHALL count as defining one. It SHALL write every desired server to that target. It SHALL leave a definition of a desired server in a lower-precedence document unchanged, since the target's definition already wins. It SHALL remove an obsolete owned key from every document that defines it, so that no shadowed definition is promoted by the removal. It SHALL leave entries it neither desires nor owns untouched in every document.
 
 #### Scenario: Claude Code uses its project server map
 
 - **WHEN** the Claude Code adapter reconciles project servers
 - **THEN** it SHALL update the `mcpServers` map in project `.mcp.json`
 
-#### Scenario: OpenCode prefers JSONC for a new entry
+#### Scenario: OpenCode writes where the project already keeps its servers
 
-- **WHEN** both `opencode.jsonc` and `opencode.json` exist and a desired server is absent from both
-- **THEN** the OpenCode adapter SHALL create the entry in the `mcp` map of `opencode.jsonc`
-- **AND** it SHALL NOT plan a change for the unchanged `opencode.json`
+- **WHEN** `.opencode/opencode.jsonc` exists without an `mcp` member and `opencode.json` defines one
+- **THEN** the OpenCode adapter SHALL write the desired server into the `mcp` map of `opencode.json`
+- **AND** it SHALL NOT plan a change for the unchanged `.opencode/opencode.jsonc`
 
-#### Scenario: OpenCode falls back to existing JSON
+#### Scenario: OpenCode prefers the highest-precedence server map
 
-- **WHEN** `opencode.json` exists and `opencode.jsonc` does not
-- **THEN** the OpenCode adapter SHALL reconcile the existing JSON document
+- **WHEN** more than one OpenCode document defines an `mcp` member
+- **THEN** the OpenCode adapter SHALL write the desired server into the highest-precedence one
 
-#### Scenario: OpenCode creates JSONC
+#### Scenario: OpenCode falls back to the highest-precedence existing document
 
-- **WHEN** neither OpenCode project document exists
-- **THEN** the OpenCode adapter SHALL create `opencode.jsonc`
+- **WHEN** no OpenCode document defines an `mcp` member and at least one exists
+- **THEN** the OpenCode adapter SHALL write the desired server into the highest-precedence existing document
 
-#### Scenario: OpenCode removes an obsolete entry from the lower layer
+#### Scenario: OpenCode creates its default document
 
-- **WHEN** an obsolete owned server is defined only in `opencode.json` while `opencode.jsonc` also exists
-- **THEN** the OpenCode adapter SHALL remove that entry from `opencode.json`
+- **WHEN** no OpenCode project document exists
+- **THEN** the OpenCode adapter SHALL create `.opencode/opencode.jsonc`
+- **AND** it SHALL NOT create any other OpenCode project document
 
-#### Scenario: OpenCode collapses a shadowed owned entry
+#### Scenario: OpenCode leaves a shadowed definition alone
 
-- **WHEN** one owned server is defined in both OpenCode documents and its declaration changed
-- **THEN** the adapter SHALL update the `opencode.jsonc` definition
-- **AND** it SHALL remove the shadowed `opencode.json` definition in the same change
+- **WHEN** a desired server is written to the target while a lower-precedence document also defines that key
+- **THEN** the OpenCode adapter SHALL leave the lower-precedence definition unchanged
 
-#### Scenario: OpenCode leaves unowned lower-layer entries alone
+#### Scenario: OpenCode removes an obsolete entry from every document
 
-- **WHEN** `opencode.json` defines a server the project neither desires nor owns
+- **WHEN** an obsolete owned server is defined in more than one OpenCode document
+- **THEN** the OpenCode adapter SHALL remove that entry from every document that defines it
+
+#### Scenario: OpenCode leaves unowned entries alone
+
+- **WHEN** an OpenCode document defines a server the project neither desires nor owns
 - **THEN** the adapter SHALL leave that entry unchanged
 
 #### Scenario: Codex uses trusted project configuration
