@@ -5,7 +5,7 @@
     "url": "https://github.com/agent-facets/facets",
     "directory": "packages/adapters/opencode"
   },
-  "version": "0.12.0",
+  "version": "0.12.1",
   "type": "module",
   "files": [
     "dist"
