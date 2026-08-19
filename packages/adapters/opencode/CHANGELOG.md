@@ -1,15 +1,24 @@
 # @agent-facets/adapter-opencode
 
+## 0.12.1
+
+### Patch Changes
+
+- [#536](https://github.com/agent-facets/facets/pull/536) [`e1f3de3`](https://github.com/agent-facets/facets/commit/e1f3de3f1f94b1d3c711895ad66a4ad0b6c37587) Thanks [@eXamadeus](https://github.com/eXamadeus)! - **MCP servers now land where OpenCode actually reads them.** The adapter considered only the project root's `opencode.jsonc` and `opencode.json`, so a project keeping its OpenCode configuration in `.opencode/` — the location that _outranks_ the root — had servers written to a file the higher-precedence one shadows. The configuration you approved was not the configuration OpenCode loaded.
+    All four documents OpenCode merges are now read, classified as one configuration, and disclosed. In decreasing precedence: `.opencode/opencode.jsonc`, `.opencode/opencode.json`, `opencode.jsonc`, `opencode.json`.
+    Writes go to exactly one of them, chosen once per run: the highest-precedence document that already defines an `mcp` member (an empty `{}` counts), otherwise the highest-precedence document that exists, otherwise a newly created `.opencode/opencode.jsonc`. Following the existing `mcp` member rather than merely the file that sorts first is what keeps a project whose servers live in a root `opencode.json`, beside a `.opencode/opencode.jsonc` holding only agents, from having its servers split across two files that shadow each other.
+    A definition of a desired server in a lower-precedence document is now left exactly as its author wrote it — the target's definition already wins, and deleting from a file this run is not otherwise writing is not the adapter's call. Previously a shadowed copy was deleted. An obsolete owned entry is still removed from **every** document that defines it, so a removal cannot promote a shadowed copy and leave the server configured. Entries the project neither desires nor owns remain untouched everywhere.
+
 ## 0.12.0
 
 ### Minor Changes
 
 - [#527](https://github.com/agent-facets/facets/pull/527) [`5a334d0`](https://github.com/agent-facets/facets/commit/5a334d0451b44eae5b9a344356eb93aec3edff06) Thanks [@eXamadeus](https://github.com/eXamadeus)! - **Adapter API `0.3`: adapters plan, the CLI writes.** The asset and MCP contracts are now strictly read-only. An adapter inspects, decides what should change, and returns exact per-file transitions — an absolute path, the state it observed that path in, and the bytes to commit. The CLI performs every write.
-    This buys guarantees no adapter could offer on its own, and now applies uniformly to assets, MCP documents, and the project's own manifest, lockfile, and receipt:
-    -   **Concurrency.** The state an adapter reports is the write's precondition. A file something else edited between planning and writing is refused and reported, never clobbered.
-    -   **Atomicity.** One logical operation's file changes commit together. A skill's primary, its companions, and its obsolete-companion removals all land or none do.
-    -   **Exact restoration.** Both endpoints of every change are recorded, so a failure restores the precise prior bytes and permission bits — comments, formatting, and member order intact. Byte-exact rollback no longer depends on re-rendering an asset from parsed data, so YAML front matter and TOML survive a rollback exactly as the author wrote them.
-    -   **No phantom drift.** A file already holding the bytes a plan would write contributes no change, so a re-install touches no modification time.
+  This buys guarantees no adapter could offer on its own, and now applies uniformly to assets, MCP documents, and the project's own manifest, lockfile, and receipt:
+  - **Concurrency.** The state an adapter reports is the write's precondition. A file something else edited between planning and writing is refused and reported, never clobbered.
+  - **Atomicity.** One logical operation's file changes commit together. A skill's primary, its companions, and its obsolete-companion removals all land or none do.
+  - **Exact restoration.** Both endpoints of every change are recorded, so a failure restores the precise prior bytes and permission bits — comments, formatting, and member order intact. Byte-exact rollback no longer depends on re-rendering an asset from parsed data, so YAML front matter and TOML survive a rollback exactly as the author wrote them.
+  - **No phantom drift.** A file already holding the bytes a plan would write contributes no change, so a re-install touches no modification time.
     **Breaking: `installAsset`, `readAsset`, and `deleteAsset` are replaced by `assets: false | { planInstall, planRemoval }`.** `supportsInstall` is gone — an adapter states its asset capability the same way it states MCP support, so "claims support" and "implements support" can no longer disagree.
     **Breaking: the MCP capability is `mcpServers: false | { plan }`.** `apply` is gone, as is the opaque plan type and the `conflict/document-changed` reason. Concurrency is detected once, by the CLI, for every file it writes. A document an adapter inspects but does not change is no longer journaled or restored.
     **`plan` returns `documentPaths`: every file it was computed from, including when it changes none of them.** The list grants nothing — a file named there and not changed is never written, journaled, or restored. It exists so the CLI can establish, before it asks for approval, that no two selected adapters manage the same configuration file; two that do now fail with both named, because neither ordering leaves both plans applicable. Every plan is also recomputed immediately before its own commit, including one that concluded nothing needed writing, so a document edited while the approval screen was open is reported rather than quietly reported as configured.
