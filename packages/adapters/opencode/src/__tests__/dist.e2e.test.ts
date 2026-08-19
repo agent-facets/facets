@@ -6,7 +6,7 @@
  */
 
 import { expect, test } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -28,7 +28,7 @@ test('bundled JSONC parser survives bundling', async () => {
     // Comments and a trailing comma are readable only if jsonc-parser was
     // actually inlined; a bare specifier would have failed at import time and
     // a JSON parser would fail here.
-    await Bun.write(join(root, 'opencode.jsonc'), '{\n  // servers\n  "mcp": {},\n}\n')
+    await Bun.write(join(root, '.opencode/opencode.jsonc'), '{\n  // servers\n  "mcp": {},\n}\n')
     const planned = await capability.plan({
       projectRoot: root,
       desired: [STDIO_SERVER],
@@ -41,7 +41,29 @@ test('bundled JSONC parser survives bundling', async () => {
     // build parses fine but resolves its edit helpers lazily, so a mis-bundled
     // dependency only renders wrong text here.
     commitPlannedAction(planned.plan.action)
-    expect(readFileSync(join(root, 'opencode.jsonc'), 'utf8')).toContain('// servers')
+    expect(readFileSync(join(root, '.opencode/opencode.jsonc'), 'utf8')).toContain('// servers')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('the bundled capability creates its default document under .opencode', async () => {
+  const capability = await loadDistMcpCapability(bundlePath)
+  const root = mkdtempSync(join(tmpdir(), 'opencode-dist-'))
+  try {
+    // Creating a document inside a directory that does not exist yet is the
+    // path a fresh project takes, and it only works if the plan's mutation
+    // carries a boundary the caller can create directories under.
+    const planned = await capability.plan({
+      projectRoot: root,
+      desired: [STDIO_SERVER],
+      previouslyOwnedNames: [],
+    })
+    if (!planned.ok) expect.unreachable()
+    commitPlannedAction(planned.plan.action)
+
+    expect(readFileSync(join(root, '.opencode/opencode.jsonc'), 'utf8')).toContain('"fs"')
+    expect(existsSync(join(root, 'opencode.jsonc'))).toBe(false)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

@@ -26,44 +26,80 @@ import {
 /**
  * OpenCode MCP server reconciliation.
  *
- * ## Two documents, one configuration
+ * ## Four documents, one configuration
  *
- * OpenCode loads `opencode.json` and then `opencode.jsonc` from the same
- * directory and deep-merges them in that order, so a key defined in both is
- * the JSONC one. That merge is the configuration; neither file is it on its
- * own. So this adapter reads BOTH, classifies against the merged per-key view,
- * and discloses both paths.
+ * OpenCode merges four project-scoped configuration documents. It loads the
+ * project root's `opencode.json` and `opencode.jsonc` first, then
+ * `.opencode/opencode.json` and `.opencode/opencode.jsonc`, deep-merging each
+ * over the ones before it. A key defined in more than one of them takes its
+ * value from the last one loaded, so precedence runs:
  *
- * Reading only the JSONC file was a real defect, not a simplification: an
- * obsolete owned server living only in `opencode.json` looked absent, so
- * removal skipped it and OpenCode went on loading a server the project had
- * deleted.
+ *   1. `.opencode/opencode.jsonc`  (wins)
+ *   2. `.opencode/opencode.json`
+ *   3. `opencode.jsonc`
+ *   4. `opencode.json`
  *
- * Writes then target the layer that makes the change effective:
+ * That merge is the configuration; no one file is it on its own. So this
+ * adapter reads ALL four, classifies against the merged per-key view, and
+ * discloses all four paths.
  *
- *   - A new entry goes to `opencode.jsonc` when that file exists, otherwise to
- *     an existing `opencode.json`, otherwise into a newly created
- *     `opencode.jsonc`.
- *   - An existing entry is updated in the layer where it currently wins.
- *   - An owned entry defined in BOTH layers is updated in `opencode.jsonc` and
- *     its shadowed `opencode.json` copy is removed in the same change, so the
- *     merged view cannot silently disagree with either file.
- *   - An obsolete owned entry is deleted from every layer that defines it.
+ * Reading fewer of them was a real defect, not a simplification: an obsolete
+ * owned server living only in a document this adapter never opened looked
+ * absent, so removal skipped it and OpenCode went on loading a server the
+ * project had deleted.
  *
- * An entry the project neither desires nor owns is never touched, in either
- * layer.
+ * ## One write target
+ *
+ * Every write for a desired server goes to a single document, chosen once per
+ * run:
+ *
+ *   1. the highest-precedence document that already defines an `mcp` member —
+ *      an empty `{}` counts, since that is still where this project keeps its
+ *      servers;
+ *   2. otherwise the highest-precedence document that exists at all;
+ *   3. otherwise `.opencode/opencode.jsonc`, created.
+ *
+ * Following the user's own `mcp` member rather than merely the
+ * highest-precedence file that happens to exist is what keeps this adapter out
+ * of the way: a project whose `.opencode/opencode.jsonc` holds only agents,
+ * with its servers in a root `opencode.json`, gets its servers where its
+ * servers already are.
+ *
+ * A copy of a desired server in a lower-precedence document is left exactly as
+ * it is. It is shadowed and inert, this adapter did not put it there, and
+ * deleting from a document this run is not otherwise writing is not this
+ * adapter's call to make.
+ *
+ * An obsolete owned entry is the one exception: it is deleted from every
+ * document that defines it, because removing only the winning copy would
+ * promote a shadowed one and leave the server configured.
+ *
+ * An entry the project neither desires nor owns is never touched, in any
+ * document.
  *
  * ## Why JSONC, and why minimal edits
  *
- * OpenCode parses *both* filenames as JSONC, and its own `opencode mcp add`
- * edits configuration with a syntax-aware editor. This adapter does the same,
- * for the same reason: a targeted edit is a minimal text change rather than a
- * re-serialization, so comments, member order, indentation, and trailing
- * commas everywhere outside the one entry being changed survive.
+ * OpenCode parses *every* one of these filenames as JSONC, and its own
+ * `opencode mcp add` edits configuration with a syntax-aware editor. This
+ * adapter does the same, for the same reason: a targeted edit is a minimal
+ * text change rather than a re-serialization, so comments, member order,
+ * indentation, and trailing commas everywhere outside the one entry being
+ * changed survive.
  */
 
-/** Candidate documents, in the order OpenCode's own merge makes authoritative. */
-const DOCUMENT_NAMES = ['opencode.jsonc', 'opencode.json'] as const
+/**
+ * Candidate documents, highest precedence first.
+ *
+ * The single source of truth for the whole capability: reading, disclosure,
+ * the merged view, target selection, and edit order all derive from this one
+ * order, so none of them can disagree with another.
+ */
+const CANDIDATE_PATHS = [
+  '.opencode/opencode.jsonc',
+  '.opencode/opencode.json',
+  'opencode.jsonc',
+  'opencode.json',
+] as const satisfies readonly [string, ...string[]]
 
 /** The top-level member OpenCode reads servers from. */
 const SERVER_MAP_KEY = 'mcp'
@@ -85,6 +121,20 @@ const PORTABLE_KEYS: Readonly<Record<'local' | 'remote', ReadonlySet<string>>> =
 }
 
 /**
+ * Whether a document that exists defines the member OpenCode reads servers
+ * from, and what it held.
+ *
+ * A state rather than a possibly-empty record, because the two cases decide
+ * different things. A document carrying `"mcp": {}` is where this project
+ * keeps its servers even while it keeps none; a document with no `mcp` member
+ * is one this adapter would be introducing MCP configuration into. Collapsing
+ * them would make target selection unable to tell those apart.
+ */
+type ServerMapState =
+  | { readonly kind: 'unconfigured' }
+  | { readonly kind: 'configured'; readonly entries: Readonly<Record<string, unknown>> }
+
+/**
  * A layer's document as it was found on disk.
  *
  * The mark is split off rather than carried inline because every parser here
@@ -93,10 +143,24 @@ const PORTABLE_KEYS: Readonly<Record<'local' | 'remote', ReadonlySet<string>>> =
  * the split form is what makes "which text do I parse" and "which text do I
  * compare against" impossible to confuse — the exact original is derived from
  * these two fields, never stored beside them.
+ *
+ * The server map hangs off the `present` arm alone: a document that does not
+ * exist cannot define one, and hoisting the field would make that combination
+ * representable for no gain.
  */
 type LayerSource =
   | { readonly kind: 'absent' }
-  | { readonly kind: 'present'; readonly bom: boolean; readonly body: string }
+  | {
+      readonly kind: 'present'
+      readonly bom: boolean
+      readonly body: string
+      /**
+       * What this document defined when it was inspected. A snapshot on
+       * purpose: every target and removal decision is made against the view
+       * OpenCode itself loaded, not against a half-edited document.
+       */
+      readonly servers: ServerMapState
+    }
 
 /** One configuration layer, as inspected and as being edited. */
 interface Layer {
@@ -108,19 +172,22 @@ interface Layer {
    */
   readonly document: McpTextDocument
   readonly source: LayerSource
-  /**
-   * The server entries this layer defined when it was inspected. A snapshot on
-   * purpose: every write-target and shadowing decision is made against the view
-   * OpenCode itself loaded, not against a half-edited document.
-   */
-  readonly servers: Record<string, unknown>
   /** The working body, mark-free like {@link LayerSource}'s. */
   workingBody: string
 }
 
-/** The exact bytes this layer was read from, which a plan compares against. */
-function _inspectedText(layer: Layer): string | null {
-  return layer.source.kind === 'absent' ? null : restoreJsoncBom(layer.source.body, layer.source.bom)
+/** Shared empty view for a layer that defines no entries. */
+const NO_ENTRIES: Readonly<Record<string, unknown>> = Object.freeze({})
+
+/** The entries this layer defined when it was inspected. */
+function definedEntries(layer: Layer): Readonly<Record<string, unknown>> {
+  if (layer.source.kind !== 'present') return NO_ENTRIES
+  return layer.source.servers.kind === 'configured' ? layer.source.servers.entries : NO_ENTRIES
+}
+
+/** Whether this layer itself defines an entry under `name`. */
+function defines(layer: Layer, name: string): boolean {
+  return Object.hasOwn(definedEntries(layer), name)
 }
 
 /** The body a first edit starts from: the document's own, or a fresh object. */
@@ -146,21 +213,23 @@ export const openCodeMcpServers: McpServerCapability = {
   async plan(request: PlanMcpServersRequest): Promise<PlanMcpServersResult> {
     const read = readLayers(request.projectRoot)
     if (!read.ok) return { ok: false, failure: read.failure }
-    const [jsonc, json] = read.layers
+    const layers = read.layers
 
-    // The merged per-key view OpenCode itself sees: the lower layer first, then
-    // the winning one over it.
+    // The merged per-key view OpenCode itself sees: lowest precedence first,
+    // each layer written over the ones it outranks.
     const merged = new Map<string, unknown>()
-    for (const layer of [json, jsonc]) {
-      for (const [name, entry] of Object.entries(layer.servers)) merged.set(name, entry)
+    for (const layer of [...layers].reverse()) {
+      for (const [name, entry] of Object.entries(definedEntries(layer))) merged.set(name, entry)
     }
 
+    const target = selectTarget(layers)
     const tracked = new Set(request.previouslyOwnedNames)
     const desiredByName = new Map(request.desired.map((contribution) => [contribution.name, contribution]))
 
+    const [highest, ...lower] = layers
     return prepareMcpTextPlan({
       request,
-      documents: [jsonc.document, json.document],
+      documents: [highest.document, ...lower.map((layer) => layer.document)],
       interpolation: { pattern: INTERPOLATION_PATTERN },
       presentNames: new Set(merged.keys()),
       compare: (contribution) => compareEntry(merged.get(contribution.name), contribution.declaration),
@@ -176,27 +245,25 @@ export const openCodeMcpServers: McpServerCapability = {
                 outcome.kind === 'divergent' && tracked.has(outcome.name)
                   ? preservableExtensions(merged.get(outcome.name), contribution.declaration)
                   : {}
-              const target = writeTargetFor(outcome.name, jsonc, json)
+              // One target for the whole run. A shadowed copy in a
+              // lower-precedence document is inert and was not put there by
+              // this adapter, so it is left exactly as its author wrote it.
               setEntry(target, outcome.name, renderEntry(contribution.declaration, preserved))
-              // A copy in the losing layer would keep shadowing this one on
-              // every future read, so the two would drift apart silently.
-              if (target === jsonc && Object.hasOwn(json.servers, outcome.name)) {
-                setEntry(json, outcome.name, undefined)
-              }
               break
             }
             case 'obsolete-owned':
               // Deleted from every layer that defines it: the merged view is
-              // only free of the entry when no layer still carries it.
-              for (const layer of [jsonc, json]) {
-                if (Object.hasOwn(layer.servers, outcome.name)) setEntry(layer, outcome.name, undefined)
+              // only free of the entry when no layer still carries it, and
+              // removing just the winning copy would promote a shadowed one.
+              for (const layer of layers) {
+                if (defines(layer, outcome.name)) setEntry(layer, outcome.name, undefined)
               }
               break
           }
         }
 
         const edits: TextDocumentEdit[] = []
-        for (const layer of [jsonc, json]) {
+        for (const layer of layers) {
           const edit = pendingEdit(layer)
           if (edit !== null) edits.push(edit)
         }
@@ -207,47 +274,73 @@ export const openCodeMcpServers: McpServerCapability = {
 }
 
 type ReadLayersResult =
-  | { readonly ok: true; readonly layers: readonly [Layer, Layer] }
+  | { readonly ok: true; readonly layers: readonly [Layer, ...Layer[]] }
   | { readonly ok: false; readonly failure: McpServerCapabilityFailure }
 
 /**
- * Read and parse both layers.
+ * Read and parse every candidate document, highest precedence first.
  *
- * Both are always disclosed, including one that does not exist: "absent" is a
- * preimage the caller can restore to, and a run that creates the JSONC file
- * has to be able to put its absence back.
+ * All are disclosed, including ones that do not exist: "absent" is a preimage
+ * the caller can restore to, and a run that creates a document has to be able
+ * to put its absence back.
+ *
+ * The tuple is built from {@link CANDIDATE_PATHS}'s own head and tail rather
+ * than accumulated into an array, so "at least one layer" is carried by the
+ * type instead of asserted afterwards by a check that could never fire.
  */
 function readLayers(projectRoot: string): ReadLayersResult {
-  const layers: Layer[] = []
+  const [highestPath, ...lowerPaths] = CANDIDATE_PATHS
 
-  for (const name of DOCUMENT_NAMES) {
-    const path = join(projectRoot, name)
-    const read = readTextOrAbsent(path)
+  const highest = readLayer(projectRoot, highestPath)
+  if (!highest.ok) return { ok: false, failure: highest.failure }
+
+  const lower: Layer[] = []
+  for (const candidate of lowerPaths) {
+    const read = readLayer(projectRoot, candidate)
     if (!read.ok) return { ok: false, failure: read.failure }
-
-    const parsed = parseLayer(read.document, read.text)
-    if (!parsed.ok) return { ok: false, failure: parsed.failure }
-    layers.push(parsed.layer)
+    lower.push(read.layer)
   }
 
-  const [jsonc, json] = layers
-  // Unreachable: `DOCUMENT_NAMES` has exactly two entries and the loop pushes
-  // one layer per entry or returns.
-  if (jsonc === undefined || json === undefined) {
-    throw new Error('opencode: expected one layer per candidate document')
-  }
-  return { ok: true, layers: [jsonc, json] }
+  return { ok: true, layers: [highest.layer, ...lower] }
 }
 
-type ParseLayerResult =
+/**
+ * The one document every desired-server write goes to.
+ *
+ * The highest-precedence document that already defines an `mcp` member, else
+ * the highest-precedence one that exists, else the highest-precedence
+ * candidate — which this run then creates. Preferring an existing `mcp` member
+ * over mere existence is deliberate: it puts servers where this project's
+ * servers already live rather than splitting them across two files that
+ * shadow each other.
+ */
+function selectTarget(layers: readonly [Layer, ...Layer[]]): Layer {
+  const configured = layers.find(
+    (layer) => layer.source.kind === 'present' && layer.source.servers.kind === 'configured',
+  )
+  if (configured !== undefined) return configured
+
+  const existing = layers.find((layer) => layer.source.kind === 'present')
+  if (existing !== undefined) return existing
+
+  return layers[0]
+}
+
+type ReadLayerResult =
   | { readonly ok: true; readonly layer: Layer }
   | { readonly ok: false; readonly failure: McpServerCapabilityFailure }
 
-function parseLayer(document: McpTextDocument, text: string | null): ParseLayerResult {
+function readLayer(projectRoot: string, candidate: string): ReadLayerResult {
+  const read = readTextOrAbsent(join(projectRoot, candidate))
+  if (!read.ok) return { ok: false, failure: read.failure }
+  return parseLayer(read.document, read.text)
+}
+
+function parseLayer(document: McpTextDocument, text: string | null): ReadLayerResult {
   const path = document.path
   if (text === null) {
     const source = { kind: 'absent' } as const
-    return { ok: true, layer: { path, document, source, servers: {}, workingBody: startingBody(source) } }
+    return { ok: true, layer: { path, document, source, workingBody: startingBody(source) } }
   }
 
   const { bom, body } = splitJsoncBom(text)
@@ -271,24 +364,10 @@ function parseLayer(document: McpTextDocument, text: string | null): ParseLayerR
     }
   }
 
-  const source = { kind: 'present', bom, body } as const
-  return { ok: true, layer: { path, document, source, servers: rawServers ?? {}, workingBody: startingBody(source) } }
-}
-
-/**
- * The layer a write must target for this name to take effect.
- *
- * An existing key is updated where it currently wins; a new one goes to the
- * preferred existing document, or to a newly created JSONC file when neither
- * exists. Writing anywhere else would leave the merged view unchanged, which
- * from the user's point of view is a silent no-op.
- */
-function writeTargetFor(name: string, jsonc: Layer, json: Layer): Layer {
-  if (Object.hasOwn(jsonc.servers, name)) return jsonc
-  if (Object.hasOwn(json.servers, name)) return json
-  if (jsonc.source.kind === 'present') return jsonc
-  if (json.source.kind === 'present') return json
-  return jsonc
+  const servers: ServerMapState =
+    rawServers === undefined ? { kind: 'unconfigured' } : { kind: 'configured', entries: rawServers }
+  const source = { kind: 'present', bom, body, servers } as const
+  return { ok: true, layer: { path, document, source, workingBody: startingBody(source) } }
 }
 
 /**

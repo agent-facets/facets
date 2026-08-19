@@ -194,7 +194,7 @@ If a facet declares MCP servers, those land somewhere else: each tool's own proj
 | Adapter | Native file |
 | --- | --- |
 | `claude-code` | `.mcp.json` |
-| `opencode` | `opencode.jsonc`, or an existing `opencode.json` |
+| `opencode` | `.opencode/opencode.jsonc`, or whichever merged config already holds your servers |
 | `codex` | `.codex/config.toml` |
 
 These are shared files you may already be using, so reconciliation is deliberately narrow: unrelated settings keep their values, server entries this project does not own are left alone, and comments and formatting are preserved wherever the format allows. Only project-scoped files are touched — no user- or system-wide tool configuration is ever created or modified.
