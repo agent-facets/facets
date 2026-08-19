@@ -5,6 +5,58 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-08-19" description="OpenCode adapter now writes MCP servers to the document OpenCode actually loads" tags={["CLI", "Fix"]} rss={{
+  title: "OpenCode adapter: MCP servers land where OpenCode actually reads them",
+  description: "The OpenCode adapter previously considered only the project root's opencode.jsonc and opencode.json, so a project keeping its OpenCode configuration under .opencode/ -- the location that outranks the root -- had servers written to a file the higher-precedence one shadowed. The configuration you approved was not the configuration OpenCode loaded. All four documents OpenCode merges are now read, classified as one configuration, and disclosed on the approval screen: in decreasing precedence, .opencode/opencode.jsonc, .opencode/opencode.json, opencode.jsonc, opencode.json. Writes go to exactly one of them, chosen once per run: the highest-precedence document that already defines an mcp member (an empty {} counts), otherwise the highest-precedence document that exists, otherwise a newly created .opencode/opencode.jsonc. A shadowed copy of a desired server is now left as its author wrote it -- the target's definition already wins, so deleting from a file this run is not otherwise writing is not the adapter's call. An obsolete owned entry is still removed from every document that defines it, so a removal cannot promote a shadowed copy and leave the server configured."
+}}>
+  ## OpenCode: MCP servers land where OpenCode actually reads them
+
+  The [OpenCode adapter](/guides/setup) previously considered only the
+  project root's `opencode.jsonc` and `opencode.json`. OpenCode itself
+  merges **four** project documents, and the two under `.opencode/`
+  outrank both root files. A project keeping its OpenCode configuration
+  under `.opencode/` had servers written to a file the higher-precedence
+  one shadowed — the configuration you approved on the
+  [MCP approval screen](/cli/install#accept-mcp) was not the configuration
+  OpenCode loaded.
+
+  All four documents are now read, classified as one configuration, and
+  disclosed. In decreasing precedence:
+
+  1. `.opencode/opencode.jsonc`
+  2. `.opencode/opencode.json`
+  3. `opencode.jsonc`
+  4. `opencode.json`
+
+  Writes go to exactly one of them, chosen once per run:
+
+  1. the highest-precedence document that already defines an `mcp` member
+     (an empty `{}` counts);
+  2. otherwise the highest-precedence document that exists;
+  3. otherwise `.opencode/opencode.jsonc`, created.
+
+  Following an existing `mcp` member rather than merely the file that
+  sorts first is what keeps a project whose servers live in a root
+  `opencode.json`, beside a `.opencode/opencode.jsonc` holding only
+  agents, from having its servers split across two files that shadow
+  each other.
+
+  Two behaviors worth calling out:
+
+  - **A shadowed copy of a desired server is left alone.** The target's
+    definition already wins, so deleting from a file this run is not
+    otherwise writing is not the adapter's call. Previously the losing
+    copy was deleted.
+  - **An obsolete owned entry is still removed from every document that
+    defines it**, so a removal cannot promote a shadowed copy and leave
+    the server configured.
+
+  Entries the project neither desires nor owns remain untouched
+  everywhere. See [`facet install`](/cli/install) and
+  [Custom adapters](/guides/custom-adapters#mcp-server-configuration) for
+  the surrounding surface.
+</Update>
+
 <Update label="2026-08-15" description="agent-facets 0.32.0 turns on adapter API 0.3 end-to-end and renames facet adapter install to facet adapter add" tags={["CLI", "Improvement", "Breaking"]} rss={{
   title: "agent-facets 0.32.0 on npm: adapter API 0.3 end-to-end",
   description: "agent-facets@0.32.0 is now on npm. This is the CLI release that pairs with yesterday's adapter SDK 0.30.0: every write to your project -- assets, native MCP configuration, and facets.json, facets.lock, and the receipt -- now goes through one filesystem transaction, so a failure restores the exact prior bytes and permission bits and a re-install that would produce the same bytes touches no modification time. Two connected adapters that manage the same MCP configuration file now fail before approval with both adapters named, and every plan is re-checked immediately before commit so a document edited while the approval screen was open is reported rather than silently reported as configured. facet adapter install is renamed to facet adapter add; the old spelling keeps working as a deprecated alias. Breaking: the supported adapter API is now exactly {0.3}, so every already-installed adapter -- first-party included -- reports unsupported in facet adapter list until reinstalled, and the CLI prints the exact facet adapter add command per entry. Run facet self-update to pick it up, then reinstall each adapter the list flags."
