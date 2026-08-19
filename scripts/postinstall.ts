@@ -53,7 +53,7 @@ const steps: Step[] = [
   },
   {
     label: 'facets',
-    run: () => $`bun dev install`.quiet().then(() => undefined),
+    run: () => $`bun dev install --accept-mcp`.quiet().then(() => undefined),
   },
 ]
 

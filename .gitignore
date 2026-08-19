@@ -10,6 +10,7 @@ mise.local.toml
 .codex/
 .opencode/
 .pr-reviews/
+.mcp.json
 
 .env
 
