@@ -236,7 +236,11 @@ async function install() {
   const loadResult = await loadInstalledAdapters()
   if (!loadResult.ok) expect.unreachable('test bug: installed fixture adapters failed to load')
   const adapters = loadResult.adapters
-  return runInstall({ projectRoot, adapters: adapters.filter((a) => a.assets !== false) })
+  return runInstall({
+    projectRoot,
+    adapters: adapters.filter((a) => a.assets !== false),
+    operation: { kind: 'reproduce', frozen: false },
+  })
 }
 
 async function installFrozen() {
@@ -246,7 +250,7 @@ async function installFrozen() {
   return runInstall({
     projectRoot,
     adapters: adapters.filter((a) => a.assets !== false),
-    frozenLockfile: true,
+    operation: { kind: 'reproduce', frozen: true },
   })
 }
 
@@ -279,33 +283,11 @@ afterEach(() => {
   rmSync(fakeHome, { recursive: true, force: true })
 })
 
-describe('runInstall — DELTA_CONFLICT (#23)', () => {
-  test('a delta with the same facet in additions and removals fails before any mutation', async () => {
-    writeFacets({ cowsay: '0.1.0' })
-    const loadResult = await loadInstalledAdapters()
-    if (!loadResult.ok) expect.unreachable('test bug: installed fixture adapters failed to load')
-    const adapters = loadResult.adapters
-    const result = await runInstall({
-      projectRoot,
-      adapters: adapters.filter((a) => a.assets !== false),
-      delta: {
-        additions: [
-          {
-            facetName: 'cowsay',
-            specifier: 'cowsay@0.1.0',
-            source: { kind: 'registry', name: 'cowsay', version: { kind: 'exact', major: 0, minor: 1, patch: 0 } },
-          },
-        ],
-        removals: [{ facetName: 'cowsay' }],
-      },
-    })
-    if (result.ok) expect.unreachable()
-    expect(result.failure.code).toBe('DELTA_CONFLICT')
-    if (result.failure.code !== 'DELTA_CONFLICT') expect.unreachable()
-    expect(result.failure.facet).toBe('cowsay')
-    expect(result.rollback.kind).toBe('not-needed')
-  })
-})
+// The former `DELTA_CONFLICT` test lived here. Adding and removing the same
+// facet in one run is no longer a runtime failure because it is no longer a
+// value: `add` and `remove` are separate arms of `InstallOperation`. The
+// replacement lives in `install-operation.test.ts`, where the compiler
+// rejects the combination outright.
 
 describe('runInstall — a facet named after an Object.prototype member', () => {
   // `constructor` passes the facet-name grammar, so it is an ordinary name a
@@ -595,6 +577,7 @@ describe('runInstall — ADAPTER_INCOMPATIBLE preflight', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [incompatibleAdapter('future-adapter', '9.9')],
+      operation: { kind: 'reproduce', frozen: false },
     })
 
     if (result.ok) expect.unreachable()
@@ -618,6 +601,7 @@ describe('runInstall — ADAPTER_INCOMPATIBLE preflight', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [incompatibleAdapter('undeclared', undefined), incompatibleAdapter('malformed', '0.0.1')],
+      operation: { kind: 'reproduce', frozen: false },
     })
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'ADAPTER_INCOMPATIBLE') expect.unreachable()
@@ -632,6 +616,7 @@ describe('runInstall — ADAPTER_INCOMPATIBLE preflight', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [incompatibleAdapter('legacy-positional', '0.0')],
+      operation: { kind: 'reproduce', frozen: false },
     })
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'ADAPTER_INCOMPATIBLE') expect.unreachable()

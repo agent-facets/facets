@@ -152,7 +152,11 @@ async function installableAdapters() {
 }
 
 async function install() {
-  return runInstall({ projectRoot, adapters: await installableAdapters() })
+  return runInstall({
+    projectRoot,
+    adapters: await installableAdapters(),
+    operation: { kind: 'reproduce', frozen: false },
+  })
 }
 
 async function remove(names: string[], prepared?: Extract<ReturnType<typeof prepareRemove>, { ok: true }>) {

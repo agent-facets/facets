@@ -1,9 +1,10 @@
 import type { Adapter } from '@agent-facets/adapter'
+import { isNonEmpty } from '@agent-facets/common'
 import type { AssetTakeoverResolver } from '../asset-takeover.ts'
 import type { CollisionResolver } from '../commit/compose.ts'
 import type { McpConsentPolicy } from '../mcp/consent.ts'
 import { runInstall } from '../run-install.ts'
-import type { OnLog, RunInstallResult, StageEvent } from '../types.ts'
+import type { InstallOperation, OnLog, RunInstallResult, StageEvent } from '../types.ts'
 import { type AddPrepareFailure, type AddSource, type PrepareAddResult, prepareAdd } from './prepare.ts'
 
 export type { AddPrepareFailure, AddSource, PrepareAddResult }
@@ -85,17 +86,28 @@ export async function runAdd(opts: RunAddOptions): Promise<RunAddResult> {
     return { ok: false, phase: 'prepare', failure: prep.failure }
   }
 
-  // 2. Commit: delegate to runInstall with the delta.
-  const install = await runInstall({
-    projectRoot,
-    adapters,
-    delta: { additions: [...prep.additions], removals: [] },
-    ...(onStage ? { onStage } : {}),
-    ...(onLog ? { onLog } : {}),
-    ...(signal ? { signal } : {}),
+  // 2. Commit: delegate to runInstall with an add operation.
+  //
+  // Nothing to add is a plain reproduction rather than an empty add: it is
+  // the same work, and an `add` arm carrying no additions would be a state
+  // whose whole meaning is "at least one facet was requested".
+  const interactions = {
     ...(opts.resolveCollisions ? { resolveCollisions: opts.resolveCollisions } : {}),
     ...(opts.mcpConsent ? { mcpConsent: opts.mcpConsent } : {}),
     ...(opts.resolveAssetTakeover ? { resolveAssetTakeover: opts.resolveAssetTakeover } : {}),
+  }
+  const additions = [...prep.additions]
+  const operation: InstallOperation = isNonEmpty(additions)
+    ? { kind: 'add', additions, ...interactions }
+    : { kind: 'reproduce', frozen: false, ...interactions }
+
+  const install = await runInstall({
+    projectRoot,
+    adapters,
+    operation,
+    ...(onStage ? { onStage } : {}),
+    ...(onLog ? { onLog } : {}),
+    ...(signal ? { signal } : {}),
   })
 
   if (!install.ok) {

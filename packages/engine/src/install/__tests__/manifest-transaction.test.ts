@@ -96,7 +96,12 @@ async function add(specifier: string) {
 }
 
 async function install(opts: { frozenLockfile?: boolean } = {}) {
-  return runInstall({ projectRoot, adapters: await adapters(), ...opts })
+  return runInstall({
+    projectRoot,
+    adapters: await adapters(),
+    operation:
+      opts.frozenLockfile === true ? { kind: 'reproduce', frozen: true } : { kind: 'reproduce', frozen: false },
+  })
 }
 
 async function remove(name: string) {

@@ -37,26 +37,26 @@
 - [x] 2.6 Implement: Export only the update planning API and structured types consumed by the CLI, retaining internal helpers behind the engine boundary.
 - [x] 2.7 Implement: Add engine tests for the resolver limit and response contract, all five specifier forms, numeric ordering, concurrent multi-group behavior, input-ordered failures, every unusable-local-state reason, unsupported git/local rows, no-downgrade behavior, exact pins tagged as candidates when Latest advances while remaining unchanged by plain update, and preparation side-effect freedom.
 - [x] 2.8 Verify: Run the targeted engine registry and update-planning tests and typecheck the engine package.
-- [ ] 2.9 Pause: Model-switch boundary before transaction research.
+- [x] 2.9 Pause: Model-switch boundary before transaction research.
 
 ## 3. Transactional Update Application — Research
 
-- [ ] 3.1 Explore: Inventory `packages/engine/src/install/types.ts`, `run-install.ts`, `commit/delta.ts`, engine add/remove front doors, `packages/cli/src/commands/install/index.ts`, and every `InstallDelta` or `frozenLockfile` call site that must migrate to the tagged operation union without behavior changes.
-- [ ] 3.2 Explore: Trace `install/commit/resolve-all.ts`, `resolve-facet.ts`, `effective-locked.ts`, `resolve-registry.ts`, `registry-support.ts`, `compose.ts`, `classify-outcome.ts`, `applyDesiredFacets`, and the project-file tri-write to separate selected exact metadata from prior lock ownership.
-- [ ] 3.3 Explore: Trace `install/lockfile-guard.ts`, file-state equality, `install/commit/tri-write.ts`, receipt ownership, disposition persistence, and filesystem transaction rollback to place stale-plan checks before every side effect.
-- [ ] 3.4 Propose: Define the cohesive transaction refactor for operation types, update resolution intent, prefetched metadata reuse, stale gates, manifest mutation, rollback, and migration of existing tests.
-- [ ] 3.5 Pause: Model-switch boundary before transaction implementation.
+- [x] 3.1 Explore: Inventory `packages/engine/src/install/types.ts`, `run-install.ts`, `commit/delta.ts`, engine add/remove front doors, `packages/cli/src/commands/install/index.ts`, and every `InstallDelta` or `frozenLockfile` call site that must migrate to the tagged operation union without behavior changes.
+- [x] 3.2 Explore: Trace `install/commit/resolve-all.ts`, `resolve-facet.ts`, `effective-locked.ts`, `resolve-registry.ts`, `registry-support.ts`, `compose.ts`, `classify-outcome.ts`, `applyDesiredFacets`, and the project-file tri-write to separate selected exact metadata from prior lock ownership.
+- [x] 3.3 Explore: Trace `install/lockfile-guard.ts`, file-state equality, `install/commit/tri-write.ts`, receipt ownership, disposition persistence, and filesystem transaction rollback to place stale-plan checks before every side effect.
+- [x] 3.4 Propose: Define the cohesive transaction refactor for operation types, update resolution intent, prefetched metadata reuse, stale gates, manifest mutation, rollback, and migration of existing tests.
+- [x] 3.5 Pause: Model-switch boundary before transaction implementation.
 
 ## 4. Transactional Update Application — Implementation
 
-- [ ] 4.1 Implement: Replace permissive install delta and frozen option combinations with mutually exclusive reproduce, add, remove, and non-empty update operation arms, then migrate existing engine and CLI callers and remove impossible conflict failures.
-- [ ] 4.2 Implement: Extend in-memory manifest merging so selected updates preserve overrides, persist the chosen final manifest source through the existing comment-preserving `applyDesiredFacets` path only during the manifest/lockfile/receipt tri-write, bypass the prior lock only as a version anchor, and retain prior entries for ownership and old-to-new outcomes.
-- [ ] 4.3 Implement: Thread per-facet update resolution intent through the resolver and seed selected registry resolution with discovery metadata so application installs the reviewed exact version without another metadata lookup.
-- [ ] 4.4 Implement: Add the under-lock exact snapshot gate and structured `UPDATE_PLAN_STALE` outcome before cache writes, downloads, transaction creation, or any other mutation.
-- [ ] 4.5 Implement: Add selection validation and `runPreparedFacetUpdate`, rejecting duplicate, unknown, unsupported, and non-advancing choices while deriving final manifest sources from the shared helper.
-- [ ] 4.6 Implement: Add transaction tests for stale manifest and lockfile snapshots, publication after discovery, no secondary metadata request, mixed selected/unselected facets, comment and override preservation, alias and omission lockfile dispositions, old-to-new summaries, exact pins versus range and latest choices, and compile-time/runtime proof that frozen mode is representable only by the reproduce operation.
-- [ ] 4.7 Implement: Add failure-path tests proving multi-facet atomicity, integrity failure rollback, collision and MCP consent behavior, takeover handling, and path-level restoration reporting remain identical to other installation operations.
-- [ ] 4.8 Verify: Run targeted install/update tests plus engine and CLI typechecks to verify the operation-union migration and application path.
+- [x] 4.1 Implement: Replace permissive install delta and frozen option combinations with mutually exclusive reproduce, add, remove, and non-empty update operation arms, then migrate existing engine and CLI callers and remove impossible conflict failures.
+- [x] 4.2 Implement: Extend in-memory manifest merging so selected updates preserve overrides, persist the chosen final manifest source through the existing comment-preserving `applyDesiredFacets` path only during the manifest/lockfile/receipt tri-write, bypass the prior lock only as a version anchor, and retain prior entries for ownership and old-to-new outcomes.
+- [x] 4.3 Implement: Thread per-facet update resolution intent through the resolver and seed selected registry resolution with discovery metadata so application installs the reviewed exact version without another metadata lookup.
+- [x] 4.4 Implement: Add the under-lock exact snapshot gate and structured `UPDATE_PLAN_STALE` outcome before cache writes, downloads, transaction creation, or any other mutation.
+- [x] 4.5 Implement: Add selection validation and `runPreparedFacetUpdate`, rejecting duplicate, unknown, unsupported, and non-advancing choices while deriving final manifest sources from the shared helper.
+- [x] 4.6 Implement: Add transaction tests for stale manifest and lockfile snapshots, publication after discovery, no secondary metadata request, mixed selected/unselected facets, comment and override preservation, alias and omission lockfile dispositions, old-to-new summaries, exact pins versus range and latest choices, and compile-time/runtime proof that frozen mode is representable only by the reproduce operation.
+- [x] 4.7 Implement: Add failure-path tests proving multi-facet atomicity, integrity failure rollback, collision and MCP consent behavior, takeover handling, and path-level restoration reporting remain identical to other installation operations.
+- [x] 4.8 Verify: Run targeted install/update tests plus engine and CLI typechecks to verify the operation-union migration and application path.
 - [ ] 4.9 Pause: Model-switch boundary before short-flag research.
 
 ## 5. CLI Short-Flag Metadata — Research

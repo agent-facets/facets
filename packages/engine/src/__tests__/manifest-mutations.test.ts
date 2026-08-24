@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mergeDeltaIntoManifest } from '../install/commit/delta.ts'
+import { mergeOperationIntoManifest } from '../install/commit/delta.ts'
 import {
   applyDesiredFacets,
   countOverrides,
@@ -114,7 +114,7 @@ describe('facet keys that collide with Object.prototype', () => {
     const result = parseProjectManifest(raw)
     if (!result.ok) expect.unreachable()
 
-    const merged = mergeDeltaIntoManifest(result.manifest.facets, { additions: [], removals: [] })
+    const merged = mergeOperationIntoManifest(result.manifest.facets, { kind: 'reproduce', frozen: false })
 
     expect(Object.keys(merged.desiredFacets).sort()).toEqual(['__proto__', 'constructor', 'ok'])
   })

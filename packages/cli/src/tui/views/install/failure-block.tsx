@@ -63,6 +63,11 @@ function driftKey(entry: LockfileDriftEntry): string {
  * added afterwards would have rendered another reason's text with `undefined`
  * spliced into it, and nothing would have failed.
  */
+/** The user-facing name of a project file a stale update plan was built from. */
+function describeStaleFile(file: 'manifest' | 'lockfile'): string {
+  return file === 'manifest' ? 'facets.json' : 'facets.lock'
+}
+
 function describeDrift(entry: LockfileDriftEntry): string {
   switch (entry.reason) {
     case 'missing-lockfile':
@@ -470,29 +475,14 @@ function failureDetail(failure: RunInstallFailure): React.JSX.Element {
           <Text color={THEME.hint}> Run without --frozen-lockfile, or `facet add` to update the lockfile.</Text>
         </Box>
       )
-    case 'FROZEN_WITH_DELTA':
+    case 'UPDATE_PLAN_STALE':
       return (
         <Box flexDirection="column" marginTop={1}>
           <Text color={THEME.warning} bold>
-            ✕ cannot add or remove with --frozen-lockfile
+            ✕ the project changed while this update was being reviewed
           </Text>
-          <Text color={THEME.hint}> Run without --frozen-lockfile to modify the locked set.</Text>
-        </Box>
-      )
-    case 'DELTA_CONFLICT':
-      return (
-        <Box flexDirection="column" marginTop={1}>
-          <Text color={THEME.warning} bold>
-            ✕ internal error: delta conflict
-          </Text>
-          <Text> facet "{failure.facet}" appears in both additions and removals</Text>
-          <Text color={THEME.hint}>
-            {' '}
-            This is a bug — please file an issue @{' '}
-            <Text color={THEME.brand} bold>
-              https://github.com/agent-facets/facets/issues/new
-            </Text>
-          </Text>
+          <Text> {failure.files.map(describeStaleFile).join(' and ')} no longer matches the reviewed plan</Text>
+          <Text color={THEME.hint}> Nothing was applied. Run `facet update` again to see current versions.</Text>
         </Box>
       )
     case 'RECONCILE_FACET_INTEGRITY':

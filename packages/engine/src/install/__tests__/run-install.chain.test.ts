@@ -3,9 +3,10 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
+import { isNonEmpty } from '@agent-facets/common'
 import type { BuildManifest, CurrentBuildManifest, Lockfile02Facet, ProjectFacetEntry } from '@agent-facets/protocol'
 import { LOCKFILE_VERSION_0_2 } from '@agent-facets/protocol'
-import type { Addition } from '../types.ts'
+import type { Addition, InstallOperation } from '../types.ts'
 
 /**
  * Spec-scenario coverage for the registry per-version materialization
@@ -236,11 +237,16 @@ async function install(opts: { additions?: Addition[]; frozen?: boolean } = {}) 
   const loadResult = await loadInstalledAdapters()
   if (!loadResult.ok) expect.unreachable('test bug: installed fixture adapters failed to load')
   const adapters = loadResult.adapters
+  const additions = opts.additions ?? []
+  const operation: InstallOperation = isNonEmpty(additions)
+    ? { kind: 'add', additions }
+    : opts.frozen === true
+      ? { kind: 'reproduce', frozen: true }
+      : { kind: 'reproduce', frozen: false }
   return runInstall({
     projectRoot,
     adapters: adapters.filter((a) => a.assets !== false),
-    delta: opts.additions ? { additions: opts.additions, removals: [] } : undefined,
-    frozenLockfile: opts.frozen,
+    operation,
   })
 }
 

@@ -1,9 +1,10 @@
 import type { Adapter } from '@agent-facets/adapter'
+import { isNonEmpty } from '@agent-facets/common'
 import type { AssetTakeoverResolver } from '../asset-takeover.ts'
 import type { CollisionResolver } from '../commit/compose.ts'
 import type { McpConsentPolicy } from '../mcp/consent.ts'
 import { runInstall } from '../run-install.ts'
-import type { OnLog, Removal, RunInstallResult, StageEvent } from '../types.ts'
+import type { InstallOperation, OnLog, Removal, RunInstallResult, StageEvent } from '../types.ts'
 import { prepareRemove, type RemovePrepareFailure, type RemovePrepareResult } from './prepare.ts'
 
 export type { RemovePrepareFailure, RemovePrepareResult }
@@ -90,16 +91,25 @@ export async function runRemove(opts: RunRemoveOptions): Promise<RunRemoveResult
 
   const removals: Removal[] = names.map((name) => ({ facetName: name }))
 
-  const install = await runInstall({
-    projectRoot,
-    adapters,
-    delta: { additions: [], removals },
-    ...(onStage ? { onStage } : {}),
-    ...(onLog ? { onLog } : {}),
-    ...(signal ? { signal } : {}),
+  // Nothing to remove is a plain reproduction rather than an empty removal,
+  // for the same reason an empty add is: the `remove` arm exists to say at
+  // least one name was requested.
+  const interactions = {
     ...(opts.resolveCollisions ? { resolveCollisions: opts.resolveCollisions } : {}),
     ...(opts.mcpConsent ? { mcpConsent: opts.mcpConsent } : {}),
     ...(opts.resolveAssetTakeover ? { resolveAssetTakeover: opts.resolveAssetTakeover } : {}),
+  }
+  const operation: InstallOperation = isNonEmpty(removals)
+    ? { kind: 'remove', removals, ...interactions }
+    : { kind: 'reproduce', frozen: false, ...interactions }
+
+  const install = await runInstall({
+    projectRoot,
+    adapters,
+    operation,
+    ...(onStage ? { onStage } : {}),
+    ...(onLog ? { onLog } : {}),
+    ...(signal ? { signal } : {}),
   })
 
   if (!install.ok) {

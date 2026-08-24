@@ -1,4 +1,4 @@
-import type { SupportedLockfileFacet } from '@agent-facets/protocol'
+import type { SupportedLockfileFacet, VersionSpec } from '@agent-facets/protocol'
 import { cacheGet } from '../../cache/index.ts'
 import { describeVersionSpec } from '../../registry/describe.ts'
 import { getRegistryBaseUrl } from '../../registry/index.ts'
@@ -13,18 +13,37 @@ import { loadFacetContent } from './finalize-facet.ts'
 import { chainFailureToRunInstall, fetchMeta } from './registry-support.ts'
 import type { ResolveFacetResult } from './types.ts'
 
+/**
+ * Where this facet's exact version comes from — the four mutually
+ * exclusive answers to "which release are we installing?".
+ *
+ *   - `locked`: a satisfying lockfile entry anchors the facet. Its
+ *     version pins resolution and its integrity is what the content
+ *     must reproduce. No network is needed on a warm cache.
+ *   - `exact`: the manifest names one release outright. No version
+ *     resolution, but a lockfile entry is being created, so the
+ *     registry must still confirm the content.
+ *   - `resolve`: a range or tag that only the registry can settle.
+ *     Confirmation rides the same response.
+ *   - `prepared`: a reviewed update. The registry already answered
+ *     during discovery and that answer was shown to the user, so
+ *     asking again could only produce a different release than the one
+ *     approved.
+ *
+ * A tagged value rather than an anchor plus optional extras: `locked`
+ * is the only arm carrying an entry, so "anchored to the old integrity"
+ * and "installing a version chosen elsewhere" cannot both be true.
+ */
+export type RegistryVersionSource =
+  | { kind: 'locked'; entry: SupportedLockfileFacet }
+  | { kind: 'exact'; version: string }
+  | { kind: 'resolve'; spec: VersionSpec }
+  | { kind: 'prepared'; metadata: RegistryMetadata }
+
 export interface ResolveRegistryFacetArgs {
   facetName: string
   source: Extract<Source, { kind: 'registry' }>
-  /**
-   * The lockfile entry that anchors this facet, post structural
-   * discriminator (`resolveEffectiveLocked`). When defined, the entry
-   * is the trust anchor: its version pins resolution and its integrity
-   * is what the content must reproduce. When `undefined`, a lockfile
-   * entry is being created — which requires same-operation registry
-   * confirmation.
-   */
-  effectiveLocked: SupportedLockfileFacet | undefined
+  version: RegistryVersionSource
   onStage: (event: StageEvent) => void
   onLog: OnLog
 }
@@ -56,33 +75,47 @@ export interface ResolveRegistryFacetArgs {
  * is the hard `CACHE_INTEGRITY_MISMATCH` (never a silent re-download).
  */
 export async function resolveRegistryFacet(args: ResolveRegistryFacetArgs): Promise<ResolveFacetResult> {
-  const { facetName, source, effectiveLocked, onStage, onLog } = args
+  const { facetName, source, onStage, onLog } = args
 
   onStage({ kind: 'facet-stage', facet: facetName, stage: 'resolve' })
 
   // 1. Exact-version gate.
+  const effectiveLocked = args.version.kind === 'locked' ? args.version.entry : undefined
   let meta: RegistryMetadata | undefined
   let exactVersion: string
-  if (effectiveLocked !== undefined) {
-    // Reproduction: the lockfile already records the exact version.
-    // No version resolution — and on a warm cache, no network at all.
-    exactVersion = effectiveLocked.version
-  } else if (source.version.kind === 'exact') {
-    // An exact specifier needs no version resolution either; the cache
-    // can be consulted before any network interaction.
-    exactVersion = describeVersionSpec(source.version)
-  } else {
-    // Non-exact and unlocked (or an explicit non-exact addition, which
-    // arrives here with `effectiveLocked === undefined` by the
-    // structural discriminator): resolve fresh. Confirmation rides this
-    // same response.
-    const metaResult = await fetchMeta(facetName, source.version, onStage, onLog)
-    if (!metaResult.ok) {
-      return { ok: false, failure: { code: 'REGISTRY_ERROR', facet: facetName, error: metaResult.error } }
+  switch (args.version.kind) {
+    case 'locked':
+      // Reproduction: the lockfile already records the exact version.
+      // No version resolution — and on a warm cache, no network at all.
+      exactVersion = args.version.entry.version
+      break
+    case 'exact':
+      // An exact specifier needs no version resolution either; the cache
+      // can be consulted before any network interaction.
+      exactVersion = args.version.version
+      break
+    case 'prepared':
+      // A reviewed update. Discovery already asked the registry which
+      // release this is and the user approved that answer, so the
+      // metadata is carried in rather than fetched again. This skips the
+      // question, not the verification: the cache is still audited, a
+      // miss still downloads, and the content still has to reproduce
+      // this fingerprint before any lockfile entry is written.
+      meta = args.version.metadata
+      exactVersion = meta.version
+      break
+    case 'resolve': {
+      // A range or tag with no anchor: resolve fresh. Confirmation rides
+      // this same response.
+      const metaResult = await fetchMeta(facetName, args.version.spec, onStage, onLog)
+      if (!metaResult.ok) {
+        return { ok: false, failure: { code: 'REGISTRY_ERROR', facet: facetName, error: metaResult.error } }
+      }
+      meta = metaResult.value
+      exactVersion = meta.version
+      onLog(() => `[verbose]   resolved ${facetName} ${describeVersionSpec(source.version)} → ${exactVersion}`)
+      break
     }
-    meta = metaResult.value
-    exactVersion = meta.version
-    onLog(() => `[verbose]   resolved ${facetName} ${describeVersionSpec(source.version)} → ${exactVersion}`)
   }
 
   // Lazily fetch (at most once) the metadata for the exact version —
