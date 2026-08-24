@@ -8,6 +8,13 @@
  * second, slightly different way.
  */
 
+export type {
+  FacetUpdateSelection,
+  RunPreparedFacetUpdateOptions,
+  RunPreparedFacetUpdateResult,
+  UpdateSelectionFailure,
+} from './apply.ts'
+export { runPreparedFacetUpdate } from './apply.ts'
 export type { AuthoredSpecifier, UpdateChoice } from './manifest-source.ts'
 export { type PrepareFacetUpdateArgs, prepareFacetUpdate } from './prepare.ts'
 export type {

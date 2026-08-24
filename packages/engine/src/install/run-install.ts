@@ -1,13 +1,15 @@
 import { join } from 'node:path'
+import { fileStatesEqual, isNonEmpty } from '@agent-facets/common'
 import type { PlannedServerConfiguration } from '@agent-facets/protocol'
 import { CURRENT_LOCKFILE_VERSION, preserveLockfileExtensions } from '@agent-facets/protocol'
 import { type AdapterCompatibilityFailure, compatibilityFailureFor } from '../adapters/api-compatibility.ts'
 import { batchResidue, FileTransaction, NO_ROLLBACK } from '../fs/index.ts'
 import { FACETS_JSON_FILE, type NormalizedProjectManifest } from '../manifest/mutations.ts'
 import { loadProjectManifest, manifestLoadFailure } from '../manifest/project-files.ts'
+import type { AssetTakeoverResolver } from './asset-takeover.ts'
 import { classifyOutcome, facetConfigurationWork, NO_CONFIGURATION_WORK } from './classify-outcome.ts'
-import { compose } from './commit/compose.ts'
-import { applyManifestWritePolicy, mergeDeltaIntoManifest } from './commit/delta.ts'
+import { type CollisionResolver, compose } from './commit/compose.ts'
+import { applyManifestWritePolicy, mergeOperationIntoManifest } from './commit/delta.ts'
 import { removedFacetOutcomes } from './commit/drift-removal.ts'
 import { finalizeMaterializationIntent, type PrunedOverride } from './commit/finalize-intent.ts'
 import { installFacets } from './commit/install-loop.ts'
@@ -50,12 +52,41 @@ import { refineRemoval } from './remove/refine.ts'
 import { rollbackAndFail, summarize } from './run-install-support.ts'
 import type {
   FacetOutcome,
-  InstallDelta,
+  InstallOperation,
   RunInstallFailure,
   RunInstallOptions,
   RunInstallResult,
   StageEvent,
 } from './types.ts'
+
+/**
+ * The interaction capabilities this operation may use.
+ *
+ * Frozen reproduction is the one arm that cannot carry a collision or
+ * takeover resolver at all, so this is a read of the type rather than a
+ * policy decision: there is nothing to ignore, because there was nothing
+ * the caller could have supplied.
+ */
+function interactionsOf(operation: InstallOperation): {
+  resolveCollisions: CollisionResolver | undefined
+  mcpConsent: McpConsentPolicy
+  resolveAssetTakeover: AssetTakeoverResolver | undefined
+} {
+  // Absent consent means "this caller cannot answer", which is what makes
+  // failing with the complete request the default rather than a special case.
+  if (operation.kind === 'reproduce' && operation.frozen) {
+    return {
+      resolveCollisions: undefined,
+      mcpConsent: operation.mcpConsent ?? { kind: 'unavailable' },
+      resolveAssetTakeover: undefined,
+    }
+  }
+  return {
+    resolveCollisions: operation.resolveCollisions,
+    mcpConsent: operation.mcpConsent ?? { kind: 'unavailable' },
+    resolveAssetTakeover: operation.resolveAssetTakeover,
+  }
+}
 
 /**
  * Run the install pipeline for a project — the commit orchestrator.
@@ -75,14 +106,11 @@ import type {
  * `result.failure`; rollback status via `result.rollback`.
  */
 export async function runInstall(opts: RunInstallOptions): Promise<RunInstallResult> {
-  const { projectRoot, adapters, signal, resolveCollisions, resolveAssetTakeover } = opts
-  const delta: InstallDelta = opts.delta ?? { additions: [], removals: [] }
+  const { projectRoot, adapters, signal, operation } = opts
   const onStage = opts.onStage ?? noopStage
   const onLog = opts.onLog ?? noopLog
-  const frozenLockfile = opts.frozenLockfile === true
-  // Absent means "this caller cannot answer", which is what makes failing
-  // with the complete request the default rather than a special case.
-  const mcpConsent: McpConsentPolicy = opts.mcpConsent ?? { kind: 'unavailable' }
+  const frozenLockfile = operation.kind === 'reproduce' && operation.frozen
+  const { resolveCollisions, mcpConsent, resolveAssetTakeover } = interactionsOf(operation)
 
   // 1. Acquire the install lock BEFORE reading anything a commit is derived
   //    from. Reading first left a window in which a concurrent operation
@@ -129,22 +157,12 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
         error: loadFailure.error,
       })
     }
-    if (!manifestResult.existed && delta.additions.length === 0) {
+    if (!manifestResult.existed && operation.kind !== 'add') {
       return failureNoMutation({ code: 'FACETS_JSON_NOT_FOUND', path: join(projectRoot, FACETS_JSON_FILE) })
     }
     const projectManifest: NormalizedProjectManifest = manifestResult.manifest
 
-    // 3. Frozen mode can never carry a delta: adding or removing a facet
-    //    changes the locked set by definition. Checked before the lockfile is
-    //    even read, so `facet add --frozen-lockfile` against a corrupt
-    //    lockfile reports the operation it cannot perform rather than a file
-    //    it never needed to open.
-    const hasDelta = delta.additions.length > 0 || delta.removals.length > 0
-    if (frozenLockfile && hasDelta) {
-      return failureNoMutation({ code: 'FROZEN_WITH_DELTA' })
-    }
-
-    // 4. Load existing lockfile (or skeleton).
+    // 3. Load existing lockfile (or skeleton).
     const lockfileResult = loadLockfile(projectRoot)
     if (!lockfileResult.ok) {
       return failureNoMutation({
@@ -157,6 +175,31 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     // carry a validated lockfile; the `existed` tag only distinguishes "read
     // from disk" from "bootstrapped empty at the current version".
     const previousLockfile = lockfileResult.parsed.lockfile
+
+    // 3a. Stale-plan gate. An update was reviewed against specific bytes
+    //     while this process held no lock; if the project moved since, the
+    //     plan describes something that no longer exists and applying it
+    //     would merge a user's decision into state they never saw.
+    //
+    //     This is the earliest point the check can run — both files are now
+    //     loaded — and it deliberately runs before everything observable
+    //     that follows: the receipt anomaly warnings below, the
+    //     `install-start` event, and every byte of network, cache, prompt,
+    //     and transaction work after that. A withdrawn plan should cost the
+    //     user a message, not a progress bar and a download.
+    //
+    //     The comparison is against the exact bytes, not the parsed meaning:
+    //     the write preconditions later in this run are byte-level too, and
+    //     a plan built from bytes someone has since replaced is stale even
+    //     if the replacement happens to parse the same.
+    if (operation.kind === 'update') {
+      const moved: Array<'manifest' | 'lockfile'> = []
+      if (!fileStatesEqual(operation.snapshot.manifestState, manifestResult.state)) moved.push('manifest')
+      if (!fileStatesEqual(operation.snapshot.lockfileState, lockfileResult.state)) moved.push('lockfile')
+      if (isNonEmpty(moved)) {
+        return failureNoMutation({ code: 'UPDATE_PLAN_STALE', files: moved })
+      }
+    }
 
     // Load the machine-local receipt — the only thing that can witness what
     // THIS machine materialized, and therefore the only authority for
@@ -198,16 +241,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       onStage({ kind: 'receipt-unavailable', reason: receiptState.reason })
     }
 
-    // 3b. Delta conflict check. The same facet name in both additions
-    //     and removals is an illegal state the CLI should never produce;
-    //     this check is defense-in-depth, run before the install lock.
-    const additionNames = new Set(delta.additions.map((a) => a.facetName))
-    const conflict = delta.removals.find((r) => additionNames.has(r.facetName))
-    if (conflict !== undefined) {
-      return failureNoMutation({ code: 'DELTA_CONFLICT', facet: conflict.facetName })
-    }
-
-    // 3c. Adapter API preflight — defense-in-depth behind the
+    // 3b. Adapter API preflight — defense-in-depth behind the
     //     command-level fail-closed load. Runs on the no-mutation path
     //     before the per-facet loop, which also precedes any Git/local
     //     facet build, drift removal, and every materialization write.
@@ -221,11 +255,11 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       return failureNoMutation({ code: 'ADAPTER_INCOMPATIBLE', failures: incompatibleAdapters })
     }
 
-    // 4. Frozen-lockfile gates. A frozen commit with a non-empty delta is
-    //    rejected immediately — add/remove can never run frozen. The
-    //    drift preflight runs before any mutation/journal entry so drift
-    //    leaves the project untouched: every manifest facet MUST have a
-    //    lockfile entry whose version satisfies its specifier.
+    // 4. Frozen-lockfile gate. A frozen run is only constructible as a
+    //    reproduction, so there is nothing to check about the operation
+    //    itself here. The drift preflight runs before any mutation/journal
+    //    entry so drift leaves the project untouched: every manifest facet
+    //    MUST have a lockfile entry whose version satisfies its specifier.
     //
     //    Frozen consistency BEFORE cleanup (design D10, task 9.5): this gate
     //    completes — on the no-mutation path — before the receipt-driven
@@ -238,7 +272,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     //    the stale entry on disk. Receipt-only orphans (present in the
     //    receipt but not the lockfile) are not lockfile drift and are cleaned
     //    up normally under frozen — only the receipt is rewritten.
-    const merged = mergeDeltaIntoManifest(projectManifest.facets, delta)
+    const merged = mergeOperationIntoManifest(projectManifest.facets, operation)
     if (frozenLockfile) {
       const inconsistent = checkFrozenConsistency({
         facets: projectManifest.facets,
@@ -282,12 +316,12 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     //    merge already treats it as a no-op), and a name a concurrent commit
     //    declared after a caller's pre-lock validation is still removed,
     //    because the request rather than a stale snapshot reached the delta.
-    const effectiveRemovals = delta.removals.filter(
-      (removal) => ownEntry(projectManifest.facets, removal.facetName) !== undefined,
-    )
-    const removalOnly = delta.removals.length > 0 && delta.additions.length === 0
+    const effectiveRemovals =
+      operation.kind === 'remove'
+        ? operation.removals.filter((removal) => ownEntry(projectManifest.facets, removal.facetName) !== undefined)
+        : []
     const refinement =
-      removalOnly && !frozenLockfile
+      operation.kind === 'remove'
         ? refineRemoval({
             desiredFacets: merged.desiredFacets,
             previousLockfile,
@@ -463,7 +497,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
     //    exists yet.
     const resolution = await resolveAll({
       desiredFacets: merged.desiredFacets,
-      additionNames: merged.additionNames,
+      intents: merged.intents,
       previousLockfile,
       projectRoot,
       adapters,
@@ -713,8 +747,8 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       facetEntries: newFacetEntries,
       configurations: claimsByFacet(reconciledServerConfigurations),
     })
-    if (!frozenLockfile && merged.hasDelta) {
-      applyManifestWritePolicy(merged.desiredFacets, delta.additions, newFacetEntries)
+    if (!frozenLockfile && merged.additions.length > 0) {
+      applyManifestWritePolicy(merged.desiredFacets, merged.additions, newFacetEntries)
     }
 
     // Finalize project intent. This is where a resolver's accepted choices

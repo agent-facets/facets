@@ -3,9 +3,10 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
+import { isNonEmpty } from '@agent-facets/common'
 import type { CurrentBuildManifest } from '@agent-facets/protocol'
 import { CURRENT_RECEIPT_VERSION, type Receipt } from '../receipt.ts'
-import type { Addition, StageEvent } from '../types.ts'
+import type { Addition, InstallOperation, StageEvent } from '../types.ts'
 
 /**
  * Spec-scenario coverage for the machine-local receipt and the
@@ -137,12 +138,19 @@ async function install(
   const loadResult = await loadInstalledAdapters()
   if (!loadResult.ok) expect.unreachable('test bug: installed fixture adapters failed to load')
   const adapters = loadResult.adapters
+  const additions = opts.additions ?? []
+  const removals = opts.removals ?? []
+  const operation: InstallOperation = isNonEmpty(additions)
+    ? { kind: 'add', additions }
+    : isNonEmpty(removals)
+      ? { kind: 'remove', removals }
+      : opts.frozen === true
+        ? { kind: 'reproduce', frozen: true }
+        : { kind: 'reproduce', frozen: false }
   return runInstall({
     projectRoot,
     adapters: adapters.filter((a) => a.assets !== false),
-    delta:
-      opts.additions || opts.removals ? { additions: opts.additions ?? [], removals: opts.removals ?? [] } : undefined,
-    frozenLockfile: opts.frozen,
+    operation,
     onStage: opts.onStage,
   })
 }

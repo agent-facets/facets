@@ -1,4 +1,4 @@
-import { type RunInstallResult, runInstall } from '@agent-facets/engine'
+import { type InstallOperation, type RunInstallResult, runInstall } from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
 import type { Command } from '../../commands.ts'
@@ -77,17 +77,29 @@ export const installCommand: Command = {
         mode: 'install',
         signal: controller.signal,
         run: async ({ onStage, onLog, resolveCollisions, resolveMcpConsent, resolveAssetTakeover }) => {
+          // `mayPrompt` already excludes frozen mode, so a frozen run can
+          // reach `preapproved` via the flag but never the prompting arm —
+          // which is also the only arm the frozen operation accepts.
+          const consent = mcpConsentPolicy({ acceptMcp, mayPrompt, resolve: resolveMcpConsent })
+          const operation: InstallOperation = frozenLockfile
+            ? {
+                kind: 'reproduce',
+                frozen: true,
+                ...(consent.kind === 'interactive' ? {} : { mcpConsent: consent }),
+              }
+            : {
+                kind: 'reproduce',
+                frozen: false,
+                mcpConsent: consent,
+                ...(mayPrompt ? { resolveCollisions, resolveAssetTakeover } : {}),
+              }
           const result = await runInstall({
             projectRoot,
             adapters,
+            operation,
             onStage,
-            // `mayPrompt` already excludes frozen mode, so a frozen run can
-            // reach `preapproved` via the flag but never the prompting arm.
-            mcpConsent: mcpConsentPolicy({ acceptMcp, mayPrompt, resolve: resolveMcpConsent }),
             ...(verbose ? { onLog } : {}),
-            ...(mayPrompt ? { resolveCollisions, resolveAssetTakeover } : {}),
             signal: controller.signal,
-            frozenLockfile,
           })
           captured = result
           return result

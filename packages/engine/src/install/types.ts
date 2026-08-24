@@ -1,5 +1,5 @@
 import type { Adapter, McpServerCapabilityFailure } from '@agent-facets/adapter'
-import type { AssetType, NonEmptyArray, Scope, ValidationError } from '@agent-facets/common'
+import type { AssetType, FileState, NonEmptyArray, Scope, ValidationError } from '@agent-facets/common'
 import type {
   CollisionGroup,
   IntegrityFailure,
@@ -12,7 +12,7 @@ import type { AdapterCompatibilityFailure } from '../adapters/api-compatibility.
 import type { McpUnsupportedAdapter } from '../adapters/mcp-support.ts'
 import type { FailedBatch, FileRollbackOutcome } from '../fs/index.ts'
 import type { UnsupportedManifestVersion } from '../manifest/project-files.ts'
-import type { RegistryError } from '../registry/index.ts'
+import type { RegistryError, RegistryMetadata } from '../registry/index.ts'
 import type { ParseError, Source } from '../sources/facet/types.ts'
 import type { AssetTakeoverResolver } from './asset-takeover.ts'
 import type { MaterializationAliasProblem } from './commit/collision-plan.ts'
@@ -537,13 +537,15 @@ export type RunInstallFailure =
       asset: AssetIdentity
       cause: string
     }
-  | { code: 'FROZEN_WITH_DELTA' }
   /**
-   * The install delta contains the same facet name in both `additions`
-   * and `removals`. This is an illegal state the CLI should never
-   * produce; the check exists as defense-in-depth.
+   * An update was applied against project files that changed after the
+   * plan was reviewed. Names every file that moved, in manifest-then-
+   * lockfile order, so the report is the same on every run.
+   *
+   * Deliberately carries no file contents: this is a report, and the
+   * bytes involved are the user's project, not diagnostic material.
    */
-  | { code: 'DELTA_CONFLICT'; facet: string }
+  | { code: 'UPDATE_PLAN_STALE'; files: NonEmptyArray<'manifest' | 'lockfile'> }
   /**
    * Pre-materialization reconciliation (design D10, task 9.3) found the
    * `0.2` lockfile entry disagreeing with the freshly-derived verified
@@ -781,65 +783,52 @@ export interface Removal {
 }
 
 /**
- * The delta produced by the plan phase. `facet install` produces an
- * empty delta; `facet add` populates `additions`; `facet remove`
- * populates `removals`. Same-name in both is an illegal state the
- * CLI cannot produce; `runInstall` validates it at the top.
+ * One facet's reviewed update, as chosen from a prepared plan.
+ *
+ * The two version-shaped values here are deliberately different things
+ * and must not be collapsed. `metadata.version` is the exact release to
+ * install and verify; `manifestSource` is what `facets.json` should say
+ * afterwards. Installing exact `1.5.0` for an entry authored `1.*` has
+ * to preserve `1.*` in the manifest, and re-resolving `1.*` during
+ * application could pick up something published after the user looked.
+ *
+ * `metadata` is the registry's own answer, obtained during discovery and
+ * carried here so application confirms the reviewed release rather than
+ * asking the registry a second question it might now answer differently.
  */
-export interface InstallDelta {
-  additions: ReadonlyArray<Addition>
-  removals: ReadonlyArray<Removal>
+export interface SelectedFacetUpdate {
+  facetName: string
+  metadata: RegistryMetadata
+  /** The value to persist in `facets.json` for this facet. */
+  manifestSource: string
 }
 
 /**
- * Options for `runInstall`.
+ * The exact bytes of the two project files a plan was built from.
  *
- *   - `projectRoot`: absolute path to the project root. The function
- *     never reads `process.cwd()`.
- *   - `adapters`: install-capable adapters the project has selected.
- *     Caller is responsible for selection (and for prompting on zero).
- *   - `onStage`: structured progress events for view layers.
- *   - `onLog`: optional verbose passthrough; receives free-form lines.
- *   - `signal`: aborts the install at the next safe checkpoint and
- *     triggers rollback. Replaces direct SIGINT handling so core never
- *     installs process-global signal handlers.
- *   - `frozenLockfile`: treat the lockfile as the source of truth.
- *     Specifiers are never re-resolved, the lockfile is never written,
- *     and any manifest/lockfile drift (missing lockfile, an uncovered
- *     manifest entry, or a locked version that does not satisfy its
- *     specifier) fails with `LOCKFILE_DRIFT` before any disk mutation.
- *     Mirrors the ecosystem-standard `--frozen-lockfile` CI contract.
- *
- * The behavior is the same regardless of who's calling. If a lockfile
- * entry exists for a facet AND its locked version satisfies the
- * manifest specifier, that locked version is honored verbatim — the
- * manifest's range is not re-resolved. If the locked version does NOT
- * satisfy the manifest specifier (a hand-edit or pull changed the
- * manifest), the entry is stale: the manifest specifier is re-resolved
- * and the stale entry is overwritten. If no lockfile entry exists
- * (bootstrap case, or a newly-added manifest entry), the manifest
- * specifier is resolved fresh and added to the lockfile. Drift removal
- * always runs. The lockfile is always written — except in
- * frozen-lockfile mode (see `frozenLockfile`), where it is never
- * written and any manifest/lockfile drift is a hard error.
+ * Update prepares its plan without the install lock so a user can read
+ * an interactive screen without blocking the machine. This is what lets
+ * application check, under the lock and before touching anything, that
+ * it is about to act on the project the user was actually shown.
  */
-export interface RunInstallOptions {
-  projectRoot: string
-  adapters: ReadonlyArray<Adapter>
-  /** Explicit additions/removals from the plan phase. Omit or pass
-   *  `{ additions: [], removals: [] }` for a plain `facet install`. */
-  delta?: InstallDelta
-  onStage?: (event: StageEvent) => void
-  onLog?: OnLog
-  signal?: AbortSignal
-  frozenLockfile?: boolean
+export interface ProjectSnapshot {
+  manifestState: FileState
+  lockfileState: FileState
+}
+
+/**
+ * How this invocation may interact with a user mid-operation.
+ *
+ * Kept off the frozen arm rather than ignored there: reproducing
+ * recorded intent must never collect a new decision, and a resolver that
+ * would be silently dropped is better made impossible to supply.
+ */
+export interface MutationInteractions {
   /**
    * Optional interactive collision resolver.
    *
    * Omitted by every non-interactive caller, which is what makes
    * "fail with the complete report" the default rather than a special case.
-   * Frozen mode ignores it: reproducing recorded intent must never collect
-   * new decisions.
    */
   resolveCollisions?: CollisionResolver
   /**
@@ -847,8 +836,7 @@ export interface RunInstallOptions {
    *
    * Defaults to `unavailable`, which makes "fail with the complete request"
    * the default rather than a special case — the same discipline that makes
-   * an omitted `resolveCollisions` report instead of guess. Frozen mode may
-   * use `preapproved` but never `interactive`.
+   * an omitted `resolveCollisions` report instead of guess.
    */
   mcpConsent?: McpConsentPolicy
   /**
@@ -864,4 +852,83 @@ export interface RunInstallOptions {
    * must never be the act that also accepts overwriting a file.
    */
   resolveAssetTakeover?: AssetTakeoverResolver
+}
+
+/**
+ * What this run is being asked to do.
+ *
+ * One tagged value replaces the previous pair of an optional
+ * additions/removals delta and a separate `frozenLockfile` boolean.
+ * That pair could express things no caller should ever be able to say:
+ * the same facet added and removed, an add and a remove in one run, a
+ * frozen run that mutates the locked set, and two different spellings of
+ * "just reproduce the lockfile". None of those are constructible here,
+ * so the checks that used to catch them at runtime are gone.
+ *
+ *   - `reproduce`: install what the manifest and lockfile already
+ *     describe. The only arm that can be frozen, because freezing means
+ *     "change nothing", which every other arm contradicts by definition.
+ *   - `add` / `remove`: a non-empty set of explicit additions or
+ *     removals. Mutually exclusive by construction.
+ *   - `update`: a non-empty set of reviewed version changes, bound to
+ *     the exact project bytes they were reviewed against.
+ */
+export type InstallOperation =
+  | ({ kind: 'reproduce'; frozen: false } & MutationInteractions)
+  | {
+      kind: 'reproduce'
+      frozen: true
+      /**
+       * Frozen mode may pre-approve MCP work but can never prompt for
+       * it, so the interactive arm is not offered here.
+       */
+      mcpConsent?: Exclude<McpConsentPolicy, { kind: 'interactive' }>
+    }
+  | ({ kind: 'add'; additions: NonEmptyArray<Addition> } & MutationInteractions)
+  | ({ kind: 'remove'; removals: NonEmptyArray<Removal> } & MutationInteractions)
+  | ({
+      kind: 'update'
+      /** The bytes the reviewed plan was built from. */
+      snapshot: ProjectSnapshot
+      selections: NonEmptyArray<SelectedFacetUpdate>
+    } & MutationInteractions)
+
+/**
+ * Options for `runInstall`.
+ *
+ *   - `projectRoot`: absolute path to the project root. The function
+ *     never reads `process.cwd()`.
+ *   - `adapters`: install-capable adapters the project has selected.
+ *     Caller is responsible for selection (and for prompting on zero).
+ *   - `operation`: what to do, and how this caller may interact while
+ *     doing it. See {@link InstallOperation}.
+ *   - `onStage`: structured progress events for view layers.
+ *   - `onLog`: optional verbose passthrough; receives free-form lines.
+ *   - `signal`: aborts the install at the next safe checkpoint and
+ *     triggers rollback. Replaces direct SIGINT handling so core never
+ *     installs process-global signal handlers.
+ *
+ * Version resolution behaves the same regardless of who is calling. If a
+ * lockfile entry exists for a facet AND its locked version satisfies the
+ * manifest specifier, that locked version is honored verbatim — the
+ * manifest's range is not re-resolved. If the locked version does NOT
+ * satisfy the manifest specifier (a hand-edit or pull changed the
+ * manifest), the entry is stale: the manifest specifier is re-resolved
+ * and the stale entry is overwritten. If no lockfile entry exists
+ * (bootstrap case, or a newly-added manifest entry), the manifest
+ * specifier is resolved fresh and added to the lockfile. A facet named
+ * by an `update` operation resolves to its reviewed exact version
+ * instead, ignoring the old lock as a version anchor. Drift removal
+ * always runs. The lockfile is always written — except under frozen
+ * reproduction, where it is never written and any manifest/lockfile
+ * drift is a hard error before any disk mutation, mirroring the
+ * ecosystem-standard `--frozen-lockfile` CI contract.
+ */
+export interface RunInstallOptions {
+  projectRoot: string
+  adapters: ReadonlyArray<Adapter>
+  operation: InstallOperation
+  onStage?: (event: StageEvent) => void
+  onLog?: OnLog
+  signal?: AbortSignal
 }

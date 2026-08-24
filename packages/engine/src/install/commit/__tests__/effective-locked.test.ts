@@ -51,7 +51,7 @@ describe('resolveEffectiveLocked — changed git source', () => {
   test('does not let the old commit constrain a new git source', () => {
     const source = parseGitSource('https://github.com/example/new.git#main')
 
-    const effectiveLocked = resolveEffectiveLocked({ locked: lockedGitEntry, source, isExplicitAddition: false })
+    const effectiveLocked = resolveEffectiveLocked({ locked: lockedGitEntry, source, intent: { kind: 'manifest' } })
 
     expect(effectiveLocked).toBeUndefined()
     expect(resolveCloneRef(effectiveLocked, source.ref)).toBe('main')
@@ -60,7 +60,7 @@ describe('resolveEffectiveLocked — changed git source', () => {
   test('keeps the locked commit when the git source is unchanged', () => {
     const source = parseGitSource(LOCKED_GIT_URL)
 
-    const effectiveLocked = resolveEffectiveLocked({ locked: lockedGitEntry, source, isExplicitAddition: false })
+    const effectiveLocked = resolveEffectiveLocked({ locked: lockedGitEntry, source, intent: { kind: 'manifest' } })
 
     expect(effectiveLocked).toBe(lockedGitEntry)
     expect(resolveCloneRef(effectiveLocked, source.ref)).toBe(LOCKED_GIT_COMMIT)
@@ -76,7 +76,7 @@ describe('resolveEffectiveLocked — changed git source', () => {
     }
     const source = parseGitSource('github:agent-facets/planner')
 
-    const effectiveLocked = resolveEffectiveLocked({ locked: lockedEntry, source, isExplicitAddition: false })
+    const effectiveLocked = resolveEffectiveLocked({ locked: lockedEntry, source, intent: { kind: 'manifest' } })
 
     expect(effectiveLocked).toBe(lockedEntry)
     expect(resolveCloneRef(effectiveLocked, source.ref)).toBe(LOCKED_GIT_COMMIT)
@@ -89,7 +89,7 @@ describe('resolveEffectiveLocked — changed git source', () => {
     // match and the entry is NOT stale.
     const source = parseGitSource('https://github.com/example/old.git#main')
 
-    const effectiveLocked = resolveEffectiveLocked({ locked: lockedGitEntry, source, isExplicitAddition: false })
+    const effectiveLocked = resolveEffectiveLocked({ locked: lockedGitEntry, source, intent: { kind: 'manifest' } })
 
     expect(effectiveLocked).toBe(lockedGitEntry)
     expect(resolveCloneRef(effectiveLocked, source.ref)).toBe(LOCKED_GIT_COMMIT)
@@ -100,7 +100,11 @@ describe('resolveEffectiveLocked — registry staleness', () => {
   test('keeps a satisfying entry for a plain install (not an addition)', () => {
     const source = parseSource('cowsay@0.*')
 
-    const effectiveLocked = resolveEffectiveLocked({ locked: lockedRegistryEntry, source, isExplicitAddition: false })
+    const effectiveLocked = resolveEffectiveLocked({
+      locked: lockedRegistryEntry,
+      source,
+      intent: { kind: 'manifest' },
+    })
 
     expect(effectiveLocked).toBe(lockedRegistryEntry)
   })
@@ -108,7 +112,11 @@ describe('resolveEffectiveLocked — registry staleness', () => {
   test('clears a stale entry whose version no longer satisfies the spec', () => {
     const source = parseSource('cowsay@1.*')
 
-    const effectiveLocked = resolveEffectiveLocked({ locked: lockedRegistryEntry, source, isExplicitAddition: false })
+    const effectiveLocked = resolveEffectiveLocked({
+      locked: lockedRegistryEntry,
+      source,
+      intent: { kind: 'manifest' },
+    })
 
     expect(effectiveLocked).toBeUndefined()
   })
@@ -120,7 +128,7 @@ describe('resolveEffectiveLocked — the structural discriminator', () => {
     // re-resolve; the locked version must not pin resolution.
     const source = parseSource('cowsay@0.*')
 
-    const effectiveLocked = resolveEffectiveLocked({ locked: lockedRegistryEntry, source, isExplicitAddition: true })
+    const effectiveLocked = resolveEffectiveLocked({ locked: lockedRegistryEntry, source, intent: { kind: 'refresh' } })
 
     expect(effectiveLocked).toBeUndefined()
   })
@@ -128,7 +136,7 @@ describe('resolveEffectiveLocked — the structural discriminator', () => {
   test('a bare/latest explicit addition never trusts the lockfile', () => {
     const source = parseSource('cowsay@latest')
 
-    const effectiveLocked = resolveEffectiveLocked({ locked: lockedRegistryEntry, source, isExplicitAddition: true })
+    const effectiveLocked = resolveEffectiveLocked({ locked: lockedRegistryEntry, source, intent: { kind: 'refresh' } })
 
     expect(effectiveLocked).toBeUndefined()
   })
@@ -139,7 +147,7 @@ describe('resolveEffectiveLocked — the structural discriminator', () => {
     // commit can be served offline from a warm cache.
     const source = parseSource('cowsay@0.4.0')
 
-    const effectiveLocked = resolveEffectiveLocked({ locked: lockedRegistryEntry, source, isExplicitAddition: true })
+    const effectiveLocked = resolveEffectiveLocked({ locked: lockedRegistryEntry, source, intent: { kind: 'refresh' } })
 
     expect(effectiveLocked).toBe(lockedRegistryEntry)
   })
@@ -147,7 +155,7 @@ describe('resolveEffectiveLocked — the structural discriminator', () => {
   test('an exact explicit addition of a DIFFERENT version clears the entry', () => {
     const source = parseSource('cowsay@0.5.0')
 
-    const effectiveLocked = resolveEffectiveLocked({ locked: lockedRegistryEntry, source, isExplicitAddition: true })
+    const effectiveLocked = resolveEffectiveLocked({ locked: lockedRegistryEntry, source, intent: { kind: 'refresh' } })
 
     expect(effectiveLocked).toBeUndefined()
   })
@@ -155,8 +163,48 @@ describe('resolveEffectiveLocked — the structural discriminator', () => {
   test('a git addition is unaffected by the discriminator (no registry version to resolve)', () => {
     const source = parseGitSource(LOCKED_GIT_URL)
 
-    const effectiveLocked = resolveEffectiveLocked({ locked: lockedGitEntry, source, isExplicitAddition: true })
+    const effectiveLocked = resolveEffectiveLocked({ locked: lockedGitEntry, source, intent: { kind: 'refresh' } })
 
     expect(effectiveLocked).toBe(lockedGitEntry)
+  })
+})
+
+describe('resolveEffectiveLocked — a reviewed update', () => {
+  const PREPARED = {
+    kind: 'prepared' as const,
+    metadata: {
+      name: 'cowsay',
+      version: '1.5.0',
+      transportHash: 'sha256:transport',
+      contentFingerprint: 'sha256:content',
+    },
+  }
+
+  test('clears the anchor even when the locked version satisfies the new value', () => {
+    // An update to `0.*` from a lockfile already at `0.4.0`: the old entry
+    // satisfies, which under ordinary reproduction is exactly the case for
+    // honoring it. A reviewed update is not ordinary reproduction — the
+    // version was already chosen, so the entry answers nothing.
+    const source = parseSource('cowsay@0.*')
+
+    expect(resolveEffectiveLocked({ locked: lockedRegistryEntry, source, intent: PREPARED })).toBeUndefined()
+  })
+
+  test('clears the anchor for an exact new manifest value', () => {
+    // The case an explicit addition deliberately does NOT clear: an exact
+    // specifier normally keeps a satisfying entry as its trust anchor. For an
+    // update the exact value is the DESTINATION, so reusing the old entry
+    // would anchor new content to the integrity of the version being left.
+    const source = parseSource('cowsay@0.4.0')
+
+    expect(resolveEffectiveLocked({ locked: lockedRegistryEntry, source, intent: PREPARED })).toBeUndefined()
+  })
+
+  test('an unselected facet in the same run still reproduces from its entry', () => {
+    const source = parseSource('cowsay@0.*')
+
+    expect(resolveEffectiveLocked({ locked: lockedRegistryEntry, source, intent: { kind: 'manifest' } })).toBe(
+      lockedRegistryEntry,
+    )
   })
 })

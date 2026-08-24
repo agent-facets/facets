@@ -14,11 +14,11 @@ import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
 import { ADAPTER_API_VERSION, planSingleFileInstall, planSingleFileRemoval } from '@agent-facets/adapter'
 import type { AssetTakeoverRequest } from '../asset-takeover.ts'
-import type { McpConsentRequest } from '../mcp/consent.ts'
+import type { McpConsentPolicy, McpConsentRequest } from '../mcp/consent.ts'
 import { receiptPath } from '../receipt.ts'
 import { runRemove } from '../remove/index.ts'
 import { runInstall } from '../run-install.ts'
-import { assetIdentity, type RunInstallOptions } from '../types.ts'
+import { assetIdentity } from '../types.ts'
 import { type RecordingMcpOptions, recordingMcpCapability } from './helpers/mcp-adapter.ts'
 
 /**
@@ -37,7 +37,7 @@ let fakeHome: string
 
 const STDIO = { type: 'stdio', command: 'npx', args: ['-y', 'server-filesystem'] }
 const HTTP = { type: 'http', url: 'https://example.test/mcp' }
-const ACCEPT: RunInstallOptions['mcpConsent'] = { kind: 'preapproved' }
+const ACCEPT: McpConsentPolicy = { kind: 'preapproved' }
 
 interface TestAdapter {
   adapter: Adapter
@@ -158,7 +158,11 @@ describe('mcp — adapter support preflight', () => {
     writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
     const declining = decliningAdapter('declines')
 
-    const result = await runInstall({ projectRoot, adapters: [declining], mcpConsent: ACCEPT })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [declining],
+      operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+    })
 
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'MCP_ADAPTERS_UNSUPPORTED') expect.unreachable()
@@ -176,7 +180,7 @@ describe('mcp — adapter support preflight', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [decliningAdapter('old'), decliningAdapter('declines'), mcpAdapter('good').adapter],
-      mcpConsent: ACCEPT,
+      operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
     })
 
     if (result.ok) expect.unreachable()
@@ -190,7 +194,11 @@ describe('mcp — adapter support preflight', () => {
   test('a text-only project keeps an adapter without MCP support usable', async () => {
     writeManifest({ facets: { alpha: skillFixture('alpha', 'review') } })
 
-    const result = await runInstall({ projectRoot, adapters: [decliningAdapter('old')] })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [decliningAdapter('old')],
+      operation: { kind: 'reproduce', frozen: false },
+    })
 
     // No declarations means no MCP work, so support is never required and no
     // capability method is invoked.
@@ -204,7 +212,15 @@ describe('mcp — adapter support preflight', () => {
       facets: { alpha: { source: a, materialization: { servers: { filesystem: { kind: 'omitted' } } } } },
     })
 
-    expect((await runInstall({ projectRoot, adapters: [decliningAdapter('declines')] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [decliningAdapter('declines')],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
   })
 })
 
@@ -213,7 +229,11 @@ describe('mcp — consent', () => {
     writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
     const rec = mcpAdapter('rec')
 
-    const result = await runInstall({ projectRoot, adapters: [rec.adapter] })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [rec.adapter],
+      operation: { kind: 'reproduce', frozen: false },
+    })
 
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'MCP_CONSENT_REQUIRED') expect.unreachable()
@@ -238,7 +258,11 @@ describe('mcp — consent', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [rec.adapter],
-      mcpConsent: { kind: 'interactive', resolve: async () => ({ kind: 'declined' }) },
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        mcpConsent: { kind: 'interactive', resolve: async () => ({ kind: 'declined' }) },
+      },
     })
 
     if (result.ok) expect.unreachable()
@@ -256,11 +280,15 @@ describe('mcp — consent', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [rec.adapter],
-      mcpConsent: {
-        kind: 'interactive',
-        resolve: async () => {
-          asked++
-          return { kind: 'approved' }
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        mcpConsent: {
+          kind: 'interactive',
+          resolve: async () => {
+            asked++
+            return { kind: 'approved' }
+          },
         },
       },
     })
@@ -287,17 +315,29 @@ describe('mcp — consent', () => {
   test('an approved declaration is not asked about again', async () => {
     writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
     const rec = mcpAdapter('rec')
-    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [rec.adapter],
+          operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+        })
+      ).ok,
+    ).toBe(true)
 
     let asked = 0
     const again = await runInstall({
       projectRoot,
       adapters: [rec.adapter],
-      mcpConsent: {
-        kind: 'interactive',
-        resolve: async () => {
-          asked++
-          return { kind: 'approved' }
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        mcpConsent: {
+          kind: 'interactive',
+          resolve: async () => {
+            asked++
+            return { kind: 'approved' }
+          },
         },
       },
     })
@@ -326,7 +366,7 @@ describe('mcp — consent', () => {
     const failed = await runInstall({
       projectRoot,
       adapters: [first.adapter, second.adapter],
-      mcpConsent: { kind: 'interactive', resolve },
+      operation: { kind: 'reproduce', frozen: false, mcpConsent: { kind: 'interactive', resolve } },
     })
 
     if (failed.ok) expect.unreachable()
@@ -336,7 +376,7 @@ describe('mcp — consent', () => {
     const retry = await runInstall({
       projectRoot,
       adapters: [first.adapter],
-      mcpConsent: { kind: 'interactive', resolve },
+      operation: { kind: 'reproduce', frozen: false, mcpConsent: { kind: 'interactive', resolve } },
     })
 
     expect(retry.ok).toBe(true)
@@ -347,7 +387,15 @@ describe('mcp — consent', () => {
     const a = serverFixture('alpha', 'filesystem', STDIO)
     writeManifest({ facets: { alpha: a } })
     const rec = mcpAdapter('rec')
-    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [rec.adapter],
+          operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+        })
+      ).ok,
+    ).toBe(true)
 
     // Same facet, same name, different command: a name the user already
     // trusted now runs something else.
@@ -357,11 +405,15 @@ describe('mcp — consent', () => {
     const again = await runInstall({
       projectRoot,
       adapters: [rec.adapter],
-      mcpConsent: {
-        kind: 'interactive',
-        resolve: async (request) => {
-          seen = request
-          return { kind: 'approved' }
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        mcpConsent: {
+          kind: 'interactive',
+          resolve: async (request) => {
+            seen = request
+            return { kind: 'approved' }
+          },
         },
       },
     })
@@ -373,14 +425,26 @@ describe('mcp — consent', () => {
   test('approval is machine-local: a teammate with the same files is asked', async () => {
     writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
     const rec = mcpAdapter('rec')
-    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [rec.adapter],
+          operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+        })
+      ).ok,
+    ).toBe(true)
 
     // The receipt is machine-local and never committed, so a teammate's clone
     // has the same manifest, lockfile, and configuration document — and no
     // approval evidence at all.
     rmSync(receiptPath(projectRoot), { force: true })
 
-    const teammate = await runInstall({ projectRoot, adapters: [rec.adapter] })
+    const teammate = await runInstall({
+      projectRoot,
+      adapters: [rec.adapter],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (teammate.ok) expect.unreachable()
     expect(teammate.failure.code).toBe('MCP_CONSENT_REQUIRED')
   })
@@ -396,11 +460,15 @@ describe('mcp — consent', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [rec.adapter],
-      mcpConsent: {
-        kind: 'interactive',
-        resolve: async (request) => {
-          seen = request
-          return { kind: 'approved' }
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        mcpConsent: {
+          kind: 'interactive',
+          resolve: async (request) => {
+            seen = request
+            return { kind: 'approved' }
+          },
         },
       },
     })
@@ -422,7 +490,15 @@ describe('mcp — consent', () => {
   test('an entry the receipt already owns is never disclosed as a takeover', async () => {
     writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
     const rec = mcpAdapter('rec')
-    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [rec.adapter],
+          operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+        })
+      ).ok,
+    ).toBe(true)
 
     // Same owned identity, drifted content.
     writeFileSync(rec.documentPath, `${JSON.stringify({ filesystem: HTTP }, null, 2)}\n`)
@@ -431,11 +507,15 @@ describe('mcp — consent', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [rec.adapter],
-      mcpConsent: {
-        kind: 'interactive',
-        resolve: async () => {
-          asked++
-          return { kind: 'approved' }
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        mcpConsent: {
+          kind: 'interactive',
+          resolve: async () => {
+            asked++
+            return { kind: 'approved' }
+          },
         },
       },
     })
@@ -452,7 +532,15 @@ describe('mcp — consent', () => {
   test('declining a combined declaration and takeover request leaves the entry alone', async () => {
     writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
     const rec = mcpAdapter('rec')
-    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [rec.adapter],
+          operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+        })
+      ).ok,
+    ).toBe(true)
 
     // Ownership and approval both go, and what is on disk is now a divergent
     // entry at a name this project wants.
@@ -464,11 +552,15 @@ describe('mcp — consent', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [rec.adapter],
-      mcpConsent: {
-        kind: 'interactive',
-        resolve: async (request) => {
-          seen = request
-          return { kind: 'declined' }
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        mcpConsent: {
+          kind: 'interactive',
+          resolve: async (request) => {
+            seen = request
+            return { kind: 'declined' }
+          },
         },
       },
     })
@@ -490,7 +582,15 @@ describe('mcp — consent', () => {
   test('a receipt predating configuration claims reads existing entries as untracked', async () => {
     writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
     const rec = mcpAdapter('rec')
-    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [rec.adapter],
+          operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+        })
+      ).ok,
+    ).toBe(true)
 
     // Downgrade the receipt to the last version that could not witness
     // configuration. Version dispatch reads the top-level `version` field, so
@@ -514,11 +614,15 @@ describe('mcp — consent', () => {
       onStage: (event) => {
         if (event.kind === 'receipt-unavailable') unavailable.push(event.reason)
       },
-      mcpConsent: {
-        kind: 'interactive',
-        resolve: async (request) => {
-          seen = request
-          return { kind: 'approved' }
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        mcpConsent: {
+          kind: 'interactive',
+          resolve: async (request) => {
+            seen = request
+            return { kind: 'approved' }
+          },
         },
       },
     })
@@ -550,7 +654,15 @@ describe('mcp — one desired set across adapters', () => {
     const one = mcpAdapter('one')
     const two = mcpAdapter('two')
 
-    expect((await runInstall({ projectRoot, adapters: [one.adapter, two.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [one.adapter, two.adapter],
+          operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+        })
+      ).ok,
+    ).toBe(true)
 
     const first = JSON.parse(readFileSync(one.documentPath, 'utf8'))
     expect(first).toEqual({ filesystem: STDIO })
@@ -570,7 +682,15 @@ describe('mcp — one desired set across adapters', () => {
     const one = mcpAdapter('one')
     const two = mcpAdapter('two')
 
-    expect((await runInstall({ projectRoot, adapters: [one.adapter, two.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [one.adapter, two.adapter],
+          operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+        })
+      ).ok,
+    ).toBe(true)
 
     // The alias moved the effective name everywhere, and the omission is
     // absent everywhere. A per-adapter disposition is not representable.
@@ -583,7 +703,15 @@ describe('mcp — one desired set across adapters', () => {
     const a = serverFixture('alpha', 'filesystem', STDIO)
     writeManifest({ facets: { alpha: a } })
     const rec = mcpAdapter('rec')
-    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [rec.adapter],
+          operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+        })
+      ).ok,
+    ).toBe(true)
     expect(JSON.parse(readFileSync(rec.documentPath, 'utf8'))).toEqual({ filesystem: STDIO })
 
     writeManifest({
@@ -591,7 +719,15 @@ describe('mcp — one desired set across adapters', () => {
       facets: { alpha: { source: a, materialization: { servers: { filesystem: { kind: 'aliased', as: 'fs' } } } } },
     })
 
-    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [rec.adapter],
+          operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+        })
+      ).ok,
+    ).toBe(true)
     // The old owned identity is gone, not left behind beside the new one.
     expect(JSON.parse(readFileSync(rec.documentPath, 'utf8'))).toEqual({ fs: STDIO })
   })
@@ -599,7 +735,15 @@ describe('mcp — one desired set across adapters', () => {
   test('an adapter selected later picks up an identity the project already owns', async () => {
     writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
     const one = mcpAdapter('one')
-    expect((await runInstall({ projectRoot, adapters: [one.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [one.adapter],
+          operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+        })
+      ).ok,
+    ).toBe(true)
 
     // Ownership is recorded per project, not per adapter, so connecting a
     // second tool delegates management of what this project already owns --
@@ -609,11 +753,15 @@ describe('mcp — one desired set across adapters', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [one.adapter, two.adapter],
-      mcpConsent: {
-        kind: 'interactive',
-        resolve: async () => {
-          asked++
-          return { kind: 'approved' }
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        mcpConsent: {
+          kind: 'interactive',
+          resolve: async () => {
+            asked++
+            return { kind: 'approved' }
+          },
         },
       },
     })
@@ -634,11 +782,15 @@ describe('mcp — one adapter per native document', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [mcpAdapter('one', {}, shared).adapter, mcpAdapter('two', {}, shared).adapter],
-      mcpConsent: {
-        kind: 'interactive',
-        resolve: async () => {
-          asked++
-          return { kind: 'approved' }
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        mcpConsent: {
+          kind: 'interactive',
+          resolve: async () => {
+            asked++
+            return { kind: 'approved' }
+          },
         },
       },
     })
@@ -665,7 +817,7 @@ describe('mcp — one adapter per native document', () => {
         mcpAdapter('two', {}, shared).adapter,
         mcpAdapter('three', {}, shared).adapter,
       ],
-      mcpConsent: ACCEPT,
+      operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
     })
 
     if (result.ok) expect.unreachable()
@@ -682,7 +834,7 @@ describe('mcp — one adapter per native document', () => {
         mcpAdapter('one', {}, () => join(projectRoot, '.shared', 'mcp.json')).adapter,
         mcpAdapter('two', {}, () => join(projectRoot, '.shared', 'MCP.json')).adapter,
       ],
-      mcpConsent: ACCEPT,
+      operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
     })
 
     if (result.ok) expect.unreachable()
@@ -700,7 +852,7 @@ describe('mcp — one adapter per native document', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [mcpAdapter('one').adapter, mcpAdapter('two').adapter],
-      mcpConsent: ACCEPT,
+      operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
     })
 
     expect(result.ok).toBe(true)
@@ -712,7 +864,7 @@ describe('mcp — one adapter per native document', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [mcpAdapter('rec', { undiscloseDocuments: true }).adapter],
-      mcpConsent: ACCEPT,
+      operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
     })
 
     if (result.ok) expect.unreachable()
@@ -741,7 +893,11 @@ describe('mcp — one adapter per native document', () => {
       },
     }
 
-    const result = await runInstall({ projectRoot, adapters: [untyped], mcpConsent: ACCEPT })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [untyped],
+      operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+    })
 
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'MCP_CONTRACT_VIOLATION') expect.unreachable()
@@ -753,11 +909,27 @@ describe('mcp — re-planned immediately before the write', () => {
   test('a plan that changed nothing is still re-planned', async () => {
     writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
     const rec = mcpAdapter('rec')
-    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [rec.adapter],
+          operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+        })
+      ).ok,
+    ).toBe(true)
 
     rec.mcpCalls.length = 0
     // Nothing to do this time: the document already holds the desired set.
-    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [rec.adapter],
+          operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+        })
+      ).ok,
+    ).toBe(true)
 
     expect(rec.mcpCalls.filter((entry) => entry.startsWith('plan:1'))).toHaveLength(2)
     expect(JSON.parse(readFileSync(rec.documentPath, 'utf8'))).toEqual({ filesystem: STDIO })
@@ -766,7 +938,15 @@ describe('mcp — re-planned immediately before the write', () => {
   test('a document edited after that plan is drift, not an adapter fault', async () => {
     writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
     const first = mcpAdapter('rec')
-    expect((await runInstall({ projectRoot, adapters: [first.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [first.adapter],
+          operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+        })
+      ).ok,
+    ).toBe(true)
 
     // The second run finds the desired set already there, so its plan changes
     // nothing — and something removes the entry before that plan is committed.
@@ -778,7 +958,11 @@ describe('mcp — re-planned immediately before the write', () => {
       },
     })
 
-    const result = await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [rec.adapter],
+      operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+    })
 
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'MCP_NATIVE_STATE_DRIFT') expect.unreachable()
@@ -804,7 +988,7 @@ describe('mcp — application and rollback', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [first.adapter, second.adapter],
-      mcpConsent: ACCEPT,
+      operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
     })
 
     if (result.ok) expect.unreachable()
@@ -825,7 +1009,7 @@ describe('mcp — application and rollback', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [first.adapter, second.adapter],
-      mcpConsent: ACCEPT,
+      operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
     })
 
     if (result.ok) expect.unreachable()
@@ -844,7 +1028,11 @@ describe('mcp — application and rollback', () => {
       failPrepare: { code: 'parse-failed', path: '/project/.rec/mcp.json', message: 'unexpected token' },
     })
 
-    const result = await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [rec.adapter],
+      operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+    })
 
     if (result.ok) expect.unreachable()
     expect(result.failure.code).toBe('MCP_PREPARE_FAILED')
@@ -865,7 +1053,11 @@ describe('mcp — application and rollback', () => {
     const before = '{\n  "legacy": {"type":"stdio","command":"keep-me"}\n}\n'
     writeFileSync(rec.documentPath, before)
 
-    const result = await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [rec.adapter],
+      operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+    })
 
     if (result.ok) expect.unreachable()
     expect(result.failure.code).toBe('MCP_APPLY_FAILED')
@@ -880,7 +1072,11 @@ describe('mcp — application and rollback', () => {
     const outside = join(fakeHome, 'user-level-mcp.json')
     const rec = mcpAdapter('rec', { planExtraDocumentPath: () => outside })
 
-    const result = await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [rec.adapter],
+      operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+    })
 
     if (result.ok) expect.unreachable()
     expect(result.failure.code).toBe('FILESYSTEM_TRANSACTION_FAILED')
@@ -901,7 +1097,15 @@ describe('mcp — application and rollback', () => {
     })
     const rec = mcpAdapter('rec')
 
-    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [rec.adapter],
+          operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+        })
+      ).ok,
+    ).toBe(true)
 
     const apply = rec.timeline.lastIndexOf('mcp:plan:changed')
     expect(apply).toBeGreaterThan(-1)
@@ -938,8 +1142,8 @@ describe('mcp — application and rollback', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [rec.adapter],
-      mcpConsent: ACCEPT,
       signal: controller.signal,
+      operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
     })
 
     if (result.ok) expect.unreachable()
@@ -960,7 +1164,15 @@ describe('mcp — application and rollback', () => {
     writeManifest({ facets: { alpha, beta } })
 
     const installed = mcpAdapter('rec')
-    expect((await runInstall({ projectRoot, adapters: [installed.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [installed.adapter],
+          operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+        })
+      ).ok,
+    ).toBe(true)
     const documentBefore = readFileSync(installed.documentPath, 'utf8')
     const manifestBefore = readFileSync(join(projectRoot, 'facets.json'), 'utf8')
     const lockBefore = readFileSync(join(projectRoot, 'facets.lock'), 'utf8')
@@ -1001,7 +1213,11 @@ describe('mcp — application and rollback', () => {
     // the journal has to walk both domains back.
     mkdirSync(receiptPath(projectRoot), { recursive: true })
 
-    const result = await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [rec.adapter],
+      operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+    })
 
     if (result.ok) expect.unreachable()
     expect(rec.mcpCalls).toContain('plan:changed')
@@ -1015,33 +1231,45 @@ describe('mcp — frozen reproduction', () => {
   test('frozen never opens a prompt, even with a resolver in hand', async () => {
     writeManifest({ facets: { alpha: serverFixture('alpha', 'filesystem', STDIO) } })
     const rec = mcpAdapter('rec')
-    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [rec.adapter],
+          operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+        })
+      ).ok,
+    ).toBe(true)
     rmSync(receiptPath(projectRoot), { force: true })
 
-    let asked = 0
+    // Frozen mode cannot reach the prompting arm at all: its `mcpConsent`
+    // field excludes the interactive policy, so there is no resolver to hand
+    // it and no runtime downgrade to observe. What remains testable is the
+    // consequence — a frozen run with nothing pre-approved refuses with the
+    // complete request rather than finding some way to ask.
     const result = await runInstall({
       projectRoot,
       adapters: [rec.adapter],
-      frozenLockfile: true,
-      mcpConsent: {
-        kind: 'interactive',
-        resolve: async () => {
-          asked++
-          return { kind: 'approved' }
-        },
-      },
+      operation: { kind: 'reproduce', frozen: true },
     })
 
     if (result.ok) expect.unreachable()
     expect(result.failure.code).toBe('MCP_CONSENT_REQUIRED')
-    expect(asked).toBe(0)
   })
 
   test('frozen honors a pre-supplied approval and still writes only the receipt', async () => {
     const a = serverFixture('alpha', 'filesystem', STDIO)
     writeManifest({ facets: { alpha: a } })
     const rec = mcpAdapter('rec')
-    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [rec.adapter],
+          operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+        })
+      ).ok,
+    ).toBe(true)
 
     const manifestBefore = readFileSync(join(projectRoot, 'facets.json'), 'utf8')
     const lockBefore = readFileSync(join(projectRoot, 'facets.lock'), 'utf8')
@@ -1050,8 +1278,7 @@ describe('mcp — frozen reproduction', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [rec.adapter],
-      frozenLockfile: true,
-      mcpConsent: ACCEPT,
+      operation: { kind: 'reproduce', frozen: true, mcpConsent: ACCEPT },
     })
 
     expect(result.ok).toBe(true)
@@ -1064,7 +1291,15 @@ describe('mcp — frozen reproduction', () => {
     const a = serverFixture('alpha', 'filesystem', STDIO)
     writeManifest({ facets: { alpha: a } })
     const rec = mcpAdapter('rec')
-    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [rec.adapter],
+          operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+        })
+      ).ok,
+    ).toBe(true)
 
     const manifestBefore = writeManifest({
       manifestVersion: 0.2,
@@ -1075,8 +1310,7 @@ describe('mcp — frozen reproduction', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [rec.adapter],
-      frozenLockfile: true,
-      mcpConsent: ACCEPT,
+      operation: { kind: 'reproduce', frozen: true, mcpConsent: ACCEPT },
     })
 
     if (result.ok) expect.unreachable()
@@ -1099,7 +1333,15 @@ describe('mcp — frozen reproduction', () => {
     const b = skillFixture('beta', 'review')
     writeManifest({ facets: { alpha: a, beta: b } })
     const rec = mcpAdapter('rec')
-    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [rec.adapter],
+          operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+        })
+      ).ok,
+    ).toBe(true)
     expect(JSON.parse(readFileSync(rec.documentPath, 'utf8'))).toEqual({ filesystem: STDIO })
 
     // The shape a teammate's removal arrives in: both shared files drop the
@@ -1114,8 +1356,7 @@ describe('mcp — frozen reproduction', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [rec.adapter],
-      frozenLockfile: true,
-      mcpConsent: ACCEPT,
+      operation: { kind: 'reproduce', frozen: true, mcpConsent: ACCEPT },
     })
 
     expect(result.ok).toBe(true)
@@ -1145,7 +1386,15 @@ describe('mcp — frozen reproduction', () => {
         beta: { source: b, materialization: { servers: { filesystem: { kind: 'omitted' } } } },
       },
     })
-    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [rec.adapter],
+          operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+        })
+      ).ok,
+    ).toBe(true)
 
     const documentBefore = readFileSync(rec.documentPath, 'utf8')
     const lockBefore = readFileSync(join(projectRoot, 'facets.lock'), 'utf8')
@@ -1156,8 +1405,7 @@ describe('mcp — frozen reproduction', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [rec.adapter],
-      frozenLockfile: true,
-      mcpConsent: ACCEPT,
+      operation: { kind: 'reproduce', frozen: true, mcpConsent: ACCEPT },
     })
 
     if (result.ok) expect.unreachable()
@@ -1183,7 +1431,15 @@ describe('mcp — frozen reproduction', () => {
     const a = serverFixture('alpha', 'filesystem', STDIO)
     writeManifest({ facets: { alpha: a } })
     const rec = mcpAdapter('rec')
-    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [rec.adapter],
+          operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+        })
+      ).ok,
+    ).toBe(true)
     rmSync(rec.documentPath, { force: true })
     const callsBefore = rec.mcpCalls.length
 
@@ -1194,8 +1450,7 @@ describe('mcp — frozen reproduction', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [rec.adapter],
-      frozenLockfile: true,
-      mcpConsent: ACCEPT,
+      operation: { kind: 'reproduce', frozen: true, mcpConsent: ACCEPT },
     })
 
     if (result.ok) expect.unreachable()
@@ -1216,7 +1471,15 @@ describe('mcp — frozen reproduction', () => {
     const a = serverFixture('alpha', 'filesystem', STDIO)
     writeManifest({ facets: { alpha: a } })
     const rec = mcpAdapter('rec')
-    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [rec.adapter],
+          operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+        })
+      ).ok,
+    ).toBe(true)
 
     const lockfile = JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8'))
     lockfile.lockfileVersion = 0.2
@@ -1232,8 +1495,7 @@ describe('mcp — frozen reproduction', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [rec.adapter],
-      frozenLockfile: true,
-      mcpConsent: ACCEPT,
+      operation: { kind: 'reproduce', frozen: true, mcpConsent: ACCEPT },
     })
 
     // It may still fail for a reason of its own, but never for this one.
@@ -1252,7 +1514,15 @@ describe('mcp — offline removal', () => {
       },
     })
     const rec = mcpAdapter('rec')
-    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [rec.adapter],
+          operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+        })
+      ).ok,
+    ).toBe(true)
     expect(JSON.parse(readFileSync(rec.documentPath, 'utf8'))).toEqual({ filesystem: STDIO })
 
     // The facet's source is gone: nothing may be fetched or rebuilt.
@@ -1273,7 +1543,15 @@ describe('mcp — offline removal', () => {
       },
     })
     const rec = mcpAdapter('rec')
-    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [rec.adapter],
+          operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+        })
+      ).ok,
+    ).toBe(true)
 
     rmSync(join(projectRoot, 'vendor/alpha'), { recursive: true, force: true })
     const removed = await runRemove({ projectRoot, names: ['alpha'], adapters: [rec.adapter] })
@@ -1291,7 +1569,15 @@ describe('mcp — offline removal', () => {
       },
     })
     const rec = mcpAdapter('rec')
-    expect((await runInstall({ projectRoot, adapters: [rec.adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [rec.adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
 
     // Rewrite the receipt at the version that predates configuration claims.
     const receipt = JSON.parse(readFileSync(receiptPath(projectRoot), 'utf8'))
@@ -1329,7 +1615,15 @@ describe('mcp — offline removal', () => {
       },
     })
     const rec = mcpAdapter('rec')
-    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [rec.adapter],
+          operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+        })
+      ).ok,
+    ).toBe(true)
 
     // Drop the machine-local evidence: the kept facet's declaration is no
     // longer approved, and removal can no longer answer from local state.
@@ -1360,7 +1654,15 @@ describe('mcp — offline removal', () => {
     })
     const rec = mcpAdapter('rec')
 
-    expect((await runInstall({ projectRoot, adapters: [rec.adapter], mcpConsent: ACCEPT })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [rec.adapter],
+          operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT },
+        })
+      ).ok,
+    ).toBe(true)
 
     // Never materialized, so there is nothing to own and nothing to approve.
     // A claim would assert two things that are both false.
@@ -1388,9 +1690,13 @@ describe('asset takeover', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [rec.adapter],
-      resolveAssetTakeover: async (request) => {
-        seen.push(request)
-        return { kind: 'continue' }
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        resolveAssetTakeover: async (request) => {
+          seen.push(request)
+          return { kind: 'continue' }
+        },
       },
     })
 
@@ -1420,7 +1726,7 @@ describe('asset takeover', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [rec.adapter],
-      resolveAssetTakeover: async () => ({ kind: 'cancelled' }),
+      operation: { kind: 'reproduce', frozen: false, resolveAssetTakeover: async () => ({ kind: 'cancelled' }) },
     })
 
     if (result.ok) expect.unreachable()
@@ -1436,7 +1742,15 @@ describe('asset takeover', () => {
   test('an owned destination reconciles without asking', async () => {
     writeManifest({ facets: { alpha: skillFixture('alpha', 'review') } })
     const rec = mcpAdapter('rec')
-    expect((await runInstall({ projectRoot, adapters: [rec.adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [rec.adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
 
     // Drift it, so the second run has real work to do at an owned identity.
     writeFileSync(join(projectRoot, '.rec', 'skills', 'review.md'), '# drifted\n')
@@ -1445,9 +1759,13 @@ describe('asset takeover', () => {
     const again = await runInstall({
       projectRoot,
       adapters: [rec.adapter],
-      resolveAssetTakeover: async () => {
-        asked++
-        return { kind: 'continue' }
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        resolveAssetTakeover: async () => {
+          asked++
+          return { kind: 'continue' }
+        },
       },
     })
 
@@ -1458,7 +1776,15 @@ describe('asset takeover', () => {
   test('an equivalent untracked destination is adopted without rewriting it', async () => {
     writeManifest({ facets: { alpha: skillFixture('alpha', 'review') } })
     const rec = mcpAdapter('rec')
-    expect((await runInstall({ projectRoot, adapters: [rec.adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [rec.adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
 
     // Forget the identity while leaving the bytes: a clone whose receipt is
     // machine-local, or a project whose receipt was lost. The destination is
@@ -1472,9 +1798,13 @@ describe('asset takeover', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [rec.adapter],
-      resolveAssetTakeover: async (request) => {
-        seen.push(request)
-        return { kind: 'continue' }
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        resolveAssetTakeover: async (request) => {
+          seen.push(request)
+          return { kind: 'continue' }
+        },
       },
     })
 
@@ -1492,7 +1822,15 @@ describe('asset takeover', () => {
     const rec = mcpAdapter('rec')
     const path = occupy('rec', 'review', '# hand written\n')
 
-    expect((await runInstall({ projectRoot, adapters: [rec.adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [rec.adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
     expect(readFileSync(path, 'utf8')).toContain('review from alpha')
   })
 
@@ -1500,24 +1838,28 @@ describe('asset takeover', () => {
     const a = skillFixture('alpha', 'review')
     writeManifest({ facets: { alpha: a } })
     const rec = mcpAdapter('rec')
-    expect((await runInstall({ projectRoot, adapters: [rec.adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [rec.adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
 
     // Forget the identity, so the destination reads as untracked again.
     rmSync(receiptPath(projectRoot), { force: true })
 
-    let asked = 0
+    // A frozen operation cannot carry a takeover resolver, so the question
+    // this test used to ask at runtime is now answered by the type.
     const result = await runInstall({
       projectRoot,
       adapters: [rec.adapter],
-      frozenLockfile: true,
-      resolveAssetTakeover: async () => {
-        asked++
-        return { kind: 'continue' }
-      },
+      operation: { kind: 'reproduce', frozen: true },
     })
 
     expect(result.ok).toBe(true)
-    expect(asked).toBe(0)
   })
 
   test('MCP approval does not accept an asset takeover', async () => {
@@ -1534,11 +1876,15 @@ describe('asset takeover', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [rec.adapter],
-      // Pre-supplied MCP approval, which must say nothing about assets.
-      mcpConsent: ACCEPT,
-      resolveAssetTakeover: async () => {
-        asked++
-        return { kind: 'cancelled' }
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        // Pre-supplied MCP approval, which must say nothing about assets.
+        mcpConsent: ACCEPT,
+        resolveAssetTakeover: async () => {
+          asked++
+          return { kind: 'cancelled' }
+        },
       },
     })
 
@@ -1558,11 +1904,15 @@ describe('mcp — interruption', () => {
       projectRoot,
       adapters: [rec.adapter],
       signal: controller.signal,
-      mcpConsent: {
-        kind: 'interactive',
-        resolve: async () => {
-          controller.abort()
-          return { kind: 'approved' }
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        mcpConsent: {
+          kind: 'interactive',
+          resolve: async () => {
+            controller.abort()
+            return { kind: 'approved' }
+          },
         },
       },
     })

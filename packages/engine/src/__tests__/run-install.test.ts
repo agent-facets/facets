@@ -223,6 +223,7 @@ describe('runInstall — facets.json discovery', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [buildFakeAdapter('test')],
+      operation: { kind: 'reproduce', frozen: false },
     })
     expect(result.ok).toBe(false)
     if (result.ok) expect.unreachable()
@@ -234,6 +235,7 @@ describe('runInstall — facets.json discovery', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [buildFakeAdapter('test')],
+      operation: { kind: 'reproduce', frozen: false },
     })
     expect(result.ok).toBe(false)
     if (result.ok) expect.unreachable()
@@ -252,6 +254,7 @@ describe('runInstall — local source success path with events', () => {
       projectRoot,
       adapters: [buildFakeAdapter('test')],
       onStage: (e) => events.push(e),
+      operation: { kind: 'reproduce', frozen: false },
     })
 
     expect(result.ok).toBe(true)
@@ -273,6 +276,7 @@ describe('runInstall — local source success path', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [buildFakeAdapter('test')],
+      operation: { kind: 'reproduce', frozen: false },
     })
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
@@ -288,7 +292,11 @@ describe('runInstall — local source success path', () => {
     const relPath = `./${local.split('/').pop()}`
     writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify({ facets: { 'viper-plans': relPath } }))
 
-    const result = await runInstall({ projectRoot, adapters: [buildFakeAdapter('test')] })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [buildFakeAdapter('test')],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
 
@@ -321,7 +329,11 @@ describe('runInstall — local source success path', () => {
     writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify({ facets: { 'viper-plans': relPath } }))
 
     // First install writes a valid 0.2 lockfile.
-    const first = await runInstall({ projectRoot, adapters: [buildFakeAdapter('test')] })
+    const first = await runInstall({
+      projectRoot,
+      adapters: [buildFakeAdapter('test')],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (!first.ok) expect.unreachable()
 
     // Tamper the locked per-file integrity for the skill's SKILL.md so the
@@ -332,7 +344,11 @@ describe('runInstall — local source success path', () => {
     lock.facets['viper-plans'].assets[0].files[0].integrity = wrong
     writeFileSync(lockPath, JSON.stringify(lock))
 
-    const second = await runInstall({ projectRoot, adapters: [buildFakeAdapter('test')] })
+    const second = await runInstall({
+      projectRoot,
+      adapters: [buildFakeAdapter('test')],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (second.ok) expect.unreachable()
     if (second.failure.code !== 'RECONCILE_PER_FILE_INTEGRITY') expect.unreachable()
     expect(second.failure.facet).toBe('viper-plans')
@@ -354,7 +370,11 @@ describe('runInstall — local source success path', () => {
     writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify({ facets: { 'viper-plans': relPath } }))
 
     // First install writes a valid 0.2 lockfile.
-    const first = await runInstall({ projectRoot, adapters: [buildFakeAdapter('test')] })
+    const first = await runInstall({
+      projectRoot,
+      adapters: [buildFakeAdapter('test')],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (!first.ok) expect.unreachable()
 
     // Inject an extra owned-file record into the locked skill entry so the
@@ -367,7 +387,11 @@ describe('runInstall — local source success path', () => {
     })
     writeFileSync(lockPath, JSON.stringify(lock))
 
-    const second = await runInstall({ projectRoot, adapters: [buildFakeAdapter('test')] })
+    const second = await runInstall({
+      projectRoot,
+      adapters: [buildFakeAdapter('test')],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (second.ok) expect.unreachable()
     if (second.failure.code !== 'RECONCILE_OWNED_PATH_SET') expect.unreachable()
     expect(second.failure.facet).toBe('viper-plans')
@@ -396,6 +420,7 @@ describe('runInstall — registry source surfaces REGISTRY_ERROR on resolution f
       const result = await runInstall({
         projectRoot,
         adapters: [buildFakeAdapter('test')],
+        operation: { kind: 'reproduce', frozen: false },
       })
       expect(result.ok).toBe(false)
       if (result.ok) expect.unreachable()
@@ -432,6 +457,7 @@ describe('runInstall — composition is rejected', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [buildFakeAdapter('test')],
+      operation: { kind: 'reproduce', frozen: false },
     })
     expect(result.ok).toBe(false)
     if (result.ok) expect.unreachable()
@@ -450,6 +476,7 @@ describe('runInstall — manifest name mismatch', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [buildFakeAdapter('test')],
+      operation: { kind: 'reproduce', frozen: false },
     })
     expect(result.ok).toBe(false)
     if (result.ok) expect.unreachable()
@@ -487,10 +514,14 @@ describe('runInstall — concrete MCP declarations', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [buildFakeAdapter('test')],
-      // A declaration authorizes execution, so an unapproved one now stops
-      // the run. This test is about the declaration not *degrading* the
-      // install; approval is exercised on its own.
-      mcpConsent: { kind: 'preapproved' },
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        // A declaration authorizes execution, so an unapproved one now stops
+        // the run. This test is about the declaration not *degrading* the
+        // install; approval is exercised on its own.
+        mcpConsent: { kind: 'preapproved' },
+      },
     })
     expect(result.ok).toBe(true)
   })
@@ -514,7 +545,11 @@ describe('runInstall — concrete MCP declarations', () => {
       JSON.stringify({ facets: { 'legacy-servers': `./${fixture.split('/').pop()}` } }),
     )
 
-    const result = await runInstall({ projectRoot, adapters: [buildFakeAdapter('test')] })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [buildFakeAdapter('test')],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     expect(result.ok).toBe(false)
   })
 })
@@ -537,6 +572,7 @@ describe('runInstall — drift removal', () => {
     const first = await runInstall({
       projectRoot,
       adapters: [buildFakeAdapter('test')],
+      operation: { kind: 'reproduce', frozen: false },
     })
     expect(first.ok).toBe(true)
 
@@ -550,6 +586,7 @@ describe('runInstall — drift removal', () => {
       projectRoot,
       adapters: [buildFakeAdapter('test')],
       onStage: (e) => events.push(e),
+      operation: { kind: 'reproduce', frozen: false },
     })
     expect(second.ok).toBe(true)
     if (!second.ok) expect.unreachable()
@@ -570,6 +607,7 @@ describe('runInstall — lockfile bootstrap and reuse', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [buildFakeAdapter('test')],
+      operation: { kind: 'reproduce', frozen: false },
     })
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
@@ -586,12 +624,14 @@ describe('runInstall — lockfile bootstrap and reuse', () => {
     const bootstrap = await runInstall({
       projectRoot,
       adapters: [buildFakeAdapter('test')],
+      operation: { kind: 'reproduce', frozen: false },
     })
     expect(bootstrap.ok).toBe(true)
 
     const result = await runInstall({
       projectRoot,
       adapters: [buildFakeAdapter('test')],
+      operation: { kind: 'reproduce', frozen: false },
     })
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
@@ -612,6 +652,7 @@ describe('runInstall — lockfile bootstrap and reuse', () => {
     const bootstrap = await runInstall({
       projectRoot,
       adapters: [buildFakeAdapter('test')],
+      operation: { kind: 'reproduce', frozen: false },
     })
     expect(bootstrap.ok).toBe(true)
 
@@ -623,6 +664,7 @@ describe('runInstall — lockfile bootstrap and reuse', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [buildFakeAdapter('test')],
+      operation: { kind: 'reproduce', frozen: false },
     })
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
@@ -648,6 +690,7 @@ describe('runInstall — abort signal', () => {
       projectRoot,
       adapters: [buildFakeAdapter('test')],
       signal: controller.signal,
+      operation: { kind: 'reproduce', frozen: false },
     })
     expect(result.ok).toBe(false)
     if (result.ok) expect.unreachable()
@@ -669,6 +712,7 @@ describe('runInstall — asset-level drift across versions', () => {
     const first = await runInstall({
       projectRoot,
       adapters: [buildFakeAdapter('test')],
+      operation: { kind: 'reproduce', frozen: false },
     })
     expect(first.ok).toBe(true)
     expect(existsSync(join(projectRoot, '.test/skills/planning.md'))).toBe(true)
@@ -689,6 +733,7 @@ describe('runInstall — asset-level drift across versions', () => {
     const second = await runInstall({
       projectRoot,
       adapters: [buildFakeAdapter('test')],
+      operation: { kind: 'reproduce', frozen: false },
     })
     expect(second.ok).toBe(true)
     expect(existsSync(join(projectRoot, '.test/skills/planning.md'))).toBe(true)
@@ -706,6 +751,7 @@ describe('runInstall — empty skill directory pruning (nested layout)', () => {
     const first = await runInstall({
       projectRoot,
       adapters: [buildNestedFakeAdapter('nested')],
+      operation: { kind: 'reproduce', frozen: false },
     })
     expect(first.ok).toBe(true)
     expect(existsSync(join(projectRoot, '.nested/skills/planning/SKILL.md'))).toBe(true)
@@ -725,6 +771,7 @@ describe('runInstall — empty skill directory pruning (nested layout)', () => {
     const second = await runInstall({
       projectRoot,
       adapters: [buildNestedFakeAdapter('nested')],
+      operation: { kind: 'reproduce', frozen: false },
     })
     expect(second.ok).toBe(true)
     // SKILL.md is gone AND the now-empty skill directory is pruned.
@@ -741,6 +788,7 @@ describe('runInstall — empty skill directory pruning (nested layout)', () => {
     const first = await runInstall({
       projectRoot,
       adapters: [buildNestedFakeAdapter('nested')],
+      operation: { kind: 'reproduce', frozen: false },
     })
     expect(first.ok).toBe(true)
 
@@ -762,6 +810,7 @@ describe('runInstall — empty skill directory pruning (nested layout)', () => {
     const second = await runInstall({
       projectRoot,
       adapters: [buildNestedFakeAdapter('nested')],
+      operation: { kind: 'reproduce', frozen: false },
     })
     expect(second.ok).toBe(true)
     // The managed SKILL.md is gone, but the directory survives because of
@@ -782,6 +831,7 @@ describe('runInstall — rollback on adapter throw', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [buildBrokenAdapter('broken', 2)],
+      operation: { kind: 'reproduce', frozen: false },
     })
     expect(result.ok).toBe(false)
     if (result.ok) expect.unreachable()
@@ -807,6 +857,7 @@ describe('runInstall — rollback on adapter throw', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [adapterA, adapterB],
+      operation: { kind: 'reproduce', frozen: false },
     })
     expect(result.ok).toBe(false)
     if (result.ok) expect.unreachable()
@@ -836,6 +887,7 @@ describe('runInstall — lockfile write failure rolls back', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false },
     })
 
     expect(result.ok).toBe(false)
@@ -862,6 +914,7 @@ describe('runInstall — a planning failure aborts before any file is touched', 
     const result = await runInstall({
       projectRoot,
       adapters: [buildBadReadAdapter('bad-read')],
+      operation: { kind: 'reproduce', frozen: false },
     })
     expect(result.ok).toBe(false)
     if (result.ok) expect.unreachable()
@@ -981,6 +1034,7 @@ describe('runInstall — git cache hit short-circuits clone', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [buildFakeAdapter('test')],
+      operation: { kind: 'reproduce', frozen: false },
     })
 
     expect(result.ok).toBe(true)
@@ -1040,6 +1094,7 @@ describe('runInstall — git cache hit short-circuits clone', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [buildFakeAdapter('test')],
+      operation: { kind: 'reproduce', frozen: false },
     })
 
     expect(result.ok).toBe(false)
@@ -1123,7 +1178,11 @@ describe('runInstall — multi-file skill materialization', () => {
       JSON.stringify({ facets: { 'viper-plans': `./${local.split('/').pop()}` } }),
     )
 
-    const result = await runInstall({ projectRoot, adapters: [buildBundleAdapter('bundle')] })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [buildBundleAdapter('bundle')],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (!result.ok) expect.unreachable()
 
     // Both companions materialized, binary preserved byte-for-byte.
@@ -1150,12 +1209,20 @@ describe('runInstall — multi-file skill materialization', () => {
     )
     const adapters = [buildBundleAdapter('bundle')]
 
-    const first = await runInstall({ projectRoot, adapters })
+    const first = await runInstall({
+      projectRoot,
+      adapters,
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (!first.ok) expect.unreachable()
     expect(first.summary.textAssets.written).toBe(1)
 
     // Second install with no changes: the whole bundle is identical → skipped.
-    const second = await runInstall({ projectRoot, adapters })
+    const second = await runInstall({
+      projectRoot,
+      adapters,
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (!second.ok) expect.unreachable()
     expect(second.summary.textAssets.written).toBe(0)
 
@@ -1165,7 +1232,12 @@ describe('runInstall — multi-file skill materialization', () => {
     const apiPath = join(projectRoot, '.bundle/skills/planning/references/api.md')
     writeFileSync(apiPath, '# TAMPERED\n')
     const logs: string[] = []
-    const third = await runInstall({ projectRoot, adapters, onLog: (b) => logs.push(b()) })
+    const third = await runInstall({
+      projectRoot,
+      adapters,
+      onLog: (b) => logs.push(b()),
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (!third.ok) expect.unreachable()
     expect(third.summary.textAssets.written).toBe(1)
     expect(readFileSync(apiPath, 'utf8')).toBe('# api reference\n')
@@ -1180,7 +1252,11 @@ describe('runInstall — multi-file skill materialization', () => {
     )
     const adapters = [buildBundleAdapter('bundle')]
 
-    const first = await runInstall({ projectRoot, adapters })
+    const first = await runInstall({
+      projectRoot,
+      adapters,
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (!first.ok) expect.unreachable()
 
     // A user drops an unowned note into the skill dir.
@@ -1189,7 +1265,11 @@ describe('runInstall — multi-file skill materialization', () => {
 
     // Change the primary so a reinstall re-writes the bundle.
     writeFileSync(join(local, 'skills/planning/SKILL.md'), '# planning edited\n')
-    const second = await runInstall({ projectRoot, adapters })
+    const second = await runInstall({
+      projectRoot,
+      adapters,
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (!second.ok) expect.unreachable()
 
     // The unowned note is untouched by the owned-set replacement.
@@ -1208,7 +1288,11 @@ describe('runInstall — multi-file skill materialization', () => {
     )
     const adapters = [buildBundleAdapter('bundle')]
 
-    const first = await runInstall({ projectRoot, adapters })
+    const first = await runInstall({
+      projectRoot,
+      adapters,
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (!first.ok) expect.unreachable()
 
     const skillDir = join(projectRoot, '.bundle/skills/planning')
@@ -1225,7 +1309,11 @@ describe('runInstall — multi-file skill materialization', () => {
     rmSync(local, { recursive: true, force: true })
     writeFileSync(join(projectRoot, 'facets.json'), JSON.stringify({ facets: {} }))
 
-    const removed = await runInstall({ projectRoot, adapters })
+    const removed = await runInstall({
+      projectRoot,
+      adapters,
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (!removed.ok) expect.unreachable()
 
     // Primary + both owned companions removed; the unowned note survives.
@@ -1257,7 +1345,11 @@ describe('runInstall — multi-file skill materialization', () => {
       JSON.stringify({ facets: { 'viper-plans': `./${repo.split('/').pop()}` } }),
     )
 
-    const result = await runInstall({ projectRoot, adapters: [buildBundleAdapter('bundle')] })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [buildBundleAdapter('bundle')],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (!result.ok) expect.unreachable()
 
     // README is NOT written into the adapter tree anywhere.
@@ -1284,7 +1376,11 @@ describe('runInstall — multi-file skill materialization', () => {
     )
     const adapters = [buildBundleAdapter('bundle')]
 
-    const first = await runInstall({ projectRoot, adapters })
+    const first = await runInstall({
+      projectRoot,
+      adapters,
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (!first.ok) expect.unreachable()
 
     const skillDir = join(projectRoot, '.bundle/skills/planning')
@@ -1296,7 +1392,11 @@ describe('runInstall — multi-file skill materialization', () => {
 
     // Re-run converges: the missing companion is restored, the unowned file
     // survives, and the install reports the bundle as repaired (one write).
-    const second = await runInstall({ projectRoot, adapters })
+    const second = await runInstall({
+      projectRoot,
+      adapters,
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (!second.ok) expect.unreachable()
     expect(second.summary.textAssets.written).toBe(1)
     expect(readFileSync(join(skillDir, 'references/api.md'), 'utf8')).toBe('# api reference\n')
@@ -1315,11 +1415,19 @@ describe('runInstall — multi-file skill materialization', () => {
     )
     const adapters = [buildBundleAdapter('bundle')]
 
-    const first = await runInstall({ projectRoot, adapters })
+    const first = await runInstall({
+      projectRoot,
+      adapters,
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (!first.ok) expect.unreachable()
     const lockBefore = readFileSync(join(projectRoot, 'facets.lock'), 'utf8')
 
-    const frozen = await runInstall({ projectRoot, adapters, frozenLockfile: true })
+    const frozen = await runInstall({
+      projectRoot,
+      adapters,
+      operation: { kind: 'reproduce', frozen: true },
+    })
     if (!frozen.ok) expect.unreachable()
 
     // Nothing written, and every companion survives.
@@ -1340,7 +1448,11 @@ describe('runInstall — multi-file skill materialization', () => {
     )
     const adapters = [buildBundleAdapter('bundle')]
 
-    const first = await runInstall({ projectRoot, adapters })
+    const first = await runInstall({
+      projectRoot,
+      adapters,
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (!first.ok) expect.unreachable()
 
     const skillDir = join(projectRoot, '.bundle/skills/planning')
@@ -1349,7 +1461,11 @@ describe('runInstall — multi-file skill materialization', () => {
     // Frozen mode constrains the locked set, not materialized state: it still
     // converges disk, which is only possible because the resolved record
     // carries the companion bytes to restore from.
-    const frozen = await runInstall({ projectRoot, adapters, frozenLockfile: true })
+    const frozen = await runInstall({
+      projectRoot,
+      adapters,
+      operation: { kind: 'reproduce', frozen: true },
+    })
     if (!frozen.ok) expect.unreachable()
     expect(frozen.perFacet).toEqual([{ kind: 'repaired', name: 'viper-plans', version: '0.1.0' }])
     expect(readFileSync(join(skillDir, 'references/api.md'), 'utf8')).toBe('# api reference\n')
