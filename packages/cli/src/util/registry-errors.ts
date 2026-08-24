@@ -56,6 +56,16 @@ export function translateEngineRegistryError(err: RegistryError): CliError {
         detail: err.cause,
         fix: 'try again; if persistent, file a bug',
       }
+    case 'TOO_MANY_SPECIFIERS':
+      // Not something the registry said, and not something the user did:
+      // a command asked for more lookups in one call than the batch
+      // boundary accepts. Say so plainly rather than dressing it up as a
+      // registry problem the user could act on.
+      return {
+        what: 'the CLI asked the registry to resolve too many facets at once',
+        detail: `${err.received} versions requested in one call (limit ${err.limit})`,
+        fix: 'file a bug — this is a defect in the CLI, not your project',
+      }
     case 'UNSUPPORTED_ARCHIVE':
       // The single compatibility table names the minimum supporting release
       // for a known newer format, or advises updating to latest for an

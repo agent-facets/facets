@@ -264,6 +264,22 @@ export type {
 // failure shapes carry one, so anything rendering `RunInstallFailure` needs
 // the constructor to build a fixture -- exported alongside the type.
 export { assetIdentity } from './install/types.ts'
+// update planning (owns every version question `facet update` renders)
+export type {
+  AdvancingChoices,
+  AuthoredSpecifier,
+  CheckableRegistryFacet,
+  ExactVersion,
+  PreparedFacetUpdate,
+  PrepareFacetUpdateFailure,
+  PrepareFacetUpdateResult,
+  ResolvedChoice,
+  UnusableFacetState,
+  UnusableStateReason,
+  UpdateChoice,
+  UpdatePlanRow,
+} from './install/update/index.ts'
+export { prepareFacetUpdate } from './install/update/index.ts'
 // loaders. Note: `ResolvedFacetManifest` and `FACET_MANIFEST_FILE` are
 // part of `@agent-facets/protocol`'s public surface, not engine's. CLI
 // imports them directly from protocol; we don't re-export them here to

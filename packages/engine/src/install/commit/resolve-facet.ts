@@ -1,8 +1,7 @@
 import type { Adapter } from '@agent-facets/adapter'
 import type { SupportedLockfile } from '@agent-facets/protocol'
-import { parseFacetSource } from '../../sources/facet/parse-source.ts'
-import { parseVersionSpec } from '../../sources/facet/parse-version.ts'
 import { ownEntry } from '../own-entry.ts'
+import { parseManifestFacetSource } from '../parse-manifest-source.ts'
 import type { OnLog, StageEvent } from '../types.ts'
 import { resolveEffectiveLocked } from './effective-locked.ts'
 import { resolveGitFacet } from './resolve-git.ts'
@@ -40,8 +39,7 @@ export async function resolveFacet(args: ResolveFacetArgs): Promise<ResolveFacet
   const { facetName, specifier, projectRoot, adapters, frozenLockfile, onStage, onLog } = args
 
   onStage({ kind: 'facet-stage', facet: facetName, stage: 'parse' })
-  const sourceString = parseVersionSpec(specifier).ok ? `${facetName}@${specifier}` : specifier
-  const parsed = parseFacetSource(sourceString)
+  const parsed = parseManifestFacetSource(facetName, specifier)
   if (!parsed.ok) {
     return {
       ok: false,
