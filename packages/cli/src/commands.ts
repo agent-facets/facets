@@ -15,8 +15,51 @@ import { searchCommand } from './commands/search/index.ts'
 import { selfUpdateCommand } from './commands/self-update.ts'
 import { whoamiCommand } from './commands/whoami/index.ts'
 
+type LowercaseLetter =
+  | 'a'
+  | 'b'
+  | 'c'
+  | 'd'
+  | 'e'
+  | 'f'
+  | 'g'
+  | 'h'
+  | 'i'
+  | 'j'
+  | 'k'
+  | 'l'
+  | 'm'
+  | 'n'
+  | 'o'
+  | 'p'
+  | 'q'
+  | 'r'
+  | 's'
+  | 't'
+  | 'u'
+  | 'v'
+  | 'w'
+  | 'x'
+  | 'y'
+  | 'z'
+
+/**
+ * A flag's single-character short form. Spelled as a letter union rather
+ * than `string` so `short: 'latest'` — which would parse as five clustered
+ * one-letter flags, not one long one — cannot be written in the first
+ * place.
+ */
+export type ShortFlagName = LowercaseLetter | Uppercase<LowercaseLetter>
+
 export type FlagDef = {
   type: 'boolean' | 'string' | 'array'
+  /**
+   * Optional one-character alias. `-L` and `--latest` are the same flag:
+   * the router hands the handler only the canonical long name, and help
+   * renders both forms from this one declaration. There is deliberately
+   * no second alias map to keep in sync.
+   */
+  short?: ShortFlagName
   description: string
 }
 

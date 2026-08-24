@@ -62,16 +62,32 @@ export async function run(argv: string[], commands: Record<string, Command>): Pr
     return 0
   }
 
-  // Build per-command flag parsing config
+  // Build per-command flag parsing config.
+  //
+  // A flag that declares a short alias contributes BOTH spellings to its
+  // type bucket, and an `alias` entry pointing the short one at the long
+  // one. Both halves are needed: the parser decides whether a token takes a
+  // value from the name as typed, before it applies aliases, so a `-i` that
+  // is aliased but not also declared boolean would swallow the next argument
+  // as its value instead of leaving it a positional.
   const booleanFlags: string[] = []
   const stringFlags: string[] = []
   const arrayFlags: string[] = []
+  // Canonical long names only — what handlers are allowed to see.
+  const scalarNames: string[] = []
+  const arrayNames: string[] = []
+  const alias: Record<string, string> = {}
 
   if (command.flags) {
     for (const [name, def] of Object.entries(command.flags)) {
-      if (def.type === 'boolean') booleanFlags.push(name)
-      else if (def.type === 'string') stringFlags.push(name)
-      else if (def.type === 'array') arrayFlags.push(name)
+      const bucket = def.type === 'boolean' ? booleanFlags : def.type === 'string' ? stringFlags : arrayFlags
+      bucket.push(name)
+      if (def.type === 'array') arrayNames.push(name)
+      else scalarNames.push(name)
+      if (def.short !== undefined) {
+        bucket.push(def.short)
+        alias[def.short] = name
+      }
     }
   }
 
@@ -81,13 +97,14 @@ export async function run(argv: string[], commands: Record<string, Command>): Pr
     boolean: booleanFlags,
     string: stringFlags,
     array: arrayFlags,
+    alias,
   })
 
   // Build positional args and flags
   const positionalArgs = parsed._.map(String)
   const flags: Record<string, unknown> = {}
 
-  for (const name of [...booleanFlags, ...stringFlags]) {
+  for (const name of scalarNames) {
     if (parsed[name] !== undefined) {
       flags[name] = parsed[name]
     }
@@ -96,7 +113,7 @@ export async function run(argv: string[], commands: Record<string, Command>): Pr
   // Array flags always surface as `string[]`. The parser yields a bare value
   // for a single occurrence and an array for multiple; normalize both to an
   // array so command handlers never branch on arity.
-  for (const name of arrayFlags) {
+  for (const name of arrayNames) {
     const value = parsed[name]
     if (value === undefined) continue
     flags[name] = Array.isArray(value) ? value.map(String) : [String(value)]
@@ -106,6 +123,9 @@ export async function run(argv: string[], commands: Record<string, Command>): Pr
   // modify` uses open-ended `--adapter-<name>` / `--remove-adapter-<name>`
   // flags whose names can't be declared up front; it reads them from here.
   // Commands that declare all their flags simply never look at the extras.
+  //
+  // Short aliases are in these buckets too, so a declared short name can
+  // never reach a handler as a second, independent value.
   const declared = new Set([...booleanFlags, ...stringFlags, ...arrayFlags])
   for (const [key, value] of Object.entries(parsed)) {
     if (key === '_' || declared.has(key) || flags[key] !== undefined) continue

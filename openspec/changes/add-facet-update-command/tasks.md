@@ -57,20 +57,20 @@
 - [x] 4.6 Implement: Add transaction tests for stale manifest and lockfile snapshots, publication after discovery, no secondary metadata request, mixed selected/unselected facets, comment and override preservation, alias and omission lockfile dispositions, old-to-new summaries, exact pins versus range and latest choices, and compile-time/runtime proof that frozen mode is representable only by the reproduce operation.
 - [x] 4.7 Implement: Add failure-path tests proving multi-facet atomicity, integrity failure rollback, collision and MCP consent behavior, takeover handling, and path-level restoration reporting remain identical to other installation operations.
 - [x] 4.8 Verify: Run targeted install/update tests plus engine and CLI typechecks to verify the operation-union migration and application path.
-- [ ] 4.9 Pause: Model-switch boundary before short-flag research.
+- [x] 4.9 Pause: Model-switch boundary before short-flag research.
 
 ## 5. CLI Short-Flag Metadata — Research
 
-- [ ] 5.1 Explore: Inspect `packages/cli/src/commands.ts`, `run.ts`, `help.ts`, `commands/shared/flags.ts`, parser alias support, undeclared dynamic-flag passthrough, help alignment, and existing alias tests.
-- [ ] 5.2 Propose: Define the canonical short-alias field, parser normalization, exclusion of short keys from handler passthrough, shared help rendering, and router-level regression coverage.
-- [ ] 5.3 Pause: Model-switch boundary before short-flag implementation.
+- [x] 5.1 Explore: Inspect `packages/cli/src/commands.ts`, `run.ts`, `help.ts`, `commands/shared/flags.ts`, parser alias support, undeclared dynamic-flag passthrough, help alignment, and existing alias tests.
+- [x] 5.2 Propose: Define the canonical short-alias field, parser normalization, exclusion of short keys from handler passthrough, shared help rendering, and router-level regression coverage.
+- [x] 5.3 Pause: Model-switch boundary before short-flag implementation.
 
 ## 6. CLI Short-Flag Metadata — Implementation
 
-- [ ] 6.1 Implement: Add canonical short aliases to command flag metadata and derive parser aliases from that field while preserving undeclared dynamic flags and exposing only canonical long-name values to handlers.
-- [ ] 6.2 Implement: Render long and short forms together in per-command help from the same declaration without a second alias map.
-- [ ] 6.3 Implement: Add router and help tests proving `-i` and `-L` set only their canonical values, undeclared dynamic flags retain existing behavior, and existing commands' help remains correctly aligned.
-- [ ] 6.4 Verify: Run targeted router/help tests and typecheck the CLI package.
+- [x] 6.1 Implement: Add canonical short aliases to command flag metadata and derive parser aliases from that field while preserving undeclared dynamic flags and exposing only canonical long-name values to handlers.
+- [x] 6.2 Implement: Render long and short forms together in per-command help from the same declaration without a second alias map.
+- [x] 6.3 Implement: Add router and help tests proving `-i` and `-L` set only their canonical values, undeclared dynamic flags retain existing behavior, and existing commands' help remains correctly aligned.
+- [x] 6.4 Verify: Run targeted router/help tests and typecheck the CLI package.
 - [ ] 6.5 Pause: Model-switch boundary before update-command research.
 
 ## 7. Update Command and Presentation — Research

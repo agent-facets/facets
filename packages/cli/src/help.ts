@@ -1,4 +1,4 @@
-import type { Command } from './commands.ts'
+import type { Command, FlagDef } from './commands.ts'
 import { version } from './version.ts'
 
 /**
@@ -10,6 +10,16 @@ import { version } from './version.ts'
 function commandLabel(c: Command): string {
   if (c.aliases === undefined || c.aliases.length === 0) return c.name
   return [c.name, ...c.aliases].join(', ')
+}
+
+/**
+ * Render a flag's label in per-command help: `--latest`, or `-L, --latest`
+ * when the flag declares a short form. The same string is used to measure
+ * the Options column and to print the row, so a short alias can never
+ * shift a description out of alignment.
+ */
+function flagLabel(name: string, def: FlagDef): string {
+  return def.short === undefined ? `--${name}` : `-${def.short}, --${name}`
 }
 
 export function printGlobalHelp(commands: Record<string, Command>): void {
@@ -53,14 +63,16 @@ export function printCommandHelp(command: Command): void {
   const lines = [`Usage: facet ${command.name}${usage} [options]`, '', `  ${command.description}`, '', 'Options:']
 
   if (command.flags) {
-    const flagEntries = Object.entries(command.flags)
-    const maxFlagLength = Math.max(...flagEntries.map(([name]) => `--${name}`.length), '--help'.length)
+    const rows = Object.entries(command.flags).map(([name, def]) => ({
+      label: flagLabel(name, def),
+      description: def.description,
+    }))
+    rows.push({ label: '--help', description: 'Show help' })
 
-    for (const [name, def] of flagEntries) {
-      lines.push(`  ${`--${name}`.padEnd(maxFlagLength + 4)}${def.description}`)
+    const maxFlagLength = Math.max(...rows.map((row) => row.label.length))
+    for (const row of rows) {
+      lines.push(`  ${row.label.padEnd(maxFlagLength + 4)}${row.description}`)
     }
-
-    lines.push(`  ${'--help'.padEnd(maxFlagLength + 4)}Show help`)
   } else {
     lines.push('  --help    Show help')
   }
