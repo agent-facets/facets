@@ -82,9 +82,12 @@ export interface InstallViewProps {
   /**
    * Header copy hint. `'add'` renders "Adding facets..."; `'install'`
    * renders "Installing facets..."; `'remove'` renders "Removing
-   * facets...". Functional behavior is identical.
+   * facets..."; `'update'` renders "Updating facets...". Functional
+   * behavior is identical — update in particular runs the same pipeline
+   * as every other operation, which is why it gets a word rather than a
+   * second progress renderer.
    */
-  mode: 'add' | 'install' | 'remove'
+  mode: 'add' | 'install' | 'remove' | 'update'
   /**
    * Fires once when the install completes, before Ink unmounts. Lets
    * the caller capture the result for exit-code mapping.
@@ -98,6 +101,14 @@ export interface InstallViewProps {
    */
   signal?: AbortSignal
 }
+
+/** What each mode calls the thing it is doing, in one table per surface. */
+const HEADER_LABELS = {
+  add: 'Adding facets:',
+  install: 'Installing facets:',
+  remove: 'Removing facets:',
+  update: 'Updating facets:',
+} as const satisfies Record<InstallViewProps['mode'], string>
 
 /** Type guard: a driver result that is an add prepare-phase failure. */
 function isPrepareFailure(r: InstallViewResult): r is { ok: false; prepareFailure: AddPrepareFailure } {
@@ -490,7 +501,7 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
     return () => signal.removeEventListener('abort', onAbort)
   }, [signal, phase])
 
-  const headerLabel = mode === 'add' ? 'Adding facets:' : mode === 'remove' ? 'Removing facets:' : 'Installing facets:'
+  const headerLabel = HEADER_LABELS[mode]
 
   // Compute live counters: [done, remaining, failed].
   let doneCount = 0
@@ -677,7 +688,7 @@ function SuccessSummary({
   elapsedMs,
 }: {
   result: RunInstallResult & { ok: true }
-  mode: 'add' | 'install' | 'remove'
+  mode: 'add' | 'install' | 'remove' | 'update'
   adapterCount: number
   elapsedMs: number
 }) {
@@ -728,18 +739,25 @@ function SuccessSummary({
   // still there because nothing proved this machine installed them.
   const untrackedNames = result.perFacet.filter((o) => o.kind === 'removed-untracked').map((o) => o.name)
 
+  // Every version this run moved, oldest fact first. `updated` is the
+  // only outcome that carries both halves, which is exactly why update
+  // mode names them: "1 updated" does not tell a user what they now have.
+  const transitions = result.perFacet.filter((outcome) => outcome.kind === 'updated')
+
   const actionLabel =
     mode === 'add'
       ? `${touched.join(', ')} installed.`
       : mode === 'remove'
         ? `${removedNames.join(', ')} removed.`
-        : 'Install complete.'
+        : mode === 'update'
+          ? 'Update complete.'
+          : 'Install complete.'
   const registrationSuffix =
     adapterCount > 0 ? ` Updated facets via ${adapterCount} adapter${adapterCount === 1 ? '' : 's'}` : ''
 
-  // Timer line: "Installed N facets" or "Removed N facets"
-  const timerVerb = mode === 'remove' ? 'Removed' : 'Installed'
-  const timerCount = mode === 'remove' ? removedNames.length : touched.length
+  // Timer line: "Installed N facets", "Removed N facets", "Updated N facets"
+  const timerVerb = mode === 'remove' ? 'Removed' : mode === 'update' ? 'Updated' : 'Installed'
+  const timerCount = mode === 'remove' ? removedNames.length : mode === 'update' ? transitions.length : touched.length
 
   return (
     <Box flexDirection="column">
@@ -758,6 +776,17 @@ function SuccessSummary({
       <Box flexDirection="column" marginLeft={2}>
         <Text color={THEME.hint}>{summaryLine(summary)}</Text>
         {bundleVizNode}
+        {/* The whole point of the command: which version each facet was
+            on, and which one it is on now. */}
+        {mode === 'update' &&
+          transitions.map((outcome) => (
+            <Text key={outcome.name}>
+              <Text color={THEME.hint}>{outcome.name} </Text>
+              <Text>{outcome.oldVersion}</Text>
+              <Text color={THEME.hint}> → </Text>
+              <Text color={THEME.success}>{outcome.newVersion}</Text>
+            </Text>
+          ))}
         {/* Aliases and omissions are the one thing a user cannot infer
             from the file tree: an asset is missing, or present under a
             name they did not publish. Naming both sides makes the

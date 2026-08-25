@@ -66,7 +66,7 @@ export async function runPreparedFacetUpdate(
 ): Promise<RunPreparedFacetUpdateResult> {
   const { prepared, adapters, selections, onStage, onLog, signal, ...interactions } = opts
 
-  const validated = validateSelections(prepared.plan, selections)
+  const validated = validateFacetUpdateSelections(prepared.plan, selections)
   if (!validated.ok) return { ok: false, phase: 'selection', failure: validated.failure }
 
   const install = await runInstall({
@@ -96,7 +96,7 @@ export async function runPreparedFacetUpdate(
  * computed its own manifest value would be describing a different
  * operation than the one that runs.
  */
-export function validateSelections(
+export function validateFacetUpdateSelections(
   plan: readonly UpdatePlanRow[],
   selections: ReadonlyArray<FacetUpdateSelection>,
 ):

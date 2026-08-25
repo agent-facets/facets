@@ -71,26 +71,26 @@
 - [x] 6.2 Implement: Render long and short forms together in per-command help from the same declaration without a second alias map.
 - [x] 6.3 Implement: Add router and help tests proving `-i` and `-L` set only their canonical values, undeclared dynamic flags retain existing behavior, and existing commands' help remains correctly aligned.
 - [x] 6.4 Verify: Run targeted router/help tests and typecheck the CLI package.
-- [ ] 6.5 Pause: Model-switch boundary before update-command research.
+- [x] 6.5 Pause: Model-switch boundary before update-command research.
 
 ## 7. Update Command and Presentation — Research
 
-- [ ] 7.1 Explore: Inspect command registration and alias dispatch in `packages/cli/src/commands.ts`, `run.ts`, and `help.ts`, using `commands/self-update.ts` and `commands/remove/index.ts` as canonical alias examples.
-- [ ] 7.2 Explore: Inspect add/install/remove orchestration, `commands/shared/ensure-adapters.ts`, TTY gates, error translators, cancellation handling, and process-exit boundaries needed to preserve update ordering and exit semantics.
-- [ ] 7.3 Explore: Inspect static list rendering, `commands/adapter/install-picker.tsx`, `tui/views/install/collision/workspace.tsx`, `tui/views/install/install-view.tsx`, failure rendering, and Ink test utilities needed for preview, selection, progress, and rollback output.
-- [ ] 7.4 Propose: Define the cohesive update-command approach for registration, mode derivation, no-op and dry-run rendering, tagged picker rows, adapter ordering, shared installation presentation, error translation, and test coverage.
-- [ ] 7.5 Pause: Model-switch boundary before update-command implementation.
+- [x] 7.1 Explore: Inspect command registration and alias dispatch in `packages/cli/src/commands.ts`, `run.ts`, and `help.ts`, using `commands/self-update.ts` and `commands/remove/index.ts` as canonical alias examples.
+- [x] 7.2 Explore: Inspect add/install/remove orchestration, `commands/shared/ensure-adapters.ts`, TTY gates, error translators, cancellation handling, and process-exit boundaries needed to preserve update ordering and exit semantics.
+- [x] 7.3 Explore: Inspect static list rendering, `commands/adapter/install-picker.tsx`, `tui/views/install/collision/workspace.tsx`, `tui/views/install/install-view.tsx`, failure rendering, and Ink test utilities needed for preview, selection, progress, and rollback output.
+- [x] 7.4 Propose: Define the cohesive update-command approach for registration, mode derivation, no-op and dry-run rendering, tagged picker rows, adapter ordering, shared installation presentation, error translation, and test coverage.
+- [x] 7.5 Pause: Model-switch boundary before update-command implementation.
 
 ## 8. Update Command and Presentation — Implementation
 
-- [ ] 8.1 Implement: Register implemented `update` with `upgrade` only as its alias, remove the inert upgrade stub, define the supported flag surface, reject positional arguments with `--interactive` guidance, and distinguish project updates from `self-update` in help.
-- [ ] 8.2 Implement: Add static Current/Target/Latest plan rendering, unsupported-source rows, latest-mode manifest rewrite previews, and distinct successful no-op messages including the actionable `--latest` hint.
-- [ ] 8.3 Implement: Add the standalone update picker by reusing `install-picker.tsx` keyboard conventions and collision-workspace focus/interrupt behavior, with tagged selected/unselected rows, mode-specific initial choices, focused `l` toggling, non-advancing protection, and reliable cancellation.
-- [ ] 8.4 Implement: Add command orchestration in the required order: positional and TTY validation, preparation, optional interactive selection, dry-run stop, adapter selection, and guarded application with the complete 0/1/2 exit contract.
-- [ ] 8.5 Implement: Extend `InstallView`, shared summaries, failure remedies, stale-plan rendering, and path-level rollback detail for update mode without introducing a second progress pipeline.
-- [ ] 8.6 Implement: Add registration, help, command, static-view, picker, and install-view unit tests covering canonical/alias identity, mode defaults, cancellation, no-op output, output streams, and `--accept-mcp` boundaries.
-- [ ] 8.7 Implement: Add CLI end-to-end tests for global and per-command help, `upgrade` alias behavior, positional and non-TTY failures, dry-run without adapters, interactive cancellation before adapter installation, applied old-to-new summaries, stale plans, and expected exit codes.
-- [ ] 8.8 Verify: Run targeted CLI command, Ink, and end-to-end tests and typecheck the CLI package.
+- [x] 8.1 Implement: Register implemented `update` with `upgrade` only as its alias, remove the inert upgrade stub, define the supported flag surface, reject positional arguments with `--interactive` guidance, and distinguish project updates from `self-update` in help.
+- [x] 8.2 Implement: Add static Current/Target/Latest plan rendering, unsupported-source rows, latest-mode manifest rewrite previews, and distinct successful no-op messages including the actionable `--latest` hint.
+- [x] 8.3 Implement: Add the standalone update picker by reusing `install-picker.tsx` keyboard conventions and collision-workspace focus/interrupt behavior, with tagged selected/unselected rows, mode-specific initial choices, focused `l` toggling, non-advancing protection, and reliable cancellation.
+- [x] 8.4 Implement: Add command orchestration in the required order: positional and TTY validation, preparation, optional interactive selection, dry-run stop, adapter selection, and guarded application with the complete 0/1/2 exit contract.
+- [x] 8.5 Implement: Extend `InstallView`, shared summaries, failure remedies, stale-plan rendering, and path-level rollback detail for update mode without introducing a second progress pipeline.
+- [x] 8.6 Implement: Add registration, help, command, static-view, picker, and install-view unit tests covering canonical/alias identity, mode defaults, cancellation, no-op output, output streams, and `--accept-mcp` boundaries.
+- [x] 8.7 Implement: Add CLI end-to-end tests for global and per-command help, `upgrade` alias behavior, positional and non-TTY failures, dry-run without adapters, interactive cancellation before adapter installation, applied old-to-new summaries, stale plans, and expected exit codes.
+- [x] 8.8 Verify: Run targeted CLI command, Ink, and end-to-end tests and typecheck the CLI package.
 - [ ] 8.9 Pause: Model-switch boundary before documentation research.
 
 ## 9. Documentation and Agent Guidance — Research
