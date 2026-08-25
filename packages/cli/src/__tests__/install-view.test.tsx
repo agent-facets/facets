@@ -1954,3 +1954,95 @@ describe('InstallView — declaration secrecy', () => {
     instance.unmount()
   })
 })
+
+// ---------------------------------------------------------------------------
+// Update mode
+// ---------------------------------------------------------------------------
+
+/**
+ * Update runs the same pipeline as everything else, so what is tested
+ * here is only what a user reading the screen would otherwise get wrong:
+ * which operation is running, and which version each facet ended up on.
+ */
+describe('InstallView — update mode', () => {
+  const updateResult: RunInstallResult = {
+    ok: true,
+    lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
+    summary: {
+      facets: { installed: 0, updated: 2, repaired: 0, unchanged: 1, removed: 0 },
+      textAssets: { written: 4, removed: 0 },
+      mcp: NO_MCP_COUNTS,
+    },
+    perFacet: [
+      { kind: 'updated', name: 'alpha', oldVersion: '1.2.0', newVersion: '1.8.0' },
+      { kind: 'updated', name: 'beta', oldVersion: '1.2.0', newVersion: '3.4.1' },
+      { kind: 'unchanged', name: 'gamma', version: '4.0.0' },
+    ],
+    mcp: NO_MCP,
+  }
+
+  test('names the operation while it runs', async () => {
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'update',
+        run: makeFakeRun([{ kind: 'install-start', totalFacets: 2 }], updateResult),
+      }),
+    )
+    // The header is only on screen before the result replaces it.
+    await settle()
+    expect(instance.frames.some((frame) => visibleTerminalText(frame ?? '').includes('Updating facets:'))).toBe(true)
+    instance.unmount()
+  })
+
+  // "2 updated" says how many moved, not what anyone now has. The
+  // transition per facet is the answer to the question the command was
+  // run to ask.
+  test('names every version transition it applied', async () => {
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'update',
+        run: makeFakeRun([{ kind: 'install-start', totalFacets: 2 }], updateResult),
+      }),
+    )
+    await settle()
+    const frame = visibleTerminalText(visibleContentFrame(instance.frames))
+    expect(frame).toContain('Update complete.')
+    expect(frame).toContain('alpha 1.2.0 → 1.8.0')
+    expect(frame).toContain('beta 1.2.0 → 3.4.1')
+    // A facet that was left alone is counted, not narrated as a move.
+    expect(frame).not.toContain('gamma 4.0.0 →')
+    instance.unmount()
+  })
+
+  test('the timer counts facets moved, not facets touched', async () => {
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'update',
+        run: makeFakeRun([{ kind: 'install-start', totalFacets: 2 }], updateResult),
+      }),
+    )
+    await settle()
+    expect(visibleTerminalText(visibleContentFrame(instance.frames))).toContain('Updated 2 facets')
+    instance.unmount()
+  })
+
+  test('a stale plan is reported as a failure, with the disk state', async () => {
+    const stale: RunInstallResult = {
+      ok: false,
+      failure: { code: 'UPDATE_PLAN_STALE', files: ['manifest'] },
+      rollback: NO_ROLLBACK,
+    }
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'update',
+        run: makeFakeRun([], stale),
+      }),
+    )
+    await settle()
+    const frame = visibleTerminalText(visibleContentFrame(instance.frames))
+    expect(frame).toContain('facets.json')
+    expect(frame).toContain(visibleTerminalText(diskStateSentence(NO_ROLLBACK)))
+    expect(frame).not.toContain('Update complete.')
+    instance.unmount()
+  })
+})

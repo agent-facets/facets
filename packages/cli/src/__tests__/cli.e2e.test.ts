@@ -20,11 +20,16 @@ const IMPLEMENTED_COMMAND_NAMES = [
   'remove',
   'search',
   'self-update',
+  'update',
   'whoami',
 ]
 // Stubs — invocable (to surface "did you mean…" suggestions) but hidden from
 // the global help listing (Adjustment K).
-const STUB_COMMAND_NAMES = ['info', 'upgrade']
+//
+// `upgrade` used to be one of these. It is now an alias of `update`, which
+// is why it no longer appears here: it is not a hidden command, it is a
+// second spelling of a listed one.
+const STUB_COMMAND_NAMES = ['info']
 
 const runCli = (...args: string[]) => spawnCli(args)
 

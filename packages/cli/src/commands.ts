@@ -13,6 +13,7 @@ import { publishCommand } from './commands/publish/index.ts'
 import { removeCommand } from './commands/remove/index.ts'
 import { searchCommand } from './commands/search/index.ts'
 import { selfUpdateCommand } from './commands/self-update.ts'
+import { updateCommand } from './commands/update/index.ts'
 import { whoamiCommand } from './commands/whoami/index.ts'
 
 type LowercaseLetter =
@@ -113,7 +114,11 @@ export const commands: Record<string, Command> = {
   remove: removeCommand,
   search: searchCommand,
   'self-update': selfUpdateCommand,
-  upgrade: stubCommand('upgrade', 'Upgrade installed facets'),
+  // `upgrade` is deliberately NOT a second key here. It is an alias on
+  // `updateCommand`, so both names resolve to one object with one help
+  // page and one behavior — the thing two registry entries could not
+  // promise.
+  update: updateCommand,
   whoami: whoamiCommand,
 }
 

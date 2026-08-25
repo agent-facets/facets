@@ -286,7 +286,11 @@ export type {
   UpdatePlanRow,
   UpdateSelectionFailure,
 } from './install/update/index.ts'
-export { prepareFacetUpdate, runPreparedFacetUpdate } from './install/update/index.ts'
+// `validateFacetUpdateSelections` is exported because a dry run has to
+// show the EXACT `facets.json` value an application would commit. That
+// value is derived here, once; recomputing it in the CLI would let a
+// preview describe a different edit than the one that runs.
+export { prepareFacetUpdate, runPreparedFacetUpdate, validateFacetUpdateSelections } from './install/update/index.ts'
 // loaders. Note: `ResolvedFacetManifest` and `FACET_MANIFEST_FILE` are
 // part of `@agent-facets/protocol`'s public surface, not engine's. CLI
 // imports them directly from protocol; we don't re-export them here to
