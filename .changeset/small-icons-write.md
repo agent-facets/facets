@@ -1,0 +1,13 @@
+---
+"agent-facets": minor
+---
+
+**New command: `facet update` (aliased `facet upgrade`)** — moves the registry-backed facets a project declares to newer releases. It reads `facets.json` and `facets.lock`, asks the registry for each facet's range-respecting target and its latest release, and shows both alongside what is installed, so "why is this one not moving?" is answerable from the plan itself. Plain `facet update` takes every target the declared specifier already permits. `--latest` (`-L`) crosses those specifiers and rewrites them by the smallest edit that admits the new version, preserving how the intent was written: a pin stays a pin, `1.*` becomes `2.*`, `1.2.*` becomes `2.4.*`, and `*` and `latest` are left exactly as authored.
+
+**Previews and per-facet selection.** `--dry-run` prints the plan and writes nothing — no manifest, no lockfile, no receipt, no assets, no cache, and no adapter installation, which makes it safe on a machine with no adapter connected. `--interactive` (`-i`) opens a picker for choosing which facets move and which version each takes; it requires a real terminal and fails immediately without one, before any registry lookup. Git and local facets are named as unsupported rather than counted as current — reporting them as up to date would claim something nothing verified.
+
+**Applying an update is an install.** Discovery runs read-only and takes no project lock, so reading a plan never blocks another facet operation. Application re-checks under the lock that the project has not moved since the plan was reviewed, then runs the ordinary install pipeline: the same verification, collision handling, MCP approval, rollback, and atomic manifest/lockfile/receipt write. The version you reviewed is the version installed — a release published in between does not silently change it. Recorded materialization choices survive a version change. There is no `--frozen-lockfile`: reproducing what the lockfile already records is the opposite of what this command does.
+
+**Breaking: `facet upgrade` is no longer a placeholder.** It previously printed a not-yet-implemented notice and exited `0` without touching a single file. It is now an alias of `facet update` — one command, one help page, one behavior — so the same invocation contacts the registry, may install adapters, takes the project lock, and rewrites `facets.json`, `facets.lock`, the install receipt, and your materialized assets. `update` is the canonical spelling, and `facet upgrade --help` prints `Usage: facet update`. If something in your automation called `facet upgrade` expecting a no-op, drop the call or make it explicit with `facet update --dry-run`.
+
+Neither name touches the CLI binary. That remains `facet self-update`.

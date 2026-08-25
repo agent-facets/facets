@@ -1,6 +1,6 @@
 ---
 title: facet upgrade
-description: Upgrade installed facets to newer versions
+description: Alias of facet update
 ---
 
 ## Usage
@@ -9,32 +9,13 @@ description: Upgrade installed facets to newer versions
 facet upgrade
 ```
 
+`facet upgrade` is an alias of [`facet update`](/cli/update). One command, one help page, one behavior — the same flags, the same output, and the same exit codes. `facet upgrade --help` prints `Usage: facet update`.
+
 <Warning>
-This command is not yet implemented. Running it prints a notice and exits. It is on the roadmap for a future release.
+Older releases treated this name as a placeholder: it printed a not-yet-implemented notice, exited `0`, and changed nothing. It now applies real updates to `facets.json`, `facets.lock`, the install receipt, and your materialized assets. If something in your automation called `facet upgrade` expecting a no-op, drop the call or make it a preview with `facet update --dry-run`.
 </Warning>
-
-## Exit codes
-
-| Code | Meaning |
-| ---- | ------- |
-| `0`  | Always -- the command prints its not-yet-implemented notice and exits |
-
-## Planned behavior
-
-`facet upgrade` will re-resolve version specifiers in `facets.json` against the registry and update `facets.lock` to the newest versions that satisfy each specifier ([resolution semantics](/specification/commit#resolve)). It is the complement to `facet install`, which honors existing lockfile pins.
-
-Until `facet upgrade` ships, you can upgrade a specific facet manually:
-
-```sh
-# Re-add at a new version (updates both facets.json and facets.lock).
-facet add viper-plans@2.0.0
-
-# Or widen the specifier and reinstall.
-# Edit facets.json to change "1.2.3" to "2.*", then:
-facet install
-```
 
 ## See also
 
-- [`facet install`](/cli/install) -- install from the current lockfile.
-- [`facet add`](/cli/add) -- add or re-add a facet at a specific version.
+- [`facet update`](/cli/update) — the canonical command, with the full flag and behavior reference.
+- [`facet self-update`](/cli/self-update) — update the `facet` CLI binary instead.

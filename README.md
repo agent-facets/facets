@@ -30,8 +30,6 @@ Please see https://docs.agentfacets.io/cli for a detailed reference for the `fac
 ### Other Commands
 
 ```shell
-
-
 # Reapply an existing project's facets after a fresh clone or after
 # pulling teammate changes:
 facet install
@@ -40,7 +38,13 @@ facet install
 # up front — otherwise a facet that declares servers fails before writing.
 facet install --accept-mcp
 
-# Update the CLI later
+# Move this project's facets to newer releases (alias: facet upgrade).
+# Respects the ranges in facets.json; --latest crosses them.
+facet update
+facet update --latest
+facet update --dry-run
+
+# Update the CLI binary itself — a different thing from the line above.
 facet self-update
 ```
 

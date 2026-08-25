@@ -8,7 +8,7 @@ The stable release will be announced as **v1.0.0** and flags general availabilit
 
 ## GA criteria
 
-- **Everything in the [beta](/roadmap/beta) is shipped and stable**  -- upgrade flow, `facet info`, and composition.
+- **Everything in the [beta](/roadmap/beta) is shipped and stable**  -- `facet info` and composition, alongside the already-shipped [update flow](/cli/update).
 - **Format stability**  -- the `facet.json` manifest, `facets.json`, `facets.lock`, the `.facet` archive format, the machine-local install receipt, and the adapter API contract are frozen under semver guarantees; breaking format changes require a major version. These are [independent version axes](/specification/project-manifest#fields) and each carries its own migration obligations.
 - **CLI surface stability**  -- commands and flags stop churning; deprecations get a documented migration window.
 - **Specification completeness**  -- the [specification](/specification) fully describes the shipped behavior, suitable for independent implementations.
