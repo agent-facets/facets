@@ -91,25 +91,25 @@
 - [x] 8.6 Implement: Add registration, help, command, static-view, picker, and install-view unit tests covering canonical/alias identity, mode defaults, cancellation, no-op output, output streams, and `--accept-mcp` boundaries.
 - [x] 8.7 Implement: Add CLI end-to-end tests for global and per-command help, `upgrade` alias behavior, positional and non-TTY failures, dry-run without adapters, interactive cancellation before adapter installation, applied old-to-new summaries, stale plans, and expected exit codes.
 - [x] 8.8 Verify: Run targeted CLI command, Ink, and end-to-end tests and typecheck the CLI package.
-- [ ] 8.9 Pause: Model-switch boundary before documentation research.
+- [x] 8.9 Pause: Model-switch boundary before documentation research.
 
 ## 9. Documentation and Agent Guidance — Research
 
-- [ ] 9.1 Explore: Inspect `docs/cli/update.mdx` requirements and reference-page conventions together with existing `docs/cli/upgrade.mdx`, `docs/cli/self-update.mdx`, `docs/cli/index.mdx`, `docs/cli/add.mdx`, `docs/cli/list.mdx`, and `docs/docs.json`; verify whether retaining the upgrade alias page outside primary navigation passes Mintlify validation.
-- [ ] 9.2 Explore: Inspect `docs/guides/install-facets.mdx`, `docs/guides/troubleshooting.mdx`, `docs/roadmap/alpha.mdx`, `docs/roadmap/beta.mdx`, `docs/roadmap/stable.mdx`, `docs/specification/commit.mdx`, `docs/specification/materialization.mdx`, and root `README.md` for stale promises, update remedies, and package-versus-binary ambiguity.
-- [ ] 9.3 Explore: Inspect `packages/cli/src/prompts/overview.txt`, `packages/cli/src/prompts/usage.txt`, prompt generation, and instruction-prompt unit/e2e tests so guidance is added without duplicating topic lists, adapter API support sets, or materialization schemas.
-- [ ] 9.4 Explore: Inspect `docs/changelog/index.mdx`, its RSS rules, `.changeset/`, and contribution conventions for the required inert-stub-to-live-alias disclosure and package changeset.
-- [ ] 9.5 Propose: Define the cohesive documentation, prompt, changelog, navigation, and validation approach while preserving historical changelog text and `facet list`'s offline contract.
+- [x] 9.1 Explore: Inspect `docs/cli/update.mdx` requirements and reference-page conventions together with existing `docs/cli/upgrade.mdx`, `docs/cli/self-update.mdx`, `docs/cli/index.mdx`, `docs/cli/add.mdx`, `docs/cli/list.mdx`, and `docs/docs.json`; verify whether retaining the upgrade alias page outside primary navigation passes Mintlify validation.
+- [x] 9.2 Explore: Inspect `docs/guides/install-facets.mdx`, `docs/guides/troubleshooting.mdx`, `docs/roadmap/alpha.mdx`, `docs/roadmap/beta.mdx`, `docs/roadmap/stable.mdx`, `docs/specification/commit.mdx`, `docs/specification/materialization.mdx`, and root `README.md` for stale promises, update remedies, and package-versus-binary ambiguity.
+- [x] 9.3 Explore: Inspect `packages/cli/src/prompts/overview.txt`, `packages/cli/src/prompts/usage.txt`, prompt generation, and instruction-prompt unit/e2e tests so guidance is added without duplicating topic lists, adapter API support sets, or materialization schemas.
+- [x] 9.4 Explore: Inspect `docs/changelog/index.mdx`, its RSS rules, `.changeset/`, and contribution conventions for the required inert-stub-to-live-alias disclosure and package changeset.
+- [x] 9.5 Propose: Define the cohesive documentation, prompt, changelog, navigation, and validation approach while preserving historical changelog text and `facet list`'s offline contract.
 - [ ] 9.6 Pause: Model-switch boundary before documentation implementation.
 
 ## 10. Documentation and Agent Guidance — Implementation
 
-- [ ] 10.1 Implement: Create `docs/cli/update.mdx`, convert `docs/cli/upgrade.mdx` into a concise alias page, update `docs/cli/self-update.mdx` and `docs/cli/index.mdx`, and revise `docs/docs.json` so canonical behavior, flags, TTY rules, preview scope, no-op/failure outcomes, and package-versus-binary distinctions have one source of truth.
-- [ ] 10.2 Implement: Update both audiences in `docs/guides/install-facets.mdx`, add remedies to `docs/guides/troubleshooting.mdx`, update `docs/roadmap/alpha.mdx`, `beta.mdx`, and `stable.mdx`, update root `README.md`, and add cross-links from `docs/cli/add.mdx` and `docs/cli/list.mdx` while retaining list's offline contract and narrowing the beta promise.
-- [ ] 10.3 Implement: Update `docs/specification/commit.mdx` for prepared exact resolution and style-preserving Latest selection, and verify `docs/specification/materialization.mdx` remains accurate without duplicating override rules.
-- [ ] 10.4 Implement: Update `packages/cli/src/prompts/overview.txt` and `usage.txt` with project update, alias, non-TTY, dry-run, `--accept-mcp`, and `facet install` recovery guidance, then add companion unit and end-to-end prompt assertions.
-- [ ] 10.5 Implement: Add the newest `docs/changelog/index.mdx` entry with the stub-to-live-alias warning while preserving historical entries, and add the appropriate `agent-facets` changeset without editing generated package changelogs.
-- [ ] 10.6 Verify: Run prompt tests, Mintlify validation, and broken-link checks for all documentation and agent-guidance changes.
+- [x] 10.1 Implement: Create `docs/cli/update.mdx`, convert `docs/cli/upgrade.mdx` into a concise alias page, update `docs/cli/self-update.mdx` and `docs/cli/index.mdx`, and revise `docs/docs.json` so canonical behavior, flags, TTY rules, preview scope, no-op/failure outcomes, and package-versus-binary distinctions have one source of truth.
+- [x] 10.2 Implement: Update both audiences in `docs/guides/install-facets.mdx`, add remedies to `docs/guides/troubleshooting.mdx`, update `docs/roadmap/alpha.mdx`, `beta.mdx`, and `stable.mdx`, update root `README.md`, and add cross-links from `docs/cli/add.mdx` and `docs/cli/list.mdx` while retaining list's offline contract and narrowing the beta promise.
+- [x] 10.3 Implement: Update `docs/specification/commit.mdx` for prepared exact resolution and style-preserving Latest selection, and verify `docs/specification/materialization.mdx` remains accurate without duplicating override rules.
+- [x] 10.4 Implement: Update `packages/cli/src/prompts/overview.txt` and `usage.txt` with project update, alias, non-TTY, dry-run, `--accept-mcp`, and `facet install` recovery guidance, then add companion unit and end-to-end prompt assertions.
+- [x] 10.5 Implement: Leave `docs/changelog/index.mdx` untouched, ask the user to generate the `agent-facets` minor changeset manually, then replace only its placeholder body with the stub-to-live-alias warning without editing generated package changelogs.
+- [x] 10.6 Verify: Run prompt tests, Mintlify validation, and broken-link checks for all documentation and agent-guidance changes.
 - [ ] 10.7 Pause: Model-switch boundary before integrated acceptance research.
 
 ## 11. Integrated Acceptance — Research

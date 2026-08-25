@@ -3,7 +3,7 @@ title: Install Facets in Your Project
 description: Add, pin, reinstall, and remove facets
 ---
 
-Bring facets into a project in two moves: connect an adapter for your AI tool, then add the facets you want. This guide walks the whole loop  -- add, list, reinstall, and remove.
+Bring facets into a project in two moves: connect an adapter for your AI tool, then add the facets you want. This guide walks the whole loop  -- add, list, reinstall, update, and remove.
 
 <Visibility for="agents">
 
@@ -20,8 +20,16 @@ Bring facets into a project in two moves: connect an adapter for your AI tool, t
 > facet add viper-plans               # registry-first: a bare name is a registry facet
 > facet add viper-plans@1.2.3         # or pin a version
 > facet install                       # after a git clone: materialize from the lockfile
+> facet update                        # move declared facets to newer releases
+> facet update --latest               # ...even past the ranges facets.json declares
+> facet update --dry-run              # print the plan; write nothing, install no adapter
 > facet remove viper-plans            # take a facet back out
 > ```
+>
+> `facet upgrade` is an alias of `facet update`. Neither touches the CLI binary --
+> that is `facet self-update`. Do not pass `--interactive` without a TTY: it fails
+> immediately. If update reports the project cannot be checked, run `facet install`
+> first, then update again.
 >
 > A facet may declare MCP servers. Without a TTY those need explicit approval,
 > or the command fails before writing anything:
@@ -29,6 +37,7 @@ Bring facets into a project in two moves: connect an adapter for your AI tool, t
 > ```sh
 > facet add viper-plans --accept-mcp  # approve the MCP config this would write
 > facet install --accept-mcp
+> facet update --accept-mcp
 > facet remove viper-plans --accept-mcp
 > ```
 >
@@ -42,7 +51,8 @@ Bring facets into a project in two moves: connect an adapter for your AI tool, t
 > Approval is per machine, so a teammate's approval never covers yours.
 >
 > See [`facet add`](/cli/add), [`facet install`](/cli/install),
-> [`facet remove`](/cli/remove), and [`facet adapter add`](/cli/adapters/add).
+> [`facet update`](/cli/update), [`facet remove`](/cli/remove), and
+> [`facet adapter add`](/cli/adapters/add).
 
 </Visibility>
 
@@ -171,7 +181,7 @@ Note this facet ships an agent `cowsay` **and** a command `cowsay`. That is lega
 </Note>
 
 <Note>
-  The lockfile honors the manifest. A pinned entry is reused as long as it still satisfies `facets.json`; when you bump a version or widen a wildcard, `facet install` [re-resolves](/specification/commit#resolve) and updates the lock.
+  The lockfile honors the manifest. A pinned entry is reused as long as it still satisfies `facets.json`; when you bump a version or widen a wildcard, `facet install` [re-resolves](/specification/commit#resolve) and updates the lock. To move to a newer release without editing the manifest yourself, use [`facet update`](/cli/update).
 </Note>
 
 ## Where assets land
@@ -317,13 +327,24 @@ facet list
 
 [`facet list`](/cli/list) shows every facet in `facets.json` with its resolved version (from the lockfile), or its source specifier if it hasn't been installed yet.
 
-**Move to a newer version:**
+**Move to newer versions:**
 
 ```sh
-facet add viper-plans@2.0.0    # re-add at the new version
+facet update                   # newest release each declared range allows
+facet update --latest          # newest release, even outside those ranges
+facet update --dry-run         # print the plan; change nothing
+facet update --interactive     # choose per facet, and which version each takes
 ```
 
-Re-adding at a new version updates both `facets.json` and the lockfile. A dedicated [`facet upgrade`](/cli/upgrade) command is on the roadmap; its page documents the manual paths until it ships.
+[`facet update`](/cli/update) checks every registry facet for a newer release and installs the ones that move, showing what is installed alongside both versions it could move to. Plain `update` respects the specifier in `facets.json`; `--latest` crosses it and rewrites that specifier in place, preserving how you wrote it (`1.*` becomes `2.*`, a pin becomes the new pin). `facet upgrade` is an alias of the same command.
+
+A dry run installs no adapter and writes nothing, so it is safe in CI. Git and local facets are named as unsupported rather than counted as current — only registry facets have releases to compare.
+
+To pin one facet to an exact version instead, re-add it:
+
+```sh
+facet add viper-plans@2.0.0    # re-add at an exact version
+```
 
 **Remove a facet:**
 

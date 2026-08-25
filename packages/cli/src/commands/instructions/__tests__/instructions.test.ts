@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { SUPPORTED_ADAPTER_APIS } from '@agent-facets/engine'
 import { FacetManifestSchema } from '@agent-facets/protocol'
+import { commands } from '../../../commands.ts'
 import {
   DEFAULT_TOPIC,
   INSTRUCTION_TOPICS,
@@ -10,6 +11,8 @@ import {
   renderTopicIndex,
   TOPICS,
 } from '../../../prompts/index.ts'
+import { ACCEPT_MCP_FLAG } from '../../shared/flags.ts'
+import { updateCommand } from '../../update/index.ts'
 import { instructionsCommand } from '../index.ts'
 
 describe('instruction topics', () => {
@@ -171,9 +174,82 @@ describe('materialization guidance is present in the prompts', () => {
 
   test('overview command index covers the project-management commands', () => {
     const overview = TOPICS.overview.prompt
-    for (const command of ['facet install', 'facet remove', 'facet list', 'facet publish']) {
+    for (const command of ['facet install', 'facet update', 'facet remove', 'facet list', 'facet publish']) {
       expect(overview).toContain(command)
     }
+  })
+
+  // The index is hand-written on purpose: its descriptions are aimed at an
+  // agent and differ from the registry's own `description`. What is NOT
+  // deliberate is a command shipping without ever reaching this list --
+  // which is exactly how `facet update` was missing from it. Derive the
+  // expectation from the registry so the next one cannot repeat it.
+  test('every implemented command reaches the overview index', () => {
+    // Covered inline on the `facet login` line rather than by their own
+    // entries, because they are one authentication story.
+    const coveredInline = new Set(['logout', 'whoami'])
+    const overview = TOPICS.overview.prompt
+    for (const [name, command] of Object.entries(commands)) {
+      if (command.implemented !== true) continue
+      if (coveredInline.has(name)) {
+        expect(overview).toContain(name)
+        continue
+      }
+      expect(overview).toContain(`facet ${name}`)
+    }
+  })
+})
+
+describe('update guidance is present in the prompts', () => {
+  test('overview names update, its alias, and what it is not', () => {
+    const overview = TOPICS.overview.prompt
+    expect(overview).toContain('facet update')
+    expect(overview).toContain('facet upgrade')
+    // The whole point of the pairing: one moves facets, the other moves
+    // the binary, and an agent that confuses them does the wrong thing.
+    expect(overview).toContain('facet self-update')
+    expect(overview).toContain('CLI binary')
+  })
+
+  test('overview names the alias from the command declaration, not a guess', () => {
+    for (const alias of updateCommand.aliases ?? []) {
+      expect(TOPICS.overview.prompt).toContain(`facet ${alias}`)
+    }
+  })
+
+  test('usage covers both modes, the preview, and the TTY refusal', () => {
+    const usage = TOPICS.usage.prompt
+    expect(usage).toContain('facet update --latest')
+    expect(usage).toContain('facet update --dry-run')
+    expect(usage).toContain('--interactive')
+    // An agent must be told not to reach for the screen it cannot use.
+    expect(usage).toContain('REQUIRES a real terminal')
+  })
+
+  test('usage gives the recovery path for a project that cannot be checked', () => {
+    const usage = TOPICS.usage.prompt
+    expect(usage).toContain('cannot be checked for updates yet')
+    expect(usage).toContain('facet install')
+    // A stale plan is not damage, and an agent that treats it as damage
+    // will go looking for a file to repair.
+    expect(usage).toContain('Nothing is broken')
+  })
+
+  test('usage names the one no-op that has a next step', () => {
+    expect(TOPICS.usage.prompt).toContain('ranges in facets.json permit none of them')
+  })
+
+  test('usage lists update among the commands that accept the MCP flag', () => {
+    // Sourced from the flag constant: the prompt and the remedy the CLI
+    // prints on failure have to be the same string.
+    expect(TOPICS.usage.prompt).toContain(`facet update --${ACCEPT_MCP_FLAG}`)
+  })
+
+  test('usage does not restate the version specifier grammar a second time', () => {
+    // The forms are taught once, under `facet add`. A second copy is a
+    // second thing to keep correct.
+    const usage = TOPICS.usage.prompt
+    expect(usage.match(/Latest 1\.2\.x\./g)?.length ?? 0).toBe(1)
   })
 })
 

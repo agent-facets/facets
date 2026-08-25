@@ -11,6 +11,8 @@ facet self-update
 
 `facet self-upgrade` is an alias of the same command.
 
+This updates the `facet` **binary**. To move the facets a project declares to newer releases, use [`facet update`](/cli/update).
+
 ## Examples
 
 ```sh
@@ -43,7 +45,9 @@ re-ran without `--dry-run`.
 
 ## What it does
 
-Updates the running `facet` binary in place. Detects how the binary was
+Updates the running `facet` binary in place. It never reads or writes
+`facets.json`, `facets.lock`, or any materialized asset  -- that is
+[`facet update`](/cli/update)'s job. Detects how the binary was
 installed  -- the curl installer, an `npm` / `yarn` / `pnpm` / `bun` global
 install, dev mode, or an unclassified location  -- and dispatches to the
 matching update mechanism for that path. Existing trust roots (the
@@ -81,6 +85,9 @@ has no business writing over the path you pointed it at. Unset
 
 Three variables affect self-update — `FACET_CLI_REGISTRY` (npm registry for version lookup), `FACET_DIR` (where the curl-installed binary lives), and `FACET_BIN_OVERRIDE` (triggers the dev-mode refusal above). See the [environment variables reference](/cli/env) for details.
 
+`FACET_CLI_REGISTRY` is the **npm** registry the CLI is published to. It is not the facet registry facets come from — that one is `FACET_REGISTRY_URL`, and it has no effect here.
+
 ## See also
 
+- [`facet update`](/cli/update) -- update the project's facets, not the CLI binary.
 - [Environment variables](/cli/env) -- `FACET_CLI_REGISTRY`, `FACET_DIR`, and `FACET_BIN_OVERRIDE` in full.

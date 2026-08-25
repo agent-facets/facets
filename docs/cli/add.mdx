@@ -148,6 +148,8 @@ facet add viper-plans@1.x            # x-style placeholders — use 1.* or 1.2.*
 
 ## Re-adding a facet
 
+Re-adding is how you pin **one** facet to a version you name. To move every declared facet to whatever newer releases exist, use [`facet update`](/cli/update) instead — it checks the registry for you rather than making you supply the version.
+
 Running `facet add` against a facet that's already in `facets.json` is supported:
 
 - Same source as before → no-op (lockfile may report `unchanged` or `repaired`). If you have since aliased or omitted one of its assets or servers, it reports `updated` instead — the version did not move, but its materialization did.
@@ -162,4 +164,5 @@ What gets written per specifier shape is defined by the [manifest-write policy](
 ## See also
 
 - [`facet install`](/cli/install)  -- re-runs the install pipeline against the current `facets.json` and lockfile, useful after a fresh `git clone` or to reapply assets after manual edits.
+- [`facet update`](/cli/update)  -- move declared facets to newer releases without naming versions yourself.
 - [`facet adapter add`](/cli/adapters/add)  -- install adapters into your machine.

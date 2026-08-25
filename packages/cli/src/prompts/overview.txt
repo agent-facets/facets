@@ -40,13 +40,15 @@ Command index
   facet edit           Interactive editing wizard (TTY only — prefer `modify`).
   facet add            Add a facet to a project and install it.
   facet install        Install every facet declared in facets.json.
+  facet update         Move the project's registry facets to newer releases
+                       (alias: facet upgrade). Not the CLI binary.
   facet remove         Remove a facet from the project (alias: facet rm).
   facet list           List declared facets and their resolved versions.
   facet search         Search the registry.
   facet adapter        Add / list / remove adapter tooling.
   facet publish        Publish a built facet to the registry.
   facet login          Authenticate with the registry (also: logout, whoami).
-  facet self-update    Update the CLI itself.
+  facet self-update    Update the CLI binary itself, never project facets.
   facet instructions   Print these instructions (see the topic index above).
 
 Machine-readable output

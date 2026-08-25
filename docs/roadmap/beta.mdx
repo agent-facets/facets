@@ -4,13 +4,9 @@ sidebarTitle: Beta
 description: Goals for the public beta
 ---
 
-The open beta begins when the features below ship. The [alpha](/roadmap/alpha) already covers the full author → publish → install loop, plus MCP server configuration; the beta rounds out the ecosystem with an upgrade flow, registry introspection, and composition.
+The open beta begins when the features below ship. The [alpha](/roadmap/alpha) already covers the full author → publish → install loop, the update flow, and MCP server configuration; the beta rounds out the ecosystem with registry introspection and composition.
 
 ## Planned
-
-<ResponseField name="facet upgrade" type="command">
-  Check installed facets for newer versions, surface what changed, and let you choose which updates to apply. Today, re-run `facet add <name>` to move a facet to a new version.
-</ResponseField>
 
 <ResponseField name="facet info" type="command">
   Show a published facet's metadata, versions, and assets straight from the registry, without installing it.
@@ -19,6 +15,10 @@ The open beta begins when the features below ship. The [alpha](/roadmap/alpha) a
 <ResponseField name="Facet composition" type="format">
   A facet that declares `facets: [...]` composes text from other published facets. The manifest format reserves the field today; installs reject it until server-side composition ships.
 </ResponseField>
+
+<Note>
+  **The update flow has shipped.** [`facet update`](/cli/update) checks every registry facet for a newer release and moves the ones you choose, respecting the ranges in `facets.json` or crossing them with `--latest`. `facet upgrade` is its alias.
+</Note>
 
 <Note>
   **MCP server support has shipped.** A facet can declare concrete [MCP servers](/specification/manifest#mcp-server-declarations), and installing one configures them in every connected tool after you approve them. See [`facet install`](/cli/install#mcp-servers).
