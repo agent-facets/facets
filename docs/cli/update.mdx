@@ -22,7 +22,6 @@ facet update                    # take the newest release each range allows
 facet update --latest           # take the newest release, ignoring ranges
 facet update --dry-run          # print the plan; change nothing
 facet update --interactive      # choose per facet, and which version each takes
-facet update -L -i              # same, starting from each facet's latest
 ```
 
 ## Flags
@@ -31,12 +30,16 @@ facet update -L -i              # same, starting from each facet's latest
   Update to each facet's latest release, ignoring the range in `facets.json`. Short form: `-L`.
 
   Because the selected version may fall outside what the project declares, this is the only mode that rewrites the specifier — see [Crossing the declared range](#crossing-the-declared-range).
+
+  It has no effect alongside `--interactive`, which already opens every row on its latest release. The combination is accepted, not rejected.
 </ResponseField>
 
 <ResponseField name="--interactive" type="boolean">
   Choose which facets to update, and which version each one takes. Short form: `-i`.
 
-  Requires a terminal that can prompt. Without one, the command fails **before** contacting the registry rather than after — see [Choosing interactively](#choosing-interactively).
+  Every row opens on its **latest** release with nothing selected, so `Space` takes the newest version of that facet — see [Choosing interactively](#choosing-interactively).
+
+  Requires a terminal that can prompt. Without one, the command fails **before** contacting the registry rather than after.
 </ResponseField>
 
 <ResponseField name="--dry-run" type="boolean">
@@ -111,8 +114,8 @@ Selecting a Target never rewrites anything: the specifier already permits that v
 
 ```
     facet        current  target  latest
-▸ ● viper-plans  1.2.0    1.4.0   2.0.0  (target)
-  ○ cowsay       2.1.3    2.1.3   3.0.0  (target)
+▸ ○ viper-plans  1.2.0    1.4.0   2.0.0  (latest)
+  ○ cowsay       2.1.3    2.1.3   3.0.0  (latest)
 ```
 
 ```
@@ -121,9 +124,11 @@ Selecting a Target never rewrites anything: the specifier already permits that v
 
 Every row shows all three versions at once, because the choice this screen exists for is a comparison. Only the digit that actually moves is coloured — green for a patch, amber for a minor, coral for a major — so the size of each jump is visible without reading the numbers twice. The column a row would install is named in words, so the screen still works with colour disabled.
 
-`↑↓` moves between facets, wrapping at the ends. `◀ ▶` moves between the two columns and clamps instead, so holding one down settles on a column rather than oscillating. `l` also flips the focused row. Each row starts on its Target, or on its Latest when `--latest` is supplied.
+**Every row starts on its Latest, with nothing selected.** Move down the list and press `Space` on the facets you want; each one takes its newest release. Nothing is chosen for you, so `Space` always means "yes, this one" — and a facet you never touch is simply left alone. `--latest` changes none of this; it is how the *non-interactive* run says what this screen already offers.
 
-A row showing a version that is already installed cannot be selected until you move it — pressing `Space` there says so rather than silently doing nothing. That is the case `--latest` exists for, and it is reachable here without the flag. Confirming requires at least one selected facet.
+`↑↓` moves between facets, wrapping at the ends. `◀ ▶` moves between the two columns and clamps instead, so holding one down settles on a column rather than oscillating. `l` also flips the focused row. Move a row to `target` before selecting it to take the version your declared range already permits instead.
+
+A row showing a version that is already installed cannot be selected — pressing `Space` there says so rather than silently doing nothing. That is what you see on a pinned facet after moving it to `target`. Confirming requires at least one selected facet.
 
 Selection happens **before** adapter selection and before anything is written, so `Esc` or `Ctrl-C` costs nothing: the command reports that nothing was applied and exits `1`.
 
