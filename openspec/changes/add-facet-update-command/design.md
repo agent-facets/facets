@@ -109,10 +109,13 @@ The CLI SHALL derive mode defaults from the prepared candidates:
 
 - Plain `facet update` SHALL select every candidate whose range Target is newer than Current.
 - `facet update --latest` SHALL select every candidate whose Latest is newer than Current.
-- `--interactive` SHALL show every candidate for which either choice is newer. Range SHALL be the initial choice unless `--latest` is present; `l` SHALL toggle the focused row between Range Target and Latest.
+- `--interactive` SHALL show every candidate for which either choice is newer. Range SHALL be the initial choice unless `--latest` is present. Left and right SHALL address the Target and Latest columns directly, clamping at each end rather than wrapping so a held key settles on a column instead of oscillating; `l` SHALL flip the focused row between them.
+- Interactive eligibility SHALL be derived from the presence of those candidate rows, not from whether the initial mode produced a non-empty default selection. In particular, plain `--interactive` SHALL open for a Latest-only candidate even though its initial Range Target is stationary. The range-specific “newer releases exist” no-op remains a non-interactive result; interactive selection is skipped only when neither choice advances for any facet.
 - A row whose displayed choice equals Current SHALL not be selectable until the user toggles to an advancing choice. Interactive row state SHALL be a tagged selected/unselected union so a selected no-op choice is not representable.
 - Confirm SHALL require at least one selected advancing target. Escape or Ctrl-C SHALL cancel before application.
 - `--dry-run` without `--interactive` SHALL render the complete prepared plan using the mode's default choices. With `--interactive`, it SHALL render the user's confirmed selection and then stop before adapter selection or application.
+
+The picker SHALL present candidate facets only and SHALL show aligned Current, Target, and Latest columns simultaneously. Each row SHALL state its chosen column as a visible word. Bold and underline MAY reinforce it but SHALL NOT carry it alone: those attributes are emitted only when the terminal advertises styling support, so under `NO_COLOR`, a pipe, or a screen reader they disappear entirely — and "which of these two similar numbers is selected" is not something a user can be left to infer. Advancing versions SHALL additionally expose the semantic size of the change by coloring only the changed suffix with existing theme roles: patch uses `THEME.success` (green), minor uses `THEME.caution` (amber), and major uses `THEME.warning` (coral). Current and stationary values remain dim. Colour is therefore never the sole carrier of any fact on this screen: the digits themselves say which component moved, and the chosen column is named in words. Reusing the existing three-rung semantic scale avoids introducing a second palette.
 
 Dry-run is a successful preview, not a drift-check contract. It SHALL exit `0` both when updates are available and when no update is selected, matching `self-update --dry-run`; real preparation failures SHALL exit non-zero. A future check mode MAY define a distinct updates-available exit contract, but is outside this change.
 
@@ -130,6 +133,10 @@ The update command SHALL define `--latest`/`-L`, `--interactive`/`-i`, `--dry-ru
 
 The command SHALL reject `--interactive` in a non-interactive terminal using `canPromptInteractively()` before starting discovery. The standalone update picker SHALL reuse the established `InstallPicker` keyboard conventions and the collision workspace's non-color focus markers and always-active interrupt handling. Installation progress and final per-facet outcomes SHALL reuse `InstallView` with an `update` mode rather than introducing a second progress renderer.
 
+After invocation and TTY validation, the CLI SHALL mount a lightweight discovery view before awaiting `prepareFacetUpdate`. While registry discovery is pending it SHALL state that it is checking the registry for facet updates and reuse the existing indeterminate `ProgressBar`; once preparation settles, that view SHALL be cleared and unmounted in a `finally` so the picker, static plan, no-op, or structured error renders onto a clean screen however discovery ended. The indicator SHALL remain indeterminate: discovery currently resolves concurrent groups without exposing per-request progress events, so a percentage or completed-count display would be invented rather than measured.
+
+The indicator SHALL be drawn only when stdout is a terminal. An animated frame is a terminal affordance; piped to a file or a CI log it becomes many frames per second in front of the output the caller wanted, and existing `--dry-run` output assertions depend on that stream staying clean. A non-terminal run performs identical discovery and emits nothing extra. This is a CLI presentation wrapper only and SHALL NOT add an engine progress API or alter metadata batching.
+
 Exit behavior SHALL remain:
 
 - `0` for applied updates, no-op, or successful dry-run;
@@ -138,7 +145,7 @@ Exit behavior SHALL remain:
 
 Errors SHALL use the existing three-line stderr format and registry/install failure translators. Help, tables, picker frames, progress, and summaries SHALL use stdout. Cancellation SHALL report that nothing was applied and SHALL not report success.
 
-**Alternatives considered:** Treating `-L` and `-i` as undeclared passthrough keys would leave aliases undocumented and force each handler to interpret two names. Registering `upgrade` as a second command object would duplicate help, tests, and behavior. A new update-specific progress pipeline would duplicate the install view. These alternatives are rejected.
+**Alternatives considered:** Treating `-L` and `-i` as undeclared passthrough keys would leave aliases undocumented and force each handler to interpret two names. Registering `upgrade` as a second command object would duplicate help, tests, and behavior. A new update-specific progress pipeline would duplicate the install view. Reporting discovery percentages without progress events would present synthetic precision; printing nothing until all registry calls settle leaves the user unable to distinguish work from a stalled command. Both are rejected in favor of the existing indeterminate progress component. These alternatives are rejected.
 
 ### D6. Reconcile documentation around one canonical update workflow
 

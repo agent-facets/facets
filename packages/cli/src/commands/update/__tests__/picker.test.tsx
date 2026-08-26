@@ -10,6 +10,8 @@ import { candidate, current } from './fixtures.ts'
 const KEY = {
   up: '\u001B[A',
   down: '\u001B[B',
+  right: '\u001B[C',
+  left: '\u001B[D',
   enter: '\r',
   space: ' ',
   escape: '\u001B',
@@ -18,6 +20,19 @@ const KEY = {
 
 function nextTick(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 20))
+}
+
+/**
+ * Which column each row says it would install.
+ *
+ * Read from the visible text on purpose. Bold and underline carry the
+ * same meaning on a capable terminal, but they vanish under `NO_COLOR`,
+ * a pipe, or a screen reader — and this suite runs without colour
+ * support, which is exactly the environment that proves the word is
+ * load-bearing rather than decorative.
+ */
+function chosenLabels(frame: string): string[] {
+  return [...visibleTerminalText(frame).matchAll(/\((target|latest)\)/g)].map((match) => match[1] ?? '')
 }
 
 // Ink needs a grace period after a bare ESC byte to tell it apart from
@@ -80,32 +95,43 @@ describe('UpdatePicker — what it offers', () => {
     app.unmount()
   })
 
-  test('plain mode starts on the range target', async () => {
+  test('every row shows current, target, and latest together', async () => {
     const { app } = mount([BOUNDED])
     await nextTick()
     const frame = visibleTerminalText(app.lastFrame() ?? '')
-    expect(frame).toContain('1.2.0 → 1.8.0')
-    expect(frame).toContain('(target)')
-    expect(frame).toContain('1 of 1 selected')
+    expect(frame).toContain('facet current target latest')
+    // The comparison this screen exists for needs all three at once.
+    expect(frame).toContain('alpha 1.2.0 1.8.0 2.0.0')
+    app.unmount()
+  })
+
+  test('plain mode starts on the range target', async () => {
+    const { app, state } = mount([BOUNDED])
+    await nextTick()
+    expect(visibleTerminalText(app.lastFrame() ?? '')).toContain('1 of 1 selected')
+    expect(chosenLabels(app.lastFrame() ?? '')).toEqual(['target'])
+    await press(app, KEY.enter)
+    expect(state.confirmed).toEqual([{ facetName: 'alpha', choice: 'range' }])
     app.unmount()
   })
 
   test('latest mode starts on the latest release', async () => {
-    const { app } = mount([BOUNDED], 'latest')
+    const { app, state } = mount([BOUNDED], 'latest')
     await nextTick()
-    const frame = visibleTerminalText(app.lastFrame() ?? '')
-    expect(frame).toContain('1.2.0 → 2.0.0')
-    expect(frame).toContain('(latest)')
+    expect(chosenLabels(app.lastFrame() ?? '')).toEqual(['latest'])
+    await press(app, KEY.enter)
+    expect(state.confirmed).toEqual([{ facetName: 'alpha', choice: 'latest' }])
     app.unmount()
   })
 
   // The row `--latest` exists for: its range cannot move, so plain mode
-  // shows it unselected and says why.
+  // shows it unselected with its target sitting on the installed version.
   test('a row whose displayed choice is already installed starts unselected', async () => {
     const { app } = mount([PINNED])
     await nextTick()
     const frame = visibleTerminalText(app.lastFrame() ?? '')
-    expect(frame).toContain('unchanged')
+    // Target equal to current is legible from the columns themselves.
+    expect(frame).toContain('beta 1.2.0 1.2.0 3.0.0')
     expect(frame).toContain('0 of 1 selected')
     app.unmount()
   })
@@ -116,9 +142,51 @@ describe('UpdatePicker — choosing', () => {
     const { app } = mount([BOUNDED])
     await nextTick()
     await press(app, 'l')
-    expect(visibleTerminalText(app.lastFrame() ?? '')).toContain('1.2.0 → 2.0.0')
+    expect(chosenLabels(app.lastFrame() ?? '')).toEqual(['latest'])
     await press(app, 'l')
-    expect(visibleTerminalText(app.lastFrame() ?? '')).toContain('1.2.0 → 1.8.0')
+    expect(chosenLabels(app.lastFrame() ?? '')).toEqual(['target'])
+    app.unmount()
+  })
+
+  test('right moves to latest, left moves back to target', async () => {
+    const { app } = mount([BOUNDED])
+    await nextTick()
+    await press(app, KEY.right)
+    expect(chosenLabels(app.lastFrame() ?? '')).toEqual(['latest'])
+    await press(app, KEY.left)
+    expect(chosenLabels(app.lastFrame() ?? '')).toEqual(['target'])
+    app.unmount()
+  })
+
+  // Clamping, not wrapping. Holding an arrow down should settle on a
+  // column rather than oscillate between the two.
+  test('the arrows clamp at each end instead of wrapping', async () => {
+    const { app } = mount([BOUNDED])
+    await nextTick()
+    await press(app, KEY.left, KEY.left)
+    expect(chosenLabels(app.lastFrame() ?? '')).toEqual(['target'])
+    await press(app, KEY.right, KEY.right, KEY.right)
+    expect(chosenLabels(app.lastFrame() ?? '')).toEqual(['latest'])
+    app.unmount()
+  })
+
+  test('the arrows carry selection the same way l does', async () => {
+    const { app, state } = mount([PINNED])
+    await nextTick()
+    // A stationary target cannot be selected; the advancing latest can.
+    await press(app, KEY.right, KEY.space, KEY.enter)
+    expect(state.confirmed).toEqual([{ facetName: 'beta', choice: 'latest' }])
+    app.unmount()
+  })
+
+  test('arrows move columns while up and down still move rows', async () => {
+    const { app, state } = mount([BOUNDED, PINNED])
+    await nextTick()
+    await press(app, KEY.down, KEY.right, KEY.space, KEY.enter)
+    expect(state.confirmed).toEqual([
+      { facetName: 'alpha', choice: 'range' },
+      { facetName: 'beta', choice: 'latest' },
+    ])
     app.unmount()
   })
 
@@ -160,9 +228,9 @@ describe('UpdatePicker — choosing', () => {
     await nextTick()
     expect(visibleTerminalText(app.lastFrame() ?? '')).toContain('1 of 1 selected')
     await press(app, 'l')
-    const frame = visibleTerminalText(app.lastFrame() ?? '')
-    expect(frame).toContain('0 of 1 selected')
-    expect(frame).toContain('unchanged')
+    expect(visibleTerminalText(app.lastFrame() ?? '')).toContain('0 of 1 selected')
+    // Still shown as the row's choice, just not a selectable one.
+    expect(chosenLabels(app.lastFrame() ?? '')).toEqual(['target'])
     app.unmount()
   })
 

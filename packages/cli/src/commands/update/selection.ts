@@ -28,6 +28,22 @@ export function choiceAdvances(row: Extract<UpdatePlanRow, { kind: 'candidate' }
   }
 }
 
+/**
+ * Whether the interactive picker has anything to offer.
+ *
+ * Deliberately independent of the mode's default selections. A facet
+ * pinned to an exact version has a stationary Target and may still have
+ * an advancing Latest — under plain `--interactive` its default
+ * selection is empty while the row it would show is precisely the one
+ * the screen exists for. Gating the picker on the defaults instead sent
+ * that user to the "ranges permit none, pass --latest" message, telling
+ * them to re-run with a flag whose job the picker was already there to
+ * do interactively.
+ */
+export function hasSelectableCandidate(plan: readonly UpdatePlanRow[]): boolean {
+  return plan.some((row) => row.kind === 'candidate')
+}
+
 /** Every candidate whose chosen version advances, in project order. */
 export function defaultSelections(plan: readonly UpdatePlanRow[], mode: UpdateMode): FacetUpdateSelection[] {
   const selections: FacetUpdateSelection[] = []

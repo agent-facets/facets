@@ -41,7 +41,7 @@ The command SHALL accept `--latest` with short alias `-L`, `--interactive` with 
 
 ### Requirement: Update presentations distinguish Current Target and Latest
 
-Whenever the update command presents discovered choices, it SHALL identify each checkable registry facet's manifest specifier, locked Current version, range-respecting Target version, and registry Latest version. Git and local facets SHALL be named as unsupported sources rather than counted as current.
+Whenever the update command presents discovered choices, it SHALL identify each checkable registry facet's manifest specifier, locked Current version, range-respecting Target version, and registry Latest version. Interactive candidate rows SHALL show Current, Target, and Latest simultaneously in aligned columns. Each row SHALL name its chosen column in visible text, so the choice survives a terminal with no styling support. Styling MAY reinforce that cue but SHALL NOT be the only carrier of it. Advancing versions SHALL also color only the changed semantic-version suffix by change size using the existing semantic theme roles: patch as success/green, minor as caution/amber, and major as warning/coral. Current and stationary values SHALL remain dim. Git and local facets SHALL be named as unsupported sources rather than counted as current.
 
 #### Scenario: Preview shows all version choices
 
@@ -50,6 +50,13 @@ Whenever the update command presents discovered choices, it SHALL identify each 
 - **THEN** the output SHALL identify `1.2.0` as Current, `1.4.0` as Target, and `2.0.0` as Latest
 - **AND** the output SHALL include the authored specifier
 
+#### Scenario: Interactive rows show all choices and change size
+
+- **WHEN** interactive discovery finds candidate facets with patch, minor, or major Target or Latest advances
+- **THEN** each candidate row SHALL show Current, Target, and Latest simultaneously
+- **AND** each row SHALL name its chosen column in visible text, independent of any styling
+- **AND** the changed version suffix SHALL use the existing success, caution, or warning theme role for a patch, minor, or major advance respectively
+
 #### Scenario: Unsupported sources are named
 
 - **WHEN** a project contains git or local facets alongside registry facets
@@ -57,9 +64,31 @@ Whenever the update command presents discovered choices, it SHALL identify each 
 - **THEN** the output SHALL name each git or local facet as unsupported for update discovery
 - **AND** it SHALL NOT report those facets as current registry facets
 
+### Requirement: Update reports registry discovery progress
+
+When the output stream is a terminal, the update command SHALL provide immediate visible feedback while registry discovery is pending. It SHALL state that it is checking the registry for facet updates and SHALL reuse the CLI's existing indeterminate progress indicator. The indicator SHALL be removed before the command presents a picker, static plan, no-op, or structured error, however discovery ends. The command SHALL NOT present a percentage or completed count unless the discovery boundary exposes real progress events. When the output stream is not a terminal, the command SHALL perform the same discovery and SHALL NOT emit progress frames.
+
+#### Scenario: Pending discovery is visible in a terminal
+
+- **WHEN** registry discovery has started but has not settled in a terminal
+- **THEN** the command SHALL state that it is checking the registry for facet updates
+- **AND** it SHALL render the existing indeterminate progress indicator
+
+#### Scenario: Discovery feedback yields to the result
+
+- **WHEN** registry discovery succeeds or fails
+- **THEN** the pending indicator SHALL be removed
+- **AND** the command SHALL continue to the picker, plan, no-op, or structured error appropriate to the result
+
+#### Scenario: Non-terminal discovery emits no progress frames
+
+- **WHEN** registry discovery runs with a non-terminal output stream
+- **THEN** the command SHALL NOT write progress frames
+- **AND** the discovered result SHALL be unchanged
+
 ### Requirement: Users can select updates interactively
 
-The `--interactive` mode SHALL present every registry facet for which Target or Latest is newer than Current. Range Target SHALL be the initial choice unless `--latest` is also supplied, in which case Latest SHALL be initial. Users SHALL be able to navigate rows, select or deselect facets, and toggle the focused row between Target and Latest with `l`. A choice that does not advance Current SHALL NOT be selectable, and confirmation SHALL require at least one selected advancing choice.
+The `--interactive` mode SHALL present every registry facet for which Target or Latest is newer than Current. Whether the picker opens SHALL be determined from that candidate set, not from whether the initial mode has a non-empty default selection. Range Target SHALL be the initial choice unless `--latest` is also supplied, in which case Latest SHALL be initial. Users SHALL be able to navigate rows, select or deselect facets, and change the focused row's column between Target and Latest. Left and right SHALL address the Target and Latest columns directly and SHALL clamp at each end rather than wrap; `l` SHALL flip the focused row between them. A choice that does not advance Current SHALL NOT be selectable, and confirmation SHALL require at least one selected advancing choice.
 
 Interactive selection SHALL occur before adapter selection or update application. The command SHALL reject interactive mode before discovery when the terminal cannot prompt. Cancelling or interrupting the picker SHALL apply nothing, SHALL report that nothing was applied, and SHALL exit with code 1.
 
@@ -68,20 +97,34 @@ Interactive selection SHALL occur before adapter selection or update application
 - **WHEN** a user runs `facet update --interactive`
 - **AND** a facet has both an advancing Target and an advancing Latest
 - **THEN** the facet's initial choice SHALL be Target
-- **AND** pressing `l` on that row SHALL change its choice to Latest
+- **AND** pressing `l` or right on that row SHALL change its choice to Latest
+
+#### Scenario: Column keys clamp at each end
+
+- **WHEN** a row's choice is Target and the user presses left
+- **THEN** the choice SHALL remain Target
+- **AND** when a row's choice is Latest and the user presses right, the choice SHALL remain Latest
 
 #### Scenario: Latest interactive mode starts with latest targets
 
 - **WHEN** a user runs `facet update --interactive --latest`
 - **AND** a facet has both an advancing Target and an advancing Latest
 - **THEN** the facet's initial choice SHALL be Latest
-- **AND** pressing `l` on that row SHALL change its choice to Target
+- **AND** pressing `l` or left on that row SHALL change its choice to Target
 
 #### Scenario: Non-advancing choice cannot be selected
 
 - **WHEN** a facet's Target equals Current but its Latest is newer
 - **THEN** the Target choice SHALL NOT be selectable
 - **AND** the user SHALL be able to toggle to and select Latest
+
+#### Scenario: Latest-only candidate opens plain interactive mode
+
+- **WHEN** a facet's Target equals Current and its Latest is newer
+- **AND** the user runs `facet update --interactive` without `--latest`
+- **THEN** the command SHALL open the picker rather than report the range-specific no-op
+- **AND** the row SHALL start on its stationary Target, unselected
+- **AND** the user SHALL be able to toggle to Latest, select it, and confirm
 
 #### Scenario: Confirmation requires a selection
 

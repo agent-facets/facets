@@ -17,8 +17,16 @@ import { ACCEPT_MCP_FLAG, INSTALL_PIPELINE_FLAGS, mcpConsentPolicy } from '../sh
 import { installFailureDetail, installFailureFix } from '../shared/install-failure.ts'
 import { updatePrepareCliError, updateSelectionCliError } from './errors.ts'
 import { buildPreview } from './preview.ts'
+import { withUpdateDiscovery } from './run-discovery.ts'
 import { runUpdatePicker } from './run-picker.ts'
-import { classifyNoOp, defaultSelections, describeNoOp, type UpdateMode } from './selection.ts'
+import {
+  classifyNoOp,
+  defaultSelections,
+  describeNoOp,
+  hasSelectableCandidate,
+  type UpdateMode,
+  type UpdateNoOp,
+} from './selection.ts'
 
 /**
  * `facet update` (alias: `facet upgrade`) — move the project's
@@ -92,7 +100,10 @@ export const updateCommand: Command = {
     const dryRun = flags['dry-run'] === true
     const mode: UpdateMode = flags.latest === true ? 'latest' : 'range'
 
-    const prepared = await prepareFacetUpdate({ projectRoot: process.cwd() })
+    // Wrapped rather than awaited bare: discovery is the long, silent
+    // part of this command, and an empty screen while it runs is
+    // indistinguishable from a command that did nothing.
+    const prepared = await withUpdateDiscovery(() => prepareFacetUpdate({ projectRoot: process.cwd() }))
     if (!prepared.ok) {
       writeCliError(updatePrepareCliError(prepared.failure))
       return 1
@@ -108,9 +119,17 @@ export const updateCommand: Command = {
     // it is decides whether the user has anything to do about it, so the
     // message says which one rather than a single "nothing to update".
     //
-    // Checked before the picker for a reason: a screen with no selectable
-    // row is not a choice, it is a dead end with no explanation on it.
-    const noOp = classifyNoOp(plan, mode, defaults)
+    // What counts as nothing depends on the mode. A non-interactive run
+    // has only its mode's default selection to go on. An interactive run
+    // has the picker, which can reach a version those defaults did not
+    // select — so its only dead end is a plan with no candidate row to
+    // put on screen at all.
+    let noOp: UpdateNoOp | null
+    if (interactive) {
+      noOp = hasSelectableCandidate(plan) ? null : classifyNoOp(plan, mode, [])
+    } else {
+      noOp = classifyNoOp(plan, mode, defaults)
+    }
     if (noOp !== null) {
       process.stdout.write(`${describeNoOp(noOp)}\n`)
       return 0

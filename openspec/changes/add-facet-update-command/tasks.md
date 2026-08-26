@@ -100,7 +100,7 @@
 - [x] 9.3 Explore: Inspect `packages/cli/src/prompts/overview.txt`, `packages/cli/src/prompts/usage.txt`, prompt generation, and instruction-prompt unit/e2e tests so guidance is added without duplicating topic lists, adapter API support sets, or materialization schemas.
 - [x] 9.4 Explore: Inspect `docs/changelog/index.mdx`, its RSS rules, `.changeset/`, and contribution conventions for the required inert-stub-to-live-alias disclosure and package changeset.
 - [x] 9.5 Propose: Define the cohesive documentation, prompt, changelog, navigation, and validation approach while preserving historical changelog text and `facet list`'s offline contract.
-- [ ] 9.6 Pause: Model-switch boundary before documentation implementation.
+- [x] 9.6 Pause: Model-switch boundary before documentation implementation.
 
 ## 10. Documentation and Agent Guidance — Implementation
 
@@ -110,17 +110,29 @@
 - [x] 10.4 Implement: Update `packages/cli/src/prompts/overview.txt` and `usage.txt` with project update, alias, non-TTY, dry-run, `--accept-mcp`, and `facet install` recovery guidance, then add companion unit and end-to-end prompt assertions.
 - [x] 10.5 Implement: Leave `docs/changelog/index.mdx` untouched, ask the user to generate the `agent-facets` minor changeset manually, then replace only its placeholder body with the stub-to-live-alias warning without editing generated package changelogs.
 - [x] 10.6 Verify: Run prompt tests, Mintlify validation, and broken-link checks for all documentation and agent-guidance changes.
-- [ ] 10.7 Pause: Model-switch boundary before integrated acceptance research.
+- [x] 10.7 Pause: Model-switch boundary before integrated acceptance research.
 
-## 11. Integrated Acceptance — Research
+## 11. Interactive Update Corrections — Implementation
 
-- [ ] 11.1 Explore: Map every reconciled CLI and installation scenario to an automated test or explicit documentation check and identify any remaining coverage gaps across engine, CLI, transaction, prompts, and docs.
-- [ ] 11.2 Explore: Review the complete implementation for single-source-of-truth violations, representable illegal states, escaping expected errors, accidental registry-current checks, secondary metadata resolution, or dry-run side effects.
-- [ ] 11.3 Propose: Define the final acceptance pass and the smallest fixes needed to close all uncovered specification and regression gaps.
-- [ ] 11.4 Pause: Model-switch boundary before final acceptance implementation.
+The approach for this block was explored and approved during the block 10 review,
+so it opens on implementation rather than a second research pass.
 
-## 12. Integrated Acceptance — Implementation
+- [x] 11.1 Implement: Add a lightweight update-discovery view that starts before awaiting preparation, states that the registry is being checked, reuses the existing indeterminate `ProgressBar`, and yields cleanly to success, no-op, or structured failure without adding synthetic percentages or an engine progress API.
+- [x] 11.2 Implement: Correct interactive orchestration so the presence of any Target-or-Latest candidate opens the picker even when the initial Range selection is empty, while truly candidate-free plans retain their specific successful no-op and non-interactive range behavior remains unchanged.
+- [x] 11.3 Implement: Render candidate picker rows as aligned Current, Target, and Latest columns; preserve mode defaults and `l` toggling; emphasize the chosen cell without color alone; and color only the changed semantic-version suffix with existing success, caution, and warning theme roles for patch, minor, and major advances.
+- [x] 11.4 Implement: Add focused command, Ink, and pure presentation tests for pending/settled/failed discovery feedback, Latest-only plain interactive selection, truly empty no-ops, simultaneous version columns, and semantic change coloring, while preserving existing cancellation, dry-run, adapter-ordering, and side-effect coverage.
+- [x] 11.5 Verify: Run the targeted update command, picker, and Ink tests plus the CLI typecheck.
+- [ ] 11.6 Pause: Model-switch boundary before integrated acceptance research.
 
-- [ ] 12.1 Implement: Add or adjust the remaining focused tests and documentation checks identified by the acceptance matrix without duplicating coverage already owned by lower-level suites.
-- [ ] 12.2 Verify: Run `bun check`; if any test, type, lint, formatting, documentation, or end-to-end check fails, stop and report the failures.
-- [ ] 12.3 Verify: Validate the completed OpenSpec change against its schema and confirm every implementation task and reconciled scenario is accounted for before verification and archive.
+## 12. Integrated Acceptance — Research
+
+- [ ] 12.1 Explore: Map every reconciled CLI and installation scenario — including the corrected interactive and discovery-feedback behavior — to an automated test or explicit documentation check, and identify any remaining coverage gaps across engine, CLI, transaction, prompts, and docs.
+- [ ] 12.2 Explore: Review the complete implementation for single-source-of-truth violations, representable illegal states, escaping expected errors, accidental registry-current checks, secondary metadata resolution, or dry-run side effects.
+- [ ] 12.3 Propose: Define the final acceptance pass and the smallest fixes needed to close all uncovered specification and regression gaps.
+- [ ] 12.4 Pause: Model-switch boundary before final acceptance implementation.
+
+## 13. Integrated Acceptance — Implementation
+
+- [ ] 13.1 Implement: Add or adjust the remaining focused tests and documentation checks identified by the acceptance matrix without duplicating coverage already owned by lower-level suites.
+- [ ] 13.2 Verify: Run `bun check`; if any test, type, lint, formatting, documentation, or end-to-end check fails, stop and report the failures.
+- [ ] 13.3 Verify: Validate the completed OpenSpec change against its schema and confirm every implementation task and reconciled scenario is accounted for before verification and archive.

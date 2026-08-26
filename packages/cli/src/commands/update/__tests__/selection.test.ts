@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { classifyNoOp, defaultSelections, describeNoOp } from '../selection.ts'
+import { classifyNoOp, defaultSelections, describeNoOp, hasSelectableCandidate } from '../selection.ts'
 import { candidate, current, unsupported } from './fixtures.ts'
 
 const BOUNDED = candidate({
@@ -37,6 +37,26 @@ describe('defaultSelections', () => {
     const plan = [current({ name: 'gamma', source: '*', version: '4.0.0' }), unsupported('delta', './local', 'local')]
     expect(defaultSelections(plan, 'range')).toEqual([])
     expect(defaultSelections(plan, 'latest')).toEqual([])
+  })
+})
+
+describe('hasSelectableCandidate', () => {
+  test('a candidate the mode would not select still counts', () => {
+    // The whole point: under plain update PINNED contributes no default
+    // selection, and it is still a row worth showing.
+    expect(defaultSelections([PINNED], 'range')).toEqual([])
+    expect(hasSelectableCandidate([PINNED])).toBe(true)
+  })
+
+  test('rows with nothing newer do not count', () => {
+    expect(hasSelectableCandidate([current({ name: 'gamma', source: '*', version: '4.0.0' })])).toBe(false)
+    expect(hasSelectableCandidate([unsupported('delta', './local', 'local')])).toBe(false)
+    expect(hasSelectableCandidate([])).toBe(false)
+  })
+
+  test('one candidate among unselectable rows is enough', () => {
+    const plan = [current({ name: 'gamma', source: '*', version: '4.0.0' }), PINNED]
+    expect(hasSelectableCandidate(plan)).toBe(true)
   })
 })
 

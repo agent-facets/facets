@@ -668,8 +668,8 @@
         "kind": "registry",
         "registry": "https://api.agentfacets.io"
       },
-      "version": "1.3.0",
-      "integrity": "sha256:be85be9bc09b87be4ffca314ec83cd317589a3da573ec73abc28e0cdda0e2ab2",
+      "version": "1.0.0",
+      "integrity": "sha256:d745129217896c754f60f62088a792042d9867151279d7b7fe55a7493cc73ebb",
       "assets": [
         {
           "scope": "project",
@@ -681,7 +681,7 @@
           "files": [
             {
               "path": "skills/viper-execution-rules/SKILL.md",
-              "integrity": "sha256:6b70bed17556faf5e131b2771c6475db23e93d26a39197ef21e143509545514f"
+              "integrity": "sha256:fc15fbdd4231e8e74a71ffb9b59b948e81c221442012970870dfed7b777c4b6b"
             }
           ]
         },
@@ -695,7 +695,7 @@
           "files": [
             {
               "path": "skills/viper-planning/SKILL.md",
-              "integrity": "sha256:cf326cb73bad44540fadd11f4c985b3f8634f734db7c8f87f9e8230bf895284c"
+              "integrity": "sha256:8360e3343f5e628e43c280da77591562035ebf82bb428a27f195150c829c39df"
             }
           ]
         },
@@ -709,7 +709,7 @@
           "files": [
             {
               "path": "commands/viper-continue.md",
-              "integrity": "sha256:80f8444039799ae1f06286994a2d420be97f1fe95c600f96b9cbc80516d29b79"
+              "integrity": "sha256:bffdb4ab2fa5a0d69a885aea589c79836e9ec94680e9cf4e7f7855d6d3bc0a75"
             }
           ]
         },
@@ -723,7 +723,7 @@
           "files": [
             {
               "path": "commands/viper-plan.md",
-              "integrity": "sha256:1faa52ff624a8fc997a4ce1a25857d9ce6d205c9e4d26015722dcd355272ed2d"
+              "integrity": "sha256:f5fa4ff8b4cbfecfed33cf54a234d2cfa7d2151b36adf36e82ce7ccc0e365988"
             }
           ]
         },
@@ -737,7 +737,7 @@
           "files": [
             {
               "path": "commands/viper-run.md",
-              "integrity": "sha256:ab4e2036931dc344424b52d0019e96853cf8e235e755a452e942953504000eee"
+              "integrity": "sha256:bfff09006b1e319e441ccc46c0b10d5079ee2c9e35231cf64e9931b606cde983"
             }
           ]
         }

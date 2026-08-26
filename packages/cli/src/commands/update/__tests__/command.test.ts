@@ -4,22 +4,28 @@ import { captureStderr, captureStdout } from '../../../__tests__/helpers/capture
 import { withTTY } from '../../../__tests__/helpers/with-tty.ts'
 import * as adapterModule from '../../shared/ensure-adapters.ts'
 import { updateCommand } from '../index.ts'
+import * as pickerModule from '../run-picker.ts'
 import { candidate, current, unsupported } from './fixtures.ts'
 
 type Prepare = typeof engine.prepareFacetUpdate
 const prepareSpy = spyOn(engine, 'prepareFacetUpdate') as unknown as Mock<Prepare>
 const adaptersSpy = spyOn(adapterModule, 'ensureAdapters')
+// Stubbed rather than mounted: the real picker waits on keystrokes, so a
+// test that let it open would hang until the suite timed out.
+const pickerSpy = spyOn(pickerModule, 'runUpdatePicker')
 
 // Cleared, not restored: `mockRestore` retires the spy for good, and
 // every test after the first would then run against the real engine.
 afterEach(() => {
   prepareSpy.mockClear()
   adaptersSpy.mockClear()
+  pickerSpy.mockClear()
 })
 
 afterAll(() => {
   prepareSpy.mockRestore()
   adaptersSpy.mockRestore()
+  pickerSpy.mockRestore()
 })
 
 function preparing(plan: engine.UpdatePlanRow[]): void {
@@ -141,6 +147,81 @@ describe('facet update — successful runs that apply nothing', () => {
     expect(result).toBe(0)
     expect(stdout).toContain('facet update --latest')
     expect(stdout).not.toContain('are current')
+    expect(adaptersSpy).not.toHaveBeenCalled()
+  })
+})
+
+describe('facet update — opening the interactive picker', () => {
+  // The bug this guards: gating the picker on the mode's DEFAULT
+  // selection instead of on the candidate rows. An exact pin has a
+  // stationary target and an advancing latest, so plain `--interactive`
+  // produced an empty default selection, tripped the range no-op, and
+  // told the user to re-run with `--latest` -- the exact job the screen
+  // they asked for was there to do.
+  test('a latest-only candidate opens the picker instead of the range no-op', async () => {
+    preparing([PINNED])
+    pickerSpy.mockResolvedValue({ kind: 'cancelled' })
+    const { stdout, result } = await withTTY(true, () =>
+      captureStdout(() => updateCommand.run([], { interactive: true })),
+    )
+    expect(pickerSpy).toHaveBeenCalled()
+    expect(stdout).not.toContain('facet update --latest')
+    expect(result).toBe(1)
+  })
+
+  test('the picker starts on the mode the flags asked for', async () => {
+    preparing([BOUNDED])
+    pickerSpy.mockResolvedValue({ kind: 'cancelled' })
+    await withTTY(true, () => captureStdout(() => updateCommand.run([], { interactive: true })))
+    expect(pickerSpy.mock.calls[0]?.[1]).toBe('range')
+
+    pickerSpy.mockClear()
+    await withTTY(true, () => captureStdout(() => updateCommand.run([], { interactive: true, latest: true })))
+    expect(pickerSpy.mock.calls[0]?.[1]).toBe('latest')
+  })
+
+  // Interactive has a dead end, it is just a different one: a plan with
+  // no candidate row at all has nothing to put on screen.
+  test('a plan with no candidate at all still reports the specific no-op', async () => {
+    preparing([current({ name: 'gamma', source: '*', version: '4.0.0' })])
+    const { stdout, result } = await withTTY(true, () =>
+      captureStdout(() => updateCommand.run([], { interactive: true })),
+    )
+    expect(pickerSpy).not.toHaveBeenCalled()
+    expect(stdout).toContain('All registry facets are current')
+    expect(result).toBe(0)
+  })
+
+  test('a project with no registry facets never opens the picker', async () => {
+    preparing([unsupported('delta', 'github:a/b', 'git')])
+    const { stdout, result } = await withTTY(true, () =>
+      captureStdout(() => updateCommand.run([], { interactive: true })),
+    )
+    expect(pickerSpy).not.toHaveBeenCalled()
+    expect(stdout).toContain('No registry facets to update')
+    expect(result).toBe(0)
+  })
+
+  test('cancelling applies nothing, says so, and exits non-zero', async () => {
+    preparing([BOUNDED])
+    pickerSpy.mockResolvedValue({ kind: 'cancelled' })
+    const { stdout, result } = await withTTY(true, () =>
+      captureStdout(() => updateCommand.run([], { interactive: true })),
+    )
+    expect(result).toBe(1)
+    expect(stdout).toContain('Nothing was applied')
+    // Cancelling must not have cost an adapter install.
+    expect(adaptersSpy).not.toHaveBeenCalled()
+  })
+
+  test('a confirmed selection under --dry-run previews and stops', async () => {
+    preparing([PINNED])
+    pickerSpy.mockResolvedValue({ kind: 'confirmed', selections: [{ facetName: 'beta', choice: 'latest' }] })
+    const { stdout, result } = await withTTY(true, () =>
+      captureStdout(() => updateCommand.run([], { interactive: true, 'dry-run': true })),
+    )
+    expect(result).toBe(0)
+    expect(stdout).toContain('3.4.1')
     expect(adaptersSpy).not.toHaveBeenCalled()
   })
 })
