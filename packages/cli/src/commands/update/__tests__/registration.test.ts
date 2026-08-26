@@ -23,6 +23,18 @@ describe('update registration', () => {
     expect(updateCommand.implemented).toBe(true)
   })
 
+  // Four names one keystroke apart, and two of them do something the
+  // other two must never do. The `self-` prefix is the whole distinction,
+  // so it is asserted rather than assumed.
+  test('neither bare name is the command that updates the binary', () => {
+    expect(commands.update).not.toBe(commands['self-update'])
+    expect(resolveCommand(commands, 'upgrade')).not.toBe(commands['self-update'])
+    expect(resolveCommand(commands, 'self-update')).not.toBe(updateCommand)
+    // And `self-update` is not reachable by either bare spelling.
+    expect(updateCommand.aliases ?? []).not.toContain('self-update')
+    expect(commands['self-update']?.aliases ?? []).not.toContain('update')
+  })
+
   test('typo suggestions know both names', () => {
     expect(allCommandNames(commands)).toContain('update')
     expect(allCommandNames(commands)).toContain('upgrade')

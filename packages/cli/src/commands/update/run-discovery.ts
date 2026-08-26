@@ -1,16 +1,17 @@
 import { render } from 'ink'
 import { createElement } from 'react'
 import { UpdateDiscoveryView } from '../../tui/views/update/discovery-view.tsx'
+import { canRenderLiveOutput, currentTerminalCapabilities } from '../../util/interactive.ts'
 
 export interface DiscoveryProgressOptions {
   /**
    * Whether to draw the indicator at all.
    *
-   * Defaults to "stdout is a terminal". An animated frame is a terminal
-   * affordance: piped into a file or a CI log it becomes twenty lines a
-   * second of comet frames in front of the output someone actually
-   * wanted. A non-terminal run does the same work and prints nothing
-   * extra.
+   * Defaults to the shared live-output rule. An animated frame is a
+   * terminal affordance: piped into a file or a CI log it becomes twenty
+   * lines a second of comet frames in front of the output someone
+   * actually wanted. A run that cannot repaint does the same work and
+   * prints nothing extra.
    */
   enabled?: boolean
 }
@@ -29,10 +30,20 @@ export async function withUpdateDiscovery<T>(
   work: () => Promise<T>,
   options: DiscoveryProgressOptions = {},
 ): Promise<T> {
-  const enabled = options.enabled ?? process.stdout.isTTY === true
+  const enabled = options.enabled ?? canRenderLiveOutput(currentTerminalCapabilities())
   if (!enabled) return work()
 
-  const instance = render(createElement(UpdateDiscoveryView), { exitOnCtrlC: false })
+  // Mounting is inside the try only in the sense that failing to mount
+  // must not cost the caller their command: a progress indicator is
+  // decoration, and a terminal that cannot host one is not a reason to
+  // abandon the update.
+  let instance: ReturnType<typeof render>
+  try {
+    instance = render(createElement(UpdateDiscoveryView), { exitOnCtrlC: false })
+  } catch {
+    return work()
+  }
+
   try {
     return await work()
   } finally {

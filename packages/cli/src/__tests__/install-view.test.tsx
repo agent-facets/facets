@@ -2026,6 +2026,30 @@ describe('InstallView — update mode', () => {
     instance.unmount()
   })
 
+  // `--verbose` is the only thing that turns these on, and where they land
+  // is the whole point: a caller piping stdout to parse the summary must
+  // not have diagnostics interleaved into it.
+  test('verbose diagnostics go to stderr while progress stays on stdout', async () => {
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'update',
+        run: async ({ onStage, onLog }) => {
+          onStage({ kind: 'install-start', totalFacets: 2 })
+          onLog(() => 'resolved alpha@1.8.0 from cache')
+          return updateResult
+        },
+      }),
+    )
+    await settle()
+
+    expect(visibleTerminalText(instance.stderr.lastFrame() ?? '')).toContain('resolved alpha@1.8.0 from cache')
+
+    const out = visibleTerminalText(visibleContentFrame(instance.frames))
+    expect(out).toContain('alpha 1.2.0 → 1.8.0')
+    expect(out).not.toContain('resolved alpha@1.8.0 from cache')
+    instance.unmount()
+  })
+
   test('a stale plan is reported as a failure, with the disk state', async () => {
     const stale: RunInstallResult = {
       ok: false,

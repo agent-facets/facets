@@ -60,10 +60,12 @@ afterEach(() => {
 })
 
 describe('facet <command> --help', () => {
-  // One definition, three commands. `rm` is included because the alias is
-  // how many people invoke removal, and an alias that silently lacked the
-  // flag would leave them with no non-interactive way to finish.
-  test.each(['add', 'install', 'remove', 'rm'])('%s lists --accept-mcp', async (command) => {
+  // One definition, every command that runs the install pipeline. `rm` is
+  // included because the alias is how many people invoke removal, and an
+  // alias that silently lacked the flag would leave them with no
+  // non-interactive way to finish. `update` is included for the same
+  // reason: a newer release can bring MCP configuration with it.
+  test.each(['add', 'install', 'remove', 'rm', 'update'])('%s lists --accept-mcp', async (command) => {
     const result = await runCli([command, '--help'])
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('--accept-mcp')

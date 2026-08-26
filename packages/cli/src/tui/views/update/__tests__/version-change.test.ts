@@ -1,10 +1,17 @@
 import { describe, expect, test } from 'bun:test'
+import type { ExactVersion } from '@agent-facets/engine'
 import { THEME } from '../../../theme.ts'
-import { classifyVersionChange, formatExactVersion, splitAtChange, versionChangeColor } from '../version-change.ts'
+import {
+  classifyVersionChange,
+  formatExactVersion,
+  splitAtChange,
+  versionCellStyle,
+  versionChangeColor,
+} from '../version-change.ts'
 
-function v(version: string) {
+function v(version: string): ExactVersion {
   const [major = 0, minor = 0, patch = 0] = version.split('.').map(Number)
-  return { major, minor, patch }
+  return { kind: 'exact', major, minor, patch }
 }
 
 describe('classifyVersionChange', () => {
@@ -83,5 +90,60 @@ describe('versionChangeColor', () => {
   test('the three sizes are visually distinct from each other', () => {
     const used = [versionChangeColor('patch'), versionChangeColor('minor'), versionChangeColor('major')]
     expect(new Set(used).size).toBe(3)
+  })
+})
+
+/**
+ * The cell's whole visual contract, asserted as a value.
+ *
+ * None of this is observable from a rendered frame: this suite runs
+ * without colour support, so chalk emits no escape codes at all, and the
+ * padding disappears into whitespace normalization. Rendering and
+ * asserting the frame would leave every one of these facts unproven —
+ * `versionChangeColor` could be dropped from the component entirely and
+ * a frame test would still pass.
+ */
+describe('versionCellStyle', () => {
+  test('colours the changed component by how big the change is', () => {
+    expect(versionCellStyle({ current: v('1.2.3'), version: v('1.2.4'), chosen: false }).changedColor).toBe(
+      THEME.success,
+    )
+    expect(versionCellStyle({ current: v('1.2.3'), version: v('1.3.0'), chosen: false }).changedColor).toBe(
+      THEME.caution,
+    )
+    expect(versionCellStyle({ current: v('1.2.3'), version: v('2.0.0'), chosen: false }).changedColor).toBe(
+      THEME.warning,
+    )
+  })
+
+  test('a stationary version carries no colour of its own', () => {
+    const style = versionCellStyle({ current: v('1.2.0'), version: v('1.2.0'), chosen: true })
+    expect(style.changedColor).toBeUndefined()
+    expect(style.changed).toBe('')
+    expect(style.prefix).toBe('1.2.0')
+  })
+
+  test('only the chosen cell is emphasized', () => {
+    expect(versionCellStyle({ current: v('1.2.0'), version: v('1.8.0'), chosen: true })).toMatchObject({
+      underline: true,
+      bold: true,
+    })
+    expect(versionCellStyle({ current: v('1.2.0'), version: v('1.8.0'), chosen: false })).toMatchObject({
+      underline: false,
+      bold: false,
+    })
+  })
+
+  // Padding inside the underline renders as underscored blanks — a
+  // trailing underscore the reader has to work out is not a character.
+  test('column padding is kept outside the styled span', () => {
+    const style = versionCellStyle({ current: v('1.2.0'), version: v('1.8.0'), chosen: true, pad: 8 })
+    expect(style.padding).toBe('   ')
+    expect(style.prefix + style.changed + style.rest).toBe('1.8.0')
+  })
+
+  test('a version at least as wide as its column gets no padding', () => {
+    expect(versionCellStyle({ current: v('1.2.0'), version: v('1.8.0'), chosen: false, pad: 3 }).padding).toBe('')
+    expect(versionCellStyle({ current: v('1.2.0'), version: v('1.8.0'), chosen: false }).padding).toBe('')
   })
 })

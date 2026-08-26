@@ -2,7 +2,9 @@
 
 ### Requirement: Update discovery reports registry-resolved choices
 
-For every registry-backed manifest entry with usable local resolution state, the system SHALL report the exact locked version as Current, the exact version resolved from the authored specifier as Target, and the exact version resolved from `latest` as Latest. Target SHALL satisfy the authored specifier. Registry resolution SHALL remain caller-relative and SHALL use the same available credentials as other registry reads.
+For every registry-backed manifest entry with usable local resolution state, the system SHALL report the exact locked version as Current, the exact version the authored specifier resolves to as Target, and the exact version resolved from `latest` as Latest. Target SHALL satisfy the authored specifier. Registry resolution SHALL remain caller-relative and SHALL use the same available credentials as other registry reads.
+
+When the authored specifier is exact, Target SHALL be taken from local state rather than resolved: the facet is checkable only because its locked version satisfies that specifier, and an exact specifier admits exactly one version. The system SHALL NOT issue a registry lookup for such a Target, and SHALL NOT carry registry metadata for it — a Target equal to Current can never be selected, so no release is ever installed for it.
 
 The system SHALL treat the registry as authoritative for resolving each supported manifest specifier and `latest`. Returned facet identities and versions SHALL be validated before they are presented or selected; a mismatched identity, unsupported exact-version form, unusable integrity value, or Target that does not satisfy its authored specifier SHALL fail discovery.
 
@@ -11,6 +13,14 @@ The system SHALL treat the registry as authoritative for resolving each supporte
 - **WHEN** a manifest pins `1.2.0`, the lockfile records Current `1.2.0`, and the registry resolves Latest `2.0.0`
 - **THEN** discovery SHALL report Target `1.2.0`
 - **AND** discovery SHALL report Latest `2.0.0`
+- **AND** discovery SHALL issue no registry lookup for that facet's Target
+
+#### Scenario: A pinned facet whose installed release was withdrawn
+
+- **WHEN** a manifest pins a version the registry can no longer resolve
+- **AND** the lockfile records that version as Current
+- **THEN** discovery SHALL still report it as Target and Current
+- **AND** the rest of the project's facets SHALL still be planned
 
 #### Scenario: Major wildcard resolves its Target
 
@@ -75,6 +85,12 @@ The system SHALL complete every required Target and Latest lookup before present
 - **THEN** the system SHALL fail discovery
 - **AND** it SHALL NOT present the successful subset as an actionable update plan
 - **AND** no project or machine-local state SHALL change
+
+#### Scenario: A lookup that throws is reported as a failure, not raised
+
+- **WHEN** a required registry lookup rejects rather than returning a failure
+- **THEN** discovery SHALL report it as a structured discovery failure
+- **AND** the error SHALL NOT escape update discovery
 
 #### Scenario: Concurrent failures have deterministic reporting order
 

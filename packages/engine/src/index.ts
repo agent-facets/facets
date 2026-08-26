@@ -269,7 +269,6 @@ export type {
 export { assetIdentity } from './install/types.ts'
 // update planning (owns every version question `facet update` renders)
 export type {
-  AdvancingChoices,
   AuthoredSpecifier,
   CheckableRegistryFacet,
   ExactVersion,
@@ -280,6 +279,7 @@ export type {
   ResolvedChoice,
   RunPreparedFacetUpdateOptions,
   RunPreparedFacetUpdateResult,
+  TargetVersion,
   UnusableFacetState,
   UnusableStateReason,
   UpdateChoice,
@@ -290,7 +290,19 @@ export type {
 // show the EXACT `facets.json` value an application would commit. That
 // value is derived here, once; recomputing it in the CLI would let a
 // preview describe a different edit than the one that runs.
-export { prepareFacetUpdate, runPreparedFacetUpdate, validateFacetUpdateSelections } from './install/update/index.ts'
+//
+// `advancingChoice` and `displayedVersion` are exported for the same
+// reason in the other direction: the picker must gate selection on the
+// identical predicate application enforces, and the plan view must
+// render the identical version. Both are one function here rather than
+// a rule the CLI reimplements.
+export {
+  advancingChoice,
+  displayedVersion,
+  prepareFacetUpdate,
+  runPreparedFacetUpdate,
+  validateFacetUpdateSelections,
+} from './install/update/index.ts'
 // loaders. Note: `ResolvedFacetManifest` and `FACET_MANIFEST_FILE` are
 // part of `@agent-facets/protocol`'s public surface, not engine's. CLI
 // imports them directly from protocol; we don't re-export them here to

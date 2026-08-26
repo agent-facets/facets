@@ -14,7 +14,6 @@ const BOUNDED = candidate({
   current: '1.2.0',
   target: '1.8.0',
   latest: '2.0.0',
-  advancing: 'range-and-latest',
 })
 
 const PINNED = candidate({
@@ -23,7 +22,6 @@ const PINNED = candidate({
   current: '1.2.0',
   target: '1.2.0',
   latest: '3.4.1',
-  advancing: 'latest-only',
 })
 
 const MINOR = candidate({
@@ -32,7 +30,6 @@ const MINOR = candidate({
   current: '1.2.0',
   target: '1.2.9',
   latest: '3.4.1',
-  advancing: 'range-and-latest',
 })
 
 /** Render exactly what the command renders: engine-derived preview data. */
@@ -75,6 +72,31 @@ describe('UpdatePlanView', () => {
     expect(frame).toContain('delta — git source (github:a/b); not checked for updates')
   })
 
+  /**
+   * The bug this guards: computing a column's width from its values only.
+   * `declared` is eight characters and `1.*` is three, so a header taken
+   * from the values alone overflows its own column and shifts every
+   * column after it — a table that is only wrong when a human reads it.
+   *
+   * Invisible to every other test in this file, because
+   * `visibleTerminalText` collapses the whitespace that carries it.
+   */
+  test('every column starts where its header says it does', () => {
+    const frame = stripTerminalControls(frameFor([BOUNDED, PINNED, MINOR], 'range'))
+    const lines = frame.split('\n').filter((line) => line.trim().length > 0)
+    const header = lines[0] ?? ''
+    const rows = lines.slice(1)
+    expect(rows).toHaveLength(3)
+
+    for (const label of ['facet', 'declared', 'current', 'target', 'latest']) {
+      const at = header.indexOf(label)
+      expect(at).toBeGreaterThanOrEqual(0)
+      for (const row of rows) {
+        expect({ label, char: row.charAt(at) }).toEqual({ label, char: row.charAt(at).trimEnd() })
+      }
+    }
+  })
+
   test('a project of only current facets still lists them', () => {
     const frame = visibleTerminalText(frameFor([current({ name: 'gamma', source: '*', version: '4.0.0' })], 'range'))
     expect(frame).toContain('gamma')
@@ -104,7 +126,6 @@ describe('UpdatePlanView — manifest rewrites', () => {
       current: '1.0.0',
       target: '2.0.0',
       latest: '2.0.0',
-      advancing: 'range-and-latest',
     })
     expect(visibleTerminalText(frameFor([floating], 'latest'))).not.toContain('facets.json')
   })

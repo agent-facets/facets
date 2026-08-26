@@ -8,6 +8,7 @@
  * second, slightly different way.
  */
 
+export { advancingChoice, displayedVersion, hasAdvancingChoice } from './advancing.ts'
 export type {
   FacetUpdateSelection,
   RunPreparedFacetUpdateOptions,
@@ -18,12 +19,12 @@ export { runPreparedFacetUpdate, validateFacetUpdateSelections } from './apply.t
 export type { AuthoredSpecifier, UpdateChoice } from './manifest-source.ts'
 export { type PrepareFacetUpdateArgs, prepareFacetUpdate } from './prepare.ts'
 export type {
-  AdvancingChoices,
   CheckableRegistryFacet,
   PreparedFacetUpdate,
   PrepareFacetUpdateFailure,
   PrepareFacetUpdateResult,
   ResolvedChoice,
+  TargetVersion,
   UnusableFacetState,
   UnusableStateReason,
   UpdatePlanRow,

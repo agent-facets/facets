@@ -1,11 +1,5 @@
+import type { ExactVersion } from '@agent-facets/engine'
 import { THEME } from '../../theme.ts'
-
-/** An exact release, as the update plan carries it. */
-export interface ExactVersionParts {
-  major: number
-  minor: number
-  patch: number
-}
 
 /**
  * How far a candidate version moves from what is installed.
@@ -35,14 +29,14 @@ export interface SplitVersion {
   rest: string
 }
 
-export function classifyVersionChange(current: ExactVersionParts, next: ExactVersionParts): VersionChange {
+export function classifyVersionChange(current: ExactVersion, next: ExactVersion): VersionChange {
   if (next.major !== current.major) return 'major'
   if (next.minor !== current.minor) return 'minor'
   if (next.patch !== current.patch) return 'patch'
   return 'none'
 }
 
-export function formatExactVersion(version: ExactVersionParts): string {
+export function formatExactVersion(version: ExactVersion): string {
   return `${version.major}.${version.minor}.${version.patch}`
 }
 
@@ -54,7 +48,7 @@ export function formatExactVersion(version: ExactVersionParts): string {
  * special-casing it. The three parts always reassemble into the whole
  * version, so a caller cannot render a version this function shortened.
  */
-export function splitAtChange(current: ExactVersionParts, next: ExactVersionParts): SplitVersion {
+export function splitAtChange(current: ExactVersion, next: ExactVersion): SplitVersion {
   switch (classifyVersionChange(current, next)) {
     case 'major':
       return { prefix: '', changed: `${next.major}`, rest: `.${next.minor}.${next.patch}` }
@@ -87,5 +81,48 @@ export function versionChangeColor(change: VersionChange): string | undefined {
       return THEME.warning
     case 'none':
       return undefined
+  }
+}
+
+/** Everything one version cell renders, decided before any JSX exists. */
+export interface VersionCellStyle extends SplitVersion {
+  /** Theme role for the changed component; absent when nothing moved. */
+  changedColor: string | undefined
+  /** Emphasis for the chosen cell. */
+  underline: boolean
+  bold: boolean
+  /**
+   * Column padding, kept out of the styled span.
+   *
+   * Underlining the padding renders it as underscored blanks — a stray
+   * trailing underscore the reader has to work out is not a character.
+   */
+  padding: string
+}
+
+/**
+ * Decide how one version cell should look.
+ *
+ * Split out of the component because it is the whole visual contract of
+ * this screen and none of it is observable from a rendered Ink frame in
+ * a test: colours collapse to nothing when chalk decides the stream is
+ * not a terminal, and padding vanishes into whitespace normalization.
+ * As a value it can simply be asserted.
+ */
+export function versionCellStyle(args: {
+  current: ExactVersion
+  version: ExactVersion
+  chosen: boolean
+  pad?: number
+}): VersionCellStyle {
+  const { current, version, chosen, pad } = args
+  const split = splitAtChange(current, version)
+  const width = formatExactVersion(version).length
+  return {
+    ...split,
+    changedColor: versionChangeColor(classifyVersionChange(current, version)),
+    underline: chosen,
+    bold: chosen,
+    padding: pad === undefined ? '' : ' '.repeat(Math.max(0, pad - width)),
   }
 }

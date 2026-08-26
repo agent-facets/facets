@@ -1,17 +1,18 @@
-import type { FacetUpdateSelection, UpdateChoice, UpdatePlanRow } from '@agent-facets/engine'
-import { Box, Text, useApp, useInput } from 'ink'
-import { useMemo, useState } from 'react'
-import { THEME } from '../../tui/theme.ts'
+import type { NonEmptyArray } from '@agent-facets/common'
+import { isNonEmpty } from '@agent-facets/common'
 import {
-  classifyVersionChange,
-  type ExactVersionParts,
-  formatExactVersion,
-  splitAtChange,
-  versionChangeColor,
-} from '../../tui/views/update/version-change.ts'
-import { choiceAdvances, type UpdateMode } from './selection.ts'
-
-type Candidate = Extract<UpdatePlanRow, { kind: 'candidate' }>
+  advancingChoice,
+  displayedVersion,
+  type ExactVersion,
+  type FacetUpdateSelection,
+  type UpdateChoice,
+} from '@agent-facets/engine'
+import { Box, Text, useApp, useInput } from 'ink'
+import { useState } from 'react'
+import { THEME } from '../../tui/theme.ts'
+import { COLUMN_GAP, COLUMN_HEADERS, columnWidth } from '../../tui/views/update/columns.ts'
+import { formatExactVersion, versionCellStyle } from '../../tui/views/update/version-change.ts'
+import type { UpdateCandidate, UpdateMode } from './selection.ts'
 
 /**
  * A row's displayed choice, tagged by whether taking it would actually
@@ -39,11 +40,20 @@ type RowState =
   | { kind: 'unselected'; displayed: DisplayChoice }
 
 export interface UpdatePickerProps {
-  plan: readonly UpdatePlanRow[]
+  /**
+   * The rows to choose between — candidates only, and at least one.
+   *
+   * Pre-filtered and non-empty by type rather than by the caller
+   * remembering to check. An empty list would make the cursor arithmetic
+   * below divide by zero and leave Enter permanently refusing, and
+   * "there is nothing to choose between" is a message the command owns,
+   * not a state this screen should be able to render.
+   */
+  candidates: NonEmptyArray<UpdateCandidate>
   /** Which version each row starts on: `--latest` starts on Latest. */
   mode: UpdateMode
   /** Fires once, with at least one advancing selection. */
-  onConfirm: (selections: FacetUpdateSelection[]) => void
+  onConfirm: (selections: NonEmptyArray<FacetUpdateSelection>) => void
   /** Fires once when the user abandons the picker (Esc / Ctrl-C). */
   onAbort: () => void
 }
@@ -60,9 +70,8 @@ export interface UpdatePickerProps {
  * selection screens in this CLI do not have separate vocabularies, plus
  * `l` for the toggle this one needs.
  */
-export function UpdatePicker({ plan, mode, onConfirm, onAbort }: UpdatePickerProps) {
+export function UpdatePicker({ candidates, mode, onConfirm, onAbort }: UpdatePickerProps) {
   const { exit } = useApp()
-  const candidates = useMemo(() => plan.filter((row): row is Candidate => row.kind === 'candidate'), [plan])
 
   const [rows, setRows] = useState<RowState[]>(() => candidates.map((row) => initialState(row, mode)))
   const [cursor, setCursor] = useState(0)
@@ -159,7 +168,7 @@ export function UpdatePicker({ plan, mode, onConfirm, onAbort }: UpdatePickerPro
         if (row.kind !== 'selected' || candidate === undefined) continue
         selections.push({ facetName: candidate.facet.name, choice: row.displayed.choice })
       }
-      if (selections.length === 0) {
+      if (!isNonEmpty(selections)) {
         setHint('Select at least one facet with Space, or press Esc to cancel.')
         return
       }
@@ -175,13 +184,13 @@ export function UpdatePicker({ plan, mode, onConfirm, onAbort }: UpdatePickerPro
       <Box height={1} />
       <Text color={THEME.hint}>
         {ROW_INDENT}
-        {'facet'.padEnd(widths.name)}
+        {COLUMN_HEADERS.facet.padEnd(widths.name)}
         {COLUMN_GAP}
-        {'current'.padEnd(widths.current)}
+        {COLUMN_HEADERS.current.padEnd(widths.current)}
         {COLUMN_GAP}
-        {'target'.padEnd(widths.target)}
+        {COLUMN_HEADERS.target.padEnd(widths.target)}
         {COLUMN_GAP}
-        latest
+        {COLUMN_HEADERS.latest}
       </Text>
       {candidates.map((candidate, index) => {
         const row = rows[index]
@@ -211,15 +220,6 @@ export function UpdatePicker({ plan, mode, onConfirm, onAbort }: UpdatePickerPro
   )
 }
 
-/**
- * Two spaces between columns, not one.
- *
- * Every cell here is digits and dots, and a single space lets `1.2.0`
- * and `1.8.0` read as one run of characters. Two is the smallest gutter
- * that keeps the columns separable at a glance.
- */
-const COLUMN_GAP = '  '
-
 /** Clears the focus marker and the selection dot, so the header lines up. */
 const ROW_INDENT = '    '
 
@@ -229,16 +229,21 @@ interface ColumnWidths {
   target: number
 }
 
-function columnWidths(candidates: readonly Candidate[]): ColumnWidths {
-  let name = 'facet'.length
-  let current = 'current'.length
-  let target = 'target'.length
-  for (const candidate of candidates) {
-    name = Math.max(name, candidate.facet.name.length)
-    current = Math.max(current, formatExactVersion(candidate.facet.current).length)
-    target = Math.max(target, candidate.facet.target.metadata.version.length)
+function columnWidths(candidates: readonly UpdateCandidate[]): ColumnWidths {
+  return {
+    name: columnWidth(
+      COLUMN_HEADERS.facet,
+      candidates.map((candidate) => candidate.facet.name),
+    ),
+    current: columnWidth(
+      COLUMN_HEADERS.current,
+      candidates.map((candidate) => formatExactVersion(candidate.facet.current)),
+    ),
+    target: columnWidth(
+      COLUMN_HEADERS.target,
+      candidates.map((candidate) => formatExactVersion(displayedVersion(candidate.facet, 'range'))),
+    ),
   }
-  return { name, current, target }
 }
 
 /**
@@ -255,7 +260,7 @@ function PickerRow({
   focused,
   widths,
 }: {
-  candidate: Candidate
+  candidate: UpdateCandidate
   state: RowState
   focused: boolean
   widths: ColumnWidths
@@ -280,16 +285,14 @@ function PickerRow({
       </Text>
       <VersionCell
         current={current}
-        version={candidate.facet.target.metadata.version}
-        parts={candidate.facet.target.version}
+        version={displayedVersion(candidate.facet, 'range')}
         chosen={chosen === 'range'}
         pad={widths.target}
       />
       <Text>{COLUMN_GAP}</Text>
       <VersionCell
         current={current}
-        version={candidate.facet.latest.metadata.version}
-        parts={candidate.facet.latest.version}
+        version={displayedVersion(candidate.facet, 'latest')}
         chosen={chosen === 'latest'}
       />
       {/* The chosen column, in words. Bold and underline say the same
@@ -316,50 +319,47 @@ function PickerRow({
 function VersionCell({
   current,
   version,
-  parts,
   chosen,
   pad,
 }: {
-  current: ExactVersionParts
-  version: string
-  parts: ExactVersionParts
+  current: ExactVersion
+  version: ExactVersion
   chosen: boolean
   pad?: number
 }) {
-  const change = classifyVersionChange(current, parts)
-  const { prefix, changed, rest } = splitAtChange(current, parts)
-  const padding = pad === undefined ? '' : ' '.repeat(Math.max(0, pad - version.length))
+  const style = versionCellStyle({ current, version, chosen, ...(pad === undefined ? {} : { pad }) })
 
   return (
     <Text>
-      {/* The underline covers the version and nothing else. Column
-          padding inside it renders as underlined blanks — a stray
-          trailing underscore the user has to work out is not a
-          character. */}
-      <Text underline={chosen}>
-        <Text color={THEME.hint}>{prefix}</Text>
-        {changed.length > 0 && (
-          <Text bold={chosen} color={versionChangeColor(change)}>
-            {changed}
+      {/* The underline covers the version and nothing else; the padding
+          sits outside it. */}
+      <Text underline={style.underline}>
+        <Text color={THEME.hint}>{style.prefix}</Text>
+        {style.changed.length > 0 && (
+          <Text bold={style.bold} color={style.changedColor}>
+            {style.changed}
           </Text>
         )}
-        <Text color={THEME.hint}>{rest}</Text>
+        <Text color={THEME.hint}>{style.rest}</Text>
       </Text>
-      {padding}
+      {style.padding}
     </Text>
   )
 }
 
-function initialState(candidate: Candidate, mode: UpdateMode): RowState {
+function initialState(candidate: UpdateCandidate, mode: UpdateMode): RowState {
   // Selected by default when the mode's own choice already advances: the
   // user asked for this mode, so its answer is the one they came for.
   return stateFor(candidate, mode, true)
 }
 
-function stateFor(candidate: Candidate, choice: UpdateChoice, select: boolean): RowState {
-  const displayed: DisplayChoice = choiceAdvances(candidate, choice)
-    ? { kind: 'advancing', choice }
-    : { kind: 'stationary', choice }
+function stateFor(candidate: UpdateCandidate, choice: UpdateChoice, select: boolean): RowState {
+  // The engine's predicate, not a comparison of our own: a row this
+  // screen lets the user select is exactly a row application accepts.
+  const displayed: DisplayChoice =
+    advancingChoice(candidate.facet, choice) !== undefined
+      ? { kind: 'advancing', choice }
+      : { kind: 'stationary', choice }
   if (select && displayed.kind === 'advancing') return { kind: 'selected', displayed }
   return { kind: 'unselected', displayed }
 }
@@ -372,10 +372,7 @@ function other(choice: UpdateChoice): UpdateChoice {
   return choice === 'range' ? 'latest' : 'range'
 }
 
+/** The chosen column's name, matching its printed header. */
 function describeChoice(choice: UpdateChoice): string {
-  return choice === 'range' ? 'target' : 'latest'
-}
-
-function _describeExact(version: { major: number; minor: number; patch: number }): string {
-  return `${version.major}.${version.minor}.${version.patch}`
+  return choice === 'range' ? COLUMN_HEADERS.target : COLUMN_HEADERS.latest
 }
