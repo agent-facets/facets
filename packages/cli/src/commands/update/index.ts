@@ -1,4 +1,6 @@
+import { isNonEmpty } from '@agent-facets/common'
 import {
+  type FacetUpdateSelection,
   prepareFacetUpdate,
   type RunPreparedFacetUpdateResult,
   runPreparedFacetUpdate,
@@ -19,14 +21,7 @@ import { updatePrepareCliError, updateSelectionCliError } from './errors.ts'
 import { buildPreview } from './preview.ts'
 import { withUpdateDiscovery } from './run-discovery.ts'
 import { runUpdatePicker } from './run-picker.ts'
-import {
-  classifyNoOp,
-  defaultSelections,
-  describeNoOp,
-  hasSelectableCandidate,
-  type UpdateMode,
-  type UpdateNoOp,
-} from './selection.ts'
+import { candidateRows, classifyNoOp, defaultSelections, describeNoOp, type UpdateMode } from './selection.ts'
 
 /**
  * `facet update` (alias: `facet upgrade`) — move the project's
@@ -123,25 +118,33 @@ export const updateCommand: Command = {
     // has only its mode's default selection to go on. An interactive run
     // has the picker, which can reach a version those defaults did not
     // select — so its only dead end is a plan with no candidate row to
-    // put on screen at all.
-    let noOp: UpdateNoOp | null
-    if (interactive) {
-      noOp = hasSelectableCandidate(plan) ? null : classifyNoOp(plan, mode, [])
-    } else {
-      noOp = classifyNoOp(plan, mode, defaults)
-    }
+    // put on screen at all. Narrowing to a non-empty candidate list here
+    // is what proves that: the picker below cannot be handed a list it
+    // has no cursor position for.
+    const candidates = candidateRows(plan)
+    const picking = interactive && isNonEmpty(candidates) ? candidates : null
+
+    const noOp = picking === null ? classifyNoOp(plan, mode, interactive ? [] : defaults) : null
     if (noOp !== null) {
       process.stdout.write(`${describeNoOp(noOp)}\n`)
       return 0
     }
 
-    let selections = defaults
-    if (interactive) {
+    let selections: readonly FacetUpdateSelection[] = defaults
+    if (picking !== null) {
       // Before adapters, before the lock, before anything that writes:
       // cancelling here must cost the user nothing at all.
-      const outcome = await runUpdatePicker(plan, mode)
+      const outcome = await runUpdatePicker(picking, mode)
       if (outcome.kind === 'cancelled') {
         process.stdout.write('Update cancelled. Nothing was applied.\n')
+        return 1
+      }
+      if (outcome.kind === 'unavailable') {
+        writeCliError({
+          what: 'the update selection screen could not be shown',
+          detail: outcome.cause,
+          fix: "run 'facet update' or 'facet update --latest' to apply updates without prompting",
+        })
         return 1
       }
       selections = outcome.selections

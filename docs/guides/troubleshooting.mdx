@@ -87,7 +87,7 @@ Common errors, what causes them, and how to fix them. Each entry mirrors the CLI
     **Fix:** take the newer releases with `facet update --latest`, which crosses the declared ranges and [rewrites the specifiers](/cli/update#crossing-the-declared-range) to match. Preview it first with `--dry-run` if you want to see the rewrites before committing to them.
   </Accordion>
 
-  <Accordion title='"the registry returned an unusable version" during update'>
+  <Accordion title='"the registry returned an unusable target version" / "unusable latest version" during update'>
     **Cause:** the registry answered an update lookup with something that is not an exact `MAJOR.MINOR.PATCH` release, or resolved a facet's declared range to a version that range does not permit. Neither is something your project can cause.
 
     **Fix:** retry in a moment. If it persists, report it with the facet name from the message — this one is on the registry, not on you.
@@ -108,7 +108,7 @@ Common errors, what causes them, and how to fix them. Each entry mirrors the CLI
     </Note>
   </Accordion>
 
-  <Accordion title='"adapter incompatible" / "unsupported adapter API" (build, add, remove, install fail before writing)' id='adapter-incompatible'>
+  <Accordion title='"adapter incompatible" / "unsupported adapter API" (build, add, remove, install, update fail before writing)' id='adapter-incompatible'>
     **Cause:** every installed adapter declares the adapter API contract it was built against, and each CLI release supports an exact set — currently just `0.3` (the read-only planning contract). Bundles declaring `0.0`, `0.1`, or `0.2` wrote files themselves and owned their own rollback, so this CLI cannot offer them the guarantees it now makes about exact restoration and concurrency; they are unsupported. A bundle installed before API versioning has **no** declaration; others can carry a malformed declaration or disagree with the npm metadata they were selected by. All these cases fail closed: `facet build`, `facet add`, `facet remove`, `facet install`, and `facet update` stop **before** invoking any adapter method or writing project files.
 
     Upgrading the CLI across this boundary makes every previously installed adapter unsupported at once, including the first-party ones. Reinstall each — the listing prints the exact command.

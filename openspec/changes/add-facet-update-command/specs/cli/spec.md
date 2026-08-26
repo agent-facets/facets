@@ -41,7 +41,9 @@ The command SHALL accept `--latest` with short alias `-L`, `--interactive` with 
 
 ### Requirement: Update presentations distinguish Current Target and Latest
 
-Whenever the update command presents discovered choices, it SHALL identify each checkable registry facet's manifest specifier, locked Current version, range-respecting Target version, and registry Latest version. Interactive candidate rows SHALL show Current, Target, and Latest simultaneously in aligned columns. Each row SHALL name its chosen column in visible text, so the choice survives a terminal with no styling support. Styling MAY reinforce that cue but SHALL NOT be the only carrier of it. Advancing versions SHALL also color only the changed semantic-version suffix by change size using the existing semantic theme roles: patch as success/green, minor as caution/amber, and major as warning/coral. Current and stationary values SHALL remain dim. Git and local facets SHALL be named as unsupported sources rather than counted as current.
+Whenever the update command presents discovered choices, it SHALL identify each checkable registry facet's locked Current version, range-respecting Target version, and registry Latest version. The static preview SHALL additionally identify each facet's manifest specifier. Both presentations SHALL align their columns, seeding each column's width from its own header label so no header overflows the column it names. Git and local facets SHALL be named as unsupported sources rather than counted as current.
+
+Interactive candidate rows SHALL show Current, Target, and Latest simultaneously, SHALL name the chosen column in visible text so the choice survives a terminal with no styling support, and SHALL color only the single version component that changed — by change size, using the existing semantic theme roles: patch as success/green, minor as caution/amber, and major as warning/coral. Styling MAY reinforce the chosen column but SHALL NOT be the only carrier of it. Current and stationary values SHALL remain dim.
 
 #### Scenario: Preview shows all version choices
 
@@ -55,7 +57,7 @@ Whenever the update command presents discovered choices, it SHALL identify each 
 - **WHEN** interactive discovery finds candidate facets with patch, minor, or major Target or Latest advances
 - **THEN** each candidate row SHALL show Current, Target, and Latest simultaneously
 - **AND** each row SHALL name its chosen column in visible text, independent of any styling
-- **AND** the changed version suffix SHALL use the existing success, caution, or warning theme role for a patch, minor, or major advance respectively
+- **AND** only the version component that changed SHALL be colored, using the existing success, caution, or warning theme role for a patch, minor, or major advance respectively
 
 #### Scenario: Unsupported sources are named
 
@@ -234,7 +236,7 @@ After a non-dry-run selection is confirmed or derived, the update command SHALL 
 
 ### Requirement: Commands declare per-command flags
 
-The system SHALL support per-command flag declarations on command definitions. The router SHALL parse per-command flags via the argument parser and pass the parsed values to command handlers alongside positional arguments. A declared flag MAY define a short alias; the long and short forms SHALL set the same canonical flag value, and the short form SHALL NOT be exposed to handlers as a second independent value.
+The system SHALL support per-command flag declarations on command definitions. The router SHALL parse per-command flags via the argument parser and pass the parsed values to command handlers alongside positional arguments, including flags a command did not declare. A declared flag MAY define a short alias; the long and short forms SHALL set the same canonical flag value, and the short form SHALL NOT be exposed to handlers as a second independent value.
 
 #### Scenario: Command with declared boolean flag
 
@@ -255,10 +257,15 @@ The system SHALL support per-command flag declarations on command definitions. T
 - **THEN** the command handler SHALL receive `interactive` as `true`
 - **AND** the handler SHALL NOT receive `i` as a separate flag value
 
-#### Scenario: Undeclared flags are ignored
+#### Scenario: Undeclared long flags reach the handler
 
-- **WHEN** a user provides a flag that is not declared by the command and is not a declared short alias
-- **THEN** the command handler SHALL NOT receive that flag
+- **WHEN** a user provides a long flag that the command did not declare
+- **THEN** the command handler SHALL receive that flag
+
+#### Scenario: A short alias is never a flag of its own
+
+- **WHEN** a user provides a declared short alias
+- **THEN** the command handler SHALL NOT receive the short name as an independent flag value
 
 ### Requirement: Per-command help displays usage and flags
 

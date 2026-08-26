@@ -1,5 +1,6 @@
 import { afterAll, afterEach, describe, expect, type Mock, spyOn, test } from 'bun:test'
 import * as engine from '@agent-facets/engine'
+import { CURRENT_LOCKFILE_VERSION } from '@agent-facets/protocol'
 import { captureStderr, captureStdout } from '../../../__tests__/helpers/capture-std.ts'
 import { withTTY } from '../../../__tests__/helpers/with-tty.ts'
 import * as adapterModule from '../../shared/ensure-adapters.ts'
@@ -46,7 +47,6 @@ const BOUNDED = candidate({
   current: '1.2.0',
   target: '1.8.0',
   latest: '2.0.0',
-  advancing: 'range-and-latest',
 })
 
 const PINNED = candidate({
@@ -55,7 +55,6 @@ const PINNED = candidate({
   current: '1.2.0',
   target: '1.2.0',
   latest: '3.4.1',
-  advancing: 'latest-only',
 })
 
 describe('facet update — refusing the invocation', () => {
@@ -205,12 +204,33 @@ describe('facet update — opening the interactive picker', () => {
   test('cancelling applies nothing, says so, and exits non-zero', async () => {
     preparing([BOUNDED])
     pickerSpy.mockResolvedValue({ kind: 'cancelled' })
+    const applySpy = spyOn(engine, 'runPreparedFacetUpdate')
+
     const { stdout, result } = await withTTY(true, () =>
       captureStdout(() => updateCommand.run([], { interactive: true })),
     )
+
     expect(result).toBe(1)
     expect(stdout).toContain('Nothing was applied')
-    // Cancelling must not have cost an adapter install.
+    // Nothing downstream of the decision ran: no adapter was selected or
+    // installed, and the transaction that writes the manifest, lockfile,
+    // receipt, assets, and native configuration was never entered.
+    expect(adaptersSpy).not.toHaveBeenCalled()
+    expect(applySpy).not.toHaveBeenCalled()
+    applySpy.mockRestore()
+  })
+
+  // A screen that could not be shown is not a decision. Reporting it as a
+  // cancellation would put a defect behind a message saying all is well.
+  test('a picker that cannot be shown is an error, not a silent cancellation', async () => {
+    preparing([BOUNDED])
+    pickerSpy.mockResolvedValue({ kind: 'unavailable', cause: 'Raw mode is not supported' })
+    const { stderr, result } = await withTTY(true, () =>
+      captureStderr(() => captureStdout(() => updateCommand.run([], { interactive: true }))),
+    )
+    expect(result.result).toBe(1)
+    expect(stderr).toContain('could not be shown')
+    expect(result.stdout).not.toContain('Nothing was applied')
     expect(adaptersSpy).not.toHaveBeenCalled()
   })
 
@@ -247,10 +267,126 @@ describe('facet update — dry run', () => {
     expect(adaptersSpy).not.toHaveBeenCalled()
   })
 
-  test('a dry run with nothing to do still succeeds', async () => {
+  // A preview that found nothing still has to say WHICH nothing, or it
+  // reads as "the check did not run".
+  test('a dry run with nothing to do says which kind of nothing', async () => {
     preparing([current({ name: 'gamma', source: '*', version: '4.0.0' })])
-    const { result } = await captureStdout(() => updateCommand.run([], { 'dry-run': true }))
+    const { stdout, result } = await captureStdout(() => updateCommand.run([], { 'dry-run': true }))
     expect(result).toBe(0)
+    expect(stdout).toContain('All registry facets are current')
     expect(adaptersSpy).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * The applying path, driven through the real Ink view.
+ *
+ * Only the engine call is stubbed. Everything between the command and it —
+ * adapter selection, the mount, the consent policy, the exit code — is the
+ * code that actually ships.
+ */
+describe('facet update — applying', () => {
+  const applied: engine.RunPreparedFacetUpdateResult = {
+    ok: true,
+    install: {
+      ok: true,
+      lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
+      summary: {
+        facets: { installed: 0, updated: 1, repaired: 0, unchanged: 0, removed: 0 },
+        textAssets: { written: 1, removed: 0 },
+        mcp: {
+          configurations: { added: 0, updated: 0, repaired: 0, unchanged: 0, removed: 0 },
+          declarations: { aliased: 0, omitted: 0 },
+          takeovers: { accepted: 0 },
+        },
+      },
+      perFacet: [{ kind: 'updated', name: 'alpha', oldVersion: '1.2.0', newVersion: '1.8.0' }],
+      mcp: { consent: { kind: 'not-required' }, dispositions: [], configurations: [], prunedIntent: [] },
+    },
+  }
+
+  function applying(result: engine.RunPreparedFacetUpdateResult = applied) {
+    adaptersSpy.mockResolvedValue([])
+    return spyOn(engine, 'runPreparedFacetUpdate').mockResolvedValue(result)
+  }
+
+  test('a failed application is reported on stderr and exits one', async () => {
+    preparing([BOUNDED])
+    const runSpy = applying({
+      ok: false,
+      phase: 'install',
+      install: {
+        ok: false,
+        failure: { code: 'UPDATE_PLAN_STALE', files: ['manifest'] },
+        rollback: { kind: 'not-needed', reason: 'post-lock-no-mutation' },
+      },
+    } as engine.RunPreparedFacetUpdateResult)
+
+    const { stderr, result } = await withTTY(false, () =>
+      captureStderr(() => captureStdout(() => updateCommand.run([], {}))),
+    )
+
+    expect(result.result).toBe(1)
+    expect(stderr).toContain('update failed')
+    // The stale-plan remedy, not a generic "fix the underlying issue".
+    expect(stderr).toContain("Re-run 'facet update'")
+    runSpy.mockRestore()
+  })
+
+  test('a successful application exits zero', async () => {
+    preparing([BOUNDED])
+    const runSpy = applying()
+    const { result } = await withTTY(false, () => captureStdout(() => updateCommand.run([], {})))
+    expect(result).toBe(0)
+    runSpy.mockRestore()
+  })
+
+  // The `self-` prefix is the only thing separating this command from the
+  // one that replaces the binary, and they sit one keystroke apart.
+  test('applying project updates never reaches the CLI-binary updater', async () => {
+    preparing([BOUNDED])
+    const runSpy = applying()
+    const selfUpdateSpy = spyOn(engine, 'runSelfUpdate')
+
+    const { result } = await withTTY(false, () => captureStdout(() => updateCommand.run([], {})))
+
+    expect(result).toBe(0)
+    expect(selfUpdateSpy).not.toHaveBeenCalled()
+    selfUpdateSpy.mockRestore()
+    runSpy.mockRestore()
+  })
+
+  // `--verbose` is the only thing that turns on engine diagnostics. Passing
+  // `onLog` unconditionally would send them to stderr on every run.
+  test('diagnostics are wired only when --verbose is given', async () => {
+    preparing([BOUNDED])
+    const runSpy = applying()
+
+    await withTTY(false, () => captureStdout(() => updateCommand.run([], {})))
+    expect(runSpy.mock.calls[0]?.[0]?.onLog).toBeUndefined()
+
+    runSpy.mockClear()
+    await withTTY(false, () => captureStdout(() => updateCommand.run([], { verbose: true })))
+    expect(typeof runSpy.mock.calls[0]?.[0]?.onLog).toBe('function')
+    runSpy.mockRestore()
+  })
+
+  test('non-interactive MCP work needs --accept-mcp, and it authorizes nothing else', async () => {
+    preparing([BOUNDED])
+    const runSpy = applying()
+
+    await withTTY(false, () => captureStdout(() => updateCommand.run([], {})))
+    // No flag, no terminal: the run must fail with the full list rather
+    // than prompt or silently proceed.
+    expect(runSpy.mock.calls[0]?.[0]?.mcpConsent).toEqual({ kind: 'unavailable' })
+    // Taking over a file someone else wrote is a separate decision, and
+    // `--accept-mcp` is not a vote on it.
+    expect(runSpy.mock.calls[0]?.[0]?.resolveAssetTakeover).toBeUndefined()
+
+    runSpy.mockClear()
+    await withTTY(false, () => captureStdout(() => updateCommand.run([], { 'accept-mcp': true })))
+    expect(runSpy.mock.calls[0]?.[0]?.mcpConsent).toEqual({ kind: 'preapproved' })
+    expect(runSpy.mock.calls[0]?.[0]?.resolveAssetTakeover).toBeUndefined()
+    runSpy.mockRestore()
   })
 })

@@ -13,7 +13,7 @@ import { installFailureDetail, installFailureFix } from '../install-failure.ts'
  * originating command from a branch that could name it.
  */
 
-const COMMANDS: Array<'add' | 'install' | 'remove'> = ['add', 'install', 'remove']
+const COMMANDS: Array<'add' | 'install' | 'remove' | 'update'> = ['add', 'install', 'remove', 'update']
 
 const notNeeded: RollbackOutcome = { kind: 'not-needed', reason: 'post-lock-no-mutation' }
 const succeeded: RollbackOutcome = {
@@ -43,6 +43,24 @@ const cancelled: RunInstallFailure = { code: 'MATERIALIZATION_CANCELLED' }
 // Nothing in this arm is special-cased, which is the point: it stands in for
 // every code that falls through to the default branch.
 const lockHeld: RunInstallFailure = { code: 'LOCK_HELD', path: '/p/.facet.lock', heldByPid: 42 }
+const stalePlan: RunInstallFailure = { code: 'UPDATE_PLAN_STALE', files: ['manifest'] }
+
+describe('installFailureFix — a withdrawn update plan', () => {
+  // Nothing is broken here, so the remedy must not read like a repair. The
+  // project moved between the plan being shown and being applied, and the
+  // only sensible next action is to look at a plan built from what is
+  // there now.
+  test('sends the user back to update rather than to a repair', () => {
+    const fix = installFailureFix(stalePlan, notNeeded, 'update')
+    expect(fix).toContain("Re-run 'facet update'")
+    expect(fix).toContain('current project state')
+    expect(fix).not.toContain('fix the underlying issue')
+  })
+
+  test('reports the disk state alongside the remedy', () => {
+    expect(installFailureFix(stalePlan, notNeeded, 'update')).toContain(describeDiskState(notNeeded))
+  })
+})
 
 describe('installFailureFix — an aborted run', () => {
   test('says nothing was written only when no rollback was needed', () => {

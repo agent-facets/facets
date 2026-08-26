@@ -71,10 +71,21 @@ export async function resolveRegistryMetadataBatch(
   // Reads carry the credential opportunistically: when one is
   // available it earns the authenticated rate-limit tier; when absent
   // the reads proceed anonymously (see design D3).
-  const cred = resolveCredential()
-  const client = createRegistryClient({
-    credential: cred.source === 'absent' ? undefined : cred.token,
-  })
+  //
+  // Guarded like `fetchOne` below rather than left bare: reading the
+  // credential touches the home directory and parses a file, and
+  // creating the client validates a URL from the environment. Both are
+  // environment failures a caller can act on, and neither may leave
+  // this function through a channel its result type does not describe.
+  let client: ReturnType<typeof createRegistryClient>
+  try {
+    const cred = resolveCredential()
+    client = createRegistryClient({
+      credential: cred.source === 'absent' ? undefined : cred.token,
+    })
+  } catch (err) {
+    return { ok: false, error: translateThrownError(err) }
+  }
   const results = await Promise.all(specs.map((spec) => fetchOne(client, spec)))
 
   // One pass in input order: the first failure wins, and the success

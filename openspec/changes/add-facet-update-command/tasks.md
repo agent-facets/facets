@@ -122,17 +122,17 @@ so it opens on implementation rather than a second research pass.
 - [x] 11.3 Implement: Render candidate picker rows as aligned Current, Target, and Latest columns; preserve mode defaults and `l` toggling; emphasize the chosen cell without color alone; and color only the changed semantic-version suffix with existing success, caution, and warning theme roles for patch, minor, and major advances.
 - [x] 11.4 Implement: Add focused command, Ink, and pure presentation tests for pending/settled/failed discovery feedback, Latest-only plain interactive selection, truly empty no-ops, simultaneous version columns, and semantic change coloring, while preserving existing cancellation, dry-run, adapter-ordering, and side-effect coverage.
 - [x] 11.5 Verify: Run the targeted update command, picker, and Ink tests plus the CLI typecheck.
-- [ ] 11.6 Pause: Model-switch boundary before integrated acceptance research.
+- [x] 11.6 Pause: Model-switch boundary before integrated acceptance research.
 
 ## 12. Integrated Acceptance — Research
 
-- [ ] 12.1 Explore: Map every reconciled CLI and installation scenario — including the corrected interactive and discovery-feedback behavior — to an automated test or explicit documentation check, and identify any remaining coverage gaps across engine, CLI, transaction, prompts, and docs.
-- [ ] 12.2 Explore: Review the complete implementation for single-source-of-truth violations, representable illegal states, escaping expected errors, accidental registry-current checks, secondary metadata resolution, or dry-run side effects.
-- [ ] 12.3 Propose: Define the final acceptance pass and the smallest fixes needed to close all uncovered specification and regression gaps.
-- [ ] 12.4 Pause: Model-switch boundary before final acceptance implementation.
+- [x] 12.1 Explore: Map every reconciled CLI and installation scenario — including the corrected interactive and discovery-feedback behavior — to an automated test or explicit documentation check, and identify any remaining coverage gaps across engine, CLI, transaction, prompts, and docs.
+- [x] 12.2 Explore: Review the complete implementation for single-source-of-truth violations, representable illegal states, escaping expected errors, accidental registry-current checks, secondary metadata resolution, or dry-run side effects.
+- [x] 12.3 Propose: Define the final acceptance pass and the smallest fixes needed to close all uncovered specification and regression gaps.
+- [x] 12.4 Pause: Model-switch boundary before final acceptance implementation.
 
 ## 13. Integrated Acceptance — Implementation
 
-- [ ] 13.1 Implement: Add or adjust the remaining focused tests and documentation checks identified by the acceptance matrix without duplicating coverage already owned by lower-level suites.
-- [ ] 13.2 Verify: Run `bun check`; if any test, type, lint, formatting, documentation, or end-to-end check fails, stop and report the failures.
-- [ ] 13.3 Verify: Validate the completed OpenSpec change against its schema and confirm every implementation task and reconciled scenario is accounted for before verification and archive.
+- [x] 13.1 Implement: Apply the correctness fixes the acceptance audit found — stop resolving an exact pin's Target as a registry Current lookup, centralize the advancing-choice predicate, convert rejected discovery promises into structured failures, and align the discovery indicator with the shared terminal-capability rule — then add or adjust the remaining focused tests and documentation checks identified by the acceptance matrix without duplicating coverage already owned by lower-level suites.
+- [x] 13.2 Verify: Run `bun check`; if any test, type, lint, formatting, documentation, or end-to-end check fails, stop and report the failures.
+- [x] 13.3 Verify: Validate the completed OpenSpec change against its schema and confirm every implementation task and reconciled scenario is accounted for before verification and archive.

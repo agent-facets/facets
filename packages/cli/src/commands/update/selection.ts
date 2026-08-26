@@ -1,4 +1,4 @@
-import type { FacetUpdateSelection, UpdateChoice, UpdatePlanRow } from '@agent-facets/engine'
+import { advancingChoice, type FacetUpdateSelection, type UpdateChoice, type UpdatePlanRow } from '@agent-facets/engine'
 
 /**
  * Which version a non-interactive run takes for each facet.
@@ -8,28 +8,11 @@ import type { FacetUpdateSelection, UpdateChoice, UpdatePlanRow } from '@agent-f
  */
 export type UpdateMode = UpdateChoice
 
-/**
- * Whether a candidate's chosen version is actually newer than what is
- * installed.
- *
- * Read from the engine's `advancing` tag rather than compared here. The
- * engine resolved both versions and already answered this question; a
- * second comparison in the CLI is a second answer waiting to disagree
- * with the one application enforces.
- */
-export function choiceAdvances(row: Extract<UpdatePlanRow, { kind: 'candidate' }>, choice: UpdateChoice): boolean {
-  switch (row.advancing) {
-    case 'range-and-latest':
-      return true
-    case 'range-only':
-      return choice === 'range'
-    case 'latest-only':
-      return choice === 'latest'
-  }
-}
+/** A plan row that has at least one version newer than what is installed. */
+export type UpdateCandidate = Extract<UpdatePlanRow, { kind: 'candidate' }>
 
 /**
- * Whether the interactive picker has anything to offer.
+ * The rows the interactive picker can offer, in project order.
  *
  * Deliberately independent of the mode's default selections. A facet
  * pinned to an exact version has a stationary Target and may still have
@@ -40,16 +23,22 @@ export function choiceAdvances(row: Extract<UpdatePlanRow, { kind: 'candidate' }
  * them to re-run with a flag whose job the picker was already there to
  * do interactively.
  */
-export function hasSelectableCandidate(plan: readonly UpdatePlanRow[]): boolean {
-  return plan.some((row) => row.kind === 'candidate')
+export function candidateRows(plan: readonly UpdatePlanRow[]): UpdateCandidate[] {
+  return plan.filter((row): row is UpdateCandidate => row.kind === 'candidate')
 }
 
-/** Every candidate whose chosen version advances, in project order. */
+/**
+ * Every candidate whose chosen version advances, in project order.
+ *
+ * `advancingChoice` is the engine's, not a comparison repeated here. It
+ * is the same predicate the picker gates selection on and the same one
+ * `validateFacetUpdateSelections` accepts by, so a default selection
+ * cannot contain a row application would refuse.
+ */
 export function defaultSelections(plan: readonly UpdatePlanRow[], mode: UpdateMode): FacetUpdateSelection[] {
   const selections: FacetUpdateSelection[] = []
-  for (const row of plan) {
-    if (row.kind !== 'candidate') continue
-    if (!choiceAdvances(row, mode)) continue
+  for (const row of candidateRows(plan)) {
+    if (advancingChoice(row.facet, mode) === undefined) continue
     selections.push({ facetName: row.facet.name, choice: mode })
   }
   return selections
@@ -84,8 +73,7 @@ export function classifyNoOp(
   const registryRows = plan.filter((row) => row.kind !== 'unsupported-source')
   if (registryRows.length === 0) return { reason: 'no-registry-facets' }
 
-  const candidates = plan.filter((row) => row.kind === 'candidate')
-  if (candidates.length === 0) return { reason: 'all-current' }
+  if (candidateRows(plan).length === 0) return { reason: 'all-current' }
 
   // Something newer exists and this mode cannot reach it. Under plain
   // update that is the authored range's doing and `--latest` is the way

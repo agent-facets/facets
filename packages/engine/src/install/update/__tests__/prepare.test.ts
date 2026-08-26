@@ -144,6 +144,46 @@ describe('prepareFacetUpdate — side-effect freedom', () => {
     expect(readdirSync(projectRoot).sort()).toEqual(['facets.json', 'facets.lock'])
   })
 
+  // Side-effect freedom on the happy path is the easy half. A run that
+  // fails partway through discovery is the one that could plausibly have
+  // written something before giving up.
+  test('a failed discovery leaves the project and the machine untouched', async () => {
+    writeManifest({ cowsay: '1.*' }, '')
+    writeLockfile({ cowsay: lockedRegistry('1.2.0') })
+    const before = projectBytes()
+
+    const failing: ResolveMetadataBatch = async () => ({
+      ok: false,
+      error: { code: 'NETWORK_ERROR', cause: 'registry unreachable', attempts: 3 },
+    })
+
+    const result = await prepareFacetUpdate({ projectRoot, resolve: failing })
+
+    if (result.ok) expect.unreachable()
+    expect(result.failure.reason).toBe('discovery-failed')
+    expect(projectBytes()).toEqual(before)
+    expect(existsSync(join(fakeHome, '.facet'))).toBe(false)
+  })
+
+  // An incoherent registry answer is refused later in discovery than a
+  // network failure — after metadata is in hand — so it is the arm most
+  // likely to have touched something on the way.
+  test('an incoherent registry answer also leaves everything untouched', async () => {
+    writeManifest({ cowsay: '1.*' }, '')
+    writeLockfile({ cowsay: lockedRegistry('1.2.0') })
+    const before = projectBytes()
+
+    // `2.0.0` cannot satisfy the authored `1.*`.
+    const outOfRange = resolver({ 'cowsay@target': '2.0.0', 'cowsay@latest': '2.0.0' })
+
+    const result = await prepareFacetUpdate({ projectRoot, resolve: outOfRange })
+
+    if (result.ok) expect.unreachable()
+    expect(result.failure.reason).toBe('target-outside-range')
+    expect(projectBytes()).toEqual(before)
+    expect(existsSync(join(fakeHome, '.facet'))).toBe(false)
+  })
+
   test('preserves manifest formatting and comments it never rewrites', async () => {
     const authored = `{
   // the talking cow

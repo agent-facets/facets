@@ -1,15 +1,30 @@
-import { type AdvancingChoices, type ExactVersion, parseVersionSpec, type UpdatePlanRow } from '@agent-facets/engine'
+import {
+  type AuthoredSpecifier,
+  type ExactVersion,
+  parseVersionSpec,
+  type TargetVersion,
+  type UpdatePlanRow,
+} from '@agent-facets/engine'
 
 /**
  * Plan rows for the CLI's own tests.
  *
  * The engine builds these from real registry answers; everything here
- * only needs them to be well-formed, so versions are parsed rather than
- * hand-shaped and the specifier goes through the real grammar.
+ * only needs them to be well-formed, so every version and specifier goes
+ * through the real grammar rather than being hand-shaped. A malformed
+ * fixture is a thrown test-setup error, not a silent `0.0.0`.
+ *
+ * Which columns advance is deliberately NOT a parameter. It is derived
+ * from the versions by the same engine predicate the picker and
+ * application use, so a fixture cannot describe a row the engine could
+ * not produce.
  */
 export function exact(version: string): ExactVersion {
-  const [major = 0, minor = 0, patch = 0] = version.split('.').map(Number)
-  return { kind: 'exact', major, minor, patch }
+  const spec = parseVersionSpec(version)
+  if (!spec.ok || spec.value.kind !== 'exact') {
+    throw new Error(`test fixture declares an invalid exact version: ${version}`)
+  }
+  return spec.value
 }
 
 function choice(name: string, version: string) {
@@ -24,10 +39,19 @@ function choice(name: string, version: string) {
   }
 }
 
-function authored(source: string) {
+function authored(source: string): AuthoredSpecifier {
   const spec = parseVersionSpec(source)
   if (!spec.ok) throw new Error(`test fixture declares an invalid specifier: ${source}`)
   return { source, spec: spec.value }
+}
+
+/**
+ * An exact specifier's Target is the pin itself, and discovery never
+ * asks the registry for it — so the fixture carries no metadata either.
+ */
+function target(name: string, declared: AuthoredSpecifier, version: string): TargetVersion {
+  if (declared.spec.kind === 'exact') return { kind: 'pinned', version: exact(version) }
+  return { kind: 'resolved', ...choice(name, version) }
 }
 
 export function candidate(args: {
@@ -36,16 +60,15 @@ export function candidate(args: {
   current: string
   target: string
   latest: string
-  advancing: AdvancingChoices
 }): Extract<UpdatePlanRow, { kind: 'candidate' }> {
+  const declared = authored(args.source)
   return {
     kind: 'candidate',
-    advancing: args.advancing,
     facet: {
       name: args.name,
-      authored: authored(args.source),
+      authored: declared,
       current: exact(args.current),
-      target: choice(args.name, args.target),
+      target: target(args.name, declared, args.target),
       latest: choice(args.name, args.latest),
     },
   }
@@ -56,13 +79,14 @@ export function current(args: {
   source: string
   version: string
 }): Extract<UpdatePlanRow, { kind: 'current' }> {
+  const declared = authored(args.source)
   return {
     kind: 'current',
     facet: {
       name: args.name,
-      authored: authored(args.source),
+      authored: declared,
       current: exact(args.version),
-      target: choice(args.name, args.version),
+      target: target(args.name, declared, args.version),
       latest: choice(args.name, args.version),
     },
   }

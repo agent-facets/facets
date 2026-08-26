@@ -1,6 +1,8 @@
-import type { UpdateChoice, UpdatePlanRow } from '@agent-facets/engine'
+import { displayedVersion, type UpdateChoice, type UpdatePlanRow } from '@agent-facets/engine'
 import { Box, Text } from 'ink'
 import { THEME } from '../../theme.ts'
+import { COLUMN_GAP, COLUMN_HEADERS, columnWidth } from './columns.ts'
+import { formatExactVersion } from './version-change.ts'
 
 /**
  * What one facet would commit to `facets.json`, when that differs from
@@ -36,18 +38,37 @@ export function UpdatePlanView({ plan, selected, rewrites }: UpdatePlanViewProps
   const rows = plan.filter((row) => row.kind !== 'unsupported-source')
   const unsupported = plan.filter((row) => row.kind === 'unsupported-source')
 
-  const nameWidth = width(rows.map((row) => row.facet.name))
-  const sourceWidth = width(rows.map((row) => row.facet.authored.source))
-  const currentWidth = width(rows.map((row) => describeExact(row.facet.current)))
-  const targetWidth = width(rows.map((row) => row.facet.target.metadata.version))
+  const nameWidth = columnWidth(
+    COLUMN_HEADERS.facet,
+    rows.map((row) => row.facet.name),
+  )
+  const sourceWidth = columnWidth(
+    COLUMN_HEADERS.declared,
+    rows.map((row) => row.facet.authored.source),
+  )
+  const currentWidth = columnWidth(
+    COLUMN_HEADERS.current,
+    rows.map((row) => formatExactVersion(row.facet.current)),
+  )
+  const targetWidth = columnWidth(
+    COLUMN_HEADERS.target,
+    rows.map((row) => formatExactVersion(displayedVersion(row.facet, 'range'))),
+  )
 
   return (
     <Box flexDirection="column">
       {rows.length > 0 && (
         <Text color={THEME.hint}>
           {'  '}
-          {'facet'.padEnd(nameWidth)} {'declared'.padEnd(sourceWidth)} {'current'.padEnd(currentWidth)}{' '}
-          {'target'.padEnd(targetWidth)} latest
+          {COLUMN_HEADERS.facet.padEnd(nameWidth)}
+          {COLUMN_GAP}
+          {COLUMN_HEADERS.declared.padEnd(sourceWidth)}
+          {COLUMN_GAP}
+          {COLUMN_HEADERS.current.padEnd(currentWidth)}
+          {COLUMN_GAP}
+          {COLUMN_HEADERS.target.padEnd(targetWidth)}
+          {COLUMN_GAP}
+          {COLUMN_HEADERS.latest}
         </Text>
       )}
       {rows.map((row) => {
@@ -63,11 +84,22 @@ export function UpdatePlanView({ plan, selected, rewrites }: UpdatePlanViewProps
               </Text>
               <Text bold color={THEME.brand}>
                 {row.facet.name.padEnd(nameWidth)}
-              </Text>{' '}
-              <Text color={THEME.hint}>{row.facet.authored.source.padEnd(sourceWidth)}</Text>{' '}
-              <Text>{describeExact(row.facet.current).padEnd(currentWidth)}</Text>{' '}
-              <Version version={row.facet.target.metadata.version} chosen={choice === 'range'} pad={targetWidth} />{' '}
-              <Version version={row.facet.latest.metadata.version} chosen={choice === 'latest'} />
+              </Text>
+              {COLUMN_GAP}
+              <Text color={THEME.hint}>{row.facet.authored.source.padEnd(sourceWidth)}</Text>
+              {COLUMN_GAP}
+              <Text>{formatExactVersion(row.facet.current).padEnd(currentWidth)}</Text>
+              {COLUMN_GAP}
+              <Version
+                version={formatExactVersion(displayedVersion(row.facet, 'range'))}
+                chosen={choice === 'range'}
+                pad={targetWidth}
+              />
+              {COLUMN_GAP}
+              <Version
+                version={formatExactVersion(displayedVersion(row.facet, 'latest'))}
+                chosen={choice === 'latest'}
+              />
             </Text>
             {rewrite !== undefined && (
               <Text color={THEME.caution}>
@@ -103,12 +135,4 @@ function Version({ version, chosen, pad }: { version: string; chosen: boolean; p
   ) : (
     <Text color={THEME.hint}>{text}</Text>
   )
-}
-
-function describeExact(version: { major: number; minor: number; patch: number }): string {
-  return `${version.major}.${version.minor}.${version.patch}`
-}
-
-function width(values: readonly string[]): number {
-  return values.reduce((max, value) => Math.max(max, value.length), 0)
 }

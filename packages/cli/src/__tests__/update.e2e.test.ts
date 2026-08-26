@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnCli } from './helpers/cli-process.ts'
@@ -25,6 +25,15 @@ function project(manifest: unknown): string {
   projects.push(dir)
   writeFileSync(join(dir, 'facets.json'), JSON.stringify(manifest, null, 2))
   return dir
+}
+
+/** Every file in the project directory, by name and exact bytes. */
+function snapshot(dir: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const name of readdirSync(dir).sort()) {
+    out[name] = readFileSync(join(dir, name), 'utf8')
+  }
+  return out
 }
 
 afterEach(() => {
@@ -64,6 +73,24 @@ describe('facet update — the command surface', () => {
     const alias = await spawnCli(['upgrade', '--help'], { trim: false })
     expect(alias.exitCode).toBe(0)
     expect(alias.stdout).toBe(canonical.stdout)
+  })
+
+  // Identical help proves the two names resolve to one command object.
+  // This proves the thing a user actually cares about: run against the
+  // same project, they behave the same, down to the exit code and the
+  // stream each message lands on.
+  test('the alias behaves identically on a real run, not just in help', async () => {
+    const canonicalDir = project({ facets: { plans: './local-plans' } })
+    const aliasDir = project({ facets: { plans: './local-plans' } })
+
+    const canonical = await spawnCli(['update'], { cwd: canonicalDir, trim: false })
+    const alias = await spawnCli(['upgrade'], { cwd: aliasDir, trim: false })
+
+    expect(alias.exitCode).toBe(canonical.exitCode)
+    expect(alias.stdout).toBe(canonical.stdout)
+    expect(alias.stderr).toBe(canonical.stderr)
+    // And it really ran the workflow rather than exiting early.
+    expect(canonical.stdout).toContain('No registry facets to update')
   })
 
   test('upgrade no longer reports itself as unimplemented', async () => {
@@ -145,6 +172,28 @@ describe('facet update — successful no-ops', () => {
     // Adapter discovery is downstream of the preview; reaching it would
     // have written this line.
     expect(result.stderr).not.toContain('no adapters installed')
+  })
+
+  // "Installed no adapter" is a proxy. This is the actual promise: a real
+  // process, run to completion, left the directory byte-for-byte as it
+  // found it — no lockfile, no receipt, no rewritten manifest.
+  test('a preview leaves the project directory exactly as it found it', async () => {
+    const dir = project({ facets: {} })
+    const before = snapshot(dir)
+
+    const result = await spawnCli(['update', '--dry-run'], { cwd: dir })
+
+    expect(result.exitCode).toBe(0)
+    expect(snapshot(dir)).toEqual(before)
+  })
+
+  test('a latest-mode preview writes nothing either', async () => {
+    const dir = project({ facets: {} })
+    const before = snapshot(dir)
+
+    expect((await spawnCli(['update', '--latest', '--dry-run'], { cwd: dir })).exitCode).toBe(0)
+
+    expect(snapshot(dir)).toEqual(before)
   })
 })
 

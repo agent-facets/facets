@@ -11,11 +11,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
+import type { Adapter } from '@agent-facets/adapter'
+import { ADAPTER_API_VERSION, planSingleFileInstall, planSingleFileRemoval } from '@agent-facets/adapter'
 import type { ProjectFacetEntry } from '@agent-facets/protocol'
+import { recordingMcpCapability } from './helpers/mcp-adapter.ts'
 
 let registryFixtures: Record<string, string> = {}
 let metadataCalls: Array<{ name: string; spec: string }> = []
@@ -118,6 +120,7 @@ const { prepareFacetUpdate } = await import('../update/prepare.ts')
 const { runPreparedFacetUpdate } = await import('../update/apply.ts')
 const { parseFacetSource } = await import('../../sources/facet/parse-source.ts')
 const { loadInstalledAdapters } = await import('../../adapters/loader.ts')
+type McpConsentPolicy = import('../mcp/consent.ts').McpConsentPolicy
 
 let projectRoot: string
 let originalCwd: string
@@ -180,29 +183,85 @@ async function adapters() {
   return loadResult.adapters.filter((a) => a.assets !== false)
 }
 
-async function add(specifier: string) {
+/**
+ * An in-memory adapter that can carry MCP work.
+ *
+ * The on-disk fixture adapter declares `mcpServers: false`, which is the
+ * right default for every other test here. Consent is a property of the
+ * update arm reaching the shared pipeline, and reaching it requires an
+ * adapter that would actually write a document.
+ */
+function mcpCapableAdapter(): Adapter {
+  const baseDir = () => join(projectRoot, '.mcp-adapter')
+  const file = (type: string, name: string) => join(baseDir(), `${type}s`, `${name}.md`)
+  const mcp = recordingMcpCapability(() => join(baseDir(), 'mcp.json'))
+  return {
+    name: 'mcp-adapter',
+    apiVersion: ADAPTER_API_VERSION,
+    mcpServers: mcp.capability,
+    buildAssetMetadata: (data) => ({ ok: true, data: (data ?? {}) as Record<string, unknown> }),
+    assets: {
+      async planInstall(request) {
+        return planSingleFileInstall(
+          { file: file(request.assetType, request.name), boundary: baseDir() },
+          request.content,
+          request.metadata as Record<string, unknown>,
+        )
+      },
+      async planRemoval(request) {
+        return planSingleFileRemoval({ file: file(request.assetType, request.name), boundary: baseDir() })
+      },
+    },
+  }
+}
+
+/** Publish a version that declares an MCP server alongside its skill. */
+function buildServerFixture(name: string, version: string, server: string, declaration: unknown): void {
+  const repo = realpathSync(mkdtempSync(join(fakeHome, 'fixture-')))
+  const skill = `${name}-skill`
+  writeFileSync(
+    join(repo, 'facet.json'),
+    JSON.stringify({
+      name,
+      version,
+      skills: { [skill]: { description: `${name} skill` } },
+      servers: { [server]: declaration },
+    }),
+  )
+  mkdirSync(join(repo, 'skills', skill), { recursive: true })
+  writeFileSync(join(repo, 'skills', skill, 'SKILL.md'), `# ${skill} ${version}\n`)
+  registryFixtures[`${name}@${version}`] = repo
+}
+
+async function add(specifier: string, using?: Adapter[]) {
   const parsed = parseFacetSource(specifier)
   if (!parsed.ok) expect.unreachable(`test bug: unparseable specifier ${specifier}`)
-  return runAdd({ projectRoot, sources: [{ specifier, source: parsed.value }], adapters: await adapters() })
+  return runAdd({ projectRoot, sources: [{ specifier, source: parsed.value }], adapters: using ?? (await adapters()) })
 }
 
 function readFacets(): Record<string, ProjectFacetEntry> {
   return JSON.parse(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).facets
 }
 
-function readLock(): { facets: Record<string, { version: string; assets: unknown[] }> } {
+function readLock(): {
+  facets: Record<string, { version: string; assets: Array<{ name: string; materialization: unknown }> }>
+} {
   return JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8'))
 }
 
 /** Prepare a plan, then apply the given choices. */
-async function update(selections: Array<{ facetName: string; choice: 'range' | 'latest' }>) {
+async function update(
+  selections: Array<{ facetName: string; choice: 'range' | 'latest' }>,
+  options: { using?: Adapter[]; mcpConsent?: McpConsentPolicy } = {},
+) {
   const prepared = await prepareFacetUpdate({ projectRoot })
   if (!prepared.ok) expect.unreachable(`test bug: prepare failed (${prepared.failure.reason})`)
   metadataCalls = []
   return runPreparedFacetUpdate({
     prepared: prepared.prepared,
     selections,
-    adapters: await adapters(),
+    adapters: options.using ?? (await adapters()),
+    ...(options.mcpConsent ? { mcpConsent: options.mcpConsent } : {}),
   })
 }
 
@@ -332,6 +391,45 @@ describe('runPreparedFacetUpdate — installing the reviewed version', () => {
     expect(readLock().facets.cowsay?.version).toBe('1.5.0')
   })
 
+  test('two selected facets move together in one commit', async () => {
+    buildFixture('cowsay', '1.0.0')
+    buildFixture('fortune', '1.0.0')
+    expect((await add('cowsay@1.*')).ok).toBe(true)
+    expect((await add('fortune@1.*')).ok).toBe(true)
+
+    buildFixture('cowsay', '1.5.0')
+    buildFixture('fortune', '1.9.0')
+
+    const result = await update([
+      { facetName: 'cowsay', choice: 'range' },
+      { facetName: 'fortune', choice: 'range' },
+    ])
+
+    if (!result.ok) expect.unreachable()
+    // One transaction, both transitions: the lockfile, both summaries, and
+    // both materialized assets all reflect the same commit.
+    expect(readLock().facets.cowsay?.version).toBe('1.5.0')
+    expect(readLock().facets.fortune?.version).toBe('1.9.0')
+    expect(result.install.perFacet).toContainEqual({
+      kind: 'updated',
+      name: 'cowsay',
+      oldVersion: '1.0.0',
+      newVersion: '1.5.0',
+    })
+    expect(result.install.perFacet).toContainEqual({
+      kind: 'updated',
+      name: 'fortune',
+      oldVersion: '1.0.0',
+      newVersion: '1.9.0',
+    })
+    expect(readFileSync(join(projectRoot, '.test-adapter/skills/cowsay-skill.md'), 'utf8')).toContain(
+      'cowsay-skill 1.5.0',
+    )
+    expect(readFileSync(join(projectRoot, '.test-adapter/skills/fortune-skill.md'), 'utf8')).toContain(
+      'fortune-skill 1.9.0',
+    )
+  })
+
   test('an unselected facet keeps reproducing its locked version', async () => {
     buildFixture('cowsay', '1.0.0')
     buildFixture('fortune', '1.0.0')
@@ -392,6 +490,47 @@ describe('runPreparedFacetUpdate — durable project intent', () => {
     expect(readFileSync(join(projectRoot, '.test-adapter/skills/vendor-plan.md'), 'utf8')).toContain(
       'cowsay-skill 1.5.0',
     )
+    // The disposition is re-recorded against the NEW version, not carried
+    // over from the old entry: the lockfile has to describe the release
+    // that is actually on disk.
+    expect(readLock().facets.cowsay?.assets[0]?.materialization).toEqual({ kind: 'aliased', as: 'vendor-plan' })
+  })
+
+  test('an omission survives the version change and is recorded at the new version', async () => {
+    buildFixture('cowsay', '1.0.0')
+    expect((await add('cowsay@1.*')).ok).toBe(true)
+
+    writeFileSync(
+      join(projectRoot, 'facets.json'),
+      `${JSON.stringify(
+        {
+          manifestVersion: 0.2,
+          facets: {
+            cowsay: {
+              source: '1.*',
+              materialization: { skills: { 'cowsay-skill': { kind: 'omitted' } } },
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    )
+    const reomit = await add('cowsay@1.*')
+    if (!reomit.ok) expect.unreachable(`test bug: re-add failed (${JSON.stringify(reomit)})`)
+
+    buildFixture('cowsay', '1.5.0')
+    const result = await update([{ facetName: 'cowsay', choice: 'range' }])
+
+    expect(result.ok).toBe(true)
+    const entry = readFacets().cowsay
+    if (entry === undefined || typeof entry === 'string') expect.unreachable()
+    expect(entry.materialization?.skills?.['cowsay-skill']).toEqual({ kind: 'omitted' })
+    // A newer release does not re-introduce an asset the project decided
+    // not to materialize.
+    expect(existsSync(join(projectRoot, '.test-adapter/skills/cowsay-skill.md'))).toBe(false)
+    expect(readLock().facets.cowsay?.version).toBe('1.5.0')
+    expect(readLock().facets.cowsay?.assets[0]?.materialization).toEqual({ kind: 'omitted' })
   })
 
   test('comments and formatting in facets.json survive the rewrite', async () => {
@@ -673,10 +812,68 @@ describe('runPreparedFacetUpdate — failing like every other operation', () => 
     if (result.ok) expect.unreachable()
     if (result.phase !== 'install') expect.unreachable()
     expect(result.install.failure.code).toBe('INTEGRITY_FAILURE')
+    // The disk-state report is part of the failure contract, not an
+    // afterthought: the user is told the project is intact.
+    expect(result.install.rollback.kind).toBe('not-needed')
     expect(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')).toBe(lockBefore)
     expect(readFileSync(join(projectRoot, '.test-adapter/skills/cowsay-skill.md'), 'utf8')).toContain(
       'cowsay-skill 1.0.0',
     )
+  })
+
+  // The literal atomicity claim: several facets selected, one of them
+  // fails INTEGRITY verification specifically, and none of the others
+  // are left committed. The sibling test above fails at resolution,
+  // which never arms a transaction at all — a weaker starting point.
+  test('one facet failing integrity leaves the others at their old versions too', async () => {
+    buildFixture('cowsay', '1.0.0')
+    buildFixture('fortune', '1.0.0')
+    expect((await add('cowsay@1.*')).ok).toBe(true)
+    expect((await add('fortune@1.*')).ok).toBe(true)
+
+    buildFixture('cowsay', '1.5.0')
+    buildFixture('fortune', '1.5.0')
+
+    const prepared = await prepareFacetUpdate({ projectRoot })
+    if (!prepared.ok) expect.unreachable()
+
+    // Swap fortune's published bytes after the fingerprint was reviewed.
+    const tampered = realpathSync(mkdtempSync(join(fakeHome, 'tampered-')))
+    writeFileSync(
+      join(tampered, 'facet.json'),
+      JSON.stringify({
+        name: 'fortune',
+        version: '1.5.0',
+        skills: { 'fortune-skill': { description: 'fortune skill' } },
+      }),
+    )
+    mkdirSync(join(tampered, 'skills/fortune-skill'), { recursive: true })
+    writeFileSync(join(tampered, 'skills/fortune-skill/SKILL.md'), '# tampered\n')
+    registryFixtures['fortune@1.5.0'] = tampered
+
+    const lockBefore = readFileSync(join(projectRoot, 'facets.lock'), 'utf8')
+    const manifestBefore = readFileSync(join(projectRoot, 'facets.json'), 'utf8')
+
+    const result = await runPreparedFacetUpdate({
+      prepared: prepared.prepared,
+      selections: [
+        { facetName: 'cowsay', choice: 'range' },
+        { facetName: 'fortune', choice: 'range' },
+      ],
+      adapters: await adapters(),
+    })
+
+    if (result.ok) expect.unreachable()
+    if (result.phase !== 'install') expect.unreachable()
+    expect(result.install.failure.code).toBe('INTEGRITY_FAILURE')
+    // The perfectly installable facet does not get to move on its own.
+    expect(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')).toBe(lockBefore)
+    expect(readFileSync(join(projectRoot, 'facets.json'), 'utf8')).toBe(manifestBefore)
+    expect(readFileSync(join(projectRoot, '.test-adapter/skills/cowsay-skill.md'), 'utf8')).toContain(
+      'cowsay-skill 1.0.0',
+    )
+    // And the user is told the project is intact.
+    expect(result.install.rollback.kind).toBe('not-needed')
   })
 
   test('a collision introduced by the new version is reported before anything is written', async () => {
@@ -709,6 +906,45 @@ describe('runPreparedFacetUpdate — failing like every other operation', () => 
     expect(result.install.failure.code).toBe('MATERIALIZATION_COLLISION')
     expect(result.install.rollback.kind).toBe('not-needed')
     expect(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')).toBe(lockBefore)
+  })
+
+  test('a new version that declares an MCP server enters the consent path', async () => {
+    const adapter = mcpCapableAdapter()
+    // v1 is skills only, so the project has approved no configuration.
+    buildFixture('cowsay', '1.0.0')
+    expect((await add('cowsay@1.*', [adapter])).ok).toBe(true)
+
+    // v2 brings a server with it — configuration the user has not seen.
+    buildServerFixture('cowsay', '1.5.0', 'files', {
+      type: 'stdio',
+      command: 'npx',
+      args: ['-y', 'server-filesystem'],
+    })
+
+    const lockBefore = readFileSync(join(projectRoot, 'facets.lock'), 'utf8')
+    const document = join(projectRoot, '.mcp-adapter/mcp.json')
+
+    const refused = await update([{ facetName: 'cowsay', choice: 'range' }], {
+      using: [adapter],
+      mcpConsent: { kind: 'unavailable' },
+    })
+
+    if (refused.ok) expect.unreachable()
+    if (refused.phase !== 'install') expect.unreachable()
+    expect(refused.install.failure.code).toBe('MCP_CONSENT_REQUIRED')
+    // Refused before mutation, like every other operation: no document, no
+    // version change.
+    expect(existsSync(document)).toBe(false)
+    expect(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')).toBe(lockBefore)
+
+    const accepted = await update([{ facetName: 'cowsay', choice: 'range' }], {
+      using: [adapter],
+      mcpConsent: { kind: 'preapproved' },
+    })
+
+    expect(accepted.ok).toBe(true)
+    expect(readLock().facets.cowsay?.version).toBe('1.5.0')
+    expect(JSON.parse(readFileSync(document, 'utf8'))).toHaveProperty('files')
   })
 
   test('a cancelled run reports its disk state the way any other operation does', async () => {

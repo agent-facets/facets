@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { classifyNoOp, defaultSelections, describeNoOp, hasSelectableCandidate } from '../selection.ts'
+import { candidateRows, classifyNoOp, defaultSelections, describeNoOp } from '../selection.ts'
 import { candidate, current, unsupported } from './fixtures.ts'
 
 const BOUNDED = candidate({
@@ -8,7 +8,6 @@ const BOUNDED = candidate({
   current: '1.2.0',
   target: '1.8.0',
   latest: '2.0.0',
-  advancing: 'range-and-latest',
 })
 
 // An exact pin: the range cannot move, but a newer release exists.
@@ -18,7 +17,6 @@ const PINNED = candidate({
   current: '1.2.0',
   target: '1.2.0',
   latest: '3.0.0',
-  advancing: 'latest-only',
 })
 
 describe('defaultSelections', () => {
@@ -40,23 +38,30 @@ describe('defaultSelections', () => {
   })
 })
 
-describe('hasSelectableCandidate', () => {
+describe('candidateRows', () => {
   test('a candidate the mode would not select still counts', () => {
     // The whole point: under plain update PINNED contributes no default
     // selection, and it is still a row worth showing.
     expect(defaultSelections([PINNED], 'range')).toEqual([])
-    expect(hasSelectableCandidate([PINNED])).toBe(true)
+    expect(candidateRows([PINNED])).toEqual([PINNED])
   })
 
   test('rows with nothing newer do not count', () => {
-    expect(hasSelectableCandidate([current({ name: 'gamma', source: '*', version: '4.0.0' })])).toBe(false)
-    expect(hasSelectableCandidate([unsupported('delta', './local', 'local')])).toBe(false)
-    expect(hasSelectableCandidate([])).toBe(false)
+    expect(candidateRows([current({ name: 'gamma', source: '*', version: '4.0.0' })])).toEqual([])
+    expect(candidateRows([unsupported('delta', './local', 'local')])).toEqual([])
+    expect(candidateRows([])).toEqual([])
   })
 
-  test('one candidate among unselectable rows is enough', () => {
-    const plan = [current({ name: 'gamma', source: '*', version: '4.0.0' }), PINNED]
-    expect(hasSelectableCandidate(plan)).toBe(true)
+  // The picker is handed exactly these rows, so the filter is what keeps
+  // a facet with nothing to offer off a screen that asks for a decision.
+  test('current and unsupported rows are dropped, in project order', () => {
+    const plan = [
+      current({ name: 'gamma', source: '*', version: '4.0.0' }),
+      PINNED,
+      unsupported('delta', './local', 'local'),
+      BOUNDED,
+    ]
+    expect(candidateRows(plan).map((row) => row.facet.name)).toEqual(['beta', 'alpha'])
   })
 })
 

@@ -2,10 +2,10 @@ import { describe, expect, test } from 'bun:test'
 import type { FacetUpdateSelection } from '@agent-facets/engine'
 import { render } from 'ink-testing-library'
 import { createElement } from 'react'
-import { visibleTerminalText } from '../../../__tests__/helpers/terminal-output.ts'
+import { stripTerminalControls, visibleTerminalText } from '../../../__tests__/helpers/terminal-output.ts'
 import { UpdatePicker } from '../picker.tsx'
 import type { UpdateMode } from '../selection.ts'
-import { candidate, current } from './fixtures.ts'
+import { candidate } from './fixtures.ts'
 
 const KEY = {
   up: '\u001B[A',
@@ -47,7 +47,6 @@ const BOUNDED = candidate({
   current: '1.2.0',
   target: '1.8.0',
   latest: '2.0.0',
-  advancing: 'range-and-latest',
 })
 
 const PINNED = candidate({
@@ -56,14 +55,16 @@ const PINNED = candidate({
   current: '1.2.0',
   target: '1.2.0',
   latest: '3.0.0',
-  advancing: 'latest-only',
 })
 
-function mount(plan: Parameters<typeof UpdatePicker>[0]['plan'], mode: UpdateMode = 'range') {
-  const state: { confirmed: FacetUpdateSelection[] | null; aborted: boolean } = { confirmed: null, aborted: false }
+function mount(candidates: Parameters<typeof UpdatePicker>[0]['candidates'], mode: UpdateMode = 'range') {
+  const state: { confirmed: readonly FacetUpdateSelection[] | null; aborted: boolean } = {
+    confirmed: null,
+    aborted: false,
+  }
   const app = render(
     createElement(UpdatePicker, {
-      plan,
+      candidates,
       mode,
       onConfirm: (selections) => {
         state.confirmed = selections
@@ -84,14 +85,14 @@ async function press(app: ReturnType<typeof render>, ...keys: string[]): Promise
 }
 
 describe('UpdatePicker — what it offers', () => {
-  test('shows only candidates, with both versions on every row', async () => {
-    const { app } = mount([BOUNDED, PINNED, current({ name: 'gamma', source: '*', version: '4.0.0' })])
+  test('renders every candidate it is handed', async () => {
+    // Filtering happens before the mount — `candidateRows` owns it, and
+    // the non-empty type is what makes the cursor arithmetic here safe.
+    const { app } = mount([BOUNDED, PINNED])
     await nextTick()
     const frame = visibleTerminalText(app.lastFrame() ?? '')
     expect(frame).toContain('alpha')
     expect(frame).toContain('beta')
-    // A facet with nothing newer has no decision to offer.
-    expect(frame).not.toContain('gamma')
     app.unmount()
   })
 
@@ -102,6 +103,42 @@ describe('UpdatePicker — what it offers', () => {
     expect(frame).toContain('facet current target latest')
     // The comparison this screen exists for needs all three at once.
     expect(frame).toContain('alpha 1.2.0 1.8.0 2.0.0')
+    app.unmount()
+  })
+
+  // The columns are the comparison, so they have to read as columns.
+  // `visibleTerminalText` collapses exactly the whitespace that carries
+  // this, so it is asserted against the raw frame.
+  test('columns line up across rows of different name lengths', async () => {
+    const { app } = mount([
+      BOUNDED,
+      candidate({ name: 'a-much-longer-name', source: '2.*', current: '2.0.0', target: '2.1.0', latest: '9.10.11' }),
+    ])
+    await nextTick()
+    const lines = stripTerminalControls(app.lastFrame() ?? '')
+      .split('\n')
+      .filter((line) => line.includes('1.2.0') || line.includes('2.0.0') || line.includes('current'))
+    expect(lines).toHaveLength(3)
+
+    const header = lines[0] ?? ''
+    for (const label of ['facet', 'current', 'target', 'latest']) {
+      const at = header.indexOf(label)
+      expect(at).toBeGreaterThanOrEqual(0)
+      for (const row of lines.slice(1)) {
+        expect({ label, char: row.charAt(at) }).toEqual({ label, char: row.charAt(at).trimEnd() })
+      }
+    }
+    app.unmount()
+  })
+
+  // Quoted verbatim in `docs/cli/update.mdx`. Without an assertion, a
+  // glyph or wording change here silently desynchronizes the docs.
+  test('the legend names every key the screen responds to', async () => {
+    const { app } = mount([BOUNDED])
+    await nextTick()
+    expect(visibleTerminalText(app.lastFrame() ?? '')).toContain(
+      '↑↓ move · ◀ ▶ target/latest · Space select · Enter confirm · Esc cancel',
+    )
     app.unmount()
   })
 

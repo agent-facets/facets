@@ -13,11 +13,12 @@
 
 import type { Adapter } from '@agent-facets/adapter'
 import { isNonEmpty } from '@agent-facets/common'
+import { describeVersionSpec } from '../../registry/describe.ts'
 import { runInstall } from '../run-install.ts'
 import type { MutationInteractions, OnLog, RunInstallResult, SelectedFacetUpdate, StageEvent } from '../types.ts'
+import { advancingChoice, displayedVersion } from './advancing.ts'
 import { finalManifestSource, type UpdateChoice } from './manifest-source.ts'
-import type { PreparedFacetUpdate, ResolvedChoice, UpdatePlanRow } from './types.ts'
-import { isNewerThan } from './version-order.ts'
+import type { PreparedFacetUpdate, UpdatePlanRow } from './types.ts'
 
 /** One facet the caller wants moved, and which of its choices to take. */
 export interface FacetUpdateSelection {
@@ -132,19 +133,22 @@ export function validateFacetUpdateSelections(
       return { ok: false, failure: { reason: 'not-a-candidate', facet: selection.facetName } }
     }
 
-    const chosen: ResolvedChoice = selection.choice === 'range' ? row.facet.target : row.facet.latest
-    if (!isNewerThan(chosen.version, row.facet.current)) {
-      // Not a technicality: applying a choice that does not advance would
-      // reinstall the same release under the banner of an update, or move
-      // the project backwards if the registry's answer regressed.
+    // The same predicate the picker gates selection on and the mode
+    // defaults are drawn from. Asking it here rather than re-comparing
+    // the versions is what makes "selectable" and "acceptable" one fact:
+    // applying a choice that does not advance would reinstall the same
+    // release under the banner of an update, or move the project
+    // backwards if the registry's answer regressed.
+    const chosen = advancingChoice(row.facet, selection.choice)
+    if (chosen === undefined) {
       return {
         ok: false,
         failure: {
           reason: 'choice-does-not-advance',
           facet: selection.facetName,
           choice: selection.choice,
-          version: chosen.metadata.version,
-          current: describeExact(row.facet.current),
+          version: describeVersionSpec(displayedVersion(row.facet, selection.choice)),
+          current: describeVersionSpec(row.facet.current),
         },
       }
     }
@@ -164,8 +168,4 @@ export function validateFacetUpdateSelections(
     return { ok: false, failure: { reason: 'empty-selection' } }
   }
   return { ok: true, selections: resolved }
-}
-
-function describeExact(version: { major: number; minor: number; patch: number }): string {
-  return `${version.major}.${version.minor}.${version.patch}`
 }
