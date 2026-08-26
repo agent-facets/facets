@@ -1252,16 +1252,18 @@ When the output stream is a terminal, the update command SHALL provide immediate
 
 ### Requirement: Users can select updates interactively
 
-The `--interactive` mode SHALL present every registry facet for which Target or Latest is newer than Current. Whether the picker opens SHALL be determined from that candidate set, not from whether the initial mode has a non-empty default selection. Range Target SHALL be the initial choice unless `--latest` is also supplied, in which case Latest SHALL be initial. Users SHALL be able to navigate rows, select or deselect facets, and change the focused row's column between Target and Latest. Left and right SHALL address the Target and Latest columns directly and SHALL clamp at each end rather than wrap; `l` SHALL flip the focused row between them. A choice that does not advance Current SHALL NOT be selectable, and confirmation SHALL require at least one selected advancing choice.
+The `--interactive` mode SHALL present every registry facet for which Target or Latest is newer than Current. Whether the picker opens SHALL be determined from that candidate set, not from whether the initial mode has a non-empty default selection. Every presented row SHALL start on Latest and SHALL start unselected, so selecting a row takes its latest release without any prior column change. `--latest` SHALL NOT change the presented initial state, and supplying it with `--interactive` SHALL be accepted rather than rejected. Users SHALL be able to navigate rows, select or deselect facets, and change the focused row's column between Target and Latest. Left and right SHALL address the Target and Latest columns directly and SHALL clamp at each end rather than wrap; `l` SHALL flip the focused row between them. A choice that does not advance Current SHALL NOT be selectable, and confirmation SHALL require at least one selected advancing choice.
 
 Interactive selection SHALL occur before adapter selection or update application. The command SHALL reject interactive mode before discovery when the terminal cannot prompt. Cancelling or interrupting the picker SHALL apply nothing, SHALL report that nothing was applied, and SHALL exit with code 1.
 
-#### Scenario: Interactive mode starts with range targets
+#### Scenario: Interactive mode starts on latest with nothing selected
 
 - **WHEN** a user runs `facet update --interactive`
 - **AND** a facet has both an advancing Target and an advancing Latest
-- **THEN** the facet's initial choice SHALL be Target
-- **AND** pressing `l` or right on that row SHALL change its choice to Latest
+- **THEN** the facet's initial choice SHALL be Latest
+- **AND** the facet SHALL start unselected
+- **AND** selecting the row without changing its column SHALL choose Latest
+- **AND** pressing `l` or left on that row SHALL change its choice to Target
 
 #### Scenario: Column keys clamp at each end
 
@@ -1269,26 +1271,26 @@ Interactive selection SHALL occur before adapter selection or update application
 - **THEN** the choice SHALL remain Target
 - **AND** when a row's choice is Latest and the user presses right, the choice SHALL remain Latest
 
-#### Scenario: Latest interactive mode starts with latest targets
+#### Scenario: Latest interactive mode presents the same initial state
 
 - **WHEN** a user runs `facet update --interactive --latest`
-- **AND** a facet has both an advancing Target and an advancing Latest
-- **THEN** the facet's initial choice SHALL be Latest
-- **AND** pressing `l` or left on that row SHALL change its choice to Target
+- **THEN** the command SHALL accept the combination
+- **AND** the presented rows SHALL start on Latest and unselected, exactly as without `--latest`
 
 #### Scenario: Non-advancing choice cannot be selected
 
 - **WHEN** a facet's Target equals Current but its Latest is newer
+- **AND** the user changes that row's column to Target
 - **THEN** the Target choice SHALL NOT be selectable
-- **AND** the user SHALL be able to toggle to and select Latest
+- **AND** the user SHALL be able to return to Latest and select it
 
 #### Scenario: Latest-only candidate opens plain interactive mode
 
 - **WHEN** a facet's Target equals Current and its Latest is newer
 - **AND** the user runs `facet update --interactive` without `--latest`
 - **THEN** the command SHALL open the picker rather than report the range-specific no-op
-- **AND** the row SHALL start on its stationary Target, unselected
-- **AND** the user SHALL be able to toggle to Latest, select it, and confirm
+- **AND** the row SHALL start on its advancing Latest, unselected
+- **AND** the user SHALL be able to select it and confirm without changing its column
 
 #### Scenario: Confirmation requires a selection
 

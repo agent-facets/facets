@@ -168,15 +168,23 @@ describe('facet update — opening the interactive picker', () => {
     expect(result).toBe(1)
   })
 
-  test('the picker starts on the mode the flags asked for', async () => {
-    preparing([BOUNDED])
+  // `--latest` is a non-interactive mode's way of saying what the picker
+  // already offers on every row, so it cannot change what opens. If it
+  // ever grows a second starting state again, this is what catches it.
+  test('--latest opens the same picker as plain interactive mode', async () => {
+    preparing([BOUNDED, PINNED])
     pickerSpy.mockResolvedValue({ kind: 'cancelled' })
     await withTTY(true, () => captureStdout(() => updateCommand.run([], { interactive: true })))
-    expect(pickerSpy.mock.calls[0]?.[1]).toBe('range')
+    const plain = pickerSpy.mock.calls[0]
 
     pickerSpy.mockClear()
     await withTTY(true, () => captureStdout(() => updateCommand.run([], { interactive: true, latest: true })))
-    expect(pickerSpy.mock.calls[0]?.[1]).toBe('latest')
+    const withLatest = pickerSpy.mock.calls[0]
+
+    expect(withLatest).toEqual(plain)
+    // The candidates, and nothing else: no mode reaches this screen.
+    expect(plain).toHaveLength(1)
+    expect(plain?.[0]).toEqual([BOUNDED, PINNED])
   })
 
   // Interactive has a dead end, it is just a different one: a plan with

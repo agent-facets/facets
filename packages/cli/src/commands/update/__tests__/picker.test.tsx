@@ -4,7 +4,6 @@ import { render } from 'ink-testing-library'
 import { createElement } from 'react'
 import { stripTerminalControls, visibleTerminalText } from '../../../__tests__/helpers/terminal-output.ts'
 import { UpdatePicker } from '../picker.tsx'
-import type { UpdateMode } from '../selection.ts'
 import { candidate } from './fixtures.ts'
 
 const KEY = {
@@ -57,7 +56,7 @@ const PINNED = candidate({
   latest: '3.0.0',
 })
 
-function mount(candidates: Parameters<typeof UpdatePicker>[0]['candidates'], mode: UpdateMode = 'range') {
+function mount(candidates: Parameters<typeof UpdatePicker>[0]['candidates']) {
   const state: { confirmed: readonly FacetUpdateSelection[] | null; aborted: boolean } = {
     confirmed: null,
     aborted: false,
@@ -65,7 +64,6 @@ function mount(candidates: Parameters<typeof UpdatePicker>[0]['candidates'], mod
   const app = render(
     createElement(UpdatePicker, {
       candidates,
-      mode,
       onConfirm: (selections) => {
         state.confirmed = selections
       },
@@ -142,56 +140,76 @@ describe('UpdatePicker — what it offers', () => {
     app.unmount()
   })
 
-  test('plain mode starts on the range target', async () => {
-    const { app, state } = mount([BOUNDED])
+  test('every row starts on latest, and nothing starts selected', async () => {
+    const { app } = mount([BOUNDED, PINNED])
     await nextTick()
-    expect(visibleTerminalText(app.lastFrame() ?? '')).toContain('1 of 1 selected')
-    expect(chosenLabels(app.lastFrame() ?? '')).toEqual(['target'])
-    await press(app, KEY.enter)
-    expect(state.confirmed).toEqual([{ facetName: 'alpha', choice: 'range' }])
+    expect(chosenLabels(app.lastFrame() ?? '')).toEqual(['latest', 'latest'])
+    // Nothing is answered yet: this screen was opened to ask, so Space
+    // means "yes, this one" rather than "no, not this one".
+    expect(visibleTerminalText(app.lastFrame() ?? '')).toContain('0 of 2 selected')
     app.unmount()
   })
 
-  test('latest mode starts on the latest release', async () => {
-    const { app, state } = mount([BOUNDED], 'latest')
+  // The whole point of the default: one keystroke per facet takes the
+  // newest release, with no toggling first and no flag.
+  test('one Space takes the latest release', async () => {
+    const { app, state } = mount([BOUNDED])
     await nextTick()
-    expect(chosenLabels(app.lastFrame() ?? '')).toEqual(['latest'])
+    await press(app, KEY.space)
+    expect(visibleTerminalText(app.lastFrame() ?? '')).toContain('1 of 1 selected')
     await press(app, KEY.enter)
     expect(state.confirmed).toEqual([{ facetName: 'alpha', choice: 'latest' }])
     app.unmount()
   })
 
-  // The row `--latest` exists for: its range cannot move, so plain mode
-  // shows it unselected with its target sitting on the installed version.
-  test('a row whose displayed choice is already installed starts unselected', async () => {
-    const { app } = mount([PINNED])
+  // The row `--latest` exists for is no longer a special case here: it
+  // opens on the release it can actually take, like every other row.
+  test('a pinned facet needs no toggle to reach its latest release', async () => {
+    const { app, state } = mount([PINNED])
     await nextTick()
-    const frame = visibleTerminalText(app.lastFrame() ?? '')
-    // Target equal to current is legible from the columns themselves.
-    expect(frame).toContain('beta 1.2.0 1.2.0 3.0.0')
-    expect(frame).toContain('0 of 1 selected')
+    // All three versions stay legible from the columns themselves.
+    expect(visibleTerminalText(app.lastFrame() ?? '')).toContain('beta 1.2.0 1.2.0 3.0.0')
+    await press(app, KEY.space, KEY.enter)
+    expect(state.confirmed).toEqual([{ facetName: 'beta', choice: 'latest' }])
+    app.unmount()
+  })
+
+  // A candidate guarantees SOME column advances, not that Latest does.
+  // The rare row where the registry's answer moved backwards still opens
+  // on Latest, and says so rather than quietly starting somewhere else.
+  test('a stationary latest still starts there, and Space says why not', async () => {
+    const { app, state } = mount([
+      candidate({ name: 'zeta', source: '1.*', current: '1.2.0', target: '1.8.0', latest: '1.2.0' }),
+    ])
+    await nextTick()
+    expect(chosenLabels(app.lastFrame() ?? '')).toEqual(['latest'])
+    await press(app, KEY.space)
+    expect(visibleTerminalText(app.lastFrame() ?? '')).toContain('already installed')
+    // `l` reaches the column that does advance.
+    await press(app, 'l', KEY.space, KEY.enter)
+    expect(state.confirmed).toEqual([{ facetName: 'zeta', choice: 'range' }])
     app.unmount()
   })
 })
 
 describe('UpdatePicker — choosing', () => {
-  test('l toggles the focused row between target and latest', async () => {
+  test('l toggles the focused row between latest and target', async () => {
     const { app } = mount([BOUNDED])
     await nextTick()
     await press(app, 'l')
-    expect(chosenLabels(app.lastFrame() ?? '')).toEqual(['latest'])
-    await press(app, 'l')
     expect(chosenLabels(app.lastFrame() ?? '')).toEqual(['target'])
+    await press(app, 'l')
+    expect(chosenLabels(app.lastFrame() ?? '')).toEqual(['latest'])
     app.unmount()
   })
 
-  test('right moves to latest, left moves back to target', async () => {
+  test('left moves to target, right moves back to latest', async () => {
     const { app } = mount([BOUNDED])
     await nextTick()
-    await press(app, KEY.right)
-    expect(chosenLabels(app.lastFrame() ?? '')).toEqual(['latest'])
     await press(app, KEY.left)
     expect(chosenLabels(app.lastFrame() ?? '')).toEqual(['target'])
+    await press(app, KEY.right)
+    expect(chosenLabels(app.lastFrame() ?? '')).toEqual(['latest'])
     app.unmount()
   })
 
@@ -200,26 +218,27 @@ describe('UpdatePicker — choosing', () => {
   test('the arrows clamp at each end instead of wrapping', async () => {
     const { app } = mount([BOUNDED])
     await nextTick()
-    await press(app, KEY.left, KEY.left)
-    expect(chosenLabels(app.lastFrame() ?? '')).toEqual(['target'])
-    await press(app, KEY.right, KEY.right, KEY.right)
+    await press(app, KEY.right, KEY.right)
     expect(chosenLabels(app.lastFrame() ?? '')).toEqual(['latest'])
+    await press(app, KEY.left, KEY.left, KEY.left)
+    expect(chosenLabels(app.lastFrame() ?? '')).toEqual(['target'])
     app.unmount()
   })
 
   test('the arrows carry selection the same way l does', async () => {
-    const { app, state } = mount([PINNED])
+    const { app, state } = mount([BOUNDED])
     await nextTick()
-    // A stationary target cannot be selected; the advancing latest can.
-    await press(app, KEY.right, KEY.space, KEY.enter)
-    expect(state.confirmed).toEqual([{ facetName: 'beta', choice: 'latest' }])
+    // Selected on latest, then moved to a target that also advances: the
+    // selection survives the move, and confirms as the column on screen.
+    await press(app, KEY.space, KEY.left, KEY.enter)
+    expect(state.confirmed).toEqual([{ facetName: 'alpha', choice: 'range' }])
     app.unmount()
   })
 
   test('arrows move columns while up and down still move rows', async () => {
     const { app, state } = mount([BOUNDED, PINNED])
     await nextTick()
-    await press(app, KEY.down, KEY.right, KEY.space, KEY.enter)
+    await press(app, KEY.left, KEY.space, KEY.down, KEY.space, KEY.enter)
     expect(state.confirmed).toEqual([
       { facetName: 'alpha', choice: 'range' },
       { facetName: 'beta', choice: 'latest' },
@@ -227,20 +246,23 @@ describe('UpdatePicker — choosing', () => {
     app.unmount()
   })
 
-  test('space deselects and reselects a row', async () => {
+  test('space selects and deselects a row', async () => {
     const { app, state } = mount([BOUNDED])
     await nextTick()
     await press(app, KEY.space)
+    expect(visibleTerminalText(app.lastFrame() ?? '')).toContain('1 of 1 selected')
+    await press(app, KEY.space)
     expect(visibleTerminalText(app.lastFrame() ?? '')).toContain('0 of 1 selected')
     await press(app, KEY.space, KEY.enter)
-    expect(state.confirmed).toEqual([{ facetName: 'alpha', choice: 'range' }])
+    expect(state.confirmed).toEqual([{ facetName: 'alpha', choice: 'latest' }])
     app.unmount()
   })
 
   test('a non-advancing choice cannot be selected, and says what to press', async () => {
     const { app, state } = mount([PINNED])
     await nextTick()
-    await press(app, KEY.space)
+    // Moved onto the pin's own target, which is the installed version.
+    await press(app, KEY.left, KEY.space)
     const frame = visibleTerminalText(app.lastFrame() ?? '')
     expect(frame).toContain('already installed')
     expect(frame).toContain('0 of 1 selected')
@@ -250,10 +272,10 @@ describe('UpdatePicker — choosing', () => {
     app.unmount()
   })
 
-  test('toggling to the advancing choice makes the same row selectable', async () => {
+  test('toggling back to the advancing choice makes the same row selectable', async () => {
     const { app, state } = mount([PINNED])
     await nextTick()
-    await press(app, 'l', KEY.space, KEY.enter)
+    await press(app, 'l', 'l', KEY.space, KEY.enter)
     expect(state.confirmed).toEqual([{ facetName: 'beta', choice: 'latest' }])
     app.unmount()
   })
@@ -261,8 +283,9 @@ describe('UpdatePicker — choosing', () => {
   // Selection is not carried across a toggle onto a version that would
   // change nothing: the state that says "selected" cannot hold it.
   test('toggling a selected row onto a stationary choice deselects it', async () => {
-    const { app } = mount([PINNED], 'latest')
+    const { app } = mount([PINNED])
     await nextTick()
+    await press(app, KEY.space)
     expect(visibleTerminalText(app.lastFrame() ?? '')).toContain('1 of 1 selected')
     await press(app, 'l')
     expect(visibleTerminalText(app.lastFrame() ?? '')).toContain('0 of 1 selected')
@@ -274,12 +297,10 @@ describe('UpdatePicker — choosing', () => {
   test('arrows move the focus between rows', async () => {
     const { app, state } = mount([BOUNDED, PINNED])
     await nextTick()
-    // Move to beta, toggle it to latest, select it, and confirm both.
-    await press(app, KEY.down, 'l', KEY.space, KEY.enter)
-    expect(state.confirmed).toEqual([
-      { facetName: 'alpha', choice: 'range' },
-      { facetName: 'beta', choice: 'latest' },
-    ])
+    // Move to beta and take only it: alpha was never selected, so an
+    // untouched row stays out of the confirmed set.
+    await press(app, KEY.down, KEY.space, KEY.enter)
+    expect(state.confirmed).toEqual([{ facetName: 'beta', choice: 'latest' }])
     app.unmount()
   })
 
@@ -287,17 +308,19 @@ describe('UpdatePicker — choosing', () => {
     const { app, state } = mount([BOUNDED, PINNED])
     await nextTick()
     // Up from the first row lands on the last one.
-    await press(app, KEY.up, 'l', KEY.space, KEY.enter)
-    expect(state.confirmed).toContainEqual({ facetName: 'beta', choice: 'latest' })
+    await press(app, KEY.up, KEY.space, KEY.enter)
+    expect(state.confirmed).toEqual([{ facetName: 'beta', choice: 'latest' }])
     app.unmount()
   })
 })
 
 describe('UpdatePicker — leaving without applying', () => {
+  // The screen opens with nothing selected, so Enter straight away is
+  // the shape this refusal has to handle.
   test('confirming nothing is refused with a hint', async () => {
     const { app, state } = mount([BOUNDED])
     await nextTick()
-    await press(app, KEY.space, KEY.enter)
+    await press(app, KEY.enter)
     expect(state.confirmed).toBeNull()
     expect(state.aborted).toBe(false)
     expect(visibleTerminalText(app.lastFrame() ?? '')).toContain('Select at least one facet')

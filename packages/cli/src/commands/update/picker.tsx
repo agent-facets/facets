@@ -12,7 +12,7 @@ import { useState } from 'react'
 import { THEME } from '../../tui/theme.ts'
 import { COLUMN_GAP, COLUMN_HEADERS, columnWidth } from '../../tui/views/update/columns.ts'
 import { formatExactVersion, versionCellStyle } from '../../tui/views/update/version-change.ts'
-import type { UpdateCandidate, UpdateMode } from './selection.ts'
+import type { UpdateCandidate } from './selection.ts'
 
 /**
  * A row's displayed choice, tagged by whether taking it would actually
@@ -50,8 +50,6 @@ export interface UpdatePickerProps {
    * not a state this screen should be able to render.
    */
   candidates: NonEmptyArray<UpdateCandidate>
-  /** Which version each row starts on: `--latest` starts on Latest. */
-  mode: UpdateMode
   /** Fires once, with at least one advancing selection. */
   onConfirm: (selections: NonEmptyArray<FacetUpdateSelection>) => void
   /** Fires once when the user abandons the picker (Esc / Ctrl-C). */
@@ -66,14 +64,21 @@ export interface UpdatePickerProps {
  * this screen exists for — take the range target, or cross the range to
  * the latest release — cannot be made from one of them.
  *
+ * Every row opens on Latest and unselected, so the screen starts as a
+ * list of the newest release each facet could take and Space is the one
+ * key that says "yes, this one" — rather than starting with a set of
+ * answers already given, where Space means "no, not this one". `--latest`
+ * therefore changes nothing here: it is a non-interactive mode's way of
+ * saying what this screen already offers on every row.
+ *
  * Keys follow the adapter picker (↑↓ / Space / Enter / Esc) so the two
  * selection screens in this CLI do not have separate vocabularies, plus
  * `l` for the toggle this one needs.
  */
-export function UpdatePicker({ candidates, mode, onConfirm, onAbort }: UpdatePickerProps) {
+export function UpdatePicker({ candidates, onConfirm, onAbort }: UpdatePickerProps) {
   const { exit } = useApp()
 
-  const [rows, setRows] = useState<RowState[]>(() => candidates.map((row) => initialState(row, mode)))
+  const [rows, setRows] = useState<RowState[]>(() => candidates.map((row) => initialState(row)))
   const [cursor, setCursor] = useState(0)
   const [hint, setHint] = useState<string | null>(null)
   const [done, setDone] = useState(false)
@@ -347,10 +352,18 @@ function VersionCell({
   )
 }
 
-function initialState(candidate: UpdateCandidate, mode: UpdateMode): RowState {
-  // Selected by default when the mode's own choice already advances: the
-  // user asked for this mode, so its answer is the one they came for.
-  return stateFor(candidate, mode, true)
+function initialState(candidate: UpdateCandidate): RowState {
+  // Latest, and nothing selected. Every row is a question this screen was
+  // opened to ask, so none of them starts with an answer already filled
+  // in; Space is what says yes. Latest is the column it says yes TO,
+  // because a user who wanted the range's own answer for everything did
+  // not need this screen at all — plain `facet update` is that run.
+  //
+  // A candidate guarantees that SOME column advances, not that Latest
+  // does. On the rare row where it does not — a registry answer that
+  // moved backwards — this opens on a stationary Latest that Space
+  // refuses by name, and `l` moves to the Target that does advance.
+  return stateFor(candidate, 'latest', false)
 }
 
 function stateFor(candidate: UpdateCandidate, choice: UpdateChoice, select: boolean): RowState {

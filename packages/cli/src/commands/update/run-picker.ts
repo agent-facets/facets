@@ -3,7 +3,7 @@ import type { FacetUpdateSelection } from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
 import { UpdatePicker } from './picker.tsx'
-import type { UpdateCandidate, UpdateMode } from './selection.ts'
+import type { UpdateCandidate } from './selection.ts'
 
 /**
  * What the user decided, or why they were never asked.
@@ -33,10 +33,7 @@ export type UpdatePickerOutcome =
  * this call, and the resulting throw would otherwise leave the command
  * boundary as an unexplained exit 2.
  */
-export async function runUpdatePicker(
-  candidates: NonEmptyArray<UpdateCandidate>,
-  mode: UpdateMode,
-): Promise<UpdatePickerOutcome> {
+export async function runUpdatePicker(candidates: NonEmptyArray<UpdateCandidate>): Promise<UpdatePickerOutcome> {
   const state: { outcome: UpdatePickerOutcome } = { outcome: { kind: 'cancelled' } }
 
   let instance: ReturnType<typeof render>
@@ -44,7 +41,6 @@ export async function runUpdatePicker(
     instance = render(
       createElement(UpdatePicker, {
         candidates,
-        mode,
         onConfirm: (selections) => {
           state.outcome = { kind: 'confirmed', selections }
         },

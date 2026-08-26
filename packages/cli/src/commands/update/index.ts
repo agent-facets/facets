@@ -105,9 +105,9 @@ export const updateCommand: Command = {
     }
     const { plan } = prepared.prepared
 
-    // The mode's own answer, before the user gets a say. In interactive
-    // mode this is only the starting position of the picker; otherwise it
-    // is the selection.
+    // What a run with no user in it takes. Interactive mode never uses
+    // this: the picker opens with nothing selected and every choice is
+    // made on screen, so `--latest` has nothing left to say there.
     const defaults = defaultSelections(plan, mode)
 
     // A run that applies nothing still succeeded. Which KIND of nothing
@@ -134,7 +134,7 @@ export const updateCommand: Command = {
     if (picking !== null) {
       // Before adapters, before the lock, before anything that writes:
       // cancelling here must cost the user nothing at all.
-      const outcome = await runUpdatePicker(picking, mode)
+      const outcome = await runUpdatePicker(picking)
       if (outcome.kind === 'cancelled') {
         process.stdout.write('Update cancelled. Nothing was applied.\n')
         return 1
