@@ -110,10 +110,20 @@ Selecting a Target never rewrites anything: the specifier already permits that v
 `--interactive` lists every facet with an advancing version and lets you pick both which facets move and which version each one takes:
 
 ```
-↑↓ move · Space toggle · l target/latest · Enter confirm · Esc cancel
+  facet        current  target  latest
+▸ ● viper-plans  1.2.0    1.8.0   2.0.0  (target)
+  ○ cowsay       2.1.3    2.1.3   3.0.0  (target)
 ```
 
-Each row starts on its Target, or on its Latest when `--latest` is also supplied. `l` toggles the focused row between the two. A row showing a version that is already installed cannot be selected until you toggle it — pressing `Space` there says so rather than silently doing nothing. Confirming requires at least one selected facet.
+```
+↑↓ move · ◀ ▶ target/latest · Space select · Enter confirm · Esc cancel
+```
+
+Every row shows all three versions at once, because the choice this screen exists for is a comparison. Only the digit that actually moves is coloured — green for a patch, amber for a minor, coral for a major — so the size of each jump is visible without reading the numbers twice. The column a row would install is named in words, so the screen still works with colour disabled.
+
+`↑↓` moves between facets and `◀ ▶` moves between the two columns, clamping at each end rather than wrapping. `l` also flips the focused row. Each row starts on its Target, or on its Latest when `--latest` is supplied.
+
+A row showing a version that is already installed cannot be selected until you move it — pressing `Space` there says so rather than silently doing nothing. That is the case `--latest` exists for, and it is reachable here without the flag. Confirming requires at least one selected facet.
 
 Selection happens **before** adapter selection and before anything is written, so `Esc` or `Ctrl-C` costs nothing: the command reports that nothing was applied and exits `1`.
 

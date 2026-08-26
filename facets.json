@@ -1,6 +1,6 @@
 {
   "facets": {
-    "viper-plans": "1.3.0",
+    "viper-plans": "1.0.0",
     "cowsay": "1.0.1",
     "@agentfacets/review-openspec-design": "latest",
     "@agentfacets/openspec-adversary": "3.2.2",

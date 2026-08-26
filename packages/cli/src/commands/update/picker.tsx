@@ -2,6 +2,13 @@ import type { FacetUpdateSelection, UpdateChoice, UpdatePlanRow } from '@agent-f
 import { Box, Text, useApp, useInput } from 'ink'
 import { useMemo, useState } from 'react'
 import { THEME } from '../../tui/theme.ts'
+import {
+  classifyVersionChange,
+  type ExactVersionParts,
+  formatExactVersion,
+  splitAtChange,
+  versionChangeColor,
+} from '../../tui/views/update/version-change.ts'
 import { choiceAdvances, type UpdateMode } from './selection.ts'
 
 type Candidate = Extract<UpdatePlanRow, { kind: 'candidate' }>
@@ -70,6 +77,23 @@ export function UpdatePicker({ plan, mode, onConfirm, onAbort }: UpdatePickerPro
     action()
   }
 
+  /**
+   * Put the focused row on a specific column.
+   *
+   * Absolute rather than relative, so left and right can clamp: asking for the
+   * column you are already on is a no-op instead of a bounce back to the
+   * other one. Selection is carried through `stateFor`, which drops it
+   * when the requested column is not an advancing one — a selected row
+   * showing the installed version is not a state this picker can hold.
+   */
+  const chooseColumn = (choice: UpdateChoice) => {
+    const row = rows[cursor]
+    const candidate = candidates[cursor]
+    if (row === undefined || candidate === undefined) return
+    if (row.displayed.choice === choice) return
+    setRows(replace(rows, cursor, stateFor(candidate, choice, row.kind === 'selected')))
+  }
+
   useInput((input, key) => {
     if (done) return
     if (hint !== null) setHint(null)
@@ -107,12 +131,24 @@ export function UpdatePicker({ plan, mode, onConfirm, onAbort }: UpdatePickerPro
       return
     }
 
+    // Left/right address the two columns directly: left is target,
+    // right is latest, and each is where it sits on screen. They clamp
+    // rather than wrap, so holding one down settles on a column instead
+    // of oscillating between them. `l` stays as the flip for anyone who
+    // learned it, and for a keyboard where the arrows are awkward.
+    if (key.leftArrow) {
+      chooseColumn('range')
+      return
+    }
+    if (key.rightArrow) {
+      chooseColumn('latest')
+      return
+    }
+
     if (input === 'l' || input === 'L') {
       const row = rows[cursor]
-      const candidate = candidates[cursor]
-      if (row === undefined || candidate === undefined) return
-      const flipped = other(row.displayed.choice)
-      setRows(replace(rows, cursor, stateFor(candidate, flipped, row.kind === 'selected')))
+      if (row === undefined) return
+      chooseColumn(other(row.displayed.choice))
       return
     }
 
@@ -131,12 +167,22 @@ export function UpdatePicker({ plan, mode, onConfirm, onAbort }: UpdatePickerPro
     }
   })
 
-  const nameWidth = candidates.reduce((max, row) => Math.max(max, row.facet.name.length), 0)
+  const widths = columnWidths(candidates)
 
   return (
     <Box flexDirection="column" paddingY={1}>
       <Text>Choose which facets to update.</Text>
       <Box height={1} />
+      <Text color={THEME.hint}>
+        {ROW_INDENT}
+        {'facet'.padEnd(widths.name)}
+        {COLUMN_GAP}
+        {'current'.padEnd(widths.current)}
+        {COLUMN_GAP}
+        {'target'.padEnd(widths.target)}
+        {COLUMN_GAP}
+        latest
+      </Text>
       {candidates.map((candidate, index) => {
         const row = rows[index]
         if (row === undefined) return null
@@ -146,12 +192,17 @@ export function UpdatePicker({ plan, mode, onConfirm, onAbort }: UpdatePickerPro
             candidate={candidate}
             state={row}
             focused={index === cursor}
-            nameWidth={nameWidth}
+            widths={widths}
           />
         )
       })}
       <Box height={1} />
-      <Text color={THEME.keyword}>↑↓ move · Space toggle · l target/latest · Enter confirm · Esc cancel</Text>
+      {/* Filled triangles rather than line arrows: `←→` jammed together
+          smears into one glyph in most terminal fonts, and these read
+          cleanly at any weight. They live on the legend line, never in a
+          column, so their ambiguous character width cannot pull the
+          version table out of alignment. */}
+      <Text color={THEME.keyword}>↑↓ move · ◀ ▶ target/latest · Space select · Enter confirm · Esc cancel</Text>
       <Text color={THEME.hint}>
         {selectedCount} of {candidates.length} selected
       </Text>
@@ -160,21 +211,57 @@ export function UpdatePicker({ plan, mode, onConfirm, onAbort }: UpdatePickerPro
   )
 }
 
+/**
+ * Two spaces between columns, not one.
+ *
+ * Every cell here is digits and dots, and a single space lets `1.2.0`
+ * and `1.8.0` read as one run of characters. Two is the smallest gutter
+ * that keeps the columns separable at a glance.
+ */
+const COLUMN_GAP = '  '
+
+/** Clears the focus marker and the selection dot, so the header lines up. */
+const ROW_INDENT = '    '
+
+interface ColumnWidths {
+  name: number
+  current: number
+  target: number
+}
+
+function columnWidths(candidates: readonly Candidate[]): ColumnWidths {
+  let name = 'facet'.length
+  let current = 'current'.length
+  let target = 'target'.length
+  for (const candidate of candidates) {
+    name = Math.max(name, candidate.facet.name.length)
+    current = Math.max(current, formatExactVersion(candidate.facet.current).length)
+    target = Math.max(target, candidate.facet.target.metadata.version.length)
+  }
+  return { name, current, target }
+}
+
+/**
+ * One facet's row: what is installed, and both versions it could take.
+ *
+ * Target and Latest are both always on screen. The choice this screen
+ * exists for cannot be made from one of them — "is the release my range
+ * forbids worth crossing the range for?" is a comparison, and hiding
+ * either side turns it into a guess.
+ */
 function PickerRow({
   candidate,
   state,
   focused,
-  nameWidth,
+  widths,
 }: {
   candidate: Candidate
   state: RowState
   focused: boolean
-  nameWidth: number
+  widths: ColumnWidths
 }) {
   const chosen = state.displayed.choice
-  const version = chosen === 'range' ? candidate.facet.target : candidate.facet.latest
-  const label = describeChoice(chosen)
-  const stationary = state.displayed.kind === 'stationary'
+  const current = candidate.facet.current
 
   return (
     <Box>
@@ -184,16 +271,82 @@ function PickerRow({
       </Text>
       <Text bold color={THEME.brand}>
         {' '}
-        {candidate.facet.name.padEnd(nameWidth)}
+        {candidate.facet.name.padEnd(widths.name)}
       </Text>
-      <Text color={THEME.hint}> {describeExact(candidate.facet.current)} → </Text>
-      <Text color={stationary ? THEME.hint : THEME.success}>{version.metadata.version}</Text>
       <Text color={THEME.hint}>
-        {' '}
-        ({label}
-        {stationary ? ', unchanged' : ''})
+        {COLUMN_GAP}
+        {formatExactVersion(current).padEnd(widths.current)}
+        {COLUMN_GAP}
+      </Text>
+      <VersionCell
+        current={current}
+        version={candidate.facet.target.metadata.version}
+        parts={candidate.facet.target.version}
+        chosen={chosen === 'range'}
+        pad={widths.target}
+      />
+      <Text>{COLUMN_GAP}</Text>
+      <VersionCell
+        current={current}
+        version={candidate.facet.latest.metadata.version}
+        parts={candidate.facet.latest.version}
+        chosen={chosen === 'latest'}
+      />
+      {/* The chosen column, in words. Bold and underline say the same
+          thing, but only where the terminal supports them — under
+          NO_COLOR, a dumb pipe, or a screen reader they are simply
+          absent, and "which of these two is selected" is not a question
+          the user can be left to infer from two similar numbers. */}
+      <Text color={THEME.hint}>
+        {COLUMN_GAP}({describeChoice(chosen)})
       </Text>
     </Box>
+  )
+}
+
+/**
+ * One of the two versions a row can take.
+ *
+ * Two independent things are encoded, and neither may depend on the
+ * other. Which cell the row would install is carried by underline —
+ * readable with no colour at all, which is what a colour-blind reader
+ * and a `NO_COLOR` terminal both get. How big the jump is, is carried by
+ * colour on only the digits that actually move.
+ */
+function VersionCell({
+  current,
+  version,
+  parts,
+  chosen,
+  pad,
+}: {
+  current: ExactVersionParts
+  version: string
+  parts: ExactVersionParts
+  chosen: boolean
+  pad?: number
+}) {
+  const change = classifyVersionChange(current, parts)
+  const { prefix, changed, rest } = splitAtChange(current, parts)
+  const padding = pad === undefined ? '' : ' '.repeat(Math.max(0, pad - version.length))
+
+  return (
+    <Text>
+      {/* The underline covers the version and nothing else. Column
+          padding inside it renders as underlined blanks — a stray
+          trailing underscore the user has to work out is not a
+          character. */}
+      <Text underline={chosen}>
+        <Text color={THEME.hint}>{prefix}</Text>
+        {changed.length > 0 && (
+          <Text bold={chosen} color={versionChangeColor(change)}>
+            {changed}
+          </Text>
+        )}
+        <Text color={THEME.hint}>{rest}</Text>
+      </Text>
+      {padding}
+    </Text>
   )
 }
 
@@ -223,6 +376,6 @@ function describeChoice(choice: UpdateChoice): string {
   return choice === 'range' ? 'target' : 'latest'
 }
 
-function describeExact(version: { major: number; minor: number; patch: number }): string {
+function _describeExact(version: { major: number; minor: number; patch: number }): string {
   return `${version.major}.${version.minor}.${version.patch}`
 }
