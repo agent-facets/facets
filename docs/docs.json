@@ -42,6 +42,12 @@
     "light": "#A78BFA",
     "dark": "#4C1D95"
   },
+  "background": {
+    "color": {
+      "light": "#f4f5f9",
+      "dark": "#0a0a12"
+    }
+  },
   "favicon": "/assets/favicon.ico",
   "redirects": [
     {
