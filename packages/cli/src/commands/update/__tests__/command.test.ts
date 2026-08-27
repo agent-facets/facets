@@ -284,6 +284,52 @@ describe('facet update — dry run', () => {
     expect(stdout).toContain('All registry facets are current')
     expect(adaptersSpy).not.toHaveBeenCalled()
   })
+
+  // ...and it has to show the rows that reason was read off. Printing
+  // the sentence alone asks the user to accept a claim about their
+  // project without any of the evidence for it.
+  test('a dry run with everything current still shows the plan', async () => {
+    preparing([current({ name: 'gamma', source: '*', version: '4.0.0' })])
+    const { stdout, result } = await captureStdout(() => updateCommand.run([], { 'dry-run': true }))
+    expect(result).toBe(0)
+    expect(stdout).toContain('gamma')
+    expect(stdout).toContain('4.0.0')
+    expect(stdout).toContain('All registry facets are current')
+  })
+
+  test('a dry run whose ranges block everything shows what is being held back', async () => {
+    preparing([PINNED])
+    const { stdout, result } = await captureStdout(() => updateCommand.run([], { 'dry-run': true }))
+    expect(result).toBe(0)
+    // The pin, what it holds, and the release it is holding back from.
+    expect(stdout).toContain('beta')
+    expect(stdout).toContain('1.2.0')
+    expect(stdout).toContain('3.4.1')
+    expect(stdout).toContain('facet update --latest')
+    // Nothing is selected, so no row is marked and no manifest edit is
+    // shown — both would describe a change this run is not making.
+    expect(stdout).not.toContain('▸')
+    expect(stdout).not.toContain('→')
+  })
+
+  test('a dry run of a project with only unsupported sources names them', async () => {
+    preparing([unsupported('delta', './local', 'local')])
+    const { stdout, result } = await captureStdout(() => updateCommand.run([], { 'dry-run': true }))
+    expect(result).toBe(0)
+    expect(stdout).toContain('delta')
+    expect(stdout).toContain('not checked for updates')
+    expect(stdout).toContain('No registry facets to update')
+  })
+
+  // The terse path: without `--dry-run` there was never a plan to
+  // review, so printing one would be answering a question nobody asked.
+  test('a no-op outside a dry run reports the reason alone', async () => {
+    preparing([PINNED])
+    const { stdout, result } = await captureStdout(() => updateCommand.run([], {}))
+    expect(result).toBe(0)
+    expect(stdout).toContain('facet update --latest')
+    expect(stdout).not.toContain('beta')
+  })
 })
 
 /**
@@ -338,6 +384,43 @@ describe('facet update — applying', () => {
     expect(stderr).toContain('update failed')
     // The stale-plan remedy, not a generic "fix the underlying issue".
     expect(stderr).toContain("Re-run 'facet update'")
+    runSpy.mockRestore()
+  })
+
+  // The engine refusing a selection is a documented outcome of this
+  // command, not an exception. It reaches the command as a returned
+  // value through the view's result channel, is reported on stderr with
+  // its own remedy, and exits 1 like every other expected failure.
+  test('a refused selection is reported on stderr and exits one', async () => {
+    preparing([BOUNDED])
+    const runSpy = applying({
+      ok: false,
+      phase: 'selection',
+      failure: { reason: 'unknown-facet', facet: 'ghost' },
+    })
+
+    const { stderr, result } = await withTTY(false, () =>
+      captureStderr(() => captureStdout(() => updateCommand.run([], {}))),
+    )
+
+    expect(result.result).toBe(1)
+    expect(stderr).toContain('ghost')
+    runSpy.mockRestore()
+  })
+
+  // The other half of the same contract: with expected failures off the
+  // rejection channel, a genuine crash is the only thing left on it and
+  // must not be quietly reshaped into "update failed". It escapes to the
+  // CLI's top level, which reports it as unexpected and exits 2.
+  test('an unexpected engine crash escapes rather than becoming an update error', async () => {
+    preparing([BOUNDED])
+    adaptersSpy.mockResolvedValue([])
+    const runSpy = spyOn(engine, 'runPreparedFacetUpdate').mockRejectedValue(new Error('engine fell over'))
+
+    await expect(
+      withTTY(false, () => captureStderr(() => captureStdout(() => updateCommand.run([], {})))),
+    ).rejects.toThrow('engine fell over')
+
     runSpy.mockRestore()
   })
 

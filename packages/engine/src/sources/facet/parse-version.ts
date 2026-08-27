@@ -1,5 +1,5 @@
-import type { VersionSpec } from '@agent-facets/protocol'
-import type { ParseResult } from './types.ts'
+import { isSafeVersionComponent, MAX_VERSION_COMPONENT, type VersionSpec } from '@agent-facets/protocol'
+import type { ParseErrorCode, ParseResult } from './types.ts'
 
 /**
  * Parse a version specifier string into a `VersionSpec`.
@@ -81,6 +81,8 @@ export function parseVersionSpec(input: string): ParseResult<VersionSpec> {
   // Major-wildcard: `<major>.*`
   const majorWildcardMatch = /^(\d+)\.\*$/.exec(input)
   if (majorWildcardMatch && majorWildcardMatch[1] !== undefined) {
+    const oversized = rejectOversized(input, [majorWildcardMatch[1]])
+    if (oversized) return oversized
     const major = Number.parseInt(majorWildcardMatch[1], 10)
     return ok({ kind: 'majorWildcard', major })
   }
@@ -88,6 +90,8 @@ export function parseVersionSpec(input: string): ParseResult<VersionSpec> {
   // Minor-wildcard: `<major>.<minor>.*`
   const minorWildcardMatch = /^(\d+)\.(\d+)\.\*$/.exec(input)
   if (minorWildcardMatch && minorWildcardMatch[1] !== undefined && minorWildcardMatch[2] !== undefined) {
+    const oversized = rejectOversized(input, [minorWildcardMatch[1], minorWildcardMatch[2]])
+    if (oversized) return oversized
     const major = Number.parseInt(minorWildcardMatch[1], 10)
     const minor = Number.parseInt(minorWildcardMatch[2], 10)
     return ok({ kind: 'minorWildcard', major, minor })
@@ -98,6 +102,8 @@ export function parseVersionSpec(input: string): ParseResult<VersionSpec> {
   // if/when needed, that's a follow-up change.
   const exactMatch = /^(\d+)\.(\d+)\.(\d+)$/.exec(input)
   if (exactMatch && exactMatch[1] !== undefined && exactMatch[2] !== undefined && exactMatch[3] !== undefined) {
+    const oversized = rejectOversized(input, [exactMatch[1], exactMatch[2], exactMatch[3]])
+    if (oversized) return oversized
     const major = Number.parseInt(exactMatch[1], 10)
     const minor = Number.parseInt(exactMatch[2], 10)
     const patch = Number.parseInt(exactMatch[3], 10)
@@ -107,14 +113,29 @@ export function parseVersionSpec(input: string): ParseResult<VersionSpec> {
   return err('INVALID_VERSION', `invalid version specifier "${input}"`, 'use 1.2.3, 1.*, 1.2.*, *, or latest')
 }
 
+/**
+ * Refuse a specifier whose shape is right but whose magnitude is not,
+ * before any component reaches `Number.parseInt`.
+ *
+ * The conversion is the lossy step: past `MAX_VERSION_COMPONENT` two
+ * different releases land on the same double and compare equal, so a
+ * specifier that got this far would resolve, order, and install as if it
+ * named a version it does not. Rejecting is the only honest answer —
+ * the parser cannot represent what it was asked to parse.
+ */
+function rejectOversized(input: string, components: readonly string[]): ParseResult<VersionSpec> | undefined {
+  if (components.every((component) => isSafeVersionComponent(component))) return undefined
+  return err(
+    'VERSION_COMPONENT_TOO_LARGE',
+    `version specifier "${input}" has a component larger than ${MAX_VERSION_COMPONENT}`,
+    `use version components no larger than ${MAX_VERSION_COMPONENT}`,
+  )
+}
+
 function ok(value: VersionSpec): ParseResult<VersionSpec> {
   return { ok: true, value }
 }
 
-function err(
-  code: 'EMPTY' | 'CARET_RANGE' | 'TILDE_RANGE' | 'COMPARATOR_RANGE' | 'OR_RANGE' | 'X_RANGE' | 'INVALID_VERSION',
-  what: string,
-  fix: string,
-): ParseResult<VersionSpec> {
+function err(code: ParseErrorCode, what: string, fix: string): ParseResult<VersionSpec> {
   return { ok: false, error: { code, what, fix } }
 }

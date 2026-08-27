@@ -172,9 +172,11 @@ type PendingLookup =
  * already known to be the installed version, and asking for it would
  * turn a yanked release into a project-wide discovery failure.
  *
- * Groups are issued concurrently but inspected in order, which is what
- * makes the reported failure the same on every run no matter which
- * request happened to lose the race.
+ * Groups are issued concurrently. When more than one of them fails,
+ * which failure comes back is deliberately not pinned down: every one of
+ * them ends the run with no plan and the same instruction to the user, so
+ * promising a particular one would constrain how these lookups are
+ * batched and issued to buy a distinction nobody can act on.
  */
 async function resolvePendingFacets(
   pending: readonly PendingFacet[],

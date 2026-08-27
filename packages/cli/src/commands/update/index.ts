@@ -126,6 +126,15 @@ export const updateCommand: Command = {
 
     const noOp = picking === null ? classifyNoOp(plan, mode, interactive ? [] : defaults) : null
     if (noOp !== null) {
+      // A dry run was asked for the plan, and "nothing to do" is a
+      // conclusion drawn FROM the plan. The reason alone asks the user to
+      // take that conclusion on faith; the rows it was drawn from let
+      // them check it — which facet is pinned, which is already current,
+      // which range is holding one back. Rendered with nothing selected
+      // and no rewrites, because that is precisely what this run would
+      // apply. An ordinary run stays terse: there is no plan to review
+      // when nothing was going to happen either way.
+      if (dryRun) renderPlan(plan, [], [])
       process.stdout.write(`${describeNoOp(noOp)}\n`)
       return 0
     }
@@ -206,9 +215,13 @@ export const updateCommand: Command = {
           captured = result
           if (result.ok) return result.install
           if (result.phase === 'install') return result.install
-          // A selection failure has no install result to render. It is
-          // reported on stderr after unmount, where its remedy lives.
-          throw new UpdateSelectionRejected()
+          // A selection failure has no install result to render, but it
+          // is still an outcome this driver produced. Returned rather
+          // than thrown: the engine refusing a selection is a documented
+          // way for this command to end, and the view's result type says
+          // so. It is reported on stderr after unmount, where its remedy
+          // lives.
+          return { ok: false, updateSelectionFailure: result.failure }
         },
         onComplete: () => {
           // `captured` is already the richer result, set inside `run`.
@@ -219,10 +232,13 @@ export const updateCommand: Command = {
       { exitOnCtrlC: false },
     )
 
+    // Not wrapped in `catch`: every outcome this command has is a value
+    // the driver returned, so a rejection here is the view or the driver
+    // failing in a way nothing modelled. It propagates, and the CLI's
+    // top level reports it as an unexpected failure instead of this
+    // command reporting a plausible-looking one it made up.
     try {
       await instance.waitUntilExit()
-    } catch {
-      // Ink rejects on view-level failure; we have the captured result.
     } finally {
       process.off('SIGINT', sigintHandler)
     }
@@ -252,15 +268,6 @@ export const updateCommand: Command = {
     return 1
   },
 }
-
-/**
- * Unmounts the view when the engine refuses the selection.
- *
- * The view renders `RunInstallResult`-shaped values and a selection
- * failure is not one. Throwing ends the mount; the structured failure is
- * already captured and is reported on stderr by the caller.
- */
-class UpdateSelectionRejected extends Error {}
 
 /** Draw the plan once and tear the mount down; nothing here is live. */
 function renderPlan(

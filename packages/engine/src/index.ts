@@ -282,7 +282,10 @@ export type {
   TargetVersion,
   UnusableFacetState,
   UnusableStateReason,
+  UpdateCandidate,
   UpdateChoice,
+  UpdateMode,
+  UpdateNoOp,
   UpdatePlanRow,
   UpdateSelectionFailure,
 } from './install/update/index.ts'
@@ -296,8 +299,16 @@ export type {
 // identical predicate application enforces, and the plan view must
 // render the identical version. Both are one function here rather than
 // a rule the CLI reimplements.
+//
+// `candidateRows`, `defaultSelections`, and `classifyNoOp` are the same
+// argument once more: which rows are offerable, what a flagless run
+// takes, and which kind of nothing a project is in are decided from the
+// plan, not from the terminal. Only the wording of a no-op is the CLI's.
 export {
   advancingChoice,
+  candidateRows,
+  classifyNoOp,
+  defaultSelections,
   displayedVersion,
   prepareFacetUpdate,
   runPreparedFacetUpdate,

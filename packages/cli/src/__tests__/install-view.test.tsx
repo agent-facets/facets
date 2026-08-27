@@ -2050,6 +2050,56 @@ describe('InstallView — update mode', () => {
     instance.unmount()
   })
 
+  // A selection refusal has no install result to draw, but it is still
+  // an outcome the driver RETURNED. It has to reach the command through
+  // the ordinary result channel; the alternative — throwing past a
+  // return type that cannot describe it — is what made every call site
+  // wrap its wait in a `catch` that then swallowed real crashes.
+  test('an update-selection refusal arrives as a result, not a crash', async () => {
+    const refusal: InstallViewResult = {
+      ok: false,
+      updateSelectionFailure: { reason: 'unknown-facet', facet: 'ghost' },
+    }
+    const seen: InstallViewResult[] = []
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'update',
+        run: makeFakePrepareRun(refusal),
+        onComplete: (result) => {
+          seen.push(result)
+        },
+      }),
+    )
+    await settle()
+    expect(seen).toEqual([refusal])
+    // Nothing to report on screen: the remedy is a rerun, not a report
+    // about files. It must not be drawn as an install failure either.
+    const frame = visibleTerminalText(visibleContentFrame(instance.frames))
+    expect(frame).not.toContain('Update complete.')
+    expect(frame).not.toContain('Rollback')
+    instance.unmount()
+  })
+
+  test('a driver that throws is a crash, and completes nothing', async () => {
+    const seen: InstallViewResult[] = []
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'update',
+        run: async () => {
+          throw new Error('the view driver fell over')
+        },
+        onComplete: (result) => {
+          seen.push(result)
+        },
+      }),
+    )
+    await settle()
+    // No result was produced, so nothing may be reported as one. The
+    // rejection channel is left carrying the only evidence there is.
+    expect(seen).toEqual([])
+    instance.unmount()
+  })
+
   test('a stale plan is reported as a failure, with the disk state', async () => {
     const stale: RunInstallResult = {
       ok: false,

@@ -253,6 +253,41 @@ describe('update guidance is present in the prompts', () => {
   })
 })
 
+/**
+ * The slice of a prompt between two anchors.
+ *
+ * Scoped rather than searched whole on purpose: both prompts mention
+ * `facet update` in several places, so a document-wide `toContain` would
+ * pass while the paragraph that actually tells an agent who owns
+ * `facets.json` still named only two of the three commands — which is
+ * exactly the state these tests were added to catch.
+ */
+function section(prompt: string, from: string, to: string): string {
+  const start = prompt.indexOf(from)
+  if (start === -1) expect.unreachable()
+  const end = prompt.indexOf(to, start)
+  if (end === -1) expect.unreachable()
+  return prompt.slice(start, end)
+}
+
+describe('project-file ownership guidance', () => {
+  // `facet update` rewrites a specifier only in latest mode; a plain
+  // update moves the lockfile and leaves the manifest alone. The prompt
+  // names the invocation rather than the command so an agent does not
+  // conclude that any update edits the file.
+  const MAINTAINERS = ['facet add', 'facet remove', 'facet update --latest']
+
+  test('usage names every command that maintains facets.json, where it describes the file', () => {
+    const block = section(TOPICS.usage.prompt, 'Your dependency list', 'facets.lock')
+    for (const command of MAINTAINERS) expect(block).toContain(command)
+  })
+
+  test('overview names every command that maintains facets.json, where it describes the file', () => {
+    const block = section(TOPICS.overview.prompt, 'A consuming project', 'facets.lock')
+    for (const command of MAINTAINERS) expect(block).toContain(command)
+  })
+})
+
 describe('manifest schema generation', () => {
   test('toJsonSchema with the predicate fallback does not throw and drops the predicate', () => {
     let schema: unknown

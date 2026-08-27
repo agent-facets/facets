@@ -26,12 +26,12 @@ export const MAX_REGISTRY_METADATA_SPECIFIERS = 100
 /**
  * Resolve registry metadata for a batch of `(name, version)` pairs.
  *
- * Returns one `RegistryMetadata` per input spec, in input order, or the
- * first failure in that same order. All-or-nothing: a caller never gets
- * a partially resolved set it could mistake for a complete answer.
- * Because the failure is chosen by input position rather than by which
- * request happened to settle first, the reported error is the same on
- * every run regardless of network timing.
+ * Returns one `RegistryMetadata` per input spec, in input order, or a
+ * single failure. All-or-nothing: a caller never gets a partially
+ * resolved set it could mistake for a complete answer. When several
+ * specifiers fail, which failure is returned is not part of the
+ * contract — every one of them denies the caller the same complete
+ * answer, and callers are required to treat any of them the same way.
  *
  * Empty input returns `{ ok: true, value: [] }` without resolving a
  * credential or touching the network. More than
@@ -88,10 +88,10 @@ export async function resolveRegistryMetadataBatch(
   }
   const results = await Promise.all(specs.map((spec) => fetchOne(client, spec)))
 
-  // One pass in input order: the first failure wins, and the success
-  // list is built from the same narrowing that proved it. Scanning for
-  // failures and then re-narrowing in a second pass would leave a
-  // branch the compiler can't discharge and that can't happen.
+  // One pass, building the success list from the same narrowing that
+  // proved each entry resolved. Scanning for failures and then
+  // re-narrowing in a second pass would leave a branch the compiler
+  // can't discharge and that can't happen.
   const resolved: RegistryMetadata[] = []
   for (const result of results) {
     if (!result.ok) return result

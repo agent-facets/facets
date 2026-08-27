@@ -436,7 +436,7 @@ describe('discoverUpdates — unusable local state', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Grouping and failure ordering
+// Grouping and failure propagation
 // ---------------------------------------------------------------------------
 
 describe('discoverUpdates — batching', () => {
@@ -550,15 +550,16 @@ describe('discoverUpdates — batching', () => {
     expect(result.failure.reason).toBe('discovery-failed')
   })
 
-  test('the reported failure follows project order, not completion order', async () => {
+  test('a failure in any group fails the whole discovery', async () => {
     const names = Array.from({ length: 60 }, (_, index) => `facet-${String(index).padStart(3, '0')}`)
     const versions: Record<string, string> = {}
     for (const name of names) {
       versions[`${name}@1.*`] = '1.8.0'
       versions[`${name}@latest`] = '2.0.0'
     }
-    // Fail one facet in each group; the earlier one must win even though
-    // the later group is made to settle first.
+    // One failure in each group, with the later group made to settle
+    // first. Which of the two is reported is deliberately not promised;
+    // what is promised is that neither leaves a partial plan behind.
     delete versions['facet-005@1.*']
     delete versions['facet-055@1.*']
 
@@ -576,9 +577,7 @@ describe('discoverUpdates — batching', () => {
     })
 
     if (result.ok) expect.unreachable()
-    if (result.failure.reason !== 'discovery-failed') expect.unreachable()
-    if (result.failure.error.code !== 'NOT_FOUND') expect.unreachable()
-    expect(result.failure.error.name).toBe('facet-005')
+    expect(result.failure.reason).toBe('discovery-failed')
   })
 })
 

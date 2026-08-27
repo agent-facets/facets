@@ -124,10 +124,11 @@ export const addCommand: Command = {
       { exitOnCtrlC: false },
     )
 
+    // See `install`: structured failures come back through `captured`,
+    // so a rejection here is an unmodelled view or driver failure and
+    // propagates to the CLI's top level rather than being swallowed.
     try {
       await instance.waitUntilExit()
-    } catch {
-      // Ink rejects on view-level failure; we have the captured result.
     } finally {
       process.off('SIGINT', sigintHandler)
     }

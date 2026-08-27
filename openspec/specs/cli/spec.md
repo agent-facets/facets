@@ -1314,6 +1314,8 @@ Interactive selection SHALL occur before adapter selection or update application
 
 The `--dry-run` flag SHALL present the update choices that the selected mode would apply and SHALL NOT modify project or machine-local state. Without `--interactive`, it SHALL present the complete discovered plan using the default Target choices or the `--latest` choices. With `--interactive`, it SHALL present the user's confirmed selection and stop before adapter selection or application. A successful preview SHALL exit with code 0 whether updates are available or not.
 
+A preview that would apply nothing SHALL still present the complete discovered plan, with nothing selected and no manifest rewrite shown, before reporting the applicable no-op reason. The plan is the evidence the reason was derived from, and a preview that withholds it asks the user to accept a conclusion about their project without showing which facet is pinned, which is already current, or which range is holding one back. A run without `--dry-run` SHALL report the reason alone, because it was never going to present a plan.
+
 #### Scenario: Default dry run previews range targets
 
 - **WHEN** a user runs `facet update --dry-run`
@@ -1339,8 +1341,15 @@ The `--dry-run` flag SHALL present the update choices that the selected mode wou
 #### Scenario: Dry run with no available update succeeds
 
 - **WHEN** a user runs an update dry run and no selected mode permits an advancing choice
-- **THEN** the output SHALL report the applicable no-op reason
+- **THEN** the output SHALL present the complete discovered plan with nothing selected
+- **AND** the output SHALL report the applicable no-op reason
 - **AND** the process SHALL exit with code 0
+
+#### Scenario: A no-op outside a dry run reports the reason alone
+
+- **WHEN** a user runs `facet update` without `--dry-run` and no advancing choice is available
+- **THEN** the output SHALL report the applicable no-op reason
+- **AND** the output SHALL NOT present a plan
 
 ### Requirement: Update no-op outcomes are distinguishable
 

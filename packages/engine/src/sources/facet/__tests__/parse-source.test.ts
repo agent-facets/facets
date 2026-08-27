@@ -306,4 +306,14 @@ describe('parseSource — rejected forms', () => {
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error.code).toBe('CARET_RANGE')
   })
+
+  test.each([
+    'cowsay@9007199254740992.0.0',
+    '@julian/cowsay@9007199254740992.0.0',
+    'cowsay@9007199254740992.*',
+  ])('an unrepresentable version component in %p is rejected', (input) => {
+    const result = parseSource(input)
+    if (result.ok) expect.unreachable()
+    expect(result.error.code).toBe('VERSION_COMPONENT_TOO_LARGE')
+  })
 })

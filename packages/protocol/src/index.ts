@@ -326,4 +326,4 @@ export {
 } from './schemas/project-manifest.ts'
 // version-spec grammar (versions as they appear inside artifacts)
 export type { VersionSpec } from './sources/version-spec.ts'
-export { resolvesToLatest, satisfies } from './sources/version-spec.ts'
+export { isSafeVersionComponent, MAX_VERSION_COMPONENT, resolvesToLatest, satisfies } from './sources/version-spec.ts'

@@ -1,6 +1,7 @@
 import { type AssetType, validateAssetName } from '@agent-facets/common'
 import { type } from 'arktype'
 import { canonicalPrimaryPath, skillRootPath } from '../materialization/identity.ts'
+import { isSafeVersionComponent } from '../sources/version-spec.ts'
 import { MaterializationDispositionSchema } from './materialization.ts'
 
 /*
@@ -64,11 +65,23 @@ export const SUPPORTED_LOCKFILE_VERSIONS: readonly number[] = [LOCKFILE_VERSION_
  * returns) only models `M.N.P`. Aligning the schema with the parser
  * keeps both shapes in sync. Adding prerelease support means widening
  * both — see the open question in the engine-side parser.
+ *
+ * Each component is additionally required to be one the grammar can
+ * carry (see `isSafeVersionComponent`). The shape check alone would
+ * admit a digit run too large to survive the conversion to a number,
+ * and a lockfile is exactly where such a value would be read back and
+ * compared against a manifest specifier as if it were exact.
  */
-const LOCKED_VERSION_RE = /^[0-9]+\.[0-9]+\.[0-9]+$/
+const LOCKED_VERSION_RE = /^([0-9]+)\.([0-9]+)\.([0-9]+)$/
 const LockedVersion = type('string').narrow(
-  (s, ctx) => LOCKED_VERSION_RE.test(s) || ctx.mustBe('an exact M.N.P version string'),
+  (s, ctx) => isExactLockedVersion(s) || ctx.mustBe('an exact M.N.P version string with components below 2^53'),
 )
+
+function isExactLockedVersion(value: string): boolean {
+  const match = LOCKED_VERSION_RE.exec(value)
+  if (match === null) return false
+  return match.slice(1).every((component) => isSafeVersionComponent(component))
+}
 
 /**
  * A locked git commit SHA. Narrowed so a commitless or non-SHA git source

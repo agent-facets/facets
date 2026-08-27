@@ -28,8 +28,9 @@ The three artifact files
                and how it wants their assets and MCP servers named. Each entry
                is either a source string or an object carrying materialization
                choices, so read both forms. You touch this when USING facets
-               (via `facet add`, or by hand to resolve a name collision or
-               refuse an MCP server).
+               (via `facet add`, `facet remove`, or `facet update --latest`,
+               or by hand to resolve a name collision or refuse an MCP
+               server).
                See: facet instructions usage
   facets.lock  The install lockfile. Managed by the CLI; do not hand-edit.
 

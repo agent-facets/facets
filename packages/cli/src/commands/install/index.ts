@@ -105,11 +105,13 @@ export const installCommand: Command = {
           return result
         },
         onComplete: (r) => {
-          // `install` never produces a prepare-phase failure (add/remove
-          // only); guard the wider InstallViewResult so the captured value
-          // stays a RunInstallResult. The `run` closure already set
+          // `install` produces none of the flow-specific failure arms —
+          // prepare belongs to add/remove, selection to update — so this
+          // narrows the wider InstallViewResult back to the only shape
+          // this command can receive. The `run` closure already set
           // `captured`.
-          if (!('prepareFailure' in r) && !('removePrepareFailure' in r)) captured = r
+          if ('prepareFailure' in r || 'removePrepareFailure' in r || 'updateSelectionFailure' in r) return
+          captured = r
         },
       }),
       // Ctrl-C must reach the collision workspace, which is the only
@@ -119,12 +121,13 @@ export const installCommand: Command = {
       { exitOnCtrlC: false },
     )
 
+    // Not wrapped in `catch`: a structured install failure unmounts the
+    // view cleanly and is read from `captured` below. A rejection here
+    // means the view or the driver failed in a way nothing modelled, and
+    // that belongs at the CLI's top level as an unexpected failure
+    // rather than being reshaped into an install error it is not.
     try {
       await instance.waitUntilExit()
-    } catch {
-      // Ink rejects on view-level errors (the view sets pendingExit).
-      // The result is already captured; we just need to fall through
-      // to the post-render error handling below.
     } finally {
       process.off('SIGINT', sigintHandler)
     }

@@ -38,6 +38,43 @@ describe('parseVersionSpec — accepted forms', () => {
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.value).toEqual({ kind: 'latest' })
   })
+
+  test('components at the representable bound', () => {
+    const result = parseVersionSpec('9007199254740991.9007199254740991.9007199254740991')
+    if (!result.ok) expect.unreachable()
+    expect(result.value).toEqual({
+      kind: 'exact',
+      major: Number.MAX_SAFE_INTEGER,
+      minor: Number.MAX_SAFE_INTEGER,
+      patch: Number.MAX_SAFE_INTEGER,
+    })
+  })
+})
+
+describe('parseVersionSpec — oversized components', () => {
+  // Every arm that converts digits to numbers has to refuse the same
+  // magnitudes, otherwise a wildcard would admit a major an exact pin
+  // rejects and the two would disagree about the same project.
+  test.each([
+    '9007199254740992.0.0',
+    '1.9007199254740992.0',
+    '1.0.9007199254740992',
+    '9007199254740992.*',
+    '9007199254740992.0.*',
+    '1.9007199254740992.*',
+    '99999999999999999999.0.0',
+  ])('rejects %p', (input) => {
+    const result = parseVersionSpec(input)
+    if (result.ok) expect.unreachable()
+    expect(result.error.code).toBe('VERSION_COMPONENT_TOO_LARGE')
+  })
+
+  test('reports magnitude rather than form', () => {
+    const result = parseVersionSpec('9007199254740992.0.0')
+    if (result.ok) expect.unreachable()
+    expect(result.error.what).toContain('9007199254740991')
+    expect(result.error.code).not.toBe('INVALID_VERSION')
+  })
 })
 
 describe('parseVersionSpec — rejected forms', () => {

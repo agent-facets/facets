@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { Command } from '../commands.ts'
+import { type Command, commands, findShortFlagCollisions } from '../commands.ts'
 import { run } from '../run.ts'
 
 /**
@@ -112,6 +112,82 @@ describe('run — declared short aliases', () => {
     })
     await run(['demo', '--skill', 'a', '-s', 'b'], registry)
     expect(captured()?.flags).toEqual({ skill: ['a', 'b'] })
+  })
+})
+
+describe('findShortFlagCollisions', () => {
+  test('accepts distinct short aliases', () => {
+    expect(
+      findShortFlagCollisions({
+        interactive: { type: 'boolean', short: 'i', description: 'interactive' },
+        latest: { type: 'boolean', short: 'L', description: 'latest' },
+        'dry-run': { type: 'boolean', description: 'dry run' },
+      }),
+    ).toEqual([])
+  })
+
+  test('distinguishes case, so -l and -L are different flags', () => {
+    expect(
+      findShortFlagCollisions({
+        list: { type: 'boolean', short: 'l', description: 'list' },
+        latest: { type: 'boolean', short: 'L', description: 'latest' },
+      }),
+    ).toEqual([])
+  })
+
+  test('reports two long flags claiming the same short alias', () => {
+    expect(
+      findShortFlagCollisions({
+        latest: { type: 'boolean', short: 'l', description: 'latest' },
+        list: { type: 'boolean', short: 'l', description: 'list' },
+      }),
+    ).toEqual([{ kind: 'duplicate-short', short: 'l', first: 'latest', second: 'list' }])
+  })
+
+  test('reports a short alias that shadows a long flag on the same command', () => {
+    expect(
+      findShortFlagCollisions({
+        i: { type: 'boolean', description: 'a one-letter long flag' },
+        interactive: { type: 'boolean', short: 'i', description: 'interactive' },
+      }),
+    ).toEqual([{ kind: 'short-shadows-long', short: 'i', declaredBy: 'interactive' }])
+  })
+
+  test('reports every collision rather than stopping at the first', () => {
+    const collisions = findShortFlagCollisions({
+      latest: { type: 'boolean', short: 'l', description: 'latest' },
+      list: { type: 'boolean', short: 'l', description: 'list' },
+      t: { type: 'boolean', description: 'a one-letter long flag' },
+      tag: { type: 'string', short: 't', description: 'tag' },
+    })
+    expect(collisions).toHaveLength(2)
+    expect(collisions.map((collision) => collision.kind).sort()).toEqual(['duplicate-short', 'short-shadows-long'])
+  })
+
+  // The validator only earns its place if the table it guards is clean.
+  test('the real command registry declares no ambiguous short flags', () => {
+    for (const [name, command] of Object.entries(commands)) {
+      if (command.flags === undefined) continue
+      expect([name, findShortFlagCollisions(command.flags)]).toEqual([name, []])
+    }
+  })
+})
+
+describe('run — ambiguous short aliases', () => {
+  test('a duplicate short alias fails instead of silently rebinding', async () => {
+    const { registry } = captureRegistry({
+      latest: { type: 'boolean', short: 'l', description: 'latest' },
+      list: { type: 'boolean', short: 'l', description: 'list' },
+    })
+    await expect(run(['demo', '-l'], registry)).rejects.toThrow('ambiguous short flags')
+  })
+
+  test('the failure names both claimants', async () => {
+    const { registry } = captureRegistry({
+      latest: { type: 'boolean', short: 'l', description: 'latest' },
+      list: { type: 'boolean', short: 'l', description: 'list' },
+    })
+    await expect(run(['demo'], registry)).rejects.toThrow('--latest and --list')
   })
 })
 
