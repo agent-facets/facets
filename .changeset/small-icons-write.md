@@ -1,5 +1,6 @@
 ---
 "agent-facets": minor
+"@agent-facets/protocol": patch
 ---
 
 **New command: `facet update` (aliased `facet upgrade`)** — moves the registry-backed facets a project declares to newer releases. It reads `facets.json` and `facets.lock`, asks the registry for each facet's range-respecting target and its latest release, and shows both alongside what is installed, so "why is this one not moving?" is answerable from the plan itself. Plain `facet update` takes every target the declared specifier already permits. `--latest` (`-L`) crosses those specifiers and rewrites them by the smallest edit that admits the new version, preserving how the intent was written: a pin stays a pin, `1.*` becomes `2.*`, `1.2.*` becomes `2.4.*`, and `*` and `latest` are left exactly as authored.
@@ -11,3 +12,5 @@
 **Breaking: `facet upgrade` is no longer a placeholder.** It previously printed a not-yet-implemented notice and exited `0` without touching a single file. It is now an alias of `facet update` — one command, one help page, one behavior — so the same invocation contacts the registry, may install adapters, takes the project lock, and rewrites `facets.json`, `facets.lock`, the install receipt, and your materialized assets. `update` is the canonical spelling, and `facet upgrade --help` prints `Usage: facet update`. If something in your automation called `facet upgrade` expecting a no-op, drop the call or make it explicit with `facet update --dry-run`.
 
 Neither name touches the CLI binary. That remains `facet self-update`.
+
+**Protocol: version components are bounded by exact integer representation.** The published version grammar now rejects a specifier or locked version whose numeric component exceeds `2^53 - 1`, with an error that names the magnitude rather than the form. Above that bound two distinct releases are the same double — `9007199254740992` and `9007199254740993` compare equal — so a comparison that decides which release is newer, or whether a locked version still satisfies a manifest range, could answer for a version that was never published. `facet update` is the first command whose whole job is that comparison, which is why the bound lands now. No real version is anywhere near it.

@@ -668,6 +668,8 @@ Contention for the lock SHALL be the only failure the system can report before a
 
 Advisory reads performed outside the lock for presentation, such as validating that the project manifest can be read before adapters are discovered, SHALL NOT be reused as the basis of a commit. In particular, the set of facets a removal operates on SHALL be decided from state read under the lock, not from a pre-lock validation of the requested names. An advisory read SHALL NOT decide an operation's outcome even when that outcome commits nothing: a removal whose requested names all appear undeclared SHALL still proceed to the commit, where the manifest read under the lock decides whether anything is removed.
 
+A **snapshot-bound** operation is the single exception, and it does not weaken the rule above. Such an operation presents a plan derived from state read before the lock, and then refuses to commit unless that exact state is still on disk once the lock is held. It SHALL carry the exact observed states it read into the operation that applies them, SHALL acquire the project install lock before performing resolution, downloads, cache writes, or transaction creation, and SHALL compare the current states against the carried ones before any of that work begins. A mismatch SHALL fail the operation. It SHALL NOT merge the change into the reviewed plan, rebase the plan onto the new state, or silently re-derive it — the reviewed plan is what the user approved, and a re-derived one is a different plan wearing its approval. A snapshot-bound read therefore never decides a commit: under the lock it decides only whether the operation may proceed at all.
+
 #### Scenario: Lock contention is reported before project state is examined
 
 - **WHEN** an install runs against a project whose install lock is already held
@@ -693,6 +695,12 @@ Advisory reads performed outside the lock for presentation, such as validating t
 - **AND** one of those names is declared by a concurrent commit before the lock is acquired
 - **THEN** the system SHALL remove that facet
 - **AND** the operation SHALL NOT report a no-op decided before the lock was held
+
+#### Scenario: A snapshot-bound operation refuses rather than merges
+
+- **WHEN** a snapshot-bound operation acquires the lock and finds that the state it carried has changed
+- **THEN** it SHALL fail before performing resolution, downloads, cache writes, or transaction creation
+- **AND** it SHALL NOT merge the change into the reviewed plan or re-derive the plan from the new state
 
 ### Requirement: Resolved facet content is cached locally
 
@@ -2109,7 +2117,9 @@ Git and local facet sources SHALL be reported as unsupported for update discover
 
 ### Requirement: Update discovery is complete or fails without a partial plan
 
-The system SHALL complete every required Target and Latest lookup before presenting an actionable update plan. If any required lookup fails, the complete discovery SHALL fail and SHALL NOT present the successful subset as actionable. Discovery SHALL preserve project order when pairing results with facets and determining which lookup failure to report.
+The system SHALL complete every required Target and Latest lookup before presenting an actionable update plan. If any required lookup fails, the complete discovery SHALL fail with exactly one structured failure and SHALL NOT present the successful subset as actionable. Discovery SHALL preserve project order when pairing results with facets, so a returned plan lists facets in the order the manifest declares them.
+
+Which failure is reported when more than one lookup fails SHALL be unspecified. Every such failure ends the same run with no actionable plan and the same instruction to the user, so choosing among them is a distinction without a consequence — and pinning the choice would constrain how the lookups are batched, issued, and abandoned for no benefit the user can act on.
 
 #### Scenario: One lookup failure rejects the whole discovery
 
@@ -2124,34 +2134,34 @@ The system SHALL complete every required Target and Latest lookup before present
 - **THEN** discovery SHALL report it as a structured discovery failure
 - **AND** the error SHALL NOT escape update discovery
 
-#### Scenario: Concurrent failures have deterministic reporting order
+#### Scenario: Several concurrent failures still produce one failure
 
 - **WHEN** more than one required registry lookup fails
-- **THEN** the system SHALL report the first failure according to the original project lookup order
-- **AND** network completion order SHALL NOT change which failure is reported
+- **THEN** the system SHALL fail discovery with exactly one structured failure
+- **AND** it SHALL NOT present the facets that resolved as an actionable plan
 
 ### Requirement: Update modes select only advancing versions
 
-Plain update SHALL select Target for every registry facet whose Target is newer than Current. Latest mode SHALL select Latest for every registry facet whose Latest is newer than Current, regardless of whether the authored specifier permits Latest. No mode SHALL select a version equal to or older than Current.
+In non-interactive use, plain update SHALL select Target for every registry facet whose Target is newer than Current, and latest mode SHALL select Latest for every registry facet whose Latest is newer than Current, regardless of whether the authored specifier permits Latest. Interactive selection SHALL derive no selection from the mode at all: every choice is made on screen, and the mode's defaults SHALL NOT be applied there. No mode and no selection SHALL take a version equal to or older than Current.
 
 #### Scenario: Plain update respects a bounded range
 
 - **WHEN** Current is `1.2.0`, Target is `1.8.0`, and Latest is `2.0.0`
-- **AND** the user requests plain update
+- **AND** the user requests plain update without interactive selection
 - **THEN** the selected version SHALL be `1.8.0`
 
 #### Scenario: Latest mode crosses a bounded range
 
 - **WHEN** Current is `1.2.0`, Target is `1.8.0`, and Latest is `2.0.0`
-- **AND** the user requests latest mode
+- **AND** the user requests latest mode without interactive selection
 - **THEN** the selected version SHALL be `2.0.0`
 
 #### Scenario: Exact pin is unchanged by plain update
 
 - **WHEN** an exact manifest pin makes Target equal Current
 - **AND** Latest is newer than Current
-- **THEN** plain update SHALL leave that facet unselected
-- **AND** latest mode MAY select Latest
+- **THEN** non-interactive plain update SHALL leave that facet unselected
+- **AND** non-interactive latest mode SHALL select Latest
 
 #### Scenario: Older registry choices never downgrade Current
 
@@ -2259,7 +2269,9 @@ All selected facets SHALL pass the same cache audit, content download, integrity
 
 ### Requirement: Prepared updates reject stale project state
 
-Update discovery and selection SHALL remain read-only and SHALL capture the exact observed states of the project manifest and lockfile. Discovery SHALL re-check both files before returning a plan and SHALL reject the plan if either changed during discovery. Before application performs resolution, cache writes, downloads, or transaction creation, it SHALL acquire the project install lock and compare the current manifest and lockfile states with the reviewed states. Any mismatch SHALL fail as a stale plan, SHALL direct the user to rerun update, and SHALL leave project and machine-local state unchanged.
+Update discovery and selection SHALL remain read-only and SHALL capture the exact observed states of the project manifest and lockfile. Discovery SHALL re-check both files before returning a plan and SHALL reject the plan if either changed during discovery. Before application performs resolution, cache writes, downloads, or transaction creation, it SHALL acquire the project install lock and compare the current manifest and lockfile states with the reviewed states. Any mismatch SHALL fail as a stale plan, SHALL direct the user to rerun update, and SHALL leave the project manifest, lockfile, receipt, cache, materialized assets, and native configuration unchanged.
+
+Installing an adapter is a prerequisite of applying an update rather than a part of the update itself. A run that has a non-empty selection to apply MAY install adapter tooling before the stale check runs, and a stale-plan failure SHALL NOT be required to uninstall it: adapter tooling is machine-local tooling the user asked for and the rerun will need, and it records no facet, version, or project state that could later be mistaken for something this project installed. That permission extends no further — discovery, interactive selection, cancelled selection, and dry runs SHALL still install and select no adapter at all.
 
 #### Scenario: Manifest changes during discovery
 
@@ -2278,6 +2290,12 @@ Update discovery and selection SHALL remain read-only and SHALL capture the exac
 
 - **WHEN** the manifest and lockfile exactly match the states captured by discovery when application acquires the project lock
 - **THEN** application MAY proceed with the selected exact versions
+
+#### Scenario: A stale plan need not uninstall adapter tooling
+
+- **WHEN** an update with a non-empty selection installs adapter tooling and then fails the stale check under the project lock
+- **THEN** the project manifest, lockfile, receipt, cache, materialized assets, and native configuration SHALL remain unchanged
+- **AND** the adapter tooling installed for that run MAY remain installed
 
 ### Requirement: Discovery and preview are free of installation side effects
 

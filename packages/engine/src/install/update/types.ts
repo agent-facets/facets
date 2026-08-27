@@ -111,12 +111,12 @@ export interface UnusableFacetState {
  * first one, so a single run tells the user the whole repair list.
  *
  * `discovery-failed` names no facet on purpose. The batch resolver
- * reports the first failure in input order — which is what makes the
- * reported error stable across runs — but it does not say which
- * specifier produced it, and a `NETWORK_ERROR` genuinely belongs to no
- * single facet. Inventing an attribution here would be a guess the user
- * could act on wrongly; the registry's own error already names the facet
- * whenever the registry knew one.
+ * returns one failure without saying which specifier produced it, and a
+ * `NETWORK_ERROR` genuinely belongs to no single facet. Inventing an
+ * attribution here would be a guess the user could act on wrongly; the
+ * registry's own error already names the facet whenever the registry
+ * knew one. When several lookups fail, which one is reported is not
+ * promised — each ends the run identically.
  *
  * `invalid-resolved-version` and `target-outside-range` are the registry
  * answering incoherently rather than failing: a version that is not an

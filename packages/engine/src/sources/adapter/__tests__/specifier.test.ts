@@ -181,6 +181,17 @@ describe('parseAdapterSpecifier — rejected npm selectors', () => {
     expect(result.error.fix).toMatch(/1\.\*|1\.2\.\*/)
   })
 
+  test('an unrepresentable version component is rejected as a magnitude problem', () => {
+    // The adapter selector shares the facet version grammar, so the
+    // bound it enforces has to reach here too rather than stopping at
+    // the manifest.
+    const result = parseAdapterSpecifier('some-adapter@9007199254740992.0.0')
+    if (result.ok) expect.unreachable()
+    if (result.reason !== 'invalid-npm-selector') expect.unreachable()
+    expect(result.error.code).toBe('VERSION_COMPONENT_TOO_LARGE')
+    expect(result.specifier).toBe('some-adapter@9007199254740992.0.0')
+  })
+
   test('rejected selector reports the alias-resolved package name', () => {
     const result = parseAdapterSpecifier('opencode@^1.0.0')
     if (result.ok) expect.unreachable()

@@ -1,5 +1,11 @@
 import { parse } from '@bomb.sh/args'
-import { allCommandNames, type Command, resolveCommand } from './commands.ts'
+import {
+  allCommandNames,
+  type Command,
+  describeShortFlagCollision,
+  findShortFlagCollisions,
+  resolveCommand,
+} from './commands.ts'
 import { printCommandHelp, printGlobalHelp } from './help.ts'
 import { findClosestCommand } from './suggest.ts'
 import { version } from './version.ts'
@@ -79,6 +85,21 @@ export async function run(argv: string[], commands: Record<string, Command>): Pr
   const alias: Record<string, string> = {}
 
   if (command.flags) {
+    // Before the alias map is built, not after: building it is what
+    // destroys the evidence. A second claim on the same short spelling
+    // overwrites the first, leaving a parser that quietly does the wrong
+    // thing with no trace of what it dropped. This is a declaration bug
+    // in this repository's own command table, so it fails loudly rather
+    // than becoming a user-facing error about an invocation that was
+    // fine.
+    const collisions = findShortFlagCollisions(command.flags)
+    if (collisions.length > 0) {
+      throw new Error(
+        `internal: command "${command.name}" declares ambiguous short flags: ` +
+          collisions.map(describeShortFlagCollision).join('; '),
+      )
+    }
+
     for (const [name, def] of Object.entries(command.flags)) {
       const bucket = def.type === 'boolean' ? booleanFlags : def.type === 'string' ? stringFlags : arrayFlags
       bucket.push(name)

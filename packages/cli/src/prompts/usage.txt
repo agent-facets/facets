@@ -74,8 +74,9 @@ Move facets to newer releases — `facet update`
   in facets.json and running `facet install`.
 
 The project files
-  facets.json – Your dependency list. `facet add` and `facet remove` maintain
-                it; hand-edit it only to record materialization choices (below).
+  facets.json – Your dependency list. `facet add`, `facet remove`, and
+                `facet update --latest` maintain it; hand-edit it only to
+                record materialization choices (below).
                 It carries a "manifestVersion" the CLI stamps for you. The
                 current version is 0.2, which is what a "servers" override
                 group requires; 0.1 and unversioned documents are still read

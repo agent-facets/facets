@@ -64,6 +64,69 @@ export type FlagDef = {
   description: string
 }
 
+/**
+ * A short-alias declaration that would make an invocation ambiguous.
+ *
+ * Both arms describe the same class of bug — two flags answering to one
+ * spelling — but they are reached differently and read differently in
+ * the message, so they stay separate rather than sharing an optional
+ * field that only one of them fills in.
+ */
+export type ShortFlagCollision =
+  /** Two long flags claim the same short alias. */
+  | { kind: 'duplicate-short'; short: ShortFlagName; first: string; second: string }
+  /** A short alias is spelled the same as a long flag on the same command. */
+  | { kind: 'short-shadows-long'; short: ShortFlagName; declaredBy: string }
+
+/**
+ * Every ambiguity in one command's short-alias declarations.
+ *
+ * The parser is configured from an alias map, and a map cannot hold two
+ * targets for one key: the second declaration silently replaces the
+ * first, so `-x` starts setting a flag its author never associated with
+ * it and the flag that declared `-x` stops responding to it. Nothing
+ * about that failure is visible at the call site — it looks exactly like
+ * a working command until someone uses the losing spelling.
+ *
+ * Returns every collision rather than the first, so a registry with more
+ * than one is repaired in a single pass.
+ *
+ * Pure: takes the declarations, returns data, decides nothing about what
+ * to do with them.
+ */
+export function findShortFlagCollisions(flags: Record<string, FlagDef>): ShortFlagCollision[] {
+  const collisions: ShortFlagCollision[] = []
+  const claimedBy = new Map<ShortFlagName, string>()
+  const longNames = new Set(Object.keys(flags))
+
+  for (const [name, def] of Object.entries(flags)) {
+    const short = def.short
+    if (short === undefined) continue
+
+    const first = claimedBy.get(short)
+    if (first === undefined) claimedBy.set(short, name)
+    else collisions.push({ kind: 'duplicate-short', short, first, second: name })
+
+    // A one-character long flag is legal on its own; it is only a problem
+    // when some other flag also claims that character as its short form,
+    // because the parser rewrites the short spelling to the long one and
+    // the two names are then the same token meaning two things.
+    if (longNames.has(short)) collisions.push({ kind: 'short-shadows-long', short, declaredBy: name })
+  }
+
+  return collisions
+}
+
+/** One collision, phrased for the invariant failure that reports it. */
+export function describeShortFlagCollision(collision: ShortFlagCollision): string {
+  switch (collision.kind) {
+    case 'duplicate-short':
+      return `-${collision.short} is claimed by both --${collision.first} and --${collision.second}`
+    case 'short-shadows-long':
+      return `-${collision.short} is claimed by --${collision.declaredBy} but --${collision.short} is also a flag`
+  }
+}
+
 export type Command = {
   name: string
   description: string

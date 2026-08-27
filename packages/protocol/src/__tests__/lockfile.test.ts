@@ -252,6 +252,12 @@ describe('Lockfile02Schema — invalid lockfiles', () => {
     'v1.2.3',
     '1.2.3 ',
     ' 1.2.3',
+    // Conforming shape, unrepresentable magnitude: past 2^53 - 1 this
+    // version and the next one are the same double, so accepting it
+    // would let the installer confuse two distinct releases.
+    '9007199254740992.0.0',
+    '1.9007199254740992.0',
+    '1.0.9007199254740992',
   ])('version %p is rejected', (version) => {
     const input = {
       lockfileVersion: LOCKFILE_VERSION_0_2,
@@ -266,6 +272,25 @@ describe('Lockfile02Schema — invalid lockfiles', () => {
     }
     const result = Lockfile02Schema(input)
     expect(result).toBeInstanceOf(type.errors)
+  })
+
+  // The bound is inclusive: the largest exactly-representable component
+  // is a legal version, so the rejection above is about magnitude rather
+  // than about long version numbers in general.
+  test('version at the representable bound is accepted', () => {
+    const input = {
+      lockfileVersion: LOCKFILE_VERSION_0_2,
+      facets: {
+        'huge-version': {
+          source: { kind: 'git', url: 'github:a/b', commit: 'abcabcabcabcabcabcabcabcabcabcabcabcabca' },
+          version: '9007199254740991.0.0',
+          integrity: 'sha256:x',
+          assets: [],
+        },
+      },
+    }
+    const result = Lockfile02Schema(input)
+    expect(result).not.toBeInstanceOf(type.errors)
   })
 
   // A git source's commit is a REQUIRED field — a git entry without one

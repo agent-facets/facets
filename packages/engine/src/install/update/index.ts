@@ -18,6 +18,8 @@ export type {
 export { runPreparedFacetUpdate, validateFacetUpdateSelections } from './apply.ts'
 export type { AuthoredSpecifier, UpdateChoice } from './manifest-source.ts'
 export { type PrepareFacetUpdateArgs, prepareFacetUpdate } from './prepare.ts'
+export type { UpdateCandidate, UpdateMode, UpdateNoOp } from './selection.ts'
+export { candidateRows, classifyNoOp, defaultSelections } from './selection.ts'
 export type {
   CheckableRegistryFacet,
   PreparedFacetUpdate,

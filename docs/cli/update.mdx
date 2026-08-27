@@ -138,6 +138,8 @@ Without a terminal that can prompt — CI, piped output — `--interactive` fail
 
 `--dry-run` prints the plan and modifies nothing: no manifest, no lockfile, no receipt, no assets, no cache, and no adapter installation. Combined with `--interactive`, it previews the selection you confirmed and stops there.
 
+A preview always prints the plan, including when nothing would move — with no row marked and no `facets.json` edit shown, followed by the reason. The plan is what the reason was read off: which facet is pinned, which is already current, which range is holding one back. A run without `--dry-run` prints the reason alone.
+
 <Note>
 A preview shows **versions**, not their downstream effects. Which assets a new release materializes, whether it collides with another facet, and what MCP configuration it declares are all determined during the install that a real run performs.
 </Note>
@@ -167,7 +169,7 @@ Recorded [materialization](/specification/materialization) choices — aliases a
 
 ## When nothing moves
 
-A run that applies nothing still succeeded, and exits `0`. Which kind of nothing it is decides whether you have anything to do about it:
+A run that applies nothing still succeeded, and exits `0`. Which kind of nothing it is decides whether you have anything to do about it. Under `--dry-run` the plan is printed first, so you can check the reason against the rows it came from:
 
 | Output | What it means |
 | ------ | ------------- |

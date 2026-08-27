@@ -26,6 +26,27 @@ A version specifier appearing inside a project manifest or a lockfile SHALL conf
 - **THEN** the system SHALL accept each specifier as valid
 - **AND** the system SHALL be able to determine whether a candidate version satisfies the specifier
 
+### Requirement: Version components are bounded by exact integer representation
+
+Every numeric component of a version specifier or a resolved version SHALL be an integer no greater than 2^53 − 1. A specifier or version whose shape conforms to the grammar but whose components exceed that bound SHALL be rejected as invalid, with a structured error distinguishing it from a malformed form. The bound exists because two versions differing above it are not reliably distinguishable once represented as double-precision numbers: they would compare equal, and a system would install one release believing it to be another. A system SHALL reject such a value rather than accept a version it cannot tell apart from a different one.
+
+#### Scenario: A component at the bound is accepted
+
+- **WHEN** a system reads a specifier whose components are all 2^53 − 1 or less
+- **THEN** the system SHALL accept the specifier as valid
+
+#### Scenario: A component above the bound is rejected
+
+- **WHEN** a system reads a conforming specifier form whose numeric component exceeds 2^53 − 1
+- **THEN** the system SHALL reject it as invalid
+- **AND** the error SHALL identify the component's magnitude as the cause rather than the specifier's form
+
+#### Scenario: An out-of-range locked version fails artifact validation
+
+- **WHEN** a lockfile records an exact version whose component exceeds 2^53 − 1
+- **THEN** the system SHALL reject the lockfile as invalid
+- **AND** it SHALL NOT compare that version against a manifest specifier
+
 ### Requirement: Version-specifier resolution semantics are deterministic
 
 For each conforming version-specifier form, the published grammar SHALL define which candidate versions satisfy the specifier. Different facet-compatible systems resolving the same specifier against the same set of candidate versions SHALL select the same version.
