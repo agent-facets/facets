@@ -5,6 +5,22 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-08-27" description="Docs site gets dedicated light and dark background colors" tags={["Improvement"]} rss={{
+  title: "Docs site: dedicated light and dark background colors",
+  description: "The documentation site at docs.agentfacets.io now sets its own background colors instead of relying on theme defaults: #f4f5f9 in light mode and #0a0a12 in dark mode. Pages render with the intended contrast in both modes. No action needed."
+}}>
+  ## Docs site: dedicated light and dark backgrounds
+
+  The [documentation site](/) now sets its own background colors instead
+  of relying on theme defaults:
+
+  - **Light mode:** `#f4f5f9`
+  - **Dark mode:** `#0a0a12`
+
+  Pages render with the intended contrast in both modes. No action
+  needed.
+</Update>
+
 <Update label="2026-08-19" description="OpenCode adapter now writes MCP servers to the document OpenCode actually loads" tags={["CLI", "Fix"]} rss={{
   title: "OpenCode adapter: MCP servers land where OpenCode actually reads them",
   description: "The OpenCode adapter previously considered only the project root's opencode.jsonc and opencode.json, so a project keeping its OpenCode configuration under .opencode/ -- the location that outranks the root -- had servers written to a file the higher-precedence one shadowed. The configuration you approved was not the configuration OpenCode loaded. All four documents OpenCode merges are now read, classified as one configuration, and disclosed on the approval screen: in decreasing precedence, .opencode/opencode.jsonc, .opencode/opencode.json, opencode.jsonc, opencode.json. Writes go to exactly one of them, chosen once per run: the highest-precedence document that already defines an mcp member (an empty {} counts), otherwise the highest-precedence document that exists, otherwise a newly created .opencode/opencode.jsonc. A shadowed copy of a desired server is now left as its author wrote it -- the target's definition already wins, so deleting from a file this run is not otherwise writing is not the adapter's call. An obsolete owned entry is still removed from every document that defines it, so a removal cannot promote a shadowed copy and leave the server configured."
