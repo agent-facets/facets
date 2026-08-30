@@ -3,27 +3,31 @@ import { errorCode, errorMessage, type InspectFileFailure, isNotFound } from '@a
 import { type FileOperationFailure, type FsSyscalls, operationFailure } from './syscalls.ts'
 
 /**
- * Directories are tracked separately from files, and far more conservatively.
+ * Directories are tracked separately from files, and answer a different
+ * question than files do.
  *
  * The journal is file-oriented: a directory is not a state a plan targets, it
- * is a thing that had to exist so a file could. So the transaction records
- * only the directories it can prove it created, and after a rollback removes
- * only those, only while they are still empty, and only while they are still
- * the very directories it made.
+ * is a thing that had to exist so a file could. Cleanup therefore asks whether
+ * anything is left inside a managed directory, not who created it. Identity is
+ * deliberately NOT tracked: `(dev, ino)` and creation time are all reusable —
+ * Linux recycles an inode the moment it is freed — so a token built from them
+ * proves nothing a later `rmdir` does not already establish.
  *
- * "Still the very ones" is why identity travels with the path. An empty
- * directory at a path we created is not necessarily ours — it can have been
- * removed and recreated by something else in between — and removing it on the
- * strength of the path alone is the same mistake as restoring a file on the
- * strength of it merely differing.
+ * `rmdir` is the whole mechanism. It is non-recursive, so the filesystem
+ * decides emptiness and performs the removal in one step: a directory holding
+ * anything at all, ours or a user's, refuses to be removed. That leaves no
+ * check-then-delete window for a concurrent write to slip through, and it is
+ * the same guarantee on Linux, macOS, and Windows.
+ *
+ * The boundary is what bounds the blast radius: a tool's configuration
+ * directory (`.claude`, `.opencode`) is never removed and never climbed past,
+ * so cleanup can only ever reclaim the tree this operation materialized.
  */
 
-/** A directory this transaction created, with the identity it had when created. */
+/** A directory this transaction created, and the boundary it may not pass. */
 export interface CreatedDirectory {
   readonly path: string
   readonly boundary: string
-  readonly dev: number
-  readonly ino: number
 }
 
 /**
@@ -235,7 +239,7 @@ function ensureOne(directory: string, boundary: string, path: string, sys: FsSys
       return { ok: false, reason: 'operation', failure: operationFailure('create-directory', directory, error) }
     }
 
-    return { ok: true, created: identifyCreated(directory, boundary, sys) }
+    return { ok: true, created: { path: directory, boundary } }
   }
 
   return {
@@ -251,27 +255,11 @@ function ensureOne(directory: string, boundary: string, path: string, sys: FsSys
 }
 
 /**
- * The identity a just-created directory has, or nothing.
- *
- * A directory we cannot identify is one we can never prove is ours later, so
- * it is not recorded: leaving it behind is the conservative outcome.
- */
-function identifyCreated(directory: string, boundary: string, sys: FsSyscalls): CreatedDirectory | null {
-  try {
-    const made = sys.lstat(directory)
-    return { path: directory, boundary, dev: made.dev, ino: made.ino }
-  } catch {
-    return null
-  }
-}
-
-/**
  * Remove directories a delete just emptied, walking up towards `boundary`.
  *
- * Distinct from {@link pruneCreatedDirectories} and deliberately less strict:
- * this runs after a *successful* removal, where the directory is empty
- * precisely because the file this operation owned was the last thing in it.
- * Provenance is not the question — the question is whether anything is left.
+ * Runs after a file this operation managed is gone, so a directory that is now
+ * empty is empty *because* of this operation. Provenance is not the question —
+ * the question is whether anything is left.
  *
  * `rmdir` is non-recursive, which is what makes that safe: a directory holding
  * anything at all, ours or a user's, refuses to be removed and stops the walk.
@@ -297,27 +285,23 @@ export function pruneEmptiedAncestors(startDir: string, boundary: string, sys: F
 /**
  * Remove directories this transaction created, deepest first.
  *
- * Every guard here fails towards leaving a directory in place:
+ * Deepest first so a parent is only considered once its children have had
+ * their turn: removing `skills/planning/` is what makes `skills/` empty.
  *
- *   - identity must still match, so a recreated directory is left alone;
- *   - `rmdir` is non-recursive, so any file inside — ours or not — stops it;
- *   - any error ends that path's attempt without failing the rollback.
+ * `rmdir` alone decides. A directory holding anything — a user's file, another
+ * facet's asset, a child directory that refused to go — fails the call and is
+ * left exactly as it was. Any other error means the same thing: leave it.
  *
- * A directory that existed before this run is never a candidate, because it
- * was never recorded. Emptiness alone is not evidence of ownership.
+ * A boundary this transaction created IS a candidate, unlike in
+ * {@link pruneEmptiedAncestors}. The difference is what the two functions are
+ * handed: everything here was made by this run, so removing an empty one puts
+ * the tree back the way it was found. The ancestor walk climbs through
+ * directories nobody recorded, which is why it stops at the boundary instead.
  */
 export function pruneCreatedDirectories(created: readonly CreatedDirectory[], sys: FsSyscalls): readonly string[] {
   const deepestFirst = [...created].sort((a, b) => b.path.length - a.path.length)
   const removed: string[] = []
   for (const directory of deepestFirst) {
-    let stats: ReturnType<FsSyscalls['lstat']>
-    try {
-      stats = sys.lstat(directory.path)
-    } catch {
-      continue
-    }
-    if (!stats.isDirectory() || stats.isSymbolicLink()) continue
-    if (stats.dev !== directory.dev || stats.ino !== directory.ino) continue
     try {
       sys.rmdir(directory.path)
       removed.push(directory.path)

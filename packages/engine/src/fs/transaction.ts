@@ -314,6 +314,7 @@ export class FileTransaction {
     const restored: string[] = []
     const alreadyRestored: string[] = []
     const issues: FileRollbackIssue[] = []
+    const emptied: string[] = []
 
     for (const entry of entries) {
       const outcome = this.restore(entry.path, entry.boundary, entry.original, entry.committed)
@@ -328,9 +329,15 @@ export class FileTransaction {
           issues.push(outcome.issue)
           break
       }
+      if (outcome.kind !== 'issue' && entry.original.kind === 'absent') {
+        emptied.push(...pruneEmptiedAncestors(dirname(entry.path), entry.boundary, this.sys))
+      }
     }
 
-    const removedDirectories = pruneCreatedDirectories(this.createdDirectories, this.sys)
+    // The created list is swept last and covers what the ancestor walks could
+    // not reach: components made by a walk that was refused before any file
+    // was journaled, and paths whose transitions coalesced out of the journal.
+    const removedDirectories = [...emptied, ...pruneCreatedDirectories(this.createdDirectories, this.sys)]
     this.transitions.clear()
     this.createdDirectories.length = 0
 
@@ -592,6 +599,7 @@ export class FileTransaction {
     const restored: string[] = []
     const alreadyRestored: string[] = []
     const issues: FileRollbackIssue[] = []
+    const emptied: string[] = []
 
     for (let index = savepoint.length - 1; index >= 0; index--) {
       const entry = savepoint[index]
@@ -608,9 +616,12 @@ export class FileTransaction {
           issues.push(outcome.issue)
           break
       }
+      if (outcome.kind !== 'issue' && entry.before.kind === 'absent') {
+        emptied.push(...pruneEmptiedAncestors(dirname(entry.path), entry.boundary, this.sys))
+      }
     }
 
-    const removedDirectories = pruneCreatedDirectories(created, this.sys)
+    const removedDirectories = [...emptied, ...pruneCreatedDirectories(created, this.sys)]
     if (isNonEmpty(issues)) {
       return { kind: 'incomplete', restored, alreadyRestored, removedDirectories, issues }
     }
@@ -660,10 +671,10 @@ export class FileTransaction {
       return { kind: 'restored' }
     }
 
-    // Directories recreated to hold a restored file are not recorded as ours:
-    // this transaction is unwinding, not accumulating new cleanup obligations.
-    // They are swept on the spot if the restore they were made for does not
-    // land, rather than left standing empty around a file that is not there.
+    // Directories recreated to hold a restored file are not journaled: this
+    // transaction is unwinding, not accumulating new cleanup obligations. They
+    // are swept on the spot if the restore they were made for does not land,
+    // rather than left standing empty around a file that is not there.
     const ensured = ensureDirectories(path, boundary, this.sys)
     if (!ensured.ok) {
       pruneCreatedDirectories(ensured.created, this.sys)
