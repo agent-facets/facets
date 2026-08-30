@@ -19,6 +19,8 @@ const DEFAULT_REGISTRY_BASE_URL = 'https://registry.npmjs.org'
 export interface NpmResolveOptions {
   /** Registry base URL (no trailing slash). Defaults to the public npm registry. */
   registryBaseUrl?: string
+  /** Fetch implementation. Defaults to the runtime global. */
+  fetch?: typeof globalThis.fetch
 }
 
 /**
@@ -105,7 +107,7 @@ export async function resolveNpmAdapter(
 
   let response: Response
   try {
-    response = await fetch(registryUrl)
+    response = await (opts.fetch ?? globalThis.fetch)(registryUrl)
   } catch (e) {
     return {
       ok: false,

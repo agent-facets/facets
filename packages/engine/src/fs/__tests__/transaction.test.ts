@@ -545,12 +545,15 @@ describe('directory cleanup', () => {
     expect(existsSync(join(root, 'made'))).toBe(false)
   })
 
-  test('a directory recreated by someone else is no longer ours to remove', () => {
+  // Emptiness, not provenance, is the question. A directory removed and
+  // recreated at a managed path is still an empty directory this operation's
+  // file was the reason for, so it goes. Identity would be the wrong test
+  // anyway: Linux recycles an inode the moment it is freed.
+  test('an empty directory recreated at a managed path is still pruned', () => {
     const file = join(root, 'made', 'asset.md')
     const transaction = new FileTransaction(nodeFsSyscalls)
     transaction.apply(mutate(write(file, 'body\n')))
 
-    // Same path, different inode: emptiness is not evidence of ownership.
     rmSync(file)
     rmdirSync(join(root, 'made'))
     mkdirSync(join(root, 'made'))
@@ -558,7 +561,43 @@ describe('directory cleanup', () => {
     const outcome = transaction.rollback()
 
     if (outcome.kind !== 'complete') expect.unreachable()
-    expect(outcome.removedDirectories).toEqual([])
-    expect(existsSync(join(root, 'made'))).toBe(true)
+    expect(outcome.removedDirectories).toContain(join(root, 'made'))
+    expect(existsSync(join(root, 'made'))).toBe(false)
+  })
+
+  // The directory pre-dates the transaction, so nothing recorded it as created
+  // — the ancestor walk from the restored file is what reclaims it.
+  test('rollback prunes a pre-existing directory its file left empty', () => {
+    const directory = join(root, 'pre-existing')
+    mkdirSync(directory)
+    const file = join(directory, 'asset.md')
+
+    const transaction = new FileTransaction(nodeFsSyscalls)
+    transaction.apply(mutate(write(file, 'body\n')))
+
+    const outcome = transaction.rollback()
+
+    if (outcome.kind !== 'complete') expect.unreachable()
+    expect(existsSync(file)).toBe(false)
+    expect(outcome.removedDirectories).toContain(directory)
+    expect(existsSync(directory)).toBe(false)
+  })
+
+  // A tool's configuration directory that was already there is not this
+  // operation's to reclaim, however empty it ends up.
+  test('pruning stops at a pre-existing boundary and never removes it', () => {
+    const boundary = join(root, 'boundary')
+    mkdirSync(boundary)
+    const file = join(boundary, 'nested', 'asset.md')
+
+    const transaction = new FileTransaction(nodeFsSyscalls)
+    transaction.apply(mutate(write(file, 'body\n', boundary)))
+
+    const outcome = transaction.rollback()
+
+    if (outcome.kind !== 'complete') expect.unreachable()
+    expect(existsSync(join(boundary, 'nested'))).toBe(false)
+    expect(outcome.removedDirectories).not.toContain(boundary)
+    expect(existsSync(boundary)).toBe(true)
   })
 })

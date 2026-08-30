@@ -303,10 +303,14 @@ describe('resolveNpmAdapter — metadata failures', () => {
 
   test('unreachable registry surfaces as metadata-network-error', async () => {
     const result = await resolveNpmAdapter('any-package', implicit, {
-      registryBaseUrl: 'http://127.0.0.1:1',
+      registryBaseUrl: 'https://registry.test',
+      fetch: (async () => {
+        throw new TypeError('fetch failed')
+      }) as unknown as typeof globalThis.fetch,
     })
     if (result.ok) expect.unreachable()
-    expect(result.reason).toBe('metadata-network-error')
+    if (result.reason !== 'metadata-network-error') expect.unreachable()
+    expect(result.cause).toContain('fetch failed')
   })
 })
 
