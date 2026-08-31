@@ -5,6 +5,40 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-08-31" description="Rollback no longer leaves empty directories behind" tags={["CLI", "Fix"]} rss={{
+  title: "Rollback no longer leaves empty directories behind",
+  description: "When an install fails or is interrupted, rollback now removes every directory it leaves empty. Previously, cleanup only reclaimed directories it could prove the run had created, so an empty directory recreated at a managed path could be left behind, and a pre-existing directory that rollback emptied was never removed at all. Cleanup now removes any directory the rollback leaves empty, walking up from each restored file. Only empty directories are ever removed -- a directory holding anything at all, yours or the tool's, is refused in a single atomic step. Cleanup is also bounded: it never removes or climbs past a tool's configuration directory (such as .claude or .opencode), so it can only reclaim the tree the install itself materialized."
+}}>
+  ## Rollback no longer leaves empty directories behind
+
+  When [`facet add`](/cli/add), [`facet install`](/cli/install), or
+  [`facet remove`](/cli/remove) fails or is interrupted, rollback now
+  removes every directory it leaves empty.
+
+  Previously, two kinds of directories could survive a rollback:
+
+  - **An empty directory recreated at a managed path** was left behind,
+    even though nothing was inside it.
+  - **A pre-existing directory that rollback emptied** was never removed
+    at all, because the run had not created it.
+
+  Both are now pruned. What this means for you:
+
+  - **A failed run leaves a tidy tree.** Rollback walks up from each
+    restored file and removes any directory it left empty, so you no
+    longer have to delete hollow folders by hand.
+  - **Only empty directories are ever removed.** A directory holding
+    anything at all -- your files or the tool's -- is refused in a single
+    atomic step. There is no window in which content can be lost.
+  - **Cleanup is bounded.** The walk never removes or climbs past a
+    tool's configuration directory (such as `.claude` or `.opencode`), so
+    it can only reclaim the tree the install itself materialized.
+
+  No flags to set; the behavior is automatic. See
+  [Troubleshooting](/guides/troubleshooting) for what a failed install
+  reports.
+</Update>
+
 <Update label="2026-08-19" description="OpenCode adapter now writes MCP servers to the document OpenCode actually loads" tags={["CLI", "Fix"]} rss={{
   title: "OpenCode adapter: MCP servers land where OpenCode actually reads them",
   description: "The OpenCode adapter previously considered only the project root's opencode.jsonc and opencode.json, so a project keeping its OpenCode configuration under .opencode/ -- the location that outranks the root -- had servers written to a file the higher-precedence one shadowed. The configuration you approved was not the configuration OpenCode loaded. All four documents OpenCode merges are now read, classified as one configuration, and disclosed on the approval screen: in decreasing precedence, .opencode/opencode.jsonc, .opencode/opencode.json, opencode.jsonc, opencode.json. Writes go to exactly one of them, chosen once per run: the highest-precedence document that already defines an mcp member (an empty {} counts), otherwise the highest-precedence document that exists, otherwise a newly created .opencode/opencode.jsonc. A shadowed copy of a desired server is now left as its author wrote it -- the target's definition already wins, so deleting from a file this run is not otherwise writing is not the adapter's call. An obsolete owned entry is still removed from every document that defines it, so a removal cannot promote a shadowed copy and leave the server configured."
