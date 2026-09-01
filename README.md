@@ -1,83 +1,74 @@
 # Agent Facets
 
-`facet` is a CLI package manager and toolkit for facets — modular skills, agents, commands, and MCP server declarations that extend AI coding assistants. A facet can declare MCP servers that are installed and configured in each connected tool's own config file (`.mcp.json`, `opencode.jsonc`, `.codex/config.toml`), after you approve them; a facet may even ship servers and nothing else. Facets can also ship non-asset files — a `README.md`, a `LICENSE`, or skill companion files — that travel inside the archive; only skill companions materialize on disk. See the [docs](https://docs.agentfacets.io) for details.
+**A package manager for AI coding assistant extensions.**
 
-The official registry for Agent Facets is [agentfacets.io](https://agentfacets.io) where you can publish and share facets.
+AI coding tools all want roughly the same things: skills, agents, commands, and MCP server declarations. But each expects them in its own format, in its own directory. So those files get copied between projects and between tools by hand, with no version, no upgrade path, no integrity check, and no clean way to take them back out.
 
-## Documentation
+A **facet** packages those extensions into a single versioned unit. The `facet` CLI installs facets into your project through adapters for Claude Code, OpenCode, and Codex, and resolves them from the free public registry at [agentfacets.io](https://agentfacets.io).
 
-Full documentation is available at [docs.agentfacets.io](https://docs.agentfacets.io).
+## Why facets?
+
+- **Reproducible.** `facets.json` records what your project depends on; `facets.lock` pins exact versions and integrity hashes, so teammates and CI get identical results.
+- **Tool-independent.** Install a facet once and it materializes into every connected tool, instead of maintaining a copy per tool.
+- **Verified and deliberate.** Every archive is integrity-checked against what was published, and a new or changed MCP server declaration is never written until you approve it.
+- **Manageable.** Move between versions with `facet update`, and remove a facet cleanly: only the files and config entries your project actually owns are deleted.
 
 ## Quickstart
 
-```shell
+```sh
 # Install the CLI (macOS/Linux)
 curl -fsSL https://agentfacets.io/install | bash
 
-# Or via npm (all platforms, including Windows)
+# Or on any platform, including Windows
 npm install -g agent-facets
 
-# Add a facet to any project — this resolves, fetches, verifies, and
-# installs in one step. If the project has no AI adapters connected
-# yet, the picker launches automatically.
-facet add viper-plans
+facet --version
 ```
 
-The public registry is free – see [agentfacets.io](https://agentfacets.io). A bare name (`facet add cowsay`) resolves against it; you can also install from `github:owner/repo`, an `https://...git` URL, an SCP-style git URL, or a local path.
-
-Please see https://docs.agentfacets.io/cli for a detailed reference for the `facet` CLI tool.
-
-### Other Commands
-
-```shell
-# Reapply an existing project's facets after a fresh clone or after
-# pulling teammate changes:
-facet install
-
-# In CI, or any run without a terminal, approve MCP server configuration
-# up front — otherwise a facet that declares servers fails before writing.
-facet install --accept-mcp
-
-# Move this project's facets to newer releases (alias: facet upgrade).
-# Respects the ranges in facets.json; --latest crosses them.
-facet update
-facet update --latest
-facet update --dry-run
-
-# Update the CLI binary itself — a different thing from the line above.
-facet self-update
-```
-
-## Packages
-
-| Package                                              | NPM                                 | Description                                                                                                                              |
-|------------------------------------------------------|-------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------|
-| [CLI](packages/cli/AGENTS.md)                        | `agent-facets`                      | CLI tool for managing facets                                                                                                             |
-| [Protocol](packages/protocol/AGENTS.md)              | `@agent-facets/protocol`            | TypeScript reference implementation of the facet artifact spec — Node-native, public, consumed by registries and other third-party tools |
-| [Adapter SDK](packages/adapter)                      | `@agent-facets/adapter`             | Contract for building adapters that target an AI coding tool — asset storage plus MCP server configuration                               |
-| [Claude Code adapter](packages/adapters/claude-code) | `@agent-facets/adapter-claude-code` | First-party adapter for Claude Code                                                                                                      |
-| [Codex adapter](packages/adapters/codex)             | `@agent-facets/adapter-codex`       | First-party adapter for Codex                                                                                                            |
-| [OpenCode adapter](packages/adapters/opencode)       | `@agent-facets/adapter-opencode`    | First-party adapter for OpenCode                                                                                                         |
-| [Brand](packages/brand)                              | `@agent-facets/brand`               | Agent Facets branding and styles                                                                                                         |
-
-The monorepo also contains private internals that are never published: `@agent-facets/engine` (Bun-native CLI machinery), `@agent-facets/common` (shared primitives), and `@agent-facets/adapter-test-kit`. See [`AGENTS.md`](AGENTS.md) for the full layer description.
-
-## Development
+Connect the AI tool you use, then add a facet from the registry:
 
 ```sh
-mise trust && mise install  # tooling (Bun, lefthook) via mise.toml
-bun install                 # dependencies + git hooks
-bun dev --version           # run the CLI from source and verify it works
-bun check                   # lint, typecheck, build, and tests
+facet adapter add claude-code   # or: opencode, codex
+
+facet add cowsay
 ```
 
-Versioning and publishing use [changesets](https://github.com/changesets/changesets) — run `bun change` for user-facing changes. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor guide.
+`facet add` resolves, verifies, records, and installs in one step:
 
-### Code Review
+```
+cowsay installed. Updated facets via 1 adapter  ✓
+  1 installed · 4 assets written
+  + 1 skill · 1 agent · 2 commands
+```
 
-We use [Greptile](https://www.greptile.com/) to review code changes in this repo. They generously provide OSS projects with free reviews.
+Those assets land where your tool already looks for them, so the new command works immediately:
 
-[![Greptile: The War on Bugs](https://www.greptile.com/badge.svg)](https://www.greptile.com/?utm_source=oss_badge&utm_medium=readme&utm_campaign=greptile_for_open_source)
+```
+/cowsay hey there
+```
+
+## Everyday use
+
+```sh
+facet install         # restore a project's facets after a clone or a pull
+facet update          # move to newer releases within the ranges facets.json allows
+facet remove cowsay   # take a facet back out, along with the files it owns
+```
+
+## Learn more
+
+- [Browse the registry](https://agentfacets.io) to find facets to install, or publish your own.
+- [Quickstart](https://docs.agentfacets.io/quickstart) walks through the above in under five minutes.
+- [Install facets](https://docs.agentfacets.io/guides/install-facets) covers adapters, version pinning, name collisions, MCP approval, and CI.
+- [Create your first facet](https://docs.agentfacets.io/guides/create-your-first-facet) covers scaffolding, authoring, building, and publishing.
+- [CLI reference](https://docs.agentfacets.io/cli) documents every command and flag.
+- [Specification](https://docs.agentfacets.io/specification) defines the open facet format, integrity model, and install pipeline.
+
+## Contributing
+
+This repository is the CLI, the protocol reference implementation, and the first-party adapters. See [CONTRIBUTING.md](CONTRIBUTING.md) to get set up.
+
+We use [Greptile](https://www.greptile.com/) to review code changes here. They generously provide free reviews to OSS projects.
 
 ## License
 

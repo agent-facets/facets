@@ -21,6 +21,7 @@ Adding the `upstream` remote lets you pull in changes from the main repo later w
 Then install tools and dependencies:
 
 ```sh
+mise trust     # trust this repo's mise.toml
 mise install   # installs Bun + lefthook as specified in mise.toml
 bun install    # installs workspace dependencies + sets up git hooks
 ```
