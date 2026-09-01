@@ -162,6 +162,74 @@ describe('resolveRegistryMetadataBatch', () => {
     expect(result.error.cause).toContain('fetch failed')
   })
 
+  test('a full batch of 100 specifiers is accepted', async () => {
+    let calls = 0
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      calls++
+      const name = captureUrl(input).split('/').at(-2) ?? 'unknown'
+      return new Response(JSON.stringify(fixtures.versionMetadata({ name, version: '1.0.0' })), { status: 200 })
+    }) as unknown as typeof fetch
+
+    const specs = Array.from({ length: 100 }, (_, index) => ({
+      name: `facet-${index}`,
+      version: { kind: 'latest' as const },
+    }))
+    const result = await resolveRegistryMetadataBatch(specs)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) expect.unreachable()
+    expect(result.value).toHaveLength(100)
+    expect(calls).toBe(100)
+  })
+
+  test('more than 100 specifiers is refused before any request is issued', async () => {
+    let calls = 0
+    globalThis.fetch = (async () => {
+      calls++
+      return new Response(JSON.stringify(fixtures.versionMetadata()), { status: 200 })
+    }) as unknown as typeof fetch
+
+    const specs = Array.from({ length: 101 }, (_, index) => ({
+      name: `facet-${index}`,
+      version: { kind: 'latest' as const },
+    }))
+    const result = await resolveRegistryMetadataBatch(specs)
+
+    if (result.ok) expect.unreachable()
+    if (result.error.code !== 'TOO_MANY_SPECIFIERS') expect.unreachable()
+    expect(result.error.limit).toBe(100)
+    expect(result.error.received).toBe(101)
+    expect(calls).toBe(0)
+  })
+
+  test('a response for a different facet is refused', async () => {
+    // A misrouted request or a mixed-up cache key would otherwise install
+    // one facet's content under another facet's name.
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify(fixtures.versionMetadata({ name: 'somebody-else', version: '1.0.0' })), {
+        status: 200,
+      })) as unknown as typeof fetch
+
+    const result = await resolveRegistryMetadataBatch([{ name: 'cowsay', version: { kind: 'latest' } }])
+
+    if (result.ok) expect.unreachable()
+    if (result.error.code !== 'UNEXPECTED_ERROR') expect.unreachable()
+    expect(result.error.cause).toContain('cowsay')
+  })
+
+  test('a resolved version that is not an exact release is refused', async () => {
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify(fixtures.versionMetadata({ name: 'cowsay', version: '1.2' })), {
+        status: 200,
+      })) as unknown as typeof fetch
+
+    const result = await resolveRegistryMetadataBatch([{ name: 'cowsay', version: { kind: 'latest' } }])
+
+    if (result.ok) expect.unreachable()
+    if (result.error.code !== 'UNEXPECTED_ERROR') expect.unreachable()
+    expect(result.error.cause).toContain('exact')
+  })
+
   test('multi-spec batch fans out and short-circuits on first failure', async () => {
     let calls = 0
     globalThis.fetch = (async (input: string | URL | Request) => {

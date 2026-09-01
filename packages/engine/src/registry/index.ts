@@ -26,7 +26,7 @@ export type { RetryConfig } from './middleware/retry.ts'
 export type { TimeoutConfig } from './middleware/timeout.ts'
 export type { PublishArgs, PublishResult } from './publish.ts'
 export { publishFacetVersion } from './publish.ts'
-export { resolveRegistryMetadataBatch } from './resolve-metadata.ts'
+export { MAX_REGISTRY_METADATA_SPECIFIERS, resolveRegistryMetadataBatch } from './resolve-metadata.ts'
 export type { RegistryError, RegistryMetadata, RegistryResult, RegistrySpec } from './types.ts'
 export type {
   WireAssetCounts,

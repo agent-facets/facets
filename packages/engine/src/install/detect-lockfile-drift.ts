@@ -1,10 +1,9 @@
 import type { SupportedLockfile } from '@agent-facets/protocol'
 import { satisfies } from '@agent-facets/protocol'
 import type { NormalizedFacetEntry } from '../manifest/mutations.ts'
-import { parseFacetSource } from '../sources/facet/parse-source.ts'
-import { parseVersionSpec } from '../sources/facet/parse-version.ts'
 import { ownEntry } from './own-entry.ts'
 import { parseLockedVersion } from './parse-locked-version.ts'
+import { parseManifestFacetSource } from './parse-manifest-source.ts'
 import { sourceMatchesLockedSource } from './source-matches.ts'
 import type { LockfileDriftEntry } from './types.ts'
 
@@ -36,8 +35,7 @@ export function detectLockfileDrift(
       drift.push({ name, reason: 'no-entry', manifestSpec: specifier })
       continue
     }
-    const sourceString = parseVersionSpec(specifier).ok ? `${name}@${specifier}` : specifier
-    const parsed = parseFacetSource(sourceString)
+    const parsed = parseManifestFacetSource(name, specifier)
     if (parsed.ok && parsed.value.kind === 'registry') {
       if (!satisfies(parseLockedVersion(locked.version), parsed.value.version)) {
         drift.push({ name, reason: 'unsatisfied', manifestSpec: specifier, lockedVersion: locked.version })

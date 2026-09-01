@@ -73,6 +73,13 @@ export interface RegistrySpec {
  *     `facetVersion` this CLI cannot verify. Carries the observed and
  *     supported versions so the CLI can render upgrade guidance from
  *     its compatibility table.
+ *   - `TOO_MANY_SPECIFIERS`: a batch metadata call passed more
+ *     specifiers than one invocation accepts. This is a caller-contract
+ *     violation rather than anything the registry said — it is a value
+ *     instead of a throw so the limit is part of the function's return
+ *     type and callers that fan out (update discovery) are forced to
+ *     group before they ever reach the network. Carries both numbers so
+ *     the message can name the limit that was exceeded and by how much.
  */
 export type RegistryError =
   | { code: 'REGISTRY_REJECTED'; wireCode: string; error: string; fix: string; docsUrl: string }
@@ -81,6 +88,7 @@ export type RegistryError =
   | { code: 'NETWORK_ERROR'; cause: string; attempts: number }
   | { code: 'UNEXPECTED_ERROR'; cause: string }
   | { code: 'UNSUPPORTED_ARCHIVE'; observed: number | undefined; supported: readonly number[] }
+  | { code: 'TOO_MANY_SPECIFIERS'; limit: number; received: number }
 
 /**
  * Result type for registry operations. Discriminated by `ok`.

@@ -68,6 +68,15 @@ describe('translateEngineRegistryError — registry-dumb rendering', () => {
     expect(retried.detail).toContain('after 3 attempts')
   })
 
+  test('TOO_MANY_SPECIFIERS blames the CLI, not the registry or the project', () => {
+    const cli = translateEngineRegistryError({ code: 'TOO_MANY_SPECIFIERS', limit: 100, received: 142 })
+
+    expect(cli.detail).toContain('142')
+    expect(cli.detail).toContain('100')
+    expect(cli.fix).toContain('file a bug')
+    expect(cli.docsUrl).toBeUndefined()
+  })
+
   test('UNEXPECTED_ERROR surfaces the cause and asks the user to file a bug', () => {
     const cli = translateEngineRegistryError({ code: 'UNEXPECTED_ERROR', cause: 'TypeError: boom' })
 
