@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { BuildManifest } from '@agent-facets/protocol'
+import type { LegacyBuildManifest } from '@agent-facets/protocol'
 import { assembleTar, computeContentHash } from '@agent-facets/protocol'
 import {
   auditCacheSlot,
@@ -264,7 +264,10 @@ describe('cacheSlotIsDir', () => {
 })
 
 /**
- * Build a real `BuildManifest` for the given files. Per-asset hashes
+ * Build a real legacy (`0.1`) build manifest for the given files. The
+ * version is deliberate: `cachePutVerified` is format-neutral — it takes a
+ * `{ integrity, fileHashes }` pair, not a manifest — so these tests pin the
+ * legacy `assets` map to prove the older shape still feeds it. Per-asset hashes
  * are computed honestly via `computeContentHash`. The top-level
  * `integrity` is a stable opaque value derived from the file set —
  * `cachePutVerified` does not recompute it; it only string-compares
@@ -272,7 +275,7 @@ describe('cacheSlotIsDir', () => {
  * same value as `computedIntegrity` for the success case, or a
  * different value to exercise the facet-level mismatch arm.
  */
-function buildManifestFor(staging: string, files: Record<string, string>): BuildManifest {
+function buildManifestFor(staging: string, files: Record<string, string>): LegacyBuildManifest {
   const assets: Record<string, string> = {}
   for (const [path, content] of Object.entries(files)) {
     const fullPath = join(staging, path)
@@ -650,7 +653,7 @@ describe('cachePutVerified path traversal defense', () => {
     const id: CacheIdentity = { kind: 'registry', name: 'traversal', version: '1.0.0' }
     const staging = cacheStagingDir()
     writeFileSync(join(staging, 'facet.json'), '{"name":"traversal","version":"1.0.0"}')
-    const manifest: BuildManifest = {
+    const manifest: LegacyBuildManifest = {
       facetVersion: 0.1,
       archive: 'archive.tar.gz',
       integrity: 'sha256:fake',
@@ -685,7 +688,7 @@ describe('cachePutVerified path traversal defense', () => {
     const id: CacheIdentity = { kind: 'registry', name: 'abs-path', version: '1.0.0' }
     const staging = cacheStagingDir()
     writeFileSync(join(staging, 'facet.json'), '{"name":"abs-path","version":"1.0.0"}')
-    const manifest: BuildManifest = {
+    const manifest: LegacyBuildManifest = {
       facetVersion: 0.1,
       archive: 'archive.tar.gz',
       integrity: 'sha256:fake',

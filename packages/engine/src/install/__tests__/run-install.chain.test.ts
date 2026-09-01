@@ -4,7 +4,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
 import { isNonEmpty } from '@agent-facets/common'
-import type { BuildManifest, CurrentBuildManifest, Lockfile02Facet, ProjectFacetEntry } from '@agent-facets/protocol'
+import type {
+  CurrentBuildManifest,
+  LegacyBuildManifest,
+  Lockfile02Facet,
+  ProjectFacetEntry,
+} from '@agent-facets/protocol'
 import { LOCKFILE_VERSION_0_2 } from '@agent-facets/protocol'
 import type { Addition, InstallOperation } from '../types.ts'
 
@@ -130,7 +135,7 @@ function seedRegistrySlot(
   if (!computed.ok) throw new Error('test bug: staged fixture unreadable')
   const skillIntegrity = computed.assetHashes['skills/planning/SKILL.md']
   if (skillIntegrity === undefined) throw new Error('test bug: fixture has no planning skill')
-  const manifest: BuildManifest = {
+  const manifest: LegacyBuildManifest = {
     facetVersion: 0.1,
     archive: 'archive.tar.gz',
     integrity: computed.integrity,

@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { BuildManifest } from '@agent-facets/protocol'
+import type { LegacyBuildManifest } from '@agent-facets/protocol'
 import type { CacheIdentity } from '../../cache/types.ts'
 import type { RegistryMetadata, RegistryResult } from '../../registry/types.ts'
 
@@ -48,7 +48,7 @@ const { cachePath, cachePutVerified, cacheStagingDir, computeDirIntegrity, readC
 
 interface Content {
   dir: string
-  manifest: BuildManifest
+  manifest: LegacyBuildManifest
   integrity: string
 }
 
@@ -61,7 +61,7 @@ function makeContent(parent: string, name: string, version: string, skillBody?: 
   writeFileSync(join(dir, 'skills/planning/SKILL.md'), skillBody ?? `# planning ${version}\n`)
   const computed = computeDirIntegrity(dir, ['facet.json', 'skills/planning/SKILL.md'])
   if (!computed.ok) throw new Error('test bug: fixture content unreadable')
-  const manifest: BuildManifest = {
+  const manifest: LegacyBuildManifest = {
     facetVersion: 0.1,
     archive: 'archive.tar.gz',
     integrity: computed.integrity,
@@ -307,7 +307,7 @@ describe('materializeVersion — confirming-miss', () => {
 
   test('a manifest listing an asset the download did not deliver fails as an asset integrity failure', async () => {
     const content = makeContent(fakeHome, 'cowsay', '0.2.0')
-    const manifestWithGhost: BuildManifest = {
+    const manifestWithGhost: LegacyBuildManifest = {
       ...content.manifest,
       assets: {
         ...content.manifest.assets,
