@@ -5,6 +5,72 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-09-01" description="agent-facets 0.33.0 ships facet update: move declared facets to newer releases" tags={["CLI", "New Feature", "Breaking"]} rss={{
+  title: "agent-facets 0.33.0: new facet update command (aliased facet upgrade)",
+  description: "agent-facets@0.33.0 is on npm with a new command: facet update, aliased facet upgrade. It moves the registry-backed facets a project declares to newer releases. The plan shows what is installed alongside each facet's range-respecting target and its latest release, so 'why is this one not moving?' is answerable from the plan itself. Plain facet update takes every target the declared specifier already permits. --latest crosses those specifiers and rewrites them by the smallest edit that admits the new version: a pin stays a pin, 1.* becomes 2.*, and * and latest are left as authored. --dry-run prints the plan and writes nothing. --interactive opens a per-facet picker where every row starts on its latest release. Applying an update runs the ordinary install pipeline -- the same verification, collision handling, MCP approval, rollback, and atomic manifest/lockfile/receipt write -- and re-checks under the project lock that nothing moved since the plan was reviewed, so the version you reviewed is the version installed. Git and local facets are named as unsupported rather than counted as current. Breaking: facet upgrade is no longer a placeholder that printed a not-yet-implemented notice and exited 0; it now applies real updates. Also in this release, via @agent-facets/protocol@0.31.1: version numeric components are now bounded at 2^53 - 1, so a version comparison can never answer for a release that was never published. Run facet self-update to pick it up."
+}}>
+  ## New command: `facet update`
+
+  `agent-facets@0.33.0` is on npm. Run
+  [`facet self-update`](/cli/self-update) to pick it up.
+
+  [`facet update`](/cli/update) (aliased `facet upgrade`) moves the
+  registry-backed facets a project declares to newer releases. The plan
+  shows what is installed alongside each facet's range-respecting
+  **target** and its **latest** release, so "why is this one not
+  moving?" is answerable from the plan itself.
+
+  ```sh
+  facet update                    # take every target the declared range permits
+  facet update --latest           # take the newest release, ignoring ranges
+  facet update --dry-run          # print the plan; change nothing
+  facet update --interactive      # choose per facet, and which version each takes
+  ```
+
+  - **Plain `facet update` respects your ranges.** Every facet moves to
+    the newest version its declared specifier already permits.
+  - **`--latest` crosses the range, minimally.** It rewrites the
+    specifier by the smallest edit that admits the new version,
+    preserving how you expressed intent: a pin stays a pin, `1.*`
+    becomes `2.*`, and `*` and `latest` are left exactly as authored.
+  - **`--dry-run` writes nothing.** No manifest, no lockfile, no
+    receipt, no assets, and no adapter installation, so it is safe on a
+    machine with no adapter connected.
+  - **`--interactive` picks per facet.** Every row starts on its latest
+    release with nothing selected; a facet you never touch is left
+    alone.
+
+  Applying an update is an install. It runs the ordinary
+  [install pipeline](/cli/install) -- the same verification, collision
+  handling, MCP approval, and rollback -- and re-checks under the
+  project lock that nothing moved since you reviewed the plan, so the
+  version you reviewed is the version installed. Recorded
+  materialization choices survive a version change. Git and local
+  facets are named as unsupported rather than counted as current.
+
+  ## Breaking: `facet upgrade` is no longer a placeholder
+
+  [`facet upgrade`](/cli/upgrade) previously printed a
+  not-yet-implemented notice and exited `0` without touching a file. It
+  is now an alias of `facet update` and applies real updates to
+  `facets.json`, `facets.lock`, the install receipt, and your
+  materialized assets. If automation called `facet upgrade` expecting a
+  no-op, drop the call or make it explicit with `facet update
+  --dry-run`.
+
+  Neither name touches the CLI binary. That remains
+  [`facet self-update`](/cli/self-update).
+
+  ## Version numbers are bounded by exact integer representation
+
+  Via `@agent-facets/protocol@0.31.1`, a version or specifier whose
+  numeric component exceeds `2^53 - 1` is now rejected, with an error
+  that names the magnitude. Above that bound two distinct releases
+  compare equal, so a comparison deciding which release is newer could
+  answer for a version that was never published. No real version is
+  anywhere near the limit.
+</Update>
+
 <Update label="2026-08-31" description="Rollback no longer leaves empty directories behind" tags={["CLI", "Fix"]} rss={{
   title: "Rollback no longer leaves empty directories behind",
   description: "When an install fails or is interrupted, rollback now removes every directory it leaves empty. Previously, cleanup only reclaimed directories it could prove the run had created, so an empty directory recreated at a managed path could be left behind, and a pre-existing directory that rollback emptied was never removed at all. Cleanup now removes any directory the rollback leaves empty, walking up from each restored file. Only empty directories are ever removed -- a directory holding anything at all, yours or the tool's, is refused in a single atomic step. Cleanup is also bounded: it never climbs above a tool's configuration directory (such as .claude or .opencode), and it removes that directory only when the failed install created it, so it can only reclaim the tree the install itself materialized."
