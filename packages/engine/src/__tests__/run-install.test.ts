@@ -10,7 +10,7 @@ import {
   planSkillBundleInstall,
   planSkillBundleRemoval,
 } from '@agent-facets/adapter'
-import type { BuildManifest, Lockfile02 } from '@agent-facets/protocol'
+import type { LegacyBuildManifest, Lockfile02 } from '@agent-facets/protocol'
 import {
   CURRENT_LOCKFILE_VERSION,
   CurrentLockfileSchema,
@@ -936,7 +936,7 @@ function seedCacheSlotForGit(
   const computed = computeDirIntegrity(staging, ['facet.json', 'skills/planning/SKILL.md'])
   if (!computed.ok) throw new Error('test bug: staged fixture unreadable')
   const integrity = computed.integrity
-  const manifest: BuildManifest = {
+  const manifest: LegacyBuildManifest = {
     facetVersion: 0.1,
     archive: 'archive.tar.gz',
     integrity,

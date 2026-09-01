@@ -1,6 +1,6 @@
 import { rm } from 'node:fs/promises'
 import type { Adapter } from '@agent-facets/adapter'
-import type { BuildManifest, LockfileSource, SupportedLockfileFacet } from '@agent-facets/protocol'
+import type { LockfileSource, SupportedLockfileFacet } from '@agent-facets/protocol'
 import { verifyGitOneCheck } from '@agent-facets/protocol'
 import { runBuildPipeline } from '../../build/pipeline.ts'
 import { type CacheIdentity, cachePutVerified } from '../../cache/index.ts'
@@ -143,14 +143,17 @@ export async function resolveGitFacet(args: ResolveGitFacetArgs): Promise<Resolv
 
       // Fresh clone → audit-then-write to cache; disarm cleanup once the
       // content lives in a durable slot.
-      const buildManifest = JSON.parse(buildResult.manifestJson) as BuildManifest
+      //
+      // The build result carries the canonical integrity and the complete
+      // per-entry hash map directly, so the cache put consumes them as-is.
+      // Re-deriving them by parsing `manifestJson` would couple this call
+      // site to one archive-format shape; `cachePutVerified` is
+      // version-neutral by contract and only wants `{ integrity, fileHashes }`.
       const cacheId: CacheIdentity = { kind: 'git', name: facetName, version: buildResult.data.version }
       const putResult = cachePutVerified(
         cacheId,
         sourceDir,
-        // The producer still emits legacy 0.1 manifests during the
-        // consumer bridge, so the per-entry hash map is `assets`.
-        { integrity: buildManifest.integrity, fileHashes: buildManifest.assets },
+        { integrity: buildResult.integrity, fileHashes: buildResult.fileHashes },
         buildResult.integrity,
         facetName,
       )
