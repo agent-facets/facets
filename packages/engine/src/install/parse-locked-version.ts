@@ -1,3 +1,4 @@
+import { isSafeVersionComponent } from '@agent-facets/protocol'
 import { regex } from 'arkregex'
 
 /**
@@ -48,6 +49,14 @@ export function parseLockedVersion(version: string): {
     throw new Error(`internal: lockfile schema accepted "${version}" but parseLockedVersion regex rejected it`)
   }
   const [, major, minor, patch] = match
+  // The same narrow also bounds each component's magnitude, so a value
+  // that would not survive the conversion below cannot reach a validated
+  // lockfile. Checked here for the same reason as the shape: if the two
+  // ever drift, this fails loudly instead of returning a number that
+  // compares equal to a different release.
+  if (![major, minor, patch].every((component) => isSafeVersionComponent(component))) {
+    throw new Error(`internal: lockfile schema accepted "${version}" but its components exceed the version grammar`)
+  }
   return {
     kind: 'exact',
     major: Number(major),

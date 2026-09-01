@@ -12,20 +12,22 @@
 import type { SupportedLockfile } from '@agent-facets/protocol'
 import { satisfies } from '@agent-facets/protocol'
 import type { NormalizedFacetEntry } from '../../manifest/mutations.ts'
+import { translateThrownError } from '../../registry/client.ts'
 import { MAX_REGISTRY_METADATA_SPECIFIERS, resolveRegistryMetadataBatch } from '../../registry/resolve-metadata.ts'
 import type { RegistryMetadata, RegistryResult, RegistrySpec } from '../../registry/types.ts'
 import { ownEntry } from '../own-entry.ts'
 import { parseManifestFacetSource } from '../parse-manifest-source.ts'
+import { hasAdvancingChoice } from './advancing.ts'
 import type { AuthoredSpecifier } from './manifest-source.ts'
 import type {
-  AdvancingChoices,
   CheckableRegistryFacet,
   PrepareFacetUpdateFailure,
   ResolvedChoice,
+  TargetVersion,
   UnusableFacetState,
   UpdatePlanRow,
 } from './types.ts'
-import { type ExactVersion, isNewerThan, parseExactVersion } from './version-order.ts'
+import { type ExactVersion, parseExactVersion } from './version-order.ts'
 
 /** The batch-resolution boundary, injectable so grouping can be tested. */
 export type ResolveMetadataBatch = (
@@ -140,7 +142,7 @@ export async function discoverUpdates(args: DiscoverUpdatesArgs): Promise<Discov
     }
     const row = resolved.rows[next]
     next += 1
-    if (row === undefined) return malformedBatch(pending.length * 2, next)
+    if (row === undefined) return malformedBatch(pending.length, resolved.rows.length)
     plan.push(row)
   }
 
@@ -148,13 +150,33 @@ export async function discoverUpdates(args: DiscoverUpdatesArgs): Promise<Discov
 }
 
 /**
- * Resolve both choices for every pending facet and classify the result.
+ * Where each pending facet's answers sit in the flattened spec list.
  *
- * Each facet contributes two adjacent specifiers — its authored one for
- * Target, `latest` for Latest — so a full group of 100 covers 50 facets.
- * Groups are issued concurrently but inspected in order, which is what
- * makes the reported failure the same on every run no matter which
- * request happened to lose the race.
+ * Tagged rather than an optional `targetAt`, because the two cases are
+ * genuinely different requests: a pinned facet asks the registry one
+ * question, everything else asks two. Carrying the offsets explicitly
+ * is what lets facets with different lookup counts share one batch
+ * without a stride the reader has to reconstruct.
+ */
+type PendingLookup =
+  | { kind: 'pinned'; facet: PendingFacet; latestAt: number }
+  | { kind: 'resolved'; facet: PendingFacet; targetAt: number; latestAt: number }
+
+/**
+ * Resolve the choices every pending facet still needs, and classify the
+ * result.
+ *
+ * A facet contributes at most two specifiers — its authored one for
+ * Target, `latest` for Latest — so a full group of 100 covers at least
+ * 50 facets. An exact pin contributes only the second: its Target is
+ * already known to be the installed version, and asking for it would
+ * turn a yanked release into a project-wide discovery failure.
+ *
+ * Groups are issued concurrently. When more than one of them fails,
+ * which failure comes back is deliberately not pinned down: every one of
+ * them ends the run with no plan and the same instruction to the user, so
+ * promising a particular one would constrain how these lookups are
+ * batched and issued to buy a distinction nobody can act on.
  */
 async function resolvePendingFacets(
   pending: readonly PendingFacet[],
@@ -163,9 +185,16 @@ async function resolvePendingFacets(
   if (pending.length === 0) return { ok: true, rows: [] }
 
   const specs: RegistrySpec[] = []
+  const lookups: PendingLookup[] = []
   for (const facet of pending) {
-    specs.push({ name: facet.name, version: facet.authored.spec })
-    specs.push({ name: facet.name, version: { kind: 'latest' } })
+    if (facet.authored.spec.kind === 'exact') {
+      const latestAt = specs.push({ name: facet.name, version: { kind: 'latest' } }) - 1
+      lookups.push({ kind: 'pinned', facet, latestAt })
+      continue
+    }
+    const targetAt = specs.push({ name: facet.name, version: facet.authored.spec }) - 1
+    const latestAt = specs.push({ name: facet.name, version: { kind: 'latest' } }) - 1
+    lookups.push({ kind: 'resolved', facet, targetAt, latestAt })
   }
 
   const groups: RegistrySpec[][] = []
@@ -173,7 +202,17 @@ async function resolvePendingFacets(
     groups.push(specs.slice(at, at + MAX_REGISTRY_METADATA_SPECIFIERS))
   }
 
-  const settled = await Promise.all(groups.map((group) => resolve(group)))
+  // The resolver's contract is result-valued, but it is an injection
+  // point and the real one reaches the network. A rejection here would
+  // otherwise leave the command boundary as an unexplained exit 2, so
+  // it is translated into the same structured failure a returned
+  // network error produces.
+  let settled: ReadonlyArray<RegistryResult<ReadonlyArray<RegistryMetadata>>>
+  try {
+    settled = await Promise.all(groups.map((group) => resolve(group)))
+  } catch (err) {
+    return { ok: false, failure: { reason: 'discovery-failed', error: translateThrownError(err) } }
+  }
 
   const metadata: RegistryMetadata[] = []
   for (const group of settled) {
@@ -182,34 +221,57 @@ async function resolvePendingFacets(
   }
 
   const rows: UpdatePlanRow[] = []
-  for (const [index, facet] of pending.entries()) {
-    const targetMeta = metadata[index * 2]
-    const latestMeta = metadata[index * 2 + 1]
-    if (targetMeta === undefined || latestMeta === undefined) {
-      return malformedBatch(specs.length, metadata.length)
-    }
-
-    const target = toChoice(facet.name, 'target', targetMeta)
-    if (!target.ok) return target
+  for (const lookup of lookups) {
+    const facet = lookup.facet
+    const latestMeta = metadata[lookup.latestAt]
+    if (latestMeta === undefined) return malformedBatch(specs.length, metadata.length)
     const latest = toChoice(facet.name, 'latest', latestMeta)
     if (!latest.ok) return latest
 
-    if (!satisfies(target.choice.version, facet.authored.spec)) {
-      return {
-        ok: false,
-        failure: {
-          reason: 'target-outside-range',
-          facet: facet.name,
-          source: facet.authored.source,
-          version: targetMeta.version,
-        },
-      }
-    }
+    const target = resolveTarget(lookup, metadata)
+    if (!target.ok) return target
 
-    rows.push(classify({ ...facet, target: target.choice, latest: latest.choice }))
+    rows.push(classify({ ...facet, target: target.target, latest: latest.choice }))
   }
 
   return { ok: true, rows }
+}
+
+/**
+ * The Target column for one facet: the pin it already has, or the
+ * release the registry resolved its specifier to.
+ *
+ * Range satisfaction is checked only on the resolved arm. A pin's
+ * Target is the locked version, which was already checked against the
+ * same specifier before this facet became checkable at all.
+ */
+function resolveTarget(
+  lookup: PendingLookup,
+  metadata: readonly RegistryMetadata[],
+): { ok: true; target: TargetVersion } | { ok: false; failure: DiscoverUpdatesFailure } {
+  const facet = lookup.facet
+  if (lookup.kind === 'pinned') {
+    return { ok: true, target: { kind: 'pinned', version: facet.current } }
+  }
+
+  const targetMeta = metadata[lookup.targetAt]
+  if (targetMeta === undefined) return malformedBatch(metadata.length + 1, metadata.length)
+  const target = toChoice(facet.name, 'target', targetMeta)
+  if (!target.ok) return target
+
+  if (!satisfies(target.choice.version, facet.authored.spec)) {
+    return {
+      ok: false,
+      failure: {
+        reason: 'target-outside-range',
+        facet: facet.name,
+        source: facet.authored.source,
+        version: targetMeta.version,
+      },
+    }
+  }
+
+  return { ok: true, target: { kind: 'resolved', ...target.choice } }
 }
 
 /**
@@ -245,19 +307,15 @@ function toChoice(
 }
 
 /**
- * Decide whether a resolved facet is a candidate, and for which choices.
+ * Decide whether a resolved facet has any decision to offer.
  *
  * Only a strictly newer version counts, so a facet whose registry
  * answers moved backwards — an unpublished release, a narrower view of
  * the registry than the one that installed it — is reported as current
- * rather than offered as a downgrade.
+ * rather than offered as a downgrade. Which of the two columns advances
+ * is left to `advancingChoice`, so the plan carries the versions and one
+ * predicate reads them.
  */
 function classify(facet: CheckableRegistryFacet): UpdatePlanRow {
-  const rangeAdvances = isNewerThan(facet.target.version, facet.current)
-  const latestAdvances = isNewerThan(facet.latest.version, facet.current)
-  if (!rangeAdvances && !latestAdvances) return { kind: 'current', facet }
-
-  const advancing: AdvancingChoices =
-    rangeAdvances && latestAdvances ? 'range-and-latest' : rangeAdvances ? 'range-only' : 'latest-only'
-  return { kind: 'candidate', facet, advancing }
+  return hasAdvancingChoice(facet) ? { kind: 'candidate', facet } : { kind: 'current', facet }
 }

@@ -8,6 +8,15 @@ import {
 import { ACCEPT_MCP_FLAG } from './flags.ts'
 
 /**
+ * The four front doors to the install pipeline.
+ *
+ * Named once because every remedy below ends by telling the user which
+ * command to run again, and a literal union repeated at three signatures
+ * is three places to forget the fourth door.
+ */
+export type InstallCommandName = 'add' | 'install' | 'remove' | 'update'
+
+/**
  * The `detail:` line for a failed install-pipeline run.
  *
  * The failure code is the part scripts branch on, so it stays first and
@@ -47,10 +56,7 @@ export function installFailureDetail(failure: RunInstallFailure): string {
  * was stale is the defect this replaces; the ordinary non-frozen run is the
  * one action that does both jobs, so it is what a mixed failure recommends.
  */
-function lockfileDriftFix(
-  facets: readonly { readonly reason: string }[],
-  command: 'add' | 'install' | 'remove',
-): string {
+function lockfileDriftFix(facets: readonly { readonly reason: string }[], command: InstallCommandName): string {
   const stale = facets.filter((entry) => entry.reason === 'stale-override').length
 
   // An empty set cannot happen through the frozen gates, which only report
@@ -77,7 +83,7 @@ function lockfileDriftFix(
 function mcpCapabilityFix(
   failure: McpServerCapabilityFailure,
   rollback: RollbackOutcome,
-  command: 'add' | 'install' | 'remove',
+  command: InstallCommandName,
 ): string {
   const state = describeDiskState(rollback)
   if (failure.code !== 'conflict') {
@@ -94,7 +100,7 @@ function mcpCapabilityFix(
 export function installFailureFix(
   failure: RunInstallFailure,
   rollback: RollbackOutcome,
-  command: 'add' | 'install' | 'remove',
+  command: InstallCommandName,
 ): string {
   // An incomplete rollback outranks everything: whatever caused the failure
   // matters less than the fact that some file is not back where it started.
@@ -158,6 +164,13 @@ export function installFailureFix(
       return `deselect one of the adapters listed above, then re-run 'facet ${command}'`
     case 'MCP_NATIVE_STATE_DRIFT':
       return `${describeDiskState(rollback)}. Review the file listed above, then re-run 'facet ${command}'`
+    case 'UPDATE_PLAN_STALE':
+      // Nothing is broken and nothing needs repairing: the project moved
+      // between the plan being shown and being applied, so the only
+      // sensible action is to look at a plan built from what is there
+      // now. Sending this to the default arm's "fix the underlying
+      // issue" would invent a problem to hunt for.
+      return `${describeDiskState(rollback)}. Re-run 'facet ${command}' to plan against the current project state`
     default:
       // Most codes that land here failed BEFORE the journal opened —
       // `LOCK_HELD`, `FACETS_JSON_NOT_FOUND`, `FROZEN_WITH_DELTA`,

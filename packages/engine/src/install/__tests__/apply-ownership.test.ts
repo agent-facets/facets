@@ -158,7 +158,11 @@ describe('apply — aliased assets materialize under the effective name', () => 
     })
     const { adapter, io } = recordingAdapter()
 
-    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (!result.ok) expect.unreachable()
 
     // The adapter was addressed with the effective name, never the authored one.
@@ -205,8 +209,20 @@ describe('apply — aliased assets materialize under the effective name', () => 
     })
     const { adapter } = recordingAdapter()
 
-    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
-    const second = await runInstall({ projectRoot, adapters: [adapter] })
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
+    const second = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (!second.ok) expect.unreachable()
 
     // If the companion lookup keyed off the effective name, the bundle would
@@ -226,14 +242,26 @@ describe('apply — global ownership reconciliation', () => {
     const b = skillFixture('beta', 'other')
     writeManifest({ facets: { alpha: a, beta: b } })
     const { adapter } = recordingAdapter()
-    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
     expect(existsSync(join(skillRoot('review'), 'SKILL.md'))).toBe(true)
 
     writeManifest({
       manifestVersion: 0.2,
       facets: { beta: { source: b, materialization: { skills: { other: { kind: 'aliased', as: 'review' } } } } },
     })
-    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (!result.ok) expect.unreachable()
 
     // The identity survives and holds the NEW owner's content.
@@ -251,7 +279,15 @@ describe('apply — global ownership reconciliation', () => {
     const a = skillFixture('alpha', 'review')
     writeManifest({ facets: { alpha: a } })
     const { adapter, io } = recordingAdapter()
-    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
 
     mkdirSync(skillRoot('shared'), { recursive: true })
     mkdirSync(join(skillRoot('shared'), 'refs'), { recursive: true })
@@ -281,7 +317,11 @@ describe('apply — global ownership reconciliation', () => {
     })
 
     io.length = 0
-    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (!result.ok) expect.unreachable()
 
     // Exactly one delete for the shared identity.
@@ -301,12 +341,24 @@ describe('apply — global ownership reconciliation', () => {
 
     writeManifest(aliased('vendor-review'))
     const { adapter, io } = recordingAdapter()
-    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
     expect(existsSync(join(skillRoot('vendor-review'), 'refs/api.md'))).toBe(true)
 
     writeManifest(aliased('partner-review'))
     io.length = 0
-    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (!result.ok) expect.unreachable()
 
     // Old bundle gone in full, new bundle complete.
@@ -330,7 +382,15 @@ describe('apply — global ownership reconciliation', () => {
     const a = skillFixture('alpha', 'planner')
     writeManifest({ facets: { alpha: a } })
     const { adapter, io } = recordingAdapter()
-    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
     expect(readFileSync(join(skillRoot('planner'), 'SKILL.md'), 'utf8')).toContain('# planner from alpha')
 
     const b = skillFixture('beta', 'planner')
@@ -341,17 +401,21 @@ describe('apply — global ownership reconciliation', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [adapter],
-      resolveCollisions: async (request): Promise<CollisionResolution> => {
-        groups = request.groups.length
-        // Intent is settled before anything moves on disk.
-        expect(io).toEqual([])
-        return {
-          kind: 'resolved',
-          overrides: {
-            alpha: { skills: { planner: { kind: 'aliased', as: 'planner-a' } } },
-            beta: { skills: { planner: { kind: 'aliased', as: 'planner-b' } } },
-          },
-        }
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        resolveCollisions: async (request): Promise<CollisionResolution> => {
+          groups = request.groups.length
+          // Intent is settled before anything moves on disk.
+          expect(io).toEqual([])
+          return {
+            kind: 'resolved',
+            overrides: {
+              alpha: { skills: { planner: { kind: 'aliased', as: 'planner-a' } } },
+              beta: { skills: { planner: { kind: 'aliased', as: 'planner-b' } } },
+            },
+          }
+        },
       },
     })
     if (!result.ok) expect.unreachable()
@@ -393,14 +457,30 @@ describe('apply — global ownership reconciliation', () => {
     const a = skillFixture('alpha', 'review', { companions: { 'refs/api.md': '# api\n' } })
     writeManifest({ facets: { alpha: a } })
     const { adapter } = recordingAdapter()
-    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
     expect(existsSync(join(skillRoot('review'), 'refs/api.md'))).toBe(true)
 
     writeManifest({
       manifestVersion: 0.2,
       facets: { alpha: { source: a, materialization: { skills: { review: { kind: 'omitted' } } } } },
     })
-    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
     expect(existsSync(skillRoot('review'))).toBe(false)
     // Still locked — an omission is a materialization choice, not a removal.
     const lock = JSON.parse(readFileSync(join(projectRoot, 'facets.lock'), 'utf8'))
@@ -408,7 +488,15 @@ describe('apply — global ownership reconciliation', () => {
     expect(readReceipt().facets.alpha?.assets).toEqual([])
 
     writeManifest({ facets: { alpha: a } })
-    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
     expect(readFileSync(join(skillRoot('review'), 'refs/api.md'), 'utf8')).toBe('# api\n')
   })
 
@@ -420,7 +508,15 @@ describe('apply — global ownership reconciliation', () => {
     const a = skillFixture('alpha', 'review', { companions: { 'refs/api.md': '# api\n' } })
     const b = skillFixture('beta', 'other')
     writeManifest({ facets: { alpha: a, beta: b } })
-    expect((await runInstall({ projectRoot, adapters: [recordingAdapter().adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [recordingAdapter().adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
     expect(existsSync(join(skillRoot('review'), 'refs/api.md'))).toBe(true)
 
     // Change beta's content so its write is not skipped as identical.
@@ -434,7 +530,11 @@ describe('apply — global ownership reconciliation', () => {
     })
 
     const { adapter, io } = recordingAdapter({ failInstallOf: new Set(['other']) })
-    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (result.ok) expect.unreachable()
     expect(result.failure.code).toBe('ADAPTER_INSTALL_FAILED')
     expect(result.rollback.kind).toBe('complete')
@@ -455,7 +555,15 @@ describe('apply — global ownership reconciliation', () => {
     const a = skillFixture('alpha', 'review', { companions: { 'refs/api.md': '# api\n' } })
     const b = skillFixture('beta', 'other')
     writeManifest({ facets: { alpha: a, beta: b } })
-    expect((await runInstall({ projectRoot, adapters: [recordingAdapter().adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [recordingAdapter().adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
 
     // alpha gains a companion; beta's write will fail after alpha's succeeds.
     writeFileSync(join(projectRoot, 'vendor/alpha/skills/review/refs/new.md'), '# new\n')
@@ -470,7 +578,11 @@ describe('apply — global ownership reconciliation', () => {
     writeFileSync(join(projectRoot, 'vendor/beta/skills/other/SKILL.md'), '# other v2\n')
 
     const { adapter } = recordingAdapter({ failInstallOf: new Set(['other']) })
-    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (result.ok) expect.unreachable()
     expect(result.rollback.kind).toBe('complete')
 
@@ -485,7 +597,11 @@ describe('apply — global ownership reconciliation', () => {
     writeManifest({ facets: { alpha: a, beta: b } })
 
     const { adapter } = recordingAdapter({ failInstallOf: new Set(['other']) })
-    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (result.ok) expect.unreachable()
     expect(result.rollback.kind).toBe('complete')
 
@@ -510,14 +626,26 @@ describe('apply — global ownership reconciliation', () => {
     const a = skillFixture('alpha', 'review', { companions: { 'refs/api.md': '# api\n' } })
     const b = skillFixture('beta', 'other')
     writeManifest({ facets: { alpha: a, beta: b } })
-    expect((await runInstall({ projectRoot, adapters: [recordingAdapter().adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [recordingAdapter().adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
 
     rmSync(join(skillRoot('review'), 'SKILL.md'))
     expect(existsSync(join(skillRoot('review'), 'refs/api.md'))).toBe(true)
     writeFileSync(join(projectRoot, 'vendor/beta/skills/other/SKILL.md'), '# other v2\n')
 
     const { adapter } = recordingAdapter({ failInstallOf: new Set(['other']) })
-    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (result.ok) expect.unreachable()
     expect(result.rollback.kind).toBe('complete')
 
@@ -539,7 +667,11 @@ describe('apply — global ownership reconciliation', () => {
     mkdirSync(receiptPath(projectRoot), { recursive: true })
 
     const { adapter } = recordingAdapter()
-    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (result.ok) expect.unreachable()
     expect(result.failure.code).toBe('LOCKFILE_WRITE_FAILED')
     expect(result.rollback.kind).toBe('complete')
@@ -553,14 +685,26 @@ describe('apply — global ownership reconciliation', () => {
     const a = skillFixture('alpha', 'review')
     writeManifest({ facets: { alpha: a } })
     const { adapter } = recordingAdapter()
-    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
 
     // A user's own note inside the bundle directory.
     const note = join(skillRoot('review'), 'notes.txt')
     writeFileSync(note, 'mine\n')
 
     writeManifest({ facets: {} })
-    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (!result.ok) expect.unreachable()
 
     expect(existsSync(join(skillRoot('review'), 'SKILL.md'))).toBe(false)
@@ -577,7 +721,11 @@ describe('apply — global ownership reconciliation', () => {
     writeManifest({ facets: { alpha: a } })
     const { adapter } = recordingAdapter()
 
-    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (!result.ok) expect.unreachable()
 
     expect(readFileSync(join(skillRoot('review'), 'SKILL.md'), 'utf8')).toContain('# review from alpha')
@@ -589,7 +737,15 @@ describe('apply — global ownership reconciliation', () => {
     const a = skillFixture('alpha', 'review')
     writeManifest({ facets: { alpha: a } })
     const { adapter, io } = recordingAdapter()
-    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
 
     // A bundle this machine never materialized, at an identity nothing claims.
     mkdirSync(skillRoot('handwritten'), { recursive: true })
@@ -597,7 +753,11 @@ describe('apply — global ownership reconciliation', () => {
 
     writeManifest({ facets: {} })
     io.length = 0
-    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (!result.ok) expect.unreachable()
 
     // Cleanup is authorized by the receipt, so an unclaimed identity is not
@@ -611,7 +771,15 @@ describe('apply — global ownership reconciliation', () => {
     const a = skillFixture('alpha', 'review')
     writeManifest({ facets: { alpha: a } })
     const { adapter, io } = recordingAdapter()
-    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
 
     // The shape of a pulled lockfile on a machine that never ran the install:
     // the declaration exists in shared state, but nothing witnesses that THIS
@@ -623,7 +791,7 @@ describe('apply — global ownership reconciliation', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [adapter],
-      delta: { additions: [], removals: [{ facetName: 'alpha' }] },
+      operation: { kind: 'remove', removals: [{ facetName: 'alpha' }] },
     })
     if (!result.ok) expect.unreachable()
 
@@ -648,12 +816,20 @@ describe('apply — global ownership reconciliation', () => {
     const b = skillFixture('beta', 'other')
     writeManifest({ facets: { alpha: a, beta: b } })
     const { adapter } = recordingAdapter()
-    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
 
     const result = await runInstall({
       projectRoot,
       adapters: [adapter],
-      delta: { additions: [], removals: [{ facetName: 'alpha' }] },
+      operation: { kind: 'remove', removals: [{ facetName: 'alpha' }] },
     })
     if (!result.ok) expect.unreachable()
 
@@ -670,13 +846,25 @@ describe('apply — global ownership reconciliation', () => {
     const a = skillFixture('alpha', 'review', { companions: { 'refs/api.md': '# api\n' } })
     writeManifest({ facets: { alpha: a } })
     const { adapter, io } = recordingAdapter()
-    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
 
     rmSync(join(skillRoot('review'), 'SKILL.md'))
 
     writeManifest({ facets: {} })
     io.length = 0
-    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (!result.ok) expect.unreachable()
 
     expect(existsSync(join(skillRoot('review'), 'refs/api.md'))).toBe(false)
@@ -692,12 +880,20 @@ describe('apply — global ownership reconciliation', () => {
     const b = skillFixture('beta', 'other')
     writeManifest({ facets: { alpha: a, beta: b } })
     const { adapter } = recordingAdapter()
-    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
 
     const result = await runInstall({
       projectRoot,
       adapters: [adapter],
-      delta: { additions: [], removals: [{ facetName: 'alpha' }] },
+      operation: { kind: 'remove', removals: [{ facetName: 'alpha' }] },
     })
     if (!result.ok) expect.unreachable()
 
@@ -710,7 +906,15 @@ describe('apply — global ownership reconciliation', () => {
     const a = skillFixture('alpha', 'review', { companions: { 'refs/api.md': '# api\n' } })
     writeManifest({ facets: { alpha: a } })
     const { adapter } = recordingAdapter()
-    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
     const before = {
       lock: readFileSync(join(projectRoot, 'facets.lock'), 'utf8'),
       receipt: readFileSync(receiptPath(projectRoot), 'utf8'),
@@ -724,7 +928,12 @@ describe('apply — global ownership reconciliation', () => {
 
     writeManifest({ facets: {} })
     const events: StageEvent[] = []
-    const result = await runInstall({ projectRoot, adapters: [adapter], onStage: (e) => events.push(e) })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      onStage: (e) => events.push(e),
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (result.ok) expect.unreachable()
 
     // The companion WAS deleted, and putting it back is exactly what having
@@ -743,7 +952,15 @@ describe('apply — global ownership reconciliation', () => {
     const a = skillFixture('alpha', 'review')
     writeManifest({ facets: { alpha: a } })
     const { adapter, io } = recordingAdapter()
-    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
 
     // A receipt file that exists and cannot be used. Every identity it had
     // tracked is now untracked, so an install that drops the facet must not
@@ -754,7 +971,12 @@ describe('apply — global ownership reconciliation', () => {
     writeManifest({ facets: {} })
     io.length = 0
     const events: StageEvent[] = []
-    const result = await runInstall({ projectRoot, adapters: [adapter], onStage: (e) => events.push(e) })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      onStage: (e) => events.push(e),
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (!result.ok) expect.unreachable()
 
     expect(events).toContainEqual({ kind: 'receipt-unavailable', reason })
@@ -772,7 +994,16 @@ describe('apply — global ownership reconciliation', () => {
     const { adapter } = recordingAdapter()
     const events: StageEvent[] = []
 
-    expect((await runInstall({ projectRoot, adapters: [adapter], onStage: (e) => events.push(e) })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [adapter],
+          onStage: (e) => events.push(e),
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
 
     expect(events.some((e) => e.kind === 'receipt-unavailable')).toBe(false)
   })
@@ -781,18 +1012,38 @@ describe('apply — global ownership reconciliation', () => {
     const a = skillFixture('alpha', 'review')
     writeManifest({ facets: { alpha: a } })
     const { adapter, io } = recordingAdapter()
-    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
     writeFileSync(receiptPath(projectRoot), 'not json{')
 
     // The remedy the CLI points at: install while the source is reachable. The
     // write is what re-creates the claim...
-    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
     expect(readReceipt().facets.alpha?.assets.map((asset) => asset.name)).toEqual(['review'])
 
     // ...and only now can a removal delete it.
     writeManifest({ facets: {} })
     io.length = 0
-    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (!result.ok) expect.unreachable()
     expect(io).toContain('delete:skill:review')
     expect(existsSync(skillRoot('review'))).toBe(false)
@@ -808,7 +1059,15 @@ describe('apply — global ownership reconciliation', () => {
       },
     })
     const { adapter, io } = recordingAdapter()
-    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
 
     // Delete the source tree entirely: removal must not need to resolve or
     // rebuild anything. The receipt's recorded disposition is the only thing
@@ -817,7 +1076,11 @@ describe('apply — global ownership reconciliation', () => {
     writeManifest({ facets: {} })
 
     io.length = 0
-    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (!result.ok) expect.unreachable()
 
     expect(io).toContain('delete:skill:vendor-review')
@@ -831,7 +1094,15 @@ describe('apply — frozen reproduction of recorded intent', () => {
   async function seed(manifest: unknown): Promise<{ adapter: Adapter; lock: string; manifestText: string }> {
     const manifestText = writeManifest(manifest)
     const { adapter } = recordingAdapter()
-    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
     return { adapter, lock: readFileSync(join(projectRoot, 'facets.lock'), 'utf8'), manifestText }
   }
 
@@ -850,18 +1121,15 @@ describe('apply — frozen reproduction of recorded intent', () => {
     })
     const manifestText = readFileSync(join(projectRoot, 'facets.json'), 'utf8')
 
-    let prompted = false
+    // No resolver is supplied because a frozen operation cannot carry one:
+    // reproducing recorded intent must never collect a new decision, and the
+    // type now says so instead of the runtime quietly ignoring it.
     const result = await runInstall({
       projectRoot,
       adapters: [adapter],
-      frozenLockfile: true,
-      resolveCollisions: async () => {
-        prompted = true
-        return { kind: 'cancelled' }
-      },
+      operation: { kind: 'reproduce', frozen: true },
     })
     if (!result.ok) expect.unreachable()
-    expect(prompted).toBe(false)
     expect(result.summary.textAssets.written).toBe(0)
     expect(existsSync(join(skillRoot('vendor-review'), 'refs/api.md'))).toBe(true)
     expectUntouched(lock, manifestText)
@@ -877,7 +1145,11 @@ describe('apply — frozen reproduction of recorded intent', () => {
         alpha: { source: a, materialization: { skills: { review: { kind: 'aliased', as: 'vendor-review' } } } },
       },
     })
-    const result = await runInstall({ projectRoot, adapters: [adapter], frozenLockfile: true })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: true },
+    })
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'LOCKFILE_DRIFT') expect.unreachable()
 
@@ -902,7 +1174,11 @@ describe('apply — frozen reproduction of recorded intent', () => {
       manifestVersion: 0.2,
       facets: { alpha: { source: a, materialization: { skills: { gone: { kind: 'omitted' } } } } },
     })
-    const result = await runInstall({ projectRoot, adapters: [adapter], frozenLockfile: true })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: true },
+    })
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'LOCKFILE_DRIFT') expect.unreachable()
     const entry = result.failure.facets[0]
@@ -932,8 +1208,8 @@ describe('apply — frozen reproduction of recorded intent', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [adapter],
-      frozenLockfile: true,
       onStage: (event) => events.push(event),
+      operation: { kind: 'reproduce', frozen: true },
     })
     if (!result.ok) expect.unreachable()
 
@@ -966,15 +1242,13 @@ describe('apply — frozen reproduction of recorded intent', () => {
     // check happened before anything was fetched, cloned, or built.
     rmSync(join(projectRoot, 'vendor'), { recursive: true, force: true })
 
-    let prompted = false
+    // No resolver is supplied because a frozen operation cannot carry one:
+    // reproducing recorded intent must never collect a new decision, and the
+    // type now says so instead of the runtime quietly ignoring it.
     const result = await runInstall({
       projectRoot,
       adapters: [adapter],
-      frozenLockfile: true,
-      resolveCollisions: async () => {
-        prompted = true
-        return { kind: 'cancelled' }
-      },
+      operation: { kind: 'reproduce', frozen: true },
     })
     if (result.ok) expect.unreachable()
     // Coverage is fine, so this must be the collision report — with every
@@ -982,7 +1256,6 @@ describe('apply — frozen reproduction of recorded intent', () => {
     if (result.failure.code !== 'MATERIALIZATION_COLLISION') expect.unreachable()
     expect(result.failure.groups).toHaveLength(1)
     expect(result.failure.groups[0]?.group.members.map((m) => m.facet).sort()).toEqual(['alpha', 'beta'])
-    expect(prompted).toBe(false)
     expectUntouched(lock, manifestText)
   })
 
@@ -1015,7 +1288,11 @@ describe('apply — frozen reproduction of recorded intent', () => {
         alpha: { source: a, materialization: { skills: { review: { kind: 'aliased', as: 'vendor-review' } } } },
       },
     })
-    const result = await runInstall({ projectRoot, adapters: [adapter], frozenLockfile: true })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: true },
+    })
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'LOCKFILE_DRIFT') expect.unreachable()
     const entry = result.failure.facets[0]
@@ -1048,7 +1325,11 @@ describe('apply — frozen reproduction of recorded intent', () => {
     writeFileSync(join(projectRoot, 'facets.lock'), lock)
     const manifestText = readFileSync(join(projectRoot, 'facets.json'), 'utf8')
 
-    const result = await runInstall({ projectRoot, adapters: [adapter], frozenLockfile: true })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: true },
+    })
     if (!result.ok) expect.unreachable()
     expectUntouched(lock, manifestText)
   })
@@ -1056,20 +1337,20 @@ describe('apply — frozen reproduction of recorded intent', () => {
   test('a frozen add is refused before the lockfile is even read', async () => {
     const a = skillFixture('alpha', 'review')
     writeManifest({ facets: { alpha: a } })
-    // A lockfile that cannot be parsed at all. If the delta check ran after
-    // the load, the user would be told to fix this file instead of being told
-    // that a frozen add is impossible in the first place.
+    // A lockfile that cannot be parsed at all. A frozen run still has to
+    // report the file it genuinely cannot read; what it no longer has to
+    // report is "you asked to add something while frozen", because that
+    // request is not constructible. See `install-operation.test.ts`.
     writeFileSync(join(projectRoot, 'facets.lock'), '{ not json')
     const { adapter } = recordingAdapter()
 
     const result = await runInstall({
       projectRoot,
       adapters: [adapter],
-      frozenLockfile: true,
-      delta: { additions: [], removals: [{ facetName: 'alpha' }] },
+      operation: { kind: 'reproduce', frozen: true },
     })
     if (result.ok) expect.unreachable()
-    expect(result.failure.code).toBe('FROZEN_WITH_DELTA')
+    expect(result.failure.code).toBe('LOCKFILE_INVALID')
     expect(result.rollback.kind).toBe('not-needed')
   })
 })
@@ -1108,7 +1389,7 @@ describe('remove — refinement only when local state agrees', () => {
     return await runInstall({
       projectRoot,
       adapters: [adapter],
-      delta: { additions: [], removals: [{ facetName: 'alpha' }] },
+      operation: { kind: 'remove', removals: [{ facetName: 'alpha' }] },
     })
   }
 
@@ -1117,7 +1398,15 @@ describe('remove — refinement only when local state agrees', () => {
     const b = skillFixture('beta', 'other')
     writeManifest({ facets: { alpha: a, beta: b } })
     const { adapter, io } = recordingAdapter()
-    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
 
     // A teammate aliased `beta`'s skill and committed both files. This machine
     // pulled them but never ran an install, so `skills/other/` is still what
@@ -1151,7 +1440,15 @@ describe('remove — refinement only when local state agrees', () => {
     const b = skillFixture('beta', 'other')
     writeManifest({ facets: { alpha: a, beta: b } })
     const { adapter, io } = recordingAdapter()
-    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
     expect(readFileSync(join(skillRoot('review'), 'SKILL.md'), 'utf8')).toContain('# review from alpha')
 
     // `beta` now claims exactly the name `alpha` materialized. The bytes at
@@ -1181,7 +1478,15 @@ describe('remove — refinement only when local state agrees', () => {
     const b = skillFixture('beta', 'other', { companions: { 'refs/api.md': '# api\n' } })
     writeManifest({ facets: { alpha: a, beta: b } })
     const { adapter, io } = recordingAdapter()
-    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
     const remainingBefore = readFileSync(join(skillRoot('other'), 'refs/api.md'), 'utf8')
 
     io.length = 0
@@ -1217,7 +1522,15 @@ describe('remove — cancellation on the refined path', () => {
     const a = skillFixture('alpha', 'review', { companions: { 'refs/api.md': '# api\n' } })
     const b = skillFixture('beta', 'other')
     writeManifest({ facets: { alpha: a, beta: b } })
-    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
   }
 
   test('a pre-aborted removal deletes nothing and reports no mutation', async () => {
@@ -1231,8 +1544,8 @@ describe('remove — cancellation on the refined path', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [adapter],
-      delta: { additions: [], removals: [{ facetName: 'alpha' }] },
       signal: controller.signal,
+      operation: { kind: 'remove', removals: [{ facetName: 'alpha' }] },
     })
 
     if (result.ok) expect.unreachable()
@@ -1273,8 +1586,8 @@ describe('remove — cancellation on the refined path', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [abortingAdapter],
-      delta: { additions: [], removals: [{ facetName: 'alpha' }] },
       signal: controller.signal,
+      operation: { kind: 'remove', removals: [{ facetName: 'alpha' }] },
     })
 
     if (result.ok) expect.unreachable()
@@ -1297,8 +1610,8 @@ describe('remove — cancellation on the refined path', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [adapter],
-      delta: { additions: [], removals: [{ facetName: 'alpha' }] },
       signal: controller.signal,
+      operation: { kind: 'remove', removals: [{ facetName: 'alpha' }] },
     })
 
     if (!result.ok) expect.unreachable()

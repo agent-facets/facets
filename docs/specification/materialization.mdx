@@ -89,7 +89,7 @@ Dispositions live in [`facets.json`](/specification/project-manifest) as durable
 
 Overrides are keyed by authored name because that is the only stable identifier — an alias is the thing being declared, so it cannot also be the key.
 
-Intent is durable. It survives a failed install, a re-add, and a change of source: changing *where* a facet comes from is not a statement about *how* its assets and servers should be named. It is discarded only when the facet is removed, or when the contribution it names disappears (see [Stale overrides](#stale-overrides)).
+Intent is durable. It survives a failed install, a re-add, a version update, and a change of source: changing *which release* a facet is at, or *where* it comes from, is not a statement about *how* its assets and servers should be named. It is discarded only when the facet is removed, or when the contribution it names disappears (see [Stale overrides](#stale-overrides)).
 
 One server disposition applies to **every** selected adapter. There is no per-adapter aliasing or omission: a project decides once what a server is called, and each adapter writes that same effective name into its own document.
 

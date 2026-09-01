@@ -126,7 +126,11 @@ describe('compose — collision detection', () => {
     const before = writeManifest({ facets: { alpha: a, beta: b } })
     const { adapter, io } = recordingAdapter('rec')
 
-    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'MATERIALIZATION_COLLISION') expect.unreachable()
 
@@ -153,7 +157,11 @@ describe('compose — collision detection', () => {
     writeManifest({ facets: { alpha: a, beta: b, gamma: c, delta: d } })
     const { adapter } = recordingAdapter('rec')
 
-    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'MATERIALIZATION_COLLISION') expect.unreachable()
     // Two independent conflicts: a user should learn both at once rather
@@ -179,7 +187,11 @@ describe('compose — collision detection', () => {
     writeManifest({ facets: { alpha: './vendor/alpha' } })
     const { adapter } = recordingAdapter('rec')
 
-    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     expect(result.ok).toBe(true)
   })
 })
@@ -193,7 +205,11 @@ describe('compose — MCP server composition', () => {
 
     // Same declaration, same effective name: one configuration, two
     // claimants. Contesting here would block an install over an agreement.
-    const result = await runInstall({ projectRoot, adapters: [adapter], mcpConsent: ACCEPT_MCP })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT_MCP },
+    })
     expect(result.ok).toBe(true)
   })
 
@@ -203,7 +219,11 @@ describe('compose — MCP server composition', () => {
     writeManifest({ facets: { alpha: a, beta: b } })
     const { adapter, io } = recordingAdapter('rec')
 
-    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false },
+    })
 
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'MATERIALIZATION_COLLISION') expect.unreachable()
@@ -222,7 +242,11 @@ describe('compose — MCP server composition', () => {
     const { adapter } = recordingAdapter('rec')
 
     // Separate identity spaces, so there is no shared key to contend in.
-    const result = await runInstall({ projectRoot, adapters: [adapter], mcpConsent: ACCEPT_MCP })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT_MCP },
+    })
     expect(result.ok).toBe(true)
   })
 
@@ -238,7 +262,11 @@ describe('compose — MCP server composition', () => {
     })
     const { adapter } = recordingAdapter('rec')
 
-    const result = await runInstall({ projectRoot, adapters: [adapter], mcpConsent: ACCEPT_MCP })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT_MCP },
+    })
     expect(result.ok).toBe(true)
   })
 
@@ -254,7 +282,11 @@ describe('compose — MCP server composition', () => {
     })
     const { adapter } = recordingAdapter('rec')
 
-    const result = await runInstall({ projectRoot, adapters: [adapter], mcpConsent: ACCEPT_MCP })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT_MCP },
+    })
     expect(result.ok).toBe(true)
   })
 
@@ -263,7 +295,11 @@ describe('compose — MCP server composition', () => {
     writeManifest({ facets: { alpha: a } })
     const { adapter, io } = recordingAdapter('rec')
 
-    const result = await runInstall({ projectRoot, adapters: [adapter], mcpConsent: ACCEPT_MCP })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT_MCP },
+    })
 
     if (!result.ok) expect.unreachable()
     // The lockfile records the facet with an empty asset list; no adapter
@@ -280,7 +316,11 @@ describe('compose — MCP server composition', () => {
     writeManifest({ facets: { alpha: a, beta: b, gamma: c, delta: d } })
     const { adapter } = recordingAdapter('rec')
 
-    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false },
+    })
 
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'MATERIALIZATION_COLLISION') expect.unreachable()
@@ -295,7 +335,15 @@ describe('compose — MCP server composition', () => {
     writeManifest({ facets: { alpha: a } })
     const { adapter } = recordingAdapter('rec')
 
-    expect((await runInstall({ projectRoot, adapters: [adapter], mcpConsent: ACCEPT_MCP })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [adapter],
+          operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT_MCP },
+        })
+      ).ok,
+    ).toBe(true)
 
     // The lockfile is unchanged by MCP support: a declaration travels inside
     // the integrity-pinned `facet.json`, so duplicating it here would give a
@@ -321,8 +369,8 @@ describe('compose — MCP server composition', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [adapter],
-      mcpConsent: ACCEPT_MCP,
       onStage: (e) => events.push(e),
+      operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT_MCP },
     })
 
     expect(result.ok).toBe(true)
@@ -350,12 +398,16 @@ describe('compose — resolution', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [adapter],
-      resolveCollisions: async (request): Promise<CollisionResolution> => {
-        seen = request
-        return {
-          kind: 'resolved',
-          overrides: { beta: { skills: { review: { kind: 'aliased', as: 'beta-review' } } } },
-        }
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        resolveCollisions: async (request): Promise<CollisionResolution> => {
+          seen = request
+          return {
+            kind: 'resolved',
+            overrides: { beta: { skills: { review: { kind: 'aliased', as: 'beta-review' } } } },
+          }
+        },
       },
     })
     if (!result.ok) expect.unreachable()
@@ -378,16 +430,20 @@ describe('compose — resolution', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [adapter],
-      resolveCollisions: async (): Promise<CollisionResolution> => {
-        calls += 1
-        // Aliases both claimants onto ONE new name — still a collision.
-        return {
-          kind: 'resolved',
-          overrides: {
-            alpha: { skills: { review: { kind: 'aliased', as: 'shared' } } },
-            beta: { skills: { review: { kind: 'aliased', as: 'shared' } } },
-          },
-        }
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        resolveCollisions: async (): Promise<CollisionResolution> => {
+          calls += 1
+          // Aliases both claimants onto ONE new name — still a collision.
+          return {
+            kind: 'resolved',
+            overrides: {
+              alpha: { skills: { review: { kind: 'aliased', as: 'shared' } } },
+              beta: { skills: { review: { kind: 'aliased', as: 'shared' } } },
+            },
+          }
+        },
       },
     })
     if (result.ok) expect.unreachable()
@@ -406,10 +462,14 @@ describe('compose — resolution', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [adapter],
-      resolveCollisions: async (): Promise<CollisionResolution> => ({
-        kind: 'resolved',
-        overrides: { beta: { skills: { review: { kind: 'aliased', as: '../escape' } } } },
-      }),
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        resolveCollisions: async (): Promise<CollisionResolution> => ({
+          kind: 'resolved',
+          overrides: { beta: { skills: { review: { kind: 'aliased', as: '../escape' } } } },
+        }),
+      },
     })
     if (result.ok) expect.unreachable()
     if (result.failure.code !== 'MATERIALIZATION_RESOLUTION_INVALID') expect.unreachable()
@@ -425,7 +485,11 @@ describe('compose — resolution', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [adapter],
-      resolveCollisions: async (): Promise<CollisionResolution> => ({ kind: 'cancelled' }),
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        resolveCollisions: async (): Promise<CollisionResolution> => ({ kind: 'cancelled' }),
+      },
     })
     if (result.ok) expect.unreachable()
     expect(result.failure.code).toBe('MATERIALIZATION_CANCELLED')
@@ -443,27 +507,31 @@ describe('compose — resolution', () => {
     const a = fixture('alpha', 'review')
     writeManifest({ facets: { alpha: a } })
     const { adapter } = recordingAdapter('rec')
-    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
 
     const b = fixture('beta', 'review')
     const before = writeManifest({ facets: { alpha: a, beta: b } })
     const lockBefore = readFileSync(join(projectRoot, 'facets.lock'), 'utf8')
 
-    let called = false
+    // A frozen operation cannot carry a collision resolver at all, so there
+    // is no longer a resolver to observe going uncalled.
     const result = await runInstall({
       projectRoot,
       adapters: [adapter],
-      frozenLockfile: true,
-      resolveCollisions: async (): Promise<CollisionResolution> => {
-        called = true
-        return { kind: 'cancelled' }
-      },
+      operation: { kind: 'reproduce', frozen: true },
     })
     if (result.ok) expect.unreachable()
     expect(result.failure.code).toBe('LOCKFILE_DRIFT')
     // The load-bearing assertion: reproducing recorded intent must never
     // collect NEW intent, so the resolver is unreachable in frozen mode.
-    expect(called).toBe(false)
     expect(readManifest()).toBe(before)
     expect(readFileSync(join(projectRoot, 'facets.lock'), 'utf8')).toBe(lockBefore)
   })
@@ -484,7 +552,11 @@ describe('compose — persisted intent', () => {
 
     // No resolver: recorded intent must reproduce without prompting, which
     // is what makes a teammate's clone and CI deterministic.
-    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (!result.ok) expect.unreachable()
     expect(io.filter((c) => c.startsWith('install:')).length).toBe(2)
   })
@@ -497,7 +569,11 @@ describe('compose — persisted intent', () => {
     })
     const { adapter, io } = recordingAdapter('rec')
 
-    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (!result.ok) expect.unreachable()
 
     // Nothing installed...
@@ -521,7 +597,11 @@ describe('compose — persisted intent', () => {
     })
     const { adapter } = recordingAdapter('rec')
 
-    const result = await runInstall({ projectRoot, adapters: [adapter] })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      operation: { kind: 'reproduce', frozen: false },
+    })
     // An override is durable intent; a facet version that no longer ships
     // the asset is a diagnostic, not a reason to refuse to install.
     expect(result.ok).toBe(true)
@@ -538,10 +618,14 @@ describe('compose — persisting and pruning intent', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [adapter],
-      resolveCollisions: async (): Promise<CollisionResolution> => ({
-        kind: 'resolved',
-        overrides: { beta: { skills: { review: { kind: 'aliased', as: 'beta-review' } } } },
-      }),
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        resolveCollisions: async (): Promise<CollisionResolution> => ({
+          kind: 'resolved',
+          overrides: { beta: { skills: { review: { kind: 'aliased', as: 'beta-review' } } } },
+        }),
+      },
     })
     if (!result.ok) expect.unreachable()
 
@@ -562,9 +646,13 @@ describe('compose — persisting and pruning intent', () => {
     const again = await runInstall({
       projectRoot,
       adapters: [adapter],
-      resolveCollisions: async (): Promise<CollisionResolution> => {
-        reprompted = true
-        return { kind: 'cancelled' }
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        resolveCollisions: async (): Promise<CollisionResolution> => {
+          reprompted = true
+          return { kind: 'cancelled' }
+        },
       },
     })
     expect(again.ok).toBe(true)
@@ -587,7 +675,12 @@ describe('compose — persisting and pruning intent', () => {
     const { adapter } = recordingAdapter('rec')
 
     const events: StageEvent[] = []
-    const result = await runInstall({ projectRoot, adapters: [adapter], onStage: (e) => events.push(e) })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [adapter],
+      onStage: (e) => events.push(e),
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (!result.ok) expect.unreachable()
 
     // The override naming a nonexistent asset is gone; the live one remains.
@@ -617,7 +710,15 @@ describe('compose — persisting and pruning intent', () => {
     })
     const { adapter } = recordingAdapter('rec')
 
-    expect((await runInstall({ projectRoot, adapters: [adapter] })).ok).toBe(true)
+    expect(
+      (
+        await runInstall({
+          projectRoot,
+          adapters: [adapter],
+          operation: { kind: 'reproduce', frozen: false },
+        })
+      ).ok,
+    ).toBe(true)
 
     // An expanded entry exists only to carry overrides. An empty one would be
     // a second spelling of the compact form.
@@ -648,7 +749,12 @@ describe('compose — persisting and pruning intent', () => {
     }
 
     const events: StageEvent[] = []
-    const result = await runInstall({ projectRoot, adapters: [failing], onStage: (e) => events.push(e) })
+    const result = await runInstall({
+      projectRoot,
+      adapters: [failing],
+      onStage: (e) => events.push(e),
+      operation: { kind: 'reproduce', frozen: false },
+    })
     if (result.ok) expect.unreachable()
     expect(result.failure.code).toBe('ADAPTER_INSTALL_FAILED')
 
@@ -676,9 +782,13 @@ describe('compose — no adapter I/O before the plan exists', () => {
     await runInstall({
       projectRoot,
       adapters: [adapter],
-      resolveCollisions: async (): Promise<CollisionResolution> => {
-        ioAtResolverTime = [...io]
-        return { kind: 'cancelled' }
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        resolveCollisions: async (): Promise<CollisionResolution> => {
+          ioAtResolverTime = [...io]
+          return { kind: 'cancelled' }
+        },
       },
     })
 
@@ -693,7 +803,7 @@ describe('compose — ordering against other failures', () => {
     const b = fixture('beta', 'review')
     writeManifest({ facets: { alpha: a, beta: b } })
 
-    let called = false
+    let _called = false
     const incompatible = {
       name: 'old',
       apiVersion: '0.0',
@@ -713,16 +823,19 @@ describe('compose — ordering against other failures', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [incompatible],
-      resolveCollisions: async (): Promise<CollisionResolution> => {
-        called = true
-        return { kind: 'cancelled' }
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        resolveCollisions: async (): Promise<CollisionResolution> => {
+          _called = true
+          return { kind: 'cancelled' }
+        },
       },
     })
     if (result.ok) expect.unreachable()
     // A user should fix their toolchain before being asked to make durable
     // naming decisions.
     expect(result.failure.code).toBe('ADAPTER_INCOMPATIBLE')
-    expect(called).toBe(false)
   })
 
   test('the collision-checking stage is emitted before any write', async () => {
@@ -735,6 +848,7 @@ describe('compose — ordering against other failures', () => {
       projectRoot,
       adapters: [adapter],
       onStage: (event) => events.push(event.kind),
+      operation: { kind: 'reproduce', frozen: false },
     })
     expect(result.ok).toBe(true)
     const checkAt = events.indexOf('collision-check')
@@ -770,13 +884,17 @@ describe('compose — resolving server collisions', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [adapter],
-      mcpConsent: ACCEPT_MCP,
-      resolveCollisions: async (request): Promise<CollisionResolution> => {
-        seen = request
-        return {
-          kind: 'resolved',
-          overrides: { beta: { servers: { filesystem: { kind: 'aliased', as: 'beta-filesystem' } } } },
-        }
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        mcpConsent: ACCEPT_MCP,
+        resolveCollisions: async (request): Promise<CollisionResolution> => {
+          seen = request
+          return {
+            kind: 'resolved',
+            overrides: { beta: { servers: { filesystem: { kind: 'aliased', as: 'beta-filesystem' } } } },
+          }
+        },
       },
     })
 
@@ -804,10 +922,14 @@ describe('compose — resolving server collisions', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [adapter],
-      mcpConsent: ACCEPT_MCP,
-      resolveCollisions: async (request): Promise<CollisionResolution> => {
-        seen = request
-        return { kind: 'cancelled' }
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        mcpConsent: ACCEPT_MCP,
+        resolveCollisions: async (request): Promise<CollisionResolution> => {
+          seen = request
+          return { kind: 'cancelled' }
+        },
       },
     })
 
@@ -828,8 +950,12 @@ describe('compose — resolving server collisions', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [adapter],
-      mcpConsent: ACCEPT_MCP,
-      resolveCollisions: async (): Promise<CollisionResolution> => ({ kind: 'cancelled' }),
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        mcpConsent: ACCEPT_MCP,
+        resolveCollisions: async (): Promise<CollisionResolution> => ({ kind: 'cancelled' }),
+      },
     })
 
     if (result.ok) expect.unreachable()
@@ -855,14 +981,18 @@ describe('compose — resolving server collisions', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [adapter],
-      mcpConsent: ACCEPT_MCP,
-      resolveCollisions: async (): Promise<CollisionResolution> => ({
-        kind: 'resolved',
-        overrides: {
-          alpha: { servers: { filesystem: { kind: 'omitted' } } },
-          beta: { servers: { filesystem: { kind: 'omitted' } } },
-        },
-      }),
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        mcpConsent: ACCEPT_MCP,
+        resolveCollisions: async (): Promise<CollisionResolution> => ({
+          kind: 'resolved',
+          overrides: {
+            alpha: { servers: { filesystem: { kind: 'omitted' } } },
+            beta: { servers: { filesystem: { kind: 'omitted' } } },
+          },
+        }),
+      },
     })
 
     if (!result.ok) expect.unreachable()
@@ -883,14 +1013,18 @@ describe('compose — resolving server collisions', () => {
     const result = await runInstall({
       projectRoot,
       adapters: [adapter],
-      mcpConsent: ACCEPT_MCP,
-      resolveCollisions: async (): Promise<CollisionResolution> => {
-        calls++
-        // Moves the problem rather than solving it.
-        return {
-          kind: 'resolved',
-          overrides: { alpha: { servers: { filesystem: { kind: 'aliased', as: 'filesystem' } } } },
-        }
+      operation: {
+        kind: 'reproduce',
+        frozen: false,
+        mcpConsent: ACCEPT_MCP,
+        resolveCollisions: async (): Promise<CollisionResolution> => {
+          calls++
+          // Moves the problem rather than solving it.
+          return {
+            kind: 'resolved',
+            overrides: { alpha: { servers: { filesystem: { kind: 'aliased', as: 'filesystem' } } } },
+          }
+        },
       },
     })
 

@@ -24,6 +24,21 @@ describe('parseExactVersion', () => {
     expect(parseExactVersion(value)).toBeUndefined()
   })
 
+  test('accepts a component at the representable bound', () => {
+    expect(parseExactVersion('9007199254740991.0.0')).toEqual(at(Number.MAX_SAFE_INTEGER, 0, 0))
+  })
+
+  test.each([
+    '9007199254740992.0.0',
+    '1.9007199254740992.0',
+    '1.0.9007199254740992',
+  ])('rejects the unrepresentable version %p', (value) => {
+    // Ordering is this module's whole job, and past the bound two
+    // distinct releases compare equal. A version it cannot order is a
+    // version it must not return.
+    expect(parseExactVersion(value)).toBeUndefined()
+  })
+
   test('never throws on hand-edited lockfile text', () => {
     // The point of this parser existing alongside `parseLockedVersion`:
     // that one throws, because the lockfile schema promised it wouldn't

@@ -12,8 +12,8 @@ Add a facet to a project — `facet add`
   rolled back automatically.
 
   Use --accept-mcp when a facet declares MCP servers and you have no TTY (see
-  "MCP servers" below). It is also accepted by `facet install` and
-  `facet remove`.
+  "MCP servers" below). It is also accepted by `facet install`,
+  `facet update`, and `facet remove`.
 
   PREFERRED: the facet registry (agentfacets.io)
   The registry is the default, first-choice source. A bare name resolves to a
@@ -33,9 +33,50 @@ Add a facet to a project — `facet add`
     facet add git@host:owner/repo#ref    SSH git URL at a ref.
     facet add ./path/to/facet            A local facet directory in the project.
 
+Move facets to newer releases — `facet update`
+  Checks every registry-backed facet in facets.json for a newer release and
+  installs the ones that move. `facet upgrade` is an alias of the same command.
+  NEITHER touches the CLI binary — that is `facet self-update`.
+    facet update              Newest release each declared specifier allows.
+    facet update --latest     Newest release, ignoring those specifiers. (-L)
+    facet update --dry-run    Print the plan; write nothing, install no adapter.
+  Takes NO positional arguments; it always considers every declared facet.
+
+  --latest may select a version the declared specifier forbids, so it rewrites
+  that specifier, preserving the form you wrote (1.* becomes 2.*, an exact pin
+  becomes the new pin, `*` and `latest` are left alone). Plain update never
+  rewrites anything. The specifier forms are the same ones listed under
+  `facet add` above.
+
+  --interactive (-i) opens a selection screen and REQUIRES a real terminal; it
+  fails immediately without one. As an agent, use plain update, --latest, or
+  --dry-run instead. Cancelling the screen applies nothing and exits non-zero.
+
+  Applying an update is an install: name collisions, MCP approval, takeover,
+  and rollback all behave exactly as described in the sections below, and
+  recorded materialization choices are preserved across a version change.
+
+  A run that applies nothing still SUCCEEDS (exit 0), and the message says
+  which kind of nothing it is. The one that is actionable:
+    "Newer releases exist, but the ranges in facets.json permit none of them."
+  That means the declared specifiers are doing their job; `facet update
+  --latest` is how to take those releases anyway.
+
+  Two refusals worth recognizing, both exit 1 with nothing written:
+    - "this project cannot be checked for updates yet" — facets.json and
+      facets.lock disagree about some facet. Run `facet install` first, then
+      update again. Update is not a drift-repairer and will keep refusing.
+    - "the project changed while this update was being reviewed" — a stale
+      plan. Nothing is broken; just re-run `facet update`.
+
+  Git and local facets have no releases to compare, so they are NAMED as
+  unsupported rather than reported as current. Move one by editing its source
+  in facets.json and running `facet install`.
+
 The project files
-  facets.json – Your dependency list. `facet add` and `facet remove` maintain
-                it; hand-edit it only to record materialization choices (below).
+  facets.json – Your dependency list. `facet add`, `facet remove`, and
+                `facet update --latest` maintain it; hand-edit it only to
+                record materialization choices (below).
                 It carries a "manifestVersion" the CLI stamps for you. The
                 current version is 0.2, which is what a "servers" override
                 group requires; 0.1 and unversioned documents are still read
@@ -111,9 +152,10 @@ MCP servers — when a facet configures a server
   prints every server with its full declaration. You have exactly two ways
   forward:
 
-    1. Approve everything reported:
+    1. Approve everything reported (pass it to whichever command failed):
          facet add <source> --accept-mcp
          facet install --accept-mcp
+         facet update --accept-mcp
          facet remove <name> --accept-mcp
 
     2. Refuse specific servers by recording an omission (requires

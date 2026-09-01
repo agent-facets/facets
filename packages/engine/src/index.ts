@@ -243,18 +243,21 @@ export type {
   EffectiveAssetName,
   FacetOutcome,
   FacetStage,
-  InstallDelta,
+  InstallOperation,
   InstallSummary,
   LockfileDriftEntry,
   MaterializationCollisionGroup,
   MaterializationOverrideRef,
+  MutationInteractions,
   NoMutationReason,
   OnLog,
+  ProjectSnapshot,
   Removal,
   RollbackOutcome,
   RunInstallFailure,
   RunInstallOptions,
   RunInstallResult,
+  SelectedFacetUpdate,
   StageEvent,
   StaleMaterializationOverride,
   TransactionSubject,
@@ -266,20 +269,51 @@ export type {
 export { assetIdentity } from './install/types.ts'
 // update planning (owns every version question `facet update` renders)
 export type {
-  AdvancingChoices,
   AuthoredSpecifier,
   CheckableRegistryFacet,
   ExactVersion,
+  FacetUpdateSelection,
   PreparedFacetUpdate,
   PrepareFacetUpdateFailure,
   PrepareFacetUpdateResult,
   ResolvedChoice,
+  RunPreparedFacetUpdateOptions,
+  RunPreparedFacetUpdateResult,
+  TargetVersion,
   UnusableFacetState,
   UnusableStateReason,
+  UpdateCandidate,
   UpdateChoice,
+  UpdateMode,
+  UpdateNoOp,
   UpdatePlanRow,
+  UpdateSelectionFailure,
 } from './install/update/index.ts'
-export { prepareFacetUpdate } from './install/update/index.ts'
+// `validateFacetUpdateSelections` is exported because a dry run has to
+// show the EXACT `facets.json` value an application would commit. That
+// value is derived here, once; recomputing it in the CLI would let a
+// preview describe a different edit than the one that runs.
+//
+// `advancingChoice` and `displayedVersion` are exported for the same
+// reason in the other direction: the picker must gate selection on the
+// identical predicate application enforces, and the plan view must
+// render the identical version. Both are one function here rather than
+// a rule the CLI reimplements.
+//
+// `candidateRows`, `defaultSelections`, and `classifyNoOp` are the same
+// argument once more: which rows are offerable, what a flagless run
+// takes, and which kind of nothing a project is in are decided from the
+// plan, not from the terminal. Only the wording of a no-op is the CLI's.
+export {
+  advancingChoice,
+  candidateRows,
+  classifyNoOp,
+  defaultSelections,
+  displayedVersion,
+  prepareFacetUpdate,
+  runPreparedFacetUpdate,
+  validateFacetUpdateSelections,
+} from './install/update/index.ts'
 // loaders. Note: `ResolvedFacetManifest` and `FACET_MANIFEST_FILE` are
 // part of `@agent-facets/protocol`'s public surface, not engine's. CLI
 // imports them directly from protocol; we don't re-export them here to

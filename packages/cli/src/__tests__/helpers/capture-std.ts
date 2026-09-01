@@ -41,8 +41,16 @@ async function captureStream<T>(
   const target = process[stream]
   const original = target.write.bind(target)
   const chunks: string[] = []
-  target.write = ((chunk: unknown) => {
+  // The completion callback has to be honoured. `Writable.write` accepts
+  // `(chunk, cb)` or `(chunk, encoding, cb)`, and a caller that passes one
+  // may be waiting on it — Ink's non-interactive unmount is exactly that
+  // caller. A stub that swallowed it left `waitUntilExit()` pending
+  // forever, so any test that captured stdout around a mounted Ink view
+  // hung until the runner's timeout, with no hint as to why.
+  target.write = ((chunk: unknown, ...rest: unknown[]) => {
     chunks.push(String(chunk))
+    const done = rest.find((arg): arg is (error?: Error | null) => void => typeof arg === 'function')
+    done?.()
     return true
   }) as typeof target.write
   try {

@@ -3,6 +3,7 @@ import { satisfies } from '@agent-facets/protocol'
 import type { Source } from '../../sources/facet/types.ts'
 import { parseLockedVersion } from '../parse-locked-version.ts'
 import { sourceMatchesLockedSource } from '../source-matches.ts'
+import type { FacetResolutionIntent } from './delta.ts'
 
 /**
  * Decide whether a lockfile entry still anchors this facet for the
@@ -11,8 +12,15 @@ import { sourceMatchesLockedSource } from '../source-matches.ts'
  * Returns `undefined` when the entry must NOT constrain resolution,
  * in which case the caller treats the facet like a fresh add: no cache
  * lookup by the old version, no clone at the old commit, no integrity
- * check against bytes from the old source. Three reasons:
+ * check against bytes from the old source. Four reasons:
  *
+ *   - **A reviewed update**: the exact release to install was already
+ *     chosen and confirmed, so the old entry answers nothing. Unlike
+ *     the addition case below, this holds even when the new manifest
+ *     value is an exact pin — the whole point of the operation is that
+ *     the version is changing, so a satisfying old entry would be a
+ *     coincidence, not an anchor. Clearing it is also what keeps the
+ *     old integrity from becoming the trust anchor for new content.
  *   - **Non-exact explicit addition** (the structural discriminator):
  *     an addition with a `bare`, `latest`, `*`, or `0.*` registry
  *     specifier never trusts the lockfile for version resolution —
@@ -29,6 +37,11 @@ import { sourceMatchesLockedSource } from '../source-matches.ts'
  *     manifest shorthand (`github:owner/repo`, a `#ref` suffix) matches
  *     the provenance a fresh install wrote.
  *
+ * Clearing the ANCHOR is not the same as forgetting the entry. The prior
+ * lockfile entry is read separately by `resolveAll` and still reaches
+ * ownership reconciliation and outcome classification, which is how an
+ * update can report the version it moved away from.
+ *
  * Local entries are intentionally never stale here. Non-frozen local
  * installs rebuild from disk and overwrite the entry; frozen installs
  * reject source drift in the preflight before the commit loop runs.
@@ -38,11 +51,15 @@ import { sourceMatchesLockedSource } from '../source-matches.ts'
 export function resolveEffectiveLocked(args: {
   locked: SupportedLockfileFacet | undefined
   source: Source
-  isExplicitAddition: boolean
+  intent: FacetResolutionIntent
 }): SupportedLockfileFacet | undefined {
-  const { locked, source, isExplicitAddition } = args
+  const { locked, source, intent } = args
 
-  if (isExplicitAddition && source.kind === 'registry' && source.version.kind !== 'exact') {
+  if (intent.kind === 'prepared') {
+    return undefined
+  }
+
+  if (intent.kind === 'refresh' && source.kind === 'registry' && source.version.kind !== 'exact') {
     return undefined
   }
 

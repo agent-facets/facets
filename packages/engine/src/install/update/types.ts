@@ -35,6 +35,24 @@ export interface ResolvedChoice {
 }
 
 /**
+ * What a facet's Target column shows.
+ *
+ * An exact pin gets its own arm because discovery must not ask the
+ * registry about it. A facet is only checkable when its locked version
+ * satisfies its authored specifier, and for an exact specifier
+ * `satisfies` admits exactly one version — so a pin's Target *is*
+ * Current, and a request for it could not come back as anything else.
+ * Issuing it anyway would make the continued availability of the
+ * installed release a precondition for updating every other facet in
+ * the project, which is the one thing update promises not to do.
+ *
+ * The pinned arm therefore carries no metadata, and needs none: a
+ * stationary version can never advance, so nothing can ever select it,
+ * so nothing ever needs a release to install for it.
+ */
+export type TargetVersion = { kind: 'pinned'; version: ExactVersion } | ({ kind: 'resolved' } & ResolvedChoice)
+
+/**
  * A registry facet whose local state is good enough to answer update
  * questions about: the manifest declares it, the lockfile records an
  * exact version, and that version satisfies what the manifest declares.
@@ -45,34 +63,23 @@ export interface CheckableRegistryFacet {
   /** The installed version, read from the lockfile and never re-resolved. */
   current: ExactVersion
   /** What the authored specifier resolves to now. */
-  target: ResolvedChoice
+  target: TargetVersion
   /** What the registry's newest release is, ignoring the authored specifier. */
   latest: ResolvedChoice
 }
 
 /**
- * Which of a candidate's two choices are newer than what is installed.
- *
- * In practice Latest is never older than Target — both come from the
- * same published set, and Target is drawn from a subset of it — so
- * `range-only` should not occur. It stays representable anyway: that
- * ordering is a property of the registry's answers, not of this type,
- * and a state the registry can produce should not be one the CLI has to
- * call unreachable.
- */
-export type AdvancingChoices = 'range-and-latest' | 'range-only' | 'latest-only'
-
-/**
  * One line of the update plan.
  *
  * `candidate` and `current` split what a single "outdated?" boolean
- * would blur, and `candidate` carries which choices actually advance so
- * no caller has to re-derive it: plain update takes the rows whose range
- * advances, `--latest` takes the rows whose latest advances, and the
- * picker refuses to select a choice that is not among them.
+ * would blur: a candidate has at least one choice newer than what is
+ * installed, and `advancingChoice` says which. That predicate is not
+ * mirrored into a field here on purpose — a stored summary of the two
+ * versions sitting beside the two versions is a second answer waiting
+ * to disagree with the one application enforces.
  */
 export type UpdatePlanRow =
-  | { kind: 'candidate'; facet: CheckableRegistryFacet; advancing: AdvancingChoices }
+  | { kind: 'candidate'; facet: CheckableRegistryFacet }
   | { kind: 'current'; facet: CheckableRegistryFacet }
   | { kind: 'unsupported-source'; name: string; source: string; sourceKind: 'git' | 'local' }
 
@@ -104,12 +111,12 @@ export interface UnusableFacetState {
  * first one, so a single run tells the user the whole repair list.
  *
  * `discovery-failed` names no facet on purpose. The batch resolver
- * reports the first failure in input order — which is what makes the
- * reported error stable across runs — but it does not say which
- * specifier produced it, and a `NETWORK_ERROR` genuinely belongs to no
- * single facet. Inventing an attribution here would be a guess the user
- * could act on wrongly; the registry's own error already names the facet
- * whenever the registry knew one.
+ * returns one failure without saying which specifier produced it, and a
+ * `NETWORK_ERROR` genuinely belongs to no single facet. Inventing an
+ * attribution here would be a guess the user could act on wrongly; the
+ * registry's own error already names the facet whenever the registry
+ * knew one. When several lookups fail, which one is reported is not
+ * promised — each ends the run identically.
  *
  * `invalid-resolved-version` and `target-outside-range` are the registry
  * answering incoherently rather than failing: a version that is not an

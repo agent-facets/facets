@@ -14,11 +14,26 @@ describe('parseLockedVersion', () => {
     expect(parseLockedVersion('0.0.0')).toEqual({ kind: 'exact', major: 0, minor: 0, patch: 0 })
   })
 
+  test('parses the largest representable components', () => {
+    expect(parseLockedVersion('9007199254740991.0.0')).toEqual({
+      kind: 'exact',
+      major: Number.MAX_SAFE_INTEGER,
+      minor: 0,
+      patch: 0,
+    })
+  })
+
   test('throws on a non-M.N.P string (schema/parser drift is a programmer bug)', () => {
     // Lockfile schema narrows `version` to M.N.P, so this is unreachable on
     // validated input — the throw guards against schema/parser drift.
     expect(() => parseLockedVersion('1.2')).toThrow('parseLockedVersion regex rejected it')
     expect(() => parseLockedVersion('1.2.3-rc.1')).toThrow()
     expect(() => parseLockedVersion('latest')).toThrow()
+  })
+
+  test('throws on an unrepresentable component (schema/parser drift is a programmer bug)', () => {
+    // Same contract as above on the other half of the schema's narrow:
+    // returning a number here would name a release this value is not.
+    expect(() => parseLockedVersion('9007199254740992.0.0')).toThrow('exceed the version grammar')
   })
 })

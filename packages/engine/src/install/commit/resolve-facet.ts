@@ -1,12 +1,15 @@
 import type { Adapter } from '@agent-facets/adapter'
-import type { SupportedLockfile } from '@agent-facets/protocol'
+import type { SupportedLockfile, SupportedLockfileFacet } from '@agent-facets/protocol'
+import { describeVersionSpec } from '../../registry/describe.ts'
+import type { Source } from '../../sources/facet/types.ts'
 import { ownEntry } from '../own-entry.ts'
 import { parseManifestFacetSource } from '../parse-manifest-source.ts'
 import type { OnLog, StageEvent } from '../types.ts'
+import type { FacetResolutionIntent } from './delta.ts'
 import { resolveEffectiveLocked } from './effective-locked.ts'
 import { resolveGitFacet } from './resolve-git.ts'
 import { resolveLocalFacet } from './resolve-local.ts'
-import { resolveRegistryFacet } from './resolve-registry.ts'
+import { type RegistryVersionSource, resolveRegistryFacet } from './resolve-registry.ts'
 import type { ResolveFacetResult } from './types.ts'
 
 export interface ResolveFacetArgs {
@@ -15,7 +18,7 @@ export interface ResolveFacetArgs {
   projectRoot: string
   adapters: ReadonlyArray<Adapter>
   previousLockfile: SupportedLockfile
-  isExplicitAddition: boolean
+  intent: FacetResolutionIntent
   frozenLockfile: boolean
   onStage: (event: StageEvent) => void
   onLog: OnLog
@@ -35,6 +38,25 @@ export interface ResolveFacetArgs {
  * entries (the value the user sees is `1.2.3`, not `cowsay@1.2.3`) while
  * still round-tripping through source resolution.
  */
+/**
+ * Which of the four ways of knowing a registry facet's exact version
+ * applies here.
+ *
+ * The order is the precedence: a reviewed update already has its answer,
+ * an anchor supplies one without the network, an exact specifier needs
+ * no resolution, and anything else has to ask.
+ */
+function registryVersionSource(
+  intent: FacetResolutionIntent,
+  effectiveLocked: SupportedLockfileFacet | undefined,
+  source: Extract<Source, { kind: 'registry' }>,
+): RegistryVersionSource {
+  if (intent.kind === 'prepared') return { kind: 'prepared', metadata: intent.metadata }
+  if (effectiveLocked !== undefined) return { kind: 'locked', entry: effectiveLocked }
+  if (source.version.kind === 'exact') return { kind: 'exact', version: describeVersionSpec(source.version) }
+  return { kind: 'resolve', spec: source.version }
+}
+
 export async function resolveFacet(args: ResolveFacetArgs): Promise<ResolveFacetResult> {
   const { facetName, specifier, projectRoot, adapters, frozenLockfile, onStage, onLog } = args
 
@@ -57,7 +79,7 @@ export async function resolveFacet(args: ResolveFacetArgs): Promise<ResolveFacet
   const effectiveLocked = resolveEffectiveLocked({
     locked: ownEntry(args.previousLockfile.facets, facetName),
     source,
-    isExplicitAddition: args.isExplicitAddition,
+    intent: args.intent,
   })
 
   switch (source.kind) {
@@ -67,7 +89,13 @@ export async function resolveFacet(args: ResolveFacetArgs): Promise<ResolveFacet
       // entry anchors the facet. Only local sources gain an extra
       // reproduction guard under frozen, because a local tree is mutable by
       // design and a normal install lets the lockfile follow disk.
-      return resolveRegistryFacet({ facetName, source, effectiveLocked, onStage, onLog })
+      return resolveRegistryFacet({
+        facetName,
+        source,
+        version: registryVersionSource(args.intent, effectiveLocked, source),
+        onStage,
+        onLog,
+      })
     case 'git':
       return resolveGitFacet({ facetName, source, adapters, effectiveLocked, onStage, onLog })
     case 'local':

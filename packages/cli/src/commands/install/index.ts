@@ -1,4 +1,4 @@
-import { type RunInstallResult, runInstall } from '@agent-facets/engine'
+import { type InstallOperation, type RunInstallResult, runInstall } from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
 import type { Command } from '../../commands.ts'
@@ -77,27 +77,41 @@ export const installCommand: Command = {
         mode: 'install',
         signal: controller.signal,
         run: async ({ onStage, onLog, resolveCollisions, resolveMcpConsent, resolveAssetTakeover }) => {
+          // `mayPrompt` already excludes frozen mode, so a frozen run can
+          // reach `preapproved` via the flag but never the prompting arm —
+          // which is also the only arm the frozen operation accepts.
+          const consent = mcpConsentPolicy({ acceptMcp, mayPrompt, resolve: resolveMcpConsent })
+          const operation: InstallOperation = frozenLockfile
+            ? {
+                kind: 'reproduce',
+                frozen: true,
+                ...(consent.kind === 'interactive' ? {} : { mcpConsent: consent }),
+              }
+            : {
+                kind: 'reproduce',
+                frozen: false,
+                mcpConsent: consent,
+                ...(mayPrompt ? { resolveCollisions, resolveAssetTakeover } : {}),
+              }
           const result = await runInstall({
             projectRoot,
             adapters,
+            operation,
             onStage,
-            // `mayPrompt` already excludes frozen mode, so a frozen run can
-            // reach `preapproved` via the flag but never the prompting arm.
-            mcpConsent: mcpConsentPolicy({ acceptMcp, mayPrompt, resolve: resolveMcpConsent }),
             ...(verbose ? { onLog } : {}),
-            ...(mayPrompt ? { resolveCollisions, resolveAssetTakeover } : {}),
             signal: controller.signal,
-            frozenLockfile,
           })
           captured = result
           return result
         },
         onComplete: (r) => {
-          // `install` never produces a prepare-phase failure (add/remove
-          // only); guard the wider InstallViewResult so the captured value
-          // stays a RunInstallResult. The `run` closure already set
+          // `install` produces none of the flow-specific failure arms —
+          // prepare belongs to add/remove, selection to update — so this
+          // narrows the wider InstallViewResult back to the only shape
+          // this command can receive. The `run` closure already set
           // `captured`.
-          if (!('prepareFailure' in r) && !('removePrepareFailure' in r)) captured = r
+          if ('prepareFailure' in r || 'removePrepareFailure' in r || 'updateSelectionFailure' in r) return
+          captured = r
         },
       }),
       // Ctrl-C must reach the collision workspace, which is the only
@@ -107,12 +121,13 @@ export const installCommand: Command = {
       { exitOnCtrlC: false },
     )
 
+    // Not wrapped in `catch`: a structured install failure unmounts the
+    // view cleanly and is read from `captured` below. A rejection here
+    // means the view or the driver failed in a way nothing modelled, and
+    // that belongs at the CLI's top level as an unexpected failure
+    // rather than being reshaped into an install error it is not.
     try {
       await instance.waitUntilExit()
-    } catch {
-      // Ink rejects on view-level errors (the view sets pendingExit).
-      // The result is already captured; we just need to fall through
-      // to the post-render error handling below.
     } finally {
       process.off('SIGINT', sigintHandler)
     }

@@ -25,6 +25,7 @@ The alpha is the **current phase**. The core loop  -- author, publish, discover,
 
 - [`facet add`](/cli/add)  -- add and install in one step, registry-first source grammar
 - [`facet install`](/cli/install)  -- lockfile-driven reproducible installs, `--frozen-lockfile` for CI
+- [`facet update`](/cli/update)  -- move declared facets to newer releases (aliased `upgrade`)
 - [`facet remove`](/cli/remove)  -- transactional removal (aliased `rm`)
 - [`facet list`](/cli/list)  -- see what's declared and resolved
 
@@ -32,7 +33,7 @@ The alpha is the **current phase**. The core loop  -- author, publish, discover,
 
 - [`facet adapter`](/cli/adapters/add)  -- add/list/remove adapters; first-party adapters for Claude Code, OpenCode, and Codex; a public [adapter SDK](/guides/custom-adapters) for building your own
 - [`facet instructions`](/cli/instructions)  -- built-in usage guidance for AI agents
-- [`facet self-update`](/cli/self-update)  -- update the CLI in place
+- [`facet self-update`](/cli/self-update)  -- update the CLI binary in place (not the project's facets  -- that is [`facet update`](/cli/update))
 
 ## Alpha caveats
 

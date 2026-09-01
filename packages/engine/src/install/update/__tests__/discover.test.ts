@@ -1,9 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import type { SupportedLockfile } from '@agent-facets/protocol'
 import type { NormalizedFacetEntry } from '../../../manifest/mutations.ts'
+import { describeVersionSpec } from '../../../registry/describe.ts'
 import { MAX_REGISTRY_METADATA_SPECIFIERS } from '../../../registry/resolve-metadata.ts'
 import type { RegistryMetadata, RegistryResult, RegistrySpec } from '../../../registry/types.ts'
+import { advancingChoice } from '../advancing.ts'
 import { discoverUpdates, type ResolveMetadataBatch } from '../discover.ts'
+import type { UpdateChoice } from '../manifest-source.ts'
 import type { UpdatePlanRow } from '../types.ts'
 
 // ---------------------------------------------------------------------------
@@ -89,6 +92,12 @@ function candidateNames(plan: readonly UpdatePlanRow[]): string[] {
   return plan.flatMap((row) => (row.kind === 'candidate' ? [row.facet.name] : []))
 }
 
+/** Which columns of a row would actually move the facet. */
+function advancing(row: Extract<UpdatePlanRow, { kind: 'candidate' }>): UpdateChoice[] {
+  const choices: UpdateChoice[] = ['range', 'latest']
+  return choices.filter((choice) => advancingChoice(row.facet, choice) !== undefined)
+}
+
 // ---------------------------------------------------------------------------
 // Classification
 // ---------------------------------------------------------------------------
@@ -107,7 +116,7 @@ describe('discoverUpdates — classifying resolved facets', () => {
     expect(row.facet.current).toEqual({ kind: 'exact', major: 1, minor: 2, patch: 0 })
     expect(row.facet.target.version).toEqual({ kind: 'exact', major: 1, minor: 8, patch: 0 })
     expect(row.facet.latest.version).toEqual({ kind: 'exact', major: 2, minor: 0, patch: 0 })
-    expect(row.advancing).toBe('range-and-latest')
+    expect(advancing(row)).toEqual(['range', 'latest'])
     expect(row.facet.authored.source).toBe('1.*')
   })
 
@@ -118,13 +127,64 @@ describe('discoverUpdates — classifying resolved facets', () => {
     const result = await discoverUpdates({
       facets: manifest([['cowsay', '1.2.0']]),
       lockfile: lockfile([['cowsay', lockedRegistry('1.2.0')]]),
-      resolve: resolverFor({ 'cowsay@1.2.0': '1.2.0', 'cowsay@latest': '2.0.0' }),
+      resolve: resolverFor({ 'cowsay@latest': '2.0.0' }),
     })
 
     if (!result.ok) expect.unreachable()
     const row = result.plan[0]
     if (row?.kind !== 'candidate') expect.unreachable()
-    expect(row.advancing).toBe('latest-only')
+    expect(advancing(row)).toEqual(['latest'])
+    expect(row.facet.target).toEqual({ kind: 'pinned', version: { kind: 'exact', major: 1, minor: 2, patch: 0 } })
+  })
+
+  // The bug this guards: resolving `cowsay@1.2.0` to learn a pinned
+  // facet's Target asks the registry whether the INSTALLED release still
+  // exists. `satisfies` admits only that one version, so the answer can
+  // never be anything else — the request's only possible effect is to
+  // turn a yanked release into a failure.
+  test('an exact pin costs no registry lookup of its own', async () => {
+    const groups: RegistrySpec[][] = []
+    const result = await discoverUpdates({
+      facets: manifest([['cowsay', '1.2.0']]),
+      lockfile: lockfile([['cowsay', lockedRegistry('1.2.0')]]),
+      resolve: resolverFor({ 'cowsay@latest': '2.0.0' }, { groups }),
+    })
+
+    if (!result.ok) expect.unreachable()
+    expect(groups[0]?.map(renderSpec)).toEqual(['latest'])
+  })
+
+  test('a pinned facet whose installed release was yanked still plans', async () => {
+    // Only `latest` is answerable; `cowsay@1.2.0` would 404. Discovery
+    // must not care, because the lockfile already says what is installed.
+    const result = await discoverUpdates({
+      facets: manifest([
+        ['cowsay', '1.2.0'],
+        ['fortune', '1.*'],
+      ]),
+      lockfile: lockfile([
+        ['cowsay', lockedRegistry('1.2.0')],
+        ['fortune', lockedRegistry('1.0.0')],
+      ]),
+      resolve: resolverFor({ 'cowsay@latest': '2.0.0', 'fortune@1.*': '1.8.0', 'fortune@latest': '1.8.0' }),
+    })
+
+    if (!result.ok) expect.unreachable()
+    // And the yanked pin does not take the rest of the project with it.
+    expect(candidateNames(result.plan)).toEqual(['cowsay', 'fortune'])
+  })
+
+  test('a pinned target is never selectable, however the registry answers', async () => {
+    const result = await discoverUpdates({
+      facets: manifest([['cowsay', '1.2.0']]),
+      lockfile: lockfile([['cowsay', lockedRegistry('1.2.0')]]),
+      resolve: resolverFor({ 'cowsay@latest': '2.0.0' }),
+    })
+
+    if (!result.ok) expect.unreachable()
+    const row = result.plan[0]
+    if (row?.kind !== 'candidate') expect.unreachable()
+    expect(advancingChoice(row.facet, 'range')).toBeUndefined()
   })
 
   test('a facet already at latest is current, not a candidate', async () => {
@@ -167,7 +227,11 @@ describe('discoverUpdates — classifying resolved facets', () => {
     if (!result.ok) expect.unreachable()
     const row = result.plan[0]
     if (row?.kind !== 'candidate') expect.unreachable()
-    expect(row.facet.target.metadata.version).toBe(target)
+    expect(describeVersionSpec(row.facet.target.version)).toBe(target)
+    // Latest is asked for separately every time, so it is asserted every
+    // time. For `*` and `latest` the two questions have one answer, and
+    // that coincidence is the scenario rather than an accident.
+    expect(describeVersionSpec(row.facet.latest.version)).toBe('3.0.0')
   })
 
   test('carries the resolved metadata so application needs no second lookup', async () => {
@@ -180,6 +244,7 @@ describe('discoverUpdates — classifying resolved facets', () => {
     if (!result.ok) expect.unreachable()
     const row = result.plan[0]
     if (row?.kind !== 'candidate') expect.unreachable()
+    if (row.facet.target.kind !== 'resolved') expect.unreachable()
     expect(row.facet.target.metadata).toEqual({
       name: 'cowsay',
       version: '1.8.0',
@@ -371,7 +436,7 @@ describe('discoverUpdates — unusable local state', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Grouping and failure ordering
+// Grouping and failure propagation
 // ---------------------------------------------------------------------------
 
 describe('discoverUpdates — batching', () => {
@@ -433,6 +498,7 @@ describe('discoverUpdates — batching', () => {
     if (!result.ok) expect.unreachable()
     const last = result.plan[count - 1]
     if (last?.kind !== 'candidate') expect.unreachable()
+    if (last.facet.target.kind !== 'resolved') expect.unreachable()
     expect(last.facet.name).toBe('facet-050')
     expect(last.facet.target.metadata.version).toBe('1.50.0')
     expect(last.facet.latest.metadata.version).toBe('2.50.0')
@@ -484,15 +550,16 @@ describe('discoverUpdates — batching', () => {
     expect(result.failure.reason).toBe('discovery-failed')
   })
 
-  test('the reported failure follows project order, not completion order', async () => {
+  test('a failure in any group fails the whole discovery', async () => {
     const names = Array.from({ length: 60 }, (_, index) => `facet-${String(index).padStart(3, '0')}`)
     const versions: Record<string, string> = {}
     for (const name of names) {
       versions[`${name}@1.*`] = '1.8.0'
       versions[`${name}@latest`] = '2.0.0'
     }
-    // Fail one facet in each group; the earlier one must win even though
-    // the later group is made to settle first.
+    // One failure in each group, with the later group made to settle
+    // first. Which of the two is reported is deliberately not promised;
+    // what is promised is that neither leaves a partial plan behind.
     delete versions['facet-005@1.*']
     delete versions['facet-055@1.*']
 
@@ -510,9 +577,7 @@ describe('discoverUpdates — batching', () => {
     })
 
     if (result.ok) expect.unreachable()
-    if (result.failure.reason !== 'discovery-failed') expect.unreachable()
-    if (result.failure.error.code !== 'NOT_FOUND') expect.unreachable()
-    expect(result.failure.error.name).toBe('facet-005')
+    expect(result.failure.reason).toBe('discovery-failed')
   })
 })
 
@@ -563,6 +628,40 @@ describe('discoverUpdates — incoherent registry answers', () => {
     if (result.ok) expect.unreachable()
     if (result.failure.reason !== 'discovery-failed') expect.unreachable()
     expect(result.failure.error.code).toBe('UNEXPECTED_ERROR')
+  })
+
+  // The resolver's contract is result-valued, but it reaches the network
+  // and is an injection point. A rejection escaping here would leave the
+  // command boundary as a bare exit 2 with no remedy attached.
+  test('a rejected lookup becomes a structured failure, not a thrown error', async () => {
+    const throwing: ResolveMetadataBatch = async () => {
+      throw Object.assign(new Error('Unable to connect'), { code: 'ECONNREFUSED' })
+    }
+
+    const result = await discoverUpdates({
+      facets: manifest([['cowsay', '1.*']]),
+      lockfile: lockfile([['cowsay', lockedRegistry('1.2.0')]]),
+      resolve: throwing,
+    })
+
+    if (result.ok) expect.unreachable()
+    if (result.failure.reason !== 'discovery-failed') expect.unreachable()
+    expect(result.failure.error.code).toBe('NETWORK_ERROR')
+  })
+
+  test('a rejection that is not an Error is still reported as a value', async () => {
+    const throwing: ResolveMetadataBatch = async () => {
+      throw 'registry exploded'
+    }
+
+    const result = await discoverUpdates({
+      facets: manifest([['cowsay', '1.*']]),
+      lockfile: lockfile([['cowsay', lockedRegistry('1.2.0')]]),
+      resolve: throwing,
+    })
+
+    if (result.ok) expect.unreachable()
+    expect(result.failure.reason).toBe('discovery-failed')
   })
 })
 

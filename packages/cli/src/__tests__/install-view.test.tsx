@@ -1954,3 +1954,169 @@ describe('InstallView — declaration secrecy', () => {
     instance.unmount()
   })
 })
+
+// ---------------------------------------------------------------------------
+// Update mode
+// ---------------------------------------------------------------------------
+
+/**
+ * Update runs the same pipeline as everything else, so what is tested
+ * here is only what a user reading the screen would otherwise get wrong:
+ * which operation is running, and which version each facet ended up on.
+ */
+describe('InstallView — update mode', () => {
+  const updateResult: RunInstallResult = {
+    ok: true,
+    lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
+    summary: {
+      facets: { installed: 0, updated: 2, repaired: 0, unchanged: 1, removed: 0 },
+      textAssets: { written: 4, removed: 0 },
+      mcp: NO_MCP_COUNTS,
+    },
+    perFacet: [
+      { kind: 'updated', name: 'alpha', oldVersion: '1.2.0', newVersion: '1.8.0' },
+      { kind: 'updated', name: 'beta', oldVersion: '1.2.0', newVersion: '3.4.1' },
+      { kind: 'unchanged', name: 'gamma', version: '4.0.0' },
+    ],
+    mcp: NO_MCP,
+  }
+
+  test('names the operation while it runs', async () => {
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'update',
+        run: makeFakeRun([{ kind: 'install-start', totalFacets: 2 }], updateResult),
+      }),
+    )
+    // The header is only on screen before the result replaces it.
+    await settle()
+    expect(instance.frames.some((frame) => visibleTerminalText(frame ?? '').includes('Updating facets:'))).toBe(true)
+    instance.unmount()
+  })
+
+  // "2 updated" says how many moved, not what anyone now has. The
+  // transition per facet is the answer to the question the command was
+  // run to ask.
+  test('names every version transition it applied', async () => {
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'update',
+        run: makeFakeRun([{ kind: 'install-start', totalFacets: 2 }], updateResult),
+      }),
+    )
+    await settle()
+    const frame = visibleTerminalText(visibleContentFrame(instance.frames))
+    expect(frame).toContain('Update complete.')
+    expect(frame).toContain('alpha 1.2.0 → 1.8.0')
+    expect(frame).toContain('beta 1.2.0 → 3.4.1')
+    // A facet that was left alone is counted, not narrated as a move.
+    expect(frame).not.toContain('gamma 4.0.0 →')
+    instance.unmount()
+  })
+
+  test('the timer counts facets moved, not facets touched', async () => {
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'update',
+        run: makeFakeRun([{ kind: 'install-start', totalFacets: 2 }], updateResult),
+      }),
+    )
+    await settle()
+    expect(visibleTerminalText(visibleContentFrame(instance.frames))).toContain('Updated 2 facets')
+    instance.unmount()
+  })
+
+  // `--verbose` is the only thing that turns these on, and where they land
+  // is the whole point: a caller piping stdout to parse the summary must
+  // not have diagnostics interleaved into it.
+  test('verbose diagnostics go to stderr while progress stays on stdout', async () => {
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'update',
+        run: async ({ onStage, onLog }) => {
+          onStage({ kind: 'install-start', totalFacets: 2 })
+          onLog(() => 'resolved alpha@1.8.0 from cache')
+          return updateResult
+        },
+      }),
+    )
+    await settle()
+
+    expect(visibleTerminalText(instance.stderr.lastFrame() ?? '')).toContain('resolved alpha@1.8.0 from cache')
+
+    const out = visibleTerminalText(visibleContentFrame(instance.frames))
+    expect(out).toContain('alpha 1.2.0 → 1.8.0')
+    expect(out).not.toContain('resolved alpha@1.8.0 from cache')
+    instance.unmount()
+  })
+
+  // A selection refusal has no install result to draw, but it is still
+  // an outcome the driver RETURNED. It has to reach the command through
+  // the ordinary result channel; the alternative — throwing past a
+  // return type that cannot describe it — is what made every call site
+  // wrap its wait in a `catch` that then swallowed real crashes.
+  test('an update-selection refusal arrives as a result, not a crash', async () => {
+    const refusal: InstallViewResult = {
+      ok: false,
+      updateSelectionFailure: { reason: 'unknown-facet', facet: 'ghost' },
+    }
+    const seen: InstallViewResult[] = []
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'update',
+        run: makeFakePrepareRun(refusal),
+        onComplete: (result) => {
+          seen.push(result)
+        },
+      }),
+    )
+    await settle()
+    expect(seen).toEqual([refusal])
+    // Nothing to report on screen: the remedy is a rerun, not a report
+    // about files. It must not be drawn as an install failure either.
+    const frame = visibleTerminalText(visibleContentFrame(instance.frames))
+    expect(frame).not.toContain('Update complete.')
+    expect(frame).not.toContain('Rollback')
+    instance.unmount()
+  })
+
+  test('a driver that throws is a crash, and completes nothing', async () => {
+    const seen: InstallViewResult[] = []
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'update',
+        run: async () => {
+          throw new Error('the view driver fell over')
+        },
+        onComplete: (result) => {
+          seen.push(result)
+        },
+      }),
+    )
+    await settle()
+    // No result was produced, so nothing may be reported as one. The
+    // rejection channel is left carrying the only evidence there is.
+    expect(seen).toEqual([])
+    instance.unmount()
+  })
+
+  test('a stale plan is reported as a failure, with the disk state', async () => {
+    const stale: RunInstallResult = {
+      ok: false,
+      failure: { code: 'UPDATE_PLAN_STALE', files: ['manifest'] },
+      rollback: NO_ROLLBACK,
+    }
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'update',
+        run: makeFakeRun([], stale),
+      }),
+    )
+    await settle()
+    const frame = visibleTerminalText(visibleContentFrame(instance.frames))
+    expect(frame).toContain('facets.json')
+    expect(frame).toContain(visibleTerminalText(diskStateSentence(NO_ROLLBACK)))
+    expect(frame).not.toContain('Update complete.')
+    instance.unmount()
+  })
+})

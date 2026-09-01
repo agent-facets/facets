@@ -4,10 +4,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Adapter } from '@agent-facets/adapter'
 import { ADAPTER_API_VERSION, planSingleFileInstall, planSingleFileRemoval } from '@agent-facets/adapter'
+import type { McpConsentPolicy } from '../mcp/consent.ts'
 import { receiptPath } from '../receipt.ts'
 import { runRemove } from '../remove/index.ts'
 import { runInstall } from '../run-install.ts'
-import type { RunInstallOptions, RunInstallResult, StageEvent } from '../types.ts'
+import type { MutationInteractions, RunInstallResult, StageEvent } from '../types.ts'
 import { type RecordingMcpOptions, recordingMcpCapability } from './helpers/mcp-adapter.ts'
 
 /**
@@ -27,7 +28,7 @@ let fakeHome: string
 
 const STDIO = { type: 'stdio', command: 'npx', args: ['-y', 'server-filesystem'], env: { TOKEN: 'hunter2' } }
 const OTHER = { type: 'http', url: 'https://example.test/mcp' }
-const ACCEPT: RunInstallOptions['mcpConsent'] = { kind: 'preapproved' }
+const ACCEPT: McpConsentPolicy = { kind: 'preapproved' }
 
 interface TestAdapter {
   adapter: Adapter
@@ -88,13 +89,14 @@ function writeManifest(value: unknown): void {
 
 /** Run an install, collecting every stage event it emits. */
 async function install(
-  options: Partial<RunInstallOptions> & { adapters: Adapter[] },
+  options: MutationInteractions & { adapters: Adapter[] },
 ): Promise<{ result: RunInstallResult; events: StageEvent[] }> {
+  const { adapters, ...interactions } = options
   const events: StageEvent[] = []
   const result = await runInstall({
     projectRoot,
-    mcpConsent: ACCEPT,
-    ...options,
+    adapters,
+    operation: { kind: 'reproduce', frozen: false, mcpConsent: ACCEPT, ...interactions },
     onStage: (event) => events.push(event),
   })
   return { result, events }

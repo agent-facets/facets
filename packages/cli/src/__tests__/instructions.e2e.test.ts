@@ -24,6 +24,10 @@ describe('facet instructions', () => {
     expect(indexAt).toBeLessThan(result.stdout.indexOf('AUTHORING a facet'))
     // The injection marker must never leak into the printed output.
     expect(result.stdout).not.toContain('{{TOPIC_INDEX}}')
+    // Prompts are inlined into the binary at compile time, so this is the
+    // only level that proves the shipped bytes carry the guidance.
+    expect(result.stdout).toContain('facet update')
+    expect(result.stdout).toContain('facet upgrade')
   })
 
   test('authoring topic covers README and supplementary-file authoring', async () => {
@@ -41,6 +45,8 @@ describe('facet instructions', () => {
     expect(result.stdout).toContain('facet add viper-plans')
     expect(result.stdout).toContain(`adapter API ${renderAdapterApiSupportSet()}`)
     expect(result.stdout).toContain('facet adapter list')
+    expect(result.stdout).toContain('facet update --latest')
+    expect(result.stdout).toContain('facet update --dry-run')
   })
 
   test('manifest topic documents supplementary files and appends the generated JSON Schema', async () => {

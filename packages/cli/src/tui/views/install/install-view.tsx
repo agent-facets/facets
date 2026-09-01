@@ -15,6 +15,7 @@ import type {
   RemovePrepareFailure,
   RunInstallResult,
   StageEvent,
+  UpdateSelectionFailure,
 } from '@agent-facets/engine'
 import { LOCKFILE_VERSION_0_3 } from '@agent-facets/protocol'
 import { Box, Text, useApp, useStderr } from 'ink'
@@ -35,13 +36,18 @@ import { AssetTakeoverScreen } from './takeover/screen.tsx'
  * `add` and `remove` flows may instead fail in a pre-install (prepare)
  * phase — `add`: name resolution / manifest read; `remove`: manifest read
  * / undeclared facet — which has no `RunInstallResult` shape, so it
- * surfaces as a distinct `prepare-failure` arm. The arm is tagged by which
- * flow produced it so the view renders the matching block.
+ * surfaces as a distinct `prepare-failure` arm. `update` adds a third:
+ * the engine can refuse the selection before installing anything, which
+ * likewise has no `RunInstallResult` to render. The arm is tagged by
+ * which flow produced it so the view renders the matching block — and so
+ * a driver can report any of them by returning, rather than by throwing
+ * past a return type that could not describe them.
  */
 export type InstallViewResult =
   | RunInstallResult
   | { ok: false; prepareFailure: AddPrepareFailure }
   | { ok: false; removePrepareFailure: RemovePrepareFailure }
+  | { ok: false; updateSelectionFailure: UpdateSelectionFailure }
 
 /**
  * Everything the view can lend a driver for one run.
@@ -82,9 +88,12 @@ export interface InstallViewProps {
   /**
    * Header copy hint. `'add'` renders "Adding facets..."; `'install'`
    * renders "Installing facets..."; `'remove'` renders "Removing
-   * facets...". Functional behavior is identical.
+   * facets..."; `'update'` renders "Updating facets...". Functional
+   * behavior is identical — update in particular runs the same pipeline
+   * as every other operation, which is why it gets a word rather than a
+   * second progress renderer.
    */
-  mode: 'add' | 'install' | 'remove'
+  mode: 'add' | 'install' | 'remove' | 'update'
   /**
    * Fires once when the install completes, before Ink unmounts. Lets
    * the caller capture the result for exit-code mapping.
@@ -99,6 +108,14 @@ export interface InstallViewProps {
   signal?: AbortSignal
 }
 
+/** What each mode calls the thing it is doing, in one table per surface. */
+const HEADER_LABELS = {
+  add: 'Adding facets:',
+  install: 'Installing facets:',
+  remove: 'Removing facets:',
+  update: 'Updating facets:',
+} as const satisfies Record<InstallViewProps['mode'], string>
+
 /** Type guard: a driver result that is an add prepare-phase failure. */
 function isPrepareFailure(r: InstallViewResult): r is { ok: false; prepareFailure: AddPrepareFailure } {
   return !r.ok && 'prepareFailure' in r
@@ -110,12 +127,24 @@ function isRemovePrepareFailure(r: InstallViewResult): r is { ok: false; removeP
 }
 
 /**
+ * Type guard: a driver result that is an update-selection refusal. The
+ * view has nothing to draw for it — the remedy is a flag or a rerun, not
+ * a report about files — so it exists to be excluded from the arms that
+ * do render, and to be reported on stderr by the command afterwards.
+ */
+function isUpdateSelectionFailure(
+  r: InstallViewResult,
+): r is { ok: false; updateSelectionFailure: UpdateSelectionFailure } {
+  return !r.ok && 'updateSelectionFailure' in r
+}
+
+/**
  * Type guard: a driver result that is an install-pipeline failure (a
  * `RunInstallResult` with `ok: false`), as opposed to a prepare-phase
  * failure. Narrows so `.failure` and `.rollback` are accessible.
  */
 function isInstallFailure(r: InstallViewResult): r is Extract<RunInstallResult, { ok: false }> {
-  return !r.ok && !isPrepareFailure(r) && !isRemovePrepareFailure(r)
+  return !r.ok && !isPrepareFailure(r) && !isRemovePrepareFailure(r) && !isUpdateSelectionFailure(r)
 }
 
 /** A materialization choice dropped because its contribution no longer exists. */
@@ -461,11 +490,20 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
 
   useEffect(() => {
     if (phase.kind === 'result') {
-      if (phase.result.ok) exit()
-      else exit(new Error('Install failed'))
+      // A structured result — success or failure — is the view doing its
+      // job. It unmounts cleanly, and the command reads the outcome from
+      // the value it captured. Rejecting `waitUntilExit()` for an
+      // ordinary failure is what forced every call site to wrap the wait
+      // in a `catch {}`, and that `catch` then swallowed the crashes the
+      // rejection channel exists for.
+      exit()
       return
     }
     if (phase.kind === 'crashed') {
+      // The driver threw instead of returning. Nothing captured a
+      // result, so the rejection is the only remaining evidence — it
+      // propagates to the command, which has no handling for it, and
+      // out to the top-level as an unexpected failure.
       exit(phase.error)
       return
     }
@@ -490,7 +528,7 @@ export function InstallView({ run, mode, onComplete, signal }: InstallViewProps)
     return () => signal.removeEventListener('abort', onAbort)
   }, [signal, phase])
 
-  const headerLabel = mode === 'add' ? 'Adding facets:' : mode === 'remove' ? 'Removing facets:' : 'Installing facets:'
+  const headerLabel = HEADER_LABELS[mode]
 
   // Compute live counters: [done, remaining, failed].
   let doneCount = 0
@@ -677,7 +715,7 @@ function SuccessSummary({
   elapsedMs,
 }: {
   result: RunInstallResult & { ok: true }
-  mode: 'add' | 'install' | 'remove'
+  mode: 'add' | 'install' | 'remove' | 'update'
   adapterCount: number
   elapsedMs: number
 }) {
@@ -728,18 +766,25 @@ function SuccessSummary({
   // still there because nothing proved this machine installed them.
   const untrackedNames = result.perFacet.filter((o) => o.kind === 'removed-untracked').map((o) => o.name)
 
+  // Every version this run moved, oldest fact first. `updated` is the
+  // only outcome that carries both halves, which is exactly why update
+  // mode names them: "1 updated" does not tell a user what they now have.
+  const transitions = result.perFacet.filter((outcome) => outcome.kind === 'updated')
+
   const actionLabel =
     mode === 'add'
       ? `${touched.join(', ')} installed.`
       : mode === 'remove'
         ? `${removedNames.join(', ')} removed.`
-        : 'Install complete.'
+        : mode === 'update'
+          ? 'Update complete.'
+          : 'Install complete.'
   const registrationSuffix =
     adapterCount > 0 ? ` Updated facets via ${adapterCount} adapter${adapterCount === 1 ? '' : 's'}` : ''
 
-  // Timer line: "Installed N facets" or "Removed N facets"
-  const timerVerb = mode === 'remove' ? 'Removed' : 'Installed'
-  const timerCount = mode === 'remove' ? removedNames.length : touched.length
+  // Timer line: "Installed N facets", "Removed N facets", "Updated N facets"
+  const timerVerb = mode === 'remove' ? 'Removed' : mode === 'update' ? 'Updated' : 'Installed'
+  const timerCount = mode === 'remove' ? removedNames.length : mode === 'update' ? transitions.length : touched.length
 
   return (
     <Box flexDirection="column">
@@ -758,6 +803,17 @@ function SuccessSummary({
       <Box flexDirection="column" marginLeft={2}>
         <Text color={THEME.hint}>{summaryLine(summary)}</Text>
         {bundleVizNode}
+        {/* The whole point of the command: which version each facet was
+            on, and which one it is on now. */}
+        {mode === 'update' &&
+          transitions.map((outcome) => (
+            <Text key={outcome.name}>
+              <Text color={THEME.hint}>{outcome.name} </Text>
+              <Text>{outcome.oldVersion}</Text>
+              <Text color={THEME.hint}> → </Text>
+              <Text color={THEME.success}>{outcome.newVersion}</Text>
+            </Text>
+          ))}
         {/* Aliases and omissions are the one thing a user cannot infer
             from the file tree: an asset is missing, or present under a
             name they did not publish. Naming both sides makes the

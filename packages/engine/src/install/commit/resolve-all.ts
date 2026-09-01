@@ -3,6 +3,7 @@ import { compareCodeUnits, type SupportedLockfile, type SupportedLockfileFacet }
 import type { NormalizedFacetEntry } from '../../manifest/mutations.ts'
 import { ownEntry } from '../own-entry.ts'
 import type { OnLog, RunInstallFailure, StageEvent } from '../types.ts'
+import type { FacetResolutionIntent } from './delta.ts'
 import { reconcileLockedAgainstPlan } from './reconcile.ts'
 import { resolveFacet } from './resolve-facet.ts'
 import type { ResolvedFacet } from './types.ts'
@@ -32,7 +33,8 @@ export type ResolveAllResult = { ok: true; value: ResolveAllSuccess } | { ok: fa
 
 export interface ResolveAllArgs {
   desiredFacets: Readonly<Record<string, NormalizedFacetEntry>>
-  additionNames: ReadonlySet<string>
+  /** How each desired facet should be resolved, keyed by facet name. */
+  intents: Readonly<Record<string, FacetResolutionIntent>>
   previousLockfile: SupportedLockfile
   projectRoot: string
   adapters: ReadonlyArray<Adapter>
@@ -91,7 +93,7 @@ export async function resolveAll(args: ResolveAllArgs): Promise<ResolveAllResult
       onStage,
       onLog,
       frozenLockfile: args.frozenLockfile,
-      isExplicitAddition: args.additionNames.has(facetName),
+      intent: ownEntry(args.intents, facetName) ?? { kind: 'manifest' },
     })
     if (!resolveResult.ok) {
       onStage({ kind: 'facet-failure', facet: facetName, failure: resolveResult.failure })

@@ -67,6 +67,24 @@ export function currentTerminalCapabilities(): TerminalCapabilities {
 }
 
 /**
+ * Whether a live, repainting region should be drawn at all.
+ *
+ * Deliberately weaker than `isInteractive`: an animated indicator reads
+ * no keys, so stdin's shape is irrelevant to it. What matters is the two
+ * facts Ink itself uses to decide whether it will repaint — a terminal
+ * stdout, and not CI.
+ *
+ * Testing `stdout.isTTY` alone is the trap. A CI runner that allocates a
+ * pseudo-TTY passes that test while Ink independently decides the mount
+ * is non-interactive; `clear()` then does nothing and `unmount()` flushes
+ * the last frame into stdout, in front of output a caller was parsing.
+ * Agreeing with Ink is the whole job of this predicate.
+ */
+export function canRenderLiveOutput(capabilities: TerminalCapabilities): boolean {
+  return capabilities.stdoutIsTTY && !capabilities.ci
+}
+
+/**
  * Convenience for call sites that just want the answer for this process.
  *
  * Note what this does NOT decide: frozen-lockfile mode never prompts even

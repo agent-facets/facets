@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from 'bun:test'
 import * as coreModule from '@agent-facets/engine'
+import { captureLog } from '../../__tests__/helpers/capture-log.ts'
 import { allCommandNames, commands, resolveCommand } from '../../commands.ts'
 import { printCommandHelp, printGlobalHelp } from '../../help.ts'
 import { findClosestCommand } from '../../suggest.ts'
@@ -128,21 +129,6 @@ describe('selfUpdateCommand.run flag forwarding', () => {
 })
 
 // ─── Help rendering ──────────────────────────────────────────────────────
-
-/** Capture console.log output during a synchronous body. */
-function captureLog(fn: () => void): string {
-  const original = console.log
-  let captured = ''
-  console.log = (...parts: unknown[]) => {
-    captured += `${parts.join(' ')}\n`
-  }
-  try {
-    fn()
-  } finally {
-    console.log = original
-  }
-  return captured
-}
 
 describe('global help rendering', () => {
   test('lists self-update with self-upgrade as a comma-joined alias', () => {

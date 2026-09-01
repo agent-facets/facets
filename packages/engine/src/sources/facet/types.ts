@@ -42,6 +42,13 @@ export type ParseErrorCode =
   | 'OR_RANGE'
   | 'X_RANGE'
   | 'INVALID_VERSION'
+  /**
+   * The specifier has a conforming shape but names a component the
+   * grammar cannot carry — see protocol's `MAX_VERSION_COMPONENT`.
+   * Distinct from `INVALID_VERSION` because the fix is different: the
+   * form was right, the number was too big.
+   */
+  | 'VERSION_COMPONENT_TOO_LARGE'
   | 'INVALID_REGISTRY_NAME'
   | 'UNKNOWN_SCHEME'
 
