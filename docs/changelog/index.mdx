@@ -5,6 +5,33 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-09-02" description="Installing a facet from a git source no longer crashes on a cold cache" tags={["CLI", "Fix"]} rss={{
+  title: "Git-sourced installs no longer crash on a cold cache",
+  description: "Installing a facet from a git source for the first time crashed with 'TypeError: Object.entries requires that input parameter not be null or undefined' instead of completing. The clone and build both succeeded; the run died on the step that commits the built content to the cache. That step is fixed, and git-sourced installs now complete on a cold cache. Only fresh clones were affected: a first install, or one whose cache slot was cold or evicted. Installs served from an audited cache hit, and facets from the registry or a local path, never hit the crash. Nothing about verification changed: the same entries are audited, and the cache records the complete set, including supplementary files that no asset owns."
+}}>
+  ## Git-sourced installs no longer crash on a cold cache
+
+  Installing a facet from a
+  [git or GitHub source](/cli/add#git-and-github-sources) for the first
+  time crashed with `TypeError: Object.entries requires that input
+  parameter not be null or undefined` instead of completing. The clone
+  and build both succeeded; the run died on the step that commits the
+  built content to the cache. That step is fixed, and git-sourced
+  installs now complete on a cold cache.
+
+  - **Only fresh clones were affected.** A first install, or one whose
+    cache slot was cold or evicted, hit the crash. Installs served from
+    an audited cache hit, and facets from the registry or a local path,
+    never took this path.
+  - **Nothing about verification changed.** The same entries are
+    audited, and the cache records the complete set, including
+    supplementary files that no asset owns.
+
+  If a git-sourced [`facet add`](/cli/add) or
+  [`facet install`](/cli/install) failed for you with this error, run it
+  again.
+</Update>
+
 <Update label="2026-09-01" description="agent-facets 0.33.0 ships facet update: move declared facets to newer releases" tags={["CLI", "New Feature", "Breaking"]} rss={{
   title: "agent-facets 0.33.0: new facet update command (aliased facet upgrade)",
   description: "agent-facets@0.33.0 is on npm with a new command: facet update, aliased facet upgrade. It moves the registry-backed facets a project declares to newer releases. The plan shows what is installed alongside each facet's range-respecting target and its latest release, so 'why is this one not moving?' is answerable from the plan itself. Plain facet update takes every target the declared specifier already permits. --latest crosses those specifiers and rewrites them by the smallest edit that admits the new version: a pin stays a pin, 1.* becomes 2.*, and * and latest are left as authored. --dry-run prints the plan and writes nothing. --interactive opens a per-facet picker where every row starts on its latest release. Applying an update runs the ordinary install pipeline -- the same verification, collision handling, MCP approval, rollback, and atomic manifest/lockfile/receipt write -- and re-checks under the project lock that nothing moved since the plan was reviewed, so the version you reviewed is the version installed. Git and local facets are named as unsupported rather than counted as current. Breaking: facet upgrade is no longer a placeholder that printed a not-yet-implemented notice and exited 0; it now applies real updates. Also in this release, via @agent-facets/protocol@0.31.1: version numeric components are now bounded at 2^53 - 1, so a version comparison can never answer for a release that was never published. Run facet self-update to pick it up."
