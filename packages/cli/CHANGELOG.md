@@ -1,31 +1,56 @@
 # agent-facets
 
+## 0.33.1
+
+### Patch Changes
+
+- [#563](https://github.com/agent-facets/facets/pull/563) [`0884b27`](https://github.com/agent-facets/facets/commit/0884b27650b9418cdb01d9c23409dcfc23e123b3) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Fix the crash when installing a facet from a git source for the first time.
+      Installing a git-sourced facet on a cold cache aborted with
+      `TypeError: Object.entries requires that input parameter not be null or
+    undefined` instead of installing anything. The clone succeeded and the build
+      succeeded; the run died on the step that commits the built content to the
+      cache.
+      The build pipeline emits the current `0.2` archive format, which records one
+      hash per archive entry under `files`. The git install path re-read that
+      output as the legacy `0.1` shape, whose map is named `assets` — a member the
+      current format does not have — and handed the resulting `undefined` to the
+      cache write, which audits every entry it is given.
+      The cache write now takes the integrity and the complete per-entry hash map
+      straight from the build result rather than re-deriving them by re-parsing the
+      build manifest, so this call site is no longer coupled to one archive-format
+      shape. Nothing about which files are audited or what is written changed: the
+      same entries are verified, and the cache sidecar records the full set,
+      including supplementary files that no asset owns.
+      Only fresh clones were affected — a first install, or one whose cache slot
+      was cold or evicted. Installs served by an audited cache hit, and facets from
+      the registry or a local path, never took this path.
+
 ## 0.33.0
 
 ### Minor Changes
 
 - [#557](https://github.com/agent-facets/facets/pull/557) [`9a061c4`](https://github.com/agent-facets/facets/commit/9a061c41b242a9be998a9549ca662df7e8ab6cfe) Thanks [@eXamadeus](https://github.com/eXamadeus)! - **New command: `facet update` (aliased `facet upgrade`)** — moves the registry-backed facets a project declares to newer releases. It reads `facets.json` and `facets.lock`, asks the registry for each facet's range-respecting target and its latest release, and shows both alongside what is installed, so "why is this one not moving?" is answerable from the plan itself. Plain `facet update` takes every target the declared specifier already permits. `--latest` (`-L`) crosses those specifiers and rewrites them by the smallest edit that admits the new version, preserving how the intent was written: a pin stays a pin, `1.*` becomes `2.*`, `1.2.*` becomes `2.4.*`, and `*` and `latest` are left exactly as authored.
-    **Previews and per-facet selection.** `--dry-run` prints the plan and writes nothing — no manifest, no lockfile, no receipt, no assets, no cache, and no adapter installation, which makes it safe on a machine with no adapter connected. `--interactive` (`-i`) opens a picker for choosing which facets move and which version each takes. Every row starts on its **latest** release with nothing selected, so walking the list and pressing `Space` takes the newest version of each facet you pick — `Space` always means "yes, this one", and a facet you never touch is left alone. `◀ ▶` (or `l`) moves a row to its range target first when that is what you want instead. `--latest` is accepted alongside `--interactive` but changes nothing there; it is how the non-interactive run asks for what this screen already offers. The picker requires a real terminal and fails immediately without one, before any registry lookup. Git and local facets are named as unsupported rather than counted as current — reporting them as up to date would claim something nothing verified.
-    **Applying an update is an install.** Discovery runs read-only and takes no project lock, so reading a plan never blocks another facet operation. Application re-checks under the lock that the project has not moved since the plan was reviewed, then runs the ordinary install pipeline: the same verification, collision handling, MCP approval, rollback, and atomic manifest/lockfile/receipt write. The version you reviewed is the version installed — a release published in between does not silently change it. Recorded materialization choices survive a version change. There is no `--frozen-lockfile`: reproducing what the lockfile already records is the opposite of what this command does.
-    **Breaking: `facet upgrade` is no longer a placeholder.** It previously printed a not-yet-implemented notice and exited `0` without touching a single file. It is now an alias of `facet update` — one command, one help page, one behavior — so the same invocation contacts the registry, may install adapters, takes the project lock, and rewrites `facets.json`, `facets.lock`, the install receipt, and your materialized assets. `update` is the canonical spelling, and `facet upgrade --help` prints `Usage: facet update`. If something in your automation called `facet upgrade` expecting a no-op, drop the call or make it explicit with `facet update --dry-run`.
-    Neither name touches the CLI binary. That remains `facet self-update`.
-    **Protocol: version components are bounded by exact integer representation.** The published version grammar now rejects a specifier or locked version whose numeric component exceeds `2^53 - 1`, with an error that names the magnitude rather than the form. Above that bound two distinct releases are the same double — `9007199254740992` and `9007199254740993` compare equal — so a comparison that decides which release is newer, or whether a locked version still satisfies a manifest range, could answer for a version that was never published. `facet update` is the first command whose whole job is that comparison, which is why the bound lands now. No real version is anywhere near it.
+  **Previews and per-facet selection.** `--dry-run` prints the plan and writes nothing — no manifest, no lockfile, no receipt, no assets, no cache, and no adapter installation, which makes it safe on a machine with no adapter connected. `--interactive` (`-i`) opens a picker for choosing which facets move and which version each takes. Every row starts on its **latest** release with nothing selected, so walking the list and pressing `Space` takes the newest version of each facet you pick — `Space` always means "yes, this one", and a facet you never touch is left alone. `◀ ▶` (or `l`) moves a row to its range target first when that is what you want instead. `--latest` is accepted alongside `--interactive` but changes nothing there; it is how the non-interactive run asks for what this screen already offers. The picker requires a real terminal and fails immediately without one, before any registry lookup. Git and local facets are named as unsupported rather than counted as current — reporting them as up to date would claim something nothing verified.
+  **Applying an update is an install.** Discovery runs read-only and takes no project lock, so reading a plan never blocks another facet operation. Application re-checks under the lock that the project has not moved since the plan was reviewed, then runs the ordinary install pipeline: the same verification, collision handling, MCP approval, rollback, and atomic manifest/lockfile/receipt write. The version you reviewed is the version installed — a release published in between does not silently change it. Recorded materialization choices survive a version change. There is no `--frozen-lockfile`: reproducing what the lockfile already records is the opposite of what this command does.
+  **Breaking: `facet upgrade` is no longer a placeholder.** It previously printed a not-yet-implemented notice and exited `0` without touching a single file. It is now an alias of `facet update` — one command, one help page, one behavior — so the same invocation contacts the registry, may install adapters, takes the project lock, and rewrites `facets.json`, `facets.lock`, the install receipt, and your materialized assets. `update` is the canonical spelling, and `facet upgrade --help` prints `Usage: facet update`. If something in your automation called `facet upgrade` expecting a no-op, drop the call or make it explicit with `facet update --dry-run`.
+  Neither name touches the CLI binary. That remains `facet self-update`.
+  **Protocol: version components are bounded by exact integer representation.** The published version grammar now rejects a specifier or locked version whose numeric component exceeds `2^53 - 1`, with an error that names the magnitude rather than the form. Above that bound two distinct releases are the same double — `9007199254740992` and `9007199254740993` compare equal — so a comparison that decides which release is newer, or whether a locked version still satisfies a manifest range, could answer for a version that was never published. `facet update` is the first command whose whole job is that comparison, which is why the bound lands now. No real version is anywhere near it.
 
 ### Patch Changes
 
 - [#554](https://github.com/agent-facets/facets/pull/554) [`d703ff1`](https://github.com/agent-facets/facets/commit/d703ff1bade3cc1333e59e0e9a5401abeacc40fc) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Remove empty directories left behind when an install rolls back.
-    Cleanup previously only reclaimed directories the run could prove it had
-    created, identified by inode. That test was both too strict and unsound: a
-    directory that existed before the run was never a candidate no matter how
-    empty the rollback left it, and inode identity proves nothing on Linux, which
-    recycles an inode the moment it is freed.
-    Rollback now asks the only question that matters — is anything left inside? —
-    and hands the answer to `rmdir`, which is non-recursive and so refuses to
-    remove a directory holding anything at all, yours or ours, in a single step
-    with no check-then-delete window. The walk climbs from each restored path and
-    stops at the tool's configuration directory (`.claude`, `.opencode`), which is
-    never removed and never climbed past, so cleanup can only reclaim the tree the
-    install materialized.
+  Cleanup previously only reclaimed directories the run could prove it had
+  created, identified by inode. That test was both too strict and unsound: a
+  directory that existed before the run was never a candidate no matter how
+  empty the rollback left it, and inode identity proves nothing on Linux, which
+  recycles an inode the moment it is freed.
+  Rollback now asks the only question that matters — is anything left inside? —
+  and hands the answer to `rmdir`, which is non-recursive and so refuses to
+  remove a directory holding anything at all, yours or ours, in a single step
+  with no check-then-delete window. The walk climbs from each restored path and
+  stops at the tool's configuration directory (`.claude`, `.opencode`), which is
+  never removed and never climbed past, so cleanup can only reclaim the tree the
+  install materialized.
 
 ## 0.32.0
 
