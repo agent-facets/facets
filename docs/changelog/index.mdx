@@ -5,11 +5,14 @@ description: What's new in Agent Facets
 rss: true
 ---
 
-<Update label="2026-09-02" description="Installing a facet from a git source no longer crashes on a cold cache" tags={["CLI", "Fix"]} rss={{
-  title: "Git-sourced installs no longer crash on a cold cache",
-  description: "Installing a facet from a git source for the first time crashed with 'TypeError: Object.entries requires that input parameter not be null or undefined' instead of completing. The clone and build both succeeded; the run died on the step that commits the built content to the cache. That step is fixed, and git-sourced installs now complete on a cold cache. Only fresh clones were affected: a first install, or one whose cache slot was cold or evicted. Installs served from an audited cache hit, and facets from the registry or a local path, never hit the crash. Nothing about verification changed: the same entries are audited, and the cache records the complete set, including supplementary files that no asset owns."
+<Update label="2026-09-02" description="agent-facets 0.33.1 fixes the cold-cache crash when installing from a git source" tags={["CLI", "Fix"]} rss={{
+  title: "agent-facets 0.33.1: git-sourced installs no longer crash on a cold cache",
+  description: "agent-facets@0.33.1 is on npm; run facet self-update to pick it up. Installing a facet from a git source for the first time crashed with 'TypeError: Object.entries requires that input parameter not be null or undefined' instead of completing. The clone and build both succeeded; the run died on the step that commits the built content to the cache. That step is fixed, and git-sourced installs now complete on a cold cache. Only fresh clones were affected: a first install, or one whose cache slot was cold or evicted. Installs served from an audited cache hit, and facets from the registry or a local path, never hit the crash. Nothing about verification changed: the same entries are audited, and the cache records the complete set, including supplementary files that no asset owns."
 }}>
   ## Git-sourced installs no longer crash on a cold cache
+
+  The fix ships in `agent-facets@0.33.1`. Run
+  [`facet self-update`](/cli/self-update) to pick it up.
 
   Installing a facet from a
   [git or GitHub source](/cli/add#git-and-github-sources) for the first
@@ -28,8 +31,8 @@ rss: true
     supplementary files that no asset owns.
 
   If a git-sourced [`facet add`](/cli/add) or
-  [`facet install`](/cli/install) failed for you with this error, run it
-  again.
+  [`facet install`](/cli/install) failed for you with this error, update
+  and run it again.
 </Update>
 
 <Update label="2026-09-01" description="agent-facets 0.33.0 ships facet update: move declared facets to newer releases" tags={["CLI", "New Feature", "Breaking"]} rss={{
