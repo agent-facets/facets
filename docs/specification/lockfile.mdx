@@ -5,9 +5,11 @@ tag: facets.lock
 description: The facets.lock schema and entry semantics
 ---
 
-The lockfile (`facets.lock`) records resolved installation state: for every declared facet, the exact version, the verified integrity, the provenance it was resolved from, and the assets it contributed — each with the [disposition](/specification/materialization#dispositions) it resolved to and a per-file integrity record for every file it owns. It is the **resolution** counterpart to the [project manifest](/specification/project-manifest)'s **intent** — the manifest records what the user asked for, the lockfile records what that resolved to.
+The lockfile records resolved installation state: for every declared facet, the exact version, the verified integrity, the provenance it came from, and the text assets it contributed with a per-file integrity record for each.
 
-Both files are version-controlled. The lockfile is written **only** by the install pipeline, as part of the [tri-write](/specification/commit#transactional-tri-write) — never ahead of success, and never by hand. A hand-edited or merge-conflicted lockfile fails validation at load rather than surfacing as a failure deep inside an install.
+It is the resolution counterpart to the [project manifest](/specification/project-manifest), which records intent. Both are version-controlled.
+
+The lockfile is written only by an install, as part of the [atomic write](/specification/install#transactional-tri-write), and never by hand. A hand-edited or merge-conflicted lockfile fails validation at load rather than deep inside an install.
 
 ## Example
 
@@ -45,15 +47,6 @@ Both files are version-controlled. The lockfile is written **only** by the insta
             { "path": "skills/viper-planning/SKILL.md", "integrity": "sha256:33cc44…" },
             { "path": "skills/viper-planning/references/api.md", "integrity": "sha256:55ee66…" }
           ]
-        },
-        {
-          "scope": "project",
-          "type": "command",
-          "name": "scratch",
-          "materialization": { "kind": "omitted" },
-          "files": [
-            { "path": "commands/scratch.md", "integrity": "sha256:77ff88…" }
-          ]
         }
       ]
     }
@@ -61,86 +54,77 @@ Both files are version-controlled. The lockfile is written **only** by the insta
 }
 ```
 
-Note what aliasing does **not** move: `name` is still `viper-planning` and its `files` still live under `skills/viper-planning/`. Only the file on disk is named `team-planning`.
+Note what aliasing does not move: `name` is still `viper-planning` and its `files` still live under `skills/viper-planning/`. Only the file on disk is named `team-planning`.
 
 ## Fields
 
 <ResponseField name="lockfileVersion" type="number" required>
-  The lockfile schema version. The current schema — the one a normal install writes — is `0.3`. One earlier schema remains **readable**: `0.2`.
+  The schema version. A normal install writes `0.3`. Version `0.2` remains readable.
 
-  Versions are dispatched by **exact match**, never by numeric ordering. A version number names a schema, not a position in a sequence, so a loader recognizes exactly the versions it supports and fails on any other rather than guessing. There is no cross-version fallback.
+  Versions are dispatched by exact match, never by ordering. A version number names a schema, not a position in a sequence, so a loader recognizes exactly what it supports and fails on anything else. There is no cross-version fallback.
 
-  A normal install migrates a verified `0.2` lockfile to `0.3` as part of the tri-write. A [frozen install](/specification/commit#frozen-lockfile) never rewrites it, and therefore retains whatever version it loaded. The authoritative version is the `CURRENT_LOCKFILE_VERSION` constant in `@agent-facets/protocol`.
-
-  <Note>
-  Readers are deliberately broader than the writer: reading two versions and writing one is a format-compatibility property, not a staged rollout.
-  </Note>
+  A normal install migrates a verified `0.2` lockfile to `0.3`. A [frozen install](/specification/install#frozen-lockfile) never rewrites it.
 </ResponseField>
 
-### Why MCP did not move the lockfile
-
-Adding MCP server support advanced the [project manifest](/specification/project-manifest) to `0.2`, the [install receipt](/specification/commit#machine-local-install-receipt) to `0.4`, and the adapter API to `0.2` — and deliberately left the lockfile at `0.3`. That is a decision, not an oversight.
-
-The lockfile's job is to pin what was resolved. A facet's `integrity` already commits to the exact bytes of its embedded `facet.json`, and MCP server declarations live inside that manifest. Recording them here would add a second copy of information the integrity hash already covers, and a second copy is a second thing that can disagree.
-
-Two consequences follow:
-
-- **Declaration drift is already detected.** Change a declaration and you change `facet.json`, which changes the facet's integrity, which no longer matches the locked value. Verification catches it with no lockfile field involved.
-- **Server intent lives in `facets.json` alone.** Aliases and omissions for servers are project intent, not resolution, so they are recorded in the project manifest and never mirrored here. Approval is machine-local and lives only in the receipt.
-
-The trade-off is honest: because declarations are not in the lockfile, a frozen install's server checks may need the locked facet content to prove what it declares. They still run before any mutation.
-
 <ResponseField name="facets" type="map<name, entry>" required>
-  One entry per resolved facet, keyed by facet name. The name lives only in the key — entries do not repeat it. Keys are written in sorted order, so add/remove/add produces byte-identical output.
+  One entry per resolved facet, keyed by name. The name lives only in the key. Keys are written sorted, so add, remove, and add again produces byte-identical output.
 </ResponseField>
 
 ## Entry fields
 
 <ResponseField name="source" type="tagged union" required>
-  Provenance, discriminated by `kind`, one variant per source kind so an illegal cross-kind combination is unrepresentable:
+  Provenance, discriminated by `kind`, so an illegal cross-kind combination cannot be expressed:
 
-  - `registry` — `{ kind, registry }`. The registry origin (base URL) the artifact was resolved from. Deliberately carries **no version specifier**: the entry's `version` field is the resolved identity, so an unresolved spec (`latest`, `1.*`) has no slot to leak into.
-  - `git` — `{ kind, url, commit }`. The repository URL plus the resolved commit SHA (lowercase hex, at least 8 characters; the pipeline writes a full `git rev-parse HEAD`). The commit is REQUIRED — it is the immutable identity that makes a git install reproducible. The symbolic ref (`#main`, a tag) is deliberately NOT recorded: a ref is what the user *requested* (a [project-manifest](/specification/project-manifest) concern, and mutable), whereas the lockfile records what was *resolved*.
-  - `local` — `{ kind, path }`. The resolved local path.
+  - `registry`: `{ kind, registry }`, the origin the artifact was resolved from. It carries no version specifier, because `version` is the resolved identity.
+  - `git`: `{ kind, url, commit }`. The commit is required, since it is the immutable identity that makes a git install reproducible. The symbolic ref is deliberately not recorded: a ref is what the user requested, and it is mutable.
+  - `local`: `{ kind, path }`.
 </ResponseField>
 
 <ResponseField name="version" type="string" required>
-  MUST be an exact `M.N.P` version — no ranges, no wildcards, no prerelease. Always written by the pipeline from resolution, never copied from a specifier.
+  An exact `M.N.P` version. No ranges, wildcards, or prerelease. Always written from resolution, never copied from a specifier.
 </ResponseField>
 
 <ResponseField name="integrity" type="string" required>
-  The [canonical fingerprint](/specification/integrity#two-hashes-two-domains) (`sha256:<hex>`) of the verified content. Derived from the freshly verified or built archive — never trusted from input.
+  The [canonical fingerprint](/specification/integrity#two-hashes-two-domains) of the verified content, derived from the freshly verified or built archive rather than trusted from input.
 </ResponseField>
 
 <ResponseField name="assets" type="array" required>
-  The assets this facet contributed. Each entry is `{ scope, type, name, materialization, files }` (`scope`: `system` | `user` | `project`; `type`: `skill` | `agent` | `command`). Names MUST pass asset-name validation — a crafted lockfile cannot smuggle path traversal into adapter I/O. Adapter-agnostic by design: the same asset set is applied to every selected adapter, and no per-adapter fields exist here.
+  The text assets this facet contributed, each `{ scope, type, name, materialization, files }`. `scope` is `system`, `user`, or `project`; `type` is `skill`, `agent`, or `command`. Names MUST pass asset-name validation, so a crafted lockfile cannot smuggle path traversal into adapter I/O.
 
-  The `type` set was deliberately **not** widened with a `server` arm. MCP servers are a separate configuration identity space rather than an asset type; see [Namespaces](/specification/materialization#namespaces). A server-only facet is represented here with an empty `assets` array.
+  This field holds text assets only: there is no `server` arm. MCP servers are a separate identity space, and a server-only facet is represented with an empty `assets` array.
 
-  `name` is the **authored** name and `files` are **canonical authored** archive paths, both unchanged by aliasing — they anchor integrity. See [Two identities](/specification/materialization#two-identities).
+  `name` and `files` are authored, unchanged by aliasing, because they anchor integrity.
 
-  `materialization` is the resolved [disposition](/specification/materialization#dispositions), and all three arms are legal here: this array is the resolved asset **set**, not the on-disk set. An **omitted** asset therefore stays listed with its complete file records — dropping it would make an omission indistinguishable from a facet that never published the asset. (The [install receipt](/specification/commit#machine-local-install-receipt), which records what is actually on disk, admits only `authored` and `aliased`.)
+  `materialization` is the resolved [disposition](/specification/materialization#dispositions), and all three arms are legal here. This array is the resolved set, not the on-disk set, so an omitted text asset stays listed with its complete records.
 
-  The `files` array records every file the asset owns as a `{ path, integrity }` record: a skill lists its `SKILL.md` plus each companion; an agent or command lists its single primary file. Each `integrity` is `sha256:` followed by exactly 64 lowercase hex characters — the recomputed [canonical per-entry hash](/specification/integrity#two-hashes-two-domains) of the verified file, never copied from a self-declared value. Records are sorted strictly ascending by path, which also forbids duplicates. At least one record is required. Archive-only supplementary files (like `README.md`) are never materialized and never appear here; they stay protected by facet-level integrity.
+  `files` records every file the text asset owns as `{ path, integrity }`, sorted strictly ascending by path, with at least one record. Each hash is the recomputed per-entry hash of the verified file. Archive-only supplementary files never appear here; they stay covered by facet-level integrity.
 
-  Ownership is derived from the asset, not merely asserted: an agent or command entry MUST contain exactly one record at its own canonical primary path, and every record in a skill entry MUST live under that skill's authored root with the canonical `SKILL.md` present. A safe, sorted path that no derivation from the asset's authored identity could produce — command `deploy` claiming `README.md`, say — is rejected, so integrity and deletion can never be pointed at an unrelated file. The same rule applies to `0.2` entries.
+  Ownership is derived, not merely asserted. An agent or command entry MUST contain exactly one record at its own canonical primary path, and every record in a skill entry MUST live under that skill's authored root with `SKILL.md` present. A path no derivation from the text asset's authored identity could produce is rejected, so integrity and deletion can never be pointed at an unrelated file.
 </ResponseField>
 
 <Note>
-An asset entry from a `0.2` lockfile has no `materialization` field. It is read as equivalent to an explicit `{ "kind": "authored" }` — the only disposition that schema could express.
+  A `0.2` text-asset entry has no `materialization` field. It reads as `{ "kind": "authored" }`, the only disposition that schema could express.
 </Note>
 
 ## Unrecognized fields
 
-Fields the schema does not define are accepted, and they **survive a rewrite** — not just a read. When install rebuilds `facets.lock`, it carries forward the unrecognized fields of the document, of each facet entry, of a retained entry's `source` when the source kind is unchanged, of each asset matched by authored `(scope, type, name)`, and of each file record matched by `path`. Migrating `0.2 → 0.3` preserves them exactly as a `0.3 → 0.3` write does.
+Fields the schema does not define are accepted and survive a rewrite. When an install rebuilds the lockfile it carries forward unrecognized fields on the document, on each facet entry, on a retained entry's `source` when the kind is unchanged, on each text asset matched by authored identity, and on each file record matched by path. Migrating `0.2` to `0.3` preserves them exactly as a same-version write does.
 
-Two consequences follow. A schema-defined field always wins over an unrecognized field of the same name, so a future version claiming a name cannot be shadowed by stale data. And unrecognized fields attached to a facet, asset, or file record that no longer exists are dropped with it, because there is nothing left to carry them.
+A schema-defined field always wins over an unrecognized field of the same name, so a future version claiming a name cannot be shadowed by stale data. Unrecognized fields attached to something that no longer exists are dropped with it.
 
-## Role in the pipeline
+## Why MCP did not move the lockfile
 
-- **Trust anchor.** When the lockfile pins a version, the audited content MUST hash to the locked integrity — a mismatch is a hard failure, never a silent re-download. → [Commit — Verify](/specification/commit#verify)
-- **Lockfile trust for resolution.** Whether a satisfying entry short-circuits version resolution depends on how the facet was requested (addition vs reproduction). → [Commit — Resolve](/specification/commit#resolve)
-- **Per-file reconciliation on reproduction.** When a facet resolves to the integrity already locked, install proves the per-file records still agree with the recomputed archive before writing, and fails with the exact mismatching path. A legitimate change resolves to a *different* integrity, so reconciliation does not apply to it. → [Commit — Verify](/specification/commit#verify)
-- **Declaration drift detection.** Because a facet's integrity commits to its embedded `facet.json`, a changed MCP server declaration fails verification through the existing integrity check — with no lockfile field recording the declaration. → [Why MCP did not move the lockfile](#why-mcp-did-not-move-the-lockfile)
-- **Not an ownership record.** The lockfile never authorizes deletion — of an asset or of an MCP server entry. It is shared, version-controlled state describing what *should* be materialized; the [install receipt](/specification/commit#machine-local-install-receipt) is the sole authority on what this machine actually wrote, and an asset the receipt does not record is untracked no matter what the lockfile says. The lockfile's `assets` still describe the desired set install writes, and ownership is recorded by **effective** identity, so a name that transferred between facets is not deleted out from under its new owner. → [Drift removal](/specification/commit#drift-removal)
-- **Frozen mode.** With `--frozen-lockfile`, the lockfile is the complete, authoritative source of truth *for reproduction* — never for deletion, which stays receipt-driven — and is never written. A `0.2` lockfile has no field in which to record an asset disposition, so a project that declares asset materialization overrides against one fails frozen validation rather than silently ignoring the intent. A *server* override never triggers that gate, since no lockfile version records server intent; frozen server checks read the integrity-pinned facet instead. → [Frozen lockfile](/specification/commit#frozen-lockfile)
+The lockfile records no MCP declaration, effective server name, or server disposition.
+
+A facet's `integrity` already commits to the exact bytes of the `facet.json` its declarations live in. Recording them again would create a second copy that can disagree with the first.
+
+Two consequences follow:
+
+- **Declaration drift is already detected.** Changing a declaration changes `facet.json`, which changes the facet's integrity, which no longer matches the locked value.
+- **Server intent lives in `facets.json` alone.** Aliases and omissions for servers are project intent rather than resolution. Approval is machine-local and is recorded in neither file.
+
+The trade-off is that a frozen install's server checks may need the locked facet content to prove what it declares. They still run before any mutation.
+
+## What the lockfile is not
+
+The lockfile never authorizes deletion. It is shared, version-controlled state describing what should be materialized, so a lockfile pulled from a teammate cannot cause deletion of files this machine never wrote. See [Ownership](/specification/install#ownership).

@@ -6,97 +6,116 @@ description: Scaffolds a new facet project
 ## Usage
 
 ```sh
-facet create [directory] [--force]
+facet create [directory]
 ```
 
-Creates a new facet project in the specified directory (defaults to the current directory). With no authoring flags, walks through an interactive wizard; with any authoring flag, scaffolds directly in [headless mode](#headless-mode).
+Creates a facet project in the given directory, defaulting to the current one. With no authoring flags it runs an interactive wizard; with any authoring flag it scaffolds directly in [headless mode](#headless-mode).
 
-If a `facet.json` already exists in the target directory, the command prompts for confirmation before overwriting. Use `--force` to skip the prompt.
+If `facet.json` already exists, the command asks before overwriting. `--force` skips that prompt.
 
 ## Examples
 
 ```sh
-facet create                       # interactive wizard in the current directory
+facet create                       # interactive wizard
 facet create ./my-facet \
   --name my-facet \
   --description "What it does" \
-  --version 0.1.0 \
-  --skill greet --agent helper --command run \
-  --json                           # headless scaffold, machine-readable result
-facet create ./bare --name bare --skill greet --no-readme  # skip the default README
+  --skill greet --agent helper --command run
+facet create ./bare --name bare --skill greet --no-readme
 ```
 
 ## Flags
 
 <ResponseField name="--name" type="string" required>
-  Facet name; required in headless mode. An unscoped slug or a scoped `@scope/name` — see the [name grammar](/specification/manifest#facet-name-grammar).
+  Facet name, required in headless mode. An unscoped slug or `@scope/name`. See the [name grammar](/specification/manifest#facet-name-grammar).
 </ResponseField>
 
 <ResponseField name="--description" type="string">
-  Facet description (headless mode).
+  Facet description.
 </ResponseField>
 
 <ResponseField name="--version" type="semver">
-  Facet version (headless mode). Defaults to `0.0.0`; must be semver.
+  Facet version. Defaults to `0.0.0`.
 </ResponseField>
 
 <ResponseField name="--private" type="boolean">
-  Mark the facet private (`private: true`).
+  Mark the facet private.
 </ResponseField>
 
 <ResponseField name="--skill / --agent / --command" type="repeatable">
-  An asset to scaffold. Repeat per asset; at least one is required in headless mode. Asset names are single-segment [Agent Skills names](/specification/manifest#asset-names); a skill and command can't share a name.
+  A text asset to scaffold. Repeat per asset. At least one is required in headless mode. Names are single segment, and a skill and command cannot share one.
 </ResponseField>
 
-<ResponseField name="--no-readme" type="boolean">
-  Skip the default `README.md`. `facet create` writes and declares an editable `README.md` (seeded from the name and description) by default; pass `--no-readme` to scaffold without it.
+<ResponseField name="--readme" type="boolean">
+  Write and declare an editable `README.md`, seeded from the name and description. On by default. Use `--no-readme` to skip it.
 </ResponseField>
 
 <ResponseField name="--force" type="boolean">
-  Overwrite an existing `facet.json`. Required in headless mode when a manifest already exists (there is no interactive confirm to fall back on).
+  Overwrite an existing `facet.json`. Required in headless mode, which has no confirmation prompt.
 </ResponseField>
 
 <ResponseField name="--json" type="boolean">
-  Emit a structured result: the created facet's name, version, target directory, and the list of files written (headless mode).
+  Emit a structured result: name, version, target directory, and the files written.
 </ResponseField>
 
 ## Exit codes
 
 | Code | Meaning |
-| ---- | ------- |
-| `0`  | Facet created successfully |
-| `1`  | Cancelled, declined overwrite, or invalid input |
+| --- | --- |
+| `0` | Facet created. |
+| `1` | Cancelled, declined overwrite, or invalid input. |
+| `2` | An unexpected error escaped command handling. |
 
-## Headless mode
+## Output
 
-<Note>
-  Headless scaffolding requires the facet CLI **v0.24.0 or newer**. On older CLIs only the interactive wizard is available; update with [`facet self-update`](/cli/self-update).
-</Note>
+```
+facet.json
+README.md                    # unless --no-readme
+skills/<name>/SKILL.md
+agents/<name>.md
+commands/<name>.md
+```
 
-Pass any authoring flag and `facet create` skips the interactive wizard and scaffolds directly — the path AI agents and scripts should use. See [`facet instructions authoring`](/cli/instructions).
+Starter asset files are plain markdown with no front matter, because asset metadata lives in the manifest. You may add front matter later; the manifest still wins at install time. `README.md` and other [supplementary files](/specification/manifest#supplementary-files) are written verbatim.
 
-After scaffolding, validate with [`facet build --verify`](/cli/authoring/build), or make further changes with [`facet modify`](/cli/authoring/modify).
+## Details
 
-## Wizard flow
+### Headless mode
 
-1. **Name**  -- the facet identity. Either an unscoped name (`my-facet`) or a scoped name (`@scope/name`, e.g. `@acme/my-facet`). See the [Manifest Schema](/specification/manifest#facet-name-grammar) for the full name grammar.
-2. **Description**  -- a brief description of the facet.
-3. **Version**  -- defaults to `0.0.0`.
-4. **Privacy**  -- choose Public (the default) or Private.
-5. **Assets**  -- add skills, agents, and commands by name.
-6. **README**  -- enabled by default. The wizard seeds `README.md` from the name and description; open the editor to customize it, or toggle it off. Edited content is preserved even if you change the name or description later.
-7. **Confirmation**  -- review the summary — which lists `README.md` when enabled — and confirm.
+Headless scaffolding requires v0.24.0 or newer.
 
-## Generated files
+Passing `--name`, `--description`, `--version`, `--private`, `--skill`, `--agent`, or `--command` skips the wizard. `--force` and `--json` do not trigger headless mode on their own, so `facet create --json` alone still opens the wizard and prints no JSON document.
 
-On confirmation, the wizard writes:
+After scaffolding, validate with [`facet build --verify`](/cli/authoring/build) or make further changes with [`facet modify`](/cli/authoring/modify).
 
-- `facet.json`  -- the manifest with named asset descriptors (and `README.md` in top-level `files` when README is enabled)
-- `README.md`  -- editable README, written and declared by default (skip with `--no-readme`)
-- `skills/<name>/SKILL.md`  -- starter skill template (Agent Skills directory convention)
-- `agents/<name>.md`  -- starter agent template
-- `commands/<name>.md`  -- starter command template
+### Interactive wizard
 
-Content files are markdown. A primary asset file (skill, agent, command) carries **no** YAML front matter — asset metadata lives in the manifest. `README.md` and other [supplementary files](/specification/manifest#supplementary-files) are written verbatim.
+The wizard asks for the name, description, version, and privacy, then the assets to scaffold. The README step is enabled by default and seeds content from the name and description, preserving your edits if you change either afterwards. A summary precedes any write.
 
-After creating the project, use `facet edit` to iterate on your facet, or `facet build` to validate and package it.
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="a facet already exists here">
+    **Cause:** the target directory already contains a `facet.json`. Headless mode has no prompt to fall back on.
+
+    **Fix:** pass `--force` to overwrite, or scaffold into an empty directory.
+  </Accordion>
+
+  <Accordion title="headless mode needs a name and at least one text asset">
+    **Cause:** `--name` is missing, or no `--skill`, `--agent`, or `--command` was given. Scaffolding needs at least one text asset.
+
+    **Fix:** supply both, for example `--name my-facet --skill greet`.
+  </Accordion>
+
+  <Accordion title="a name or version was rejected">
+    **Cause:** the facet name breaks the [name grammar](/specification/manifest#facet-name-grammar), an asset name is not a single lowercase segment, or `--version` is not semver.
+
+    **Fix:** correct the value. Names are validated, never normalized, so nothing is silently rewritten.
+  </Accordion>
+</AccordionGroup>
+
+## See also
+
+- [`facet modify`](/cli/authoring/modify)
+- [`facet edit`](/cli/authoring/edit)
+- [`facet build`](/cli/authoring/build)

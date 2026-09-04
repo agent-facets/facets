@@ -1,70 +1,64 @@
 ---
 title: "Materialization"
-description: How authored assets become files on disk
+description: How authored contributions become project state
 ---
 
-Materialization is the rule that turns what facets publish into the state a tool actually reads: files on disk for text assets, and keyed entries inside tool-owned configuration for [MCP server declarations](/specification/manifest#mcp-server-declarations). It sits inside [Commit](/specification/commit#compose), between verification and the first write.
+Materialization is the rule that turns what facets publish into what a tool reads: files on disk for text assets, and keyed entries inside tool-owned configuration for [MCP server declarations](/specification/manifest#mcp-server-declarations).
 
-Most of the time it is invisible: a facet publishes a skill named `planning`, and a file named `planning` appears. It becomes visible the moment two facets publish the same name, or a project decides it wants a published contribution under a different name — or not at all.
+It runs between verification and the first write. See [Composition](/specification/install#composition).
 
 <Info>
-Materialization decides **names**, never **content**. Every archive path, every integrity hash, every byte of an asset, and every field of a server declaration is fixed by its publisher and unaffected by anything on this page.
+Materialization decides names, never content. Every archive path, every integrity hash, and every field of a declaration is fixed by its publisher and unaffected by anything on this page.
 </Info>
 
 ## Two identities
 
-Every asset has two names, and conflating them is the mistake this model exists to prevent.
-
 <ResponseField name="authored name" type="fixed by the publisher">
-  The name declared in the facet's [`facet.json`](/specification/manifest). It fixes the asset's canonical paths inside the [archive](/specification/archive) — `skills/<authored>/SKILL.md`, `agents/<authored>.md`, `commands/<authored>.md` — and therefore every [integrity](/specification/integrity) value recorded for it. It is what the [lockfile](/specification/lockfile) stores. Aliasing and omission never change it.
+  The name declared in [`facet.json`](/specification/manifest). It fixes a text asset's canonical archive paths, and therefore every [integrity](/specification/integrity) value recorded for it. It is what the [lockfile](/specification/lockfile) stores. Aliasing and omission never change it.
 </ResponseField>
 
 <ResponseField name="effective name" type="chosen by the project">
-  The name the asset is materialized under: the file an [adapter](/specification/terminology#core-concepts) resolves and plans against. It equals the authored name unless the consuming project aliased it.
+  The name the contribution is materialized under. It equals the authored name unless the project aliased it.
 </ResponseField>
 
-An aliased skill therefore lives on disk under its **effective** name while its recorded file paths remain **authored**:
+An aliased skill lives on disk under its effective name while its recorded paths stay authored:
 
 ```
-facet.json          skills/planning/SKILL.md      (authored — anchors integrity)
+facet.json          skills/planning/SKILL.md      (authored, anchors integrity)
 facets.lock         skills/planning/SKILL.md      (authored)
 on disk             skills/team-planning/SKILL.md (effective)
 ```
 
-Front matter follows the same split: the `name` field written into a materialized asset is the **effective** name, while `description` stays as the publisher wrote it. Renaming an asset does not rewrite it.
+Front matter follows the same split: the `name` written into a materialized asset is the effective name, and `description` stays as the publisher wrote it.
 
-MCP servers have the same two identities. The **authored** server name is the key in the facet's `servers` map; it keys the project's override and the receipt's ownership claim. The **effective** server name is the key written into `.mcp.json`, `opencode.jsonc`, or `.codex/config.toml`. The declaration body itself is name-independent — its [canonical fingerprint](/specification/commit#machine-local-install-receipt) is computed without either name — so renaming a server never changes what it launches or connects to.
+MCP servers have the same two identities. The authored name keys the project's override and the ownership record; the effective name is the key written into the tool's document. The declaration body is name-independent, so renaming a server never changes what it launches or connects to.
 
 ## Dispositions
 
-A project resolves each authored contribution — asset or MCP server — to exactly one of three outcomes. The contract is identical for both; only what "materialize" means differs.
+A project resolves each authored contribution to exactly one outcome.
 
 <ResponseField name="authored" type="the default">
-  Materialize under the publisher's name. Expressed by recording **nothing** — the absence of an override *is* the authored disposition. An explicit `authored` override in [`facets.json`](/specification/project-manifest) MUST be rejected, so that one state has exactly one spelling.
+  Materialize under the publisher's name. Expressed by recording nothing: the absence of an override is the authored disposition. An explicit `authored` override MUST be rejected, so one state has one spelling.
 </ResponseField>
 
 <ResponseField name="aliased" type="{ kind: 'aliased', as }">
-  Materialize under a different effective name. `as` is required and MUST satisfy the single-segment [asset-name grammar](/specification/manifest#asset-names). An invalid alias MUST be rejected, never normalized or sanitized — silently rewriting a chosen name would make the materialized identity unpredictable.
+  Materialize under a different effective name. `as` is required and MUST satisfy the single-segment [asset-name grammar](/specification/manifest#asset-names). An invalid alias MUST be rejected rather than normalized, because silently rewriting a chosen name would make the result unpredictable.
 </ResponseField>
 
 <ResponseField name="omitted" type="{ kind: 'omitted' }">
-  Do not materialize this contribution, or any file it owns. An omitted asset is still resolved, still verified, and still recorded in the lockfile — it simply never reaches an adapter. An omitted **server** never reaches an adapter either, and is never approved or owned.
+  Do not materialize this contribution or any file it owns. An omitted text asset is still resolved, verified, and recorded in the lockfile. It simply never reaches an adapter, and is never approved or owned.
 </ResponseField>
 
-Two narrower forms are derived from these three arms:
+Two narrower forms derive from these:
 
-- A **project override** admits only `aliased` and `omitted`, because `authored` is the absence of an override.
-- A **materialized disposition** — what the [install receipt](/specification/commit#machine-local-install-receipt) records for an asset on disk or a configured server — admits only `authored` and `aliased`, because an omitted contribution was never materialized. "Omitted but present" is unrepresentable rather than merely invalid.
+- A project override admits only `aliased` and `omitted`, because `authored` is the absence of one.
+- A materialized disposition admits only `authored` and `aliased`, because an omitted contribution was never materialized.
 
-<Note>
-An omitted asset stays listed in the lockfile with its complete authored file records. Dropping it would make an omission indistinguishable from a facet that never published the asset at all.
-
-An omitted **server** leaves no lockfile trace at all — but for a different reason: the lockfile never records server declarations or dispositions in the first place. An omitted server is simply absent from the desired set, and its intent lives in `facets.json` alone.
-</Note>
+An omitted text asset stays in the lockfile with its complete authored file records. Dropping it would make an omission indistinguishable from a facet that never published it. An omitted server leaves no lockfile trace, because [the lockfile records no server intent at all](/specification/lockfile#why-mcp-did-not-move-the-lockfile).
 
 ## Recording intent
 
-Dispositions live in [`facets.json`](/specification/project-manifest) as durable project intent, keyed by contribution kind and then by **authored** name:
+Dispositions live in [`facets.json`](/specification/project-manifest), keyed by contribution kind and then by authored name:
 
 ```json facets.json
 {
@@ -87,102 +81,80 @@ Dispositions live in [`facets.json`](/specification/project-manifest) as durable
 }
 ```
 
-Overrides are keyed by authored name because that is the only stable identifier — an alias is the thing being declared, so it cannot also be the key.
+Overrides are keyed by authored name because that is the only stable identifier. An alias is the thing being declared, so it cannot also be the key.
 
-Intent is durable. It survives a failed install, a re-add, a version update, and a change of source: changing *which release* a facet is at, or *where* it comes from, is not a statement about *how* its assets and servers should be named. It is discarded only when the facet is removed, or when the contribution it names disappears (see [Stale overrides](#stale-overrides)).
+Intent is durable. It survives a failed install, a re-add, a version update, and a change of source. It is discarded only when the facet is removed, or when the contribution it names disappears.
 
-One server disposition applies to **every** selected adapter. There is no per-adapter aliasing or omission: a project decides once what a server is called, and each adapter writes that same effective name into its own document.
-
-<Tip>
-You rarely write this block by hand. [`facet add`](/cli/add) and [`facet install`](/cli/install) open an interactive resolver when they hit a collision and write your choices here. Hand-editing is the path for CI, where nothing can prompt.
-</Tip>
+One server disposition applies to every selected adapter. There is no per-adapter aliasing: a project decides once what a server is called.
 
 ## Namespaces
 
-Two assets may share a name freely across namespaces, but never within one.
+Two contributions may share a name across namespaces, never within one.
 
-- **`skill-command`** — skills and commands compete for the same names, because they materialize into a single flat command surface in the tools facets target.
-- **`agent`** — agents occupy their own namespace.
+- **Skills and commands** share one namespace, because they materialize into a single flat surface in the tools facets target.
+- **Agents** occupy their own namespace.
 
-So a skill `deploy` and a command `deploy` collide, while an agent `deploy` coexists with both. This is the same rule a single facet's [`facet.json`](/specification/manifest#constraints) is validated against; materialization applies it across every facet in the project at once.
+So a skill `deploy` and a command `deploy` collide, while an agent `deploy` coexists with both.
 
-MCP servers are **not** an asset type and do not join either namespace. They occupy a separate **configuration identity** space — `(mcp-server, effective name)` at project scope — because they materialize into a different kind of destination: a key inside a tool-owned configuration document rather than a file the project owns. A server `deploy` therefore coexists with a skill, command, and agent all named `deploy`; it can only ever collide with another server.
+MCP servers are not a text asset type. They occupy a separate configuration identity space, keyed by effective server name at project scope, so a server `deploy` coexists with every text asset named `deploy` and can only collide with another server.
 
 ## Collisions
 
-Two assets collide when their **collision keys** are equal:
+Two text assets collide when their collision keys are equal:
 
 ```
 collisionKey = (scope, namespace, portable effective name)
 ```
 
-Three properties of that key matter:
+Three properties matter:
 
-- It uses the **effective** name, so aliasing can both cause and cure a collision.
-- It folds asset type into its **namespace**, giving the rule above.
-- It folds the name **portably** — Unicode NFC, then case — so two assets differing only by case or normalization collide rather than silently overwriting each other on a case-insensitive volume.
+- It uses the effective name, so aliasing can both cause and cure a collision.
+- It folds text asset type into its namespace, giving the rule above.
+- It folds the name portably: Unicode NFC, then ASCII lowercasing. This is deliberately not full Unicode case folding, so `ß` and `SS` do not fold together. Two names differing only by case or normalization collide rather than silently overwriting each other on a case-insensitive volume.
 
-A collision key is a *logical* identity and MUST NOT be handed to an adapter. The addressable identity is `(scope, type, effective name)`, keyed by asset type rather than namespace and by the verbatim effective name rather than a folded one: a skill `deploy` and a command `deploy` are two different files even though they may not legally coexist. For a server, the addressable identity is the verbatim effective server name.
+A collision key is a logical identity and MUST NOT be handed to an adapter. The addressable identity is `(scope, type, effective name)`, using the verbatim name: a skill `deploy` and a command `deploy` are two different files even though they may not legally coexist.
 
 ### Server collisions
 
-MCP servers collide by project scope and portable effective server name, evaluated in the same pre-write pass as assets. One difference is load-bearing, and it has no asset counterpart:
+Servers collide by project scope and portable effective server name, in the same pass as text assets, with one rule that has no text-asset counterpart:
 
-- **Identical declarations compose.** If two facets claim the same effective server name with declarations whose [canonical fingerprints](/specification/commit#machine-local-install-receipt) are equal, that is not a conflict. They produce **one** effective configuration, and both facets are retained as claimants for ownership and reporting. Two facets asking for the same server, spelled the same way, are in agreement — there is nothing for a user to resolve.
-- **Different declarations collide.** If the fingerprints differ, the two claims describe materially different behavior at one key. That is one collision group naming every claimant, reported before any write, with no winner chosen.
+- **Identical declarations compose.** When two facets claim one effective name with declarations whose [canonical fingerprints](/specification/manifest#canonical-declaration-fingerprint) are equal, they agree. One configuration is produced and both facets are retained as claimants.
+- **Different declarations collide.** Differing fingerprints describe materially different behavior at one key, so they form a collision group naming every claimant.
 
-Assets have no such rule because two assets at one name are two different files even when their content matches; a server key is a single entry that either says one thing or is contested.
-
-### When collisions are detected
-
-Detection is **global and pre-write**, and one pass covers both asset and server collisions. Every facet in the desired set is resolved and verified first; only then is the complete effective set checked, before any adapter is asked to write anything or any [MCP approval](/specification/commit#mcp-configuration) is requested.
-
-```mermaid
-flowchart LR
-    RESOLVE["Resolve all<br/>every facet fetched + verified"]
-    PLAN["Plan materialization<br/>overrides applied, effective set checked"]
-    APPLY["Apply<br/>delete obsolete, then write"]
-    RESOLVE --> PLAN
-    PLAN -->|collision-free| APPLY
-    PLAN -->|collisions| STOP["Stop<br/>nothing written"]
-```
-
-This ordering is the reason the whole desired set must exist before the first write: a per-facet loop cannot detect that facet A and facet Z want the same name until it has already materialized A.
-
-When the effective set does collide, the result carries **every** group with **every** claimant — never a truncated report, and never a generated winner. A tool that picked a winner would silently discard someone's asset.
+Two text assets at one name are always two different files, even when their content matches. A server key is a single entry that either says one thing or is contested.
 
 ## Planning rules
 
-Materialization planning is a **single pass**, not a fixed-point resolver. Overrides are applied once against authored identity, then the resulting effective set is checked once. Assets and servers share one planning primitive, so every rule below holds identically in both identity spaces even though their domain types stay separate. Four consequences follow, and all four are normative:
+Planning is a single pass, not a fixed-point resolver. Overrides are applied once against authored identity, then the resulting effective set is checked once. Text assets and servers share one planning primitive, so every rule below holds in both identity spaces.
 
-- **Alias swaps are legal.** If `A` aliases to `B` and `B` aliases to `A`, both land. Neither observes the other's result, because there is no second pass.
-- **Duplicate alias targets fail.** Two assets aliased to the same name collide like any other pair.
-- **A name freed by an omission is available.** Omitting one claimant removes it from the effective set entirely.
-- **Order does not matter.** The result never depends on the order facets were declared in.
+- **Alias swaps are legal.** If `A` aliases to `B` and `B` aliases to `A`, both land, because neither observes the other's result.
+- **Duplicate alias targets fail.** Two contributions aliased to one name collide like any other pair.
+- **A name freed by an omission is available.**
+- **Order does not matter.** The result never depends on declaration order.
 
-A name that **every** claimant aliases away from is freed the same way an omission frees one: nothing in the effective set claims it. If your [install receipt](/specification/commit#machine-local-install-receipt) tracks that name, [drift removal](/specification/commit#drift-removal) deletes it in the same operation — before any alias is written — and each alias is written with its own facet's authored content. A file at that name the receipt does *not* track is left alone: freeing a name says nothing about who wrote the file sitting on it.
+Determinism here is a contract: reordering facets, or the assets a facet declares, MUST NOT change any disposition, whether a collision is detected, or which effective set is materialized. No claimant can win a collision by being listed first.
 
-Determinism is a contract, and what it guarantees is **independence from declaration order**. Reordering the facets in `facets.json`, or the assets a facet declares, never changes the disposition an asset receives, whether a collision is detected, or which effective set is materialized. The same inputs plan to the same answer however they were enumerated — which is why no claimant can win a collision by being listed first.
+Collision reports MUST be stable: groups, and claimants within a group, come back in a fixed order, so the same conflict reads identically on every machine. That ordering MUST NOT be locale-sensitive.
 
-Collision reports are additionally stable for presentation: groups, and the claimants within a group, come back in a fixed order, so the same unresolved conflict reads identically on every machine and on every rerun. That ordering is deliberately not locale-aware; locale-sensitive collation would make output depend on the machine's environment.
+A name that every claimant aliases away from is freed, exactly like one an omission frees. If that name is [owned](/specification/install#ownership), it is deleted in the same operation, before any alias is written. A file at that name which nothing owns is left alone: freeing a name says nothing about who wrote the file sitting on it.
 
 ## Stale overrides
 
-An override naming an asset or server the resolved facet version no longer contains is **stale** — typically because you upgraded a facet and the publisher renamed or dropped that contribution.
+An override naming a contribution the resolved version no longer contains is stale, usually because a publisher renamed or dropped it.
 
-A stale override is reported, not fatal. Because intent is durable, it survives a failed operation and is pruned only as part of a successful commit — at which point the CLI tells you what it dropped. Under [`--frozen-lockfile`](/specification/commit#frozen-lockfile) the same report is blocking drift instead: frozen mode has no transaction to prune in, and silently ignoring recorded intent would defeat the flag's purpose.
+A stale override is reported rather than fatal. Because intent is durable, it survives a failed operation and is pruned only by a successful install, which reports what it dropped. Under a [frozen install](/specification/install#frozen-lockfile) the same condition is blocking drift instead, and the override is not removed.
 
 ## What aliasing does not change
 
-Aliasing renames; it does not rewrite. Everything in this list is anchored to the **authored** name and is byte-identical whether or not an asset is aliased:
+Everything below is anchored to the authored name and is byte-identical whether or not a contribution is aliased:
 
-- Canonical inner-archive paths, and therefore the archive's per-entry hashes.
-- The facet's canonical fingerprint (`content_integrity`).
-- The lockfile's `name` and `files` records for the asset.
-- The asset's content and its `description`.
+- Canonical archive paths, and therefore the per-entry hashes.
+- The facet's canonical fingerprint.
+- The lockfile's `name` and `files` records.
+- The text asset's content and its `description`.
 
-For a server, aliasing likewise leaves the declaration body, its canonical declaration fingerprint, and the facet integrity that pins it unchanged. Because approval is keyed by effective name *and* fingerprint, aliasing a server to a name this machine has already approved for the same declaration does not re-prompt, while aliasing it to a new effective name does.
+For a server, aliasing leaves the declaration body, its canonical fingerprint, and the facet integrity that pins it unchanged. Because approval is keyed by effective name and fingerprint, aliasing to a name already approved for that same declaration does not re-prompt, while aliasing to a new name does.
 
 <Warning>
-Because integrity is anchored to authored paths, an alias can never be used to smuggle different content under a familiar name. Verification happens before materialization and never sees the effective name. The same holds for a server declaration: it is verified as part of the integrity-protected manifest before any adapter is asked to write it.
+  Because integrity is anchored to authored paths, an alias can never smuggle different content under a familiar name. Verification happens before materialization and never sees the effective name.
 </Warning>

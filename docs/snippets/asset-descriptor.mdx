@@ -4,23 +4,21 @@ export const AssetDescriptor = ({ assetType, promptPath }) => (
       Human-readable description of the {assetType}.
     </ResponseField>
     <ResponseField name="adapters" type="map of string → adapter config">
-      Adapter name → adapter-specific {assetType} configuration. Each installed
-      adapter validates its own metadata schema at build time. Unknown adapters
-      produce a warning; invalid metadata for an installed adapter is a build
-      error.
+      Adapter name to adapter-specific {assetType} configuration. Validated at
+      build time against each installed adapter's schema. See{" "}
+      <a href="/specification/manifest#text-assets">Text assets</a>.
     </ResponseField>
     {assetType === "skill" && (
       <ResponseField name="files" type="array of string">
         Companion files shipped inside the skill directory, as exact paths
-        relative to <code>skills/&lt;name&gt;/</code> (e.g.{" "}
-        <code>references/api.md</code>). They install and remove atomically with
-        the skill and cannot list <code>SKILL.md</code>. See{" "}
+        relative to <code>skills/&lt;name&gt;/</code>. They install and remove
+        atomically with the skill and cannot list <code>SKILL.md</code>. See{" "}
         <a href="/specification/manifest#supplementary-files">Supplementary files</a>.
       </ResponseField>
     )}
     <p>
       The {assetType}'s prompt is the content of <code>{promptPath}</code>,
-      resolved by convention at build time — it is not a manifest field.
+      resolved by convention at build time. It is not a manifest field.
     </p>
   </>
 );

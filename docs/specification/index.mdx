@@ -3,111 +3,89 @@ title: "Introduction"
 description: "The open source Agent Facet specification"
 ---
 
-Facets are an open format and distribution system for modular AI assistant extensions. A facet packages skills, agents,
-commands, and MCP server declarations into a versioned, distributable unit with a well-defined manifest, integrity
-model, install pipeline, and publish flow.
+Facets are an open format for modular AI assistant extensions. A facet packages assets, which are skills, agents, commands, and MCP server declarations, into a versioned, distributable unit.
 
-This specification defines the authoritative requirements for the Facets format and protocol. For introductory material,
-see [Introduction](/) and [Key Concepts](/docs/learn).
+This specification defines the requirements an implementation must satisfy to produce or consume facets. For introductory material, see [Key Concepts](/docs/learn). Terms are collected in [Terminology](/specification/terminology).
 
 <Info>
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in [RFC 2119](https://www.ietf.org/rfc/rfc2119.txt) and [RFC 8174](https://www.ietf.org/rfc/rfc8174.txt).
 </Info>
 
-## Actors
+## Project state
+
+A consuming project holds two version-controlled files.
 
 <CardGroup cols={2}>
-  <Card horizontal title="Author" icon="pen">
-    Creates facets for agentic use. Publishes to the registry.
+  <Card title="facets.json" icon="files" href="/specification/project-manifest">
+    The project manifest: which facets the project depends on, and how it wants their assets materialized.
   </Card>
-  <Card horizontal title="CLI" icon="terminal">
-    Installs facets, manages the lockfile and caches.
-  </Card>
-  <Card horizontal title="Registry" icon="database">
-    Stores archives, provides provenance, and acts as an integrity authority.
-  </Card>
-  <Card horizontal title="AI assistant" icon="bot">
-    Loads facets into context.
+  <Card title="facets.lock" icon="lock" href="/specification/lockfile">
+    The lockfile: what those dependencies resolved to, with verified integrity and per-file records.
   </Card>
 </CardGroup>
 
+The manifest records intent and the lockfile records resolution. An [install](/specification/install) reads both, and on success writes both together with a machine-local ownership record that is deliberately not committed.
+
 ## The facet artifact
 
-A **facet** is a named, versioned collection of text assets — skills, agents, and commands — plus portable [MCP server declarations](/specification/manifest#mcp-server-declarations), defined by a manifest. The author's CLI builds it into a self-contained **facet archive** (`.facet`): the manifest plus every text asset. The registry verifies and stores that archive, and consumers receive exactly the bytes the author built — no text is fetched or assembled at install time, and no server is fetched, resolved, or run.
+A facet is a named, versioned collection of assets: [text assets](/specification/manifest#text-assets) and portable [MCP server declarations](/specification/manifest#mcp-server-declarations), described by a [facet manifest](/specification/manifest). It is built into a self-contained [archive](/specification/archive) and consumers receive exactly the bytes the author built.
 
 <Info>
-Stale text is safe (suboptimal, not broken). Changed text is a trust concern (prompt injection). That is why content is locked into the archive at build time and every install verifies the published hashes.
+Stale text is safe: suboptimal, not broken. Changed text is a trust concern, because it is prompt injection. That is why content is fixed into the archive at build time and every install verifies the [published hashes](/specification/integrity).
 </Info>
 
 ## Lifecycle
 
+### Consume a facet
+
 <Steps>
-  <Step title="Author">
-    Create a `facet.json` manifest and text asset files in a local directory.
-  </Step>
-  <Step title="Build & publish">
-    The CLI builds the archive and computes its <Tooltip tip="The canonical fingerprint (content_integrity, over the uncompressed inner tar) and the transport hash (content_hash, over the uploaded tarball) — two distinct, non-interchangeable hashes." cta="See Integrity Model" href="/specification/integrity">integrity hashes</Tooltip>; the registry verifies the upload, stores it, and publishes the hashes. A published version is immutable. See [Build](/specification/build) and [Publish](/specification/publish).
+  <Step title="Declare">
+    Record the facet and any materialization intent in [`facets.json`](/specification/project-manifest).
   </Step>
   <Step title="Install">
-    The [plan/commit pipeline](/specification/install) resolves versions, verifies integrity (cache self-audit + lockfile comparison or registry confirmation), obtains [MCP configuration approval](/specification/commit#mcp-configuration), materializes assets, reconciles native MCP configuration, and writes manifest + lockfile + receipt atomically.
+    An [install](/specification/install) resolves versions, verifies integrity, composes one materialization plan, obtains approval for MCP configuration, and writes project state atomically.
   </Step>
   <Step title="Run">
-    Text assets in the assistant's context; configured MCP servers connected by the tool itself.
+    Text assets enter the assistant's context. Configured servers are connected by the tool itself.
   </Step>
 </Steps>
 
-## Generated JSON
+### Produce a facet
 
-Every JSON file the CLI generates — [`facets.json`](/specification/project-manifest), [`facets.lock`](/specification/lockfile), the [install receipt](/specification/commit#machine-local-install-receipt), build manifests, scaffolded [`facet.json`](/specification/manifest), and cache integrity sidecars — uses 2-space indentation and ends with exactly one trailing newline. Open a generated file in an editor that appends a final newline, save it, and there is no diff. `facets.json` is written through a comment-preserving serializer, so hand-written annotations survive every write. A coding tool's own native configuration is out of scope: those documents keep the formatting the tool gave them.
+<Steps>
+  <Step title="Author">
+    Write a `facet.json` [manifest](/specification/manifest) and the asset files it declares.
+  </Step>
+  <Step title="Build">
+    [Build](/specification/build) assembles the archive and computes its hashes.
+  </Step>
+  <Step title="Publish">
+    [Publish](/specification/publish) uploads it, and the registry verifies and stores it. A published version is immutable.
+  </Step>
+</Steps>
+
+## Actors
+
+<CardGroup cols={2}>
+  <Card horizontal title="Installer" icon="terminal">
+    Resolves, verifies, and materializes facets into a project.
+  </Card>
+  <Card horizontal title="AI assistant" icon="bot">
+    Loads materialized text assets, and connects to configured servers.
+  </Card>
+  <Card horizontal title="Author" icon="pen">
+    Creates facets and publishes them to a registry.
+  </Card>
+  <Card horizontal title="Registry" icon="database">
+    Verifies uploads, stores archives, and publishes integrity hashes.
+  </Card>
+</CardGroup>
 
 ## Security and trust
 
-Facets enable arbitrary text injection into AI assistant contexts, and an MCP server declaration can additionally cause
-a coding tool to execute a command or open an outbound connection.
-Implementors MUST address:
+A facet injects text into an assistant's context, and an MCP server declaration can cause a tool to execute a command or open a connection. Implementations MUST address:
 
-1. **Content verification** -- hashes MUST be verified at download, on every cache hit, and at lockfile-entry creation. A lockfile entry for a registry facet MUST NOT be created without registry confirmation.
-2. **User consent** -- consumers SHOULD understand what a facet contains before installing it.
-3. **Execution consent** -- a new or changed MCP server declaration MUST be approved before it is materialized. Interactive consumers MUST see the exact command, arguments, and environment assignments, or the exact URL, before anything is written; non-interactive consumers MUST require an explicit opt-in. Approval is **machine-local** evidence: it MUST NOT travel to a teammate through version-controlled project state.
-4. **No server lifecycle** -- materializing a declaration MUST NOT install, launch, probe, or authenticate to the server. Facets stores no credentials and runs no MCP client; connection and authentication remain the target tool's responsibility.
-
-## Sections
-
-<CardGroup cols={2}>
-   <Card title="Project Manifest" icon="files" href="/specification/project-manifest">
-      The `facets.json` format -- declared facets and entry semantics.
-   </Card>
-   <Card title="Lockfile" icon="lock" href="/specification/lockfile">
-      The `facets.lock` format -- resolved versions and integrity.
-   </Card>
-   <Card title="Facet Manifest" icon="file-code" href="/specification/manifest">
-      The `facet.json` format -- fields, types, constraints.
-   </Card>
-   <Card title="Facet Archive" icon="package" href="/specification/archive">
-      The two-layer `.facet` format -- layout, determinism, hashes.
-   </Card>
-   <Card title="Integrity Model" icon="shield-check" href="/specification/integrity">
-      Content hashing and cache audit.
-   </Card>
-   <Card title="Installation" icon="download" href="/specification/install">
-      Two-phase pipeline: planning, then commit.
-   </Card>
-   <Card title="Planning" icon="route" href="/specification/planning">
-      Phase 1 -- turn a command into a delta.
-   </Card>
-   <Card title="Commit" icon="check" href="/specification/commit">
-      Phase 2 -- resolve, compose, materialize, write atomically.
-   </Card>
-   <Card title="Materialization" icon="tag" href="/specification/materialization">
-      Authored vs. effective names, aliasing, omission, collisions.
-   </Card>
-   <Card title="Build" icon="hammer" href="/specification/build">
-      Produce the canonical `.facet` archive.
-   </Card>
-   <Card title="Publish" icon="upload" href="/specification/publish">
-      Verify and upload to the registry.
-   </Card>
-   <Card title="Terminology" icon="book" href="/specification/terminology">
-      Canonical terms and definitions.
-   </Card>
-</CardGroup>
+1. **Content verification.** Hashes MUST be verified at download, on every cache hit, and when a lockfile entry is created. A lockfile entry for a registry facet MUST NOT be created without registry confirmation. See the [Integrity Model](/specification/integrity).
+2. **User consent.** Consumers SHOULD understand what a facet contains before installing it.
+3. **Execution consent.** A new or changed server declaration MUST be approved before it is materialized, and that approval MUST be machine-local rather than carried in version-controlled state. See [MCP configuration](/specification/install#mcp-configuration).
+4. **No server lifecycle.** Materializing a declaration MUST NOT install, launch, probe, or authenticate to the server, and MUST NOT store credentials. See [Boundaries](/specification/install#boundaries).

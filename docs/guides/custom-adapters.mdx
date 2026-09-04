@@ -3,101 +3,41 @@ title: Build a Custom Adapter
 description: Write custom adapters for AI coding tools
 ---
 
-An <Tooltip headline="Adapter" tip={<span>The bridge between facets and an AI coding tool. It tells <code>facet</code> where and how to write a facet's assets on disk so the tool can find them.</span>} cta="Adapter reference" href="/cli/adapters/add">adapter</Tooltip> teaches the `facet` CLI how to install assets into a specific AI coding tool. The first-party adapters cover Claude Code, OpenCode, and Codex; this guide shows how to build your own using the [`@agent-facets/adapter`](https://github.com/agent-facets/facets/tree/main/packages/adapter) SDK.
+An [adapter](/docs/learn/adapters) teaches the `facet` CLI how to materialize a facet's assets into one AI coding tool. The first-party adapters cover Claude Code, OpenCode, and Codex. This guide builds your own with the `@agent-facets/adapter` SDK.
 
-An adapter is a small TypeScript library. You write one file, build it, and install it locally  -- from a directory, from GitHub, or (once published) by name.
+An adapter is a small TypeScript package. You write one file, build it, and install it from a directory, from git, or by npm name.
 
 <Visibility for="agents">
 
-> **Building an adapter?** It's a TypeScript package that default-exports a
-> `defineAdapter({...})` call. The contract lives in `@agent-facets/adapter`:
+> **Building an adapter?** Write a package that default-exports
+> `defineAdapter({...})` from `@agent-facets/adapter`. Required fields are
+> `name`, `buildAssetMetadata`, `assets`, and `mcpServers`. Both capabilities
+> are read-only: they return planned file transitions and the CLI performs
+> every write.
 >
-> - `name` (required) — unique adapter id.
-> - `buildAssetMetadata(data)` (required) — validate/enrich per-asset
->   manifest metadata; return `Validated<AdapterMetadata>`.
-> - `assets` (**required**) — `false`, or a complete capability
->   `{ planInstall, planRemoval }`. Both are **read-only**: they decide what
->   should change and return exact per-file transitions; the CLI performs
->   every write. Each takes a single request object **tagged by `assetType`**
->   and returns a discriminated result (`{ ok: true, plan }` or
->   `{ ok: false, failure }`) — expected failures are values, never thrown.
->   `false` means metadata-only: still validates manifest config, hidden from
->   the install picker.
->   - A plan is `{ occupancy, action, primaryPath }` for installs and
->     `{ kind: 'absent' | 'remove', … }` for removals. An `action` is
->     `{ kind: 'unchanged' }` or `{ kind: 'mutate', mutations }`, where each
->     mutation is `{ kind: 'write' | 'delete', path, boundary, expected, … }`.
->   - `expected` is the exact state you observed (`{ kind: 'absent' }` or
->     `{ kind: 'regular-file', contents, mode }`). It is the precondition for
->     the write: if the file moved, the CLI refuses rather than clobbering.
->   - `boundary` is the directory you are authorized to work inside. Every
->     path must be strictly below it.
->   - `projectRoot` arrives on **every** request, at every scope. Never use
->     `process.cwd()`.
->   - A file already holding the bytes you would write contributes no
->     mutation, so a re-install touches nothing.
-> - `mcpServers` (**required**) — `false`, or a complete MCP server capability
->   `{ plan }`. It is a union, not a boolean plus optional methods, so a
->   partial capability cannot be expressed. `false` is a legitimate permanent
->   answer; the adapter then blocks any project with active MCP declarations
->   rather than silently skipping them.
->   - `plan(request)` is **read-only**: parse your tool's project config,
->     classify every desired server (`absent` / `equivalent` / `divergent`,
->     each with `ownership`, plus `obsolete-owned`), and return those
->     `outcomes` plus an `action` carrying exact document mutations.
->     Write nothing — not even when the document does not exist yet.
->   - There is **no** apply and **no** inverse method: the CLI commits the
->     mutations and restores exact prior bytes itself. A document you
->     inspected but did not change is not in the plan and is never restored.
->   - Ownership comes from `previouslyOwnedNames` in the request. Never infer
->     it from the document. `name` is already the effective name.
->   - Classify as `divergent` whenever you cannot *prove* semantic equality.
->   - Preserve unrelated settings and any server entry that is neither desired
->     nor owned.
->
-> Use the SDK's skill-bundle planners (`planSkillBundleInstall` /
-> `planSkillBundleRemoval`) for the multi-file skill variant, and the
-> single-file planners (`planSingleFileInstall` / `planSingleFileRemoval`)
-> for agents and commands. `Scope` is `'system' | 'user' | 'project'`;
-> `AssetType` is `'skill' | 'agent' | 'command'`.
->
-> `defineAdapter()` stamps the adapter API version (`apiVersion`, currently
-> `0.3`) onto the returned adapter — do NOT set it yourself; the input type
-> excludes it, and a value supplied through untyped input is ignored. `0.3`
-> identifies the read-only planning contract. `0.0`, `0.1`, and `0.2` are
-> unsupported: under those the adapter wrote files itself. The current CLI
-> supports exactly `{0.3}` — membership is exact, never ordering or
-> proximity. When publishing to npm, the published `package.json` MUST
-> declare `"facetAdapterApiVersion": "0.3"` (the canonical constants live at
-> `@agent-facets/adapter/api-version`) and it MUST match what your bundle
-> stamps at runtime, or verification fails.
->
-> Build with `tsdown`/`tsc`, then install:
+> The full contract, including plan shapes, failure codes, and helpers, is at
+> [Adapter SDK](/reference/adapter-sdk). Do not restate it from memory.
 >
 > ```sh
-> facet adapter add ./my-adapter                        # local directory
-> facet adapter add git+https://github.com/you/repo.git # from GitHub
-> facet adapter add my-adapter                          # by npm name, once published
+> bun add @agent-facets/adapter
+> bunx tsdown src/index.ts
+> facet adapter add ./my-adapter
 > ```
 
 </Visibility>
 
 <Visibility for="humans">
 
-## How an adapter fits in
+## What an adapter does
 
-When you run `facet install`, the CLI resolves each facet's contributions and hands the ones the project wants materialized to every installed adapter. The adapter decides **where** on disk each asset goes and **how** it's formatted, so the target tool picks it up.
+When you run `facet install`, the CLI resolves what the project should have and hands each text asset to every installed adapter. The adapter decides where the file goes and how it is formatted.
 
-There are two halves to the job:
+There are two halves:
 
-- **Assets** — translate a facet's skills, agents, and commands into files your tool reads. You own the layout.
-- **MCP servers** — translate portable server declarations into your tool's own project configuration. You own the format, and you edit a file the user may already be using.
+- **Text assets**: turn skills, agents, and commands into files your tool reads.
+- **MCP servers**: turn portable server declarations into your tool's own project configuration.
 
-An adapter implements a small contract from the SDK:
-
-- `buildAssetMetadata` validates the per-asset metadata an author put in `facet.json` (the `adapters.<name>` block) and enriches it with your defaults.
-- `assets` decides what installing or removing an asset would change, as exact per-file transitions. The CLI performs every write — see [why you never write anything](#why-you-never-write-anything).
-- `mcpServers` declares whether you configure MCP servers, and if so, how. It is **required** — see [MCP server configuration](#mcp-server-configuration).
+Adapters never write to disk. They return exact file transitions and the CLI commits them, which is what gives every change the same rollback and concurrency guarantees. See the [Adapter SDK reference](/reference/adapter-sdk).
 
 ## Scaffold the package
 
@@ -111,13 +51,13 @@ bun init -y
 bun add @agent-facets/adapter
 ```
 
-The SDK is a leaf library with no heavy dependencies  -- `@agent-facets/common` (the shared types) is bundled into it, so you don't install anything else.
+The shared types from `@agent-facets/common` are bundled into the SDK, so that is the only dependency you add.
 
 </Step>
 
 <Step title="Write the adapter">
 
-Create `src/index.ts` and default-export a [`defineAdapter`](https://github.com/agent-facets/facets/tree/main/packages/adapter) call. Each planning method takes a single request **tagged by `assetType`** and returns a discriminated result. Skills are multi-file bundles (a primary `SKILL.md` plus companion files); agents and commands are single files. The SDK's bundle and single-file planners do the heavy lifting:
+Create `src/index.ts` and default-export a `defineAdapter` call. Each planning method takes one request tagged by `assetType`. Skills are multi-file bundles; agents and commands are single files. The SDK planners do the work:
 
 ```ts expandable src/index.ts
 import {
@@ -135,7 +75,7 @@ import {
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-// The project root arrives on every request — never read process.cwd().
+// The project root arrives on every request. Never read process.cwd().
 function baseDir(context: AssetRequestContext): string | null {
   switch (context.scope) {
     case 'user':
@@ -147,16 +87,12 @@ function baseDir(context: AssetRequestContext): string | null {
   }
 }
 
-// A skill lives in its own directory: skills/<effective name>/SKILL.md (+ companions).
 function skillTarget(base: string, name: string): SkillBundleTarget {
   const root = join(base, 'skills', name)
   return { root, primaryFile: join(root, 'SKILL.md'), boundary: base }
 }
 
 const assets: AssetCapability = {
-  // Branch on request.assetType. Skills carry a companion byte map plus the
-  // engine-verified owned-companion path set; the bundle planner validates
-  // containment and returns the complete batch. Nothing here writes.
   async planInstall(request) {
     const base = baseDir(request)
     if (base === null) return { ok: false, failure: { code: 'unsupported-scope', scope: request.scope } }
@@ -203,230 +139,86 @@ export default defineAdapter({
 
   assets,
 
-  // Required. `false` is a complete, permanent answer: this adapter does not
-  // configure MCP servers. See "MCP server configuration" below to implement it.
+  // Required. `false` means this adapter does not configure MCP servers.
   mcpServers: false,
 
   // Validate the author's `adapters.my-tool` block at build time.
-  // Returns errors if it's invalid; the CLI writes front matter itself.
   buildAssetMetadata(data: unknown): Validated<AdapterMetadata> {
-    // Trivial pass-through; use arktype/zod here for a real schema.
     const meta = (data ?? {}) as AdapterMetadata
     return { ok: true, data: meta }
   },
 })
 ```
 
-<Note>
-  The bundle planners (`planSkillBundleInstall` / `planSkillBundleRemoval`) and single-file planners (`planSingleFileInstall` / …) manage YAML front-matter assembly, companion path validation, and exact state capture. They only ever look at the primary file plus the caller-supplied owned companion paths, so unowned user files are never read, planned over, or swept into a removal. Use them instead of hand-rolling this so a re-install produces no mutation at all.
-</Note>
-
 </Step>
 
 </Steps>
 
-## The adapter contract
-
-Everything an adapter can implement, from [`@agent-facets/adapter`](https://github.com/agent-facets/facets/tree/main/packages/adapter):
-
-<ResponseField name="name" type="string" required>
-  A unique id (e.g. `my-tool`). Users install and reference the adapter by this name.
-</ResponseField>
-
-<ResponseField name="apiVersion" type="string">
-  The adapter API contract the adapter was built against — **stamped automatically by `defineAdapter()`** (currently `0.3`: the read-only planning contract). You cannot set it in your definition; the input type excludes it, and a value forced through untyped input is ignored rather than honored.
-
-  The CLI classifies a declared API as missing, malformed, unsupported, or supported, and supported means **membership in an explicit set** — currently `{0.3}`. Compatibility is never inferred from the CLI version, the SDK package version, your package version, or semver ordering, and numeric proximity confers nothing: `0.2` is not "nearly `0.3`".
-
-  `0.0`, `0.1`, and `0.2` are unsupported. Under those contracts your adapter wrote files itself and was responsible for undoing its own work, and the CLI can no longer offer that arrangement the guarantees it now makes — exact restoration, concurrency detection, all-or-nothing batches. Rebuild against a current SDK release and reinstall.
-</ResponseField>
-
-<ResponseField name="buildAssetMetadata(data)" type="Validated<AdapterMetadata>" required>
-  Validate and enrich the per-asset metadata from a facet's `adapters.<name>` block. Return `{ ok: true, data }` or `{ ok: false, errors }`. Runs during `facet build`, so bad config is caught early.
-</ResponseField>
-
-<ResponseField name="assets" type="false | AssetCapability" required>
-  Whether this adapter materializes text assets, and how. `false` is a complete answer: the adapter still validates manifest metadata during `facet build`, and simply never appears in the install picker.
-
-  It is a **union**, deliberately: a boolean beside optional methods could state support and be missing the method that provides it, so a half-implemented capability is unrepresentable rather than merely discouraged.
-</ResponseField>
-
-<ResponseField name="mcpServers" type="false | McpServerCapability" required>
-  Whether this adapter configures MCP servers, and how. See [MCP server configuration](#mcp-server-configuration) for the full capability. It is a **union**, deliberately: a boolean plus optional methods could disagree with itself, so a partially implemented capability is unrepresentable rather than merely discouraged.
-
-  The field is MCP-specific. A future project-configuration feature gets its own capability rather than widening this one.
-</ResponseField>
-
-<ResponseField name="assets.planInstall(request)" type="Promise<PlanAssetInstallResult>">
-  Decide what installing (or replacing) an asset would change — and change nothing. `request` is tagged by `assetType`: the `skill` variant carries `content`, `metadata`, a `companions` byte map, and the engine-verified `ownedCompanionPaths`; `agent`/`command` variants carry `content` and `metadata` only.
-
-  Return `{ occupancy: 'equivalent', action: { kind: 'unchanged' } }` when the destination already holds what you would write, or `{ occupancy: 'absent' | 'divergent', action: { kind: 'mutate', mutations } }`. Each mutation names an absolute `path`, the `boundary` it may work inside, the `expected` state you observed, and the `contents` to commit.
-</ResponseField>
-
-<ResponseField name="assets.planRemoval(request)" type="Promise<PlanAssetRemovalResult>">
-  Decide what removing an asset would change. The `skill` variant carries `ownedCompanionPaths`; the plan removes the primary plus exactly those, preserving unowned files. That set is the union of every past claim on this name, so it may include files a *different* facet left behind when the name changed hands. Return `{ kind: 'absent' }` when nothing is there, or `{ kind: 'remove', action }`.
-</ResponseField>
-
-Every request carries `projectRoot`, `scope` (`'system'`, `'user'`, or `'project'` — decide your on-disk layout per scope) and `name`, tagged by `assetType` (`'skill'`, `'agent'`, or `'command'`). `name` is always the effective name (see above); by the time a request reaches you the effective set is guaranteed collision-free, so you never have to arbitrate between two assets wanting one path. Expected failures are structured values (`invalid-companion-path`, `unsupported-scope`, `io-failed`, `unsupported-object`, `unrepresentable`), never thrown errors.
-
-<Warning>
-`projectRoot` is the only definition of "this project" you may use. Do not reach for `process.cwd()`: the caller may be installing into a tree it is not running inside, and deriving the root yourself would silently materialize assets somewhere else.
-</Warning>
-
-<Tip>
-  You can ship a **metadata-only** adapter: implement just `name`, `buildAssetMetadata`, `assets: false`, and `mcpServers: false`. It validates manifest config during builds without materializing anything  -- useful while you're still figuring out a tool's on-disk layout.
-</Tip>
-
-### Why you never write anything
-
-Planning and writing are split so that every file this system touches gets the same guarantees, whoever decided to touch it:
-
-- **Concurrency.** The `expected` state you report is the precondition for the write. If something else edits the file between your plan and the commit, the write is refused and reported — never applied over the other change.
-- **Atomicity.** All the mutations for one logical operation commit together. A skill's primary, its companions, and its obsolete-companion removals either all land or none do.
-- **Restoration.** Both endpoints of every change are recorded, so a later failure puts the exact prior bytes back — comments, formatting, permission bits and all. You are never asked to undo your own work, and undo fidelity never depends on your code being correct twice.
-- **No phantom drift.** A file already holding the bytes you would write contributes no mutation, so a re-install touches nothing and wakes no file watcher.
+<Note>
+  Use the SDK planners rather than hand-rolling file writes. They assemble front matter, validate companion paths, capture exact prior state, and produce no mutation when a file already holds the bytes you would write.
+</Note>
 
 ## MCP server configuration
 
-A facet can declare [MCP servers](/specification/manifest#mcp-server-declarations). One capability turns those portable declarations into your tool's own project configuration.
+Set `mcpServers: false` if your tool has no MCP configuration. That is a complete answer: projects without declarations install normally, and a project that declares servers fails with a message naming your adapter.
 
-```ts
-mcpServers: false | { plan }
-```
+To support servers, implement the `plan` capability. It parses your tool's project document, classifies every desired server, and returns the exact document changes plus every file it read. It writes nothing, and the CLI commits the result.
 
-`false` says your tool has no MCP configuration to write. That is a complete answer, not a stub: a project with no active declarations installs normally, and a project with them fails with a clear message naming your adapter.
-
-<Note>
-Declarations come from `@agent-facets/protocol` — import the type, never restate its shape. One portable declaration reaches every adapter; you translate it, rather than copying another tool's file format.
-</Note>
-
-### Plan, and only plan
-
-The capability operates on the **complete** desired set rather than one server at a time.
-
-<ResponseField name="plan(request)" type="Promise<PlanMcpServersResult>" required>
-  Strictly read-only. Parse your tool's project document **once**, work out the whole change, and write nothing — including when the document does not exist yet. Describe the prospective file instead of creating it.
-
-  The request carries `projectRoot`, the complete `desired` contribution set, and `previouslyOwnedNames`: the effective names the engine has verified this project owns. Take ownership from that list only. Never infer it from the document, a naming convention, or a marker comment.
-
-  Return structured `outcomes` — one per key — using `absent`, `equivalent`, or `divergent` (each carrying `ownership: 'tracked' | 'untracked'`), plus `obsolete-owned` (carrying `occupancy`) for an owned entry the desired set no longer names. Return an `action` alongside them: `{ kind: 'unchanged' }`, or `{ kind: 'mutate', mutations }` where each mutation names the document, the exact state you inspected it in, and the exact bytes to commit.
-
-  Return `documentPaths` too: every file you read to reach that conclusion, **including when you change none of them**. It is how the CLI knows, before approving anything, that no two selected adapters manage the same file. It confers no ownership — a file listed there and not changed is never written, journaled, or restored.
-
-  A parse or validation failure is a **value**, not a throw: `io-failed`, `parse-failed`, `validation-failed`, or `conflict`. The document must be left byte-for-byte unchanged.
-
-  A `conflict` carries a `reason`, and each reason carries only its own facts — `interpolation` names the server and the offending value (no document: nothing has been written anywhere), and `native-state` names the document plus your format layer's detail. Neither carries a preformatted sentence; the CLI writes the wording and escapes the value.
-</ResponseField>
-
-### Why there is no apply, and no inverse
-
-You are never asked to write, and never asked to undo. The engine commits your mutations, and each one carries the exact state you computed it from, so:
-
-- a document something else edited after you inspected it is **refused**, not overwritten — you no longer need a `document-changed` conflict of your own;
-- a later failure restores the exact prior bytes, preserving comments, formatting, and member order without depending on your code being correct a second time;
-- a document you inspected but did not change is **not** among your mutations, so nothing restores it, rewrites it, or touches its modification time.
-
-That last point is why a plan's *mutations* list only what changes. Inspecting a file has never been a reason to own it — which is exactly why `documentPaths` is a separate list that grants nothing.
-
-Your plan is also recomputed immediately before it is committed, every time, including when it changed nothing. If the second answer differs, the CLI stops and tells the user their tool's configuration changed mid-run. Nothing is expected of you there beyond planning honestly twice.
-
-### Equality decides whether anything is written
-
-You compute equality, because you are the only component that knows your tool's schema. Compare the existing entry against **your own native rendering** of the desired declaration:
-
-- Comments, whitespace, member ordering, and omitted-versus-empty optional collections are **not** differences.
-- Anything that changes the launch or connection behavior **is** a difference.
-- If you cannot *prove* equality, report `divergent`. Failing safe means an unnecessary rewrite; guessing means silently keeping a server that behaves differently from what the user approved.
-
-An `equivalent` entry is adopted with no write at all.
-
-### What you must preserve
-
-You are editing a file the user owns and may already be using:
-
-- Unrelated settings keep their semantic values.
-- A server entry that is neither desired nor owned is left **completely** untouched.
-- For an owned entry, native fields outside the portable model (a timeout, say) survive where your format allows.
-- Use a syntax-aware edit and an atomic write. Semantic preservation is mandatory; comment and formatting preservation is best-effort and should be maximized.
-
-Write **project-scoped configuration only**. Never create or modify a user-wide or system-wide tool file. For reference, the first-party adapters use `.mcp.json` (Claude Code), the four documents OpenCode merges — `.opencode/opencode.jsonc`, `.opencode/opencode.json`, `opencode.jsonc`, `opencode.json` — as one configuration (OpenCode), and `.codex/config.toml` (Codex).
-
-If your tool merges several configuration layers, read them all and classify against the merged view, then write to one of them. Reading only the file you would write is how an obsolete entry in another layer survives a removal and keeps a server your user deleted.
+The full request and result shapes, failure codes, equality rules, and the preservation requirements for editing a user's configuration file are in the [Adapter SDK reference](/reference/adapter-sdk#mcp-servers).
 
 <Warning>
-Two selected adapters may not manage the same file. If your tool reads a configuration file another supported tool also reads, say so in your README: a user who selects both gets a failure telling them to deselect one, because there is no ordering in which both plans survive the other's write.
-</Warning>
-
-If your tool expands placeholders inside its own configuration values, check every authored command, argument, environment value, and URL for that syntax before writing and return a structured `conflict` when you find one. A portable declaration is literal, so writing a value your tool would substitute would launch something other than what the user approved. Claude Code (`${VAR}`) and OpenCode (`{env:...}`, `{file:...}`) both do this.
-
-Preserve the file's encoding preamble too: if your parser cannot accept a leading byte-order mark, strip it before parsing and put it back when writing, per document. Dropping it rewrites a file the user's editor will only mark again on their next save.
-
-Most of this is scaffolding you should not write yourself. The SDK's `readTextOrAbsent` and `prepareMcpTextPlan` handle reading a document with its exact state, the interpolation guard, classification, the no-write short-circuit, dropping a rendered edit that turns out to be byte-identical, and turning your edits into exact mutations — including for a plan that touches more than one file. You supply the tool-specific parts: which documents to read, how to parse them, how to compare an entry, and how to render an edit.
-
-If you need to put a declaration value in front of a user yourself, import `terminalLiteral` (or `terminalCommandLine` / `terminalEnvironmentAssignment`) from `@agent-facets/adapter/terminal` — a dependency-free entry point. It is the same rendering the CLI's consent screens use: printable ASCII only, complete, and reversible, so a value cannot add a line or issue a terminal control.
-
-<Warning>
-Configuring a server is not running one. Never launch the command, connect to the URL, health-check, collect credentials, or perform OAuth. Authentication belongs to the tool, after the configuration exists.
+  Configuring a server is not running one. Never launch the command, connect to the URL, health-check, or collect credentials.
 </Warning>
 
 ## Bundle it
 
-`facet adapter add` re-bundles your adapter into a self-contained `adapter.js`, but it needs a clean single-module entry to start from. Compile your package first  -- for example with `tsdown` (what the first-party adapters use) or `tsc`:
+`facet adapter add` needs a clean single-module entry. Compile with `tsdown` (what the first-party adapters use) or `tsc`:
 
 ```sh
 bunx tsdown src/index.ts
 ```
 
-Point your `package.json` `exports`/`main` at the compiled entry so the CLI can resolve it.
+Point your `package.json` `exports` or `main` at the compiled entry.
 
 ## Install your adapter
-
-`facet adapter add` accepts your adapter three ways:
 
 <CodeGroup>
 
 ```sh Local directory
-# Fastest while developing — installs from a local build.
 facet adapter add ./my-adapter
 ```
 
 ```sh Git repository
-# Note the git+ prefix; add #ref to pin a tag or branch.
 facet adapter add git+https://github.com/you/my-adapter.git
 facet adapter add git+https://github.com/you/my-adapter.git#v1.0.0
 ```
 
 ```sh npm package
-# By package name, once you've published it.
 facet adapter add my-adapter
 ```
 
 </CodeGroup>
 
-The CLI downloads the source, bundles it into `adapter.js`, verifies it exports a valid adapter, and places it in `$FACET_DIR/adapters/<name>/` (default `~/.facet`). See [`facet adapter add`](/cli/adapters/add) for every specifier format.
+The CLI prepares a self-contained `adapter.js`, verifies it exports a valid adapter, and installs it under [`$FACET_DIR`](/cli/env)`/adapters/<name>/`. See [`facet adapter add`](/cli/adapters/add).
 
 <Tip>
-  During development, `facet adapter add ./my-adapter` picks up your latest local build immediately. Reinstall after each rebuild to test changes end-to-end.
+  While developing, rerun `facet adapter add ./my-adapter` after each rebuild to test end to end.
 </Tip>
 
 ## Verify it works
 
-Confirm the adapter is registered, then install a facet to see it materialize assets:
-
 ```sh
-facet adapter list          # your adapter should appear
-facet add cowsay            # installs into every connected adapter, yours included
+facet adapter list     # your adapter should appear
+facet add cowsay       # installs into every connected adapter
 ```
 
-Check that files landed where your path helpers put them. From here, harden `buildAssetMetadata` with a real schema and flesh out the on-disk layout your tool expects.
+Check that files landed where your path helpers put them, then harden `buildAssetMetadata` with a real schema.
 
-`facet adapter list` also shows each adapter's declared adapter API and whether the CLI supports it. When a CLI release changes the supported API set, rebuild your adapter against a matching SDK release and reinstall it — the list output prints the exact reinstall command next to any incompatible entry.
-
-Note that `supported` answers whether the adapter **loads**, not whether it can configure MCP servers. An adapter declaring `mcpServers: false` lists as supported and works normally — it only blocks a project that has active MCP declarations.
+`facet adapter list` also shows each adapter's declared API version and whether this CLI supports it. When the supported set changes, rebuild against a matching SDK release and reinstall. The list prints the exact command next to any incompatible entry.
 
 ## Publish to npm
 
-Installing by bare name (`facet adapter add my-adapter`) resolves through npm, and the CLI selects a release **before downloading it** by reading one required field from your published `package.json`:
+Installing by bare name resolves through npm. Declare the API version your SDK release stamps:
 
 ```json package.json
 {
@@ -434,18 +226,12 @@ Installing by bare name (`facet adapter add my-adapter`) resolves through npm, a
 }
 ```
 
-Declare the adapter API version your SDK release stamps at runtime (currently `0.3`). The CLI skips releases where this field is missing, malformed, or unsupported — a release without it is never selected, and a field that disagrees with the runtime `apiVersion` stamped by `defineAdapter()` fails verification after download.
+The CLI reads this field before downloading, so a release without it is never selected. Among compatible releases the highest package version wins, and the npm `latest` dist-tag is never consulted. An exact request such as `facet adapter add my-adapter@1.4.0` is never substituted and fails if that release is incompatible.
 
-Selection is by **package version** among compatible releases; the supported API tokens are an unordered set, so numeric ordering confers nothing — the highest satisfying release that declares a supported token wins. The npm `latest` dist-tag is never consulted, so you never need to move, pin, or withhold it for compatibility.
-
-That is what makes publishing safe for consumers on older CLIs: a CLI supporting only `{0.2}` keeps selecting your highest `0.2` release and ignores the `0.3` one. The exception is an **exact** request (`facet adapter add my-adapter@1.4.0`), which is never substituted — it fails if that specific release is incompatible with the CLI asking.
-
-The canonical values are exported from `@agent-facets/adapter/api-version` (`ADAPTER_API_VERSION` and `ADAPTER_API_VERSION_PACKAGE_FIELD`), so release tooling can inject the field instead of hardcoding it. That entry and `@agent-facets/adapter/terminal` are both dependency-free, so importing either one costs you nothing at runtime.
+See [API versions](/reference/adapter-sdk#api-versions) for the canonical constants.
 
 ## Share it upstream
 
-Built an adapter for a major AI coding assistant? Contributions are welcome. If your adapter targets a widely used tool, open a pull request on the [facets repository](https://github.com/agent-facets/facets) to share it upstream as a first-party adapter.
-
-A first-party adapter is installable by name (`facet adapter add <name>`) via the CLI, so everyone using that tool benefits.
+If your adapter targets a widely used tool, open a pull request on the [facets repository](https://github.com/agent-facets/facets). First-party adapters are installable by name for everyone.
 
 </Visibility>

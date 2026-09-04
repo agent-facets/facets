@@ -9,105 +9,82 @@ description: Add facets to a project and install them
 facet add <source> [more sources...]
 ```
 
-Adds the named facet(s) to `facets.json` and immediately installs them into every connected adapter. There is no separate "install after add" step  -- `facet add` is the single command for bringing a new facet into a project.
+Adds the named facets to `facets.json` and installs them into every connected adapter. There is no separate install step afterwards.
 
-Every source specifier is validated first. If the project then has no adapters installed, `facet add` launches the adapter picker — but only when the terminal can prompt. Otherwise it exits with an error pointing at `facet adapter add`.
+Specifiers are validated before anything touches disk. If the project has no adapter, a terminal gets the picker and a non-interactive run fails pointing at [`facet adapter add`](/cli/adapters/add). From there the run is an ordinary [install](/cli/install), so it reports the same outcomes and can meet the same [collision](/cli/install#name-collisions) and [MCP approval](/cli/install#mcp-servers) screens.
+
+A facet whose only asset is an MCP server is valid: it configures servers and writes no files. A facet that composes other facets with a non-empty `facets` array is rejected.
 
 ## Examples
 
 ```sh
-facet add viper-plans                    # bare name — pins the resolved version
-facet add viper-plans@1.*                # wildcard — floats within 1.x
+facet add viper-plans                    # bare name, pins the resolved version
+facet add viper-plans@1.*                # wildcard, floats within 1.x
 facet add @acme/deploy-tools             # scoped facet
 facet add github:agent-facets/viper-plans#main
 facet add ./local-facets/my-plans
-facet add viper-plans rezi planner@2.*   # multiple sources in one command
+facet add viper-plans rezi planner@2.*   # several at once
 ```
-
-Every accepted form — and what each writes to `facets.json` — is in the [source grammar](#source-grammar) below.
 
 ## Flags
 
 <ResponseField name="--verbose" type="boolean">
-  Show detailed step output on stderr. Verbose output never reproduces an [MCP server declaration](/cli/install#where-declarations-appear).
+  Show detailed step output on stderr. Declaration contents never appear here. See [where declarations appear](/cli/install#where-declarations-appear).
 </ResponseField>
 
 <ResponseField name="--accept-mcp" type="boolean">
-  Approve the [MCP server configuration](/cli/install#mcp-servers) this operation would write, without prompting. The sole non-interactive acceptance mechanism, and the same flag `facet install` and `facet remove` accept.
-
-  It does not authorize an [asset takeover](/cli/install#taking-over-an-existing-file) or resolve a name collision.
+  Approve the [MCP configuration](/cli/install#accept-mcp) this run would write, without prompting.
 </ResponseField>
 
 ## Exit codes
 
-| Code | Meaning                                                                              |
-| ---- | ------------------------------------------------------------------------------------ |
-| `0`  | Add and install succeeded.                                                           |
-| `1`  | Failed — parse error, no usable adapter, an unresolved [name collision](/cli/install#name-collisions), a cancelled resolution, [MCP configuration awaiting approval](/cli/install#in-ci-and-other-non-interactive-runs) or declined, a selected adapter that [cannot configure MCP servers](/cli/install#adapters-that-cannot-configure-mcp-servers), an unparseable native tool config, a cancelled [asset takeover](/cli/install#taking-over-an-existing-file), or an install failure. Nothing is written unless the failure happened mid-write, in which case the journal rolls it back. |
+| Code | Meaning |
+| --- | --- |
+| `0` | Add and install succeeded. |
+| `1` | Failed, for example a parse error, no usable adapter, an unresolved [collision](/cli/install#name-collisions), unapproved MCP configuration, or an install failure. |
+| `2` | An unexpected error escaped command handling. |
 
-## What it does
+Nothing is written unless the run had already started writing, in which case it is rolled back.
 
-<Steps>
-  <Step title="Parse">
-    Validate every source specifier up front. Invalid grammar exits before touching disk.
-  </Step>
-  <Step title="Discover adapters">
-    If none installed: launch the picker when the terminal can prompt, or fail with recovery guidance when it cannot.
-  </Step>
-  <Step title="Prepare">
-    Read each source's `facet.json` to learn its name. Sources that declare a non-empty `facets: [...]` array are rejected. Load the project manifest if it exists. This is also where a facet's [MCP server declarations](/specification/manifest#mcp-server-declarations) enter the desired set — a facet whose only deliverable is a server is valid and installs with zero assets.
-  </Step>
-  <Step title="Commit">
-    Delegate to the [install pipeline](/specification/install) with the additions delta. Version resolution, integrity verification, [global collision detection](/specification/commit#compose), adapter MCP capability checks, read-only native configuration preparation, [MCP approval](/cli/install#mcp-servers), and the atomic write follow the [commit phase](/specification/commit) — additions always [re-resolve non-exact specifiers](/specification/commit#resolve), and new lockfile entries require [registry confirmation](/specification/commit#verify) (fails closed offline).
+## Details
 
-    Adding a facet is the most common way to hit a name collision: the new facet may want a name an installed facet already uses. See [Name collisions](/cli/install#name-collisions) for how that is resolved and what gets recorded. It is also the most common way to meet the MCP approval screen, since a newly added facet's declarations have never been approved on this machine.
-  </Step>
-</Steps>
+### Source grammar
 
-<Tip>
-The manifest, lockfile, receipt, and every tool's MCP configuration are **never written ahead** of success. A failure before the first write — an unresolved collision, a declined MCP approval, an unsupported adapter — leaves the project byte-identical with nothing to undo; a failure after it rolls back through the journal, restoring native configuration documents to their exact prior bytes.
-</Tip>
-
-## Source grammar
-
-`facet add` accepts these source forms (the normative source-kind taxonomy lives in [Planning — Accepted source kinds](/specification/planning#accepted-source-kinds)):
-
-### Registry names
+#### Registry names
 
 <CodeGroup>
 
 ```sh Bare name
 facet add viper-plans
-# equivalent to viper-plans@latest; the resolved version is
-# written back to facets.json (default-to-pinned)
+# resolves to the newest release, then pins that exact version
+# in facets.json
 ```
 
 ```sh Exact version
 facet add viper-plans@1.2.3
-# exact pin, written verbatim
+# written verbatim
 ```
 
 ```sh @latest
 facet add viper-plans@latest
-# re-resolves to the newest published version; "latest" is preserved
-# verbatim in facets.json (the entry floats) — only a bare name pins
+# re-resolves each install; "latest" is preserved, so the entry
+# keeps floating. Only a bare name pins.
 ```
 
 ```sh Wildcard
 facet add viper-plans@1.*
-# also 1.2.* and *; the wildcard is preserved in facets.json and
-# the resolved exact version goes in the lockfile
+# also 1.2.* and *. The wildcard stays in facets.json and the
+# resolved version goes in the lockfile.
 ```
 
 ```sh Scoped
 facet add @scope/name@1.2.3
-# the leading @ marks the scope; a trailing @ separates the version.
-# versioning and pinning rules are identical to unscoped names
+# the leading @ marks the scope, a later @ separates the version
 ```
 
 </CodeGroup>
 
-### Git and GitHub sources
+#### Git and GitHub sources
 
 <CodeGroup>
 
@@ -116,53 +93,107 @@ facet add github:owner/repo#ref
 # optional #ref: branch, tag, or SHA
 ```
 
-```sh HTTPS git URL
+```sh Schemed URL
 facet add https://host/repo.git#ref
-# must end in .git; optional #ref
+# https, http, ssh, and git schemes are accepted
+# a schemed URL must end in .git
 ```
 
-```sh SCP-style git URL
+```sh SCP-style URL
 facet add git@host:owner/repo.git#ref
-# standard user@host:path SSH form; optional #ref
+# standard user@host:path SSH form, with no .git requirement
 ```
 
 </CodeGroup>
 
-### Local paths
+A git source is cloned and built locally, so `git` must be on your `PATH`.
+
+#### Local paths
 
 ```sh
 facet add ./facets/my-plans
-# relative, absolute, or ~-prefixed; must resolve inside the
-# project tree. A file: prefix is tolerated (stripped, then
-# treated as a local path)
+# relative or absolute, and must resolve inside the project tree.
+# A file: prefix is tolerated and stripped.
 ```
 
-### Forms that are rejected
+A `~` is not expanded by the CLI. Let your shell expand it, and remember the result still has to sit inside the project tree.
+
+#### Forms that are rejected
 
 ```sh
-facet add git+https://host/repo.git  # git+ prefix — drop it: https://...git
-facet add viper-plans@^1.2.3         # caret/tilde ranges — use 1.*, 1.2.*, or 1.2.3
-facet add viper-plans@">=1.0.0"      # comparator and OR ranges — pick one version
-facet add viper-plans@1.x            # x-style placeholders — use 1.* or 1.2.*
+facet add git+https://host/repo.git  # drop the git+ prefix
+facet add ftp://host/repo.git        # unsupported scheme
+facet add https://host/repo          # schemed URL must end in .git
+facet add viper-plans@^1.2.3         # caret and tilde ranges: use 1.*, 1.2.*, or 1.2.3
+facet add viper-plans@">=1.0.0"      # comparator and OR ranges
+facet add "viper-plans@1.0.0 - 2.0.0"  # hyphen ranges
+facet add viper-plans@1.x            # x placeholders: use 1.* or 1.2.*
+facet add viper-plans@1.2.3-rc.1     # prerelease and build metadata
+facet add @scope                     # incomplete scoped name
+facet add acme/foo/bar               # too many path segments
 ```
 
-## Re-adding a facet
+### Re-adding a facet
 
-Re-adding is how you pin **one** facet to a version you name. To move every declared facet to whatever newer releases exist, use [`facet update`](/cli/update) instead — it checks the registry for you rather than making you supply the version.
+Re-adding pins one facet to a version you name. To move every declared facet to newer releases, use [`facet update`](/cli/update) instead.
 
-Running `facet add` against a facet that's already in `facets.json` is supported:
+- **Same source**: a no-op, reported as `unchanged` or `repaired`. If you aliased or omitted one of its contributions since, it reports `updated`.
+- **Different version**: updates the entry and counts under `N updated`. Per-facet version transitions are printed by `facet update`.
+- **Bare re-add**: resolves the newest release and pins it, even over an existing wildcard.
+- **Explicit `@latest` or wildcard**: re-resolves to the newest match and keeps floating.
 
-- Same source as before → no-op (lockfile may report `unchanged` or `repaired`). If you have since aliased or omitted one of its assets or servers, it reports `updated` instead — the version did not move, but its materialization did.
-- Different version pin → updates the entry; the install summary shows `(was X → Y)`.
-- Bare re-add (no version) → resolves the newest published version and **pins** it in `facets.json`. A bare add always pins to the resolved exact version, even over an existing wildcard spec.
-- Explicit `@latest`/wildcard re-add → re-resolves to the newest match (the lockfile never pins an explicit non-exact add), but the specifier itself is written verbatim and keeps floating.
+Recorded [materialization overrides](/specification/materialization#recording-intent) are preserved across a re-add, for text assets and servers alike. An override naming something the new version no longer contains is dropped, and the install tells you which. Under [`--frozen-lockfile`](/cli/install#frozen-lockfile) that same stale override is blocking drift instead.
 
-In every case, any [materialization overrides](/specification/materialization#recording-intent) already recorded for the facet are preserved — asset and `servers` overrides alike. Changing where a facet comes from is not a statement about how its assets and servers should be named. An override naming an asset or server the new version no longer contains is dropped, and the install tells you which one. Under [`--frozen-lockfile`](/cli/install#param-frozen-lockfile) that same stale override is blocking drift and is never pruned.
+What gets written per specifier shape is defined by the [manifest write policy](/specification/install#manifest-write-policy). A successful non-frozen add also stamps `"manifestVersion": 0.2`.
 
-What gets written per specifier shape is defined by the [manifest-write policy](/specification/commit#manifest-write-policy). A successful non-frozen `add` also stamps the current `"manifestVersion": 0.2`, migrating an older document inside the same transaction.
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="a source specifier was rejected">
+    **Cause:** the specifier does not match the [source grammar](#source-grammar). Every specifier is parsed before any network or disk work, so the run stops with the project untouched.
+
+    **Fix:** the error names the offending specifier and the accepted forms. See [forms that are rejected](#forms-that-are-rejected) for the common substitutions.
+  </Accordion>
+
+  <Accordion title="git is not installed">
+    **Cause:** a git or GitHub source is cloned locally, and `git` was not found on your `PATH`.
+
+    **Fix:** install git, or add the facet from the registry or a local path instead.
+  </Accordion>
+
+  <Accordion title="a git source needs authentication">
+    **Cause:** the repository is private, or the clone prompted for credentials.
+
+    **Fix:** use a public repository, or an SSH URL backed by a running SSH agent. Interactive credential prompts are not supported during a clone.
+  </Accordion>
+
+  <Accordion title="a git ref could not be checked out">
+    **Cause:** the branch, tag, or commit named after `#` does not exist in the cloned repository.
+
+    **Fix:** correct the ref, or drop it to use the default branch.
+  </Accordion>
+
+  <Accordion title="a local path resolved outside the project">
+    **Cause:** a local source must resolve inside the project tree, so a facet cannot be installed from an arbitrary location on your machine.
+
+    **Fix:** move or copy the facet into the project, then add it by a path inside the tree.
+  </Accordion>
+
+  <Accordion title="the facet declares composition">
+    **Cause:** the source declares a non-empty `facets` array. Composition is reserved in the manifest format and is not installable yet.
+
+    **Fix:** ask the publisher for a release that ships its own assets directly. There is no flag to install it as-is.
+  </Accordion>
+
+  <Accordion title="a git or local source failed to build">
+    **Cause:** the clone or directory resolved, but its `facet.json` did not load, its name disagreed with what you asked for, or the build failed.
+
+    **Fix:** run [`facet build --verify`](/cli/authoring/build) inside that source to see the validation errors, then fix and re-add.
+  </Accordion>
+</AccordionGroup>
 
 ## See also
 
-- [`facet install`](/cli/install)  -- re-runs the install pipeline against the current `facets.json` and lockfile, useful after a fresh `git clone` or to reapply assets after manual edits.
-- [`facet update`](/cli/update)  -- move declared facets to newer releases without naming versions yourself.
-- [`facet adapter add`](/cli/adapters/add)  -- install adapters into your machine.
+- [`facet install`](/cli/install)
+- [`facet update`](/cli/update)
+- [`facet adapter add`](/cli/adapters/add)

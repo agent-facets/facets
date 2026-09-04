@@ -6,41 +6,31 @@ description: Show help for the CLI or a specific command
 ## Usage
 
 ```sh
-facet --help
-facet <command> --help
+facet --help              # global help
+facet help                # the same
+facet <command> --help    # one command
+facet help <command>      # the same
+facet --version           # installed CLI version
 ```
-
-Prints usage information. With no command, shows the global help listing all available commands. With a command name, shows that command's usage, description, and flags.
 
 ## Exit codes
 
 | Code | Meaning |
-| ---- | ------- |
-| `0`  | Help or version printed — including `facet help <unknown-topic>`, which falls back to the global help |
-| `1`  | Unknown command (`facet <unknown-command>`) |
+| --- | --- |
+| `0` | Help or version printed, including `facet help <unknown-topic>`, which falls back to global help. |
+| `1` | Unknown command. |
 
-## Global help
+## Output
 
-```sh
-facet --help
-```
+Global help lists every registered command with a short description. Aliases such as `self-upgrade` appear alongside the canonical name. Unimplemented commands are hidden but still resolve for typo suggestions.
 
-Lists every registered command with a short description. Aliases (e.g., `self-upgrade` for `self-update`) are listed alongside the canonical name. Stub commands (not yet implemented) are hidden from this output but still resolve for typo suggestions.
+Per-command help prints the usage line, description, and available flags. Alias spellings show the canonical command name.
 
-## Per-command help
+<Note>
+  `--version` is the global version flag only before a command name. After one it belongs to that command, so `facet modify facet --version 1.2.3` sets a facet's version and `facet self-update --version 0.7.0` selects a CLI release.
+</Note>
 
-```sh
-facet add --help
-facet build --help
-facet adapter add --help
-```
+## See also
 
-Shows the command's usage line, description, available flags with defaults, and a `--help` flag reference.
-
-## Version
-
-```sh
-facet --version
-```
-
-Prints the installed CLI version and exits.
+- [CLI reference](/cli)
+- [`facet instructions`](/cli/instructions)

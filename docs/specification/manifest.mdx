@@ -10,10 +10,10 @@ import { AssetDescriptor } from "/snippets/asset-descriptor.mdx";
 The facet manifest (`facet.json`) is the source of truth for a facet's identity, the text assets it contains, the [MCP server declarations](#mcp-server-declarations) it contributes, and the [supplementary files](#supplementary-files) it ships. The names it declares are **authored** names: they fix every archive path and integrity value, and a consuming project may materialize an asset or a server under a different name without changing any of that. This page defines every field in the manifest schema and is the canonical reference for the facet name grammar, the asset name grammar, and the server declaration grammar.
 
 <Note>
-The facet manifest is distinct from the [project manifest](/specification/project-manifest) (`facets.json`) — the file in a consuming project that declares which facets are installed, and how it wants their assets named. Throughout this page, "the manifest" means the facet manifest.
+The facet manifest is distinct from the [project manifest](/specification/project-manifest) (`facets.json`), which declares which facets a consuming project installs. Throughout this page, "the manifest" means the facet manifest.
 </Note>
 
-For conceptual guides to each asset type, see [Skills](/docs/learn/skills), [Commands](/docs/learn/commands), and [Agents](/docs/learn/agents).
+For conceptual guides to each asset type, see [Skills](/docs/learn/skills), [Commands](/docs/learn/commands), [Agents](/docs/learn/agents), and [MCP servers](/docs/learn/mcp-servers).
 
 ## Example
 
@@ -47,16 +47,16 @@ For conceptual guides to each asset type, see [Skills](/docs/learn/skills), [Com
 
 ## Schema
 
-Every top-level field of `facet.json`. The `name` and `version` fields MUST be present; a manifest missing either MUST be rejected. A facet MUST also declare at least one **deliverable**: a text asset (`skills`, `agents`, `commands`), a composed facet (`facets`), or an MCP server (`servers`). Consumers MUST tolerate unrecognized top-level fields — unknown fields MUST be ignored, not rejected. The one exception is inside an MCP server declaration, which is a [closed object](#mcp-server-declarations).
+Every top-level field of `facet.json`. The `name` and `version` fields MUST be present; a manifest missing either MUST be rejected. A facet MUST also declare at least one **asset**, which is a text asset (`skills`, `agents`, `commands`) or an MCP server (`servers`), or else a composed facet (`facets`). Consumers MUST tolerate unrecognized top-level fields rather than reject them. The one exception is inside an MCP server declaration, which is a [closed object](#mcp-server-declarations).
 
 ### Fields
 
 <ResponseField name="name" type="string" required>
-  Facet identity: an unscoped name (`cowsay`) or a scoped name (`@scope/name`). Validated, never normalized — see [Facet name grammar](#facet-name-grammar). This is the facet's own name; the names of the assets it contains follow the separate [asset name grammar](#asset-names).
+  Facet identity: an unscoped name (`cowsay`) or a scoped name (`@scope/name`). Validated, never normalized. See [Facet name grammar](#facet-name-grammar). This is the facet's own name; the names of the assets it contains follow the separate [asset name grammar](#asset-names).
 </ResponseField>
 
 <ResponseField name="version" type="string" required>
-  Semver version string.
+  The facet version. The schema requires a string; a registry MAY require semver, and the public registry does.
 </ResponseField>
 
 <ResponseField name="description" type="string">
@@ -93,7 +93,7 @@ Every top-level field of `facet.json`. The `name` and `version` fields MUST be p
 </ResponseField>
 
 <ResponseField name="files" type="array of string">
-  Top-level [supplementary files](#supplementary-files): exact repo-relative paths to non-asset files that ship in the archive but never materialize (e.g. `README.md`, `LICENSE`, `docs/design.md`). Exact paths only — no globs or patterns. Every path MUST satisfy the [portable path grammar](/specification/archive#content-rules) and MUST NOT resolve under `skills/` (skill companions are declared in their skill's own `files`).
+  Top-level [supplementary files](#supplementary-files): exact repo-relative paths to non-asset files that ship in the archive but never materialize, such as `README.md` or `LICENSE`. Exact paths only, with no globs. Every path MUST satisfy the [portable path grammar](/specification/archive#content-rules) and MUST NOT resolve under `skills/` (skill companions are declared in their skill's own `files`).
 </ResponseField>
 
 <ResponseField name="facets" type="array of facets entries">
@@ -101,7 +101,7 @@ Every top-level field of `facet.json`. The `name` and `version` fields MUST be p
 </ResponseField>
 
 <ResponseField name="servers" type="map of string → MCP server declaration">
-  Server name → concrete [MCP server declaration](#mcp-server-declarations): a standard-input server (`{ "type": "stdio", … }`) or a Streamable HTTP server (`{ "type": "http", … }`). Declarations are materialized into each selected adapter's native project configuration at install time, after [explicit approval](/specification/commit#mcp-configuration). Server names use the [asset name grammar](#asset-names) but occupy their own namespace.
+  Server name → concrete [MCP server declaration](#mcp-server-declarations): a standard-input server (`{ "type": "stdio", … }`) or a Streamable HTTP server (`{ "type": "http", … }`). Declarations are materialized into each selected adapter's native project configuration at install time, after [explicit approval](/specification/install#mcp-configuration). Server names use the [asset name grammar](#asset-names) and occupy their own namespace.
 </ResponseField>
 
 ### Privacy
@@ -111,7 +111,7 @@ The optional `private` field declares the author's publish-visibility intent:
 - `private: true` declares that the facet is **private**.
 - `private: false`, or **omitting** the field, declares the facet is **public** (public-by-default).
 
-`private` is a recognized schema field, not an unknown extension. It MUST be a boolean: a non-boolean value (string, number, object, array, or null) MUST be rejected with a `private`-identified error rather than tolerated or coerced. Validation MUST NOT inject `private: false` into a manifest that omits the field  -- omission remains omission in the validated data, so tooling sees exactly what the author wrote.
+`private` is a recognized schema field, not an unknown extension. It MUST be a boolean: a non-boolean value (string, number, object, array, or null) MUST be rejected rather than coerced. Validation MUST NOT inject `private: false` into a manifest that omits the field, so tooling sees exactly what the author wrote.
 
 The `private` declaration is part of manifest content: it is embedded verbatim in the built `.facet` artifact and travels to the registry at publish time (see [Publish](/specification/publish)). It expresses author intent; registry-side authorization and visibility enforcement are the registry's responsibility, not the CLI's.
 
@@ -149,48 +149,43 @@ The following scoped shapes are rejected: a bare scope (`@scope`), a missing sco
 
 ### Asset names
 
-Asset names — skill, command, and agent names — follow the [Agent Skills name grammar](https://agentskills.io/specification#name-field), interpreted by Facets as a **single ASCII segment**: 1–64 characters of lowercase ASCII letters, digits, and hyphens, not starting or ending with a hyphen and with no consecutive hyphens. Unlike the earlier format, a current-format asset name is a single segment: it MUST NOT contain `/`, so slash-namespaced names like `viper-plans/planning` are no longer valid (use `viper-planning`).
+Asset names, covering skills, commands, and agents, follow the [Agent Skills name grammar](https://agentskills.io/specification#name-field), interpreted here as a **single ASCII segment**: 1–64 characters of lowercase ASCII letters, digits, and hyphens, not starting or ending with a hyphen and with no consecutive hyphens. Unlike the earlier format, a current-format asset name is a single segment: it MUST NOT contain `/`, so slash-namespaced names like `viper-plans/planning` are no longer valid (use `viper-planning`).
 
 Skills and commands share **one namespace**: within a facet, a skill and a command MUST NOT use the same name. Agents are a separate namespace and may reuse a skill or command name. [MCP server names](#mcp-server-declarations) use this same grammar and are a third, separate namespace: a server and a skill MAY both be named `review`.
 
-The manifest is validated against this rule within a single facet. The same rule is applied again **across every facet in a project** at install time, over the names assets are actually materialized under — see [Namespaces](/specification/materialization#namespaces).
+The manifest is validated against this rule within a single facet. The same rule is applied again **across every facet in a project** at install time, over the names text assets are actually materialized under. See [Namespaces](/specification/materialization#namespaces).
 
-A companion file's path may contain `/` for directory depth (`references/api.md`), but those separators are part of the file path, not the skill name — the skill name itself is still a single segment.
+A companion file's path may contain `/` for directory depth (`references/api.md`), but those separators are part of the file path, not the skill name, which is still a single segment.
 
 <Note>
 Legacy `0.1` archives retain their earlier multi-segment naming during the compatibility window. New manifests use the single-segment grammar above. A legacy manifest MUST NOT declare `servers` at all: MCP declarations are a current-format feature, and a legacy archive carrying any `servers` member is rejected rather than installed.
 </Note>
 
-### Constraints
-
-1. The `name` MUST be a valid facet identity (see [Facet name grammar](#facet-name-grammar)), and the `version` MUST be a semver string.
-2. A facet MUST have at least one deliverable -- skills, agents, commands, facets, or servers. A facet whose only deliverable is a server declaration is valid.
-3. The `@` character marks a scope (`@scope/name`) and also separates a name from a version when a facet is referenced elsewhere (`name@version`, `@scope/name@version`).
-4. Consumers MUST tolerate unrecognized fields. Unknown fields MUST be ignored -- **except** inside an MCP server declaration, where an unrecognized member MUST be rejected (see [MCP server declarations](#mcp-server-declarations)).
-5. If present, `private` MUST be a boolean; non-boolean values are rejected. Omission is not rewritten to `private: false` (see [Privacy](#privacy)).
-6. The facet manifest MUST NOT be modified by the build, publish, or install pipelines. (The [project manifest](/specification/project-manifest), `facets.json`, follows different rules: the install pipeline writes it as part of the [tri-write](/specification/commit#transactional-tri-write).)
+<Note>
+The facet manifest MUST NOT be modified by a build, publish, or install. The [project manifest](/specification/project-manifest) follows different rules: an install writes it.
+</Note>
 
 ## Text assets
 
-Text assets are one of a facet's two content classes — the other is [MCP server declarations](#mcp-server-declarations) — and are carried by three types: skills, agents, and commands. Each asset is declared in the manifest under its type's map, and its name maps to a file at a conventional path in the source tree. The file's content is the asset's prompt — it is resolved by convention at [build time](/specification/build#steps), never referenced by a manifest field.
+Text assets are the asset types that materialize as files: skills, agents, and commands. The other asset type, an [MCP server declaration](#mcp-server-declarations), materializes into tool-owned configuration instead. Each text asset is declared under its type's map, and its name maps to a file at a conventional path. The file's content is the asset's prompt, resolved by convention at [build time](/specification/build#steps) rather than referenced by a manifest field.
 
-- **Skill** — `skills/<name>/SKILL.md`. Each skill lives in its own directory, per the [Agent Skills](https://agentskills.io/specification) convention; the main file MUST be named `SKILL.md`. A skill directory MAY also contain declared [companion files](#supplementary-files) at any safe depth (`references/api.md`, `scripts/run.ts`).
-- **Agent** — `agents/<name>.md`. A single markdown file whose content is the agent's system prompt.
-- **Command** — `commands/<name>.md`. A single markdown file whose content is the command's prompt.
+- **Skill**: `skills/<name>/SKILL.md`. Each skill lives in its own directory, per the [Agent Skills](https://agentskills.io/specification) convention, and the main file MUST be named `SKILL.md`. A skill directory MAY also contain declared [companion files](#supplementary-files) at any safe depth.
+- **Agent**: `agents/<name>.md`, whose content is the agent's system prompt.
+- **Command**: `commands/<name>.md`, whose content is the command's prompt.
 
 A primary asset file (a `SKILL.md`, agent, or command file) MAY carry author-supplied YAML front matter. It ships verbatim in the archive and is reconciled with the manifest only at install time: materialization merges the manifest's `name` and `description`, plus any per-adapter extras, on top of whatever the author wrote. The manifest always wins, so a facet cannot override its own asset identity through front matter.
 
 <Note>
-The `name` written at install time is the asset's **effective** name — the one the consuming project chose. `description` stays as the publisher wrote it. See [Two identities](/specification/materialization#two-identities).
+The `name` written at install time is the asset's **effective** name, the one the consuming project chose. `description` stays as the publisher wrote it. See [Two identities](/specification/materialization#two-identities).
 </Note>
 
 An asset descriptor's `adapters` block is validated at [build time](/specification/build#steps) against each installed adapter's schema: unknown adapters produce a warning, and invalid metadata for an installed adapter is a build error.
 
 ## MCP server declarations
 
-A facet can declare [Model Context Protocol](https://modelcontextprotocol.io) servers its assets expect to be available. A declaration is **portable connection information**, not a package reference: it says how a tool should launch or reach a server, and nothing about where that server comes from. Facets never resolves, downloads, versions, or runs a declared server.
+A facet can declare [Model Context Protocol](https://modelcontextprotocol.io) servers its text assets expect to be available. A declaration is **portable connection information**, not a package reference: it says how a tool should launch or reach a server, and nothing about where that server comes from. Facets never resolves, downloads, versions, or runs a declared server.
 
-Declarations are the only deliverable that materializes into a file the facet does not own. At install time each selected [adapter](/specification/terminology) translates the portable declaration into its own tool's native project configuration — `.mcp.json`, `opencode.jsonc`, `.codex/config.toml` — after the user [approves it](/specification/commit#mcp-configuration).
+A server declaration is an asset, and the only one that materializes into a file the facet does not own. At install time each selected adapter translates the portable declaration into its own tool's native project configuration, after the user [approves it](/specification/install#mcp-configuration).
 
 ```json facet.json
 {
@@ -237,43 +232,59 @@ A declaration is exactly one of two shapes, selected by its required `type` tag.
       Selects the Streamable HTTP shape.
     </ResponseField>
     <ResponseField name="url" type="string" required>
-      An absolute `http:` or `https:` URL. Relative URLs and other schemes (`file:`, `ws:`, `wss:`) are rejected, as are URLs carrying embedded credentials (`https://user:token@host/...`) — a declaration ships inside a published artifact and carries no secrets.
+      An absolute `http:` or `https:` URL. Relative URLs and other schemes such as `file:` or `ws:` are rejected, as are URLs carrying embedded credentials. A declaration ships inside a published artifact and carries no secrets.
     </ResponseField>
   </Expandable>
 </ResponseField>
 
 ### Closed objects
 
-A server declaration MUST reject any member its selected shape does not define. This is a deliberate exception to the manifest's general [tolerate-unknown-fields rule](#constraints).
+A server declaration MUST reject any member its selected shape does not define. This is the one exception to the manifest's general tolerate-unknown-fields rule.
 
-The reason is that these fields change what runs. If one consumer ignored an unrecognized `headers`, `cwd`, or `shell` member while another honored it, both would report successful validation while configuring materially different behavior. A new portable field therefore requires an explicit schema revision, not a tolerated extension. Unrecognized fields **outside** the declaration objects — including at the top level of the manifest — are still tolerated and preserved.
+These fields change what runs. If one consumer ignored an unrecognized `headers`, `cwd`, or `shell` member while another honored it, both would report successful validation while configuring materially different behavior. A new portable field requires a schema revision, not a tolerated extension.
+
+Unrecognized fields outside the declaration objects, including at the top level of the manifest, are still tolerated and preserved.
+
+### Canonical declaration fingerprint
+
+A declaration has a canonical fingerprint: the identity used to decide whether two facets [declare the same server](/specification/materialization#server-collisions) and whether a declaration has already been [approved](/specification/install#mcp-configuration).
+
+The encoding is normative, so independent implementations agree:
+
+- It is computed from the declaration's meaning, not its spelling, and is tagged with a version so it can evolve.
+- Argument order is preserved, because reordering arguments changes what runs.
+- Environment keys are sorted, because their order does not.
+- An omitted `args` or `env` is equal to an empty one.
+- It is independent of both the authored and effective server name.
+
+Because the fingerprint carries no command, URL, or environment data, a consumer can prove a declaration was approved without storing the declaration itself.
 
 ### Environment name grammar
 
 An `env` key MUST start with an ASCII letter or underscore and continue with ASCII letters, digits, or underscores. Names are validated, never normalized: `PATH`, `_HOME`, and `API_KEY_2` are valid; `2FA`, `MY-VAR`, and `my.var` are rejected.
 
 <Warning>
-`env` values are **literal strings that ship inside the published archive**. Never put a secret, token, or credential in one. The portable schema deliberately has no headers, credentials, OAuth, or variable-substitution grammar — authentication belongs to the target tool, which the user completes after the configuration is written.
+`env` values are **literal strings that ship inside the published archive**. Never put a secret, token, or credential in one. The portable schema has no headers, credentials, OAuth, or substitution grammar: authentication belongs to the target tool.
 </Warning>
 
 ### What a declaration is not
 
 - It is **not** a package reference. There is no registry, version range, or OCI image for a server. The earlier speculative version-string and `{ image }` reference forms are rejected in every manifest format.
-- It is **not** a separately published artifact. There is no standalone server manifest; a declaration travels inside `facet.json`. See [Publish](/specification/publish#boundaries).
+- It is **not** a separately published artifact. There is no standalone server manifest; a declaration travels inside `facet.json`. See [Publish](/specification/publish#not-in-publish).
 - It is **not** an archive entry. Declarations add no file to the `.facet` archive; the embedded manifest is their integrity-protected representation, so changing a declaration changes the facet's [integrity](/specification/integrity).
 
 ## Supplementary files
 
-Beyond its assets, a facet can declare **supplementary files** — non-asset files that ship inside the `.facet` archive and are integrity-protected like everything else, but are not independently installable assets. They have no asset type, no adapter metadata, and no lockfile asset tuple.
+Beyond its assets, a facet can declare **supplementary files**: non-asset files that ship inside the archive and are integrity-protected, but are not independently installable assets. They have no asset type, no adapter metadata, and no lockfile asset tuple.
 
 There are two declaration sites, and every supplementary archive entry MUST be derivable from one of them (there is no auto-discovery):
 
-- **Top-level `files`** — repo-relative paths at the tree root, declared in the manifest's [`files`](#fields) array. Used for `README.md`, `LICENSE`, development notes, and other project files. These ship but **never materialize**: they are not written to disk at install time.
-- **Per-skill `files`** — paths relative to a skill's directory, declared in that [skill descriptor's](#fields) `files` array. These are the skill's **companion files** (references, scripts, templates). A companion materializes atomically with its owning skill and cannot list `SKILL.md` itself.
+- **Top-level `files`**: repo-relative paths at the tree root, declared in the manifest's [`files`](#fields) array. These ship but never materialize, so they are not written to disk at install time.
+- **Per-skill `files`**: paths relative to a skill's directory, declared in that [skill descriptor's](#fields) `files` array. A companion materializes atomically with its skill and cannot list `SKILL.md` itself.
 
-Supplementary files are declared as **exact paths only** — no globs or patterns — and each path MUST satisfy the [portable path grammar](/specification/archive#content-rules). A top-level path MUST NOT resolve under `skills/`, so a skill's files have exactly one declaration site. Supplementary bytes are shipped verbatim: binary and empty files are valid, and front matter is never parsed or stripped.
+Supplementary files are declared as **exact paths only**, with no globs, and each path MUST satisfy the [portable path grammar](/specification/archive#content-rules). A top-level path MUST NOT resolve under `skills/`, so a skill's files have exactly one declaration site, and MUST NOT be the root `facet.json`, which the archive always carries. Supplementary bytes are shipped verbatim: binary and empty files are valid, and front matter is never parsed or stripped.
 
-`README.md` and the extensionless `README` are ordinary top-level `files` declarations — there is no README-specific manifest field. Authoring support for them is described in [Create Your First Facet](/guides/create-your-first-facet) and [`facet edit`](/cli/authoring/edit).
+`README.md` and the extensionless `README` are ordinary top-level `files` declarations. There is no README-specific manifest field. Authoring support is described in [Create Your First Facet](/guides/create-your-first-facet) and [`facet edit`](/cli/authoring/edit).
 
 <Warning>
 A CLI older than the first `0.2`-producing release tolerates the `files` fields but omits their bytes when it builds, producing a declared-but-empty facet. Build with a current release so declared files actually ship.

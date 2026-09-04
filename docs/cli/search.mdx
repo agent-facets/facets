@@ -9,7 +9,7 @@ description: Search the registry for published facets
 facet search [term]
 ```
 
-Queries the registry for facets matching the given substring (case-insensitive). Without a term, lists all published facets. At most one term is accepted — passing more than one argument is an error (exit `1`).
+Sends the term to the registry, which decides what matches and in what order. Without a term, lists published facets. At most one term is accepted, and more than one argument is an error.
 
 ## Examples
 
@@ -24,32 +24,22 @@ facet search
 ## Exit codes
 
 | Code | Meaning |
-| ---- | ------- |
-| `0`  | Search completed (even if no results). |
-| `1`  | Failed (network error, registry unavailable, etc.). |
+| --- | --- |
+| `0` | Search completed, including no results. |
+| `1` | Failed, for example the registry was unreachable. |
+| `2` | An unexpected error escaped command handling. |
 
-## What it does
-
-<Steps>
-  <Step title="Send query">
-    Calls the registry search endpoint with the provided term (or no filter if omitted).
-  </Step>
-  <Step title="Display results">
-    Each result shows the facet name, latest version, author, and asset counts.
-  </Step>
-</Steps>
-
-## Output format
+## Output
 
 ```
 Searching registry for 'plan'...found 2 matches.
 
 viper-plans  v1.2.0 · by acme · 2 skills, 1 agent, 1 command
-rezi         v0.5.0 · by julian · 3 skills
+rezi         v0.5.0 · by julian · 3 skills, 1 server
 ```
 
-Asset counts are omitted when all are zero.
+Each result shows the facet name, latest version, author, and asset counts, including servers. Counts are omitted when all are zero. Only the first page of results is shown.
 
 ## See also
 
-- [`facet add`](/cli/add) -- add a found facet to your project.
+- [`facet add`](/cli/add)

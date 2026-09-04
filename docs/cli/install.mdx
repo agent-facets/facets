@@ -9,151 +9,116 @@ description: Install every declared facet
 facet install
 ```
 
-Reads `facets.json`, fetches and materializes every facet declared there, and writes a `facets.lock` recording the exact resolved versions and integrity hashes. Used after a fresh `git clone`, after pulling teammate changes that updated the manifest, or to reapply assets after manual edits to adapter directories.
+Reads `facets.json`, materializes every facet declared there, and writes `facets.lock` with the exact resolved versions and integrity hashes. Use it after a clone, after pulling manifest changes, or to restore files someone edited by hand.
 
-`facet install` does not accept positional arguments  -- to add a new facet, use [`facet add`](/cli/add).
+Nothing is written until every facet resolves, verifies, and composes without a collision. A failed or declined run leaves the project unchanged.
+
+`facet install` takes no positional arguments. To add a facet, use [`facet add`](/cli/add).
+
+## Examples
+
+```sh
+facet install                     # materialize what facets.json declares
+facet install --frozen-lockfile   # CI: fail on any manifest and lockfile drift
+facet install --accept-mcp        # pre-approve MCP configuration
+```
 
 ## Flags
 
 <ResponseField name="--verbose" type="boolean">
-  Show detailed step output on stderr. Verbose output never reproduces an MCP server declaration — see [Where declarations appear](#where-declarations-appear).
+  Show detailed step output on stderr. Declaration contents never appear here. See [Where declarations appear](#where-declarations-appear).
 </ResponseField>
 
 <ResponseField name="--accept-mcp" type="boolean">
-  Approve the MCP server configuration this operation would write, without prompting.
-
-  This is the **only** non-interactive way to accept MCP configuration; there is no second override flag. It approves the complete set the operation would write — declarations and [native takeovers](#taking-over-an-existing-entry) alike — exactly as pressing *Approve all* on the interactive screen does.
-
-  Passing it in an interactive terminal skips the approval screen rather than pre-selecting an answer on it. Frozen mode never prompts but does honor this flag.
-
-  It does **not** authorize an [asset takeover](#taking-over-an-existing-file) or resolve an asset [name collision](#name-collisions). Those are separate questions about different state.
+  Approve the MCP configuration this run would write, without prompting. See [Accept MCP](#accept-mcp).
 </ResponseField>
 
 <ResponseField name="--frozen-lockfile" type="boolean">
-  Treat the lockfile as the source of truth; fail on any manifest/lockfile drift.
-
-  Setting this flag makes the **lockfile authoritative**: no re-resolution, no lockfile writes, and every facet — including local sources — must reproduce its locked integrity. It also requires the lockfile's recorded [materialization](/specification/materialization) intent to match `facets.json` exactly. The full preflight and behavior matrix are in the [Frozen lockfile specification](/specification/commit#frozen-lockfile).
-
-  Frozen mode **never prompts**, even in a fully interactive terminal. It reproduces recorded intent, so it must not collect a new decision. A name collision under `--frozen-lockfile` is reported and fails, and MCP configuration needing approval fails unless [`--accept-mcp`](#param-accept-mcp) was supplied.
-
-  A `0.2` lockfile has no field in which to record an **asset** materialization disposition. If `facets.json` declares any asset override against one, the frozen install fails rather than silently ignoring it — run one non-frozen `facet install` to migrate the lockfile. A `materialization.servers` override can never cause this: no lockfile version records server intent, by design.
-
-  Frozen mode reads `manifestVersion` `0.2`, `0.1`, and unversioned documents, and migrates none of them. A stale `servers` override — one naming a server the locked facet no longer declares — is reported as blocking drift and is **not** removed.
-
-  <Tip>
-  Use this in CI to guarantee `facets.json` and `facets.lock` are in agreement. Mirrors `--frozen-lockfile` from `npm` and `bun`.
-  </Tip>
+  Treat the lockfile as the source of truth and fail on drift. See [Frozen lockfile](#frozen-lockfile).
 </ResponseField>
 
 ## Exit codes
 
-| Code | Meaning                                                              |
-| ---- | -------------------------------------------------------------------- |
-| `0`  | Install succeeded (including no-op when nothing has changed).        |
-| `1`  | Install failed. The view renders the structured failure inline; stderr carries a three-line block — `error:`, `code=...` for log-grepping, and a `fix:` action. A [name collision](#name-collisions), an [MCP approval requirement](#in-ci-and-other-non-interactive-runs), and an [unsupported adapter](#adapters-that-cannot-configure-mcp-servers) each print a full report above that block, so `fix:` stays the last line. |
+| Code | Meaning |
+| --- | --- |
+| `0` | Install succeeded, including a no-op. |
+| `1` | Install failed. |
+| `2` | An unexpected error escaped command handling. |
 
-## What it does
+On failure, stderr carries three lines: `error:`, a `code=` token for log searching, and a `fix:` action. Reports for collisions, MCP approval, and unsupported adapters print above that block, so `fix:` stays last.
 
-<Steps>
-  <Step title="Validate the project">
-    `facets.json` must exist, and at least one **install-capable** adapter must be installed. If none are, the picker launches when the terminal can prompt; otherwise the command exits pointing at [`facet adapter add`](/cli/adapters/add). Installed-but-incompatible adapters fail here rather than falling through to the picker.
-  </Step>
-  <Step title="Run the install pipeline">
-    Runs the [install pipeline](/specification/install) with an empty delta: acquire the install lock, resolve and [verify](/specification/commit#verify) *every* declared facet ([honoring satisfying lockfile pins](/specification/commit#resolve)), [compose one global plan](/specification/commit#compose) checking for name collisions, check that every selected adapter can configure any active MCP servers, ask each adapter to [prepare](/specification/commit#reconciliation) its native MCP change read-only, obtain [MCP approval](#mcp-servers), then [remove drift](/specification/commit#drift-removal) and materialize assets into every adapter, apply the prepared MCP changes, and finally [write manifest + lockfile + receipt atomically](/specification/commit#transactional-tri-write).
-
-    Deletion runs before any write, which is what lets an asset name move from one facet to another in a single install. MCP configuration is applied **last**, immediately before the tri-write.
-  </Step>
-</Steps>
-
-<Note>
-Every facet is verified, the whole plan composed, every adapter's MCP change prepared, and every approval collected before any asset is written. An integrity mismatch, a name collision, a cancelled resolution, a declined MCP approval, an unsupported adapter, and an unparseable tool config all abort with the project **byte-identical** — not rolled back, but never touched.
-
-Cancelling an [asset takeover](#taking-over-an-existing-file) is the exception: it happens mid-write, so it is a genuine rollback rather than an untouched abort. The full semantics live in the [Commit specification](/specification/commit) and the [Integrity Model](/specification/integrity).
-</Note>
-
-## Outcomes
-
-The summary line classifies each facet by what happened on disk:
-
-<ResponseField name="installed" type="new">
-  Facet was not in the previous lockfile.
-</ResponseField>
-
-<ResponseField name="updated" type="state change">
-  Facet was in the lockfile at a different version  -- including when a stale entry was re-resolved to match the manifest. The summary shows `(was X → Y)`.
-
-  Also reported when the version is unchanged but its [materialization](/specification/materialization) is not: aliasing or omitting an asset **or an MCP server**, or a changed server declaration, changes what the project materializes, so it is an update rather than a no-op. It is not a *repair* either — nothing drifted, the project changed its mind.
-</ResponseField>
-
-<ResponseField name="repaired" type="self-heal">
-  Same version and same materialization intent, but at least one adapter file was missing or had drifted from the lockfile content. Restored. A skill is repaired by replacing its whole bundle atomically, so a single drifted companion pulls the primary with it.
-
-  MCP configuration is repaired the same way: an already-approved declaration whose native entry had drifted is rewritten, as is a divergent untracked entry you chose to take over.
-</ResponseField>
-
-<ResponseField name="unchanged" type="no-op">
-  Same version, same materialization intent, every asset already in its desired state. Nothing was written — the on-disk bytes were compared and matched, which is enough to record the assets as tracked without rewriting them.
-
-  A native MCP entry that already matches semantically is likewise left untouched, including one you took over: adopting an equivalent entry records ownership without rewriting the document.
-</ResponseField>
-
-<ResponseField name="removed" type="cleanup">
-  Facet is no longer declared in `facets.json`, and this machine's [install receipt](/specification/commit#machine-local-install-receipt) tracked it. Its ownership was reconciled: obsolete identities deleted, and any identity another declared facet now claims kept. That includes MCP server entries the receipt owned — the complete entry is removed from every selected adapter, while an entry the receipt never claimed is left alone.
-</ResponseField>
-
-<ResponseField name="removed-untracked" type="records only">
-  Facet is no longer declared, and only the lockfile ever recorded it — you pulled a teammate's `facets.lock` and never installed. The declaration is dropped from `facets.json` and `facets.lock`, but **nothing on disk is deleted**, because no receipt claim proves this machine wrote it. The summary names the facet and says the files were left in place.
-</ResponseField>
-
-<Note>
-The `N removed` count covers both: it counts declarations that went away. How many *assets* left disk is the separate asset count — zero, for an untracked removal.
-</Note>
-
-If you delete a materialized asset by hand and re-run `facet install`, the affected facet shows up as `repaired`.
-
-MCP servers are counted **separately** from text assets, so a facet that contributes only servers reports real work rather than looking like a no-op:
+## Output
 
 ```
   1 installed · 0 assets written · 1 server config added
-  mcp-tools MCP server filesystem added in claude-code, opencode
+  MCP server filesystem added in claude-code, opencode
 ```
 
-Server configuration is reported as `added`, `updated`, `repaired`, `unchanged`, or `removed`, with `aliased` and `omitted` counted alongside their asset equivalents. A line gains ` (took over an existing entry)` when the entry was [taken over](#taking-over-an-existing-entry) rather than created.
+The `assets written` counter covers text assets only, and MCP servers are counted beside it, so a facet that only declares servers still reports real work. Server configuration is reported as `added`, `updated`, `repaired`, `unchanged`, or `removed`, and a line gains `(took over an existing entry)` when it adopted or replaced an entry this project did not create.
 
-Below the counts, the summary names every contribution whose materialized name differs from its authored one — the one thing you cannot infer from the file tree:
+Below the counts, the summary names every contribution whose materialized name differs from the published one:
 
 ```
   1 updated · 1 asset written · 1 server config updated
   + 1 skill
   viper-plans skill planning → team-planning
   cowsay command scratch — omitted
-  mcp-tools server filesystem → team-filesystem
-  mcp-tools server docs — omitted
+  mcp-tools MCP server filesystem → team-filesystem
 ```
 
-Omitted assets and omitted servers are not counted as written.
+Omitted contributions are never counted as written.
 
-## Name collisions
+### Outcomes
 
-Two facets cannot materialize a contribution under the same name. Skills and commands share one namespace; agents have their own; MCP servers are a third, separate space — see [Namespaces](/specification/materialization#namespaces). A server never collides with a skill, command, or agent.
+The summary classifies each facet by what happened on disk.
 
-Two facets declaring the **same** server, spelled the same way, is not a collision: identical declarations compose into one configuration and both facets are recorded as claimants. Only differing declarations at one effective name contest it.
+<ResponseField name="installed" type="new">
+  The facet was not in the previous lockfile.
+</ResponseField>
 
-Collisions are detected **globally, before anything is written**, so the install stops with the project untouched.
+<ResponseField name="updated" type="state change">
+  The facet was locked at a different version, or its [materialization](/specification/materialization) changed. Aliasing or omitting a text asset or server changes what the project materializes, so it counts as an update rather than a repair.
+</ResponseField>
 
-**In an interactive terminal**, the install pauses and opens a resolver. Each contested asset gets one of three outcomes:
+<ResponseField name="repaired" type="self-heal">
+  Same version and intent, but a file was missing or had drifted from the lockfile content. A skill is repaired as a whole bundle, so one drifted companion pulls its primary with it. A drifted MCP entry is rewritten the same way.
+</ResponseField>
 
-| Key | Choice | Result |
-| --- | --- | --- |
-| `Keep` | keep the authored name | records nothing |
-| `Alias` | materialize under a name you type | `{ "kind": "aliased", "as": "..." }` |
-| `Omit` | do not materialize it at all | `{ "kind": "omitted" }` |
+<ResponseField name="unchanged" type="no-op">
+  Same version, same intent, everything already in its desired state. Matching bytes are adopted without a rewrite.
+</ResponseField>
 
-Move with `↑↓`, pick with `←→`, apply with `Enter`, and `Esc` to go back. Arrow keys only move the cursor — nothing is applied until you press `Enter`. Each claimant shows a status that pairs an icon with a word, so it stays readable without color: `✕ unresolved`, `⚠ conflict` (your own edit created this one), `✓ resolved`. Confirmation unlocks only when every group is resolved.
+<ResponseField name="removed" type="cleanup">
+  The facet is no longer declared and this machine's records tracked it. Obsolete files and owned server entries are deleted; anything another declared facet still claims is kept.
+</ResponseField>
 
-A contested server claimant additionally shows its declaration summary and a short fingerprint (`stdio, command "npx" · 1a2b3c4d`) so you can tell two same-named servers apart without leaving the screen.
+<ResponseField name="removed-untracked" type="records only">
+  The facet is no longer declared, and only the lockfile ever recorded it, which happens when you pull a teammate's lockfile and never install. The declaration is dropped, but nothing on disk is deleted. Remove those files yourself.
+</ResponseField>
 
-Your choices are written into `facets.json` as durable intent, so the next install runs without prompting:
+The `N removed` count covers facets, not the assets they contributed. An untracked removal deletes nothing on disk.
+
+## Details
+
+### Name collisions
+
+Two facets cannot materialize under the same name. Skills and commands share a namespace, agents have their own, and servers occupy a third. Collisions are also scoped, so a project-scoped text asset never contests a user-scoped one. See [Namespaces](/specification/materialization#namespaces).
+
+Two facets declaring the same server identically is not a collision. They agree, one entry is configured, and both are recorded as claimants.
+
+Collisions are detected before anything is written, so the run stops with the project untouched.
+
+**In a terminal**, the install pauses and opens a resolver. Each contested contribution takes one choice:
+
+| Choice | Result |
+| --- | --- |
+| Keep | Materialize under the published name |
+| Alias | Materialize under a name you type |
+| Omit | Do not materialize it |
+
+Move between rows with `↑↓`, choose with `←→`, and apply with `Enter`. Each claimant shows `✕ unresolved`, `⚠ conflict`, or `✓ resolved`. A contested server also shows its declaration summary and a short fingerprint, so you can tell two same-named servers apart. Confirmation unlocks when every group is resolved. `Esc` cancels the whole install without writing anything.
+
+Only one claimant has to change. Your choices are saved to `facets.json`:
 
 ```json facets.json
 "viper-plans": {
@@ -165,54 +130,58 @@ Your choices are written into `facets.json` as durable intent, so the next insta
 }
 ```
 
-The `servers` group requires `"manifestVersion": 0.2`. A successful non-frozen install writes that version for you; a `servers` group inside a document that declares `0.1` is rejected rather than tolerated.
+A `servers` group needs `"manifestVersion": 0.2`, which a successful non-frozen install writes for you.
 
-`Esc` or `Ctrl-C` cancels the whole install. Nothing was written, and re-running lets you make the choices again.
+**Without a terminal**, nothing is prompted. Every group and claimant is printed with the exact `facets.json` location and copy-pasteable snippets. No winner is chosen and no name is invented: the placeholder is literally `choose-a-name`.
 
-**Without a terminal** — CI, piped output, or `--frozen-lockfile` — nothing is prompted. Every group and every claimant is printed to stderr with the exact `facets.json` location to edit and copy-pasteable alias and omit snippets. No winner is chosen and no alias is invented for you: the placeholder is literally `choose-a-name`. The report ends by stating that `facets.json`, `facets.lock`, the receipt, your materialized assets, and every tool's MCP configuration were **not** changed.
+### Frozen lockfile
 
-## Cache
+`--frozen-lockfile` makes the lockfile authoritative. Nothing is re-resolved, the lockfile is never written, and every facet must reproduce its locked integrity. The lockfile's recorded materialization intent must match `facets.json`.
 
-Resolved facet content is stored at `$FACET_DIR/cache/<name>@<version>/` (default `~/.facet/cache/`) so subsequent installs of the same identity don't hit the network. Cache hits are re-verified on every use — see [cache self-audit](/specification/integrity). The cache root is part of the facet directory tree; set `FACET_DIR` to change it. See the [environment variables reference](/cli/env).
+Frozen mode never prompts, even in a terminal, because it reproduces recorded intent rather than collecting new decisions. A collision fails, and MCP configuration needing approval fails unless you also pass `--accept-mcp`.
 
-## MCP servers
+A `0.2` lockfile has no field for a text-asset disposition, so a frozen run fails if `facets.json` declares one. Run a plain `facet install` once to migrate the lockfile. A `servers` override never causes this, because no lockfile version records server intent.
 
-A facet that declares [`servers`](/specification/manifest#mcp-server-declarations) contributes MCP server configuration to every selected adapter, written into each tool's own project file — `.mcp.json` for Claude Code, `.opencode/opencode.jsonc` for OpenCode, `.codex/config.toml` for Codex. Only project-scoped files are ever touched; no user- or system-wide tool configuration is created or modified.
+Frozen mode reads `manifestVersion` `0.2`, `0.1`, and unversioned documents and migrates none of them. A stale `servers` override is reported as drift and is not removed.
 
-OpenCode merges four project files into one configuration, so all four are read. In decreasing precedence they are:
+<Tip>
+  Use this in CI to prove `facets.json` and `facets.lock` agree, the same way `--frozen-lockfile` works in npm and bun.
+</Tip>
 
-1. `.opencode/opencode.jsonc`
-2. `.opencode/opencode.json`
-3. `opencode.jsonc`
-4. `opencode.json`
+### Cache
 
-Servers are written to a single one of them: the highest-precedence file that already has an `mcp` section — an empty one counts — otherwise the highest-precedence file that exists, otherwise a newly created `.opencode/opencode.jsonc`. So a project that keeps its servers in a root `opencode.json` keeps getting them there, even if a `.opencode/opencode.jsonc` exists for something else.
+Resolved content is cached under [`$FACET_DIR`](/cli/env)`/cache/`, so repeat installs of the same version skip the network. Cache hits are re-verified on every use. See [integrity](/specification/integrity).
 
-A copy of the same server in a lower-precedence file is left alone: the one that was just written already wins. An entry your project owns and no longer wants is removed from *every* file that defines it, so a shadowed copy cannot come back. Entries you added yourself are never touched in any file.
+### MCP servers
 
-Installing a server **configures** it. Facets never downloads it, launches it, connects to it, checks its health, or authenticates to it. Whatever sign-in the server needs happens inside your coding tool afterwards.
+A facet that declares [servers](/docs/learn/mcp-servers) contributes configuration to every selected adapter, written into that tool's own project file. Only project-scoped files are touched. See [where configuration lands](/docs/learn/adapters#where-mcp-configuration-lands).
 
-### Approving a declaration
+Installing a server configures it. Facets never downloads, launches, connects to, health-checks, or authenticates to it.
 
-Approving MCP configuration means letting your coding tools run a command or open a connection, so a new or changed declaration is never written without your say-so.
+#### Accept MCP
 
-In an interactive terminal the install pauses on one MCP-only screen listing every declaration awaiting approval, each with its claimant facets and its **exact** command, arguments, and environment assignments — or its exact URL. `Decline` is selected by default; `←/→` chooses, `Enter` confirms, and `Esc` or `Ctrl-C` declines. Approval is all-or-nothing over the displayed set.
+`--accept-mcp` is the only non-interactive way to accept MCP configuration. It approves the complete set the run reports, including [takeovers of existing entries](#taking-over-an-existing-entry).
 
-Approval is remembered **per machine**, keyed by the effective server name and the declaration's content:
+It does not authorize a [text-asset takeover](#taking-over-an-existing-file) and does not resolve a [name collision](#name-collisions). The same flag exists on [`facet add`](/cli/add), [`facet update`](/cli/update), and [`facet remove`](/cli/remove).
 
-- Reproducing an already-approved declaration does not ask again — including when a second facet declares the same server identically.
-- Changing the command, argument order, an environment value, the transport, the URL, or the effective name asks again.
-- A run that fails or is rolled back banks nothing; the next attempt asks again.
+#### Approving a declaration
 
-<Note>
-Approval never travels with your project. It lives in the machine-local [install receipt](/specification/commit#machine-local-install-receipt), not in `facets.json` or `facets.lock`, so a teammate who clones your fully-approved project approves it on their own machine. That is deliberate: committed files must not be able to claim you consented to running something.
-</Note>
+In a terminal the install pauses on one screen listing every declaration awaiting approval, its claimant facets, and its exact command, arguments, and environment assignments or URL. Decline is selected by default, and approval covers the whole displayed set.
 
-### In CI and other non-interactive runs
+Approval is stored per machine, keyed by the effective server name and the declaration's content:
 
-Without a terminal, an unapproved declaration fails the install **before anything is written** and prints the complete list to stderr: every effective server name, its claimant facets, its full declaration, and — per claimant — the exact `facets.json` location and a copy-pasteable omission snippet.
+- An already-approved declaration is not asked about again, including when a second facet declares it identically.
+- A changed command, argument order, environment value, transport, URL, or effective name asks again.
+- A run that fails or rolls back banks nothing.
+- Machine records written before MCP support carry no approvals, so the first install after upgrading asks once.
 
-You then have two ways forward: re-run with [`--accept-mcp`](#param-accept-mcp) to approve everything shown, or record an omission for the servers you do not want.
+Approval never travels with your project. It is machine-local rather than recorded in `facets.json` or `facets.lock`, so a committed file cannot claim you consented to running something.
+
+#### In CI and other non-interactive runs
+
+Without a terminal, an unapproved declaration fails before anything is written and prints every server, its claimants, its full declaration, and the exact `facets.json` edit that would refuse it. Frozen mode fails the same way even on a terminal, because it never collects a new decision.
+
+Re-run with `--accept-mcp` to approve everything shown, or omit what you do not want:
 
 ```json facets.json
 "mcp-tools": {
@@ -223,42 +192,133 @@ You then have two ways forward: re-run with [`--accept-mcp`](#param-accept-mcp) 
 }
 ```
 
-### Taking over an existing entry
+#### Taking over an existing entry
 
-If a desired server name already has an entry that this project's receipt does not own — you configured it by hand, or a teammate did — it is disclosed in a distinct section of the same approval screen, before anything is written. Each line names the adapter and says whether the existing entry `already matches and would be adopted` or `differs and would be replaced`.
+If a desired server name already has an entry this project did not create, it is disclosed on the same approval screen, before any write. Each line names the adapter and says whether the entry already matches and would be adopted, or differs and would be replaced.
 
-An equivalent entry is adopted **without rewriting the document**; a divergent one is replaced transactionally. An entry the receipt already owns reconciles with no disclosure, and an entry outside your desired set is never touched at all. Because this happens before the first write, declining has nothing to undo.
+An equivalent entry is adopted without rewriting the document. Declining costs nothing, because no write has happened yet.
 
-### Taking over an existing file
+#### Taking over an existing file
 
-Assets have their own, separate takeover prompt, and it behaves differently on purpose. It appears **mid-write**, at the moment materialization reaches an occupied destination this machine does not own, naming the adapter, scope, type, and effective name.
+Text assets have a separate prompt that appears mid-write, when materialization reaches an occupied destination this machine does not own. It names the adapter, scope, type, and effective name.
 
-`Continue` is the default here — the opposite of MCP consent — because continuing is what a non-interactive run already does, and because taking over a file is far less consequential than authorizing a command to run. Cancelling **rolls back everything the command has done so far** and exits non-zero. Non-interactive runs continue automatically with no prompt.
+Continue is the default here, because that is what a non-interactive run already does and because replacing a file is less consequential than authorizing a command. Cancelling rolls back everything the run has already written and exits non-zero. `--accept-mcp` never answers this prompt.
 
-`--accept-mcp` never answers this screen.
+#### Adapters that cannot configure MCP servers
 
-### Adapters that cannot configure MCP servers
+When the project has active declarations and a selected adapter declares no MCP support, the run fails before approval and before any write, naming every such adapter.
 
-Configuring servers needs an adapter that declares MCP support. When active declarations exist and a selected adapter cannot serve them, the install fails before approval and before any mutation, naming **every** such adapter.
+That adapter declares no MCP support as a deliberate answer, so a newer release will not change it. Omit every affected server, or [remove the adapter](/cli/adapters/remove). With no active declarations left, an adapter without MCP support installs normally.
 
-The adapter declares no MCP support, and a newer release will not change that: omit the declarations in `facets.json`, or deselect the adapter.
+#### Where declarations appear
 
-Omitting every declared server also resolves this: with no active declarations, an adapter without MCP support is perfectly usable.
+A declaration's command, arguments, environment values, and URL appear on exactly two surfaces: the interactive approval screen and the non-interactive report that asks you to approve. They never appear in `--verbose` output or success summaries, which name servers by identity only. That keeps declaration contents out of scrollback and CI logs.
 
-### Where declarations appear
-
-A declaration's command, arguments, environment values, and URL are shown on exactly two surfaces: the interactive approval screen, and the non-interactive report that asks you to approve. They never appear in `--verbose` output, in success summaries, or in other diagnostics, which name servers by identity only. That keeps the contents of a declaration out of scrollback and CI logs.
-
-On both surfaces every value is shown quoted and escaped — `"srv" "--root" "/w"`, `"TOKEN"="a b"`. Nothing is hidden or shortened; the quoting is what keeps one argument containing a space distinguishable from two arguments, and what stops a value from adding a line or issuing a terminal escape of its own.
-
-The non-interactive report also lists every existing entry the run would take over: the adapter, the effective name, whether the entry already matches or differs, and the full declaration that would be adopted or written. It ends by stating that nothing was changed.
+On both surfaces values are quoted and escaped, such as `"srv" "--root" "/w"` and `"TOKEN"="a b"`. Quoting keeps one argument containing a space distinguishable from two, and stops a value from issuing a terminal escape.
 
 <Warning>
-`env` values are literal strings that ship inside the published facet. Never put a token, key, or other secret in one. Authenticate inside your coding tool instead.
+  `env` values are literal strings that ship inside the published facet. Never put a token, key, or other secret in one.
 </Warning>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="another install is already running">
+    **Cause:** one install runs per project at a time, and another process holds the lock. The message names the process that holds it.
+
+    **Fix:** wait for that run to finish. If it died, the lock is released when the process exits; re-run then.
+  </Accordion>
+
+  <Accordion title="this facet uses an archive format this CLI does not support">
+    **Cause:** the facet was built by a newer CLI, using an [archive format](/specification/archive) yours does not read. This is a version mismatch, not a corrupt file.
+
+    **Fix:** run [`facet self-update`](/cli/self-update). The message names the minimum supporting release when it knows it.
+  </Accordion>
+
+  <Accordion title="unsupported lockfileVersion">
+    **Cause:** `facets.lock` declares a version this CLI does not read. The common case is the withdrawn closed-alpha `1`.
+
+    **Fix:** if it declares `1`, delete `facets.lock` and run `facet install` to regenerate it. If it declares something newer, run `facet self-update` instead, because deleting a newer lockfile discards resolutions your teammates committed.
+  </Accordion>
+
+  <Accordion title="lockfile v0.2 cannot record materialization overrides">
+    **Cause:** `facets.json` declares an alias or omission for a text asset, and the lockfile is still at `0.2`, which has no field for it. A [frozen install](#frozen-lockfile) refuses rather than ignore your intent.
+
+    **Fix:** run one plain `facet install` to migrate the lockfile, then commit it.
+  </Accordion>
+
+  <Accordion title="facets.json and the lockfile disagree under a frozen install">
+    **Cause:** the manifest and lockfile record different versions, sources, or materialization intent, and frozen mode never rewrites the lockfile.
+
+    **Fix:** it depends on what drifted, and the `fix:` line says which case you are in.
+
+    - Nothing stale: run `facet install` without the flag, or `facet add`, then commit the lockfile.
+    - Only stale overrides: remove those materialization choices from `facets.json`, or re-run without the flag to drop them.
+    - Both: re-run without the flag, which records the drift and drops the stale choices in one run.
+  </Accordion>
+
+  <Accordion title="integrity mismatch on install">
+    **Cause:** a materialized file no longer matches the [per-file integrity](/specification/lockfile) in `facets.lock`, usually an edit or corruption on disk.
+
+    **Fix:** re-run `facet install`. It repairs a drifted file in place without touching files you added yourself.
+
+    When the archive itself disagrees with the lockfile, re-running will not help. Delete `facets.lock` and re-run, or [`facet add`](/cli/add) the facet to refresh its entry.
+  </Accordion>
+
+  <Accordion title="cached content does not match the lockfile">
+    **Cause:** the cache slot for that version disagrees with the integrity your lockfile records.
+
+    **Fix:** delete that version's directory under [`$FACET_DIR`](/cli/env)`/cache/` and re-run, which re-downloads and re-verifies it.
+  </Accordion>
+
+  <Accordion title="cannot create a lockfile entry without registry confirmation">
+    **Cause:** the content resolved, but the registry could not confirm its published fingerprint, so writing a lockfile entry would record something unverified.
+
+    **Fix:** restore registry access and re-run. This is not fixed by clearing the cache: the content was fine, the confirmation was missing.
+  </Accordion>
+
+  <Accordion title="invalid materialization alias">
+    **Cause:** an `as` value does not satisfy the [asset-name grammar](/specification/manifest#asset-names): 1 to 64 characters of lowercase letters, digits, and hyphens, with no leading, trailing, or repeated hyphen. An alias is a single segment, so `team/planning` is rejected too.
+
+    **Fix:** correct the alias at the `facets.json` path the error names. Aliases are never auto-corrected.
+  </Accordion>
+
+  <Accordion title="the chosen names still conflict">
+    **Cause:** the names you picked in the resolver still collide with each other or with another claimant.
+
+    **Fix:** re-run and choose names that differ. The resolver does not reopen automatically, and nothing was written.
+  </Accordion>
+
+  <Accordion title="more than one selected adapter configures the same file">
+    **Cause:** several connected adapters manage the same MCP configuration file. Each plans against the file as it stands, so whichever wrote second would apply a plan computed from replaced content. The run stops before approval.
+
+    **Fix:** deselect one of the named adapters, for example with [`facet adapter remove`](/cli/adapters/remove). Which tool owns the file is your decision.
+  </Accordion>
+
+  <Accordion title="a tool's MCP configuration cannot be read or written">
+    **Cause:** an adapter could not read, parse, or validate its native configuration. The usual reason is a hand edit that left the file invalid.
+
+    **Fix:** repair the named file and re-run. The document is left byte-for-byte unchanged.
+
+    One variant is not a broken file: when a declaration contains a value your tool would expand rather than use literally, the run reports an interpolation conflict naming the server and the value. Fix or omit that server in `facets.json` instead.
+  </Accordion>
+
+  <Accordion title="a tool's MCP configuration changed while the command was running">
+    **Cause:** every plan is recomputed immediately before it is written. Something changed the named file in between, so what would be written is no longer what you approved.
+
+    **Fix:** re-run. Anything the run had already written is rolled back first, and the `fix:` line reports what was left on disk.
+  </Accordion>
+
+  <Accordion title="a planned change was refused">
+    **Cause:** a file moved between planning and writing, something that is not a plain file occupies a path, or the write failed at the filesystem level.
+
+    **Fix:** the `fix:` line names the path and the reason. Resolve that one path, then re-run. Nothing is left half-applied.
+  </Accordion>
+</AccordionGroup>
 
 ## See also
 
-- [`facet add`](/cli/add)  -- adds a new facet to `facets.json` and installs it in one step.
-- [`facet adapter add`](/cli/adapters/add)  -- install adapters that `facet install` materializes facets into.
-- [Installation specification](/specification/install)  -- the two-phase pipeline this command runs.
+- [`facet add`](/cli/add)
+- [`facet update`](/cli/update)
+- [`facet remove`](/cli/remove)
+- [Install guarantees](/specification/install)

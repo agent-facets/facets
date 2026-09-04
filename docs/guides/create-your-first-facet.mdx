@@ -3,39 +3,33 @@ title: Create Your First Facet
 description: Scaffold, author, build, and verify a facet
 ---
 
-By the end of this guide you will have a working `.facet` file ready to publish or share. Make sure you have the CLI installed first  -- see [Setup & Prerequisites](/guides/setup).
+By the end of this guide you will have a working `.facet` file ready to publish or share. Install the CLI first: see [Setup & Prerequisites](/guides/setup).
 
 <Visibility for="agents">
 
-> **Authoring a facet? Read the CLI's own agent instructions first.** The CLI
-> is the single source of truth for the non-interactive authoring workflow:
+> **Authoring a facet? Read the CLI's own agent instructions first.**
 >
 > ```sh
-> facet instructions authoring   # scaffold → modify → verify, headless
-> facet instructions manifest    # facet.json structure + generated JSON Schema
+> facet instructions authoring   # scaffold, modify, verify, headless
+> facet instructions manifest    # facet.json structure and JSON Schema
 > ```
 >
-> The short version:
->
 > ```sh
-> # 1. Scaffold headlessly (no wizard). A default README.md is written and
-> #    declared unless you pass --no-readme:
 > facet create my-facet \
 >   --name my-facet --description "My first facet" \
 >   --skill code-review --agent reviewer --command review-pr
 >
-> # 2. Write the asset files: skills/<name>/SKILL.md, agents/<name>.md,
-> #    commands/<name>.md. Change the manifest with `facet modify`
-> #    (e.g. descriptions, adapter config) instead of `facet edit`.
 > facet modify skill code-review --description "Guidelines for reviewing code"
 >
-> # 3. Validate without producing an artifact, then build:
 > facet build --verify
 > facet build
 > ```
 >
-> See [`facet instructions`](/cli/instructions), [`facet create`](/cli/authoring/create),
-> [`facet modify`](/cli/authoring/modify), and [`facet build`](/cli/authoring/build).
+> Write asset files at `skills/<name>/SKILL.md`, `agents/<name>.md`, and
+> `commands/<name>.md`. Change the manifest with `facet modify`, not by hand.
+>
+> See [`facet create`](/cli/authoring/create),
+> [`facet modify`](/cli/authoring/modify), [`facet build`](/cli/authoring/build).
 
 </Visibility>
 
@@ -43,7 +37,7 @@ By the end of this guide you will have a working `.facet` file ready to publish 
 
 ## Scaffold a new facet
 
-Scaffold a facet in one command. Pass the assets you want and the CLI writes the manifest plus a starter file for each:
+Pass the assets you want and the CLI writes the manifest plus a starter file for each:
 
 ```sh
 facet create my-facet \
@@ -52,7 +46,7 @@ facet create my-facet \
 ```
 
 <Tip>
-  Prefer a guided setup? Run `facet create my-facet` with no flags for an interactive wizard. See [`facet create`](/cli/authoring/create).
+  Run `facet create my-facet` with no authoring flags for an interactive wizard. See [`facet create`](/cli/authoring/create).
 </Tip>
 
 That gives you:
@@ -66,13 +60,13 @@ my-facet/
 └── commands/review-pr.md
 ```
 
-Each asset type has a conventional path: skills at `skills/<name>/SKILL.md`, agents at `agents/<name>.md`, commands at `commands/<name>.md`. Asset names are single-segment [Agent Skills names](/specification/manifest#asset-names) (lowercase ASCII, digits, and hyphens; no slashes), even when the facet identity is scoped (`@scope/name`); skills and commands share one namespace and can't reuse a name. `facet create` also writes an editable `README.md` by default and declares it in the manifest's top-level `files` — pass `--no-readme` to skip it.
+Each text-asset type has a conventional path. Asset names are single segment: lowercase ASCII, digits, and hyphens, with no slashes. Skills and commands share one namespace, so they cannot reuse a name. See [Asset names](/specification/manifest#asset-names).
 
 ## Understand the manifest
 
 `facet.json` is the source of truth for what the facet contains:
 
-```json
+```json facet.json
 {
   "name": "my-facet",
   "version": "0.0.0",
@@ -84,13 +78,13 @@ Each asset type has a conventional path: skills at `skills/<name>/SKILL.md`, age
 }
 ```
 
-Each asset type is a map of name to descriptor. A descriptor needs a `description` and may carry optional `adapters` metadata. The name maps to the file at its conventional path. At least one asset is required. The full schema and name grammar live in the [manifest specification](/specification/manifest).
+Each text-asset type maps a name to a descriptor. A descriptor needs a `description` and may carry optional `adapters` metadata. A facet needs at least one asset, which can be an MCP server instead. The full schema lives in the [manifest specification](/specification/manifest).
 
 ### Ship supporting files
 
-The top-level `files` array declares [supplementary files](/specification/manifest#supplementary-files) — non-asset files like `README.md`, `LICENSE`, or design notes. They ship inside the archive and are integrity-protected, but never materialize on disk at install. A skill can also declare `files` of its own — **companion files** (references, scripts, templates) that install and remove atomically with the skill:
+The top-level `files` array declares [supplementary files](/specification/manifest#supplementary-files) such as `README.md` or `LICENSE`. They ship in the archive and are integrity-protected, but never install onto disk. A skill can declare its own `files`, which install and remove with it:
 
-```json
+```json facet.json
 {
   "skills": {
     "code-review": {
@@ -102,9 +96,9 @@ The top-level `files` array declares [supplementary files](/specification/manife
 }
 ```
 
-Declare exact paths only (no globs). Top-level paths can't point under `skills/`, and a skill's `files` are relative to its own directory and can't list `SKILL.md`. Supplementary bytes ship verbatim — binary and empty files are fine, and front matter is never parsed.
+Declare exact paths, not globs. Top-level paths cannot point under `skills/`, and a skill's paths are relative to its own directory and cannot list `SKILL.md`. Binary and empty files are fine.
 
-You rarely hand-edit `facet.json` for routine changes  -- [`facet modify`](/cli/authoring/modify) does it for you:
+For routine manifest changes, use [`facet modify`](/cli/authoring/modify):
 
 ```sh
 facet modify skill code-review --description "Guidelines for reviewing code"
@@ -113,19 +107,19 @@ facet modify facet --version 0.1.0
 
 ## Write your content
 
-Open each starter file and replace the template with your content. The files are plain markdown. Asset metadata lives in the manifest, not the file, so a primary asset file MUST NOT carry YAML front matter — set `description` and adapter config with `facet modify` instead.
+Replace each starter file with your own markdown.
 
-**`skills/code-review/SKILL.md`**  -- a [skill](/docs/learn/skills) provides reusable guidelines, following the [Agent Skills specification](https://agentskills.io/specification):
+**`skills/code-review/SKILL.md`** holds reusable guidelines, following the [Agent Skills specification](https://agentskills.io/specification):
 
 ```markdown
 # Code Review
 
 - Check new files are in the right directory and imports are tidy.
 - Look for off-by-one errors, unawaited async, and missing error handling.
-- Every new function needs a test; cover edge cases (empty, null, boundaries).
+- Every new function needs a test. Cover empty, null, and boundary cases.
 ```
 
-**`agents/reviewer.md`**  -- an agent's content is its system prompt:
+**`agents/reviewer.md`** is the agent's system prompt:
 
 ```markdown
 You are a code reviewer. Review changes for correctness, style, and
@@ -133,7 +127,7 @@ maintainability. Distinguish blocking issues from suggestions, and when
 you find a bug, explain why and suggest a fix.
 ```
 
-**`commands/review-pr.md`**  -- a command is a user-invokable workflow:
+**`commands/review-pr.md`** is a workflow the user invokes:
 
 ```markdown
 Review the current pull request: read the diff against the base branch,
@@ -141,10 +135,10 @@ check each changed file for logic errors, missing error handling, and
 untested paths, then summarize findings as "blocking" or "suggestion".
 ```
 
-<Tip>
-  Adapter-specific settings (tool lists, model preferences, permissions) live in the manifest, not the content file.
+Asset identity lives in the manifest. A primary file may carry YAML front matter, which ships verbatim, but at install time the manifest's `name` and `description` are merged over it. Set metadata with `facet modify` rather than in front matter.
 
-  Set them with `facet modify`:
+<Tip>
+  Adapter-specific settings such as tool lists or model preferences also live in the manifest:
 
   ```sh
   facet modify agent reviewer --adapter-opencode '{"tools":{"grep":true,"bash":true}}'
@@ -153,34 +147,30 @@ untested paths, then summarize findings as "blocking" or "suggestion".
 
 ## Verify, then build
 
-Check that the manifest and every asset are valid  -- without producing an artifact  -- using `--verify`:
+Validate without producing an artifact:
 
 ```sh
 facet build --verify
 ```
 
-When it passes, build the distributable `.facet`:
+When it passes, build the distributable archive:
 
 ```sh
 facet build
 ```
-
-On success the archive lands in `dist/`:
 
 ```
 dist/
 └── my-facet-0.0.0.facet
 ```
 
-A scoped identity renders as a nested path: `@acme/my-facet` at `0.0.0` writes to `dist/@acme/my-facet-0.0.0.facet`. The `.facet` file is the single distributable artifact; pass `--emit-manifest` to also write a loose `build-manifest.json` for debugging. See [`facet build`](/cli/authoring/build).
+A scoped identity nests: `@acme/my-facet` writes to `dist/@acme/my-facet-0.0.0.facet`. See [`facet build`](/cli/authoring/build).
 
 ## Keep editing
 
-Two ways to change a facet after scaffolding:
+- [`facet modify`](/cli/authoring/modify) makes one scriptable change at a time. This is the fastest path.
+- [`facet edit`](/cli/authoring/edit) is an interactive workbench that also reconciles `facet.json` with files you added, renamed, or removed on disk.
 
-- **[`facet modify`](/cli/authoring/modify)**  -- scriptable, one change per command. Add, remove, rename, or re-describe assets, set adapter config, or update facet metadata. This is the fastest path (and what agents use).
-- **[`facet edit`](/cli/authoring/edit)**  -- an interactive workbench that also reconciles drift between `facet.json` and files you added, renamed, or removed on disk, adopts skill companions and root files like `LICENSE`, and has a dedicated panel for authoring `README.md`.
-
-Whichever you use, finish with `facet build --verify` to confirm the facet still builds.
+Finish with `facet build --verify` to confirm the facet still builds.
 
 </Visibility>

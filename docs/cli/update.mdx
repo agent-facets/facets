@@ -9,82 +9,87 @@ description: Move declared facets to newer releases
 facet update
 ```
 
-Checks every registry-backed facet in `facets.json` for a newer release and installs the ones that move. `facet upgrade` is an alias of the same command — same flags, same output, same exit codes.
+Checks every registry-backed facet in `facets.json` for a newer release, then installs the ones that move. Applying an update is an ordinary [install](/cli/install), so it reports the same outcomes and honors the same approvals.
 
-This updates the **facets your project declares**. To update the `facet` binary itself, use [`facet self-update`](/cli/self-update).
+`facet upgrade` is an alias of this command, with the same flags, output, and exit codes. Both act on the facets your project declares. To update the `facet` binary, use [`facet self-update`](/cli/self-update).
 
-`facet update` does not accept positional arguments. To update some facets but not others, use [`--interactive`](#param-interactive).
+`facet update` takes no positional arguments. To update some facets but not others, use `--interactive`.
 
 ## Examples
 
 ```sh
-facet update                    # take the newest release each range allows
-facet update --latest           # take the newest release, ignoring ranges
-facet update --dry-run          # print the plan; change nothing
+facet update                    # newest release each declared range allows
+facet update --latest           # newest release, ignoring ranges
+facet update --dry-run          # print the plan, change nothing
 facet update --interactive      # choose per facet, and which version each takes
 ```
 
 ## Flags
 
 <ResponseField name="--latest" type="boolean">
-  Update to each facet's latest release, ignoring the range in `facets.json`. Short form: `-L`.
+  Take each facet's latest release, ignoring the range in `facets.json`. Short form `-L`.
 
-  Because the selected version may fall outside what the project declares, this is the only mode that rewrites the specifier — see [Crossing the declared range](#crossing-the-declared-range).
+  This is the only mode that rewrites a specifier. See [Crossing the declared range](#crossing-the-declared-range).
 
-  It has no effect alongside `--interactive`, which already opens every row on its latest release. The combination is accepted, not rejected.
+  It has no effect alongside `--interactive`, which already opens every row on its latest release.
 </ResponseField>
 
 <ResponseField name="--interactive" type="boolean">
-  Choose which facets to update, and which version each one takes. Short form: `-i`.
+  Choose which facets move and which version each takes. Short form `-i`.
 
-  Every row opens on its **latest** release with nothing selected, so `Space` takes the newest version of that facet — see [Choosing interactively](#choosing-interactively).
-
-  Requires a terminal that can prompt. Without one, the command fails **before** contacting the registry rather than after.
+  Requires a terminal. Without one the command fails before contacting the registry.
 </ResponseField>
 
 <ResponseField name="--dry-run" type="boolean">
-  Print the plan; do not modify any files. Exits `0` whether or not updates are available.
+  Print the plan and modify nothing. Exits `0` whether or not updates are available.
 </ResponseField>
 
 <ResponseField name="--verbose" type="boolean">
-  Show detailed step output on stderr. Verbose output never reproduces an MCP server declaration — see [Where declarations appear](/cli/install#where-declarations-appear).
+  Show detailed step output on stderr. Declaration contents never appear here. See [where declarations appear](/cli/install#where-declarations-appear).
 </ResponseField>
 
 <ResponseField name="--accept-mcp" type="boolean">
-  Approve the MCP server configuration this update would write, without prompting.
-
-  An update is an install, so it collects the same approval on the same terms as [`facet install`](/cli/install#param-accept-mcp). It does **not** authorize an [asset takeover](/cli/install#taking-over-an-existing-file) or resolve an asset [name collision](/cli/install#name-collisions).
+  Approve the [MCP configuration](/cli/install#accept-mcp) this update would write, without prompting.
 </ResponseField>
 
-<Note>
-There is no `--frozen-lockfile`. Frozen mode reproduces what the lockfile already records, which is the opposite of what this command does. It belongs to [`facet install`](/cli/install#param-frozen-lockfile).
-</Note>
+There is no `--frozen-lockfile` here. Frozen mode reproduces what the lockfile records, which is the opposite of what this command does, and it belongs to [`facet install`](/cli/install#frozen-lockfile).
 
 ## Exit codes
 
 | Code | Meaning |
-| ---- | ------- |
-| `0`  | Updates applied, a successful [no-op](#when-nothing-moves), or a completed `--dry-run`. |
-| `1`  | Positional arguments, `--interactive` without a terminal, a cancelled picker, a project that [cannot be checked](#when-the-project-cannot-be-checked), a failed registry lookup, a [stale plan](#when-the-project-moves-mid-run), or a failed install. |
-| `2`  | An unexpected error escaped command handling. |
+| --- | --- |
+| `0` | Updates applied, a successful [no-op](#when-nothing-moves), or a completed `--dry-run`. |
+| `1` | The command refused to run, the picker was cancelled or unavailable, or the install failed. See [Troubleshooting](#troubleshooting). |
+| `2` | An unexpected error escaped command handling. |
 
-## Current, Target, and Latest
+## Output
+
+```
+  1 updated · 2 assets written
+  viper-plans 1.2.0 → 1.4.0
+```
+
+Each moving facet is named with the version it left and the version it took. Recorded aliases and omissions survive a version change, and outcomes match [`facet install`](/cli/install#outcomes).
+
+## Details
+
+### Current, Target, and Latest
 
 Every checkable facet has three versions, and the plan shows all three:
 
 <ResponseField name="current" type="installed">
-  The exact version `facets.lock` records as installed.
+  The exact version `facets.lock` records.
 </ResponseField>
 
 <ResponseField name="target" type="range-respecting">
-  The newest release the specifier in `facets.json` already permits. Selecting it never changes what the project declares.
+  The newest release the specifier in `facets.json` already permits. Taking it never changes what the project declares.
 </ResponseField>
 
 <ResponseField name="latest" type="newest published">
-  The registry's newest release, regardless of the declared specifier.
+  The registry's newest release, whatever the specifier says.
 </ResponseField>
 
-All three are shown even for a facet that is not moving, because that is what answers "why is this one staying put?":
+All three appear even for a facet that is not moving, because that is what answers why it stayed put:
 
 ```
   facet        declared  current  target  latest
@@ -92,25 +97,23 @@ All three are shown even for a facet that is not moving, because that is what an
   cowsay       2.1.*     2.1.3    2.1.3   3.0.0
 ```
 
-Here `viper-plans` moves to `1.4.0` under a plain `facet update`. `cowsay` does not move at all: its range allows nothing newer than what is installed, and reaching `3.0.0` requires `--latest`.
+`viper-plans` moves to `1.4.0` under a plain update. `cowsay` does not move, and reaching `3.0.0` needs `--latest`.
 
 Plain `facet update` takes every Target that advances. `--latest` takes every Latest that advances.
 
-## Crossing the declared range
+### Crossing the declared range
 
-`--latest` may select a version the declared specifier forbids, so it rewrites that specifier — by the smallest edit that admits the new version while preserving how you chose to express intent:
+`--latest` can select a version the declared specifier forbids, so it rewrites that specifier with the smallest edit that admits the new version:
 
 ```
     facets.json 1.* → 2.*
 ```
 
-A pin stays a pin, a major wildcard stays a major wildcard, and a specifier that already floats is left exactly as written. The complete table lives in the [manifest-write policy](/specification/commit#manifest-write-policy).
+A pin stays a pin, a wildcard keeps its shape, and a specifier that already floats is left as written. The full table is in the [manifest write policy](/specification/install#manifest-write-policy).
 
-Selecting a Target never rewrites anything: the specifier already permits that version, so the declared intent has not changed.
+Taking a Target never rewrites anything.
 
-## Choosing interactively
-
-`--interactive` lists every facet with an advancing version and lets you pick both which facets move and which version each one takes:
+### Choosing interactively
 
 ```
     facet        current  target  latest
@@ -122,102 +125,102 @@ Selecting a Target never rewrites anything: the specifier already permits that v
 ↑↓ move · ◀ ▶ target/latest · Space select · Enter confirm · Esc cancel
 ```
 
-Every row shows all three versions at once, because the choice this screen exists for is a comparison. Only the digit that actually moves is coloured — green for a patch, amber for a minor, coral for a major — so the size of each jump is visible without reading the numbers twice. The column a row would install is named in words, so the screen still works with colour disabled.
+Every row opens on its Latest with nothing selected, so `Space` takes the newest release of that facet and a facet you never touch is left alone. Move a row to `target` first to take the version your declared range already permits.
 
-**Every row starts on its Latest, with nothing selected.** Move down the list and press `Space` on the facets you want; each one takes its newest release. Nothing is chosen for you, so `Space` always means "yes, this one" — and a facet you never touch is simply left alone. `--latest` changes none of this; it is how the *non-interactive* run says what this screen already offers.
+Only the digit that moves is coloured, and the column a row would install is also named in words, so the screen works without colour. A row already at the installed version cannot be selected, and confirming needs at least one selection.
 
-`↑↓` moves between facets, wrapping at the ends. `◀ ▶` moves between the two columns and clamps instead, so holding one down settles on a column rather than oscillating. `l` also flips the focused row. Move a row to `target` before selecting it to take the version your declared range already permits instead.
+Selection happens before adapter discovery and before anything is written, so cancelling costs nothing.
 
-A row showing a version that is already installed cannot be selected — pressing `Space` there says so rather than silently doing nothing. That is what you see on a pinned facet after moving it to `target`. Confirming requires at least one selected facet.
+### Previewing
 
-Selection happens **before** adapter selection and before anything is written, so `Esc` or `Ctrl-C` costs nothing: the command reports that nothing was applied and exits `1`.
+`--dry-run` prints the plan and writes nothing: no manifest, no lockfile, no assets, no cache, and no adapter installation. That also means a preview works on a machine with no adapter connected.
 
-Without a terminal that can prompt — CI, piped output — `--interactive` fails immediately, before any registry lookup, and points at plain `facet update` or `facet update --latest`.
-
-## Previewing
-
-`--dry-run` prints the plan and modifies nothing: no manifest, no lockfile, no receipt, no assets, no cache, and no adapter installation. Combined with `--interactive`, it previews the selection you confirmed and stops there.
-
-A preview always prints the plan, including when nothing would move — with no row marked and no `facets.json` edit shown, followed by the reason. The plan is what the reason was read off: which facet is pinned, which is already current, which range is holding one back. A run without `--dry-run` prints the reason alone.
+A preview always prints the plan, including when nothing would move, followed by the reason. A real run prints the reason alone. Combined with `--interactive` it previews the selection you confirmed.
 
 <Note>
-A preview shows **versions**, not their downstream effects. Which assets a new release materializes, whether it collides with another facet, and what MCP configuration it declares are all determined during the install that a real run performs.
+  A preview shows versions, not their effects. Which assets a release materializes, whether it collides, and what it declares are determined during the install a real run performs.
 </Note>
 
-## What it does
+### When nothing moves
 
-<Steps>
-  <Step title="Discover, without taking the project lock">
-    Reads `facets.json` and `facets.lock`, then asks the registry for each facet's range Target and its Latest. This phase writes nothing and takes no lock, so reading a plan never blocks another facet operation on the machine. A single failed lookup rejects the whole discovery rather than presenting a partial answer.
-  </Step>
-  <Step title="Select">
-    Applies the mode's default choices, or the ones you confirmed in the picker. A `--dry-run` stops here.
-  </Step>
-  <Step title="Apply through the install pipeline">
-    Confirms the project has not changed since the plan was reviewed, then runs the ordinary [install pipeline](/specification/install) for the selected facets — the same verification, collision detection, [MCP approval](/cli/install#mcp-servers), materialization, rollback, and atomic [tri-write](/specification/commit#transactional-tri-write) as every other install. The reviewed version is installed as chosen; a release published between review and application does not change it.
-  </Step>
-</Steps>
-
-The summary reports each facet's move:
-
-```
-  1 updated · 2 assets written
-  viper-plans 1.2.0 → 1.4.0
-```
-
-Recorded [materialization](/specification/materialization) choices — aliases and omissions — survive a version change. Outcomes, counts, and collision behavior are identical to [`facet install`](/cli/install#outcomes).
-
-## When nothing moves
-
-A run that applies nothing still succeeded, and exits `0`. Which kind of nothing it is decides whether you have anything to do about it. Under `--dry-run` the plan is printed first, so you can check the reason against the rows it came from:
+A run that applies nothing still succeeded and exits `0`.
 
 | Output | What it means |
-| ------ | ------------- |
-| `No registry facets to update.` | Nothing in the project is registry-backed. Only registry facets can be checked. |
-| `All registry facets are current.` | Every facet is already at the newest release that exists. |
-| `Newer releases exist, but the ranges in facets.json permit none of them.` | Something newer was published, and your specifiers forbid it. The message names `facet update --latest` as the way to take it. |
+| --- | --- |
+| `No registry facets to update.` | Nothing in the project is registry-backed. |
+| `All registry facets are current.` | Every facet is at the newest release that exists. |
+| `Newer releases exist, but the ranges in facets.json permit none of them.` | Your specifiers forbid what was published. Take them with `--latest`. |
 | `No registry facet has a newer release than the one installed.` | Under `--latest`, with nothing left to suggest. |
 
-## Sources that cannot be checked
+### Sources that cannot be checked
 
-Only registry facets have releases to compare. Git and local facets are **named** in the plan rather than counted as current:
+Only registry facets have releases to compare. Git and local facets are named in the printed plan rather than counted as current:
 
 ```
   scratch — local source (./packages/scratch); not checked for updates
 ```
 
-Reporting them as up to date would claim something nothing verified. Move one by editing its source in `facets.json` and running [`facet install`](/cli/install).
+Because a plain run prints only the reason, use `--dry-run` to see these rows. Move one by editing its source in `facets.json` and running [`facet install`](/cli/install).
 
-## When the project cannot be checked
+## Troubleshooting
 
-If a declared registry facet is missing from `facets.lock`, locked to a different kind of source, locked at something that is not an exact release, or locked at a version its specifier no longer permits, update refuses to guess and exits `1`. It names **every** affected facet, because one [`facet install`](/cli/install) covers all of them:
+<AccordionGroup>
+  <Accordion title="this project cannot be checked for updates yet">
+    **Cause:** `facets.json` and `facets.lock` disagree. A declared registry facet is missing from the lockfile, locked to a different source kind, locked at something that is not an exact release, or locked at a version its specifier no longer permits. The message names every affected facet.
 
-```
-error: this project cannot be checked for updates yet
-fix: run 'facet install' to bring facets.lock in line with facets.json, then update again
-```
+    **Fix:** repair the drift first, then update:
 
-Repairing lockfile drift is `facet install`'s job, not this command's.
+    ```sh
+    facet install
+    facet update
+    ```
+  </Accordion>
 
-## When the project moves mid-run
+  <Accordion title="facets.json declares a source that cannot be parsed">
+    **Cause:** an entry's specifier is malformed, so update cannot tell what it is meant to resolve to.
 
-If `facets.json` or `facets.lock` changes between reading the plan and applying it, the update is withdrawn before anything is written and exits `1`. Nothing is broken and nothing needs repairing — the plan simply described a project that no longer exists. Re-run `facet update` to plan against the current state.
+    **Fix:** correct that entry in `facets.json` by hand. `facet install` cannot repair a malformed specifier.
+  </Accordion>
 
-## Project facets vs. the CLI binary
+  <Accordion title="the project changed while the update ran">
+    **Cause:** `facets.json` or `facets.lock` changed while the plan was being built, or between reading the plan and applying it. A concurrent command, a pull, or an editor save will do it.
 
-Four command names sit one keystroke apart. The `self-` prefix is what separates them:
+    **Fix:** re-run `facet update`. Nothing was written in either case, so nothing needs repairing.
+  </Accordion>
 
-| Command | Acts on |
-| ------- | ------- |
-| `facet update`, `facet upgrade` | The facets declared in this project's `facets.json`. |
-| `facet self-update`, `facet self-upgrade` | The `facet` CLI binary itself. |
+  <Accordion title="facet update --interactive needs an interactive terminal">
+    **Cause:** the picker needs a TTY. The check runs before any registry lookup.
 
-Neither touches the other.
+    **Fix:** use a non-interactive mode instead:
+
+    ```sh
+    facet update            # every range-respecting target
+    facet update --latest   # every latest release
+    facet update --dry-run  # print the plan, change nothing
+    ```
+  </Accordion>
+
+  <Accordion title="the update selection screen could not be shown">
+    **Cause:** the terminal check passed, but the picker could not render, for example because stdin was taken away mid-run.
+
+    **Fix:** re-run in a normal terminal, or pick a non-interactive mode. Nothing was applied.
+  </Accordion>
+
+  <Accordion title="facet update does not accept positional arguments">
+    **Cause:** update considers everything declared in `facets.json`.
+
+    **Fix:** choose per facet with `facet update --interactive`.
+  </Accordion>
+
+  <Accordion title="the registry returned an unusable version">
+    **Cause:** the registry answered with something that is not an exact release, or resolved a facet outside its declared range. Your project cannot cause this.
+
+    **Fix:** retry shortly. If it persists, report it with the facet name from the message.
+  </Accordion>
+</AccordionGroup>
 
 ## See also
 
-- [`facet install`](/cli/install) — the pipeline an update runs, and every outcome it reports.
-- [`facet add`](/cli/add) — add a facet, or pin an existing one to an exact version.
-- [`facet self-update`](/cli/self-update) — update the CLI binary.
-- [`facet upgrade`](/cli/upgrade) — the alias.
-- [Commit specification](/specification/commit#resolve) — how a reviewed version is resolved and written.
+- [`facet install`](/cli/install)
+- [`facet add`](/cli/add)
+- [`facet self-update`](/cli/self-update)

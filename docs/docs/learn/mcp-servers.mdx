@@ -1,0 +1,51 @@
+---
+title: MCP Servers
+description: Portable server declarations in a facet
+---
+
+A facet can declare [MCP servers](/specification/manifest#mcp-server-declarations) alongside its skills, commands, and agents. A declaration is portable connection information, not a package reference: there is no server registry, version range, or image.
+
+A server is an asset, but not a [text asset](/specification/manifest#text-assets). It is versioned, integrity-checked, and materialized on install like the rest of a facet, but it lands in a different place: a keyed entry inside each connected tool's configuration rather than a file your project owns. A facet may declare servers and nothing else.
+
+## Example
+
+```json facet.json
+{
+  "servers": {
+    "filesystem": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]
+    },
+    "docs": { "type": "http", "url": "https://mcp.example.com/docs" }
+  }
+}
+```
+
+A `stdio` server names a command and its ordered arguments. An `http` server names an absolute URL. Declaration objects are closed: an unrecognized member is rejected rather than ignored.
+
+## Approval
+
+Configuring a server lets your coding tool run a command or open a connection, so a new or changed declaration needs your approval before anything is written. Interactive runs show one screen with Decline selected by default. Non-interactive runs need [`--accept-mcp`](/cli/install#mcp-servers).
+
+Approval is machine-local. It is never recorded in `facets.json` or `facets.lock`, so a teammate who clones your project approves on their own machine.
+
+## Naming and refusal
+
+Servers are aliased and omitted per project exactly like text assets, under the `servers` group in [`facets.json`](/specification/project-manifest). They occupy their own identity space, so a server named `deploy` never collides with a skill, command, or agent named `deploy`.
+
+Two facets declaring the same server identically agree and produce one entry. Two facets declaring different servers at one name is a collision you resolve like any other.
+
+## What Facets does not do
+
+Facets writes configuration. It never installs, launches, connects to, health-checks, or authenticates to a declared server, and stores no credentials. Sign-in happens in your coding tool afterwards.
+
+<Warning>
+  `env` values are literal strings that ship inside the published archive. Never put a secret in one.
+</Warning>
+
+## Further reading
+
+- [MCP server declarations](/specification/manifest#mcp-server-declarations)
+- [`facet install`](/cli/install#mcp-servers)
+- [Adapters](/docs/learn/adapters)

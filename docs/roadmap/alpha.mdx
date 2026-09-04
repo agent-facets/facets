@@ -1,43 +1,21 @@
 ---
 title: Pre-Release Alpha
 sidebarTitle: Alpha
-description: The current phase — what's shipped today
+description: The current phase, and what has shipped
 ---
 
-The alpha is the **current phase**. The core loop  -- author, publish, discover, install  -- is live end to end against the public registry at [agentfacets.io](https://agentfacets.io).
+The alpha is the current phase. The core loop of author, publish, discover, and install is live end to end against the public registry at [agentfacets.io](https://agentfacets.io).
 
 ## Shipped
 
-**Authoring**
+- **Authoring.** Scaffold, edit, and package a facet with [`facet create`](/cli/authoring/create), [`facet edit`](/cli/authoring/edit), [`facet modify`](/cli/authoring/modify), and [`facet build`](/cli/authoring/build).
+- **Registry.** Publish, discover, and authenticate with [`facet publish`](/cli/authoring/publish), [`facet search`](/cli/search), and [`facet login`](/cli/login).
+- **Project management.** Add, install, update, remove, and inspect with [`facet add`](/cli/add), [`facet install`](/cli/install), [`facet update`](/cli/update), [`facet remove`](/cli/remove), and [`facet list`](/cli/list).
+- **Platform.** First-party [adapters](/docs/learn/adapters) for Claude Code, OpenCode, and Codex, a public [adapter SDK](/reference/adapter-sdk), agent guidance via [`facet instructions`](/cli/instructions), and in-place binary updates with [`facet self-update`](/cli/self-update).
 
-- [`facet create`](/cli/authoring/create)  -- scaffold a facet, interactively or headless via flags
-- [`facet edit`](/cli/authoring/edit)  -- interactive authoring workbench with disk/manifest reconciliation
-- [`facet modify`](/cli/authoring/modify)  -- headless, scriptable edits (assets, metadata, adapter config)
-- [`facet build`](/cli/authoring/build)  -- validate and package; `--verify` for a no-output validation pass, `--json` for machine-readable results
+## Caveats
 
-**Registry**
+- Published versions are immutable, but registry policies such as review queues and name reservations are still being tuned.
+- Breaking CLI changes may still ship between alpha versions. Check the [changelog](/changelog).
 
-- [`facet publish`](/cli/authoring/publish)  -- upload with drift detection and immutable versions
-- [`facet search`](/cli/search)  -- discover published facets
-- [`facet login`](/cli/login) / [`facet whoami`](/cli/whoami) / [`facet logout`](/cli/logout)  -- token-based auth
-
-**Project management**
-
-- [`facet add`](/cli/add)  -- add and install in one step, registry-first source grammar
-- [`facet install`](/cli/install)  -- lockfile-driven reproducible installs, `--frozen-lockfile` for CI
-- [`facet update`](/cli/update)  -- move declared facets to newer releases (aliased `upgrade`)
-- [`facet remove`](/cli/remove)  -- transactional removal (aliased `rm`)
-- [`facet list`](/cli/list)  -- see what's declared and resolved
-
-**Platform**
-
-- [`facet adapter`](/cli/adapters/add)  -- add/list/remove adapters; first-party adapters for Claude Code, OpenCode, and Codex; a public [adapter SDK](/guides/custom-adapters) for building your own
-- [`facet instructions`](/cli/instructions)  -- built-in usage guidance for AI agents
-- [`facet self-update`](/cli/self-update)  -- update the CLI binary in place (not the project's facets  -- that is [`facet update`](/cli/update))
-
-## Alpha caveats
-
-- Published versions are immutable, but registry policies (review queues, name reservations) are still being tuned.
-- Breaking CLI changes may still ship between alpha versions  -- check the [changelog](/changelog).
-
-See the [beta goals](/roadmap/beta) for what's next.
+See the [beta goals](/roadmap/beta) for what is next.

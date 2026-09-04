@@ -9,57 +9,60 @@ description: Print CLI usage instructions for AI agents
 facet instructions [topic]
 ```
 
-`facet instructions` prints agent-oriented usage guidance for the CLI. It is **for AI agents**: workflow guidance that tells an autonomous agent how to author and use facets, rather than per-flag help (for that, use `facet <command> --help`).
+Prints agent-oriented workflow guidance: how an autonomous agent should author and use facets. For per-flag help, use `facet <command> --help`.
 
-The default topic is `overview`. It opens with a generated index of every instruction topic, then routes the agent to the right domain — authoring a facet, or using facets in a project. The index is generated from the CLI's own topic list, so it always lists exactly the topics the CLI serves.
+The default topic is `overview`, which opens with an index generated from the CLI's own topic list, so it always matches the topics the CLI serves.
 
 <Note>
-  Requires the facet CLI **v0.24.0 or newer**. If `facet instructions` reports *"Unknown command"*, update with [`facet self-update`](/cli/self-update).
+  Requires v0.24.0 or newer. If this reports "Unknown command", run [`facet self-update`](/cli/self-update).
 </Note>
 
-## Topics
-
-<ResponseField name="overview" type="default">
-  What facets are, the three artifact files, the two workflows (authoring vs. using), a command index, and a generated index of every topic.
-</ResponseField>
-
-<ResponseField name="manifest" type="topic">
-  The `facet.json` structure — including top-level and per-skill supplementary `files` — plus the JSON Schema generated live from the schema definition.
-</ResponseField>
-
-<ResponseField name="authoring" type="topic">
-  Writing facets: scaffold → modify → verify, including README and supplementary-file authoring, MCP server declarations, and per-asset adapter configuration.
-</ResponseField>
-
-<ResponseField name="usage" type="topic">
-  Project management: add/update/remove facets (registry-first), the shape of `facets.json` including materialization overrides, how to resolve a name collision without a TTY, how to approve or omit MCP servers without a TTY, and installing adapter tooling (including adapter API compatibility recovery).
-</ResponseField>
+## Examples
 
 ```sh
 facet instructions            # overview
-facet instructions manifest   # facet.json structure + generated JSON Schema
+facet instructions manifest   # facet.json structure and generated JSON Schema
 facet instructions authoring  # how to author a facet non-interactively
 facet instructions usage      # how to use facets in a project
 ```
 
 ## Exit codes
 
-| Code | Meaning                                   |
-| ---- | ----------------------------------------- |
-| `0`  | Instructions printed                      |
-| `1`  | Unknown topic (valid topics are listed)   |
+| Code | Meaning |
+| --- | --- |
+| `0` | Instructions printed. |
+| `1` | Unknown topic. The valid topics are listed. |
+| `2` | An unexpected error escaped command handling. |
 
-## The manifest schema is generated
+## Output
 
-The `manifest` topic appends the `facet.json` **JSON Schema generated at runtime from the schema definition** — it is never a hand-maintained copy, so it always matches the CLI you are running. The narrow business rules the schema cannot express (at least one deliverable — asset, composed facet, or MCP server — single-segment asset and server names, a skill and command not sharing a name, exact and collision-free supplementary `files` paths, a valid facet name) are described in prose alongside it; run [`facet build --verify`](/cli/authoring/build) to check them against a real facet.
+<ResponseField name="overview" type="default">
+  What facets are, the three artifact files, the two workflows, a command index, and a generated index of every topic.
+</ResponseField>
 
-## Related commands
+<ResponseField name="manifest" type="topic">
+  The `facet.json` structure, including top-level and per-skill supplementary `files`, plus the JSON Schema generated from the schema definition.
+</ResponseField>
 
-The instructions point agents at the non-interactive, machine-readable surfaces:
+<ResponseField name="authoring" type="topic">
+  Writing facets: scaffold, modify, verify, including README and supplementary-file authoring, MCP server declarations, and per-text-asset adapter configuration.
+</ResponseField>
 
-- [`facet create`](/cli/authoring/create) — scaffold a facet with headless flags.
-- [`facet modify`](/cli/authoring/modify) — make scriptable edits to a facet.
-- [`facet build`](/cli/authoring/build) — build, or `--verify` to validate without output.
-- [`facet add`](/cli/add) — add facets to a project (registry-first).
-- [`facet adapter`](/cli/adapters/add) — install and manage adapter tooling.
+<ResponseField name="usage" type="topic">
+  Project management: adding, updating, and removing facets, the shape of `facets.json`, resolving a name collision without a TTY, approving or omitting MCP servers without a TTY, and installing adapter tooling.
+</ResponseField>
 
+## Details
+
+### The manifest schema is generated
+
+The `manifest` topic appends the `facet.json` JSON Schema generated at runtime, so it always matches the CLI you are running.
+
+Rules the schema cannot express, such as needing at least one asset and keeping skill and command names distinct, are described alongside it. Run [`facet build --verify`](/cli/authoring/build) to check a real facet.
+
+## See also
+
+- [`facet create`](/cli/authoring/create)
+- [`facet modify`](/cli/authoring/modify)
+- [`facet build`](/cli/authoring/build)
+- [`facet adapter add`](/cli/adapters/add)

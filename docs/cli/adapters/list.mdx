@@ -9,39 +9,69 @@ description: Lists installed adapters
 facet adapter list
 ```
 
-Lists all installed adapters by inspecting the adapter base directory, `$FACET_DIR/adapters/` (see [environment variables](/cli/env) for the `FACET_DIR` layout). Each entry shows the adapter's declared adapter API and whether this CLI supports it:
+Lists every adapter installed under [`$FACET_DIR`](/cli/env)`/adapters/`, with its declared API and whether this CLI supports it. Listing keeps working when entries are unsupported or broken, which is the point: it prints the command that repairs each one.
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Listed successfully, including an empty list. |
+
+## Output
 
 ```text
 Installed adapters:
   claude-code  api 0.3      supported
   legacy-tool  api 0.2      unsupported — reinstall: facet adapter add legacy-tool
-  codex        api 0.0      unsupported — reinstall: facet adapter add codex
   opencode     api missing  unsupported — reinstall: facet adapter add opencode
   my-tool      api unknown  broken (bundle failed to load) — reinstall: facet adapter add my-tool
 ```
 
-## Output columns
+<ResponseField name="api" type="declared contract">
+  The adapter's declared API, or `api missing` when there is no declaration, `api malformed` when it is not a valid identifier, or `api unknown` when the bundle could not be read.
+</ResponseField>
 
-- **API** — the adapter's declared adapter API (`api 0.3`), or `api missing` (no declaration — typically a bundle installed before API versioning), `api malformed ("…")` (a declaration that isn't a valid API identifier), or `api unknown` (the bundle could not be read). An adapter declaring a superseded contract (`0.0`, `0.1`, `0.2`) is shown with an `unsupported` status — rebuild it against a current SDK release and reinstall.
-- **Status** — `supported` (usable by this CLI), `unsupported — reinstall: <command>` (the adapter's API declaration is missing, malformed, or names an API this CLI does not support), or `broken (<reason>) — reinstall: <command>` (invalid installation metadata, a missing active bundle, or a bundle that failed to load).
-
-<Note>
-`supported` means the adapter **loads**. It does not mean the adapter can configure MCP servers: a supported adapter may still decline MCP support. If an install fails because an adapter [cannot configure MCP servers](/cli/install#adapters-that-cannot-configure-mcp-servers), that failure names the adapter and the right fix — this listing will show it as `supported`.
-</Note>
-
-Listing stays available when entries are incompatible or broken — run it to find the best available `facet adapter add <specifier>` command next to each failing entry.
+<ResponseField name="status" type="usability">
+  `supported`, `unsupported` with a reinstall command, or `broken` with a reason and a reinstall command.
+</ResponseField>
 
 <Note>
-If an adapter was originally installed with an **exact** npm version, such as `my-adapter@1.2.3`, its printed command preserves that exact pin. Re-running it fails again when that release is incompatible rather than silently upgrading. Drop or change the exact selector — use the bare package name, `@latest`, or a wider selector such as `1.*` — so the CLI can select the highest compatible release. Git and local commands rebuild the same supplied source, so that source must itself be updated when incompatible.
+  `supported` means the adapter loads. It does not mean the adapter can configure MCP servers, which [fails separately](/cli/install#adapters-that-cannot-configure-mcp-servers).
 </Note>
 
-## Exit codes
+## Details
 
-| Code | Meaning |
-| ---- | ------- |
-| `0`  | Always — listed successfully, including an empty list |
+### Reinstall commands preserve your specifier
+
+The printed command reproduces how the adapter was installed. An adapter pinned to an exact npm version keeps that pin, so re-running it fails again rather than silently upgrading.
+
+Use the bare name, `@latest`, or a wider selector such as `1.*` to let the CLI choose a compatible release. A git or local adapter rebuilds the same source, so that source has to change.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="an adapter is listed as unsupported">
+    **Cause:** the adapter declares an API this CLI does not support, or declares none at all. This CLI supports exactly `0.3`; adapters built against `0.1` or `0.2` wrote files themselves, which the current guarantees cannot be built on.
+
+    Upgrading the CLI across that boundary marks every installed adapter unsupported at once, first-party ones included.
+
+    **Fix:** run the reinstall command printed beside the entry. Nothing is written by any command until this check passes, and [`facet adapter remove`](/cli/adapters/remove) works regardless.
+  </Accordion>
+
+  <Accordion title="an adapter's declared API disagrees with its package">
+    **Cause:** the runtime API the bundle stamps does not match what its published package declared, so the release that was selected is not the release that was built.
+
+    **Fix:** reinstalling the same version will not help. Report it to the adapter's author and install a different version.
+  </Accordion>
+
+  <Accordion title="an adapter is listed as broken">
+    **Cause:** its installation record is invalid, its active bundle is missing, or the bundle failed to load.
+
+    **Fix:** run the reinstall command printed beside the entry. If it keeps failing, remove the adapter and add it again.
+  </Accordion>
+</AccordionGroup>
 
 ## See also
 
-- [`facet adapter add`](/cli/adapters/add) -- install an adapter.
-- [`facet adapter remove`](/cli/adapters/remove) -- remove an installed adapter.
+- [`facet adapter add`](/cli/adapters/add)
+- [`facet adapter remove`](/cli/adapters/remove)

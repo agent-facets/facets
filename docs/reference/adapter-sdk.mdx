@@ -1,0 +1,156 @@
+---
+title: Adapter SDK
+description: The adapter contract and planners
+---
+
+The contract implemented by every adapter, from [`@agent-facets/adapter`](https://github.com/agent-facets/facets/tree/main/packages/adapter). To build one, start with the [Custom adapters guide](/guides/custom-adapters).
+
+Adapters are read-only. Both capabilities inspect the project, decide what should change, and return exact per-file transitions. The CLI performs every write, so an adapter is never asked to undo its own work.
+
+## Adapter fields
+
+<ResponseField name="name" type="string" required>
+  Unique adapter id, such as `my-tool`. Users install and reference the adapter by this name.
+</ResponseField>
+
+<ResponseField name="buildAssetMetadata(data)" type="Validated<AdapterMetadata>" required>
+  Validate and enrich the per-text-asset metadata from a facet's `adapters.<name>` block. Return `{ ok: true, data }` or `{ ok: false, errors }`. Runs during `facet build`.
+</ResponseField>
+
+<ResponseField name="assets" type="false | AssetCapability" required>
+  Whether this adapter materializes text assets, and how. A capability provides both `planInstall` and `planRemoval`; there is no partial form.
+</ResponseField>
+
+<ResponseField name="mcpServers" type="false | McpServerCapability" required>
+  Whether this adapter configures MCP servers, and how. `false` is a permanent answer, not a stub.
+</ResponseField>
+
+<ResponseField name="apiVersion" type="string">
+  Stamped by `defineAdapter()`. You cannot set it: the input type excludes it, and a value forced through untyped input is ignored.
+</ResponseField>
+
+## Requests
+
+Every text-asset request carries `projectRoot`, `scope`, and `name`, and is tagged by `assetType`.
+
+- `scope` is `'system'`, `'user'`, or `'project'`.
+- `assetType` is `'skill'`, `'agent'`, or `'command'`. It names the text asset types only: MCP servers are an asset too, but they reach you through the separate `mcpServers` capability and never as an `assetType` value.
+- `name` is the effective name, which is the name the consuming project chose. The set reaching you is already collision-free.
+
+<Warning>
+  `projectRoot` is the only definition of the project you may use. `process.cwd()` may be a different tree, and using it would materialize text assets somewhere else.
+</Warning>
+
+## Asset capability
+
+The `assets` capability covers text assets. MCP servers have their own capability, [below](#mcp-servers).
+
+<ResponseField name="planInstall(request)" type="Promise<PlanAssetInstallResult>">
+  Decide what installing or replacing a text asset would change. The `skill` variant carries `content`, `metadata`, a `companions` byte map, and `ownedCompanionPaths`. The `agent` and `command` variants carry `content` and `metadata`.
+
+  Return `{ occupancy: 'equivalent', action: { kind: 'unchanged' }, primaryPath }` when the destination already holds what you would write, or `{ occupancy: 'absent' | 'divergent', action: { kind: 'mutate', mutations }, primaryPath }`.
+</ResponseField>
+
+<ResponseField name="planRemoval(request)" type="Promise<PlanAssetRemovalResult>">
+  Decide what removing a text asset would change. The `skill` variant carries `ownedCompanionPaths`, and the plan removes the primary plus exactly those paths. Return `{ kind: 'absent', primaryPath }` or `{ kind: 'remove', action, primaryPath }`.
+</ResponseField>
+
+### Mutations
+
+Each mutation names an absolute `path`, the `boundary` it may work inside, and the `expected` state you observed.
+
+- `expected` is `{ kind: 'absent' }` or `{ kind: 'regular-file', contents, mode }`. It is the precondition for the write: if the file moved, the CLI refuses rather than overwriting someone else's change.
+- `boundary` is the directory you are authorized to work inside. Every path must be strictly below it.
+- A file already holding the bytes you would write contributes no mutation, so a re-install touches nothing.
+- All mutations for one operation commit together. A skill's primary, its companions, and its obsolete companions either all land or none do.
+
+`ownedCompanionPaths` is the caller-verified set of paths a previous install owns. It is the union of every past claim on that name, so it can include files a different facet left behind when the name changed hands. Never enumerate a directory to discover ownership.
+
+### Failures
+
+Expected failures are values, never thrown errors: `invalid-companion-path`, `unsupported-scope`, `io-failed`, `unsupported-object`, `unrepresentable`.
+
+## Planner helpers
+
+The SDK ships the planners the first-party adapters use:
+
+- `planSkillBundleInstall` and `planSkillBundleRemoval` for skills.
+- `planSingleFileInstall` and `planSingleFileRemoval` for agents and commands.
+
+They assemble YAML front matter, validate companion containment, capture exact prior state, and drop edits that would be byte-identical. They read only the primary file and the supplied owned companions, so unowned files are never read or swept into a removal.
+
+## MCP servers
+
+<ResponseField name="plan(request)" type="Promise<PlanMcpServersResult>" required>
+  Strictly read-only. Parse your tool's project documents once, work out the whole change, and write nothing, including when the document does not exist yet.
+
+  The request carries `projectRoot`, the complete `desired` set, and `previouslyOwnedNames`. Take ownership from that list only, never from the document or a naming convention.
+
+  Return `outcomes`, one per key: `absent`, `equivalent`, or `divergent`, each carrying `ownership: 'tracked' | 'untracked'`, plus `obsolete-owned` (carrying `occupancy`) for an owned entry the desired set no longer names.
+
+  Return an `action`: `{ kind: 'unchanged' }` or `{ kind: 'mutate', mutations }`, where each mutation names the document, the exact state you inspected, and the bytes to commit.
+
+  Return `documentPaths`: every file you read, including ones you do not change. The CLI uses it to detect two adapters managing one file before asking for approval. It confers no ownership, and a file listed there but not changed is never written or restored.
+</ResponseField>
+
+Failures are values: `io-failed`, `parse-failed`, `validation-failed`, or `conflict`. The document must be left byte-for-byte unchanged. A `conflict` carries a `reason`: `interpolation` names the server and offending value, and `native-state` names the document and your format detail. Neither carries a preformatted sentence; the CLI writes and escapes the wording.
+
+Your plan is recomputed immediately before commit, including when it changed nothing. A different second answer stops the run and reports that the tool's configuration changed mid-run.
+
+### Equality
+
+You compute equality, because only you know your tool's schema. Compare the existing entry against your own rendering of the desired declaration.
+
+- Comments, whitespace, member order, and omitted versus empty optional collections are not differences.
+- Anything that changes launch or connection behavior is a difference.
+- If you cannot prove equality, report `divergent`. An unnecessary rewrite is safe; a wrong guess keeps a server that behaves differently from what the user approved.
+
+An `equivalent` entry is adopted with no write.
+
+### What you must preserve
+
+You are editing a file the user owns.
+
+- Unrelated settings keep their values.
+- An entry that is neither desired nor owned is left untouched.
+- For an owned entry, native fields outside the portable model survive where your format allows.
+- Use a syntax-aware edit. Semantic preservation is required; comment and formatting preservation is best effort.
+- Write project-scoped configuration only. Never create or modify a user-wide or system-wide file.
+
+If your tool merges several configuration layers, read them all, classify against the merged view, then write to one. Reading only the file you would write lets an obsolete entry in another layer survive a removal.
+
+<Warning>
+  Two selected adapters may not manage the same file. If your tool reads a file another supported tool also reads, say so in your README: a user who selects both gets a failure telling them to deselect one.
+</Warning>
+
+If your tool expands placeholders inside configuration values, check every command, argument, environment value, and URL before writing and return an `interpolation` conflict when you find one. A portable declaration is literal, so writing a value your tool would substitute launches something other than what the user approved. Claude Code uses `${VAR}`; OpenCode uses `{env:...}` and `{file:...}`.
+
+Preserve a leading byte-order mark if your parser cannot accept one: strip it before parsing and restore it on write.
+
+### Helpers
+
+`readTextOrAbsent` and `prepareMcpTextPlan` handle reading a document with its exact state, the interpolation guard, classification, the no-write short-circuit, dropping byte-identical edits, and producing mutations across multiple documents. You supply which documents to read, how to parse them, how to compare an entry, and how to render an edit.
+
+To display a declaration value yourself, import `terminalLiteral`, `terminalCommandLine`, or `terminalEnvironmentAssignment` from `@agent-facets/adapter/terminal`. This is the rendering the CLI's consent screens use: printable ASCII, complete, and reversible.
+
+## API versions
+
+The current adapter API is `0.3`, the read-only planning contract. This CLI supports exactly `{0.3}`. Support is set membership, not ordering, so `0.2` is not close enough to `0.3`.
+
+Versions `0.0`, `0.1`, and `0.2` are unsupported. Under those the adapter wrote files itself, which the current guarantees cannot be built on. Rebuild against a current SDK release and reinstall.
+
+A published `package.json` must declare `"facetAdapterApiVersion": "0.3"`, and it must match what your bundle stamps at runtime or verification fails after download. The canonical constants `ADAPTER_API_VERSION` and `ADAPTER_API_VERSION_PACKAGE_FIELD` are exported from `@agent-facets/adapter/api-version`, a dependency-free entry point.
+
+## Metadata-only adapters
+
+An adapter with `assets: false` and `mcpServers: false` still validates manifest metadata during `facet build` and materializes nothing.
+
+<Note>
+  An adapter with `assets: false` is excluded from install runs, so it is never asked to configure MCP servers either. If every installed adapter declares `assets: false`, `facet add`, `facet install`, and `facet remove` fail because no adapter can materialize anything.
+</Note>
+
+## Further reading
+
+- [Custom adapters guide](/guides/custom-adapters)
+- [`facet adapter add`](/cli/adapters/add)
+- [MCP server declarations](/specification/manifest#mcp-server-declarations)

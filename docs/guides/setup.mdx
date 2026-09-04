@@ -3,7 +3,7 @@ title: Setup & Prerequisites
 description: Install the CLI, an adapter, and a token
 ---
 
-What you need before adding, authoring, or publishing facets. If you just want to try a facet, the [Quickstart](/quickstart) is faster.
+What you need before adding, authoring, or publishing facets. To just try a facet, the [Quickstart](/quickstart) is faster.
 
 <Visibility for="agents">
 
@@ -33,16 +33,16 @@ What you need before adding, authoring, or publishing facets. If you just want t
       ```
     </CodeGroup>
 
-    Keep it current with [`facet self-update`](/cli/self-update) — the newer authoring commands need **v0.24.0+**:
+    Keep it current with [`facet self-update`](/cli/self-update). The authoring commands need v0.24.0 or newer.
 
     ```sh
     facet --version
-    facet self-update   # update in place if needed
+    facet self-update
     ```
   </Step>
 
-  <Step title="Connect an adapter (required before adding facets)">
-    A facet is only useful once it's materialized into an AI tool, which the <Tooltip tip="An adapter is the bridge between facet and a specific AI coding tool.">adapter</Tooltip> handles. Install one per machine with [`facet adapter add`](/cli/adapters/add):
+  <Step title="Connect an adapter">
+    An [adapter](/docs/learn/adapters) materializes facets into one AI tool. Install one per machine:
 
     ```sh
     facet adapter add claude-code   # or: opencode, codex
@@ -50,16 +50,18 @@ What you need before adding, authoring, or publishing facets. If you just want t
     ```
 
     <Note>
-      Without an adapter, [`facet add`](/cli/add) shows a picker in a terminal — and **fails** in a non-interactive shell (CI). Install one first.
+      Without an adapter, [`facet add`](/cli/add) opens a picker in a terminal and fails in CI.
     </Note>
   </Step>
 
-  <Step title="Create a registry account + token">
-    Adding public facets needs no account. A token is what unlocks the rest: **publishing** your own facets, plus **accessing private or organization-owned facets** you're authorized to use. Sign up at [agentfacets.io](https://agentfacets.io) and create a <Tooltip tip="A revocable credential you mint in the web UI to authenticate the CLI to the registry.">personal access token (PAT)</Tooltip> in your account settings. Sign in with [`facet login`](/cli/login) and confirm with [`facet whoami`](/cli/whoami):
+  <Step title="Create a registry account and token">
+    Adding public facets needs no account. A token unlocks publishing your own facets and reaching private or organization-owned ones.
+
+    Sign up at [agentfacets.io](https://agentfacets.io), create a <Tooltip tip="A revocable credential you mint in the web UI to authenticate the CLI to the registry.">personal access token</Tooltip> in your account settings, then:
 
     ```sh
-    facet login                     # interactive; stores the token
-    export FACET_TOKEN=fct_pub_…    # or, preferred for CI/scripts
+    facet login                     # interactive, stores the token
+    export FACET_TOKEN=fct_pub_…    # or this, for CI and scripts
     facet whoami                    # confirm the signed-in identity
     ```
   </Step>
@@ -70,7 +72,7 @@ What you need before adding, authoring, or publishing facets. If you just want t
 ```sh
 facet --version        # CLI is installed and recent
 facet adapter list     # at least one adapter connected
-facet whoami           # signed in (needed to publish and to reach private facets)
+facet whoami           # signed in
 ```
 
 ## Next steps

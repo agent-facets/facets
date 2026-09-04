@@ -54,6 +54,21 @@
       "source": "/cli/adapters/install",
       "destination": "/cli/adapters/add",
       "permanent": true
+    },
+    {
+      "source": "/cli/upgrade",
+      "destination": "/cli/update",
+      "permanent": true
+    },
+    {
+      "source": "/specification/commit",
+      "destination": "/specification/install",
+      "permanent": true
+    },
+    {
+      "source": "/specification/planning",
+      "destination": "/cli/add",
+      "permanent": true
     }
   ],
   "navigation": {
@@ -75,14 +90,24 @@
               "guides/install-facets",
               "guides/create-your-first-facet",
               "guides/publish-a-facet",
-              "guides/custom-adapters",
               "guides/troubleshooting"
             ]
           },
           {
-            "group": "Asset Types",
+            "group": "Concepts",
             "icon": "book",
-            "pages": ["docs/learn/skills", "docs/learn/commands", "docs/learn/agents"]
+            "pages": [
+              "docs/learn/skills",
+              "docs/learn/commands",
+              "docs/learn/agents",
+              "docs/learn/mcp-servers",
+              "docs/learn/adapters"
+            ]
+          },
+          {
+            "group": "Adapter Development",
+            "icon": "wrench",
+            "pages": ["guides/custom-adapters", "reference/adapter-sdk"]
           }
         ]
       },
@@ -144,12 +169,7 @@
           },
           {
             "group": "Installation",
-            "pages": [
-              "specification/install",
-              "specification/planning",
-              "specification/commit",
-              "specification/materialization"
-            ]
+            "pages": ["specification/install", "specification/materialization"]
           },
           {
             "group": "Authoring",

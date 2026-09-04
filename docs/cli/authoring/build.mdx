@@ -9,65 +9,112 @@ description: Build a facet from the current directory
 facet build [directory]
 ```
 
-Validates and builds the facet in the specified directory (defaults to the current directory). The build command is purely deterministic  -- it never modifies the manifest and behaves identically in all environments.
+Validates and packages the facet in the given directory, defaulting to the current one. The build is deterministic and never modifies `facet.json`.
+
+Validation runs before any `dist/` cleanup, so a failed build leaves your previous output intact. The normative rules are in the [build specification](/specification/build).
+
+## Examples
+
+```sh
+facet build                   # validate and write dist/<name>-<version>.facet
+facet build --verify          # validate only, write nothing
+facet build --json            # machine-readable result
+facet build ./packages/cowsay
+```
 
 ## Flags
 
 <ResponseField name="--verify" type="boolean">
-  Validate the facet without writing any output (no `dist/` writes).
+  Run the full validation pipeline without writing output. `dist/` is never touched.
 </ResponseField>
 
 <ResponseField name="--json" type="boolean">
-  Emit a machine-readable JSON result to stdout instead of the interactive view.
+  Emit a structured result to stdout instead of the interactive view. Works with or without `--verify`.
 </ResponseField>
 
 <ResponseField name="--emit-manifest" type="boolean">
-  Write a loose `build-manifest.json` to `dist/` alongside the `.facet` file.
+  Also write a loose `build-manifest.json` into `dist/` for debugging.
 </ResponseField>
+
+<Note>
+  `--verify` and `--json` require v0.24.0 or newer.
+</Note>
 
 ## Exit codes
 
 | Code | Meaning |
-| ---- | ------- |
-| `0`  | Build (or verify) succeeded |
-| `1`  | Build (or verify) failed (validation errors) |
+| --- | --- |
+| `0` | Build or verify succeeded. |
+| `1` | Validation failed. |
+| `2` | An unexpected error escaped command handling. |
 
-## What it does
+## Output
 
-`facet build` runs the validation-and-assembly pipeline defined in the [Build specification](/specification/build): parse and validate the manifest, resolve prompts from their conventional paths, resolve and validate declared [supplementary files](/specification/manifest#supplementary-files), validate content, validate adapter metadata, and assemble the deterministic two-layer archive. Validation happens **before** any `dist/` cleanup, so a build that fails leaves your previous output intact. Build output shows the emitted archive-format version, the complete entry listing (assets and supplementary files), and the integrity hash.
+On success the build writes one artifact:
 
-On success, the build writes `dist/<name>-<version>.facet` — the single distributable artifact, with the build manifest embedded inside it (see [Archive format](/specification/archive)). `dist/` is purged first, so it contains exactly one `.facet` after a successful build. For a scoped identity the name's `/` renders as a nested path: `@acme/cowsay` at `1.0.0` lands at `dist/@acme/cowsay-1.0.0.facet`.
-
-Use `--emit-manifest` to also write a loose copy of `build-manifest.json` to `dist/` for debugging or tooling integration.
-
-If the build fails, errors are displayed inline under the failed pipeline stage, with a suggestion to run `facet edit` to fix the issues.
-
-## Validate without building: `--verify`
-
-<Note>
-  The `--verify` and `--json` flags require the facet CLI **v0.24.0 or newer**. Update with [`facet self-update`](/cli/self-update) if your build doesn't recognize them.
-</Note>
-
-`facet build --verify` runs the full validation pipeline **without writing any output** — a no-op build. Nothing is written to `dist/`. Use it to confirm that `facet.json` and every asset file are valid and buildable, without producing an artifact.
-
-```sh
-facet build --verify          # validate only; dist/ is never touched
+```
+dist/
+└── my-facet-0.0.0.facet
 ```
 
-A clean verify means the facet would build. To produce the actual `.facet` artifact, run `facet build` without `--verify`. This is the recommended check after editing a facet — see [`facet instructions authoring`](/cli/instructions).
+A scoped identity nests, so `@acme/cowsay` at `1.0.0` lands at `dist/@acme/cowsay-1.0.0.facet`. The build manifest is embedded inside the archive, and `--emit-manifest` writes a loose copy beside it.
 
-## Machine-readable output: `--json`
+### JSON output
 
-`facet build --json` emits a structured JSON document to stdout instead of the interactive view. It works with or without `--verify`.
+The document carries `schemaVersion`, `ok`, and `verified`. On success it reports `name`, `version`, `facetVersion`, `files` (the complete archive entry listing), `integrity`, and any `warnings`. On failure it reports `errors`, each with a `message` and a `path`.
 
-```sh
-facet build --verify --json   # validation result as JSON, no output written
-facet build --json            # build and write output, then print JSON
-```
+<Warning>
+  `schemaVersion` is `"2"`. Consumers pinned to schema `1` must migrate: the old `assets` field is gone, replaced by `files`.
+</Warning>
 
-The document is versioned (`schemaVersion`) and reports `ok`, whether it was a verify (`verified`), and on success the facet `name`, `version`, `assets`, and `integrity` — or on failure a list of `errors` (each with a `message` and `path`) and any `warnings`.
+## Details
+
+### What is validated
+
+The manifest is checked against the [schema](/specification/manifest), each text asset's prompt is resolved from its conventional path, declared [supplementary files](/specification/manifest#supplementary-files) are read as opaque bytes, and per-text-asset adapter metadata is validated against every installed adapter.
+
+MCP server declarations are validated statically. A build never locates a command, starts a process, connects to a URL, or authenticates.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="validation failed">
+    **Cause:** the manifest or a text asset broke a rule. Each error names a `message` and the `path` in `facet.json` that produced it.
+
+    **Fix:** read the path in each error and correct that field. A common case is writing a text-asset group as an array: `skills` is a map of name to descriptor.
+
+    ```json facet.json
+    {
+      "skills": {
+        "code-review": { "description": "Guidelines for reviewing code changes" }
+      }
+    }
+    ```
+
+    Re-check with `facet build --verify`, which validates without touching `dist/`.
+  </Accordion>
+
+  <Accordion title="a declared file is missing or unreadable">
+    **Cause:** a text asset's prompt file or a declared supplementary file does not exist at its declared path, is a symlink, or resolves outside the facet.
+
+    **Fix:** create the file at the exact declared path, or drop the declaration. Paths are exact, and globs are not accepted.
+  </Accordion>
+
+  <Accordion title="an MCP server declaration was rejected">
+    **Cause:** a declaration is not a valid closed `stdio` or `http` object. Common reasons: an unrecognized member, a URL that is not absolute `http:` or `https:`, a URL carrying credentials, an environment name outside `[A-Za-z_][A-Za-z0-9_]*`, or a server name outside the [asset-name grammar](/specification/manifest#asset-names).
+
+    **Fix:** correct the declaration in `facet.json`. See [MCP server declarations](/specification/manifest#mcp-server-declarations).
+  </Accordion>
+
+  <Accordion title="an installed adapter is incompatible">
+    **Cause:** adapter metadata is validated against every installed adapter, so an adapter this CLI cannot load stops the build before validation of your manifest completes.
+
+    **Fix:** run [`facet adapter list`](/cli/adapters/list) and reinstall the entries it flags.
+  </Accordion>
+</AccordionGroup>
 
 ## See also
 
-- [`facet publish`](/cli/authoring/publish) -- verify and upload the built archive.
-- [Build specification](/specification/build) -- the normative build steps and archive format.
+- [`facet publish`](/cli/authoring/publish)
+- [`facet modify`](/cli/authoring/modify)
+- [Build specification](/specification/build)

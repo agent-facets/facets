@@ -9,75 +9,81 @@ description: Interactively edit a facet
 facet edit [directory]
 ```
 
-Opens an interactive editor for the facet in the specified directory (defaults to the current directory). The edit command is the full authoring workbench  -- everything `facet create` can do, plus automatic reconciliation of disk state versus the manifest.
+Opens the authoring workbench for the facet in the given directory. It does everything [`facet create`](/cli/authoring/create) can, plus reconciling the manifest against what is actually on disk.
+
+Nothing is written until you confirm. Exit with `Esc` twice to discard everything.
 
 <Note>
-  `facet edit` is interactive (TTY only). For scripted or agent-driven edits, use [`facet modify`](/cli/authoring/modify)  -- the headless, flag-driven counterpart.
+  `facet edit` needs a terminal. For scripted edits use [`facet modify`](/cli/authoring/modify).
 </Note>
 
 ## Exit codes
 
-| Code | Meaning                       |
-|------|-------------------------------|
-| `0`  | Changes applied successfully  |
-| `1`  | Cancelled or manifest invalid |
+| Code | Meaning |
+| --- | --- |
+| `0` | Changes applied. |
+| `1` | Cancelled, or the manifest is invalid. |
+| `2` | An unexpected error escaped command handling. |
 
-## What it does
-
-The edit command has two phases:
+## Details
 
 ### Reconciliation
 
-If the edit command detects drift between the manifest and the files on disk, it enters a reconciliation phase first. Drift includes:
+When the manifest and disk disagree, you resolve that first:
 
-- **New assets on disk** not tracked in the manifest  -- choose "Add to manifest" or "Ignore for now"
-- **Undeclared files inside a declared skill directory**  -- adopt them into that skill's [companion `files`](/specification/manifest#supplementary-files), or ignore
-- **Common root files** like `LICENSE`  -- adopt them into the top-level `files`, or ignore
-- **Missing files** declared in the manifest but absent from disk  -- choose "Scaffold template" or "Remove from manifest" (at the exact declared path, for both assets and supplementary files)
+- **New text assets on disk**: add them to the manifest, or ignore.
+- **Undeclared files inside a declared skill**: adopt them as [companion files](/specification/manifest#supplementary-files), or ignore.
+- **Root files such as `LICENSE`**: adopt into the top-level `files`, or ignore.
+- **Declared files missing from disk**: scaffold a template at the declared path, or drop the declaration.
 
-`README.md` and the extensionless `README` are handled by their own [README panel](#readme-panel), not generic reconciliation, so they never appear twice. Ignored files stay on disk and undeclared.
-
-All reconciliation items must be resolved before proceeding to editing.
+Ignored files stay on disk and undeclared. `README.md` and `README` are handled by the README panel instead, so they never appear twice.
 
 ### Editing
 
-After reconciliation (or immediately if no drift), the edit phase allows:
+- Change the facet name, description, and version.
+- Switch between public and private without opening `facet.json`.
+- Add, remove, or rename skills, agents, and commands. Deleting a skill removes its declared companions, while files you added to that directory yourself are preserved.
+- Edit a text asset's description in your terminal editor, using `$VISUAL`, `$EDITOR`, or `vi`.
 
-- **Identity editing**  -- modify the facet name, description, and version
-- **Privacy editing**  -- inspect the facet's current visibility intent without opening `facet.json`, and switch between Public and Private.
-- **Asset management**  -- add, remove, or rename skills, agents, and commands. Deleting a skill removes its declared companion files too, while any files you added to the skill directory yourself are preserved.
-- **Description editing**  -- press Enter on an asset to edit its name, or press ↓ during name editing to open the description in your terminal editor (`$VISUAL` / `$EDITOR` / `vi`)
-
-A primary asset file carries no YAML front matter — asset metadata lives in the manifest, and edit writes confirmed content without front matter.
-
-All changes are transactional  -- nothing is written to disk until you review and confirm on the confirmation page. Exit at any point with Esc Esc to discard all changes.
+Text-asset metadata lives in the manifest, so the editor never writes front matter into an asset file.
 
 ### README panel
 
-Both conventional README paths — `README.md` and the extensionless `README` — get a dedicated panel, managed independently. The actions offered depend on each path's current state:
+Both `README.md` and the extensionless `README` get their own panel:
 
 | State | Actions |
 | --- | --- |
-| Present and declared | **Edit** the content, or **Remove** (deletes the file and its declaration) |
-| Present but undeclared | **Adopt** (declare it, bytes untouched), or **Edit and adopt** |
-| Declared but missing | **Scaffold** at that path, or **Remove declaration** |
-| Absent and undeclared | **Create** (defaults to `README.md`) |
+| Present and declared | Edit, or remove the file and its declaration |
+| Present but undeclared | Adopt as is, or edit and adopt |
+| Declared but missing | Scaffold, or drop the declaration |
+| Absent and undeclared | Create, defaulting to `README.md` |
 
-Adopt preserves the existing bytes unless you explicitly edit them. Every README operation is queued until Apply, like all other edits.
+Adopting preserves the existing bytes unless you edit them.
 
-## Confirmation
+### Confirmation
 
-Before applying, a summary shows the final state of your facet  -- identity fields, the privacy intent, and all assets with their descriptions  -- along with a reminder that a privacy change is embedded at build time (rebuild to apply it, and bump the version if it was already published). Choose "Apply" to write changes or "Go back" to continue editing.
+The summary shows the final identity, privacy intent, and assets, plus every queued file operation with its exact path. A privacy change takes effect at build time, so rebuild afterwards and bump the version if it was already published.
 
-The confirmation lists every queued file operation with its exact path. On apply, the edit command transactionally:
-- Writes the updated `facet.json`
-- Scaffolds template files for new assets
-- Deletes files for removed assets (and a removed skill's declared companions)
-- Writes or deletes README files per the [README panel](#readme-panel) choices
-- Scaffolds or removes reconciled supplementary files
+Applying writes `facet.json`, scaffolds new text-asset templates, deletes files for removed text assets, and applies your README and supplementary-file choices together.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="facet edit needs an interactive terminal">
+    **Cause:** the workbench cannot run without a TTY.
+
+    **Fix:** use [`facet modify`](/cli/authoring/modify), which makes the same changes one flag at a time.
+  </Accordion>
+
+  <Accordion title="the manifest could not be loaded">
+    **Cause:** `facet.json` is missing from the directory, or it is not valid JSON.
+
+    **Fix:** run `facet edit` from the facet's root, or repair the file. To scaffold a new facet instead, use [`facet create`](/cli/authoring/create).
+  </Accordion>
+</AccordionGroup>
 
 ## See also
 
-- [`facet modify`](/cli/authoring/modify) -- headless, scriptable edits.
-- [`facet create`](/cli/authoring/create) -- scaffold a new facet project.
-
+- [`facet modify`](/cli/authoring/modify)
+- [`facet create`](/cli/authoring/create)
+- [`facet build`](/cli/authoring/build)
