@@ -42,7 +42,7 @@
     "dedent": "1.7.2",
     "mint": "4.2.674",
     "turbo": "2.9.18",
-    "type-fest": "5.7.0",
+    "type-fest": "5.8.0",
     "typescript": "6.0.3"
   }
 }
