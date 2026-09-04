@@ -9,85 +9,75 @@ description: Update the facet CLI to a newer version
 facet self-update
 ```
 
-`facet self-upgrade` is an alias of the same command.
+Updates the `facet` binary in place. `facet self-upgrade` is an alias.
 
-This updates the `facet` **binary**. To move the facets a project declares to newer releases, use [`facet update`](/cli/update).
+It detects how the binary was installed and dispatches to that mechanism, so download, verification, and the swap are handled by the installer or package manager you already used. It never reads or writes `facets.json`, `facets.lock`, or any materialized asset. To move the facets a project declares, use [`facet update`](/cli/update).
 
 ## Examples
 
 ```sh
 facet self-update                  # update to the latest published version
 facet self-update --version 0.7.0  # pin to a specific version
-facet self-update --dry-run        # preview the plan without changing anything
+facet self-update --dry-run        # preview without changing anything
 ```
-
-The `--dry-run` output reports the current and target versions, the
-detected install method, and the exact command that would run if you
-re-ran without `--dry-run`.
 
 ## Flags
 
 <ResponseField name="--version <x.y.z>" type="string">
-  Pin to a specific version instead of latest.
+  Install a specific version instead of the latest.
 </ResponseField>
 
 <ResponseField name="--dry-run" type="boolean">
-  Print the plan; do not modify any files.
+  Print the plan and modify nothing.
 </ResponseField>
 
 ## Exit codes
 
 | Code | Meaning |
-| ---- | ------- |
-| `0`  | Successful update, already up to date, or `--dry-run` (any state except dev mode) |
-| `1`  | Dev-mode refusal, network error, or malformed registry data |
-| other | The underlying installer or package manager's exit code, passed through |
+| --- | --- |
+| `0` | Updated, already current, or a completed `--dry-run`. |
+| `1` | Dev-mode refusal, network error, or malformed registry data. |
+| other | Passed through from the underlying installer or package manager. |
 
-## What it does
+## Output
 
-Updates the running `facet` binary in place. It never reads or writes
-`facets.json`, `facets.lock`, or any materialized asset  -- that is
-[`facet update`](/cli/update)'s job. Detects how the binary was
-installed  -- the curl installer, an `npm` / `yarn` / `pnpm` / `bun` global
-install, dev mode, or an unclassified location  -- and dispatches to the
-matching update mechanism for that path. Existing trust roots (the
-[install script](https://agentfacets.io/install) and the user's package
-manager) handle download, integrity verification, and the binary swap.
+A `--dry-run` names the current and target versions, the detected install method, and the exact command that would run.
 
-## Install methods
+## Details
 
-| Detected method | Update command                                    |
-| --------------- | ------------------------------------------------- |
-| curl installer  | re-runs `agentfacets.io/install` (no PATH change) |
-| `npm` global    | `npm install -g agent-facets@<version>`           |
-| `yarn` global   | `yarn global add agent-facets@<version>`          |
-| `pnpm` global   | `pnpm add -g agent-facets@<version>`              |
-| `bun` global    | `bun add -g agent-facets@<version>`               |
-| unclassified    | falls back to the curl installer + PATH warning   |
+### Install methods
 
-If the binary location can't be classified, `facet self-update` falls back
-to the curl installer (which installs to `~/.facet/bin/facet`) and warns
-if `facet` on your `$PATH` still resolves to a different binary after the
-install  -- so you can decide whether to remove the older copy or reorder
-your `$PATH`.
+The update path follows how the binary was installed: the curl installer, or an `npm`, `yarn`, `pnpm`, or `bun` global install.
 
-## Dev mode
+If the location cannot be classified, self-update falls back to the curl installer and warns when `facet` on your `PATH` still resolves elsewhere afterwards, so you can remove the older copy or reorder your `PATH`.
 
-When the `FACET_BIN_OVERRIDE` environment variable is set (typical in a
-workspace shell where you're testing changes via `bun dev`),
-`facet self-update` refuses with a clear stderr message and exits with
-code `1`. This is intentional: when you've overridden which binary the
-launcher executes, you've taken control of binary placement  -- self-update
-has no business writing over the path you pointed it at. Unset
-`FACET_BIN_OVERRIDE` to update a real install.
+### Environment
 
-## Environment variables
+`FACET_CLI_REGISTRY` sets the npm registry used to look up CLI versions. It is not the facet registry, which is `FACET_REGISTRY_URL` and has no effect here. See [environment variables](/cli/env).
 
-Three variables affect self-update — `FACET_CLI_REGISTRY` (npm registry for version lookup), `FACET_DIR` (where the curl-installed binary lives), and `FACET_BIN_OVERRIDE` (triggers the dev-mode refusal above). See the [environment variables reference](/cli/env) for details.
+## Troubleshooting
 
-`FACET_CLI_REGISTRY` is the **npm** registry the CLI is published to. It is not the facet registry facets come from — that one is `FACET_REGISTRY_URL`, and it has no effect here.
+<AccordionGroup>
+  <Accordion title="self-update refuses in dev mode">
+    **Cause:** `FACET_BIN_OVERRIDE` is set, so you have taken control of which binary runs. Self-update will not write over the path you pointed at.
+
+    **Fix:** unset `FACET_BIN_OVERRIDE` to update a real install.
+  </Accordion>
+
+  <Accordion title="the update ran but facet still reports the old version">
+    **Cause:** another copy of `facet` comes first on your `PATH`, which happens after a fallback install.
+
+    **Fix:** the warning names both paths. Remove the older copy, or reorder your `PATH`.
+  </Accordion>
+
+  <Accordion title="the version list could not be read">
+    **Cause:** the npm registry was unreachable, or returned data the CLI could not parse.
+
+    **Fix:** check connectivity and retry. If you point `FACET_CLI_REGISTRY` at a mirror, confirm it serves the `agent-facets` package.
+  </Accordion>
+</AccordionGroup>
 
 ## See also
 
-- [`facet update`](/cli/update) -- update the project's facets, not the CLI binary.
-- [Environment variables](/cli/env) -- `FACET_CLI_REGISTRY`, `FACET_DIR`, and `FACET_BIN_OVERRIDE` in full.
+- [`facet update`](/cli/update)
+- [Environment variables](/cli/env)

@@ -3,42 +3,38 @@ title: Agents
 description: Portable agent definitions
 ---
 
-An agent is a markdown file defining an AI assistant persona with a specific role, behavior, and tool access. Agents are the identity layer of a facet -- they define who the assistant is and how it should act.
+An agent is a markdown file defining an assistant persona: its role, behavior, and tool access.
 
-Each agent lives at `agents/<name>.md` and is declared in `facet.json` under the `agents` map. The normative rules — placement, descriptor shape, and the YAML front-matter contract — live at [Text assets](/specification/manifest#text-assets) in the manifest specification.
+Each agent lives at `agents/<name>.md` and is declared in `facet.json` under `agents`. Placement and descriptor rules live at [Text assets](/specification/manifest#text-assets).
 
 ## Example
 
 The file content is the agent's system prompt:
 
-```markdown
-You are a code reviewer. Your role is to review code changes for
-correctness, style, and maintainability.
+```markdown agents/reviewer.md
+You are a code reviewer. Review changes for correctness, style, and
+maintainability.
 
 ## Behavior
 
 - Read the diff carefully before commenting.
-- Distinguish between blocking issues and suggestions.
+- Distinguish blocking issues from suggestions.
 - When you find a bug, explain why it is wrong and suggest a fix.
 - Do not comment on formatting if the project uses an autoformatter.
 
 ## Tool access
 
-You have access to file reading and grep tools. Use them to check
-surrounding context when a diff is ambiguous.
+You have file reading and grep tools. Use them to check surrounding
+context when a diff is ambiguous.
 ```
 
 ## When to use agents
 
-Agents define **who the assistant is** -- a persona with a role, behavioral rules, and tool access. Use agents for:
+Use an agent when you need a named persona: a security reviewer, an accessibility auditor, a database advisor, a debugging partner.
 
-- Specialized reviewer personas (security reviewer, accessibility auditor)
-- Domain experts (database advisor, API designer)
-- Workflow-specific assistants (deployment helper, debugging partner)
-
-Use [skills](/docs/learn/skills) when you need passive knowledge without a persona. Use [commands](/docs/learn/commands) when you need a user-invokable action.
+Use a [skill](/docs/learn/skills) for passive knowledge. Use a [command](/docs/learn/commands) for a user-invoked action.
 
 ## Further reading
 
-- [Text assets](/specification/manifest#text-assets) -- placement, descriptor shape, and front-matter rules
-- [Create Your First Facet](/guides/create-your-first-facet) -- step-by-step guide including writing an agent
+- [Text assets](/specification/manifest#text-assets)
+- [Create Your First Facet](/guides/create-your-first-facet)

@@ -3,363 +3,88 @@ title: Troubleshooting
 description: Fix common facet CLI errors
 ---
 
-Common errors, what causes them, and how to fix them. Each entry mirrors the CLI's own `error: … fix: …` output.
+Errors that several commands can produce, with their cause and fix. An error only one command can produce lives on that command's page, listed at the [bottom of this page](#command-specific-errors).
+
+## Cross-command errors
 
 <AccordionGroup>
-  <Accordion title='"Unknown command" (e.g. facet instructions / modify)'>
-    **Cause:** your installed CLI predates the command. `facet instructions`, `facet modify`, headless `facet create`, and `facet build --verify/--json` require **v0.24.0 or newer**.
+  <Accordion title='"Unknown command"'>
+    **Cause:** your CLI predates the command. `facet instructions`, `facet modify`, headless `facet create`, and `facet build --verify` need v0.24.0 or newer. `facet update` needs v0.33.0 or newer.
 
-    **Fix:** update in place with [`facet self-update`](/cli/self-update), then re-run:
+    **Fix:**
 
     ```sh
     facet self-update
     facet --version
     ```
-
-    [`facet update`](/cli/update) is newer still. An older CLI does not recognize `facet update` at all, and recognizes `facet upgrade` only as a placeholder that prints a not-yet-implemented notice and exits `0` without changing anything. If you see that notice, the CLI is the thing to update first.
   </Accordion>
 
   <Accordion title='"could not reach the registry"'>
-    **Cause:** `facet search`, a registry `facet add`, [`facet update`](/cli/update), and `facet publish` need network access to the registry. Offline, they [**fail closed**](/specification/commit#verify) rather than write an unconfirmed entry.
+    **Cause:** the command needs the registry and could not reach it. That covers [`facet search`](/cli/search), a registry [`facet add`](/cli/add), [`facet install`](/cli/install), [`facet update`](/cli/update), [`facet publish`](/cli/authoring/publish), and identity checks such as [`facet whoami`](/cli/whoami). Offline, they fail rather than record something unverified.
 
-    **Fix:** check your connection and retry. Note that **local paths** (`./my-facet`) and **git sources** (`github:owner/repo`) resolve without the registry, so you do not need registry access to install/add from these sources.
+    **Fix:** check your connection and retry. Local paths and git sources resolve without the registry.
 
-    `facet update` fails closed for the whole project, not per facet: one failed lookup rejects the entire plan rather than presenting the facets that did resolve. A partial plan would look like a complete answer. Git and local facets are not checked at all, so they are named as unsupported rather than reported as current.
-  </Accordion>
-
-  <Accordion title='"this project cannot be checked for updates yet"'>
-    **Cause:** [`facet update`](/cli/update) compares what `facets.json` declares against what `facets.lock` records, and something in that pairing does not line up — a declared facet is missing from the lockfile, the lockfile records a different kind of source, the locked version is not an exact release, or the locked version no longer satisfies the declared specifier. Update refuses to guess what is installed rather than checking a version it cannot vouch for. Nothing was written.
-
-    The message names **every** affected facet, because one install covers all of them.
-
-    **Fix:** repair the lockfile first, then update:
-
-    ```sh
-    facet install
-    facet update
-    ```
-
-    Repairing drift is [`facet install`](/cli/install)'s job. `facet update` is not a second drift-repairer, and it will keep refusing until install has run.
-  </Accordion>
-
-  <Accordion title='"the project changed while this update was being reviewed"'>
-    **Cause:** `facets.json` or `facets.lock` changed between the moment the update plan was read and the moment it would have been applied — a concurrent `facet add`, a `git pull`, an editor save. Applying the plan would install versions chosen against a project that no longer exists.
-
-    A closely related message, *"facets.json changed while update was checking versions"*, is the same situation caught earlier, during discovery.
-
-    **Fix:** re-run `facet update`. **Nothing is broken and nothing needs repairing** — no file was written in either case. The second run plans against the project as it now stands.
-  </Accordion>
-
-  <Accordion title='"facet update --interactive needs an interactive terminal"'>
-    **Cause:** `--interactive` opens a selection screen, and this environment cannot prompt — CI, piped output, or a closed stdin. The check runs **before** any registry lookup, so the run fails immediately rather than after resolving every facet.
-
-    **Fix:** pick a non-interactive mode:
-
-    ```sh
-    facet update            # every range-respecting target
-    facet update --latest   # every latest release
-    facet update --dry-run  # print the plan; change nothing
-    ```
-  </Accordion>
-
-  <Accordion title='"facet update does not accept positional arguments"'>
-    **Cause:** unlike [`facet add`](/cli/add) and [`facet remove`](/cli/remove), `facet update` takes no facet names. It considers everything declared in `facets.json`.
-
-    **Fix:** to update some facets but not others, choose them from the picker:
-
-    ```sh
-    facet update --interactive
-    ```
-
-    Per-facet filtering on the command line is deliberately deferred, not missing by oversight.
-  </Accordion>
-
-  <Accordion title='facet update says nothing to do, but a newer release exists'>
-    **Cause:** an update that applies nothing still succeeded and exits `0`. There are four such outcomes and they are not interchangeable — the message says which one you got. The one that usually surprises people is the third:
-
-    ```
-    Newer releases exist, but the ranges in facets.json permit none of them.
-    Run `facet update --latest` to take them anyway.
-    ```
-
-    Your specifiers are doing exactly what they were written to do. `1.*` will never accept `2.0.0`.
-
-    **Fix:** take the newer releases with `facet update --latest`, which crosses the declared ranges and [rewrites the specifiers](/cli/update#crossing-the-declared-range) to match. Preview it first with `--dry-run` if you want to see the rewrites before committing to them.
-  </Accordion>
-
-  <Accordion title='"the registry returned an unusable target version" / "unusable latest version" during update'>
-    **Cause:** the registry answered an update lookup with something that is not an exact `MAJOR.MINOR.PATCH` release, or resolved a facet's declared range to a version that range does not permit. Neither is something your project can cause.
-
-    **Fix:** retry in a moment. If it persists, report it with the facet name from the message — this one is on the registry, not on you.
-  </Accordion>
-
-  <Accordion title='"no adapters installed" when running facet add or facet update (non-interactive)'>
-    **Cause:** a facet has to be materialized into at least one adapter, but none is connected. In a real terminal `facet add` and [`facet update`](/cli/update) show a picker; in a non-interactive shell (CI, piped stdin) they exit with an error instead.
-
-    **Fix:** install an adapter first with [`facet adapter add`](/cli/adapters/add):
-
-    ```sh
-    facet adapter add claude-code
-    facet adapter list
-    ```
-
-    <Note>
-    `facet update --dry-run` returns **before** adapters are checked, so a preview never needs one. That makes it safe to run on a machine that has no adapter connected at all.
-    </Note>
-  </Accordion>
-
-  <Accordion title='"adapter incompatible" / "unsupported adapter API" (build, add, remove, install, update fail before writing)' id='adapter-incompatible'>
-    **Cause:** every installed adapter declares the adapter API contract it was built against, and each CLI release supports an exact set — currently just `0.3` (the read-only planning contract). Bundles declaring `0.0`, `0.1`, or `0.2` wrote files themselves and owned their own rollback, so this CLI cannot offer them the guarantees it now makes about exact restoration and concurrency; they are unsupported. A bundle installed before API versioning has **no** declaration; others can carry a malformed declaration or disagree with the npm metadata they were selected by. All these cases fail closed: `facet build`, `facet add`, `facet remove`, `facet install`, and `facet update` stop **before** invoking any adapter method or writing project files.
-
-    Upgrading the CLI across this boundary makes every previously installed adapter unsupported at once, including the first-party ones. Reinstall each — the listing prints the exact command.
-
-    Membership is exact, never ordering: `0.2` is not "close enough" to `0.3`.
-
-    <Note>
-    This is a *loadability* problem. An adapter that loads may still [not configure MCP servers](#mcp-adapters), which is a different failure with a different fix.
-    </Note>
-
-    **Fix:** list your installed adapters to see each one's declared API and status, then run the reinstall command printed next to the incompatible entry:
-
-    ```sh
-    facet adapter list
-    # my-adapter  api missing  unsupported — reinstall: facet adapter add my-adapter
-    facet adapter add my-adapter
-    ```
-
-    Reinstalling selects the newest release compatible with this CLI. See [compatible resolution](/cli/adapters/add#compatible-resolution) for how selection works, and note that [`facet adapter remove`](/cli/adapters/remove) always works regardless of compatibility.
-  </Accordion>
-
-  <Accordion title='"unsupported archive format" on install'>
-    **Cause:** the facet's archive uses a [`facetVersion`](/specification/archive) your CLI doesn't support. A newer facet may use a format published after your CLI; a corrupt or unknown archive fails the same way. The adapter API, archive `facetVersion`, and lockfile version are [independent axes](/specification/install) — this is the archive axis.
-
-    **Fix:** update the CLI with [`facet self-update`](/cli/self-update). The error names the minimum supporting release when the format is known; when it isn't, update to the latest.
-  </Accordion>
-
-  <Accordion title='"unsupported lockfileVersion" on install'>
-    **Cause:** `facets.lock` declares a version this CLI does not read. The common case is the withdrawn closed-alpha `1`, which is no longer parsed — the number is reserved for the eventual stable v1 schema, so it is not reused for a compatibility shim. A version newer than your CLI fails the same way.
-
-    **Fix:** if the file declares `1`, delete `facets.lock` and run [`facet install`](/cli/install); the lockfile is regenerated from `facets.json` and re-verified from scratch. If it declares something newer, update the CLI with [`facet self-update`](/cli/self-update) instead — deleting a newer lockfile would discard resolutions your teammates committed. The adapter API, archive `facetVersion`, and lockfile version are [independent axes](/specification/install); this is the lockfile axis.
-  </Accordion>
-
-  <Accordion title='"integrity mismatch" / companion drift on install'>
-    **Cause:** a materialized file no longer matches the [per-file integrity](/specification/lockfile) recorded in `facets.lock` — a file was edited or corrupted on disk, or the cache was tampered with. Install reconciles every file (including each skill companion) before writing and reports the exact drifting path.
-
-    **Fix:** re-run [`facet install`](/cli/install) — it repairs a drifted file in place (reported as *repaired*) without touching files you added yourself. If a registry facet fails to reconcile against its lockfile integrity, the download is rejected rather than silently replaced; confirm the lockfile matches what you expect. A `RECONCILE_*` failure is different: the archive itself disagrees with the lockfile, so re-running will not fix it — delete `facets.lock` and re-run, or [`facet add`](/cli/add) the facet to update the entry.
-  </Accordion>
-
-  <Accordion title='"two or more facets want the same name"'>
-    **Cause:** two installed facets each publish a contribution that would materialize under the same name. Skills and commands share one namespace, so a skill and a command can collide too. MCP servers collide only with other servers — never with a skill, command, or agent. Nothing is written — the check runs before any file is touched.
-
-    **Fix:** in a terminal, [`facet install`](/cli/install#name-collisions) pauses and lets you keep, rename, or omit each one. In CI it fails and prints every claimant with the exact `facets.json` edit; make that edit locally, commit it, and CI will never see the collision again:
-
-    ```json facets.json
-    "team-tools": {
-      "source": "1.*",
-      "materialization": {
-        "skills": { "planning": { "kind": "aliased", "as": "team-planning" } },
-        "servers": { "filesystem": { "kind": "aliased", "as": "team-filesystem" } }
-      }
-    }
-    ```
-
-    Only *one* claimant needs to change — the names just have to differ from each other. A `servers` group needs `"manifestVersion": 0.2`. Two facets declaring the *same* server identically never collide. See [Materialization](/specification/materialization).
-  </Accordion>
-
-  <Accordion title='"invalid materialization alias"'>
-    **Cause:** an `as` value in a `materialization` block does not satisfy the [asset-name grammar](/specification/manifest#asset-names): 1–64 characters of lowercase letters, digits, and hyphens, no leading or trailing hyphen, no consecutive hyphens, and no `/`. Server aliases use the same grammar.
-
-    **Fix:** correct the alias in `facets.json` and re-run. Aliases are never auto-corrected — silently rewriting your chosen name would make the result unpredictable.
-  </Accordion>
-
-  <Accordion title='"lockfile cannot record materialization overrides" (frozen install)'>
-    **Cause:** `facets.json` declares an alias or omission for an **asset**, but `facets.lock` is still at lockfile `0.2`, which has no field in which to record it. [`--frozen-lockfile`](/cli/install) refuses rather than silently ignoring your intent.
-
-    **Fix:** run one plain `facet install` (without the flag) to migrate the lockfile to `0.3`, then commit it. CI will pass from then on.
-
-    A `materialization.servers` override can never cause this: no lockfile version records server intent, by [design](/specification/lockfile#why-mcp-did-not-move-the-lockfile).
-  </Accordion>
-
-  <Accordion title='"facets.json says X, lockfile says Y" (frozen install)'>
-    **Cause:** you changed an alias or omission in `facets.json` but never ran a normal install, so `facets.lock` still records the old disposition. Under [`--frozen-lockfile`](/cli/install) that is drift, exactly like an unrecorded version bump.
-
-    **Fix:** run `facet install` without the flag, then commit the updated `facets.lock`.
-
-    A stale **server** override reports as drift too, even though the lockfile records no server intent — the check compares your override against the servers the integrity-pinned facet actually declares. The fix is the same.
-  </Accordion>
-
-  <Accordion title='A materialization choice was dropped, or is rejected in CI'>
-    **Cause:** an override names an asset or MCP server the resolved facet version no longer contains — usually the publisher renamed or removed it in a newer release, which makes [`facet update`](/cli/update) the operation that most often surfaces it. A normal install prunes the stale override and tells you which one; a frozen install treats it as blocking drift, because it has no transaction in which to prune.
-
-    **Fix:** nothing, if you saw the pruning notice — it is already resolved and `facets.json` was updated. In CI, run `facet install` locally without `--frozen-lockfile` and commit the pruned manifest.
-
-    Overrides that still name something the new version contains are carried across a version change untouched: updating a facet does not cost you your aliases and omissions.
+    [`facet adapter add`](/cli/adapters/add) reports npm separately, because adapters resolve through the npm registry rather than the facet registry.
   </Accordion>
 
   <Accordion title='"facets.json declares an unsupported manifestVersion"'>
-    **Cause:** the manifest was written by a newer CLI. Versions are matched exactly, never by ordering, so a newer format is refused rather than guessed at. The current version is `0.2`; `0.1` and unversioned manifests are still read, and a successful non-frozen install migrates them.
+    **Cause:** the manifest was written by a newer CLI. Versions match exactly, never by ordering. The current version is `0.2`, and `0.1` or unversioned manifests still read and migrate on a successful install. Every command that reads the manifest fails the same way, including `install`, `add`, `remove`, `list`, and `update`.
 
-    **Fix:** update with [`facet self-update`](/cli/self-update).
+    **Fix:** run `facet self-update`.
 
-    A `servers` group inside a document that declares `manifestVersion: 0.1` is a *validation* failure, not a version failure — `0.1` cannot express server intent, so the group is rejected rather than tolerated. Run one non-frozen `facet install` to migrate the document to `0.2` first.
+    A `servers` group inside a `0.1` document is a validation failure instead: run one non-frozen `facet install` to migrate first.
   </Accordion>
 
-  <Accordion title='"MCP server configuration needs approval" in CI'>
-    **Cause:** a facet declares [MCP servers](/cli/install#mcp-servers) that this machine has not approved, and the run has no terminal to ask in. Approval is machine-local, so a teammate's approval — or a green run on another machine — does not cover this one. Nothing was written.
+  <Accordion title='"unsupported adapter API"'>
+    **Cause:** an installed adapter declares an API this CLI does not support, so every command that touches adapters fails closed, including `build`, `add`, `install`, `remove`, and `update`.
 
-    **Fix:** read the printed declarations, then either approve them all or refuse the ones you do not want:
-
-    ```sh
-    facet install --accept-mcp
-    ```
-
-    ```json facets.json
-    "mcp-tools": {
-      "source": "1.*",
-      "materialization": { "servers": { "docs": { "kind": "omitted" } } }
-    }
-    ```
-
-    The same flag works on [`facet add`](/cli/add), [`facet update`](/cli/update), and [`facet remove`](/cli/remove) — pass it to whichever command reported the failure.
+    **Fix:** list the adapters and run the reinstall command printed beside each flagged entry. See [`facet adapter list`](/cli/adapters/list#troubleshooting).
   </Accordion>
 
-  <Accordion title='Approval keeps being requested for a server you already approved'>
-    **Cause:** approval is keyed by the effective server name **and** the declaration's exact content, and it is only banked by a run that fully succeeds. So you are asked again when the declaration changed (command, argument order, an environment value, transport, URL, or the effective name), when the previous run failed or was rolled back, or when this machine's install receipt predates MCP support and therefore carries no approvals at all.
+  <Accordion title='"two or more facets want the same name"'>
+    **Cause:** two facets would materialize under one name. Any command that installs can hit it, and nothing is written when it does.
 
-    **Fix:** for a changed declaration, review and approve it — the change is the reason you are being asked. For a receipt that predates MCP support, one successful install records approvals from then on.
+    **Fix:** in a terminal, resolve it at the prompt. In CI, apply the printed `facets.json` edit. See [name collisions](/cli/install#name-collisions).
   </Accordion>
 
-  <Accordion title='"selected adapters cannot configure MCP servers"' id='mcp-adapters'>
-    **Cause:** the project has active MCP declarations and at least one selected adapter declares no MCP support. The failure lists every such adapter and happens before any approval or mutation.
+  <Accordion title='"MCP server configuration needs approval"'>
+    **Cause:** a facet declares [MCP servers](/docs/learn/mcp-servers) this machine has not approved, and the run cannot prompt. Approval is machine-local, so a teammate's approval does not cover yours. Nothing was written.
 
-    **Fix:** updating the adapter will not help — declaring no MCP support is a deliberate answer, not a missing feature. Either [`facet adapter remove`](/cli/adapters/remove) the adapter, or omit the server declarations so the project has no MCP work to do:
-
-    ```json facets.json
-    "mcp-tools": {
-      "source": "1.*",
-      "materialization": { "servers": { "docs": { "kind": "omitted" } } }
-    }
-    ```
-
-    <Note>
-    This is different from an adapter that [cannot be loaded at all](#adapter-incompatible). That one *is* fixed by reinstalling.
-    </Note>
+    **Fix:** pass `--accept-mcp`, or omit the servers you do not want. See [MCP servers](/cli/install#mcp-servers).
   </Accordion>
 
-  <Accordion title="A tool's MCP config file cannot be read or written">
-    **Cause:** an adapter could not parse, validate, or write its native project configuration — `.mcp.json`, `opencode.jsonc`, or `.codex/config.toml`. The usual cause is a hand edit that left the file syntactically invalid.
+  <Accordion title='"some files could not be returned to their previous state"'>
+    **Cause:** an install-pipeline command failed and rolled back, but at least one file could not be restored. Any of `add`, `install`, `remove`, and `update` can report this, and it outranks whatever error stopped the run.
 
-    **Fix:** open the named file and repair it, then re-run. The failure is detected while **reading**, before any asset is written, and the document is left byte-for-byte unchanged. If a write did fail partway through a larger operation, everything is rolled back — including restoring each config file's exact prior bytes, comments and formatting included.
-  </Accordion>
+    The report names each file with one of three outcomes:
 
-  <Accordion title='"two selected adapters configure the same file"' id='mcp-shared-file'>
-    **Cause:** two connected adapters manage the same MCP configuration file. Facets does not support that: each plans its change against the file as it stands, so whichever writes second would apply a plan computed from content the first already replaced. The run stops before approval and before anything is written.
+    - **changed by something else, left as it is**: another editor or command wrote the file after this run did, so rollback declined to overwrite that work. Nothing is wrong with your file.
+    - **could not be read, left as it is**: the file could not be inspected, so it was not touched.
+    - **could not be restored**: the restore itself failed, usually permissions or disk.
 
-    **Fix:** [`facet adapter remove`](/cli/adapters/remove) one of the adapters named in the message. Upgrading will not help — both adapters are working correctly, and which tool should own the file is a decision only you can make.
-  </Accordion>
+    No file is ever reported as both restored and unrecoverable, and you are never asked to choose between two versions of a contested file.
 
-  <Accordion title="A tool's MCP config changed while the command was running">
-    **Cause:** a run re-checks every adapter's MCP plan immediately before writing it, including one that had concluded there was nothing to do. Something changed the named file in between — your editor, the tool itself, or a concurrent command — so what would be written is no longer what you approved.
-
-    **Fix:** re-run. Nothing was written, and the second run plans against the file as it now stands. This is not an adapter bug: the adapter re-read the file and reported what it found.
-  </Accordion>
-
-  <Accordion title='"some files could not be returned to their previous state" after a failure'>
-    **Cause:** the command failed and rolled back, but at least one file could not be put back. Every change is recorded as an exact `before → after` pair, and rollback classifies each file against what the run actually left there. The report names each one:
-
-    ```
-    Some files were changed by something else while this ran and were left as they are:
-      .claude/skills/review/SKILL.md — changed by something else after this run wrote it; left as it is
-      (7 other file(s) were restored)
-    ```
-
-    The two kinds of line mean opposite things:
-
-    - **"changed by something else … left as it is"** — nothing is wrong with your file. Your editor, another agent, or a concurrent command wrote it after this run did, so the rollback declined to overwrite that work. Their content is intact.
-    - **"could not be restored: …"** — the restore itself failed, usually a permissions or disk problem. This one needs you.
-
-    **Fix:** for a preserved edit, nothing — decide whether you still want the change and re-run the command that failed when you do. For a genuine restore failure, resolve the named cause and re-run; the `fix:` line names the right command for the operation you ran, and installing reconciles each file against its recorded integrity and repairs what it owns without touching files you added yourself.
-
-    <Note>
-    Facets never prompts to force-overwrite a contested file, in a terminal or in CI. Being asked to choose between two versions of a file during a failure — before you can compare them — is not a decision anyone can make well.
-    </Note>
-  </Accordion>
-
-  <Accordion title='A takeover prompt appeared, or an install was cancelled at one'>
-    **Cause:** something already occupies a name your project wants, and this machine's receipt does not record putting it there. Any operation that materializes assets can hit this — `facet add`, `facet install`, or [`facet update`](/cli/update). For an MCP server it is disclosed up front on the [approval screen](/cli/install#taking-over-an-existing-entry); for a file it is a separate mid-write prompt with **Continue** selected by default.
-
-    **Fix:** continue to take ownership, or cancel. Cancelling an asset takeover rolls back everything the command has done so far and exits non-zero — nothing is left half-applied. Non-interactive runs never see the asset prompt; they continue automatically, which is the behavior that predates the prompt.
-  </Accordion>
-
-  <Accordion title='A facet fails to install with an invalid "servers" entry'>
-    **Cause:** the facet declares MCP servers in a form no longer accepted. Earlier speculative forms — a version string, or an object with `image` — are rejected in both current and legacy manifests, with no fallback and no warning. A declaration must be a concrete [`stdio` or `http` object](/specification/manifest#mcp-server-declarations), and it may not carry members outside that shape.
-
-    **Fix:** if you author the facet, republish it with a concrete declaration. If you consume it, ask the publisher for a release that does. There is no flag to install it as-is: the whole point of rejecting the old forms is that nobody can be unsure what a declaration means.
-  </Accordion>
-
-  <Accordion title="A configured MCP server does not appear in your tool">
-    **Cause:** Facets writes configuration; it does not run servers. A successful install proves the entry is in your tool's config file — not that the server starts, is reachable, or is authenticated.
-
-    **Fix:** check the file the adapter wrote, then take it up in the tool. Many servers need a sign-in step the tool provides; Facets deliberately stores no credentials and performs no OAuth.
-  </Accordion>
-
-  <Accordion title='facet update ran but the CLI version did not change (or vice versa)'>
-    **Cause:** four command names sit one keystroke apart and they do two different jobs. The `self-` prefix is the whole distinction:
-
-    | Command | Acts on |
-    | ------- | ------- |
-    | `facet update`, `facet upgrade` | The facets declared in this project's `facets.json`. |
-    | `facet self-update`, `facet self-upgrade` | The `facet` CLI binary itself. |
-
-    Neither touches the other. [`facet update`](/cli/update) never rewrites your binary, and [`facet self-update`](/cli/self-update) never reads `facets.json`.
-
-    **Fix:** run the one that matches what you meant to move.
-
-    <Warning>
-    `facet upgrade` used to be a placeholder that printed a notice and exited `0` without changing anything. It is now a live alias of `facet update` and applies real changes. If a script called it expecting a no-op, drop the call or make it `facet update --dry-run`.
-    </Warning>
-  </Accordion>
-
-  <Accordion title='"not signed in — no registry credential found"'>
-    **Cause:** `facet publish` (and `facet whoami`) need a registry credential and none was found.
-
-    **Fix:** authenticate with [`facet login`](/cli/login), then retry. In CI, prefer the [`FACET_TOKEN`](/cli/env) environment variable:
-
-    ```sh
-    facet login              # interactive
-    export FACET_TOKEN=fct_pub_…   # or, for CI/scripts
-    facet whoami             # confirm the identity
-    ```
-  </Accordion>
-
-  <Accordion title='Publish rejected: version already exists (HTTP 409)'>
-    **Cause:** published `(name, version)` pairs are [**immutable**](/specification/publish#immutability) — you can't republish a version with different content. The status table lives at [`facet publish`](/cli/authoring/publish#publish-outcomes).
-
-    **Fix:** bump the version, rebuild, and publish again:
-
-    ```sh
-    facet modify facet --version 1.2.0
-    facet build
-    facet publish
-    ```
-  </Accordion>
-
-  <Accordion title='Build fails: skills["0"] must be an object'>
-    **Cause:** `skills` is written as an array of strings. It must be a **map** of name → descriptor.
-
-    **Fix:**
-
-    ```json
-    {
-      "skills": {
-        "code-review": { "description": "Guidelines for reviewing code changes" }
-      }
-    }
-    ```
-
-    Then re-check with `facet build --verify`. See the [Manifest reference](/specification/manifest).
+    **Fix:** for a preserved edit, decide whether you still want the change and re-run when you do. For a restore failure, resolve the named cause and re-run. Installing reconciles each file against its recorded integrity and repairs what it owns.
   </Accordion>
 </AccordionGroup>
+
+## Command-specific errors
+
+| Command | Covers |
+| --- | --- |
+| [`facet install`](/cli/install#troubleshooting) | Archive and lockfile versions, frozen drift, integrity, cache, aliases, MCP configuration failures |
+| [`facet add`](/cli/add#troubleshooting) | Source parsing, git and local sources, composition |
+| [`facet remove`](/cli/remove#troubleshooting) | Untracked files, removals that need the network |
+| [`facet update`](/cli/update#troubleshooting) | Project state, stale plans, the picker, registry answers |
+| [`facet adapter add`](/cli/adapters/add#troubleshooting) | Missing adapters, compatible releases, bundle verification |
+| [`facet adapter list`](/cli/adapters/list#troubleshooting) | Unsupported and broken adapters |
+| [`facet login`](/cli/login#troubleshooting) | Credentials and tokens |
+| [`facet build`](/cli/authoring/build#troubleshooting) | Manifest validation, declared files, MCP declarations |
+| [`facet create`](/cli/authoring/create#troubleshooting) | Scaffolding an existing or invalid project |
+| [`facet edit`](/cli/authoring/edit#troubleshooting) | Terminal and manifest requirements |
+| [`facet modify`](/cli/authoring/modify#troubleshooting) | Asset lifecycle and invalid results |
+| [`facet publish`](/cli/authoring/publish#troubleshooting) | Artifacts, verification, immutable versions |
+| [`facet self-update`](/cli/self-update#troubleshooting) | Dev mode, `PATH`, version lookup |
 
 ## Still stuck?
 

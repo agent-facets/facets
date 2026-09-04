@@ -4,7 +4,7 @@ Thanks for your interest in contributing to Agent Facets!
 
 ## Prerequisites
 
-- [mise](https://mise.jdx.dev) — manages tooling (Bun, lefthook) via `mise.toml`
+- [mise](https://mise.jdx.dev), which manages tooling (Bun, lefthook) via `mise.toml`
 
 ## Setup
 
@@ -28,18 +28,18 @@ bun install    # installs workspace dependencies + sets up git hooks
 
 ## Scripts
 
-| Command                         | Description                                                                  |
-| ------------------------------- |------------------------------------------------------------------------------|
-| `bun dev`                       | Run `facet` from source (e.g. `bun dev build ./my-facet`)                    |
-| `bun check`                     | Turborepo lint + typecheck + build + tests — run this before submitting a PR |
-| `bun format`                    | Biome auto-fix and format                                                    |
-| `bun run types`                 | Typecheck only                                                               |
+| Command | Description |
+| --- | --- |
+| `bun dev` | Run `facet` from source, for example `bun dev build ./my-facet` |
+| `bun check` | Lint, typecheck, build, and test. Run this before submitting a PR |
+| `bun format` | Biome auto-fix and format |
+| `bun run types` | Typecheck only |
 
 ## Pull requests
 
 - Push your branch to your fork, then open a PR against `agent-facets/facets:main`.
 - Keep PRs focused on a single change.
-- Run `bun check` before submitting — CI runs the same command.
+- Run `bun check` before submitting. CI runs the same command.
 - Add a changeset for changes to published packages (see below).
 
 ## Changesets
@@ -58,4 +58,4 @@ A good changeset describes:
 - **Why** the change was made
 - **How** a consumer should update their code (if applicable)
 
-Not every PR needs a changeset — changes to docs, CI, or other non-published files can skip this step. The [changeset bot](https://github.com/apps/changeset-bot) comments on every PR to indicate whether one is present.
+Not every PR needs a changeset. Changes to docs, CI, or other non-published files can skip this step. The [changeset bot](https://github.com/apps/changeset-bot) comments on every PR to indicate whether one is present.

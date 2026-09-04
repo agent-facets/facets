@@ -9,42 +9,52 @@ description: Make a headless, scriptable edit to a facet
 facet modify <target> [name] [directory] [flags]
 ```
 
+Applies one change to `facet.json` and its text-asset files, then exits. This is the scriptable counterpart to [`facet edit`](/cli/authoring/edit), and the path agents should use.
+
+`<target>` is `skill`, `agent`, `command`, or `facet`. There is no `server` target: MCP server declarations are edited in `facet.json` directly. `[directory]` defaults to the current directory and must contain a `facet.json`.
+
 <Note>
-  Requires the facet CLI **v0.24.0 or newer**. If `facet modify` reports *"Unknown command"*, update with [`facet self-update`](/cli/self-update).
+  Requires v0.24.0 or newer.
 </Note>
 
-`facet modify` is the headless, flag-driven counterpart to the interactive [`facet edit`](/cli/authoring/edit) wizard. It applies **one** change to a facet's `facet.json` (and its asset files) and exits — the path AI agents and scripts should use for authoring. See [`facet instructions authoring`](/cli/instructions).
+## Examples
 
-`<target>` is one of `skill`, `agent`, `command`, or `facet`. `[directory]` defaults to the current directory and must contain a `facet.json`.
+```sh
+facet modify skill greet --add --description "Greets the user"
+facet modify agent helper --description "Reviews code"
+facet modify command run --rename start
+facet modify skill greet --remove
+facet modify facet --version 1.0.0 --private
+```
 
 ## Flags
 
 <ResponseField name="--add" type="boolean">
-  Add a new asset (scaffold + manifest entry).
+  Add a new text asset: manifest entry plus a scaffolded starter file.
 </ResponseField>
 
 <ResponseField name="--remove" type="boolean">
-  Remove an asset (delete file + manifest entry).
+  Remove a text asset: manifest entry plus its file.
 </ResponseField>
 
 <ResponseField name="--rename <name>" type="string">
-  Rename an asset to the given name.
+  Rename a text asset to the given name.
 </ResponseField>
 
 <ResponseField name="--description <text>" type="string">
-  Set the asset's (or facet's) description.
+  Set the text asset's or facet's description.
 </ResponseField>
 
 <ResponseField name="--adapter-<name> '<json>'" type="JSON object">
-  Set an asset's config for the named adapter (replaces the block).
+  Set a text asset's config for the named adapter, replacing that block.
 </ResponseField>
 
 <ResponseField name="--remove-adapter-<name>" type="boolean">
-  Remove an asset's config for the named adapter.
+  Remove a text asset's config for the named adapter.
 </ResponseField>
 
 <ResponseField name="--name / --version / --private" type="facet target only">
-  Set facet-level metadata (`facet modify facet ...`).
+  Set facet-level metadata.
 </ResponseField>
 
 <ResponseField name="--json" type="boolean">
@@ -53,52 +63,27 @@ facet modify <target> [name] [directory] [flags]
 
 ## Exit codes
 
-| Code | Meaning                                          |
-| ---- | ------------------------------------------------ |
-| `0`  | Change applied successfully                      |
-| `1`  | Invalid arguments, asset not found, or the change would make the manifest invalid |
+| Code | Meaning |
+| --- | --- |
+| `0` | Change applied. |
+| `1` | Invalid arguments, asset not found, or a change that would make the manifest invalid. |
+| `2` | An unexpected error escaped command handling. |
 
-## Editing an asset
+## Details
 
-For the asset targets (`skill`, `agent`, `command`), pass the asset name and at most one lifecycle action, optionally with field changes.
+### Changing an asset
 
-### Add an asset
+For the text-asset targets, pass the asset name and at most one lifecycle action, optionally with field changes.
 
-Creates the manifest descriptor **and** scaffolds the starter file (`skills/<name>/SKILL.md`, `agents/<name>.md`, or `commands/<name>.md`). May carry a description and adapter config in the same call.
-
-```sh
-facet modify skill greet --add --description "Greets the user"
-```
-
-### Change a description
-
-```sh
-facet modify agent helper --description "Reviews code"
-```
-
-### Rename an asset
-
-Renames the manifest key and moves the asset's primary file (removing the now-empty skill directory, for skills).
-
-```sh
-facet modify command run --rename start
-```
+`--add` creates the manifest descriptor and scaffolds the starter file at its conventional path. `--rename` renames the manifest key and moves the primary file, removing a now-empty skill directory. `--remove` drops the descriptor and deletes the file.
 
 <Note>
-  `facet modify` operates on asset primaries. To adopt, move, or reconcile a skill's [companion files](/specification/manifest#supplementary-files) or top-level supplementary files, use [`facet edit`](/cli/authoring/edit).
+  `facet modify` operates on text-asset primaries. To adopt, move, or reconcile a skill's [companion files](/specification/manifest#supplementary-files) or top-level supplementary files, use [`facet edit`](/cli/authoring/edit).
 </Note>
 
-### Remove an asset
+### Adapter configuration
 
-Removes the manifest descriptor and deletes the asset's file.
-
-```sh
-facet modify skill greet --remove
-```
-
-## Adapter configuration
-
-Each asset descriptor may carry an [`adapters`](/specification/manifest#fields) block: a map of adapter name to a free-form config object that the CLI passes through to that adapter at install time. Set one with a **name-embedded flag** whose value is a JSON object — the whole suffix after `--adapter-` is the adapter name, so hyphenated names like `claude-code` work:
+Each text-asset descriptor may carry an [`adapters`](/specification/manifest#fields) block: a map of adapter name to a config object the CLI passes to that adapter. Set one with a name-embedded flag whose value is a JSON object. The whole suffix after `--adapter-` is the adapter name, so hyphenated names such as `claude-code` work:
 
 ```sh
 facet modify skill greet \
@@ -106,29 +91,56 @@ facet modify skill greet \
   --adapter-opencode    '{"model":"..."}'
 ```
 
-Setting an adapter **replaces** that adapter's block wholesale. Remove one with `--remove-adapter-<name>`:
+Setting an adapter replaces that adapter's block wholesale. Remove one with `--remove-adapter-<name>`:
 
 ```sh
 facet modify skill greet --remove-adapter-opencode
 ```
 
-Adapter flags may accompany `--add` or `--rename`, or stand alone. You can also hand-edit the `adapters` object in `facet.json` directly; edits round-trip safely because the CLI preserves unknown descriptor fields.
+Adapter flags may accompany `--add` or `--rename`, or stand alone. Hand-edits to the `adapters` object round-trip safely, because unknown descriptor fields are preserved.
 
-## Editing facet metadata
+### Facet metadata
 
-The `facet` target sets facet-level fields (it takes no asset name). Pass at least one of `--name`, `--description`, `--version`, or `--private`.
+The `facet` target takes no text-asset name and sets facet-level fields. Pass at least one of `--name`, `--description`, `--version`, or `--private`.
 
-```sh
-facet modify facet --version 1.0.0 --description "..." --private
-```
+### What you cannot combine
 
-## Validation
+- Exactly one lifecycle action per call. Combining `--add`, `--remove`, and `--rename` is an error.
+- `--description` and adapter flags may ride along with `--add` or `--rename`, or stand alone. `--remove` takes no field flags.
+- Text-asset flags are not valid for the `facet` target, and facet-metadata flags are not valid for text-asset targets.
 
-After every mutation the resulting manifest is re-validated before anything is written. A change that would make `facet.json` invalid (for example, removing the only asset) is rejected and nothing is written.
+After every change the resulting manifest is re-validated before anything is written.
 
-## Rules
+## Troubleshooting
 
-- Exactly **one** lifecycle action per call: `--add`, `--remove`, or `--rename`. Combining them is an error.
-- `--description` and adapter flags may ride along with `--add` or `--rename`, or stand alone as an update. `--remove` takes no field flags.
-- Asset flags (`--add`/`--remove`/`--rename`) are not valid for the `facet` target, and facet-metadata flags (`--name`/`--version`/`--private`) are not valid for asset targets.
+<AccordionGroup>
+  <Accordion title="the asset already exists, or was not found">
+    **Cause:** `--add` names a text asset the manifest already declares, or another action names one it does not.
 
+    **Fix:** check the current names with `facet build --verify` or by reading `facet.json`, then re-run against the right name.
+  </Accordion>
+
+  <Accordion title="the rename target already exists">
+    **Cause:** the new name is already taken in that text asset's namespace. Skills and commands share one namespace, so a skill cannot take a command's name.
+
+    **Fix:** choose a free name, or remove the existing text asset first.
+  </Accordion>
+
+  <Accordion title="no facet fields were given">
+    **Cause:** `facet modify facet` was called with no metadata flag, so there is nothing to set.
+
+    **Fix:** pass at least one of `--name`, `--description`, `--version`, or `--private`.
+  </Accordion>
+
+  <Accordion title="the change would make facet.json invalid">
+    **Cause:** the result fails manifest validation, for example removing the last asset, or setting a name that breaks the [name grammar](/specification/manifest#facet-name-grammar).
+
+    **Fix:** the error names the offending field. Nothing was written, so correct the invocation and re-run.
+  </Accordion>
+</AccordionGroup>
+
+## See also
+
+- [`facet edit`](/cli/authoring/edit)
+- [`facet create`](/cli/authoring/create)
+- [`facet build`](/cli/authoring/build)

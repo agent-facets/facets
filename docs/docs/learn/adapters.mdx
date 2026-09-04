@@ -1,0 +1,58 @@
+---
+title: Adapters
+description: How facets reach your AI tool
+---
+
+An adapter connects facets to one AI coding tool. It knows where that tool keeps each kind of asset: files for skills, agents, and commands, and configuration entries for MCP servers. Install one adapter per tool you use, then every facet you add materializes into all of them.
+
+Adapters are installed per machine, not per project:
+
+```sh
+facet adapter add claude-code   # or: opencode, codex
+facet adapter list
+```
+
+See [`facet adapter add`](/cli/adapters/add) for sources, versions, and compatibility recovery.
+
+## Where assets land
+
+Text assets are written at project scope, inside your checkout, so they travel with the repository. MCP servers land in configuration instead, covered below.
+
+<ResponseField name="claude-code" type="first-party">
+  `.claude/skills/<name>/SKILL.md`, `.claude/agents/<name>.md`, `.claude/commands/<name>.md`
+</ResponseField>
+
+<ResponseField name="opencode" type="first-party">
+  `.opencode/skills/<name>/SKILL.md`, `.opencode/agents/<name>.md`, `.opencode/commands/<name>.md`
+</ResponseField>
+
+<ResponseField name="codex" type="first-party">
+  `.agents/skills/<name>/SKILL.md`, `.agents/commands/<name>.md`, and `.codex/agents/<name>.toml`
+</ResponseField>
+
+The name on disk is the [effective name](/specification/materialization#two-identities), which is the name your project chose if you aliased the text asset.
+
+## Where MCP configuration lands
+
+<ResponseField name="claude-code" type="first-party">
+  `.mcp.json`
+</ResponseField>
+
+<ResponseField name="opencode" type="first-party">
+  Whichever of `.opencode/opencode.jsonc`, `.opencode/opencode.json`, `opencode.jsonc`, or `opencode.json` already holds your servers
+</ResponseField>
+
+<ResponseField name="codex" type="first-party">
+  `.codex/config.toml`
+</ResponseField>
+
+Your unrelated settings, comments, and any server entry the project does not own are preserved. See [MCP servers](/docs/learn/mcp-servers).
+
+## Building your own
+
+An adapter is a small npm package that plans file changes and returns them; the CLI performs every write. See the [Custom adapters guide](/guides/custom-adapters) to build one, and the [Adapter SDK reference](/reference/adapter-sdk) for the contract.
+
+## Further reading
+
+- [`facet adapter add`](/cli/adapters/add)
+- [Set up your environment](/guides/setup)

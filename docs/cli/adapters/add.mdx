@@ -9,100 +9,110 @@ description: Installs an adapter
 facet adapter add [specifier]
 ```
 
-Installs an adapter from the given specifier. An adapter is a way for the `facet` system to talk to external tools, most often AI coding harnesses (OpenCode, Claude Code, Codex, etc.). Adapters define where assets and configuration live on disk.
+Installs an [adapter](/docs/learn/adapters) so facets can materialize into that tool. Run with no specifier for a picker of the first-party adapters. Without a terminal, the no-argument form fails.
 
-Run with no specifier to choose from an interactive picker of the first-party adapters (TTY only) — in a non-interactive shell the no-argument form fails with a structured error and exit `1`.
-
-<Note>
-`facet adapter install` is a deprecated alias of `add`. It still installs exactly the same way and exits with the same code; it just prints a deprecation notice on stderr first. Prefer `add`, which mirrors the top-level split: [`facet add`](/cli/add) takes a specifier, [`facet install`](/cli/install) takes none.
-</Note>
-
-## Built-in adapters
-
-These names resolve to the first-party adapter packages:
-
-- `opencode`  -- OpenCode adapter (`@agent-facets/adapter-opencode`)
-- `claude-code`  -- Claude Code adapter (`@agent-facets/adapter-claude-code`)
-- `codex`  -- Codex adapter (`@agent-facets/adapter-codex`)
+The candidate is staged, bundled, and verified before it replaces anything, and the switch is atomic. A failure before that switch leaves the existing installation untouched.
 
 <Note>
-A per-install `--target-dir` flag is intentionally not supported: later invocations (such as `facet build`) would have no way to locate adapters placed in non-default locations.
+  `facet adapter install` is a deprecated alias. It behaves identically and prints a deprecation notice on stderr.
 </Note>
+
+## Examples
+
+```sh
+facet adapter add opencode                      # first-party name
+facet adapter add @acme/adapter-custom          # highest compatible release
+facet adapter add @acme/adapter-custom@1.2.3    # exact release, never substituted
+facet adapter add git+https://github.com/you/repo.git#v1.0.0
+facet adapter add ./path/to/adapter
+```
+
+First-party names are `claude-code`, `opencode`, and `codex`.
 
 ## Exit codes
 
 | Code | Meaning |
-| ---- | ------- |
-| `0`  | Adapter installed |
-| `1`  | Install failed (bad specifier, no compatible release, download/clone failure, invalid adapter export, incompatible adapter API, or the no-argument form in a non-interactive shell) |
+| --- | --- |
+| `0` | Adapter installed. |
+| `1` | Failed, for example a bad specifier, no compatible release, a download failure, an invalid adapter export, an unsupported adapter API, or the no-argument form without a terminal. |
+| `2` | An unexpected error escaped command handling. |
 
-## What it does
+## Details
 
-The flow stages and verifies a candidate before it ever touches the existing installation:
+### Specifier grammar
 
-1. Download (or clone/copy) the source and bundle it into a self-contained `adapter.js` in temporary storage.
-2. Verify the bundle: it must export a valid adapter that declares a supported adapter API. For npm sources the runtime declaration must also match the package metadata used for selection.
-3. Acquire a per-adapter replacement lock, copy the verified bundle into a new generation under `$FACET_DIR/adapters/<name>/generations/<generation-id>/`, and verify it again at its final path.
-4. Atomically activate the new generation by replacing the `installation.json` receipt — the record of the active generation, verified API, and source provenance (specifier, resolved npm package/version, integrity).
-5. Remove the previous generation.
+Version selectors use the facet grammar: exact `1.2.3`, `1.*`, `1.2.*`, `*`, or `latest`. npm range syntax such as `^1.2.3` or `>=1.0.0` is rejected with a list of supported forms.
 
-Any failure **before** activation leaves the existing installation untouched — replacement is atomic. A cleanup failure **after** activation is reported as a warning; the new version is already active. See [environment variables](/cli/env) for the `FACET_DIR` layout.
+Adapter specifiers accept `git+` URLs, even though [`facet add`](/cli/add) rejects them for facets. Adapters and facets follow different source rules.
 
-## Specifier formats
+### Compatible resolution
 
-<CodeGroup>
+Every adapter declares the API contract it was built against, and this CLI supports exactly `0.3`. See [API versions](/reference/adapter-sdk#api-versions).
 
-```sh Built-in name
-facet adapter add opencode
-# resolves to the first-party npm package
-```
+For npm installs the CLI reads each release's declared API and selects the highest stable release that satisfies your selector and declares a supported API:
 
-```sh npm package
-facet adapter add @acme/adapter-custom          # highest compatible release
-facet adapter add @acme/adapter-custom@1.2.3    # exact version — fails if incompatible
-facet adapter add @acme/adapter-custom@1.*      # highest compatible in the range
-facet adapter add opencode@latest               # explicit latest = highest compatible
-```
-
-```sh Git URL
-facet adapter add git+https://github.com/user/repo.git#v1.0.0
-# clones the repository; optional #ref pins a tag, branch, or commit
-```
-
-```sh Local path
-facet adapter add ./path/to/adapter
-# uses a local directory
-```
-
-</CodeGroup>
-
-<Note>
-Adapter specifiers accept `git+` URLs even though facet sources for [`facet add`](/cli/add) reject them — adapters and facets follow different source rules.
-</Note>
-
-Version selectors use the Facet grammar: exact `1.2.3`, major wildcard `1.*`, minor wildcard `1.2.*`, `*`, or `latest`. npm range syntax (`^1.2.3`, `~1.2.3`, comparators, hyphen/OR/x-ranges, prerelease tags) is rejected with an error listing the supported forms.
-
-## Compatible resolution
-
-Every adapter declares the adapter API contract it was built against, and each CLI release supports an exact set of adapter APIs — currently just `0.3` (the read-only planning contract, where the adapter decides what changes and the CLI performs every write). Adapters declaring `0.0`, `0.1`, or `0.2` wrote files themselves and are unsupported. An older CLI whose set excludes `0.3` keeps selecting the highest release it does support, so the lines advance independently. Membership is exact and unordered, and numeric proximity confers nothing.
-
-For npm installs, the CLI reads the package's version metadata (the `facetAdapterApiVersion` field each release publishes) and selects the **highest stable release** that both satisfies your version selector and declares a supported API:
-
-- A bare name, `*`, or `latest` selects the highest compatible release — independent of npm's `latest` dist-tag.
-- A wildcard selector (`1.*`, `1.2.*`) selects the highest compatible release in the range.
-- An **exact version** considers only that release: if it is incompatible, the install fails rather than substituting another version.
+- A bare name, `*`, or `latest` selects the highest compatible release, independent of npm's `latest` dist-tag.
+- A wildcard selects the highest compatible release in that range.
+- An exact version considers only that release and fails if it is incompatible.
 - Releases with a missing or malformed declaration are never selected.
 
-When no release in the requested set is compatible, the install fails with the newest considered release, its declared (or missing) adapter API, and the APIs this CLI supports.
+Git and local sources skip selection. They are built as supplied and must still pass runtime verification.
 
-Git and local sources don't participate in compatible resolution — the version-selector grammar and highest-compatible-release selection apply only to npm installs. A Git `#ref` still pins exactly what gets built (a tag, branch, or commit), and both Git and local sources are built as supplied and must pass the same runtime compatibility verification before installation.
+### Where it is installed
+
+The active bundle and its installation record live under [`$FACET_DIR`](/cli/env)`/adapters/<name>/`. Replacing an adapter stages a new generation and switches over atomically, so an interrupted install never leaves a half-written adapter active.
 
 <Note>
-Being installable is not the same as being able to configure MCP servers. An adapter with no MCP support installs and works normally — it only blocks a project that has active [MCP server declarations](/cli/install#adapters-that-cannot-configure-mcp-servers). All three first-party adapters declare `0.3` with MCP support.
+  There is no `--target-dir`. Later commands would have no way to find adapters placed outside the standard location.
 </Note>
+
+<Note>
+  Installing is not the same as configuring MCP servers. An adapter with no MCP support installs and works normally, and only blocks a project with [active declarations](/cli/install#adapters-that-cannot-configure-mcp-servers).
+</Note>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="no adapters installed">
+    **Cause:** a facet must materialize into at least one adapter, and this project has none connected. In a terminal you get a picker; without one the command fails.
+
+    **Fix:**
+
+    ```sh
+    facet adapter add claude-code
+    facet adapter list
+    ```
+
+    Two related failures name themselves differently: installed adapters that declare no text-asset support cannot materialize anything, and a picker that yields only such adapters fails the same way. Install one that materializes text assets.
+  </Accordion>
+
+  <Accordion title="no compatible release">
+    **Cause:** nothing in the requested set declares an adapter API this CLI supports. An exact version is never substituted, so pinning an incompatible release fails rather than resolving elsewhere.
+
+    **Fix:** the message names the newest release considered and its declared API. Drop the exact pin, or widen the selector, so the CLI can choose a compatible release. For a git or local source, update the source itself.
+  </Accordion>
+
+  <Accordion title="integrity check failed on download">
+    **Cause:** the downloaded package did not match the integrity the registry published for it.
+
+    **Fix:** do not retry blindly. Verify the package and the registry you are pointed at, then report it if the mismatch persists.
+  </Accordion>
+
+  <Accordion title="the bundle is not a valid adapter">
+    **Cause:** the built entry has no default export, exports something that is not an adapter, or declares a capability it does not implement.
+
+    **Fix:** build the package and confirm it default-exports a `defineAdapter` call. See the [Adapter SDK](/reference/adapter-sdk).
+  </Accordion>
+
+  <Accordion title="another install is replacing this adapter">
+    **Cause:** adapter replacement takes a per-adapter lock, and another process holds it.
+
+    **Fix:** wait for that run to finish and re-run. The previous installation stays active meanwhile.
+  </Accordion>
+</AccordionGroup>
 
 ## See also
 
-- [`facet adapter list`](/cli/adapters/list) -- list installed adapters.
-- [`facet adapter remove`](/cli/adapters/remove) -- remove an installed adapter.
-- [Environment variables](/cli/env) -- `FACET_DIR` and the directory layout.
+- [`facet adapter list`](/cli/adapters/list)
+- [`facet adapter remove`](/cli/adapters/remove)
+- [Adapter SDK](/reference/adapter-sdk)

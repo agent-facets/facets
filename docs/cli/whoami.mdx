@@ -9,38 +9,17 @@ description: Print the signed-in identity
 facet whoami
 ```
 
-Prints the identity associated with the current credential by calling `GET /v0/auth/me`.
+Resolves your credential, checking `FACET_TOKEN` before the saved [credentials file](/cli/env), and prints the identity it belongs to.
 
 ## Exit codes
 
 | Code | Meaning |
-| ---- | ------- |
-| `0`  | Identity displayed successfully. |
-| `1`  | Failed (no credential found, invalid token, network error). |
-
-## What it does
-
-<Steps>
-  <Step title="Resolve credential">
-    Checks `FACET_TOKEN` environment variable first, then the credentials file at `$FACET_DIR/credentials` (default `~/.facet/credentials`).
-  </Step>
-  <Step title="Query registry">
-    Calls `GET /v0/auth/me` with the resolved token.
-  </Step>
-  <Step title="Display identity">
-    Shows the username, email, account tier, and credential source.
-  </Step>
-</Steps>
+| --- | --- |
+| `0` | Identity displayed. |
+| `1` | Failed, for example no credential, an invalid token, or a network error. See [`facet login`](/cli/login#troubleshooting). |
+| `2` | An unexpected error escaped command handling. |
 
 ## Output
-
-```
-yourname <you@example.com>
-  tier: free
-  registry: https://api.agentfacets.io
-```
-
-If the credential was resolved from `FACET_TOKEN` instead of the saved file:
 
 ```
 yourname <you@example.com>
@@ -49,11 +28,9 @@ yourname <you@example.com>
   credential: FACET_TOKEN (environment)
 ```
 
-The `registry` line is always printed and shows the base URL the identity was resolved against.
-
-If the account is suspended, the suspended status is shown.
+The `registry` line always shows the base URL the identity was resolved against. The `credential` line appears when the token came from the environment rather than the saved file. A suspended account is reported as suspended.
 
 ## See also
 
-- [`facet login`](/cli/login) -- sign in to the registry.
-- [`facet logout`](/cli/logout) -- remove saved credentials.
+- [`facet login`](/cli/login)
+- [`facet logout`](/cli/logout)

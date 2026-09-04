@@ -1,106 +1,74 @@
 # Docs authoring rules
 
-These rules apply to all documentation under `docs/` (Mintlify site). For
-changelog-specific rules, see `docs/changelog/AGENTS.md`.
+These rules apply to every page under `docs/`. Changelog entries have
+additional rules in `docs/changelog/AGENTS.md`.
 
-## File format: `.mdx`
+## What each surface is for
 
-All documentation pages use the `.mdx` extension, not `.md`. MDX lets pages
-use Mintlify components (`<Steps>`, `<Tooltip>`, `<Card>`, `<Visibility>`,
-etc.) freely. When creating a new page, name it `*.mdx`. The only `.md`
-files under `docs/` are the `AGENTS.md` instruction files (like this one),
-which are guidance for agents, not published pages.
+Every page has one audience and one job. If a page starts doing a second
+job, split it or link to the page that owns the other job.
 
-Navigation in `docs.json` references pages **without** an extension
-(`cli/authoring/build`, not `cli/authoring/build.mdx`), so renaming between
-`.md` and `.mdx` never touches `docs.json`. Internal links use extensionless
-paths too (`/docs/learn`, not `/docs/learn/index.md`).
+| Surface | Job | Never carries |
+| --- | --- | --- |
+| `docs/index`, `quickstart` | Get someone productive fast | Edge cases, reference tables |
+| `docs/learn/*` | Define a concept once | Command flags, install behavior |
+| `guides/*` | Walk one task end to end | Exhaustive options, design rationale |
+| `cli/*` | Invocation, observable output, recovery | Engine internals, spec prose |
+| `specification/*` | Testable rules another implementation must satisfy | CLI choreography, our engine's architecture |
+| `reference/*` | Public type and API contracts | Tutorials, rationale essays |
 
-## Linked inline code
+## One canonical home
 
-When a link's visible text is inline code (a command, flag, filename, or
-symbol), use a backtick code span inside the Markdown link:
-`` [`facet build`](/cli/authoring/build) ``.
+Each behavior is documented in exactly one place. Every other mention is
+a link, not a summary.
 
-Do **not** wrap the link in `<code>…</code>`. Mintlify applies typographic
-transformation to text inside `<code>` elements, which corrupts
-double-hyphen flag names (`--frozen-lockfile` renders as an en dash).
-Backtick spans preserve literal dashes.
+Before writing a paragraph, search for the rule. If it already exists,
+link to it. Two copies of a rule become two different rules.
 
-**Do:**
+## Write less
 
-```mdx
-See [`facet build`](/cli/authoring/build) for the full pipeline.
-```
+- Lead with the goal, then the commands.
+- Prefer a command or short example over a paragraph describing it.
+- Cut any sentence that does not change what the reader types, sees, or
+  decides.
+- Second person, active voice. "Add a facet", not "Facets can be added".
+- Length is earned by substance. A small topic gets a short page.
 
-**Don't:**
+Do not explain why the system was designed a given way. Keep rationale
+only when it prevents misuse or describes a security boundary, and keep
+it to one sentence.
 
-```mdx
-See <code>[facet build](/cli/authoring/build)</code> for the full pipeline.
-```
+Do not describe internal architecture. Call orders, transaction
+journals, module names, and receipt schema mechanics belong in the
+source, not the docs. Users need the guarantee, not the implementation.
 
-Notes:
+## Punctuation
 
-- This applies only when the **entire** visible link text is code. A link
-  whose text is prose stays a normal Markdown link: `[the manifest](/…)`.
-- Inline code that is **not** a link stays a normal backtick span
-  (`` `facet.json` ``). This rule is only about links.
+Prose must not contain an em dash (`—`) or a spaced double hyphen used as
+one (` -- `). Use a period, comma, colon, or parentheses instead.
 
-## Inline code inside component string props
+This applies to prose only. Literal CLI flags (`--frozen-lockfile`),
+code samples, and command output keep their exact characters.
 
-Markdown backticks do **not** render inside a component prop that takes a
-plain string (for example, `<Tooltip tip="…">`). Backticks appear
-literally. When a string prop needs inline code, pass a JSX expression with
-a `<span>` wrapper and `<code>` elements instead.
+**Do:** `--latest` crosses the declared range. It rewrites the specifier
+minimally.
 
-**Do:**
+**Don't:** `--latest` crosses the declared range  --  it rewrites the
+specifier minimally.
 
-```mdx
-<Tooltip tip={<span>Set via <code>facet login</code> or <code>FACET_TOKEN</code>.</span>}>
-  personal access token
-</Tooltip>
-```
+## File format
 
-**Don't** (backticks render as literal characters):
+All pages use `.mdx`, so they can use Mintlify components. The only `.md`
+files under `docs/` are `AGENTS.md` instruction files.
 
-```mdx
-<Tooltip tip="Set via `facet login` or `FACET_TOKEN`.">
-  personal access token
-</Tooltip>
-```
-
-The same applies to any other component prop typed as a string that you
-want to contain inline code (e.g. `headline`). Wrap the value in
-`{<span>…</span>}` and use `<code>` for the code spans.
-
-## Writing style
-
-Docs should be **simple, scannable, and easy to read**. Prefer showing over
-telling. A reader skimming the page should be able to follow the happy path
-from the code blocks and headings alone.
-
-- **Lead with the goal, then the steps.** Open a guide with one or two
-  sentences on what the reader will end up with, then get to the commands.
-- **Show, don't over-explain.** Favor a command or short example over a
-  paragraph describing it. Trim background that doesn't change what the
-  reader types.
-- **Lean on the CLI.** When a flow can be reduced to a single command
-  (e.g. headless `facet create` instead of narrating a wizard), do that.
-- **Succinct, not terse.** Length is earned by substance. A small change
-  gets a short section; a big one gets a longer one. Don't pad.
-- **Second person, active voice.** "Add a facet", not "Facets can be added".
-- **Keep prose out of the reader's way.** Reference pages carry exhaustive
-  flag lists and edge cases; guides carry the path a reader actually walks.
-  Link to the reference rather than duplicating it.
+`docs.json` and internal links use extensionless paths (`/docs/learn`,
+`cli/authoring/build`).
 
 ## Page descriptions
 
-The frontmatter `description` must be **short** — aim for ~40 characters and
-treat that as the ceiling, not a target to fill. Descriptions appear in the
-"next/previous page" link cards at the bottom of pages, and anything much
-longer than the example below is truncated with an ellipsis.
-
-Write a tight verb phrase that says what the page is for:
+Frontmatter `description` is a short verb phrase, about 40 characters and
+never much longer. Descriptions render in next/previous cards and
+truncate. Drop filler like "A guide to" or "How to".
 
 ```mdx
 ---
@@ -109,109 +77,145 @@ description: Scaffold, author, build, and verify a facet
 ---
 ```
 
-That example is 43 characters  -- a good ceiling. Drop filler ("A guide to
-…", "How to …", "Everything about …") and trailing punctuation. If you can't
-fit the scope, the page is probably doing too much  -- split it.
+If the scope will not fit, the page is doing too much.
 
 ## Page structure
 
-Structure a guide as a walkable path, not a flat wall of prose.
+- `##` headings mark the phases a reader can jump between.
+- `<Steps>` for anything sequential.
+- One idea per section. If a section branches into unrelated sub-topics,
+  split it.
+- Name a section for the reader's situation ("When nothing moves"), not
+  for the system's internals.
 
-- **`<Steps>` for anything sequential.** If actions happen in order (scaffold
-  → write → verify → build; sign in → build → publish), wrap them in
-  `<Steps>` with a `<Step title="…">` per action. This is the default for
-  procedural guides.
-- **`##` headings for phases.** Group the guide into a few top-level phases a
-  reader can jump between from the sidebar TOC.
-- **One idea per section.** If a section starts branching into unrelated
-  sub-topics, split it.
+## CLI command pages
 
-## Human vs. agent content: `<Visibility>`
+Every page under `cli/` that documents a command uses this order. Skip a
+section rather than moving it, and never add one just to fill the slot.
 
-Guides that both a human and an AI agent will read use the `<Visibility>`
-component to serve each audience the right depth without maintaining two
-pages. See [Visibility](https://www.mintlify.com/docs/components/visibility).
+```mdx
+## Usage            {/* required */}
+## Examples         {/* optional */}
+## Flags            {/* optional */}
+## Exit codes       {/* required */}
+## Output           {/* optional */}
+## Details          {/* optional */}
+## Troubleshooting  {/* optional */}
+## See also         {/* required */}
+```
 
-- `<Visibility for="agents">` — a **concise** block, rendered only in the
-  Markdown (`.md`) output agents consume. It routes the agent to the
-  authoritative source (usually `facet instructions <topic>`) and gives a
-  short, copy-pasteable command recipe. Do not restate the whole human
-  walkthrough here.
-- `<Visibility for="humans">` — the full, readable walkthrough shown on the
-  web.
+What each section owns:
 
-Write the agent block as a Markdown blockquote (`>`), keep it near the top of
-the page (right after the intro), and point it at the CLI's own instructions
-rather than duplicating guidance.
+- **Usage** is the synopsis plus one or two sentences on what the command
+  does and what it writes. There is no `What it does` section: a step
+  narration of the pipeline belongs in the source, not here.
+- **Examples** shows real invocations when the command takes arguments or
+  more than one flag. A single zero-argument command skips it.
+- **Flags** documents what `--help` does not already make obvious. One or
+  two sentences each. If a flag needs more, put the detail in `Details`
+  and link to it.
+- **Exit codes** is a two-column table. Use the shared wording from
+  [`/cli`](/cli): `0` succeeded, `1` failed in an anticipated way, `2` an
+  unexpected error escaped command handling.
+- **Output** describes what a successful run prints, when that helps the
+  reader read or consume it.
+- **Details** is the only home for command-specific explanation. Each
+  topic is an `###` under it, and a topic that needs sub-topics uses
+  `####`. A command page never grows a peer `##` for its own behavior.
+- **Troubleshooting** is an `<AccordionGroup>` of Cause and Fix entries in
+  the same shape as [Troubleshooting](/guides/troubleshooting). The
+  command page owns the errors only that command can produce.
+- **See also** is 2 to 4 links.
 
-## Prefer components over tables
+An error that several commands can produce stays in the central
+troubleshooting guide. An error one command owns lives on that command's
+page, and the guide links to it.
 
-**Tables are a last resort.** They wrap badly, especially when cells contain
-inline code, and they read poorly on narrow viewports. Reach for a
-purpose-built component first:
+Two pages are exempt because they are not command pages: `cli/index` is a
+navigation hub whose `##` headings match the nav groups, and `cli/env` is
+a catalog with one `##` per variable.
 
-- **Fields, methods, options, parameters → `<ResponseField>`.** Documenting a
-  set of named things each with a type and a description (an adapter contract,
-  a manifest's fields, a command's flags) belongs in `<ResponseField
-  name="…" type="…" required>…</ResponseField>`, one per item. This renders
-  each item as a clean labeled row instead of a wrapping wall of code pills.
-- **Alternative ways to do one thing → `<CodeGroup>`.** When the same step has
-  several variants (install from a local dir vs. GitHub vs. by name; curl vs.
-  npm vs. bun), put each in its own titled tab: ` ```sh Local directory `.
-  Keep the explanatory comment inline in each tab.
-- **Sequential actions → `<Steps>`** (see Page structure).
+Heading text is an anchor contract. Changing a heading's level is safe;
+changing its words breaks every inbound link, so check before renaming.
 
-**When a table is still fine:** genuinely tabular reference data where every
-row shares the same simple columns and cells are short  -- e.g. HTTP status
-codes and their meanings, or an environment-variable reference. If a cell
-would contain a long signature or multiple code spans, it's not a table.
+## Linked inline code
 
-## Large code blocks: `expandable`
+When a link's entire visible text is code, put a backtick span inside the
+Markdown link: `` [`facet build`](/cli/authoring/build) ``.
 
-Collapse long code blocks (roughly 15+ lines  -- a full example file, a
-lockfile sample) behind a toggle by adding `expandable` after the language on
-the fence, with a title. The fence info string reads:
+Never wrap a link in `<code>`. Mintlify applies typographic
+transformation inside `<code>`, which turns `--flag` into an en dash.
 
-    ```json expandable facets.lock
+## Inline code in component props
 
-i.e. `<language> expandable <title>`.
+Backticks do not render inside a plain string prop. Pass a JSX expression
+instead.
 
-Short blocks (commands, small snippets) stay expanded. Always give a code
-block a title after the language when it represents a named file (info string
-`ts src/index.ts`) or a `<CodeGroup>` tab (info string `sh Local directory`).
+```mdx
+<Tooltip tip={<span>Set via <code>facet login</code> or <code>FACET_TOKEN</code>.</span>}>
+  personal access token
+</Tooltip>
+```
 
-## Tooltips for glossary terms
+## Components over tables
 
-Use `<Tooltip>` to define a domain term on its **first bare mention** in a
-page  -- "facet", "adapter", "lockfile", "integrity hash", "PAT". Give it a
-`headline`, a one-sentence `tip`, and (where useful) a `cta`/`href` to the
-fuller reference.
+Tables are a last resort. They wrap badly when cells hold code.
 
-- One tooltip per term per page, on first use only. Don't tooltip the same
-  term repeatedly.
-- Skip the tooltip when the surrounding prose already defines the term inline
-  ("An adapter is the bridge between…"). Tooltips are for terms used *without*
-  an inline definition.
-- Remember the string-prop rule above: if the `tip` needs inline code, pass
-  `tip={<span>…<code>…</code></span>}`.
+- Named things with a type and a description (fields, flags, options) use
+  `<ResponseField name="…" type="…">`.
+- Variants of one step (curl vs npm, local vs GitHub) use `<CodeGroup>`
+  with a titled tab per variant.
+- Sequential actions use `<Steps>`.
+
+A table is fine for genuinely tabular data with short cells, such as exit
+codes or environment variables. If a cell needs a long signature or
+several code spans, it is not a table.
+
+## Code blocks
+
+Give a block a title when it names a file or a `<CodeGroup>` tab:
+` ```ts src/index.ts `. Collapse blocks of roughly 15 lines or more with
+` ```json expandable facets.lock `.
+
+Show the smallest complete example. Do not enumerate every variant a
+reader could construct.
 
 ## Callouts
 
-Use callouts sparingly, for information that sits beside the main path:
+Callouts sit beside the main path and stay short, about three lines.
 
-- **`<Tip>`** — an optional shortcut or nicety ("prefer a guided setup? run …
-  with no flags").
-- **`<Note>`** — a clarification the reader should know but that doesn't block
-  them.
-- **`<Warning>`** — a genuine footgun (a stale `dist/` shipping in CI, a
-  lingering `FACET_TOKEN` after logout).
+- `<Tip>` for an optional shortcut.
+- `<Note>` for a clarification that does not block the reader.
+- `<Warning>` for a real footgun, such as data loss or a leaked secret.
 
-Don't wrap the primary instruction in a callout  -- callouts are the margin,
-not the main text.
+Never put the primary instruction in a callout. A callout carrying five
+behaviors is body text in disguise: promote it to a section.
+
+## Tooltips
+
+Use `<Tooltip>` on a term's first bare mention in a page, once per page.
+Skip it when the surrounding prose already defines the term.
+
+## `<Visibility>`
+
+Guides read by both humans and agents use `<Visibility>`.
+
+- `<Visibility for="agents">` is a short blockquote, about 20 lines at
+  most. It points at `facet instructions <topic>` and gives a
+  copy-pasteable command recipe. It never restates the walkthrough or a
+  contract shape.
+- `<Visibility for="humans">` holds the readable walkthrough.
 
 ## Cross-linking
 
-Connect pages instead of duplicating them. Link to the CLI reference
-(`/cli/...`), the specification, and related guides using the backtick-link
-convention (`` [`…`](/url) ``) for command/symbol links. A guide should
-teach the path and defer exhaustive detail to the reference it links.
+Connect pages instead of duplicating them. A guide teaches the path and
+links the reference that owns the detail.
+
+## Before you commit a page
+
+- One audience, one job.
+- Every rule stated once, elsewhere linked.
+- No em dash or spaced double hyphen in prose.
+- No internal architecture, no design rationale beyond a preventive
+  sentence.
+- Claims verified against source, not against another doc page.

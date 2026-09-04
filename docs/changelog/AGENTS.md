@@ -1,138 +1,85 @@
 # Changelog authoring rules
 
-These rules govern how changelog entries are written and structured in
-`docs/changelog/index.mdx`. They are distilled from [Mintlify's changelog
-docs](https://www.mintlify.com/docs/create/changelogs) and [Mintlify's
-five-principles guide](https://www.mintlify.com/blog/five-changelog-principles-from-best-developer-brands).
+These rules govern entries in `docs/changelog/index.mdx`. The general
+docs rules in `docs/AGENTS.md` apply too, including the punctuation rule:
+no em dash and no spaced double hyphen in prose.
 
 ## File layout
 
-- **Single source of truth**: all changelog content lives in
-  `docs/changelog/index.mdx`. Never create additional per-date files (e.g.
-  `2026-04-20.mdx`)  -- they fragment the changelog, duplicate nav entries, and
-  create orphan pages.
-- **One changelog tab in `docs/docs.json`**: the Changelog tab must point only
-  to `changelog/index`. Do not add a second tab.
-- **Frontmatter must include `rss: true`**: this surfaces the RSS-subscribe
-  button on the page. Keep `title: Changelog` and a short `description`.
+- All changelog content lives in `docs/changelog/index.mdx`. Never create
+  per-date files; they fragment the changelog and create orphan pages.
+- The Changelog tab in `docs/docs.json` points only at `changelog/index`.
+- Frontmatter keeps `title: Changelog`, a short `description`, and
+  `rss: true`.
 
 ## Entry structure
-
-Every entry is a Mintlify `<Update>` component:
 
 ```mdx
 <Update label="YYYY-MM-DD" description="Short tagline" tags={["New Feature"]}>
   ## Section heading
 
-  Body content…
+  Body content
 </Update>
 ```
 
-- **`label`**  -- ISO date (`YYYY-MM-DD`). Sorts naturally. Generates the
-  right-sidebar TOC entry.
-- **`description`**  -- a short, user-scannable tagline for the day's changes.
-- **`tags`**  -- see [Tag vocabulary](#tag-vocabulary) below.
+- `label` is the ISO ship date. It sorts naturally and generates the
+  sidebar entry.
+- `description` is a one-line tagline covering the day's changes.
+- `tags` follow the vocabulary below.
 
-## Tag vocabulary
+## Tags
 
-Tags have two independent dimensions. An entry carries one **change-type** tag
-and, if the `facet` CLI itself was modified, also the `CLI` tag.
+One change-type tag per section, plus `CLI` when the `facet` CLI itself
+changed.
 
-### Change type (usually one, unless release spans multiple aspects, each aspect should be it's own section)
+- `New Feature`: a capability that did not exist before.
+- `Improvement`: something that existed got better or gained scope.
+- `Fix`: a user-visible bug fix.
+- `Breaking`: backwards-incompatible change, removal, or deprecation.
+- `CLI`: the CLI's commands, flags, behavior, build pipeline, archive
+  format, or adapter SDK changed.
 
-- **`New Feature`**  -- a capability that didn't exist before (a new command, a new
-  adapter, a new site, a new docs surface).
-- **`Improvement`**  -- something that already existed got better: faster,
-  cleaner, more flexible, or picked up additional capabilities on an existing
-  surface. Use this for performance wins, UX polish, and incremental additions
-  to an existing command or format.
-- **`Fix`**  -- a user-visible bug fix. (No entries use this yet; reserved for
-  future use.)
-- **`Breaking`**  -- a change that breaks existing behavior. Use this for
-  backwards-incompatible changes, removals, or deprecations.
+No surface tag means the change was not product-facing (docs, site,
+branding). Do not invent a `Docs` or `Site` tag.
 
-### Surface (optional)
-
-- **`CLI`**  -- the `facet` CLI / tooling was changed. Add this whenever an
-  entry touches the CLI's commands, flags, behavior, build pipeline, archive
-  format, or adapter SDK.
-- **No surface tag**  -- the change is non-product (docs, landing page, site
-  URLs, branding). Don't invent a `Docs` or `Site` tag  -- the absence of `CLI`
-  is the signal.
-
-### Mixed-surface days
-
-When a single day bundles CLI and non-CLI changes into one entry, tag by the
-**dominant** change. For example, if `facet add` ships on the same day as a
-docs URL move, tag the combined entry `["CLI", "New Feature"]`  -- the install-URL
-cleanup rides along under the CLI release.
-
-### Examples
-
-| Change                                                | Tags                     |
-|-------------------------------------------------------|--------------------------|
-| Brand-new `facet add` / `facet install` commands      | `["CLI", "New Feature"]` |
-| New adapter SDK and first-party adapters              | `["CLI", "New Feature"]` |
-| Faster adapter installs (existing command, now fast)  | `["CLI", "Improvement"]` |
-| `.facet` archive format becomes self-contained        | `["CLI", "Improvement"]` |
-| New landing page at agentfacets.io                    | `["Improvement"]`        |
-| Docs moved to docs.agentfacets.io                     | `["Improvement"]`        |
-| Bug fix in `facet build`                              | `["CLI", "Fix"]`         |
+When one day bundles CLI and non-CLI work, tag by the dominant change.
 
 ## One entry per day
 
-- **Never create multiple `<Update>` blocks with the same `label`.** If more
-  than one thing shipped on the same date, combine them into a single entry and
-  use `##` subheadings to separate the distinct announcements within the body.
-- The `description` and `tags` on a combined entry should reflect all the
-  changes it contains (e.g. `description="Install pipeline and new install
-  URL"`, `tags={["New Feature", "Improvement"]}`).
+Never write two `<Update>` blocks with the same `label`. Combine same-day
+changes into one entry and separate announcements with `##` subheadings.
+
+Entries are newest first. A new entry goes at the top of the file.
 
 ## Writing style
 
-An entry should read like a release announcement, not a commit summary.
+An entry reads like a release announcement, not a commit summary.
 
-- **Succinct, not terse**. Length is earned by substance: a small change gets a
-  short entry, a big day gets a long one. Don't pad, but don't over-compress
-  either.
-- **User-facing and descriptive**. Focus on what improved for the reader, not
-  what changed in the codebase. Show _how to use_ the thing  -- command
-  invocations, realistic examples, sample output where it helps.
-- **Connect and reference** (Mintlify principle #3): link to CLI reference
-  pages (e.g. `/cli/add`, `/cli/install`), external docs, and related
-  packages. Include code blocks for new commands, install flows, or migration
-  paths.
-- **Only what matters** (Mintlify principle #4): include changes that affect
-  the user experience. Skip internal refactors and code cleanup unless they
-  have a user-visible consequence (e.g. "faster adapter installs").
-- **Breaking changes**: prefix with `**Breaking:**` inline and explain what
-  broke and what the user must do. Make these impossible to miss.
+- Say what improved for the reader, not what changed in the codebase.
+- Show usage: the command, a realistic example, sample output when it
+  helps.
+- Link to the pages that own the detail, such as `/cli/add` or
+  `/cli/install`. Do not restate a reference page inside an entry.
+- Skip internal refactors unless they have a visible consequence.
+- Keep it proportional. A small fix gets a short entry.
+- Prefix a breaking change with `**Breaking:**` and say what the reader
+  must do.
 
-## Ordering
+## RSS
 
-Entries are listed newest-first (descending date). When adding a new entry, it
-goes at the top of the file.
+RSS entries carry plain Markdown only, so components and code blocks are
+dropped. When an entry's substance lives in a code block or component,
+add an `rss` prop with an equivalent text description.
 
-## RSS considerations
+Publishing happens when an `<Update>` is added or its headings change.
+Avoid editing headings on shipped entries.
 
-- RSS feed entries contain pure Markdown only  -- components, HTML, and code
-  blocks are excluded. If an entry's substance is inside a code block or
-  component, add an `rss` prop with an alternative text description.
-- Adding a new `<Update>` or modifying headings inside an existing one
-  publishes an RSS entry. Avoid gratuitous heading edits on shipped entries.
+## Checklist
 
-## Checklist for a new entry
-
-- [ ] Added to the top of `docs/changelog/index.mdx`.
-- [ ] `label="YYYY-MM-DD"` uses today's date (or the ship date).
-- [ ] No other `<Update>` in the file uses the same `label`  -- if one exists,
-      merge into it instead of creating a new entry.
-- [ ] `description` is a short tagline covering the full scope of the day's
-      changes.
-- [ ] `tags` are set: one change-type tag per section (`New Feature`, `Improvement`, or
-      `Fix`) plus the `CLI` tag if the `facet` CLI itself was modified.
-- [ ] Body explains the user-facing impact and shows usage (code samples,
-      commands, realistic examples) where relevant.
-- [ ] Links to CLI reference or docs pages where appropriate.
-- [ ] No duplicate `docs/changelog/*.mdx` files; no second Changelog tab in
-      `docs/docs.json`.
+- [ ] Added at the top of `docs/changelog/index.mdx`.
+- [ ] `label` is the ship date and no other entry uses it.
+- [ ] `description` covers the day's full scope.
+- [ ] Tags set: one change type per section, plus `CLI` when applicable.
+- [ ] Body shows user-facing impact and usage.
+- [ ] Links to the reference pages that own the detail.
+- [ ] No em dash or spaced double hyphen in prose.

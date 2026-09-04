@@ -3,76 +3,69 @@ title: "Publish"
 description: Verify and upload to the registry
 ---
 
-`facet publish` reads the built `.facet` from `dist/`, verifies it end-to-end via the archive-verification operation defined by this specification (see [Facet Archive](/specification/archive)), and uploads the verified bytes to the registry. Building and publishing are distinct steps — [`facet build`](/specification/build) is the sole producer of the archive, and publish never constructs it on its normal path.
+Publishing verifies a built [archive](/specification/archive) and uploads it. [Build](/specification/build) is the sole producer of that archive; publish never constructs one on its normal path.
 
-This page specifies what publishing means — the verification obligations, the registry's behavior, and the decision semantics when the built artifact is missing or has drifted from source. Command usage, flags, and the interactive prompt flow are documented at [`facet publish`](/cli/authoring/publish).
+This page defines the obligations. Command behavior and prompts are documented at [`facet publish`](/cli/authoring/publish).
 
 ## Authentication
 
-Publishing is an authenticated operation. The CLI sends an `Authorization: Bearer <token>` header on the publish request, where the token is a personal access token (PAT) minted in the web UI. If no credential can be resolved, `facet publish` MUST fail before any verification or registry round-trip. Credential management — where tokens live and how they are resolved — is CLI behavior; see [`facet login`](/cli/login).
+Publishing is authenticated. If no credential can be resolved, publish MUST fail before any verification or registry request.
 
-Errors returned by the registry MUST be rendered verbatim  -- implementations show the registry's own message and suggested fix rather than maintaining their own copy of what each error code means. A duplicate-version publish, for example, surfaces the registry's "version already exists" guidance directly.
+Errors returned by the registry MUST be rendered verbatim. Implementations show the registry's own message and suggested fix rather than maintaining a second copy of what each error means.
 
 ## What the author uploads
 
-The CLI uploads the complete built `.facet` archive  -- the same self-contained two-layer artifact `facet build` produced. The outer tar contains the `build-manifest.json` (recording the integrity hash and the complete per-entry [`files`](/specification/archive) hash map) and the gzipped inner archive (carrying the embedded `facet.json`, every declared asset, and every declared supplementary file). No part of the archive is re-derived at upload time: the bytes on disk are the bytes on the wire.
+The complete built archive is uploaded as it exists on disk. No part of it is re-derived at upload time.
 
-The `name` and `version` used to address the upload come from the verified artifact's embedded manifest, not from a separate parse of the source-tree `facet.json`. This matters when the user explicitly chooses to ship a drifted artifact under its own embedded identity (see [identity drift](#when-the-built-artifact-has-drifted-from-source)).
+The `name` and `version` addressing the upload MUST come from the verified artifact's embedded manifest, not from a separate read of the source `facet.json`. This matters when a user deliberately ships a drifted artifact under its own identity.
 
-The manifest's [`private`](/specification/manifest#privacy) declaration is part of that embedded manifest, so it travels with the upload like any other manifest content  -- there is no separate publish flag for privacy. The registry reads the author's privacy intent from the embedded `facet.json`. Registry-side authorization and visibility enforcement are outside the CLI/protocol surface described here.
+The [`private`](/specification/manifest#privacy) declaration is manifest content, so it travels inside the artifact. There is no separate publish flag for visibility.
 
 ## What the registry does
 
-1. **Verify the upload.** The registry runs the same archive-verification operation `facet publish` ran locally: dispatch on the archive `facetVersion` (accepting both the current `0.2` and legacy `0.1` during the compatibility window), parse the outer container, decompress the inner archive (within the registry's size policy), verify the integrity hash, verify each per-entry hash, validate the embedded manifest, and apply the [artifact content rules](/specification/archive#content-rules) — including the expanded supplementary-file membership. A verification failure rejects the publish. The registry is a separate implementation of this specification and adopts the same relaxed rules.
-
-2. **Store the artifact.** The verified bytes are stored under `(name, version)`. The registry records both the canonical fingerprint (`content_integrity`) and the transport hash (`content_hash`). Consumers verify both at different stages (see [Integrity Model](/specification/integrity)).
-
-Publish-time errors from the registry  -- verification failures, duplicate-version conflicts, tier limits, size caps  -- are surfaced to the user with the registry's own text (see the [Authentication](#authentication) note above).
+1. **Verify the upload.** The registry runs the same archive verification a consumer would: dispatch on `facetVersion`, parse the container, verify the integrity hash and every per-entry hash, validate the embedded manifest, and apply the [content rules](/specification/archive#content-rules). A verification failure rejects the publish.
+2. **Store the artifact.** The verified bytes are stored under `(name, version)`, and both the canonical fingerprint and the transport hash are recorded.
 
 ## Review queue
 
-A first-time publish MAY be accepted into a moderation queue rather than published immediately — for example when the requested name is reserved, or the account has exceeded its tier's publish budget. This is a **success** outcome: implementations MUST report that the submission was queued for review and render the registry's guidance. The version becomes available once an admin approves it.
+A publish MAY be accepted into a moderation queue rather than published immediately, for example when a name is reserved. This is a success outcome: implementations MUST report that the submission was queued and render the registry's guidance. The version becomes available once approved.
 
 ## Immutability
 
-Once a facet version is published, the registry MUST NOT allow re-publishing the same name and version with different content. A version, once published, is immutable.
+Once a version is published, the registry MUST NOT allow republishing that name and version with different content.
 
-Because `private` is manifest content embedded in the artifact, changing a facet's privacy after a version is published requires the same version bump as any other content change. Re-publishing the same `(name, version)` with a flipped `private` value collides with immutability and is rejected; publish the visibility change under a new version.
+Because `private` is manifest content, changing visibility after publication requires a new version like any other content change.
 
 ## When the built artifact is missing
 
-When `dist/` is empty (or doesn't exist), there is nothing for publish to ship, and the registry MUST NOT be contacted:
+With nothing to ship, the registry MUST NOT be contacted.
 
-- **Interactive contexts** MAY offer to build the current source and, on acceptance, verify and upload the freshly built artifact. On decline, the operation fails.
-- **Non-interactive contexts** (CI, piped stdin) MUST NOT prompt and MUST fail with guidance to run `facet build` first.
-
-The concrete prompt flow is documented at [`facet publish`](/cli/authoring/publish#interactive-prompts).
+- Interactive contexts MAY offer to build the current source and, on acceptance, verify and upload the result.
+- Non-interactive contexts MUST NOT prompt and MUST fail with guidance to build first.
 
 ## When the built artifact has drifted from source
 
-When `dist/` contains a `.facet` but its embedded manifest disagrees with the current source-tree `facet.json`, implementations MUST distinguish two drift classes:
+When the archive's embedded manifest disagrees with the current source, implementations MUST distinguish two classes:
 
-**Content drift**  -- same name and version, different manifest content (the user edited `description`, `private`, an asset descriptor, or similar without rebuilding). Either resolution uploads to the same `(name, version)` address; the registry has no view into the user's local edits. Interactive contexts MAY offer to rebuild and publish the new artifact, or to publish the existing artifact unchanged. Editing `private` is content drift like any other manifest edit  -- publishing the existing artifact ships its embedded privacy declaration unchanged, while rebuilding embeds the new value.
+**Content drift**: same name and version, different content. Either resolution uploads to the same address.
 
-**Identity drift**  -- different name or different version (the most common case: the user bumped `version` to `0.2.0` but `dist/` still has the `0.1.0` artifact). Uploads always address the artifact's **embedded** identity, so publishing the existing artifact ships it under its own `(name, version)` — and collides with [immutability](#immutability) if that identity is already published. Interactive contexts MAY offer to rebuild from the current source, publish the existing artifact as-is, or cancel without contacting the registry.
+**Identity drift**: a different name or version. Uploads always address the artifact's embedded identity, so publishing the existing artifact ships it under its own name and version, and collides with [immutability](#immutability) if that identity already exists.
 
-**Non-interactive contexts** MUST NOT prompt. Both drift classes fall back to the same default: emit a warning summarising the drift, then upload the existing artifact unchanged (warn-and-ship).
+Interactive contexts MAY offer to rebuild, to publish the existing artifact, or to cancel. Non-interactive contexts MUST NOT prompt: both classes warn and upload the existing artifact unchanged.
 
-The prompt choreography for both drift classes is documented at [`facet publish`](/cli/authoring/publish#interactive-prompts).
+## Build against publish
 
-## Build vs. publish
+| Concern | Build | Publish |
+| --- | --- | --- |
+| Role | Producer | Verify and ship |
+| Reads | Source tree | Built archive |
+| Produces | The `.facet` archive | No on-disk output |
+| Network | None | One request to the registry |
+| Verification | Schema and content validators | Full archive verification |
 
-| Concern      | `facet build`                                              | `facet publish`                                                                                |
-| ------------ | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Role         | Producer                                                   | Verify-and-ship                                                                                |
-| Reads        | Source tree (`facet.json` + asset files)                   | Built archive in `dist/`                                                                       |
-| Produces     | `dist/<name>-<version>.facet`                              | No on-disk output                                                                              |
-| Network      | None                                                       | One POST to the registry                                                                       |
-| Verification | Build-time validators (schema, content rules, collisions)  | Full archive verification (integrity hash, per-entry hashes, embedded manifest, content rules) |
-
-Neither step mutates the manifest. An invalid input fails the respective step — publish fails with a verification error and never contacts the registry.
+Neither step modifies the facet manifest.
 
 ## Not in publish
 
-- **MCP server declarations**  -- a [declaration](/specification/manifest#mcp-server-declarations) is manifest content. It travels inside the embedded `facet.json`, is verified with it, and is republished with it like any other field. It is never independently published, versioned, resolved, or fetched: there is no server registry, no standalone server artifact, and no `server.json`. Publish never contacts or launches a declared server. Changing a declaration changes the manifest, so it requires a new facet version like any other content change.
-- **Lockfile generation**  -- the lockfile is an install-time artifact, not a publish-time artifact.
+- **MCP server declarations.** A declaration is manifest content. It is never independently published, versioned, resolved, or fetched: there is no server registry and no standalone server artifact. Publish never contacts or launches a declared server.
+- **Lockfile generation.** The lockfile is an install-time artifact.

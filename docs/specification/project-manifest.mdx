@@ -5,10 +5,10 @@ tag: facets.json
 description: The facets.json schema and entry semantics
 ---
 
-The project manifest (`facets.json`) is the file in a consuming project that declares which facets the project depends on, and how it wants their assets and MCP servers materialized. It is the input every install command reads and the declarative record a team commits to version control — a fresh clone plus [`facet install`](/cli/install) reproduces the full asset set.
+The project manifest declares which facets a project depends on and how it wants their contributions materialized. It is the input every install reads, and the record a team commits: a fresh clone plus [`facet install`](/cli/install) reproduces the full set.
 
 <Note>
-The project manifest is distinct from the [facet manifest](/specification/manifest) (`facet.json`) — the file *inside a facet* that declares its identity and assets. A consuming project has one `facets.json`; every facet ships its own `facet.json`.
+  This is distinct from the [facet manifest](/specification/manifest) (`facet.json`), which lives inside a facet and declares its identity and assets. A project has one `facets.json`; every facet ships its own `facet.json`.
 </Note>
 
 ## Example
@@ -34,75 +34,68 @@ The project manifest is distinct from the [facet manifest](/specification/manife
 ## Fields
 
 <ResponseField name="manifestVersion" type="number" required>
-  The manifest schema version. The current version is `0.2`, which added the `servers` override group. Version `0.1` and a document that omits this field entirely (**legacy unversioned**) are still read; see [Validation](#validation).
+  The schema version. The current version is `0.2`, which added the `servers` override group. Version `0.1` and a document that omits the field entirely are still read.
 
-  This axis is independent of the archive, lockfile, install-receipt, and adapter API versions — five separate compatibility axes that happen to share release trains. They move independently: this change advanced the project manifest to `0.2` and the receipt to `0.4` while the lockfile [deliberately stayed at `0.3`](/specification/lockfile#why-mcp-did-not-move-the-lockfile).
+  This axis is independent of the archive and lockfile [version axes](/specification/install#version-axes).
 </ResponseField>
 
 <ResponseField name="facets" type="map<name, entry>" required>
-  One entry per declared facet. The key is the facet name. The value is either a **compact** source specifier string or an **expanded** object. Entries are added and removed by the install pipeline — or by hand, with `facet install` reconciling the result.
+  One entry per declared facet, keyed by facet name.
 </ResponseField>
 
-## Entry value semantics
+## Entry values
 
-An entry takes one of two forms. Both express the same source; the expanded form additionally carries the project's [materialization](/specification/materialization) intent.
+An entry takes one of two forms. Both express the same source; the expanded form additionally carries [materialization](/specification/materialization) intent.
 
 <ResponseField name="compact" type="string">
-  The source specifier **as the user wrote it**. This is the canonical form for a facet with no materialization overrides.
+  The source specifier as the user wrote it. This is the canonical form for a facet with no overrides.
 </ResponseField>
 
 <ResponseField name="expanded" type="{ source, materialization }">
-  `source` carries the same specifier string the compact form would. `materialization` records per-contribution [dispositions](/specification/materialization#dispositions), grouped by contribution kind (`skills`, `agents`, `commands`, and — in `0.2` — `servers`) and keyed by **authored** name. It MUST declare at least one override — an expanded entry with none is invalid, because the compact form already expresses that. A `servers` override counts toward that rule exactly as an asset override does.
+  `source` carries the same specifier string. `materialization` records dispositions grouped by contribution kind (`skills`, `agents`, `commands`, and under `0.2`, `servers`) and keyed by authored name.
+
+  An expanded entry MUST declare at least one override, because the compact form already expresses none.
 </ResponseField>
 
-A consumer reading `facets.json` MUST handle both forms. Treating the value as a string is the failure mode this schema is shaped to make obvious rather than silent.
+A consumer reading `facets.json` MUST handle both forms. Treating every value as a string is the failure this schema is shaped to make obvious rather than silent.
 
-Whichever form the entry takes, the specifier's meaning depends on the source kind established when the entry was added (see [Accepted source kinds](/specification/planning#accepted-source-kinds)):
+The specifier's meaning depends on the source kind:
 
-- **Registry** — a bare version specifier (`1.2.3`, `1.*`, `1.2.*`, `*`, `latest`); the facet name lives in the key, and commit reconstructs the full source as `name@specifier`.
-- **Git / GitHub** — a self-contained source string (a git URL or `github:` shorthand, with an optional `#ref`). The ref recorded here is what the user *requested*; the resolved commit lives in the [lockfile](/specification/lockfile).
-- **Local** — a directory path that MUST resolve inside the project tree.
+- **Registry**: a bare version specifier such as `1.2.3`, `1.*`, or `latest`. The facet name lives in the key.
+- **Git**: a self-contained URL or `github:` shorthand with an optional ref. The ref here is what the user requested; the resolved commit lives in the [lockfile](/specification/lockfile).
+- **Local**: a directory path that MUST resolve inside the project tree.
+
+Accepted specifier forms are documented at [`facet add`](/cli/add#source-grammar). Specifier grammar is not validated at load: a malformed specifier fails the install, not the read.
 
 ## Validation
 
-**Version dispatch is by exact equality, never by shape.** A document is classified before its schema is chosen:
+Version dispatch is by exact equality, never by shape.
 
-- `manifestVersion` **absent** → legacy unversioned. Every entry value MUST be a string; an expanded entry here is rejected, not promoted.
-- `manifestVersion` **exactly** the number `0.1` → the preceding schema. It supports the three asset groups and MUST reject a `servers` group outright — a `0.1` document is not silently promoted to `0.2`, and its declared version is taken at face value.
-- `manifestVersion` **exactly** the number `0.2` → current schema. The string `"0.2"` is not the number `0.2` and MUST be rejected.
-- Anything else → an `unsupported manifestVersion` failure naming the observed and supported versions.
+- `manifestVersion` absent selects the legacy schema. Every entry value MUST be a string, and an expanded entry is rejected rather than promoted.
+- Exactly `0.1` selects the preceding schema, which supports the three text-asset groups and MUST reject a `servers` group.
+- Exactly `0.2` selects the current schema. The string `"0.2"` is not the number `0.2` and MUST be rejected.
+- Anything else is an unsupported version failure naming the observed and supported versions.
 
-There is no cross-version fallback. A document that violates its selected schema MUST NOT be retried under another — that would let a typo downgrade a manifest silently, or let a `servers` group appear to work in a document that declares it cannot express one.
+There is no cross-version fallback. A document that violates its selected schema MUST NOT be retried under another, which would let a typo silently downgrade a manifest.
 
-**Duplicate JSON members are rejected before dispatch.** Two entries with the same key would otherwise collapse by last-member-wins, which could discard one of two conflicting materialization decisions for the same asset.
+Duplicate JSON members MUST be rejected before dispatch, since last-member-wins could otherwise discard one of two conflicting decisions for the same facet.
 
-Beyond shape, the load validates what it can prove locally:
+Beyond shape, a loader validates what it can prove locally:
 
-- Override **groups** MUST be a group the selected version recognizes: `skills`, `agents`, or `commands` under every supported version, plus `servers` under `0.2`. Any other key — `skillz`, say — is rejected, including when it sits beside a valid group. Accepting it would silently drop the intent it carries, which is the failure mode an override exists to prevent. A `servers` group in a `0.1` document is rejected for the same reason.
-- Override **keys** are checked for path safety, so a project can address a legacy multi-segment authored name.
-- Alias **values** are checked against the current single-segment [asset-name grammar](/specification/manifest#asset-names) and are rejected rather than normalized. Server aliases use that same grammar, which is what keeps a server key portable across the JSON, JSONC, and TOML documents adapters write it into.
-- An `{ "kind": "authored" }` override is rejected. Authored materialization is expressed by the absence of an override, and one state MUST have exactly one spelling.
-
-Specifier grammar is *not* validated at load. It is validated when each entry is parsed during [commit](/specification/commit#parse) — a malformed specifier fails the install, not the load.
+- An override **group** MUST be one the selected version recognizes. Any other key is rejected, including beside a valid group, because accepting it would silently drop the intent it carries.
+- An override **key** is checked for path safety, so a project can still address a legacy multi-segment authored name.
+- An **alias value** for a text asset MUST satisfy the single-segment [asset-name grammar](/specification/manifest#asset-names). A **server alias** MUST satisfy the stricter [server name grammar](/specification/manifest#mcp-server-declarations), which is what keeps a server key portable across the JSON, JSONC, and TOML documents adapters write it into. Neither is normalized.
+- An explicit `{ "kind": "authored" }` override MUST be rejected, because authored materialization is the absence of an override.
 
 ## Write rules
 
-- The project manifest MUST NOT be written ahead of the install. A failed operation MUST leave it untouched. → [Installation](/specification/install)
-- Every successful non-frozen write stamps the current `manifestVersion`, migrating a legacy or `0.1` document **inside the same transaction** that writes the lockfile and receipt. There is no separate migration step and no standalone upgrade command.
-- What gets written per specifier shape (bare names pin, explicit specifiers are preserved verbatim, reproductions are unchanged) is defined by the [manifest-write policy](/specification/commit#manifest-write-policy).
-- Entry form follows content: an entry that has overrides is written expanded; an entry whose last override is removed **collapses back to a compact string**. An existing expanded entry is mutated in place.
-- Comments survive. `facets.json` may carry `//` and `/* */` comments; writes mutate the document in place rather than re-serializing it, so hand-written annotations are preserved. That includes comments **inside** a `materialization` block: an override whose intent is unchanged is not rewritten at all, and a changed one is edited as narrowly as possible, so a note explaining why you aliased an asset outlives every later install.
-- [Stale overrides](/specification/materialization#stale-overrides) are pruned as part of a successful commit, and reported afterwards.
-- On success it is written atomically alongside `facets.lock` and the install receipt — the [tri-write](/specification/commit#transactional-tri-write).
+- The manifest MUST NOT be written ahead of the install, and a failed operation MUST leave it untouched.
+- Every successful non-frozen write stamps the current `manifestVersion`, migrating a legacy or `0.1` document in the same transaction. There is no separate migration command.
+- Entry form follows content: an entry with overrides is written expanded, and one whose last override is removed collapses back to a compact string.
+- Comments survive. Writes mutate the document in place rather than re-serializing it, including inside a `materialization` block, so a note explaining why you aliased something outlives every later install.
+
+What gets written per specifier shape is defined by the [manifest write policy](/specification/install#manifest-write-policy).
 
 <Note>
-Frozen mode never writes the manifest. A legacy or `0.1` document therefore stays as it is under [`--frozen-lockfile`](/specification/commit#frozen-lockfile), and stale overrides are neither pruned nor reported — they are blocking drift instead. That applies to a stale `servers` override too.
+  A frozen install never writes the manifest, so a legacy or `0.1` document stays as it is, and stale overrides are blocking drift rather than pruned.
 </Note>
-
-## Relationship to the lockfile
-
-The project manifest records **intent** (what the user asked for, in the shape they asked for it, and how they want it named); the [lockfile](/specification/lockfile) records **resolution** (exact versions, integrity, provenance, and the disposition each asset was resolved to). Both are version-controlled; the install receipt is not.
-
-Server dispositions live **only** here. The lockfile records no MCP declaration, effective server name, or server disposition, because a facet's integrity already pins the exact `facet.json` the declaration lives in. And MCP **approval** lives only in the machine-local [install receipt](/specification/commit#machine-local-install-receipt) — never in `facets.json` — because a security decision about executing a command must not be published to teammates through version control.
-
-The two MUST stay consistent — [frozen mode](/specification/commit#frozen-lockfile) checks that consistency bidirectionally before touching anything, including whether the lockfile's format can express the intent the manifest declares.

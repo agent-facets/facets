@@ -5,46 +5,72 @@ tag: .facet
 description: The two-layer .facet archive format
 ---
 
-The facet archive (`.facet`) is the self-contained artifact a facet travels in: built by [`facet build`](/specification/build) (the sole producer), verified and uploaded by [`facet publish`](/specification/publish), stored by the registry, and downloaded and verified at [install](/specification/commit#verify). It contains the embedded [facet manifest](/specification/manifest), every declared asset, and every declared [supplementary file](/specification/manifest#supplementary-files) — skill companions (files beside a `SKILL.md`) and top-level archive-only files like `README.md` or `LICENSE`. Nothing is fetched at install time.
+The facet archive is the self-contained artifact a facet travels in. It carries the embedded [facet manifest](/specification/manifest), every declared text asset, and every declared [supplementary file](/specification/manifest#supplementary-files). MCP server declarations contribute no archive entry: they travel inside the embedded manifest. Nothing is fetched at install time.
 
-The `.facet` file is a two-layer container. Both layers are tar archives; only the inner layer is compressed. Its content-hash contract is defined in the [Integrity Model](/specification/integrity).
+A `.facet` file is a two-layer container. Both layers are tar archives, and only the inner layer is compressed.
 
 ## Outer layer
 
-An **uncompressed tar** with exactly two entries:
+An uncompressed tar with exactly two entries.
 
 <ResponseField name="build-manifest.json" type="JSON" required>
-  The build manifest: `facetVersion` (the archive-format revision this artifact conforms to; breaking changes to the archive layout bump it, and consumers key compatibility off this field), `archive` (the inner archive's entry name, which MUST be the exact literal `archive.tar.gz`), `integrity` (the canonical fingerprint, `sha256:` followed by 64 hex characters), and `files` (a map of **every** inner-archive entry path — `facet.json`, each primary asset, and each supplementary file — to its `sha256:<hex>` per-entry hash).
+  `facetVersion` (the archive format this artifact conforms to), `archive` (the inner entry name), `integrity` (the canonical fingerprint as `sha256:` and 64 hex characters), and `files` (a map of every inner-archive entry path to its `sha256:<hex>` hash).
 
-  The current archive format is `0.2`; consumers also accept the legacy `0.1` format during the compatibility window. The two are dispatched by exact match on `facetVersion`, never by numeric ordering: a `0.2` manifest carries a `files` map, a `0.1` manifest carries the older `assets` map, and neither shape is reinterpreted as the other. The authoritative versions are the `FACET_ARCHIVE_VERSION`, `LEGACY_FACET_ARCHIVE_VERSION`, and `SUPPORTED_FACET_VERSIONS` constants in `@agent-facets/protocol`.
+  The current format is `0.2`, where `archive` MUST be the literal `archive.tar.gz` and per-entry hashes live in `files`. The legacy `0.1` format is accepted during the compatibility window and carries an `assets` map instead. The two are dispatched by exact match on `facetVersion`, never by ordering, and neither shape is reinterpreted as the other.
 </ResponseField>
 
 <ResponseField name="archive.tar.gz" type="gzip" required>
-  The gzip-compressed inner archive carrying the actual content.
+  The gzip-compressed inner archive carrying the content.
 </ResponseField>
 
-The outer tar MUST be uncompressed so the build manifest can be read without decompressing the inner archive.
+The outer tar MUST be uncompressed, so the build manifest can be read without decompressing the inner archive.
 
 ## Inner archive
 
-The inner archive decompresses to a **deterministic uncompressed tar** containing the embedded `facet.json`, every declared asset at its conventional path (`skills/<name>/SKILL.md`, `agents/<name>.md`, `commands/<name>.md`), and every declared supplementary file at its declared path (skill companions under `skills/<name>/`, top-level files like `README.md` at the tree root). Entries MUST be sorted lexicographically by path. The complete entry set is derived from the embedded manifest by the shared archive-plan operation, so archive membership stays explicit and reviewable — there is no recursive auto-discovery.
+The inner archive decompresses to a deterministic uncompressed tar containing the embedded `facet.json`, every declared text asset at its conventional path, and every declared supplementary file at its declared path. Entries MUST be sorted lexicographically by path.
+
+The entry set is derived from the embedded manifest. There is no recursive discovery, so archive membership stays explicit.
 
 ## Determinism
 
-Tar metadata MUST be fixed at known values so build output is byte-identical across builds, machines, and platforms: `mtime` 0, `uid` 0, `gid` 0, mode `644`, empty user and group names. The integrity hash is computed over these tar bytes, so any third-party producer that wants its artifacts to interoperate MUST use the same metadata.
+Tar metadata MUST be fixed so build output is byte-identical across builds, machines, and platforms: `mtime` 0, `uid` 0, `gid` 0, mode `644`, and empty user and group names. The integrity hash covers these bytes, so any producer that wants its artifacts to interoperate MUST use the same metadata.
 
-## Hash domains
+The canonical fingerprint is the SHA-256 of the uncompressed inner tar. Gzip output is never hashed, because different gzip implementations produce different bytes that decompress to identical tars. See the [Integrity Model](/specification/integrity#two-hashes-two-domains).
 
-The **canonical fingerprint** (`content_integrity`) is the SHA-256 of the *uncompressed* inner tar bytes, formatted `sha256:<hex>`. Gzip output is NOT hashed — compression is a delivery concern, and different gzip implementations produce different bytes that decompress to identical tars. The full two-hash contract lives in the [Integrity Model](/specification/integrity).
-
-Verifiers MUST recompute the fingerprint by decompressing the inner archive and hashing the resulting tar bytes. The build manifest's self-declared `integrity` is a claim to be checked, never a value to be trusted.
+A verifier MUST recompute the fingerprint by decompressing and hashing. The build manifest's own `integrity` is a claim to check, never a value to trust.
 
 ## Content rules
 
-Beyond hash verification, a verifier MUST enforce three structural rules on the archive's contents. An archive violating any of them MUST be rejected. Both tar layers are validated at the raw-header level — before any path-keyed map is built — so duplicate paths, non-regular entries (symlinks, hard links, directories, devices), and unsafe or non-portable names are rejected before they can alias a legitimate entry. Duplicate JSON object members in `facet.json` and `build-manifest.json` are likewise rejected before schema validation.
+A verifier MUST reject an archive that violates any rule below.
 
-1. **Path safety.** Every key in the build manifest's `files` map and every entry name in the inner tar MUST be a safe, portable relative path. The grammar forbids traversal (`..`), empty and `.` segments, absolute paths, drive and URL prefixes, backslashes, NUL and control bytes, the portable-reserved characters `< > : " | ? *`, Windows reserved device names (`CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`), and trailing dot or space on any segment. Paths that collide after Unicode normalization or case folding, and any file/directory prefix conflict, are also rejected. A malicious archive that smuggles an unsafe path through either channel is stopped before any content is trusted.
+### 1. Raw header validation
 
-2. **Declared-vs-present reconciliation, in both directions.** Every inner-tar entry MUST appear in the build manifest's `files` map, and every `files` key MUST have a matching inner-tar entry — an undeclared extra entry and a declared-but-missing file are both rejections. Each entry's recomputed content hash MUST equal the hash the `files` map records for it. This applies to every entry, asset or not.
+Both tar layers MUST be validated at the raw-header level, before any path-keyed map is built, so a malformed entry cannot alias a legitimate one. A verifier MUST reject:
 
-3. **Outer exclusivity.** Every inner-tar entry MUST be derivable from the embedded `facet.json`: the entry set is exactly `facet.json` plus the conventional path of each declared asset (`skills/<name>/SKILL.md`, `agents/<name>.md`, `commands/<name>.md`) and the declared path of each supplementary file (skill companions in a skill's `files`, top-level entries in the manifest's `files`). The expected set is derived from the embedded manifest, never from the attacker-controlled build manifest, so rule 2 alone is insufficient — the embedded facet manifest is the trust root. Relaxing this rule to admit declared supplementary files preserves the supply-chain guarantee: an archive still cannot carry an undeclared file that lands on disk at install time.
+- duplicate paths, and paths that collide after the portable fold;
+- non-regular entries: symlinks, hard links, directories, and devices;
+- a ustar header checksum mismatch;
+- non-zero bytes after the end-of-archive marker;
+- a name or prefix that does not round-trip as UTF-8;
+- a non-empty ustar `prefix` field;
+- GNU base-256 size encoding.
+
+The inner archive MUST additionally be in canonical ascending entry order. The outer container is deliberately exempt, so that a verified archive and an installable archive are the same set.
+
+Duplicate JSON object members in `facet.json` and `build-manifest.json` MUST be rejected before schema validation.
+
+### 2. Path safety
+
+Every key in `files` and every inner entry name MUST be a safe, portable relative path. The grammar forbids traversal (`..`), empty and `.` segments, absolute paths, drive and URL prefixes, backslashes, NUL and control bytes, the reserved characters `< > : " | ? *`, Windows device names such as `CON` and `COM1`, and a trailing dot or space on any segment.
+
+Paths that collide after the portable fold, and any file against directory prefix conflict, are rejected too.
+
+### 3. Membership
+
+For the current format, the plan derived from the embedded `facet.json`, the inner tar entry set, and the `files` keys MUST all be the same set, and each entry's recomputed hash MUST equal the hash `files` records.
+
+The expected set is derived from the embedded manifest, never from the build manifest, so the embedded manifest is the trust root. A `files` record cannot expand archive membership: a key naming a path the manifest does not declare is rejected outright.
+
+Legacy `0.1` archives are checked by reconciling declared against present entries in both directions, then confirming outer exclusivity against the embedded manifest.
+
+This is what keeps the supply-chain guarantee intact: an archive cannot carry an undeclared file that lands on disk at install time.

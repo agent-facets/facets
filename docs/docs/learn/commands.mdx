@@ -3,44 +3,33 @@ title: Commands
 description: User-invokable workflows
 ---
 
-A command is a markdown file defining a user-invokable workflow. Commands are the action layer of a facet -- they define what happens when the user triggers a specific task.
+A command is a markdown file defining a workflow the user triggers, usually as a slash command in their tool.
 
-Each command lives at `commands/<name>.md` and is declared in `facet.json` under the `commands` map. The normative rules — placement, descriptor shape, and the YAML front-matter contract — live at [Text assets](/specification/manifest#text-assets) in the manifest specification.
+Each command lives at `commands/<name>.md` and is declared in `facet.json` under `commands`. Placement and descriptor rules live at [Text assets](/specification/manifest#text-assets).
 
 ## Example
 
-The file content is the command's prompt -- the instructions that run when the user invokes the command:
+The file content is the command's prompt:
 
-```markdown
+```markdown commands/review.md
 Review the current pull request.
 
 ## Steps
 
 1. Read the full diff of the current branch against the base branch.
-2. Identify files that changed and their purpose.
-3. For each changed file, check for:
-   - Logic errors or regressions
-   - Missing error handling
-   - Untested code paths
-4. Write a summary of findings with line references.
-5. Classify each finding as "blocking" or "suggestion".
+2. For each changed file, check for logic errors, missing error
+   handling, and untested code paths.
+3. Write a summary of findings with line references.
+4. Classify each finding as "blocking" or "suggestion".
 ```
-
-When an adapter supports slash commands (e.g., Claude Code's custom commands), the command content defines what happens when the user invokes it.
 
 ## When to use commands
 
-Commands define **what the user can trigger** -- a specific workflow or action. Use commands for:
+Use a command for an action the user starts: review workflows, deployment checklists, refactors, report generation, test scaffolding.
 
-- Code review workflows
-- Deployment checklists
-- Refactoring tasks
-- Report generation
-- Test scaffolding
-
-Use [skills](/docs/learn/skills) when you need passive knowledge the assistant should always have. Use [agents](/docs/learn/agents) when you need a persona with specific behavior.
+Use a [skill](/docs/learn/skills) for passive knowledge. Use an [agent](/docs/learn/agents) for a persona.
 
 ## Further reading
 
-- [Text assets](/specification/manifest#text-assets) -- placement, descriptor shape, and front-matter rules
-- [Create Your First Facet](/guides/create-your-first-facet) -- step-by-step guide including writing a command
+- [Text assets](/specification/manifest#text-assets)
+- [Create Your First Facet](/guides/create-your-first-facet)

@@ -1,50 +1,154 @@
 ---
 title: "Installation"
-sidebarTitle: "Overview"
-description: The two-phase install pipeline
+sidebarTitle: "Installation"
+description: Requirements every install must satisfy
 ---
 
-import { DeltaTip } from "/snippets/glossary.jsx";
+This page defines what an install MUST guarantee, whatever implementation performs it. Adding, removing, updating, and reproducing are all installs; they differ only in what the project is asked to change.
 
-Installation is a single pipeline with two phases. **[Planning](/specification/planning)** builds a <DeltaTip>delta</DeltaTip> — what should change. **[Commit](/specification/commit)** applies it — resolving versions, verifying [integrity](/specification/integrity), composing one global [materialization](/specification/materialization) plan, obtaining [MCP configuration approval](/specification/commit#mcp-configuration), writing assets, reconciling native MCP configuration, and writing `facets.json`, `facets.lock`, and the install receipt together. A removal that local state already answers for [skips resolution entirely](/specification/commit#removal-only-short-circuit).
+Command behavior, prompts, and output are documented at [`facet install`](/cli/install).
 
-[`facet add`](/cli/add), [`facet remove`](/cli/remove), and [`facet install`](/cli/install) all run this same pipeline — they differ only in the delta they produce.
+## Ordering
 
-Before the pipeline runs, **every installed adapter's** declared adapter API MUST be inspected against the CLI's supported set. An incompatible or broken installed adapter MUST fail the operation before planning begins — before any adapter method is invoked and before any project write — with per-adapter diagnostics and the best available reinstall command for each entry. The commit phase then re-checks the adapters selected for the operation as defense-in-depth: the same incompatibility MUST fail at [Load state and gate](/specification/commit), before any facet is resolved and therefore before any Git or local facet build can invoke adapter metadata methods.
+An install MUST resolve and verify the complete desired set, and MUST compose one plan over all of it, before writing anything.
 
-When the desired state contains active MCP server declarations, every selected adapter MUST additionally support MCP server configuration. Adapters that cannot — those declaring no MCP support — MUST be collected into one failure raised before any approval is requested and before any mutation. Two selected adapters that manage the same configuration file MUST fail at the same point, naming every adapter involved: neither ordering leaves both plans applicable.
+Composing globally is what makes collision detection possible: two facets claiming one name cannot be detected once the first is already on disk. See [Materialization](/specification/materialization).
 
-The [adapter API](/guides/custom-adapters), the [archive `facetVersion`](/specification/archive), the [project manifest version](/specification/project-manifest), the [lockfile version](/specification/lockfile), and the [install receipt version](/specification/commit#machine-local-install-receipt) are five independent version axes, each classified separately by exact match. They happen to share release trains; they are not one version in five places. The adapter-compatibility preflight runs **before** archive-version dispatch, so an adapter declaring a superseded contract fails on the adapter axis — with reinstall guidance — before a facet's `facetVersion` is even examined.
+Project state MUST NOT be written unless every check passes. A failure before the first write leaves the project byte-identical. From the first write onward, an implementation MUST record enough state to restore every file it changes, and a failure MUST restore text assets, native configuration documents, and project state to their exact prior bytes.
 
-Project state MUST NOT be written unless every check passes. Everything through MCP approval is read-only, so a failure there — an unresolved name collision, a cancelled resolution, a declined approval, an unsupported adapter, an unparseable native configuration document — leaves the project byte-identical with nothing to undo. From the first write onward, every change is recorded as an exact `before → after` transition, and a failure MUST use those records to restore every file it changed — assets, native MCP documents, and project state alike — to its exact prior bytes.
+## Resolve
 
-What install materializes — and what it does not — is a first-class part of the contract:
+Whether the lockfile is trusted for version resolution depends on how an entry was requested, not on a flag.
 
-- **Materialization boundary.** Skill companion files materialize atomically with their skill; every other supplementary file (top-level `README.md`, `LICENSE`, extras beside agents or commands) ships in the archive but is **never written to disk**. Detail in [Commit — Materialize](/specification/commit#materialize).
-- **Project-chosen names.** A project MAY materialize an asset under a different name, or not at all. The asset is still resolved, verified, and recorded either way — only the file on disk changes. See [Materialization](/specification/materialization).
-- **Global collision detection.** Two facets cannot claim one name. The complete desired set — assets and MCP servers alike — is checked before the first write, so a collision stops the install with nothing changed. See [Commit — Compose](/specification/commit#compose).
-- **MCP server configuration.** Active declarations are reconciled into every selected adapter's project-scoped native configuration, after explicit machine-local approval and after all asset writes, immediately before the final commit. Configuring a server never installs, launches, connects to, or authenticates to it. See [MCP configuration](/specification/commit#mcp-configuration).
-- **Takeover of untracked state.** A desired identity already occupied by state this machine does not own is disclosed before it is adopted or replaced — pre-mutation for MCP entries, just-in-time for asset files. See [Untracked destinations](/specification/commit#untracked-destinations).
-- **Per-file integrity and drift.** On reproduction, install reconciles each file against its [lockfile](/specification/lockfile) integrity before writing and reports the exact drifting path; a drifted companion is repaired by replacing its skill's bundle atomically.
-- **Unsupported archive versions.** An archive whose `facetVersion` the CLI does not support fails with a structured error the CLI renders as upgrade guidance — a known newer format names the minimum supporting release, an unknown format says update to the latest.
+- **Implicit request.** A non-exact specifier in an addition, such as a bare name, `1.*`, or `latest`, MUST resolve to the newest matching version even when the lockfile already satisfies it. The user asked for that range now.
+- **Explicit request.** An exact specifier, and any reproduction of an already-declared facet, MUST reuse a satisfying lockfile entry. Only an absent or stale entry triggers resolution.
+- **Reviewed update.** A version chosen during an update's read-only discovery MUST be installed as reviewed. Resolution MUST NOT be repeated at write time, so a release published in between cannot silently change what is installed.
 
-<CardGroup cols={2}>
-  <Card title="Planning" icon="route" href="/specification/planning">
-    Phase 1 — build the delta. No version resolution, no lockfile reads, no project mutation.
-  </Card>
-  <Card title="Commit" icon="check" href="/specification/commit">
-    Phase 2 — the transaction. Resolve every facet (or refine a removal from local state), compose one global plan, then delete drift and materialize; write atomically.
-  </Card>
-</CardGroup>
+Skipping the question never skips verification.
 
-```mermaid
-flowchart LR
-    CMD["Command<br/>(add / remove / install)"] --> PLAN["Phase 1: Planning<br/>build the delta"]
-    PLAN --> COMMIT["Phase 2: Commit<br/>resolve all · compose · apply"]
-    COMMIT -->|all checks pass| OK["Tri-write:<br/>facets.json + facets.lock + receipt"]
-    COMMIT -->|any failure| RB["Restore every changed file<br/>project unchanged"]
-```
+## Verification
 
-<Info>
-The [project manifest](/specification/project-manifest) MUST NOT be written ahead of the install. A failed operation MUST leave the project exactly as it was.
-</Info>
+Verification obligations are defined in the [Integrity Model](/specification/integrity). An install MUST apply them:
+
+- Cached content MUST be re-verified on every use, and content that fails MUST NOT be materialized.
+- When the lockfile pins a version, the verified integrity MUST equal the locked integrity. A mismatch MUST fail.
+- When a lockfile entry is created or replaced, the integrity MUST be confirmed against the registry's published fingerprint. An unreachable registry MUST fail rather than record an unconfirmed entry.
+- A git source MUST verify its built content against the locked integrity, which is what detects a moved tag.
+- Failures MUST be reported under distinct checks, so a frozen local-source failure is never reported as a git failure.
+
+On reproduction, an implementation MUST reconcile each file against its recorded per-file integrity before writing, and MUST report the exact drifting path.
+
+## Composition
+
+The desired set is computed by the deterministic planner defined in [Materialization](/specification/materialization). Text assets and MCP servers are planned in separate identity spaces.
+
+A collision MUST NOT be resolved by choosing a winner or inventing a name. An implementation MUST either collect the user's decision, recorded as durable intent in `facets.json`, or report every claimant and stop.
+
+## MCP configuration
+
+A new or changed [MCP server declaration](/specification/manifest#mcp-server-declarations) MUST be approved before it is materialized.
+
+- Approval MUST be keyed by the effective server name and the declaration's canonical content, so an unchanged declaration does not ask again and any change to what would launch or connect does.
+- Interactive consumers MUST be shown the exact command, arguments, and environment assignments, or the exact URL, before anything is written. Non-interactive consumers MUST require an explicit opt-in.
+- Approval MUST be recorded only by a fully successful operation. A declined, failed, or rolled back run MUST bank nothing.
+- Approval MUST be machine-local. It MUST NOT be stored in version-controlled project state, because a committed file must not be able to claim that another machine consented to running something.
+
+Two identical declarations at one effective name are not a conflict. They compose into one configuration retaining both claimants.
+
+Configuration is applied after text-asset writes and immediately before project state is written, which is the narrowest window in which a tool watching its own configuration could observe an entry a later failure would undo.
+
+## Ownership
+
+Two rules govern every kind of state.
+
+- **Desired state authorizes writes.** Every desired identity is reconciled. When what is already present matches byte for byte, the write MAY be skipped, and the identity is still recorded as owned.
+- **Recorded ownership authorizes deletion.** Only an identity this machine recorded materializing may be deleted. A lockfile entry alone is not evidence, because a lockfile is shared state that can arrive from a teammate.
+
+Ownership is recorded per project, not per adapter. Connecting an adapter delegates management of those identities inside it, so removing a facet removes it from every connected tool.
+
+An unusable ownership record is treated as an empty one: nothing is deleted, and the run records only what it reconciles. Records that fail validation MUST be reported, and the files they covered MUST be left in place.
+
+A name that no remaining contribution claims is vacated, and is deleted before any alias is written. An authored name that was never recorded is left alone.
+
+## Untracked destinations
+
+A desired identity already occupied by state this machine does not own MUST be disclosed before it is adopted or replaced.
+
+Equivalent state MUST be adopted without rewriting it. Divergent state MAY be replaced once the user continues. State at an identity the desired set does not name MUST NOT be inspected or modified.
+
+## Manifest write policy
+
+The value written to `facets.json` depends on the specifier shape, and is applied only as part of the final write.
+
+| Specifier | Manifest value | Lockfile value |
+| --- | --- | --- |
+| Bare name | Pinned to the resolved exact version | Resolved exact and integrity |
+| Explicit (`1.2.3`, `1.*`, `1.2.*`, `*`, `latest`) | Written verbatim | Resolved exact and integrity |
+| Reproduction | Unchanged | Unchanged or re-resolved |
+
+An update decides its manifest value from the choice the user reviewed. Taking a facet's range target never rewrites the specifier, and the authored string is preserved rather than re-rendered. Taking the latest release widens the specifier by the smallest edit that admits it:
+
+| Declared | Selected | Manifest value |
+| --- | --- | --- |
+| `1.2.0` | `2.4.1` | `2.4.1` |
+| `1.*` | `2.4.1` | `2.*` |
+| `1.2.*` | `2.4.1` | `2.4.*` |
+| `*` | `2.4.1` | `*` |
+| `latest` | `2.4.1` | `latest` |
+
+Materialization overrides are carried across a version change untouched. An override naming something the new version no longer contains is [pruned and reported](/specification/materialization#recording-intent).
+
+Comments in `facets.json` MUST survive a write.
+
+## Transactional tri-write
+
+On success the project manifest, the lockfile, and the machine-local ownership record MUST be written together.
+
+A failure anywhere MUST leave all three exactly as they were, and MUST restore every text asset and every native configuration document the operation touched.
+
+## Frozen lockfile
+
+Frozen mode treats the lockfile as authoritative for what to reproduce. It is not authority to delete: that stays with the machine-local record.
+
+Only a reproduction can run frozen. An addition, removal, or update has no frozen form.
+
+Frozen mode MUST NOT prompt, for a collision or for approval, though it MAY use approval supplied in advance.
+
+These gates MUST run before any network access, so a frozen install can refuse without fetching anything:
+
+<Steps>
+  <Step title="Coverage">
+    Every manifest facet MUST have a satisfying lockfile entry, the lockfile MUST NOT pin anything the manifest dropped, and git and local sources MUST match their locked provenance.
+  </Step>
+  <Step title="Format capability">
+    A lockfile version with no field for a text-asset disposition MUST fail when the manifest declares one, rather than ignore the intent. A server disposition never triggers this, because no lockfile version records server intent.
+  </Step>
+  <Step title="Plan over the locked set">
+    The planner runs against the lockfile's recorded text assets, so a collision or invalid alias in recorded state is reported before anything is downloaded.
+  </Step>
+  <Step title="Stale intent">
+    An override naming a text asset the locked version does not contain, or a server the pinned facet does not declare, is blocking drift. Frozen mode reports it without removing it.
+  </Step>
+  <Step title="Intent against recorded disposition">
+    For every locked text asset, what the manifest asks for MUST equal what the lockfile records. Editing an alias without a normal install is drift, exactly like editing a version.
+  </Step>
+</Steps>
+
+MCP adds its own pre-mutation gates: an unresolved server collision, an adapter that cannot configure servers, an unparseable native document, or an unapproved declaration MUST fail before any write. These checks MAY need to fetch locked content, because declarations live in the facet rather than the lockfile.
+
+Once every check passes, frozen mode MAY reconcile native configuration and the machine-local record, including removing an owned entry the project no longer desires, while still leaving the manifest and lockfile untouched.
+
+## Version axes
+
+The [archive `facetVersion`](/specification/archive), the [project manifest version](/specification/project-manifest), and the [lockfile version](/specification/lockfile) are independent axes. Each is classified by exact match against a supported set, never by numeric ordering, so an unrecognized version is refused rather than guessed at.
+
+An implementation that also supports adapters carries its own adapter API axis on top of these.
+
+An archive whose `facetVersion` is unsupported MUST fail with the observed and supported versions, so a consumer can be told what to upgrade.
+
+## Boundaries
+
+- Text is never fetched or assembled at install time. Everything installed comes from the verified archive.
+- Skill companion files materialize with their skill. Every other supplementary file ships in the archive and MUST NOT be written to disk.
+- Materializing a declaration MUST NOT install, launch, probe, or authenticate to an MCP server, and MUST NOT store credentials.
+- An installer MUST NOT modify user-wide or system-wide tool configuration.

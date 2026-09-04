@@ -9,44 +9,63 @@ description: Sign in to the facet registry
 facet login
 ```
 
-Signs in to the registry by pasting a personal access token (PAT). Requires an interactive terminal.
+Signs in by pasting a personal access token from your account at [agentfacets.io](https://agentfacets.io). Requires a terminal.
+
+The token is verified against the registry before it is saved, so a typo or expired token fails immediately and you are reprompted.
 
 ## Exit codes
 
 | Code | Meaning |
-| ---- | ------- |
-| `0`  | Signed in successfully. |
-| `1`  | Failed (non-interactive terminal, invalid token, network error). |
+| --- | --- |
+| `0` | Signed in. |
+| `1` | Failed, for example no terminal, an invalid token, or a network error. |
+| `2` | An unexpected error escaped command handling. |
 
-## What it does
+## Details
 
-<Steps>
-  <Step title="Prompt for token">
-    Presents an interactive menu. Select "Paste a token" and paste the PAT from your account at [agentfacets.io](https://agentfacets.io).
-  </Step>
-  <Step title="Verify token">
-    Calls `GET /v0/auth/me` to confirm the token is valid. A typo or expired token fails immediately with the registry's own error message, and you are reprompted.
-  </Step>
-  <Step title="Persist credential">
-    Writes the verified token to `$FACET_DIR/credentials` (default `~/.facet/credentials`) in INI format with mode `0600`.
-  </Step>
-</Steps>
+### Where the credential is stored
 
-## Credential file format
+The verified token is written to the [credentials file](/cli/env) with mode `0600`:
 
 ```ini
 [default]
 token = fct_pub_xxxxxxxxxxxxx
 ```
 
-The file is created with `0600` permissions so only the current user can read it.
+### Token precedence
 
-## Token precedence
+`FACET_TOKEN` takes precedence over the saved file. `facet login` says so when both are present, so the variable cannot silently shadow what you just saved.
 
-When both `FACET_TOKEN` and the credentials file are present, `FACET_TOKEN` takes precedence. The `login` command notes this so the environment variable does not silently shadow the file.
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="not signed in, no registry credential found">
+    **Cause:** a command that needs the registry found neither `FACET_TOKEN` nor a saved credentials file.
+
+    **Fix:**
+
+    ```sh
+    facet login                    # interactive
+    export FACET_TOKEN=fct_pub_…   # or this, in CI
+    facet whoami
+    ```
+  </Accordion>
+
+  <Accordion title="your registry credentials could not be read">
+    **Cause:** the credentials file exists but is unreadable or malformed. This is a different failure from having no credential at all.
+
+    **Fix:** run `facet login` again to rewrite the file, or set `FACET_TOKEN` for the current shell.
+  </Accordion>
+
+  <Accordion title="the token was rejected">
+    **Cause:** the registry refused the pasted token, usually because it was revoked, expired, or copied incompletely.
+
+    **Fix:** mint a new token in your account settings and paste it again.
+  </Accordion>
+</AccordionGroup>
 
 ## See also
 
-- [`facet whoami`](/cli/whoami) -- verify the signed-in identity.
-- [`facet logout`](/cli/logout) -- remove saved credentials.
-- [`facet publish`](/cli/authoring/publish) -- publish a facet (requires authentication).
+- [`facet whoami`](/cli/whoami)
+- [`facet logout`](/cli/logout)
+- [`facet publish`](/cli/authoring/publish)

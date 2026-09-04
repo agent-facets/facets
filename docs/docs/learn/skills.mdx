@@ -3,13 +3,11 @@ title: Skills
 description: Reusable knowledge and guidelines
 ---
 
-A skill is a directory bundle — a `SKILL.md` primary plus any declared companion files — containing domain-specific instructions, guidelines, or best practices. Skills follow the [Agent Skills](https://agentskills.io/specification) specification. They are the passive knowledge layer of a facet -- text that shapes how an AI assistant approaches a domain without defining a persona or a user-invokable action.
+A skill is a directory bundle holding domain knowledge the assistant applies passively: conventions, checklists, best practices. Skills follow the [Agent Skills](https://agentskills.io/specification) specification.
 
-Each skill lives in its own directory at `skills/<name>/SKILL.md` and is declared in `facet.json` under the `skills` map. The normative rules — placement, descriptor shape, and the no-front-matter contract — live at [Text assets](/specification/manifest#text-assets) in the manifest specification.
+Each skill lives at `skills/<name>/SKILL.md` and is declared in `facet.json` under `skills`. Placement and descriptor rules live at [Text assets](/specification/manifest#text-assets).
 
 ## Example
-
-A "code-review" skill (`skills/code-review/SKILL.md`):
 
 ```markdown expandable skills/code-review/SKILL.md
 # Code Review
@@ -17,30 +15,26 @@ A "code-review" skill (`skills/code-review/SKILL.md`):
 ## Structure
 - Check that new files are placed in the correct directory.
 - Verify imports are sorted and unused imports are removed.
-- Confirm naming conventions match the project style.
 
 ## Logic
 - Look for off-by-one errors in loops and array access.
 - Verify error handling covers all failure paths.
-- Check that async operations are awaited.
 - Confirm discriminated unions are exhaustively matched.
 
 ## Testing
 - Every new public function should have a corresponding test.
-- Edge cases (empty input, null, boundary values) should be covered.
-- Tests should not depend on execution order.
+- Cover edge cases: empty input, null, boundary values.
 
 ## Style
-- Prefer `const` over `let` when the binding is never reassigned.
+- Prefer `const` when the binding is never reassigned.
 - Use early returns to reduce nesting.
-- Do not comment obvious code.
 ```
 
 ## Companion files
 
-A skill can ship more than its `SKILL.md`. Declare **companion files** — references, scripts, templates — in the skill descriptor's `files` array, as exact paths relative to the skill directory:
+A skill can ship more than its `SKILL.md`. Declare companion files in the descriptor's `files` array, as paths relative to the skill directory:
 
-```json
+```json facet.json
 {
   "skills": {
     "code-review": {
@@ -51,21 +45,16 @@ A skill can ship more than its `SKILL.md`. Declare **companion files** — refer
 }
 ```
 
-Companions ship inside the archive and install and remove **atomically** with their skill; files you add to a skill directory yourself are left untouched on removal. They ship as opaque bytes (binary and empty files are fine), the skill name is still a single segment (the `/` in a companion path is directory depth, not part of the name), and a companion can't be `SKILL.md` itself. See [Supplementary files](/specification/manifest#supplementary-files) for the full rules.
+Companions install and remove atomically with the skill. Files you add to a skill directory yourself are left in place on removal. A companion cannot be `SKILL.md`. See [Supplementary files](/specification/manifest#supplementary-files).
 
 ## When to use skills
 
-Skills are **passive knowledge** -- they inform how the assistant thinks and works but do not define who it is or what the user can invoke. Use skills for:
+Use a skill for knowledge the assistant should always have: coding standards, review checklists, domain guidelines, framework practices.
 
-- Coding standards and conventions
-- Review checklists
-- Domain-specific guidelines (API design, security practices, accessibility)
-- Framework best practices
-
-Use [agents](/docs/learn/agents) when you need to define a persona with a specific role and behavior. Use [commands](/docs/learn/commands) when you need a user-invokable workflow that performs a specific task.
+Use an [agent](/docs/learn/agents) to define a persona. Use a [command](/docs/learn/commands) for something the user invokes.
 
 ## Further reading
 
 - [Agent Skills specification](https://agentskills.io/specification)
-- [Text assets](/specification/manifest#text-assets) -- placement, descriptor shape, and front-matter rules
-- [Create Your First Facet](/guides/create-your-first-facet) -- step-by-step guide to writing a skill
+- [Text assets](/specification/manifest#text-assets)
+- [Create Your First Facet](/guides/create-your-first-facet)

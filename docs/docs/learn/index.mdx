@@ -1,32 +1,56 @@
 ---
 title: Key Concepts
-description: Facets, assets, and MCP servers
+description: Facets, project files, assets, adapters
 ---
 
-This page introduces the core concepts behind Facets. For normative requirements, see the [Specification](/specification).
+The vocabulary behind Facets. For normative rules, see the [Specification](/specification).
 
 ## Facets
 
-A **facet** is a versioned collection of [assets](#assets) and [MCP server declarations](#mcp-servers) defined by a [facet manifest](/specification/manifest) (`facet.json`) — the same bundle an author creates locally, publishes to the registry, and installs into a project.
+A **facet** is a versioned bundle of assets. Your project declares the facets it wants, and an install resolves each one to an exact version, verifies its content, and materializes its assets into every AI tool you have connected.
 
-## Assets
+The same bundle is authored locally, published to the registry, and installed into a project. Its own identity and contents are declared in a [facet manifest](/specification/manifest) (`facet.json`) that ships inside the facet.
 
-An asset is a discrete unit of content within a facet. A facet bundles any combination of the three text asset types below. Skills follow the [Agent Skills](https://agentskills.io/specification) specification; agents and commands are single-file conventions defined by the [facet specification](/specification).
+## Project state
 
-<Columns cols={3}>
-  <Card title='Skills' href='/docs/learn/skills'>
-    Reusable knowledge and guidelines the assistant applies passively.
+Two files in your repository describe what the project depends on. Commit both.
+
+<Columns cols={2}>
+  <Card title='facets.json' href='/specification/project-manifest'>
+    What you declared: the facets you want, and how you want their assets named.
   </Card>
-  <Card title='Commands' href='/docs/learn/commands'>
-    User-invokable workflows, exposed as slash commands.
-  </Card>
-  <Card title='Agents' href='/docs/learn/agents'>
-    Personas with a defined role, behavior, and tool access.
+  <Card title='facets.lock' href='/specification/lockfile'>
+    What that resolved to: exact versions, provenance, and integrity hashes.
   </Card>
 </Columns>
 
-## MCP servers
+You edit `facets.json`, usually through the CLI. The lockfile is written only by an install, so a teammate who clones the repository and runs [`facet install`](/cli/install) gets the same versions and the same bytes you did.
 
-A facet can also declare [MCP servers](/specification/manifest#mcp-server-declarations) — portable connection information for a tool your assistant should be able to reach. A declaration is not an asset: instead of a file the project owns, it materializes into a keyed entry in each connected tool's own configuration.
+## Assets
 
-Because configuring a server lets your tool run a command or open a connection, installing a new or changed declaration [requires your approval](/cli/install#mcp-servers) first. A facet may declare servers and nothing else.
+An asset is one unit a facet ships. Every asset is versioned with the facet, integrity-checked, and materialized into your tools on install.
+
+<Columns cols={2}>
+  <Card title='Skills' href='/docs/learn/skills'>
+    Knowledge the assistant applies passively.
+  </Card>
+  <Card title='Commands' href='/docs/learn/commands'>
+    Workflows the user invokes.
+  </Card>
+  <Card title='Agents' href='/docs/learn/agents'>
+    Personas with a role and tool access.
+  </Card>
+  <Card title='MCP servers' href='/docs/learn/mcp-servers'>
+    Tools and data your assistant can reach.
+  </Card>
+</Columns>
+
+Skills, commands, and agents are **text assets**: prompt content that materializes as files your project owns. Skills follow the [Agent Skills](https://agentskills.io/specification) specification; agents and commands are single-file conventions defined by the [facet specification](/specification).
+
+An MCP server is the one asset that is not a text asset. It materializes as an entry inside your tool's own configuration rather than a file your project owns, which is why it has its own identity space and needs your approval before it is written.
+
+## Adapters
+
+An adapter is not something a facet ships. It is the layer that knows where one AI tool keeps files and configuration, and it materializes a facet's assets into that tool.
+
+Install one per tool you use. See [Adapters](/docs/learn/adapters).

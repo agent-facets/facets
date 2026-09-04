@@ -4,44 +4,107 @@ sidebarTitle: Overview
 description: "The open-source CLI for managing facets"
 ---
 
-Good development ecosystems allow you to install the exact version of what you need.
+`facet` installs, verifies, authors, and publishes facets for any AI coding tool with an [adapter](/docs/learn/adapters). Projects declare what they depend on in `facets.json` and get reproducible installs from `facets.lock`.
 
-`facet` is a **facet** manager for any AI coding tool (adapter) that follows the
-[Agent Skills specification](https://agentskills.io/specification) and
-[Model Context Protocol](https://modelcontextprotocol.io/specification/latest). It can discover, install,
-verify, and publish **facets**. It is extremely configurable and solves a variety of use cases. Most importantly, it
-allows you to install the exact versions you want of **facets** and their dependencies.
+## Facet management
 
-## Common Commands
+<Columns cols={2}>
+  <Card title={<Badge>facet install</Badge>} href="/cli/install">
+    Install everything the project declares
+  </Card>
+  <Card title={<Badge>facet add</Badge>} href="/cli/add">
+    Add a facet and install it in one step
+  </Card>
+  <Card title={<Badge>facet remove</Badge>} href="/cli/remove">
+    Remove a facet and the files it owns (alias `facet rm`)
+  </Card>
+  <Card title={<Badge>facet update</Badge>} href="/cli/update">
+    Move facets to newer releases (alias `facet upgrade`)
+  </Card>
+  <Card title={<Badge>facet search</Badge>} href="/cli/search">
+    Find published facets in the registry
+  </Card>
+  <Card title={<Badge>facet list</Badge>} href="/cli/list">
+    Show what is declared and what resolved
+  </Card>
+</Columns>
 
-The following are the most common `facet` commands. See the [roadmap](/roadmap) for planned commands.
+## Adapters
+
+<Columns cols={2}>
+  <Card title={<Badge>facet adapter add</Badge>} href="/cli/adapters/add">
+    Connect an AI coding tool
+  </Card>
+  <Card title={<Badge>facet adapter list</Badge>} href="/cli/adapters/list">
+    See what is connected, and what needs repair
+  </Card>
+  <Card title={<Badge>facet adapter remove</Badge>} href="/cli/adapters/remove">
+    Disconnect a tool
+  </Card>
+</Columns>
+
+## Authentication
+
+<Columns cols={2}>
+  <Card title={<Badge>facet login</Badge>} href="/cli/login">
+    Store a registry token
+  </Card>
+  <Card title={<Badge>facet whoami</Badge>} href="/cli/whoami">
+    Print the signed-in identity
+  </Card>
+  <Card title={<Badge>facet logout</Badge>} href="/cli/logout">
+    Remove the saved credential
+  </Card>
+</Columns>
+
+## Authoring
 
 <Columns cols={2}>
   <Card title={<Badge>facet create</Badge>} href="/cli/authoring/create">
-    Scaffolds a new **facet** project with an interactive wizard  -- name, description, version, and initial assets
+    Scaffold a new facet project
   </Card>
   <Card title={<Badge>facet edit</Badge>} href="/cli/authoring/edit">
-    Full authoring workbench  -- edit identity, manage assets, reconcile disk vs manifest
+    Interactive authoring workbench
   </Card>
   <Card title={<Badge>facet modify</Badge>} href="/cli/authoring/modify">
-    Headless, scriptable edits  -- add, remove, rename, re-describe assets, and set adapter config
+    Scriptable manifest edits
   </Card>
   <Card title={<Badge>facet build</Badge>} href="/cli/authoring/build">
-    Validates and packages your **facet** into a distributable archive with integrity hashes
-  </Card>
-  <Card title={<Badge>facet add</Badge>} href="/cli/add">
-    Add a **facet** to the project  -- resolve from a source, download, and install in one step
-  </Card>
-  <Card title={<Badge>facet update</Badge>} href="/cli/update">
-    Move the project's **facets** to newer releases (alias: `facet upgrade`)
+    Validate and package a facet archive
   </Card>
   <Card title={<Badge>facet publish</Badge>} href="/cli/authoring/publish">
-    Publish a built **facet** to the registry
-  </Card>
-  <Card title={<Badge>facet instructions</Badge>} href="/cli/instructions">
-    Print CLI usage instructions for AI agents  -- the non-interactive, machine-readable workflows
-  </Card>
-  <Card title={<Badge>facet self-update</Badge>} href="/cli/self-update">
-    Update the `facet` CLI to the latest version (alias: `facet self-upgrade`)
+    Publish a built facet to the registry
   </Card>
 </Columns>
+
+## CLI
+
+<Columns cols={2}>
+  <Card title={<Badge>facet instructions</Badge>} href="/cli/instructions">
+    Print CLI usage guidance for AI agents
+  </Card>
+  <Card title={<Badge>facet help</Badge>} href="/cli/help">
+    Command and flag help
+  </Card>
+  <Card title={<Badge>facet self-update</Badge>} href="/cli/self-update">
+    Update the CLI binary (alias `facet self-upgrade`)
+  </Card>
+</Columns>
+
+## Exit codes
+
+Every command uses the same convention.
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Succeeded, including a no-op. |
+| `1` | Failed in a way the command anticipated. |
+| `2` | An unexpected error escaped command handling. |
+
+Failures print three lines on stderr: `error:`, a `code=` token for log searching, and a `fix:` action.
+
+## See also
+
+- [Environment variables](/cli/env)
+- [Troubleshooting](/guides/troubleshooting)
+- [Roadmap](/roadmap) for planned commands

@@ -9,27 +9,30 @@ description: Remove saved registry credentials
 facet logout
 ```
 
-Removes the saved credentials file. No server call is made -- token revocation is done in the web UI at [agentfacets.io](https://agentfacets.io).
+Deletes the saved [credentials file](/cli/env). Removing a credential that was never saved is a no-op.
 
 ## Exit codes
 
 | Code | Meaning |
-| ---- | ------- |
-| `0`  | Always — credentials removed, or the file did not exist. |
-| `2`  | Unexpected filesystem error (surfaced by the top-level error handler). |
+| --- | --- |
+| `0` | Credentials removed, or the file did not exist. |
+| `2` | An unexpected filesystem error. |
 
-## What it does
+## Details
 
-<Steps>
-  <Step title="Delete credentials file">
-    Removes `$FACET_DIR/credentials` (default `~/.facet/credentials`).
-  </Step>
-  <Step title="Warn about FACET_TOKEN">
-    If the `FACET_TOKEN` environment variable is set, the CLI warns that it will continue to authenticate commands. Run `unset FACET_TOKEN` to fully sign out of the current shell.
-  </Step>
-</Steps>
+### Revocation happens in the web UI
+
+Logout makes no server call. It removes the local credential only, so the token itself stays valid until you revoke it at [agentfacets.io](https://agentfacets.io).
+
+### FACET_TOKEN survives logout
+
+If `FACET_TOKEN` is set, it keeps authenticating commands after logout, and the command says so.
+
+```sh
+unset FACET_TOKEN
+```
 
 ## See also
 
-- [`facet login`](/cli/login) -- sign in to the registry.
-- [`facet whoami`](/cli/whoami) -- verify the signed-in identity.
+- [`facet login`](/cli/login)
+- [`facet whoami`](/cli/whoami)
