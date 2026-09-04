@@ -16,7 +16,7 @@ The open beta is the current phase. The [alpha](/roadmap/alpha) shipped the core
 
 ### Facet composition
 
-A facet that declares `facets: [...]` composes text assets from other published facets. The manifest accepts the field today, so a composing facet can build and publish, but the references are not resolved. [`facet add`](/cli/add) and [`facet install`](/cli/install) reject it before changing project state. Do not publish a composing facet until resolution ships.
+A facet that declares `facets: [...]` composes text assets from other published facets. The manifest accepts the field today, so a composing facet can build and publish, but the references are not resolved. [`facet add`](/cli/add) and [`facet install`](/cli/install) ignore this field. We do not recommend publishing a composing facet until full resolution support ships.
 
 ## Planned commands
 
