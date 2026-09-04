@@ -1,9 +1,9 @@
 # Agent Facets
 
-**A package manager for AI coding assistant extensions.**
-
 [![npm version](https://img.shields.io/npm/v/agent-facets.svg)](https://www.npmjs.com/package/agent-facets)
 [![Discord](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/qXQYaYna5w)
+
+#### **A package manager for AI coding assistant extensions.**
 
 AI coding tools all want roughly the same things: skills, agents, commands, and MCP server declarations. Each expects them in its own format, in its own directory. So those files get copied between projects and between tools by hand, with no version, no upgrade path, no integrity check, and no clean way to take them back out.
 

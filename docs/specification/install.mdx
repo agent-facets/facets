@@ -104,7 +104,7 @@ Comments in `facets.json` MUST survive a write.
 
 ## Transactional tri-write
 
-On success the project manifest, the lockfile, and the machine-local ownership record MUST be written together.
+On success, a non-frozen install MUST write the project manifest, the lockfile, and the machine-local ownership record together.
 
 A failure anywhere MUST leave all three exactly as they were, and MUST restore every text asset and every native configuration document the operation touched, under the restoration rule in [Ordering](#ordering).
 
@@ -138,7 +138,9 @@ These gates MUST run before any network access, so a frozen install can refuse w
 
 MCP adds its own pre-mutation gates: an unresolved server collision, an adapter that cannot configure servers, an unparseable native document, or an unapproved declaration MUST fail before any write. These checks MAY need to fetch locked content, because declarations live in the facet rather than the lockfile.
 
-Once every check passes, frozen mode MAY reconcile native configuration and the machine-local record, including removing an owned entry the project no longer desires, while still leaving the manifest and lockfile untouched.
+Once every check passes, frozen mode MAY reconcile native configuration and the machine-local record, including removing an owned entry the project no longer desires. It MUST NOT write the project manifest or lockfile.
+
+An otherwise successful frozen install MAY still succeed if its machine-local ownership record cannot be persisted. The implementation MUST report that failure and any incomplete restoration of the record, and MUST NOT treat unpersisted ownership or approval as recorded.
 
 ## Version axes
 

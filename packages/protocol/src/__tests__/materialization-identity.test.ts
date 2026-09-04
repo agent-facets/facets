@@ -66,6 +66,14 @@ describe('collisionKey — logical uniqueness', () => {
     expect(collisionKey('project', 'skill', 'Review')).toBe(collisionKey('project', 'skill', 'review'))
   })
 
+  test('Unicode uppercase and lowercase names collide', () => {
+    expect(collisionKey('project', 'skill', '\u00c4')).toBe(collisionKey('project', 'skill', '\u00e4'))
+  })
+
+  test('full Unicode case folding is not used', () => {
+    expect(collisionKey('project', 'skill', '\u00df')).not.toBe(collisionKey('project', 'skill', 'SS'))
+  })
+
   test('names differing only by Unicode normalization collide', () => {
     expect(collisionKey('project', 'skill', 'caf\u00e9')).toBe(collisionKey('project', 'skill', 'cafe\u0301'))
   })
