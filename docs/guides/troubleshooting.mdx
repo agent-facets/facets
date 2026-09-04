@@ -35,7 +35,7 @@ Errors that several commands can produce, with their cause and fix. An error onl
     A `servers` group inside a `0.1` document is a validation failure instead: run one non-frozen `facet install` to migrate first.
   </Accordion>
 
-  <Accordion title='"unsupported adapter API"'>
+  <Accordion title='"unsupported adapter SDK API"'>
     **Cause:** an installed adapter declares an API this CLI does not support, so every command that touches adapters fails closed, including `build`, `add`, `install`, `remove`, and `update`.
 
     **Fix:** list the adapters and run the reinstall command printed beside each flagged entry. See [`facet adapter list`](/cli/adapters/list#troubleshooting).

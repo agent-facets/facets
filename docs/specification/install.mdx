@@ -142,7 +142,7 @@ Once every check passes, frozen mode MAY reconcile native configuration and the 
 
 The [archive `facetVersion`](/specification/archive), the [project manifest version](/specification/project-manifest), and the [lockfile version](/specification/lockfile) are independent axes. Each is classified by exact match against a supported set, never by numeric ordering, so an unrecognized version is refused rather than guessed at.
 
-An implementation that also supports adapters carries its own adapter API axis on top of these.
+An implementation that also supports adapters carries its own adapter SDK API axis on top of these.
 
 An archive whose `facetVersion` is unsupported MUST fail with the observed and supported versions, so a consumer can be told what to upgrade.
 

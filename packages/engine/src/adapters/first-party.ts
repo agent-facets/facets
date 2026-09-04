@@ -1,8 +1,8 @@
 /**
  * First-party adapters known to the CLI. Drives the zero-adapter install
  * picker (both `facet adapter add` no-arg and `facet install` zero-
- * adapter paths) so partners see a curated list of the tools we officially
- * support in closed alpha.
+ * adapter paths) so users see a curated list of the tools we officially
+ * support.
  *
  * `supportsInstall: false` entries render dimmed + non-selectable in the
  * picker (Adjustment A). When an adapter flips to real I/O, set this to
@@ -14,7 +14,7 @@ export interface FirstPartyAdapter {
   name: string
   /** npm package id used as the install specifier. */
   npmPackage: string
-  /** Whether this adapter has real filesystem I/O ready for alpha dogfood. */
+  /** Whether this adapter has real filesystem I/O ready for use. */
   supportsInstall: boolean
   /** One-line note shown when the adapter is dimmed. */
   comingSoonLabel?: string

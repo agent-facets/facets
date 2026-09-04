@@ -456,8 +456,9 @@ export type RunInstallFailure =
   /** `git` is not installed (or not on PATH). */
   | { code: 'GIT_BINARY_MISSING'; facet: string }
   /**
-   * `git clone` failed because the registry rejected our auth attempt.
-   * Closed alpha supports public repos and SSH (via agent) only.
+   * `git clone` failed because the remote rejected our auth attempt.
+   * HTTPS cloning supports public repositories; private repositories
+   * require SSH agent authentication.
    */
   | { code: 'GIT_AUTH_REQUIRED'; facet: string; url: string }
   /**

@@ -1,21 +1,42 @@
 ---
 title: Pre-Release Alpha
 sidebarTitle: Alpha
-description: The current phase, and what has shipped
+description: What shipped before the open beta
 ---
 
-The alpha is the current phase. The core loop of author, publish, discover, and install is live end to end against the public registry at [agentfacets.io](https://agentfacets.io).
+The alpha established the core author, publish, discover, install, and update loop against the public registry at [agentfacets.io](https://agentfacets.io). The [open beta](/roadmap/beta) is the current phase.
 
-## Shipped
+## Core functionality
 
-- **Authoring.** Scaffold, edit, and package a facet with [`facet create`](/cli/authoring/create), [`facet edit`](/cli/authoring/edit), [`facet modify`](/cli/authoring/modify), and [`facet build`](/cli/authoring/build).
-- **Registry.** Publish, discover, and authenticate with [`facet publish`](/cli/authoring/publish), [`facet search`](/cli/search), and [`facet login`](/cli/login).
-- **Project management.** Add, install, update, remove, and inspect with [`facet add`](/cli/add), [`facet install`](/cli/install), [`facet update`](/cli/update), [`facet remove`](/cli/remove), and [`facet list`](/cli/list).
-- **Platform.** First-party [adapters](/docs/learn/adapters) for Claude Code, OpenCode, and Codex, a public [adapter SDK](/reference/adapter-sdk), agent guidance via [`facet instructions`](/cli/instructions), and in-place binary updates with [`facet self-update`](/cli/self-update).
+- **Authoring.** Scaffold a facet, edit it interactively or from a script, and package it into a verified archive.
+- **Registry.** Publish immutable versions, search for published facets, and authenticate with a personal access token.
+- **Project management.** Declare facets in a project, install them reproducibly from a lockfile, move them to newer releases, and remove the files they own.
+- **Install safety.** Resolve [name collisions](/specification/materialization) across facets, and approve new or changed [MCP server configuration](/docs/learn/mcp-servers) before it is written.
+- **Platform.** First-party [adapters](/docs/learn/adapters) for Claude Code, OpenCode, and Codex, a public [adapter SDK](/reference/adapter-sdk), agent-facing guidance, and in-place CLI updates.
+
+## Commands
+
+<Columns cols={2}>
+  <Card title="Facet management" href="/cli#facet-management">
+    `install`, `add`, `remove`, `update`, `search`, `list`
+  </Card>
+  <Card title="Authoring" href="/cli#authoring">
+    `create`, `edit`, `modify`, `build`, `publish`
+  </Card>
+  <Card title="Authentication" href="/cli#authentication">
+    `login`, `whoami`, `logout`
+  </Card>
+  <Card title="Adapters" href="/cli#adapters">
+    `adapter add`, `adapter list`, `adapter remove`
+  </Card>
+  <Card title="CLI" href="/cli#cli">
+    `instructions`, `help`, `self-update`
+  </Card>
+</Columns>
 
 ## Caveats
 
-- Published versions are immutable, but registry policies such as review queues and name reservations are still being tuned.
-- Breaking CLI changes may still ship between alpha versions. Check the [changelog](/changelog).
+- Published versions were immutable from the start. Registry policies such as review queues and name reservations continue to be tuned during the beta.
+- Breaking CLI changes shipped between alpha versions. Check the [changelog](/changelog).
 
-See the [beta goals](/roadmap/beta) for what is next.
+See the [beta goals](/roadmap/beta) for the current phase.

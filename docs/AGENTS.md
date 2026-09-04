@@ -206,6 +206,31 @@ Guides read by both humans and agents use `<Visibility>`.
   contract shape.
 - `<Visibility for="humans">` holds the readable walkthrough.
 
+## Cards
+
+A card is navigation. Every `<Card>` MUST have an `href`, because a card
+looks clickable whether or not it is one, and a dead card teaches the
+reader to stop trying the others.
+
+Content with no destination is not a card. Two things being contrasted
+are a bold-led list; a definition is a sentence.
+
+**Do:**
+
+```mdx
+<Card title="Quickstart" icon="rocket" href="/quickstart" horizontal>
+  Install the CLI and use your first facet.
+</Card>
+```
+
+**Don't:**
+
+```mdx
+<Card title="Public facets" icon="globe">
+  Anyone can install a public facet.
+</Card>
+```
+
 ## Cross-linking
 
 Connect pages instead of duplicating them. A guide teaches the path and
@@ -216,6 +241,7 @@ links the reference that owns the detail.
 - One audience, one job.
 - Every rule stated once, elsewhere linked.
 - No em dash or spaced double hyphen in prose.
+- Every card has an `href`.
 - No internal architecture, no design rationale beyond a preventive
   sentence.
 - Claims verified against source, not against another doc page.

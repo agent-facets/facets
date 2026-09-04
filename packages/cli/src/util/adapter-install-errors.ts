@@ -301,7 +301,7 @@ export function describeCompatibilityFailure(
       }
     case 'api-unsupported':
       return {
-        what: `adapter "${failure.adapter}" declares unsupported adapter API ${failure.found}`,
+        what: `adapter "${failure.adapter}" declares unsupported adapter SDK API ${failure.found}`,
         detail: `this CLI supports adapter API ${supported}`,
         fix: `install a compatible release: ${adapterAddCommand(installTarget)}`,
       }
@@ -428,7 +428,7 @@ function describeNoCompatibleRelease(failure: {
         newest = `newest considered release ${version} declares malformed adapter API "${declared.found}"`
         break
       case 'unsupported':
-        newest = `newest considered release ${version} declares unsupported adapter API ${declared.api}`
+        newest = `newest considered release ${version} declares unsupported adapter SDK API ${declared.api}`
         break
       case 'supported':
         // Unreachable when resolution failed, but render honestly.
@@ -487,7 +487,7 @@ function describeGitFailure(
     case 'auth-required':
       return {
         what: `git authentication required for ${failure.url}`,
-        detail: 'closed alpha supports public repos and SSH (via agent) only',
+        detail: 'HTTPS cloning supports public repositories; private repositories require SSH agent authentication',
         fix: 'use a public URL or configure your SSH agent',
       }
     case 'clone-failed':
