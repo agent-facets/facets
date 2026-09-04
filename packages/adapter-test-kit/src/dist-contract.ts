@@ -25,7 +25,7 @@ export interface AssertDistBundleOptions {
 }
 
 export function assertDistBundleContract(options: AssertDistBundleOptions): void {
-  test('built bundle declares the canonical adapter API version', async () => {
+  test('built bundle declares the canonical adapter SDK API version', async () => {
     const loaded = await loadAdapter(options.bundlePath)
     expect(loaded.name).toBe(options.sourceAdapter.name)
     expect(loaded.apiVersion).toBe(ADAPTER_API_VERSION)

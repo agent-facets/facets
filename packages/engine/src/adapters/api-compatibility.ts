@@ -7,7 +7,7 @@ import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
 /**
  * Pure adapter-API compatibility primitives.
  *
- * Adapter API versions are discrete contract identifiers compared for
+ * Adapter SDK API versions are discrete contract identifiers compared for
  * exact equality — never semantic-version ranges. This module owns the
  * CLI's support set, the canonical syntax rule, and the shared failure
  * union consumed by npm selection, candidate verification, installed
@@ -16,7 +16,7 @@ import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
  */
 
 /**
- * The exact adapter APIs this CLI supports — the compatibility window.
+ * The exact adapter SDK APIs this CLI supports — the compatibility window.
  *
  * This is the CLI's sole concrete declaration of what it accepts. Every
  * check (verification, loading, listing, npm selection, package-versus-runtime
@@ -36,19 +36,19 @@ import { ADAPTER_API_VERSION } from '@agent-facets/adapter/api-version'
 export const SUPPORTED_ADAPTER_APIS: readonly string[] = [ADAPTER_API_VERSION]
 
 /**
- * Canonical adapter API syntax: `MAJOR.MINOR` in decimal with no sign,
+ * Canonical adapter SDK API syntax: `MAJOR.MINOR` in decimal with no sign,
  * suffix, build metadata, patch component, or leading zeroes other than
  * the number zero itself.
  */
 const ADAPTER_API_SYNTAX = /^(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 
-/** True iff `value` is a syntactically valid adapter API identifier. */
+/** True iff `value` is a syntactically valid adapter SDK API identifier. */
 export function isWellFormedAdapterApi(value: string): boolean {
   return ADAPTER_API_SYNTAX.test(value)
 }
 
 /**
- * Classification of a declared adapter API value — from a runtime
+ * Classification of a declared adapter SDK API value — from a runtime
  * `apiVersion` export or a package-metadata field. `undefined` and
  * `null` classify as missing; any non-string or syntactically invalid
  * string classifies as malformed.
@@ -60,7 +60,7 @@ export type ApiDeclarationClassification =
   | { kind: 'missing' }
 
 /**
- * Classify a declared adapter API value against the CLI support set.
+ * Classify a declared adapter SDK API value against the CLI support set.
  * Pure; shared by npm release filtering and runtime verification so both
  * sides apply identical rules.
  */

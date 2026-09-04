@@ -10,13 +10,13 @@ Private facets let you share skills, agents, commands, and MCP servers without m
 - **Public.** Anyone can discover and install the facet from the registry.
 - **Private.** Only signed-in users with access can discover and install it.
 
-Each facet declares its visibility in the manifest. Private facets must use a <Tooltip tip="The `@owner` prefix on a facet name. A scope belongs to a user account or an organization.">scope</Tooltip> you own, such as `@ada/review-kit` or `@acme/review-kit`. See the [`private` field](/specification/manifest#privacy) for the exact manifest rules and [Publish a Facet](/guides/publish-a-facet#changing-visibility) for the publishing workflow.
+Each facet declares its visibility in the manifest. Private facets must use a <Tooltip tip={<>The <code>@owner</code> prefix on a facet name. A scope belongs to a user account or an organization.</>}>scope</Tooltip> you own, such as `@ada/review-kit` or `@acme/review-kit`. See the [`private` field](/specification/manifest#privacy) for the exact manifest rules and [Publish a Facet](/guides/publish-a-facet#changing-visibility) for the publishing workflow.
 
 ## Your private facets
 
 Your username owns its matching personal scope. A facet named `@ada/review-kit` belongs to the `ada` account, and that account must be signed in to publish or access its private versions.
 
-Personal private publishing is free during the open beta. At [general availability](/roadmap/stable), personal private facets will be available on a paid plan.
+Personal private publishing is free during the open beta. At [general availability](/roadmap/stable), personal private facets will be available on a paid plan. Anything published during the open beta will remain accessible for free forever.
 
 ## Private facets for teams
 

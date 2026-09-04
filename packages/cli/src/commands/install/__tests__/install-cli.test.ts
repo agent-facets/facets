@@ -301,7 +301,7 @@ describe('facet install — unresolved collisions', () => {
 
 describe('facet install — what an adapter is asked to write', () => {
   /**
-   * An adapter that records every request it receives. The adapter API
+   * An adapter that records every request it receives. The adapter SDK API
    * does not change for aliasing, so the only way to show that the
    * effective name reaches the adapter — and that authored content does
    * not get rewritten along with it — is to look at the requests.

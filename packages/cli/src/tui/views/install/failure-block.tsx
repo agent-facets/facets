@@ -320,10 +320,7 @@ function failureDetail(failure: RunInstallFailure): React.JSX.Element {
           <Text color={THEME.warning} bold>
             ✕ git authentication required for {failure.url}
           </Text>
-          <Text>
-            {' '}
-            HTTPS cloning supports public repositories; private repositories require SSH agent authentication
-          </Text>
+          <Text> private repositories require git authentication</Text>
         </Box>
       )
     case 'GIT_CLONE_FAILED':

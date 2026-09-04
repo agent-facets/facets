@@ -231,6 +231,23 @@ are a bold-led list; a definition is a sentence.
 </Card>
 ```
 
+## Naming the adapter SDK
+
+Two names, and never a third:
+
+- **Adapter SDK** is the package and authoring surface
+  (`@agent-facets/adapter`).
+- **Adapter SDK API** is the versioned compatibility contract an adapter
+  declares and the CLI checks (`0.3` today).
+
+Never write "adapter API". It reads as a third concept and hides which
+of the two is meant. This applies to user-facing CLI output as well as
+these pages.
+
+Code identifiers keep their existing spelling: `ADAPTER_API_VERSION`,
+`SUPPORTED_ADAPTER_APIS`, and the published `facetAdapterApiVersion`
+package field are contracts, not prose.
+
 ## Cross-linking
 
 Connect pages instead of duplicating them. A guide teaches the path and

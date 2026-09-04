@@ -5,7 +5,7 @@
  *
  * 1. Every real first-party adapter manifest under `packages/adapters/`,
  *    when run through the full prepack transform chain, publishes the
- *    canonical adapter API metadata field.
+ *    canonical adapter SDK API metadata field.
  * 2. The `scripts/prepack.ts` entry script itself qualifies exactly the
  *    packages under `packages/adapters/` for injection — an unrelated
  *    package's manifest is left untouched. This runs the real script

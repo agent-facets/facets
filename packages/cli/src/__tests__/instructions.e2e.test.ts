@@ -43,7 +43,7 @@ describe('facet instructions', () => {
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('agentfacets.io')
     expect(result.stdout).toContain('facet add viper-plans')
-    expect(result.stdout).toContain(`adapter API ${renderAdapterApiSupportSet()}`)
+    expect(result.stdout).toContain(`adapter SDK API ${renderAdapterApiSupportSet()}`)
     expect(result.stdout).toContain('facet adapter list')
     expect(result.stdout).toContain('facet update --latest')
     expect(result.stdout).toContain('facet update --dry-run')

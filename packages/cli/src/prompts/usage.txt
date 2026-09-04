@@ -190,8 +190,8 @@ Adapter tooling — `facet adapter`
   `facet adapter install` still works as a deprecated alias of `add`; it
   behaves identically and prints a deprecation notice on stderr.
 
-  This CLI supports adapter API {{ADAPTER_API_SUPPORT_SET}}. An adapter that declares an older or
-  unsupported API fails closed before any project files change. Note that
+  This CLI supports adapter SDK API {{ADAPTER_API_SUPPORT_SET}}. An adapter that declares an older or
+  unsupported one fails closed before any project files change. Note that
   loadability and MCP capability are separate questions: an adapter can load
   and work normally while declaring no MCP support, in which case it cannot
   configure MCP servers and reinstalling it will not change that.

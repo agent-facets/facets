@@ -104,7 +104,7 @@ export async function runBuildPipeline(
 ): Promise<BuildResult | BuildFailure> {
   const warnings: string[] = []
 
-  // Stage 0: adapter API preflight — defense-in-depth behind the
+  // Stage 0: adapter SDK API preflight — defense-in-depth behind the
   // command-level fail-closed load. Runs before any stage so an
   // incompatible adapter can never reach a contract method or be
   // misreported as a content-validation failure. A build with zero

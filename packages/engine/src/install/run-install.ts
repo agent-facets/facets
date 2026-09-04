@@ -241,7 +241,7 @@ export async function runInstall(opts: RunInstallOptions): Promise<RunInstallRes
       onStage({ kind: 'receipt-unavailable', reason: receiptState.reason })
     }
 
-    // 3b. Adapter API preflight — defense-in-depth behind the
+    // 3b. Adapter SDK API preflight — defense-in-depth behind the
     //     command-level fail-closed load. Runs on the no-mutation path
     //     before the per-facet loop, which also precedes any Git/local
     //     facet build, drift removal, and every materialization write.

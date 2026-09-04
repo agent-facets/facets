@@ -191,7 +191,7 @@ export interface AssetCapability {
  */
 export interface Adapter {
   /**
-   * The adapter API contract identifier this adapter implements.
+   * The adapter SDK API contract identifier this adapter implements.
    *
    * Stamped by `defineAdapter()` from the SDK's canonical
    * `ADAPTER_API_VERSION` — adapter authors do not (and cannot) supply it.

@@ -44,7 +44,7 @@ export interface InstallationReceipt {
   schemaVersion: typeof INSTALLATION_SCHEMA_VERSION
   /** The sole active generation id — a validated safe path segment. */
   activeGeneration: string
-  /** The verified runtime adapter API at activation time. */
+  /** The verified runtime adapter SDK API at activation time. */
   apiVersion: string
   source: InstallationSource
 }

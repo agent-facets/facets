@@ -113,7 +113,7 @@ export type PlaceAdapterResult =
 
 /** Provenance recorded in the receipt at activation. */
 export interface PlacementProvenance {
-  /** The verified runtime adapter API of the candidate. */
+  /** The verified runtime adapter SDK API of the candidate. */
   apiVersion: string
   source: InstallationSource
 }

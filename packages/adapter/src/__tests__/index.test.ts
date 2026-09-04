@@ -104,7 +104,7 @@ describe('defineAdapter — required field validation', () => {
   })
 })
 
-describe('adapter API identifier', () => {
+describe('adapter SDK API identifier', () => {
   test('the SDK stamps the canonical identifier', () => {
     expect(defineAdapter(validDefinition()).apiVersion).toBe(ADAPTER_API_VERSION)
   })

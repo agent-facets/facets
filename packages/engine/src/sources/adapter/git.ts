@@ -9,9 +9,8 @@ import { join } from 'node:path'
  * failures into the same CLI rendering surface if we ever consolidate.
  *
  *   - `git-binary-missing` — `git` is not installed (or not on PATH).
- *   - `auth-required` — the remote rejected the auth attempt; HTTPS
- *     cloning supports public repositories, and private repositories
- *     require SSH agent authentication.
+ *   - `auth-required` — the remote rejected the auth attempt; private
+ *     repositories require git authentication.
  *   - `clone-failed` — clone failed for some other reason. Carries
  *     stderr verbatim for the CLI to surface.
  */

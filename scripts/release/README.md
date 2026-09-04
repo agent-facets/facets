@@ -58,7 +58,7 @@ The `--filter=<pkg>...` scope is critical: an unfiltered `turbo build` fans out 
 
 `publish.ts` checks `pkg.private` before publishing. If a private package's tag triggers the release workflow (e.g., an internal adapter package), the script logs a skip message and exits cleanly. This prevents accidental npm publish attempts for internal packages.
 
-## Adapter API compatibility rollout
+## Adapter SDK API compatibility rollout
 
 The compatibility-aware CLI selects npm adapter releases by their `facetAdapterApiVersion` metadata and refuses to load installed adapters without a supported declaration. That makes release **ordering** load-bearing on **every** change to the supported API set, not just its introduction.
 
@@ -73,7 +73,7 @@ Adapter-first avoids both. For a **widening** it is safe because an older CLI si
 
 Checklist (protocol → SDK + first-party adapters → CLI):
 
-1. If the SDK's contract depends on a new protocol export (as adapter API `0.2` depends on `@agent-facets/protocol/mcp-declaration`), land a **protocol-only** changeset first and let it publish. The SDK bundles protocol, so this is not a build requirement — it is so external consumers of the published spec, including the registry, can adopt the contract before a CLI starts producing artifacts that use it.
+1. If the SDK's contract depends on a new protocol export (as adapter SDK API `0.2` depends on `@agent-facets/protocol/mcp-declaration`), land a **protocol-only** changeset first and let it publish. The SDK bundles protocol, so this is not a build requirement — it is so external consumers of the published spec, including the registry, can adopt the contract before a CLI starts producing artifacts that use it.
 2. Land the implementation with changesets for `@agent-facets/adapter` and the first-party adapter packages (`@agent-facets/adapter-claude-code`, `@agent-facets/adapter-opencode`, `@agent-facets/adapter-codex`) **only** — no `agent-facets` changeset yet. All four must be listed explicitly: each adapter depends on the SDK as a `devDependency`, and changesets does not cascade a bump across dev dependencies.
 
    Write the CLI's changeset at the same time — while the change is fresh — but park it in `scripts/release/deferred/` rather than `.changeset/`. Changesets reads `.changeset/*.md` and nothing else, so a deferred file is inert until it is moved. A comment asking a reviewer not to merge a pending changeset is not a mechanism; its absence from `.changeset/` is.

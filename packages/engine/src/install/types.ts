@@ -457,8 +457,7 @@ export type RunInstallFailure =
   | { code: 'GIT_BINARY_MISSING'; facet: string }
   /**
    * `git clone` failed because the remote rejected our auth attempt.
-   * HTTPS cloning supports public repositories; private repositories
-   * require SSH agent authentication.
+   * Private repositories require git authentication.
    */
   | { code: 'GIT_AUTH_REQUIRED'; facet: string; url: string }
   /**
@@ -492,7 +491,7 @@ export type RunInstallFailure =
    */
   | { code: 'ADAPTER_UNSUPPORTED'; facet: string; adapter: string }
   /**
-   * A selected adapter does not declare a CLI-supported adapter API.
+   * A selected adapter does not declare a CLI-supported adapter SDK API.
    * Detected by the preflight before the per-facet loop (which precedes
    * any Git/local facet build, materialization write, or adapter
    * contract method) — the primary gate is the command-level

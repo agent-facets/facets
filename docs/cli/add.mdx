@@ -164,7 +164,7 @@ What gets written per specifier shape is defined by the [manifest write policy](
   <Accordion title="a git source needs authentication">
     **Cause:** the repository is private, or the clone prompted for credentials.
 
-    **Fix:** use a public repository, or an SSH URL backed by a running SSH agent. Interactive credential prompts are not supported during a clone.
+    **Fix:** configure git authentication for the repository, or use a public one. Interactive credential prompts are not supported during a clone.
   </Accordion>
 
   <Accordion title="a git ref could not be checked out">

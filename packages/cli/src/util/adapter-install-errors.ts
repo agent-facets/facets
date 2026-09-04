@@ -259,7 +259,7 @@ function describeVerifyFailure(
       }
     case 'invalid-capability':
       return {
-        what: `adapter "${failure.adapter}" declares adapter API ${failure.api} but does not implement it`,
+        what: `adapter "${failure.adapter}" declares adapter SDK API ${failure.api} but does not implement it`,
         detail: failure.detail,
         fix: 'declare "mcpServers" as false or a complete { prepare, apply } capability, then rebuild the adapter',
       }
@@ -289,25 +289,25 @@ export function describeCompatibilityFailure(
   switch (failure.kind) {
     case 'api-missing':
       return {
-        what: `adapter "${failure.adapter}" does not declare an adapter API version`,
-        detail: `this CLI supports adapter API ${supported}; undeclared adapters are incompatible`,
+        what: `adapter "${failure.adapter}" does not declare an adapter SDK API version`,
+        detail: `this CLI supports adapter SDK API ${supported}; undeclared adapters are incompatible`,
         fix: `install a release built with a current @agent-facets/adapter SDK: ${adapterAddCommand(installTarget)}`,
       }
     case 'api-malformed':
       return {
-        what: `adapter "${failure.adapter}" declares a malformed adapter API version`,
-        detail: `found "${failure.found}"; this CLI supports adapter API ${supported}`,
-        fix: `install a release with a valid API declaration: ${adapterAddCommand(installTarget)}`,
+        what: `adapter "${failure.adapter}" declares a malformed adapter SDK API version`,
+        detail: `found "${failure.found}"; this CLI supports adapter SDK API ${supported}`,
+        fix: `install a release with a valid adapter SDK API declaration: ${adapterAddCommand(installTarget)}`,
       }
     case 'api-unsupported':
       return {
         what: `adapter "${failure.adapter}" declares unsupported adapter SDK API ${failure.found}`,
-        detail: `this CLI supports adapter API ${supported}`,
+        detail: `this CLI supports adapter SDK API ${supported}`,
         fix: `install a compatible release: ${adapterAddCommand(installTarget)}`,
       }
     case 'api-metadata-mismatch':
       return {
-        what: `adapter "${failure.adapter}" package metadata disagrees with its runtime API declaration`,
+        what: `adapter "${failure.adapter}" package metadata disagrees with its runtime adapter SDK API declaration`,
         detail: `package declares ${failure.packageDeclared}, runtime declares ${failure.runtimeDeclared}; supported: ${supported}`,
         fix: 'this release is inconsistently published; report it to the adapter author and install a different version',
       }
@@ -422,24 +422,24 @@ function describeNoCompatibleRelease(failure: {
     const { version, declared } = failure.newestConsidered
     switch (declared.kind) {
       case 'missing':
-        newest = `newest considered release ${version} declares no adapter API`
+        newest = `newest considered release ${version} declares no adapter SDK API`
         break
       case 'malformed':
-        newest = `newest considered release ${version} declares malformed adapter API "${declared.found}"`
+        newest = `newest considered release ${version} declares malformed adapter SDK API "${declared.found}"`
         break
       case 'unsupported':
         newest = `newest considered release ${version} declares unsupported adapter SDK API ${declared.api}`
         break
       case 'supported':
         // Unreachable when resolution failed, but render honestly.
-        newest = `newest considered release ${version} declares adapter API ${declared.api}`
+        newest = `newest considered release ${version} declares adapter SDK API ${declared.api}`
         break
     }
   }
 
   return {
     what: `no compatible release of "${failure.packageName}" (${selector})`,
-    detail: `this CLI supports adapter API ${supported}; ${newest}`,
+    detail: `this CLI supports adapter SDK API ${supported}; ${newest}`,
     fix: noCompatibleReleaseFix(failure.request, failure.packageName, failure.newestConsidered !== undefined),
   }
 }
@@ -457,7 +457,7 @@ function noCompatibleReleaseFix(request: NpmVersionRequest, packageName: string,
   if (considered) {
     return request.kind === 'exact'
       ? `that exact version is incompatible; try \`${bareInstall}\` for the highest compatible release`
-      : 'the publisher must release a version declaring a supported adapter API'
+      : 'the publisher must release a version declaring a supported adapter SDK API'
   }
   switch (request.kind) {
     case 'exact':
@@ -487,8 +487,8 @@ function describeGitFailure(
     case 'auth-required':
       return {
         what: `git authentication required for ${failure.url}`,
-        detail: 'HTTPS cloning supports public repositories; private repositories require SSH agent authentication',
-        fix: 'use a public URL or configure your SSH agent',
+        detail: 'private repositories require git authentication',
+        fix: 'configure git authentication for this repository, or use a public URL',
       }
     case 'clone-failed':
       return {

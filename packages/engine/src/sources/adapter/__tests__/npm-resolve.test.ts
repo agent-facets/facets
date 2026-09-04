@@ -42,7 +42,7 @@ function makeTarball(content: string): Uint8Array {
 }
 
 interface FakeVersion {
-  /** Adapter API declaration; `undefined` omits the field entirely. */
+  /** Adapter SDK API declaration; `undefined` omits the field entirely. */
   api?: unknown
   /** Omit dist.integrity/shasum when false-y flags are set. */
   noIntegrity?: boolean

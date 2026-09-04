@@ -92,13 +92,13 @@ describe('0.29 guidance is present in the prompts', () => {
     expect(manifest).toContain('--- JSON Schema (generated) ---')
   })
 
-  test('usage covers adapter API recovery guidance for the whole support set', () => {
+  test('usage covers adapter SDK API recovery guidance for the whole support set', () => {
     // Rendered, not raw: the support set is generated from engine's single
     // declaration, so asserting the raw prompt would only prove a marker
     // exists — and asserting a literal would be the duplication the marker
     // was introduced to remove.
     const usage = promptFor('usage')
-    expect(usage).toContain(`adapter API ${renderAdapterApiSupportSet()}`)
+    expect(usage).toContain(`adapter SDK API ${renderAdapterApiSupportSet()}`)
     for (const api of SUPPORTED_ADAPTER_APIS) {
       expect(usage).toContain(api)
     }
