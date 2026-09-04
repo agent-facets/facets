@@ -5,6 +5,24 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-09-04" description="Agent Facets enters open beta with private publishing for individuals and teams" tags={["New Feature"]}>
+  ## Agent Facets is in open beta
+
+  The alpha established the full author, publish, install, and update
+  loop. Agent Facets is now in open beta while we complete registry
+  inspection, facet composition, and the compatibility work required for
+  general availability.
+
+  - **Public publishing remains free.**
+  - **Personal private publishing is free during the beta.**
+  - **Private publishing for teams is a paid offering available by
+    request.**
+
+  See the [roadmap](/roadmap) for the path to general availability and
+  [Private Facets](/private-facets) for visibility, scopes, and team
+  access.
+</Update>
+
 <Update label="2026-09-02" description="agent-facets 0.33.1 fixes the cold-cache crash when installing from a git source" tags={["CLI", "Fix"]} rss={{
   title: "agent-facets 0.33.1: git-sourced installs no longer crash on a cold cache",
   description: "agent-facets@0.33.1 is on npm; run facet self-update to pick it up. Installing a facet from a git source for the first time crashed with 'TypeError: Object.entries requires that input parameter not be null or undefined' instead of completing. The clone and build both succeeded; the run died on the step that commits the built content to the cache. That step is fixed, and git-sourced installs now complete on a cold cache. Only fresh clones were affected: a first install, or one whose cache slot was cold or evicted. Installs served from an audited cache hit, and facets from the registry or a local path, never hit the crash. Nothing about verification changed: the same entries are audited, and the cache records the complete set, including supplementary files that no asset owns."

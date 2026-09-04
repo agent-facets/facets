@@ -475,7 +475,7 @@ describe('materialize — adapter-extras cannot override computed identity', () 
   })
 })
 
-describe('materialize — adapter API invariant check', () => {
+describe('materialize — adapter SDK API invariant check', () => {
   test('an incompatible adapter fails before any method is invoked', async () => {
     const manifest: ResolvedFacetManifest = {
       name: 'viper-plans',

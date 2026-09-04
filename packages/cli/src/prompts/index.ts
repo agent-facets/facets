@@ -60,7 +60,7 @@ export function isInstructionTopic(value: string): value is InstructionTopic {
 export const OVERVIEW_INDEX_MARKER = '{{TOPIC_INDEX}}'
 
 /**
- * The marker in `usage.txt` where the CLI's adapter API support set is
+ * The marker in `usage.txt` where the CLI's adapter SDK API support set is
  * injected. Generated for the same reason as the topic index: the window is
  * declared once, in engine's `SUPPORTED_ADAPTER_APIS`, and prose that restated
  * it would silently go stale the next time the set changes.

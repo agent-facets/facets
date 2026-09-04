@@ -6,13 +6,13 @@ An adapter is an AI coding tool (OpenCode, Claude Code, Codex, etc.) that wraps 
 
 An adapter author SHALL be able to create an adapter by importing the SDK and calling a factory function with a definition object. The factory SHALL validate the definition shape and return an adapter object. The definition SHALL accept a name, a function to build per-asset adapter metadata, the required `assets` capability, and the required `mcpServers` capability.
 
-The SDK SHALL expose `0.3` as the canonical adapter API identifier for the read-only planning contract: tagged asset planning plus the MCP server planning capability. Every adapter returned by the current factory SHALL carry that identifier in a required, readonly `apiVersion` field. The factory definition SHALL NOT require or accept an author-supplied API identifier, so adapter authors cannot create a conflicting declaration and do not repeat the SDK-owned value. If a value is nonetheless supplied for `apiVersion`, such as through untyped input, the factory SHALL ignore it; the returned adapter SHALL always carry the SDK's canonical identifier and SHALL NOT reflect the author-supplied value.
+The SDK SHALL expose `0.3` as the canonical adapter SDK API identifier for the read-only planning contract: tagged asset planning plus the MCP server planning capability. Every adapter returned by the current factory SHALL carry that identifier in a required, readonly `apiVersion` field. The factory definition SHALL NOT require or accept an author-supplied API identifier, so adapter authors cannot create a conflicting declaration and do not repeat the SDK-owned value. If a value is nonetheless supplied for `apiVersion`, such as through untyped input, the factory SHALL ignore it; the returned adapter SHALL always carry the SDK's canonical identifier and SHALL NOT reflect the author-supplied value.
 
 #### Scenario: Author creates a valid adapter
 
 - **WHEN** an author calls the factory function with a complete definition
 - **THEN** the factory SHALL return a valid adapter object with all provided properties, methods, and capability declaration
-- **AND** the returned adapter SHALL declare the canonical adapter API `0.3`
+- **AND** the returned adapter SHALL declare the canonical adapter SDK API `0.3`
 
 #### Scenario: Author provides an invalid definition
 
@@ -27,7 +27,7 @@ The SDK SHALL expose `0.3` as the canonical adapter API identifier for the read-
 
 #### Scenario: Consumer reads the canonical API identifier
 
-- **WHEN** an adapter publisher or compatibility-aware consumer imports the SDK's canonical adapter API identifier
+- **WHEN** an adapter publisher or compatibility-aware consumer imports the SDK's canonical adapter SDK API identifier
 - **THEN** the exported value SHALL be `0.3`
 
 ### Requirement: The SDK refuses an incomplete capability rather than stubbing it
@@ -92,41 +92,41 @@ First-party adapters (for AI coding tools maintained by the project) SHALL be in
 - **WHEN** the system loads adapters at runtime
 - **THEN** first-party and third-party adapters SHALL be loaded from the same directory using the same mechanism
 
-### Requirement: Adapter API compatibility uses exact contract identifiers
+### Requirement: Adapter SDK API compatibility uses exact contract identifiers
 
-An adapter API identifier SHALL use the canonical `MAJOR.MINOR` decimal form without signs, suffixes, build metadata, or leading zeroes other than zero itself. Compatibility-aware consumers SHALL distinguish missing, malformed, unsupported, and supported identifiers. They SHALL determine compatibility by membership in an explicit exact-token support set and SHALL NOT infer compatibility from CLI versions, SDK package versions, adapter package versions, or semantic-version ordering.
+An adapter SDK API identifier SHALL use the canonical `MAJOR.MINOR` decimal form without signs, suffixes, build metadata, or leading zeroes other than zero itself. Compatibility-aware consumers SHALL distinguish missing, malformed, unsupported, and supported identifiers. They SHALL determine compatibility by membership in an explicit exact-token support set and SHALL NOT infer compatibility from CLI versions, SDK package versions, adapter package versions, or semantic-version ordering.
 
-Adapter API `0.3` SHALL identify the read-only planning contract. Adapter APIs `0.0`, `0.1`, and `0.2` SHALL remain identifiers of superseded contracts in which the adapter performed its own filesystem writes. Whether a consumer supports an exact contract identifier SHALL be determined solely by membership in that consumer's explicit support set; changing the set SHALL NOT change an existing token's meaning. Package metadata and runtime declarations for one adapter release SHALL still agree by exact token.
+Adapter SDK API `0.3` SHALL identify the read-only planning contract. Adapter SDK APIs `0.0`, `0.1`, and `0.2` SHALL remain identifiers of superseded contracts in which the adapter performed its own filesystem writes. Whether a consumer supports an exact contract identifier SHALL be determined solely by membership in that consumer's explicit support set; changing the set SHALL NOT change an existing token's meaning. Package metadata and runtime declarations for one adapter release SHALL still agree by exact token.
 
 #### Scenario: Current exact identifier is compatible
 
 - **WHEN** an adapter declares API `0.3`
 - **AND** the consumer's explicit support set contains `0.3`
-- **THEN** the adapter API SHALL be classified as supported
+- **THEN** the adapter SDK API SHALL be classified as supported
 
 #### Scenario: Previous tagged identifier is unsupported
 
 - **WHEN** an adapter declares API `0.1` or `0.2`
 - **AND** the consumer's explicit support set does not contain it
-- **THEN** the adapter API SHALL be classified as unsupported
+- **THEN** the adapter SDK API SHALL be classified as unsupported
 
 #### Scenario: Superseded positional identifier is unsupported
 
 - **WHEN** an adapter declares the positional-contract API `0.0`
 - **AND** the consumer's explicit support set excludes `0.0`
-- **THEN** the adapter API SHALL be classified as unsupported
+- **THEN** the adapter SDK API SHALL be classified as unsupported
 - **AND** numeric proximity to a supported token SHALL NOT make it compatible
 
 #### Scenario: Different well-formed identifier is unsupported
 
 - **WHEN** an adapter declares a well-formed API identifier that is not in the consumer's support set
-- **THEN** the adapter API SHALL be classified as unsupported
+- **THEN** the adapter SDK API SHALL be classified as unsupported
 - **AND** numeric proximity to a supported identifier SHALL NOT make it compatible
 
 #### Scenario: Invalid identifier is malformed
 
 - **WHEN** an adapter declares an identifier with a patch component, suffix, build metadata, sign, or disallowed leading zero
-- **THEN** the adapter API SHALL be classified as malformed
+- **THEN** the adapter SDK API SHALL be classified as malformed
 
 #### Scenario: Package and runtime tokens must agree
 
@@ -136,8 +136,8 @@ Adapter API `0.3` SHALL identify the read-only planning contract. Adapter APIs `
 #### Scenario: API identifier is independent of package versions
 
 - **WHEN** the CLI, an adapter package, or the Adapter SDK package changes semantic version without changing the `0.3` adapter call contract
-- **THEN** the adapter API identifier SHALL remain `0.3`
-- **AND** the package-version change SHALL NOT imply a different adapter API compatibility result
+- **THEN** the adapter SDK API identifier SHALL remain `0.3`
+- **AND** the package-version change SHALL NOT imply a different adapter SDK API compatibility result
 
 ### Requirement: Adapter authors declare MCP server support as one complete capability
 
@@ -160,7 +160,7 @@ An adapter definition using API `0.3` SHALL declare both `assets` and `mcpServer
 
 #### Scenario: Future configuration feature remains independent
 
-- **WHEN** a later adapter API adds a different project-configuration feature
+- **WHEN** a later adapter SDK API adds a different project-configuration feature
 - **THEN** that feature SHALL use a separate capability without widening the MCP server contract
 
 ### Requirement: The SDK supplies reusable MCP planning scaffolding

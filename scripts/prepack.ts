@@ -12,7 +12,7 @@
  *      tarball anyway. See `lib/prepack.ts#stripDevDependencies` for
  *      the full rationale.
  *   4. For first-party adapter packages (anything under
- *      `packages/adapters/`), injects the top-level adapter API metadata
+ *      `packages/adapters/`), injects the top-level adapter SDK API metadata
  *      field so compatibility-aware CLIs can select releases before
  *      download. Field name and value come from the adapter SDK's
  *      canonical constants — no literals here.
@@ -76,7 +76,7 @@ const resolver = createDiskResolver(rootDir)
 /**
  * First-party adapter packages are exactly the workspace members under
  * `packages/adapters/` (mirrors the root workspace glob). Only they
- * publish the adapter API metadata field.
+ * publish the adapter SDK API metadata field.
  */
 const adaptersDir = resolve(rootDir, 'packages', 'adapters')
 const isFirstPartyAdapter = cwd.startsWith(adaptersDir + sep)

@@ -199,8 +199,8 @@ export function addPrepareCliError(failure: AddPrepareFailure): CliError {
     case 'git-auth-required':
       return {
         what: `git authentication required for ${failure.url}`,
-        detail: 'closed alpha supports public repos and SSH (via agent) only',
-        fix: 'use a public URL or configure your SSH agent',
+        detail: 'private repositories require git authentication',
+        fix: 'configure git authentication for this repository, or use a public URL',
       }
     case 'git-clone-failed':
       return {

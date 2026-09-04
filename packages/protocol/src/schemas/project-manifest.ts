@@ -22,7 +22,7 @@ export const PROJECT_MANIFEST_VERSION_0_1 = 0.1
  * the `materialization.servers` override group.
  *
  * It evolves independently of `FACET_ARCHIVE_VERSION`,
- * `CURRENT_LOCKFILE_VERSION`, the receipt version, and the adapter API
+ * `CURRENT_LOCKFILE_VERSION`, the receipt version, and the adapter SDK API
  * version — separate compatibility axes that happen to share release trains,
  * not one version in five places. That `0.2` currently coincides with the
  * archive version is a coincidence, not a constraint.

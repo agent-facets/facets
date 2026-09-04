@@ -175,9 +175,9 @@ export function stripDevDependencies(pkg: Record<string, unknown>): {
 }
 
 /**
- * Set an adapter API metadata field on a package manifest.
+ * Set an adapter SDK API metadata field on a package manifest.
  *
- * Used at pack time to inject the top-level adapter API declaration
+ * Used at pack time to inject the top-level adapter SDK API declaration
  * (field name and value both come from `@agent-facets/adapter`'s
  * canonical constants — this helper deliberately takes them as inputs so
  * it stays pure and literal-free). The caller decides which packages

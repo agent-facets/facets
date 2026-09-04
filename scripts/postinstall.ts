@@ -42,7 +42,7 @@ const steps: Step[] = [
   {
     label: 'opencode adapter',
     // Install from the workspace source, not npm. The in-repo CLI's
-    // adapter API support set advances with the in-repo SDK, so a
+    // adapter SDK API support set advances with the in-repo SDK, so a
     // published adapter release may lag behind what this checkout
     // requires (the rollout publishes adapters before the CLI, but the
     // monorepo's own bootstrap can't depend on that ordering — it would

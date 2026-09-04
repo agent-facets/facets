@@ -1,23 +1,31 @@
 ---
 title: Open Beta
 sidebarTitle: Beta
-description: Goals for the public beta
+description: Track current access and beta goals
 ---
 
-The open beta begins when the features below ship. The [alpha](/roadmap/alpha) already covers the full author, publish, and install loop, the update flow, and MCP server configuration. The beta rounds out registry introspection and composition.
+The open beta is the current phase. The [alpha](/roadmap/alpha) shipped the core author, publish, install, and update loop with MCP server configuration. The beta adds per-facet registry inspection and facet composition.
 
-## Planned
+## Available functionality
+
+- **Public facets.** Publishing, discovery, and installation remain free.
+- **Personal private facets.** Private publishing is free during the beta.
+- **Private facets for teams.** Paid access is available by request. See [Private Facets](/private-facets) to contact us.
+
+## Planned functionality
+
+### Facet composition
+
+A facet that declares `facets: [...]` composes text assets from other published facets. The manifest accepts the field today, so a composing facet can build and publish, but the references are not resolved. [`facet add`](/cli/add) and [`facet install`](/cli/install) ignore this field. We do not recommend publishing a composing facet until full resolution support ships.
+
+## Planned commands
 
 <ResponseField name="facet info" type="command">
-  Show a published facet's metadata, versions, and assets straight from the registry, without installing it.
-</ResponseField>
-
-<ResponseField name="Facet composition" type="format">
-  A facet that declares `facets: [...]` composes text from other published facets. The manifest format reserves the field today, and installs reject it until server-side composition ships.
+  Show a published facet's metadata, versions, and assets from the registry without installing it.
 </ResponseField>
 
 ## Hardening
 
-Beyond features, the beta gate includes registry policy maturity, CLI surface stability, and documentation completeness.
+During the beta, we are tuning registry policy, settling the CLI surface, and closing documentation gaps. Review queues, name reservations, and private-publishing entitlements are already in place and continue to be calibrated.
 
-See the [stable release](/roadmap/stable) criteria for what comes after.
+See the [general availability](/roadmap/stable) criteria for what comes next.

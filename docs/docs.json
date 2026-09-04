@@ -80,7 +80,7 @@
           {
             "group": "Agent Facets",
             "icon": "box",
-            "pages": ["index", "quickstart", "docs/learn/index"]
+            "pages": ["index", "quickstart", "docs/learn/index", "private-facets"]
           },
           {
             "group": "Guides",
@@ -189,7 +189,13 @@
       {
         "tab": "Roadmap",
         "icon": "map",
-        "pages": ["roadmap/index", "roadmap/alpha", "roadmap/beta", "roadmap/stable"]
+        "groups": [
+          {
+            "group": "Roadmap",
+            "root": "roadmap/index",
+            "pages": ["roadmap/alpha", "roadmap/beta", "roadmap/stable"]
+          }
+        ]
       }
     ]
   },

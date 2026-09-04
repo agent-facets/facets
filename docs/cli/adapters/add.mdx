@@ -34,7 +34,7 @@ First-party names are `claude-code`, `opencode`, and `codex`.
 | Code | Meaning |
 | --- | --- |
 | `0` | Adapter installed. |
-| `1` | Failed, for example a bad specifier, no compatible release, a download failure, an invalid adapter export, an unsupported adapter API, or the no-argument form without a terminal. |
+| `1` | Failed, for example a bad specifier, no compatible release, a download failure, an invalid adapter export, an unsupported adapter SDK API, or the no-argument form without a terminal. |
 | `2` | An unexpected error escaped command handling. |
 
 ## Details
@@ -87,7 +87,7 @@ The active bundle and its installation record live under [`$FACET_DIR`](/cli/env
   </Accordion>
 
   <Accordion title="no compatible release">
-    **Cause:** nothing in the requested set declares an adapter API this CLI supports. An exact version is never substituted, so pinning an incompatible release fails rather than resolving elsewhere.
+    **Cause:** nothing in the requested set declares an adapter SDK API this CLI supports. An exact version is never substituted, so pinning an incompatible release fails rather than resolving elsewhere.
 
     **Fix:** the message names the newest release considered and its declared API. Drop the exact pin, or widen the selector, so the CLI can choose a compatible release. For a git or local source, update the source itself.
   </Accordion>

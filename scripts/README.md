@@ -44,7 +44,7 @@ scripts/
 ├── smoke/                      # Manual, run-on-demand smoke checks
 │   └── protocol-node.mjs       # Load @agent-facets/protocol's built bundle on plain Node
 │
-├── prepack.ts                  # Rewrite workspace:* deps, hoist publishConfig overrides, inject adapter API metadata before npm publish
+├── prepack.ts                  # Rewrite workspace:* deps, hoist publishConfig overrides, inject adapter SDK API metadata before npm publish
 ├── postpack.ts                 # Restore package.json after pack
 ├── postinstall.ts              # Quiet `bun install` postinstall (lefthook + adapter + facets)
 └── check-bun-version.ts        # Verify Bun version matches mise.toml
@@ -138,7 +138,7 @@ The contract for marking a package as "workspace-only, never release" has three 
 
 Together these keep workspace-only packages out of the release pipeline entirely — no tags, no npm publishes, no lingering "unpublished" state, and no prepack failures.
 
-## Adapter API metadata injection
+## Adapter SDK API metadata injection
 
 For packages under `packages/adapters/`, `prepack` injects the `facetAdapterApiVersion` field into the packed `package.json` via `injectAdapterApiVersion` in `scripts/lib/prepack.ts`. The field name and value are imported from the Adapter SDK's canonical constants (`packages/adapter/src/api-version.ts`) — the single source of truth; neither string is hardcoded in the scripts. The facet CLI reads this field from the npm registry to select a compatible adapter release **before** downloading it. Non-adapter packages are untouched, and `postpack` restores the source manifest as usual. Packed-tarball coverage lives in `scripts/prepack-adapters.test.ts`.
 

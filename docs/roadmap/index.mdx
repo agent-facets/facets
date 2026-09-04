@@ -5,35 +5,28 @@ description: "What's shipped now and what's next"
 icon: "map"
 ---
 
-<Columns>
-<Card
-  title="Pre-release Alpha"
-  icon="link"
-  href="/roadmap/alpha"
-  arrow={true}
-  cta="See what's shipped"
->
-  The current phase. The full author, publish, and install loop is live against the public registry.
-</Card>
+<Steps titleSize="h2">
+  <Step title="Pre-release Alpha">
+    <Badge color="green">Complete</Badge>
 
-<Card
-  title="Open Beta"
-  icon="link"
-  href="/roadmap/beta"
-  arrow={true}
-  cta="See the goals for the beta"
->
-  A public beta release. The beta will run until we are ready to release a stable version for general use.
-</Card>
-</Columns>
+    The author, publish, discover, install, and update loop shipped with first-party adapters, collision handling, and MCP server approval.
 
-<Card
-  title="General Availability"
-  icon="link"
-  href="/roadmap/stable"
-  arrow={true}
-  cta="See our public release plan"
->
-  The stable public release. This will track status until we reach GA. Completion of this roadmap will be announced as
-  v1.0.0 and will flag general availability.
-</Card>
+    [See what shipped](/roadmap/alpha).
+  </Step>
+
+  <Step title="Open Beta">
+    <Badge color="purple">Current</Badge>
+
+    The beta adds registry inspection and composition. Personal private publishing is free, and paid team access is available by request.
+
+    [See the current beta goals](/roadmap/beta).
+  </Step>
+
+  <Step title="General Availability">
+    <Badge color="gray">Next</Badge>
+
+    Every published Agent Facets package reaches v1.0.0, and paid private publishing for individuals and teams becomes self-service.
+
+    [See the release criteria](/roadmap/stable).
+  </Step>
+</Steps>

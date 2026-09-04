@@ -28,7 +28,7 @@ function isCompleteMcpServerCapability(value: unknown): value is McpServerCapabi
  * Create an adapter from a definition object.
  *
  * Validates the definition shape and returns a frozen `Adapter` stamped with
- * the SDK's canonical adapter API version (`ADAPTER_API_VERSION`).
+ * the SDK's canonical adapter SDK API version (`ADAPTER_API_VERSION`).
  *
  * Both capabilities are required fields with an explicit `false`. There are no
  * stub defaults: a capability the CLI must know about *before* it plans a

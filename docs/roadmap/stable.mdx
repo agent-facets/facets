@@ -1,16 +1,22 @@
 ---
-title: Stable Release
-sidebarTitle: Stable
-description: Criteria for the v1.0.0 release
+title: General Availability
+description: Plans and criteria for general availability
 ---
 
-The stable release will be announced as **v1.0.0** and flags general availability. It ships when the [beta](/roadmap/beta) feature set has proven itself in public use.
+General availability begins when the beta commitments and compatibility criteria below are met. Every npm package Agent Facets publishes, including the CLI platform packages, reaches v1.0.0 together.
+
+## Access at GA
+
+- **Public facets.** Stay free to publish, discover, and install.
+- **Personal private facets.** Move to a paid plan. Anything you published privately while it was free stays private and accessible at no cost.
+- **Private facets for teams.** Become self-service instead of activated by request.
+- **Enterprise support.** Available for large enterprise customers.
 
 ## GA criteria
 
-- **Beta features are shipped and stable**, including `facet info` and composition.
-- **Format stability.** The facet manifest, `facets.json`, `facets.lock`, the archive format, and the adapter API are frozen under semver guarantees, so a breaking format change requires a major version. These are [independent version axes](/specification/install#version-axes), each with its own migration obligations.
-- **CLI surface stability.** Commands and flags stop churning, and deprecations get a documented migration window.
-- **Specification completeness.** The [specification](/specification) fully describes shipped behavior, suitable for independent implementations.
+- **Beta features.** Every feature from the open beta is complete and stable.
+- **Published packages.** All published Agent Facets packages reach v1.0.0 together.
+- **Format compatibility.** The archive format, `facets.json`, and `facets.lock` remain [independent version axes](/specification/install#version-axes). Each reaches v1 with the published packages, as does the [adapter SDK API](/reference/adapter-sdk) on its own axis.
+- **Specification completeness.** The [specification](/specification) fully describes the product, locks to v1, and is versioned from then on.
 
-Progress is tracked in the [changelog](/changelog).
+Releases are logged in the [changelog](/changelog).

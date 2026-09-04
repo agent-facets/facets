@@ -54,7 +54,7 @@ export interface AdapterInstallOptions {
  *   - `bundle-failed` — entry resolution, dependency install, or
  *     bundling failed. Carries the structured `BundleFailure`.
  *   - `verify-failed` — the produced bundle failed verification. Carries
- *     the full structured `VerifyAdapterFailure` (including adapter API
+ *     the full structured `VerifyAdapterFailure` (including adapter SDK API
  *     compatibility classifications) for the CLI to render.
  *   - `place-failed` — managed placement failed (lock, staging,
  *     staged-path verification, or receipt activation).

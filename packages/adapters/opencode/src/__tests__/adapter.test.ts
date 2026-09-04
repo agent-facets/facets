@@ -52,7 +52,7 @@ const read = (path: string): string => readFileSync(path, 'utf8')
 const encode = (text: string): Uint8Array => new TextEncoder().encode(text)
 
 describe('adapter identity', () => {
-  test('declares the canonical adapter API', () => {
+  test('declares the canonical adapter SDK API', () => {
     expect(adapter.name).toBe('opencode')
     expect(adapter.apiVersion).toBe(ADAPTER_API_VERSION)
   })

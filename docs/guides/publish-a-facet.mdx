@@ -5,7 +5,7 @@ description: Build, update, and publish your facets
 
 Publishing takes a built facet to the registry. Sign in, build, publish.
 
-You need a facet project with a valid `facet.json` (see [Create Your First Facet](/guides/create-your-first-facet)) and a registry account with a <Tooltip headline="Personal access token" tip={<span>A revocable credential you mint in the web UI and use with <code>facet login</code> or <code>FACET_TOKEN</code>.</span>}>personal access token</Tooltip> from [agentfacets.io](https://agentfacets.io).
+You need a facet project with a valid `facet.json` (see [Create a Facet](/guides/create-your-first-facet)) and a registry account with a <Tooltip headline="Personal access token" tip={<span>A revocable credential you mint in the web UI and use with <code>facet login</code> or <code>FACET_TOKEN</code>.</span>}>personal access token</Tooltip> from [agentfacets.io](https://agentfacets.io).
 
 <Visibility for="agents">
 
@@ -92,7 +92,7 @@ facet build
 facet publish
 ```
 
-Omitting `private` keeps a facet public. Who can see or download a private facet is enforced by the registry.
+Omitting `private` keeps a facet public. Who can see or download a private facet is enforced by the registry. See [Private Facets](/private-facets) for scopes and access.
 
 ## Sign out
 

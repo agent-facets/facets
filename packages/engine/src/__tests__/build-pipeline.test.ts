@@ -1047,9 +1047,9 @@ describe('runBuildPipeline — embedded manifest privacy', () => {
   })
 })
 
-// --- Adapter API preflight (defense-in-depth gate) ---
+// --- Adapter SDK API preflight (defense-in-depth gate) ---
 
-describe('runBuildPipeline — adapter API preflight', () => {
+describe('runBuildPipeline — adapter SDK API preflight', () => {
   /** A structurally valid adapter whose declared API is not supported.
    *  Contract methods throw so any invocation is loud. */
   function incompatibleAdapter(name: string, apiVersion: unknown): Adapter {

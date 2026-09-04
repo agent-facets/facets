@@ -206,6 +206,48 @@ Guides read by both humans and agents use `<Visibility>`.
   contract shape.
 - `<Visibility for="humans">` holds the readable walkthrough.
 
+## Cards
+
+A card is navigation. Every `<Card>` MUST have an `href`, because a card
+looks clickable whether or not it is one, and a dead card teaches the
+reader to stop trying the others.
+
+Content with no destination is not a card. Two things being contrasted
+are a bold-led list; a definition is a sentence.
+
+**Do:**
+
+```mdx
+<Card title="Quickstart" icon="rocket" href="/quickstart" horizontal>
+  Install the CLI and use your first facet.
+</Card>
+```
+
+**Don't:**
+
+```mdx
+<Card title="Public facets" icon="globe">
+  Anyone can install a public facet.
+</Card>
+```
+
+## Naming the adapter SDK
+
+Two names, and never a third:
+
+- **Adapter SDK** is the package and authoring surface
+  (`@agent-facets/adapter`).
+- **Adapter SDK API** is the versioned compatibility contract an adapter
+  declares and the CLI checks (`0.3` today).
+
+Never write "adapter API". It reads as a third concept and hides which
+of the two is meant. This applies to user-facing CLI output as well as
+these pages.
+
+Code identifiers keep their existing spelling: `ADAPTER_API_VERSION`,
+`SUPPORTED_ADAPTER_APIS`, and the published `facetAdapterApiVersion`
+package field are contracts, not prose.
+
 ## Cross-linking
 
 Connect pages instead of duplicating them. A guide teaches the path and
@@ -216,6 +258,7 @@ links the reference that owns the detail.
 - One audience, one job.
 - Every rule stated once, elsewhere linked.
 - No em dash or spaced double hyphen in prose.
+- Every card has an `href`.
 - No internal architecture, no design rationale beyond a preventive
   sentence.
 - Claims verified against source, not against another doc page.

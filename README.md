@@ -6,6 +6,8 @@ AI coding tools all want roughly the same things: skills, agents, commands, and 
 
 A **facet** packages those extensions into a single versioned unit. The `facet` CLI installs facets into your project through adapters for Claude Code, OpenCode, and Codex, and resolves them from the free public registry at [agentfacets.io](https://agentfacets.io).
 
+Agent Facets is in [open beta](https://docs.agentfacets.io/roadmap/beta). Public publishing remains free. [Personal private publishing](https://docs.agentfacets.io/private-facets) is free during the beta, and paid private publishing for teams is available by request.
+
 ## Why facets?
 
 - **Reproducible.** `facets.json` records what your project depends on. `facets.lock` pins exact versions and integrity hashes, so teammates and CI get identical results.
@@ -63,7 +65,7 @@ Full documentation lives at [docs.agentfacets.io](https://docs.agentfacets.io).
 **Start here**
 
 - [Quickstart](https://docs.agentfacets.io/quickstart) walks through the above in under five minutes.
-- [Setup and prerequisites](https://docs.agentfacets.io/guides/setup) covers the CLI, adapters, and registry tokens.
+- [Setup](https://docs.agentfacets.io/guides/setup) covers the CLI, adapters, and registry tokens.
 - [Key concepts](https://docs.agentfacets.io/docs/learn) explains facets, the two project files, assets, and adapters.
 
 **Using facets**
@@ -74,7 +76,7 @@ Full documentation lives at [docs.agentfacets.io](https://docs.agentfacets.io).
 
 **Authoring and publishing**
 
-- [Create your first facet](https://docs.agentfacets.io/guides/create-your-first-facet) covers scaffolding, authoring, and building.
+- [Create a facet](https://docs.agentfacets.io/guides/create-your-first-facet) covers scaffolding, authoring, and building.
 - [Publish a facet](https://docs.agentfacets.io/guides/publish-a-facet) covers authentication, publishing, and versioning.
 
 **Extending and integrating**
@@ -85,7 +87,7 @@ Full documentation lives at [docs.agentfacets.io](https://docs.agentfacets.io).
 
 **Project status**
 
-- [Changelog](https://docs.agentfacets.io/changelog) and [roadmap](https://docs.agentfacets.io/roadmap).
+- Agent Facets is currently in [open beta](https://docs.agentfacets.io/roadmap/beta). Follow the [roadmap](https://docs.agentfacets.io/roadmap) and [changelog](https://docs.agentfacets.io/changelog).
 - [Browse the registry](https://agentfacets.io) to find facets, or publish your own.
 
 ## Repository layout

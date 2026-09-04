@@ -1,7 +1,7 @@
 /**
- * Canonical adapter API contract identifiers.
+ * Canonical adapter SDK API contract identifiers.
  *
- * The adapter API version is a discrete contract token compared for exact
+ * The adapter SDK API version is a discrete contract token compared for exact
  * equality — it is NOT a semantic-version range and is independent of the
  * CLI version, this SDK package's version, and adapter package versions.
  *
@@ -11,7 +11,7 @@
  */
 
 /**
- * The adapter API contract identifier this SDK stamps into every adapter
+ * The adapter SDK API contract identifier this SDK stamps into every adapter
  * returned by `defineAdapter()`. Identifies the read-only *planning* contract:
  * an adapter computes exact per-file state transitions and returns them, and
  * the caller performs every write.
@@ -31,10 +31,10 @@ export const ADAPTER_API_VERSION = '0.3' as const
 
 /**
  * The top-level `package.json` field where a published npm adapter release
- * declares its adapter API version, so compatibility can be determined
+ * declares its adapter SDK API version, so compatibility can be determined
  * before downloading the bundle.
  */
 export const ADAPTER_API_VERSION_PACKAGE_FIELD = 'facetAdapterApiVersion' as const
 
-/** The adapter API identifier type produced by this SDK. */
+/** The adapter SDK API identifier type produced by this SDK. */
 export type AdapterApiVersion = typeof ADAPTER_API_VERSION

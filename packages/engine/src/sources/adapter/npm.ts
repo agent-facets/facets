@@ -32,7 +32,7 @@ export interface NpmResolvedRelease {
   packageName: string
   /** Exact `M.N.P` package version of the selected release. */
   version: string
-  /** The release's declared adapter API — validated and CLI-supported. */
+  /** The release's declared adapter SDK API — validated and CLI-supported. */
   apiVersion: string
   tarballUrl: string
   /** Registry integrity anchors for the tarball, verbatim. */
@@ -48,7 +48,7 @@ export interface NpmResolvedRelease {
  *     unusable (missing `versions`, or the selected release lacks a
  *     tarball URL).
  *   - `no-compatible-release` — no stable release satisfying the
- *     request declares a CLI-supported adapter API. `newestConsidered`
+ *     request declares a CLI-supported adapter SDK API. `newestConsidered`
  *     is the newest release that satisfied the package-version request
  *     (when any did), with its API classification — absent when nothing
  *     satisfied the request at all.
@@ -83,12 +83,12 @@ const STABLE_VERSION_RE = /^(\d+)\.(\d+)\.(\d+)$/
  *
  * The full document is required: the abbreviated
  * `application/vnd.npm.install-v1+json` representation can omit custom
- * per-version fields such as the adapter API declaration.
+ * per-version fields such as the adapter SDK API declaration.
  *
  * Selection rules:
  *   - only stable `M.N.P` versions are considered (prereleases excluded);
  *   - the user's package-version request constrains the candidate set;
- *   - releases whose adapter API declaration is missing, malformed, or
+ *   - releases whose adapter SDK API declaration is missing, malformed, or
  *     unsupported are ineligible;
  *   - the highest remaining semantic version wins.
  *

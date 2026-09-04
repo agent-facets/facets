@@ -24,7 +24,7 @@ import { unsupportedManifestVersionError } from '../../util/unsupported-manifest
  * dependencies), shows the source specifier so the user knows to run
  * `facet install`.
  *
- * No network calls. No "updates available" indicator (deferred to alpha).
+ * No network calls and no "updates available" indicator.
  */
 export const listCommand: Command = {
   name: 'list',

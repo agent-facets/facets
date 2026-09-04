@@ -45,7 +45,7 @@ export function AddPrepareFailureBlock({ failure }: { failure: AddPrepareFailure
             ✕ git authentication required for {failure.url}
           </Text>
           <Text> source: {failure.specifier}</Text>
-          <Text color={THEME.hint}> closed alpha supports public repos and SSH (via agent) only</Text>
+          <Text color={THEME.hint}> private repositories require git authentication</Text>
         </Box>
       )
     case 'git-clone-failed':

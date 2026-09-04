@@ -65,20 +65,20 @@ The system SHALL verify that a produced adapter bundle is valid and compatible b
 
 #### Scenario: Runtime API declaration is missing or malformed
 
-- **WHEN** a candidate bundle has no runtime adapter API declaration or has a malformed declaration
+- **WHEN** a candidate bundle has no runtime adapter SDK API declaration or has a malformed declaration
 - **THEN** verification SHALL fail with the corresponding compatibility classification
 - **AND** the candidate SHALL NOT become active
 
 #### Scenario: Runtime API declaration is unsupported
 
-- **WHEN** a candidate bundle declares a well-formed adapter API that the CLI does not support
+- **WHEN** a candidate bundle declares a well-formed adapter SDK API that the CLI does not support
 - **THEN** verification SHALL fail before any adapter contract method is invoked
 - **AND** the candidate SHALL NOT become active
 
 #### Scenario: Git or local candidate is checked as supplied
 
 - **WHEN** a user installs an adapter from Git or a local path
-- **THEN** the produced runtime bundle MUST declare an adapter API supported by the CLI
+- **THEN** the produced runtime bundle MUST declare an adapter SDK API supported by the CLI
 - **AND** an incompatible declaration SHALL fail rather than trigger package-version substitution
 
 ### Requirement: Adapter identity is determined by the adapter itself
@@ -99,7 +99,7 @@ The system SHALL determine an adapter's name from the adapter object's own name 
 
 ### Requirement: Users can list installed adapters
 
-The system SHALL provide a command to list all adapters currently installed in the adapter directory. The listing SHALL inspect every entry and display its declared adapter API as an exact identifier, `missing`, or `malformed`, together with a `supported`, `unsupported`, or `broken` compatibility status. An entry SHALL be classified as `broken` when its installation metadata is invalid, its bundle cannot be loaded, or its export is not a valid adapter object. A missing, malformed, or unsupported API declaration alone SHALL be classified as API incompatibility rather than `broken`. An entry with no installation metadata — a legacy directly placed bundle without an installation receipt — SHALL be inspected as an unmanaged installation and classified from its runtime bundle: `supported` when it declares a supported API, `unsupported` when its API declaration is missing, malformed, or unsupported, and `broken` only when the bundle cannot be loaded or its export is not a valid adapter object. The entry SHALL NOT be classified as `broken` merely because its receipt is absent. Listing SHALL remain available when one or more entries are incompatible or broken so the user can identify what needs repair.
+The system SHALL provide a command to list all adapters currently installed in the adapter directory. The listing SHALL inspect every entry and display its declared adapter SDK API as an exact identifier, `missing`, or `malformed`, together with a `supported`, `unsupported`, or `broken` compatibility status. An entry SHALL be classified as `broken` when its installation metadata is invalid, its bundle cannot be loaded, or its export is not a valid adapter object. A missing, malformed, or unsupported API declaration alone SHALL be classified as API incompatibility rather than `broken`. An entry with no installation metadata — a legacy directly placed bundle without an installation receipt — SHALL be inspected as an unmanaged installation and classified from its runtime bundle: `supported` when it declares a supported API, `unsupported` when its API declaration is missing, malformed, or unsupported, and `broken` only when the bundle cannot be loaded or its export is not a valid adapter object. The entry SHALL NOT be classified as `broken` merely because its receipt is absent. Listing SHALL remain available when one or more entries are incompatible or broken so the user can identify what needs repair.
 
 #### Scenario: List with compatible installed adapters
 
@@ -136,7 +136,7 @@ The system SHALL provide a command to remove an installed adapter by name.
 
 ### Requirement: The system loads installed adapter bundles at runtime
 
-The system SHALL inspect installed adapter bundles before returning them for use. A compatible installation SHALL provide a verified adapter whose runtime API is a member of the current exact adapter API support set. If any installed entry is incompatible or broken, loading SHALL fail with all collected failures instead of silently skipping entries. No adapter contract method SHALL be invoked for an entry before its compatibility has been established. A runtime declaration of the superseded positional adapter API `0.0` SHALL be treated as unsupported and SHALL fail closed before any contract method is invoked.
+The system SHALL inspect installed adapter bundles before returning them for use. A compatible installation SHALL provide a verified adapter whose runtime API is a member of the current exact adapter SDK API support set. If any installed entry is incompatible or broken, loading SHALL fail with all collected failures instead of silently skipping entries. No adapter contract method SHALL be invoked for an entry before its compatibility has been established. A runtime declaration of the superseded positional adapter SDK API `0.0` SHALL be treated as unsupported and SHALL fail closed before any contract method is invoked.
 
 #### Scenario: Load compatible installed adapters for a build
 
@@ -168,7 +168,7 @@ The system SHALL inspect installed adapter bundles before returning them for use
 
 ### Requirement: npm adapter installs select the highest compatible package version
 
-The system SHALL accept npm adapter package selectors in the exact `MAJOR.MINOR.PATCH`, major-wildcard `MAJOR.*`, minor-wildcard `MAJOR.MINOR.*`, bare wildcard `*`, and `latest` forms. A bare package name or first-party alias SHALL act as an implicit unconstrained selector. For a non-exact request, the system SHALL select the highest stable package version that satisfies the selector and declares an API in the current exact adapter API support set. For an exact request, the system SHALL consider only that package version and SHALL NOT silently substitute another release. The `latest` selector SHALL denote the same unconstrained candidate set as a bare package name or `*`; the system SHALL resolve it to the highest stable version that declares a supported adapter API and SHALL NOT consult the npm `latest` distribution tag during selection.
+The system SHALL accept npm adapter package selectors in the exact `MAJOR.MINOR.PATCH`, major-wildcard `MAJOR.*`, minor-wildcard `MAJOR.MINOR.*`, bare wildcard `*`, and `latest` forms. A bare package name or first-party alias SHALL act as an implicit unconstrained selector. For a non-exact request, the system SHALL select the highest stable package version that satisfies the selector and declares an API in the current exact adapter SDK API support set. For an exact request, the system SHALL consider only that package version and SHALL NOT silently substitute another release. The `latest` selector SHALL denote the same unconstrained candidate set as a bare package name or `*`; the system SHALL resolve it to the highest stable version that declares a supported adapter SDK API and SHALL NOT consult the npm `latest` distribution tag during selection.
 
 The npm `latest` distribution tag SHALL continue to advance according to normal publishing policy. Compatibility selection SHALL NOT require moving, pinning, or withholding that tag. Supported API tokens SHALL be treated as an unordered acceptance set: package-version precedence SHALL select among compatible releases, and numeric proximity or ordering between members SHALL NOT alter selection.
 
@@ -199,7 +199,7 @@ The npm `latest` distribution tag SHALL continue to advance according to normal 
 
 #### Scenario: Exact incompatible release is not substituted
 
-- **WHEN** a user requests an exact npm adapter package version whose declared adapter API is missing, malformed, or unsupported
+- **WHEN** a user requests an exact npm adapter package version whose declared adapter SDK API is missing, malformed, or unsupported
 - **THEN** installation SHALL fail for that exact release
 - **AND** the system SHALL NOT install another package version instead
 
@@ -219,7 +219,7 @@ The npm `latest` distribution tag SHALL continue to advance according to normal 
 
 ### Requirement: Published npm adapters declare their API before download
 
-An npm adapter release MUST publish its adapter API identifier in the top-level `facetAdapterApiVersion` package field. The package declaration SHALL be used to select a candidate before download, but the loaded adapter's runtime declaration SHALL remain authoritative. A package/runtime disagreement SHALL fail verification and SHALL NOT be treated as a reason to select a different call contract.
+An npm adapter release MUST publish its adapter SDK API identifier in the top-level `facetAdapterApiVersion` package field. The package declaration SHALL be used to select a candidate before download, but the loaded adapter's runtime declaration SHALL remain authoritative. A package/runtime disagreement SHALL fail verification and SHALL NOT be treated as a reason to select a different call contract.
 
 #### Scenario: Compatible package declaration permits candidacy
 
@@ -234,7 +234,7 @@ An npm adapter release MUST publish its adapter API identifier in the top-level 
 
 #### Scenario: Package and runtime declarations disagree
 
-- **WHEN** a selected npm release declares one supported adapter API in package metadata
+- **WHEN** a selected npm release declares one supported adapter SDK API in package metadata
 - **AND** its loaded runtime adapter declares a different API
 - **THEN** verification SHALL fail before the adapter is activated
 - **AND** no adapter contract method SHALL be invoked
@@ -258,18 +258,18 @@ The system SHALL completely verify a candidate adapter before making it active. 
 
 ### Requirement: Managed adapter installations retain repair provenance
 
-A managed installation SHALL retain its original source specifier, verified adapter API, and source-specific provenance sufficient to identify the installed source and render a repair command. npm provenance SHALL include the resolved package name and version and the registry integrity used to authenticate that package. Git provenance SHALL include the repository URL and optional requested ref. Local provenance SHALL include the resolved source path. Git and local provenance SHALL NOT claim an npm package version or npm registry integrity.
+A managed installation SHALL retain its original source specifier, verified adapter SDK API, and source-specific provenance sufficient to identify the installed source and render a repair command. npm provenance SHALL include the resolved package name and version and the registry integrity used to authenticate that package. Git provenance SHALL include the repository URL and optional requested ref. Local provenance SHALL include the resolved source path. Git and local provenance SHALL NOT claim an npm package version or npm registry integrity.
 
 #### Scenario: Managed npm installation provides its repair source
 
 - **WHEN** a managed npm adapter is later found incompatible or broken
-- **THEN** its retained provenance SHALL include the original install specifier, resolved package name and version, verified adapter API, and registry integrity
+- **THEN** its retained provenance SHALL include the original install specifier, resolved package name and version, verified adapter SDK API, and registry integrity
 - **AND** the CLI SHALL be able to present `facet adapter add <specifier>` as the repair command
 
 #### Scenario: Git or local installation retains source-specific provenance
 
 - **WHEN** a user installs an adapter from Git or a local path
-- **THEN** the retained provenance SHALL include the original specifier and verified adapter API
+- **THEN** the retained provenance SHALL include the original specifier and verified adapter SDK API
 - **AND** Git provenance SHALL include the repository URL and optional requested ref
 - **AND** local provenance SHALL include the resolved source path
 - **AND** the provenance SHALL NOT include an npm package version or npm registry integrity
@@ -305,9 +305,9 @@ When an adapter cannot be selected, verified, or loaded because its API declarat
 - **THEN** the diagnostic SHALL provide a best-available compatible-install command derived from the installed adapter name
 - **AND** the diagnostic SHALL indicate that the original install source is unavailable
 
-### Requirement: The current CLI supports an explicit exact adapter API set
+### Requirement: The current CLI supports an explicit exact adapter SDK API set
 
-The current CLI's adapter API support set SHALL be exactly `{0.3}`. Every verification, loading, listing, npm selection, and package-versus-runtime agreement check SHALL use exact-token membership. The set SHALL NOT be interpreted as a range or ordering, and changing it SHALL NOT weaken any individual exact-token check.
+The current CLI's adapter SDK API support set SHALL be exactly `{0.3}`. Every verification, loading, listing, npm selection, and package-versus-runtime agreement check SHALL use exact-token membership. The set SHALL NOT be interpreted as a range or ordering, and changing it SHALL NOT weaken any individual exact-token check.
 
 The set holds one token because the superseded contracts are not merely older: under them an adapter performed its own writes and owned its own rollback, so no caller can offer them the guarantees this system now makes about exact restoration, concurrency detection, and batch atomicity. Accepting one would mean silently dropping those guarantees for whatever it materialized.
 
@@ -329,5 +329,5 @@ The set holds one token because the superseded contracts are not merely older: u
 
 #### Scenario: A superseded declaration is rejected before the bundle is imported
 
-- **WHEN** an installation's retained metadata records an unsupported adapter API
+- **WHEN** an installation's retained metadata records an unsupported adapter SDK API
 - **THEN** the CLI SHALL classify it as incompatible without importing its bundle
