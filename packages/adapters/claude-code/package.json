@@ -26,7 +26,7 @@
     "@agent-facets/adapter-jsonc": "workspace:*",
     "@agent-facets/adapter-test-kit": "workspace:*",
     "arktype": "2.2.0",
-    "tsdown": "^0.22.3",
+    "tsdown": "^0.22.14",
     "typescript": "^6.0.3"
   },
   "publishConfig": {

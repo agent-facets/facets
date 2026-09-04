@@ -32,7 +32,7 @@
   },
   "devDependencies": {
     "@agent-facets/common": "workspace:*",
-    "tsdown": "^0.22.3",
+    "tsdown": "^0.22.14",
     "typescript": "^6.0.3"
   },
   "peerDependencies": {
