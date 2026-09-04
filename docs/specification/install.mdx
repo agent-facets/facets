@@ -14,7 +14,9 @@ An install MUST resolve and verify the complete desired set, and MUST compose on
 
 Composing globally is what makes collision detection possible: two facets claiming one name cannot be detected once the first is already on disk. See [Materialization](/specification/materialization).
 
-Project state MUST NOT be written unless every check passes. A failure before the first write leaves the project byte-identical. From the first write onward, an implementation MUST record enough state to restore every file it changes, and a failure MUST restore text assets, native configuration documents, and project state to their exact prior bytes.
+Project state MUST NOT be written unless every check passes. A failure before the first write leaves the project byte-identical.
+
+From the first write onward, an implementation MUST record enough state to restore every file it changes. A failure MUST then restore text assets, native configuration documents, and project state to their exact prior bytes, except where a path was changed by something else after this operation wrote it, or cannot be read or written back. Such a path MUST be left as it stands rather than overwritten, and every path an implementation could not return to its prior bytes MUST be reported.
 
 ## Resolve
 
@@ -104,7 +106,7 @@ Comments in `facets.json` MUST survive a write.
 
 On success the project manifest, the lockfile, and the machine-local ownership record MUST be written together.
 
-A failure anywhere MUST leave all three exactly as they were, and MUST restore every text asset and every native configuration document the operation touched.
+A failure anywhere MUST leave all three exactly as they were, and MUST restore every text asset and every native configuration document the operation touched, under the restoration rule in [Ordering](#ordering).
 
 ## Frozen lockfile
 

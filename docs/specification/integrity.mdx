@@ -28,7 +28,8 @@ Gzip is a delivery concern outside the hash contract, so the canonical fingerpri
 - **At build.** The producer computes the canonical fingerprint and the per-entry hashes over the assembled archive.
 - **At publish.** The registry independently verifies the upload and records both hashes.
 - **At download.** The transport hash MUST be verified against the raw bytes.
-- **After extraction.** The canonical fingerprint MUST be genuinely recomputed from the extracted content, never taken from the build manifest's own claim, and MUST match both that claim and the registry's published value.
+- **Before extraction.** The inner archive MUST be decompressed and the canonical fingerprint recomputed over those exact uncompressed tar bytes, never taken from the build manifest's own claim, and it MUST match both that claim and the registry's published value. Extracted files do not preserve the tar byte stream, so the fingerprint cannot be recovered from them.
+- **After extraction.** Every per-entry hash MUST be recomputed from the extracted entry's bytes and MUST match the hash the build manifest records for that path.
 - **On every cache use.** Cached content MUST be re-verified against what was recorded when it was cached. Content that fails MUST NOT be materialized.
 - **Against the lockfile.** When the lockfile pins a version, the verified integrity MUST equal the locked integrity.
 - **When recording a lockfile entry.** The verified integrity MUST match the registry's published fingerprint. An unreachable registry MUST fail the operation rather than record an unconfirmed entry.
