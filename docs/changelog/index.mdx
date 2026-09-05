@@ -5,6 +5,39 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-09-05" description="Private facets appear in facet search when signed in; clearer adapter and git authentication errors" tags={["CLI", "New Feature", "Improvement"]} rss={{
+  title: "Private facets in facet search; clearer adapter and git authentication errors",
+  description: "facet search now includes private facets. Signed out, results show only public facets. Signed in with facet login, results also include the private facets your account can access, ranked and paged by the registry like everything else. If a private facet you own is missing from results, run facet login and search again. Alongside open beta, the CLI's messaging dropped its alpha-era wording. Adapter compatibility diagnostics now say adapter SDK API consistently, in facet adapter list, in the failures that stop facet build, facet add, facet remove, and facet install, and in the CLI's built-in usage guidance. A git clone that needs credentials now fails with 'private repositories require git authentication' and suggests configuring git authentication or using a public URL, replacing the outdated message that claimed only public repos and SSH were supported."
+}}>
+  ## Private facets in `facet search` results
+
+  [`facet search`](/cli/search) now includes
+  [private facets](/private-facets). Signed out, results show only
+  public facets. Signed in, results also include the private facets
+  your account can access, ranked and paged by the registry like
+  everything else.
+
+  If a private facet you own is missing from results, run
+  [`facet login`](/cli/login) and search again.
+
+  ## Clearer terminology and errors
+
+  Alongside open beta, the CLI's messaging dropped its alpha-era
+  wording:
+
+  - **Adapter compatibility errors say "adapter SDK API."** The
+    diagnostics in [`facet adapter list`](/cli/adapters/list), the
+    failures that stop `facet build`, `facet add`, `facet remove`, and
+    `facet install`, and the CLI's built-in usage guidance all use one
+    term for the [adapter SDK API](/reference/adapter-sdk) version an
+    adapter declares.
+  - **Git authentication failures name the real requirement.** A clone
+    that needs credentials now fails with `private repositories require
+    git authentication` and suggests configuring git authentication or
+    using a public URL. The old message claimed only public repos and
+    SSH were supported, which is no longer true.
+</Update>
+
 <Update label="2026-09-04" description="Agent Facets enters open beta with private publishing for individuals and teams" tags={["New Feature"]}>
   ## Agent Facets is in open beta
 
