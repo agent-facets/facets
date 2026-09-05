@@ -11,7 +11,7 @@ facet install
 
 Reads `facets.json`, materializes every facet declared there, and writes `facets.lock` with the exact resolved versions and integrity hashes. Use it after a clone, after pulling manifest changes, or to restore files someone edited by hand.
 
-Nothing is written until every facet resolves, verifies, and composes without a collision. A failed or declined run leaves the project unchanged.
+Nothing is written until every facet resolves, verifies, and composes without a collision, so a run that fails or is declined before that point leaves the project byte-identical. If a failure happens after writing starts, the run rolls back what it wrote and names any file it could not return to its previous state. See [when rollback cannot finish](/guides/troubleshooting).
 
 `facet install` takes no positional arguments. To add a facet, use [`facet add`](/cli/add).
 

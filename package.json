@@ -40,7 +40,7 @@
     "@types/node": "24.12.4",
     "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "dedent": "1.7.2",
-    "mint": "4.2.674",
+    "mint": "4.2.873",
     "turbo": "2.9.18",
     "type-fest": "5.7.0",
     "typescript": "6.0.3"
