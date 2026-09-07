@@ -37,7 +37,10 @@ facet self-update --dry-run        # preview without changing anything
 | --- | --- |
 | `0` | Updated, already current, or a completed `--dry-run`. |
 | `1` | Dev-mode refusal, network error, or malformed registry data. |
+| `2` | An unexpected error escaped command handling, or the installer exited `2`. |
 | other | Passed through from the underlying installer or package manager. |
+
+This is the one command whose codes are not exclusively its own: it dispatches to the installer or package manager you used, and returns whatever that returns. Treat any non-zero code as a failure and read the output rather than branching on the number.
 
 ## Output
 

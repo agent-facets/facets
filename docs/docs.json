@@ -157,15 +157,16 @@
         "icon": "section",
         "groups": [
           {
-            "group": "Specification",
-            "pages": [
-              "specification/index",
-              "specification/project-manifest",
-              "specification/lockfile",
-              "specification/manifest",
-              "specification/archive",
-              "specification/integrity"
-            ]
+            "group": "Overview",
+            "pages": ["specification/index", "specification/terminology"]
+          },
+          {
+            "group": "Project State",
+            "pages": ["specification/project-manifest", "specification/lockfile"]
+          },
+          {
+            "group": "Facet Artifact",
+            "pages": ["specification/manifest", "specification/archive", "specification/integrity"]
           },
           {
             "group": "Installation",
@@ -174,10 +175,6 @@
           {
             "group": "Authoring",
             "pages": ["specification/build", "specification/publish"]
-          },
-          {
-            "group": "Reference",
-            "pages": ["specification/terminology"]
           }
         ]
       },

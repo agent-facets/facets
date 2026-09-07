@@ -103,6 +103,8 @@ Every command uses the same convention.
 
 Failures print three lines on stderr: `error:`, a `code=` token for log searching, and a `fix:` action.
 
+The one exception is [`facet self-update`](/cli/self-update), which dispatches to your installer or package manager and passes its exit code through, so it can also exit with a code this table does not define.
+
 ## See also
 
 - [Environment variables](/cli/env)

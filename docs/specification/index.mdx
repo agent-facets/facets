@@ -7,9 +7,7 @@ Facets are an open format for modular AI assistant extensions. A facet packages 
 
 This specification defines the requirements an implementation must satisfy to produce or consume facets. For introductory material, see [Key Concepts](/docs/learn). Terms are collected in [Terminology](/specification/terminology).
 
-<Info>
-The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in [RFC 2119](https://www.ietf.org/rfc/rfc2119.txt) and [RFC 8174](https://www.ietf.org/rfc/rfc8174.txt).
-</Info>
+Because a facet injects text into an assistant's context and its server declarations can make a tool run commands, [content verification](/specification/integrity) and [execution consent](/specification/install#mcp-configuration) are part of the core contract rather than optional hardening.
 
 ## Project state
 
@@ -24,51 +22,22 @@ A consuming project holds two version-controlled files.
   </Card>
 </CardGroup>
 
-The manifest records intent and the lockfile records resolution. An [install](/specification/install) reads both, and on success writes both together with a machine-local ownership record that is deliberately not committed.
+The manifest records intent and the lockfile records resolution. Both are committed. An [install](/specification/install) also writes a machine-local ownership record, which is deliberately not.
 
 ## The facet artifact
 
-A facet is a named, versioned collection of assets: [text assets](/specification/manifest#text-assets) and portable [MCP server declarations](/specification/manifest#mcp-server-declarations), described by a [facet manifest](/specification/manifest). It is built into a self-contained [archive](/specification/archive) and consumers receive exactly the bytes the author built.
+A facet is a named, versioned collection of assets: [text assets](/specification/manifest#text-assets) and portable [MCP server declarations](/specification/manifest#mcp-server-declarations), described by a [facet manifest](/specification/manifest). It is built into a self-contained [archive](/specification/archive), and consumers receive exactly the bytes the author built.
 
-<Info>
-Stale text is safe: suboptimal, not broken. Changed text is a trust concern, because it is prompt injection. That is why content is fixed into the archive at build time and every install verifies the [published hashes](/specification/integrity).
-</Info>
+<CardGroup cols={3}>
+  <Card title="Facet Manifest" icon="file-code" href="/specification/manifest">
+    `facet.json`: identity, assets, and declarations.
+  </Card>
+  <Card title="Facet Archive" icon="package" href="/specification/archive">
+    The `.facet` container and its content rules.
+  </Card>
+  <Card title="Integrity Model" icon="shield-check" href="/specification/integrity">
+    The hash domains, and when each MUST be verified.
+  </Card>
+</CardGroup>
 
-## Lifecycle
-
-### Consume a facet
-
-<Steps>
-  <Step title="Declare">
-    Record the facet and any materialization intent in [`facets.json`](/specification/project-manifest).
-  </Step>
-  <Step title="Install">
-    An [install](/specification/install) resolves versions, verifies integrity, composes one materialization plan, obtains approval for MCP configuration, and writes project state atomically.
-  </Step>
-  <Step title="Run">
-    Text assets enter the assistant's context. Configured servers are connected by the tool itself.
-  </Step>
-</Steps>
-
-### Produce a facet
-
-<Steps>
-  <Step title="Author">
-    Write a `facet.json` [manifest](/specification/manifest) and the asset files it declares.
-  </Step>
-  <Step title="Build">
-    [Build](/specification/build) assembles the archive and computes its hashes.
-  </Step>
-  <Step title="Publish">
-    [Publish](/specification/publish) uploads it, and the registry verifies and stores it. A published version is immutable.
-  </Step>
-</Steps>
-
-## Security and trust
-
-A facet injects text into an assistant's context, and an MCP server declaration can cause a tool to execute a command or open a connection. Implementations MUST address:
-
-1. **Content verification.** Hashes MUST be verified at download, on every cache hit, and when a lockfile entry is created. A lockfile entry for a registry facet MUST NOT be created without registry confirmation. See the [Integrity Model](/specification/integrity).
-2. **User consent.** Consumers SHOULD understand what a facet contains before installing it.
-3. **Execution consent.** A new or changed server declaration MUST be approved before it is materialized, and that approval MUST be machine-local rather than carried in version-controlled state. See [MCP configuration](/specification/install#mcp-configuration).
-4. **No server lifecycle.** Materializing a declaration MUST NOT install, launch, probe, or authenticate to the server, and MUST NOT store credentials. See [Boundaries](/specification/install#boundaries).
+Throughout this specification, uppercase key words such as MUST, MUST NOT, and MAY carry the meanings defined in [RFC 2119](https://www.ietf.org/rfc/rfc2119.txt) and [RFC 8174](https://www.ietf.org/rfc/rfc8174.txt). The same words in lowercase are ordinary prose.

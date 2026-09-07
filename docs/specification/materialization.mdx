@@ -110,7 +110,7 @@ Three properties matter:
 
 - It uses the effective name, so aliasing can both cause and cure a collision.
 - It folds text asset type into its namespace, giving the rule above.
-- It folds the name portably: Unicode NFC, then ASCII lowercasing. This is deliberately not full Unicode case folding, so `ß` and `SS` do not fold together. Two names differing only by case or normalization collide rather than silently overwriting each other on a case-insensitive volume.
+- It folds the name portably: Unicode NFC, then Unicode lowercasing. Lowercasing is not ASCII-only, so `Ä` and `ä` collide, but it is deliberately not full Unicode case folding, so `ß` and `SS` do not fold together. Two names differing only by case or normalization collide rather than silently overwriting each other on a case-insensitive volume.
 
 A collision key is a logical identity and MUST NOT be handed to an adapter. The addressable identity is `(scope, type, effective name)`, using the verbatim name: a skill `deploy` and a command `deploy` are two different files even though they may not legally coexist.
 

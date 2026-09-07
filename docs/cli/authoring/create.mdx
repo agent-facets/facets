@@ -11,7 +11,7 @@ facet create [directory]
 
 Creates a facet project in the given directory, defaulting to the current one. With no authoring flags it runs an interactive wizard; with any authoring flag it scaffolds directly in [headless mode](#headless-mode).
 
-If `facet.json` already exists, the command asks before overwriting. `--force` skips that prompt.
+If `facet.json` already exists, the wizard asks before overwriting and `--force` skips that prompt. Headless mode has no prompt, so it requires `--force` in that case. A fresh directory needs no flag either way.
 
 ## Examples
 
@@ -51,7 +51,7 @@ facet create ./bare --name bare --skill greet --no-readme
 </ResponseField>
 
 <ResponseField name="--force" type="boolean">
-  Overwrite an existing `facet.json`. Required in headless mode, which has no confirmation prompt.
+  Overwrite an existing `facet.json`. Required in headless mode when a manifest already exists, because there is no confirmation prompt to fall back on. Scaffolding into a directory with no `facet.json` never needs it.
 </ResponseField>
 
 <ResponseField name="--json" type="boolean">

@@ -3,7 +3,9 @@ title: Adapters
 description: How facets reach your AI tool
 ---
 
-An adapter connects facets to one AI coding tool. It knows where that tool keeps each kind of asset: files for skills, agents, and commands, and configuration entries for MCP servers. Install one adapter per tool you use, then every facet you add materializes into all of them.
+An adapter connects facets to one AI coding tool. It knows where that tool keeps each kind of asset: files for skills, agents, and commands, and configuration entries for MCP servers. Install one adapter per tool you use, and each one materializes the assets it declares support for.
+
+Text assets and MCP servers are separate capabilities, so an adapter may support both, one, or neither. An adapter that supports neither validates manifest metadata during [`facet build`](/cli/authoring/build) and writes nothing.
 
 Adapters are installed per machine, not per project:
 

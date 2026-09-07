@@ -1,6 +1,9 @@
 # Agent Facets
 
-**A package manager for AI coding assistant extensions.**
+[![npm version](https://img.shields.io/npm/v/agent-facets.svg)](https://www.npmjs.com/package/agent-facets)
+[![Discord](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/qXQYaYna5w)
+
+#### **A package manager for AI coding assistant extensions.**
 
 AI coding tools all want roughly the same things: skills, agents, commands, and MCP server declarations. Each expects them in its own format, in its own directory. So those files get copied between projects and between tools by hand, with no version, no upgrade path, no integrity check, and no clean way to take them back out.
 
@@ -11,7 +14,7 @@ Agent Facets is in [open beta](https://docs.agentfacets.io/roadmap/beta). Public
 ## Why facets?
 
 - **Reproducible.** `facets.json` records what your project depends on. `facets.lock` pins exact versions and integrity hashes, so teammates and CI get identical results.
-- **Tool-independent.** Install a facet once and it materializes into every connected tool, instead of maintaining a copy per tool.
+- **Tool-independent.** Install a facet once and each connected adapter materializes the asset types it supports, instead of maintaining a copy per tool.
 - **Verified and deliberate.** Every archive is integrity-checked against what was published, and a new or changed MCP server declaration is never written until you approve it.
 - **Manageable.** Move between versions with `facet update`, and remove a facet cleanly: only the files and config entries your project actually owns are deleted.
 

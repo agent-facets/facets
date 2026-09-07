@@ -77,7 +77,9 @@ The SDK ships the planners the first-party adapters use:
 - `planSkillBundleInstall` and `planSkillBundleRemoval` for skills.
 - `planSingleFileInstall` and `planSingleFileRemoval` for agents and commands.
 
-They assemble YAML front matter, validate companion containment, capture exact prior state, and drop edits that would be byte-identical. They read only the primary file and the supplied owned companions, so unowned files are never read or swept into a removal.
+They assemble YAML front matter, validate companion containment, capture exact prior state, and drop edits that would be byte-identical.
+
+Their read set is the primary file, every destination the new bundle desires, and the supplied `ownedCompanionPaths`. A desired destination is read to capture the prior state a write needs, so an unowned file already sitting at one is read before it is replaced. Every other path is neither read nor touched, and a removal sweeps only the supplied owned companions.
 
 ## MCP servers
 
@@ -117,7 +119,7 @@ You are editing a file the user owns.
 - Use a syntax-aware edit. Semantic preservation is required; comment and formatting preservation is best effort.
 - Write project-scoped configuration only. Never create or modify a user-wide or system-wide file.
 
-If your tool merges several configuration layers, read them all, classify against the merged view, then write to one. Reading only the file you would write lets an obsolete entry in another layer survive a removal.
+If your tool merges several configuration layers, read them all and classify against the merged view. Write additions and replacements to one selected layer, and leave a shadowed copy you did not put there alone. Remove an obsolete owned entry from every layer that defines it: deleting only the winning copy would promote a shadowed one and leave the server configured. Reading only the file you would write lets an obsolete entry in another layer survive a removal.
 
 <Warning>
   Two selected adapters may not manage the same file. If your tool reads a file another supported tool also reads, say so in your README: a user who selects both gets a failure telling them to deselect one.
