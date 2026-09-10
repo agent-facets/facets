@@ -1,8 +1,11 @@
-- The release/commands directory contains single-file symlinks to the development/commands/* files
-- When creating new commands, write them to the development/commands directory, then make a symlink in release/commands
-- `release/@config.yml` is a symlink to `development/@config.yml` — edits to either land in both packed configs. The `parameters.package` block lives here for this reason; it's consumed only by the release workflow's `serial-group` but declared in both packed outputs, which is harmless (CircleCI ignores unused declared parameters).
+- **Anything shared between the two pipelines is authored under `development/` and symlinked into `release/`.** That applies to commands *and* jobs. Write the real file in `development/commands/` or `development/jobs/`, then create the symlink in the matching `release/` directory. Currently shared: `commands/setup-mise.yml`, `commands/notify-failure.yml`, `jobs/release.yml`, and `@config.yml` itself.
+- Because `@config.yml` is shared, a block declared there lands in both packed configs. `parameters.package` is declared that way deliberately; the rationale lives in the comment at the top of `development/@config.yml`.
 
-## Required contexts
+## Contexts
+
+Four org-level contexts are in play. Every job attaches `turbo-cache` and `github`; the main-branch and release jobs additionally attach `bot-context` (GitHub App credentials) and `slack-secrets` (consumed by `notify-failure`). Check an existing job's `context:` list before writing a new one.
+
+The rest of this section covers `github`, which is the one with a non-obvious failure mode.
 
 ### `github` — required for every job that uses `setup-mise`
 
@@ -13,7 +16,7 @@ REST API when resolving and downloading tool releases. Without it, mise falls ba
 unauthenticated requests, which CircleCI's shared IP pool burns through GitHub's 60-req/hour
 unauthenticated rate limit. With it, the limit is 5,000 req/hour per token.
 
-[mise-tokens]: https://mise.en.dev/dev-tools/github-tokens.html
+[mise-tokens]: https://mise.jdx.dev/dev-tools/github-tokens.html
 
 | Workflow      | Job                      | Requires `github` context? |
 |---------------|--------------------------|----------------------------|
@@ -58,23 +61,25 @@ operations with the scopeless PAT in any job where `mintGithubTokens()` hasn't y
 
 ## Caches
 
-Three CircleCI caches keep CI from redownloading the same binaries and
-artifacts on every job. All live in the shared `setup-mise` command, so every
-job that calls it benefits.
+Four CircleCI caches keep CI from redownloading the same binaries and
+artifacts on every job. Three live in the shared `setup-mise` command, so
+every job that calls it benefits. The fourth lives in `run-check`, so only
+the jobs that run checks (`check`, `main-pipeline`) use it.
 
 | Cache         | Key                                                                                   | Paths                                                       | Defined in                            |
 |---------------|---------------------------------------------------------------------------------------|------------------------------------------------------------|---------------------------------------|
 | mise tools    | `v1-mise-{{ .Environment.MISE_ENV }}-{{ checksum "mise.toml" }}-{{ checksum "mise.development.toml" }}` | `~/.local/share/mise/installs`, `~/.local/share/mise/downloads` | `commands/setup-mise.yml`            |
 | facets        | `v1-facet-{{ checksum "facets.lock" }}`                                                | `~/.facet/cache`                                            | `commands/setup-mise.yml`             |
 | bun deps      | `v1-deps-{{ checksum "bun.lock" }}`                                                    | `node_modules`, `~/.bun/install/cache`                     | `commands/setup-mise.yml`             |
+| mint framework| `v1-mint-{{ checksum "bun.lock" }}`                                                    | `~/.mintlify`                                               | `commands/run-check.yml`              |
 
 ### Why each key is shaped this way
 
 - **mise tools** — keyed on `MISE_ENV` because mise loads different config
   files per env. With no `MISE_ENV` (CI jobs), mise loads `mise.toml` **and**
   `mise.development.toml`, so the toolset includes `circleci`. With
-  `MISE_ENV=release` (the `build-cli`, `publish-platform`,
-  `finalize-cli` jobs), mise loads **only** `mise.toml` — no `circleci`.
+  `MISE_ENV=release` (the `release`, `build-cli`, `publish-platform`,
+  and `finalize-cli` jobs), mise loads **only** `mise.toml` — no `circleci`.
   Namespacing the key by `MISE_ENV` keeps the two toolsets in separate cache
   slots so a release job never restores (or saves) a CI-shaped cache. Both
   toml checksums are in the key so a bump to either file invalidates it. The
@@ -82,9 +87,9 @@ job that calls it benefits.
   a hit. (`mise.local.toml` is gitignored and absent in CI, so it's excluded
   from the key.)
 - **facets** — keyed on `facets.lock`, not `facets.json`. `facets.json` can
-  reference a mutable git source (`viper-plans` tracks `#main`); the lockfile
-  records the resolved commit, so when `#main` moves, `facets.lock` changes and
-  the cache invalidates correctly. Pinned facets (e.g. `cowsay`) stay cached.
+  carry a mutable specifier (a `latest`, or a git ref); the lockfile records
+  what it resolved to, so when the upstream moves, `facets.lock` changes and
+  the cache invalidates correctly. Pinned facets stay cached.
 
 When changing a cache's paths or invalidation inputs, bump the key's version
 prefix (`v1-` → `v2-`, etc.) so stale entries are retired rather than reused.
@@ -97,14 +102,11 @@ Two packed CircleCI configs, one per pipeline dir.
 
 PR-time checks. Workflows: `ci` (runs `check` and `registry-compatibility` on non-main branches, runs `main-pipeline` on main).
 
-`registry-compatibility` is the live-registry type-compatibility job: it
-fetches the deployed registry's OpenAPI spec (network dependency), regenerates
-the engine's registry types in the ephemeral checkout, and runs
-`bun turbo types` across the whole monorepo (hence the `turbo-cache` context
-in addition to `github`). It fails when the live schema is unevaluable
-(fetch/validate/codegen error) or when any type check fails — never on
-snapshot age or diffs against the committed generated files, which are
-discarded with the checkout.
+`registry-compatibility` type-checks the monorepo against the **live**
+registry's OpenAPI spec, so it carries a network dependency. What does and
+does not fail the job is documented in
+`development/jobs/registry-compatibility.yml`; read it there rather than
+trusting a second copy here.
 
 ### `release/` — CD
 
@@ -128,7 +130,7 @@ The main-branch / release top-level jobs that must queue are assigned a `serial-
 
 Notes:
 
-- The `release` group keys on the `package` pipeline parameter so different packages (`core`, `adapter`, …) can release in parallel while repeat releases of the same package serialize. `scripts/release/tag.ts` parses the package name out of the tag and forwards it via the CircleCI API v2 trigger. The parameter is declared in `release/@config.yml` with a default of `""` — which applies to the `release-cli` trigger path that doesn't set it. Required because the serial-group charset (`[A-Za-z0-9._\-/]`) excludes `@`, so we can't embed the raw tag string.
+- The `release` group keys on the `package` pipeline parameter so different packages (`protocol`, `adapter`, …) can release in parallel while repeat releases of the same package serialize. `scripts/release/tag.ts` parses the package name out of the tag and forwards it via the CircleCI API v2 trigger. The parameter is declared in `development/@config.yml` (which `release/@config.yml` symlinks to) with a default of `""`, for the `release-cli` trigger path that doesn't set it. Required because the serial-group charset (`[A-Za-z0-9._\-/]`) excludes `@`, so we can't embed the raw tag string.
 - `release-cli` uses **two distinct** group names (`release-cli-build` and `release-cli-finalize`). CircleCI's docs explicitly warn against reusing  the same `serial-group` value on multiple jobs in a single workflow.
 - `publish-platform` intentionally has no `serial-group`. Each matrix variant publishes a distinct platform package, so parallel runs are safe, and adding it would spawn 12 separate queues.
 - Pipeline-number priority: if a newer pipeline enters a serial group while an older one is still waiting, the older one is skipped. This matches the behavior we want for deploys and releases — newer always wins.
