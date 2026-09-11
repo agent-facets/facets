@@ -16,7 +16,14 @@ test('npm deployment has no direct or transitive dependency on archive packaging
   }
 
   expect(jobs.has('package-cli-assets')).toBe(true)
+  expect(jobs.has('upload-cli-assets')).toBe(true)
   expect([...dependencies('package-cli-assets')]).toEqual(['build-cli'])
   expect([...dependencies('publish-platform')]).toEqual(['build-cli'])
   expect([...dependencies('finalize-cli')]).toEqual(['publish-platform', 'build-cli'])
+  expect([...dependencies('upload-cli-assets')]).toEqual([
+    'finalize-cli',
+    'publish-platform',
+    'build-cli',
+    'package-cli-assets',
+  ])
 })

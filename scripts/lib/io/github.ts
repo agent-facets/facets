@@ -19,4 +19,5 @@ export const githubIo = {
   },
   releaseCreate: (tag: string, title: string, notes: string) =>
     $`gh release create ${tag} --title ${title} --notes ${notes}`.text(),
+  releaseUpload: (tag: string, assets: string[]) => $`gh release upload ${tag} ${assets} --clobber`,
 }
