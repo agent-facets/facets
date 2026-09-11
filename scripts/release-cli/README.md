@@ -65,13 +65,14 @@ windows-arm64, windows-x64, windows-x64-baseline
 After `build-cli`, `package-cli-assets` runs alongside npm publishing:
 
 ```text
-build-cli ─┬─ publish-platform (×12) ── finalize-cli (npm wrapper + release)
-           └─ package-cli-assets (archives + checksums)
+build-cli ─┬─ publish-platform (×12) ── finalize-cli (npm wrapper + release) ─┐
+           └─ package-cli-assets (archives + checksums) ─────────────────────┴─ upload-cli-assets
 ```
 
 Neither npm publishing nor finalization requires the packaging job. Packaging
 failures are reported by CircleCI and Slack but do not block npm deployment.
-Future GitHub asset uploads must stay outside the npm dependency chain too.
+`upload-cli-assets` waits for both branches of the workflow, then uploads the
+packaged archives to the GitHub Release with `gh release upload --clobber`.
 
 `package-assets.ts` writes `packages/cli/dist/release-assets` and the packaging
 job persists that directory only after success. Packaging requires `tar` and `zip` on

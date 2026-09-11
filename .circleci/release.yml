@@ -129,6 +129,21 @@ jobs:
           command: bun scripts/release/publish.ts
           name: Publish
       - notify-failure
+  upload-cli-assets:
+    docker:
+      - image: cimg/base:current
+    environment:
+      LEFTHOOK: "0"
+      MISE_ENV: release
+    resource_class: small
+    steps:
+      - setup-mise
+      - attach_workspace:
+          at: .
+      - run:
+          command: bun scripts/release-cli/upload-assets.ts
+          name: Upload CLI release assets
+      - notify-failure
 parameters:
   package:
     default: ""
@@ -226,3 +241,18 @@ workflows:
           requires:
             - publish-platform
           serial-group: << pipeline.project.slug >>/release-cli-finalize
+      - upload-cli-assets:
+          context:
+            - bot-context
+            - slack-secrets
+            - github
+          filters:
+            branches:
+              ignore:
+                - /.*/
+            tags:
+              only:
+                - /^agent-facets@\d+\..+/
+          requires:
+            - finalize-cli
+            - package-cli-assets

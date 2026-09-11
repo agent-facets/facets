@@ -25,6 +25,7 @@ unauthenticated rate limit. With it, the limit is 5,000 req/hour per token.
 | `release-cli` | `package-cli-assets`     | yes                        |
 | `release-cli` | `publish-platform`       | yes                        |
 | `release-cli` | `finalize-cli`           | yes                        |
+| `release-cli` | `upload-cli-assets`      | yes                        |
 
 If a future job adds `setup-mise` without attaching the `github` context, it will fail loudly
 on the `Install tools` step with `mise WARN GitHub rate limit exceeded` once CircleCI's IP
