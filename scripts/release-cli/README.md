@@ -12,6 +12,7 @@ Tag push: agent-facets@X.Y.Z
 │  build.ts                                                     │
 │                                                               │
 │  Cross-compile 12 platform binaries via Bun.build({compile})  │
+│  Package 8 release archives + SHA-256 checksums.txt            │
 │  Persist dist/ to workspace                                   │
 └──────────────────────┬────────────────────────────────────────┘
                        │
@@ -58,6 +59,35 @@ linux-arm64, linux-arm64-musl, linux-x64
 linux-x64-baseline, linux-x64-baseline-musl, linux-x64-musl
 windows-arm64, windows-x64, windows-x64-baseline
 ```
+
+## Release assets
+
+`build.ts` also writes `packages/cli/dist/release-assets`, which is persisted
+with `dist/` in the CircleCI workspace. Packaging requires `tar` and `zip` on
+the build host. Each archive contains a single root-level executable (`facet`
+on macOS/Linux, `facet.exe` on Windows):
+
+```text
+facet-darwin-arm64.tar.gz
+facet-darwin-x64.tar.gz
+facet-linux-arm64.tar.gz
+facet-linux-arm64-musl.tar.gz
+facet-linux-x64.tar.gz
+facet-linux-x64-musl.tar.gz
+facet-windows-arm64.zip
+facet-windows-x64.zip
+checksums.txt
+```
+
+All x64 archives use baseline binaries, so installation does not require AVX2
+detection. The npm package layout and its optimized variants are preserved.
+`checksums.txt` contains SHA-256 hashes of the archives in standard checksum
+format. Each invocation clears the release-assets directory before building
+and emits checksums only for that invocation's archives.
+
+`--single` and `--target` package only the selected platform/ABI. Selecting an
+optimized x64 target also builds its baseline counterpart for the release
+archive. A full build continues to compile all 12 npm targets.
 
 ## Why the CLI needs a custom pipeline
 
