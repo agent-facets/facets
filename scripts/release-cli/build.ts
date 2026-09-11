@@ -10,23 +10,16 @@
  *   bun scripts/release-cli/build.ts --target darwin-arm64 # Build a specific target by name
  */
 
-import { createHash } from 'node:crypto'
-import { mkdir, rm } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import { $ } from 'bun'
 import {
   allTargets,
-  binaryPath,
   buildTargetPackageJson,
   bunTarget,
-  executableName,
   filterTargets,
   outfilePath,
   packageJsonPath,
   packageName,
-  releaseArchiveName,
-  releaseAssetsDir,
-  releaseAssetTargets,
   shouldSmokeTest,
 } from './targets'
 
@@ -55,16 +48,6 @@ if (targets.length === 0) {
   console.error(`No matching targets for ${process.platform}/${process.arch}`)
   process.exit(1)
 }
-
-const assetTargets = releaseAssetTargets(targets)
-for (const target of assetTargets) {
-  if (!targets.some((built) => packageName(built) === packageName(target))) targets.push(target)
-}
-
-// A partial or repeated build must never leave stale release assets to upload.
-const assetsDir = releaseAssetsDir(cliDir)
-await rm(assetsDir, { recursive: true, force: true })
-await mkdir(assetsDir, { recursive: true })
 
 // ---------------------------------------------------------------------------
 // Build loop
@@ -117,28 +100,3 @@ for (const target of targets) {
 }
 
 console.log(`\nDone — ${targets.length} target(s) built.`)
-
-// Archive from bin/ so installers receive a single root-level executable.
-const checksums: string[] = []
-for (const target of assetTargets) {
-  const name = releaseArchiveName(target)
-  const archive = resolve(assetsDir, name)
-  const binDir = dirname(binaryPath(cliDir, target))
-  const executable = executableName(target)
-  const result =
-    target.os === 'win32'
-      ? await $`zip -j ${archive} ${executable}`.cwd(binDir).nothrow()
-      : await $`tar -czf ${archive} -C ${binDir} ${executable}`.nothrow()
-
-  if (result.exitCode !== 0) {
-    console.error(`Failed to package ${name}`)
-    process.exit(1)
-  }
-
-  const hash = createHash('sha256')
-    .update(await Bun.file(archive).bytes())
-    .digest('hex')
-  checksums.push(`${hash}  ${name}`)
-  console.log(`  ✓ ${name}`)
-}
-await Bun.write(resolve(assetsDir, 'checksums.txt'), `${checksums.sort().join('\n')}\n`)
