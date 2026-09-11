@@ -2,178 +2,162 @@
 
 ## What this package is
 
-The Bun-native CLI machinery — Layer 2 of the three-layer architecture
-(protocol / engine / CLI). One concrete implementation of the facet
-specification on a developer's machine: install pipeline, registry
-client, adapter machinery, scaffold, edit, self-update, source
-resolvers, manifest mutations, cache, build pipeline orchestrator.
+The Bun-native CLI machinery — Layer 2 of the protocol / engine / CLI
+split. One concrete implementation of the facet specification on a
+developer's machine.
 
-Engine is **private** to this monorepo. It is never published to npm.
-Other systems implementing the facet spec — a future Rust CLI, the
-cafe registry server — would have their own engine equivalent. The
-contract they all conform to lives in `@agent-facets/protocol`.
+Engine is **private** and never published. Other systems implementing
+the spec (a future Rust CLI, the registry server) would have their own
+equivalent. The contract they all conform to lives in
+`@agent-facets/protocol`.
 
-If we rewrote the engine in Rust tomorrow, every line in this package
-would be replaced. The protocol it depends on would not.
+If we rewrote engine in Rust tomorrow, every line here would be
+replaced. The protocol it depends on would not.
 
 ## What belongs here
 
-- **Adapter machinery** — bundling, install-service, placement, verify,
-  loader, first-party list. Adapters are CLI-side abstractions over AI
-  coding tools; the spec doesn't mandate adapters at all.
-- **Adapter sources** — npm tarball download, git clone, local path
-  resolution. Subprocess-driven; engine-only.
-- **Facet sources** — git clone, local path resolution. Same shape as
-  adapter sources; engine-only.
-- **Source-specifier parsers** — `parseFacetSource`, `parseAdapterSpecifier`,
-  `parseVersionSpec`. The CLI interprets user-input source strings;
-  the parsed `Source` discriminant is engine-internal. Only the
-  `VersionSpec` slice (which appears in published artifacts) lives in
-  protocol.
-- **Install pipeline orchestrator** — `runInstall`, lockfile-guard,
-  lockfile-io, materialize. Drives the install flow on a developer's
-  machine.
-- **File transition transaction** — `src/fs/`. The one mechanism every
-  install-time write goes through: exact `A → B` per-file transitions,
-  batch preflight and commit, coalescing, classified rollback, and
+- **Command orchestrators** — `runInstall`, plus the add, remove, and
+  update pipelines under `src/install/{add,remove,update}/`. Lockfile
+  guard and I/O, drift detection, frozen-lockfile gates, materialization,
+  install receipts, asset takeover, outcome classification.
+- **The file transition transaction** (`src/fs/`) — the one mechanism
+  every write goes through. Exact `A → B` per-file transitions, batch
+  preflight and commit, coalescing, classified rollback, and
   conservative cleanup of directories it created. Adapters plan; this
-  writes.
-- **Build pipeline orchestrator** — `runBuildPipeline`, `writeBuildOutput`.
-  Wires protocol's primitives (validators, content-hash, tar layout)
-  into a CLI workflow with progress events.
-- **`compressArchive`** — gzip is delivery, not part of the integrity
-  contract. Kept here so protocol stays gzip-implementation-agnostic.
-- **Cache** — `~/.facet/cache/` layout, identity computation, atomic
-  put, lookup. Developer-machine state.
-- **Manifest mutations + project-files I/O** — the JSON rewrites for
-  `facets.json` and the disk bridge that reads/writes it. Each CLI has
-  its own mutation semantics; the spec only constrains the file's
-  shape (which lives in protocol).
-- **Registry client** — HTTP I/O against the registry server, archive
-  download/extract. The wire format is owned by the registry server's
-  own OpenAPI specification, not the protocol package.
-- **Edit** — interactive reconcile, scanner, manifest-writer, edit
-  operations. CLI authoring workflow.
-- **Scaffold** — `facet create` machinery. Generates a starter project
-  tree.
-- **Self-update** — detect install method, run the right updater
-  (npm/pnpm/yarn/bun/curl). CLI lifecycle management.
-- **Path-based loaders** — `loadManifest(dir)`, `resolvePrompts(rootDir)`.
-  Thin wrappers over Bun's filesystem primitives that read bytes and call
+  writes. `src/fs-transaction.ts` is the authoring-side front for the
+  same transaction (`facet create`, `facet edit`) — a thin front, not a
+  second implementation.
+- **MCP install pipeline** — `src/install/mcp/`: preparation, consent,
+  apply, outcomes, document handling.
+- **Adapter machinery** — bundling, install service, placement, verify,
+  loader, inspection, the first-party list, API-version compatibility,
+  and MCP support detection.
+- **Sources** — facet and adapter source parsing plus git clone, npm
+  tarball download, and local path resolution. Subprocess-driven.
+  Only the `VersionSpec` slice of source grammar lives in protocol.
+- **Registry client** — HTTP I/O, metadata resolution, download and
+  extract, publishing, credentials, and auth. The wire format is owned
+  by the registry's OpenAPI specification, not by protocol.
+- **Build pipeline orchestrator** — `runBuildPipeline`,
+  `writeBuildOutput`, adapter and supplementary-source validation, and
+  `compressArchive` (gzip is delivery, not part of the integrity
+  contract).
+- **Cache, edit, scaffold, self-update, README authoring, manifest
+  mutations, and path-based loaders** that read bytes and hand them to
   protocol's bytes-validators.
+
+`src/index.ts` is the authoritative export list.
 
 ## What does NOT belong here
 
 - **Schemas, integrity verification, content-hash format, tar layout,
-  front-matter encoding, version-spec grammar.** All in protocol.
-- **Bytes-validators.** Engine reads bytes, protocol validates them.
+  front-matter encoding, version-spec grammar.** All protocol.
+- **Bytes-validators.** Engine reads bytes; protocol validates them.
 - **Display code.** No Ink, no chalk, no spinners, no `console.log` for
-  user-facing output. If engine needs to surface progress, it returns
-  structured events; the CLI renders them.
-- **CLI argument parsing or command help text.** That's the CLI's job.
-- **Process-exit logic.** Engine returns results; the CLI decides
-  exit codes.
-- **`process.argv` reads.** Configuration comes in through function
-  parameters or, where unavoidable, via environment variables
-  documented on the function.
+  user-facing output. Engine returns structured events; the CLI renders
+  them.
+- **Argument parsing, help text, exit codes.** The CLI's job.
+- **`process.argv` reads.** Configuration arrives through parameters,
+  or through an environment variable documented on the function.
+
+## On-disk state
+
+Everything facet writes outside a project lives under `$FACET_DIR`
+(default `~/.facet`). `src/facet-dir.ts` is the single source of truth
+and derives every root from it: `cache/`, `adapters/`, `locks/`,
+`bin/`, `receipts/`, and the `credentials` file.
+
+`FACET_DIR` is read on every call rather than memoized, so tests can
+redirect per test and per spawned subprocess. Do not hardcode
+`~/.facet` anywhere.
 
 ## Public surface discipline
 
-`src/index.ts` exports **only what the CLI consumes**. Do not add
-speculative exports for hypothetical future consumers. The protocol
-package handles the "exported for any third-party implementer" case;
-engine is for one consumer (the CLI in this repo).
+`src/index.ts` exports **only what the CLI consumes**. No speculative
+exports — protocol handles the "exported for any third-party
+implementer" case; engine has exactly one consumer.
 
-If the export list starts feeling bloated, that is a signal the
-package boundary is wrong — the same failure mode that produced the
-overstuffed `@agent-facets/core` before this split. A future change
-SHOULD subdivide engine before adding more exports.
+That list is now large enough to be a warning sign. A bloated export
+list means the package boundary is wrong; it is the same failure mode
+that produced the overstuffed `@agent-facets/core` before this split. A
+future change SHOULD subdivide engine rather than keep growing it.
 
-## Boundary with `protocol`
+## Boundaries with `protocol` and `common`
 
-Engine consumes `@agent-facets/protocol` as a workspace dependency
-for everything that is part of the facet spec. Engine NEVER reaches
-into protocol's internals; it only imports the public surface from
-`@agent-facets/protocol`.
+Engine consumes protocol's public surface for everything spec-defined
+and never reaches into its internals. If engine wants to reimplement
+something protocol already does, either protocol is missing a real
+engine-side concern, or the engine code is duplicated and should be
+deleted.
 
-If engine finds itself wanting to reimplement something already in
-protocol, that is a smell. Either the engine code is doing something
-the protocol doesn't yet support (a real engine concern), or the
-engine code is duplicating protocol logic and should be deleted.
+Engine may import `@agent-facets/common`. The rule for what may live in
+`common` is owned by `packages/common/AGENTS.md`.
 
-## Boundary with `common`
+## Registry client
 
-Engine may import `@agent-facets/common` freely for cross-cutting
-primitives (`Validated<T>`, `ValidationError`, `AssetType`, etc.).
-`common` is shared with `protocol` and `adapter`; it carries types
-that are useful at every layer.
+Wire-format types come from a vendored snapshot of the registry's
+OpenAPI specification:
 
-## Registry client codegen
+- **Snapshot** — `src/registry/openapi.snapshot.yaml`, with a four-line
+  header (`Generated by`, `Source`, `Generated-At`, do-not-edit).
+  Committed; never hand-edited. One key per line so tooling can target
+  a line with a simple regex.
+- **Generated types** — `src/registry/generated/registry-api.ts`, from
+  `openapi-typescript`. Committed, never hand-edited, ignored by Biome,
+  marked `linguist-generated`.
+- **Curated re-exports** — `src/registry/wire.ts`. The only import
+  surface other code should use, so generator churn does not ripple
+  across call sites.
 
-The registry client's wire-format types come from a vendored snapshot
-of the registry's OpenAPI specification. The contract:
+Refresh with `bun run codegen:registry` from `packages/engine`. It
+never runs at build time: fresh clones must build offline and CI must
+build deterministically. Codegen is manual, committed, and reviewable.
 
-- **Snapshot** at `src/registry/openapi.snapshot.yaml` — the YAML
-  fetched from the registry, with a 4-line header (Generated-by,
-  Source, Generated-At, do-not-edit). Committed; never hand-edited.
-- **Generated types** at `src/registry/generated/registry-api.ts` —
-  emitted by `openapi-typescript` from the snapshot. Committed;
-  never hand-edited; ignored by Biome and marked
-  `linguist-generated` for GitHub.
-- **Curated re-exports** at `src/registry/wire.ts` — the only
-  import surface that other engine code (and the CLI via engine's
-  public exports) should use. Provides stable names like
-  `WireMetadataResponse`, `WireErrorResponse`, `WireAssetCounts`
-  so generator-internals churn doesn't ripple across call sites.
-
-To refresh: run `bun run codegen:registry` from `packages/engine`.
-The script fetches the OpenAPI YAML (from `FACET_REGISTRY_OPENAPI_URL`
-env, defaulting to the production registry), validates it, atomically
-writes the snapshot, and runs `openapi-typescript`. Idempotent at
-the generated-module boundary — re-running against an unchanged
-registry produces a byte-identical generated file (the snapshot's
-`Generated-At` line updates by design).
-
-The script never runs at build time. Fresh clones must build
-offline; CI must build deterministically. Codegen is manual,
-committed, and reviewable in PRs.
-
-Contributors call the registry through `createRegistryClient()`,
-which returns a typed `openapi-fetch` client with retry, timeout,
-and abort middleware pre-applied:
+Call the registry through `createRegistryClient()`, which returns a
+typed `openapi-fetch` client with middleware pre-applied — auth (only
+when a credential is present), then timeout, then retry. The
+`client.use(...)` order is load-bearing; see the note in
+`src/registry/client.ts`.
 
 ```ts
 import { createRegistryClient } from '@agent-facets/engine'
 const client = createRegistryClient()
 const { data, error, response } = await client.GET(
-  '/v0/packages/{name}/{version}',
+  '/v0/facets/{name}/{version}',
   { params: { path: { name, version } } },
 )
 ```
 
-Wire errors become structured `RegistryError` values via
-`translateWireError(error, response.status)` and
-`translateThrownError(err)`. The discriminator surfaces four codes:
-`NOT_FOUND`, `NETWORK_ERROR` (with `attempts` count),
-`REGISTRY_NOT_AVAILABLE`, `UNEXPECTED_ERROR`.
+Facet routes come in unscoped and scoped pairs
+(`/v0/facets/{name}/...` and `/v0/facets/{scope}/{name}/...`); pick
+based on whether the name carries a scope.
 
-A CircleCI job (`registry-compatibility` in
-`.circleci/development/jobs/`) checks compatibility against the
-**live** registry: it runs `codegen:registry` against the deployed
-registry's OpenAPI spec (a network dependency), regenerates the
-types in the ephemeral CI checkout, and runs `bun turbo types`
-across the full monorepo. It fails when the live schema can't be
-fetched/validated/generated or when any type check fails. Snapshot
-age and diffs against the committed generated files are not failure
-conditions — the regenerated output is discarded with the checkout,
-and the committed snapshot remains authoritative for deterministic
-offline builds. The check does not block merge by default; add the
-job to GitHub branch protection if you want hard-block behavior.
+Wire failures become structured `RegistryError` values through
+`translateWireError(wire, status, notFoundContext?)` and
+`translateThrownError(err)`. **Pass `notFoundContext` when you have it**
+— a 404 only becomes `NOT_FOUND` when that argument is present;
+otherwise it degrades into a less specific code.
+
+`RegistryError`'s members are documented on the union itself in
+`src/registry/types.ts`. Read them there; do not copy the list into
+prose that will rot.
+
+A CircleCI job (`registry-compatibility`) regenerates types against the
+**live** registry and type-checks the monorepo. Snapshot age and diffs
+against the committed output are deliberately not failure conditions —
+the committed snapshot stays authoritative for offline, deterministic
+builds. Details live in `.circleci/development/jobs/registry-compatibility.yml`.
 
 ## Bun runtime
 
-Engine is **Bun-native** by design. `Bun.spawn`, `Bun.file`,
-`Bun.gzipSync`, `Bun.which`, `Bun.build`, `Bun.Glob` are all fair
-game. Tests run on `bun:test`. The CLI runs on Bun. The cafe registry
-runs on Node — and **doesn't depend on engine** because engine isn't
-published. The cafe consumes `@agent-facets/protocol` directly.
+Engine is Bun-native by design: `Bun.spawn`, `Bun.file`,
+`Bun.gzipSync`, `Bun.which`, `Bun.Glob` are all fair game.
+
+Use the `Bun.*` **global** form. Never `import ... from 'bun'` —
+`tsdown.config.ts` lists `bun` in `neverBundle` specifically to catch a
+bare import slipping back in.
+
+`node:*` imports are not a smell here. `src/fs/syscalls.ts` is built on
+`node:fs` deliberately, because the transaction needs syscall-level
+control (`lstat`, `unlink`, link topology) that `Bun.file` does not
+expose.

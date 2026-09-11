@@ -1,170 +1,91 @@
-<CircleCI>
+# Agent Facets
 
-## CircleCI Project
+A Turborepo monorepo, built and tested with Bun, that ships the `facet`
+CLI and the packages it is assembled from.
 
-| Key            | Value                                                    |
-|----------------|----------------------------------------------------------|
-| Project Name   | facets                                                   |
-| Project Slug   | `circleci/TXx3MQGFf8BTw9fgSHwVWi/RfHfmwgTVFBrv4ZDBMMifk` |
-| Git Remote URL | `git@github.com:agent-facets/facets.git`                 |
-| Default Branch | `main`                                                   |
+This file is the **map**. It carries only what applies to the whole
+repository. Anything that is true of exactly one package lives in that
+package's own `AGENTS.md` — follow the link before working in a
+package.
 
-</CircleCI>
-
-<RunningBunCommands>
+## Running Bun commands
 
 Sometimes `bun` is not available in the shell. If that happens prefix the `bun`
 commands with `mise exec --` like the following: `mise exec -- bun format`.
 
 Mise will ensure you find the `bun` executable correctly.
 
-</RunningBunCommands>
+## Architecture
 
-## Source Code Map
+Three layers, plus the SDK that third parties implement against:
 
-Turborepo monorepo with Bun workspaces. Six packages under `packages/`,
-organized as a three-layer architecture (protocol / engine / CLI).
+- **protocol** (Layer 1) — the facet artifact specification. Schemas,
+  integrity, content hashing, archive format, materialization planning.
+  Runs on Node; published to npm.
+- **engine** (Layer 2) — one concrete implementation of that spec on a
+  developer's machine. Install/update/remove pipelines, registry client,
+  cache, filesystem transaction. Bun-native; never published.
+- **cli** (Layer 3) — argument parsing, Ink views, error formatting,
+  exit codes. Replaceable skin over the two layers below it.
+- **adapter** — the SDK an adapter implements to teach the pipeline about
+  an AI coding tool. Published; must stay a leaf.
 
-### `packages/protocol` — `@agent-facets/protocol` (Layer 1)
+The test for where code goes: **if `engine` were rewritten in Rust
+tomorrow, would this line change?** No means protocol. Yes means engine.
+If it is intrinsically about a terminal, it is cli.
 
-The TypeScript reference implementation of the **facet artifact specification**.
-Public, Node-native (Node 22+), the only thing in this monorepo that gets
-published to npm. Contains the schemas, bytes-validators, integrity
-verification, deterministic archive format, hash algorithm, version-spec
-grammar, front-matter encoding, and pure build validators.
+## Workspaces
 
-If we rewrote engine in another language tomorrow, every line in protocol
-would survive untouched — that's the test for what belongs here. See
-`packages/protocol/AGENTS.md` for the full rules.
+`packages/*` and `packages/adapters/*` (root `package.json`). Eleven
+packages; seven publish to npm.
 
-```
-src/
-├── schemas/        # Arktype schemas (facet, project, lockfile, build, mcp-server)
-├── loaders/        # Pure bytes-validators: validateFacetManifest, resolvePromptsFromMap
-├── integrity/      # 3-check + 1-check verification, IntegrityResult types
-├── build/          # Pure: detect-collisions, validate-content, validate-facets, content-hash, parseFacetArchive
-├── materialization/# Generic effective-name planner + MCP server identity/plan wrappers
-├── mcp/            # Canonical declaration encoding + fingerprint
-├── sources/        # Just version-spec.ts (VersionSpec type + grammar + resolvesToLatest)
-├── front-matter.ts # YAML front-matter extract/strip
-├── index.ts        # Curated public API
-└── __tests__/      # Tests run on bun:test (devDep), but src/ runs on Node
-```
+| Package | npm | Purpose | Rules |
+|---|---|---|---|
+| `packages/protocol` | public | Reference implementation of the facet spec | [AGENTS.md](packages/protocol/AGENTS.md) |
+| `packages/engine` | no | CLI machinery: install, registry, cache, fs transaction | [AGENTS.md](packages/engine/AGENTS.md) |
+| `packages/cli` | public (`agent-facets`) | The `facet` binary; Ink TUI | [AGENTS.md](packages/cli/AGENTS.md) |
+| `packages/adapter` | public | Adapter SDK (`defineAdapter`) | [AGENTS.md](packages/adapter/AGENTS.md) |
+| `packages/common` | no | Primitives shared across published packages | [AGENTS.md](packages/common/AGENTS.md) |
+| `packages/brand` | public | Color, theme, and font tokens | [AGENTS.md](packages/brand/AGENTS.md) |
+| `packages/adapter-jsonc` | no | JSONC parse/edit helpers for adapters | [AGENTS.md](packages/adapter-jsonc/AGENTS.md) |
+| `packages/adapter-test-kit` | no | Shared adapter conformance fixtures | [AGENTS.md](packages/adapter-test-kit/AGENTS.md) |
+| `packages/adapters/claude-code` | public | First-party adapter | [AGENTS.md](packages/adapters/AGENTS.md) |
+| `packages/adapters/codex` | public | First-party adapter | [AGENTS.md](packages/adapters/AGENTS.md) |
+| `packages/adapters/opencode` | public | First-party adapter | [AGENTS.md](packages/adapters/AGENTS.md) |
 
-### `packages/engine` — `@agent-facets/engine` (Layer 2)
-
-The Bun-native CLI machinery. Private to this monorepo; never published.
-One concrete implementation of the spec on a developer's machine. Other
-implementations (a future Rust CLI, the cafe registry server) would have
-their own engine equivalent. Engine consumes `@agent-facets/protocol`
-for everything that's part of the spec.
-
-If you'd rewrite this code in Rust as part of porting the CLI, it
-belongs here.
-
-```
-src/
-├── adapters/       # Adapter machinery: bundler, placement, verify, loader, install-service, first-party list, api-compatibility, mcp-support
-├── sources/        # Source resolvers: parse + clone/fetch (facet + adapter), Source type, ParseError
-├── fs/             # File transition transaction kernel: syscalls, directories, transaction (apply/rollback/journal), describe
-├── install/        # Install machinery: lockfile-guard, lockfile-io, materialize, run-install orchestrator, asset-takeover, classify-outcome, commit/ (tri-write, install-loop), mcp/ (prepare, consent, apply, outcomes)
-├── cache/          # ~/.facet/cache/ — content-addressed cache for fetched facet payloads
-├── manifest/       # Pure JSON mutations + project-files I/O bridge for facets.json
-├── registry/       # Registry HTTP client: metadata resolution, download/extract, version-spec rendering
-├── scaffold/       # Scaffold generator: `facet create` machinery
-├── self-update/    # Detect install method, run the right updater
-├── edit/           # Edit context: reconcile, scanner, manifest-writer, context, operations
-├── build/          # Build pipeline orchestrator (pipeline.ts, write-output.ts) + compress.ts (gzip — delivery only)
-├── loaders/        # Path-based loader wrappers that read disk and call protocol's bytes-validators
-└── index.ts        # Curated engine-specific exports — do not re-export protocol
-```
-
-A note on duplication: `sources/facet/` and `sources/adapter/` each have
-their own parser and git-clone helper today. They started life on the CLI
-side and were lifted to engine as-is. Consolidating them into one
-parameterized resolver is a deliberate follow-up — the rules differ today
-(facet sources enforce project-tree containment; adapter sources don't),
-and a unified API would need to make that variation explicit.
-
-### `packages/cli` — `agent-facets` (Layer 3)
-
-CLI binary (`facet`). Thin orchestration layer over `@agent-facets/protocol`
-(data primitives) and `@agent-facets/engine` (CLI workflows): command
-bindings, Ink-based TUI views, error formatting for the terminal.
-Entry point: `src/index.ts`
-
-```
-src/
-├── commands/       # Command bindings: add, adapter, build, create, edit, install, self-update
-├── tui/            # Ink components, hooks, layouts, views, theme, gradient, editor
-├── util/           # CLI presentation helpers (errors.ts → 3-line stderr format)
-├── cli.ts          # CLI entry point used by the run loop
-├── run.ts          # Top-level argv → command dispatch
-├── help.ts         # Help rendering
-├── commands.ts     # Command registry + alias resolution
-├── version.ts      # Build-time version constant
-├── suggest.ts      # "did you mean?" suggestions
-├── index.ts        # Process-level entry (handles unhandled errors, exit codes)
-└── __tests__/      # End-to-end tests + a few cross-cutting unit tests
-```
-
-### `packages/adapter` — `@agent-facets/adapter`
-
-Adapter SDK for defining abstractions over AI coding tools. Entry point: `src/index.ts`
-
-```
-src/
-├── define-adapter.ts  # Factory function: defineAdapter()
-├── types.ts           # Adapter types
-└── index.ts           # Public API entry point
-```
-
-### `packages/brand` — `@agent-facets/brand`
-
-Brand colors and visual identity constants.
-
-### `packages/common` — `@agent-facets/common`
-
-Shared primitives that cross the protocol / engine / adapter SDK / CLI boundary:
-cross-cutting types (`AssetType`, `Scope`, `Validated`) and pure helpers with no
-heavy dependencies (asset-name validation, text normalization, atomic file writes).
-Private — not published to npm. `@agent-facets/adapter` and `@agent-facets/protocol`
-both bundle `common` into their builds via tsdown's `alwaysBundle` so external
-consumers see a single package surface; `engine` and `cli` import it normally as a
-workspace dependency.
-
-See `packages/common/AGENTS.md` for the rule on what does and doesn't belong here.
+Do not maintain a directory listing here. Each package's `src/index.ts`
+and its own `AGENTS.md` are the source of truth for what it contains.
 
 ### Other directories
 
-| Directory       | Purpose                                              |
-| --------------- | ---------------------------------------------------- |
-| `docs/`         | Mintlify documentation site                          |
-| `scripts/`      | Repo-level utility scripts                           |
-| `openspec/`     | OpenSpec change management (specs, schemas, changes) |
+| Directory | Purpose | Rules |
+|---|---|---|
+| `docs/` | Mintlify documentation site | [AGENTS.md](docs/AGENTS.md) |
+| `scripts/` | Release and repo tooling | [AGENTS.md](scripts/AGENTS.md) |
+| `.circleci/` | Packed CircleCI configs | [AGENTS.md](.circleci/AGENTS.md) |
+| `openspec/` | Change management (specs, changes, schemas) | — |
 
-## Bun
+## Runtime
 
-Default to using Bun instead of Node.js.
+There is no single runtime rule. It is per package:
 
-- Use `bun <file>` instead of `node <file>` or `ts-node <file>`
-- Use `bun test` instead of `jest` or `vitest`
-- Use `bun build <file.html|file.ts|file.css>` instead of `webpack` or `esbuild`
-- Use `bun install` instead of `npm install` or `yarn install` or `pnpm install`
-- Use `bun run <script>` instead of `npm run <script>` or `yarn run <script>` or `pnpm run <script>`
-- Use `bun <package> <command>` instead of `npx <package> <command>`
-- You MUST run OpenSpec commands with `bun openspec ...` not `npx openspec ...`
-- Bun automatically loads .env, so don't use dotenv.
+- **`protocol`** must run on **Node 22+ with no Bun on `$PATH`**. No
+  `Bun.*` globals, no subprocesses, no network, no filesystem writes.
+- **`engine`, `cli`, `scripts/`** are Bun-native. Use the `Bun.*`
+  globals (`Bun.file`, `Bun.spawn`, `Bun.Glob`, `Bun.gzipSync`), never
+  `import ... from 'bun'`.
+- **`adapter`, `brand`, `common`** are published or bundled into
+  published artifacts and stay runtime-agnostic.
 
-## APIs
+`node:*` imports are not a smell. Engine's filesystem transaction is
+built on `node:fs` deliberately (`packages/engine/src/fs/syscalls.ts`),
+because it needs syscall-level control that `Bun.file` does not expose.
 
-- `Bun.serve()` supports WebSockets, HTTPS, and routes. Don't use `express`.
-- `bun:sqlite` for SQLite. Don't use `better-sqlite3`.
-- `Bun.redis` for Redis. Don't use `ioredis`.
-- `Bun.sql` for Postgres. Don't use `pg` or `postgres.js`.
-- `WebSocket` is built-in. Don't use `ws`.
-- Prefer `Bun.file` over `node:fs`'s readFile/writeFile
-- Bun.$`ls` instead of execa.
+Beyond that, Bun is the toolchain: `bun install`, `bun run <script>`,
+`bun test`, `bun <file>`. Libraries build with `tsdown`; the CLI binary
+builds with `bun build --compile`.
+
+OpenSpec commands MUST run as `bun openspec ...`, never `npx openspec ...`.
 
 ## Errors are values, not control flow
 
@@ -222,11 +143,11 @@ Match these shapes. Do not invent new patterns.
   `IntegrityFailure`. Pure-data failure shape; no thrown errors.
 - `packages/engine/src/install/lockfile-io.ts` — `LoadLockfileResult` as
   `{ ok: true; data; existed } | { ok: false; error }`.
-- `packages/engine/src/install/run-install.ts` — `PlanFacetResult` and the
-  larger `RunInstallResult` discriminated union. Failures are typed by
-  `code` discriminator with structured fields per code.
-- `@agent-facets/common`'s `Validated<T>` type — the project-wide alias
-  for "validated payload or list of errors."
+- `packages/engine/src/install/types.ts` — `RunInstallResult`, the
+  largest union in the repo. Failures are typed by a `code`
+  discriminator with structured fields per code.
+- `@agent-facets/common`'s `Validated<T>` — the project-wide alias for
+  "validated payload or list of errors."
 
 ### When throwing is correct
 
@@ -239,76 +160,61 @@ Match these shapes. Do not invent new patterns.
   authors *catch and convert into result types* at the boundary.
 - **Inside try/catch wrappers that immediately convert to result types**:
   e.g., `try { JSON.parse(s) } catch { return { ok: false, ... } }`. The
-  throw is internal; it never escapes the function. The function's
-  *contract* is still result-shaped.
+  throw is internal; it never escapes the function.
 
 ### Anti-patterns to refuse
 
-- **"I'll just throw a typed error class"**: still invisible to the type
-  system, still a side channel. A `class FooError extends Error` does
-  not solve the problem; it just makes the throw feel structured. Use a
-  discriminated union member instead.
-- **"The caller can wrap it in try/catch"**: pushing failure handling
-  into runtime checks the compiler can't verify. The whole point of
-  TypeScript is to make this kind of obligation static.
-- **"It's only for *exceptional* cases"**: every codebase that has ever
-  said this has, three years later, contained dozens of `try { ... } catch (e) { /* swallow */ }` blocks. If the failure mode is part of the
-  function's contract, it goes in the return type. "Exceptional" is in
-  the eye of the caller.
-- **Mixed contract — sometimes returns, sometimes throws**: pick one. If
-  any failure mode in a function returns a result, all of them should.
+- **A typed error class.** `class FooError extends Error` is still
+  invisible to the type system. Use a union member.
+- **"The caller can wrap it in try/catch."** That is a runtime check the
+  compiler cannot verify.
+- **"It's only for exceptional cases."** "Exceptional" is in the eye of
+  the caller. If it is part of the contract, it goes in the return type.
+- **A mixed contract.** If any failure mode in a function returns a
+  result, all of them should.
 
-### When you spot a throw in a code review
-
-If a function throws something a caller might reasonably want to handle:
-flag it. Convert it to a result type. The diff is mechanical; the type
-system improvement is permanent.
+When you spot a throw a caller might reasonably want to handle, convert
+it. The diff is mechanical; the type-system improvement is permanent.
 
 ## Testing
 
-Use `bun check` to run tests, linting, and typeschecking.
+`bun check` is the canonical entry point. It runs lint, type checks,
+unit tests, e2e tests, the `scripts/` tests, docs validation, and the
+CircleCI config pack check via Turbo.
 
-### Fixing formatting errors
+Per-package: `bun test --cwd packages/<pkg>` for unit tests,
+`bun run --cwd packages/<pkg> test:e2e` for e2e.
 
-When `bun check` (or `bun run lint`) reports a Biome **formatting** error, run `bun format` to fix it — do NOT hand-edit whitespace, line wrapping, or trailing commas to satisfy the formatter. `bun format` runs `biome check --write --unsafe .` across all 432 files in a few hundred milliseconds; manually reflowing a call to one line is slower and error-prone. Edit by hand only for actual lint *rule* violations that `bun format` can't auto-fix.
+### Test conventions
 
-```ts#index.test.ts
-import { test, expect } from "bun:test";
-
-test("hello world", () => {
-  expect(1).toBe(1);
-});
-```
+- `*.test.ts` files are unit tests. They import from source
+  (`../index.ts`, never `dist/`) and never depend on `build`.
+- `*.e2e.test.ts` files may spawn compiled binaries or read `dist/`.
+  They run via `test:e2e`, which `dependsOn: ["^build"]`. Packages that
+  have them exclude them from `test` with
+  `--path-ignore-patterns '**/*.e2e.test.ts'`.
+- `bun test` at the repo root tests `scripts/` only (root `bunfig.toml`
+  sets `[test] root`).
 
 ### Awaiting async expectations
 
-Bun's `expect(...).rejects.<matcher>` and `expect(...).resolves.<matcher>` return promises. You **MUST** `await` the entire expression (or `return` it from the test). Without the outer `await`, Bun's test runner sees a synchronous return, the assertion promise never settles in scope, and a failing assertion silently passes — the test appears green but provides no guarantee.
-
-The same rule applies to any promise-returning matcher.
-
-**Correct** — the outer `await` makes the assertion actually run:
-
-```ts
-test("should handle async errors", async () => {
-  await expect(async () => {
-    await fetchUser("invalid-id");
-  }).rejects.toThrow("User not found");
-});
-```
-
-**Wrong** — no outer `await`. This test passes even when `fetchUser` doesn't throw:
+Bun's `expect(...).rejects.<matcher>` and `expect(...).resolves.<matcher>` return
+promises. You **MUST** `await` the entire expression (or `return` it from the
+test). Without the outer `await`, Bun's test runner sees a synchronous return,
+the assertion promise never settles in scope, and a failing assertion silently
+passes — the test appears green but provides no guarantee.
 
 ```ts
-test("should handle async errors", async () => {
-  expect(async () => {
-    await fetchUser("invalid-id");
-  }).rejects.toThrow("User not found");
-});
-```
+// Correct — the outer await makes the assertion actually run
+await expect(async () => {
+  await fetchUser('invalid-id')
+}).rejects.toThrow('User not found')
 
-The same rule applies to `.resolves.*`:
+// Wrong — passes even when fetchUser does not throw
+expect(async () => {
+  await fetchUser('invalid-id')
+}).rejects.toThrow('User not found')
 
-```ts
 // Correct
 await expect(loadConfig()).resolves.toEqual({ ok: true })
 
@@ -316,58 +222,16 @@ await expect(loadConfig()).resolves.toEqual({ ok: true })
 expect(loadConfig()).resolves.toEqual({ ok: true })
 ```
 
-### Narrow with `expect.unreachable()`, not silent returns
+### Narrow with `expect.unreachable()`
 
-When narrowing a discriminated union in a test (the most common case:
-proving `result.ok === false` so you can access `result.failure`), use
-`expect.unreachable()` to fail the test if the narrowing precondition
-doesn't hold. Do **not** use `if (...) return` or `if (...) throw`.
-
-A silent `return` in a test body looks like a passing test — Bun's
-runner sees no failed assertion and reports green. A failing test
-that prints "pass" is worse than no test at all.
-
-`throw new Error('unreachable')` works (it does fail the test) but is
-verbose and hides intent behind a generic Error. `expect.unreachable()`
-is the dedicated primitive for this exact case: it fails the test,
-counts as an assertion, and reads as "I'm asserting this code path is
-impossible."
-
-**Wrong** — silent return; failing precondition reports as passing test:
+When narrowing a discriminated union in a test — most often proving
+`result.ok === false` so you can reach `result.failure` — use
+`expect.unreachable()`. Never `if (...) return`: a silent return looks
+like a passing test, and a failing test that prints "pass" is worse than
+no test at all. `throw new Error('unreachable')` works but hides intent.
 
 ```ts
 test('failure carries the right shape', () => {
-  const result = doThing()
-  expect(result.ok).toBe(false)
-  if (result.ok) return                  // ← silently swallows a real bug
-  expect(result.failure.code).toBe('FOO')
-})
-```
-
-**Wrong** — verbose throw; works but reads like a comment:
-
-```ts
-test('failure carries the right shape', () => {
-  const result = doThing()
-  if (result.ok) throw new Error('unreachable')
-  expect(result.failure.code).toBe('FOO')
-})
-```
-
-**Correct** — `expect.unreachable()` is purpose-built for this:
-
-```ts
-test('failure carries the right shape', () => {
-  const result = doThing()
-  if (result.ok) expect.unreachable()
-  expect(result.failure.code).toBe('FOO')
-})
-```
-
-The same applies to nested narrowing on tagged unions:
-
-```ts
-test('failure has facet kind', () => {
   const result = doThing()
   if (result.ok) expect.unreachable()
   if (result.failure.kind !== 'facet') expect.unreachable()
@@ -375,148 +239,36 @@ test('failure has facet kind', () => {
 })
 ```
 
-`expect.unreachable()` doesn't need a message argument in most cases —
-the line number and surrounding test name already tell the reader
-which precondition failed. Add a string only if the failure mode
-needs explanation a glance at the line wouldn't give.
+Drop any preceding `expect(result.ok).toBe(false)` — the narrowing is
+the assertion.
 
-When a preceding `expect(...).toBe(...)` would assert the same
-condition, drop it: the `expect.unreachable()` arm fails the test
-just as loudly and avoids the redundant assertion. The narrowing
-itself is the assertion.
+## Formatting
 
-## Turbo Caching
+When `bun check` (or `bun run lint`) reports a Biome **formatting** error, run
+`bun format` to fix it. Do NOT hand-edit whitespace, line wrapping, or trailing
+commas to satisfy the formatter — `bun format` runs
+`biome check --write --unsafe .` across the whole repo in a few hundred
+milliseconds. Edit by hand only for lint *rule* violations it cannot auto-fix.
 
-The `check` pipeline (`bun check`) orchestrates `test`, `types`, `lint`, and other tasks via Turborepo. Caching rules:
+## Turbo caching
 
-- **`build`** is cached by default. The CLI package (`packages/cli`) overrides `outputs` to `[]` in its package-level `turbo.json` — Turbo caches the hash (knows the build succeeded) but never uploads the ~63 MB compiled binary to the remote cache.
-- **`test`** and **`types`** are cached and never depend on `build`. End-to-end tests that need a compiled binary live in a separate **`test:e2e`** task — see "Test conventions" below.
+- **`build`** is cached. `packages/cli/turbo.json` overrides `outputs` to
+  `[]`: the compiled binary is ~64 MB, too large for the Lambda-based
+  remote cache, so Turbo caches the hash without uploading the artifact.
+  The CLI's `test:e2e` inlines `bun run build &&` so the binary is
+  produced fresh without poisoning the cache chain.
+- **`test`** and **`types`** are cached and never depend on `build`.
 - Package-level overrides live in `packages/<name>/turbo.json`.
-
-### Test conventions
-
-- `*.test.ts` files are unit tests. They import from source (`../index.ts`, not `dist/`) and never depend on `build`.
-- `*.e2e.test.ts` files are end-to-end tests. They may spawn compiled binaries or read from `dist/`. They run via `test:e2e`, which `dependsOn: ["^build"]` (upstream package builds). The CLI's `test:e2e` script inlines its own build (`bun run build && bun test ...`) so the compiled binary is produced fresh without making Turbo's cache depend on the large artifact.
-- `bun check` is the canonical entry point — it runs lint, types, unit tests, e2e tests, and the root-level `scripts/` tests via Turbo.
-- `bun test` at the repo root tests files in `scripts/` only (configured via root `bunfig.toml` `[test] root`). For per-package work use `bun test --cwd packages/<pkg>` (unit only) or `bun run --cwd packages/<pkg> test:e2e`.
-- The `test` script in each package excludes e2e files via `bun test --path-ignore-patterns '**/*.e2e.test.ts'` (set per-package in `package.json`).
-
-### CLI build caching
-
-The CLI compiled binary (~63 MB) is too large for the Lambda-based Turbo remote cache. To handle this, `packages/cli/turbo.json` sets `outputs: []` on the `build` task — Turbo caches the hash (knows the build succeeded for these inputs) but never tries to upload or download the binary. The `test:e2e` script inlines `bun run build &&` so the binary is produced fresh when e2e tests run, without poisoning the Turbo cache chain.
 
 ### When adding a new package
 
-1. Add `"test": "bun test"` and `"types": "tsc --noEmit"` scripts to its `package.json` so turbo picks them up for the `check` pipeline.
-2. If the package has end-to-end tests that depend on build output, name them `*.e2e.test.ts`, add a `test:e2e` script that inlines the build (`bun run build && bun test ...`), and ensure the root `turbo.json`'s `test:e2e` task has `dependsOn: ["^build"]` (upstream builds only). See `packages/cli/` for an example.
-3. If the package's build output is too large for remote cache, set `"outputs": []` in the package-level `turbo.json` so Turbo caches the hash without uploading artifacts.
-
-## Frontend
-
-Use HTML imports with `Bun.serve()`. Don't use `vite`. HTML imports fully support React, CSS, Tailwind.
-
-Server:
-
-```ts#index.ts
-import index from "./index.html"
-
-Bun.serve({
-  routes: {
-    "/": index,
-    "/api/users/:id": {
-      GET: (req) => {
-        return new Response(JSON.stringify({ id: req.params.id }));
-      },
-    },
-  },
-  // optional websocket support
-  websocket: {
-    open: (ws) => {
-      ws.send("Hello, world!");
-    },
-    message: (ws, message) => {
-      ws.send(message);
-    },
-    close: (ws) => {
-      // handle close
-    }
-  },
-  development: {
-    hmr: true,
-    console: true,
-  }
-})
-```
-
-HTML files can import .tsx, .jsx, or .js files directly and Bun's bundler will transpile & bundle automatically. `<link>` tags can point to stylesheets and Bun's CSS bundler will bundle.
-
-```html#index.html
-<html>
-  <body>
-    <h1>Hello, world!</h1>
-    <script type="module" src="./frontend.tsx"></script>
-  </body>
-</html>
-```
-
-With the following `frontend.tsx`:
-
-```tsx#frontend.tsx
-import React from "react";
-import { createRoot } from "react-dom/client";
-
-// import .css files directly and it works
-import './index.css';
-
-const root = createRoot(document.body);
-
-export default function Frontend() {
-  return <h1>Hello, world!</h1>;
-}
-
-root.render(<Frontend />);
-```
-
-Then, run index.ts
-
-```sh
-bun --hot ./index.ts
-```
-
-For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.
-
-## Agent Spawning Rules
-
-When spawning subagents, **never delegate the same inputs you received** to a copy of yourself. This causes infinite recursive delegation.
-
-- **Bad**: Agent receives "Explore X, Y, and Z" → spawns subagent with "Explore X, Y, and Z"
-- **Good**: Agent receives "Explore X, Y, and Z" → spawns three subagents: "Explore X", "Explore Y", "Explore Z"
-
-Decompose tasks into smaller, distinct sub-questions before delegating. Each subagent must receive a narrower, well-scoped slice of the original task — never the full task verbatim.
-
-### Examples
-
-#### Input received
-
-An Explore agent is spawned with the following context:
-
-> In the codebase at <projectDir>, investigate how sessions are stored, pruned, or deleted. I need very thorough findings on:
-> 1. Where sessions are stored (filesystem, database, memory?) - find the storage layer
-> 2. Any code that deletes, prunes, or cleans up sessions (search for delete/remove/cleanup/prune related to sessions)
-> 3. Any startup/initialization code that might clean up old sessions on boot
-> 4. How the `prune` config option works - does it only prune tool outputs from context window, or does it delete actual session records from storage?
-> 5. Any connection between `OPENCODE_DISABLE_PRUNE` env var and session lifecycle
-
-#### Wrong
-
-Spawn one subagent with the full context verbatim.
-
-#### Right
-
-Spawn 5 Explore subagents, one per question:
-
-- Subagent 1: "In the codebase at <projectDir>, where are sessions stored? Find the storage layer — filesystem, database, memory, etc. Return exact file paths and line numbers."
-- Subagent 2: "In the codebase at <projectDir>, find any code that deletes, prunes, or cleans up sessions. Search for delete/remove/cleanup/prune related to sessions. Return exact file paths and line numbers."
-- Subagent 3: "In the codebase at <projectDir>, find any startup or initialization code that cleans up old sessions on boot. Return exact file paths and line numbers."
-- Subagent 4: "In the codebase at <projectDir>, how does the `prune` config option work? Does it only prune tool outputs from the context window, or does it delete actual session records from storage? Return exact file paths and line numbers."
-- Subagent 5: "In the codebase at <projectDir>, is there any connection between the `OPENCODE_DISABLE_PRUNE` env var and session lifecycle? Return exact file paths and line numbers."
+1. Add `"test": "bun test"` and `"types": "tsgo --noEmit"` scripts so
+   Turbo picks it up for the `check` pipeline. Every package uses
+   `tsgo` (`@typescript/native-preview`), not `tsc`.
+2. If it has tests that depend on build output, name them
+   `*.e2e.test.ts`, add a `test:e2e` script that inlines the build, and
+   exclude them from `test`.
+3. If its build output is too large for the remote cache, set
+   `"outputs": []` in the package-level `turbo.json`.
+4. Add it to the workspace table above, and give it an `AGENTS.md` only
+   if it has rules that its own source cannot express.

@@ -2,91 +2,77 @@
 
 ## What this package is
 
-Shared primitives that the **adapter SDK**, **protocol**, and **engine**
-all need. The CLI imports it directly too (per the CLI's own AGENTS.md
-exception), but that's not what gates inclusion: the bar for adding
-something to `common` is whether at least two of `{adapter SDK,
-protocol, engine}` need it.
+The primitives that must be identical on both sides of a published
+package boundary. `common` exists for one reason: **the adapter SDK and
+protocol are published to npm and cannot depend on `engine`**, yet all
+three need to speak the same vocabulary. `tsdown`'s `alwaysBundle`
+inlines this package into their published tarballs, so an external
+consumer never sees `@agent-facets/common` in their dependency tree.
 
-Why so narrow? Because the adapter SDK and protocol are both published
-to npm and cannot take a runtime dependency on engine (which contains
-subprocess-spawning, filesystem I/O, the full install pipeline). When
-multiple published packages genuinely need the same primitive — a type,
-a pure function, a filesystem pattern — that primitive lives here, and
-`tsdown`'s `alwaysBundle` inlines it into the published tarballs so
-external consumers never end up with `common` as a runtime dependency.
-`engine` and `cli` import it normally as a workspace dep.
+This package is workspace-only. It has no `version` field and is listed
+in `.changeset/config.json`'s `ignore`, so the release pipeline skips
+it. See `scripts/README.md` ("Workspace-only packages") for why.
 
-If only `protocol` or `engine` needs something, it goes in that
-package. If only `cli` needs something, it goes in `cli`. If only the
-adapter SDK needs something, it goes in `adapter`. `common` is
-reserved for the genuine intersection of at least two of `{adapter,
-protocol, engine}`.
+## The bar for adding something here
+
+**This file is the single owner of that rule.** Other packages' AGENTS
+files point here rather than restating it.
+
+Add something to `common` when **the adapter SDK needs it at runtime,
+and at least one of `{protocol, engine}` needs it too.**
+
+If the consumer set is just `{protocol, engine}`, the right home is
+`protocol` — engine can import protocol freely, and nothing has to be
+bundled. If only one package needs it, it belongs in that package.
+
+The bar is deliberately narrow because everything here is duplicated
+into two published tarballs.
+
+Two current entries predate this rule and do not meet it:
+`atomicWriteFileSync` (only `engine` calls it) and
+`NonEmptyArray`/`isNonEmpty` (only `engine` and `cli`). Do not cite
+them as precedent. Moving them into `engine` is a welcome cleanup; do
+not add more like them.
 
 ## What belongs here
 
-- **Types** that more than one of `{adapter SDK, protocol, engine}`
-  reference (e.g. `AssetType`, `Scope`, `Validated`, `ValidationError`).
-- **Pure helpers** — no I/O side effects at import time, no heavy
-  dependencies — that more than one consumer needs. Current examples:
-  - `validateAssetName` — asset-name safety check used by both
-    protocol's manifest + lockfile schemas and the adapter SDK's I/O
-    helpers.
-  - `normalizeLineEndings` — BOM strip + CRLF-to-LF used by both
-    protocol's front-matter parser and the adapter SDK's
-    `splitAssetContent`.
-  - `splitFrontMatter` — the canonical YAML front-matter splitter.
-    Used by adapter SDK's `splitAssetContent`, by engine's
-    `materialize` (for the skip-if-identical comparison), and
-    re-exported from protocol's public surface so external consumers
-    of `@agent-facets/protocol` (e.g. the cafe registry) get it
-    through one package boundary.
-  - `atomicWriteFileSync` — tmp + rename pattern used by engine's
-    writers and the adapter SDK's asset-fs helper.
+- **The file-state and mutation vocabulary.** This is the largest and
+  most load-bearing part of the package, and the clearest example of
+  why it exists: an adapter *plans* mutations, engine's transaction
+  *applies* them, and both must agree on the shape.
+  `FileState`, `FileMutation`, `FileMutationAction`, `ABSENT_FILE`,
+  `regularFile`, `bytesEqual`, `fileStatesEqual`, `isNoOpMutation`,
+  plus the inspection helpers (`inspectFileState`,
+  `describeInspectFailure`, `nodeFileReadSyscalls`).
+- **Cross-boundary types** — `AssetType`, `Scope`, `Validated<T>`,
+  `ValidationError`.
+- **Pure helpers with genuinely shared consumers** — `validateAssetName`
+  (path-safety), `splitFrontMatter`, `decodeFileText`.
+
+`src/index.ts` is the authoritative list. Do not maintain a copy here.
+
+### Two functions named `validateAssetName`
+
+`common`'s is the **path-safety** check: is this name safe to use as a
+filesystem path, a tar entry, or a lockfile key. Protocol exports a
+*different* `validateAssetName`
+(`packages/protocol/src/schemas/asset-name.ts`) that enforces the
+stricter Agent Skills **authoring grammar** for author-declared manifest
+keys.
+
+Protocol imports both. When you reach for one, be explicit about which
+concern you are enforcing — picking the wrong one silently changes
+validation strictness.
 
 ## What does NOT belong here
 
-- Anything only the CLI needs (Ink components, prompts, command help) —
-  goes in `cli`.
-- Anything only `engine` needs (install pipeline, cache, registry
-  client, source resolvers, scaffold) — goes in `engine`. Even if the
-  CLI imports it indirectly through engine, that doesn't make it
-  "common."
-- Anything only `protocol` needs (schemas, integrity verification,
-  content-hash format, version-spec grammar) — goes in `protocol`.
-- Anything only the adapter SDK needs — goes in `adapter`.
-- Anything that depends on `arktype` or other schema libraries — the
-  validators live in `protocol`; `common` just exposes the primitive
-  function they narrow on.
-- Anything with heavy runtime dependencies — remember, this gets
-  bundled into the published adapter SDK and protocol tarballs, so
-  every byte counts.
-
-## Rule of thumb
-
-Before adding a file here, ask **two** questions:
-
-1. Does the adapter SDK genuinely need to call this at runtime, AND
-2. Does at least one of `{protocol, engine}` also genuinely need to
-   call this?
-
-If the answer is "no" to question 1 and the consumer set is just
-`{protocol, engine}` (no adapter SDK), the right home is usually
-`protocol` (which engine can import). Common's reason for existing is
-the bundling escape hatch for the adapter SDK; without that
-constraint, code belongs closer to its primary consumer.
-
-## Workspace-only — no release
-
-This package is workspace-only: it's bundled into the adapter SDK and
-protocol at build time and imported directly by `engine` and `cli`, so
-there's no npm release path for it. It's kept out of the release
-pipeline by two mechanisms:
-
-1. Listed in `.changeset/config.json` `ignore` — changesets never bumps
-   its version.
-2. Intentionally has no `version` field in `package.json` — `tag.ts` and
-   `hasUnpublishedVersions` defensively skip versionless packages.
-
-See `scripts/README.md` ("Workspace-only packages") for the full
-rationale.
+- Anything only the CLI needs (Ink components, prompts, help text).
+- Anything only `engine` needs. The CLI importing it *through* engine
+  does not make it common.
+- Anything only `protocol` needs — schemas, integrity, content-hash
+  format, version-spec grammar.
+- Anything that depends on `arktype` or another schema library. The
+  validators live in `protocol`; `common` exposes the primitive they
+  narrow on.
+- Anything with a heavy runtime dependency. Every byte here ships
+  twice, in two packages other people install.
