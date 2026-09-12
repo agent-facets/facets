@@ -66,7 +66,7 @@ After `build-cli`, `package-cli-assets` runs alongside npm publishing:
 
 ```text
 build-cli ─┬─ publish-platform (×12) ── finalize-cli (npm wrapper + release) ─┐
-           └─ package-cli-assets (archives + checksums) ─────────────────────┴─ upload-cli-assets
+           └─ package-cli-assets (archives + checksums) ──────────────────────┴─ upload-cli-assets
 ```
 
 Neither npm publishing nor finalization requires the packaging job. Packaging
