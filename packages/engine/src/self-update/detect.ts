@@ -135,7 +135,7 @@ function orderedProbes(execPath: string): readonly Probe[] {
  *   4. Otherwise → `unknown`.
  *
  * No filesystem writes, no network, no subprocesses for steps 1–2. Only
- * step 3 spawns probes, and each one has a 3-second timeout.
+ * step 3 checks mise install roots, and step 4 spawns probes with a 3-second timeout.
  */
 export async function detectInstallMethod(deps?: Partial<DetectDependencies>): Promise<MethodKind> {
   const d: DetectDependencies = {
@@ -168,7 +168,23 @@ export async function detectInstallMethod(deps?: Partial<DetectDependencies>): P
     resolvedExec = d.execPath
   }
 
-  // ── 2. Curl-path match ──────────────────────────────────────────────
+  // ── 2. Mise-path match ───────────────────────────────────────────────
+  // Mise places installed tools under its data dir's `installs/` tree. The
+  // exact tool directory depends on the backend (`facet` after registry
+  // support, or a github-backend slug during transition), so match the root
+  // rather than a single tool name. The explicit `MISE_DATA_DIR` override is
+  // honored when present; the default follows mise's documented data layout.
+  const trimmedMiseDataDir = d.env.MISE_DATA_DIR?.trim()
+  const miseDataDir =
+    trimmedMiseDataDir && trimmedMiseDataDir.length > 0
+      ? trimmedMiseDataDir
+      : join(d.homedir, '.local', 'share', 'mise')
+  const miseInstallsDir = pathResolve(miseDataDir, 'installs')
+  if (resolvedExec === miseInstallsDir || resolvedExec.startsWith(`${miseInstallsDir}/`)) {
+    return 'mise'
+  }
+
+  // ── 3. Curl-path match ──────────────────────────────────────────────
   // The curl installer puts the binary at `$FACET_DIR/bin/facet`.
   // Default `$FACET_DIR` is `$HOME/.facet`. Whitespace-only env values
   // fall back to the default — matches `resolveFacetDir()` semantics in
@@ -180,7 +196,7 @@ export async function detectInstallMethod(deps?: Partial<DetectDependencies>): P
     return 'curl'
   }
 
-  // ── 3. Parallel package-manager probes ──────────────────────────────
+  // ── 4. Parallel package-manager probes ──────────────────────────────
   const probes = orderedProbes(resolvedExec)
   const results = await Promise.all(
     probes.map(async (probe) => {
@@ -198,6 +214,6 @@ export async function detectInstallMethod(deps?: Partial<DetectDependencies>): P
     if (r !== null) return r
   }
 
-  // ── 4. Unclassified ─────────────────────────────────────────────────
+  // ── 5. Unclassified ─────────────────────────────────────────────────
   return 'unknown'
 }
