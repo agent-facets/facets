@@ -97,11 +97,13 @@ format. Each invocation clears the release-assets directory before building
 and emits checksums only for that invocation's archives.
 
 The packaging script's `--single` and `--target` flags package only the selected
-platform/ABI using already-built binaries. x64 selection always uses the baseline
-counterpart; build it first with `build.ts --single --baseline` or an explicit
-baseline `--target`. On ARM64, use `build.ts --single` followed by
-`package-assets.ts --single`. Packaging never compiles additional binaries.
-The build script retains its original target selection and npm-only behavior.
+platform/ABI using already-built binaries. `--target` requires an explicit
+non-flag value, so malformed invocations fail instead of falling back to a wider
+target set. x64 selection always uses the baseline counterpart; build it first
+with `build.ts --single --baseline` or an explicit baseline `--target`. On ARM64,
+use `build.ts --single` followed by `package-assets.ts --single`. Packaging never
+compiles additional binaries. The build script retains its original target
+selection and npm-only behavior.
 
 ## Why the CLI needs a custom pipeline
 
