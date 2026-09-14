@@ -1,0 +1,18 @@
+docker:
+  - image: cimg/base:current
+resource_class: small
+environment:
+  LEFTHOOK: "0"
+  MISE_ENV: release
+steps:
+  - setup-mise
+  - attach_workspace:
+      at: .
+  - run:
+      name: Package CLI release assets
+      command: bun scripts/release-cli/package-assets.ts
+  - persist_to_workspace:
+      root: .
+      paths:
+        - packages/cli/dist/release-assets
+  - notify-failure

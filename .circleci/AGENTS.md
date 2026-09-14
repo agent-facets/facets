@@ -22,6 +22,7 @@ unauthenticated rate limit. With it, the limit is 5,000 req/hour per token.
 | `ci`          | `main-pipeline`          | yes                        |
 | `release`     | `release`                | yes                        |
 | `release-cli` | `build-cli`              | yes                        |
+| `release-cli` | `package-cli-assets`     | yes                        |
 | `release-cli` | `publish-platform`       | yes                        |
 | `release-cli` | `finalize-cli`           | yes                        |
 

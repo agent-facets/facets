@@ -122,3 +122,31 @@ export function outfilePath(cliDir: string, name: string): string {
 export function packageJsonPath(cliDir: string, name: string): string {
   return resolve(cliDir, 'dist', name, 'package.json')
 }
+
+/** Select one portable binary per release asset, including for partial builds. */
+export function releaseAssetTargets(targets: Target[]): Target[] {
+  const portable = targets.map((target): Target => (target.arch === 'x64' ? { ...target, avx2: false } : target))
+  return [...new Map(portable.map((target) => [packageName(target), target])).values()]
+}
+
+export function releaseAssetSuffix(target: Target): string {
+  const os = target.os === 'win32' ? 'windows' : target.os
+  return `${os}-${target.arch}${target.abi ? `-${target.abi}` : ''}`
+}
+
+export function releaseArchiveName(target: Target): string {
+  return `facet-${releaseAssetSuffix(target)}.${target.os === 'win32' ? 'zip' : 'tar.gz'}`
+}
+
+export function executableName(target: Target): string {
+  return target.os === 'win32' ? 'facet.exe' : 'facet'
+}
+
+/** Bun appends .exe to the compile outfile for Windows targets. */
+export function binaryPath(cliDir: string, target: Target): string {
+  return resolve(cliDir, 'dist', packageName(target), 'bin', executableName(target))
+}
+
+export function releaseAssetsDir(cliDir: string): string {
+  return resolve(cliDir, 'dist', 'release-assets')
+}

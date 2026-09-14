@@ -13,6 +13,19 @@ jobs:
         branches:
           ignore:
             - /.*/
+  - package-cli-assets:
+      context:
+        - slack-secrets
+        - github
+      requires:
+        - build-cli
+      filters:
+        tags:
+          only:
+            - /^agent-facets@\d+\..+/
+        branches:
+          ignore:
+            - /.*/
   - publish-platform:
       matrix:
         parameters:
