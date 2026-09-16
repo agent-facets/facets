@@ -1,18 +1,71 @@
 import { describe, expect, test } from 'bun:test'
 import {
   allTargets,
+  binaryPath,
   buildTargetPackageJson,
   bunTarget,
+  executableName,
   filterTargets,
   outfilePath,
   type PackageName,
   packageJsonPath,
   packageName,
+  releaseArchiveName,
+  releaseAssetsDir,
+  releaseAssetTargets,
   shouldSmokeTest,
   type Target,
 } from './targets'
 
 describe('targets.ts', () => {
+  describe('release assets', () => {
+    test('full matrix produces exactly eight portable archives', () => {
+      const targets = releaseAssetTargets(allTargets)
+      expect(targets.map(releaseArchiveName).sort()).toEqual([
+        'facet-darwin-arm64.tar.gz',
+        'facet-darwin-x64.tar.gz',
+        'facet-linux-arm64-musl.tar.gz',
+        'facet-linux-arm64.tar.gz',
+        'facet-linux-x64-musl.tar.gz',
+        'facet-linux-x64.tar.gz',
+        'facet-windows-arm64.zip',
+        'facet-windows-x64.zip',
+      ])
+      expect(
+        targets
+          .filter((target) => target.arch === 'x64')
+          .map(packageName)
+          .sort(),
+      ).toEqual([
+        '@agent-facets/cli-darwin-x64-baseline',
+        '@agent-facets/cli-linux-x64-baseline',
+        '@agent-facets/cli-linux-x64-baseline-musl',
+        '@agent-facets/cli-windows-x64-baseline',
+      ])
+    })
+
+    test.each(allTargets)('partial build maps $os/$arch/$abi to a portable binary', (target) => {
+      const original = { ...target }
+      const selected = releaseAssetTargets([target])
+      expect(selected).toEqual([target.arch === 'x64' ? { ...target, avx2: false } : target])
+      expect(target).toEqual(original)
+      expect(releaseArchiveName(target)).not.toContain('baseline')
+      expect(releaseArchiveName(target)).not.toContain('avx2')
+      expect(releaseArchiveName(target)).toEndWith(target.os === 'win32' ? '.zip' : '.tar.gz')
+      expect(executableName(target)).toBe(target.os === 'win32' ? 'facet.exe' : 'facet')
+    })
+
+    test('Windows source uses the actual exe path', () => {
+      expect(binaryPath('/opt/cli', { os: 'win32', arch: 'x64', avx2: false })).toBe(
+        '/opt/cli/dist/@agent-facets/cli-windows-x64-baseline/bin/facet.exe',
+      )
+    })
+
+    test('release output is inside the persisted dist directory', () => {
+      expect(releaseAssetsDir('/opt/cli')).toBe('/opt/cli/dist/release-assets')
+    })
+  })
+
   describe('packageName', () => {
     test.each([
       [{ os: 'linux', arch: 'arm64' }, '@agent-facets/cli-linux-arm64'],
