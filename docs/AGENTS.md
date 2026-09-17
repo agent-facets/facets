@@ -8,14 +8,23 @@ additional rules in `docs/changelog/AGENTS.md`.
 Every page has one audience and one job. If a page starts doing a second
 job, split it or link to the page that owns the other job.
 
+Paths below are routes, as they appear in `docs.json`. Most map directly
+onto the filesystem; `/docs/learn/*` is the exception, and lives at
+`docs/docs/learn/`.
+
 | Surface | Job | Never carries |
 | --- | --- | --- |
-| `docs/index`, `quickstart` | Get someone productive fast | Edge cases, reference tables |
+| `index`, `quickstart` | Get someone productive fast | Edge cases, reference tables |
 | `docs/learn/*` | Define a concept once | Command flags, install behavior |
 | `guides/*` | Walk one task end to end | Exhaustive options, design rationale |
 | `cli/*` | Invocation, observable output, recovery | Engine internals, spec prose |
 | `specification/*` | Testable rules another implementation must satisfy | CLI choreography, our engine's architecture |
 | `reference/*` | Public type and API contracts | Tutorials, rationale essays |
+| `roadmap/*` | What is shipped, in progress, and planned | Usage instructions |
+| `changelog/*` | What shipped on a given day | Reference detail (see `changelog/AGENTS.md`) |
+
+`snippets/*` holds reusable MDX fragments rather than pages, and
+`private-facets` is a standalone page in the top-level group.
 
 ## One canonical home
 
@@ -24,6 +33,10 @@ a link, not a summary.
 
 Before writing a paragraph, search for the rule. If it already exists,
 link to it. Two copies of a rule become two different rules.
+
+Verify a claim against the source that implements it, never against
+another doc page. A page that was written from another page inherits its
+errors and outlives its corrections.
 
 ## Write less
 
@@ -49,6 +62,11 @@ one (` -- `). Use a period, comma, colon, or parentheses instead.
 
 This applies to prose only. Literal CLI flags (`--frozen-lockfile`),
 code samples, and command output keep their exact characters.
+
+It applies to prose you write or edit. Shipped changelog entries predate
+the rule and are not retrofitted: rewriting them would churn published
+RSS for no reader benefit. Fix an old entry's punctuation only when you
+are already editing that entry for another reason.
 
 **Do:** `--latest` crosses the declared range. It rewrites the specifier
 minimally.
@@ -238,7 +256,9 @@ Two names, and never a third:
 - **Adapter SDK** is the package and authoring surface
   (`@agent-facets/adapter`).
 - **Adapter SDK API** is the versioned compatibility contract an adapter
-  declares and the CLI checks (`0.3` today).
+  declares and the CLI checks. When a page needs the current number, take
+  it from `ADAPTER_API_VERSION` in
+  `packages/adapter/src/api-version.ts` rather than restating it here.
 
 Never write "adapter API". It reads as a third concept and hides which
 of the two is meant. This applies to user-facing CLI output as well as
@@ -255,10 +275,12 @@ links the reference that owns the detail.
 
 ## Before you commit a page
 
+A recap of the rules above, not new ones.
+
 - One audience, one job.
 - Every rule stated once, elsewhere linked.
-- No em dash or spaced double hyphen in prose.
+- Claims verified against source, not against another doc page.
+- No em dash or spaced double hyphen in prose you wrote or edited.
 - Every card has an `href`.
 - No internal architecture, no design rationale beyond a preventive
   sentence.
-- Claims verified against source, not against another doc page.

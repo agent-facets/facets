@@ -2,15 +2,16 @@
 
 These rules govern entries in `docs/changelog/index.mdx`. The general
 docs rules in `docs/AGENTS.md` apply too, including the punctuation rule:
-no em dash and no spaced double hyphen in prose.
+no em dash and no spaced double hyphen in prose you write or edit.
+Shipped entries predate that rule and are left alone.
 
 ## File layout
 
 - All changelog content lives in `docs/changelog/index.mdx`. Never create
   per-date files; they fragment the changelog and create orphan pages.
 - The Changelog tab in `docs/docs.json` points only at `changelog/index`.
-- Frontmatter keeps `title: Changelog`, a short `description`, and
-  `rss: true`.
+- Frontmatter keeps `title: Changelog`, `sidebarTitle: Facet CLI
+  Changelog`, a short `description`, and `rss: true`.
 
 ## Entry structure
 
@@ -29,8 +30,11 @@ no em dash and no spaced double hyphen in prose.
 
 ## Tags
 
-One change-type tag per section, plus `CLI` when the `facet` CLI itself
-changed.
+`tags` is a prop on `<Update>`, so one entry carries one set covering
+everything in it. Include a change-type tag for each `##` section's
+dominant change, plus `CLI` when the `facet` CLI itself changed. A day
+with a feature and two fixes is `["CLI", "New Feature", "Fix"]`, not
+three separate entries.
 
 - `New Feature`: a capability that did not exist before.
 - `Improvement`: something that existed got better or gained scope.
@@ -41,8 +45,6 @@ changed.
 
 No surface tag means the change was not product-facing (docs, site,
 branding). Do not invent a `Docs` or `Site` tag.
-
-When one day bundles CLI and non-CLI work, tag by the dominant change.
 
 ## One entry per day
 
@@ -79,7 +81,7 @@ Avoid editing headings on shipped entries.
 - [ ] Added at the top of `docs/changelog/index.mdx`.
 - [ ] `label` is the ship date and no other entry uses it.
 - [ ] `description` covers the day's full scope.
-- [ ] Tags set: one change type per section, plus `CLI` when applicable.
+- [ ] Tags cover every section's change type, plus `CLI` when applicable.
 - [ ] Body shows user-facing impact and usage.
 - [ ] Links to the reference pages that own the detail.
 - [ ] No em dash or spaced double hyphen in prose.
