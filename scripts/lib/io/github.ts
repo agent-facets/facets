@@ -19,5 +19,6 @@ export const githubIo = {
   },
   releaseCreate: (tag: string, title: string, notes: string) =>
     $`gh release create ${tag} --title ${title} --notes ${notes}`.text(),
+  /** Uploads assets to a GitHub Release, replacing any existing asset with the same name. */
   releaseUpload: (tag: string, assets: string[]) => $`gh release upload ${tag} ${assets} --clobber`,
 }

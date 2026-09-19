@@ -42,6 +42,7 @@ Tag push: agent-facets@X.Y.Z
 |---------------------------|-----------------------------|-------------------------------------------------------------|
 | `build.ts`                | `build-cli`                 | Cross-compile 12 standalone binaries                        |
 | `package-assets.ts`       | `package-cli-assets`        | Package existing binaries into archives and checksums       |
+| `upload-assets.ts`        | `upload-cli-assets`         | Upload packaged archives to the GitHub Release              |
 | `publish-platform.ts`     | `publish-platform` (matrix) | Publish one `@agent-facets/cli-*` package                   |
 | `publish-cli-package.ts`  | (called by finalize)        | Synthesize and publish the `agent-facets` wrapper           |
 | `finalize.ts`             | `finalize-cli`              | Orchestrate: verify platforms → publish wrapper → verify wrapper → announce |

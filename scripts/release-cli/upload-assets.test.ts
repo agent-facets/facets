@@ -1,16 +1,16 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, rm } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { io } from '../lib/io'
 import { shellResult, silenceIO } from '../lib/test-helpers'
 import { releaseAssetsDir } from './targets'
-import { expectedReleaseAssetNames, uploadCliAssets } from './upload-assets'
+import { expectedReleaseAssetNames, renderUploadCliAssetsResult, uploadCliAssets } from './upload-assets'
 
 const assetsDir = releaseAssetsDir(resolve(import.meta.dir, '..', '..', 'packages', 'cli'))
 
 async function writeAssets(names = expectedReleaseAssetNames()) {
   await mkdir(assetsDir, { recursive: true })
-  for (const name of names) await writeFile(resolve(assetsDir, name), name)
+  for (const name of names) await Bun.write(resolve(assetsDir, name), name)
 }
 
 describe('upload-assets.ts', () => {
@@ -46,9 +46,10 @@ describe('upload-assets.ts', () => {
     spyOn(io.shell, 'mintGitHubAppToken').mockResolvedValue('fake-token')
     const uploadSpy = spyOn(io.gh, 'releaseUpload').mockResolvedValue(shellResult())
 
-    const code = await uploadCliAssets()
+    const result = await uploadCliAssets()
 
-    expect(code).toBe(0)
+    expect(result).toEqual({ ok: true, tag: 'agent-facets@0.4.0', count: expectedReleaseAssetNames().length })
+    expect(renderUploadCliAssetsResult(result)).toBe(0)
     expect(process.env.GH_TOKEN).toBe('fake-token')
     expect(process.env.GITHUB_TOKEN).toBe('fake-token')
     expect(uploadSpy).toHaveBeenCalledTimes(1)
@@ -61,9 +62,10 @@ describe('upload-assets.ts', () => {
     process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
     const uploadSpy = spyOn(io.gh, 'releaseUpload').mockResolvedValue(shellResult())
 
-    const code = await uploadCliAssets()
+    const result = await uploadCliAssets()
 
-    expect(code).toBe(1)
+    expect(result).toEqual({ ok: false, code: 'missing-assets-dir', assetsDir })
+    expect(renderUploadCliAssetsResult(result)).toBe(1)
     expect(uploadSpy).not.toHaveBeenCalled()
   })
 
@@ -72,9 +74,10 @@ describe('upload-assets.ts', () => {
     await writeAssets(expectedReleaseAssetNames().filter((name) => name !== 'checksums.txt'))
     const uploadSpy = spyOn(io.gh, 'releaseUpload').mockResolvedValue(shellResult())
 
-    const code = await uploadCliAssets()
+    const result = await uploadCliAssets()
 
-    expect(code).toBe(1)
+    expect(result).toEqual({ ok: false, code: 'missing-assets', assetsDir, missing: ['checksums.txt'] })
+    expect(renderUploadCliAssetsResult(result)).toBe(1)
     expect(uploadSpy).not.toHaveBeenCalled()
   })
 
@@ -83,9 +86,22 @@ describe('upload-assets.ts', () => {
     await writeAssets()
     const uploadSpy = spyOn(io.gh, 'releaseUpload').mockResolvedValue(shellResult())
 
-    const code = await uploadCliAssets()
+    const result = await uploadCliAssets()
 
-    expect(code).toBe(1)
+    expect(result).toEqual({ ok: false, code: 'wrong-package', name: '@agent-facets/protocol' })
+    expect(renderUploadCliAssetsResult(result)).toBe(1)
     expect(uploadSpy).not.toHaveBeenCalled()
+  })
+
+  test('returns a structured failure when GitHub upload fails', async () => {
+    process.env.CIRCLE_TAG = 'agent-facets@0.4.0'
+    await writeAssets()
+    spyOn(io.shell, 'mintGitHubAppToken').mockResolvedValue('fake-token')
+    spyOn(io.gh, 'releaseUpload').mockRejectedValue(new Error('upload failed'))
+
+    const result = await uploadCliAssets()
+
+    expect(result).toEqual({ ok: false, code: 'github-upload-failed' })
+    expect(renderUploadCliAssetsResult(result)).toBe(1)
   })
 })
