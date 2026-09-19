@@ -66,6 +66,9 @@ export async function pickAndInstallAdapters(): Promise<PickAndInstallResult> {
         state.picked = null
       },
     }),
+    // InstallPicker owns Ctrl-C so it can settle the callback contract before
+    // exiting. Ink's default handler would terminate the mount first.
+    { exitOnCtrlC: false },
   )
 
   try {
