@@ -480,4 +480,20 @@ describe('facet update — applying', () => {
     expect(runSpy.mock.calls[0]?.[0]?.resolveAssetTakeover).toBeUndefined()
     runSpy.mockRestore()
   })
+
+  test('CI stays non-interactive even when the runner allocates a pseudo-terminal', async () => {
+    preparing([BOUNDED])
+    const runSpy = applying()
+
+    await withTTY(true, async () => {
+      process.env.CI = '1'
+      await captureStdout(() => updateCommand.run([], {}))
+    })
+
+    const options = runSpy.mock.calls[0]?.[0]
+    expect(options?.mcpConsent).toEqual({ kind: 'unavailable' })
+    expect(options?.resolveCollisions).toBeUndefined()
+    expect(options?.resolveAssetTakeover).toBeUndefined()
+    runSpy.mockRestore()
+  })
 })
