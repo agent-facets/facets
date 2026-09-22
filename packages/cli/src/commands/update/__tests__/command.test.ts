@@ -2,6 +2,7 @@ import { afterAll, afterEach, describe, expect, type Mock, spyOn, test } from 'b
 import * as engine from '@agent-facets/engine'
 import { CURRENT_LOCKFILE_VERSION } from '@agent-facets/protocol'
 import { captureStderr, captureStdout } from '../../../__tests__/helpers/capture-std.ts'
+import { stripTerminalControls } from '../../../__tests__/helpers/terminal-output.ts'
 import { withTTY } from '../../../__tests__/helpers/with-tty.ts'
 import * as adapterModule from '../../shared/ensure-adapters.ts'
 import { updateCommand } from '../index.ts'
@@ -57,6 +58,40 @@ const PINNED = candidate({
   target: '1.2.0',
   latest: '3.4.1',
 })
+
+/** A run that wrote: one facet moved, one asset written, no MCP work. */
+const applied: engine.RunPreparedFacetUpdateResult = {
+  ok: true,
+  install: {
+    ok: true,
+    lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
+    summary: {
+      facets: { installed: 0, updated: 1, repaired: 0, unchanged: 0, removed: 0 },
+      textAssets: { written: 1, removed: 0 },
+      mcp: {
+        configurations: { added: 0, updated: 0, repaired: 0, unchanged: 0, removed: 0 },
+        declarations: { aliased: 0, omitted: 0 },
+        takeovers: { accepted: 0 },
+      },
+    },
+    perFacet: [{ kind: 'updated', name: 'alpha', oldVersion: '1.2.0', newVersion: '1.8.0' }],
+    mcp: { consent: { kind: 'not-required' }, dispositions: [], configurations: [], prunedIntent: [] },
+  },
+}
+
+/**
+ * Stub the engine call and let the adapters through, so everything
+ * between the command and the engine is the code that ships.
+ *
+ * At module scope because the Ink-driven path and the `--json` path are
+ * two drivers for the same engine call, and a second copy of this
+ * fixture is the one way their tests could end up asserting against
+ * different outcomes.
+ */
+function applying(result: engine.RunPreparedFacetUpdateResult = applied) {
+  adaptersSpy.mockResolvedValue([])
+  return spyOn(engine, 'runPreparedFacetUpdate').mockResolvedValue(result)
+}
 
 describe('facet update — refusing the invocation', () => {
   test('a positional argument is refused, pointing at the flag that replaces it', async () => {
@@ -341,30 +376,6 @@ describe('facet update — dry run', () => {
  * code that actually ships.
  */
 describe('facet update — applying', () => {
-  const applied: engine.RunPreparedFacetUpdateResult = {
-    ok: true,
-    install: {
-      ok: true,
-      lockfile: { lockfileVersion: CURRENT_LOCKFILE_VERSION, facets: {} },
-      summary: {
-        facets: { installed: 0, updated: 1, repaired: 0, unchanged: 0, removed: 0 },
-        textAssets: { written: 1, removed: 0 },
-        mcp: {
-          configurations: { added: 0, updated: 0, repaired: 0, unchanged: 0, removed: 0 },
-          declarations: { aliased: 0, omitted: 0 },
-          takeovers: { accepted: 0 },
-        },
-      },
-      perFacet: [{ kind: 'updated', name: 'alpha', oldVersion: '1.2.0', newVersion: '1.8.0' }],
-      mcp: { consent: { kind: 'not-required' }, dispositions: [], configurations: [], prunedIntent: [] },
-    },
-  }
-
-  function applying(result: engine.RunPreparedFacetUpdateResult = applied) {
-    adaptersSpy.mockResolvedValue([])
-    return spyOn(engine, 'runPreparedFacetUpdate').mockResolvedValue(result)
-  }
-
   test('a failed application is reported on stderr and exits one', async () => {
     preparing([BOUNDED])
     const runSpy = applying({
@@ -484,18 +495,16 @@ describe('facet update — applying', () => {
 })
 
 /**
- * `--json` on every outcome this command reaches without applying
- * anything: a discovery failure, a no-op, and `--dry-run`.
+ * `--json` on every outcome this command has: a discovery failure, a
+ * no-op, `--dry-run`, and a run that actually applies.
  *
  * The one assertion nearly all of these share is `JSON.parse(stdout)`
  * off the raw capture. It is doing real work — a plan table, a prose
  * no-op line, or a stray spinner frame in front of the document all
  * make it throw, which is the whole promise `--json` makes.
  *
- * Nothing here touches the applying path. It still mounts Ink and
- * returns 0 with no document; that is a known intermediate state of
- * this stack and the next change's to fix, so asserting today's
- * behavior would only mean deleting the assertion later.
+ * The applying path is covered too, at the end: it now runs the engine
+ * with no view mounted and writes a document saying it applied.
  */
 describe('facet update — --json', () => {
   test('--json --dry-run writes one document and nothing else', async () => {
@@ -619,5 +628,128 @@ describe('facet update — --json', () => {
     } finally {
       discoverySpy.mockRestore()
     }
+  })
+
+  test('a run that applies writes one document saying it applied, and exits 0', async () => {
+    preparing([BOUNDED])
+    const runSpy = applying()
+
+    const { stdout, result } = await withTTY(false, () =>
+      captureStdout(() => updateCommand.run([], { json: true }), { raw: true }),
+    )
+
+    expect(result).toBe(0)
+    expect(runSpy).toHaveBeenCalled()
+    const document = JSON.parse(stdout)
+    expect(document.ok).toBe(true)
+    // The difference between this and every other document the command
+    // writes: something was actually written to the project.
+    expect(document.applied).toBe(true)
+    expect(document.facets.map((facet: { name: string }) => facet.name)).toEqual(['alpha'])
+    runSpy.mockRestore()
+  })
+
+  // The guard for the whole change. On a live terminal the old code
+  // mounted `InstallView` here, and Ink's very first frame — cursor
+  // moves, clears, the spinner — lands on stdout in front of the
+  // document. Run with a TTY on purpose, because that is the only
+  // environment where a mount is visible: both the parse and the
+  // control-sequence check hold trivially under a piped runner.
+  test('an applying --json run mounts no Ink: stdout is one JSON value and nothing else', async () => {
+    preparing([BOUNDED])
+    const runSpy = applying()
+
+    const { stdout, result } = await withTTY(true, () =>
+      captureStdout(() => updateCommand.run([], { json: true }), { raw: true }),
+    )
+
+    expect(result).toBe(0)
+    // Node's own idea of a control sequence, so this cannot disagree
+    // with what the capture helper strips everywhere else.
+    expect(stripTerminalControls(stdout)).toBe(stdout)
+    // One value, not a document with frames appended: re-serializing the
+    // parse has to give back the whole stream.
+    const document = JSON.parse(stdout)
+    expect(stdout).toBe(`${JSON.stringify(document, null, 2)}\n`)
+    expect(document.applied).toBe(true)
+    runSpy.mockRestore()
+  })
+
+  // `--json` on a real terminal is the case that matters: the terminal
+  // can prompt, and nothing must ask it to. A resolver would open a
+  // screen over the document with nobody there to answer, so the run
+  // takes the same consent policy a non-interactive one does and fails
+  // with the full MCP request instead.
+  test('a --json run never prompts, even on a terminal that could', async () => {
+    preparing([BOUNDED])
+    const runSpy = applying()
+
+    await withTTY(true, () => captureStdout(() => updateCommand.run([], { json: true, verbose: true })))
+
+    const options = runSpy.mock.calls[0]?.[0]
+    expect(options?.resolveCollisions).toBeUndefined()
+    expect(options?.resolveAssetTakeover).toBeUndefined()
+    expect(options?.mcpConsent).toEqual({ kind: 'unavailable' })
+    // `--verbose` is prose on stderr; the document is the only thing a
+    // `--json` run says, so the diagnostics stay off.
+    expect(options?.onLog).toBeUndefined()
+    // ...and `--accept-mcp` still reaches the engine, because that is an
+    // answer given up front rather than a prompt.
+    runSpy.mockClear()
+    await withTTY(true, () => captureStdout(() => updateCommand.run([], { json: true, 'accept-mcp': true })))
+    expect(runSpy.mock.calls[0]?.[0]?.mcpConsent).toEqual({ kind: 'preapproved' })
+    runSpy.mockRestore()
+  })
+
+  test('a failed application is an ok:false document on stdout, and still exits 1', async () => {
+    preparing([BOUNDED])
+    const runSpy = applying({
+      ok: false,
+      phase: 'install',
+      install: {
+        ok: false,
+        failure: { code: 'UPDATE_PLAN_STALE', files: ['manifest'] },
+        rollback: { kind: 'not-needed', reason: 'post-lock-no-mutation' },
+      },
+    } as engine.RunPreparedFacetUpdateResult)
+
+    const { stderr, result } = await withTTY(false, () =>
+      captureStderr(() => captureStdout(() => updateCommand.run([], { json: true }), { raw: true })),
+    )
+
+    expect(result.result).toBe(1)
+    const document = JSON.parse(result.stdout)
+    expect(document.ok).toBe(false)
+    // The same words the human path uses, from the same producers: the
+    // stale-plan remedy, not a generic "fix the underlying issue".
+    expect(document.error.what).toBe('update failed')
+    expect(document.error.detail).toContain('UPDATE_PLAN_STALE')
+    expect(document.error.fix).toContain("Re-run 'facet update'")
+    // The report moved to stdout; printing the three-line block as well
+    // would report one failure twice, in two formats.
+    expect(stderr).not.toContain('error:')
+    runSpy.mockRestore()
+  })
+
+  // The other failure phase. It never reaches an install, so it has no
+  // rollback and no disk state to describe — just the refused selection.
+  test('a refused selection is an ok:false document too, and exits 1', async () => {
+    preparing([BOUNDED])
+    const runSpy = applying({
+      ok: false,
+      phase: 'selection',
+      failure: { reason: 'unknown-facet', facet: 'ghost' },
+    })
+
+    const { stderr, result } = await withTTY(false, () =>
+      captureStderr(() => captureStdout(() => updateCommand.run([], { json: true }), { raw: true })),
+    )
+
+    expect(result.result).toBe(1)
+    const document = JSON.parse(result.stdout)
+    expect(document.ok).toBe(false)
+    expect(`${document.error.what} ${document.error.detail}`).toContain('ghost')
+    expect(stderr).toBe('')
+    runSpy.mockRestore()
   })
 })

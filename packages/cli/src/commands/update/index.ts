@@ -1,6 +1,7 @@
 import { isNonEmpty } from '@agent-facets/common'
 import {
   type FacetUpdateSelection,
+  type McpConsentResolver,
   prepareFacetUpdate,
   type RunPreparedFacetUpdateResult,
   runPreparedFacetUpdate,
@@ -243,7 +244,13 @@ export const updateCommand: Command = {
 
     const verbose = flags.verbose === true
     const acceptMcp = flags[ACCEPT_MCP_FLAG] === true
-    const mayPrompt = canPromptInteractively()
+    // `--json` cannot prompt, on any terminal. A resolver that opened a
+    // screen would write over the document, and there would be nobody
+    // reading it to answer anyway. Decided once, here, rather than by
+    // leaving the resolvers out at each call site: this is the value the
+    // consent policy is chosen from too, and two places to remember is
+    // one place to forget.
+    const mayPrompt = !json && canPromptInteractively()
 
     // SIGINT reaches the engine as an abort rather than killing the
     // process, so a run interrupted mid-write unwinds through its own
@@ -254,6 +261,67 @@ export const updateCommand: Command = {
       controller.abort()
     }
     process.on('SIGINT', sigintHandler)
+
+    // The same engine call the Ink view below drives, with nothing drawn.
+    //
+    // Every callback that view hands the engine is either progress to
+    // show or a question to ask, and a `--json` run has neither: there is
+    // no screen for a stage to appear on and no user to answer a
+    // collision. So the view is not a dependency here, only a renderer we
+    // do without — no resolvers (`mayPrompt` is false above), and no
+    // `onLog`, because `--verbose` diagnostics are prose and the document
+    // is the only thing this run is allowed to say.
+    //
+    // The abort handler registered just above is the one this shares, and
+    // it is released in `finally` exactly as the mounted path releases it.
+    // An interrupted `--json` run has the same obligation as any other:
+    // unwind the engine's rollback and let go of the project lock.
+    if (json) {
+      let result: RunPreparedFacetUpdateResult
+      try {
+        result = await runPreparedFacetUpdate({
+          prepared: prepared.prepared,
+          selections,
+          adapters,
+          onStage: () => {},
+          mcpConsent: mcpConsentPolicy({ acceptMcp, mayPrompt, resolve: jsonModeCannotPrompt }),
+          signal: controller.signal,
+        })
+      } finally {
+        process.off('SIGINT', sigintHandler)
+      }
+
+      if (result.ok) {
+        // `applied` is the engine's answer, not this branch's. Reaching
+        // here is what a successful write looks like from the outside,
+        // and saying so twice is how a document starts claiming a run
+        // that did not happen.
+        writeJsonDocument(buildUpdateJson({ plan, mode, applied: result.ok }))
+        return 0
+      }
+
+      if (result.phase === 'selection') {
+        writeJsonDocument(buildUpdateErrorJson(updateSelectionCliError(result.failure)))
+        return 1
+      }
+
+      // The long-form block still goes out, to stderr, where it cannot
+      // touch the document: the `fix:` line below is the shared one, and
+      // several of its remedies say "the files listed above" or "the
+      // servers listed above". Dropping the block would leave the
+      // document pointing at nothing — and a rollback that could not put
+      // a file back is the last thing to swallow because the output is
+      // machine-readable.
+      writeInstallFailureDetail(result.install.failure, result.install.rollback)
+      writeJsonDocument(
+        buildUpdateErrorJson({
+          what: 'update failed',
+          detail: installFailureDetail(result.install.failure),
+          fix: installFailureFix(result.install.failure, result.install.rollback, 'update'),
+        }),
+      )
+      return 1
+    }
 
     let captured: RunPreparedFacetUpdateResult | undefined
     const instance = render(
@@ -326,6 +394,21 @@ export const updateCommand: Command = {
     })
     return 1
   },
+}
+
+/**
+ * Stands in for the MCP consent prompt on the `--json` path, where there
+ * is nothing to prompt on.
+ *
+ * It cannot be called: `mcpConsentPolicy` only reaches the resolver when
+ * `mayPrompt` is true, and `mayPrompt` is false for every `--json` run.
+ * It exists so a JSON run gets its consent policy from the same function
+ * every other run does — `--accept-mcp` or nothing — instead of a second
+ * copy of that rule written out beside the headless call, which is how
+ * the two would eventually disagree.
+ */
+const jsonModeCannotPrompt: McpConsentResolver = () => {
+  throw new Error('facet update --json reached the MCP consent prompt; --json can never prompt')
 }
 
 /**
