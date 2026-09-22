@@ -122,7 +122,7 @@
           {
             "group": "Facet Management",
             "icon": "box",
-            "pages": ["cli/install", "cli/add", "cli/remove", "cli/update", "cli/search", "cli/list"]
+            "pages": ["cli/install", "cli/add", "cli/remove", "cli/update", "cli/outdated", "cli/search", "cli/list"]
           },
           {
             "group": "Adapters",

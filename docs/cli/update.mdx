@@ -52,6 +52,10 @@ facet update --interactive      # choose per facet, and which version each takes
   Approve the [MCP configuration](/cli/install#accept-mcp) this update would write, without prompting.
 </ResponseField>
 
+<ResponseField name="--json" type="boolean">
+  Print one JSON document to stdout instead of the plan view, and turn off the live progress indicator so its frames can't land in front of the document. Cannot be combined with `--interactive`: the picker writes to the same stream the document would. See [JSON output](#json-output).
+</ResponseField>
+
 There is no `--frozen-lockfile` here. Frozen mode reproduces what the lockfile records, which is the opposite of what this command does, and it belongs to [`facet install`](/cli/install#frozen-lockfile).
 
 ## Exit codes
@@ -70,6 +74,73 @@ There is no `--frozen-lockfile` here. Frozen mode reproduces what the lockfile r
 ```
 
 Each moving facet is named with the version it left and the version it took. Recorded aliases and omissions survive a version change, and outcomes match [`facet install`](/cli/install#outcomes).
+
+## JSON output
+
+`--json` prints one document to stdout and nothing else — no plan view, no progress indicator. The exit code and the document answer two different questions: the exit code says whether the command *worked* (`0` for every successful run, whether or not anything moved, including a no-op or a completed `--dry-run`; `1` when preparation, selection, or the install itself failed — see [Exit codes](#exit-codes)), and the document's `applied` field and each facet's `outcome` say whether anything *moved*. Check the exit code first; read the document for what happened.
+
+A project that pins `cowsay` at `1.0.0`, with `1.0.1` published to the registry, run through `facet update --latest --json`:
+
+```json
+{
+  "schemaVersion": "1",
+  "ok": true,
+  "applied": true,
+  "facets": [
+    {
+      "name": "cowsay",
+      "declared": "1.0.0",
+      "current": "1.0.0",
+      "target": "1.0.0",
+      "latest": "1.0.1",
+      "outcome": "updated"
+    }
+  ],
+  "counts": { "updated": 1, "current": 0, "held": 0, "unsupported": 0 }
+}
+```
+
+<ResponseField name="applied" type="boolean">
+  Whether this run actually wrote. `false` for a dry run; `true` once `facets.json`, `facets.lock`, and any assets have been written.
+</ResponseField>
+
+<ResponseField name="facets" type="array">
+  One entry per declared facet, each with `declared` (the specifier exactly as written in `facets.json`), `current` (the installed version), `target` (the newest release the declared range permits), `latest` (the registry's newest release), and `outcome`.
+</ResponseField>
+
+Each facet's `outcome` is one of four values:
+
+<ResponseField name="updated" type="outcome">
+  This run moved it — to `target` under a plain update, or to `latest` under `--latest`.
+</ResponseField>
+
+<ResponseField name="current" type="outcome">
+  Already at the newest release that exists. Nothing to take.
+</ResponseField>
+
+<ResponseField name="held" type="outcome">
+  A newer release exists, but this run doesn't take it. A facet pinned to an exact version, or floating within a range that doesn't reach the newest release, shows `held` — plain words for "the ranges in `facets.json` permit none of them" — until it runs with `--latest`. A fully pinned project sees `held` rather than `updated` until then.
+</ResponseField>
+
+<ResponseField name="unsupported" type="outcome">
+  A git or local source. Not checked for updates; `current`, `target`, and `latest` are all `null`.
+</ResponseField>
+
+`counts` tallies how many facets landed in each outcome, always summing to `facets.length`.
+
+On failure the document takes a different shape and the exit code is `1`:
+
+```json
+{
+  "schemaVersion": "1",
+  "ok": false,
+  "error": {
+    "what": "facets.json declares a source that cannot be parsed",
+    "detail": "cowsay: \"not-a-version\" is not a valid specifier",
+    "fix": "correct that entry in facets.json by hand"
+  }
+}
+```
 
 ## Details
 
