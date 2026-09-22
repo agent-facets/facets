@@ -43,6 +43,7 @@ Command index
   facet install        Install every facet declared in facets.json.
   facet update         Move the project's registry facets to newer releases
                        (alias: facet upgrade). Not the CLI binary.
+  facet outdated       Report which facets have newer releases. Never writes.
   facet remove         Remove a facet from the project (alias: facet rm).
   facet list           List declared facets and their resolved versions.
   facet search         Search the registry.
@@ -53,7 +54,15 @@ Command index
   facet instructions   Print these instructions (see the topic index above).
 
 Machine-readable output
-  `facet create`, `facet modify`, and `facet build` accept `--json` for
-  structured output. Prefer it when you need to parse results.
+  `facet create`, `facet modify`, `facet build`, `facet update`, and
+  `facet outdated` accept `--json` for structured output. Prefer it when you
+  need to parse results.
+
+  For update and outdated the document reports each facet's outcome:
+  `updated` (this run's flags move it), `held` (a newer release exists but
+  the specifier in facets.json forbids it), `current`, or `unsupported`
+  (a git or local facet, which cannot be version-checked). Read `applied`
+  to tell a real update from a preview: `facet outdated` and
+  `facet update --dry-run` always report `applied: false`.
 
 Before doing any authoring work, run: facet instructions authoring

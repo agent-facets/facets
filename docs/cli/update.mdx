@@ -111,7 +111,9 @@ A project that pins `cowsay` at `1.0.0`, with `1.0.1` published to the registry,
 Each facet's `outcome` is one of four values:
 
 <ResponseField name="updated" type="outcome">
-  This run moved it — to `target` under a plain update, or to `latest` under `--latest`.
+  This run's flags take a newer release for it — `target` under a plain update, `latest` under `--latest`.
+
+  `outcome` says what the flags resolve to, not whether anything was written. Read `applied` for that: a preview (`--dry-run`, or [`facet outdated`](/cli/outdated)) reports `applied: false` while still marking movable facets `updated`, because that is what the same flags would do for real.
 </ResponseField>
 
 <ResponseField name="current" type="outcome">
