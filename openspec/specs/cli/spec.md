@@ -1201,6 +1201,12 @@ The command SHALL accept `--latest` with short alias `-L`, `--interactive` with 
 - **THEN** the help SHALL describe `update` as operating on facets declared by the project
 - **AND** the help SHALL name `self-update` as the command for updating the CLI binary
 
+#### Scenario: Update rejects json with interactive
+
+- **WHEN** a user runs `facet update --json --interactive`
+- **THEN** the system SHALL print a usage error
+- **AND** the process SHALL exit with code 1
+
 ### Requirement: Update presentations distinguish Current Target and Latest
 
 Whenever the update command presents discovered choices, it SHALL identify each checkable registry facet's locked Current version, range-respecting Target version, and registry Latest version. The static preview SHALL additionally identify each facet's manifest specifier. Both presentations SHALL align their columns, seeding each column's width from its own header label so no header overflows the column it names. Git and local facets SHALL be named as unsupported sources rather than counted as current.
@@ -1404,3 +1410,46 @@ After a non-dry-run selection is confirmed or derived, the update command SHALL 
 - **AND** `--accept-mcp` is not supplied
 - **THEN** the command SHALL fail before mutation with the complete consent information
 - **AND** when `--accept-mcp` is supplied, the command SHALL proceed without prompting if the work is otherwise valid
+
+### Requirement: Update emits machine-readable output on request
+
+The `update` command SHALL accept a `--json` flag. When `--json` is given, the system SHALL emit a single JSON document to stdout and SHALL emit no other output to stdout, on every outcome the command reaches.
+
+#### Scenario: Dry run with json writes nothing to the project
+
+- **WHEN** a user runs `facet update --dry-run --json`
+- **THEN** the system SHALL write a single JSON document to stdout
+- **AND** the command SHALL NOT modify `facets.json`, `facets.lock`, or any other project file
+
+#### Scenario: The document is the only thing on stdout
+
+- **WHEN** a user runs `facet update --json`
+- **THEN** stdout SHALL contain exactly one JSON document and no other text
+- **AND** progress indicators, prose summaries, and no-op messages SHALL be suppressed from stdout
+
+### Requirement: Machine-readable output distinguishes a held facet
+
+When `update --json` reports each facet's outcome, the system SHALL report a facet whose authored specifier forbids a newer published release as a distinct outcome from a facet with no newer release.
+
+#### Scenario: A held facet is reported separately from a current one
+
+- **WHEN** a facet is pinned below a newer published release that its authored specifier does not permit
+- **AND** a user runs `facet update --json`
+- **THEN** the document SHALL report that facet's outcome as held
+- **AND** the document SHALL NOT report it as current
+
+### Requirement: Outdated command is registered
+
+The system SHALL register an `outdated` command that reports the update plan for project facets. The command SHALL NOT modify `facets.json` or `facets.lock`.
+
+#### Scenario: Outdated command is available in help
+
+- **WHEN** a user runs the CLI with `--help`
+- **THEN** the help output SHALL list the `outdated` command with its description
+
+#### Scenario: Outdated command leaves the manifest and lockfile unchanged
+
+- **WHEN** a user runs `facet outdated` in a project with an existing manifest and lockfile
+- **THEN** the process SHALL exit with code 0
+- **AND** `facets.json` SHALL remain byte-identical to its state before the command ran
+- **AND** `facets.lock` SHALL remain byte-identical to its state before the command ran
