@@ -23,13 +23,18 @@ afterAll(() => {
   prepareSpy.mockRestore()
 })
 
-// A facet whose declared range holds it at its current version while a
-// newer release exists — the shape `facet outdated` exists to surface.
+// A facet whose declared range already reaches a newer release than the
+// one installed — a genuine candidate `update` would apply by default,
+// not a no-op. That matters for the guarantee test below: a fixture
+// update classifies as a no-op (target === current) never reaches the
+// code path `dry-run` gates, so it would pass even if `outdated` forgot
+// to force `dry-run` at all. This one only stays unwritten because the
+// flag really is forced.
 const STALE = candidate({
   name: 'alpha',
   source: '1.*',
   current: '1.2.0',
-  target: '1.2.0',
+  target: '1.8.0',
   latest: '2.0.0',
 })
 
