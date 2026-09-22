@@ -13,11 +13,12 @@ import { InstallView } from '../../tui/views/install/install-view.tsx'
 import { UpdatePlanView } from '../../tui/views/update/plan-view.tsx'
 import { writeCliError } from '../../util/errors.ts'
 import { writeInstallFailureDetail } from '../../util/install-detail.ts'
-import { canPromptInteractively } from '../../util/interactive.ts'
+import { canPromptInteractively, canRenderLiveOutput, currentTerminalCapabilities } from '../../util/interactive.ts'
 import { ensureAdapters } from '../shared/ensure-adapters.ts'
 import { ACCEPT_MCP_FLAG, INSTALL_PIPELINE_FLAGS, mcpConsentPolicy } from '../shared/flags.ts'
 import { installFailureDetail, installFailureFix } from '../shared/install-failure.ts'
 import { updatePrepareCliError, updateSelectionCliError } from './errors.ts'
+import { buildUpdateErrorJson, buildUpdateJson, type UpdateDocument, type UpdateErrorDocument } from './json.ts'
 import { buildPreview } from './preview.ts'
 import { withUpdateDiscovery } from './run-discovery.ts'
 import { runUpdatePicker } from './run-picker.ts'
@@ -64,6 +65,7 @@ export const updateCommand: Command = {
       type: 'boolean',
       description: 'Print the plan; do not modify any files',
     },
+    json: { type: 'boolean', description: 'Emit machine-readable JSON to stdout instead of the plan view' },
   },
   run: async (args, flags) => {
     // No positional filter yet — interactive selection is how a user
@@ -79,6 +81,22 @@ export const updateCommand: Command = {
     }
 
     const interactive = flags.interactive === true
+    const json = flags.json === true
+
+    // This has to come before the terminal check below, not after it.
+    // Both are true for `facet update --json --interactive` in CI, and
+    // whichever runs first is the one the user reads. "needs an
+    // interactive terminal" would be the wrong answer there: the run is
+    // refused because the two flags contradict each other, and it would
+    // still be refused on the nicest terminal in the world.
+    if (json && interactive) {
+      writeCliError({
+        what: 'facet update --json cannot be combined with --interactive',
+        detail: 'the picker writes to stdout, which would corrupt the JSON document',
+        fix: "run 'facet update --json --dry-run' to see what would change without prompting",
+      })
+      return 1
+    }
 
     // Checked before discovery on purpose: a user who asked to pick from
     // a list should not wait through every registry lookup to be told the
@@ -98,9 +116,28 @@ export const updateCommand: Command = {
     // Wrapped rather than awaited bare: discovery is the long, silent
     // part of this command, and an empty screen while it runs is
     // indistinguishable from a command that did nothing.
-    const prepared = await withUpdateDiscovery(() => prepareFacetUpdate({ projectRoot: process.cwd() }))
+    //
+    // The indicator is a second Ink writer and it is on by default on a
+    // live terminal, so `--json` has to switch it off explicitly or its
+    // frames land on stdout in front of the document.
+    //
+    // ANDed with the usual live-output rule rather than replacing it.
+    // `enabled` is read with `??`, so a bare `!json` would be `true` for
+    // every ordinary run and force the indicator on where it is normally
+    // off — piped to a file, or in CI — which is the exact leak the
+    // default exists to prevent. This only ever turns the indicator off.
+    const prepared = await withUpdateDiscovery(() => prepareFacetUpdate({ projectRoot: process.cwd() }), {
+      enabled: !json && canRenderLiveOutput(currentTerminalCapabilities()),
+    })
     if (!prepared.ok) {
-      writeCliError(updatePrepareCliError(prepared.failure))
+      const error = updatePrepareCliError(prepared.failure)
+      if (json) {
+        // The document replaces the report, never the exit code: a
+        // caller that only checked `$?` must still see this fail.
+        writeJsonDocument(buildUpdateErrorJson(error))
+        return 1
+      }
+      writeCliError(error)
       return 1
     }
     const { plan } = prepared.prepared
@@ -126,6 +163,16 @@ export const updateCommand: Command = {
 
     const noOp = picking === null ? classifyNoOp(plan, mode, interactive ? [] : defaults) : null
     if (noOp !== null) {
+      // JSON says which nothing this is without the prose: every row
+      // carries its own outcome, so a parser can read the conclusion off
+      // the document. One document whether or not `--dry-run` was
+      // passed — the terse/verbose split below is a reading affordance
+      // for humans, and a script wants the rows either way.
+      if (json) {
+        writeJsonDocument(buildUpdateJson({ plan, mode, applied: false }))
+        return 0
+      }
+
       // A dry run was asked for the plan, and "nothing to do" is a
       // conclusion drawn FROM the plan. The reason alone asks the user to
       // take that conclusion on faith; the rows it was drawn from let
@@ -164,11 +211,23 @@ export const updateCommand: Command = {
     // opinion, and the preview is the thing a user approves.
     const validated = validateFacetUpdateSelections(plan, selections)
     if (!validated.ok) {
-      writeCliError(updateSelectionCliError(validated.failure))
+      const error = updateSelectionCliError(validated.failure)
+      if (json) {
+        writeJsonDocument(buildUpdateErrorJson(error))
+        return 1
+      }
+      writeCliError(error)
       return 1
     }
 
     if (dryRun) {
+      // `mode` is the one the run selected, passed through rather than
+      // worked out again here, so the document cannot describe a
+      // different run from the one that produced the plan.
+      if (json) {
+        writeJsonDocument(buildUpdateJson({ plan, mode, applied: false }))
+        return 0
+      }
       renderPlan(plan, selections, validated.selections)
       return 0
     }
@@ -267,6 +326,17 @@ export const updateCommand: Command = {
     })
     return 1
   },
+}
+
+/**
+ * Write one document to stdout and nothing else.
+ *
+ * Every `--json` exit goes through here so the promise `--json` makes —
+ * one parseable document on stdout, no prose around it — is kept in one
+ * place rather than re-honoured at four call sites.
+ */
+function writeJsonDocument(document: UpdateDocument | UpdateErrorDocument): void {
+  process.stdout.write(`${JSON.stringify(document, null, 2)}\n`)
 }
 
 /** Draw the plan once and tear the mount down; nothing here is live. */

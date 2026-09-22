@@ -5,6 +5,7 @@ import { captureStderr, captureStdout } from '../../../__tests__/helpers/capture
 import { withTTY } from '../../../__tests__/helpers/with-tty.ts'
 import * as adapterModule from '../../shared/ensure-adapters.ts'
 import { updateCommand } from '../index.ts'
+import * as discoveryModule from '../run-discovery.ts'
 import * as pickerModule from '../run-picker.ts'
 import { candidate, current, unsupported } from './fixtures.ts'
 
@@ -479,5 +480,144 @@ describe('facet update — applying', () => {
     expect(runSpy.mock.calls[0]?.[0]?.mcpConsent).toEqual({ kind: 'preapproved' })
     expect(runSpy.mock.calls[0]?.[0]?.resolveAssetTakeover).toBeUndefined()
     runSpy.mockRestore()
+  })
+})
+
+/**
+ * `--json` on every outcome this command reaches without applying
+ * anything: a discovery failure, a no-op, and `--dry-run`.
+ *
+ * The one assertion nearly all of these share is `JSON.parse(stdout)`
+ * off the raw capture. It is doing real work — a plan table, a prose
+ * no-op line, or a stray spinner frame in front of the document all
+ * make it throw, which is the whole promise `--json` makes.
+ *
+ * Nothing here touches the applying path. It still mounts Ink and
+ * returns 0 with no document; that is a known intermediate state of
+ * this stack and the next change's to fix, so asserting today's
+ * behavior would only mean deleting the assertion later.
+ */
+describe('facet update — --json', () => {
+  test('--json --dry-run writes one document and nothing else', async () => {
+    preparing([BOUNDED, PINNED])
+    const { stdout, result } = await captureStdout(() => updateCommand.run([], { 'dry-run': true, json: true }), {
+      raw: true,
+    })
+
+    expect(result).toBe(0)
+    const document = JSON.parse(stdout)
+    expect(document.ok).toBe(true)
+    // A dry run wrote nothing, and the document has to say so.
+    expect(document.applied).toBe(false)
+    expect(document.facets.map((facet: { name: string }) => facet.name)).toEqual(['alpha', 'beta'])
+    expect(adaptersSpy).not.toHaveBeenCalled()
+  })
+
+  // The document reports the run that produced it, not a fresh opinion
+  // about the plan. `beta` is pinned: the same plan is `held` in range
+  // mode and `updated` under `--latest`, so a document that ignored the
+  // mode would give one of these two the other's answer.
+  test('--latest reaches the document, so its outcomes match the run', async () => {
+    preparing([PINNED])
+    const range = await captureStdout(() => updateCommand.run([], { 'dry-run': true, json: true }), { raw: true })
+    const latest = await captureStdout(() => updateCommand.run([], { 'dry-run': true, json: true, latest: true }), {
+      raw: true,
+    })
+
+    expect(JSON.parse(range.stdout).facets[0].outcome).toBe('held')
+    expect(JSON.parse(latest.stdout).facets[0].outcome).toBe('updated')
+  })
+
+  // The prose no-op line says which nothing this is in English. A parser
+  // cannot read it, and it is not JSON, so emitting it alongside the
+  // document would break the document.
+  test('a no-op run emits a document instead of the prose line', async () => {
+    preparing([current({ name: 'gamma', source: '*', version: '4.0.0' })])
+    const { stdout, result } = await captureStdout(() => updateCommand.run([], { json: true }), { raw: true })
+
+    expect(result).toBe(0)
+    expect(stdout).not.toContain('All registry facets are current')
+    const document = JSON.parse(stdout)
+    expect(document.ok).toBe(true)
+    expect(document.counts).toEqual({ updated: 0, current: 1, held: 0, unsupported: 0 })
+    expect(adaptersSpy).not.toHaveBeenCalled()
+  })
+
+  // `--json` changes the format of the report, never the exit code. A
+  // script that only checks `$?` has to still see this fail.
+  test('a preparation failure is an ok:false document on stdout, and still exits 1', async () => {
+    prepareSpy.mockResolvedValue({
+      ok: false,
+      failure: { reason: 'discovery-failed', error: { code: 'NETWORK_ERROR', cause: 'ECONNREFUSED', attempts: 3 } },
+    })
+    const { stderr, result } = await captureStderr(() =>
+      captureStdout(() => updateCommand.run([], { json: true }), { raw: true }),
+    )
+
+    expect(result.result).toBe(1)
+    const document = JSON.parse(result.stdout)
+    expect(document.ok).toBe(false)
+    expect(document.error.what).toContain('could not reach the registry')
+    expect(document.error.detail).toContain('ECONNREFUSED')
+    // The report moved to stdout. Printing the human block as well would
+    // report the same failure twice, in two formats.
+    expect(stderr).toBe('')
+  })
+
+  // The ordering this pins down: in CI, `--json --interactive` trips the
+  // terminal-capability check too, and whichever check runs first is the
+  // reason the user reads. "needs an interactive terminal" is the wrong
+  // one — these two flags contradict each other on any terminal. Run
+  // non-TTY on purpose, because that is the environment where the wrong
+  // ordering would pass on a developer's machine and fail in CI.
+  test('--json --interactive is refused for the flags, not the terminal, in a non-TTY', async () => {
+    const { stderr, result } = await withTTY(false, () =>
+      captureStderr(() => updateCommand.run([], { json: true, interactive: true })),
+    )
+
+    expect(result).toBe(1)
+    expect(stderr).toContain('facet update --json cannot be combined with --interactive')
+    expect(stderr).not.toContain('needs an interactive terminal')
+    // Refused before anything looked at the project or the registry.
+    expect(prepareSpy).not.toHaveBeenCalled()
+    expect(adaptersSpy).not.toHaveBeenCalled()
+  })
+
+  test('--json --interactive is refused on a real terminal too', async () => {
+    const { stderr, result } = await withTTY(true, () =>
+      captureStderr(() => updateCommand.run([], { json: true, interactive: true })),
+    )
+
+    expect(result).toBe(1)
+    expect(stderr).toContain('facet update --json cannot be combined with --interactive')
+    expect(prepareSpy).not.toHaveBeenCalled()
+  })
+
+  // The discovery indicator is a second Ink writer and it is ON by
+  // default on a live terminal, so a `--json` run in a terminal would
+  // emit frames in front of the document. No captured-output assertion
+  // can catch that under a piped test runner, so the switch itself is
+  // what gets asserted here.
+  test('the discovery indicator is switched off in JSON mode, and left alone otherwise', async () => {
+    preparing([BOUNDED])
+    const discoverySpy = spyOn(discoveryModule, 'withUpdateDiscovery')
+    try {
+      await withTTY(true, () => captureStdout(() => updateCommand.run([], { 'dry-run': true, json: true })))
+      expect(discoverySpy.mock.calls[0]?.[1]).toEqual({ enabled: false })
+
+      // ...and a run that is not `--json` keeps the indicator it would
+      // have had. Hard-wiring `!json` here would force it ON for every
+      // ordinary piped run, which is the same leak in the other
+      // direction.
+      discoverySpy.mockClear()
+      await withTTY(true, () => captureStdout(() => updateCommand.run([], { 'dry-run': true })))
+      expect(discoverySpy.mock.calls[0]?.[1]).toEqual({ enabled: true })
+
+      discoverySpy.mockClear()
+      await withTTY(false, () => captureStdout(() => updateCommand.run([], { 'dry-run': true })))
+      expect(discoverySpy.mock.calls[0]?.[1]).toEqual({ enabled: false })
+    } finally {
+      discoverySpy.mockRestore()
+    }
   })
 })
