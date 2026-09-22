@@ -9,6 +9,7 @@ import { listCommand } from './commands/list/index.ts'
 import { loginCommand } from './commands/login/index.ts'
 import { logoutCommand } from './commands/logout/index.ts'
 import { modifyCommand } from './commands/modify/index.ts'
+import { outdatedCommand } from './commands/outdated/index.ts'
 import { publishCommand } from './commands/publish/index.ts'
 import { removeCommand } from './commands/remove/index.ts'
 import { searchCommand } from './commands/search/index.ts'
@@ -173,6 +174,7 @@ export const commands: Record<string, Command> = {
   login: loginCommand,
   logout: logoutCommand,
   modify: modifyCommand,
+  outdated: outdatedCommand,
   publish: publishCommand,
   remove: removeCommand,
   search: searchCommand,
