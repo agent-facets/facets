@@ -1166,7 +1166,7 @@ A write to the project manifest SHALL additionally preserve the comments a user 
 
 The system SHALL register `update` as the canonical command for updating registry-backed facets declared by a project. The system SHALL accept `upgrade` as an alias with identical output, side effects, and exit behavior. Both names SHALL operate on project facets and SHALL NOT update the CLI binary.
 
-The command SHALL accept `--latest` with short alias `-L`, `--interactive` with short alias `-i`, `--dry-run`, `--verbose`, and `--accept-mcp`. It SHALL accept no positional arguments and SHALL NOT expose `--frozen-lockfile`.
+The command SHALL accept `--latest` with short alias `-L`, `--interactive` with short alias `-i`, `--dry-run`, `--json`, `--verbose`, and `--accept-mcp`. It SHALL accept no positional arguments and SHALL NOT expose `--frozen-lockfile`.
 
 #### Scenario: Update command is available in help
 
