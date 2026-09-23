@@ -1484,6 +1484,21 @@ Each facet entry in the `update --json` document SHALL carry exactly one outcome
 - **AND** a user runs `facet update --json`
 - **THEN** the document SHALL report that facet's outcome as unsupported
 
+### Requirement: Machine-readable output reports the version each facet resolves to
+
+Each facet entry in the `update --json` document SHALL report the version this run's flags actually resolve that facet to. The system SHALL report a resolved version exactly when the facet's outcome is updated, and SHALL report none for every other outcome.
+
+#### Scenario: An updated facet reports the version it resolves to
+
+- **WHEN** a user runs `facet update --latest --json` against a facet with a newer release
+- **THEN** the document SHALL report that facet's outcome as updated
+- **AND** the document SHALL report the version this run resolves that facet to
+
+#### Scenario: A facet this run does not update reports no resolved version
+
+- **WHEN** a user runs `facet update --json` against a facet whose outcome is current, held, or unsupported
+- **THEN** the document SHALL report no resolved version for that facet
+
 ### Requirement: Machine-readable output tallies outcomes by kind
 
 The `update --json` document SHALL carry a counts block reporting how many facet entries landed in each outcome. The counts SHALL sum to the number of facet entries the document reports.
@@ -1505,6 +1520,8 @@ When `update --json` refuses to run or fails, the system SHALL write exactly one
 - **AND** the document SHALL carry an `ok` field set to `false`
 - **AND** the document's error object SHALL name what failed and the action to take
 - **AND** stdout SHALL contain no prose usage message
+- **AND** stderr SHALL be empty
+- **AND** the process SHALL exit with code 1
 
 #### Scenario: A failure emits an error document with empty stderr
 
