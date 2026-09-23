@@ -59,11 +59,10 @@ Machine-readable output
   need to parse results.
 
   For update and outdated the document reports each facet's outcome:
-  `updated` (this run's flags resolve to something newer), `held` (newer
-  exists, this run doesn't resolve to it), `current`, or `unsupported`
-  (a git or local facet, not version-checked). Read `resolved` for what
-  it takes and `applied` to tell a real update from a preview:
-  `facet outdated` and `facet update --dry-run` always report
-  `applied: false`.
+  `updated` (this run resolves to something newer), `held` (newer exists,
+  this run doesn't take it), `current`, or `unsupported` (a git or local
+  facet, not version-checked). `resolved` is the version it takes;
+  `applied` tells a real update from a preview: `facet outdated` and
+  `facet update --dry-run` always report `applied: false`.
 
 Before doing any authoring work, run: facet instructions authoring
