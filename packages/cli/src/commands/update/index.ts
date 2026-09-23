@@ -13,7 +13,7 @@ import type { Command } from '../../commands.ts'
 import { InstallView } from '../../tui/views/install/install-view.tsx'
 import { UpdatePlanView } from '../../tui/views/update/plan-view.tsx'
 import { type CliError, writeCliError } from '../../util/errors.ts'
-import { writeInstallFailureDetail } from '../../util/install-detail.ts'
+import { formatInstallFailureDetail, writeInstallFailureDetail } from '../../util/install-detail.ts'
 import { canPromptInteractively, canRenderLiveOutput, currentTerminalCapabilities } from '../../util/interactive.ts'
 import { ensureAdapters } from '../shared/ensure-adapters.ts'
 import { ACCEPT_MCP_FLAG, INSTALL_PIPELINE_FLAGS, mcpConsentPolicy } from '../shared/flags.ts'
@@ -314,7 +314,7 @@ export const updateCommand: Command = {
     // rollback and releases the project lock.
     const controller = new AbortController()
     const sigintHandler = () => {
-      process.stderr.write('\nInterrupted. Stopping safely...\n')
+      if (!json) process.stderr.write('\nInterrupted. Stopping safely...\n')
       controller.abort()
     }
     process.on('SIGINT', sigintHandler)
@@ -362,18 +362,18 @@ export const updateCommand: Command = {
         return 1
       }
 
-      // The long-form block still goes out, to stderr, where it cannot
-      // touch the document: the `fix:` line below is the shared one, and
-      // several of its remedies say "the files listed above" or "the
-      // servers listed above". Dropping the block would leave the
-      // document pointing at nothing — and a rollback that could not put
-      // a file back is the last thing to swallow because the output is
-      // machine-readable.
-      writeInstallFailureDetail(result.install.failure, result.install.rollback)
+      // Keep recovery paths and consent details inside the document so
+      // machine-readable failures leave stderr empty.
+      const detail = [
+        installFailureDetail(result.install.failure),
+        formatInstallFailureDetail(result.install.failure, result.install.rollback).trimEnd(),
+      ]
+        .filter(Boolean)
+        .join('\n')
       writeJsonDocument(
         buildUpdateErrorJson({
           what: 'update failed',
-          detail: installFailureDetail(result.install.failure),
+          detail,
           fix: installFailureFix(result.install.failure, result.install.rollback, 'update'),
         }),
       )

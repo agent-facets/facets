@@ -1,6 +1,6 @@
 import type { RollbackOutcome, RunInstallFailure } from '@agent-facets/engine'
 import { ACCEPT_MCP_FLAG } from '../commands/shared/flags.ts'
-import { writeMaterializationDetail } from './collision-report.ts'
+import { formatMaterializationDetail } from './collision-report.ts'
 import { describeRollbackIssue, hasPreservedConflicts } from './install-outcome.ts'
 import {
   formatMcpConsentReport,
@@ -25,20 +25,30 @@ import {
  * last thing on the stream, where people look for it.
  */
 export function writeInstallFailureDetail(failure: RunInstallFailure, rollback: RollbackOutcome): boolean {
-  const wroteRollback = writeRollbackDetail(rollback)
+  const detail = formatInstallFailureDetail(failure, rollback)
+  if (!detail) return false
+  process.stderr.write(detail)
+  return true
+}
+
+/** Preserve the same recovery details when the caller emits a JSON document. */
+export function formatInstallFailureDetail(failure: RunInstallFailure, rollback: RollbackOutcome): string {
+  const rollbackDetail = formatRollbackDetail(rollback)
+  let detail: string
   switch (failure.code) {
     case 'MCP_CONSENT_REQUIRED':
-      process.stderr.write(`${formatMcpConsentReport(failure.request, ACCEPT_MCP_FLAG)}\n`)
-      return true
+      detail = `${formatMcpConsentReport(failure.request, ACCEPT_MCP_FLAG)}\n`
+      break
     case 'MCP_ADAPTERS_UNSUPPORTED':
-      process.stderr.write(`${formatUnsupportedMcpAdaptersReport(failure.adapters, failure.servers)}\n`)
-      return true
+      detail = `${formatUnsupportedMcpAdaptersReport(failure.adapters, failure.servers)}\n`
+      break
     case 'MCP_DOCUMENT_OVERLAP':
-      process.stderr.write(`${formatMcpDocumentOverlapReport(failure.overlaps)}\n`)
-      return true
+      detail = `${formatMcpDocumentOverlapReport(failure.overlaps)}\n`
+      break
     default:
-      return writeMaterializationDetail(failure) || wroteRollback
+      detail = formatMaterializationDetail(failure)
   }
+  return rollbackDetail + detail
 }
 
 /**
@@ -49,8 +59,8 @@ export function writeInstallFailureDetail(failure: RunInstallFailure, rollback: 
  * left it. Recovering from here is a decision only the user can make, and the
  * paths are what makes it possible.
  */
-function writeRollbackDetail(rollback: RollbackOutcome): boolean {
-  if (rollback.kind !== 'incomplete') return false
+function formatRollbackDetail(rollback: RollbackOutcome): string {
+  if (rollback.kind !== 'incomplete') return ''
 
   const lines: string[] = []
   lines.push(
@@ -64,6 +74,5 @@ function writeRollbackDetail(rollback: RollbackOutcome): boolean {
   if (rollback.restored.length > 0) {
     lines.push(`  (${rollback.restored.length} other file(s) were restored)`)
   }
-  process.stderr.write(`${lines.join('\n')}\n`)
-  return true
+  return `${lines.join('\n')}\n`
 }

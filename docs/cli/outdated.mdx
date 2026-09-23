@@ -1,6 +1,6 @@
 ---
 title: facet outdated
-description: Report which facets have newer releases, without changing anything
+description: Preview available facet updates
 ---
 
 ## Usage
@@ -9,7 +9,7 @@ description: Report which facets have newer releases, without changing anything
 facet outdated
 ```
 
-Checks every registry-backed facet in `facets.json` against the registry and reports which ones have a newer release. It is [`facet update`](/cli/update) with previewing forced on and prompting turned off, so the two can never disagree about what would happen — there is no second implementation here to drift from the one `update` actually applies.
+Check every registry-backed facet in `facets.json` for newer releases without applying updates. To apply them, use [`facet update`](/cli/update).
 
 `facet outdated` never writes. It does not touch `facets.json`, `facets.lock`, any asset, or any adapter.
 
@@ -31,21 +31,23 @@ facet outdated --json           # machine-readable report
   Print one JSON document to stdout instead of the plan view. Same document shape as [`facet update --json`](/cli/update#json-output), with `applied` always `false`.
 </ResponseField>
 
-Every run behaves like a preview: nothing is ever applied, and there is no picker, because there is nothing to choose — `outdated` only reports.
+The command reports all facets without prompting.
 
 ## Exit codes
 
 | Code | Meaning |
 | --- | --- |
 | `0` | Reported successfully, including when nothing has moved and when a newer release exists that the declared range forbids. |
-| `1` | The command refused to run, or checking the project failed. See [`facet update` Troubleshooting](/cli/update#troubleshooting) — the same causes apply here. |
+| `1` | The command refused to run, or checking the project failed. See [`facet update` Troubleshooting](/cli/update#troubleshooting). The same causes apply here. |
 | `2` | An unexpected error escaped command handling. |
 
-## JSON output
+## Output
+
+### JSON output
 
 A project that pins `cowsay` at `1.0.0`, with `1.0.1` published to the registry:
 
-```json
+```json expandable
 {
   "schemaVersion": "1",
   "ok": true,
@@ -57,6 +59,7 @@ A project that pins `cowsay` at `1.0.0`, with `1.0.1` published to the registry:
       "current": "1.0.0",
       "target": "1.0.0",
       "latest": "1.0.1",
+      "resolved": null,
       "outcome": "held"
     }
   ],
@@ -64,7 +67,7 @@ A project that pins `cowsay` at `1.0.0`, with `1.0.1` published to the registry:
 }
 ```
 
-`applied` is always `false` here — `outdated` never writes. `outcome` is one of `updated`, `current`, `held`, or `unsupported`; see [`facet update`'s JSON output](/cli/update#json-output) for what each one means. This entry is `held`: `cowsay` has a newer release (`1.0.1`), but the pinned specifier in `facets.json` (`1.0.0`) permits none of it. A fully pinned project sees `held` rather than `updated` on every facet with a newer release, until it runs `facet update --latest`.
+`applied` is always `false` here. `outdated` never writes. `outcome` is one of `updated`, `current`, `held`, or `unsupported`; see [`facet update`'s JSON output](/cli/update#json-output) for what each one means. This entry is `held`: `cowsay` has a newer release (`1.0.1`), but the pinned specifier in `facets.json` (`1.0.0`) permits none of it. A fully pinned project sees `held` rather than `updated` on every facet with a newer release, until it runs `facet update --latest`.
 
 ## See also
 

@@ -978,3 +978,116 @@ describe('facet update — --json and adapter discovery', () => {
     expect(stderr).toContain('no adapters installed')
   })
 })
+
+describe('facet update — JSON failure diagnostics', () => {
+  const failures: { name: string; failure: engine.RunInstallFailure; expected: string }[] = [
+    {
+      name: 'MCP consent',
+      failure: {
+        code: 'MCP_CONSENT_REQUIRED',
+        request: {
+          declarations: [
+            {
+              identity: { kind: 'mcp-server', effectiveName: 'filesystem' },
+              fingerprint: `sha256:${'a'.repeat(64)}`,
+              declaration: { type: 'stdio', command: 'npx', args: ['srv'] },
+              claimants: [{ facet: 'alpha', authoredName: 'filesystem', disposition: { kind: 'authored' } }],
+              standing: { kind: 'unknown-identity' },
+            },
+          ],
+          takeovers: [],
+        },
+      },
+      expected: 'filesystem',
+    },
+    {
+      name: 'invalid materialization alias',
+      failure: {
+        code: 'MATERIALIZATION_ALIAS_INVALID',
+        problems: [
+          {
+            kind: 'asset',
+            facet: 'alpha',
+            assetType: 'skill',
+            authoredName: 'review',
+            alias: 'bad/name',
+            reason: 'invalid name',
+          },
+        ],
+      },
+      expected: 'bad/name',
+    },
+  ]
+
+  for (const { name, failure, expected } of failures) {
+    test(`${name} and rollback paths stay in the error document`, async () => {
+      preparing([BOUNDED])
+      const runSpy = applying({
+        ok: false,
+        phase: 'install',
+        install: {
+          ok: false,
+          failure,
+          rollback: {
+            kind: 'incomplete',
+            restored: [],
+            alreadyRestored: [],
+            removedDirectories: [],
+            issues: [
+              {
+                kind: 'restore-failed',
+                path: '/project/contested.md',
+                original: { kind: 'absent' },
+                committed: { kind: 'absent' },
+                failure: { operation: 'commit', path: '/project/contested.md', message: 'EIO' },
+              },
+            ],
+          },
+        },
+      })
+      try {
+        const { stderr, result } = await captureStderr(() =>
+          captureStdout(() => updateCommand.run([], { json: true }), { raw: true }),
+        )
+        expect(result.result).toBe(1)
+        expect(stderr).toBe('')
+        const document = JSON.parse(result.stdout)
+        expect(document.ok).toBe(false)
+        expect(document.error.detail).toContain(failure.code)
+        expect(document.error.detail).toContain(expected)
+        expect(document.error.detail).toContain('/project/contested.md')
+        expect(document.error.detail).toContain('EIO')
+      } finally {
+        runSpy.mockRestore()
+      }
+    })
+  }
+
+  test('SIGINT aborts the engine without writing prose to stderr', async () => {
+    preparing([BOUNDED])
+    const runSpy = applying()
+    runSpy.mockImplementation(async ({ signal }) => {
+      process.emit('SIGINT')
+      expect(signal?.aborted).toBe(true)
+      return {
+        ok: false,
+        phase: 'install',
+        install: {
+          ok: false,
+          failure: { code: 'ABORTED' },
+          rollback: { kind: 'not-needed', reason: 'post-lock-no-mutation' },
+        },
+      }
+    })
+    try {
+      const { stderr, result } = await captureStderr(() =>
+        captureStdout(() => updateCommand.run([], { json: true }), { raw: true }),
+      )
+      expect(result.result).toBe(1)
+      expect(stderr).toBe('')
+      expect(JSON.parse(result.stdout).error.detail).toContain('ABORTED')
+    } finally {
+      runSpy.mockRestore()
+    }
+  })
+})
