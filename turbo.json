@@ -1,6 +1,12 @@
 {
   "$schema": "https://turborepo.com/schema.json",
   "globalDependencies": ["bun.lock", "mise.toml"],
+  // Git fixtures in the engine tests make real commits, and this repo signs commits
+  // with an SSH key held by an agent. Turbo does not forward arbitrary environment
+  // variables to task subprocesses, so without this the agent socket is invisible to
+  // the tests and every signing commit fails -- green when run directly, red under
+  // `turbo`. Machines with no agent are unaffected: the variable is simply absent.
+  "globalPassThroughEnv": ["SSH_AUTH_SOCK"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

@@ -1,0 +1,75 @@
+---
+title: facet outdated
+description: Preview available facet updates
+---
+
+## Usage
+
+```sh
+facet outdated
+```
+
+Check every registry-backed <Tooltip tip="A versioned bundle of skills, agents, commands, and MCP server declarations for AI coding tools.">facet</Tooltip> in `facets.json` for newer releases without applying updates. To apply them, use [`facet update`](/cli/update).
+
+`facet outdated` never writes. It does not touch `facets.json`, `facets.lock`, any asset, or any adapter.
+
+## Examples
+
+```sh
+facet outdated                  # compare against each range's target
+facet outdated --latest         # compare against each facet's latest release, ignoring ranges
+facet outdated --json           # machine-readable report
+```
+
+## Flags
+
+<ResponseField name="--latest" type="boolean">
+  Compare against each facet's latest release, ignoring the range in `facets.json`. Short form `-L`.
+</ResponseField>
+
+<ResponseField name="--json" type="boolean">
+  Print one JSON document to stdout instead of the plan view. Same document shape as [`facet update --json`](/cli/update#json-output), with `applied` always `false`.
+</ResponseField>
+
+The command reports all facets without prompting.
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Reported successfully, including when nothing has moved and when a newer release exists that the declared range forbids. |
+| `1` | The command refused to run, or checking the project failed. See [`facet update` Troubleshooting](/cli/update#troubleshooting). The same causes apply here. |
+| `2` | An unexpected error escaped command handling. |
+
+## Output
+
+### JSON output
+
+A project that pins `cowsay` at `1.0.0`, with `1.0.1` published to the registry:
+
+```json expandable
+{
+  "schemaVersion": "1",
+  "ok": true,
+  "applied": false,
+  "facets": [
+    {
+      "name": "cowsay",
+      "declared": "1.0.0",
+      "current": "1.0.0",
+      "target": "1.0.0",
+      "latest": "1.0.1",
+      "resolved": null,
+      "outcome": "held"
+    }
+  ],
+  "counts": { "updated": 0, "current": 0, "held": 1, "unsupported": 0 }
+}
+```
+
+`applied` is always `false` here. `outdated` never writes. `outcome` is one of `updated`, `current`, `held`, or `unsupported`; see [`facet update`'s JSON output](/cli/update#json-output) for what each one means. This entry is `held`: `cowsay` has a newer release (`1.0.1`), but the pinned specifier in `facets.json` (`1.0.0`) permits none of it. A fully pinned project sees `held` rather than `updated` on every facet with a newer release, until it runs `facet update --latest`.
+
+## See also
+
+- [`facet update`](/cli/update), which applies what this reports
+- [`facet list`](/cli/list)

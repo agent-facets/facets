@@ -1,6 +1,7 @@
 import { isNonEmpty } from '@agent-facets/common'
 import {
   type FacetUpdateSelection,
+  type McpConsentResolver,
   prepareFacetUpdate,
   type RunPreparedFacetUpdateResult,
   runPreparedFacetUpdate,
@@ -11,13 +12,14 @@ import { createElement } from 'react'
 import type { Command } from '../../commands.ts'
 import { InstallView } from '../../tui/views/install/install-view.tsx'
 import { UpdatePlanView } from '../../tui/views/update/plan-view.tsx'
-import { writeCliError } from '../../util/errors.ts'
-import { writeInstallFailureDetail } from '../../util/install-detail.ts'
-import { canPromptInteractively } from '../../util/interactive.ts'
+import { type CliError, writeCliError } from '../../util/errors.ts'
+import { formatInstallFailureDetail, writeInstallFailureDetail } from '../../util/install-detail.ts'
+import { canPromptInteractively, canRenderLiveOutput, currentTerminalCapabilities } from '../../util/interactive.ts'
 import { ensureAdapters } from '../shared/ensure-adapters.ts'
 import { ACCEPT_MCP_FLAG, INSTALL_PIPELINE_FLAGS, mcpConsentPolicy } from '../shared/flags.ts'
 import { installFailureDetail, installFailureFix } from '../shared/install-failure.ts'
 import { updatePrepareCliError, updateSelectionCliError } from './errors.ts'
+import { buildUpdateErrorJson, buildUpdateJson, type UpdateDocument, type UpdateErrorDocument } from './json.ts'
 import { buildPreview } from './preview.ts'
 import { withUpdateDiscovery } from './run-discovery.ts'
 import { runUpdatePicker } from './run-picker.ts'
@@ -64,31 +66,73 @@ export const updateCommand: Command = {
       type: 'boolean',
       description: 'Print the plan; do not modify any files',
     },
+    json: { type: 'boolean', description: 'Emit machine-readable JSON to stdout instead of the plan view' },
   },
   run: async (args, flags) => {
+    // Read before the first refusal below, not after it. A run refused
+    // for its arguments owes the caller the same one document on stdout
+    // that every other outcome produces — an empty stdout and a non-zero
+    // exit is indistinguishable from a crash to the CI that reads this.
+    const json = flags.json === true
+    const interactive = flags.interactive === true
+
     // No positional filter yet — interactive selection is how a user
     // updates some facets but not others, so say that rather than
     // rejecting the argument with nothing to offer instead.
     if (args.length > 0) {
-      writeCliError({
+      const error = {
         what: `facet update does not accept positional arguments (got "${args[0]}")`,
         detail: 'update considers every facet declared in facets.json',
         fix: "run 'facet update --interactive' to choose which facets to update",
-      })
+      }
+      if (json) {
+        // The document replaces the report, never the exit code: a
+        // caller that only checked `$?` must still see this fail.
+        writeJsonDocument(buildUpdateErrorJson(error))
+        return 1
+      }
+      writeCliError(error)
       return 1
     }
 
-    const interactive = flags.interactive === true
+    // This has to come before the terminal check below, not after it.
+    // Both are true for `facet update --json --interactive` in CI, and
+    // whichever runs first is the one the user reads. "needs an
+    // interactive terminal" would be the wrong answer there: the run is
+    // refused because the two flags contradict each other, and it would
+    // still be refused on the nicest terminal in the world.
+    if (json && interactive) {
+      const error = {
+        what: 'facet update --json cannot be combined with --interactive',
+        detail: 'the picker writes to stdout, which would corrupt the JSON document',
+        fix: "run 'facet update --json --dry-run' to see what would change without prompting",
+      }
+      // Same shape as every other refusal here, even though only the
+      // first arm can run: this site is reached with --json set, so the
+      // prose arm is the one that never fires. Written out anyway so all
+      // three refusals read alike and none of them can drift apart.
+      if (json) {
+        writeJsonDocument(buildUpdateErrorJson(error))
+        return 1
+      }
+      writeCliError(error)
+      return 1
+    }
 
     // Checked before discovery on purpose: a user who asked to pick from
     // a list should not wait through every registry lookup to be told the
     // list can never be shown.
     if (interactive && !canPromptInteractively()) {
-      writeCliError({
+      const error = {
         what: 'facet update --interactive needs an interactive terminal',
         detail: 'this environment cannot prompt, so the selection screen cannot run here',
         fix: "run 'facet update' or 'facet update --latest' to apply updates without prompting",
-      })
+      }
+      if (json) {
+        writeJsonDocument(buildUpdateErrorJson(error))
+        return 1
+      }
+      writeCliError(error)
       return 1
     }
 
@@ -98,9 +142,28 @@ export const updateCommand: Command = {
     // Wrapped rather than awaited bare: discovery is the long, silent
     // part of this command, and an empty screen while it runs is
     // indistinguishable from a command that did nothing.
-    const prepared = await withUpdateDiscovery(() => prepareFacetUpdate({ projectRoot: process.cwd() }))
+    //
+    // The indicator is a second Ink writer and it is on by default on a
+    // live terminal, so `--json` has to switch it off explicitly or its
+    // frames land on stdout in front of the document.
+    //
+    // ANDed with the usual live-output rule rather than replacing it.
+    // `enabled` is read with `??`, so a bare `!json` would be `true` for
+    // every ordinary run and force the indicator on where it is normally
+    // off — piped to a file, or in CI — which is the exact leak the
+    // default exists to prevent. This only ever turns the indicator off.
+    const prepared = await withUpdateDiscovery(() => prepareFacetUpdate({ projectRoot: process.cwd() }), {
+      enabled: !json && canRenderLiveOutput(currentTerminalCapabilities()),
+    })
     if (!prepared.ok) {
-      writeCliError(updatePrepareCliError(prepared.failure))
+      const error = updatePrepareCliError(prepared.failure)
+      if (json) {
+        // The document replaces the report, never the exit code: a
+        // caller that only checked `$?` must still see this fail.
+        writeJsonDocument(buildUpdateErrorJson(error))
+        return 1
+      }
+      writeCliError(error)
       return 1
     }
     const { plan } = prepared.prepared
@@ -126,6 +189,16 @@ export const updateCommand: Command = {
 
     const noOp = picking === null ? classifyNoOp(plan, mode, interactive ? [] : defaults) : null
     if (noOp !== null) {
+      // JSON says which nothing this is without the prose: every row
+      // carries its own outcome, so a parser can read the conclusion off
+      // the document. One document whether or not `--dry-run` was
+      // passed — the terse/verbose split below is a reading affordance
+      // for humans, and a script wants the rows either way.
+      if (json) {
+        writeJsonDocument(buildUpdateJson({ plan, mode, applied: false }))
+        return 0
+      }
+
       // A dry run was asked for the plan, and "nothing to do" is a
       // conclusion drawn FROM the plan. The reason alone asks the user to
       // take that conclusion on faith; the rows it was drawn from let
@@ -164,11 +237,23 @@ export const updateCommand: Command = {
     // opinion, and the preview is the thing a user approves.
     const validated = validateFacetUpdateSelections(plan, selections)
     if (!validated.ok) {
-      writeCliError(updateSelectionCliError(validated.failure))
+      const error = updateSelectionCliError(validated.failure)
+      if (json) {
+        writeJsonDocument(buildUpdateErrorJson(error))
+        return 1
+      }
+      writeCliError(error)
       return 1
     }
 
     if (dryRun) {
+      // `mode` is the one the run selected, passed through rather than
+      // worked out again here, so the document cannot describe a
+      // different run from the one that produced the plan.
+      if (json) {
+        writeJsonDocument(buildUpdateJson({ plan, mode, applied: false }))
+        return 0
+      }
       renderPlan(plan, selections, validated.selections)
       return 0
     }
@@ -176,25 +261,124 @@ export const updateCommand: Command = {
     // Only now: adapters can trigger a picker and an install of their
     // own, which is a side effect a preview or a cancellation must never
     // have paid for.
-    const adapters = await ensureAdapters()
+    //
+    // Under `--json` the errors are collected instead of written. Two
+    // reasons, both of them the document's: the picker would draw over
+    // stdout, and the first failure arm reports one error per broken
+    // adapter — several JSON values on one stream is nothing a consumer
+    // can parse. So they are gathered here and only the first is spoken.
+    const adapterErrors: CliError[] = []
+    const adapters = await ensureAdapters(
+      json
+        ? {
+            headless: true,
+            report: (error) => {
+              adapterErrors.push(error)
+            },
+          }
+        : {},
+    )
     if (adapters === null) {
+      if (json) {
+        writeJsonDocument(
+          buildUpdateErrorJson(
+            // The fallback is for a future arm of `ensureAdapters` that
+            // returns null without reporting: a run that said nothing at
+            // all would be the one failure mode `--json` exists to
+            // prevent, so it gets a document rather than silence.
+            adapterErrors[0] ?? {
+              what: 'facet update could not resolve any adapters',
+              detail: 'adapter discovery failed without reporting a reason',
+              fix: "run 'facet adapter add <name>' and try again",
+            },
+          ),
+        )
+        return 1
+      }
       // ensureAdapters already wrote the appropriate CLI error.
       return 1
     }
 
     const verbose = flags.verbose === true
     const acceptMcp = flags[ACCEPT_MCP_FLAG] === true
-    const mayPrompt = canPromptInteractively()
+    // `--json` cannot prompt, on any terminal. A resolver that opened a
+    // screen would write over the document, and there would be nobody
+    // reading it to answer anyway. Decided once, here, rather than by
+    // leaving the resolvers out at each call site: this is the value the
+    // consent policy is chosen from too, and two places to remember is
+    // one place to forget.
+    const mayPrompt = !json && canPromptInteractively()
 
     // SIGINT reaches the engine as an abort rather than killing the
     // process, so a run interrupted mid-write unwinds through its own
     // rollback and releases the project lock.
     const controller = new AbortController()
     const sigintHandler = () => {
-      process.stderr.write('\nInterrupted. Stopping safely...\n')
+      if (!json) process.stderr.write('\nInterrupted. Stopping safely...\n')
       controller.abort()
     }
     process.on('SIGINT', sigintHandler)
+
+    // The same engine call the Ink view below drives, with nothing drawn.
+    //
+    // Every callback that view hands the engine is either progress to
+    // show or a question to ask, and a `--json` run has neither: there is
+    // no screen for a stage to appear on and no user to answer a
+    // collision. So the view is not a dependency here, only a renderer we
+    // do without — no resolvers (`mayPrompt` is false above), and no
+    // `onLog`, because `--verbose` diagnostics are prose and the document
+    // is the only thing this run is allowed to say.
+    //
+    // The abort handler registered just above is the one this shares, and
+    // it is released in `finally` exactly as the mounted path releases it.
+    // An interrupted `--json` run has the same obligation as any other:
+    // unwind the engine's rollback and let go of the project lock.
+    if (json) {
+      let result: RunPreparedFacetUpdateResult
+      try {
+        result = await runPreparedFacetUpdate({
+          prepared: prepared.prepared,
+          selections,
+          adapters,
+          onStage: () => {},
+          mcpConsent: mcpConsentPolicy({ acceptMcp, mayPrompt, resolve: jsonModeCannotPrompt }),
+          signal: controller.signal,
+        })
+      } finally {
+        process.off('SIGINT', sigintHandler)
+      }
+
+      if (result.ok) {
+        // `applied` is the engine's answer, not this branch's. Reaching
+        // here is what a successful write looks like from the outside,
+        // and saying so twice is how a document starts claiming a run
+        // that did not happen.
+        writeJsonDocument(buildUpdateJson({ plan, mode, applied: result.ok }))
+        return 0
+      }
+
+      if (result.phase === 'selection') {
+        writeJsonDocument(buildUpdateErrorJson(updateSelectionCliError(result.failure)))
+        return 1
+      }
+
+      // Keep recovery paths and consent details inside the document so
+      // machine-readable failures leave stderr empty.
+      const detail = [
+        installFailureDetail(result.install.failure),
+        formatInstallFailureDetail(result.install.failure, result.install.rollback).trimEnd(),
+      ]
+        .filter(Boolean)
+        .join('\n')
+      writeJsonDocument(
+        buildUpdateErrorJson({
+          what: 'update failed',
+          detail,
+          fix: installFailureFix(result.install.failure, result.install.rollback, 'update'),
+        }),
+      )
+      return 1
+    }
 
     let captured: RunPreparedFacetUpdateResult | undefined
     const instance = render(
@@ -267,6 +451,32 @@ export const updateCommand: Command = {
     })
     return 1
   },
+}
+
+/**
+ * Stands in for the MCP consent prompt on the `--json` path, where there
+ * is nothing to prompt on.
+ *
+ * It cannot be called: `mcpConsentPolicy` only reaches the resolver when
+ * `mayPrompt` is true, and `mayPrompt` is false for every `--json` run.
+ * It exists so a JSON run gets its consent policy from the same function
+ * every other run does — `--accept-mcp` or nothing — instead of a second
+ * copy of that rule written out beside the headless call, which is how
+ * the two would eventually disagree.
+ */
+const jsonModeCannotPrompt: McpConsentResolver = () => {
+  throw new Error('facet update --json reached the MCP consent prompt; --json can never prompt')
+}
+
+/**
+ * Write one document to stdout and nothing else.
+ *
+ * Every `--json` exit goes through here so the promise `--json` makes —
+ * one parseable document on stdout, no prose around it — is kept in one
+ * place rather than re-honoured at four call sites.
+ */
+function writeJsonDocument(document: UpdateDocument | UpdateErrorDocument): void {
+  process.stdout.write(`${JSON.stringify(document, null, 2)}\n`)
 }
 
 /** Draw the plan once and tear the mount down; nothing here is live. */

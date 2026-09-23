@@ -100,6 +100,7 @@ describe('version.ts', () => {
     test('exits early when changeset version produces no diff', async () => {
       spyOn(io.shell, 'scanDir').mockResolvedValue(['funny-turtle.md'])
       spyOn(io.shell, 'mintGitHubAppToken').mockResolvedValue('fake-gh-token')
+      spyOn(io.gh, 'authSetupGit').mockResolvedValue(shellResult())
       spyOn(ci, 'loadWorkspacePackages').mockResolvedValue([
         { name: '@agent-facets/protocol', version: '1.0.0', dir: 'packages/core' },
       ])

@@ -1166,7 +1166,7 @@ A write to the project manifest SHALL additionally preserve the comments a user 
 
 The system SHALL register `update` as the canonical command for updating registry-backed facets declared by a project. The system SHALL accept `upgrade` as an alias with identical output, side effects, and exit behavior. Both names SHALL operate on project facets and SHALL NOT update the CLI binary.
 
-The command SHALL accept `--latest` with short alias `-L`, `--interactive` with short alias `-i`, `--dry-run`, `--verbose`, and `--accept-mcp`. It SHALL accept no positional arguments and SHALL NOT expose `--frozen-lockfile`.
+The command SHALL accept `--latest` with short alias `-L`, `--interactive` with short alias `-i`, `--dry-run`, `--json`, `--verbose`, and `--accept-mcp`. It SHALL accept no positional arguments and SHALL NOT expose `--frozen-lockfile`.
 
 #### Scenario: Update command is available in help
 
@@ -1200,6 +1200,12 @@ The command SHALL accept `--latest` with short alias `-L`, `--interactive` with 
 - **WHEN** a user runs `facet update --help`
 - **THEN** the help SHALL describe `update` as operating on facets declared by the project
 - **AND** the help SHALL name `self-update` as the command for updating the CLI binary
+
+#### Scenario: Update rejects json with interactive
+
+- **WHEN** a user runs `facet update --json --interactive`
+- **THEN** the system SHALL print a usage error
+- **AND** the process SHALL exit with code 1
 
 ### Requirement: Update presentations distinguish Current Target and Latest
 
@@ -1404,3 +1410,146 @@ After a non-dry-run selection is confirmed or derived, the update command SHALL 
 - **AND** `--accept-mcp` is not supplied
 - **THEN** the command SHALL fail before mutation with the complete consent information
 - **AND** when `--accept-mcp` is supplied, the command SHALL proceed without prompting if the work is otherwise valid
+
+### Requirement: Update emits machine-readable output on request
+
+The `update` command SHALL accept a `--json` flag. When `--json` is given, the system SHALL emit a single JSON document to stdout and SHALL emit no other output to stdout, on every outcome the command reaches.
+
+#### Scenario: Dry run with json writes nothing to the project
+
+- **WHEN** a user runs `facet update --dry-run --json`
+- **THEN** the system SHALL write a single JSON document to stdout
+- **AND** the command SHALL NOT modify `facets.json`, `facets.lock`, or any other project file
+
+#### Scenario: The document is the only thing on stdout
+
+- **WHEN** a user runs `facet update --json`
+- **THEN** stdout SHALL contain exactly one JSON document and no other text
+- **AND** progress indicators, prose summaries, and no-op messages SHALL be suppressed from stdout
+
+### Requirement: Machine-readable output distinguishes a held facet
+
+When `update --json` reports each facet's outcome, the system SHALL report a facet whose authored specifier forbids a newer published release as a distinct outcome from a facet with no newer release.
+
+#### Scenario: A held facet is reported separately from a current one
+
+- **WHEN** a facet is pinned below a newer published release that its authored specifier does not permit
+- **AND** a user runs `facet update --json`
+- **THEN** the document SHALL report that facet's outcome as held
+- **AND** the document SHALL NOT report it as current
+
+### Requirement: Machine-readable output carries a versioned envelope
+
+Every JSON document the `update` command emits under `--json` SHALL carry a `schemaVersion` field identifying the document's shape, and SHALL carry an `ok` boolean. The system SHALL set `ok` to `false` exactly when the command refuses to run or fails, and SHALL set it to `true` on every other outcome.
+
+#### Scenario: A successful run's document reports ok true
+
+- **WHEN** a user runs `facet update --json` and the command completes without refusing or failing
+- **THEN** the document SHALL carry a `schemaVersion` field
+- **AND** the document SHALL carry an `ok` field set to `true`
+
+#### Scenario: A refused or failed run's document reports ok false
+
+- **WHEN** a user runs `facet update --json` and the command refuses to run or fails
+- **THEN** the document SHALL carry an `ok` field set to `false`
+
+### Requirement: Machine-readable output reports whether the run wrote to the project
+
+An `update --json` document with `ok: true` SHALL carry an `applied` boolean reporting whether the run modified the project. A facet MAY be reported with outcome updated in a document whose `applied` is `false`, when the run previewed a change without writing it.
+
+#### Scenario: A dry run reports applied false with facets it would update
+
+- **WHEN** a user runs `facet update --latest --dry-run --json` against a facet with a newer release
+- **THEN** the document SHALL report that facet's outcome as updated
+- **AND** the document SHALL carry an `applied` field set to `false`
+
+#### Scenario: An applying run reports applied true
+
+- **WHEN** a user runs `facet update --latest --json --accept-mcp` and the run writes to the project
+- **THEN** the document SHALL carry an `applied` field set to `true`
+
+### Requirement: Machine-readable output names each facet's outcome from a fixed set
+
+Each facet entry in the `update --json` document SHALL carry exactly one outcome, drawn from the complete set: updated, current, held, and unsupported. The system SHALL report a facet declared from a source the command cannot check for updates as unsupported.
+
+#### Scenario: Every facet entry carries one of the four outcomes
+
+- **WHEN** a user runs `facet update --json` against a project with at least one facet in each state the command distinguishes
+- **THEN** each facet entry in the document SHALL carry an outcome of updated, current, held, or unsupported
+- **AND** no facet entry SHALL carry any other outcome value
+
+#### Scenario: A git or local facet is reported as unsupported
+
+- **WHEN** a project declares a facet from a source the command cannot check for updates
+- **AND** a user runs `facet update --json`
+- **THEN** the document SHALL report that facet's outcome as unsupported
+
+### Requirement: Machine-readable output reports the version each facet resolves to
+
+Each facet entry in the `update --json` document SHALL report the version this run's flags actually resolve that facet to. The system SHALL report a resolved version exactly when the facet's outcome is updated, and SHALL report none for every other outcome.
+
+#### Scenario: An updated facet reports the version it resolves to
+
+- **WHEN** a user runs `facet update --latest --json` against a facet with a newer release
+- **THEN** the document SHALL report that facet's outcome as updated
+- **AND** the document SHALL report the version this run resolves that facet to
+
+#### Scenario: A facet this run does not update reports no resolved version
+
+- **WHEN** a user runs `facet update --json` against a facet whose outcome is current, held, or unsupported
+- **THEN** the document SHALL report no resolved version for that facet
+
+### Requirement: Machine-readable output tallies outcomes by kind
+
+An `update --json` document with `ok: true` SHALL carry a counts block reporting how many facet entries landed in each outcome. The counts SHALL sum to the number of facet entries the document reports.
+
+#### Scenario: Counts match the facets reported
+
+- **WHEN** a user runs `facet update --json` and the command succeeds
+- **THEN** the document SHALL carry a count for each of updated, current, held, and unsupported
+- **AND** the sum of those counts SHALL equal the number of facet entries in the document
+
+### Requirement: A refused or failed json run emits an error document instead of prose
+
+When `update --json` refuses to run or fails, the system SHALL write exactly one JSON document to stdout reporting what happened, and SHALL write nothing else to stdout. The document SHALL carry an `ok` field set to `false` and an `error` object naming what failed, optional additional detail, and the action to take to resolve it.
+
+#### Scenario: A refusal emits an error document, not a usage message
+
+- **WHEN** a user runs `facet update --json` with an invocation the command refuses
+- **THEN** stdout SHALL contain exactly one JSON document
+- **AND** the document SHALL carry an `ok` field set to `false`
+- **AND** the document's error object SHALL name what failed and the action to take
+- **AND** stdout SHALL contain no prose usage message
+- **AND** stderr SHALL be empty
+- **AND** the process SHALL exit with code 1
+
+#### Scenario: A failure emits an error document with empty stderr
+
+- **WHEN** a user runs `facet update --json` and the command fails after starting work
+- **THEN** stdout SHALL contain exactly one JSON document with `ok` set to `false`
+- **AND** stderr SHALL be empty
+- **AND** the process SHALL exit with code 1
+
+### Requirement: Outdated command is registered
+
+The system SHALL register an `outdated` command that reports the update plan for project facets. The command SHALL NOT modify `facets.json` or `facets.lock`.
+
+#### Scenario: Outdated command is available in help
+
+- **WHEN** a user runs the CLI with `--help`
+- **THEN** the help output SHALL list the `outdated` command with its description
+
+#### Scenario: Outdated command leaves the manifest and lockfile unchanged
+
+- **WHEN** a user runs `facet outdated` in a project with an existing manifest and lockfile
+- **AND** the command completes its report
+- **THEN** the process SHALL exit with code 0
+- **AND** `facets.json` SHALL remain byte-identical to its state before the command ran
+- **AND** `facets.lock` SHALL remain byte-identical to its state before the command ran
+
+#### Scenario: Outdated leaves the manifest and lockfile unchanged even when it cannot report
+
+- **WHEN** a user runs `facet outdated` against a malformed lockfile
+- **THEN** the command SHALL fail without exiting 0
+- **AND** `facets.json` SHALL remain byte-identical to its state before the command ran
+- **AND** `facets.lock` SHALL remain byte-identical to its state before the command ran

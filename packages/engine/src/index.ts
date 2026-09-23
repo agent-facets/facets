@@ -310,6 +310,7 @@ export {
   classifyNoOp,
   defaultSelections,
   displayedVersion,
+  hasAdvancingChoice,
   prepareFacetUpdate,
   runPreparedFacetUpdate,
   validateFacetUpdateSelections,

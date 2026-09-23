@@ -330,25 +330,26 @@ export function aliasProblemLocation(problem: MaterializationAliasProblem): stri
  * the last thing on the stream, where people look for it.
  */
 export function writeMaterializationDetail(failure: RunInstallFailure): boolean {
+  const detail = formatMaterializationDetail(failure)
+  if (!detail) return false
+  process.stderr.write(detail)
+  return true
+}
+
+/** Format diagnostics for either the human report or a JSON error document. */
+export function formatMaterializationDetail(failure: RunInstallFailure): string {
   switch (failure.code) {
     case 'MATERIALIZATION_COLLISION':
-      process.stderr.write(`${formatCollisionReport(failure.groups, failure.staleOverrides)}\n`)
-      return true
+      return `${formatCollisionReport(failure.groups, failure.staleOverrides)}\n`
     case 'MATERIALIZATION_RESOLUTION_INVALID':
-      process.stderr.write(
-        `${formatCollisionReport(failure.groups, [])}\n${failure.problems
-          .map((problem) => `  • alias "${problem.alias}" ${problem.reason}\n      at ${aliasProblemLocation(problem)}`)
-          .join('\n')}\n`,
-      )
-      return true
+      return `${formatCollisionReport(failure.groups, [])}\n${failure.problems
+        .map((problem) => `  • alias "${problem.alias}" ${problem.reason}\n      at ${aliasProblemLocation(problem)}`)
+        .join('\n')}\n`
     case 'MATERIALIZATION_ALIAS_INVALID':
-      process.stderr.write(
-        `A materialization alias in facets.json is not a legal name. Nothing was changed.\n${failure.problems
-          .map((problem) => `  • "${problem.alias}" ${problem.reason}\n      at ${aliasProblemLocation(problem)}`)
-          .join('\n')}\n`,
-      )
-      return true
+      return `A materialization alias in facets.json is not a legal name. Nothing was changed.\n${failure.problems
+        .map((problem) => `  • "${problem.alias}" ${problem.reason}\n      at ${aliasProblemLocation(problem)}`)
+        .join('\n')}\n`
     default:
-      return false
+      return ''
   }
 }
