@@ -64,6 +64,28 @@ describe('facet outdated — refusing the invocation', () => {
     expect(stderr).toContain('facet outdated does not accept positional arguments')
     expect(prepareSpy).not.toHaveBeenCalled()
   })
+
+  // The same refusal used to print prose to stderr and exit 1 with an
+  // empty stdout even under `--json` — indistinguishable from a crash to
+  // the unattended CI that reads this. Asserts the same three things the
+  // `update` suite does: one parseable document, `ok: false` in the
+  // command's existing words, and silent stderr.
+  test('a positional argument under --json is one ok:false document on stdout, and exits 1', async () => {
+    const { stderr, result } = await captureStderr(() =>
+      captureStdout(() => outdatedCommand.run(['alpha'], { json: true }), { raw: true }),
+    )
+
+    expect(result.result).toBe(1)
+    const document = JSON.parse(result.stdout)
+    expect(document.ok).toBe(false)
+    // The same sentence the human path prints, moved rather than reworded.
+    expect(document.error.what).toBe('facet outdated does not accept positional arguments')
+    expect(document.error.detail).toBe('outdated reports on every facet declared in facets.json')
+    expect(document.error.fix).toBe("run 'facet outdated --json' for a machine-readable report")
+    expect(stderr).toBe('')
+    // Refused before anything looked at the project.
+    expect(prepareSpy).not.toHaveBeenCalled()
+  })
 })
 
 describe('facet outdated — reporting', () => {
