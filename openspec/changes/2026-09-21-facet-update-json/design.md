@@ -83,9 +83,8 @@ same reason — it is a sum of the document, not an independent count.
 ### 2. `facet outdated` is `facet update --dry-run` with the dry run forced
 
 `facet outdated` SHALL be implemented as the update command with `dryRun` fixed to
-`true` and JSON output on by default, rather than as a parallel implementation. It
-SHALL NOT accept flags that would make it write, and `applied` in its document SHALL
-always be `false`.
+`true`, rather than as a parallel implementation. It SHALL NOT accept flags that would
+make it write, and `applied` in its document SHALL always be `false`.
 
 The point is that the two can never drift. If `outdated` re-derived staleness on its
 own, every change to resolution would have to be made twice and the second copy would

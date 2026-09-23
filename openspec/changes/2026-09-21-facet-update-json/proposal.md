@@ -35,11 +35,17 @@ facet, and a tally of the entries by outcome.
 
 Each facet entry SHALL report exactly one of four outcomes:
 
-- `updated` — this run moved the facet to a newer release.
+- `updated` — this run's flags resolve the facet to a newer release than what is
+  declared, whether or not the run goes on to write it.
 - `current` — nothing newer exists to move to.
 - `held` — a newer release exists, and this run leaves it alone. In the default mode
   that is precisely the release the authored specifier forbids.
 - `unsupported` — the facet's source cannot be version-checked at all.
+
+The document-level `applied` boolean SHALL report whether the run actually wrote
+anything to the project. A facet entry MAY report `updated` in a document whose
+`applied` is `false` — a dry run, for instance, resolves the newer release without
+writing it.
 
 Failures SHALL also be expressible as JSON, so a caller that asked for a document
 never has to switch parsers halfway through. The error document SHALL carry the same
