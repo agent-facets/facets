@@ -12,7 +12,7 @@ import { createElement } from 'react'
 import type { Command } from '../../commands.ts'
 import { InstallView } from '../../tui/views/install/install-view.tsx'
 import { UpdatePlanView } from '../../tui/views/update/plan-view.tsx'
-import { writeCliError } from '../../util/errors.ts'
+import { type CliError, writeCliError } from '../../util/errors.ts'
 import { writeInstallFailureDetail } from '../../util/install-detail.ts'
 import { canPromptInteractively, canRenderLiveOutput, currentTerminalCapabilities } from '../../util/interactive.ts'
 import { ensureAdapters } from '../shared/ensure-adapters.ts'
@@ -69,20 +69,31 @@ export const updateCommand: Command = {
     json: { type: 'boolean', description: 'Emit machine-readable JSON to stdout instead of the plan view' },
   },
   run: async (args, flags) => {
+    // Read before the first refusal below, not after it. A run refused
+    // for its arguments owes the caller the same one document on stdout
+    // that every other outcome produces — an empty stdout and a non-zero
+    // exit is indistinguishable from a crash to the CI that reads this.
+    const json = flags.json === true
+    const interactive = flags.interactive === true
+
     // No positional filter yet — interactive selection is how a user
     // updates some facets but not others, so say that rather than
     // rejecting the argument with nothing to offer instead.
     if (args.length > 0) {
-      writeCliError({
+      const error = {
         what: `facet update does not accept positional arguments (got "${args[0]}")`,
         detail: 'update considers every facet declared in facets.json',
         fix: "run 'facet update --interactive' to choose which facets to update",
-      })
+      }
+      if (json) {
+        // The document replaces the report, never the exit code: a
+        // caller that only checked `$?` must still see this fail.
+        writeJsonDocument(buildUpdateErrorJson(error))
+        return 1
+      }
+      writeCliError(error)
       return 1
     }
-
-    const interactive = flags.interactive === true
-    const json = flags.json === true
 
     // This has to come before the terminal check below, not after it.
     // Both are true for `facet update --json --interactive` in CI, and
@@ -91,11 +102,20 @@ export const updateCommand: Command = {
     // refused because the two flags contradict each other, and it would
     // still be refused on the nicest terminal in the world.
     if (json && interactive) {
-      writeCliError({
+      const error = {
         what: 'facet update --json cannot be combined with --interactive',
         detail: 'the picker writes to stdout, which would corrupt the JSON document',
         fix: "run 'facet update --json --dry-run' to see what would change without prompting",
-      })
+      }
+      // Same shape as every other refusal here, even though only the
+      // first arm can run: this site is reached with --json set, so the
+      // prose arm is the one that never fires. Written out anyway so all
+      // three refusals read alike and none of them can drift apart.
+      if (json) {
+        writeJsonDocument(buildUpdateErrorJson(error))
+        return 1
+      }
+      writeCliError(error)
       return 1
     }
 
@@ -103,11 +123,16 @@ export const updateCommand: Command = {
     // a list should not wait through every registry lookup to be told the
     // list can never be shown.
     if (interactive && !canPromptInteractively()) {
-      writeCliError({
+      const error = {
         what: 'facet update --interactive needs an interactive terminal',
         detail: 'this environment cannot prompt, so the selection screen cannot run here',
         fix: "run 'facet update' or 'facet update --latest' to apply updates without prompting",
-      })
+      }
+      if (json) {
+        writeJsonDocument(buildUpdateErrorJson(error))
+        return 1
+      }
+      writeCliError(error)
       return 1
     }
 
@@ -236,8 +261,40 @@ export const updateCommand: Command = {
     // Only now: adapters can trigger a picker and an install of their
     // own, which is a side effect a preview or a cancellation must never
     // have paid for.
-    const adapters = await ensureAdapters()
+    //
+    // Under `--json` the errors are collected instead of written. Two
+    // reasons, both of them the document's: the picker would draw over
+    // stdout, and the first failure arm reports one error per broken
+    // adapter — several JSON values on one stream is nothing a consumer
+    // can parse. So they are gathered here and only the first is spoken.
+    const adapterErrors: CliError[] = []
+    const adapters = await ensureAdapters(
+      json
+        ? {
+            headless: true,
+            report: (error) => {
+              adapterErrors.push(error)
+            },
+          }
+        : {},
+    )
     if (adapters === null) {
+      if (json) {
+        writeJsonDocument(
+          buildUpdateErrorJson(
+            // The fallback is for a future arm of `ensureAdapters` that
+            // returns null without reporting: a run that said nothing at
+            // all would be the one failure mode `--json` exists to
+            // prevent, so it gets a document rather than silence.
+            adapterErrors[0] ?? {
+              what: 'facet update could not resolve any adapters',
+              detail: 'adapter discovery failed without reporting a reason',
+              fix: "run 'facet adapter add <name>' and try again",
+            },
+          ),
+        )
+        return 1
+      }
       // ensureAdapters already wrote the appropriate CLI error.
       return 1
     }

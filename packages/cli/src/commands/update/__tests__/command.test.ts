@@ -1,9 +1,10 @@
 import { afterAll, afterEach, describe, expect, type Mock, spyOn, test } from 'bun:test'
 import * as engine from '@agent-facets/engine'
 import { CURRENT_LOCKFILE_VERSION } from '@agent-facets/protocol'
-import { captureStderr, captureStdout } from '../../../__tests__/helpers/capture-std.ts'
+import { captureStderr, captureStdout, withSilencedStdout } from '../../../__tests__/helpers/capture-std.ts'
 import { stripTerminalControls } from '../../../__tests__/helpers/terminal-output.ts'
 import { withTTY } from '../../../__tests__/helpers/with-tty.ts'
+import * as pickerInstallModule from '../../adapter/pick-and-install.ts'
 import * as adapterModule from '../../shared/ensure-adapters.ts'
 import { updateCommand } from '../index.ts'
 import * as discoveryModule from '../run-discovery.ts'
@@ -12,7 +13,11 @@ import { candidate, current, unsupported } from './fixtures.ts'
 
 type Prepare = typeof engine.prepareFacetUpdate
 const prepareSpy = spyOn(engine, 'prepareFacetUpdate') as unknown as Mock<Prepare>
-const adaptersSpy = spyOn(adapterModule, 'ensureAdapters')
+// `let`, because one test below has to put the REAL `ensureAdapters`
+// back to exercise its headless path. Restoring a spy retires it for
+// good, so that test re-installs a fresh one and rebinds this name —
+// every later test still gets a stub instead of the real thing.
+let adaptersSpy = spyOn(adapterModule, 'ensureAdapters')
 // Stubbed rather than mounted: the real picker waits on keystrokes, so a
 // test that let it open would hang until the suite timed out.
 const pickerSpy = spyOn(pickerModule, 'runUpdatePicker')
@@ -581,12 +586,17 @@ describe('facet update — --json', () => {
   // ordering would pass on a developer's machine and fail in CI.
   test('--json --interactive is refused for the flags, not the terminal, in a non-TTY', async () => {
     const { stderr, result } = await withTTY(false, () =>
-      captureStderr(() => updateCommand.run([], { json: true, interactive: true })),
+      captureStderr(() => captureStdout(() => updateCommand.run([], { json: true, interactive: true }), { raw: true })),
     )
 
-    expect(result).toBe(1)
-    expect(stderr).toContain('facet update --json cannot be combined with --interactive')
-    expect(stderr).not.toContain('needs an interactive terminal')
+    expect(result.result).toBe(1)
+    const document = JSON.parse(result.stdout)
+    expect(document.ok).toBe(false)
+    expect(document.error.what).toBe('facet update --json cannot be combined with --interactive')
+    expect(document.error.what).not.toContain('needs an interactive terminal')
+    // The reason is on stdout now, so stderr has to be silent: a
+    // consumer that reads both would see the same refusal twice.
+    expect(stderr).toBe('')
     // Refused before anything looked at the project or the registry.
     expect(prepareSpy).not.toHaveBeenCalled()
     expect(adaptersSpy).not.toHaveBeenCalled()
@@ -594,11 +604,16 @@ describe('facet update — --json', () => {
 
   test('--json --interactive is refused on a real terminal too', async () => {
     const { stderr, result } = await withTTY(true, () =>
-      captureStderr(() => updateCommand.run([], { json: true, interactive: true })),
+      captureStderr(() => captureStdout(() => updateCommand.run([], { json: true, interactive: true }), { raw: true })),
     )
 
-    expect(result).toBe(1)
-    expect(stderr).toContain('facet update --json cannot be combined with --interactive')
+    expect(result.result).toBe(1)
+    const document = JSON.parse(result.stdout)
+    expect(document.ok).toBe(false)
+    expect(document.error.what).toBe('facet update --json cannot be combined with --interactive')
+    expect(document.error.detail).toBe('the picker writes to stdout, which would corrupt the JSON document')
+    expect(document.error.fix).toBe("run 'facet update --json --dry-run' to see what would change without prompting")
+    expect(stderr).toBe('')
     expect(prepareSpy).not.toHaveBeenCalled()
   })
 
@@ -751,5 +766,215 @@ describe('facet update — --json', () => {
     expect(`${document.error.what} ${document.error.detail}`).toContain('ghost')
     expect(stderr).toBe('')
     runSpy.mockRestore()
+  })
+})
+
+/**
+ * The four ways a `--json` run can refuse before it ever reaches the
+ * engine: a positional argument, the flag conflict, the terminal check
+ * behind it, and adapter discovery coming up empty.
+ *
+ * All four used to print prose to stderr and exit 1 with an empty
+ * stdout, which is exactly what a crash looks like to the unattended CI
+ * that reads this command. Every test here asserts the same three
+ * things: stdout parses as ONE document, that document says `ok: false`
+ * in the command's existing words, and stderr stayed silent.
+ */
+describe('facet update — --json refuses with a document, never with prose', () => {
+  test('a positional argument is one ok:false document on stdout, and exits 1', async () => {
+    const { stderr, result } = await captureStderr(() =>
+      captureStdout(() => updateCommand.run(['alpha'], { json: true }), { raw: true }),
+    )
+
+    expect(result.result).toBe(1)
+    const document = JSON.parse(result.stdout)
+    expect(document.ok).toBe(false)
+    // The same sentence the human path prints, moved rather than reworded.
+    expect(document.error.what).toBe('facet update does not accept positional arguments (got "alpha")')
+    expect(document.error.detail).toBe('update considers every facet declared in facets.json')
+    expect(document.error.fix).toBe("run 'facet update --interactive' to choose which facets to update")
+    expect(stderr).toBe('')
+    // Refused before anything looked at the project.
+    expect(prepareSpy).not.toHaveBeenCalled()
+    expect(adaptersSpy).not.toHaveBeenCalled()
+  })
+
+  // Without `--json` the prose block is still the right answer. This is
+  // the guard against "fixed" meaning "every user now reads JSON".
+  test('the same refusal without --json is still prose on stderr', async () => {
+    const { stderr, result } = await captureStderr(() => updateCommand.run(['alpha'], {}))
+
+    expect(result).toBe(1)
+    expect(stderr).toContain('does not accept positional arguments')
+  })
+
+  // Two refusals are true at once here. Only the first may speak: two
+  // JSON values on one stream is not a document, it is a parse error.
+  test('a positional argument AND --interactive still produce exactly one document', async () => {
+    const { stderr, result } = await withTTY(false, () =>
+      captureStderr(() =>
+        captureStdout(() => updateCommand.run(['alpha'], { json: true, interactive: true }), { raw: true }),
+      ),
+    )
+
+    expect(result.result).toBe(1)
+    // The parse is the assertion: a second document appended to the
+    // first makes this throw.
+    const document = JSON.parse(result.stdout)
+    expect(document.ok).toBe(false)
+    expect(document.error.what).toContain('does not accept positional arguments')
+    // Counted as well as parsed, so a future emitter that wrote one
+    // document with a stray object inside it could not pass quietly.
+    expect(result.stdout.match(/"schemaVersion"/g)).toHaveLength(1)
+    expect(stderr).toBe('')
+  })
+
+  // The terminal check sits behind the flag conflict, so under `--json`
+  // it is only reachable if that ordering ever changes. Its document
+  // arm is the thing that keeps the promise when it does.
+  test('the flag conflict, not the terminal, is the document a non-TTY gets', async () => {
+    const { stderr, result } = await withTTY(false, () =>
+      captureStderr(() => captureStdout(() => updateCommand.run([], { json: true, interactive: true }), { raw: true })),
+    )
+
+    expect(result.result).toBe(1)
+    const document = JSON.parse(result.stdout)
+    expect(document.error.what).toBe('facet update --json cannot be combined with --interactive')
+    expect(result.stdout).not.toContain('needs an interactive terminal')
+    expect(stderr).toBe('')
+  })
+
+  // `--interactive` alone on a non-TTY keeps its prose: there is no
+  // document to protect, and the user is a human at a keyboard.
+  test('--interactive without --json keeps the terminal error on stderr', async () => {
+    const { stderr, result } = await withTTY(false, () =>
+      captureStderr(() => updateCommand.run([], { interactive: true })),
+    )
+
+    expect(result).toBe(1)
+    expect(stderr).toContain('facet update --interactive needs an interactive terminal')
+  })
+})
+
+/**
+ * Adapter discovery, with the real `ensureAdapters` in place.
+ *
+ * Every other test in this file stubs that function, which is why the
+ * gap this closes survived: nothing exercised what it actually does. The
+ * spy comes off here and only the engine's adapter loader is stubbed, so
+ * the code between the command and the picker is the code that ships.
+ */
+describe('facet update — --json and adapter discovery', () => {
+  type LoadAdapters = typeof engine.loadInstalledAdapters
+
+  /**
+   * Put the real `ensureAdapters` back for one test, with the engine's
+   * loader answering `loaded` and the picker under a spy so a regression
+   * mounts nothing and hangs nothing. The `ensureAdapters` spy is
+   * re-installed afterwards — restoring retires it for good, and every
+   * later test in this file needs a stub.
+   */
+  async function withRealAdapterDiscovery<T>(
+    loaded: engine.LoadAdaptersResult,
+    fn: (pickerInstallSpy: Mock<typeof pickerInstallModule.pickAndInstallAdapters>) => Promise<T>,
+  ): Promise<T> {
+    adaptersSpy.mockRestore()
+    const loadSpy = spyOn(engine, 'loadInstalledAdapters') as unknown as Mock<LoadAdapters>
+    loadSpy.mockResolvedValue(loaded)
+    const pickerInstallSpy = spyOn(pickerInstallModule, 'pickAndInstallAdapters')
+    pickerInstallSpy.mockResolvedValue({ ok: false, reason: 'aborted' })
+    try {
+      return await fn(pickerInstallSpy)
+    } finally {
+      pickerInstallSpy.mockRestore()
+      loadSpy.mockRestore()
+      adaptersSpy = spyOn(adapterModule, 'ensureAdapters')
+    }
+  }
+
+  // On a TTY the picker is what a non-JSON run would open. A `--json`
+  // run has a document on that stdout, so the picker must never be
+  // reached at all — not opened and cancelled, not reached.
+  test('zero adapters on a TTY is one document, and the picker is never mounted', async () => {
+    preparing([BOUNDED])
+    const { stderr, result, pickerCalled } = await withRealAdapterDiscovery(
+      { ok: true, adapters: [] },
+      async (pickerInstallSpy) => {
+        const captured = await withTTY(true, () =>
+          captureStderr(() => captureStdout(() => updateCommand.run([], { json: true }), { raw: true })),
+        )
+        return { ...captured, pickerCalled: pickerInstallSpy.mock.calls.length }
+      },
+    )
+
+    expect(pickerCalled).toBe(0)
+    expect(result.result).toBe(1)
+    const document = JSON.parse(result.stdout)
+    expect(document.ok).toBe(false)
+    expect(document.error.what).toBe('no adapters installed')
+    expect(document.error.detail).toBe('this is a non-interactive environment; the picker cannot run here')
+    expect(document.error.fix).toContain('first (e.g. claude-code, opencode)')
+    expect(stderr).toBe('')
+  })
+
+  test('zero adapters off a TTY is the same document, and still exits 1', async () => {
+    preparing([BOUNDED])
+    const { stderr, result, pickerCalled } = await withRealAdapterDiscovery(
+      { ok: true, adapters: [] },
+      async (pickerInstallSpy) => {
+        const captured = await withTTY(false, () =>
+          captureStderr(() => captureStdout(() => updateCommand.run([], { json: true }), { raw: true })),
+        )
+        return { ...captured, pickerCalled: pickerInstallSpy.mock.calls.length }
+      },
+    )
+
+    expect(pickerCalled).toBe(0)
+    expect(result.result).toBe(1)
+    expect(JSON.parse(result.stdout).error.what).toBe('no adapters installed')
+    expect(stderr).toBe('')
+  })
+
+  // The loader reports one error per broken installation. Written
+  // straight out, two of them would be two JSON values on one stream —
+  // which no consumer can parse. Only the first is spoken.
+  test('several broken adapters still produce exactly one document', async () => {
+    preparing([BOUNDED])
+    const broken = (name: string): engine.InstalledAdapterFailure => ({
+      kind: 'broken',
+      name,
+      managed: false,
+      reason: { kind: 'invalid-receipt', detail: `${name} receipt is not readable` },
+      repair: { kind: 'unmanaged-name', name },
+    })
+
+    const { stderr, result } = await withRealAdapterDiscovery(
+      { ok: false, failures: [broken('alpha'), broken('beta')] },
+      () =>
+        withTTY(false, () =>
+          captureStderr(() => captureStdout(() => updateCommand.run([], { json: true }), { raw: true })),
+        ),
+    )
+
+    expect(result.result).toBe(1)
+    const document = JSON.parse(result.stdout)
+    expect(document.ok).toBe(false)
+    // One document, and it is the FIRST failure's.
+    expect(result.stdout.match(/"schemaVersion"/g)).toHaveLength(1)
+    expect(`${document.error.what} ${document.error.detail}`).toContain('alpha')
+    expect(`${document.error.what} ${document.error.detail}`).not.toContain('beta')
+    expect(stderr).toBe('')
+  })
+
+  // The other half of the contract: a run without `--json` still gets
+  // the prose block, one per broken adapter, on stderr.
+  test('without --json the same failures are still prose on stderr', async () => {
+    preparing([BOUNDED])
+    const { stderr, result } = await withRealAdapterDiscovery({ ok: true, adapters: [] }, () =>
+      withTTY(false, () => captureStderr(() => withSilencedStdout(() => updateCommand.run([], {})))),
+    )
+
+    expect(result).toBe(1)
+    expect(stderr).toContain('no adapters installed')
   })
 })
