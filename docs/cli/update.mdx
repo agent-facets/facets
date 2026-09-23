@@ -79,7 +79,7 @@ Each moving facet is named with the version it left and the version it took. Rec
 
 `--json` prints one document to stdout and nothing else — no plan view, no progress indicator. The exit code and the document answer two different questions: the exit code says whether the command *worked* (`0` for every successful run, whether or not anything moved, including a no-op or a completed `--dry-run`; `1` when preparation, selection, or the install itself failed — see [Exit codes](#exit-codes)), and the document's `applied` field and each facet's `outcome` say whether anything *moved*. Check the exit code first; read the document for what happened.
 
-A project that pins `cowsay` at `1.0.0`, with `1.0.1` published to the registry, run through `facet update --latest --json`:
+A project that pins `cowsay` at `1.0.0`, with `1.0.1` published to the registry, run through `facet update --latest --json --accept-mcp`:
 
 ```json
 {
@@ -93,6 +93,7 @@ A project that pins `cowsay` at `1.0.0`, with `1.0.1` published to the registry,
       "current": "1.0.0",
       "target": "1.0.0",
       "latest": "1.0.1",
+      "resolved": "1.0.1",
       "outcome": "updated"
     }
   ],
@@ -100,46 +101,62 @@ A project that pins `cowsay` at `1.0.0`, with `1.0.1` published to the registry,
 }
 ```
 
+The run wrote `1.0.1`, so `facets.lock` records `1.0.1` afterward — yet `current` in the document still reads `1.0.0`. That is deliberate: `current` is the version that was locked when this run *started*, the "from"; `resolved` is what the run's flags took, the "to". This holds on an applied run too, not only on a preview.
+
 <ResponseField name="applied" type="boolean">
   Whether this run actually wrote. `false` for a dry run; `true` once `facets.json`, `facets.lock`, and any assets have been written.
 </ResponseField>
 
 <ResponseField name="facets" type="array">
-  One entry per declared facet, each with `declared` (the specifier exactly as written in `facets.json`), `current` (the installed version), `target` (the newest release the declared range permits), `latest` (the registry's newest release), and `outcome`.
+  One entry per declared facet, each with `declared` (the specifier exactly as written in `facets.json`), `current` (the version locked when this run started), `target` (the newest release the declared range permits), `latest` (the registry's newest release), `resolved` (the version this run's flags actually take, or `null`), and `outcome`.
 </ResponseField>
 
 Each facet's `outcome` is one of four values:
 
 <ResponseField name="updated" type="outcome">
-  This run's flags take a newer release for it — `target` under a plain update, `latest` under `--latest`.
+  This run's flags resolve to a newer release for it — `target` under a plain update, `latest` under `--latest`. `resolved` carries that version; it is never `null` here.
 
   `outcome` says what the flags resolve to, not whether anything was written. Read `applied` for that: a preview (`--dry-run`, or [`facet outdated`](/cli/outdated)) reports `applied: false` while still marking movable facets `updated`, because that is what the same flags would do for real.
 </ResponseField>
 
 <ResponseField name="current" type="outcome">
-  Already at the newest release that exists. Nothing to take.
+  Already at the newest release that exists. Nothing to take; `resolved` is `null`.
 </ResponseField>
 
 <ResponseField name="held" type="outcome">
-  A newer release exists, but this run doesn't take it. A facet pinned to an exact version, or floating within a range that doesn't reach the newest release, shows `held` — plain words for "the ranges in `facets.json` permit none of them" — until it runs with `--latest`. A fully pinned project sees `held` rather than `updated` until then.
+  A newer release exists, but this run's flags don't resolve to it; `resolved` is `null`. The common case is a facet pinned to an exact version — taking anything newer needs `--latest`. A floating range can also land here, but not merely because it falls short of the newest release: if the range's own ceiling still advances past what's locked, that's `updated`, not `held` (see [Current, Target, and Latest](#current-target-and-latest)). `--latest` can report `held` too, when the registry's newest answer has moved backwards relative to what's locked — a fact about the registry, not the specifier.
 </ResponseField>
 
 <ResponseField name="unsupported" type="outcome">
-  A git or local source. Not checked for updates; `current`, `target`, and `latest` are all `null`.
+  A git or local source. Not checked for updates; `current`, `target`, `latest`, and `resolved` are all `null`.
 </ResponseField>
 
 `counts` tallies how many facets landed in each outcome, always summing to `facets.length`.
 
-On failure the document takes a different shape and the exit code is `1`:
+Every refusal under `--json` — a bad flag combination, a positional argument, a non-interactive terminal where the picker would run, an adapter failure — also writes a single document to stdout, nothing to stderr, and exits `1`. Captured from a real `facet update --json --interactive` run:
 
 ```json
 {
   "schemaVersion": "1",
   "ok": false,
   "error": {
-    "what": "facets.json declares a source that cannot be parsed",
-    "detail": "cowsay: \"not-a-version\" is not a valid specifier",
-    "fix": "correct that entry in facets.json by hand"
+    "what": "facet update --json cannot be combined with --interactive",
+    "detail": "the picker writes to stdout, which would corrupt the JSON document",
+    "fix": "run 'facet update --json --dry-run' to see what would change without prompting"
+  }
+}
+```
+
+A project-level failure takes the same shape. Captured from a real run against a `facets.json` declaring a source `facets.lock` doesn't recognize:
+
+```json
+{
+  "schemaVersion": "1",
+  "ok": false,
+  "error": {
+    "what": "this project cannot be checked for updates yet",
+    "detail": "cowsay: facets.json declares \"???\" (unrecognized source specifier \"???\")",
+    "fix": "run 'facet install' to bring facets.lock in line with facets.json, then update again"
   }
 }
 ```
@@ -151,15 +168,15 @@ On failure the document takes a different shape and the exit code is `1`:
 Every checkable facet has three versions, and the plan shows all three:
 
 <ResponseField name="current" type="installed">
-  The exact version `facets.lock` records.
+  The exact version `facets.lock` records when the run starts. It does not move even on an applied run: `facets.lock` is rewritten, but this value keeps describing the "from", not the "to" — read `resolved` in the [JSON output](#json-output) for what a run under `--json` actually took.
 </ResponseField>
 
 <ResponseField name="target" type="range-respecting">
-  The newest release the specifier in `facets.json` already permits. Taking it never changes what the project declares.
+  The newest release the specifier in `facets.json` already permits. Taking it never changes what the project declares. Plain `facet update` takes Target.
 </ResponseField>
 
 <ResponseField name="latest" type="newest published">
-  The registry's newest release, whatever the specifier says.
+  The registry's newest release, whatever the specifier says. `--latest` takes Latest instead of Target.
 </ResponseField>
 
 All three appear even for a facet that is not moving, because that is what answers why it stayed put:
