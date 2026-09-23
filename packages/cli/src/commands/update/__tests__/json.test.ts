@@ -180,7 +180,76 @@ describe('buildUpdateJson', () => {
       current: null,
       target: null,
       latest: null,
+      resolved: null,
       outcome: 'unsupported',
+    })
+  })
+
+  describe('resolved', () => {
+    /**
+     * `resolved` is non-null exactly when `outcome` is `updated` — the
+     * property this field exists to guarantee. Assert it over every
+     * outcome the document can produce, not just the `updated` cases,
+     * and fail loudly if the case list is ever emptied by accident.
+     */
+    const cases: Array<{ label: string; doc: () => ReturnType<typeof buildUpdateJson> }> = [
+      {
+        label: 'updated in range mode',
+        doc: () => buildUpdateJson({ plan: [rangeAdvances], mode: 'range', applied: true }),
+      },
+      {
+        label: 'updated under --latest',
+        doc: () => buildUpdateJson({ plan: [pinnedWithNewerRelease], mode: 'latest', applied: true }),
+      },
+      { label: 'held', doc: () => buildUpdateJson({ plan: [pinnedWithNewerRelease], mode: 'range', applied: false }) },
+      { label: 'current', doc: () => buildUpdateJson({ plan: [trulyCurrent], mode: 'range', applied: false }) },
+      { label: 'unsupported', doc: () => buildUpdateJson({ plan: [gitFacet], mode: 'range', applied: false }) },
+    ]
+
+    test('the biconditional holds over every outcome, and the case list is not empty', () => {
+      expect(cases.length).toBeGreaterThan(0)
+      for (const { label, doc } of cases) {
+        const facet = doc().facets[0]
+        if (!facet) throw new Error(`${label}: no facet in document`)
+        expect(facet.resolved !== null, `${label}: resolved/outcome disagree (${JSON.stringify(facet)})`).toBe(
+          facet.outcome === 'updated',
+        )
+      }
+    })
+
+    test('resolved carries the advancing choice, from the same call facetOutcome uses', () => {
+      const rangeDoc = buildUpdateJson({ plan: [rangeAdvances], mode: 'range', applied: true })
+      expect(rangeDoc.facets[0]?.resolved).toBe('1.2.0')
+
+      // Pinned target with a newer registry release: latest mode resolves
+      // to the registry's latest, not to `target` (which never moves for
+      // a pin). Re-deriving from mode instead of `advancingChoice` would
+      // still pass this one case, which is why the backwards-registry
+      // case below also has to hold.
+      const latestDoc = buildUpdateJson({ plan: [pinnedWithNewerRelease], mode: 'latest', applied: true })
+      expect(latestDoc.facets[0]?.resolved).toBe('1.4.0')
+      expect(latestDoc.facets[0]?.resolved).toBe(latestDoc.facets[0]?.latest)
+
+      // The backwards-registry case: range mode is `updated` even though
+      // `latest` moved backwards, so `resolved` must be the range target,
+      // not a value keyed off the `latest` column.
+      const backwardsDoc = buildUpdateJson({ plan: [registryMovedBackwards], mode: 'range', applied: true })
+      expect(backwardsDoc.facets[0]?.resolved).toBe('1.2.0')
+      expect(backwardsDoc.facets[0]?.resolved).toBe(backwardsDoc.facets[0]?.target)
+    })
+
+    test('the other five fields are unchanged from their present values', () => {
+      const doc = buildUpdateJson({ plan: [rangeAdvances], mode: 'range', applied: true })
+      expect(doc.facets[0]).toMatchObject({
+        name: 'alpha',
+        declared: '1.*',
+        current: '1.0.0',
+        target: '1.2.0',
+        latest: '1.2.0',
+        outcome: 'updated',
+      })
+      expect(doc.applied).toBe(true)
+      expect(doc.counts).toEqual({ updated: 1, current: 0, held: 0, unsupported: 0 })
     })
   })
 

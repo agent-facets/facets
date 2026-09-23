@@ -36,6 +36,13 @@ export interface UpdateJsonFacet {
   target: string | null
   /** The registry's newest release, or null. */
   latest: string | null
+  /**
+   * What this run's flags actually resolve this facet to, or null when
+   * the run takes nothing. `target` and `latest` both exist regardless
+   * of mode, so neither one alone answers "what will this become" — this
+   * field does, and it is null exactly when `outcome` is not `updated`.
+   */
+  resolved: string | null
   outcome: UpdateOutcome
 }
 
@@ -104,17 +111,23 @@ function facetEntry(row: UpdatePlanRow, mode: UpdateMode): UpdateJsonFacet {
         current: null,
         target: null,
         latest: null,
+        resolved: null,
         outcome: 'unsupported',
       }
     case 'candidate':
     case 'current': {
       const facet = row.facet
+      // Same call `facetOutcome` uses to decide `updated`, so the two
+      // can never disagree: `resolved` is the version that call found,
+      // not a re-derivation from `target`/`latest` by mode.
+      const choice = advancingChoice(facet, mode)
       return {
         name: facet.name,
         declared: facet.authored.source,
         current: describeVersionSpec(facet.current),
         target: describeVersionSpec(displayedVersion(facet, 'range')),
         latest: describeVersionSpec(displayedVersion(facet, 'latest')),
+        resolved: choice ? describeVersionSpec(choice.version) : null,
         outcome: facetOutcome(facet, mode),
       }
     }
