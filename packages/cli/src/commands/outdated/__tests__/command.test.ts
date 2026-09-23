@@ -1,6 +1,6 @@
 import { afterAll, afterEach, describe, expect, type Mock, spyOn, test } from 'bun:test'
 import { createHash } from 'node:crypto'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as engine from '@agent-facets/engine'
@@ -38,11 +38,11 @@ const STALE = candidate({
   latest: '2.0.0',
 })
 
-function preparing(): void {
+function preparing(projectRoot: string): void {
   prepareSpy.mockResolvedValue({
     ok: true,
     prepared: {
-      projectRoot: '/tmp/project',
+      projectRoot,
       plan: [STALE],
       manifestState: { kind: 'absent' },
       lockfileState: { kind: 'absent' },
@@ -68,7 +68,7 @@ describe('facet outdated — refusing the invocation', () => {
 
 describe('facet outdated — reporting', () => {
   test('--json produces one parseable document', async () => {
-    preparing()
+    preparing(mkdtempSync(join(tmpdir(), 'facet-outdated-report-')))
     const { stdout, result } = await captureStdout(() => outdatedCommand.run([], { json: true }), { raw: true })
     expect(result).toBe(0)
     const document = JSON.parse(stdout)
@@ -86,8 +86,12 @@ describe('facet outdated — the guarantee: it can never write', () => {
   // write. A comment asserting that is not proof; running it against a
   // real fixture and hashing the files before and after is.
   test('facets.json and facets.lock are byte-identical before and after a run against a stale fixture', async () => {
-    preparing()
     const dir = mkdtempSync(join(tmpdir(), 'facet-outdated-guarantee-'))
+    // The mock is bound to the same directory being hashed below — the
+    // whole point is that there is only one root in play, so a write
+    // landing anywhere the mock claims is prepared is a write the
+    // assertions below would actually catch.
+    preparing(dir)
     const facetsJsonPath = join(dir, 'facets.json')
     const facetsLockPath = join(dir, 'facets.lock')
     writeFileSync(facetsJsonPath, JSON.stringify({ facets: { alpha: { source: '1.*' } } }, null, 2))
@@ -99,10 +103,12 @@ describe('facet outdated — the guarantee: it can never write', () => {
     const hashOf = (path: string) => createHash('sha256').update(readFileSync(path)).digest('hex')
     const beforeJson = hashOf(facetsJsonPath)
     const beforeLock = hashOf(facetsLockPath)
+    const beforeListing = readdirSync(dir).sort()
 
     const previousCwd = process.cwd()
     let afterJson: string
     let afterLock: string
+    let afterListing: string[]
     process.chdir(dir)
     try {
       const { result } = await captureStdout(() => outdatedCommand.run([], { json: true }), { raw: true })
@@ -111,6 +117,9 @@ describe('facet outdated — the guarantee: it can never write', () => {
       // cleanup removes it.
       afterJson = hashOf(facetsJsonPath)
       afterLock = hashOf(facetsLockPath)
+      // A third file dropped beside the two we hash would pass a
+      // two-file checksum comparison; the listing catches it.
+      afterListing = readdirSync(dir).sort()
     } finally {
       process.chdir(previousCwd)
       rmSync(dir, { recursive: true, force: true })
@@ -118,5 +127,6 @@ describe('facet outdated — the guarantee: it can never write', () => {
 
     expect(afterJson).toBe(beforeJson)
     expect(afterLock).toBe(beforeLock)
+    expect(afterListing).toEqual(beforeListing)
   })
 })
