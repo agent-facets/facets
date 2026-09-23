@@ -29,20 +29,20 @@ and `create` each declare the same flag — `json: { type: 'boolean', descriptio
 
 The system SHALL accept a `--json` flag on `facet update`. When the flag is set, the
 command SHALL write a single JSON document to stdout and SHALL NOT write the
-human-readable table. The document SHALL carry a schema version so consumers can pin
-it, a boolean saying whether the run actually wrote anything, one entry per planned
-facet, and a tally of the entries by outcome.
+human-readable table. Every document SHALL carry a schema version so consumers can pin it. Successful
+documents SHALL also carry a boolean saying whether the run actually wrote anything,
+one entry per planned facet, and a tally of the entries by outcome.
 
 Each facet entry SHALL report exactly one of four outcomes:
 
-- `updated` — this run's flags resolve the facet to a newer release than what is
-  declared, whether or not the run goes on to write it.
+- `updated` — this run's flags resolve the facet to a newer release than the version
+  locked when the run starts, whether or not the run goes on to write it.
 - `current` — nothing newer exists to move to.
 - `held` — a newer release exists, and this run leaves it alone. In the default mode
   that is precisely the release the authored specifier forbids.
 - `unsupported` — the facet's source cannot be version-checked at all.
 
-The document-level `applied` boolean SHALL report whether the run actually wrote
+A successful document's `applied` boolean SHALL report whether the run actually wrote
 anything to the project. A facet entry MAY report `updated` in a document whose
 `applied` is `false` — a dry run, for instance, resolves the newer release without
 writing it.
@@ -60,9 +60,10 @@ the command it reports on.
 
 **The bump semantics of `facet update` do not change.** This proposal is about output
 only. Which release a facet resolves to, when a declared range is rewritten, what
-`--latest` means, and what `--interactive` offers all stay exactly as they are. A run
-with `--json` MUST select and install the same versions the same run without it would
-have selected and installed.
+`--latest` means, and what `--interactive` offers all stay exactly as they are. For flag combinations accepted by JSON mode, a run
+with `--json` MUST select the same versions as the same run without it and, when
+application succeeds, install those versions. JSON mode rejects `--interactive`
+and never prompts; required approvals must be supplied before the run.
 
 Exit codes do not change either. `--json` MUST NOT alter which outcomes exit `0` and
 which exit `1`; it makes the distinction readable, it does not relocate it.

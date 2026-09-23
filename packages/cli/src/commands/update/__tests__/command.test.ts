@@ -935,19 +935,19 @@ describe('facet update — --json and adapter discovery', () => {
     expect(stderr).toBe('')
   })
 
+  const broken = (name: string): engine.InstalledAdapterFailure => ({
+    kind: 'broken',
+    name,
+    managed: false,
+    reason: { kind: 'invalid-receipt', detail: `${name} receipt is not readable` },
+    repair: { kind: 'unmanaged-name', name },
+  })
+
   // The loader reports one error per broken installation. Written
   // straight out, two of them would be two JSON values on one stream —
   // which no consumer can parse. Only the first is spoken.
   test('several broken adapters still produce exactly one document', async () => {
     preparing([BOUNDED])
-    const broken = (name: string): engine.InstalledAdapterFailure => ({
-      kind: 'broken',
-      name,
-      managed: false,
-      reason: { kind: 'invalid-receipt', detail: `${name} receipt is not readable` },
-      repair: { kind: 'unmanaged-name', name },
-    })
-
     const { stderr, result } = await withRealAdapterDiscovery(
       { ok: false, failures: [broken('alpha'), broken('beta')] },
       () =>
@@ -970,12 +970,22 @@ describe('facet update — --json and adapter discovery', () => {
   // the prose block, one per broken adapter, on stderr.
   test('without --json the same failures are still prose on stderr', async () => {
     preparing([BOUNDED])
-    const { stderr, result } = await withRealAdapterDiscovery({ ok: true, adapters: [] }, () =>
-      withTTY(false, () => captureStderr(() => withSilencedStdout(() => updateCommand.run([], {})))),
+    const { stderr, result } = await withRealAdapterDiscovery(
+      { ok: false, failures: [broken('alpha'), broken('beta')] },
+      (pickerInstallSpy) =>
+        withTTY(false, async () => {
+          const captured = await captureStderr(() => withSilencedStdout(() => updateCommand.run([], {})))
+          expect(pickerInstallSpy).not.toHaveBeenCalled()
+          return captured
+        }),
     )
 
     expect(result).toBe(1)
-    expect(stderr).toContain('no adapters installed')
+    expect(stderr.match(/error:/g)).toHaveLength(2)
+    for (const name of ['alpha', 'beta']) {
+      expect(stderr).toContain(`installed adapter "${name}" has an invalid installation record`)
+      expect(stderr).toContain(`${name} receipt is not readable`)
+    }
   })
 })
 

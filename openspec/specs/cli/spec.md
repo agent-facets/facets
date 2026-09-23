@@ -1455,7 +1455,7 @@ Every JSON document the `update` command emits under `--json` SHALL carry a `sch
 
 ### Requirement: Machine-readable output reports whether the run wrote to the project
 
-The document `update --json` emits SHALL carry an `applied` boolean reporting whether the run modified the project. A facet MAY be reported with outcome updated in a document whose `applied` is `false`, when the run previewed a change without writing it.
+An `update --json` document with `ok: true` SHALL carry an `applied` boolean reporting whether the run modified the project. A facet MAY be reported with outcome updated in a document whose `applied` is `false`, when the run previewed a change without writing it.
 
 #### Scenario: A dry run reports applied false with facets it would update
 
@@ -1501,11 +1501,11 @@ Each facet entry in the `update --json` document SHALL report the version this r
 
 ### Requirement: Machine-readable output tallies outcomes by kind
 
-The `update --json` document SHALL carry a counts block reporting how many facet entries landed in each outcome. The counts SHALL sum to the number of facet entries the document reports.
+An `update --json` document with `ok: true` SHALL carry a counts block reporting how many facet entries landed in each outcome. The counts SHALL sum to the number of facet entries the document reports.
 
 #### Scenario: Counts match the facets reported
 
-- **WHEN** a user runs `facet update --json`
+- **WHEN** a user runs `facet update --json` and the command succeeds
 - **THEN** the document SHALL carry a count for each of updated, current, held, and unsupported
 - **AND** the sum of those counts SHALL equal the number of facet entries in the document
 

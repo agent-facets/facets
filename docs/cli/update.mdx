@@ -104,7 +104,7 @@ A project that pins `cowsay` at `1.0.0`, with `1.0.1` published to the registry,
 The run wrote `1.0.1`, so `facets.lock` records `1.0.1` afterward, yet `current` in the document still reads `1.0.0`. That is deliberate: `current` is the version that was locked when this run *started*, the "from"; `resolved` is what the run's flags took, the "to". This holds on an applied run too, not only on a preview.
 
 <ResponseField name="applied" type="boolean">
-  Whether this run actually wrote. `false` for a dry run; `true` once `facets.json`, `facets.lock`, and any assets have been written.
+  Whether this run wrote changes to the project. `false` for a dry run or a no-op. An applied update does not necessarily change every file; for example, a range-respecting update preserves the specifier in `facets.json`.
 </ResponseField>
 
 <ResponseField name="facets" type="array">
