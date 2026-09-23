@@ -12,7 +12,7 @@ import { exact } from './fixtures.ts'
 
 function authored(source: string): AuthoredSpecifier {
   const spec = parseVersionSpec(source)
-  if (!spec.ok) throw new Error(`test fixture declares an invalid specifier: ${source}`)
+  if (!spec.ok) expect.unreachable(`test fixture declares an invalid specifier: ${source}`)
   return { source, spec: spec.value }
 }
 
@@ -60,7 +60,7 @@ function row(args: {
 
 /** The facet behind a row, for tests that want to question the engine directly. */
 function facetOf(planRow: UpdatePlanRow): CheckableRegistryFacet {
-  if (planRow.kind === 'unsupported-source') throw new Error('row carries no facet')
+  if (planRow.kind === 'unsupported-source') expect.unreachable('row carries no facet')
   return planRow.facet
 }
 
@@ -210,7 +210,7 @@ describe('buildUpdateJson', () => {
       expect(cases.length).toBeGreaterThan(0)
       for (const { label, doc } of cases) {
         const facet = doc().facets[0]
-        if (!facet) throw new Error(`${label}: no facet in document`)
+        if (!facet) expect.unreachable(`${label}: no facet in document`)
         expect(facet.resolved !== null, `${label}: resolved/outcome disagree (${JSON.stringify(facet)})`).toBe(
           facet.outcome === 'updated',
         )
