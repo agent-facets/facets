@@ -5,6 +5,49 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-09-23" description="New facet outdated command and facet update --json for scripts and scheduled jobs" tags={["CLI", "New Feature"]} rss={{
+  title: "New facet outdated command and facet update --json",
+  description: "Two additions make facet updates scriptable. facet outdated checks every registry-backed facet in facets.json for newer releases and never writes; add --latest to compare against each facet's latest release, ignoring ranges. facet update --json prints one JSON document to stdout and nothing else, including when the command refuses to run. facet outdated --json prints the same document with applied always false. Each facet reports current, target, latest, and resolved versions, plus an outcome of updated, current, held, or unsupported. held means a newer release exists that your declared range does not allow. Check the exit code to see whether the command worked, then read applied and each outcome to see what moved. --json cannot be combined with --interactive."
+}}>
+  ## Check for updates without applying them
+
+  [`facet outdated`](/cli/outdated) checks every registry-backed facet
+  in `facets.json` for newer releases. It never writes to your manifest,
+  lockfile, assets, or adapters.
+
+  ```sh
+  facet outdated                  # compare against each range's target
+  facet outdated --latest         # compare against each facet's latest release
+  ```
+
+  ## Machine-readable update results
+
+  [`facet update --json`](/cli/update#json-output) and
+  `facet outdated --json` print one JSON document to stdout and nothing
+  else, so a scheduled job or CI script can read the result directly
+  instead of scraping the table.
+
+  ```sh
+  facet update --json --accept-mcp
+  facet outdated --json
+  ```
+
+  - **Every facet reports its versions and an outcome.** Each entry
+    lists `current`, `target`, `latest`, and `resolved`, plus an
+    `outcome` of `updated`, `current`, `held`, or `unsupported`.
+  - **`held` is the actionable one.** A newer release exists that your
+    declared range does not allow. Run `facet update --latest` to move
+    past it.
+  - **Failures are JSON too.** When the command refuses to run, it
+    prints an `ok: false` document with recovery details and leaves
+    stderr empty.
+  - **The exit code and the document answer different questions.** The
+    exit code says whether the command worked. The `applied` field and
+    each `outcome` say what moved.
+
+  `--json` cannot be combined with `--interactive`.
+</Update>
+
 <Update label="2026-09-05" description="Private facets appear in facet search when signed in; clearer adapter and git authentication errors" tags={["CLI", "New Feature", "Improvement"]} rss={{
   title: "Private facets in facet search; clearer adapter and git authentication errors",
   description: "facet search now includes private facets. Signed out, results show only public facets. Signed in with facet login, results also include the private facets your account can access, ranked and paged by the registry like everything else. If a private facet you own is missing from results, run facet login and search again. Alongside open beta, the CLI's messaging dropped its alpha-era wording. Adapter compatibility diagnostics now say adapter SDK API consistently, in facet adapter list, in the failures that stop facet build, facet add, facet remove, and facet install, and in the CLI's built-in usage guidance. A git clone that needs credentials now fails with 'private repositories require git authentication' and suggests configuring git authentication or using a public URL, replacing the outdated message that claimed only public repos and SSH were supported."
