@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, type Mock, spyOn, te
 import { bunMethod } from '../methods/bun.ts'
 import { curlMethod, runCurlInstaller } from '../methods/curl.ts'
 import { localDevMethod } from '../methods/local-dev.ts'
+import { miseMethod } from '../methods/mise.ts'
 import { npmMethod } from '../methods/npm.ts'
 import { pnpmMethod } from '../methods/pnpm.ts'
 import type { InstallMethod, SelfUpdateErrorEvent } from '../methods/types.ts'
@@ -118,6 +119,11 @@ describe.each<{ method: InstallMethod; expectedArgv: string[]; expectedDescribe:
     method: bunMethod,
     expectedArgv: ['bun', 'add', '-g', 'agent-facets@0.8.0'],
     expectedDescribe: 'bun add -g agent-facets@0.8.0',
+  },
+  {
+    method: miseMethod,
+    expectedArgv: ['mise', 'use', '-g', 'facet@0.8.0'],
+    expectedDescribe: 'mise use -g facet@0.8.0',
   },
 ])('package-manager method: $method.kind', ({ method, expectedArgv, expectedDescribe }) => {
   test('describe() returns the canonical command string', () => {

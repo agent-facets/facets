@@ -10,7 +10,7 @@
 
 import type { LatestVersionResult } from '../version-check.ts'
 
-export type MethodKind = 'curl' | 'npm' | 'yarn' | 'pnpm' | 'bun' | 'local-dev' | 'unknown'
+export type MethodKind = 'curl' | 'npm' | 'yarn' | 'pnpm' | 'bun' | 'mise' | 'local-dev' | 'unknown'
 
 /**
  * Structured event payload for self-update error reporting.

@@ -119,6 +119,28 @@ describe('runSelfUpdate orchestration', () => {
     describe.mockRestore()
   })
 
+  test('mise method is registered and participates in dry-run planning', async () => {
+    detectSpy.mockImplementation(async () => 'mise')
+    getLatestSpy.mockImplementation(async () => ({ ok: true, version: '0.8.0' }))
+    const { update, describe } = instrumentMethod('mise')
+    describe.mockImplementation(() => 'mise use -g facet@0.8.0')
+    const outputs: string[] = []
+
+    const code = await runSelfUpdate({
+      currentVersion: '0.7.3',
+      dryRun: true,
+      onOutput: (line) => outputs.push(line),
+    })
+
+    expect(code).toBe(0)
+    expect(update).toHaveBeenCalledTimes(0)
+    expect(describe).toHaveBeenCalledTimes(1)
+    expect(outputs.join('')).toContain('Detected install method: mise (global)')
+    expect(outputs.join('')).toContain('Would run: mise use -g facet@0.8.0')
+    update.mockRestore()
+    describe.mockRestore()
+  })
+
   test('non-dev path: getLatestVersion failure surfaces structured event and exits 1', async () => {
     detectSpy.mockImplementation(async () => 'npm')
     getLatestSpy.mockImplementation(async () => ({
