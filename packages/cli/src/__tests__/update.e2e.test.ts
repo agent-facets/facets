@@ -111,6 +111,16 @@ describe('facet update — refused invocations', () => {
     expect(result.stdout).toBe('')
   })
 
+  test('a large failure report is fully flushed before exit', async () => {
+    const dir = project({ facets: {} })
+    const argument = 'x'.repeat(80_000)
+    const result = await spawnCli(['update', argument], { cwd: dir, trim: false })
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain(argument)
+    expect(result.stderr).toEndWith("fix: run 'facet update --interactive' to choose which facets to update\n")
+  })
+
   // stdin is closed by the spawn helper, so this is the real
   // non-interactive case rather than a simulated one.
   test('--interactive without a terminal exits 1 on stderr', async () => {
