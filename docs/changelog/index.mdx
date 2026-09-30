@@ -5,6 +5,27 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-09-29" description="agent-facets 0.34.0 ships facet outdated and facet update --json" tags={["CLI", "New Feature"]} rss={{
+  title: "agent-facets 0.34.0: facet outdated and facet update --json are on npm",
+  description: "agent-facets@0.34.0 is on npm; run facet self-update to pick it up. This release ships facet outdated, a read-only report of newer releases for every registry-backed facet in facets.json, and facet update --json, which prints one machine-readable document to stdout. Failed JSON runs include recovery details in the document and leave stderr empty."
+}}>
+  ## `facet outdated` and `facet update --json` are on npm
+
+  `agent-facets@0.34.0` is out. Run
+  [`facet self-update`](/cli/self-update) to pick it up.
+
+  - **[`facet outdated`](/cli/outdated)** reports newer releases for
+    every registry-backed facet in `facets.json` without writing
+    anything.
+  - **[`facet update --json`](/cli/update#json-output)** prints one
+    machine-readable document to stdout for scripts and scheduled jobs.
+    Failed runs include recovery details in the document and leave
+    stderr empty.
+
+  See the [September 23 entry](#2026-09-23) for usage and output
+  details.
+</Update>
+
 <Update label="2026-09-23" description="New facet outdated command and facet update --json for scripts and scheduled jobs" tags={["CLI", "New Feature"]} rss={{
   title: "New facet outdated command and facet update --json",
   description: "Two additions make facet updates scriptable. facet outdated checks every registry-backed facet in facets.json for newer releases and never writes; add --latest to compare against each facet's latest release, ignoring ranges. facet update --json prints one JSON document to stdout and nothing else, including when the command refuses to run. facet outdated --json prints the same document with applied always false. Each facet reports current, target, latest, and resolved versions, plus an outcome of updated, current, held, or unsupported. held means a newer release exists that your declared range does not allow. Check the exit code to see whether the command worked, then read applied and each outcome to see what moved. --json cannot be combined with --interactive."
