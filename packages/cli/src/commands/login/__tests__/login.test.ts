@@ -1,33 +1,35 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import { chmodSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import * as engine from '@agent-facets/engine'
 import * as ink from 'ink'
 import { isValidElement } from 'react'
 import { captureStderr, captureStdout } from '../../../__tests__/helpers/capture-std.ts'
 import { withTTY } from '../../../__tests__/helpers/with-tty.ts'
-import type { OpenBrowserResult } from '../../../util/open-browser.ts'
+import * as browser from '../../../util/open-browser.ts'
 
 const canary = 'device-secret-canary-must-not-print'
-const attempt = {
-  display: {
-    verificationUri: 'https://login.example/device',
-    verificationUriComplete: 'https://login.example/device?user_code=ABCD-1234',
-    userCode: 'ABCD-1234',
-  },
-  expiresAt: 9999999999999,
-  hiddenDeviceCode: canary,
+const expectedDisplay = {
+  verificationUri: 'https://login.example/device',
+  verificationUriComplete: 'https://login.example/device?user_code=ABCD-1234',
+  userCode: 'ABCD-1234',
 }
+const registry = 'https://registry.example'
+const clientId = 'client_01HZXYPJYQ8V7Z9M4G3K2N1P0R'
+const authorizationEndpoint = 'https://api.workos.com/user_management/authorize/device'
+const tokenEndpoint = 'https://api.workos.com/user_management/authenticate'
+const now = 2_000_000_000_000
 
-let beginResult:
-  | { ok: true; value: typeof attempt }
-  | { ok: false; error: { code: 'CONFIG_UNAVAILABLE'; reason: 'NETWORK_ERROR' } }
-let completeBehavior: (signal?: AbortSignal) => Promise<unknown>
+let beginResult: Awaited<ReturnType<typeof engine.beginCliLogin>>
+let completeBehavior: (signal?: AbortSignal) => ReturnType<typeof engine.completeCliLogin>
 let legacyCredential: ReturnType<typeof engine.resolveCredential>
-let browserResult: OpenBrowserResult
+let browserResult: browser.OpenBrowserResult
 let browserUrls: string[]
 let beginSignals: Array<AbortSignal | undefined>
 let savedTokens: string[]
 let verifiedTokens: string[]
-let fetchResult: unknown
+let fetchResult: Awaited<ReturnType<typeof engine.fetchAuthMe>>
 let originalInterruptListeners: number
 let scriptedChoice: { kind: 'browser' } | { kind: 'token'; token: string } | undefined
 let inkActive = false
@@ -38,93 +40,130 @@ let mountCrash: Error | undefined
 let waitCrash: Error | undefined
 let clearedPrompts = 0
 let unmountedPrompts = 0
+let facetDir: string
+let originalFacetDir: string | undefined
+let originalToken: string | undefined
+let restoreSpies: Array<() => void> = []
+const originalBeginCliLogin = engine.beginCliLogin
 const originalInkRender = ink.render
 
-mock.module('ink', () => ({
-  ...ink,
-  render: (...args: Parameters<typeof ink.render>) => {
-    if (scriptedChoice === undefined) return originalInkRender(...args)
-    if (mountCrash !== undefined) throw mountCrash
-    inkActive = true
-    const props: unknown = isValidElement(args[0]) ? args[0].props : undefined
-    if (typeof props === 'object' && props !== null && 'polling' in props && props.polling === true) {
-      if (cancelPolling && 'onCancel' in props && typeof props.onCancel === 'function') props.onCancel()
-    } else if (typeof props === 'object' && props !== null) {
-      if (
-        cancelRejectedToken &&
-        'initialError' in props &&
-        props.initialError !== undefined &&
-        'onCancel' in props &&
-        typeof props.onCancel === 'function'
-      ) {
-        props.onCancel()
-      } else if (
-        scriptedChoice.kind === 'browser' &&
-        'onChooseBrowser' in props &&
-        typeof props.onChooseBrowser === 'function'
-      ) {
-        props.onChooseBrowser()
-      } else if (
-        scriptedChoice.kind === 'token' &&
-        'onSubmitToken' in props &&
-        typeof props.onSubmitToken === 'function'
-      ) {
-        props.onSubmitToken(scriptedChoice.token)
-      }
+function fakeInkRender(...args: Parameters<typeof ink.render>): ReturnType<typeof ink.render> {
+  if (scriptedChoice === undefined) return originalInkRender(...args)
+  if (mountCrash !== undefined) throw mountCrash
+  inkActive = true
+  const props: unknown = isValidElement(args[0]) ? args[0].props : undefined
+  if (typeof props === 'object' && props !== null && 'polling' in props && props.polling === true) {
+    if (cancelPolling && 'onCancel' in props && typeof props.onCancel === 'function') props.onCancel()
+  } else if (typeof props === 'object' && props !== null) {
+    if (
+      cancelRejectedToken &&
+      'initialError' in props &&
+      props.initialError !== undefined &&
+      'onCancel' in props &&
+      typeof props.onCancel === 'function'
+    ) {
+      props.onCancel()
+    } else if (
+      scriptedChoice.kind === 'browser' &&
+      'onChooseBrowser' in props &&
+      typeof props.onChooseBrowser === 'function'
+    ) {
+      props.onChooseBrowser()
+    } else if (
+      scriptedChoice.kind === 'token' &&
+      'onSubmitToken' in props &&
+      typeof props.onSubmitToken === 'function'
+    ) {
+      props.onSubmitToken(scriptedChoice.token)
     }
-    return {
-      waitUntilExit: async () => {
-        if (waitCrash !== undefined) throw waitCrash
-      },
-      clear: () => {
-        clearedPrompts++
-      },
-      unmount: () => {
-        unmountedPrompts++
-        inkActive = false
-      },
-    }
-  },
-}))
+  }
+  return {
+    rerender: () => {},
+    waitUntilRenderFlush: async () => {},
+    waitUntilExit: async () => {
+      if (waitCrash !== undefined) throw waitCrash
+    },
+    cleanup: () => {},
+    clear: () => {
+      clearedPrompts++
+    },
+    unmount: () => {
+      unmountedPrompts++
+      inkActive = false
+    },
+  }
+}
 
-mock.module('@agent-facets/engine', () => ({
-  ...engine,
-  beginCliLogin: async (options: { signal?: AbortSignal }) => {
-    beginSignals.push(options.signal)
-    return beginResult
-  },
-  completeCliLogin: async (_attempt: unknown, options: { signal?: AbortSignal }) => completeBehavior(options.signal),
-  resolveCredential: () => legacyCredential,
-  writeCredentialsToken: (token: string) => {
-    savedTokens.push(token)
-  },
-  fetchAuthMe: async (token: string) => {
-    verifiedTokens.push(token)
-    return fetchResult
-  },
-}))
-mock.module('../../../util/open-browser.ts', () => ({
-  openBrowser: async (url: string) => {
-    browserOpenedDuringInk = inkActive
-    browserUrls.push(url)
-    return browserResult
-  },
-}))
+function profile(username: string): engine.WireAuthMeResponse {
+  return {
+    user_uuid: 'registry-user-uuid',
+    username,
+    email: 'user@example.test',
+    tier: 'free',
+    suspended: false,
+    startup_experience: { kind: 'landing-only' },
+    getting_started: { kind: 'unavailable' },
+  }
+}
+
+async function realBrandedAttempt(): ReturnType<typeof engine.beginCliLogin> {
+  const fetcher = async (input: Request | string | URL, init?: RequestInit): Promise<Response> => {
+    const request = input instanceof Request ? input : new Request(input.toString(), init)
+    let body: unknown
+    if (request.url.endsWith('/v0/auth/cli/config')) {
+      body = {
+        enabled: true,
+        provider: 'workos',
+        client_id: clientId,
+        issuer: `https://api.workos.com/user_management/${clientId}`,
+        authorization_endpoint: authorizationEndpoint,
+        token_endpoint: tokenEndpoint,
+        verification_origin: 'https://login.example',
+        onboarding_url: 'https://app.example/auth/onboarding',
+      }
+    } else if (request.url === authorizationEndpoint) {
+      body = {
+        device_code: canary,
+        user_code: expectedDisplay.userCode,
+        verification_uri: expectedDisplay.verificationUri,
+        verification_uri_complete: expectedDisplay.verificationUriComplete,
+        expires_in: 300,
+        interval: 5,
+      }
+    } else {
+      throw new Error(`unexpected login fixture request: ${request.url}`)
+    }
+    return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } })
+  }
+  fetcher.preconnect = globalThis.fetch.preconnect
+  const result = await originalBeginCliLogin({ registryUrl: registry, fetch: fetcher, now: () => now })
+  if (!result.ok) expect.unreachable(`real login fixture failed: ${result.error.code}`)
+  expect(result.value.display).toEqual(expectedDisplay)
+  expect(JSON.stringify(result.value)).not.toContain(canary)
+  return result
+}
 
 const { loginCommand } = await import('../index.ts')
 const { run } = await import('../../../run.ts')
 
-beforeEach(() => {
+async function setupLoginFixture(): Promise<void> {
+  restoreSpies = []
+  originalFacetDir = process.env.FACET_DIR
+  originalToken = process.env.FACET_TOKEN
+  facetDir = realpathSync(mkdtempSync(join(tmpdir(), 'login-command-test-')))
+  chmodSync(facetDir, 0o700)
+  process.env.FACET_DIR = facetDir
+  delete process.env.FACET_TOKEN
   originalInterruptListeners = process.listenerCount('SIGINT')
-  beginResult = { ok: true, value: attempt }
-  completeBehavior = async () => ({ ok: true, value: { username: 'verified-alice' } })
+  beginResult = await realBrandedAttempt()
+  completeBehavior = async () => ({ ok: true, value: profile('verified-alice') })
   legacyCredential = { source: 'absent' }
   browserResult = { ok: true }
   browserUrls = []
   beginSignals = []
   savedTokens = []
   verifiedTokens = []
-  fetchResult = { ok: true, value: { username: 'verified-pat', tier: 'free' } }
+  fetchResult = { ok: true, value: profile('verified-pat') }
   scriptedChoice = undefined
   inkActive = false
   browserOpenedDuringInk = false
@@ -134,11 +173,48 @@ beforeEach(() => {
   waitCrash = undefined
   clearedPrompts = 0
   unmountedPrompts = 0
-})
+  const beginSpy = spyOn(engine, 'beginCliLogin').mockImplementation(async (options = {}) => {
+    beginSignals.push(options.signal)
+    return beginResult
+  })
+  restoreSpies.push(() => beginSpy.mockRestore())
+  const completeSpy = spyOn(engine, 'completeCliLogin').mockImplementation(async (_attempt, options = {}) =>
+    completeBehavior(options.signal),
+  )
+  restoreSpies.push(() => completeSpy.mockRestore())
+  const credentialSpy = spyOn(engine, 'resolveCredential').mockImplementation(() => legacyCredential)
+  restoreSpies.push(() => credentialSpy.mockRestore())
+  const writerSpy = spyOn(engine, 'writeCredentialsToken').mockImplementation((token) => {
+    savedTokens.push(token)
+  })
+  restoreSpies.push(() => writerSpy.mockRestore())
+  const profileSpy = spyOn(engine, 'fetchAuthMe').mockImplementation(async (token) => {
+    verifiedTokens.push(token)
+    return fetchResult
+  })
+  restoreSpies.push(() => profileSpy.mockRestore())
+  const inkSpy = spyOn(ink, 'render').mockImplementation(fakeInkRender)
+  restoreSpies.push(() => inkSpy.mockRestore())
+  const browserSpy = spyOn(browser, 'openBrowser').mockImplementation(async (url) => {
+    browserOpenedDuringInk = inkActive
+    browserUrls.push(url)
+    return browserResult
+  })
+  restoreSpies.push(() => browserSpy.mockRestore())
+}
 
-afterEach(() => {
-  expect(process.listenerCount('SIGINT')).toBe(originalInterruptListeners)
-})
+function cleanupLoginFixture(): void {
+  try {
+    expect(process.listenerCount('SIGINT')).toBe(originalInterruptListeners)
+  } finally {
+    for (const restore of restoreSpies.reverse()) restore()
+    rmSync(facetDir, { recursive: true, force: true })
+    if (originalFacetDir === undefined) delete process.env.FACET_DIR
+    else process.env.FACET_DIR = originalFacetDir
+    if (originalToken === undefined) delete process.env.FACET_TOKEN
+    else process.env.FACET_TOKEN = originalToken
+  }
+}
 
 async function captureLogin(args: string[], interactive = false) {
   return withTTY(interactive, async () => {
@@ -159,6 +235,9 @@ async function captureInteractiveLogin(args: string[], choice: { kind: 'browser'
 }
 
 describe('facet login command routing', () => {
+  beforeEach(setupLoginFixture)
+  afterEach(cleanupLoginFixture)
+
   test('requires an explicit mode without a terminal and rejects conflicting or malformed flags', async () => {
     for (const args of [
       [],
@@ -183,7 +262,7 @@ describe('facet login command routing', () => {
     expect(result.stdout).toContain('Visit https://login.example/device')
     expect(result.stdout).toContain('Enter code: ABCD-1234')
     expect(result.stdout).toContain('Logged in as verified-alice')
-    expect(result.stdout).not.toContain(attempt.display.verificationUriComplete)
+    expect(result.stdout).not.toContain(expectedDisplay.verificationUriComplete)
     expect(result.stdout).not.toContain(canary)
     expect(result.stderr).not.toContain(canary)
     expect(browserUrls).toHaveLength(0)
@@ -196,7 +275,7 @@ describe('facet login command routing', () => {
     browserResult = { ok: false, code: 'LAUNCH_FAILED' }
     const result = await captureLogin(['--browser'])
     expect(result.code).toBe(0)
-    expect(browserUrls).toEqual([attempt.display.verificationUriComplete])
+    expect(browserUrls).toEqual([expectedDisplay.verificationUriComplete])
     expect(result.stdout).toContain('browser could not be opened')
     expect(result.stdout).toContain('Logged in as verified-alice')
     expect(result.stdout).not.toContain(canary)
@@ -205,7 +284,7 @@ describe('facet login command routing', () => {
   test('default interactive menu choice enters browser flow after Ink teardown', async () => {
     const result = await captureInteractiveLogin([], { kind: 'browser' })
     expect(result).toEqual(expect.objectContaining({ code: 0 }))
-    expect(browserUrls).toEqual([attempt.display.verificationUriComplete])
+    expect(browserUrls).toEqual([expectedDisplay.verificationUriComplete])
     expect(browserOpenedDuringInk).toBe(false)
     expect(result.stdout).toContain('Logged in as verified-alice')
     expect(result.stdout).not.toContain(canary)
@@ -253,7 +332,13 @@ describe('facet login command routing', () => {
   test('a rejected PAT is never saved and the retry prompt may be cancelled', async () => {
     fetchResult = {
       ok: false,
-      error: { code: 'REGISTRY_REJECTED', wireCode: 'bad_token', error: 'Rejected', fix: 'Use another token' },
+      error: {
+        code: 'REGISTRY_REJECTED',
+        wireCode: 'bad_token',
+        error: 'Rejected',
+        fix: 'Use another token',
+        docsUrl: 'https://registry.example/docs/tokens',
+      },
     }
     cancelRejectedToken = true
     const result = await captureInteractiveLogin(['--token'], { kind: 'token', token: 'fct_pub_rejected' })
@@ -298,7 +383,7 @@ describe('facet login command routing', () => {
   test('a completed save remains a reported success if SIGINT arrives just after completion', async () => {
     completeBehavior = async () => {
       process.emit('SIGINT')
-      return { ok: true, value: { username: 'verified-alice' } }
+      return { ok: true, value: profile('verified-alice') }
     }
     const result = await captureLogin(['--no-browser'])
     expect(result.code).toBe(0)
@@ -337,7 +422,7 @@ describe('facet login command routing', () => {
   })
 
   test('browser configuration failure is a typed local error and never falls back to PAT', async () => {
-    beginResult = { ok: false, error: { code: 'CONFIG_UNAVAILABLE', reason: 'NETWORK_ERROR' } }
+    beginResult = { ok: false, error: { code: 'CONFIG_UNAVAILABLE', reason: 'CLI_CONFIG_UNAVAILABLE' } }
     const result = await captureLogin(['--browser'])
     expect(result.code).toBe(1)
     expect(result.stderr).toContain('browser sign-in configuration is unavailable')
