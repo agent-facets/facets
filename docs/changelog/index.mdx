@@ -7,7 +7,7 @@ rss: true
 
 <Update label="2026-10-08" description="Browser sign-in for facet login and confirmed browser sign-out for facet logout" tags={["CLI", "New Feature", "Improvement"]} rss={{
   title: "Browser sign-in for the facet CLI",
-  description: "facet login now supports browser sign-in on macOS and Linux. Run facet login --browser to open the verification page, or facet login --no-browser to get a URL and code to finish on another device. Personal access tokens still work with facet login --token or FACET_TOKEN, including on Windows and in CI, and they take priority over browser sessions. Commands renew browser sessions automatically, and a rejected credential fails the command instead of switching identity. facet logout now confirms the registry revoked your browser session before removing it locally; use facet logout --local to clean up offline. This ships in the next agent-facets release."
+  description: "facet login now supports browser sign-in on macOS and Linux. Run facet login --browser to open the verification page, or facet login --no-browser to get a URL and code to finish on another device. Personal access tokens still work: run facet login --token in an interactive terminal, or set FACET_TOKEN in CI and other non-interactive environments, including Windows. Tokens take priority over browser sessions. Commands renew browser sessions automatically, and a rejected credential fails the command instead of switching identity. facet logout now confirms the registry revoked your browser session before removing it locally; use facet logout --local to clean up offline. This ships in the next agent-facets release."
 }}>
   ## Sign in with your browser
 
