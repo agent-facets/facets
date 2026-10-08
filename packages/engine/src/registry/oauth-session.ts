@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
-import { lstat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { lstat, readlink } from 'node:fs/promises'
+import { dirname, join, resolve } from 'node:path'
 import { resolveFacetDir } from '../facet-dir.ts'
 import { type CliAuthConfig, type CliConfigFailure, fetchCliAuthConfig, validateRegistryOrigin } from './cli-config.ts'
 import { createRegistryClient } from './client.ts'
@@ -239,13 +239,17 @@ export async function logoutCliSession(
         : failure({ code: 'UNEXPECTED_FAILURE' })
     }
     if (legacy.reason !== undefined) return failure({ code: 'PAT_UNREADABLE', path: legacy.reason.path })
-    if (!isOAuthStorePlatformSupported(options.platform)) return unsupportedPlatform()
     if (options.signal?.aborted) return failure({ code: 'CANCELLED' })
     const selected = selectedOrigin(options)
     if (!selected.ok) return selected
-    const exists = await stateCandidateExists(selected.value)
+    const supported = isOAuthStorePlatformSupported(options.platform)
+    const exists = supported
+      ? await stateCandidateExists(selected.value)
+      : await unsupportedStateCandidateExists(selected.value)
+    if (options.signal?.aborted) return failure({ code: 'CANCELLED' })
     if (!exists.ok) return exists
     if (!exists.value) return success({ source: 'absent' })
+    if (!supported) return unsupportedPlatform()
     const selectedCandidate = await readOAuthSessionForLocalCleanup(selected.value, { platform: options.platform })
     if (!selectedCandidate.ok) return storeFailure(selectedCandidate.error)
     if (selectedCandidate.value === null) return success({ source: 'absent' })
@@ -628,6 +632,45 @@ async function stateCandidateExists(registryOrigin: string): Promise<RegistrySes
   }
 }
 
+/** Unsupported platforms may prove absence, but must never open an OAuth credential. */
+async function unsupportedStateCandidateExists(registryOrigin: string): Promise<RegistrySessionResult<boolean>> {
+  try {
+    let facetDir = resolve(resolveFacetDir())
+    if (process.platform === 'darwin') {
+      for (const alias of ['/tmp', '/var']) {
+        if (facetDir !== alias && !facetDir.startsWith(`${alias}/`)) continue
+        const metadata = await lstat(alias)
+        if (!metadata.isSymbolicLink() || metadata.uid !== 0 || (await readlink(alias)) !== `private${alias}`) {
+          return failure({ code: 'STATE_UNAVAILABLE', reason: 'UNSAFE_STATE' })
+        }
+        facetDir = `/private${facetDir}`
+        break
+      }
+    }
+    const key = createHash('sha256').update(registryOrigin).digest('hex')
+    const candidate = join(facetDir, 'oauth', `${key}.json`)
+    const paths = [candidate]
+    let parent = dirname(candidate)
+    while (true) {
+      paths.unshift(parent)
+      const next = dirname(parent)
+      if (next === parent) break
+      parent = next
+    }
+    for (const path of paths) {
+      const metadata = await lstat(path)
+      if (metadata.isSymbolicLink() || (path === candidate ? !metadata.isFile() : !metadata.isDirectory())) {
+        return failure({ code: 'STATE_UNAVAILABLE', reason: 'UNSAFE_STATE' })
+      }
+    }
+    return success(true)
+  } catch (error) {
+    return isRecord(error) && error.code === 'ENOENT'
+      ? success(false)
+      : failure({ code: 'STATE_UNAVAILABLE', reason: 'IO_ERROR' })
+  }
+}
+
 function bindingFor(config: Readonly<CliAuthConfig>): OAuthSessionBinding {
   return {
     registry_origin: config.registryOrigin,
@@ -710,6 +753,7 @@ async function locked<T>(
 ): Promise<RegistrySessionResult<T>> {
   const result = await withOAuthSessionLock(binding, async (lock) => ({ ok: true, value: await operation(lock) }), {
     platform: options.platform,
+    signal: options.signal,
     lockTimeoutMs: LOCK_TIMEOUT_MS,
   })
   return result.ok ? result.value : storeFailure(result.error)
@@ -736,6 +780,7 @@ function unsupportedPlatform<T>(): RegistrySessionResult<T> {
 }
 
 function storeFailure<T>(error: OAuthStoreError): RegistrySessionResult<T> {
+  if (error.code === 'CANCELLED') return failure({ code: 'CANCELLED' })
   return failure({ code: 'STATE_UNAVAILABLE', reason: error.code })
 }
 
