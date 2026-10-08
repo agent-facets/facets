@@ -8,9 +8,53 @@ import { allTargets, buildTargetPackageJson, bunTarget, packageName, shouldSmoke
 
 const engineManifest = resolve(import.meta.dir, '../../packages/engine/package.json')
 const fromEngine = createRequire(engineManifest)
-const koffiManifest = await Bun.file(join(dirname(fromEngine.resolve('koffi')), 'package.json')).json()
+const koffiEntry = fromEngine.resolve('koffi')
+const koffiManifest = await Bun.file(join(dirname(koffiEntry), 'package.json')).json()
 const optional: string[] = Object.keys(koffiManifest.optionalDependencies)
 const helper = resolve(import.meta.dir, '../../packages/engine/src/registry/oauth-permissions.ts')
+
+// A plain `bun install` only fetches the host's koffi prebuild. The Darwin ones
+// arrive via `bun install --os '*' --cpu '*'`, which CI runs before `bun check`.
+const darwinArches = [...new Set(allTargets.filter((target) => target.os === 'darwin').map((target) => target.arch))]
+const darwinPrebuildsInstalled = darwinArches.every((arch) => {
+  try {
+    createRequire(koffiEntry).resolve(`@koromix/koffi-darwin-${arch}`)
+    return true
+  } catch {
+    return false
+  }
+})
+const requireNativeGraph = darwinPrebuildsInstalled || Boolean(process.env.CI)
+
+/** An engine manifest whose koffi mirrors the real one, with stub Darwin prebuilds. */
+async function writeEngineFixture(root: string): Promise<string> {
+  const engine = join(root, 'engine', 'package.json')
+  const modules = join(root, 'engine', 'node_modules')
+  await mkdir(join(modules, 'koffi'), { recursive: true })
+  await writeFile(engine, '{}')
+  await writeFile(join(modules, 'koffi', 'index.cjs'), '')
+  await writeFile(
+    join(modules, 'koffi', 'package.json'),
+    JSON.stringify({
+      name: 'koffi',
+      version: koffiManifest.version,
+      main: 'index.cjs',
+      optionalDependencies: koffiManifest.optionalDependencies,
+    }),
+  )
+  for (const arch of darwinArches) {
+    const name = `@koromix/koffi-darwin-${arch}`
+    const dir = join(modules, name)
+    await mkdir(join(dir, `darwin_${arch}`), { recursive: true })
+    await writeFile(join(dir, 'index.js'), '')
+    await writeFile(
+      join(dir, 'package.json'),
+      JSON.stringify({ name, version: koffiManifest.version, main: 'index.js' }),
+    )
+    await writeFile(join(dir, `darwin_${arch}`, 'koffi.node'), 'fixture')
+  }
+  return engine
+}
 
 async function fixture(run: (root: string) => Promise<void>) {
   const root = await mkdtemp(join(tmpdir(), 'cli-native-build-'))
@@ -33,11 +77,19 @@ test('build import is safe and never starts compilation', () => {
 
 test.each(allTargets)('actual target receiver preserves $os/$arch/$abi/$avx2 options', async (target) => {
   const received: Bun.BuildConfig[] = []
-  const result = await compileTarget(target, { entrypoint: '/entry.ts', outfile: '/binary' }, async (options) => {
-    received.push(options)
-    return successful
+  let result: Awaited<ReturnType<typeof compileTarget>> | undefined
+  await fixture(async (root) => {
+    const enginePackageJson = await writeEngineFixture(root)
+    result = await compileTarget(
+      target,
+      { entrypoint: '/entry.ts', outfile: '/binary', enginePackageJson },
+      async (options) => {
+        received.push(options)
+        return successful
+      },
+    )
   })
-  if (!result.ok) expect.unreachable()
+  if (!result?.ok) expect.unreachable()
   expect(received).toHaveLength(1)
   const selected = target.os === 'darwin' ? `@koromix/koffi-darwin-${target.arch}` : undefined
   expect(received[0]).toEqual({
@@ -119,17 +171,20 @@ test.each([
 })
 
 // Allow twelve sequential 30-second builds plus 30 seconds for fixture setup and cleanup.
-test('production options select the real native graph for all twelve targets', async () => {
-  await fixture(async (root) => {
-    const entry = join(root, 'graph.ts')
-    await writeFile(
-      entry,
-      `import { inspectDarwinDirectoryAcl } from ${JSON.stringify(helper)}; console.log(inspectDarwinDirectoryAcl(Number(process.env.TEST_FD)))`,
-    )
-    const driver = join(root, 'graph-driver.ts')
-    await writeFile(
-      driver,
-      `
+// Needs the real Darwin prebuilds; skipped locally without them, but mandatory in CI.
+test.skipIf(!requireNativeGraph)(
+  'production options select the real native graph for all twelve targets',
+  async () => {
+    await fixture(async (root) => {
+      const entry = join(root, 'graph.ts')
+      await writeFile(
+        entry,
+        `import { inspectDarwinDirectoryAcl } from ${JSON.stringify(helper)}; console.log(inspectDarwinDirectoryAcl(Number(process.env.TEST_FD)))`,
+      )
+      const driver = join(root, 'graph-driver.ts')
+      await writeFile(
+        driver,
+        `
       import assert from 'node:assert/strict'
       import { createHash } from 'node:crypto'
       import { readFileSync } from 'node:fs'
@@ -150,21 +205,23 @@ test('production options select the real native graph for all twelve targets', a
       } else assert.equal(native.length,0)
       console.log('verified graph '+target.os+' '+target.arch)
     `,
-    )
-    for (const target of allTargets) {
-      const child = Bun.spawnSync([process.execPath, driver, JSON.stringify(target)], {
-        timeout: 30_000,
-        stdout: 'pipe',
-        stderr: 'pipe',
-      })
-      expect({ exit: child.exitCode, stdout: child.stdout.toString(), stderr: child.stderr.toString() }).toEqual({
-        exit: 0,
-        stdout: expect.stringContaining(`verified graph ${target.os} ${target.arch}`),
-        stderr: expect.any(String),
-      })
-    }
-  })
-}, 390_000)
+      )
+      for (const target of allTargets) {
+        const child = Bun.spawnSync([process.execPath, driver, JSON.stringify(target)], {
+          timeout: 30_000,
+          stdout: 'pipe',
+          stderr: 'pipe',
+        })
+        expect({ exit: child.exitCode, stdout: child.stdout.toString(), stderr: child.stderr.toString() }).toEqual({
+          exit: 0,
+          stdout: expect.stringContaining(`verified graph ${target.os} ${target.arch}`),
+          stderr: expect.any(String),
+        })
+      }
+    })
+  },
+  390_000,
+)
 
 const policy = `
 import assert from 'node:assert/strict'

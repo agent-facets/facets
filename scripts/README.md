@@ -17,7 +17,7 @@ scripts/
 │   ├── publish-platform.ts     # Publish one platform binary package
 │   ├── publish-cli-package.ts  # Synthesize + publish CLI wrapper
 │   ├── finalize.ts             # Orchestrate publish → verify → announce
-│   ├── verify.ts               # Verify all 13 packages on npm
+│   ├── verify.ts               # Verify CLI packages on npm (retries ~4m15s)
 │   ├── seed.ts                 # Seed platform package names on npm
 │   └── targets.ts              # Platform target matrix definitions
 │

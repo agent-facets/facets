@@ -17,7 +17,8 @@
 import { versionExists } from '../lib/npm'
 import { allPackageNames } from './targets'
 
-const MAX_RETRIES = 5
+// Initial check + 8 retries; the default backoff waits 255 seconds in total.
+const MAX_RETRIES = 8
 const INITIAL_DELAY_MS = 1_000
 
 function sleep(ms: number): Promise<void> {

@@ -48,6 +48,8 @@
       ]
     },
     "//#test:scripts": {
+      // build.test.ts requires the Darwin native graph test whenever CI is set.
+      "env": ["CI"],
       "inputs": [
         "scripts/**",
         ".changeset/**",

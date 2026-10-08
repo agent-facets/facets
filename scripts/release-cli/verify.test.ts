@@ -19,11 +19,12 @@ describe('verify.ts', () => {
   })
 
   test('returns 0 when all packages are found on first attempt', async () => {
-    spyOn(npm, 'versionExists').mockResolvedValue(true)
+    const veSpy = spyOn(npm, 'versionExists').mockResolvedValue(true)
 
     const code = await verify(ALL_PACKAGES, VERSION, 0)
 
     expect(code).toBe(0)
+    expect(veSpy).toHaveBeenCalledTimes(ALL_PACKAGES.length)
   })
 
   test('verifies all 13 packages (12 platform + main) when given the full list', async () => {
@@ -79,6 +80,31 @@ describe('verify.ts', () => {
     expect(code).toBe(0)
   })
 
+  test('succeeds when a package first appears on the final (ninth) check', async () => {
+    const lateCheck = 9
+    let checks = 0
+
+    spyOn(npm, 'versionExists').mockImplementation(async () => {
+      checks++
+      return checks === lateCheck
+    })
+
+    const code = await verify([CLI_PACKAGE_NAME], VERSION, 0)
+
+    expect(code).toBe(0)
+    expect(checks).toBe(lateCheck)
+  })
+
+  test('returns 1 after exactly nine checks when a package remains missing', async () => {
+    const veSpy = spyOn(npm, 'versionExists').mockResolvedValue(false)
+
+    const code = await verify([CLI_PACKAGE_NAME], VERSION, 0)
+
+    expect(code).toBe(1)
+    // Initial check + MAX_RETRIES (8)
+    expect(veSpy).toHaveBeenCalledTimes(9)
+  })
+
   test('returns 1 after max retries when packages remain missing', async () => {
     const missing = new Set([ALL_PACKAGES[0], ALL_PACKAGES[1]])
 
@@ -107,7 +133,7 @@ describe('verify.ts', () => {
       }
     }
 
-    // The missing package should be checked on every attempt (initial + MAX_RETRIES = 6)
-    expect(callCounts.get(missingPkg ?? '')).toBeGreaterThan(1)
+    // The missing package should be checked on every attempt (initial + MAX_RETRIES = 9)
+    expect(callCounts.get(missingPkg ?? '')).toBe(9)
   })
 })
