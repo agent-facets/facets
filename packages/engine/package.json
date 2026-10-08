@@ -24,6 +24,7 @@
     "arktype": "2.2.0",
     "comment-json": "^5.0.0",
     "ini": "7.0.0",
+    "koffi": "3.3.2",
     "nanotar": "0.3.0",
     "openapi-fetch": "0.17.0",
     "yaml": "2.9.0"
