@@ -26,7 +26,7 @@
     "@agent-facets/adapter-test-kit": "workspace:*",
     "@decimalturn/toml-patch": "^3.0.1",
     "arktype": "2.2.0",
-    "smol-toml": "^1.7.0",
+    "smol-toml": "^1.7.1",
     "tsdown": "^0.22.3",
     "typescript": "^6.0.3"
   },
