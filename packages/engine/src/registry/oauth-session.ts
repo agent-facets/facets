@@ -112,7 +112,13 @@ export async function resolveRegistryCredential(
     if (options.signal?.aborted) return failure({ code: 'CANCELLED' })
 
     const selected = selectedOrigin(options)
-    if (!selected.ok) return selected
+    if (!selected.ok) {
+      const anonymousOrigin = anonymousHttpOrigin(options.registryUrl ?? getRegistryBaseUrl())
+      if (anonymousOrigin === undefined) return selected
+      const exists = await stateCandidateExists(anonymousOrigin)
+      if (!exists.ok) return exists
+      return exists.value ? selected : success({ source: 'absent' })
+    }
     const exists = await stateCandidateExists(selected.value)
     if (!exists.ok) return exists
     if (!exists.value) return success({ source: 'absent' })
@@ -224,6 +230,14 @@ export async function logoutCliSession(
     if (legacy.source === 'env' || legacy.source === 'file') {
       return success({ source: 'pat', removed: deleteCredentialsFile(), envActive: legacy.source === 'env' })
     }
+    // A broken saved PAT still belongs to local logout before any OAuth selection.
+    try {
+      if (deleteCredentialsFile()) return success({ source: 'pat', removed: true, envActive: false })
+    } catch {
+      return legacy.reason !== undefined
+        ? failure({ code: 'PAT_UNREADABLE', path: legacy.reason.path })
+        : failure({ code: 'UNEXPECTED_FAILURE' })
+    }
     if (legacy.reason !== undefined) return failure({ code: 'PAT_UNREADABLE', path: legacy.reason.path })
     if (!isOAuthStorePlatformSupported(options.platform)) return unsupportedPlatform()
     if (options.signal?.aborted) return failure({ code: 'CANCELLED' })
@@ -235,24 +249,16 @@ export async function logoutCliSession(
     const selectedCandidate = await readOAuthSessionForLocalCleanup(selected.value, { platform: options.platform })
     if (!selectedCandidate.ok) return storeFailure(selectedCandidate.error)
     if (selectedCandidate.value === null) return success({ source: 'absent' })
+    const candidateSession = Object.freeze({ ...selectedCandidate.value })
     if (options.localOnly === true) {
-      const candidate = await readOAuthSessionForLocalCleanup(selected.value, { platform: options.platform })
-      if (!candidate.ok) return storeFailure(candidate.error)
-      if (candidate.value === null) return failure({ code: 'SESSION_CHANGED' })
-      const candidateSession = Object.freeze({ ...candidate.value })
-      const generation = candidateSession.generation
       const binding = bindingForSession(candidateSession)
       return locked<CliLogoutOutcome>(binding, options, async (lock) => {
-        const current = await readOAuthSession(binding)
+        const current = await readOAuthSessionForLocalCleanup(selected.value, { platform: options.platform })
         if (!current.ok) return storeFailure(current.error)
-        if (
-          current.value === null ||
-          current.value.generation !== generation ||
-          !sameSessionSnapshot(current.value, candidateSession)
-        )
+        if (current.value === null || !sameSelectedSession(current.value, candidateSession))
           return failure({ code: 'SESSION_CHANGED' })
         if (options.signal?.aborted) return failure({ code: 'CANCELLED' })
-        const deleted = await deleteOAuthSession(binding, generation, lock)
+        const deleted = await deleteOAuthSession(binding, current.value.generation, lock)
         return deleted.ok ? success({ source: 'oauth', remoteRevocation: 'unverified' }) : storeFailure(deleted.error)
       })
     }
@@ -262,9 +268,14 @@ export async function logoutCliSession(
     const config = configured.value
     const binding = bindingFor(config)
     return locked<CliLogoutOutcome>(binding, options, async (lock) => {
+      const selectedCurrent = await readOAuthSessionForLocalCleanup(selected.value, { platform: options.platform })
+      if (!selectedCurrent.ok) return storeFailure(selectedCurrent.error)
+      if (selectedCurrent.value === null || !sameSelectedSession(selectedCurrent.value, candidateSession))
+        return failure({ code: 'SESSION_CHANGED' })
       const current = await readOAuthSession(binding)
       if (!current.ok) return storeFailure(current.error)
-      if (current.value === null) return failure({ code: 'SESSION_CHANGED' })
+      if (current.value === null || !sameSelectedSession(current.value, candidateSession))
+        return failure({ code: 'SESSION_CHANGED' })
       if (options.signal?.aborted) return failure({ code: 'CANCELLED' })
       const resolved = await resolveHeld(config, current.value, lock, options)
       if (!resolved.ok) {
@@ -273,14 +284,16 @@ export async function logoutCliSession(
         if (!revocation.ok) return revocation
         const dead = await readOAuthSession(binding)
         if (!dead.ok) return storeFailure(dead.error)
-        if (dead.value === null) return failure({ code: 'SESSION_CHANGED' })
+        if (dead.value === null || !sameSelectedSession(dead.value, candidateSession))
+          return failure({ code: 'SESSION_CHANGED' })
         if (options.signal?.aborted) return failure({ code: 'CANCELLED' })
         const deleted = await deleteOAuthSession(binding, dead.value.generation, lock)
         return deleted.ok ? success({ source: 'oauth', remoteRevocation: 'confirmed' }) : storeFailure(deleted.error)
       }
       const latest = await readOAuthSession(binding)
       if (!latest.ok) return storeFailure(latest.error)
-      if (latest.value === null) return failure({ code: 'SESSION_CHANGED' })
+      if (latest.value === null || !sameSelectedSession(latest.value, candidateSession))
+        return failure({ code: 'SESSION_CHANGED' })
       if (options.signal?.aborted) return failure({ code: 'CANCELLED' })
       const revoked = await revokeCliSession(config, resolved.value.token, options)
       if (!revoked.ok) return revoked
@@ -559,6 +572,17 @@ function createBoundFetch(fetchImpl: typeof globalThis.fetch): typeof globalThis
   return boundFetch
 }
 
+/** HTTP can remain anonymous, but cannot select or configure browser credentials. */
+function anonymousHttpOrigin(raw: string): string | undefined {
+  if (!/^http:\/\/[^/?#]+\/?$/i.test(raw) || /[\s\\]/.test(raw)) return undefined
+  try {
+    const url = new URL(raw)
+    return url.protocol === 'http:' && url.username === '' && url.password === '' ? url.origin : undefined
+  } catch {
+    return undefined
+  }
+}
+
 function selectedOrigin(options: RegistrySessionOptions): RegistrySessionResult<string> {
   const selected = validateRegistryOrigin(options.registryUrl ?? getRegistryBaseUrl(), options.allowHttpLoopback)
   return selected.ok ? success(selected.value) : failure({ code: 'INVALID_REGISTRY_ORIGIN' })
@@ -633,6 +657,21 @@ function bindingForSession(session: OAuthSession): OAuthSessionBinding {
     token_endpoint: session.token_endpoint,
     verification_origin: session.verification_origin,
   }
+}
+
+/** Renewal may change tokens or generation without changing the selected login. */
+function sameSelectedSession(left: Readonly<OAuthSession>, right: Readonly<OAuthSession>): boolean {
+  return (
+    left.user_uuid === right.user_uuid &&
+    left.subject === right.subject &&
+    left.session_id === right.session_id &&
+    left.registry_origin === right.registry_origin &&
+    left.client_id === right.client_id &&
+    left.issuer === right.issuer &&
+    left.authorization_endpoint === right.authorization_endpoint &&
+    left.token_endpoint === right.token_endpoint &&
+    left.verification_origin === right.verification_origin
+  )
 }
 
 function sameSessionSnapshot(left: Readonly<OAuthSession> | null, right: Readonly<OAuthSession> | null): boolean {

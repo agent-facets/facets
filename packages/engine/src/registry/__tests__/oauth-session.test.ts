@@ -5,7 +5,7 @@ import { chmodSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync 
 import * as fsPromises from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { writeCredentialsToken } from '../credentials.ts'
+import { resolveCredential, writeCredentialsToken } from '../credentials.ts'
 import {
   beginCliLogin,
   completeCliLogin,
@@ -174,12 +174,50 @@ async function seed(session: OAuthSession = ready()): Promise<void> {
 
 async function stored(): Promise<OAuthSession | null> {
   const result = await readOAuthSession(binding())
-  expect(result.ok).toBe(true)
   if (!result.ok) expect.unreachable()
   return result.value
 }
 
 describe('registry credential precedence and absence', () => {
+  for (const registryUrl of ['http://registry.example', 'http://localhost:3000', 'http://127.0.0.1:3000/']) {
+    test(`anonymous HTTP registry without OAuth state stays absent: ${registryUrl}`, async () => {
+      let calls = 0
+      const setup = options(
+        makeFetch(() => {
+          calls++
+          return json(configResponse())
+        }),
+        { registryUrl },
+      )
+      expect(await resolveRegistryCredential(setup)).toEqual({ ok: true, value: { source: 'absent' } })
+      expect(calls).toBe(0)
+      expect(await Bun.file(join(facetDir, 'oauth')).exists()).toBe(false)
+      expect(await beginCliLogin(setup)).toEqual({ ok: false, error: { code: 'INVALID_REGISTRY_ORIGIN' } })
+      expect(calls).toBe(0)
+    })
+  }
+
+  test('HTTP registry with an OAuth candidate fails closed before reading credentials or network', async () => {
+    const registryUrl = 'http://registry.example'
+    mkdirSync(join(facetDir, 'oauth'), { recursive: true, mode: 0o700 })
+    const path = statePath(registryUrl)
+    const contents = JSON.stringify(ready({ registry_origin: registryUrl }))
+    writeFileSync(path, contents, { mode: 0o600 })
+    let calls = 0
+    const result = await resolveRegistryCredential(
+      options(
+        makeFetch(() => {
+          calls++
+          return json(configResponse())
+        }),
+        { registryUrl },
+      ),
+    )
+    expect(result).toEqual({ ok: false, error: { code: 'INVALID_REGISTRY_ORIGIN' } })
+    expect(calls).toBe(0)
+    expect(readFileSync(path, 'utf8')).toBe(contents)
+  })
+
   test('fresh FACET_DIR under the real sticky temp parent stays absent without network or OAuth directory creation', async () => {
     let calls = 0
     const result = await resolveRegistryCredential(
@@ -346,10 +384,8 @@ describe('browser login and binding', () => {
         return json(await response.json(), response.status)
       })
       const begun = await beginCliLogin(options(fetcher))
-      expect(begun.ok).toBe(true)
       if (!begun.ok) expect.unreachable()
       const completed = await completeCliLogin(begun.value, options(fetcher))
-      expect(completed.ok).toBe(false)
       if (completed.ok) expect.unreachable()
       if (response.status === 403) {
         expect(completed.error).toEqual({ code: 'ONBOARDING_REQUIRED', onboardingUrl: ONBOARDING })
@@ -539,12 +575,10 @@ describe('refresh fencing and bound identity', () => {
     })
     const result = await resolveRegistryCredential(options(fetcher))
     if (!result.ok) expect.unreachable()
-    expect(result.value.source).toBe('oauth')
     if (result.value.source !== 'oauth') expect.unreachable()
     expect(result.value.token).toBe(accessToken())
     expect(exchanges).toBe(3)
     const saved = await stored()
-    expect(saved?.status).toBe('uncertain')
     if (saved?.status !== 'uncertain') expect.unreachable()
     expect(saved.refresh_attempts).toBe(3)
     expect(saved.refresh_started_at).toBe(NOW)
@@ -644,7 +678,6 @@ describe('refresh fencing and bound identity', () => {
     expect(result).toEqual({ ok: false, error: { code: 'REFRESH_UNAVAILABLE', reason: 'transient' } })
     expect(exchanges).toBe(1)
     const saved = await stored()
-    expect(saved?.status).toBe('uncertain')
     if (saved?.status !== 'uncertain') expect.unreachable()
     expect(saved.refresh_attempts).toBe(1)
   })
@@ -672,7 +705,6 @@ describe('refresh fencing and bound identity', () => {
     expect(result.ok).toBe(true)
     expect(exchanges).toBe(2)
     const saved = await stored()
-    expect(saved?.status).toBe('uncertain')
     if (saved?.status !== 'uncertain') expect.unreachable()
     expect(saved.refresh_started_at).toBe(NOW - 1_000)
     expect(saved.refresh_attempts).toBe(3)
@@ -721,7 +753,6 @@ describe('refresh fencing and bound identity', () => {
     expect(result).toEqual({ ok: false, error: { code: 'CANCELLED' } })
     expect(exchanges).toBe(1)
     const saved = await stored()
-    expect(saved?.status).toBe('uncertain')
     if (saved?.status !== 'uncertain') expect.unreachable()
     expect(saved.refresh_attempts).toBe(1)
     expect(saved.refresh_token).toBe(REFRESH)
@@ -730,6 +761,219 @@ describe('refresh fencing and bound identity', () => {
 })
 
 describe('selected-session logout and failure retention', () => {
+  for (const legacyFile of ['malformed', 'unreadable']) {
+    test(`logout removes ${legacyFile} legacy PAT file before selecting saved OAuth`, async () => {
+      await seed()
+      const original = readFileSync(statePath(), 'utf8')
+      const credentialsPath = join(facetDir, 'credentials')
+      writeFileSync(
+        credentialsPath,
+        legacyFile === 'malformed' ? '[other]\ntoken=unused\n' : '[default]\ntoken=secret\n',
+        { mode: 0o600 },
+      )
+      if (legacyFile === 'unreadable') chmodSync(credentialsPath, 0o000)
+      expect(resolveCredential()).toEqual(
+        legacyFile === 'malformed'
+          ? { source: 'absent' }
+          : { source: 'absent', reason: { code: 'unreadable', path: credentialsPath, cause: expect.any(String) } },
+      )
+      let calls = 0
+      const fetcher = makeFetch(() => {
+        calls++
+        return json(configResponse())
+      })
+      expect(await logoutCliSession(options(fetcher))).toEqual({
+        ok: true,
+        value: { source: 'pat', removed: true, envActive: false },
+      })
+      expect(await Bun.file(credentialsPath).exists()).toBe(false)
+      expect(readFileSync(statePath(), 'utf8')).toBe(original)
+      expect(calls).toBe(0)
+    })
+  }
+
+  test('logout retains an unreadable PAT directory and fails closed when deletion cannot remove it', async () => {
+    await seed()
+    const original = readFileSync(statePath(), 'utf8')
+    const credentialsPath = join(facetDir, 'credentials')
+    mkdirSync(credentialsPath, { mode: 0o700 })
+    let calls = 0
+    expect(
+      await logoutCliSession(
+        options(
+          makeFetch(() => {
+            calls++
+            return json(configResponse())
+          }),
+        ),
+      ),
+    ).toEqual({ ok: false, error: { code: 'PAT_UNREADABLE', path: credentialsPath } })
+    expect(readFileSync(statePath(), 'utf8')).toBe(original)
+    expect(calls).toBe(0)
+    expect((await fsPromises.lstat(credentialsPath)).isDirectory()).toBe(true)
+  })
+
+  for (const replacement of [
+    { user_uuid: 'replacement-user' },
+    { subject: 'replacement-subject' },
+    { session_id: 'replacement-session' },
+    { client_id: 'replacement-client', issuer: 'https://api.workos.com/user_management/replacement-client' },
+    { issuer: 'https://api.workos.com/other-issuer' },
+    { authorization_endpoint: 'https://api.workos.com/other-authorize' },
+    { token_endpoint: 'https://api.workos.com/other-token' },
+    { verification_origin: 'https://other-login.example' },
+  ]) {
+    test(`logout preserves original selection when ${Object.keys(replacement)[0]} changes during config`, async () => {
+      await seed()
+      let laterCalls = 0
+      const next = ready({ ...replacement, generation: 3 })
+      const fetcher = makeFetch(async (request) => {
+        if (request.url.endsWith('/config')) {
+          const removed = await withOAuthSessionLock(binding(), (lock) => deleteOAuthSession(binding(), 1, lock))
+          if (!removed.ok) expect.unreachable()
+          const saved = await withOAuthSessionLock(next, (lock) => saveOAuthSession(next, 2, lock))
+          if (!saved.ok) expect.unreachable()
+          return json(configResponse())
+        }
+        laterCalls++
+        return request.url.endsWith('/me') ? json(profile(next.user_uuid)) : json({ ok: true })
+      })
+      expect(await logoutCliSession(options(fetcher))).toEqual({ ok: false, error: { code: 'SESSION_CHANGED' } })
+      expect(laterCalls).toBe(0)
+      const current = await readOAuthSession(next)
+      if (!current.ok) expect.unreachable()
+      expect(current.value).toEqual(next)
+    })
+  }
+
+  test('local logout pins its first read rather than adopting a replacement on a second read', async () => {
+    await seed()
+    const originalRead = oauthStore.readOAuthSessionForLocalCleanup
+    const replacement = ready({ generation: 2, user_uuid: 'replacement-user', session_id: 'replacement-session' })
+    let replaced = false
+    const readProbe = spyOn(oauthStore, 'readOAuthSessionForLocalCleanup').mockImplementation(async (...args) => {
+      const result = await originalRead(...args)
+      if (!replaced) {
+        replaced = true
+        const saved = await withOAuthSessionLock(binding(), (lock) => saveOAuthSession(replacement, 1, lock))
+        if (!saved.ok) expect.unreachable()
+      }
+      return result
+    })
+    let calls = 0
+    try {
+      expect(
+        await logoutCliSession({
+          ...options(
+            makeFetch(() => {
+              calls++
+              return json(configResponse())
+            }),
+          ),
+          localOnly: true,
+        }),
+      ).toEqual({ ok: false, error: { code: 'SESSION_CHANGED' } })
+      expect(await stored()).toEqual(replacement)
+      expect(calls).toBe(0)
+      expect(replaced).toBe(true)
+    } finally {
+      readProbe.mockRestore()
+    }
+  })
+
+  for (const localOnly of [false, true]) {
+    for (const renewal of [false, true]) {
+      test(`${localOnly ? 'local' : 'remote'} logout ${renewal ? 'accepts original SID renewal' : 'rejects replacement SID'} during lock wait`, async () => {
+        await seed()
+        const next = ready({
+          generation: 2,
+          access_token: accessToken({ jti: 'renewed' }),
+          refresh_token: ROTATED,
+          ...(renewal ? {} : { session_id: 'replacement-session' }),
+        })
+        let holderReady = () => {}
+        const holding = new Promise<void>((resolve) => {
+          holderReady = resolve
+        })
+        let releaseHolder = () => {}
+        const held = new Promise<void>((resolve) => {
+          releaseHolder = resolve
+        })
+        const holder = withOAuthSessionLock(binding(), async (lock) => {
+          holderReady()
+          await held
+          return saveOAuthSession(next, 1, lock)
+        })
+        await holding
+        let contenderReady = () => {}
+        const contending = new Promise<void>((resolve) => {
+          contenderReady = resolve
+        })
+        const originalExec = Database.prototype.exec
+        const exec = spyOn(Database.prototype, 'exec').mockImplementation(function (this: Database, sql) {
+          if (sql === 'BEGIN IMMEDIATE') contenderReady()
+          return originalExec.call(this, sql)
+        })
+        const revocations: Array<string | null> = []
+        let profileCalls = 0
+        const fetcher = makeFetch((request) => {
+          if (request.url.endsWith('/config')) return json(configResponse())
+          if (request.url.endsWith('/me')) {
+            profileCalls++
+            return json(profile())
+          }
+          revocations.push(request.headers.get('authorization'))
+          return json({ ok: true })
+        })
+        const pending = logoutCliSession({ ...options(fetcher), localOnly })
+        try {
+          await Promise.race([
+            contending,
+            Bun.sleep(2_000).then(() => expect.unreachable('contender did not reach lock')),
+          ])
+          releaseHolder()
+          const saved = await holder
+          if (!saved.ok) expect.unreachable()
+          expect(await pending).toEqual(
+            renewal
+              ? { ok: true, value: { source: 'oauth', remoteRevocation: localOnly ? 'unverified' : 'confirmed' } }
+              : { ok: false, error: { code: 'SESSION_CHANGED' } },
+          )
+          expect(revocations).toEqual(renewal && !localOnly ? [`Bearer ${next.access_token}`] : [])
+          expect(profileCalls).toBe(renewal && !localOnly ? 1 : 0)
+          expect(await stored()).toEqual(renewal ? null : next)
+        } finally {
+          releaseHolder()
+          await holder
+          await pending
+          exec.mockRestore()
+        }
+      })
+    }
+  }
+
+  test('remote logout accepts original SID token renewal during configuration', async () => {
+    await seed()
+    const renewed = ready({ generation: 2, access_token: accessToken({ jti: 'renewed' }), refresh_token: ROTATED })
+    const revocations: Array<string | null> = []
+    const fetcher = makeFetch(async (request) => {
+      if (request.url.endsWith('/config')) {
+        const saved = await withOAuthSessionLock(binding(), (lock) => saveOAuthSession(renewed, 1, lock))
+        if (!saved.ok) expect.unreachable()
+        return json(configResponse())
+      }
+      if (request.url.endsWith('/me')) return json(profile())
+      revocations.push(request.headers.get('authorization'))
+      return json({ ok: true })
+    })
+    expect(await logoutCliSession(options(fetcher))).toEqual({
+      ok: true,
+      value: { source: 'oauth', remoteRevocation: 'confirmed' },
+    })
+    expect(revocations).toEqual([`Bearer ${renewed.access_token}`])
+    expect(await stored()).toBeNull()
+  })
+
   test('revokes the bound bearer session and removes only selected OAuth state', async () => {
     await seed()
     let logoutRequest: Request | undefined
@@ -1131,7 +1375,6 @@ describe('real multi-process refresh coordination', () => {
     const crashed = await launchWorkers(1, logPath, true)
     expect(crashed[0]?.exitCode).toBe(0)
     const uncertain = await stored()
-    expect(uncertain?.status).toBe('uncertain')
     if (uncertain?.status !== 'uncertain') expect.unreachable()
     expect(uncertain.refresh_attempts).toBe(1)
     expect(uncertain.refresh_started_at).toBe(NOW)
