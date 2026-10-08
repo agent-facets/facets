@@ -1,6 +1,6 @@
 ---
 title: Setup
-description: Install the CLI, an adapter, and a token
+description: Install the CLI, connect, and sign in
 ---
 
 What you need before adding, authoring, or publishing facets. To just try a facet, the [Quickstart](/quickstart) is faster.
@@ -54,16 +54,19 @@ What you need before adding, authoring, or publishing facets. To just try a face
     </Note>
   </Step>
 
-  <Step title="Create a registry account and token">
-    Adding public facets needs no account. A token unlocks publishing your own facets and reaching [private ones](/private-facets) you have access to.
+  <Step title="Sign in to the registry">
+    Adding public facets needs no account. Sign in to publish your own facets and reach [private ones](/private-facets) you have access to.
 
-    Sign up at [agentfacets.io](https://agentfacets.io), create a <Tooltip tip="A revocable credential you mint in the web UI to authenticate the CLI to the registry.">personal access token</Tooltip> in your account settings, then:
+    On macOS or Linux:
 
     ```sh
-    facet login                     # interactive, stores the token
-    export FACET_TOKEN=fct_pub_…    # or this, for CI and scripts
-    facet whoami                    # confirm the signed-in identity
+    facet login --browser
+    facet whoami
     ```
+
+    Follow the verification page and complete account setup if requested. See [`facet login`](/cli/login) for manual browser verification and personal access token entry on Windows.
+
+    For CI and scripts, create a personal access token in your account settings at [agentfacets.io](https://agentfacets.io) and supply [`FACET_TOKEN`](/cli/env#facet_token). Do not run interactive login in CI.
   </Step>
 </Steps>
 

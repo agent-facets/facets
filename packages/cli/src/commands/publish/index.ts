@@ -4,7 +4,7 @@ import {
   discoverBuiltArtifacts,
   loadManifest,
   publishFacetVersion,
-  resolveCredential,
+  resolveRegistryCredential,
   uncappedGunzip,
 } from '@agent-facets/engine'
 import { type ArchiveVerificationFailure, type FacetManifest, validateFacetArchive } from '@agent-facets/protocol'
@@ -62,16 +62,13 @@ export const publishCommand: Command = {
     const projectRoot = resolved.dir
 
     // (b) Resolve credential before any work — fail fast.
-    const cred = resolveCredential()
+    const resolvedCredential = await resolveRegistryCredential()
+    if (!resolvedCredential.ok) {
+      writeCliError(translateEngineRegistryError({ code: 'AUTHENTICATION_ERROR', reason: resolvedCredential.error }))
+      return 1
+    }
+    const cred = resolvedCredential.value
     if (cred.source === 'absent') {
-      if (cred.reason?.code === 'unreadable') {
-        writeCliError({
-          what: "couldn't read your registry credentials file",
-          detail: `${cred.reason.path}: ${cred.reason.cause}`,
-          fix: "fix the file's permissions, or run `facet logout` then `facet login`",
-        })
-        return 1
-      }
       writeCliError({
         what: 'not signed in — no registry credential found',
         fix: 'run `facet login` to sign in, or set FACET_TOKEN in your environment',
@@ -130,7 +127,11 @@ export const publishCommand: Command = {
     const { facetManifest } = verified.data
 
     // (g) Upload using the artifact's embedded identity.
-    const client = createRegistryClient({ credential: cred.token })
+    const client = createRegistryClient(
+      cred.source === 'oauth'
+        ? { baseUrl: cred.registryOrigin, credential: cred.token, credentialPolicy: 'oauth' }
+        : { credential: cred.token },
+    )
     const result = await publishFacetVersion(client, {
       name: facetManifest.name,
       tarball: distBytes,

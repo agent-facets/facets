@@ -5,14 +5,14 @@ description: Build, update, and publish your facets
 
 Publishing takes a built facet to the registry. Sign in, build, publish.
 
-You need a facet project with a valid `facet.json` (see [Create a Facet](/guides/create-your-first-facet)) and a registry account with a <Tooltip headline="Personal access token" tip={<span>A revocable credential you mint in the web UI and use with <code>facet login</code> or <code>FACET_TOKEN</code>.</span>}>personal access token</Tooltip> from [agentfacets.io](https://agentfacets.io).
+You need a facet project with a valid `facet.json` (see [Create a Facet](/guides/create-your-first-facet)) and a registry account at [agentfacets.io](https://agentfacets.io).
 
 <Visibility for="agents">
 
 > **Publishing is authenticated, and a published version is immutable.**
 >
 > ```sh
-> export FACET_TOKEN=fct_pub_…   # or run `facet login` interactively
+> export FACET_TOKEN=fct_pub_…   # a personal access token for CI
 > facet whoami
 >
 > facet build
@@ -33,14 +33,14 @@ You need a facet project with a valid `facet.json` (see [Create a Facet](/guides
 ## Authenticate
 
 ```sh
-facet login     # choose "Paste a personal access token"
+facet login --browser   # macOS or Linux
 facet whoami    # confirm the identity
 ```
 
-[`facet login`](/cli/login) verifies the token against the registry before saving it, so a typo fails now rather than at publish time. [`facet whoami`](/cli/whoami) prints your username, email, and tier.
+Follow the verification page and finish account setup if requested. For Windows or personal access token entry, see [`facet login`](/cli/login). [`facet whoami`](/cli/whoami) confirms the identity you will publish as.
 
 <Tip>
-  In CI, skip `facet login` and set `FACET_TOKEN`. It takes precedence over the saved credentials file.
+  In CI, skip interactive login and set [`FACET_TOKEN`](/cli/env#facet_token). See [credential precedence](/cli/login#token-precedence) if a saved token shadows browser sign-in.
 </Tip>
 
 ## Build, then publish
@@ -100,11 +100,7 @@ Omitting `private` keeps a facet public. Who can see or download a private facet
 facet logout
 ```
 
-[`facet logout`](/cli/logout) deletes the local credentials file. It makes no server call, so revoke tokens in the web UI.
-
-<Warning>
-  If `FACET_TOKEN` is set, it keeps authenticating after logout. Run `unset FACET_TOKEN` to sign out of the current shell.
-</Warning>
+See [`facet logout`](/cli/logout) for browser session revocation, offline local cleanup, and personal access token removal. If your shell supplies `FACET_TOKEN`, [unset it separately](/cli/logout#facet_token-survives-logout).
 
 `FACET_TOKEN` and `FACET_REGISTRY_URL` are documented in the [environment reference](/cli/env).
 

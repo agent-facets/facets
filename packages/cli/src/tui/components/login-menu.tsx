@@ -1,87 +1,85 @@
 import { Box, Text, useApp, useInput } from 'ink'
 import TextInput from 'ink-text-input'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { THEME } from '../theme.ts'
 
-/**
- * Interactive login flow: a two-row method menu followed by a masked
- * personal-access-token prompt.
- *
- * The component collects input only — it never makes a network call.
- * The caller verifies the submitted token (and re-mounts with an
- * `error` to reprompt on rejection), then persists it. This keeps the
- * registry round-trip in the command/engine layer, not in the view.
- *
- * Menu rows:
- *   - "Paste a personal access token" — active.
- *   - "Sign in via browser" — disabled, dimmed, "(coming soon)". Shown
- *     so the forthcoming browser flow is discoverable; it cannot be
- *     selected (↑↓ skip it, Enter never lands on it).
- *
- * Keyboard:
- *   ↑↓     move (skips the disabled row)
- *   Enter  on the PAT row → advance to the masked prompt
- *   Esc    cancel (hands back null)
- *   In the prompt: Enter submits the token, Esc returns to the menu.
- */
-
-type Phase = 'menu' | 'token'
+type Phase = 'menu' | 'token' | 'polling'
+type Choice = 'browser' | 'token'
 
 export interface LoginMenuProps {
-  /**
-   * When set, an error from a previous token attempt to display above
-   * the prompt (the caller re-mounts with this after a rejected token).
-   * The component starts directly in the token phase when an error is
-   * present, so the user reprompts without re-selecting the method.
-   */
   initialError?: string
-  /** Fires when the user submits a (non-empty) token. */
+  polling?: boolean
+  tokenOnly?: boolean
+  onChooseBrowser?: () => void
   onSubmitToken: (token: string) => void
-  /** Fires when the user aborts the whole flow (Esc at the menu). */
   onCancel: () => void
 }
 
-export function LoginMenu({ initialError, onSubmitToken, onCancel }: LoginMenuProps) {
+/** Collects a method or token, or handles keys while a device attempt is polling. */
+export function LoginMenu({
+  initialError,
+  polling = false,
+  tokenOnly = false,
+  onChooseBrowser,
+  onSubmitToken,
+  onCancel,
+}: LoginMenuProps) {
   const { exit } = useApp()
-  const [phase, setPhase] = useState<Phase>(initialError !== undefined ? 'token' : 'menu')
+  const [phase, setPhase] = useState<Phase>(
+    polling ? 'polling' : tokenOnly || initialError !== undefined ? 'token' : 'menu',
+  )
+  const [choice, setChoice] = useState<Choice>('browser')
   const [token, setToken] = useState('')
-  const [done, setDone] = useState(false)
+  const settled = useRef(false)
 
-  // Menu input. The token phase is driven by <TextInput> (onSubmit), so
-  // useInput here only needs to handle the menu and the token-phase Esc.
-  useInput((_input, key) => {
-    if (done) return
+  function finish(emit: () => void): void {
+    if (settled.current) return
+    settled.current = true
+    emit()
+    exit()
+  }
 
+  useInput((input, key) => {
+    if (settled.current) return
+    if (key.ctrl && input === 'c') {
+      finish(onCancel)
+      return
+    }
+    if (phase === 'polling') {
+      if (key.escape) finish(onCancel)
+      return
+    }
     if (phase === 'menu') {
       if (key.escape) {
-        finish(() => onCancel())
-        return
-      }
-      // Only one selectable row, so ↑↓ are no-ops; Enter advances.
-      if (key.return) {
-        setPhase('token')
-        return
+        finish(onCancel)
+      } else if (key.upArrow || key.downArrow) {
+        setChoice((current) => (current === 'browser' ? 'token' : 'browser'))
+      } else if (key.return) {
+        if (choice === 'browser') finish(() => onChooseBrowser?.())
+        else setPhase('token')
       }
       return
     }
-
-    // phase === 'token': Esc returns to the menu (cancel the entry).
-    if (key.escape) {
+    if (key.escape && tokenOnly) {
+      finish(onCancel)
+    } else if (key.escape) {
       setToken('')
       setPhase('menu')
     }
   })
 
-  function finish(emit: () => void): void {
-    setDone(true)
-    exit()
-    emit()
-  }
-
   function submitToken(value: string): void {
     const trimmed = value.trim()
-    if (trimmed.length === 0) return
-    finish(() => onSubmitToken(trimmed))
+    if (trimmed.length > 0) finish(() => onSubmitToken(trimmed))
+  }
+
+  if (phase === 'polling') {
+    return (
+      <Box flexDirection="column" paddingY={1}>
+        <Text>Waiting for browser sign-in…</Text>
+        <Text color={THEME.keyword}>Esc or Ctrl-C cancel</Text>
+      </Box>
+    )
   }
 
   if (phase === 'menu') {
@@ -90,16 +88,17 @@ export function LoginMenu({ initialError, onSubmitToken, onCancel }: LoginMenuPr
         <Text>How would you like to sign in?</Text>
         <Box height={1} />
         <Box>
-          <Text color={THEME.focus}>▸ </Text>
+          <Text color={THEME.focus}>{choice === 'browser' ? '▸ ' : '  '}</Text>
           <Text color={THEME.secondary}>● </Text>
-          <Text>Paste a personal access token</Text>
+          <Text>Sign in via browser</Text>
         </Box>
         <Box>
-          <Text>{'  '}</Text>
-          <Text color={THEME.hint}>○ Sign in via browser (coming soon)</Text>
+          <Text color={THEME.focus}>{choice === 'token' ? '▸ ' : '  '}</Text>
+          <Text color={THEME.hint}>○ </Text>
+          <Text>Paste a personal access token</Text>
         </Box>
         <Box height={1} />
-        <Text color={THEME.keyword}>Enter select · Esc cancel</Text>
+        <Text color={THEME.keyword}>↑↓ choose · Enter select · Esc cancel</Text>
       </Box>
     )
   }

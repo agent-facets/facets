@@ -1,8 +1,8 @@
 import { parseVersionSpec } from '../sources/facet/parse-version.ts'
 import { createRegistryClient, translateThrownError, translateWireError } from './client.ts'
-import { resolveCredential } from './credentials.ts'
 import { describeVersionSpec } from './describe.ts'
 import { facetNameToRoute } from './http.ts'
+import { resolveRegistryCredential } from './oauth-session.ts'
 import type { RegistryMetadata, RegistryResult, RegistrySpec } from './types.ts'
 
 /**
@@ -68,21 +68,19 @@ export async function resolveRegistryMetadataBatch(
     }
   }
 
-  // Reads carry the credential opportunistically: when one is
-  // available it earns the authenticated rate-limit tier; when absent
-  // the reads proceed anonymously (see design D3).
-  //
-  // Guarded like `fetchOne` below rather than left bare: reading the
-  // credential touches the home directory and parses a file, and
-  // creating the client validates a URL from the environment. Both are
-  // environment failures a caller can act on, and neither may leave
-  // this function through a channel its result type does not describe.
+  // Resolve authentication before resource I/O; a failed session cannot downgrade to anonymous reads.
   let client: ReturnType<typeof createRegistryClient>
   try {
-    const cred = resolveCredential()
-    client = createRegistryClient({
-      credential: cred.source === 'absent' ? undefined : cred.token,
-    })
+    const resolved = await resolveRegistryCredential()
+    if (!resolved.ok) {
+      return { ok: false, error: { code: 'AUTHENTICATION_ERROR', reason: resolved.error } }
+    }
+    const cred = resolved.value
+    client = createRegistryClient(
+      cred.source === 'oauth'
+        ? { baseUrl: cred.registryOrigin, credential: cred.token, credentialPolicy: 'oauth' }
+        : { credential: cred.source === 'absent' ? undefined : cred.token },
+    )
   } catch (err) {
     return { ok: false, error: translateThrownError(err) }
   }

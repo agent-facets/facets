@@ -1,12 +1,13 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { WireAuthMeResponse } from '@agent-facets/engine'
+import * as engine from '@agent-facets/engine'
 import { buildArtifactPath, fixtures, uncappedGunzip } from '@agent-facets/engine'
 import { parseFacetArchive, validateFacetArchive } from '@agent-facets/protocol'
 import { captureStderr, captureStdout } from '../../../__tests__/helpers/capture-std.ts'
 import { withTTY } from '../../../__tests__/helpers/with-tty.ts'
-import { publishCommand } from '../index.ts'
 import { buildFacetFixture, createFetchSpy } from './helpers.ts'
 
 const ORIGINAL_FETCH = globalThis.fetch
@@ -17,6 +18,20 @@ const ORIGINAL_URL = process.env.FACET_REGISTRY_URL
 let projectRoot: string
 let facetDir: string
 let originalCwd: string
+const oauthProfile = {
+  user_uuid: 'u-1',
+  username: 'ada',
+  email: 'ada@example.com',
+  tier: 'pro',
+  suspended: false,
+  startup_experience: { kind: 'landing-only' },
+  getting_started: { kind: 'unavailable' },
+} satisfies WireAuthMeResponse
+const realResolveRegistryCredential = engine.resolveRegistryCredential
+let resolveBehavior: typeof realResolveRegistryCredential = realResolveRegistryCredential
+let restoreResolver = () => {}
+
+const { publishCommand } = await import('../index.ts')
 
 // Module mocks: these stub the interactive prompt helpers and the
 // build-view trampoline so tests can assert end-to-end publish behavior
@@ -56,9 +71,13 @@ beforeEach(() => {
   mockRebuildDriftedAnswer = false
   mockIdentityDriftDecision = 'cancel'
   mockRunBuildViewBehavior = async () => ({ ok: false })
+  resolveBehavior = realResolveRegistryCredential
+  const mocked = spyOn(engine, 'resolveRegistryCredential').mockImplementation((options) => resolveBehavior(options))
+  restoreResolver = () => mocked.mockRestore()
 })
 
 afterEach(() => {
+  restoreResolver()
   process.chdir(originalCwd)
   rmSync(projectRoot, { recursive: true, force: true })
   rmSync(facetDir, { recursive: true, force: true })
@@ -121,6 +140,86 @@ describe('publishCommand — happy path', () => {
     expect(parsed.data.manifest.manifest.archive).toBe('archive.tar.gz')
     expect(parsed.data.manifest.manifest.integrity).toMatch(/^sha256:[a-f0-9]{64}$/)
     expect(stdout).toContain('Published cowsay@0.1.0')
+  })
+})
+
+describe('publishCommand — selected browser session', () => {
+  test('binds the frozen OAuth origin and bearer despite registry ENV drift', async () => {
+    await buildFacetFixture(projectRoot, {
+      name: 'cowsay',
+      version: '0.1.0',
+      commands: { cowsay: '# cowsay\n' },
+    })
+    const bearer = 'oauth-bearer-canary'
+    resolveBehavior = async () => {
+      process.env.FACET_REGISTRY_URL = 'https://changed.invalid'
+      return {
+        ok: true,
+        value: {
+          source: 'oauth',
+          token: bearer,
+          registryOrigin: 'https://api.test',
+          profile: oauthProfile,
+        },
+      }
+    }
+    const transport: Array<{ redirect: RequestInit['redirect']; credentials: RequestInit['credentials'] }> = []
+    const spy = createFetchSpy(() => new Response(JSON.stringify(fixtures.publishResponse()), { status: 201 }))
+    const fetcher = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      transport.push({ redirect: init?.redirect, credentials: init?.credentials })
+      return spy.fetch(input, init)
+    }
+    globalThis.fetch = Object.assign(fetcher, { preconnect: spy.fetch.preconnect })
+
+    const { result, stdout } = await captureStdout(() => publishCommand.run([], {}))
+    expect(result).toBe(0)
+    expect(spy.calls).toHaveLength(1)
+    const call = spy.calls[0]
+    if (call === undefined) expect.unreachable()
+    expect(call.url).toBe('https://api.test/v0/facets/cowsay/versions')
+    expect(call.headers.authorization).toBe(`Bearer ${bearer}`)
+    expect(transport).toEqual([{ redirect: 'error', credentials: 'omit' }])
+    expect(stdout).not.toContain(bearer)
+  })
+
+  test('failed refresh sends no publish POST and renders only typed guidance', async () => {
+    await buildFacetFixture(projectRoot, {
+      name: 'cowsay',
+      version: '0.1.0',
+      commands: { cowsay: '# cowsay\n' },
+    })
+    resolveBehavior = async () => ({ ok: false, error: { code: 'REFRESH_UNAVAILABLE', reason: 'transient' } })
+    const spy = createFetchSpy()
+    globalThis.fetch = spy.fetch
+
+    const { result, stderr } = await captureStderr(() => publishCommand.run([], {}))
+    expect(result).toBe(1)
+    expect(spy.calls).toHaveLength(0)
+    expect(stderr).toContain('sign-in')
+    expect(stderr).not.toContain('oauth-bearer-canary')
+  })
+
+  test('a rejected OAuth publish POST is not replayed', async () => {
+    await buildFacetFixture(projectRoot, {
+      name: 'cowsay',
+      version: '0.1.0',
+      commands: { cowsay: '# cowsay\n' },
+    })
+    resolveBehavior = async () => ({
+      ok: true,
+      value: {
+        source: 'oauth',
+        token: 'oauth-bearer-canary',
+        registryOrigin: 'https://api.test',
+        profile: oauthProfile,
+      },
+    })
+    const spy = createFetchSpy(() => new Response(JSON.stringify(fixtures.apiError()), { status: 401 }))
+    globalThis.fetch = spy.fetch
+
+    const { result } = await captureStderr(() => publishCommand.run([], {}))
+    expect(result).toBe(1)
+    expect(spy.calls).toHaveLength(1)
   })
 })
 

@@ -1,4 +1,9 @@
-import { fetchAuthMe, getRegistryBaseUrl, resolveCredential } from '@agent-facets/engine'
+import {
+  fetchAuthMe,
+  getRegistryBaseUrl,
+  resolveRegistryCredential,
+  type WireAuthMeResponse,
+} from '@agent-facets/engine'
 import type { Command } from '../../commands.ts'
 import { writeCliError } from '../../util/errors.ts'
 import { translateEngineRegistryError } from '../../util/registry-errors.ts'
@@ -15,16 +20,13 @@ export const whoamiCommand: Command = {
   description: 'Show the signed-in registry identity',
   implemented: true,
   run: async (_args, _flags) => {
-    const cred = resolveCredential()
+    const resolved = await resolveRegistryCredential()
+    if (!resolved.ok) {
+      writeCliError(translateEngineRegistryError({ code: 'AUTHENTICATION_ERROR', reason: resolved.error }))
+      return 1
+    }
+    const cred = resolved.value
     if (cred.source === 'absent') {
-      if (cred.reason?.code === 'unreadable') {
-        writeCliError({
-          what: "couldn't read your registry credentials file",
-          detail: `${cred.reason.path}: ${cred.reason.cause}`,
-          fix: "fix the file's permissions, or run `facet logout` then `facet login`",
-        })
-        return 1
-      }
       writeCliError({
         what: 'not signed in — no registry credential found',
         fix: 'run `facet login` to sign in, or set FACET_TOKEN in your environment',
@@ -32,21 +34,29 @@ export const whoamiCommand: Command = {
       return 1
     }
 
-    const profile = await fetchAuthMe(cred.token)
-    if (!profile.ok) {
-      writeCliError(translateEngineRegistryError(profile.error))
-      return 1
+    let profile: Readonly<WireAuthMeResponse>
+    if (cred.source === 'oauth') {
+      profile = cred.profile
+    } else {
+      const checked = await fetchAuthMe(cred.token)
+      if (!checked.ok) {
+        writeCliError(translateEngineRegistryError(checked.error))
+        return 1
+      }
+      profile = checked.value
     }
 
-    const { username, email, tier, suspended } = profile.value
+    const { username, email, tier, suspended } = profile
     process.stdout.write(`${username} <${email}>\n`)
     process.stdout.write(`  tier: ${tier}\n`)
     if (suspended) {
       process.stdout.write('  status: suspended\n')
     }
-    process.stdout.write(`  registry: ${getRegistryBaseUrl()}\n`)
+    process.stdout.write(`  registry: ${cred.source === 'oauth' ? cred.registryOrigin : getRegistryBaseUrl()}\n`)
     if (cred.source === 'env') {
       process.stdout.write('  credential: FACET_TOKEN (environment)\n')
+    } else if (cred.source === 'oauth') {
+      process.stdout.write('  credential: browser session\n')
     }
     return 0
   },

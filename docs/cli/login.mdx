@@ -6,26 +6,61 @@ description: Sign in to the facet registry
 ## Usage
 
 ```sh
-facet login
+facet login [--browser | --no-browser | --token]
 ```
 
-Signs in by pasting a personal access token from your account at [agentfacets.io](https://agentfacets.io). Requires a terminal.
+In a terminal, choose browser sign-in or paste a personal access token. Browser sign-in is available on macOS and Linux. On Windows, use `facet login --token` or [`FACET_TOKEN`](/cli/env#facet_token).
 
-The token is verified against the registry before it is saved, so a typo or expired token fails immediately and you are reprompted.
+The registry verifies your identity before the CLI saves a usable credential. For CI and scripts, supply `FACET_TOKEN` instead of running interactive login.
+
+## Examples
+
+```sh
+facet login --browser      # open the verification page
+facet login --no-browser   # show the URL and code for another browser
+facet login --token        # paste a personal access token in a terminal
+facet whoami
+```
+
+## Flags
+
+<ResponseField name="--browser" type="boolean">
+  Start browser sign-in and try to open the verification page. The URL and code are always printed, so you can finish manually if opening the browser fails.
+</ResponseField>
+
+<ResponseField name="--no-browser" type="boolean">
+  Start the same sign-in flow without opening a browser. Open the printed URL on a device with a browser and enter the code while the command waits.
+</ResponseField>
+
+<ResponseField name="--token" type="boolean">
+  Paste a personal access token from your account at [agentfacets.io](https://agentfacets.io). Requires an interactive terminal and cannot be combined with a browser flag.
+</ResponseField>
 
 ## Exit codes
 
 | Code | Meaning |
 | --- | --- |
-| `0` | Signed in. |
-| `1` | Failed, for example no terminal, an invalid token, or a network error. |
+| `0` | Succeeded. |
+| `1` | Failed in an anticipated way, such as cancellation, expired verification, rejected credentials, or a network error. |
 | `2` | An unexpected error escaped command handling. |
+
+## Output
+
+Browser sign-in prints a verification URL and user code, then `Logged in as yourname.` after verification succeeds. Press Ctrl+C to cancel. A pasted token also prints your account tier after it is verified.
 
 ## Details
 
+### Browser verification
+
+Confirm the code shown in your terminal on the verification page. Complete any registry account setup requested in the browser, then sign in again if the CLI asks you to finish onboarding.
+
+This uses the [OAuth device authorization flow](https://workos.com/docs/authkit/cli-auth), with a public client ID and no embedded API key or client secret. The CLI does not need a browser redirect back to your machine. It accepts only the selected registry's validated sign-in configuration and rejects unexpected authentication redirects.
+
 ### Where the credential is stored
 
-The verified token is written to the [credentials file](/cli/env) with mode `0600`:
+Browser credentials are separate from the personal access token file, under [`$FACET_DIR/oauth/`](/cli/env#facet_dir). They are bound to the registry you signed in to; changing `FACET_REGISTRY_URL` does not transfer that session to another registry.
+
+A verified personal access token is written to the [credentials file](/cli/env#facet_dir):
 
 ```ini
 [default]
@@ -34,33 +69,53 @@ token = fct_pub_xxxxxxxxxxxxx
 
 ### Token precedence
 
-`FACET_TOKEN` takes precedence over the saved file. `facet login` says so when both are present, so the variable cannot silently shadow what you just saved.
+Commands select the first available credential in this order:
+
+1. Non-empty `FACET_TOKEN`.
+2. A saved personal access token.
+3. A browser session for the selected registry.
+
+Login warns when a personal access token shadows your new browser session. Unset `FACET_TOKEN` and remove a saved token with [`facet logout`](/cli/logout) before using browser sign-in. Removing a saved token can reveal an existing browser session.
+
+A rejected or unreadable selected credential fails the command. The CLI does not switch to another identity or retry anonymously after an authentication failure.
+
+### Session renewal
+
+Commands renew browser sessions when needed and verify the registry identity before using them. A temporary network or registry verification outage fails the command while preserving local sign-in state; retry when connectivity returns.
+
+An expired or revoked session requires browser sign-in again. If a refresh outcome cannot be confirmed within the safe retry window, the CLI stops renewing it and asks you to sign in again rather than replaying an old refresh indefinitely.
 
 ## Troubleshooting
 
 <AccordionGroup>
-  <Accordion title="not signed in, no registry credential found">
-    **Cause:** a command that needs the registry found neither `FACET_TOKEN` nor a saved credentials file.
+  <Accordion title="browser sign-in did not complete">
+    **Cause:** verification expired, was denied, or was cancelled.
 
-    **Fix:**
+    **Fix:** start `facet login --browser` or `facet login --no-browser` again and complete the new verification prompt.
+  </Accordion>
 
-    ```sh
-    facet login                    # interactive
-    export FACET_TOKEN=fct_pub_…   # or this, in CI
-    facet whoami
-    ```
+  <Accordion title="registry account setup is required">
+    **Cause:** browser authentication succeeded, but registry onboarding is incomplete.
+
+    **Fix:** open the onboarding page reported by the CLI, finish setup, then sign in again.
+  </Accordion>
+
+  <Accordion title="local sign-in state could not be read or updated">
+    **Cause:** the browser credential directory or files have unsafe ownership, permissions, or filesystem behavior.
+
+    **Fix:** check the [local state requirements](/cli/env#facet_dir), correct ownership and permissions, then retry. The CLI will not weaken these checks to save credentials.
   </Accordion>
 
   <Accordion title="your registry credentials could not be read">
-    **Cause:** the credentials file exists but is unreadable or malformed. This is a different failure from having no credential at all.
+    **Cause:** the personal access token file exists but is unreadable or malformed.
 
-    **Fix:** run `facet login` again to rewrite the file, or set `FACET_TOKEN` for the current shell.
+    **Fix:** check its permissions, run `facet login --token` to replace it, or set `FACET_TOKEN` for the current shell.
   </Accordion>
 
   <Accordion title="the token was rejected">
     **Cause:** the registry refused the pasted token, usually because it was revoked, expired, or copied incompletely.
 
-    **Fix:** mint a new token in your account settings and paste it again.
+    **Fix:** mint a new token in your account settings and paste it again with `facet login --token`.
   </Accordion>
 </AccordionGroup>
 
@@ -68,4 +123,5 @@ token = fct_pub_xxxxxxxxxxxxx
 
 - [`facet whoami`](/cli/whoami)
 - [`facet logout`](/cli/logout)
+- [Environment variables](/cli/env)
 - [`facet publish`](/cli/authoring/publish)

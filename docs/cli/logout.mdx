@@ -1,38 +1,64 @@
 ---
 title: facet logout
-description: Remove saved registry credentials
+description: Sign out of the selected registry
 ---
 
 ## Usage
 
 ```sh
-facet logout
+facet logout [--local]
 ```
 
-Deletes the saved [credentials file](/cli/env). Removing a credential that was never saved is a no-op.
+Sign out using the same [credential precedence](/cli/login#token-precedence) as other commands. Browser sign-out normally asks the registry to revoke the session before removing the local credential. Saved personal access tokens are removed locally.
+
+## Examples
+
+```sh
+facet logout           # confirm remote browser sign-out when applicable
+facet logout --local   # remove a browser credential without contacting the registry
+```
+
+## Flags
+
+<ResponseField name="--local" type="boolean">
+  Remove the selected browser credential locally, including while offline. Remote revocation remains unverified. Personal access token cleanup is unchanged.
+</ResponseField>
 
 ## Exit codes
 
 | Code | Meaning |
 | --- | --- |
-| `0` | Credentials removed, or the file did not exist. |
-| `2` | An unexpected filesystem error. |
+| `0` | Succeeded, including when no saved credential exists. |
+| `1` | Failed in an anticipated way, such as unavailable remote sign-out or unsafe local state. |
+| `2` | An unexpected error escaped command handling. |
+
+## Output
+
+Browser sign-out reports whether remote revocation was confirmed or only the local credential was removed. If the registry cannot confirm ordinary sign-out, the command fails and retains the local credential. Retry, or choose `--local` if you accept unverified remote revocation.
 
 ## Details
 
+### Browser session revocation
+
+Confirmed sign-out revokes the browser session and removes its local credential. It does not promise immediate invalidation of already-issued access tokens. `--local` leaves the remote session unverified and may leave it active.
+
 ### Revocation happens in the web UI
 
-Logout makes no server call. It removes the local credential only, so the token itself stays valid until you revoke it at [agentfacets.io](https://agentfacets.io).
+For personal access tokens, logout removes only the saved [credentials file](/cli/env#facet_dir). Revoke the token itself in your account settings at [agentfacets.io](https://agentfacets.io).
+
+Removing a saved personal access token leaves any browser session intact, and that session may be selected by the next command. After clearing the token and environment override, run `facet logout` again to sign out of that browser session too.
 
 ### FACET_TOKEN survives logout
 
-If `FACET_TOKEN` is set, it keeps authenticating commands after logout, and the command says so.
+If `FACET_TOKEN` is set, it keeps authenticating commands after logout, and the command says so. Logout cannot change your shell environment or revoke this token.
 
 ```sh
 unset FACET_TOKEN
+facet whoami
 ```
 
 ## See also
 
 - [`facet login`](/cli/login)
 - [`facet whoami`](/cli/whoami)
+- [Environment variables](/cli/env)

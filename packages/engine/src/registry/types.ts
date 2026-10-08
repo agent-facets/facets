@@ -1,4 +1,5 @@
 import type { VersionSpec } from '@agent-facets/protocol'
+import type { RegistrySessionFailure } from './oauth-session.ts'
 
 /**
  * Metadata returned by the registry for a single resolved facet.
@@ -69,6 +70,9 @@ export interface RegistrySpec {
  *   - `UNEXPECTED_ERROR`: a thrown error that wasn't a recognized
  *     network failure shape. Surfaces honestly rather than being
  *     silently relabeled as a network error (per design D11).
+ *   - `AUTHENTICATION_ERROR`: an expected local OAuth/PAT authentication
+ *     outcome. The CLI renders fixed guidance from its structured reason;
+ *     this is not a registry response envelope or an unexpected exception.
  *   - `UNSUPPORTED_ARCHIVE`: the downloaded archive declares a
  *     `facetVersion` this CLI cannot verify. Carries the observed and
  *     supported versions so the CLI can render upgrade guidance from
@@ -87,6 +91,7 @@ export type RegistryError =
   | { code: 'NOT_FOUND'; name: string; spec: string }
   | { code: 'NETWORK_ERROR'; cause: string; attempts: number }
   | { code: 'UNEXPECTED_ERROR'; cause: string }
+  | { code: 'AUTHENTICATION_ERROR'; reason: RegistrySessionFailure }
   | { code: 'UNSUPPORTED_ARCHIVE'; observed: number | undefined; supported: readonly number[] }
   | { code: 'TOO_MANY_SPECIFIERS'; limit: number; received: number }
 
