@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
-import { chmodSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as engine from '@agent-facets/engine'
@@ -66,7 +66,10 @@ function fakeInkRender(...args: Parameters<typeof ink.render>): ReturnType<typeo
     void pollingWait.catch(() => {})
   }
   if (polling) {
-    if (cancelPolling && 'onCancel' in props && typeof props.onCancel === 'function') props.onCancel()
+    if (cancelPolling && 'onCancel' in props && typeof props.onCancel === 'function') {
+      props.onCancel()
+      resolvePollingWait?.()
+    }
   } else if (typeof props === 'object' && props !== null) {
     if (
       cancelRejectedToken &&
@@ -405,6 +408,92 @@ describe('facet login command routing', () => {
     expect(savedTokens).toHaveLength(0)
     expect(process.listenerCount('SIGINT')).toBe(originalInterruptListeners)
   })
+
+  for (const viewOutcome of ['crash', 'escape'] as const) {
+    test(`drains aborted completion cleanup before settling after polling ${viewOutcome}`, async () => {
+      const viewCrash = new Error('polling-view-crash')
+      const lateCompletionCrash = new Error('late-completion-crash')
+      const marker = join(facetDir, 'pending-login-cleanup')
+      writeFileSync(marker, 'test-only-marker', { mode: 0o600 })
+      let signalCompletionStarted: () => void = () => {}
+      const completionStarted = new Promise<void>((resolve) => {
+        signalCompletionStarted = resolve
+      })
+      let signalAbortSeen: () => void = () => {}
+      const abortSeen = new Promise<void>((resolve) => {
+        signalAbortSeen = resolve
+      })
+      let releaseCleanup: () => void = () => {}
+      const cleanupReleased = new Promise<void>((resolve) => {
+        releaseCleanup = resolve
+      })
+      let signalCleanupFinished: () => void = () => {}
+      const cleanupFinished = new Promise<void>((resolve) => {
+        signalCleanupFinished = resolve
+      })
+      completeBehavior = (signal) => {
+        signalCompletionStarted()
+        return new Promise((resolve, reject) => {
+          const onAbort = () => {
+            signalAbortSeen()
+            void cleanupReleased.then(() => {
+              rmSync(marker, { force: true })
+              signalCleanupFinished()
+              if (viewOutcome === 'crash') reject(lateCompletionCrash)
+              else resolve({ ok: false, error: { code: 'CANCELLED' } })
+            })
+          }
+          if (signal?.aborted) onAbort()
+          else signal?.addEventListener('abort', onAbort, { once: true })
+        })
+      }
+      cancelPolling = viewOutcome === 'escape'
+      scriptedChoice = { kind: 'browser' }
+      const writes: string[] = []
+      const outputSpy = spyOn(process.stdout, 'write').mockImplementation((chunk, ...rest) => {
+        writes.push(String(chunk))
+        const done = rest.find((value): value is (error?: Error | null) => void => typeof value === 'function')
+        done?.()
+        return true
+      })
+      let started = false
+      try {
+        let commandSettled = false
+        const pending = withTTY(true, () => run(['login', '--browser'], { login: loginCommand }))
+        void pending.then(
+          () => {
+            commandSettled = true
+          },
+          () => {
+            commandSettled = true
+          },
+        )
+        await completionStarted
+        started = true
+        if (viewOutcome === 'crash') rejectPollingWait?.(viewCrash)
+        await abortSeen
+        await new Promise<void>((resolve) => setImmediate(resolve))
+        const settledBeforeCleanup = commandSettled
+        const markerBeforeCleanup = existsSync(marker)
+        releaseCleanup()
+        await cleanupFinished
+        if (viewOutcome === 'crash') await expect(pending).rejects.toBe(viewCrash)
+        else expect(await pending).toBe(1)
+        expect(settledBeforeCleanup).toBe(false)
+        expect(markerBeforeCleanup).toBe(true)
+        expect(existsSync(marker)).toBe(false)
+        expect(writes.join('')).not.toContain('Logged in')
+        expect(clearedPrompts).toBe(1)
+        expect(unmountedPrompts).toBe(1)
+        expect(process.listenerCount('SIGINT')).toBe(originalInterruptListeners)
+      } finally {
+        releaseCleanup()
+        if (started) await cleanupFinished
+        outputSpy.mockRestore()
+        scriptedChoice = undefined
+      }
+    })
+  }
 
   test('--token keeps the verified PAT save path and never persists before verification', async () => {
     const result = await captureInteractiveLogin(['--token'], { kind: 'token', token: 'fct_pub_pasted' })

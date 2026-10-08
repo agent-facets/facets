@@ -126,19 +126,19 @@ async function runBrowserLogin(autoLaunch: boolean): Promise<number> {
         (error: unknown) => ({ kind: 'view-error' as const, error }),
       )
     }
-    const completion = completeCliLogin(started.value, { signal: controller.signal }).then((value) => ({
-      kind: 'completed' as const,
-      value,
-    }))
+    const completion = completeCliLogin(started.value, { signal: controller.signal }).then(
+      (value): { kind: 'completed'; value: typeof value } => ({ kind: 'completed', value }),
+      (error: unknown): { kind: 'completion-error'; error: unknown } => ({ kind: 'completion-error', error }),
+    )
     const first = viewExit === undefined ? await completion : await Promise.race([completion, viewExit])
-    if (first.kind === 'view-error') {
+    if (first.kind === 'view-error' || first.kind === 'view-exit') {
       controller.abort()
-      throw first.error
-    }
-    if (first.kind === 'view-exit') {
-      controller.abort()
+      // An in-progress credential write may outlive abort; let it finish cleanup before command exit.
+      await completion
+      if (first.kind === 'view-error') throw first.error
       return cancelled()
     }
+    if (first.kind === 'completion-error') throw first.error
     const completed = first.value
     if (progress !== undefined) {
       const mounted = progress
