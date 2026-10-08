@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import type { Stats } from 'node:fs'
 import { lstat, readlink } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { resolveFacetDir } from '../facet-dir.ts'
@@ -657,17 +658,55 @@ async function unsupportedStateCandidateExists(registryOrigin: string): Promise<
       if (next === parent) break
       parent = next
     }
+    const checked: DirectorySnapshot[] = []
     for (const path of paths) {
-      const metadata = await lstat(path)
+      const before = await revalidateDirectories(checked)
+      if (!before.ok) return before
+      let metadata: Stats
+      try {
+        metadata = await lstat(path)
+      } catch (error) {
+        if (!isRecord(error) || error.code !== 'ENOENT') throw error
+        // ENOENT is absence only while all previously observed parents still identify the same directories.
+        const stable = await revalidateDirectories(checked)
+        return stable.ok ? success(false) : stable
+      }
       if (metadata.isSymbolicLink() || (path === candidate ? !metadata.isFile() : !metadata.isDirectory())) {
         return failure({ code: 'STATE_UNAVAILABLE', reason: 'UNSAFE_STATE' })
       }
+      if (path !== candidate) checked.push({ path, dev: metadata.dev, ino: metadata.ino })
+      const after = await revalidateDirectories(checked)
+      if (!after.ok) return after
     }
     return success(true)
-  } catch (error) {
-    return isRecord(error) && error.code === 'ENOENT'
-      ? success(false)
-      : failure({ code: 'STATE_UNAVAILABLE', reason: 'IO_ERROR' })
+  } catch {
+    return failure({ code: 'STATE_UNAVAILABLE', reason: 'IO_ERROR' })
+  }
+}
+
+interface DirectorySnapshot {
+  path: string
+  dev: number
+  ino: number
+}
+
+async function revalidateDirectories(checked: readonly DirectorySnapshot[]): Promise<RegistrySessionResult<void>> {
+  try {
+    for (const directory of checked) {
+      const current = await lstat(directory.path)
+      if (
+        !current.isDirectory() ||
+        current.isSymbolicLink() ||
+        current.dev !== directory.dev ||
+        current.ino !== directory.ino
+      ) {
+        return failure({ code: 'STATE_UNAVAILABLE', reason: 'UNSAFE_STATE' })
+      }
+    }
+    return success(undefined)
+  } catch {
+    // A previously existing directory disappearing is uncertainty, not proof that the selected credential is absent.
+    return failure({ code: 'STATE_UNAVAILABLE', reason: 'IO_ERROR' })
   }
 }
 

@@ -2634,3 +2634,97 @@ describe('unsupported-platform logout metadata (simulated win32 option)', () => 
     expect(existsSync(join(facetDir, 'changed-selection'))).toBe(false)
   })
 })
+
+describe('unsupported metadata ancestry replacement', () => {
+  test.each([
+    'symlink',
+    'directory',
+    'file',
+    'missing',
+  ])('rejects a checked selected directory replaced with %s before the next lookup', async (replacement) => {
+    mkdirSync(facetDir, { mode: 0o700 })
+    const parent = fs.realpathSync(facetDir)
+    chmodSync(parent, 0o777)
+    const selected = join(parent, 'selected')
+    const moved = join(parent, 'moved')
+    const outside = join(parent, 'outside')
+    mkdirSync(join(selected, 'oauth'), { recursive: true, mode: 0o700 })
+    if (replacement === 'file') writeFileSync(outside, '')
+    else mkdirSync(outside, { mode: 0o700 })
+    const leaf = basename(statePath())
+    writeFileSync(join(selected, 'oauth', leaf), CANARY, { mode: 0o600 })
+    process.env.FACET_DIR = selected
+    const original = fsPromises.lstat
+    let switched = false
+    function race(path: fs.PathLike, opts?: fs.StatOptions & { bigint?: false }): Promise<fs.Stats>
+    function race(path: fs.PathLike, opts: fs.StatOptions & { bigint: true }): Promise<fs.BigIntStats>
+    function race(path: fs.PathLike, opts?: fs.StatOptions): Promise<fs.Stats | fs.BigIntStats>
+    async function race(path: fs.PathLike, opts?: fs.StatOptions): Promise<fs.Stats | fs.BigIntStats> {
+      const result = opts?.bigint
+        ? await original(path, { ...opts, bigint: true })
+        : await original(path, { ...opts, bigint: false })
+      if (path === selected && !switched) {
+        switched = true
+        fs.renameSync(selected, moved)
+        if (replacement === 'symlink') symlinkSync(outside, selected)
+        else if (replacement !== 'missing') fs.renameSync(outside, selected)
+      }
+      return result
+    }
+    const probe = spyOn(fsPromises, 'lstat').mockImplementation(race)
+    try {
+      expect(await metadataOnlyLogout()).toEqual({
+        ok: false,
+        error: {
+          code: 'STATE_UNAVAILABLE',
+          reason: replacement === 'missing' ? 'IO_ERROR' : 'UNSAFE_STATE',
+        },
+      })
+      expect(switched).toBe(true)
+      expect(readFileSync(join(moved, 'oauth', leaf), 'utf8')).toBe(CANARY)
+    } finally {
+      probe.mockRestore()
+    }
+  })
+
+  test('revalidates checked ancestry after a real missing leaf before accepting absence', async () => {
+    mkdirSync(facetDir)
+    const parent = fs.realpathSync(facetDir)
+    const selected = join(parent, 'selected')
+    const moved = join(parent, 'moved')
+    const outside = join(parent, 'outside')
+    mkdirSync(join(selected, 'oauth'), { recursive: true })
+    mkdirSync(outside)
+    process.env.FACET_DIR = selected
+    const candidate = join(selected, 'oauth', basename(statePath()))
+    const original = fsPromises.lstat
+    let switched = false
+    function race(path: fs.PathLike, opts?: fs.StatOptions & { bigint?: false }): Promise<fs.Stats>
+    function race(path: fs.PathLike, opts: fs.StatOptions & { bigint: true }): Promise<fs.BigIntStats>
+    function race(path: fs.PathLike, opts?: fs.StatOptions): Promise<fs.Stats | fs.BigIntStats>
+    async function race(path: fs.PathLike, opts?: fs.StatOptions): Promise<fs.Stats | fs.BigIntStats> {
+      try {
+        return opts?.bigint
+          ? await original(path, { ...opts, bigint: true })
+          : await original(path, { ...opts, bigint: false })
+      } catch (error) {
+        if (path === candidate && !switched) {
+          switched = true
+          fs.renameSync(selected, moved)
+          symlinkSync(outside, selected)
+        }
+        throw error
+      }
+    }
+    const probe = spyOn(fsPromises, 'lstat').mockImplementation(race)
+    try {
+      expect(await metadataOnlyLogout()).toEqual({
+        ok: false,
+        error: { code: 'STATE_UNAVAILABLE', reason: 'UNSAFE_STATE' },
+      })
+      expect(switched).toBe(true)
+    } finally {
+      probe.mockRestore()
+    }
+  })
+})
