@@ -1,12 +1,13 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { WireAuthMeResponse } from '@agent-facets/engine'
+import * as engine from '@agent-facets/engine'
 import { buildArtifactPath, fixtures, uncappedGunzip } from '@agent-facets/engine'
 import { parseFacetArchive, validateFacetArchive } from '@agent-facets/protocol'
 import { captureStderr, captureStdout } from '../../../__tests__/helpers/capture-std.ts'
 import { withTTY } from '../../../__tests__/helpers/with-tty.ts'
-import { publishCommand } from '../index.ts'
 import { buildFacetFixture, createFetchSpy } from './helpers.ts'
 
 const ORIGINAL_FETCH = globalThis.fetch
@@ -17,6 +18,20 @@ const ORIGINAL_URL = process.env.FACET_REGISTRY_URL
 let projectRoot: string
 let facetDir: string
 let originalCwd: string
+const oauthProfile = {
+  user_uuid: 'u-1',
+  username: 'ada',
+  email: 'ada@example.com',
+  tier: 'pro',
+  suspended: false,
+  startup_experience: { kind: 'landing-only' },
+  getting_started: { kind: 'unavailable' },
+} satisfies WireAuthMeResponse
+const realResolveRegistryCredential = engine.resolveRegistryCredential
+let resolveBehavior: typeof realResolveRegistryCredential = realResolveRegistryCredential
+let restoreResolver = () => {}
+
+const { publishCommand } = await import('../index.ts')
 
 // Module mocks: these stub the interactive prompt helpers and the
 // build-view trampoline so tests can assert end-to-end publish behavior
@@ -56,9 +71,13 @@ beforeEach(() => {
   mockRebuildDriftedAnswer = false
   mockIdentityDriftDecision = 'cancel'
   mockRunBuildViewBehavior = async () => ({ ok: false })
+  resolveBehavior = realResolveRegistryCredential
+  const mocked = spyOn(engine, 'resolveRegistryCredential').mockImplementation((options) => resolveBehavior(options))
+  restoreResolver = () => mocked.mockRestore()
 })
 
 afterEach(() => {
+  restoreResolver()
   process.chdir(originalCwd)
   rmSync(projectRoot, { recursive: true, force: true })
   rmSync(facetDir, { recursive: true, force: true })
@@ -88,6 +107,26 @@ function mockRunBuildViewToActuallyBuild(): void {
     await writeBuildOutput(result, root)
     return { ok: true }
   }
+}
+
+function pauseMissingArtifactBuild() {
+  writeFileSync(
+    join(projectRoot, 'facet.json'),
+    JSON.stringify({ name: 'cowsay', version: '0.1.0', commands: { cowsay: { description: 'ascii cow' } } }),
+  )
+  mkdirSync(join(projectRoot, 'commands'))
+  writeFileSync(join(projectRoot, 'commands/cowsay.md'), '# cowsay\n\nascii cow')
+  mockBuildMissingAnswer = true
+  mockRunBuildViewToActuallyBuild()
+  const build = mockRunBuildViewBehavior
+  const started = Promise.withResolvers<void>()
+  const resume = Promise.withResolvers<void>()
+  mockRunBuildViewBehavior = async (root) => {
+    started.resolve()
+    await resume.promise
+    return build(root)
+  }
+  return { started: started.promise, resume: resume.resolve }
 }
 
 describe('publishCommand — happy path', () => {
@@ -121,6 +160,256 @@ describe('publishCommand — happy path', () => {
     expect(parsed.data.manifest.manifest.archive).toBe('archive.tar.gz')
     expect(parsed.data.manifest.manifest.integrity).toMatch(/^sha256:[a-f0-9]{64}$/)
     expect(stdout).toContain('Published cowsay@0.1.0')
+  })
+})
+
+describe('publishCommand — selected browser session', () => {
+  test('renews an expired bearer after a paused accepted build, then uploads the fresh bearer', async () => {
+    const paused = pauseMissingArtifactBuild()
+    const originalBearer = 'expired-publish-bearer-canary'
+    const freshBearer = 'renewed-publish-bearer-canary'
+    let expired = false
+    let resolutions = 0
+    resolveBehavior = async () => {
+      resolutions++
+      if (resolutions > 1) expect(expired).toBe(true)
+      return {
+        ok: true,
+        value: {
+          source: 'oauth',
+          token: expired ? freshBearer : originalBearer,
+          registryOrigin: 'https://api.test',
+          profile: oauthProfile,
+        },
+      }
+    }
+    const spy = createFetchSpy(
+      (request) =>
+        new Response(JSON.stringify(fixtures.publishResponse()), {
+          status: request.headers.get('authorization') === `Bearer ${freshBearer}` ? 201 : 401,
+        }),
+    )
+    globalThis.fetch = spy.fetch
+    const running = withTTY(true, () => captureStderr(() => captureStdout(() => publishCommand.run([], {}))))
+    await paused.started
+    try {
+      expect(resolutions).toBe(1)
+      expect(spy.calls).toHaveLength(0)
+      expired = true
+    } finally {
+      paused.resume()
+    }
+    const {
+      result: { result, stdout },
+      stderr,
+    } = await running
+    expect(result).toBe(0)
+    expect(resolutions).toBe(2)
+    expect(spy.calls).toHaveLength(1)
+    const call = spy.calls[0]
+    if (call === undefined) expect.unreachable()
+    expect(call.headers.authorization).toBe(`Bearer ${freshBearer}`)
+    expect(call.url).toBe('https://api.test/v0/facets/cowsay/versions')
+    const verified = await validateFacetArchive(call.body, { gunzip: uncappedGunzip })
+    if (!verified.ok) expect.unreachable()
+    expect(verified.data.facetManifest.name).toBe('cowsay')
+    expect(stdout + stderr).not.toContain(originalBearer)
+    expect(stdout + stderr).not.toContain(freshBearer)
+  })
+
+  const lateFailures: Array<{
+    name: string
+    credential: Awaited<ReturnType<typeof realResolveRegistryCredential>>
+    guidance: string
+  }> = [
+    {
+      name: 'changed verified UUID',
+      credential: {
+        ok: true,
+        value: {
+          source: 'oauth',
+          token: 'late-bearer-canary',
+          registryOrigin: 'https://api.test',
+          profile: { ...oauthProfile, user_uuid: 'u-2' },
+        },
+      },
+      guidance: 'sign-in changed',
+    },
+    {
+      name: 'changed origin',
+      credential: {
+        ok: true,
+        value: {
+          source: 'oauth',
+          token: 'late-bearer-canary',
+          registryOrigin: 'https://other.invalid',
+          profile: oauthProfile,
+        },
+      },
+      guidance: 'sign-in changed',
+    },
+    {
+      name: 'changed to environment PAT',
+      credential: { ok: true, value: { source: 'env', token: 'late-pat-canary' } },
+      guidance: 'sign-in changed',
+    },
+    {
+      name: 'changed to file PAT',
+      credential: { ok: true, value: { source: 'file', token: 'late-pat-canary' } },
+      guidance: 'sign-in changed',
+    },
+    { name: 'removed session', credential: { ok: true, value: { source: 'absent' } }, guidance: 'sign-in changed' },
+    {
+      name: 'renewal error',
+      credential: { ok: false, error: { code: 'REFRESH_UNAVAILABLE', reason: 'transient' } },
+      guidance: 'sign-in could not be renewed',
+    },
+  ]
+
+  test.each(lateFailures)('$name after a paused build fails closed without any publish POST', async ({
+    credential,
+    guidance,
+  }) => {
+    const paused = pauseMissingArtifactBuild()
+    let resolutions = 0
+    resolveBehavior = async () => {
+      resolutions++
+      return resolutions === 1
+        ? {
+            ok: true,
+            value: {
+              source: 'oauth',
+              token: 'original-bearer-canary',
+              registryOrigin: 'https://api.test',
+              profile: oauthProfile,
+            },
+          }
+        : credential
+    }
+    const spy = createFetchSpy(() => new Response(JSON.stringify(fixtures.publishResponse()), { status: 201 }))
+    globalThis.fetch = spy.fetch
+    const running = withTTY(true, () => captureStderr(() => captureStdout(() => publishCommand.run([], {}))))
+    await paused.started
+    try {
+      expect(resolutions).toBe(1)
+      expect(spy.calls).toHaveLength(0)
+    } finally {
+      paused.resume()
+    }
+    const {
+      result: { result, stdout },
+      stderr,
+    } = await running
+    expect(result).toBe(1)
+    expect(resolutions).toBe(2)
+    expect(spy.calls).toHaveLength(0)
+    expect(stderr).toContain(guidance)
+    expect(stdout + stderr).not.toContain('original-bearer-canary')
+    expect(stdout + stderr).not.toContain('late-bearer-canary')
+    expect(stdout + stderr).not.toContain('late-pat-canary')
+  })
+
+  const patSources: Array<'env' | 'file'> = ['env', 'file']
+  test.each(patSources)('initial %s PAT resolves once across a paused build', async (source) => {
+    const paused = pauseMissingArtifactBuild()
+    let resolutions = 0
+    resolveBehavior = async () => {
+      resolutions++
+      return { ok: true, value: { source, token: 'initial-pat-canary' } }
+    }
+    const spy = createFetchSpy(() => new Response(JSON.stringify(fixtures.publishResponse()), { status: 201 }))
+    globalThis.fetch = spy.fetch
+    const running = withTTY(true, () => captureStdout(() => publishCommand.run([], {})))
+    await paused.started
+    paused.resume()
+    const { result, stdout } = await running
+    expect(result).toBe(0)
+    expect(resolutions).toBe(1)
+    expect(spy.calls).toHaveLength(1)
+    const call = spy.calls[0]
+    if (call === undefined) expect.unreachable()
+    expect(call.headers.authorization).toBe('Bearer initial-pat-canary')
+    expect(stdout).not.toContain('initial-pat-canary')
+  })
+
+  test('binds the frozen OAuth origin and bearer despite registry ENV drift', async () => {
+    await buildFacetFixture(projectRoot, {
+      name: 'cowsay',
+      version: '0.1.0',
+      commands: { cowsay: '# cowsay\n' },
+    })
+    const bearer = 'oauth-bearer-canary'
+    resolveBehavior = async () => {
+      process.env.FACET_REGISTRY_URL = 'https://changed.invalid'
+      return {
+        ok: true,
+        value: {
+          source: 'oauth',
+          token: bearer,
+          registryOrigin: 'https://api.test',
+          profile: oauthProfile,
+        },
+      }
+    }
+    const transport: Array<{ redirect: RequestInit['redirect']; credentials: RequestInit['credentials'] }> = []
+    const spy = createFetchSpy(() => new Response(JSON.stringify(fixtures.publishResponse()), { status: 201 }))
+    const fetcher = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      transport.push({ redirect: init?.redirect, credentials: init?.credentials })
+      return spy.fetch(input, init)
+    }
+    globalThis.fetch = Object.assign(fetcher, { preconnect: spy.fetch.preconnect })
+
+    const { result, stdout } = await captureStdout(() => publishCommand.run([], {}))
+    expect(result).toBe(0)
+    expect(spy.calls).toHaveLength(1)
+    const call = spy.calls[0]
+    if (call === undefined) expect.unreachable()
+    expect(call.url).toBe('https://api.test/v0/facets/cowsay/versions')
+    expect(call.headers.authorization).toBe(`Bearer ${bearer}`)
+    expect(transport).toEqual([{ redirect: 'error', credentials: 'omit' }])
+    expect(stdout).not.toContain(bearer)
+  })
+
+  test('failed refresh sends no publish POST and renders only typed guidance', async () => {
+    pauseMissingArtifactBuild()
+    let builds = 0
+    mockRunBuildViewBehavior = async () => {
+      builds++
+      return { ok: false }
+    }
+    resolveBehavior = async () => ({ ok: false, error: { code: 'REFRESH_UNAVAILABLE', reason: 'transient' } })
+    const spy = createFetchSpy()
+    globalThis.fetch = spy.fetch
+
+    const { result, stderr } = await withTTY(true, () => captureStderr(() => publishCommand.run([], {})))
+    expect(result).toBe(1)
+    expect(builds).toBe(0)
+    expect(spy.calls).toHaveLength(0)
+    expect(stderr).toContain('sign-in')
+    expect(stderr).not.toContain('oauth-bearer-canary')
+  })
+
+  test('a rejected OAuth publish POST is not replayed', async () => {
+    await buildFacetFixture(projectRoot, {
+      name: 'cowsay',
+      version: '0.1.0',
+      commands: { cowsay: '# cowsay\n' },
+    })
+    resolveBehavior = async () => ({
+      ok: true,
+      value: {
+        source: 'oauth',
+        token: 'oauth-bearer-canary',
+        registryOrigin: 'https://api.test',
+        profile: oauthProfile,
+      },
+    })
+    const spy = createFetchSpy(() => new Response(JSON.stringify(fixtures.apiError()), { status: 401 }))
+    globalThis.fetch = spy.fetch
+
+    const { result } = await captureStderr(() => publishCommand.run([], {}))
+    expect(result).toBe(1)
+    expect(spy.calls).toHaveLength(1)
   })
 })
 

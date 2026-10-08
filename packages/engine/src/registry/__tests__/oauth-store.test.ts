@@ -32,6 +32,7 @@ import {
   type OAuthStoreResult,
   type ReadyOAuthSession,
   readOAuthSession,
+  readOAuthSessionForLocalCleanup,
   saveOAuthSession,
   type UncertainOAuthSession,
   withOAuthSessionLock,
@@ -51,7 +52,7 @@ let options: OAuthStoreOptions
 
 beforeEach(() => {
   const uid = process.getuid?.()
-  if (uid === undefined) expect.unreachable('OAuth store tests require a POSIX host')
+  if (uid === undefined) throw new Error('OAuth store tests require a POSIX host')
   facetDir = realpathSync(mkdtempSync(join(tmpdir(), 'oauth-store-')))
   chmodSync(facetDir, 0o700)
   options = {
@@ -148,6 +149,61 @@ describe('platform support', () => {
 })
 
 describe('session persistence', () => {
+  test('offline cleanup read validates selected origin and the full protected state', async () => {
+    await save(readySession(1), null)
+    expect(unwrap(await readOAuthSessionForLocalCleanup(binding.registry_origin, options))).toEqual(readySession(1))
+    expect(unwrap(await readOAuthSessionForLocalCleanup('https://other-registry.example.test', options))).toBeNull()
+
+    const wrongOrigin = { ...readySession(1), registry_origin: 'https://other-registry.example.test' }
+    writeFileSync(statePath(), `${JSON.stringify(wrongOrigin)}\n`, { mode: 0o600 })
+    const rejected = await readOAuthSessionForLocalCleanup(binding.registry_origin, options)
+    if (rejected.ok) expect.unreachable('wrong-origin state accepted')
+    expect(rejected.error.code).toBe('INVALID_SESSION')
+    expect(existsSync(statePath())).toBe(true)
+
+    const invalidOrigin = await readOAuthSessionForLocalCleanup('http://registry.example.test', options)
+    if (invalidOrigin.ok) expect.unreachable('insecure origin accepted')
+    expect(invalidOrigin.error.code).toBe('INVALID_BINDING')
+  })
+
+  test('offline cleanup read rejects symlinks, wrong owner, and malformed state', async () => {
+    const outside = join(facetDir, 'outside.json')
+    writeFileSync(outside, `${JSON.stringify(readySession(1))}\n`, { mode: 0o600 })
+    mkdirSync(join(facetDir, 'oauth'), { mode: 0o700 })
+    symlinkSync(outside, statePath())
+    expectUnsafe(await readOAuthSessionForLocalCleanup(binding.registry_origin, options), 'symlink')
+
+    rmSync(statePath())
+    writeFileSync(statePath(), `${JSON.stringify(readySession(1))}\n`, { mode: 0o600 })
+    expectUnsafe(
+      await readOAuthSessionForLocalCleanup(binding.registry_origin, {
+        ...options,
+        lstat: wrongOwnerLstat(statePath()),
+      }),
+      'wrong-owner',
+    )
+    writeFileSync(statePath(), '{broken-json\n', { mode: 0o600 })
+    const malformed = await readOAuthSessionForLocalCleanup(binding.registry_origin, options)
+    if (malformed.ok) expect.unreachable('malformed state accepted')
+    expect(malformed.error.code).toBe('INVALID_SESSION')
+  })
+
+  test('offline cleanup candidate cannot delete a later replacement generation', async () => {
+    await save(readySession(1), null)
+    const candidate = unwrap(await readOAuthSessionForLocalCleanup(binding.registry_origin, options))
+    if (candidate === null) expect.unreachable('missing cleanup candidate')
+    await save(readySession(2), 1)
+    const replacement = readFileSync(statePath(), 'utf8')
+    const staleDelete = await withOAuthSessionLock(
+      binding,
+      (lock) => deleteOAuthSession(binding, candidate.generation, lock),
+      options,
+    )
+    if (staleDelete.ok) expect.unreachable('stale cleanup deleted replacement')
+    expect(staleDelete.error.code).toBe('GENERATION_CONFLICT')
+    expect(readFileSync(statePath(), 'utf8')).toBe(replacement)
+  })
+
   test('writes a registry-keyed owner-only session and verifies its current binding', async () => {
     await save(readySession(1), null)
 
@@ -282,7 +338,7 @@ describe('session persistence', () => {
 
     chmodSync(statePath(), 0o600)
     const uid = process.getuid?.()
-    if (uid === undefined) expect.unreachable('OAuth store tests require a POSIX host')
+    if (uid === undefined) throw new Error('OAuth store tests require a POSIX host')
     const wrongOwner = await readOAuthSession(binding, { ...options, ownerUid: uid + 1 })
     expectUnsafe(wrongOwner, 'wrong-owner')
   })
@@ -618,7 +674,7 @@ function expectBindingMismatch(result: OAuthStoreResult<unknown>, field: keyof O
 
 function wrongOwnerLstat(targetPath: string): NonNullable<OAuthStoreOptions['lstat']> {
   const uid = process.getuid?.()
-  if (uid === undefined) expect.unreachable('OAuth store tests require a POSIX host')
+  if (uid === undefined) throw new Error('OAuth store tests require a POSIX host')
   return async (path) => {
     const metadata = await lstat(path)
     if (path === targetPath) metadata.uid = uid + 1
@@ -751,10 +807,42 @@ describe('durable lifecycle regressions', () => {
   })
 })
 
-describe('protected replacement descriptors', () => {
-  test.each(['insecure-permissions', 'multiple-links'] satisfies Array<
-    'insecure-permissions' | 'multiple-links'
-  >)('validates %s on replacement descriptor rather than stale lstat', async (reason) => {
+describe('protected absence and opened descriptors', () => {
+  test('tombstone retains revision and no tokens; stale null CAS cannot overwrite it', async () => {
+    await save(readySession(1), null)
+    unwrap(await withOAuthSessionLock(binding, (lock) => deleteOAuthSession(binding, 1, lock), options))
+    const raw = JSON.parse(readFileSync(statePath(), 'utf8'))
+    expect(raw).toEqual({ version: 2, ...binding, generation: 2, status: 'absent' })
+    expect(unwrap(await readOAuthSession(binding, options))).toBeNull()
+    const stale = await withOAuthSessionLock(binding, (lock) => saveOAuthSession(readySession(1), null, lock), options)
+    if (stale.ok) expect.unreachable()
+    expect(stale.error).toEqual({ code: 'GENERATION_CONFLICT', expected: null, actual: 2 })
+    await save(readySession(3), 2)
+    expect(unwrap(await readOAuthSession(binding, options))?.generation).toBe(3)
+  })
+
+  test.each([
+    { version: 1 },
+    { generation: -1 },
+    { access_token: 'must-not-be-in-tombstone' },
+    { client_id: 'x'.repeat(513) },
+    { token_endpoint: 'http://unsafe.example' },
+    { registry_origin: 'https://wrong.example' },
+  ])('never treats malformed or wrong-origin tombstone as absence: %j', async (overrides) => {
+    await save(readySession(1), null)
+    writeFileSync(
+      statePath(),
+      JSON.stringify({ version: 2, ...binding, generation: 2, status: 'absent', ...overrides }),
+    )
+    const result = await readOAuthSession(binding, options)
+    if (result.ok) expect.unreachable()
+    expect(result.error.code).toBe('INVALID_SESSION')
+  })
+
+  test.each([
+    'insecure-permissions',
+    'multiple-links',
+  ] as const)('validates %s on replacement descriptor rather than stale lstat', async (reason) => {
     await save(readySession(1), null)
     let replaced = false
     const result = await readOAuthSession(binding, {

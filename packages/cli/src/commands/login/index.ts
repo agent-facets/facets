@@ -1,96 +1,239 @@
-import { fetchAuthMe, resolveCredential, writeCredentialsToken } from '@agent-facets/engine'
+import type { RegistrySessionFailure } from '@agent-facets/engine'
+import {
+  beginCliLogin,
+  completeCliLogin,
+  fetchAuthMe,
+  resolveCredential,
+  writeCredentialsToken,
+} from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
 import type { Command } from '../../commands.ts'
 import { LoginMenu } from '../../tui/components/login-menu.tsx'
 import { writeCliError } from '../../util/errors.ts'
 import { canPromptInteractively } from '../../util/interactive.ts'
+import { openBrowser } from '../../util/open-browser.ts'
 import { translateEngineRegistryError } from '../../util/registry-errors.ts'
 
-/**
- * `facet login` — guided sign-in. V0 supports pasting a personal access
- * token minted in the web UI; a browser sign-in option is shown as a
- * disabled "coming soon" placeholder.
- *
- * The pasted token is verified against `GET /v0/auth/me` BEFORE it is
- * written to disk, so a typo or expired paste fails fast with the
- * registry's own message and the user is reprompted rather than left
- * with an unusable saved credential.
- */
+type LoginChoice = { kind: 'browser' } | { kind: 'token'; token: string } | { kind: 'cancelled' }
+
 export const loginCommand: Command = {
   name: 'login',
-  description: 'Sign in to the registry',
+  description: 'Sign in to the registry using a browser or personal access token',
   implemented: true,
-  run: async (_args, _flags) => {
-    // The menu and masked prompt require an interactive terminal.
-    if (!canPromptInteractively()) {
+  flags: {
+    browser: {
+      type: 'boolean',
+      description: 'Use browser sign-in; --no-browser shows the code without opening a browser',
+    },
+    token: { type: 'boolean', description: 'Paste a personal access token in an interactive terminal' },
+  },
+  run: async (args, flags) => {
+    if (
+      args.length > 0 ||
+      Object.keys(flags).some((name) => name !== 'browser' && name !== 'token') ||
+      (flags.browser !== undefined && typeof flags.browser !== 'boolean') ||
+      (flags.token !== undefined && typeof flags.token !== 'boolean')
+    ) {
       writeCliError({
-        what: 'facet login requires an interactive terminal',
-        detail: 'this is a non-interactive environment; the sign-in prompt cannot run here',
-        fix: 'run `facet login` in an interactive shell, or set FACET_TOKEN for non-interactive use',
+        what: 'invalid login arguments',
+        fix: 'run `facet login --help` to choose --browser, --no-browser, or --token',
+      })
+      return 1
+    }
+    if (flags.token === true && flags.browser !== undefined) {
+      writeCliError({
+        what: 'choose one sign-in method',
+        fix: 'use --token by itself, or choose --browser or --no-browser',
+      })
+      return 1
+    }
+    if (flags.token === true && !canPromptInteractively()) {
+      writeCliError({
+        what: 'token entry requires an interactive terminal',
+        fix: 'run `facet login --token` in a terminal, or set FACET_TOKEN',
+      })
+      return 1
+    }
+    if (flags.browser === undefined && flags.token !== true && !canPromptInteractively()) {
+      writeCliError({
+        what: 'facet login requires a sign-in mode outside a terminal',
+        fix: 'use `facet login --browser` or `facet login --no-browser`, or set FACET_TOKEN',
       })
       return 1
     }
 
-    // If FACET_TOKEN is set it takes precedence over the file we are
-    // about to write — warn before prompting so the user is not
-    // surprised when `login` "doesn't take effect".
-    const existing = resolveCredential()
-    if (existing.source === 'env') {
-      process.stdout.write('Note: FACET_TOKEN is set in your environment and will be used for every command\n')
-      process.stdout.write('in preference to the credential you are about to save. Run `unset FACET_TOKEN`\n')
-      process.stdout.write('if you want the saved login to take effect.\n\n')
-    } else if (existing.source === 'absent' && existing.reason?.code === 'unreadable') {
-      // An existing credentials file is present but unreadable; logging in
-      // will overwrite it. Surface the situation so the overwrite is not a
-      // surprise.
-      process.stdout.write(`Note: an existing credentials file at ${existing.reason.path} could not be read\n`)
-      process.stdout.write(`(${existing.reason.cause}); signing in will overwrite it.\n\n`)
+    if (flags.browser !== undefined) return runBrowserLogin(flags.browser)
+    if (flags.token === true) return runTokenLogin()
+
+    const choice = await promptForChoice()
+    if (choice.kind === 'browser') return runBrowserLogin(true)
+    if (choice.kind === 'token') return runTokenLogin(choice.token)
+    process.stdout.write('Cancelled.\n')
+    return 1
+  },
+}
+
+function warnShadowedCredential(): void {
+  const existing = resolveCredential()
+  if (existing.source === 'env') {
+    process.stdout.write(
+      'Note: FACET_TOKEN is active and takes precedence over this login. Unset FACET_TOKEN to use it.\n',
+    )
+  } else if (existing.source === 'file') {
+    process.stdout.write(
+      'Note: a saved personal access token takes precedence over browser sign-in. Run `facet logout` to clear it.\n',
+    )
+  } else if (existing.reason !== undefined) {
+    process.stdout.write(
+      'Note: the saved personal access token could not be read. Check its permissions before using this login.\n',
+    )
+  }
+}
+
+async function runBrowserLogin(autoLaunch: boolean): Promise<number> {
+  warnShadowedCredential()
+  const controller = new AbortController()
+  const onInterrupt = () => controller.abort()
+  process.on('SIGINT', onInterrupt)
+  let progress: ReturnType<typeof render> | undefined
+  let viewExit: Promise<{ kind: 'view-exit' } | { kind: 'view-error'; error: unknown }> | undefined
+  try {
+    const started = await beginCliLogin({ signal: controller.signal })
+    if (controller.signal.aborted) return cancelled()
+    if (!started.ok) return authenticationFailure(started.error)
+
+    const { verificationUri, userCode, verificationUriComplete } = started.value.display
+    process.stdout.write(`Visit ${verificationUri}\nEnter code: ${userCode}\n`)
+    if (autoLaunch) {
+      const opened = await openBrowser(verificationUriComplete)
+      if (!opened.ok)
+        process.stdout.write('Note: the browser could not be opened. Use the URL and code above to finish sign-in.\n')
     }
+    if (controller.signal.aborted) return cancelled()
 
-    // Reprompt loop: each rejected token re-mounts the prompt with the
-    // registry's error shown above it. The user aborts with Esc.
-    let lastError: string | undefined
-    for (;;) {
-      const token = await promptForToken(lastError)
-      if (token === null) {
-        process.stdout.write('Cancelled.\n')
-        return 1
-      }
+    if (canPromptInteractively()) {
+      progress = render(
+        createElement(LoginMenu, {
+          polling: true,
+          onSubmitToken: () => {},
+          onCancel: () => controller.abort(),
+        }),
+        { exitOnCtrlC: false },
+      )
+      viewExit = progress.waitUntilExit().then(
+        () => ({ kind: 'view-exit' as const }),
+        (error: unknown) => ({ kind: 'view-error' as const, error }),
+      )
+    }
+    const completion = completeCliLogin(started.value, { signal: controller.signal }).then(
+      (value): { kind: 'completed'; value: typeof value } => ({ kind: 'completed', value }),
+      (error: unknown): { kind: 'completion-error'; error: unknown } => ({ kind: 'completion-error', error }),
+    )
+    const first = viewExit === undefined ? await completion : await Promise.race([completion, viewExit])
+    if (first.kind === 'view-error' || first.kind === 'view-exit') {
+      controller.abort()
+      // An in-progress credential write may outlive abort; let it finish cleanup before command exit.
+      await completion
+      if (first.kind === 'view-error') throw first.error
+      return cancelled()
+    }
+    if (first.kind === 'completion-error') throw first.error
+    const completed = first.value
+    if (progress !== undefined) {
+      const mounted = progress
+      progress = undefined
+      clearAndUnmount(mounted)
+    }
+    if (viewExit !== undefined) {
+      const settled = await viewExit
+      if (settled.kind === 'view-error') throw settled.error
+    }
+    if (completed.ok) {
+      process.stdout.write(`Logged in as ${completed.value.username}.\n`)
+      return 0
+    }
+    if (controller.signal.aborted || completed.error.code === 'CANCELLED') return cancelled()
+    return authenticationFailure(completed.error)
+  } finally {
+    try {
+      if (progress !== undefined) clearAndUnmount(progress)
+    } finally {
+      process.off('SIGINT', onInterrupt)
+    }
+  }
+}
 
-      const profile = await fetchAuthMe(token)
-      if (!profile.ok) {
-        // Render the registry's own error verbatim, then reprompt.
-        const cli = translateEngineRegistryError(profile.error)
-        lastError = cli.fix !== undefined ? `${cli.what} — ${cli.fix}` : cli.what
-        continue
-      }
+async function runTokenLogin(firstToken?: string): Promise<number> {
+  const existing = resolveCredential()
+  if (existing.source === 'env') {
+    process.stdout.write(
+      'Note: FACET_TOKEN is active and takes precedence over the saved token. Unset FACET_TOKEN to use it.\n',
+    )
+  } else if (existing.source === 'absent' && existing.reason !== undefined) {
+    process.stdout.write('Note: an existing credentials file cannot be read; saving a token will replace it.\n')
+  }
 
+  let token = firstToken
+  let lastError: string | undefined
+  for (;;) {
+    if (token === undefined) {
+      const choice = await promptForChoice(lastError, true)
+      if (choice.kind !== 'token') return cancelled()
+      token = choice.token
+    }
+    const profile = await fetchAuthMe(token)
+    if (profile.ok) {
       writeCredentialsToken(token)
       process.stdout.write(`Logged in as ${profile.value.username} (${profile.value.tier}).\n`)
       return 0
     }
-  },
+    const rendered = translateEngineRegistryError(profile.error)
+    lastError = `${rendered.what} — ${rendered.fix}`
+    token = undefined
+  }
 }
 
-/**
- * Mount the interactive login menu and resolve with the submitted token,
- * or `null` if the user cancels. `initialError`, when present, is shown
- * above the prompt and starts the flow directly at the token entry.
- */
-async function promptForToken(initialError: string | undefined): Promise<string | null> {
-  let submitted: string | null = null
+function authenticationFailure(reason: RegistrySessionFailure): number {
+  writeCliError(translateEngineRegistryError({ code: 'AUTHENTICATION_ERROR', reason }))
+  return 1
+}
+
+function cancelled(): number {
+  process.stdout.write('Cancelled.\n')
+  return 1
+}
+
+async function promptForChoice(initialError?: string, tokenOnly = false): Promise<LoginChoice> {
+  const state: { choice: LoginChoice } = { choice: { kind: 'cancelled' } }
   const instance = render(
     createElement(LoginMenu, {
       initialError,
-      onSubmitToken: (t: string) => {
-        submitted = t
+      tokenOnly,
+      onChooseBrowser: () => {
+        state.choice = { kind: 'browser' }
+      },
+      onSubmitToken: (token: string) => {
+        state.choice = { kind: 'token', token }
       },
       onCancel: () => {
-        submitted = null
+        state.choice = { kind: 'cancelled' }
       },
     }),
+    { exitOnCtrlC: false },
   )
-  await instance.waitUntilExit()
-  return submitted
+  try {
+    await instance.waitUntilExit()
+    return state.choice
+  } finally {
+    clearAndUnmount(instance)
+  }
+}
+
+function clearAndUnmount(instance: ReturnType<typeof render>): void {
+  try {
+    instance.clear()
+  } finally {
+    instance.unmount()
+  }
 }

@@ -9,10 +9,10 @@ import {
 } from '@agent-facets/protocol'
 import type { Client } from 'openapi-fetch'
 import { createRegistryClient, translateWireError } from './client.ts'
-import { resolveCredential } from './credentials.ts'
 import type { paths } from './generated/registry-api.ts'
 import { uncappedGunzip } from './gunzip.ts'
 import { facetNameToRoute } from './http.ts'
+import { resolveRegistryCredential } from './oauth-session.ts'
 import type { RegistryMetadata, RegistryResult } from './types.ts'
 
 /**
@@ -91,13 +91,16 @@ export async function downloadAndExtractFacet(
   meta: RegistryMetadata,
   dest: string,
 ): Promise<RegistryResult<DownloadedArchiveInfo>> {
-  // Reads carry the credential opportunistically (see design D3): the
-  // archive-lookup request earns the authenticated rate-limit tier when
-  // a credential is available, and proceeds anonymously otherwise.
-  const cred = resolveCredential()
-  const client = createRegistryClient({
-    credential: cred.source === 'absent' ? undefined : cred.token,
-  })
+  const resolved = await resolveRegistryCredential()
+  if (!resolved.ok) {
+    return { ok: false, error: { code: 'AUTHENTICATION_ERROR', reason: resolved.error } }
+  }
+  const cred = resolved.value
+  const client = createRegistryClient(
+    cred.source === 'oauth'
+      ? { baseUrl: cred.registryOrigin, credential: cred.token, credentialPolicy: 'oauth' }
+      : { credential: cred.source === 'absent' ? undefined : cred.token },
+  )
 
   const urlResult = await resolveArchiveUrl(client, meta)
   if (!urlResult.ok) return urlResult

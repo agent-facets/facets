@@ -1,6 +1,7 @@
 import type { McpServerCapabilityFailure } from '@agent-facets/adapter'
 import type {
   LockfileDriftEntry,
+  RegistryError,
   RollbackOutcome,
   RunInstallFailure,
   RunInstallResult,
@@ -29,6 +30,7 @@ import {
   describeTakeoverHeading,
   describeUnsupportedMcpAdapter,
 } from '../../../util/mcp-report.ts'
+import { translateEngineRegistryError } from '../../../util/registry-errors.ts'
 import { THEME } from '../../theme.ts'
 import { UnsupportedManifestVersionBlock } from './unsupported-version-block.tsx'
 
@@ -147,6 +149,20 @@ function McpCapabilityHint({ failure }: { failure: McpServerCapabilityFailure })
   return <Text color={THEME.hint}> {hint}</Text>
 }
 
+function AuthenticationErrorDetail({
+  error,
+}: {
+  error: Extract<RegistryError, { code: 'AUTHENTICATION_ERROR' }>
+}): React.JSX.Element {
+  const guidance = translateEngineRegistryError(error)
+  return (
+    <>
+      <Text> {guidance.what}</Text>
+      <Text color={THEME.hint}> fix: {guidance.fix}</Text>
+    </>
+  )
+}
+
 /**
  * The structured detail for one failure variant. Each gets its own format so
  * callers can see exactly what went wrong without parsing message strings.
@@ -227,7 +243,9 @@ function failureDetail(failure: RunInstallFailure): React.JSX.Element {
       return (
         <Box flexDirection="column" marginTop={1}>
           <Text color={THEME.warning} bold>
-            ✕ registry error for {failure.facet}
+            {failure.error.code === 'AUTHENTICATION_ERROR'
+              ? `✕ authentication problem while installing ${failure.facet}`
+              : `✕ registry error for ${failure.facet}`}
           </Text>
           {failure.error.code === 'REGISTRY_REJECTED' ? (
             <>
@@ -245,6 +263,7 @@ function failureDetail(failure: RunInstallFailure): React.JSX.Element {
             </Text>
           ) : null}
           {failure.error.code === 'NETWORK_ERROR' ? <Text> network: {failure.error.cause}</Text> : null}
+          {failure.error.code === 'AUTHENTICATION_ERROR' ? <AuthenticationErrorDetail error={failure.error} /> : null}
           {failure.error.code === 'UNSUPPORTED_ARCHIVE' ? (
             <Text>
               {' '}
@@ -259,13 +278,25 @@ function failureDetail(failure: RunInstallFailure): React.JSX.Element {
           <Text color={THEME.warning} bold>
             ✕ cannot create a lockfile entry for {failure.facet}@{failure.version} without registry confirmation
           </Text>
-          <Text>
-            {' '}
-            The content is already cached — nothing needed downloading — but a new lockfile entry requires the
-            registry's published integrity, and the registry could not be reached.
-          </Text>
+          {failure.error.code === 'AUTHENTICATION_ERROR' ? (
+            <Text>
+              {' '}
+              The content is already cached — nothing needed downloading — but a new lockfile entry requires the
+              registry's published integrity. Authentication could not complete, so confirmation cannot continue.
+            </Text>
+          ) : (
+            <Text>
+              {' '}
+              The content is already cached — nothing needed downloading — but a new lockfile entry requires the
+              registry's published integrity, and the registry could not be reached.
+            </Text>
+          )}
           {failure.error.code === 'NETWORK_ERROR' ? <Text> network: {failure.error.cause}</Text> : null}
-          <Text color={THEME.hint}> Reconnect and retry. Reproducing an existing lockfile entry works offline.</Text>
+          {failure.error.code === 'AUTHENTICATION_ERROR' ? (
+            <AuthenticationErrorDetail error={failure.error} />
+          ) : (
+            <Text color={THEME.hint}> Reconnect and retry. Reproducing an existing lockfile entry works offline.</Text>
+          )}
         </Box>
       )
     case 'INTEGRITY_FAILURE':

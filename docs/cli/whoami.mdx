@@ -9,7 +9,7 @@ description: Print the signed-in identity
 facet whoami
 ```
 
-Resolves your credential, checking `FACET_TOKEN` before the saved [credentials file](/cli/env), and prints the identity it belongs to.
+Prints the verified identity for your selected credential. Selection follows [credential precedence](/cli/login#token-precedence), including browser sessions for the selected registry.
 
 ## Exit codes
 
@@ -28,7 +28,9 @@ yourname <you@example.com>
   credential: FACET_TOKEN (environment)
 ```
 
-The `registry` line always shows the base URL the identity was resolved against. The `credential` line appears when the token came from the environment rather than the saved file. A suspended account is reported as suspended.
+The `registry` line shows the registry that verified the identity. The `credential` line is `FACET_TOKEN (environment)` for an environment token or `browser session` for browser sign-in; it is omitted for a saved personal access token. A suspended account is reported as suspended.
+
+Browser sessions may be [renewed before this command completes](/cli/login#session-renewal). Authentication failures stop the command; they do not produce another identity or an anonymous result.
 
 ## See also
 

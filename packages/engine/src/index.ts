@@ -348,6 +348,7 @@ export type { ReadmePath } from './readme.ts'
 export { isReadmePath, README_EXTENSIONLESS, README_MD, README_PATHS, readmeTemplate } from './readme.ts'
 // registry
 export type {
+  CliLogoutOutcome,
   DiscoverArtifactResult,
   DriftResult,
   PublishArgs,
@@ -356,8 +357,11 @@ export type {
   RegistryError,
   RegistryMetadata,
   RegistryResult,
+  RegistrySessionFailure,
+  RegistrySessionResult,
   RegistrySpec,
   ResolvedCredential,
+  ResolvedRegistryCredential,
   RetryConfig,
   TimeoutConfig,
   WireAssetCounts,
@@ -373,10 +377,11 @@ export type {
 } from './registry/index.ts'
 export {
   BUILD_OUTPUT_DIR,
+  beginCliLogin,
   buildArtifactFilename,
   buildArtifactPath,
+  completeCliLogin,
   createRegistryClient,
-  deleteCredentialsFile,
   describeVersionSpec,
   detectManifestDrift,
   discoverBuiltArtifacts,
@@ -385,9 +390,11 @@ export {
   fetchAuthMe,
   fixtures,
   getRegistryBaseUrl,
+  logoutCliSession,
   publishFacetVersion,
   readCredentialsToken,
   resolveCredential,
+  resolveRegistryCredential,
   resolveRegistryMetadataBatch,
   translateThrownError,
   translateWireError,

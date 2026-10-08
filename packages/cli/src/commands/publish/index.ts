@@ -4,7 +4,7 @@ import {
   discoverBuiltArtifacts,
   loadManifest,
   publishFacetVersion,
-  resolveCredential,
+  resolveRegistryCredential,
   uncappedGunzip,
 } from '@agent-facets/engine'
 import { type ArchiveVerificationFailure, type FacetManifest, validateFacetArchive } from '@agent-facets/protocol'
@@ -62,16 +62,13 @@ export const publishCommand: Command = {
     const projectRoot = resolved.dir
 
     // (b) Resolve credential before any work — fail fast.
-    const cred = resolveCredential()
+    const resolvedCredential = await resolveRegistryCredential()
+    if (!resolvedCredential.ok) {
+      writeCliError(translateEngineRegistryError({ code: 'AUTHENTICATION_ERROR', reason: resolvedCredential.error }))
+      return 1
+    }
+    const cred = resolvedCredential.value
     if (cred.source === 'absent') {
-      if (cred.reason?.code === 'unreadable') {
-        writeCliError({
-          what: "couldn't read your registry credentials file",
-          detail: `${cred.reason.path}: ${cred.reason.cause}`,
-          fix: "fix the file's permissions, or run `facet logout` then `facet login`",
-        })
-        return 1
-      }
       writeCliError({
         what: 'not signed in — no registry credential found',
         fix: 'run `facet login` to sign in, or set FACET_TOKEN in your environment',
@@ -129,8 +126,35 @@ export const publishCommand: Command = {
     }
     const { facetManifest } = verified.data
 
+    // Builds and terminal prompts can outlive an OAuth bearer. Renew only
+    // the selected browser account, and reject a changed publishing target.
+    let uploadCredential = cred
+    if (cred.source === 'oauth') {
+      const renewed = await resolveRegistryCredential()
+      if (!renewed.ok) {
+        writeCliError(translateEngineRegistryError({ code: 'AUTHENTICATION_ERROR', reason: renewed.error }))
+        return 1
+      }
+      const next = renewed.value
+      if (
+        next.source !== 'oauth' ||
+        next.registryOrigin !== cred.registryOrigin ||
+        next.profile.user_uuid !== cred.profile.user_uuid
+      ) {
+        writeCliError(
+          translateEngineRegistryError({ code: 'AUTHENTICATION_ERROR', reason: { code: 'SESSION_CHANGED' } }),
+        )
+        return 1
+      }
+      uploadCredential = next
+    }
+
     // (g) Upload using the artifact's embedded identity.
-    const client = createRegistryClient({ credential: cred.token })
+    const client = createRegistryClient(
+      uploadCredential.source === 'oauth'
+        ? { baseUrl: uploadCredential.registryOrigin, credential: uploadCredential.token, credentialPolicy: 'oauth' }
+        : { credential: uploadCredential.token },
+    )
     const result = await publishFacetVersion(client, {
       name: facetManifest.name,
       tarball: distBytes,

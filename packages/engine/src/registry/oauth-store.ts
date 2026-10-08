@@ -42,7 +42,7 @@ const SESSION_KEYS = new Set([
   'refresh_attempts',
 ])
 
-export type OAuthSessionStatus = 'ready' | 'uncertain' | 'reauth-required'
+export type OAuthSessionStatus = 'ready' | 'uncertain' | 'reauth-required' | 'verification-pending'
 
 export interface OAuthSessionBinding {
   registry_origin: string
@@ -82,7 +82,27 @@ export interface ReauthRequiredOAuthSession extends OAuthSessionBase {
   refresh_attempts?: never
 }
 
-export type OAuthSession = ReadyOAuthSession | UncertainOAuthSession | ReauthRequiredOAuthSession
+/** Rotated credentials are durable but unusable until registry identity is verified. */
+export interface PendingOAuthSession extends OAuthSessionBase {
+  status: 'verification-pending'
+  refresh_started_at?: never
+  refresh_attempts?: never
+}
+
+export type OAuthSession = ReadyOAuthSession | UncertainOAuthSession | ReauthRequiredOAuthSession | PendingOAuthSession
+
+interface AbsentOAuthSession extends OAuthSessionBinding {
+  version: 2
+  status: 'absent'
+  generation: number
+}
+
+type StoredOAuthState = OAuthSession | AbsentOAuthSession
+
+export interface OAuthSessionSnapshot {
+  revision: number | null
+  session: OAuthSession | null
+}
 
 export type OAuthStoreError =
   | {
@@ -154,6 +174,15 @@ export async function readOAuthSession(
   binding: OAuthSessionBinding,
   options: OAuthStoreOptions = {},
 ): Promise<OAuthStoreResult<OAuthSession | null>> {
+  const snapshot = await readOAuthSessionSnapshot(binding, options)
+  return snapshot.ok ? { ok: true, value: snapshot.value.session } : snapshot
+}
+
+/** Revision survives token deletion, including absence observed by a login attempt. */
+export async function readOAuthSessionSnapshot(
+  binding: OAuthSessionBinding,
+  options: OAuthStoreOptions = {},
+): Promise<OAuthStoreResult<OAuthSessionSnapshot>> {
   const context = prepareContext(binding, options)
   if (!context.ok) return context
 
@@ -161,7 +190,26 @@ export async function readOAuthSession(
   if (!root.ok) return root
   const filesystem = await requireLocalFilesystem(context.value)
   if (!filesystem.ok) return filesystem
-  return readSessionFile(binding, context.value)
+  const read = await readSessionFile(binding, context.value)
+  return read.ok
+    ? { ok: true, value: { revision: read.value?.generation ?? null, session: liveSession(read.value) } }
+    : read
+}
+
+/** Read only the selected origin's protected local state for explicit offline cleanup. */
+export async function readOAuthSessionForLocalCleanup(
+  registryOrigin: string,
+  options: OAuthStoreOptions = {},
+): Promise<OAuthStoreResult<OAuthSession | null>> {
+  const context = prepareOriginContext(registryOrigin, options)
+  if (!context.ok) return context
+
+  const root = await ensureOAuthRoot(context.value)
+  if (!root.ok) return root
+  const filesystem = await requireLocalFilesystem(context.value)
+  if (!filesystem.ok) return filesystem
+  const read = await readSessionFile(registryOrigin, context.value)
+  return read.ok ? { ok: true, value: liveSession(read.value) } : read
 }
 
 export async function saveOAuthSession(
@@ -210,7 +258,7 @@ export async function saveOAuthSession(
       },
     }
   }
-  const transitionIssues = validateTransition(current.value, session)
+  const transitionIssues = validateTransition(liveSession(current.value), session)
   if (transitionIssues.length > 0) {
     return {
       ok: false,
@@ -244,15 +292,20 @@ export async function deleteOAuthSession(
   if (actual !== expectedGeneration) {
     return { ok: false, error: { code: 'GENERATION_CONFLICT', expected: expectedGeneration, actual } }
   }
-  if (current.value === null) return { ok: true, value: false }
-
-  try {
-    await rm(held.value.context.statePath)
-    await syncDirectory(held.value.context.root)
-    return { ok: true, value: true }
-  } catch (error) {
-    return ioFailure('delete session', held.value.context.statePath, error)
+  const tombstone: AbsentOAuthSession = {
+    version: 2,
+    ...binding,
+    generation: (actual ?? 0) + 1,
+    status: 'absent',
   }
+  const issues = validateAbsentSession(tombstone)
+  if (issues.length > 0)
+    return {
+      ok: false,
+      error: { code: 'INVALID_SESSION', path: held.value.context.statePath, issues },
+    }
+  const saved = await atomicWriteSession(tombstone, held.value.context)
+  return saved.ok ? { ok: true, value: liveSession(current.value) !== null } : saved
 }
 
 export async function withOAuthSessionLock<T>(
@@ -291,11 +344,28 @@ function prepareContext(binding: OAuthSessionBinding, options: OAuthStoreOptions
   const issues = validateBinding(binding)
   if (issues.length > 0) return { ok: false, error: { code: 'INVALID_BINDING', issues } }
 
+  return contextForValidatedOrigin(binding.registry_origin, options, platform)
+}
+
+function prepareOriginContext(registryOrigin: string, options: OAuthStoreOptions): OAuthStoreResult<StoreContext> {
+  const platform = options.platform ?? process.platform
+  if (!isOAuthStorePlatformSupported(platform)) return unsupportedPlatform(platform)
+  const issues: string[] = []
+  validateOrigin(registryOrigin, 'registry_origin', issues)
+  if (issues.length > 0) return { ok: false, error: { code: 'INVALID_BINDING', issues } }
+  return contextForValidatedOrigin(registryOrigin, options, platform)
+}
+
+function contextForValidatedOrigin(
+  registryOrigin: string,
+  options: OAuthStoreOptions,
+  platform: string,
+): OAuthStoreResult<StoreContext> {
   const ownerUid = options.ownerUid ?? process.getuid?.()
   if (ownerUid === undefined) return unsupportedPlatform(platform)
   const facetDir = (options.resolveFacetDir ?? resolveFacetDir)()
   const root = join(facetDir, 'oauth')
-  const key = createHash('sha256').update(binding.registry_origin).digest('hex')
+  const key = createHash('sha256').update(registryOrigin).digest('hex')
   return {
     ok: true,
     value: {
@@ -345,9 +415,9 @@ async function ensureDirectory(
 }
 
 async function readSessionFile(
-  binding: OAuthSessionBinding,
+  binding: OAuthSessionBinding | string,
   context: StoreContext,
-): Promise<OAuthStoreResult<OAuthSession | null>> {
+): Promise<OAuthStoreResult<StoredOAuthState | null>> {
   const inspected = await inspectPath(context.statePath, 'file', context.ownerUid, 0o600, true, context.lstat)
   if (!inspected.ok) return inspected
   if (!inspected.value) return { ok: true, value: null }
@@ -369,11 +439,17 @@ async function readSessionFile(
         error: { code: 'INVALID_SESSION', path: context.statePath, issues: ['state is not valid JSON'] },
       }
     }
-    const issues = validateSession(parsed)
-    if (issues.length > 0 || !isOAuthSession(parsed)) {
+    const issues =
+      isRecord(parsed) && parsed.status === 'absent' ? validateAbsentSession(parsed) : validateSession(parsed)
+    if (issues.length > 0 || !isStoredOAuthState(parsed)) {
       return { ok: false, error: { code: 'INVALID_SESSION', path: context.statePath, issues } }
     }
-    const bindingIssue = bindingMismatch(binding, parsed)
+    const bindingIssue =
+      typeof binding === 'string' || parsed.status === 'absent'
+        ? parsed.registry_origin === (typeof binding === 'string' ? binding : binding.registry_origin)
+          ? null
+          : 'registry_origin differs from selected origin'
+        : bindingMismatch(binding, parsed)
     if (bindingIssue !== null) {
       return { ok: false, error: { code: 'INVALID_SESSION', path: context.statePath, issues: [bindingIssue] } }
     }
@@ -385,7 +461,7 @@ async function readSessionFile(
   }
 }
 
-async function atomicWriteSession(session: OAuthSession, context: StoreContext): Promise<OAuthStoreResult<void>> {
+async function atomicWriteSession(session: StoredOAuthState, context: StoreContext): Promise<OAuthStoreResult<void>> {
   const tempPath = `${context.statePath}.${randomUUID()}.tmp`
   let handle: FileHandle | undefined
   let renamed = false
@@ -687,7 +763,12 @@ function validateSession(value: unknown): string[] {
   if (typeof value.generation !== 'number' || !Number.isSafeInteger(value.generation) || value.generation < 1) {
     issues.push('generation must be a positive safe integer')
   }
-  if (value.status !== 'ready' && value.status !== 'uncertain' && value.status !== 'reauth-required') {
+  if (
+    value.status !== 'ready' &&
+    value.status !== 'uncertain' &&
+    value.status !== 'reauth-required' &&
+    value.status !== 'verification-pending'
+  ) {
     issues.push('status is invalid')
   } else if (value.status === 'uncertain') {
     if (
@@ -714,10 +795,18 @@ function validateSession(value: unknown): string[] {
 }
 
 function validateTransition(current: OAuthSession | null, next: OAuthSession): string[] {
+  if (next.status === 'verification-pending') {
+    if (current?.status !== 'uncertain') return ['pending rotation requires an uncertain refresh fence']
+    return current.subject === next.subject &&
+      current.session_id === next.session_id &&
+      current.user_uuid === next.user_uuid
+      ? []
+      : ['pending rotation must preserve trusted identity']
+  }
   if (next.status !== 'uncertain') return []
   if (current === null) return ['uncertain state requires an existing ready session']
   if (current.status === 'reauth-required') return ['reauth-required state cannot begin a refresh']
-  if (current.status === 'ready') {
+  if (current.status === 'ready' || current.status === 'verification-pending') {
     return next.refresh_attempts === 1 ? [] : ['the first refresh exchange must use refresh_attempts 1']
   }
 
@@ -731,8 +820,55 @@ function validateTransition(current: OAuthSession | null, next: OAuthSession): s
   return issues
 }
 
-function isOAuthSession(value: unknown): value is OAuthSession {
-  return validateSession(value).length === 0
+function validateAbsentSession(value: unknown): string[] {
+  if (!isRecord(value)) return ['absent state must be an object']
+  const allowed = new Set([
+    'version',
+    'status',
+    'generation',
+    'registry_origin',
+    'client_id',
+    'issuer',
+    'authorization_endpoint',
+    'token_endpoint',
+    'verification_origin',
+  ])
+  const issues = validateBinding({
+    registry_origin: typeof value.registry_origin === 'string' ? value.registry_origin : '',
+    client_id: typeof value.client_id === 'string' ? value.client_id : '',
+    issuer: typeof value.issuer === 'string' ? value.issuer : '',
+    authorization_endpoint: typeof value.authorization_endpoint === 'string' ? value.authorization_endpoint : '',
+    token_endpoint: typeof value.token_endpoint === 'string' ? value.token_endpoint : '',
+    verification_origin: typeof value.verification_origin === 'string' ? value.verification_origin : '',
+  })
+  for (const key of Object.keys(value)) if (!allowed.has(key)) issues.push(`unexpected field: ${key}`)
+  for (const key of [
+    'registry_origin',
+    'client_id',
+    'issuer',
+    'authorization_endpoint',
+    'token_endpoint',
+    'verification_origin',
+  ]) {
+    const field = value[key]
+    if (typeof field !== 'string' || field.length > (key === 'client_id' ? 512 : 4096) || field.trim() !== field)
+      issues.push(`${key} must be a bounded trimmed string`)
+  }
+  if (value.version !== 2) issues.push('absent state version must be 2')
+  if (value.status !== 'absent') issues.push('absent state status is invalid')
+  if (typeof value.generation !== 'number' || !Number.isSafeInteger(value.generation) || value.generation < 1)
+    issues.push('generation must be a positive safe integer')
+  return issues
+}
+
+function isStoredOAuthState(value: unknown): value is StoredOAuthState {
+  return (
+    isRecord(value) && (value.status === 'absent' ? validateAbsentSession(value) : validateSession(value)).length === 0
+  )
+}
+
+function liveSession(value: StoredOAuthState | null): OAuthSession | null {
+  return value === null || value.status === 'absent' ? null : value
 }
 
 function bindingOf(session: OAuthSession): OAuthSessionBinding {

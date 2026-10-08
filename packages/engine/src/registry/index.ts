@@ -10,7 +10,6 @@ export type { RegistryClientConfig } from './client.ts'
 export { createRegistryClient, translateThrownError, translateWireError } from './client.ts'
 export type { ResolvedCredential } from './credentials.ts'
 export {
-  deleteCredentialsFile,
   readCredentialsToken,
   resolveCredential,
   writeCredentialsToken,
@@ -24,6 +23,13 @@ export { uncappedGunzip } from './gunzip.ts'
 export { encodeFacetName, getRegistryBaseUrl } from './http.ts'
 export type { RetryConfig } from './middleware/retry.ts'
 export type { TimeoutConfig } from './middleware/timeout.ts'
+export type {
+  CliLogoutOutcome,
+  RegistrySessionFailure,
+  RegistrySessionResult,
+  ResolvedRegistryCredential,
+} from './oauth-session.ts'
+export { beginCliLogin, completeCliLogin, logoutCliSession, resolveRegistryCredential } from './oauth-session.ts'
 export type { PublishArgs, PublishResult } from './publish.ts'
 export { publishFacetVersion } from './publish.ts'
 export { MAX_REGISTRY_METADATA_SPECIFIERS, resolveRegistryMetadataBatch } from './resolve-metadata.ts'

@@ -1,20 +1,39 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { fixtures, type WirePackageListItem } from '@agent-facets/engine'
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import * as engine from '@agent-facets/engine'
+import { fixtures, type WireAuthMeResponse, type WirePackageListItem } from '@agent-facets/engine'
 import { render as inkRender } from 'ink-testing-library'
 import { createElement } from 'react'
 import { captureStderr } from '../../../__tests__/helpers/capture-std.ts'
 import { contentFrame, visibleContentFrame, visibleTerminalText } from '../../../__tests__/helpers/terminal-output.ts'
 import { type SearchResult, SearchView } from '../../../tui/views/search/search-view.tsx'
-import { searchCommand } from '../index.ts'
+
+const realResolveRegistryCredential = engine.resolveRegistryCredential
+let resolveBehavior: typeof realResolveRegistryCredential = realResolveRegistryCredential
+let restoreResolver = () => {}
+const oauthProfile = {
+  user_uuid: 'u-1',
+  username: 'ada',
+  email: 'ada@example.com',
+  tier: 'pro',
+  suspended: false,
+  startup_experience: { kind: 'landing-only' },
+  getting_started: { kind: 'unavailable' },
+} satisfies WireAuthMeResponse
+
+const { searchCommand } = await import('../index.ts')
 
 const ORIGINAL_FETCH = globalThis.fetch
 const ORIGINAL_ENV = process.env.FACET_REGISTRY_URL
 
 beforeEach(() => {
   process.env.FACET_REGISTRY_URL = 'https://api.test'
+  resolveBehavior = realResolveRegistryCredential
+  const mocked = spyOn(engine, 'resolveRegistryCredential').mockImplementation((options) => resolveBehavior(options))
+  restoreResolver = () => mocked.mockRestore()
 })
 
 afterEach(() => {
+  restoreResolver()
   globalThis.fetch = ORIGINAL_FETCH
   if (ORIGINAL_ENV === undefined) delete process.env.FACET_REGISTRY_URL
   else process.env.FACET_REGISTRY_URL = ORIGINAL_ENV
@@ -285,5 +304,63 @@ describe('searchCommand — query parameter', () => {
     expect(result).toBe(0)
     expect(urls).toHaveLength(1)
     expect(urls[0]).not.toContain('q=')
+  })
+})
+
+describe('searchCommand — selected browser session', () => {
+  test('uses frozen OAuth origin and restricted transport after ENV drift', async () => {
+    const bearer = 'oauth-search-bearer-canary'
+    resolveBehavior = async () => {
+      process.env.FACET_REGISTRY_URL = 'https://changed.invalid'
+      return {
+        ok: true,
+        value: { source: 'oauth', token: bearer, registryOrigin: 'https://api.test', profile: oauthProfile },
+      }
+    }
+    const seen: Array<{
+      url: string
+      authorization: string | null
+      redirect: RequestInit['redirect']
+      credentials: RequestInit['credentials']
+    }> = []
+    const fetcher = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const request = input instanceof Request ? input : new Request(input.toString(), init)
+      seen.push({
+        url: request.url,
+        authorization: request.headers.get('authorization'),
+        redirect: init?.redirect,
+        credentials: init?.credentials,
+      })
+      return new Response(JSON.stringify({ facets: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    globalThis.fetch = Object.assign(fetcher, { preconnect: ORIGINAL_FETCH.preconnect })
+
+    const { result } = await captureStderr(() => searchCommand.run(['cowsay'], {}))
+    expect(result).toBe(0)
+    expect(seen).toEqual([
+      {
+        url: 'https://api.test/v0/facets?q=cowsay',
+        authorization: `Bearer ${bearer}`,
+        redirect: 'error',
+        credentials: 'omit',
+      },
+    ])
+  })
+
+  test('failed refresh does not issue an anonymous search request', async () => {
+    resolveBehavior = async () => ({ ok: false, error: { code: 'REFRESH_UNAVAILABLE', reason: 'transient' } })
+    let requests = 0
+    const fetcher = async (): Promise<Response> => {
+      requests++
+      return new Response(JSON.stringify({ facets: [] }), { status: 200 })
+    }
+    globalThis.fetch = Object.assign(fetcher, { preconnect: ORIGINAL_FETCH.preconnect })
+    const { result, stderr } = await captureStderr(() => searchCommand.run([], {}))
+    expect(result).toBe(1)
+    expect(requests).toBe(0)
+    expect(stderr).toContain('sign-in')
   })
 })

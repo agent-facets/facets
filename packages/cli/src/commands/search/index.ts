@@ -1,4 +1,9 @@
-import { createRegistryClient, resolveCredential, translateThrownError, translateWireError } from '@agent-facets/engine'
+import {
+  createRegistryClient,
+  resolveRegistryCredential,
+  translateThrownError,
+  translateWireError,
+} from '@agent-facets/engine'
 import { render } from 'ink'
 import { createElement } from 'react'
 import type { Command } from '../../commands.ts'
@@ -38,18 +43,19 @@ export const searchCommand: Command = {
     }
     const term = args[0]
 
-    // Reads carry the credential opportunistically (see design D3):
-    // when one is available it earns the authenticated rate-limit tier;
-    // when absent the search proceeds anonymously.
-    const cred = resolveCredential()
-    if (cred.source === 'absent' && cred.reason?.code === 'unreadable') {
-      process.stderr.write(
-        `warning: couldn't read credentials at ${cred.reason.path} (${cred.reason.cause}); continuing anonymously\n`,
-      )
+    const resolvedCredential = await resolveRegistryCredential()
+    if (!resolvedCredential.ok) {
+      writeCliError(translateEngineRegistryError({ code: 'AUTHENTICATION_ERROR', reason: resolvedCredential.error }))
+      return 1
     }
-    const client = createRegistryClient({
-      credential: cred.source === 'absent' ? undefined : cred.token,
-    })
+    // True absence keeps public search anonymous. Failed session resolution
+    // cannot silently downgrade an authenticated request to that path.
+    const cred = resolvedCredential.value
+    const client = createRegistryClient(
+      cred.source === 'oauth'
+        ? { baseUrl: cred.registryOrigin, credential: cred.token, credentialPolicy: 'oauth' }
+        : { credential: cred.source === 'absent' ? undefined : cred.token },
+    )
 
     // The fetch function is passed to the view so the animated
     // "Searching..." line shows while the request is in flight.
