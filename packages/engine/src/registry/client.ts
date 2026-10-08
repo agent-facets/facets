@@ -52,6 +52,8 @@ export interface RegistryClientConfig {
    * with it.
    */
   credential?: string
+  /** OAuth requests omit cookies and reject automatic redirects. */
+  credentialPolicy?: 'oauth'
   /** Timeout middleware config. Omit to use defaults. */
   timeout?: Partial<TimeoutConfig>
   /** Retry middleware config. Omit to use defaults. */
@@ -80,7 +82,7 @@ export interface RegistryClientConfig {
 export function createRegistryClient(cfg: RegistryClientConfig = {}): Client<paths> {
   const client = createOpenApiClient<paths>({
     baseUrl: cfg.baseUrl ?? getRegistryBaseUrl(),
-    fetch: cfg.fetch,
+    fetch: cfg.credentialPolicy === 'oauth' ? createOAuthFetch(cfg.fetch ?? globalThis.fetch) : cfg.fetch,
   })
   if (cfg.credential !== undefined) {
     client.use(createAuthMiddleware(cfg.credential))
@@ -88,6 +90,20 @@ export function createRegistryClient(cfg: RegistryClientConfig = {}): Client<pat
   client.use(createTimeoutMiddleware(cfg.timeout))
   client.use(createRetryMiddleware(cfg.retry))
   return client
+}
+
+function createOAuthFetch(fetchImpl: typeof globalThis.fetch): typeof globalThis.fetch {
+  const boundFetch = async (input: Request | string | URL, init?: RequestInit): Promise<Response> => {
+    const incoming = input instanceof Request ? new Request(input, init) : new Request(input.toString(), init)
+    const headers = new Headers(incoming.headers)
+    headers.delete('cookie')
+    const redirect = incoming.redirect === 'manual' ? 'manual' : 'error'
+    const request = new Request(incoming, { headers, redirect })
+    // Bun does not reliably reflect credentials on Request; enforce omission at fetch.
+    return fetchImpl(request, { redirect, credentials: 'omit', signal: request.signal })
+  }
+  boundFetch.preconnect = fetchImpl.preconnect
+  return boundFetch
 }
 
 /**
