@@ -5,6 +5,44 @@ description: What's new in Agent Facets
 rss: true
 ---
 
+<Update label="2026-10-08" description="Browser sign-in for facet login and confirmed browser sign-out for facet logout" tags={["CLI", "New Feature", "Improvement"]} rss={{
+  title: "Browser sign-in for the facet CLI",
+  description: "facet login now supports browser sign-in on macOS and Linux. Run facet login --browser to open the verification page, or facet login --no-browser to get a URL and code to finish on another device. Personal access tokens still work: run facet login --token in an interactive terminal, or set FACET_TOKEN in CI and other non-interactive environments, including Windows. Tokens take priority over browser sessions. Commands renew browser sessions automatically, and a rejected credential fails the command instead of switching identity. facet logout now confirms the registry revoked your browser session before removing it locally; use facet logout --local to clean up offline. This ships in the next agent-facets release."
+}}>
+  ## Sign in with your browser
+
+  [`facet login`](/cli/login) now supports browser sign-in on macOS and
+  Linux. No token copy and paste required.
+
+  ```sh
+  facet login --browser      # open the verification page
+  facet login --no-browser   # print a URL and code to finish on another device
+  facet login --token        # paste a personal access token
+  ```
+
+  - **Works in headless terminals.** `--no-browser` prints a URL and code
+    you can confirm from any device with a browser.
+  - **Tokens still work.** Run `facet login --token` in an interactive
+    terminal. For CI and other non-interactive environments, set
+    [`FACET_TOKEN`](/cli/env#facet_token). Tokens take [priority](/cli/login#token-precedence)
+    over browser sessions.
+  - **Sessions renew automatically.** Commands refresh your browser
+    session before use. Browser sessions are bound to their registry
+    and [stored separately](/cli/env#browser-credentials) from tokens.
+
+  ## Safer sign-out and authentication failures
+
+  - **[`facet logout`](/cli/logout) confirms revocation.** Browser
+    sign-out asks the registry to revoke the session before removing it
+    locally. Use `facet logout --local` to clean up while offline.
+  - **No silent identity switching.** A rejected or unreadable
+    credential now fails the command with guidance. The CLI no longer
+    falls back to another credential or retries anonymously.
+
+  These changes ship in the next `agent-facets` release. Run
+  [`facet self-update`](/cli/self-update) once it is out.
+</Update>
+
 <Update label="2026-09-29" description="agent-facets 0.34.0 ships facet outdated and facet update --json" tags={["CLI", "New Feature"]} rss={{
   title: "agent-facets 0.34.0: facet outdated and facet update --json are on npm",
   description: "agent-facets@0.34.0 is on npm; run facet self-update to pick it up. This release ships facet outdated, a read-only report of newer releases for every registry-backed facet in facets.json, and facet update --json, which prints one machine-readable document to stdout. Failed JSON runs include recovery details in the document and leave stderr empty."
