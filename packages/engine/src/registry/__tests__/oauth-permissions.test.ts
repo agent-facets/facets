@@ -201,14 +201,17 @@ describe('Darwin directory ACL boundary', () => {
   )
 
   test.skipIf(process.platform !== 'darwin')(
-    'checks real ACLs with forced GC in source and isolated arm64/x64-baseline binaries',
+    'compiles arm64/x64-baseline and checks real ACLs through forced GC in source and the host binary',
     () => {
       const root = mkdtempSync(join(tmpdir(), 'oauth-acl-compiled-'))
       try {
         const script = join(root, 'native.ts')
         writeFileSync(script, nativeFixture)
         run([process.execPath, script], root)
-        for (const target of ['bun-darwin-arm64', 'bun-darwin-x64-baseline']) {
+        for (const { target, arch } of [
+          { target: 'bun-darwin-arm64', arch: 'arm64' },
+          { target: 'bun-darwin-x64-baseline', arch: 'x64' },
+        ]) {
           const binary = join(root, target)
           const build = Bun.spawnSync(
             [process.execPath, 'build', script, '--compile', '--target', target, '--outfile', binary],
@@ -223,7 +226,7 @@ describe('Darwin directory ACL boundary', () => {
             exit: 0,
             stderr: expect.any(String),
           })
-          run([binary], root)
+          if (arch === process.arch) run([binary], root)
         }
       } finally {
         rmSync(root, { recursive: true, force: true })

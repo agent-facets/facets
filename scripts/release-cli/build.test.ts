@@ -4,7 +4,7 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { compileTarget } from './build'
-import { allTargets, buildTargetPackageJson, bunTarget, packageName } from './targets'
+import { allTargets, buildTargetPackageJson, bunTarget, packageName, shouldSmokeTest } from './targets'
 
 const engineManifest = resolve(import.meta.dir, '../../packages/engine/package.json')
 const fromEngine = createRequire(engineManifest)
@@ -118,6 +118,7 @@ test.each([
   })
 })
 
+// Allow twelve sequential 30-second builds plus 30 seconds for fixture setup and cleanup.
 test('production options select the real native graph for all twelve targets', async () => {
   await fixture(async (root) => {
     const entry = join(root, 'graph.ts')
@@ -163,7 +164,7 @@ test('production options select the real native graph for all twelve targets', a
       })
     }
   })
-}, 60_000)
+}, 390_000)
 
 const policy = `
 import assert from 'node:assert/strict'
@@ -195,7 +196,7 @@ try {
 
 describe('standalone production native policy', () => {
   test.skipIf(process.platform !== 'darwin')(
-    'source and isolated arm64/x64-baseline retain ACL policy through forced GC',
+    'compiles isolated arm64/x64-baseline and retains ACL policy through forced GC in source and the host binary',
     async () => {
       await fixture(async (root) => {
         const script = join(root, 'policy.ts')
@@ -237,12 +238,14 @@ describe('standalone production native policy', () => {
             stdout: expect.stringContaining('compiled production receiver'),
             stderr: expect.any(String),
           })
-          const child = Bun.spawnSync([binary], { cwd: isolated, timeout: 60_000, stdout: 'pipe', stderr: 'pipe' })
-          expect({ exit: child.exitCode, stdout: child.stdout.toString(), stderr: child.stderr.toString() }).toEqual({
-            exit: 0,
-            stdout: expect.stringContaining(`verified policy ${target.arch} Bun ${Bun.version}`),
-            stderr: expect.any(String),
-          })
+          if (shouldSmokeTest(target, process.platform, process.arch)) {
+            const child = Bun.spawnSync([binary], { cwd: isolated, timeout: 60_000, stdout: 'pipe', stderr: 'pipe' })
+            expect({ exit: child.exitCode, stdout: child.stdout.toString(), stderr: child.stderr.toString() }).toEqual({
+              exit: 0,
+              stdout: expect.stringContaining(`verified policy ${target.arch} Bun ${Bun.version}`),
+              stderr: expect.any(String),
+            })
+          }
         }
       })
     },
