@@ -15,6 +15,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
+import { lstat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -158,6 +159,49 @@ describe('session persistence', () => {
     expect(mismatch.ok).toBe(false)
     if (mismatch.ok) expect.unreachable('binding mismatch unexpectedly succeeded')
     expect(mismatch.error.code).toBe('INVALID_SESSION')
+  })
+
+  test('rejects every lock-binding mismatch before an initial or replacement mutation', async () => {
+    const mismatches = [
+      ['registry_origin', 'https://other-registry.example.test'],
+      ['client_id', 'different-client'],
+      ['issuer', 'https://other-login.example.test'],
+      ['authorization_endpoint', 'https://login.example.test/oauth/other-authorize'],
+      ['token_endpoint', 'https://login.example.test/oauth/other-token'],
+      ['verification_origin', 'https://other-login.example.test'],
+    ] satisfies ReadonlyArray<readonly [keyof OAuthSessionBinding, string]>
+
+    for (const [field, value] of mismatches) {
+      const rejected = await withOAuthSessionLock(
+        binding,
+        (lock) => saveOAuthSession({ ...readySession(1), [field]: value }, null, lock),
+        options,
+      )
+      expectBindingMismatch(rejected, field)
+      expect(existsSync(statePath())).toBe(false)
+    }
+
+    await save(readySession(1), null)
+    const original = readFileSync(statePath(), 'utf8')
+    for (const [field, value] of mismatches) {
+      const rejected = await withOAuthSessionLock(
+        binding,
+        (lock) => saveOAuthSession({ ...readySession(2), [field]: value }, 1, lock),
+        options,
+      )
+      expectBindingMismatch(rejected, field)
+      expect(readFileSync(statePath(), 'utf8')).toBe(original)
+
+      const rejectedDelete = await withOAuthSessionLock(
+        binding,
+        (lock) => deleteOAuthSession({ ...binding, [field]: value }, 1, lock),
+        options,
+      )
+      expect(rejectedDelete.ok).toBe(false)
+      if (rejectedDelete.ok) expect.unreachable(`${field} mismatch unexpectedly deleted state`)
+      expect(rejectedDelete.error.code).toBe('LOCK_LOST')
+      expect(readFileSync(statePath(), 'utf8')).toBe(original)
+    }
   })
 
   test('validates retry metadata as a status-dependent persistent fence', async () => {
@@ -379,6 +423,22 @@ describe('cross-process lock', () => {
     expect(existsSync(sidecar)).toBe(true)
   })
 
+  test('rejects wrong-owner coordination database and each sidecar before SQLite opens', async () => {
+    unwrap(await withOAuthSessionLock(binding, async () => ok(undefined), options))
+    const targets = [lockPath(), ...['-journal', '-wal', '-shm'].map((suffix) => `${lockPath()}${suffix}`)]
+
+    for (const target of targets) {
+      if (target !== lockPath()) writeFileSync(target, '', { mode: 0o600 })
+      const result = await withOAuthSessionLock(binding, async () => ok(undefined), {
+        ...options,
+        lstat: wrongOwnerLstat(target),
+      })
+      expectUnsafe(result, 'wrong-owner')
+      expect(existsSync(target)).toBe(true)
+      if (target !== lockPath()) rmSync(target)
+    }
+  })
+
   test('retries a busy commit without rerunning the callback', async () => {
     const originalExec = Database.prototype.exec
     let commits = 0
@@ -541,6 +601,24 @@ function expectUnsafe(
   expect(result.error.code).toBe('UNSAFE_STATE')
   if (result.error.code !== 'UNSAFE_STATE') expect.unreachable('unexpected failure code')
   expect(result.error.reason).toBe(reason)
+}
+
+function expectBindingMismatch(result: OAuthStoreResult<unknown>, field: keyof OAuthSessionBinding): void {
+  expect(result.ok).toBe(false)
+  if (result.ok) expect.unreachable(`${field} mismatch unexpectedly persisted`)
+  expect(result.error.code).toBe('INVALID_SESSION')
+  if (result.error.code !== 'INVALID_SESSION') expect.unreachable('unexpected binding mismatch error')
+  expect(result.error.issues).toEqual([`${field} differs from current configuration`])
+}
+
+function wrongOwnerLstat(targetPath: string): NonNullable<OAuthStoreOptions['lstat']> {
+  const uid = process.getuid?.()
+  if (uid === undefined) throw new Error('OAuth store tests require a POSIX host')
+  return async (path) => {
+    const metadata = await lstat(path)
+    if (path === targetPath) metadata.uid = uid + 1
+    return metadata
+  }
 }
 
 async function runLockRace(count: number): Promise<void> {

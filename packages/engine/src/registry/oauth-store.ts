@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { createHash, randomUUID } from 'node:crypto'
-import { closeSync, constants, fsyncSync, openSync } from 'node:fs'
+import { closeSync, constants, fsyncSync, openSync, type Stats } from 'node:fs'
 import { type FileHandle, lstat, mkdir, open, rename, rm, statfs } from 'node:fs/promises'
 import { join } from 'node:path'
 import { resolveFacetDir } from '../facet-dir.ts'
@@ -117,6 +117,7 @@ export interface OAuthStoreOptions {
   lockTimeoutMs?: number
   lockPollMs?: number
   statfs?: (path: string) => Promise<{ type: bigint }>
+  lstat?: (path: string) => Promise<Stats>
 }
 
 export interface OAuthSessionLock {
@@ -133,9 +134,11 @@ interface StoreContext {
   lockTimeoutMs: number
   lockPollMs: number
   statfs: (path: string) => Promise<{ type: bigint }>
+  lstat: (path: string) => Promise<Stats>
 }
 
 interface HeldLock extends OAuthSessionLock {
+  readonly binding: OAuthSessionBinding
   readonly context: StoreContext
   readonly database: Database
   readonly deadline: number
@@ -176,13 +179,14 @@ export async function saveOAuthSession(
   if (issues.length > 0) {
     return { ok: false, error: { code: 'INVALID_SESSION', path: held.value.context.statePath, issues } }
   }
-  if (session.registry_origin !== held.value.registry_origin) {
+  const bindingIssue = bindingMismatch(held.value.binding, session)
+  if (bindingIssue !== null) {
     return {
       ok: false,
       error: {
         code: 'INVALID_SESSION',
         path: held.value.context.statePath,
-        issues: ['registry_origin differs from lock'],
+        issues: [bindingIssue],
       },
     }
   }
@@ -228,7 +232,7 @@ export async function deleteOAuthSession(
   if (!held.ok) return held
   const bindingIssues = validateBinding(binding)
   if (bindingIssues.length > 0) return { ok: false, error: { code: 'INVALID_BINDING', issues: bindingIssues } }
-  if (binding.registry_origin !== held.value.registry_origin) {
+  if (bindingMismatch(held.value.binding, binding) !== null) {
     return { ok: false, error: { code: 'LOCK_LOST', path: held.value.context.lockPath } }
   }
 
@@ -263,7 +267,7 @@ export async function withOAuthSessionLock<T>(
   if (!root.ok) return root
   const filesystem = await requireLocalFilesystem(context.value)
   if (!filesystem.ok) return filesystem
-  const acquired = await acquireLock(binding.registry_origin, context.value)
+  const acquired = await acquireLock(binding, context.value)
   if (!acquired.ok) return acquired
 
   let result: OAuthStoreResult<T> | undefined
@@ -303,6 +307,7 @@ function prepareContext(binding: OAuthSessionBinding, options: OAuthStoreOptions
       lockTimeoutMs: options.lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS,
       lockPollMs: options.lockPollMs ?? DEFAULT_LOCK_POLL_MS,
       statfs: options.statfs ?? ((path) => statfs(path, { bigint: true })),
+      lstat: options.lstat ?? lstat,
     },
   }
 }
@@ -343,7 +348,7 @@ async function readSessionFile(
   binding: OAuthSessionBinding,
   context: StoreContext,
 ): Promise<OAuthStoreResult<OAuthSession | null>> {
-  const inspected = await inspectPath(context.statePath, 'file', context.ownerUid, 0o600, true)
+  const inspected = await inspectPath(context.statePath, 'file', context.ownerUid, 0o600, true, context.lstat)
   if (!inspected.ok) return inspected
   if (!inspected.value) return { ok: true, value: null }
 
@@ -391,11 +396,11 @@ async function atomicWriteSession(session: OAuthSession, context: StoreContext):
     await handle.close()
     handle = undefined
 
-    const safeTemp = await inspectPath(tempPath, 'file', context.ownerUid, 0o600)
+    const safeTemp = await inspectPath(tempPath, 'file', context.ownerUid, 0o600, false, context.lstat)
     if (!safeTemp.ok) return safeTemp
     await rename(tempPath, context.statePath)
     renamed = true
-    const safeState = await inspectPath(context.statePath, 'file', context.ownerUid, 0o600)
+    const safeState = await inspectPath(context.statePath, 'file', context.ownerUid, 0o600, false, context.lstat)
     if (!safeState.ok) return safeState
     await syncDirectory(context.root)
     return { ok: true, value: undefined }
@@ -429,7 +434,7 @@ async function requireLocalFilesystem(context: StoreContext): Promise<OAuthStore
   }
 }
 
-async function acquireLock(registryOrigin: string, context: StoreContext): Promise<OAuthStoreResult<HeldLock>> {
+async function acquireLock(binding: OAuthSessionBinding, context: StoreContext): Promise<OAuthStoreResult<HeldLock>> {
   const created = createCoordinationDatabase(context)
   if (!created.ok) return created
   const safe = await inspectCoordinationPaths(context)
@@ -463,7 +468,8 @@ async function acquireLock(registryOrigin: string, context: StoreContext): Promi
   }
 
   const lock: HeldLock = {
-    registry_origin: registryOrigin,
+    registry_origin: binding.registry_origin,
+    binding: { ...binding },
     context,
     database,
     deadline,
@@ -506,10 +512,17 @@ function createCoordinationDatabase(context: StoreContext): OAuthStoreResult<voi
 }
 
 async function inspectCoordinationPaths(context: StoreContext): Promise<OAuthStoreResult<void>> {
-  const database = await inspectPath(context.lockPath, 'file', context.ownerUid, 0o600)
+  const database = await inspectPath(context.lockPath, 'file', context.ownerUid, 0o600, false, context.lstat)
   if (!database.ok) return database
   for (const suffix of SQLITE_SIDECAR_SUFFIXES) {
-    const sidecar = await inspectPath(`${context.lockPath}${suffix}`, 'file', context.ownerUid, 0o600, true)
+    const sidecar = await inspectPath(
+      `${context.lockPath}${suffix}`,
+      'file',
+      context.ownerUid,
+      0o600,
+      true,
+      context.lstat,
+    )
     if (!sidecar.ok) return sidecar
   }
   return { ok: true, value: undefined }
@@ -581,9 +594,10 @@ async function inspectPath(
   ownerUid: number,
   requiredMode: number | null,
   allowMissing = false,
+  lstatPath: (path: string) => Promise<Stats> = lstat,
 ): Promise<OAuthStoreResult<{ dev: number; ino: number } | null>> {
   try {
-    const stat = await lstat(path)
+    const stat = await lstatPath(path)
     if (stat.isSymbolicLink()) return { ok: false, error: { code: 'UNSAFE_STATE', path, reason: 'symlink' } }
     if ((kind === 'file' && !stat.isFile()) || (kind === 'directory' && !stat.isDirectory())) {
       return { ok: false, error: { code: 'UNSAFE_STATE', path, reason: 'wrong-kind' } }
@@ -705,7 +719,7 @@ function bindingOf(session: OAuthSession): OAuthSessionBinding {
   }
 }
 
-function bindingMismatch(expected: OAuthSessionBinding, actual: OAuthSession): string | null {
+function bindingMismatch(expected: OAuthSessionBinding, actual: OAuthSessionBinding): string | null {
   for (const key of [
     'registry_origin',
     'client_id',
