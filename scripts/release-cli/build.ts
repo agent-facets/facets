@@ -127,7 +127,12 @@ async function main(): Promise<number> {
     console.log(`  ✓ ${name}`)
     if (shouldSmokeTest(target, process.platform, process.arch)) {
       console.log(`  Running smoke test: ${outfile} --version`)
-      const child = Bun.spawn([outfile, '--version'], { stdout: 'pipe', stderr: 'pipe' })
+      const child = Bun.spawn([outfile, '--version'], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+        timeout: 30_000,
+        killSignal: 'SIGKILL',
+      })
       const [exit, stdout, stderr] = await Promise.all([
         child.exited,
         new Response(child.stdout).text(),
