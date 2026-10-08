@@ -509,7 +509,8 @@ async function readSessionFile(
   binding: OAuthSessionBinding | string,
   context: StoreContext,
 ): Promise<OAuthStoreResult<StoredOAuthState | null>> {
-  const inspected = await inspectPath(context.statePath, 'file', context.ownerUid, 0o600, true, context.lstat)
+  // A path lookup may observe the replaced inode unlinked; the current opened descriptor is still verified below.
+  const inspected = await inspectPath(context.statePath, 'file', context.ownerUid, 0o600, true, context.lstat, true)
   if (!inspected.ok) return inspected
   if (!inspected.value) return { ok: true, value: null }
 
@@ -790,10 +791,11 @@ async function inspectPath(
   requiredMode: number | null,
   allowMissing = false,
   lstatPath: (path: string) => Promise<Stats> = lstat,
+  allowUnlinked = false,
 ): Promise<OAuthStoreResult<{ dev: number; ino: number } | null>> {
   try {
     const stat = await lstatPath(path)
-    return inspectStats(stat, path, kind, ownerUid, requiredMode)
+    return inspectStats(stat, path, kind, ownerUid, requiredMode, allowUnlinked)
   } catch (error) {
     if (allowMissing && hasCode(error, 'ENOENT')) return { ok: true, value: null }
     return ioFailure('inspect path', path, error)

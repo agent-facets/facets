@@ -810,6 +810,83 @@ describe('durable lifecycle regressions', () => {
   })
 })
 
+describe('zero-link preliminary state metadata', () => {
+  // Deterministic scheduling simulation: real fstat of the replaced old inode supplies the observed lstat race metadata.
+  async function readAfterReplacement(replace: () => Promise<void>, oldMode?: number) {
+    await save(readySession(1), null)
+    let supplied = 0
+    let selectedOpens = 0
+    const originalOpen = fsPromises.open
+    const openProbe = spyOn(fsPromises, 'open').mockImplementation(async (...args) => {
+      if (args[0] === statePath() && supplied === 1) selectedOpens++
+      return originalOpen(...args)
+    })
+    try {
+      const result = await readOAuthSession(binding, {
+        ...options,
+        lstat: async (path) => {
+          if (path !== statePath() || supplied !== 0) return lstat(path)
+          const old = await fsPromises.open(path, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW)
+          try {
+            await replace()
+            if (oldMode !== undefined) await old.chmod(oldMode)
+            const metadata = await old.stat()
+            expect(metadata.nlink).toBe(0)
+            supplied++
+            return metadata
+          } finally {
+            await old.close()
+          }
+        },
+      })
+      expect(supplied).toBe(1)
+      expect(selectedOpens).toBe(oldMode === undefined ? 1 : 0)
+      return result
+    } finally {
+      openProbe.mockRestore()
+    }
+  }
+
+  test('reads the current valid replacement after descriptor-derived zero-link preliminary metadata', async () => {
+    const result = await readAfterReplacement(() => save(readySession(2), 1))
+    expect(unwrap(result)).toEqual(readySession(2))
+  })
+
+  test.each([
+    'mode',
+    'hardlink',
+    'symlink',
+    'schema',
+    'binding',
+  ])('rejects hostile current replacement %s after zero-link preliminary metadata', async (hazard) => {
+    const result = await readAfterReplacement(async () => {
+      await save(readySession(2), 1)
+      if (hazard === 'mode') chmodSync(statePath(), 0o644)
+      if (hazard === 'hardlink') linkSync(statePath(), join(facetDir, 'second-state-link'))
+      if (hazard === 'symlink') {
+        const target = join(facetDir, 'linked-state')
+        renameSync(statePath(), target)
+        symlinkSync(target, statePath())
+      }
+      if (hazard === 'schema') writeFileSync(statePath(), '{}')
+      if (hazard === 'binding') {
+        writeFileSync(statePath(), JSON.stringify({ ...readySession(2), client_id: 'different-client' }))
+      }
+    })
+    if (hazard === 'mode') expectUnsafe(result, 'insecure-permissions')
+    else if (hazard === 'hardlink') expectUnsafe(result, 'multiple-links')
+    else {
+      if (result.ok) expect.unreachable('hostile replacement unexpectedly loaded')
+      expect(result.error.code).toBe(hazard === 'symlink' ? 'IO_ERROR' : 'INVALID_SESSION')
+    }
+  })
+
+  test('still rejects unsafe permissions on zero-link preliminary metadata', async () => {
+    const result = await readAfterReplacement(() => save(readySession(2), 1), 0o644)
+    expectUnsafe(result, 'insecure-permissions')
+  })
+})
+
 describe('protected absence and opened descriptors', () => {
   test('tombstone retains revision and no tokens; stale null CAS cannot overwrite it', async () => {
     await save(readySession(1), null)
