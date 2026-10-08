@@ -1,13 +1,26 @@
+import { Database } from 'bun:sqlite'
 import { createHash, randomUUID } from 'node:crypto'
-import { constants } from 'node:fs'
-import { type FileHandle, lstat, mkdir, open, rename, rm, rmdir } from 'node:fs/promises'
+import { closeSync, constants, fsyncSync, openSync } from 'node:fs'
+import { type FileHandle, lstat, mkdir, open, rename, rm, statfs } from 'node:fs/promises'
 import { join } from 'node:path'
 import { resolveFacetDir } from '../facet-dir.ts'
 
 const OAUTH_SESSION_VERSION = 1
 const DEFAULT_LOCK_TIMEOUT_MS = 5_000
 const DEFAULT_LOCK_POLL_MS = 20
-const LOCK_OWNER_FILE = 'owner.json'
+const SQLITE_SIDECAR_SUFFIXES = ['-journal', '-wal', '-shm']
+const LINUX_NETWORK_FILESYSTEM_TYPES = new Set([
+  0x5346414f, // AFS
+  0x6b414653, // AFS
+  0x00c36400, // Ceph
+  0x73757245, // CODA
+  0x0000564c, // NCP
+  0x00006969, // NFS
+  0x0000517b, // SMB
+  0xff534d42, // CIFS
+  0xfe534d42, // SMB2
+  0x01021997, // 9P
+])
 const lockBrand = Symbol('oauth-session-lock')
 const SESSION_KEYS = new Set([
   'version',
@@ -85,6 +98,12 @@ export type OAuthStoreError =
       reason: 'symlink' | 'wrong-kind' | 'wrong-owner' | 'insecure-permissions' | 'multiple-links'
     }
   | { code: 'IO_ERROR'; operation: string; path: string; cause: string }
+  | {
+      code: 'UNSUPPORTED_FILESYSTEM'
+      path: string
+      filesystem_type: string
+      guidance: 'Browser login requires a local filesystem for OAuth state.'
+    }
   | { code: 'LOCK_TIMEOUT'; path: string; timeout_ms: number }
   | { code: 'LOCK_LOST'; path: string }
   | { code: 'GENERATION_CONFLICT'; expected: number | null; actual: number | null }
@@ -97,6 +116,7 @@ export interface OAuthStoreOptions {
   ownerUid?: number
   lockTimeoutMs?: number
   lockPollMs?: number
+  statfs?: (path: string) => Promise<{ type: bigint }>
 }
 
 export interface OAuthSessionLock {
@@ -112,11 +132,13 @@ interface StoreContext {
   ownerUid: number
   lockTimeoutMs: number
   lockPollMs: number
+  statfs: (path: string) => Promise<{ type: bigint }>
 }
 
 interface HeldLock extends OAuthSessionLock {
-  readonly nonce: string
   readonly context: StoreContext
+  readonly database: Database
+  readonly deadline: number
 }
 
 const heldLocks = new WeakMap<OAuthSessionLock, HeldLock>()
@@ -134,6 +156,8 @@ export async function readOAuthSession(
 
   const root = await ensureOAuthRoot(context.value)
   if (!root.ok) return root
+  const filesystem = await requireLocalFilesystem(context.value)
+  if (!filesystem.ok) return filesystem
   return readSessionFile(binding, context.value)
 }
 
@@ -237,6 +261,8 @@ export async function withOAuthSessionLock<T>(
 
   const root = await ensureOAuthRoot(context.value)
   if (!root.ok) return root
+  const filesystem = await requireLocalFilesystem(context.value)
+  if (!filesystem.ok) return filesystem
   const acquired = await acquireLock(binding.registry_origin, context.value)
   if (!acquired.ok) return acquired
 
@@ -247,7 +273,7 @@ export async function withOAuthSessionLock<T>(
   } catch (error) {
     thrown = error
   }
-  const released = await releaseLock(acquired.value)
+  const released = await releaseLock(acquired.value, thrown === undefined)
   if (!released.ok) return released
   if (thrown !== undefined) throw thrown
   if (result === undefined) throw new Error('OAuth lock operation returned no result')
@@ -271,11 +297,12 @@ function prepareContext(binding: OAuthSessionBinding, options: OAuthStoreOptions
     value: {
       root,
       statePath: join(root, `${key}.json`),
-      lockPath: join(root, `${key}.lock`),
+      lockPath: join(root, `${key}.lock.sqlite`),
       platform,
       ownerUid,
       lockTimeoutMs: options.lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS,
       lockPollMs: options.lockPollMs ?? DEFAULT_LOCK_POLL_MS,
+      statfs: options.statfs ?? ((path) => statfs(path, { bigint: true })),
     },
   }
 }
@@ -380,56 +407,112 @@ async function atomicWriteSession(session: OAuthSession, context: StoreContext):
   }
 }
 
-async function acquireLock(registryOrigin: string, context: StoreContext): Promise<OAuthStoreResult<HeldLock>> {
-  const started = Date.now()
-  while (true) {
-    try {
-      await mkdir(context.lockPath, { mode: 0o700 })
-      const safe = await inspectPath(context.lockPath, 'directory', context.ownerUid, 0o700)
-      if (!safe.ok) return safe
-      const nonce = randomUUID()
-      const ownerPath = join(context.lockPath, LOCK_OWNER_FILE)
-      const owner = await writeExclusiveFile(ownerPath, `${JSON.stringify({ nonce })}\n`, context.ownerUid)
-      if (!owner.ok) return owner
-      const lock: HeldLock = {
-        registry_origin: registryOrigin,
-        nonce,
-        context,
-        [lockBrand]: true,
-      }
-      heldLocks.set(lock, lock)
-      return { ok: true, value: lock }
-    } catch (error) {
-      if (!hasCode(error, 'EEXIST')) return ioFailure('acquire lock', context.lockPath, error)
-      const safe = await inspectPath(context.lockPath, 'directory', context.ownerUid, 0o700, true)
-      if (!safe.ok) return safe
-      if (safe.value === null) continue
-      if (Date.now() - started >= context.lockTimeoutMs) {
-        return {
-          ok: false,
-          error: { code: 'LOCK_TIMEOUT', path: context.lockPath, timeout_ms: context.lockTimeoutMs },
-        }
-      }
-      await sleep(context.lockPollMs)
-    }
+async function requireLocalFilesystem(context: StoreContext): Promise<OAuthStoreResult<void>> {
+  let filesystem: { type: bigint }
+  try {
+    filesystem = await context.statfs(context.root)
+  } catch (error) {
+    return ioFailure('inspect filesystem', context.root, error)
+  }
+  if (context.platform !== 'linux') return { ok: true, value: undefined }
+
+  const normalized = Number(BigInt.asUintN(32, filesystem.type))
+  if (!LINUX_NETWORK_FILESYSTEM_TYPES.has(normalized)) return { ok: true, value: undefined }
+  return {
+    ok: false,
+    error: {
+      code: 'UNSUPPORTED_FILESYSTEM',
+      path: context.root,
+      filesystem_type: `0x${normalized.toString(16)}`,
+      guidance: 'Browser login requires a local filesystem for OAuth state.',
+    },
   }
 }
 
-async function writeExclusiveFile(path: string, contents: string, ownerUid: number): Promise<OAuthStoreResult<void>> {
-  let handle: FileHandle | undefined
+async function acquireLock(registryOrigin: string, context: StoreContext): Promise<OAuthStoreResult<HeldLock>> {
+  const created = createCoordinationDatabase(context)
+  if (!created.ok) return created
+  const safe = await inspectCoordinationPaths(context)
+  if (!safe.ok) return safe
+
+  let database: Database | undefined
   try {
-    handle = await open(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | noFollowFlag(), 0o600)
-    await handle.writeFile(contents, 'utf8')
-    await handle.sync()
-    await handle.close()
-    handle = undefined
-    const safe = await inspectPath(path, 'file', ownerUid, 0o600)
-    return safe.ok ? { ok: true, value: undefined } : safe
+    database = new Database(context.lockPath, { create: false, readwrite: true, strict: true })
+    database.exec('PRAGMA busy_timeout = 0')
+    const mode = database.query<{ journal_mode: string }, []>('PRAGMA journal_mode').get()
+    if (mode?.journal_mode.toLowerCase() !== 'delete') {
+      database.close(true)
+      return sqliteFailure('validate journal mode', context.lockPath, 'SQLITE_UNSAFE_JOURNAL_MODE')
+    }
   } catch (error) {
-    return ioFailure('create lock owner', path, error)
-  } finally {
-    await handle?.close().catch(() => {})
+    try {
+      database?.close(true)
+    } catch {}
+    return sqliteFailure('open lock', context.lockPath, sqliteErrorCode(error))
   }
+
+  const deadline = Date.now() + context.lockTimeoutMs
+  const begun = await executeWithBusyRetry(database, 'BEGIN IMMEDIATE', deadline, context)
+  if (!begun.ok) {
+    try {
+      database.close(true)
+    } catch (error) {
+      return sqliteFailure('close lock', context.lockPath, sqliteErrorCode(error))
+    }
+    return begun
+  }
+
+  const lock: HeldLock = {
+    registry_origin: registryOrigin,
+    context,
+    database,
+    deadline,
+    [lockBrand]: true,
+  }
+  heldLocks.set(lock, lock)
+  return { ok: true, value: lock }
+}
+
+function createCoordinationDatabase(context: StoreContext): OAuthStoreResult<void> {
+  let descriptor: number | undefined
+  let directoryDescriptor: number | undefined
+  try {
+    descriptor = openSync(
+      context.lockPath,
+      constants.O_RDWR | constants.O_CREAT | constants.O_EXCL | noFollowFlag(),
+      0o600,
+    )
+    fsyncSync(descriptor)
+    closeSync(descriptor)
+    descriptor = undefined
+    directoryDescriptor = openSync(context.root, constants.O_RDONLY)
+    fsyncSync(directoryDescriptor)
+    closeSync(directoryDescriptor)
+    directoryDescriptor = undefined
+    return { ok: true, value: undefined }
+  } catch (error) {
+    if (descriptor !== undefined) {
+      try {
+        closeSync(descriptor)
+      } catch {}
+    }
+    if (directoryDescriptor !== undefined) {
+      try {
+        closeSync(directoryDescriptor)
+      } catch {}
+    }
+    return hasCode(error, 'EEXIST') ? { ok: true, value: undefined } : ioFailure('create lock', context.lockPath, error)
+  }
+}
+
+async function inspectCoordinationPaths(context: StoreContext): Promise<OAuthStoreResult<void>> {
+  const database = await inspectPath(context.lockPath, 'file', context.ownerUid, 0o600)
+  if (!database.ok) return database
+  for (const suffix of SQLITE_SIDECAR_SUFFIXES) {
+    const sidecar = await inspectPath(`${context.lockPath}${suffix}`, 'file', context.ownerUid, 0o600, true)
+    if (!sidecar.ok) return sidecar
+  }
+  return { ok: true, value: undefined }
 }
 
 function inspectHeldLock(lock: OAuthSessionLock): OAuthStoreResult<HeldLock> {
@@ -438,43 +521,57 @@ function inspectHeldLock(lock: OAuthSessionLock): OAuthStoreResult<HeldLock> {
 }
 
 async function verifyLockOwner(lock: HeldLock): Promise<OAuthStoreResult<void>> {
-  const ownerPath = join(lock.context.lockPath, LOCK_OWNER_FILE)
-  const safe = await inspectPath(ownerPath, 'file', lock.context.ownerUid, 0o600)
-  if (!safe.ok) return safe
-  if (!safe.value) return { ok: false, error: { code: 'LOCK_LOST', path: lock.context.lockPath } }
-  let handle: FileHandle | undefined
-  try {
-    handle = await open(ownerPath, constants.O_RDONLY | noFollowFlag())
-    const opened = await handle.stat()
-    if (opened.dev !== safe.value.dev || opened.ino !== safe.value.ino) {
-      return { ok: false, error: { code: 'LOCK_LOST', path: lock.context.lockPath } }
-    }
-    const parsed: unknown = JSON.parse(await handle.readFile('utf8'))
-    if (!isRecord(parsed) || parsed.nonce !== lock.nonce) {
-      return { ok: false, error: { code: 'LOCK_LOST', path: lock.context.lockPath } }
-    }
-    return { ok: true, value: undefined }
-  } catch (error) {
-    return hasCode(error, 'ENOENT')
-      ? { ok: false, error: { code: 'LOCK_LOST', path: lock.context.lockPath } }
-      : ioFailure('verify lock owner', ownerPath, error)
-  } finally {
-    await handle?.close().catch(() => {})
-  }
+  return heldLocks.get(lock) === lock
+    ? { ok: true, value: undefined }
+    : { ok: false, error: { code: 'LOCK_LOST', path: lock.context.lockPath } }
 }
 
-async function releaseLock(lock: HeldLock): Promise<OAuthStoreResult<void>> {
+async function releaseLock(lock: HeldLock, commit: boolean): Promise<OAuthStoreResult<void>> {
   if (!heldLocks.delete(lock)) return { ok: false, error: { code: 'LOCK_LOST', path: lock.context.lockPath } }
-  const owned = await verifyLockOwner(lock)
-  if (!owned.ok) return owned
-  const ownerPath = join(lock.context.lockPath, LOCK_OWNER_FILE)
+  let result: OAuthStoreResult<void>
   try {
-    await rm(ownerPath)
-    await rmdir(lock.context.lockPath)
-    await syncDirectory(lock.context.root)
-    return { ok: true, value: undefined }
+    if (commit) {
+      result = await executeWithBusyRetry(lock.database, 'COMMIT', lock.deadline, lock.context)
+    } else {
+      lock.database.exec('ROLLBACK')
+      result = { ok: true, value: undefined }
+    }
   } catch (error) {
-    return ioFailure('release lock', lock.context.lockPath, error)
+    result = sqliteFailure('release lock', lock.context.lockPath, sqliteErrorCode(error))
+  }
+  try {
+    lock.database.close(true)
+  } catch (error) {
+    return sqliteFailure('close lock', lock.context.lockPath, sqliteErrorCode(error))
+  }
+  return result
+}
+
+async function executeWithBusyRetry(
+  database: Database,
+  sql: 'BEGIN IMMEDIATE' | 'COMMIT',
+  deadline: number,
+  context: StoreContext,
+): Promise<OAuthStoreResult<void>> {
+  while (true) {
+    try {
+      database.exec(sql)
+      return { ok: true, value: undefined }
+    } catch (error) {
+      if (!isSqliteBusy(error))
+        return sqliteFailure(
+          sql === 'COMMIT' ? 'commit lock' : 'acquire lock',
+          context.lockPath,
+          sqliteErrorCode(error),
+        )
+      if (Date.now() >= deadline) {
+        return {
+          ok: false,
+          error: { code: 'LOCK_TIMEOUT', path: context.lockPath, timeout_ms: context.lockTimeoutMs },
+        }
+      }
+      await sleep(Math.min(context.lockPollMs, Math.max(1, deadline - Date.now())))
+    }
   }
 }
 
@@ -666,6 +763,21 @@ function noFollowFlag(): number {
 
 function hasCode(error: unknown, code: string): boolean {
   return isRecord(error) && error.code === code
+}
+
+function isSqliteBusy(error: unknown): boolean {
+  return isRecord(error) && (error.code === 'SQLITE_BUSY' || error.errno === 5)
+}
+
+function sqliteErrorCode(error: unknown): string {
+  if (!isRecord(error)) return 'SQLITE_ERROR'
+  if (typeof error.code === 'string' && error.code.startsWith('SQLITE_')) return error.code
+  if (typeof error.errno === 'number') return `SQLITE_ERRNO_${error.errno}`
+  return 'SQLITE_ERROR'
+}
+
+function sqliteFailure<T>(operation: string, path: string, cause: string): OAuthStoreResult<T> {
+  return { ok: false, error: { code: 'IO_ERROR', operation, path, cause } }
 }
 
 function ioFailure<T>(operation: string, path: string, error: unknown): OAuthStoreResult<T> {

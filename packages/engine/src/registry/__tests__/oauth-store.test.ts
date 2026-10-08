@@ -1,8 +1,10 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { Database } from 'bun:sqlite'
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import {
   chmodSync,
   existsSync,
+  linkSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -70,11 +72,16 @@ describe('platform support', () => {
 
   test('returns the fixed unsupported result before resolving any filesystem path', async () => {
     let resolutions = 0
+    let filesystemChecks = 0
     const unsupported: OAuthStoreOptions = {
       platform: 'win32',
       resolveFacetDir: () => {
         resolutions += 1
         return join(facetDir, 'must-not-be-used')
+      },
+      statfs: async () => {
+        filesystemChecks += 1
+        return { type: 0n }
       },
     }
 
@@ -95,6 +102,42 @@ describe('platform support', () => {
       },
       options,
     )
+    unwrap(result)
+    expect(filesystemChecks).toBe(0)
+  })
+
+  test('rejects known Linux network filesystems and classifies statfs failure', async () => {
+    const network = await withOAuthSessionLock(binding, async () => ok(undefined), {
+      ...options,
+      platform: 'linux',
+      statfs: async () => ({ type: 0x6969n }),
+    })
+    if (network.ok) expect.unreachable('NFS unexpectedly accepted')
+    expect(network.error).toEqual({
+      code: 'UNSUPPORTED_FILESYSTEM',
+      path: join(facetDir, 'oauth'),
+      filesystem_type: '0x6969',
+      guidance: 'Browser login requires a local filesystem for OAuth state.',
+    })
+
+    const failed = await readOAuthSession(binding, {
+      ...options,
+      statfs: async () => {
+        throw new Error('statfs unavailable')
+      },
+    })
+    if (failed.ok) expect.unreachable('statfs failure unexpectedly accepted')
+    expect(failed.error.code).toBe('IO_ERROR')
+    if (failed.error.code !== 'IO_ERROR') expect.unreachable('unexpected statfs failure')
+    expect(failed.error.operation).toBe('inspect filesystem')
+  })
+
+  test('does not claim unknown macOS filesystem types are proven local', async () => {
+    const result = await withOAuthSessionLock(binding, async () => ok(undefined), {
+      ...options,
+      platform: 'darwin',
+      statfs: async () => ({ type: 0xdeadbeefn }),
+    })
     unwrap(result)
   })
 })
@@ -268,32 +311,158 @@ describe('cross-process lock', () => {
     unwrap(await withOAuthSessionLock(binding, async () => ok(undefined), options))
   })
 
-  test('does not release a lock whose owner nonce was replaced', async () => {
-    const lockPath = join(
-      facetDir,
-      'oauth',
-      `${createHash('sha256').update(binding.registry_origin).digest('hex')}.lock`,
-    )
-    const result = await withOAuthSessionLock(
-      binding,
-      async () => {
-        writeFileSync(join(lockPath, 'owner.json'), '{"nonce":"replacement"}\n', { mode: 0o600 })
-        return ok(undefined)
-      },
-      options,
-    )
-    expect(result.ok).toBe(false)
-    if (result.ok) expect.unreachable('replaced lock nonce unexpectedly released')
-    expect(result.error.code).toBe('LOCK_LOST')
-    expect(existsSync(lockPath)).toBe(true)
+  test('keeps a safe owner-only coordination database in DELETE journal mode', async () => {
+    unwrap(await withOAuthSessionLock(binding, async () => ok(undefined), options))
+    const path = lockPath()
+    const stat = lstatSync(path)
+    expect(stat.isFile()).toBe(true)
+    expect(stat.mode & 0o777).toBe(0o600)
+    expect(stat.nlink).toBe(1)
+
+    const database = new Database(path, { create: false, readwrite: true, strict: true })
+    try {
+      expect(database.query<{ journal_mode: string }, []>('PRAGMA journal_mode').get()).toEqual({
+        journal_mode: 'delete',
+      })
+    } finally {
+      database.close(true)
+    }
+  })
+
+  test('rejects unsafe coordination database types, permissions, and links', async () => {
+    mkdirSync(join(facetDir, 'oauth'), { mode: 0o700 })
+    const path = lockPath()
+    const outside = join(facetDir, 'outside.sqlite')
+    writeFileSync(outside, '', { mode: 0o600 })
+    symlinkSync(outside, path)
+    expectUnsafe(await withOAuthSessionLock(binding, async () => ok(undefined), options), 'symlink')
+
+    rmSync(path)
+    mkdirSync(path)
+    expectUnsafe(await withOAuthSessionLock(binding, async () => ok(undefined), options), 'wrong-kind')
+
+    rmSync(path, { recursive: true })
+    writeFileSync(path, '', { mode: 0o644 })
+    expectUnsafe(await withOAuthSessionLock(binding, async () => ok(undefined), options), 'insecure-permissions')
+
+    chmodSync(path, 0o600)
+    linkSync(path, `${path}.alias`)
+    expectUnsafe(await withOAuthSessionLock(binding, async () => ok(undefined), options), 'multiple-links')
+  })
+
+  test('rejects unsafe SQLite sidecars without deleting them', async () => {
+    unwrap(await withOAuthSessionLock(binding, async () => ok(undefined), options))
+    for (const suffix of ['-journal', '-wal', '-shm']) {
+      const sidecar = `${lockPath()}${suffix}`
+      mkdirSync(sidecar)
+      expectUnsafe(await withOAuthSessionLock(binding, async () => ok(undefined), options), 'wrong-kind')
+      expect(existsSync(sidecar)).toBe(true)
+      rmSync(sidecar, { recursive: true })
+
+      writeFileSync(sidecar, '', { mode: 0o644 })
+      expectUnsafe(await withOAuthSessionLock(binding, async () => ok(undefined), options), 'insecure-permissions')
+      expect(existsSync(sidecar)).toBe(true)
+      rmSync(sidecar)
+    }
+
+    const sidecar = `${lockPath()}-journal`
+    const outside = join(facetDir, 'outside-sidecar')
+    writeFileSync(outside, '', { mode: 0o600 })
+    symlinkSync(outside, sidecar)
+    expectUnsafe(await withOAuthSessionLock(binding, async () => ok(undefined), options), 'symlink')
+    expect(existsSync(sidecar)).toBe(true)
+    rmSync(sidecar)
+
+    writeFileSync(sidecar, '', { mode: 0o600 })
+    linkSync(sidecar, `${sidecar}.alias`)
+    expectUnsafe(await withOAuthSessionLock(binding, async () => ok(undefined), options), 'multiple-links')
+    expect(existsSync(sidecar)).toBe(true)
+  })
+
+  test('retries a busy commit without rerunning the callback', async () => {
+    const originalExec = Database.prototype.exec
+    let commits = 0
+    let callbacks = 0
+    const exec = spyOn(Database.prototype, 'exec').mockImplementation(function (this: Database, sql) {
+      if (sql === 'COMMIT' && commits++ === 0) throw new BusySqliteError()
+      return originalExec.call(this, sql)
+    })
+    try {
+      const result = await withOAuthSessionLock(
+        binding,
+        async () => {
+          callbacks += 1
+          return ok('done')
+        },
+        { ...options, lockPollMs: 1 },
+      )
+      expect(unwrap(result)).toBe('done')
+      expect(callbacks).toBe(1)
+      expect(commits).toBe(2)
+    } finally {
+      exec.mockRestore()
+    }
   })
 
   test('permits exactly one holder across N=2 real processes', async () => {
     await runLockRace(2)
   })
 
-  test('permits exactly one holder across 10N=20 real processes', async () => {
+  test('serializes 10N=20 real processes through concurrent first creation', async () => {
     await runLockRace(20)
+    expect(lstatSync(lockPath()).mode & 0o777).toBe(0o600)
+  })
+
+  test('recovers after SIGKILL releases the operating-system lock', async () => {
+    const holder = spawnLockHolder(false)
+    await expectHolderReady(holder)
+    holder.kill(9)
+    expect(await holder.exited).not.toBe(0)
+    unwrap(await withOAuthSessionLock(binding, async () => ok(undefined), options))
+  })
+
+  test('preserves uncertain refresh metadata when a holder is SIGKILLed', async () => {
+    await save(readySession(1), null)
+    const holder = spawnLockHolder(true)
+    await expectHolderReady(holder)
+    holder.kill(9)
+    expect(await holder.exited).not.toBe(0)
+
+    const resumed = unwrap(await withOAuthSessionLock(binding, async () => readOAuthSession(binding, options), options))
+    if (resumed?.status !== 'uncertain') expect.unreachable('uncertain state was not recovered')
+    expect(resumed.refresh_started_at).toBe(1_800_000_000_000)
+    expect(resumed.refresh_attempts).toBe(1)
+  })
+
+  test('runs the SQLite-backed store from a compiled Bun executable', async () => {
+    const script = join(facetDir, 'compiled-smoke.ts')
+    const executable = join(facetDir, 'compiled-smoke')
+    writeFileSync(
+      script,
+      `
+        import { withOAuthSessionLock } from ${JSON.stringify(modulePath())}
+        const binding = JSON.parse(process.env.OAUTH_BINDING ?? '')
+        const result = await withOAuthSessionLock(binding, async () => ({ ok: true, value: 'compiled-ok' }))
+        if (!result.ok) throw new Error(result.error.code)
+        process.stdout.write(result.value)
+      `,
+    )
+    const built = Bun.spawn([process.execPath, 'build', '--compile', script, '--outfile', executable], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    const buildOutput = await collect(built)
+    if (buildOutput.exitCode !== 0) throw new Error(`compiled smoke build failed: ${buildOutput.stderr}`)
+
+    const smoke = Bun.spawn([executable], {
+      env: { ...process.env, FACET_DIR: facetDir, OAUTH_BINDING: JSON.stringify(binding) },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    const smokeOutput = await collect(smoke)
+    expect(smokeOutput.exitCode).toBe(0)
+    expect(smokeOutput.stderr).toBe('')
+    expect(smokeOutput.stdout).toBe('compiled-ok')
   })
 })
 
@@ -335,6 +504,15 @@ function statePath(): string {
   return join(facetDir, 'oauth', `${hash}.json`)
 }
 
+function lockPath(): string {
+  const hash = createHash('sha256').update(binding.registry_origin).digest('hex')
+  return join(facetDir, 'oauth', `${hash}.lock.sqlite`)
+}
+
+function modulePath(): string {
+  return join(dirname(fileURLToPath(import.meta.url)), '..', 'oauth-store.ts')
+}
+
 function ok<T>(value: T): OAuthStoreResult<T> {
   return { ok: true, value }
 }
@@ -366,7 +544,6 @@ function expectUnsafe(
 }
 
 async function runLockRace(count: number): Promise<void> {
-  const modulePath = join(dirname(fileURLToPath(import.meta.url)), '..', 'oauth-store.ts')
   const sentinel = join(facetDir, 'exclusive-holder')
   const script = `
     const store = await import(process.env.OAUTH_STORE_MODULE)
@@ -391,7 +568,7 @@ async function runLockRace(count: number): Promise<void> {
       env: {
         ...process.env,
         FACET_DIR: facetDir,
-        OAUTH_STORE_MODULE: pathToFileURL(modulePath).href,
+        OAUTH_STORE_MODULE: pathToFileURL(modulePath()).href,
         OAUTH_BINDING: JSON.stringify(binding),
         OAUTH_SENTINEL: sentinel,
       },
@@ -413,4 +590,74 @@ async function runLockRace(count: number): Promise<void> {
     expect(outcome.exitCode).toBe(0)
     expect(outcome.stdout).toBe('ok')
   }
+}
+
+interface PipedSubprocess {
+  stdout: ReadableStream<Uint8Array>
+  stderr: ReadableStream<Uint8Array>
+  exited: Promise<number>
+  kill(signal?: number | NodeJS.Signals): void
+}
+
+function spawnLockHolder(saveUncertain: boolean): PipedSubprocess {
+  const script = `
+    const store = await import(process.env.OAUTH_STORE_MODULE)
+    const binding = JSON.parse(process.env.OAUTH_BINDING)
+    const result = await store.withOAuthSessionLock(binding, async (lock) => {
+      if (process.env.OAUTH_SAVE_UNCERTAIN === '1') {
+        const current = await store.readOAuthSession(binding)
+        if (!current.ok || current.value?.generation !== 1) throw new Error('missing ready state')
+        const saved = await store.saveOAuthSession({
+          ...current.value,
+          generation: 2,
+          status: 'uncertain',
+          refresh_started_at: 1800000000000,
+          refresh_attempts: 1,
+        }, 1, lock)
+        if (!saved.ok) throw new Error(saved.error.code)
+      }
+      process.stdout.write('held\\n')
+      setInterval(() => {}, 1000)
+      await new Promise(() => {})
+      return { ok: true, value: 1 }
+    })
+    if (!result.ok) throw new Error(result.error.code)
+  `
+  return Bun.spawn([process.execPath, '--eval', script], {
+    env: {
+      ...process.env,
+      FACET_DIR: facetDir,
+      OAUTH_STORE_MODULE: pathToFileURL(modulePath()).href,
+      OAUTH_BINDING: JSON.stringify(binding),
+      OAUTH_SAVE_UNCERTAIN: saveUncertain ? '1' : '0',
+    },
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+}
+
+async function expectHolderReady(holder: PipedSubprocess): Promise<void> {
+  const reader = holder.stdout.getReader()
+  const chunk = await reader.read()
+  reader.releaseLock()
+  expect(chunk.done).toBe(false)
+  expect(new TextDecoder().decode(chunk.value)).toBe('held\n')
+}
+
+async function collect(process: PipedSubprocess): Promise<{
+  exitCode: number
+  stdout: string
+  stderr: string
+}> {
+  const [exitCode, stdout, stderr] = await Promise.all([
+    process.exited,
+    new Response(process.stdout).text(),
+    new Response(process.stderr).text(),
+  ])
+  return { exitCode, stdout, stderr }
+}
+
+class BusySqliteError extends Error {
+  readonly code = 'SQLITE_BUSY'
+  readonly errno = 5
 }
