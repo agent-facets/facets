@@ -4,6 +4,9 @@ steps:
         - v1-mint-{{ checksum "bun.lock" }}
         - v1-mint-
   - run:
+      name: Install locked native prebuilds for all targets
+      command: bun install --frozen-lockfile --os '*' --cpu '*' --ignore-scripts
+  - run:
       name: Check
       # Runs on a `medium` resource class (4 GB, 2 vCPU). Even on `medium`,
       # parallel DTS builds (arktype inlined via tsdown's `deps.alwaysBundle`,
