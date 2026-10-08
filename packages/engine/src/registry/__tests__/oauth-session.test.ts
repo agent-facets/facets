@@ -1,11 +1,22 @@
 import { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { createHash, randomUUID } from 'node:crypto'
-import { chmodSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import * as fs from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import * as fsPromises from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { resolveCredential, writeCredentialsToken } from '../credentials.ts'
+import * as oauthPermissions from '../oauth-permissions.ts'
 import {
   beginCliLogin,
   completeCliLogin,
@@ -172,6 +183,28 @@ async function seed(session: OAuthSession = ready()): Promise<void> {
   expect(result.ok).toBe(true)
 }
 
+async function seedPending(expiresAt: number): Promise<void> {
+  const old = ready({ expires_at: NOW - 1 })
+  await seed(old)
+  const result = await withOAuthSessionLock(binding(), async (lock) => {
+    const fenced: OAuthSession = {
+      ...old,
+      status: 'uncertain',
+      generation: 2,
+      refresh_started_at: NOW,
+      refresh_attempts: 1,
+    }
+    const savedFence = await saveOAuthSession(fenced, 1, lock)
+    if (!savedFence.ok) return savedFence
+    const pending: OAuthSession = {
+      ...ready({ expires_at: expiresAt, refresh_token: ROTATED, generation: 3 }),
+      status: 'verification-pending',
+    }
+    return saveOAuthSession(pending, 2, lock)
+  })
+  expect(result.ok).toBe(true)
+}
+
 async function stored(): Promise<OAuthSession | null> {
   const result = await readOAuthSession(binding())
   if (!result.ok) expect.unreachable()
@@ -272,7 +305,7 @@ describe('registry credential precedence and absence', () => {
     expect(calls).toBe(0)
   })
 
-  test('unsupported platform preserves anonymous resolution and rejects native OAuth actions before I/O', async () => {
+  test('unsupported platform preserves anonymous resolution and empty logout while rejecting browser login', async () => {
     let calls = 0
     const unsupported = options(
       makeFetch(() => {
@@ -285,9 +318,7 @@ describe('registry credential precedence and absence', () => {
     const begin = await beginCliLogin(unsupported)
     if (begin.ok) expect.unreachable()
     expect(begin.error.code).toBe('UNSUPPORTED_PLATFORM')
-    const logout = await logoutCliSession(unsupported)
-    if (logout.ok) expect.unreachable()
-    expect(logout.error.code).toBe('UNSUPPORTED_PLATFORM')
+    expect(await logoutCliSession(unsupported)).toEqual({ ok: true, value: { source: 'absent' } })
     expect(calls).toBe(0)
     expect(await Bun.file(join(facetDir, 'oauth')).exists()).toBe(false)
   })
@@ -1586,6 +1617,131 @@ describe('durable cross-process lifecycle', () => {
 
 describe('pending rotation trust and lifecycle', () => {
   test.each([
+    [30_000, 1],
+    [30_001, 0],
+  ])('pending expiry offset %i ms uses %i bounded refresh exchanges', async (offset, expectedExchanges) => {
+    await seedPending(NOW + offset)
+    let exchanges = 0
+    const fetcher = makeFetch((request) => {
+      if (request.url.endsWith('/v0/auth/cli/config')) return json(configResponse())
+      if (request.url === TOKEN_ENDPOINT) {
+        exchanges++
+        return json(tokenResponse())
+      }
+      return json(profile())
+    })
+    const result = await resolveRegistryCredential(options(fetcher))
+    if (!result.ok) expect.unreachable()
+    expect(result.value.source).toBe('oauth')
+    expect(exchanges).toBe(expectedExchanges)
+    expect((await stored())?.status).toBe('ready')
+  })
+
+  test('pending profile crossing exact expiry leaves the latest pair quarantined', async () => {
+    const expiry = NOW + 30_001
+    await seedPending(expiry)
+    let clock = NOW
+    let exchanges = 0
+    const fetcher = makeFetch((request) => {
+      if (request.url.endsWith('/v0/auth/cli/config')) return json(configResponse())
+      if (request.url === TOKEN_ENDPOINT) {
+        exchanges++
+        return json(tokenResponse())
+      }
+      clock = expiry
+      return json(profile())
+    })
+    const result = await resolveRegistryCredential(options(fetcher, { now: () => clock }))
+    expect(result).toEqual({ ok: false, error: { code: 'REFRESH_UNAVAILABLE', reason: 'transient' } })
+    expect(exchanges).toBe(0)
+    expect(await stored()).toMatchObject({ status: 'verification-pending', generation: 3, refresh_token: ROTATED })
+  })
+
+  test('expiry during an actual awaited READY save returns transient and retains a renewable pair', async () => {
+    const expiry = NOW + 30_001
+    await seedPending(expiry)
+    let clock = NOW
+    let readyWrites = 0
+    const sent: Array<string | null> = []
+    const originalSave = oauthStore.saveOAuthSession
+    const saveProbe = spyOn(oauthStore, 'saveOAuthSession').mockImplementation(async (...args) => {
+      const result = await originalSave(...args)
+      if (result.ok && args[0].status === 'ready' && readyWrites === 0) {
+        readyWrites++
+        expect(await stored()).toMatchObject({ status: 'ready', refresh_token: ROTATED })
+        clock = expiry
+      }
+      return result
+    })
+    const fetcher = makeFetch(async (request) => {
+      if (request.url.endsWith('/v0/auth/cli/config')) return json(configResponse())
+      if (request.url === TOKEN_ENDPOINT) {
+        sent.push(new URLSearchParams(await request.text()).get('refresh_token'))
+        return json(tokenResponse(accessToken(), 'next-refresh-secret'))
+      }
+      return json(profile())
+    })
+    const setup = options(fetcher, { now: () => clock })
+    try {
+      const first = await resolveRegistryCredential(setup)
+      expect(first).toEqual({ ok: false, error: { code: 'REFRESH_UNAVAILABLE', reason: 'transient' } })
+      expect(readyWrites).toBe(1)
+      expect(await stored()).toMatchObject({ status: 'ready', generation: 4, refresh_token: ROTATED })
+      const second = await resolveRegistryCredential(setup)
+      if (!second.ok) expect.unreachable()
+      expect(second.value.source).toBe('oauth')
+      expect(sent).toEqual([ROTATED])
+      expect(await stored()).toMatchObject({ status: 'ready', refresh_token: 'next-refresh-secret' })
+    } finally {
+      saveProbe.mockRestore()
+    }
+  })
+
+  test('ready existing profile crossing exact expiry cannot return an expired bearer', async () => {
+    const expiry = NOW + 30_001
+    await seed(ready({ expires_at: expiry }))
+    let clock = NOW
+    const fetcher = makeFetch((request) => {
+      if (request.url.endsWith('/v0/auth/cli/config')) return json(configResponse())
+      clock = expiry
+      return json(profile())
+    })
+    expect(await resolveRegistryCredential(options(fetcher, { now: () => clock }))).toEqual({
+      ok: false,
+      error: { code: 'REFRESH_UNAVAILABLE', reason: 'transient' },
+    })
+    expect(await stored()).toMatchObject({ status: 'ready', generation: 1, refresh_token: REFRESH })
+  })
+
+  test.each([
+    'mismatch',
+    'cancelled',
+    'outage',
+  ] as const)('pending %s failure takes precedence over elapsed expiry and retains its pair', async (outcome) => {
+    const expiry = NOW + 30_001
+    await seedPending(expiry)
+    const controller = new AbortController()
+    let clock = NOW
+    const fetcher = makeFetch((request) => {
+      if (request.url.endsWith('/v0/auth/cli/config')) return json(configResponse())
+      clock = expiry
+      if (outcome === 'cancelled') controller.abort()
+      if (outcome === 'outage') return json({ code: 'E_OUTAGE' }, 503)
+      return json(profile(outcome === 'mismatch' ? 'different-user' : 'registry-user-uuid'))
+    })
+    const result = await resolveRegistryCredential(options(fetcher, { now: () => clock, signal: controller.signal }))
+    if (result.ok) expect.unreachable()
+    expect(result.error.code).toBe(
+      outcome === 'mismatch'
+        ? 'IDENTITY_MISMATCH'
+        : outcome === 'cancelled'
+          ? 'CANCELLED'
+          : 'REGISTRY_VERIFICATION_FAILED',
+    )
+    expect(await stored()).toMatchObject({ status: 'verification-pending', generation: 3, refresh_token: ROTATED })
+  })
+
+  test.each([
     401,
     503,
     'mismatch',
@@ -2143,4 +2299,432 @@ describe('cancellation persistence and stale opened candidates', () => {
       }
     })
   }
+})
+
+describe('facade acquisition cancellation', () => {
+  test('aborts a genuine SQLite waiter promptly without callback, HTTP or late write', async () => {
+    await seed()
+    const before = readFileSync(statePath(), 'utf8')
+    const holder = new Database(statePath().replace(/\.json$/, '.lock.sqlite'), { create: false, readwrite: true })
+    holder.exec('BEGIN IMMEDIATE')
+    const controller = new AbortController()
+    const waiting = Promise.withResolvers<void>()
+    const originalExec = Database.prototype.exec
+    const exec = spyOn(Database.prototype, 'exec').mockImplementation(function (this: Database, sql, ...args) {
+      try {
+        return originalExec.call(this, sql, ...args)
+      } catch (error) {
+        if (sql === 'BEGIN IMMEDIATE') waiting.resolve()
+        throw error
+      }
+    })
+    let callbacks = 0
+    const originalLock = oauthStore.withOAuthSessionLock
+    async function observedLock<T>(
+      bound: OAuthSessionBinding,
+      operation: (lock: oauthStore.OAuthSessionLock) => Promise<oauthStore.OAuthStoreResult<T>>,
+      lockOptions?: oauthStore.OAuthStoreOptions,
+    ) {
+      return originalLock(
+        bound,
+        async (lock) => {
+          callbacks++
+          return operation(lock)
+        },
+        lockOptions,
+      )
+    }
+    const lockProbe = spyOn(oauthStore, 'withOAuthSessionLock').mockImplementation(observedLock)
+    let requests = 0
+    const fetcher = makeFetch((request) => {
+      requests++
+      return request.url.endsWith('/config') ? json(configResponse()) : json(profile())
+    })
+    let settled = false
+    const pending = resolveRegistryCredential(options(fetcher, { signal: controller.signal }))
+    const settlement = pending.then(() => {
+      settled = true
+    })
+    try {
+      await waiting.promise
+      expect(lockProbe.mock.calls[0]?.[2]?.lockTimeoutMs).toBe(35_000)
+      controller.abort()
+      await Bun.sleep(80)
+      expect(settled).toBe(true)
+      expect(await pending).toEqual({ ok: false, error: { code: 'CANCELLED' } })
+      expect(callbacks).toBe(0)
+      expect(requests).toBe(1)
+      expect(readFileSync(statePath(), 'utf8')).toBe(before)
+    } finally {
+      holder.exec('ROLLBACK')
+      holder.close()
+      exec.mockRestore()
+      lockProbe.mockRestore()
+      await settlement
+    }
+    expect(callbacks).toBe(0)
+    expect(readFileSync(statePath(), 'utf8')).toBe(before)
+    expect((await resolveRegistryCredential(options(fetcher))).ok).toBe(true)
+  })
+
+  test('an abort during actual pending-to-ready fsync waits for persistence and lock release', async () => {
+    await seedPending(NOW + 60_000)
+    const controller = new AbortController()
+    const syncing = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    const originalOpen = fsPromises.open
+    const restorers: Array<() => void> = []
+    const openProbe = spyOn(fsPromises, 'open').mockImplementation(async (...args) => {
+      const handle = await originalOpen(...args)
+      if (typeof args[0] === 'string' && args[0].startsWith(statePath()) && args[0].endsWith('.tmp')) {
+        const originalSync = handle.sync.bind(handle)
+        const sync = spyOn(handle, 'sync').mockImplementation(async () => {
+          syncing.resolve()
+          await release.promise
+          await originalSync()
+        })
+        restorers.push(() => sync.mockRestore())
+      }
+      return handle
+    })
+    const fetcher = makeFetch((request) => (request.url.endsWith('/config') ? json(configResponse()) : json(profile())))
+    let settled = false
+    const pending = resolveRegistryCredential(options(fetcher, { signal: controller.signal }))
+    const settlement = pending.then(() => {
+      settled = true
+    })
+    try {
+      await syncing.promise
+      controller.abort()
+      await Bun.sleep(20)
+      expect(settled).toBe(false)
+      expect(JSON.parse(readFileSync(statePath(), 'utf8')).status).toBe('verification-pending')
+      const contender = await withOAuthSessionLock(binding(), async () => ({ ok: true, value: undefined }), {
+        lockTimeoutMs: 15,
+      })
+      if (contender.ok) expect.unreachable('in-flight save released its lock')
+      expect(contender.error.code).toBe('LOCK_TIMEOUT')
+      release.resolve()
+      expect(await pending).toEqual({ ok: false, error: { code: 'CANCELLED' } })
+      expect(await stored()).toMatchObject({ status: 'ready', refresh_token: ROTATED, generation: 4 })
+      expect((await withOAuthSessionLock(binding(), async () => ({ ok: true, value: undefined }))).ok).toBe(true)
+    } finally {
+      release.resolve()
+      await settlement
+      openProbe.mockRestore()
+      for (const restore of restorers) restore()
+    }
+  })
+
+  test('maps only store CANCELLED and preserves the uncancelled timeout and other failure reasons', async () => {
+    await seed()
+    const fetcher = makeFetch(() => json(configResponse()))
+    const errors: oauthStore.OAuthStoreError[] = [
+      { code: 'CANCELLED' },
+      { code: 'LOCK_TIMEOUT', path: 'selected-lock', timeout_ms: 35_000 },
+      { code: 'IO_ERROR', operation: 'open lock', path: 'selected-lock', cause: 'SQLITE_ERROR' },
+    ]
+    for (const error of errors) {
+      const lockProbe = spyOn(oauthStore, 'withOAuthSessionLock').mockResolvedValue({ ok: false, error })
+      try {
+        expect(await resolveRegistryCredential(options(fetcher))).toEqual({
+          ok: false,
+          error: error.code === 'CANCELLED' ? { code: 'CANCELLED' } : { code: 'STATE_UNAVAILABLE', reason: error.code },
+        })
+        expect(lockProbe.mock.calls[0]?.[2]?.lockTimeoutMs).toBe(35_000)
+      } finally {
+        lockProbe.mockRestore()
+      }
+    }
+  })
+})
+
+async function metadataOnlyLogout(overrides: Partial<RegistrySessionOptions> = {}) {
+  const probes = [
+    spyOn(fs, 'readFileSync'),
+    spyOn(fs, 'writeFileSync'),
+    spyOn(fs, 'mkdirSync'),
+    spyOn(fs, 'rmSync'),
+    spyOn(fsPromises, 'open'),
+    spyOn(fsPromises, 'readFile'),
+    spyOn(fsPromises, 'mkdir'),
+    spyOn(fsPromises, 'rename'),
+    spyOn(fsPromises, 'rm'),
+    spyOn(oauthStore, 'withOAuthSessionLock'),
+    spyOn(oauthStore, 'readOAuthSessionForLocalCleanup'),
+    spyOn(oauthStore, 'saveOAuthSession'),
+    spyOn(oauthStore, 'deleteOAuthSession'),
+    spyOn(oauthPermissions, 'inspectDarwinDirectoryAcl'),
+  ]
+  let requests = 0
+  try {
+    const result = await logoutCliSession(
+      options(
+        makeFetch(() => {
+          requests++
+          throw new Error('unexpected network')
+        }),
+        {
+          platform: 'win32',
+          ...overrides,
+        },
+      ),
+    )
+    expect(requests).toBe(0)
+    for (const probe of probes) expect(probe).toHaveBeenCalledTimes(0)
+    return result
+  } finally {
+    for (const probe of probes) probe.mockRestore()
+  }
+}
+
+describe('unsupported-platform logout metadata (simulated win32 option)', () => {
+  test('missing FACET_DIR, missing nested parent, empty root and missing leaf are idempotently absent', async () => {
+    expect(await metadataOnlyLogout()).toEqual({ ok: true, value: { source: 'absent' } })
+    expect(existsSync(facetDir)).toBe(false)
+    process.env.FACET_DIR = join(facetDir, 'missing', 'nested')
+    expect(await metadataOnlyLogout()).toEqual({ ok: true, value: { source: 'absent' } })
+    expect(existsSync(facetDir)).toBe(false)
+    process.env.FACET_DIR = facetDir
+    mkdirSync(facetDir, { mode: 0o700 })
+    expect(await metadataOnlyLogout()).toEqual({ ok: true, value: { source: 'absent' } })
+    expect(readdirSync(facetDir)).toEqual([])
+    mkdirSync(join(facetDir, 'oauth'))
+    expect(await metadataOnlyLogout()).toEqual({ ok: true, value: { source: 'absent' } })
+    expect(readdirSync(join(facetDir, 'oauth'))).toEqual([])
+  })
+
+  test('saved PAT logout followed by empty logout succeeds and env precedence remains active', async () => {
+    writeCredentialsToken(CANARY)
+    const noNetwork = options(
+      makeFetch(() => {
+        throw new Error('unexpected network')
+      }),
+      { platform: 'win32' },
+    )
+    expect(await logoutCliSession(noNetwork)).toEqual({
+      ok: true,
+      value: { source: 'pat', removed: true, envActive: false },
+    })
+    expect(await metadataOnlyLogout()).toEqual({ ok: true, value: { source: 'absent' } })
+    process.env.FACET_TOKEN = CANARY
+    expect(await logoutCliSession({ ...noNetwork, registryUrl: 'invalid' })).toEqual({
+      ok: true,
+      value: { source: 'pat', removed: false, envActive: true },
+    })
+    delete process.env.FACET_TOKEN
+    writeFileSync(join(facetDir, 'credentials'), 'broken saved PAT')
+    expect(await logoutCliSession(noNetwork)).toEqual({
+      ok: true,
+      value: { source: 'pat', removed: true, envActive: false },
+    })
+    expect(await metadataOnlyLogout()).toEqual({ ok: true, value: { source: 'absent' } })
+  })
+
+  test.each([
+    'regular',
+    'unreadable',
+    'unknown-schema',
+    'tombstone',
+  ])('existing %s candidate remains unsupported without reading bytes', async (kind) => {
+    mkdirSync(join(facetDir, 'oauth'), { recursive: true, mode: 0o700 })
+    const bytes =
+      kind === 'tombstone'
+        ? JSON.stringify({ version: 2, status: 'absent' })
+        : kind === 'unknown-schema'
+          ? '{"version":999}'
+          : CANARY
+    writeFileSync(statePath(), bytes, { mode: 0o600 })
+    if (kind === 'unreadable') chmodSync(statePath(), 0o000)
+    try {
+      const result = await metadataOnlyLogout()
+      if (result.ok) expect.unreachable('existing candidate called absent')
+      expect(result.error.code).toBe('UNSUPPORTED_PLATFORM')
+    } finally {
+      chmodSync(statePath(), 0o600)
+    }
+    expect(readFileSync(statePath(), 'utf8')).toBe(bytes)
+    expect(readdirSync(join(facetDir, 'oauth'))).toEqual([basename(statePath())])
+  })
+
+  test.each([
+    'facet',
+    'oauth',
+    'leaf',
+  ])('rejects symlink %s without following it to establish absence', async (part) => {
+    mkdirSync(facetDir, { mode: 0o700 })
+    const outside = join(facetDir, 'outside')
+    mkdirSync(outside)
+    if (part === 'facet') {
+      const linked = join(facetDir, 'linked')
+      symlinkSync(outside, linked)
+      process.env.FACET_DIR = linked
+    } else if (part === 'oauth') symlinkSync(outside, join(facetDir, 'oauth'))
+    else {
+      mkdirSync(join(facetDir, 'oauth'))
+      symlinkSync(join(outside, 'missing'), statePath())
+    }
+    expect(await metadataOnlyLogout()).toEqual({
+      ok: false,
+      error: { code: 'STATE_UNAVAILABLE', reason: 'UNSAFE_STATE' },
+    })
+    expect(readdirSync(outside)).toEqual([])
+  })
+
+  test.each(['facet', 'oauth', 'leaf'])('rejects wrong-kind %s rather than claiming absence', async (part) => {
+    if (part === 'facet') writeFileSync(facetDir, '')
+    else {
+      mkdirSync(facetDir)
+      if (part === 'oauth') writeFileSync(join(facetDir, 'oauth'), '')
+      else {
+        mkdirSync(join(facetDir, 'oauth'))
+        mkdirSync(statePath())
+      }
+    }
+    expect(await metadataOnlyLogout()).toEqual({
+      ok: false,
+      error: { code: 'STATE_UNAVAILABLE', reason: 'UNSAFE_STATE' },
+    })
+  })
+
+  test.each(['EACCES', 'EIO'])('unknown lookup %s is typed unavailability', async (code) => {
+    const stat = spyOn(fsPromises, 'lstat').mockImplementation(async (): Promise<never> => {
+      throw Object.assign(new Error('private failure'), { code })
+    })
+    try {
+      expect(await metadataOnlyLogout()).toEqual({
+        ok: false,
+        error: { code: 'STATE_UNAVAILABLE', reason: 'IO_ERROR' },
+      })
+    } finally {
+      stat.mockRestore()
+    }
+  })
+
+  test('invalid origin and invalid filesystem path remain typed failures without config fetch', async () => {
+    expect(await metadataOnlyLogout({ registryUrl: 'not an origin' })).toEqual({
+      ok: false,
+      error: { code: 'INVALID_REGISTRY_ORIGIN' },
+    })
+    process.env.FACET_DIR = `${facetDir}\0invalid`
+    expect(await metadataOnlyLogout()).toEqual({ ok: false, error: { code: 'STATE_UNAVAILABLE', reason: 'IO_ERROR' } })
+  })
+
+  test('unrelated registry bytes stay untouched and selection remains frozen across metadata awaits', async () => {
+    mkdirSync(join(facetDir, 'oauth'), { recursive: true })
+    writeFileSync(statePath(OTHER_REGISTRY), CANARY)
+    const original = fsPromises.lstat
+    function changedSelection(path: fs.PathLike, opts?: fs.StatOptions & { bigint?: false }): Promise<fs.Stats>
+    function changedSelection(path: fs.PathLike, opts: fs.StatOptions & { bigint: true }): Promise<fs.BigIntStats>
+    function changedSelection(path: fs.PathLike, opts?: fs.StatOptions): Promise<fs.Stats | fs.BigIntStats>
+    async function changedSelection(path: fs.PathLike, opts?: fs.StatOptions): Promise<fs.Stats | fs.BigIntStats> {
+      const result = opts?.bigint
+        ? await original(path, { ...opts, bigint: true })
+        : await original(path, { ...opts, bigint: false })
+      process.env.FACET_DIR = join(facetDir, 'changed-selection')
+      return result
+    }
+    const stat = spyOn(fsPromises, 'lstat').mockImplementation(changedSelection)
+    try {
+      expect(await metadataOnlyLogout()).toEqual({ ok: true, value: { source: 'absent' } })
+    } finally {
+      stat.mockRestore()
+    }
+    expect(readFileSync(statePath(OTHER_REGISTRY), 'utf8')).toBe(CANARY)
+    expect(existsSync(join(facetDir, 'changed-selection'))).toBe(false)
+  })
+})
+
+describe('unsupported metadata ancestry replacement', () => {
+  test.each([
+    'symlink',
+    'directory',
+    'file',
+    'missing',
+  ])('rejects a checked selected directory replaced with %s before the next lookup', async (replacement) => {
+    mkdirSync(facetDir, { mode: 0o700 })
+    const parent = fs.realpathSync(facetDir)
+    chmodSync(parent, 0o777)
+    const selected = join(parent, 'selected')
+    const moved = join(parent, 'moved')
+    const outside = join(parent, 'outside')
+    mkdirSync(join(selected, 'oauth'), { recursive: true, mode: 0o700 })
+    if (replacement === 'file') writeFileSync(outside, '')
+    else mkdirSync(outside, { mode: 0o700 })
+    const leaf = basename(statePath())
+    writeFileSync(join(selected, 'oauth', leaf), CANARY, { mode: 0o600 })
+    process.env.FACET_DIR = selected
+    const original = fsPromises.lstat
+    let switched = false
+    function race(path: fs.PathLike, opts?: fs.StatOptions & { bigint?: false }): Promise<fs.Stats>
+    function race(path: fs.PathLike, opts: fs.StatOptions & { bigint: true }): Promise<fs.BigIntStats>
+    function race(path: fs.PathLike, opts?: fs.StatOptions): Promise<fs.Stats | fs.BigIntStats>
+    async function race(path: fs.PathLike, opts?: fs.StatOptions): Promise<fs.Stats | fs.BigIntStats> {
+      const result = opts?.bigint
+        ? await original(path, { ...opts, bigint: true })
+        : await original(path, { ...opts, bigint: false })
+      if (path === selected && !switched) {
+        switched = true
+        fs.renameSync(selected, moved)
+        if (replacement === 'symlink') symlinkSync(outside, selected)
+        else if (replacement !== 'missing') fs.renameSync(outside, selected)
+      }
+      return result
+    }
+    const probe = spyOn(fsPromises, 'lstat').mockImplementation(race)
+    try {
+      expect(await metadataOnlyLogout()).toEqual({
+        ok: false,
+        error: {
+          code: 'STATE_UNAVAILABLE',
+          reason: replacement === 'missing' ? 'IO_ERROR' : 'UNSAFE_STATE',
+        },
+      })
+      expect(switched).toBe(true)
+      expect(readFileSync(join(moved, 'oauth', leaf), 'utf8')).toBe(CANARY)
+    } finally {
+      probe.mockRestore()
+    }
+  })
+
+  test('revalidates checked ancestry after a real missing leaf before accepting absence', async () => {
+    mkdirSync(facetDir)
+    const parent = fs.realpathSync(facetDir)
+    const selected = join(parent, 'selected')
+    const moved = join(parent, 'moved')
+    const outside = join(parent, 'outside')
+    mkdirSync(join(selected, 'oauth'), { recursive: true })
+    mkdirSync(outside)
+    process.env.FACET_DIR = selected
+    const candidate = join(selected, 'oauth', basename(statePath()))
+    const original = fsPromises.lstat
+    let switched = false
+    function race(path: fs.PathLike, opts?: fs.StatOptions & { bigint?: false }): Promise<fs.Stats>
+    function race(path: fs.PathLike, opts: fs.StatOptions & { bigint: true }): Promise<fs.BigIntStats>
+    function race(path: fs.PathLike, opts?: fs.StatOptions): Promise<fs.Stats | fs.BigIntStats>
+    async function race(path: fs.PathLike, opts?: fs.StatOptions): Promise<fs.Stats | fs.BigIntStats> {
+      try {
+        return opts?.bigint
+          ? await original(path, { ...opts, bigint: true })
+          : await original(path, { ...opts, bigint: false })
+      } catch (error) {
+        if (path === candidate && !switched) {
+          switched = true
+          fs.renameSync(selected, moved)
+          symlinkSync(outside, selected)
+        }
+        throw error
+      }
+    }
+    const probe = spyOn(fsPromises, 'lstat').mockImplementation(race)
+    try {
+      expect(await metadataOnlyLogout()).toEqual({
+        ok: false,
+        error: { code: 'STATE_UNAVAILABLE', reason: 'UNSAFE_STATE' },
+      })
+      expect(switched).toBe(true)
+    } finally {
+      probe.mockRestore()
+    }
+  })
 })

@@ -1,9 +1,10 @@
 import { Database } from 'bun:sqlite'
 import { createHash, randomUUID } from 'node:crypto'
-import { closeSync, constants, fsyncSync, openSync, type Stats } from 'node:fs'
+import { closeSync, constants, fsyncSync, lstatSync, openSync, readlinkSync, type Stats } from 'node:fs'
 import { type FileHandle, lstat, mkdir, open, rename, rm, statfs } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { resolveFacetDir } from '../facet-dir.ts'
+import { inspectDarwinDirectoryAcl } from './oauth-permissions.ts'
 
 const OAUTH_SESSION_VERSION = 1
 const DEFAULT_LOCK_TIMEOUT_MS = 5_000
@@ -124,6 +125,7 @@ export type OAuthStoreError =
       filesystem_type: string
       guidance: 'Browser login requires a local filesystem for OAuth state.'
     }
+  | { code: 'CANCELLED' }
   | { code: 'LOCK_TIMEOUT'; path: string; timeout_ms: number }
   | { code: 'LOCK_LOST'; path: string }
   | { code: 'GENERATION_CONFLICT'; expected: number | null; actual: number | null }
@@ -131,6 +133,7 @@ export type OAuthStoreError =
 export type OAuthStoreResult<T> = { ok: true; value: T } | { ok: false; error: OAuthStoreError }
 
 export interface OAuthStoreOptions {
+  signal?: AbortSignal
   platform?: string
   resolveFacetDir?: () => string
   ownerUid?: number
@@ -146,6 +149,8 @@ export interface OAuthSessionLock {
 }
 
 interface StoreContext {
+  signal?: AbortSignal
+  authorityRoot: string
   root: string
   statePath: string
   lockPath: string
@@ -313,15 +318,22 @@ export async function withOAuthSessionLock<T>(
   operation: (lock: OAuthSessionLock) => Promise<OAuthStoreResult<T>>,
   options: OAuthStoreOptions = {},
 ): Promise<OAuthStoreResult<T>> {
+  if (options.signal?.aborted) return cancelled()
   const context = prepareContext(binding, options)
   if (!context.ok) return context
 
-  const root = await ensureOAuthRoot(context.value)
+  const root = await ensureOAuthRoot(context.value, options.signal)
+  if (options.signal?.aborted) return cancelled()
   if (!root.ok) return root
   const filesystem = await requireLocalFilesystem(context.value)
+  if (options.signal?.aborted) return cancelled()
   if (!filesystem.ok) return filesystem
   const acquired = await acquireLock(binding, context.value)
   if (!acquired.ok) return acquired
+  if (options.signal?.aborted) {
+    const released = await releaseLock(acquired.value, false)
+    return released.ok ? cancelled() : released
+  }
 
   let result: OAuthStoreResult<T> | undefined
   let thrown: unknown
@@ -363,12 +375,17 @@ function contextForValidatedOrigin(
 ): OAuthStoreResult<StoreContext> {
   const ownerUid = options.ownerUid ?? process.getuid?.()
   if (ownerUid === undefined) return unsupportedPlatform(platform)
-  const facetDir = (options.resolveFacetDir ?? resolveFacetDir)()
-  const root = join(facetDir, 'oauth')
+  const selected = resolve((options.resolveFacetDir ?? resolveFacetDir)())
+  const canonical = canonicalFacetDirectory(selected)
+  if (!canonical.ok) return canonical
+  // Preserve the selected filename spelling while checking the system alias's actual authority.
+  const root = join(selected, 'oauth')
   const key = createHash('sha256').update(registryOrigin).digest('hex')
   return {
     ok: true,
     value: {
+      signal: options.signal,
+      authorityRoot: join(canonical.value, 'oauth'),
       root,
       statePath: join(root, `${key}.json`),
       lockPath: join(root, `${key}.lock.sqlite`),
@@ -393,32 +410,107 @@ function unsupportedPlatform(platform: string): OAuthStoreResult<never> {
   }
 }
 
-async function ensureOAuthRoot(context: StoreContext): Promise<OAuthStoreResult<void>> {
-  const facetDir = context.root.slice(0, -'/oauth'.length)
-  const facet = await ensureDirectory(facetDir, context.ownerUid, false)
-  if (!facet.ok) return facet
-  return ensureDirectory(context.root, context.ownerUid, true)
+function canonicalFacetDirectory(path: string): OAuthStoreResult<string> {
+  if (process.platform !== 'darwin') return { ok: true, value: path }
+  for (const alias of ['/tmp', '/var']) {
+    if (path !== alias && !path.startsWith(`${alias}/`)) continue
+    try {
+      const metadata = lstatSync(alias)
+      if (!metadata.isSymbolicLink() || metadata.uid !== 0 || readlinkSync(alias) !== `private${alias}`) {
+        return { ok: false, error: { code: 'UNSAFE_STATE', path: alias, reason: 'symlink' } }
+      }
+      return { ok: true, value: `/private${path}` }
+    } catch (error) {
+      return ioFailure('inspect system alias', alias, error)
+    }
+  }
+  return { ok: true, value: path }
 }
 
-async function ensureDirectory(
-  path: string,
-  ownerUid: number,
-  requireOwnerOnly: boolean,
-): Promise<OAuthStoreResult<void>> {
-  try {
-    await mkdir(path, { recursive: false, mode: 0o700 })
-  } catch (error) {
-    if (!hasCode(error, 'EEXIST')) return ioFailure('create directory', path, error)
+async function ensureOAuthRoot(context: StoreContext, signal?: AbortSignal): Promise<OAuthStoreResult<void>> {
+  const paths = [context.authorityRoot]
+  while (paths[0] !== '/') paths.unshift(dirname(paths[0] ?? '/'))
+  const facetDir = dirname(context.authorityRoot)
+  // A checked parent excludes other-UID replacement before the next path-based descent.
+  for (const path of paths) {
+    if (signal?.aborted) return cancelled()
+    let handle: FileHandle | undefined
+    try {
+      try {
+        let metadata: Stats
+        try {
+          metadata = await context.lstat(path)
+        } catch (error) {
+          if (!hasCode(error, 'ENOENT')) return ioFailure('inspect directory', path, error)
+          if (signal?.aborted) return cancelled()
+          try {
+            await mkdir(path, { mode: 0o700 })
+          } catch (createError) {
+            if (!hasCode(createError, 'EEXIST')) return ioFailure('create directory', path, createError)
+          }
+          metadata = await context.lstat(path)
+        }
+        if (signal?.aborted) return cancelled()
+        const safe = inspectDirectoryAuthority(metadata, path, context, facetDir)
+        if (!safe.ok) return safe
+        if (constants.O_NOFOLLOW === undefined || constants.O_DIRECTORY === undefined) {
+          return sqliteFailure('inspect directory', path, 'Directory identity could not be verified.')
+        }
+        handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_DIRECTORY)
+        const opened = await handle.stat()
+        const descriptor = inspectDirectoryAuthority(opened, path, context, facetDir)
+        if (!descriptor.ok) return descriptor
+        if (opened.dev !== metadata.dev || opened.ino !== metadata.ino) {
+          return sqliteFailure('inspect directory', path, 'Directory identity changed during inspection.')
+        }
+        if (process.platform === 'darwin') {
+          const permissions = inspectDarwinDirectoryAcl(handle.fd)
+          if (!permissions.ok) {
+            return permissions.reason === 'unsafe-acl'
+              ? { ok: false, error: { code: 'UNSAFE_STATE', path, reason: 'insecure-permissions' } }
+              : sqliteFailure('inspect permissions', path, 'Directory permissions could not be verified.')
+          }
+        }
+        if (signal?.aborted) return cancelled()
+      } catch (error) {
+        return ioFailure('inspect directory', path, error)
+      } finally {
+        await handle?.close()
+      }
+    } catch (error) {
+      return ioFailure('close directory', path, error)
+    }
   }
-  const safe = await inspectPath(path, 'directory', ownerUid, requireOwnerOnly ? 0o700 : null)
-  return safe.ok ? { ok: true, value: undefined } : safe
+  return { ok: true, value: undefined }
+}
+
+function inspectDirectoryAuthority(
+  stat: Stats,
+  path: string,
+  context: StoreContext,
+  facetDir: string,
+): OAuthStoreResult<void> {
+  if (stat.isSymbolicLink()) return { ok: false, error: { code: 'UNSAFE_STATE', path, reason: 'symlink' } }
+  if (!stat.isDirectory()) return { ok: false, error: { code: 'UNSAFE_STATE', path, reason: 'wrong-kind' } }
+  const privateOwner = path === facetDir || path === context.authorityRoot
+  if (stat.uid !== context.ownerUid && (privateOwner || stat.uid !== 0)) {
+    return { ok: false, error: { code: 'UNSAFE_STATE', path, reason: 'wrong-owner' } }
+  }
+  if (
+    (path === context.authorityRoot && (stat.mode & 0o777) !== 0o700) ||
+    ((stat.mode & 0o022) !== 0 && (stat.mode & 0o1000) === 0)
+  ) {
+    return { ok: false, error: { code: 'UNSAFE_STATE', path, reason: 'insecure-permissions' } }
+  }
+  return { ok: true, value: undefined }
 }
 
 async function readSessionFile(
   binding: OAuthSessionBinding | string,
   context: StoreContext,
 ): Promise<OAuthStoreResult<StoredOAuthState | null>> {
-  const inspected = await inspectPath(context.statePath, 'file', context.ownerUid, 0o600, true, context.lstat)
+  // A path lookup may observe the replaced inode unlinked; the current opened descriptor is still verified below.
+  const inspected = await inspectPath(context.statePath, 'file', context.ownerUid, 0o600, true, context.lstat, true)
   if (!inspected.ok) return inspected
   if (!inspected.value) return { ok: true, value: null }
 
@@ -512,7 +604,9 @@ async function requireLocalFilesystem(context: StoreContext): Promise<OAuthStore
 
 async function acquireLock(binding: OAuthSessionBinding, context: StoreContext): Promise<OAuthStoreResult<HeldLock>> {
   const deadline = Date.now() + context.lockTimeoutMs
+  if (context.signal?.aborted) return cancelled()
   const created = createCoordinationDatabase(context)
+  if (context.signal?.aborted) return cancelled()
   if (!created.ok) return created
   const safe = await inspectCoordinationPaths(context)
   if (!safe.ok) return safe
@@ -520,7 +614,7 @@ async function acquireLock(binding: OAuthSessionBinding, context: StoreContext):
   const opened = await openCoordinationDatabase(context, deadline)
   if (!opened.ok) return opened
   const database = opened.value
-  const begun = await executeWithBusyRetry(database, 'BEGIN IMMEDIATE', deadline, context)
+  const begun = await executeWithBusyRetry(database, 'BEGIN IMMEDIATE', deadline, context, context.signal)
   if (!begun.ok) {
     try {
       database.close(true)
@@ -544,6 +638,7 @@ async function acquireLock(binding: OAuthSessionBinding, context: StoreContext):
 
 async function openCoordinationDatabase(context: StoreContext, deadline: number): Promise<OAuthStoreResult<Database>> {
   while (true) {
+    if (context.signal?.aborted) return cancelled()
     let database: Database | undefined
     try {
       database = new Database(context.lockPath, { create: false, readwrite: true, strict: true })
@@ -553,6 +648,10 @@ async function openCoordinationDatabase(context: StoreContext, deadline: number)
         database.close(true)
         return sqliteFailure('validate journal mode', context.lockPath, 'SQLITE_UNSAFE_JOURNAL_MODE')
       }
+      if (context.signal?.aborted) {
+        database.close(true)
+        return cancelled()
+      }
       return { ok: true, value: database }
     } catch (error) {
       try {
@@ -560,11 +659,13 @@ async function openCoordinationDatabase(context: StoreContext, deadline: number)
       } catch (closeError) {
         return sqliteFailure('close lock', context.lockPath, sqliteErrorCode(closeError))
       }
+      if (context.signal?.aborted) return cancelled()
       if (!isSqliteBusy(error)) return sqliteFailure('open lock', context.lockPath, sqliteErrorCode(error))
       if (Date.now() >= deadline) {
         return { ok: false, error: { code: 'LOCK_TIMEOUT', path: context.lockPath, timeout_ms: context.lockTimeoutMs } }
       }
-      await sleep(Math.min(context.lockPollMs, Math.max(1, deadline - Date.now())))
+      await sleep(Math.min(context.lockPollMs, Math.max(1, deadline - Date.now())), context.signal)
+      if (context.signal?.aborted) return cancelled()
       const safe = await inspectCoordinationPaths(context)
       if (!safe.ok) return safe
     }
@@ -657,12 +758,15 @@ async function executeWithBusyRetry(
   sql: 'BEGIN IMMEDIATE' | 'COMMIT',
   deadline: number,
   context: StoreContext,
+  signal?: AbortSignal,
 ): Promise<OAuthStoreResult<void>> {
   while (true) {
+    if (signal?.aborted) return cancelled()
     try {
       database.exec(sql)
       return { ok: true, value: undefined }
     } catch (error) {
+      if (signal?.aborted) return cancelled()
       if (!isSqliteBusy(error))
         return sqliteFailure(
           sql === 'COMMIT' ? 'commit lock' : 'acquire lock',
@@ -675,7 +779,7 @@ async function executeWithBusyRetry(
           error: { code: 'LOCK_TIMEOUT', path: context.lockPath, timeout_ms: context.lockTimeoutMs },
         }
       }
-      await sleep(Math.min(context.lockPollMs, Math.max(1, deadline - Date.now())))
+      await sleep(Math.min(context.lockPollMs, Math.max(1, deadline - Date.now())), signal)
     }
   }
 }
@@ -687,10 +791,11 @@ async function inspectPath(
   requiredMode: number | null,
   allowMissing = false,
   lstatPath: (path: string) => Promise<Stats> = lstat,
+  allowUnlinked = false,
 ): Promise<OAuthStoreResult<{ dev: number; ino: number } | null>> {
   try {
     const stat = await lstatPath(path)
-    return inspectStats(stat, path, kind, ownerUid, requiredMode)
+    return inspectStats(stat, path, kind, ownerUid, requiredMode, allowUnlinked)
   } catch (error) {
     if (allowMissing && hasCode(error, 'ENOENT')) return { ok: true, value: null }
     return ioFailure('inspect path', path, error)
@@ -964,6 +1069,19 @@ function ioFailure<T>(operation: string, path: string, error: unknown): OAuthSto
   }
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+function cancelled(): OAuthStoreResult<never> {
+  return { ok: false, error: { code: 'CANCELLED' } }
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const finish = () => {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', finish)
+      resolve()
+    }
+    const timer = setTimeout(finish, ms)
+    signal?.addEventListener('abort', finish, { once: true })
+    if (signal?.aborted) finish()
+  })
 }

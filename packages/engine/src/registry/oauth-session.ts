@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
-import { lstat } from 'node:fs/promises'
-import { join } from 'node:path'
+import type { Stats } from 'node:fs'
+import { lstat, readlink } from 'node:fs/promises'
+import { dirname, join, resolve } from 'node:path'
 import { resolveFacetDir } from '../facet-dir.ts'
 import { type CliAuthConfig, type CliConfigFailure, fetchCliAuthConfig, validateRegistryOrigin } from './cli-config.ts'
 import { createRegistryClient } from './client.ts'
@@ -239,13 +240,17 @@ export async function logoutCliSession(
         : failure({ code: 'UNEXPECTED_FAILURE' })
     }
     if (legacy.reason !== undefined) return failure({ code: 'PAT_UNREADABLE', path: legacy.reason.path })
-    if (!isOAuthStorePlatformSupported(options.platform)) return unsupportedPlatform()
     if (options.signal?.aborted) return failure({ code: 'CANCELLED' })
     const selected = selectedOrigin(options)
     if (!selected.ok) return selected
-    const exists = await stateCandidateExists(selected.value)
+    const supported = isOAuthStorePlatformSupported(options.platform)
+    const exists = supported
+      ? await stateCandidateExists(selected.value)
+      : await unsupportedStateCandidateExists(selected.value)
+    if (options.signal?.aborted) return failure({ code: 'CANCELLED' })
     if (!exists.ok) return exists
     if (!exists.value) return success({ source: 'absent' })
+    if (!supported) return unsupportedPlatform()
     const selectedCandidate = await readOAuthSessionForLocalCleanup(selected.value, { platform: options.platform })
     if (!selectedCandidate.ok) return storeFailure(selectedCandidate.error)
     if (selectedCandidate.value === null) return success({ source: 'absent' })
@@ -317,7 +322,7 @@ async function resolveHeld(
   if (session.status === 'reauth-required') return failure({ code: 'REAUTHENTICATION_REQUIRED' })
   const currentTime = now(options)
   if (!Number.isSafeInteger(currentTime) || currentTime < 0) return failure({ code: 'UNEXPECTED_FAILURE' })
-  if (session.status === 'verification-pending' && session.expires_at > currentTime) {
+  if (session.status === 'verification-pending' && session.expires_at > currentTime + REFRESH_AHEAD_MS) {
     return verifyPendingHeld(config, session, lock, options)
   }
   if (session.status === 'ready' && session.expires_at > currentTime + REFRESH_AHEAD_MS) {
@@ -347,10 +352,12 @@ async function verifyPendingHeld(
   if (!verified.ok) return verified
   if (verified.value.user_uuid !== session.user_uuid) return failure({ code: 'IDENTITY_MISMATCH' })
   if (options.signal?.aborted) return failure({ code: 'CANCELLED' })
+  if (session.expires_at <= now(options)) return failure({ code: 'REFRESH_UNAVAILABLE', reason: 'transient' })
   const ready: ReadyOAuthSession = { ...baseSession(session), status: 'ready', generation: session.generation + 1 }
   const saved = await saveOAuthSession(ready, session.generation, lock)
   if (!saved.ok) return storeFailure(saved.error)
   if (options.signal?.aborted) return failure({ code: 'CANCELLED' })
+  if (ready.expires_at <= now(options)) return failure({ code: 'REFRESH_UNAVAILABLE', reason: 'transient' })
   return success({
     source: 'oauth',
     token: ready.access_token,
@@ -368,6 +375,8 @@ async function verifiedExisting(
   const verified = await verifyProfile(config, session.access_token, options)
   if (!verified.ok) return verified
   if (verified.value.user_uuid !== session.user_uuid) return failure({ code: 'IDENTITY_MISMATCH' })
+  if (options.signal?.aborted) return failure({ code: 'CANCELLED' })
+  if (session.expires_at <= now(options)) return failure({ code: 'REFRESH_UNAVAILABLE', reason: 'transient' })
   return success({
     source: 'oauth',
     token: session.access_token,
@@ -624,6 +633,83 @@ async function stateCandidateExists(registryOrigin: string): Promise<RegistrySes
   }
 }
 
+/** Unsupported platforms may prove absence, but must never open an OAuth credential. */
+async function unsupportedStateCandidateExists(registryOrigin: string): Promise<RegistrySessionResult<boolean>> {
+  try {
+    let facetDir = resolve(resolveFacetDir())
+    if (process.platform === 'darwin') {
+      for (const alias of ['/tmp', '/var']) {
+        if (facetDir !== alias && !facetDir.startsWith(`${alias}/`)) continue
+        const metadata = await lstat(alias)
+        if (!metadata.isSymbolicLink() || metadata.uid !== 0 || (await readlink(alias)) !== `private${alias}`) {
+          return failure({ code: 'STATE_UNAVAILABLE', reason: 'UNSAFE_STATE' })
+        }
+        facetDir = `/private${facetDir}`
+        break
+      }
+    }
+    const key = createHash('sha256').update(registryOrigin).digest('hex')
+    const candidate = join(facetDir, 'oauth', `${key}.json`)
+    const paths = [candidate]
+    let parent = dirname(candidate)
+    while (true) {
+      paths.unshift(parent)
+      const next = dirname(parent)
+      if (next === parent) break
+      parent = next
+    }
+    const checked: DirectorySnapshot[] = []
+    for (const path of paths) {
+      const before = await revalidateDirectories(checked)
+      if (!before.ok) return before
+      let metadata: Stats
+      try {
+        metadata = await lstat(path)
+      } catch (error) {
+        if (!isRecord(error) || error.code !== 'ENOENT') throw error
+        // ENOENT is absence only while all previously observed parents still identify the same directories.
+        const stable = await revalidateDirectories(checked)
+        return stable.ok ? success(false) : stable
+      }
+      if (metadata.isSymbolicLink() || (path === candidate ? !metadata.isFile() : !metadata.isDirectory())) {
+        return failure({ code: 'STATE_UNAVAILABLE', reason: 'UNSAFE_STATE' })
+      }
+      if (path !== candidate) checked.push({ path, dev: metadata.dev, ino: metadata.ino })
+      const after = await revalidateDirectories(checked)
+      if (!after.ok) return after
+    }
+    return success(true)
+  } catch {
+    return failure({ code: 'STATE_UNAVAILABLE', reason: 'IO_ERROR' })
+  }
+}
+
+interface DirectorySnapshot {
+  path: string
+  dev: number
+  ino: number
+}
+
+async function revalidateDirectories(checked: readonly DirectorySnapshot[]): Promise<RegistrySessionResult<void>> {
+  try {
+    for (const directory of checked) {
+      const current = await lstat(directory.path)
+      if (
+        !current.isDirectory() ||
+        current.isSymbolicLink() ||
+        current.dev !== directory.dev ||
+        current.ino !== directory.ino
+      ) {
+        return failure({ code: 'STATE_UNAVAILABLE', reason: 'UNSAFE_STATE' })
+      }
+    }
+    return success(undefined)
+  } catch {
+    // A previously existing directory disappearing is uncertainty, not proof that the selected credential is absent.
+    return failure({ code: 'STATE_UNAVAILABLE', reason: 'IO_ERROR' })
+  }
+}
+
 function bindingFor(config: Readonly<CliAuthConfig>): OAuthSessionBinding {
   return {
     registry_origin: config.registryOrigin,
@@ -706,6 +792,7 @@ async function locked<T>(
 ): Promise<RegistrySessionResult<T>> {
   const result = await withOAuthSessionLock(binding, async (lock) => ({ ok: true, value: await operation(lock) }), {
     platform: options.platform,
+    signal: options.signal,
     lockTimeoutMs: LOCK_TIMEOUT_MS,
   })
   return result.ok ? result.value : storeFailure(result.error)
@@ -732,6 +819,7 @@ function unsupportedPlatform<T>(): RegistrySessionResult<T> {
 }
 
 function storeFailure<T>(error: OAuthStoreError): RegistrySessionResult<T> {
+  if (error.code === 'CANCELLED') return failure({ code: 'CANCELLED' })
   return failure({ code: 'STATE_UNAVAILABLE', reason: error.code })
 }
 

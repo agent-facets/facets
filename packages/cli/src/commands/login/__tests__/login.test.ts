@@ -25,6 +25,7 @@ let beginResult: Awaited<ReturnType<typeof engine.beginCliLogin>>
 let completeBehavior: (signal?: AbortSignal) => ReturnType<typeof engine.completeCliLogin>
 let legacyCredential: ReturnType<typeof engine.resolveCredential>
 let browserResult: browser.OpenBrowserResult
+let browserBehavior: () => Promise<browser.OpenBrowserResult>
 let browserUrls: string[]
 let beginSignals: Array<AbortSignal | undefined>
 let savedTokens: string[]
@@ -178,6 +179,7 @@ async function setupLoginFixture(): Promise<void> {
   completeBehavior = async () => ({ ok: true, value: profile('verified-alice') })
   legacyCredential = { source: 'absent' }
   browserResult = { ok: true }
+  browserBehavior = async () => browserResult
   browserUrls = []
   beginSignals = []
   savedTokens = []
@@ -219,7 +221,7 @@ async function setupLoginFixture(): Promise<void> {
   const browserSpy = spyOn(browser, 'openBrowser').mockImplementation(async (url) => {
     browserOpenedDuringInk = inkActive
     browserUrls.push(url)
-    return browserResult
+    return browserBehavior()
   })
   restoreSpies.push(() => browserSpy.mockRestore())
 }
@@ -252,6 +254,43 @@ async function captureInteractiveLogin(args: string[], choice: { kind: 'browser'
     return await captureLogin(args, true)
   } finally {
     scriptedChoice = undefined
+  }
+}
+
+function holdBrowser() {
+  let announceEntry: () => void = () => {}
+  let release: (result: browser.OpenBrowserResult) => void = () => {}
+  let reject: (error: unknown) => void = () => {}
+  const entered = new Promise<void>((resolve) => {
+    announceEntry = resolve
+  })
+  const held = new Promise<browser.OpenBrowserResult>((resolve, rejectHeld) => {
+    release = resolve
+    reject = rejectHeld
+  })
+  browserBehavior = () => {
+    announceEntry()
+    return held
+  }
+  return { entered, release, reject }
+}
+
+type Settlement<T> = { kind: 'resolved'; value: T } | { kind: 'rejected'; error: unknown } | { kind: 'pending' }
+
+async function settlePromptly<T>(pending: Promise<T>): Promise<Settlement<T>> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      pending.then(
+        (value): Settlement<T> => ({ kind: 'resolved', value }),
+        (error: unknown): Settlement<T> => ({ kind: 'rejected', error }),
+      ),
+      new Promise<Settlement<T>>((resolve) => {
+        timer = setTimeout(() => resolve({ kind: 'pending' }), 200)
+      }),
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
   }
 }
 
@@ -297,9 +336,142 @@ describe('facet login command routing', () => {
     const result = await captureLogin(['--browser'])
     expect(result.code).toBe(0)
     expect(browserUrls).toEqual([expectedDisplay.verificationUriComplete])
-    expect(result.stdout).toContain('browser could not be opened')
+    expect(result.stdout).toContain('If the browser does not open, use the URL and code above')
     expect(result.stdout).toContain('Logged in as verified-alice')
     expect(result.stdout).not.toContain(canary)
+  })
+
+  test('a held optional browser launcher cannot delay successful device completion', async () => {
+    const launcher = holdBrowser()
+    const pending = captureLogin(['--browser'])
+    try {
+      await launcher.entered
+      const settled = await settlePromptly(pending)
+      expect(settled.kind).toBe('resolved')
+      if (settled.kind === 'resolved') {
+        expect(settled.value.code).toBe(0)
+        expect(settled.value.stdout).toContain('Logged in as verified-alice')
+        expect(settled.value.stdout).toContain('If the browser does not open')
+      }
+      expect(browserUrls).toEqual([expectedDisplay.verificationUriComplete])
+      expect(browserOpenedDuringInk).toBe(false)
+    } finally {
+      launcher.release({ ok: true })
+      await pending
+    }
+  })
+
+  test('SIGINT settles while launcher is held and a late launcher rejection writes nothing', async () => {
+    const launcher = holdBrowser()
+    let announceCompletion: () => void = () => {}
+    const completionStarted = new Promise<void>((resolve) => {
+      announceCompletion = resolve
+    })
+    completeBehavior = (signal) => {
+      announceCompletion()
+      return new Promise((resolve) => {
+        signal?.addEventListener('abort', () => resolve({ ok: false, error: { code: 'CANCELLED' } }), { once: true })
+      })
+    }
+    const pending = captureLogin(['--browser'])
+    let launcherSettled = false
+    let commandSettled = false
+    void pending.then(
+      () => {
+        commandSettled = true
+      },
+      () => {
+        commandSettled = true
+      },
+    )
+    try {
+      await launcher.entered
+      const started = await settlePromptly(completionStarted)
+      expect(started.kind).toBe('resolved')
+      process.emit('SIGINT')
+      const settled = await settlePromptly(pending)
+      expect(settled.kind).toBe('resolved')
+      if (settled.kind === 'resolved') {
+        expect(settled.value.code).toBe(1)
+        expect(settled.value.stdout).toContain('Cancelled.')
+        expect(settled.value.stdout).not.toContain(canary)
+      }
+      const output = spyOn(process.stdout, 'write').mockImplementation(() => true)
+      const errorOutput = spyOn(process.stderr, 'write').mockImplementation(() => true)
+      try {
+        launcher.reject(new Error('late-opener-failure-canary'))
+        launcherSettled = true
+        await new Promise<void>((resolve) => setImmediate(resolve))
+        expect(output).not.toHaveBeenCalled()
+        expect(errorOutput).not.toHaveBeenCalled()
+      } finally {
+        output.mockRestore()
+        errorOutput.mockRestore()
+      }
+    } finally {
+      if (!commandSettled) process.emit('SIGINT')
+      if (!launcherSettled) launcher.release({ ok: true })
+      await pending
+    }
+  })
+
+  test('Esc settles while launcher is held and preserves the previous credential', async () => {
+    const launcher = holdBrowser()
+    legacyCredential = { source: 'file', token: canary }
+    cancelPolling = true
+    completeBehavior = async (signal) => ({
+      ok: false,
+      error: { code: signal?.aborted ? 'CANCELLED' : 'UNEXPECTED_FAILURE' },
+    })
+    const pending = captureInteractiveLogin(['--browser'], { kind: 'browser' })
+    try {
+      await launcher.entered
+      const settled = await settlePromptly(pending)
+      expect(settled.kind).toBe('resolved')
+      if (settled.kind === 'resolved') {
+        expect(settled.value.code).toBe(1)
+        expect(settled.value.stdout).toContain('Cancelled.')
+        expect(settled.value.stdout).not.toContain(canary)
+      }
+      expect(savedTokens).toHaveLength(0)
+      expect(clearedPrompts).toBe(1)
+      expect(unmountedPrompts).toBe(1)
+    } finally {
+      launcher.release({ ok: true })
+      await pending
+    }
+  })
+
+  test('a polling view crash remains primary while launcher is held', async () => {
+    const launcher = holdBrowser()
+    const crash = new Error('polling-view-primary-crash')
+    let announceCompletion: () => void = () => {}
+    const completionStarted = new Promise<void>((resolve) => {
+      announceCompletion = resolve
+    })
+    completeBehavior = (signal) => {
+      announceCompletion()
+      return new Promise((resolve) => {
+        signal?.addEventListener('abort', () => resolve({ ok: false, error: { code: 'CANCELLED' } }), { once: true })
+      })
+    }
+    const pending = captureInteractiveLogin(['--browser'], { kind: 'browser' })
+    try {
+      await launcher.entered
+      const started = await settlePromptly(completionStarted)
+      expect(started.kind).toBe('resolved')
+      rejectPollingWait?.(crash)
+      const settled = await settlePromptly(pending)
+      expect(settled.kind).toBe('rejected')
+      if (settled.kind === 'rejected') expect(settled.error).toBe(crash)
+      expect(clearedPrompts).toBe(1)
+      expect(unmountedPrompts).toBe(1)
+    } finally {
+      launcher.release({ ok: true })
+      const started = await settlePromptly(completionStarted)
+      if (started.kind === 'resolved') rejectPollingWait?.(crash)
+      await pending.catch(() => undefined)
+    }
   })
 
   test('default interactive menu choice enters browser flow after Ink teardown', async () => {

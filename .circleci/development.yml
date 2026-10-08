@@ -12,6 +12,9 @@ commands:
             - v1-mint-{{ checksum "bun.lock" }}
             - v1-mint-
       - run:
+          command: bun install --frozen-lockfile --os '*' --cpu '*' --ignore-scripts
+          name: Install locked native prebuilds for all targets
+      - run:
           command: bun turbo check
           environment:
             TURBO_CONCURRENCY: "1"
