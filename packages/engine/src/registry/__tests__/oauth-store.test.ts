@@ -1,6 +1,8 @@
 import { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { createHash } from 'node:crypto'
+import { getEventListeners } from 'node:events'
+import * as fs from 'node:fs'
 import {
   type BigIntStats,
   chmodSync,
@@ -12,6 +14,7 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   type StatOptions,
   type Stats,
@@ -1010,4 +1013,547 @@ describe('unlinked descriptor retains metadata guards', () => {
       }
     })
   }
+})
+
+describe('directory authority', () => {
+  test('creates each missing private component without changing an existing 0755 parent', async () => {
+    chmodSync(facetDir, 0o755)
+    const selected = join(facetDir, 'one', 'two', 'three')
+    unwrap(
+      await withOAuthSessionLock(binding, async () => ok(undefined), { ...options, resolveFacetDir: () => selected }),
+    )
+    expect(lstatSync(facetDir).mode & 0o777).toBe(0o755)
+    for (const path of [join(facetDir, 'one'), join(facetDir, 'one', 'two'), selected, join(selected, 'oauth')]) {
+      expect(lstatSync(path).mode & 0o777).toBe(0o700)
+    }
+  })
+
+  test.each([false, true])('rejects real two-process rename authority (private child: %s)', async (nested) => {
+    const authority = join(facetDir, 'authority')
+    mkdirSync(authority, { mode: 0o777 })
+    chmodSync(authority, 0o777)
+    const selected = nested ? join(authority, 'private') : authority
+    if (nested) mkdirSync(selected, { mode: 0o700 })
+    const release = join(facetDir, 'release')
+    const script = `
+      const { withOAuthSessionLock } = await import(${JSON.stringify(modulePath())})
+      const result = await withOAuthSessionLock(${JSON.stringify(binding)}, async () => {
+        if (process.env.HOLDER === '1') {
+          process.stdout.write('entered\\n')
+          while (!(await Bun.file(${JSON.stringify(release)}).exists())) await Bun.sleep(5)
+        }
+        return {ok:true,value:'entered'}
+      })
+      process.stdout.write(JSON.stringify(result))
+    `
+    const first = Bun.spawn([process.execPath, '--eval', script], {
+      env: { ...process.env, FACET_DIR: selected, HOLDER: '1' },
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: 5000,
+    })
+    try {
+      const reader = first.stdout.getReader()
+      const firstMessage = new TextDecoder().decode((await reader.read()).value)
+      reader.releaseLock()
+      renameSync(authority, `${authority}-displaced`)
+      mkdirSync(authority, { mode: 0o777 })
+      chmodSync(authority, 0o777)
+      if (nested) mkdirSync(selected, { mode: 0o700 })
+      const second = Bun.spawnSync([process.execPath, '--eval', script], {
+        env: { ...process.env, FACET_DIR: selected, HOLDER: '0' },
+        stdout: 'pipe',
+        stderr: 'pipe',
+        timeout: 5000,
+      })
+      writeFileSync(release, '')
+      expect(await first.exited).toBe(0)
+      expect(second.exitCode).toBe(0)
+      expect({ first: firstMessage, second: second.stdout.toString() }).toEqual({
+        first: expect.stringContaining('insecure-permissions'),
+        second: expect.stringContaining('insecure-permissions'),
+      })
+      expect(firstMessage).not.toContain('entered')
+      expect(second.stdout.toString()).not.toContain('entered')
+      expect(existsSync(join(selected, 'oauth'))).toBe(false)
+    } finally {
+      first.kill()
+      await first.exited
+    }
+  })
+
+  test('permits current-owned sticky ancestry and rejects simulated foreign-owned sticky/nonsticky authority', async () => {
+    const selected = join(facetDir, 'child')
+    expect(Bun.spawnSync(['/bin/chmod', '1777', facetDir]).exitCode).toBe(0)
+    expect(lstatSync(facetDir).mode & 0o1777).toBe(0o1777)
+    unwrap(await readOAuthSession(binding, { ...options, resolveFacetDir: () => selected }))
+    for (const mode of [0o1777, 0o755]) {
+      expect(Bun.spawnSync(['/bin/chmod', mode.toString(8), facetDir]).exitCode).toBe(0)
+      expectUnsafe(
+        await readOAuthSession(binding, {
+          ...options,
+          resolveFacetDir: () => selected,
+          lstat: wrongOwnerLstat(facetDir),
+        }),
+        'wrong-owner',
+      )
+    }
+  })
+
+  test('rejects custom symlink ancestors and raced mkdir symlink winners without descent', async () => {
+    const outside = join(facetDir, 'outside')
+    mkdirSync(outside)
+    const link = join(facetDir, 'redirect')
+    symlinkSync(outside, link)
+    expectUnsafe(await readOAuthSession(binding, { ...options, resolveFacetDir: () => join(link, 'child') }), 'symlink')
+    const raced = join(facetDir, 'raced')
+    const create = spyOn(fsPromises, 'mkdir').mockImplementation(async (path): Promise<never> => {
+      if (path !== raced) throw new Error('unexpected creation')
+      symlinkSync(outside, raced)
+      throw Object.assign(new Error('race winner exists'), { code: 'EEXIST' })
+    })
+    try {
+      expectUnsafe(
+        await readOAuthSession(binding, { ...options, resolveFacetDir: () => join(raced, 'child') }),
+        'symlink',
+      )
+      expect(readdirSync(outside)).toEqual([])
+    } finally {
+      create.mockRestore()
+    }
+  })
+
+  test('checks actual opened authority and identity despite stale or simulated pathname metadata', async () => {
+    const originalMode = lstatSync(facetDir).mode
+    const altered = await readOAuthSession(binding, {
+      ...options,
+      lstat: async (path) => {
+        const metadata = await lstat(path)
+        if (path === facetDir) chmodSync(facetDir, 0o777)
+        return metadata
+      },
+    })
+    expectUnsafe(altered, 'insecure-permissions')
+    chmodSync(facetDir, originalMode)
+    const changedIdentity = await readOAuthSession(binding, {
+      ...options,
+      lstat: async (path) => {
+        const metadata = await lstat(path)
+        if (path === facetDir) metadata.ino += 1
+        return metadata
+      },
+    })
+    if (changedIdentity.ok) expect.unreachable('mismatched directory accepted')
+    expect(changedIdentity.error.code).toBe('IO_ERROR')
+    const selected = join(facetDir, 'child')
+    const uid = process.getuid?.()
+    if (uid === undefined) expect.unreachable()
+    expectUnsafe(
+      await readOAuthSession(binding, {
+        ...options,
+        ownerUid: uid + 1,
+        resolveFacetDir: () => selected,
+        lstat: async (path) => {
+          const metadata = await lstat(path)
+          if (metadata.uid === uid) metadata.uid = 0
+          return metadata
+        },
+      }),
+      'wrong-owner',
+    )
+  })
+
+  test('freezes the absolute selection before an awaited cwd change', async () => {
+    const previous = process.cwd()
+    process.chdir(facetDir)
+    let selected = 0
+    try {
+      unwrap(
+        await readOAuthSession(binding, {
+          ...options,
+          resolveFacetDir: () => {
+            selected++
+            return 'relative/nested'
+          },
+          lstat: async (path) => {
+            process.chdir(previous)
+            return lstat(path)
+          },
+        }),
+      )
+      expect(selected).toBe(1)
+      expect(existsSync(join(facetDir, 'relative/nested/oauth'))).toBe(true)
+    } finally {
+      process.chdir(previous)
+    }
+  })
+
+  test.skipIf(process.platform !== 'darwin')(
+    'accepts live root-owned tmp/var aliases and rejects a simulated spoofed alias target',
+    async () => {
+      const tmp = mkdtempSync('/tmp/oauth-alias-')
+      try {
+        unwrap(await readOAuthSession(binding, { ...options, resolveFacetDir: () => tmp }))
+        unwrap(
+          await readOAuthSession(binding, {
+            ...options,
+            resolveFacetDir: () => facetDir.replace(/^\/private\/var\//, '/var/'),
+          }),
+        )
+        function spoof(path: fs.PathLike, encoding?: fs.EncodingOption): string
+        function spoof(path: fs.PathLike, encoding: fs.BufferEncodingOption): Buffer<ArrayBuffer>
+        function spoof(_path: fs.PathLike, encoding?: fs.EncodingOption | fs.BufferEncodingOption): string | Buffer {
+          return encoding === 'buffer' || (typeof encoding === 'object' && encoding?.encoding === 'buffer')
+            ? Buffer.from('private/spoof')
+            : 'private/spoof'
+        }
+        const link = spyOn(fs, 'readlinkSync').mockImplementation(spoof)
+        try {
+          expectUnsafe(await readOAuthSession(binding, { ...options, resolveFacetDir: () => tmp }), 'symlink')
+        } finally {
+          link.mockRestore()
+        }
+      } finally {
+        rmSync(tmp, { recursive: true, force: true })
+      }
+    },
+  )
+
+  test.skipIf(process.platform !== 'darwin')(
+    'checks real deny/allow/inherited ACL authority despite a linux option',
+    async () => {
+      const chmod = (...args: string[]) => {
+        const child = Bun.spawnSync(['/bin/chmod', ...args], { stderr: 'pipe', timeout: 5000 })
+        expect({ exit: child.exitCode, stderr: child.stderr.toString() }).toEqual({ exit: 0, stderr: '' })
+      }
+      try {
+        chmod('+a', 'everyone deny delete', facetDir)
+        unwrap(await readOAuthSession(binding, { ...options, platform: 'linux' }))
+        chmod('-N', facetDir)
+        chmod('+a', 'everyone allow delete,delete_child,directory_inherit', facetDir)
+        const inherited = join(facetDir, 'inherited')
+        mkdirSync(inherited)
+        expectUnsafe(await readOAuthSession(binding, { ...options, platform: 'linux' }), 'insecure-permissions')
+        chmod('-N', facetDir)
+        expectUnsafe(
+          await readOAuthSession(binding, { ...options, platform: 'linux', resolveFacetDir: () => inherited }),
+          'insecure-permissions',
+        )
+      } finally {
+        chmod('-RN', facetDir)
+      }
+    },
+  )
+
+  test.skipIf(process.platform !== 'darwin')(
+    'maps unavailable native inspection in an isolated process with constant cause',
+    async () => {
+      const nativePath = fileURLToPath(new URL('../oauth-permissions.ts', import.meta.url))
+      const script = `
+      import { mock } from 'bun:test'
+      import { fstatSync } from 'node:fs'
+      mock.module(${JSON.stringify(nativePath)}, () => ({ inspectDarwinDirectoryAcl(fd) {
+        if (!fstatSync(fd).isDirectory()) throw Error('not a borrowed directory')
+        return {ok:false,reason:'acl-unavailable'}
+      }}))
+      const {readOAuthSession} = await import(${JSON.stringify(modulePath())})
+      console.log(JSON.stringify(await readOAuthSession(${JSON.stringify(binding)}, {platform:'linux'})))
+    `
+      const child = Bun.spawnSync([process.execPath, '--eval', script], {
+        env: { ...process.env, FACET_DIR: facetDir },
+        stdout: 'pipe',
+        stderr: 'pipe',
+        timeout: 5000,
+      })
+      expect(child.exitCode).toBe(0)
+      expect(JSON.parse(child.stdout.toString())).toEqual({
+        ok: false,
+        error: {
+          code: 'IO_ERROR',
+          operation: 'inspect permissions',
+          path: '/',
+          cause: 'Directory permissions could not be verified.',
+        },
+      })
+      expect(readdirSync(facetDir)).toEqual([])
+    },
+  )
+})
+
+describe('acquisition cancellation', () => {
+  test('pre-abort performs no resolution, filesystem work or callback', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    let touched = 0
+    const result = await withOAuthSessionLock(
+      binding,
+      async () => {
+        touched++
+        return ok(undefined)
+      },
+      {
+        ...options,
+        signal: controller.signal,
+        resolveFacetDir: () => {
+          touched++
+          return facetDir
+        },
+      },
+    )
+    expect(result).toEqual({ ok: false, error: { code: 'CANCELLED' } })
+    expect(touched).toBe(0)
+    expect(readdirSync(facetDir)).toEqual([])
+  })
+
+  test('cancels a real held SQLite contender promptly, cleans listeners, and never acquires late', async () => {
+    const holder = spawnLockHolder(false)
+    const controller = new AbortController()
+    let callbacks = 0
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      await expectHolderReady(holder)
+      const started = performance.now()
+      timer = setTimeout(() => controller.abort(), 40)
+      const result = await withOAuthSessionLock(
+        binding,
+        async () => {
+          callbacks++
+          return ok(undefined)
+        },
+        {
+          ...options,
+          signal: controller.signal,
+          lockTimeoutMs: 5000,
+          lockPollMs: 2000,
+        },
+      )
+      expect(result).toEqual({ ok: false, error: { code: 'CANCELLED' } })
+      expect(performance.now() - started).toBeLessThan(1000)
+      expect(callbacks).toBe(0)
+      expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0)
+    } finally {
+      clearTimeout(timer)
+      holder.kill('SIGKILL')
+      await holder.exited
+    }
+    unwrap(await withOAuthSessionLock(binding, async () => ok(undefined), options))
+    expect(callbacks).toBe(0)
+  })
+
+  test('cancels startup busy waiting and closes the opened database', async () => {
+    const controller = new AbortController()
+    let closes = 0
+    const originalClose = Database.prototype.close
+    const close = spyOn(Database.prototype, 'close').mockImplementation(function (this: Database, ...args) {
+      closes++
+      return originalClose.apply(this, args)
+    })
+    const query = spyOn(Database.prototype, 'query').mockImplementation((): never => {
+      throw new BusySqliteError()
+    })
+    const timer = setTimeout(() => controller.abort(), 30)
+    let callbacks = 0
+    try {
+      const started = performance.now()
+      const result = await withOAuthSessionLock(
+        binding,
+        async () => {
+          callbacks++
+          return ok(undefined)
+        },
+        {
+          ...options,
+          signal: controller.signal,
+          lockPollMs: 2000,
+        },
+      )
+      expect(result).toEqual({ ok: false, error: { code: 'CANCELLED' } })
+      expect(performance.now() - started).toBeLessThan(1000)
+      expect(callbacks).toBe(0)
+      expect(closes).toBeGreaterThan(0)
+      expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0)
+    } finally {
+      clearTimeout(timer)
+      query.mockRestore()
+      close.mockRestore()
+    }
+    unwrap(await withOAuthSessionLock(binding, async () => ok(undefined), options))
+  })
+
+  test('abort after BEGIN but before callback rolls back, closes and never invokes callback', async () => {
+    const controller = new AbortController()
+    const original = Database.prototype.exec
+    let rolledBack = false
+    let callbacks = 0
+    const exec = spyOn(Database.prototype, 'exec').mockImplementation(function (this: Database, sql) {
+      const result = original.call(this, sql)
+      if (sql === 'BEGIN IMMEDIATE') queueMicrotask(() => controller.abort())
+      if (sql === 'ROLLBACK') rolledBack = true
+      return result
+    })
+    try {
+      expect(
+        await withOAuthSessionLock(
+          binding,
+          async () => {
+            callbacks++
+            return ok(undefined)
+          },
+          {
+            ...options,
+            signal: controller.signal,
+          },
+        ),
+      ).toEqual({ ok: false, error: { code: 'CANCELLED' } })
+      expect(callbacks).toBe(0)
+      expect(rolledBack).toBe(true)
+    } finally {
+      exec.mockRestore()
+    }
+    unwrap(await withOAuthSessionLock(binding, async () => ok(undefined), options))
+  })
+
+  test('abort wins simultaneous timeout, while an un-aborted wait retains LOCK_TIMEOUT', async () => {
+    const controller = new AbortController()
+    const original = Database.prototype.exec
+    const exec = spyOn(Database.prototype, 'exec').mockImplementation(function (this: Database, sql) {
+      if (sql === 'BEGIN IMMEDIATE') {
+        controller.abort()
+        throw new BusySqliteError()
+      }
+      return original.call(this, sql)
+    })
+    try {
+      expect(
+        await withOAuthSessionLock(binding, async () => ok(undefined), {
+          ...options,
+          signal: controller.signal,
+          lockTimeoutMs: 0,
+        }),
+      ).toEqual({ ok: false, error: { code: 'CANCELLED' } })
+    } finally {
+      exec.mockRestore()
+    }
+    unwrap(
+      await withOAuthSessionLock(
+        binding,
+        async () => {
+          const timeout = await withOAuthSessionLock(binding, async () => ok(undefined), {
+            ...options,
+            lockTimeoutMs: 10,
+          })
+          if (timeout.ok) expect.unreachable()
+          expect(timeout.error.code).toBe('LOCK_TIMEOUT')
+          return ok(undefined)
+        },
+        options,
+      ),
+    )
+  })
+
+  test('an entered callback drains its save and busy COMMIT after abort', async () => {
+    const controller = new AbortController()
+    const original = Database.prototype.exec
+    let commits = 0
+    const exec = spyOn(Database.prototype, 'exec').mockImplementation(function (this: Database, sql) {
+      if (sql === 'COMMIT' && commits++ === 0) throw new BusySqliteError()
+      return original.call(this, sql)
+    })
+    try {
+      const result = await withOAuthSessionLock(
+        binding,
+        async (lock) => {
+          controller.abort()
+          await Bun.sleep(10)
+          return saveOAuthSession(readySession(1), null, lock)
+        },
+        { ...options, signal: controller.signal },
+      )
+      unwrap(result)
+      expect(commits).toBe(2)
+      expect(unwrap(await readOAuthSession(binding, options))).toEqual(readySession(1))
+      expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0)
+    } finally {
+      exec.mockRestore()
+    }
+  })
+})
+
+describe('acquisition directory cleanup', () => {
+  test('abort after directory open closes every borrowed handle and prevents descent', async () => {
+    const controller = new AbortController()
+    const original = fsPromises.open
+    const handles: fsPromises.FileHandle[] = []
+    const opened = spyOn(fsPromises, 'open').mockImplementation(async (...args) => {
+      const handle = await original(...args)
+      handles.push(handle)
+      if (args[0] === facetDir) controller.abort()
+      return handle
+    })
+    let callbacks = 0
+    try {
+      expect(
+        await withOAuthSessionLock(
+          binding,
+          async () => {
+            callbacks++
+            return ok(undefined)
+          },
+          {
+            ...options,
+            signal: controller.signal,
+          },
+        ),
+      ).toEqual({ ok: false, error: { code: 'CANCELLED' } })
+      expect(handles.length).toBeGreaterThan(0)
+      for (const handle of handles) expect(handle.fd).toBe(-1)
+      expect(callbacks).toBe(0)
+      expect(readdirSync(facetDir)).toEqual([])
+    } finally {
+      opened.mockRestore()
+    }
+  })
+
+  test('abort after creating a missing component stops before creating oauth state', async () => {
+    const controller = new AbortController()
+    const selected = join(facetDir, 'new-parent')
+    let callbacks = 0
+    const result = await withOAuthSessionLock(
+      binding,
+      async () => {
+        callbacks++
+        return ok(undefined)
+      },
+      {
+        ...options,
+        signal: controller.signal,
+        resolveFacetDir: () => selected,
+        lstat: async (path) => {
+          const metadata = await lstat(path)
+          if (path === selected) controller.abort()
+          return metadata
+        },
+      },
+    )
+    expect(result).toEqual({ ok: false, error: { code: 'CANCELLED' } })
+    expect(lstatSync(selected).mode & 0o777).toBe(0o700)
+    expect(readdirSync(selected)).toEqual([])
+    expect(callbacks).toBe(0)
+  })
+
+  test('aborting an entered throwing callback still rolls back and releases its lock', async () => {
+    const controller = new AbortController()
+    await expect(
+      withOAuthSessionLock(
+        binding,
+        async () => {
+          controller.abort()
+          await Bun.sleep(5)
+          throw new Error('callback failure')
+        },
+        { ...options, signal: controller.signal },
+      ),
+    ).rejects.toThrow('callback failure')
+    unwrap(await withOAuthSessionLock(binding, async () => ok(undefined), options))
+  })
 })
