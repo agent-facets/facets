@@ -22,8 +22,10 @@ rss: true
 
   - **Works in headless terminals.** `--no-browser` prints a URL and code
     you can confirm from any device with a browser.
-  - **Tokens still work.** Use `facet login --token` or
-    [`FACET_TOKEN`](/cli/env#facet_token) on Windows and in CI. Tokens
+  - **Tokens still work.** Run `facet login --token` in an interactive
+    terminal. For CI and other non-interactive environments, set
+    [`FACET_TOKEN`](/cli/env#facet_token). Tokens take [priority](/cli/login#token-precedence)
+    over browser sessions.
     take [priority](/cli/login#token-precedence) over browser sessions.
   - **Sessions renew automatically.** Commands refresh your browser
     session before use. Browser sessions are bound to their registry
