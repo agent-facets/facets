@@ -40,6 +40,7 @@ Tag push: agent-facets@X.Y.Z
 
 | Script                    | CircleCI Job                | Purpose                                                     |
 |---------------------------|-----------------------------|-------------------------------------------------------------|
+| `build.test.ts`           | (local tests)               | Verify actual build options, native preflight and isolated policy |
 | `build.ts`                | `build-cli`                 | Cross-compile 12 standalone binaries                        |
 | `package-assets.ts`       | `package-cli-assets`        | Package existing binaries into archives and checksums       |
 | `publish-platform.ts`     | `publish-platform` (matrix) | Publish one `@agent-facets/cli-*` package                   |
@@ -117,3 +118,28 @@ Users install via `npm install agent-facets`. npm resolves the correct platform 
    install), and post-publish verifies the wrapper itself before announcing
 
 None of this fits `changeset publish`'s model, so the CLI has its own pipeline.
+
+## Native permission dependency
+
+The release build still runs on Linux. After the ordinary host dependency setup,
+`build-cli` runs `bun install --frozen-lockfile --os '*' --cpu '*' --ignore-scripts`
+to install locked foreign native prebuilds without lifecycle scripts or a compiler.
+Koffi is pinned to 3.3.2; its CommonJS entry lets Bun embed the Darwin Node-API addon.
+Each build defines the destination OS and CPU, selects the matching Darwin arm64
+or x64 addon, and externalizes the other finite optional packages. Baseline and
+optimized x64 use the same addon. Missing or mismatched Darwin native files fail
+preflight before compilation. Linux and Windows emit no native addons and never enter the guarded native load;
+unreachable loader JavaScript may remain in the compiled graph.
+
+`build.test.ts` checks the actual receiving options and preflight failures, native
+graph selection, and the production ACL helper in isolated arm64/x64-baseline
+executables with forced GC. This is compatibility evidence for pinned Bun 1.3.14
+and Koffi 3.3.2, not an upstream promise of Bun support. Ordinary local CLI builds
+use the host addon; released binaries and archives need no node_modules directory.
+
+To verify without publishing, run `bun scripts/release-cli/build.ts` (all twelve),
+then `bun scripts/release-cli/package-assets.ts` (eight archives/checksums). These
+commands read the current version and write dist artifacts only; they do not tag,
+change versions or publish. Matching-host --version smoke does not execute foreign
+Linux/Windows binaries. After CI job edits, run `bun run ci:pack` and
+`bun run ci:check-pack`; only the generated release config should change.

@@ -7,6 +7,9 @@ environment:
 steps:
   - setup-mise
   - run:
+      name: Install locked native prebuilds for all targets
+      command: bun install --frozen-lockfile --os '*' --cpu '*' --ignore-scripts
+  - run:
       name: Build CLI binaries
       command: bun scripts/release-cli/build.ts
   - persist_to_workspace:

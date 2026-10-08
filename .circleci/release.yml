@@ -56,6 +56,9 @@ jobs:
     steps:
       - setup-mise
       - run:
+          command: bun install --frozen-lockfile --os '*' --cpu '*' --ignore-scripts
+          name: Install locked native prebuilds for all targets
+      - run:
           command: bun scripts/release-cli/build.ts
           name: Build CLI binaries
       - persist_to_workspace:
