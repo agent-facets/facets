@@ -126,11 +126,34 @@ export const publishCommand: Command = {
     }
     const { facetManifest } = verified.data
 
+    // Builds and terminal prompts can outlive an OAuth bearer. Renew only
+    // the selected browser account, and reject a changed publishing target.
+    let uploadCredential = cred
+    if (cred.source === 'oauth') {
+      const renewed = await resolveRegistryCredential()
+      if (!renewed.ok) {
+        writeCliError(translateEngineRegistryError({ code: 'AUTHENTICATION_ERROR', reason: renewed.error }))
+        return 1
+      }
+      const next = renewed.value
+      if (
+        next.source !== 'oauth' ||
+        next.registryOrigin !== cred.registryOrigin ||
+        next.profile.user_uuid !== cred.profile.user_uuid
+      ) {
+        writeCliError(
+          translateEngineRegistryError({ code: 'AUTHENTICATION_ERROR', reason: { code: 'SESSION_CHANGED' } }),
+        )
+        return 1
+      }
+      uploadCredential = next
+    }
+
     // (g) Upload using the artifact's embedded identity.
     const client = createRegistryClient(
-      cred.source === 'oauth'
-        ? { baseUrl: cred.registryOrigin, credential: cred.token, credentialPolicy: 'oauth' }
-        : { credential: cred.token },
+      uploadCredential.source === 'oauth'
+        ? { baseUrl: uploadCredential.registryOrigin, credential: uploadCredential.token, credentialPolicy: 'oauth' }
+        : { credential: uploadCredential.token },
     )
     const result = await publishFacetVersion(client, {
       name: facetManifest.name,

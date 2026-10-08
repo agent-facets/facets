@@ -109,6 +109,26 @@ function mockRunBuildViewToActuallyBuild(): void {
   }
 }
 
+function pauseMissingArtifactBuild() {
+  writeFileSync(
+    join(projectRoot, 'facet.json'),
+    JSON.stringify({ name: 'cowsay', version: '0.1.0', commands: { cowsay: { description: 'ascii cow' } } }),
+  )
+  mkdirSync(join(projectRoot, 'commands'))
+  writeFileSync(join(projectRoot, 'commands/cowsay.md'), '# cowsay\n\nascii cow')
+  mockBuildMissingAnswer = true
+  mockRunBuildViewToActuallyBuild()
+  const build = mockRunBuildViewBehavior
+  const started = Promise.withResolvers<void>()
+  const resume = Promise.withResolvers<void>()
+  mockRunBuildViewBehavior = async (root) => {
+    started.resolve()
+    await resume.promise
+    return build(root)
+  }
+  return { started: started.promise, resume: resume.resolve }
+}
+
 describe('publishCommand — happy path', () => {
   test('built artifact matches source: verifies and uploads, returns 0', async () => {
     await buildFacetFixture(projectRoot, {
@@ -144,6 +164,174 @@ describe('publishCommand — happy path', () => {
 })
 
 describe('publishCommand — selected browser session', () => {
+  test('renews an expired bearer after a paused accepted build, then uploads the fresh bearer', async () => {
+    const paused = pauseMissingArtifactBuild()
+    const originalBearer = 'expired-publish-bearer-canary'
+    const freshBearer = 'renewed-publish-bearer-canary'
+    let expired = false
+    let resolutions = 0
+    resolveBehavior = async () => {
+      resolutions++
+      if (resolutions > 1) expect(expired).toBe(true)
+      return {
+        ok: true,
+        value: {
+          source: 'oauth',
+          token: expired ? freshBearer : originalBearer,
+          registryOrigin: 'https://api.test',
+          profile: oauthProfile,
+        },
+      }
+    }
+    const spy = createFetchSpy(
+      (request) =>
+        new Response(JSON.stringify(fixtures.publishResponse()), {
+          status: request.headers.get('authorization') === `Bearer ${freshBearer}` ? 201 : 401,
+        }),
+    )
+    globalThis.fetch = spy.fetch
+    const running = withTTY(true, () => captureStderr(() => captureStdout(() => publishCommand.run([], {}))))
+    await paused.started
+    try {
+      expect(resolutions).toBe(1)
+      expect(spy.calls).toHaveLength(0)
+      expired = true
+    } finally {
+      paused.resume()
+    }
+    const {
+      result: { result, stdout },
+      stderr,
+    } = await running
+    expect(result).toBe(0)
+    expect(resolutions).toBe(2)
+    expect(spy.calls).toHaveLength(1)
+    const call = spy.calls[0]
+    if (call === undefined) expect.unreachable()
+    expect(call.headers.authorization).toBe(`Bearer ${freshBearer}`)
+    expect(call.url).toBe('https://api.test/v0/facets/cowsay/versions')
+    const verified = await validateFacetArchive(call.body, { gunzip: uncappedGunzip })
+    if (!verified.ok) expect.unreachable()
+    expect(verified.data.facetManifest.name).toBe('cowsay')
+    expect(stdout + stderr).not.toContain(originalBearer)
+    expect(stdout + stderr).not.toContain(freshBearer)
+  })
+
+  const lateFailures: Array<{
+    name: string
+    credential: Awaited<ReturnType<typeof realResolveRegistryCredential>>
+    guidance: string
+  }> = [
+    {
+      name: 'changed verified UUID',
+      credential: {
+        ok: true,
+        value: {
+          source: 'oauth',
+          token: 'late-bearer-canary',
+          registryOrigin: 'https://api.test',
+          profile: { ...oauthProfile, user_uuid: 'u-2' },
+        },
+      },
+      guidance: 'sign-in changed',
+    },
+    {
+      name: 'changed origin',
+      credential: {
+        ok: true,
+        value: {
+          source: 'oauth',
+          token: 'late-bearer-canary',
+          registryOrigin: 'https://other.invalid',
+          profile: oauthProfile,
+        },
+      },
+      guidance: 'sign-in changed',
+    },
+    {
+      name: 'changed to environment PAT',
+      credential: { ok: true, value: { source: 'env', token: 'late-pat-canary' } },
+      guidance: 'sign-in changed',
+    },
+    {
+      name: 'changed to file PAT',
+      credential: { ok: true, value: { source: 'file', token: 'late-pat-canary' } },
+      guidance: 'sign-in changed',
+    },
+    { name: 'removed session', credential: { ok: true, value: { source: 'absent' } }, guidance: 'sign-in changed' },
+    {
+      name: 'renewal error',
+      credential: { ok: false, error: { code: 'REFRESH_UNAVAILABLE', reason: 'transient' } },
+      guidance: 'sign-in could not be renewed',
+    },
+  ]
+
+  test.each(lateFailures)('$name after a paused build fails closed without any publish POST', async ({
+    credential,
+    guidance,
+  }) => {
+    const paused = pauseMissingArtifactBuild()
+    let resolutions = 0
+    resolveBehavior = async () => {
+      resolutions++
+      return resolutions === 1
+        ? {
+            ok: true,
+            value: {
+              source: 'oauth',
+              token: 'original-bearer-canary',
+              registryOrigin: 'https://api.test',
+              profile: oauthProfile,
+            },
+          }
+        : credential
+    }
+    const spy = createFetchSpy(() => new Response(JSON.stringify(fixtures.publishResponse()), { status: 201 }))
+    globalThis.fetch = spy.fetch
+    const running = withTTY(true, () => captureStderr(() => captureStdout(() => publishCommand.run([], {}))))
+    await paused.started
+    try {
+      expect(resolutions).toBe(1)
+      expect(spy.calls).toHaveLength(0)
+    } finally {
+      paused.resume()
+    }
+    const {
+      result: { result, stdout },
+      stderr,
+    } = await running
+    expect(result).toBe(1)
+    expect(resolutions).toBe(2)
+    expect(spy.calls).toHaveLength(0)
+    expect(stderr).toContain(guidance)
+    expect(stdout + stderr).not.toContain('original-bearer-canary')
+    expect(stdout + stderr).not.toContain('late-bearer-canary')
+    expect(stdout + stderr).not.toContain('late-pat-canary')
+  })
+
+  const patSources: Array<'env' | 'file'> = ['env', 'file']
+  test.each(patSources)('initial %s PAT resolves once across a paused build', async (source) => {
+    const paused = pauseMissingArtifactBuild()
+    let resolutions = 0
+    resolveBehavior = async () => {
+      resolutions++
+      return { ok: true, value: { source, token: 'initial-pat-canary' } }
+    }
+    const spy = createFetchSpy(() => new Response(JSON.stringify(fixtures.publishResponse()), { status: 201 }))
+    globalThis.fetch = spy.fetch
+    const running = withTTY(true, () => captureStdout(() => publishCommand.run([], {})))
+    await paused.started
+    paused.resume()
+    const { result, stdout } = await running
+    expect(result).toBe(0)
+    expect(resolutions).toBe(1)
+    expect(spy.calls).toHaveLength(1)
+    const call = spy.calls[0]
+    if (call === undefined) expect.unreachable()
+    expect(call.headers.authorization).toBe('Bearer initial-pat-canary')
+    expect(stdout).not.toContain('initial-pat-canary')
+  })
+
   test('binds the frozen OAuth origin and bearer despite registry ENV drift', async () => {
     await buildFacetFixture(projectRoot, {
       name: 'cowsay',
@@ -183,17 +371,19 @@ describe('publishCommand — selected browser session', () => {
   })
 
   test('failed refresh sends no publish POST and renders only typed guidance', async () => {
-    await buildFacetFixture(projectRoot, {
-      name: 'cowsay',
-      version: '0.1.0',
-      commands: { cowsay: '# cowsay\n' },
-    })
+    pauseMissingArtifactBuild()
+    let builds = 0
+    mockRunBuildViewBehavior = async () => {
+      builds++
+      return { ok: false }
+    }
     resolveBehavior = async () => ({ ok: false, error: { code: 'REFRESH_UNAVAILABLE', reason: 'transient' } })
     const spy = createFetchSpy()
     globalThis.fetch = spy.fetch
 
-    const { result, stderr } = await captureStderr(() => publishCommand.run([], {}))
+    const { result, stderr } = await withTTY(true, () => captureStderr(() => publishCommand.run([], {})))
     expect(result).toBe(1)
+    expect(builds).toBe(0)
     expect(spy.calls).toHaveLength(0)
     expect(stderr).toContain('sign-in')
     expect(stderr).not.toContain('oauth-bearer-canary')
