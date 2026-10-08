@@ -97,6 +97,7 @@ async function runBrowserLogin(autoLaunch: boolean): Promise<number> {
   const onInterrupt = () => controller.abort()
   process.on('SIGINT', onInterrupt)
   let progress: ReturnType<typeof render> | undefined
+  let viewExit: Promise<{ kind: 'view-exit' } | { kind: 'view-error'; error: unknown }> | undefined
   try {
     const started = await beginCliLogin({ signal: controller.signal })
     if (controller.signal.aborted) return cancelled()
@@ -120,12 +121,33 @@ async function runBrowserLogin(autoLaunch: boolean): Promise<number> {
         }),
         { exitOnCtrlC: false },
       )
+      viewExit = progress.waitUntilExit().then(
+        () => ({ kind: 'view-exit' as const }),
+        (error: unknown) => ({ kind: 'view-error' as const, error }),
+      )
     }
-    const completed = await completeCliLogin(started.value, { signal: controller.signal })
+    const completion = completeCliLogin(started.value, { signal: controller.signal }).then((value) => ({
+      kind: 'completed' as const,
+      value,
+    }))
+    const first = viewExit === undefined ? await completion : await Promise.race([completion, viewExit])
+    if (first.kind === 'view-error') {
+      controller.abort()
+      throw first.error
+    }
+    if (first.kind === 'view-exit') {
+      controller.abort()
+      return cancelled()
+    }
+    const completed = first.value
     if (progress !== undefined) {
       const mounted = progress
       progress = undefined
       clearAndUnmount(mounted)
+    }
+    if (viewExit !== undefined) {
+      const settled = await viewExit
+      if (settled.kind === 'view-error') throw settled.error
     }
     if (completed.ok) {
       process.stdout.write(`Logged in as ${completed.value.username}.\n`)

@@ -38,6 +38,8 @@ let cancelPolling = false
 let cancelRejectedToken = false
 let mountCrash: Error | undefined
 let waitCrash: Error | undefined
+let rejectPollingWait: ((error: Error) => void) | undefined
+let pollingWaitOnUnmount: Error | undefined
 let clearedPrompts = 0
 let unmountedPrompts = 0
 let facetDir: string
@@ -52,7 +54,18 @@ function fakeInkRender(...args: Parameters<typeof ink.render>): ReturnType<typeo
   if (mountCrash !== undefined) throw mountCrash
   inkActive = true
   const props: unknown = isValidElement(args[0]) ? args[0].props : undefined
-  if (typeof props === 'object' && props !== null && 'polling' in props && props.polling === true) {
+  const polling = typeof props === 'object' && props !== null && 'polling' in props && props.polling === true
+  let pollingWait: Promise<void> | undefined
+  let resolvePollingWait: (() => void) | undefined
+  if (polling) {
+    pollingWait = new Promise<void>((resolve, reject) => {
+      resolvePollingWait = resolve
+      rejectPollingWait = reject
+    })
+    // The fixture owns its rejection until the command attaches its observer.
+    void pollingWait.catch(() => {})
+  }
+  if (polling) {
     if (cancelPolling && 'onCancel' in props && typeof props.onCancel === 'function') props.onCancel()
   } else if (typeof props === 'object' && props !== null) {
     if (
@@ -80,8 +93,9 @@ function fakeInkRender(...args: Parameters<typeof ink.render>): ReturnType<typeo
   return {
     rerender: () => {},
     waitUntilRenderFlush: async () => {},
-    waitUntilExit: async () => {
+    waitUntilExit: () => {
       if (waitCrash !== undefined) throw waitCrash
+      return pollingWait ?? Promise.resolve()
     },
     cleanup: () => {},
     clear: () => {
@@ -90,6 +104,8 @@ function fakeInkRender(...args: Parameters<typeof ink.render>): ReturnType<typeo
     unmount: () => {
       unmountedPrompts++
       inkActive = false
+      if (pollingWaitOnUnmount !== undefined) rejectPollingWait?.(pollingWaitOnUnmount)
+      else resolvePollingWait?.()
     },
   }
 }
@@ -171,6 +187,8 @@ async function setupLoginFixture(): Promise<void> {
   cancelRejectedToken = false
   mountCrash = undefined
   waitCrash = undefined
+  rejectPollingWait = undefined
+  pollingWaitOnUnmount = undefined
   clearedPrompts = 0
   unmountedPrompts = 0
   const beginSpy = spyOn(engine, 'beginCliLogin').mockImplementation(async (options = {}) => {
@@ -316,6 +334,75 @@ describe('facet login command routing', () => {
     expect(clearedPrompts).toBe(0)
     expect(unmountedPrompts).toBe(0)
     expect(beginSignals).toHaveLength(1)
+    expect(process.listenerCount('SIGINT')).toBe(originalInterruptListeners)
+  })
+
+  test('a deferred polling view crash aborts pending authentication and propagates once', async () => {
+    const crash = new Error('ink-deferred-poll-crash-canary')
+    const writes: string[] = []
+    let enteredCompletion: () => void = () => {}
+    const completionStarted = new Promise<void>((resolve) => {
+      enteredCompletion = resolve
+    })
+    let completionSignal: AbortSignal | undefined
+    let finishCompletion: (() => void) | undefined
+    completeBehavior = (signal) => {
+      completionSignal = signal
+      enteredCompletion()
+      return new Promise((resolve) => {
+        finishCompletion = () => resolve({ ok: false, error: { code: 'CANCELLED' } })
+        signal?.addEventListener('abort', () => resolve({ ok: false, error: { code: 'CANCELLED' } }), { once: true })
+      })
+    }
+    scriptedChoice = { kind: 'browser' }
+    const outputSpy = spyOn(process.stdout, 'write').mockImplementation((chunk, ...rest) => {
+      writes.push(String(chunk))
+      const done = rest.find((value): value is (error?: Error | null) => void => typeof value === 'function')
+      done?.()
+      return true
+    })
+    try {
+      const pending = withTTY(true, () => run(['login', '--browser'], { login: loginCommand }))
+      await completionStarted
+      rejectPollingWait?.(crash)
+      await Promise.resolve()
+      finishCompletion?.()
+      await expect(pending).rejects.toBe(crash)
+    } finally {
+      outputSpy.mockRestore()
+      scriptedChoice = undefined
+    }
+    expect(completionSignal?.aborted).toBe(true)
+    expect(writes.join('')).not.toContain('Logged in')
+    expect(clearedPrompts).toBe(1)
+    expect(unmountedPrompts).toBe(1)
+    expect(inkActive).toBe(false)
+    expect(savedTokens).toHaveLength(0)
+    expect(process.listenerCount('SIGINT')).toBe(originalInterruptListeners)
+  })
+
+  test('a polling view failure during teardown overrides success without a late rejection', async () => {
+    const crash = new Error('ink-late-poll-crash-canary')
+    pollingWaitOnUnmount = crash
+    const writes: string[] = []
+    scriptedChoice = { kind: 'browser' }
+    const outputSpy = spyOn(process.stdout, 'write').mockImplementation((chunk, ...rest) => {
+      writes.push(String(chunk))
+      const done = rest.find((value): value is (error?: Error | null) => void => typeof value === 'function')
+      done?.()
+      return true
+    })
+    try {
+      await expect(withTTY(true, () => run(['login', '--browser'], { login: loginCommand }))).rejects.toBe(crash)
+    } finally {
+      outputSpy.mockRestore()
+      scriptedChoice = undefined
+    }
+    expect(writes.join('')).not.toContain('Logged in')
+    expect(clearedPrompts).toBe(1)
+    expect(unmountedPrompts).toBe(1)
+    expect(inkActive).toBe(false)
+    expect(savedTokens).toHaveLength(0)
     expect(process.listenerCount('SIGINT')).toBe(originalInterruptListeners)
   })
 
