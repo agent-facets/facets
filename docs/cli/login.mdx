@@ -58,7 +58,7 @@ This uses the [OAuth device authorization flow](https://workos.com/docs/authkit/
 
 ### Where the credential is stored
 
-Browser credentials are separate from the personal access token file, under [`$FACET_DIR/oauth/`](/cli/env#facet_dir). They are bound to the registry you signed in to; changing `FACET_REGISTRY_URL` does not transfer that session to another registry.
+See [browser credential storage and registry binding](/cli/env#browser-credentials).
 
 A verified personal access token is written to the [credentials file](/cli/env#facet_dir):
 
@@ -101,9 +101,9 @@ An expired or revoked session requires browser sign-in again. If a refresh outco
   </Accordion>
 
   <Accordion title="local sign-in state could not be read or updated">
-    **Cause:** the browser credential directory or files have unsafe ownership, permissions, or filesystem behavior.
+    **Cause:** your [browser credential storage](/cli/env#browser-credentials) failed its safety checks.
 
-    **Fix:** check the [local state requirements](/cli/env#facet_dir), correct ownership and permissions, then retry. The CLI will not weaken these checks to save credentials.
+    **Fix:** check the [local state requirements](/cli/env#browser-credentials), correct ownership and permissions, then retry. The CLI will not weaken these checks to save credentials.
   </Accordion>
 
   <Accordion title="your registry credentials could not be read">
