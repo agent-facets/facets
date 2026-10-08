@@ -106,9 +106,12 @@ async function runBrowserLogin(autoLaunch: boolean): Promise<number> {
     const { verificationUri, userCode, verificationUriComplete } = started.value.display
     process.stdout.write(`Visit ${verificationUri}\nEnter code: ${userCode}\n`)
     if (autoLaunch) {
-      const opened = await openBrowser(verificationUriComplete)
-      if (!opened.ok)
-        process.stdout.write('Note: the browser could not be opened. Use the URL and code above to finish sign-in.\n')
+      process.stdout.write('If the browser does not open, use the URL and code above to finish sign-in.\n')
+      // The optional opener may outlive this command; polling and cancellation do not wait for it.
+      void openBrowser(verificationUriComplete).then(
+        () => undefined,
+        () => undefined,
+      )
     }
     if (controller.signal.aborted) return cancelled()
 
