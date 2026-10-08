@@ -30,11 +30,45 @@ export interface paths {
         };
         /**
          * List or search facets
-         * @description Searches published facets via the supported search path. Supports `?q=` substring matching, `?sort=` (relevance|recent|name) with deterministic ordering, and opaque `?cursor=` pagination. Anonymous callers see only public facets; authenticated callers also see private facets they are entitled to. The response is `no-store` and never reveals how many facets were hidden.
+         * @description Searches published facets via the supported search path. Supports `?q=` substring matching, `?sort=` (relevance|recent|name) with deterministic ordering, `?type=` (skills|commands|agents|servers) to narrow to facets shipping one primitive, and opaque `?cursor=` pagination. Anonymous callers see only public facets; authenticated callers also see private facets they are entitled to. The response is `no-store` and never reveals how many facets were hidden.
          */
         get: operations["getV0Facets"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/facets/metadata/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve metadata for many facet versions
+         * @description Resolves an ordered list of up to 100 `{ name, version }` items in one request.
+         *     Each `version` may be `latest`, an exact version, or a semver range.
+         *
+         *     Every input position gets exactly one result, in order, and duplicate items stay duplicated.
+         *     A result carries one outcome: `resolved`, `invalid_name`, `invalid_version_spec`, or `unresolved`.
+         *     An item that fails does not prevent the others from resolving, so a 200 does NOT mean every item resolved —
+         *     read each outcome. `unresolved` is caller-relative: it means nothing YOU may read matches, and a facet you are
+         *     not authorized to see is deliberately indistinguishable from one that does not exist.
+         *
+         *     Send the body as `application/json` or any media type with a `+json` structured suffix; a body under any
+         *     other media type is rejected with 415.
+         *     Names are taken literally and are never URL-decoded: send `@scope/name`, not `%40scope/name`.
+         *     Authentication is optional — an absent credential reads anonymously, while a presented credential that is
+         *     invalid is rejected rather than downgraded. Responses are always `Cache-Control: no-store`, because
+         *     visibility is caller-relative and `latest`/range resolution changes as versions publish.
+         */
+        post: operations["postV0FacetsMetadataBatch"];
         delete?: never;
         options?: never;
         head?: never;
@@ -53,6 +87,26 @@ export interface paths {
          * @description Returns the projected count of live public facets. The count is event-backed and eventually consistent; it is never derived from facet search and never reveals private facet counts.
          */
         get: operations["getV0FacetsCount"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/facets/popular": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Popular facets
+         * @description Returns up to four public facets ranked by distinct public archive requests over a rolling 90-day window. Facet metadata is read live from authoritative registry state, so entries always reflect current public facets. Request counts and the ranking window are not exposed. A ranking that is missing or too old to present returns an empty list rather than an unranked fallback.
+         */
+        get: operations["getV0FacetsPopular"];
         put?: never;
         post?: never;
         delete?: never;
@@ -321,6 +375,106 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v0/auth/sign-in": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Begin an interactive sign-in
+         * @description Redirects the browser to the identity provider to begin an authorization-code sign-in. The PKCE verifier and state are generated here and held in a short-lived signed cookie, so neither is ever exposed to page scripts. `web_origin` must exactly match one of the web origins configured for this stage; `return_to` is a path-only in-app destination.
+         */
+        get: operations["getV0AuthSignIn"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/auth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Complete an interactive sign-in
+         * @description The identity provider redirects here with an authorization code. The API validates the signed transaction, exchanges the code, and issues the refresh credential as an HttpOnly cookie. It then redirects to the web application, carrying only the validated destination or a stable failure reason — never a code, state, or token.
+         */
+        get: operations["getV0AuthCallback"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/auth/cli/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get public CLI device authorization configuration
+         * @description Returns public, stage-bound WorkOS device authorization settings when CLI authentication is fully configured. Disabled stages expose only the selected provider.
+         */
+        get: operations["getV0AuthCliConfig"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/auth/cli/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * End the current CLI session
+         * @description Revokes refresh capability for only the verified WorkOS session attached to this bearer token. The issued access token remains valid until its short expiry. PAT callers must revoke the PAT by prefix instead.
+         */
+        post: operations["postV0AuthCliLogout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/auth/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Renew the browser session
+         * @description Issues a fresh short-lived access token from the refresh credential held in an HttpOnly cookie. Requires an allowlisted `Origin` and the browser-session marker header; the cookie alone is not sufficient. The response never contains the refresh credential. A rejected session withdraws the cookie; a registry or identity-provider failure leaves it in place so an outage is not mistaken for a sign-out. A suspended account renews normally — suspension blocks writes, not the session.
+         */
+        post: operations["postV0AuthRefresh"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v0/auth/logout": {
         parameters: {
             query?: never;
@@ -332,7 +486,7 @@ export interface paths {
         put?: never;
         /**
          * Sign out (revoke refresh token)
-         * @description Revokes the supplied refresh token at Cognito. Authenticated by the refresh_token in the request body (not by Authorization header), so the call succeeds even after the access token has locally expired. After this call, any currently-issued access token remains valid until its natural expiry but no new tokens can be obtained without re-authenticating. PAT callers (CI tokens) should use `DELETE /v0/auth/tokens/:prefix` instead. Suspended users receive 403 E_ACCOUNT_SUSPENDED.
+         * @description Revokes the caller's refresh token at Cognito. A browser presents it as an HttpOnly cookie and must also send an allowlisted `Origin` and the browser-session marker header; the cookie is withdrawn once the outcome is terminal, including an already-invalid credential, and is kept when the outcome could not be established. Any other caller presents `refresh_token` in the request body, which is authenticated by the token itself, so the call succeeds even after the access token has locally expired. After this call, any currently-issued access token remains valid until its natural expiry but no new tokens can be obtained without re-authenticating. A suspended account may sign out: suspension blocks writes, not the ending of the caller's own session. PAT callers (CI tokens) should use `DELETE /v0/auth/tokens/:prefix` instead.
          */
         post: operations["postV0AuthLogout"];
         delete?: never;
@@ -350,7 +504,7 @@ export interface paths {
         };
         /**
          * Get the authenticated user's profile
-         * @description Returns the authenticated user's PROFILE projection: user_uuid, username, email, tier, and a boolean `suspended` derived from `suspended_at`. Available to suspended users (so the UI can render the suspension banner).
+         * @description Returns the authenticated user's PROFILE projection: user_uuid, username, email, tier, and a boolean `suspended` derived from `suspended_at`. Available to suspended users (so the UI can render the suspension banner). `startup_experience` reports where this session may start — a derived destination, never runtime control state. `getting_started` reports availability and progress; `entry_required` is true only while the account has no presentation, skip, completion, or opt-out on record, and is confirmed against the authoritative account row before it is reported.
          */
         get: operations["getV0AuthMe"];
         put?: never;
@@ -376,7 +530,7 @@ export interface paths {
         put?: never;
         /**
          * Mint a new personal access token
-         * @description Returns the plaintext token EXACTLY ONCE in the `plaintext_token` field. The registry stores only the HMAC of the secret portion. If you lose the plaintext, you must mint a new token. Up to 3 prefix-collision retries before returning 500 E_PREFIX_COLLISION_RETRY_EXHAUSTED. Requires an interactive (JWT) session — PAT callers receive 403 E_INTERACTIVE_SESSION_REQUIRED. Impersonated (admin-as-target) sessions receive 403 E_IMPERSONATION_FORBIDDEN — stop impersonating before minting.
+         * @description Returns the plaintext token EXACTLY ONCE in the `plaintext_token` field. The registry stores only the HMAC of the secret portion. If you lose the plaintext, you must mint a new token. Up to 3 prefix-collision retries before returning 500 E_PREFIX_COLLISION_RETRY_EXHAUSTED. Requires an interactive (JWT) session — PAT callers receive 403 E_INTERACTIVE_SESSION_REQUIRED. Impersonated (admin-as-target) sessions receive 403 E_IMPERSONATION_FORBIDDEN — stop impersonating before minting. Sending `source: "getting-started"` additionally records the account’s getting-started token milestone in the same transaction and attributes the `user.token_minted` event to the flow.
          */
         post: operations["postV0AuthTokens"];
         delete?: never;
@@ -415,8 +569,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Sign out from all Cognito sessions
-         * @description Invalidates all access and refresh tokens for the caller's Cognito user. Subsequent requests with those tokens fail with 401. Does NOT revoke the caller's PATs — use `GET /v0/auth/tokens` + per-prefix DELETE for that. PAT callers receive 400 (PATs don't have Cognito sessions). Suspended users receive 403 E_ACCOUNT_SUSPENDED.
+         * Sign out from all interactive sessions
+         * @description Invalidates all interactive sessions for the selected provider. WorkOS sign-out applies the registry's authentication cutoff and confirms that every listed WorkOS session was revoked before reporting success. Does NOT revoke PATs — use `GET /v0/auth/tokens` + per-prefix DELETE for that. PAT callers receive 400. Suspended users receive 403 E_ACCOUNT_SUSPENDED.
          */
         post: operations["postV0AuthSignOutEverywhere"];
         delete?: never;
@@ -629,6 +783,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v0/admin/pilot-intake": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List pilot-intake submissions (admin)
+         * @description Newest-first. `cursor` continues a previous page; `limit` caps the page size.
+         */
+        get: operations["getV0AdminPilotIntake"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/admin/pilot-intake/{id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record the Q08 human-read verdict (admin) */
+        post: operations["postV0AdminPilotIntakeByIdReview"];
+        /**
+         * Reset a recorded Q08 verdict (admin)
+         * @description Returns the submission to awaiting review so a corrected verdict can be recorded.
+         */
+        delete: operations["deleteV0AdminPilotIntakeByIdReview"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v0/admin/reservation-list": {
         parameters: {
             query?: never;
@@ -705,8 +900,14 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Search users by username prefix
-         * @description Bounded username search over the OpenSearch users index: an empty `q` browses all users alphabetically (match_all) and a non-empty `q` is an infix substring match. Admin-gated, so the response carries email, tier, and suspension status.
+         * Search or browse users
+         * @description Bounded username search or database-backed directory browse.
+         *
+         *     **Search mode** (default): an empty `q` browses all users alphabetically (match_all) and a non-empty `q` is an infix substring match over the OpenSearch users index; when OpenSearch fails the request 503s rather than silently degrading.
+         *
+         *     **Browse mode** (`?browse=1`): walks all users alphabetically independent of search, using the database directly. If `q` is non-empty, browse is ignored and search takes precedence. Returns a `cursor` on non-terminal pages for pagination.
+         *
+         *     Admin-gated, so the response carries email, tier, and suspension status. Suspended users are included in browse results as an admin directory view.
          */
         get: operations["getV0AdminUsers"];
         put?: never;
@@ -748,12 +949,12 @@ export interface paths {
         put?: never;
         /**
          * Suspend a user
-         * @description Authoritative step: UpdateItem on the target user's PROFILE sets suspended_at, suspended_reason, and suspended_by_user_id. Best-effort cleanup follows sequentially: Cognito AdminUserGlobalSignOut, then per-PAT revoke. Failures in the cleanup phase don't roll back the suspension — the PROFILE gate is the source of truth.
+         * @description UpdateItem on the target user's PROFILE sets suspended_at, suspended_reason, and suspended_by_user_id. That row is the whole mechanism: it is read strongly-consistently at every write and admin operation, so the user's next write is refused regardless of the credential they present. No credential is revoked — the user keeps their sessions and CI publish tokens, continues to read, and may sign out of the session they are using.
          */
         post: operations["postV0AdminUsersByIdSuspension"];
         /**
          * Lift a user's suspension
-         * @description REMOVEs suspended_at, suspended_reason, suspended_by_user_id from the PROFILE row. Does NOT restore Cognito sessions or PATs that were invalidated by the original suspension — the user signs in again or mints new tokens.
+         * @description REMOVEs suspended_at, suspended_reason, suspended_by_user_id from the PROFILE row. The user regains write access on their next request using the credentials they already hold — suspension revoked nothing.
          */
         delete: operations["deleteV0AdminUsersByIdSuspension"];
         options?: never;
@@ -769,8 +970,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Search organizations by name/slug prefix
-         * @description Bounded organization search over the OpenSearch organizations index, returning org id, slug, and display name for admin autocomplete. An empty `q` browses all organizations alphabetically (capped).
+         * Search or browse organizations
+         * @description Bounded organization search over the OpenSearch organizations index, returning org id, slug, and display name for admin autocomplete. An empty `q` browses all organizations alphabetically via OpenSearch match_all (capped); a non-empty `q` is a relevance-ranked match over display-name/description SUBSTRINGS. Requires search to be configured for the stage — organizations have no legacy prefix-queryable GSI, so search-mode 503s when search is unavailable rather than degrading.
+         *
+         *     **Browse mode** (`?browse=1`): walks every organization alphabetically by SLUG PREFIX, straight from the database, independent of OpenSearch availability — the fallback for stages without search configured, or when search is down. Different match semantics than primary search: this orders and pages by slug, not by display-name/description relevance. If `q` is non-empty, browse is ignored and search takes precedence. Returns a `cursor` on non-terminal pages for pagination.
          */
         get: operations["getV0AdminOrgs"];
         put?: never;
@@ -855,6 +1058,26 @@ export interface paths {
          * @description Async-invokes the flush Lambda to DROP and re-apply the shared ClickHouse schema (wiping all stages' rows) and reload this stage from the archive. Destructive. Admin only.
          */
         post: operations["postV0AdminEventHealthRebuild"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/admin/event-health/refresh-popularity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Recalculate the popular-facets ranking now
+         * @description Async-invokes the analytics Lambda to recompute and republish the rolling 90-day popular-facets ranking from already-loaded analytics history. Admin only.
+         */
+        post: operations["postV0AdminEventHealthRefreshPopularity"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1181,9 +1404,83 @@ export interface paths {
         post?: never;
         /**
          * Withdraw a pending review item
-         * @description Transitions the row to status='withdrawn'. Cross-user attempts collapse to 404 (to avoid leaking queue-id existence). Non-pending rows (already approved/rejected/superseded) return 409.
+         * @description Transitions the row to status='withdrawn'. Cross-user attempts collapse to 404 (to avoid leaking queue-id existence). Non-pending rows (already approved/rejected/superseded) return 409. Withdrawal is a write, so a suspended user receives 403 E_ACCOUNT_SUSPENDED.
          */
         delete: operations["deleteV0SettingsReviewQueueById"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/settings/startup-destination": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set where the caller’s session starts
+         * @description Records whether the caller starts on the landing page or the browse experience. The stored choice is reported back through `startup_experience` on GET /v0/auth/me.
+         */
+        put: operations["putV0SettingsStartupDestination"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/settings/getting-started/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record a getting-started presentation, milestone, skip, finish, opt-out, or reset
+         * @description Records one getting-started fact on the caller’s account, at most once each: a repeat answers 200 with the unchanged progress and emits no second event. The token milestone is not markable here — it is recorded by the mint that creates the token (`POST /v0/auth/tokens` with `source: "getting-started"`). Finishing records completion without filling in milestones the user never confirmed. `presented` acknowledges that a setup screen rendered and completes no milestone or event. `reset` clears the account’s presentation, skip, finish, and opt-out records so the walkthrough is presented again, preserves the three setup milestones and their original times, emits `user.getting_started_reset`, and succeeds when repeated; it is refused with 403 E_FORBIDDEN while the flow is unavailable. This endpoint requires a direct interactive session — PAT callers receive 403 E_INTERACTIVE_SESSION_REQUIRED. Impersonated sessions receive 403 E_IMPERSONATION_FORBIDDEN; suspended accounts receive 403 E_ACCOUNT_SUSPENDED.
+         */
+        post: operations["postV0SettingsGettingStartedProgress"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/organizations/email-invitations/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List accepted email invitations awaiting local organization membership */
+        get: operations["getV0OrganizationsEmailInvitationsPending"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/organizations/email-invitations/{invitationId}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept a WorkOS email invitation into registry membership */
+        post: operations["postV0OrganizationsEmailInvitationsByInvitationIdAccept"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1259,6 +1556,23 @@ export interface paths {
         put?: never;
         /** Invite a user to the organization */
         post: operations["postV0OrganizationsBySlugMembers"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v0/organizations/{slug}/email-invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Invite someone by email to join an organization */
+        post: operations["postV0OrganizationsBySlugEmailInvitations"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1350,6 +1664,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v0/pilot-intake": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit the pilot kickoff intake
+         * @description Public endpoint behind the website "Book pilot kickoff" flow. Evaluates the questionnaire server-side and answers with the outcome screen to render; evaluation internals are never disclosed.
+         */
+        post: operations["postV0PilotIntake"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1389,16 +1723,71 @@ export interface components {
             facets: components["schemas"]["FacetSummary"][];
             next_cursor?: string;
         };
-        PublicFacetCountResponse: {
-            count: number;
-        };
-        LatestVersionResponse: {
-            latest: string;
+        BatchMetadataInput: {
             name: string;
+            version: string;
+        };
+        BatchMetadataRequest: {
+            items: components["schemas"]["BatchMetadataInput"][];
+        };
+        BatchMetadataResolved: {
+            content_hash: string;
+            content_integrity: string;
+            /** @constant */
+            kind: "resolved";
+            version: string;
+        };
+        BatchMetadataUnresolved: {
+            error: {
+                /** @constant */
+                code: "E_FACET_NOT_FOUND";
+                docs_url: string;
+                error: string;
+                fix: string;
+            };
+            /** @constant */
+            kind: "unresolved";
+            /** @constant */
+            status: 404;
+        };
+        BatchMetadataInvalidName: {
+            error: {
+                /** @constant */
+                code: "E_INVALID_NAME";
+                docs_url: string;
+                error: string;
+                fix: string;
+            };
+            /** @constant */
+            kind: "invalid_name";
+            /** @constant */
+            status: 422;
+        };
+        BatchMetadataInvalidVersionSpec: {
+            error: {
+                /** @constant */
+                code: "E_INVALID_VERSION_SPEC";
+                docs_url: string;
+                error: string;
+                fix: string;
+            };
+            /** @constant */
+            kind: "invalid_version_spec";
+            /** @constant */
+            status: 422;
+        };
+        BatchMetadataOutcome: components["schemas"]["BatchMetadataResolved"] | components["schemas"]["BatchMetadataUnresolved"] | components["schemas"]["BatchMetadataInvalidName"] | components["schemas"]["BatchMetadataInvalidVersionSpec"];
+        BatchMetadataResult: {
+            name: string;
+            outcome: components["schemas"]["BatchMetadataOutcome"];
+            requested_version: string;
+        };
+        BatchMetadataResponse: {
+            results: components["schemas"]["BatchMetadataResult"][];
         };
         ApiErrorBody: {
             /** @enum {unknown} */
-            code: "E_ACCOUNT_SUSPENDED" | "E_ADMIN_REQUIRED" | "E_ALREADY_MEMBER" | "E_ALREADY_ONBOARDED" | "E_API_KEY_MISSING" | "E_ARCHIVE_DECOMPRESSED_TOO_LARGE" | "E_ARCHIVE_MALFORMED" | "E_ARCHIVE_METADATA_TOO_LARGE" | "E_CLAIM_ALREADY_PENDING" | "E_CLAIM_PENDING_ELSEWHERE" | "E_CONTENT_INTEGRITY_MISMATCH" | "E_CONTROL_CONCURRENT_MODIFICATION" | "E_CONTROL_INVALID_TARGET" | "E_CONTROL_INVALID_VALUE" | "E_CONTROL_MANAGEMENT_IMMUTABLE" | "E_CONTROL_NOT_FOUND" | "E_CONTROL_RULE_NOT_FOUND" | "E_DRY_RUN_REQUIRED" | "E_FACET_NOT_FOUND" | "E_FACET_NOT_OWNED" | "E_FORBIDDEN" | "E_GLOBAL_FACET_MUST_BE_PUBLIC" | "E_IMPERSONATION_FORBIDDEN" | "E_INTERACTIVE_SESSION_REQUIRED" | "E_INTERNAL" | "E_INVALID_CURSOR" | "E_INVALID_NAME" | "E_INVALID_VERSION" | "E_INVITATION_NOT_FOUND" | "E_LOGOUT_REQUIRES_JWT" | "E_MANIFEST_CONTENT_MISMATCH" | "E_MEMBER_NOT_FOUND" | "E_MIGRATION_ALREADY_COMPLETED" | "E_MIGRATION_BATCH_NOT_FOUND" | "E_MIGRATION_BATCH_RUNNING" | "E_MIGRATION_DEPENDENCY_UNMET" | "E_MIGRATION_NOT_FOUND" | "E_MIGRATION_RUNNING" | "E_NAME_BLOCKED" | "E_ONBOARDING_REQUIRED" | "E_ORG_FORBIDDEN" | "E_ORG_LAST_ADMIN" | "E_ORG_NAME_RESERVED" | "E_ORG_NAME_TAKEN" | "E_ORG_NOT_FOUND" | "E_PREFIX_COLLISION_RETRY_EXHAUSTED" | "E_PRIVATE_FACET_ENTITLEMENT_REQUIRED" | "E_PROFILE_CORRUPT" | "E_QUEUE_FULL" | "E_QUEUE_ITEM_NOT_FOUND" | "E_QUEUE_ITEM_NOT_PENDING" | "E_READ_ONLY" | "E_REGISTRY_UNAVAILABLE" | "E_RESERVATION_EXISTS" | "E_RESERVATION_NOT_FOUND" | "E_REVIEW_ARTIFACT_MISSING" | "E_RUN_NOT_FOUND" | "E_SCOPE_NOT_FOUND" | "E_SCOPE_NOT_OWNED" | "E_TARBALL_CORRUPTED" | "E_TARBALL_TOO_LARGE" | "E_TOKEN_EXPIRED" | "E_TOKEN_NOT_FOUND" | "E_TOKEN_REVOKED" | "E_UNAUTHENTICATED" | "E_UNDECLARED_CONTENT" | "E_UNSUPPORTED_FACET_VERSION" | "E_USERNAME_TAKEN" | "E_USER_NOT_FOUND" | "E_VERSION_EXISTS" | "E_WRITE_BANNED";
+            code: "E_ACCOUNT_SUSPENDED" | "E_ADMIN_REQUIRED" | "E_ALREADY_MEMBER" | "E_ALREADY_ONBOARDED" | "E_API_KEY_MISSING" | "E_ARCHIVE_DECOMPRESSED_TOO_LARGE" | "E_ARCHIVE_MALFORMED" | "E_ARCHIVE_METADATA_TOO_LARGE" | "E_AUTH_PROVIDER_DISABLED" | "E_BATCH_TOO_LARGE" | "E_CLAIM_ALREADY_PENDING" | "E_CLAIM_PENDING_ELSEWHERE" | "E_CONTENT_INTEGRITY_MISMATCH" | "E_CONTROL_CONCURRENT_MODIFICATION" | "E_CONTROL_INVALID_TARGET" | "E_CONTROL_INVALID_VALUE" | "E_CONTROL_MANAGEMENT_IMMUTABLE" | "E_CONTROL_NOT_FOUND" | "E_CONTROL_RULE_NOT_FOUND" | "E_DRY_RUN_REQUIRED" | "E_FACET_NOT_FOUND" | "E_FACET_NOT_OWNED" | "E_FORBIDDEN" | "E_GLOBAL_FACET_MUST_BE_PUBLIC" | "E_IDENTITY_CONFLICT" | "E_IMPERSONATION_FORBIDDEN" | "E_INTAKE_INVALID" | "E_INTAKE_NOT_FOUND" | "E_INTAKE_REVIEW_ALREADY_RECORDED" | "E_INTAKE_REVIEW_NOT_RECORDED" | "E_INTERACTIVE_SESSION_REQUIRED" | "E_INTERNAL" | "E_INVALID_BATCH_REQUEST" | "E_INVALID_CURSOR" | "E_INVALID_NAME" | "E_INVALID_VERSION" | "E_INVALID_VERSION_SPEC" | "E_INVITATION_NOT_FOUND" | "E_LOGOUT_REQUIRES_JWT" | "E_MANIFEST_CONTENT_MISMATCH" | "E_MEMBER_NOT_FOUND" | "E_MIGRATION_ALREADY_COMPLETED" | "E_MIGRATION_BATCH_NOT_FOUND" | "E_MIGRATION_BATCH_RUNNING" | "E_MIGRATION_DEPENDENCY_UNMET" | "E_MIGRATION_NOT_FOUND" | "E_MIGRATION_RUNNING" | "E_NAME_BLOCKED" | "E_OIDC_REPLAY" | "E_ONBOARDING_REQUIRED" | "E_ORG_FORBIDDEN" | "E_ORG_LAST_ADMIN" | "E_ORG_NAME_RESERVED" | "E_ORG_NAME_TAKEN" | "E_ORG_NOT_FOUND" | "E_PREFIX_COLLISION_RETRY_EXHAUSTED" | "E_PRIVATE_FACET_ENTITLEMENT_REQUIRED" | "E_PROFILE_CORRUPT" | "E_PUBLISH_CREDENTIAL_SCOPE" | "E_QUEUE_FULL" | "E_QUEUE_ITEM_NOT_FOUND" | "E_QUEUE_ITEM_NOT_PENDING" | "E_RATE_LIMITED" | "E_READ_ONLY" | "E_REGISTRY_UNAVAILABLE" | "E_RESERVATION_EXISTS" | "E_RESERVATION_NOT_FOUND" | "E_REVIEW_ARTIFACT_MISSING" | "E_RUN_NOT_FOUND" | "E_SCOPE_NOT_FOUND" | "E_SCOPE_NOT_OWNED" | "E_TARBALL_CORRUPTED" | "E_TARBALL_TOO_LARGE" | "E_TOKEN_EXPIRED" | "E_TOKEN_NOT_FOUND" | "E_TOKEN_REVOKED" | "E_TRUSTED_PUBLISHER_FORBIDDEN" | "E_TRUSTED_PUBLISHER_REVOKED" | "E_UNAUTHENTICATED" | "E_UNDECLARED_CONTENT" | "E_UNSUPPORTED_FACET_VERSION" | "E_UNSUPPORTED_MEDIA_TYPE" | "E_USERNAME_TAKEN" | "E_USER_NOT_FOUND" | "E_VERSION_EXISTS" | "E_WRITE_BANNED";
             docs_url: string;
             error: string;
             fix: string;
@@ -1424,7 +1813,22 @@ export interface components {
                 kind: "aggregate_metadata_too_large";
                 limit_bytes: number;
                 message: string;
+            } | {
+                /** @constant */
+                kind: "invalid_request_field";
+                message: string;
+                path: string;
             })[];
+        };
+        PublicFacetCountResponse: {
+            count: number;
+        };
+        PopularFacetsResponse: {
+            facets: components["schemas"]["FacetSummary"][];
+        };
+        LatestVersionResponse: {
+            latest: string;
+            name: string;
         };
         VersionListResponse: {
             name: string;
@@ -1501,13 +1905,66 @@ export interface components {
             /** @constant */
             status: "QUEUED_FOR_REVIEW";
         };
+        AuthCliConfigResponse: {
+            authorization_endpoint: string;
+            client_id: string;
+            /** @constant */
+            enabled: true;
+            issuer: string;
+            onboarding_url: string;
+            /** @constant */
+            provider: "workos";
+            token_endpoint: string;
+            verification_origin: string;
+        } | {
+            /** @constant */
+            enabled: false;
+            /** @enum {unknown} */
+            provider: "cognito" | "workos";
+        };
+        AuthCliLogoutResponse: {
+            /** @constant */
+            ok: true;
+        };
+        BrowserSessionResponse: {
+            access_token: string;
+            expires_in: number;
+            /** @constant */
+            token_type: "Bearer";
+        };
         AuthMeResponse: {
             email: string;
+            getting_started: {
+                entry_required: boolean;
+                /** @constant */
+                kind: "available";
+                offered: boolean;
+                cli_signed_in_at?: string;
+                completed_at?: string;
+                facet_added_at?: string;
+                opted_out_at?: string;
+                presented_at?: string;
+                skipped_at?: string;
+                token_created_at?: string;
+            } | {
+                /** @constant */
+                kind: "unavailable";
+            };
+            startup_experience: {
+                /** @constant */
+                kind: "browse-preview";
+                /** @enum {unknown} */
+                startup_destination: "browse" | "landing" | "unset";
+            } | {
+                /** @constant */
+                kind: "landing-only";
+            };
             suspended: boolean;
             /** @enum {unknown} */
             tier: "admin" | "enterprise" | "free" | "pro";
             user_uuid: string;
             username: string;
+            email_invitations_available?: boolean;
         };
         MintTokenResponse: {
             expires_at: string;
@@ -1663,6 +2120,133 @@ export interface components {
             error?: string;
             finished_at?: string;
         };
+        PilotIntakeAdminListResponse: {
+            submissions: {
+                answers: {
+                    /** @enum {unknown} */
+                    q01: "eng_leader" | "individual_engineer" | "other" | "platform_owner" | "team_lead";
+                    /** @enum {unknown} */
+                    q02: 2150 | 24 | "50_plus" | 520 | "just_me";
+                    q03: ("claude_code" | "codex" | "cursor" | "gemini_cli" | "github_copilot" | "opencode" | "other" | "windsurf")[];
+                    /** @enum {unknown} */
+                    q04: "claude_code" | "codex" | "cursor" | "gemini_cli" | "github_copilot" | "opencode" | "other" | "windsurf";
+                    q05: ("checked_into_repos" | "distributed_ci" | "dotfiles_symlinks" | "individual" | "no_custom_config" | "shared_informally")[];
+                    q06: ("custom_agents" | "custom_commands" | "custom_skills" | "internal_mcp_servers" | "mcp_configs" | "none_builtins")[];
+                    q07: ("breaking_update" | "held_off_install" | "manual_porting" | "none" | "rewrote_skill" | "security_asked" | "version_mismatch")[];
+                    /** @enum {unknown} */
+                    q10: "me" | "named_owner" | "nobody_yet" | "shared_no_owner";
+                    /** @enum {unknown} */
+                    q11: "no" | "sandbox_only" | "yes" | "yes_after_approval";
+                    /** @enum {unknown} */
+                    q12: "cannot_commit" | "daily_plus_checkins" | "plus_rollout" | "plus_weekly_feedback";
+                    q13: ("adoption_help" | "consistent_installs" | "control_agents" | "evaluate_governance" | "replace_glue" | "standardize_team")[];
+                    /** @enum {unknown} */
+                    q14: "founder_network" | "github" | "other" | "referral";
+                    q08?: string;
+                    q09?: string;
+                    q14_other?: string;
+                    q15?: string;
+                    q16?: string;
+                };
+                contact: {
+                    email: string;
+                    name?: string;
+                };
+                evaluation: {
+                    adapter_gap: boolean;
+                    breakdown: {
+                        commitment: number;
+                        friction: number;
+                        glue: number;
+                        harnesses: number;
+                        install: number;
+                        outcome: number;
+                        owner: number;
+                        team_size: number;
+                    };
+                    /** @constant */
+                    outcome: "nurture";
+                    score: number;
+                    /** @constant */
+                    stage: "score";
+                    /** @constant */
+                    tier: "nurture";
+                    unsupported_primary: boolean;
+                } | {
+                    adapter_gap: boolean;
+                    breakdown: {
+                        commitment: number;
+                        friction: number;
+                        glue: number;
+                        harnesses: number;
+                        install: number;
+                        outcome: number;
+                        owner: number;
+                        team_size: number;
+                    };
+                    /** @constant */
+                    outcome: "schedule";
+                    score: number;
+                    /** @enum {unknown} */
+                    tier: "priority" | "schedule";
+                    unsupported_primary: boolean;
+                } | {
+                    adapter_gap: boolean;
+                    /** @enum {unknown} */
+                    failed_gate: "G1" | "G2" | "G3" | "G4";
+                    /** @constant */
+                    outcome: "nurture";
+                    /** @constant */
+                    stage: "gate";
+                    unsupported_primary: boolean;
+                } | {
+                    adapter_gap: boolean;
+                    flags: ("q10_no_owner" | "q12_no_commitment" | "q13_adoption" | "q13_governance")[];
+                    /** @constant */
+                    outcome: "nurture";
+                    /** @constant */
+                    stage: "flag";
+                    unsupported_primary: boolean;
+                };
+                questionnaire_version: string;
+                review: {
+                    reviewed_at: string;
+                    reviewer_user_id: string;
+                    /** @constant */
+                    status: "done";
+                    /** @enum {unknown} */
+                    verdict: "concrete" | "hypothetical";
+                } | {
+                    /** @constant */
+                    status: "not-required";
+                } | {
+                    /** @constant */
+                    status: "pending";
+                };
+                submission_id: string;
+                submitted_at: string;
+                booking?: {
+                    end_time: string;
+                    reported_at: string;
+                    start_time: string;
+                    /** @enum {unknown} */
+                    status: "booked" | "cancelled";
+                    uid: string;
+                };
+                review_history?: {
+                    reset_at: string;
+                    reviewed_at: string;
+                    reviewer_user_id: string;
+                    /** @enum {unknown} */
+                    verdict: "concrete" | "hypothetical";
+                }[];
+            }[];
+            next_cursor?: string;
+        };
+        PilotIntakeReviewRequest: {
+            /** @enum {unknown} */
+            verdict: "concrete" | "hypothetical";
+        };
         ReservationListResponse: {
             reservations: {
                 added_at: string;
@@ -1702,6 +2286,17 @@ export interface components {
             /** @constant */
             success: false;
         };
+        AdminQueueDecisionResponse: {
+            decision_reason: string;
+            /** @constant */
+            outcome: "superseded";
+        } | {
+            /** @constant */
+            outcome: "approved";
+        } | {
+            /** @constant */
+            outcome: "rejected";
+        };
         AdminUserListResponse: {
             users: {
                 email: string;
@@ -1711,6 +2306,7 @@ export interface components {
                 user_id: string;
                 username: string;
             }[];
+            cursor?: string;
         };
         StartImpersonationResponse: {
             target: {
@@ -1724,6 +2320,7 @@ export interface components {
                 org_id: string;
                 slug: string;
             }[];
+            cursor?: string;
         };
         EventDeliveryHealthResponse: {
             consumers: ({
@@ -1740,6 +2337,24 @@ export interface components {
                 capture_dlq_depth: number | null;
                 /** @constant */
                 consumer: "analytics";
+                popularity: {
+                    refresh_running: boolean;
+                    snapshot: {
+                        calculated_at: string;
+                        candidate_count: number;
+                        /** @enum {unknown} */
+                        state: "current" | "expired";
+                        window_ended_at: string;
+                    } | {
+                        /** @constant */
+                        state: "missing";
+                    };
+                    /** @constant */
+                    state: "available";
+                } | {
+                    /** @constant */
+                    state: "unavailable";
+                };
             } | {
                 apply_dlq_depth: number;
                 /** @constant */
@@ -1773,6 +2388,7 @@ export interface components {
                 index_count: number;
                 indexed: number;
                 scanned: number;
+                stale_skipped: number;
                 subject: string;
             }[];
             error?: string;
@@ -1792,6 +2408,11 @@ export interface components {
             subjects: {
                 matched: number;
                 mismatches: {
+                    diffs: {
+                        expected: string;
+                        field: string;
+                        indexed: string;
+                    }[];
                     diverged_fields: string[];
                     id: string;
                 }[];
@@ -2219,6 +2840,28 @@ export interface components {
                 requested_slug?: string;
             }[];
         };
+        StartupDestinationResponse: {
+            /** @enum {unknown} */
+            startup_destination: "browse" | "landing";
+        };
+        MarkGettingStartedProgressResponse: {
+            getting_started: {
+                entry_required: boolean;
+                /** @constant */
+                kind: "available";
+                offered: boolean;
+                cli_signed_in_at?: string;
+                completed_at?: string;
+                facet_added_at?: string;
+                opted_out_at?: string;
+                presented_at?: string;
+                skipped_at?: string;
+                token_created_at?: string;
+            } | {
+                /** @constant */
+                kind: "unavailable";
+            };
+        };
         OrgDetailResponse: {
             created_at: string;
             display_name: string;
@@ -2260,6 +2903,51 @@ export interface components {
                 username: string;
             }[];
         };
+        PilotIntakeSubmitResponse: {
+            /** @constant */
+            outcome: "nurture";
+        } | {
+            /** @constant */
+            outcome: "schedule";
+            scheduling: {
+                embed_url: string;
+            } | null;
+            submission_id: string;
+        };
+        PilotIntakeSubmitRequest: {
+            answers: {
+                /** @enum {unknown} */
+                q01: "eng_leader" | "individual_engineer" | "other" | "platform_owner" | "team_lead";
+                /** @enum {unknown} */
+                q02: 2150 | 24 | "50_plus" | 520 | "just_me";
+                q03: ("claude_code" | "codex" | "cursor" | "gemini_cli" | "github_copilot" | "opencode" | "other" | "windsurf")[];
+                /** @enum {unknown} */
+                q04: "claude_code" | "codex" | "cursor" | "gemini_cli" | "github_copilot" | "opencode" | "other" | "windsurf";
+                q05: ("checked_into_repos" | "distributed_ci" | "dotfiles_symlinks" | "individual" | "no_custom_config" | "shared_informally")[];
+                q06: ("custom_agents" | "custom_commands" | "custom_skills" | "internal_mcp_servers" | "mcp_configs" | "none_builtins")[];
+                q07: ("breaking_update" | "held_off_install" | "manual_porting" | "none" | "rewrote_skill" | "security_asked" | "version_mismatch")[];
+                /** @enum {unknown} */
+                q10: "me" | "named_owner" | "nobody_yet" | "shared_no_owner";
+                /** @enum {unknown} */
+                q11: "no" | "sandbox_only" | "yes" | "yes_after_approval";
+                /** @enum {unknown} */
+                q12: "cannot_commit" | "daily_plus_checkins" | "plus_rollout" | "plus_weekly_feedback";
+                q13: ("adoption_help" | "consistent_installs" | "control_agents" | "evaluate_governance" | "replace_glue" | "standardize_team")[] | ("adoption_help" | "consistent_installs" | "control_agents" | "evaluate_governance" | "replace_glue" | "standardize_team");
+                /** @enum {unknown} */
+                q14: "founder_network" | "github" | "other" | "referral";
+                q08?: string;
+                q09?: string;
+                q14_other?: string;
+                q15?: string;
+                q16?: string;
+            };
+            /** @constant */
+            consent: true;
+            contact: {
+                email: string;
+                name?: string;
+            };
+        };
     };
     responses: never;
     parameters: never;
@@ -2295,6 +2983,7 @@ export interface operations {
                 sort?: "name" | "recent" | "relevance";
                 cursor?: string;
                 q?: string;
+                type?: "agents" | "commands" | "servers" | "skills";
             };
             header?: never;
             path?: never;
@@ -2322,6 +3011,93 @@ export interface operations {
             };
         };
     };
+    postV0FacetsMetadataBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchMetadataRequest"];
+            };
+        };
+        responses: {
+            /** @description One ordered outcome per requested item */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchMetadataResponse"];
+                };
+            };
+            /** @description Malformed JSON, or a request body that is not a valid batch */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description A credential was presented and is not valid */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description The presented credential may not read the registry */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description More than 100 items */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description The request body was not sent as JSON */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Unexpected registry failure */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description A registry dependency is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
     getV0FacetsCount: {
         parameters: {
             query?: never;
@@ -2338,6 +3114,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PublicFacetCountResponse"];
+                };
+            };
+        };
+    };
+    getV0FacetsPopular: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Popular public facets, most popular first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PopularFacetsResponse"];
                 };
             };
         };
@@ -2916,6 +3712,192 @@ export interface operations {
             };
         };
     };
+    getV0AuthSignIn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirect to the identity provider */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unconfigured web origin (E_FORBIDDEN) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Interactive sign-in is not configured on this deployment */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    getV0AuthCallback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirect to the web application */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Interactive sign-in is not configured on this deployment */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    getV0AuthCliConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description CLI device authorization configuration */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthCliConfigResponse"];
+                };
+            };
+        };
+    };
+    postV0AuthCliLogout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current CLI session refresh capability revoked */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthCliLogoutResponse"];
+                };
+            };
+            /** @description PAT caller has no interactive session to revoke (E_LOGOUT_REQUIRES_JWT) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Missing or invalid bearer credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Impersonated callers cannot revoke the target user session (E_IMPERSONATION_FORBIDDEN) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description WorkOS is disabled or the session could not be revoked */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    postV0AuthRefresh: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A fresh access token */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserSessionResponse"];
+                };
+            };
+            /** @description No usable session (E_UNAUTHENTICATED) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Untrusted origin or missing marker (E_FORBIDDEN) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description The session could not be renewed right now (E_REGISTRY_UNAVAILABLE) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
     postV0AuthLogout: {
         parameters: {
             query?: never;
@@ -2941,8 +3923,17 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorBody"];
                 };
             };
-            /** @description Account suspended (E_ACCOUNT_SUSPENDED) */
+            /** @description Untrusted origin or missing marker (E_FORBIDDEN) */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description The session could not be ended right now (E_REGISTRY_UNAVAILABLE) */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2972,6 +3963,24 @@ export interface operations {
             };
             /** @description Missing or invalid credentials */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description The account profile is corrupt */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description The account’s getting-started state could not be read; retryable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3055,6 +4064,15 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorBody"];
                 };
             };
+            /** @description Event-sequence contention; retryable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
         };
     };
     deleteV0AuthTokensByPrefix: {
@@ -3113,7 +4131,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description All Cognito sessions invalidated */
+            /** @description All interactive sessions invalidated */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3140,6 +4158,15 @@ export interface operations {
             };
             /** @description Account suspended (E_ACCOUNT_SUSPENDED) */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Global sign-out could not be confirmed (E_REGISTRY_UNAVAILABLE) */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3477,6 +4504,115 @@ export interface operations {
             };
         };
     };
+    getV0AdminPilotIntake: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of submissions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PilotIntakeAdminListResponse"];
+                };
+            };
+            /** @description Unusable cursor or limit */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    postV0AdminPilotIntakeByIdReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PilotIntakeReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Verdict recorded */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No submission with that id (E_INTAKE_NOT_FOUND) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Submission is not awaiting review (E_INTAKE_REVIEW_ALREADY_RECORDED) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    deleteV0AdminPilotIntakeByIdReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Verdict cleared; the submission awaits review again */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No submission with that id (E_INTAKE_NOT_FOUND) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description No recorded verdict to reset (E_INTAKE_REVIEW_NOT_RECORDED) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
     getV0AdminReservationList: {
         parameters: {
             query?: never;
@@ -3688,7 +4824,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AdminQueueDecisionResponse"];
+                };
             };
             /** @description Missing or invalid credentials */
             401: {
@@ -3739,7 +4877,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Matching users */
+            /** @description Matching or browsed users */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3748,13 +4886,13 @@ export interface operations {
                     "application/json": components["schemas"]["AdminUserListResponse"];
                 };
             };
-            /** @description Invalid `q` query param */
+            /** @description Invalid `q` query param, or an invalid browse cursor */
             400: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationErrorBody"];
+                    "application/json": components["schemas"]["ValidationErrorBody"] | components["schemas"]["ApiErrorBody"];
                 };
             };
             /** @description Missing or invalid credentials */
@@ -3940,7 +5078,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Matching organizations */
+            /** @description Matching or browsed organizations */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3949,13 +5087,13 @@ export interface operations {
                     "application/json": components["schemas"]["AdminOrgListResponse"];
                 };
             };
-            /** @description Invalid `q` query param */
+            /** @description Invalid `q` query param, or an invalid browse cursor */
             400: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationErrorBody"];
+                    "application/json": components["schemas"]["ValidationErrorBody"] | components["schemas"]["ApiErrorBody"];
                 };
             };
             /** @description Missing or invalid credentials */
@@ -3976,7 +5114,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorBody"];
                 };
             };
-            /** @description Search is unavailable or not configured */
+            /** @description Search is unavailable or not configured (browse mode is unaffected) */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -4060,6 +5198,24 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Rebuild accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    postV0AdminEventHealthRefreshPopularity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recalculation accepted */
             202: {
                 headers: {
                     [name: string]: unknown;
@@ -4833,6 +5989,15 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorBody"];
                 };
             };
+            /** @description Account suspended (E_ACCOUNT_SUSPENDED) or write-banned */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
             /** @description No such queue item for this user */
             404: {
                 headers: {
@@ -4850,6 +6015,215 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ApiErrorBody"];
                 };
+            };
+        };
+    };
+    putV0SettingsStartupDestination: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Choice recorded */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StartupDestinationResponse"];
+                };
+            };
+            /** @description Invalid body */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorBody"];
+                };
+            };
+            /** @description Missing or invalid credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Impersonated session, or account suspended (E_ACCOUNT_SUSPENDED) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    postV0SettingsGettingStartedProgress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @constant */
+                    kind: "completed";
+                } | {
+                    /** @constant */
+                    kind: "opted_out";
+                } | {
+                    /** @constant */
+                    kind: "presented";
+                } | {
+                    /** @constant */
+                    kind: "reset";
+                } | {
+                    /** @constant */
+                    kind: "skipped";
+                } | {
+                    /** @constant */
+                    kind: "step";
+                    /** @enum {unknown} */
+                    step: "cli_signed_in" | "facet_added";
+                };
+            };
+        };
+        responses: {
+            /** @description The account’s committed getting-started progress */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarkGettingStartedProgressResponse"];
+                };
+            };
+            /** @description Unknown action or step */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorBody"];
+                };
+            };
+            /** @description Missing or invalid credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Impersonated session, account suspended (E_ACCOUNT_SUSPENDED), PAT caller (E_INTERACTIVE_SESSION_REQUIRED), or a reset while the flow is unavailable (E_FORBIDDEN) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description The account profile is corrupt */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Event-sequence contention; retryable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    getV0OrganizationsEmailInvitationsPending: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Eligible invitations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Interactive WorkOS session required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invitation lookup unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    postV0OrganizationsEmailInvitationsByInvitationIdAccept: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invitationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Membership activated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Interactive WorkOS session required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No eligible invitation */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invitation lookup unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -5087,6 +6461,40 @@ export interface operations {
             };
         };
     };
+    postV0OrganizationsBySlugEmailInvitations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Invitation delivery started or already pending */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Caller is not an Admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invitation service unavailable; no automatic resend */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     postV0OrganizationsBySlugMembersByUserIdRole: {
         parameters: {
             query?: never;
@@ -5252,6 +6660,48 @@ export interface operations {
             };
             /** @description No such organization or pending invitation */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    postV0PilotIntake: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PilotIntakeSubmitRequest"];
+            };
+        };
+        responses: {
+            /** @description Submission recorded; the outcome to render */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PilotIntakeSubmitResponse"];
+                };
+            };
+            /** @description Invalid submission (E_INTAKE_INVALID, with violations) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Submission budget for this network exhausted (E_RATE_LIMITED) */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
