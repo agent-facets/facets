@@ -14,7 +14,8 @@
     "build": "tsdown",
     "codegen:registry": "bun ./scripts/sync-registry-openapi.ts",
     "types": "tsgo --noEmit",
-    "test": "bun test"
+    "test": "bun test --path-ignore-patterns '**/*.e2e.test.ts'",
+    "test:e2e": "bun test --timeout 15000 src/registry/__tests__/oauth-store.e2e.test.ts"
   },
   "dependencies": {
     "@agent-facets/adapter": "workspace:*",

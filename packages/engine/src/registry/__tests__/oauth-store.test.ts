@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import {
+  type BigIntStats,
   chmodSync,
   existsSync,
   linkSync,
@@ -12,9 +13,12 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  type StatOptions,
+  type Stats,
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
+import * as fsPromises from 'node:fs/promises'
 import { lstat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -47,7 +51,7 @@ let options: OAuthStoreOptions
 
 beforeEach(() => {
   const uid = process.getuid?.()
-  if (uid === undefined) throw new Error('OAuth store tests require a POSIX host')
+  if (uid === undefined) expect.unreachable('OAuth store tests require a POSIX host')
   facetDir = realpathSync(mkdtempSync(join(tmpdir(), 'oauth-store-')))
   chmodSync(facetDir, 0o700)
   options = {
@@ -156,7 +160,6 @@ describe('session persistence', () => {
 
     const changed = { ...binding, client_id: 'different-client' }
     const mismatch = await readOAuthSession(changed, options)
-    expect(mismatch.ok).toBe(false)
     if (mismatch.ok) expect.unreachable('binding mismatch unexpectedly succeeded')
     expect(mismatch.error.code).toBe('INVALID_SESSION')
   })
@@ -197,7 +200,6 @@ describe('session persistence', () => {
         (lock) => deleteOAuthSession({ ...binding, [field]: value }, 1, lock),
         options,
       )
-      expect(rejectedDelete.ok).toBe(false)
       if (rejectedDelete.ok) expect.unreachable(`${field} mismatch unexpectedly deleted state`)
       expect(rejectedDelete.error.code).toBe('LOCK_LOST')
       expect(readFileSync(statePath(), 'utf8')).toBe(original)
@@ -215,7 +217,6 @@ describe('session persistence', () => {
       writeFileSync(statePath(), `${JSON.stringify(invalid)}\n`, { mode: 0o600 })
       chmodSync(statePath(), 0o600)
       const result = await readOAuthSession(binding, options)
-      expect(result.ok).toBe(false)
       if (result.ok) expect.unreachable('invalid retry metadata unexpectedly persisted')
       expect(result.error.code).toBe('INVALID_SESSION')
     }
@@ -238,7 +239,6 @@ describe('session persistence', () => {
         ),
       options,
     )
-    expect(reset.ok).toBe(false)
     if (reset.ok) expect.unreachable('refresh timestamp reset unexpectedly persisted')
     expect(reset.error.code).toBe('INVALID_SESSION')
 
@@ -260,7 +260,6 @@ describe('session persistence', () => {
       writeFileSync(statePath(), contents, { mode: 0o600 })
       chmodSync(statePath(), 0o600)
       const result = await readOAuthSession(binding, options)
-      expect(result.ok).toBe(false)
       if (result.ok) expect.unreachable('invalid state unexpectedly loaded')
       expect(result.error.code).toBe('INVALID_SESSION')
     }
@@ -283,7 +282,7 @@ describe('session persistence', () => {
 
     chmodSync(statePath(), 0o600)
     const uid = process.getuid?.()
-    if (uid === undefined) throw new Error('OAuth store tests require a POSIX host')
+    if (uid === undefined) expect.unreachable('OAuth store tests require a POSIX host')
     const wrongOwner = await readOAuthSession(binding, { ...options, ownerUid: uid + 1 })
     expectUnsafe(wrongOwner, 'wrong-owner')
   })
@@ -299,7 +298,6 @@ describe('session persistence', () => {
     const beforeInode = lstatSync(statePath()).ino
 
     const stale = await withOAuthSessionLock(binding, (lock) => saveOAuthSession(readySession(2), 0, lock), options)
-    expect(stale.ok).toBe(false)
     if (stale.ok) expect.unreachable('stale generation unexpectedly persisted')
     expect(stale.error).toEqual({ code: 'GENERATION_CONFLICT', expected: 0, actual: 1 })
     expect(readFileSync(statePath(), 'utf8')).toBe(beforeBytes)
@@ -332,7 +330,6 @@ describe('cross-process lock', () => {
           lockTimeoutMs: 30,
           lockPollMs: 2,
         })
-        expect(contender.ok).toBe(false)
         if (contender.ok) expect.unreachable('contender unexpectedly acquired the lock')
         expect(contender.error.code).toBe('LOCK_TIMEOUT')
         return ok(undefined)
@@ -464,6 +461,48 @@ describe('cross-process lock', () => {
     }
   })
 
+  test('retries one startup PRAGMA SQLITE_BUSY within the original lock deadline', async () => {
+    let attempts = 0
+    const query = spyOn(Database.prototype, 'query').mockImplementation(function (this: Database, sql): never {
+      if (sql !== 'PRAGMA journal_mode') throw new Error('unexpected startup query')
+      attempts++
+      query.mockRestore()
+      throw new BusySqliteError()
+    })
+    try {
+      const result = await withOAuthSessionLock(binding, async () => ok('acquired'), {
+        ...options,
+        lockTimeoutMs: 100,
+        lockPollMs: 1,
+      })
+      expect(unwrap(result)).toBe('acquired')
+      expect(attempts).toBe(1)
+    } finally {
+      query.mockRestore()
+    }
+  })
+
+  test('perpetual startup PRAGMA SQLITE_BUSY ends in structured lock timeout', async () => {
+    let attempts = 0
+    const query = spyOn(Database.prototype, 'query').mockImplementation(function (this: Database, sql): never {
+      if (sql !== 'PRAGMA journal_mode') throw new Error('unexpected startup query')
+      attempts++
+      throw new BusySqliteError()
+    })
+    try {
+      const result = await withOAuthSessionLock(binding, async () => ok('unreachable'), {
+        ...options,
+        lockTimeoutMs: 20,
+        lockPollMs: 1,
+      })
+      if (result.ok) expect.unreachable('perpetual startup contention acquired lock')
+      expect(result.error.code).toBe('LOCK_TIMEOUT')
+      expect(attempts).toBeGreaterThan(1)
+    } finally {
+      query.mockRestore()
+    }
+  })
+
   test('permits exactly one holder across N=2 real processes', async () => {
     await runLockRace(2)
   })
@@ -492,37 +531,6 @@ describe('cross-process lock', () => {
     if (resumed?.status !== 'uncertain') expect.unreachable('uncertain state was not recovered')
     expect(resumed.refresh_started_at).toBe(1_800_000_000_000)
     expect(resumed.refresh_attempts).toBe(1)
-  })
-
-  test('runs the SQLite-backed store from a compiled Bun executable', async () => {
-    const script = join(facetDir, 'compiled-smoke.ts')
-    const executable = join(facetDir, 'compiled-smoke')
-    writeFileSync(
-      script,
-      `
-        import { withOAuthSessionLock } from ${JSON.stringify(modulePath())}
-        const binding = JSON.parse(process.env.OAUTH_BINDING ?? '')
-        const result = await withOAuthSessionLock(binding, async () => ({ ok: true, value: 'compiled-ok' }))
-        if (!result.ok) throw new Error(result.error.code)
-        process.stdout.write(result.value)
-      `,
-    )
-    const built = Bun.spawn([process.execPath, 'build', '--compile', script, '--outfile', executable], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-    const buildOutput = await collect(built)
-    if (buildOutput.exitCode !== 0) throw new Error(`compiled smoke build failed: ${buildOutput.stderr}`)
-
-    const smoke = Bun.spawn([executable], {
-      env: { ...process.env, FACET_DIR: facetDir, OAUTH_BINDING: JSON.stringify(binding) },
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-    const smokeOutput = await collect(smoke)
-    expect(smokeOutput.exitCode).toBe(0)
-    expect(smokeOutput.stderr).toBe('')
-    expect(smokeOutput.stdout).toBe('compiled-ok')
   })
 })
 
@@ -583,7 +591,6 @@ function unwrap<T>(result: OAuthStoreResult<T>): T {
 }
 
 function expectUnsupported(result: OAuthStoreResult<unknown>): void {
-  expect(result.ok).toBe(false)
   if (result.ok) expect.unreachable('unsupported platform unexpectedly succeeded')
   expect(result.error).toEqual({
     code: 'UNSUPPORTED_PLATFORM',
@@ -596,7 +603,6 @@ function expectUnsafe(
   result: OAuthStoreResult<unknown>,
   reason: 'symlink' | 'wrong-kind' | 'wrong-owner' | 'insecure-permissions' | 'multiple-links',
 ): void {
-  expect(result.ok).toBe(false)
   if (result.ok) expect.unreachable('unsafe state unexpectedly loaded')
   expect(result.error.code).toBe('UNSAFE_STATE')
   if (result.error.code !== 'UNSAFE_STATE') expect.unreachable('unexpected failure code')
@@ -604,7 +610,6 @@ function expectUnsafe(
 }
 
 function expectBindingMismatch(result: OAuthStoreResult<unknown>, field: keyof OAuthSessionBinding): void {
-  expect(result.ok).toBe(false)
   if (result.ok) expect.unreachable(`${field} mismatch unexpectedly persisted`)
   expect(result.error.code).toBe('INVALID_SESSION')
   if (result.error.code !== 'INVALID_SESSION') expect.unreachable('unexpected binding mismatch error')
@@ -613,7 +618,7 @@ function expectBindingMismatch(result: OAuthStoreResult<unknown>, field: keyof O
 
 function wrongOwnerLstat(targetPath: string): NonNullable<OAuthStoreOptions['lstat']> {
   const uid = process.getuid?.()
-  if (uid === undefined) throw new Error('OAuth store tests require a POSIX host')
+  if (uid === undefined) expect.unreachable('OAuth store tests require a POSIX host')
   return async (path) => {
     const metadata = await lstat(path)
     if (path === targetPath) metadata.uid = uid + 1
@@ -722,20 +727,199 @@ async function expectHolderReady(holder: PipedSubprocess): Promise<void> {
   expect(new TextDecoder().decode(chunk.value)).toBe('held\n')
 }
 
-async function collect(process: PipedSubprocess): Promise<{
-  exitCode: number
-  stdout: string
-  stderr: string
-}> {
-  const [exitCode, stdout, stderr] = await Promise.all([
-    process.exited,
-    new Response(process.stdout).text(),
-    new Response(process.stderr).text(),
-  ])
-  return { exitCode, stdout, stderr }
-}
-
 class BusySqliteError extends Error {
   readonly code = 'SQLITE_BUSY'
   readonly errno = 5
 }
+
+describe('durable lifecycle regressions', () => {
+  test('accepts a secure atomic replacement between lstat and descriptor open', async () => {
+    await save(readySession(1), null)
+    let replaced = false
+    const result = await readOAuthSession(binding, {
+      ...options,
+      lstat: async (path) => {
+        const before = await lstat(path)
+        if (path === statePath() && !replaced) {
+          replaced = true
+          await save(readySession(2), 1)
+        }
+        return before
+      },
+    })
+    expect(unwrap(result)).toEqual(readySession(2))
+  })
+})
+
+describe('protected replacement descriptors', () => {
+  test.each(['insecure-permissions', 'multiple-links'] satisfies Array<
+    'insecure-permissions' | 'multiple-links'
+  >)('validates %s on replacement descriptor rather than stale lstat', async (reason) => {
+    await save(readySession(1), null)
+    let replaced = false
+    const result = await readOAuthSession(binding, {
+      ...options,
+      lstat: async (path) => {
+        const before = await lstat(path)
+        if (path === statePath() && !replaced) {
+          replaced = true
+          rmSync(path)
+          writeFileSync(path, JSON.stringify(readySession(2)), {
+            mode: reason === 'insecure-permissions' ? 0o644 : 0o600,
+          })
+          if (reason === 'multiple-links') linkSync(path, join(facetDir, 'second-link'))
+        }
+        return before
+      },
+    })
+    expectUnsafe(result, reason)
+  })
+
+  test('refuses a symlink replacement after safe lstat without reading its token', async () => {
+    await save(readySession(1), null)
+    const outside = join(facetDir, 'outside-secret')
+    writeFileSync(outside, JSON.stringify(readySession(2)), { mode: 0o600 })
+    let replaced = false
+    const result = await readOAuthSession(binding, {
+      ...options,
+      lstat: async (path) => {
+        const before = await lstat(path)
+        if (path === statePath() && !replaced) {
+          replaced = true
+          rmSync(path)
+          symlinkSync(outside, path)
+        }
+        return before
+      },
+    })
+    if (result.ok) expect.unreachable()
+    expect(JSON.stringify(result)).not.toContain(readySession(2).access_token)
+  })
+})
+
+describe('atomic replacement after descriptor open', () => {
+  test('accepts a secure opened inode unlinked by atomic replacement before fstat', async () => {
+    await save(readySession(1), null)
+    const originalOpen = fsPromises.open
+    let replaced = false
+    let openedLinks: number | undefined
+    const openProbe = spyOn(fsPromises, 'open').mockImplementation(async (...args) => {
+      const handle = await originalOpen(...args)
+      if (args[0] === statePath() && !replaced) {
+        replaced = true
+        await save(readySession(2), 1)
+        openedLinks = (await handle.stat()).nlink
+      }
+      return handle
+    })
+    try {
+      expect(unwrap(await readOAuthSession(binding, options))).toEqual(readySession(1))
+      expect(openedLinks).toBe(0)
+      expect(unwrap(await readOAuthSession(binding, options))).toEqual(readySession(2))
+    } finally {
+      openProbe.mockRestore()
+    }
+  })
+
+  test.each([2, 3])('rejects an opened descriptor given %i links after safe pathname inspection', async (links) => {
+    await save(readySession(1), null)
+    const originalOpen = fsPromises.open
+    let linked = false
+    let openedLinks: number | undefined
+    const openProbe = spyOn(fsPromises, 'open').mockImplementation(async (...args) => {
+      const handle = await originalOpen(...args)
+      if (args[0] === statePath() && !linked) {
+        linked = true
+        for (let index = 1; index < links; index++) linkSync(statePath(), join(facetDir, `hostile-link-${index}`))
+        openedLinks = (await handle.stat()).nlink
+      }
+      return handle
+    })
+    try {
+      expectUnsafe(await readOAuthSession(binding, options), 'multiple-links')
+      expect(openedLinks).toBe(links)
+    } finally {
+      openProbe.mockRestore()
+    }
+  })
+
+  for (const overrides of [
+    { version: 2 },
+    { access_token: '' },
+    { registry_origin: 'https://other.example.test' },
+    { client_id: 'other-client' },
+    { issuer: 'https://other.example.test' },
+    { authorization_endpoint: 'https://other.example.test/authorize' },
+    { token_endpoint: 'https://other.example.test/token' },
+    { verification_origin: 'https://other.example.test' },
+  ]) {
+    test(`rejects unlinked opened bytes with invalid schema/binding ${JSON.stringify(overrides)}`, async () => {
+      await save(readySession(1), null)
+      writeFileSync(statePath(), JSON.stringify({ ...readySession(1), ...overrides }))
+      const originalOpen = fsPromises.open
+      let unlinked = false
+      let openedLinks: number | undefined
+      const openProbe = spyOn(fsPromises, 'open').mockImplementation(async (...args) => {
+        const handle = await originalOpen(...args)
+        if (args[0] === statePath() && !unlinked) {
+          unlinked = true
+          rmSync(statePath())
+          openedLinks = (await handle.stat()).nlink
+        }
+        return handle
+      })
+      try {
+        const result = await readOAuthSession(binding, options)
+        if (result.ok) expect.unreachable()
+        expect(result.error.code).toBe('INVALID_SESSION')
+        expect(openedLinks).toBe(0)
+        expect(JSON.stringify(result)).not.toContain(readySession(1).access_token)
+      } finally {
+        openProbe.mockRestore()
+      }
+    })
+  }
+})
+
+describe('unlinked descriptor retains metadata guards', () => {
+  for (const reason of ['insecure-permissions', 'wrong-owner']) {
+    test(`rejects ${reason} on an opened unlinked state descriptor`, async () => {
+      await save(readySession(1), null)
+      const originalOpen = fsPromises.open
+      const restoreDescriptorStats: Array<() => void> = []
+      let unlinked = false
+      const openProbe = spyOn(fsPromises, 'open').mockImplementation(async (...args) => {
+        const handle = await originalOpen(...args)
+        if (args[0] === statePath() && !unlinked) {
+          unlinked = true
+          if (reason === 'insecure-permissions') chmodSync(statePath(), 0o644)
+          rmSync(statePath())
+          expect((await handle.stat()).nlink).toBe(0)
+          if (reason === 'wrong-owner') {
+            const originalStat = handle.stat.bind(handle)
+            function wrongOwnerStat(opts?: StatOptions & { bigint?: false }): Promise<Stats>
+            function wrongOwnerStat(opts: StatOptions & { bigint: true }): Promise<BigIntStats>
+            function wrongOwnerStat(opts?: StatOptions): Promise<Stats | BigIntStats>
+            async function wrongOwnerStat(opts?: StatOptions): Promise<Stats | BigIntStats> {
+              const metadata = await originalStat(opts)
+              if (typeof metadata.uid === 'bigint') metadata.uid += 1n
+              else metadata.uid += 1
+              return metadata
+            }
+            const descriptorStats = spyOn(handle, 'stat').mockImplementation(wrongOwnerStat)
+            restoreDescriptorStats.push(() => descriptorStats.mockRestore())
+          }
+        }
+        return handle
+      })
+      try {
+        const result = await readOAuthSession(binding, options)
+        expectUnsafe(result, reason === 'wrong-owner' ? 'wrong-owner' : 'insecure-permissions')
+        expect(unlinked).toBe(true)
+      } finally {
+        for (const restore of restoreDescriptorStats) restore()
+        openProbe.mockRestore()
+      }
+    })
+  }
+})

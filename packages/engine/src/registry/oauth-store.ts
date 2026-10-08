@@ -356,9 +356,9 @@ async function readSessionFile(
   try {
     handle = await open(context.statePath, constants.O_RDONLY | noFollowFlag())
     const opened = await handle.stat()
-    if (opened.dev !== inspected.value.dev || opened.ino !== inspected.value.ino) {
-      return { ok: false, error: { code: 'UNSAFE_STATE', path: context.statePath, reason: 'wrong-kind' } }
-    }
+    // Atomic replacement can unlink a private state inode after this reader opens it.
+    const safeDescriptor = inspectStats(opened, context.statePath, 'file', context.ownerUid, 0o600, true)
+    if (!safeDescriptor.ok) return safeDescriptor
     const raw = await handle.readFile('utf8')
     let parsed: unknown
     try {
@@ -435,28 +435,15 @@ async function requireLocalFilesystem(context: StoreContext): Promise<OAuthStore
 }
 
 async function acquireLock(binding: OAuthSessionBinding, context: StoreContext): Promise<OAuthStoreResult<HeldLock>> {
+  const deadline = Date.now() + context.lockTimeoutMs
   const created = createCoordinationDatabase(context)
   if (!created.ok) return created
   const safe = await inspectCoordinationPaths(context)
   if (!safe.ok) return safe
 
-  let database: Database | undefined
-  try {
-    database = new Database(context.lockPath, { create: false, readwrite: true, strict: true })
-    database.exec('PRAGMA busy_timeout = 0')
-    const mode = database.query<{ journal_mode: string }, []>('PRAGMA journal_mode').get()
-    if (mode?.journal_mode.toLowerCase() !== 'delete') {
-      database.close(true)
-      return sqliteFailure('validate journal mode', context.lockPath, 'SQLITE_UNSAFE_JOURNAL_MODE')
-    }
-  } catch (error) {
-    try {
-      database?.close(true)
-    } catch {}
-    return sqliteFailure('open lock', context.lockPath, sqliteErrorCode(error))
-  }
-
-  const deadline = Date.now() + context.lockTimeoutMs
+  const opened = await openCoordinationDatabase(context, deadline)
+  if (!opened.ok) return opened
+  const database = opened.value
   const begun = await executeWithBusyRetry(database, 'BEGIN IMMEDIATE', deadline, context)
   if (!begun.ok) {
     try {
@@ -477,6 +464,35 @@ async function acquireLock(binding: OAuthSessionBinding, context: StoreContext):
   }
   heldLocks.set(lock, lock)
   return { ok: true, value: lock }
+}
+
+async function openCoordinationDatabase(context: StoreContext, deadline: number): Promise<OAuthStoreResult<Database>> {
+  while (true) {
+    let database: Database | undefined
+    try {
+      database = new Database(context.lockPath, { create: false, readwrite: true, strict: true })
+      database.exec('PRAGMA busy_timeout = 0')
+      const mode = database.query<{ journal_mode: string }, []>('PRAGMA journal_mode').get()
+      if (mode?.journal_mode.toLowerCase() !== 'delete') {
+        database.close(true)
+        return sqliteFailure('validate journal mode', context.lockPath, 'SQLITE_UNSAFE_JOURNAL_MODE')
+      }
+      return { ok: true, value: database }
+    } catch (error) {
+      try {
+        database?.close(true)
+      } catch (closeError) {
+        return sqliteFailure('close lock', context.lockPath, sqliteErrorCode(closeError))
+      }
+      if (!isSqliteBusy(error)) return sqliteFailure('open lock', context.lockPath, sqliteErrorCode(error))
+      if (Date.now() >= deadline) {
+        return { ok: false, error: { code: 'LOCK_TIMEOUT', path: context.lockPath, timeout_ms: context.lockTimeoutMs } }
+      }
+      await sleep(Math.min(context.lockPollMs, Math.max(1, deadline - Date.now())))
+      const safe = await inspectCoordinationPaths(context)
+      if (!safe.ok) return safe
+    }
+  }
 }
 
 function createCoordinationDatabase(context: StoreContext): OAuthStoreResult<void> {
@@ -598,22 +614,33 @@ async function inspectPath(
 ): Promise<OAuthStoreResult<{ dev: number; ino: number } | null>> {
   try {
     const stat = await lstatPath(path)
-    if (stat.isSymbolicLink()) return { ok: false, error: { code: 'UNSAFE_STATE', path, reason: 'symlink' } }
-    if ((kind === 'file' && !stat.isFile()) || (kind === 'directory' && !stat.isDirectory())) {
-      return { ok: false, error: { code: 'UNSAFE_STATE', path, reason: 'wrong-kind' } }
-    }
-    if (stat.uid !== ownerUid) return { ok: false, error: { code: 'UNSAFE_STATE', path, reason: 'wrong-owner' } }
-    if (requiredMode !== null && (stat.mode & 0o777) !== requiredMode) {
-      return { ok: false, error: { code: 'UNSAFE_STATE', path, reason: 'insecure-permissions' } }
-    }
-    if (kind === 'file' && stat.nlink !== 1) {
-      return { ok: false, error: { code: 'UNSAFE_STATE', path, reason: 'multiple-links' } }
-    }
-    return { ok: true, value: { dev: stat.dev, ino: stat.ino } }
+    return inspectStats(stat, path, kind, ownerUid, requiredMode)
   } catch (error) {
     if (allowMissing && hasCode(error, 'ENOENT')) return { ok: true, value: null }
     return ioFailure('inspect path', path, error)
   }
+}
+
+function inspectStats(
+  stat: Stats,
+  path: string,
+  kind: 'file' | 'directory',
+  ownerUid: number,
+  requiredMode: number | null,
+  allowUnlinked = false,
+): OAuthStoreResult<{ dev: number; ino: number }> {
+  if (stat.isSymbolicLink()) return { ok: false, error: { code: 'UNSAFE_STATE', path, reason: 'symlink' } }
+  if ((kind === 'file' && !stat.isFile()) || (kind === 'directory' && !stat.isDirectory())) {
+    return { ok: false, error: { code: 'UNSAFE_STATE', path, reason: 'wrong-kind' } }
+  }
+  if (stat.uid !== ownerUid) return { ok: false, error: { code: 'UNSAFE_STATE', path, reason: 'wrong-owner' } }
+  if (requiredMode !== null && (stat.mode & 0o777) !== requiredMode) {
+    return { ok: false, error: { code: 'UNSAFE_STATE', path, reason: 'insecure-permissions' } }
+  }
+  if (kind === 'file' && stat.nlink !== 1 && !(allowUnlinked && stat.nlink === 0)) {
+    return { ok: false, error: { code: 'UNSAFE_STATE', path, reason: 'multiple-links' } }
+  }
+  return { ok: true, value: { dev: stat.dev, ino: stat.ino } }
 }
 
 async function syncDirectory(path: string): Promise<void> {
