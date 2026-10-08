@@ -172,6 +172,28 @@ async function seed(session: OAuthSession = ready()): Promise<void> {
   expect(result.ok).toBe(true)
 }
 
+async function seedPending(expiresAt: number): Promise<void> {
+  const old = ready({ expires_at: NOW - 1 })
+  await seed(old)
+  const result = await withOAuthSessionLock(binding(), async (lock) => {
+    const fenced: OAuthSession = {
+      ...old,
+      status: 'uncertain',
+      generation: 2,
+      refresh_started_at: NOW,
+      refresh_attempts: 1,
+    }
+    const savedFence = await saveOAuthSession(fenced, 1, lock)
+    if (!savedFence.ok) return savedFence
+    const pending: OAuthSession = {
+      ...ready({ expires_at: expiresAt, refresh_token: ROTATED, generation: 3 }),
+      status: 'verification-pending',
+    }
+    return saveOAuthSession(pending, 2, lock)
+  })
+  expect(result.ok).toBe(true)
+}
+
 async function stored(): Promise<OAuthSession | null> {
   const result = await readOAuthSession(binding())
   if (!result.ok) expect.unreachable()
@@ -1585,6 +1607,131 @@ describe('durable cross-process lifecycle', () => {
 })
 
 describe('pending rotation trust and lifecycle', () => {
+  test.each([
+    [30_000, 1],
+    [30_001, 0],
+  ])('pending expiry offset %i ms uses %i bounded refresh exchanges', async (offset, expectedExchanges) => {
+    await seedPending(NOW + offset)
+    let exchanges = 0
+    const fetcher = makeFetch((request) => {
+      if (request.url.endsWith('/v0/auth/cli/config')) return json(configResponse())
+      if (request.url === TOKEN_ENDPOINT) {
+        exchanges++
+        return json(tokenResponse())
+      }
+      return json(profile())
+    })
+    const result = await resolveRegistryCredential(options(fetcher))
+    if (!result.ok) expect.unreachable()
+    expect(result.value.source).toBe('oauth')
+    expect(exchanges).toBe(expectedExchanges)
+    expect((await stored())?.status).toBe('ready')
+  })
+
+  test('pending profile crossing exact expiry leaves the latest pair quarantined', async () => {
+    const expiry = NOW + 30_001
+    await seedPending(expiry)
+    let clock = NOW
+    let exchanges = 0
+    const fetcher = makeFetch((request) => {
+      if (request.url.endsWith('/v0/auth/cli/config')) return json(configResponse())
+      if (request.url === TOKEN_ENDPOINT) {
+        exchanges++
+        return json(tokenResponse())
+      }
+      clock = expiry
+      return json(profile())
+    })
+    const result = await resolveRegistryCredential(options(fetcher, { now: () => clock }))
+    expect(result).toEqual({ ok: false, error: { code: 'REFRESH_UNAVAILABLE', reason: 'transient' } })
+    expect(exchanges).toBe(0)
+    expect(await stored()).toMatchObject({ status: 'verification-pending', generation: 3, refresh_token: ROTATED })
+  })
+
+  test('expiry during an actual awaited READY save returns transient and retains a renewable pair', async () => {
+    const expiry = NOW + 30_001
+    await seedPending(expiry)
+    let clock = NOW
+    let readyWrites = 0
+    const sent: Array<string | null> = []
+    const originalSave = oauthStore.saveOAuthSession
+    const saveProbe = spyOn(oauthStore, 'saveOAuthSession').mockImplementation(async (...args) => {
+      const result = await originalSave(...args)
+      if (result.ok && args[0].status === 'ready' && readyWrites === 0) {
+        readyWrites++
+        expect(await stored()).toMatchObject({ status: 'ready', refresh_token: ROTATED })
+        clock = expiry
+      }
+      return result
+    })
+    const fetcher = makeFetch(async (request) => {
+      if (request.url.endsWith('/v0/auth/cli/config')) return json(configResponse())
+      if (request.url === TOKEN_ENDPOINT) {
+        sent.push(new URLSearchParams(await request.text()).get('refresh_token'))
+        return json(tokenResponse(accessToken(), 'next-refresh-secret'))
+      }
+      return json(profile())
+    })
+    const setup = options(fetcher, { now: () => clock })
+    try {
+      const first = await resolveRegistryCredential(setup)
+      expect(first).toEqual({ ok: false, error: { code: 'REFRESH_UNAVAILABLE', reason: 'transient' } })
+      expect(readyWrites).toBe(1)
+      expect(await stored()).toMatchObject({ status: 'ready', generation: 4, refresh_token: ROTATED })
+      const second = await resolveRegistryCredential(setup)
+      if (!second.ok) expect.unreachable()
+      expect(second.value.source).toBe('oauth')
+      expect(sent).toEqual([ROTATED])
+      expect(await stored()).toMatchObject({ status: 'ready', refresh_token: 'next-refresh-secret' })
+    } finally {
+      saveProbe.mockRestore()
+    }
+  })
+
+  test('ready existing profile crossing exact expiry cannot return an expired bearer', async () => {
+    const expiry = NOW + 30_001
+    await seed(ready({ expires_at: expiry }))
+    let clock = NOW
+    const fetcher = makeFetch((request) => {
+      if (request.url.endsWith('/v0/auth/cli/config')) return json(configResponse())
+      clock = expiry
+      return json(profile())
+    })
+    expect(await resolveRegistryCredential(options(fetcher, { now: () => clock }))).toEqual({
+      ok: false,
+      error: { code: 'REFRESH_UNAVAILABLE', reason: 'transient' },
+    })
+    expect(await stored()).toMatchObject({ status: 'ready', generation: 1, refresh_token: REFRESH })
+  })
+
+  test.each([
+    'mismatch',
+    'cancelled',
+    'outage',
+  ] as const)('pending %s failure takes precedence over elapsed expiry and retains its pair', async (outcome) => {
+    const expiry = NOW + 30_001
+    await seedPending(expiry)
+    const controller = new AbortController()
+    let clock = NOW
+    const fetcher = makeFetch((request) => {
+      if (request.url.endsWith('/v0/auth/cli/config')) return json(configResponse())
+      clock = expiry
+      if (outcome === 'cancelled') controller.abort()
+      if (outcome === 'outage') return json({ code: 'E_OUTAGE' }, 503)
+      return json(profile(outcome === 'mismatch' ? 'different-user' : 'registry-user-uuid'))
+    })
+    const result = await resolveRegistryCredential(options(fetcher, { now: () => clock, signal: controller.signal }))
+    if (result.ok) expect.unreachable()
+    expect(result.error.code).toBe(
+      outcome === 'mismatch'
+        ? 'IDENTITY_MISMATCH'
+        : outcome === 'cancelled'
+          ? 'CANCELLED'
+          : 'REGISTRY_VERIFICATION_FAILED',
+    )
+    expect(await stored()).toMatchObject({ status: 'verification-pending', generation: 3, refresh_token: ROTATED })
+  })
+
   test.each([
     401,
     503,

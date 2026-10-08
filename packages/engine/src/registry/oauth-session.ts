@@ -317,7 +317,7 @@ async function resolveHeld(
   if (session.status === 'reauth-required') return failure({ code: 'REAUTHENTICATION_REQUIRED' })
   const currentTime = now(options)
   if (!Number.isSafeInteger(currentTime) || currentTime < 0) return failure({ code: 'UNEXPECTED_FAILURE' })
-  if (session.status === 'verification-pending' && session.expires_at > currentTime) {
+  if (session.status === 'verification-pending' && session.expires_at > currentTime + REFRESH_AHEAD_MS) {
     return verifyPendingHeld(config, session, lock, options)
   }
   if (session.status === 'ready' && session.expires_at > currentTime + REFRESH_AHEAD_MS) {
@@ -347,10 +347,12 @@ async function verifyPendingHeld(
   if (!verified.ok) return verified
   if (verified.value.user_uuid !== session.user_uuid) return failure({ code: 'IDENTITY_MISMATCH' })
   if (options.signal?.aborted) return failure({ code: 'CANCELLED' })
+  if (session.expires_at <= now(options)) return failure({ code: 'REFRESH_UNAVAILABLE', reason: 'transient' })
   const ready: ReadyOAuthSession = { ...baseSession(session), status: 'ready', generation: session.generation + 1 }
   const saved = await saveOAuthSession(ready, session.generation, lock)
   if (!saved.ok) return storeFailure(saved.error)
   if (options.signal?.aborted) return failure({ code: 'CANCELLED' })
+  if (ready.expires_at <= now(options)) return failure({ code: 'REFRESH_UNAVAILABLE', reason: 'transient' })
   return success({
     source: 'oauth',
     token: ready.access_token,
@@ -368,6 +370,8 @@ async function verifiedExisting(
   const verified = await verifyProfile(config, session.access_token, options)
   if (!verified.ok) return verified
   if (verified.value.user_uuid !== session.user_uuid) return failure({ code: 'IDENTITY_MISMATCH' })
+  if (options.signal?.aborted) return failure({ code: 'CANCELLED' })
+  if (session.expires_at <= now(options)) return failure({ code: 'REFRESH_UNAVAILABLE', reason: 'transient' })
   return success({
     source: 'oauth',
     token: session.access_token,
