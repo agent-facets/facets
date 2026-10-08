@@ -115,7 +115,10 @@ Users install via `npm install agent-facets`. npm resolves the correct platform 
 3. Publishing the wrapper package last (it references all 12 via optionalDependencies)
 4. Split verification to handle npm registry propagation delay: pre-publish verifies
    the 12 platforms (so the wrapper's `optionalDependencies` will resolve when users
-   install), and post-publish verifies the wrapper itself before announcing
+   install), and post-publish verifies the wrapper itself before announcing.
+   Each stage makes an initial check plus 8 retries with exponential backoff
+   (1, 2, 4, … 128s — 4m15s of waiting, plus npm request time). Only packages
+   still missing are re-queried; the stage fails if any remain after the last check
 
 None of this fits `changeset publish`'s model, so the CLI has its own pipeline.
 
@@ -133,7 +136,11 @@ unreachable loader JavaScript may remain in the compiled graph.
 
 `build.test.ts` checks the actual receiving options and preflight failures, native
 graph selection, and the production ACL helper in isolated arm64/x64-baseline
-executables with forced GC. This is compatibility evidence for pinned Bun 1.3.14
+executables with forced GC. Option and preflight tests use stub koffi fixtures, so
+they pass after a plain `bun install`. The real-native-graph test needs the Darwin
+prebuilds from the cross-platform install above: it is skipped locally when they
+are absent and required whenever `CI` is set (`turbo.json` declares `CI` for
+`//#test:scripts`). This is compatibility evidence for pinned Bun 1.3.14
 and Koffi 3.3.2, not an upstream promise of Bun support. Ordinary local CLI builds
 use the host addon; released binaries and archives need no node_modules directory.
 
