@@ -179,7 +179,15 @@ export { overrideFor, overrideGroupKey, overridesForType, planMaterialization } 
 export type {
   AuthoredServer,
   InvalidServerAlias,
+  LockedServerClaimant,
+  LockedServerCollisionGroup,
+  LockedServerCollisionMember,
+  LockedServerContribution,
+  LockedServerRecord,
   McpServerIdentity,
+  PlanLockedServerInventoryResult,
+  PlannedLockedServer,
+  PlannedLockedServerConfiguration,
   PlannedServer,
   PlannedServerConfiguration,
   PlanServerMaterializationResult,
@@ -189,12 +197,17 @@ export type {
   ServerContribution,
   StaleServerOverride,
 } from './materialization/servers.ts'
-export { mcpServerKey, planServerMaterialization } from './materialization/servers.ts'
+export { mcpServerKey, planLockedServerInventory, planServerMaterialization } from './materialization/servers.ts'
 // canonical MCP declaration fingerprint — the semantic identity the receipt
 // stores in place of the declaration, so prior approval can be proven without
 // recording a command, URL, or environment data.
 export type { McpServerFingerprint } from './mcp/fingerprint.ts'
-export { canonicalMcpServerEncoding, computeMcpServerFingerprint, isMcpServerFingerprint } from './mcp/fingerprint.ts'
+export {
+  canonicalMcpServerEncoding,
+  computeMcpServerFingerprint,
+  isMcpServerFingerprint,
+  MCP_SERVER_FINGERPRINT_ENCODING,
+} from './mcp/fingerprint.ts'
 // one clone-and-freeze for declarations, so a planned result never shares
 // mutable structure with the input it was derived from.
 export { freezeMcpServerDeclaration } from './mcp/freeze.ts'
@@ -257,6 +270,7 @@ export type {
 export {
   CURRENT_LOCKFILE_VERSION,
   CurrentLockfileSchema,
+  LOCKFILE_0_4_SERVER_FINGERPRINT_ENCODING,
   LOCKFILE_VERSION_0_2,
   LOCKFILE_VERSION_0_3,
   Lockfile02Schema,

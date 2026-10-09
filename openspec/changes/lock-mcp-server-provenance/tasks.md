@@ -30,42 +30,42 @@ Protocol filenames below are relative to `packages/protocol/src`; installation f
 ## 1. Fingerprints and shared server planning — Research
 
 ### Step 1 - Explore: Audit the canonical fingerprint contract
-- [ ] 1.1 Explore: Audit the canonical fingerprint contract
+- [x] 1.1 Explore: Audit the canonical fingerprint contract
 
 Inspect the existing canonical encoder, fingerprint validation, public exports, and fixed-vector tests in `packages/protocol/src/mcp/fingerprint.ts`, `src/index.ts`, and `src/__tests__/mcp-server.test.ts`; identify the independently pinned `0.4` encoding constant without changing either transport's encoding.
 
 ### Step 2 - Explore: Map shared server-planning semantics
-- [ ] 1.2 Explore: Map shared server-planning semantics
+- [x] 1.2 Explore: Map shared server-planning semantics
 
 Inspect `materialization/servers.ts`, `effective-name.ts`, and existing planner tests; map declaration freezing, portable identities, claimant ordering, invalid-alias failures, omissions, and stale overrides to the declaration-free planner contract in D3.
 
 ### Step 3 - Propose: Agree the pure planning changes
-- [ ] 1.3 Propose: Agree the pure planning changes
+- [x] 1.3 Propose: Agree the pure planning changes
 
 Present the shared-core extraction, public fingerprint-only planner/result shapes, encoding exports, and equivalence-test approach for all of group 2, preserving existing declaration-based APIs and the Adapter SDK API. Obtain approval before writing.
 
 ### Step 4 - Pause: Switch model for implementation
-- [ ] 1.4 Pause: Switch model for implementation
+- [x] 1.4 Pause: Switch model for implementation
 
 ## 2. Fingerprints and shared server planning — Implementation
 
 ### Step 5 - Implement: Export fixed encoding identifiers
-- [ ] 2.1 Implement: Export fixed encoding identifiers
+- [x] 2.1 Implement: Export fixed encoding identifiers
 
 Expose `MCP_SERVER_FINGERPRINT_ENCODING` and an independent literal `LOCKFILE_0_4_SERVER_FINGERPRINT_ENCODING`, including public exports; retain the exact `facets:mcp-server:v1` preimages and do not yet switch current lockfile aliases.
 
 ### Step 6 - Implement: Add the fingerprint-only server planner
-- [ ] 2.2 Implement: Add the fingerprint-only server planner
+- [x] 2.2 Implement: Add the fingerprint-only server planner
 
 Extract the private shared server-claim core and add public `planLockedServerInventory` with its declaration-free types; retain existing `planServerMaterialization` signatures, clone/freeze behavior, complete claimants, and separate invalid-alias/collision results with stale diagnostics.
 
 ### Step 7 - Implement: Pin fingerprints and planner equivalence
-- [ ] 2.3 Implement: Pin fingerprints and planner equivalence
+- [x] 2.3 Implement: Pin fingerprints and planner equivalence
 
 Extend `packages/protocol/src/__tests__/mcp-server.test.ts` with fixed preimage and digest vectors for `["facets:mcp-server:v1","stdio","npx",[],[]]` and `["facets:mcp-server:v1","http","https://example.com/mcp"]`. Pin compact JSON, sorted environment pairs, absent-collection normalization, name/source independence, and the independent encoding constants. Compare both planners over generated input permutations, including “missing override means authored,” alias swaps, stale `gone` on an empty facet, invalid aliases distinct from collisions, and collisions retaining unrelated stale diagnostics.
 
 ### Step 8 - Verify: Check the pure planning boundary
-- [ ] 2.4 Verify: Check the pure planning boundary
+- [x] 2.4 Verify: Check the pure planning boundary
 
 Run `bun run --cwd packages/protocol test`, `bun run --cwd packages/protocol types`, `bun run --cwd packages/engine types`, and `bun run --cwd packages/cli types`. Confirm the existing declaration-based callers and current `0.3` writer still work at this boundary. Stop and report any failure.
 

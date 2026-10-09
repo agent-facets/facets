@@ -49,6 +49,17 @@ export const LOCKFILE_VERSION_0_3 = 0.3
 export const CURRENT_LOCKFILE_VERSION = LOCKFILE_VERSION_0_3
 
 /**
+ * The MCP declaration-fingerprint encoding lockfile `0.4` server records are
+ * bound to.
+ *
+ * Deliberately a literal rather than an alias of the encoder's current tag
+ * (`MCP_SERVER_FINGERPRINT_ENCODING`): a stored `0.4` fingerprint means
+ * exactly this encoding forever. A future encoder revision requires a new
+ * lockfile version, not a reinterpretation of documents already written.
+ */
+export const LOCKFILE_0_4_SERVER_FINGERPRINT_ENCODING = 'facets:mcp-server:v1'
+
+/**
  * Every lockfile schema version this implementation can READ. Broader than
  * what it writes: `0.3` is readable as soon as its schema exists.
  */
