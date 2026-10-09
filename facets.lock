@@ -53,6 +53,58 @@
         }
       ]
     },
+    "@agentfacets/graphite-submit-branch": {
+      "source": {
+        "kind": "registry",
+        "registry": "https://api.agentfacets.io"
+      },
+      "version": "1.0.0",
+      "integrity": "sha256:5733e9753ea5b9e2a4ac1ff9f7d4f05ad6c6b2ac74fd1862cca8da2120d554c0",
+      "assets": [
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "graphite-submit-branch-rules",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "skills/graphite-submit-branch-rules/SKILL.md",
+              "integrity": "sha256:c612d55c2104ff93da406f349b784a08ac975a5b49b726008b8ccc52d6da785a"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "submit-draft",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "commands/submit-draft.md",
+              "integrity": "sha256:efa0b4d06f31c550e6b85297a1ed730a5d81cf5408b22b3b4a861572a2d8c310"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "submit-pr",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "commands/submit-pr.md",
+              "integrity": "sha256:4fd5dd0a264a05a25b64cd58e0aa46034e82b5ac7166cd027b1875bed98834d9"
+            }
+          ]
+        }
+      ]
+    },
     "@agentfacets/openspec-adversary": {
       "source": {
         "kind": "registry",
