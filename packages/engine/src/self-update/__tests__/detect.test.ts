@@ -98,6 +98,39 @@ describe('detectInstallMethod', () => {
     expect(result).toBe<MethodKind>('curl')
   })
 
+  test('returns mise when resolved binary is under the default mise installs dir', async () => {
+    const home = '/home/test'
+    const result = await detectInstallMethod(
+      makeDeps({
+        execPath: join(home, '.local', 'share', 'mise', 'installs', 'facet', '0.8.0', 'bin', 'facet'),
+        homedir: home,
+      }),
+    )
+    expect(result).toBe<MethodKind>('mise')
+  })
+
+  test('returns mise when resolved binary is under $MISE_DATA_DIR/installs', async () => {
+    const result = await detectInstallMethod(
+      makeDeps({
+        execPath: '/opt/mise-data/installs/github-agent-facets-facets/0.8.0/bin/facet',
+        env: { MISE_DATA_DIR: '/opt/mise-data' },
+      }),
+    )
+    expect(result).toBe<MethodKind>('mise')
+  })
+
+  test('mise path detection wins before package-manager probes', async () => {
+    const home = '/home/test'
+    const result = await detectInstallMethod(
+      makeDeps({
+        execPath: join(home, '.local', 'share', 'mise', 'installs', 'facet', '0.8.0', 'bin', 'facet'),
+        homedir: home,
+        spawn: fakeSpawn({ npm: 'agent-facets@0.7.3' }),
+      }),
+    )
+    expect(result).toBe<MethodKind>('mise')
+  })
+
   test('a single npm probe match returns npm', async () => {
     const result = await detectInstallMethod(
       makeDeps({
