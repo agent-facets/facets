@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { RollbackOutcome, RunInstallFailure } from '@agent-facets/engine'
-import { writeInstallFailureDetail } from '../install-detail.ts'
+import { formatInstallFailureDetail, writeInstallFailureDetail } from '../install-detail.ts'
 
 /**
  * What a run that could not put everything back tells a user who has no
@@ -94,5 +94,46 @@ describe('writeInstallFailureDetail — rollback conflicts', () => {
     }
 
     expect(captureStderr(() => writeInstallFailureDetail(aborted, complete))).toBe('')
+  })
+})
+
+describe('formatInstallFailureDetail — server inventory reconciliation', () => {
+  const notNeeded: RollbackOutcome = { kind: 'not-needed', reason: 'post-lock-no-mutation' }
+
+  test('the stderr and JSON detail names the facet, the server, and both fingerprints', () => {
+    const detail = formatInstallFailureDetail(
+      {
+        code: 'RECONCILE_SERVER_FINGERPRINT',
+        facet: 'alpha',
+        authoredName: 'filesystem',
+        expected: `sha256:${'1'.repeat(64)}`,
+        actual: `sha256:${'2'.repeat(64)}`,
+      },
+      notNeeded,
+    )
+    expect(detail).toContain('"filesystem"')
+    expect(detail).toContain('"alpha"')
+    expect(detail).toContain(`sha256:${'1'.repeat(64)}`)
+    expect(detail).toContain(`sha256:${'2'.repeat(64)}`)
+    expect(detail).toContain('Re-running will not repair it')
+    expect(detail).toContain('were NOT changed')
+  })
+
+  test('a name-set mismatch lists both directions', () => {
+    const detail = formatInstallFailureDetail(
+      { code: 'RECONCILE_SERVER_IDENTITY', facet: 'alpha', missing: ['gone'], unexpected: ['extra'] },
+      notNeeded,
+    )
+    expect(detail).toContain('locked but not declared: "gone"')
+    expect(detail).toContain('declared but not locked: "extra"')
+  })
+
+  test('a hostile name is escaped on stderr too', () => {
+    const detail = formatInstallFailureDetail(
+      { code: 'RECONCILE_SERVER_IDENTITY', facet: 'alpha', missing: ['gone\u001b[2K\nforged'], unexpected: [] },
+      notNeeded,
+    )
+    expect(detail).not.toContain('\u001b[2K')
+    expect(detail).not.toContain('\nforged')
   })
 })

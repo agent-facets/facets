@@ -1,6 +1,7 @@
 import type { McpServerCapabilityFailure } from '@agent-facets/adapter'
 import type { FileTransactionFailure, RollbackOutcome, RunInstallFailure } from '@agent-facets/engine'
 import { describeDiskState, hasPreservedConflicts } from '../../util/install-outcome.ts'
+import { serverInventoryMismatchFix } from '../../util/mcp-report.ts'
 import {
   describeUnsupportedManifestVersion,
   UNSUPPORTED_MANIFEST_VERSION_FIX,
@@ -164,6 +165,12 @@ export function installFailureFix(
       return `deselect one of the adapters listed above, then re-run 'facet ${command}'`
     case 'MCP_NATIVE_STATE_DRIFT':
       return `${describeDiskState(rollback)}. Review the file listed above, then re-run 'facet ${command}'`
+    case 'RECONCILE_SERVER_IDENTITY':
+    case 'RECONCILE_SERVER_FINGERPRINT':
+      // Not the default's "fix the underlying issue": the content is fine and
+      // a plain re-run fails identically. The lockfile's server metadata is
+      // what changed, and only restoring it from a trusted revision helps.
+      return `${describeDiskState(rollback)}; ${serverInventoryMismatchFix(command)}`
     case 'UPDATE_PLAN_STALE':
       // Nothing is broken and nothing needs repairing: the project moved
       // between the plan being shown and being applied, so the only

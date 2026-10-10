@@ -4,7 +4,7 @@ import type { NormalizedFacetEntry } from '../../manifest/mutations.ts'
 import { ownEntry } from '../own-entry.ts'
 import type { OnLog, RunInstallFailure, StageEvent } from '../types.ts'
 import type { FacetResolutionIntent } from './delta.ts'
-import { reconcileLockedAgainstPlan } from './reconcile.ts'
+import { reconcileLockedAgainstPlan, reconcileLockedServerInventory } from './reconcile.ts'
 import { resolveFacet } from './resolve-facet.ts'
 import type { ResolvedFacet } from './types.ts'
 
@@ -121,6 +121,19 @@ export async function resolveAll(args: ResolveAllArgs): Promise<ResolveAllResult
     if (mismatch !== undefined) {
       onStage({ kind: 'facet-failure', facet: facetName, failure: mismatch })
       return { ok: false, failure: mismatch }
+    }
+
+    // The same check for the server inventory a `0.4` entry records. Given
+    // the whole document because only its version says an inventory exists.
+    const serverMismatch = reconcileLockedServerInventory(
+      facetName,
+      previousLockfile,
+      facetResolution.integrity,
+      facetResolution.servers,
+    )
+    if (serverMismatch !== undefined) {
+      onStage({ kind: 'facet-failure', facet: facetName, failure: serverMismatch })
+      return { ok: false, failure: serverMismatch }
     }
 
     resolved.push({ ...facetResolution, facet: facetName, previousEntry })

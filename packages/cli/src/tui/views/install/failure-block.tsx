@@ -27,8 +27,10 @@ import {
   describeMcpCapabilityHint,
   describeMcpContractViolation,
   describeMcpDocumentOverlap,
+  describeServerInventoryMismatch,
   describeTakeoverHeading,
   describeUnsupportedMcpAdapter,
+  SERVER_INVENTORY_MISMATCH_EXPLANATION,
 } from '../../../util/mcp-report.ts'
 import { translateEngineRegistryError } from '../../../util/registry-errors.ts'
 import { THEME } from '../../theme.ts'
@@ -575,6 +577,25 @@ function failureDetail(failure: RunInstallFailure): React.JSX.Element {
           <Text color={THEME.hint}> Delete facets.lock and re-run, or `facet add` to update it.</Text>
         </Box>
       )
+    case 'RECONCILE_SERVER_IDENTITY':
+    case 'RECONCILE_SERVER_FINGERPRINT': {
+      const described = describeServerInventoryMismatch(failure)
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ {described.heading}
+          </Text>
+          {described.lines.map((line) => (
+            <Text key={line} color={THEME.hint}>
+              {'  '}
+              {line}
+            </Text>
+          ))}
+          <Text color={THEME.hint}> {SERVER_INVENTORY_MISMATCH_EXPLANATION}</Text>
+          <Text color={THEME.hint}> Restore the server records from a trusted revision, then re-run.</Text>
+        </Box>
+      )
+    }
     case 'MATERIALIZATION_COLLISION':
       return (
         <Box flexDirection="column" marginTop={1}>

@@ -448,3 +448,39 @@ describe('installFailureFix — a preserved concurrent edit is not a failure', (
     expect(fix).not.toContain('inspect')
   })
 })
+
+describe('installFailureFix — a same-integrity server inventory mismatch', () => {
+  const identity: RunInstallFailure = {
+    code: 'RECONCILE_SERVER_IDENTITY',
+    facet: 'alpha',
+    missing: ['gone'],
+    unexpected: [],
+  }
+  const fingerprint: RunInstallFailure = {
+    code: 'RECONCILE_SERVER_FINGERPRINT',
+    facet: 'alpha',
+    authoredName: 'filesystem',
+    expected: `sha256:${'1'.repeat(64)}`,
+    actual: `sha256:${'2'.repeat(64)}`,
+  }
+
+  for (const failure of [identity, fingerprint]) {
+    test.each(COMMANDS)(`${failure.code} sends a %s user to the lockfile, not a plain retry`, (command) => {
+      const fix = installFailureFix(failure, notNeeded, command)
+      expect(fix).toContain(describeDiskState(notNeeded))
+      expect(fix).toContain('facets.lock')
+      expect(fix).toContain('trusted revision')
+      expect(fix).toContain(`facet ${command}`)
+      expect(fix).not.toContain('fix the underlying issue')
+      expect(fix.toLowerCase()).not.toContain('delete')
+    })
+
+    test(`${failure.code}: an incomplete rollback still outranks it`, () => {
+      expect(installFailureFix(failure, partial, 'install')).toContain(describeDiskState(partial))
+    })
+
+    test(`${failure.code}: the detail line stays machine-shaped`, () => {
+      expect(installFailureDetail(failure)).toBe(`code=${failure.code}`)
+    })
+  }
+})

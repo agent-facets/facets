@@ -122,45 +122,45 @@ Run protocol unit tests and types, engine and CLI typechecks, and lint. Confirm 
 ## 5. Verified server reconciliation — Research
 
 ### Step 19 - Pause: Switch model for exploration
-- [ ] 5.1 Pause: Switch model for exploration
+- [x] 5.1 Pause: Switch model for exploration
 
 ### Step 20 - Explore: Trace verified-content reconciliation
-- [ ] 5.2 Explore: Trace verified-content reconciliation
+- [x] 5.2 Explore: Trace verified-content reconciliation
 
 Inspect installation `commit/resolve-all.ts`, `commit/reconcile.ts`, source resolvers, and warm/cold fixtures. Locate the previous document-version discriminator and the boundary before composition, approval, adapter planning, and cleanup.
 
 ### Step 21 - Explore: Audit reconciliation failure consumers
-- [ ] 5.3 Explore: Audit reconciliation failure consumers
+- [x] 5.3 Explore: Audit reconciliation failure consumers
 
 Inspect `types.ts` and CLI `commands/shared/install-failure.ts` and `tui/views/install/failure-block.tsx`. Identify all consumers of the two new reconciliation failures.
 
 ### Step 22 - Propose: Agree the reconciliation boundary
-- [ ] 5.4 Propose: Agree the reconciliation boundary
+- [x] 5.4 Propose: Agree the reconciliation boundary
 
 Present group 6's same-integrity checks, typed failures, CLI rendering, and tests. Preserve legacy behavior and the current `0.3` writer; dispositions remain project intent rather than content. Obtain approval.
 
 ### Step 23 - Pause: Switch model for implementation
-- [ ] 5.5 Pause: Switch model for implementation
+- [x] 5.5 Pause: Switch model for implementation
 
 ## 6. Verified server reconciliation — Implementation
 
 ### Step 24 - Implement: Reconcile server metadata before side effects
-- [ ] 6.1 Implement: Reconcile server metadata before side effects
+- [x] 6.1 Implement: Reconcile server metadata before side effects
 
 Add `RECONCILE_SERVER_IDENTITY` and `RECONCILE_SERVER_FINGERPRINT`; discriminate on the previous document version and compare complete authored names and recomputed fingerprints for unchanged-integrity `0.4` entries. Include omitted records, skip legacy lookalikes, and do not compare dispositions.
 
 ### Step 25 - Implement: Render reconciliation failures honestly
-- [ ] 6.2 Implement: Render reconciliation failures honestly
+- [x] 6.2 Implement: Render reconciliation failures honestly
 
 Update every CLI consumer with facet/authored-name and expected/observed fingerprint data. Explain review/restoration of inconsistent metadata rather than promising silent retry repair; disclose no declaration values.
 
 ### Step 26 - Implement: Test reconciliation across acquisition paths
-- [ ] 6.3 Implement: Test reconciliation across acquisition paths
+- [x] 6.3 Implement: Test reconciliation across acquisition paths
 
 Extend reconciliation, resolution, and `run-install.test.ts` coverage for missing `gone`, unexpected `extra`, changed and omitted fingerprints, warm/cold acquisition, registry/git/local sources, legitimate integrity updates, and normal intent edits. Assert failure before prompts, adapter planning, cleanup, and writes; use explicit `0.4` input fixtures without requiring the writer switch.
 
 ### Step 27 - Verify: Check reconciliation independently
-- [ ] 6.4 Verify: Check reconciliation independently
+- [x] 6.4 Verify: Check reconciliation independently
 
 Run protocol, engine, and CLI unit-test scripts and typechecks plus lint. Confirm existing `0.3` workflows still pass and the new `0.4` checks fail before side effects. Stop on failure.
 
