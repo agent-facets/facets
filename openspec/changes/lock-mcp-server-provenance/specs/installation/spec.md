@@ -575,7 +575,7 @@ Before deleting any materialized asset, the system SHALL verify that every selec
 #### Scenario: Omitted server records survive removal without receipt claims
 
 - **WHEN** a remaining `0.4` facet has an omitted server with no receipt claim
-- **AND** its receipt agrees with every active locked asset and server record on authored identity, disposition, and applicable file-integrity or declaration-fingerprint values
+- **AND** its receipt agrees with every active locked asset on authored identity, disposition, and owned file paths, and with every active locked server record on authored identity, disposition, and declaration fingerprint
 - **THEN** that omission SHALL NOT force content resolution
 - **AND** the complete omitted record SHALL survive the lockfile rewrite
 
