@@ -2,8 +2,21 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { computeMcpServerFingerprint, type McpServerDeclaration } from '@agent-facets/protocol'
 import { spawnCli } from './helpers/cli-process.ts'
 import { installFakeAdapter } from './helpers/fake-adapter.ts'
+import {
+  buildFacet,
+  countingEndpoint,
+  forgetConfigurationClaims,
+  readJson,
+  readLock,
+  receiptFile,
+  relockLegacy,
+  sentinelServer,
+  snapshot,
+  writeManifest,
+} from './helpers/mcp-project.ts'
 
 /**
  * End-to-end coverage for MCP configuration consent, driving the compiled
@@ -245,5 +258,192 @@ describe('declaration secrecy', () => {
     expect(result.exitCode).toBe(1)
     expect(result.stderr).not.toContain('\u001b[2K')
     expect(result.stderr).toContain('\\u001b[2K\\nforged')
+  })
+})
+
+/**
+ * The `0.4` lockfile's server inventory, written by the real binary.
+ *
+ * Every facet entry records every authored server — omitted ones included —
+ * as name, fingerprint, and disposition only. Nothing here may launch a
+ * command or contact an endpoint: configuring a server is writing a document.
+ */
+describe('locked server inventory', () => {
+  test('records complete per-facet inventories and never runs or contacts a server', async () => {
+    installFakeAdapter(adaptersDir, 'faketool', { mcp: true })
+    const { declaration: filesystem, marker } = sentinelServer(projectRoot)
+    const endpoint = countingEndpoint()
+    try {
+      const docs: McpServerDeclaration = { type: 'http', url: endpoint.url }
+      const scratch: McpServerDeclaration = { type: 'stdio', command: 'scratch-mcp' }
+      writeManifest(projectRoot, {
+        manifestVersion: 0.2,
+        facets: {
+          // Server-only, with one aliased server.
+          alpha: {
+            source: buildFacet(projectRoot, 'alpha', { servers: { filesystem, docs } }),
+            materialization: { servers: { docs: { kind: 'aliased', as: 'team-docs' } } },
+          },
+          // Mixed, declaring alpha's server identically: one native entry,
+          // a record for each facet.
+          beta: buildFacet(projectRoot, 'beta', { skills: ['review'], servers: { filesystem } }),
+          // No servers at all: an explicit empty inventory.
+          gamma: buildFacet(projectRoot, 'gamma', { skills: ['notes'] }),
+          // Omitted: never configured, still recorded.
+          delta: {
+            source: buildFacet(projectRoot, 'delta', { servers: { scratch } }),
+            materialization: { servers: { scratch: { kind: 'omitted' } } },
+          },
+        },
+      })
+
+      const result = await runCli(['install', '--accept-mcp'])
+
+      expect(result.exitCode).toBe(0)
+      const lock = readLock(projectRoot)
+      expect(lock.lockfileVersion).toBe(0.4)
+      const record = (
+        name: string,
+        declaration: McpServerDeclaration,
+        materialization: { kind: string; as?: string },
+      ) => ({
+        name,
+        fingerprint: computeMcpServerFingerprint(declaration),
+        materialization,
+      })
+      expect(lock.facets.alpha?.assets).toEqual([])
+      expect(lock.facets.alpha?.servers).toEqual([
+        record('docs', docs, { kind: 'aliased', as: 'team-docs' }),
+        record('filesystem', filesystem, { kind: 'authored' }),
+      ])
+      expect(lock.facets.beta?.assets).toHaveLength(1)
+      expect(lock.facets.beta?.servers).toEqual([record('filesystem', filesystem, { kind: 'authored' })])
+      expect(lock.facets.gamma?.servers).toEqual([])
+      expect(lock.facets.delta?.servers).toEqual([record('scratch', scratch, { kind: 'omitted' })])
+
+      // Fingerprints only: no command, argument, or URL reaches a shared file.
+      const lockText = readFileSync(join(projectRoot, 'facets.lock'), 'utf8')
+      for (const value of [filesystem.type === 'stdio' ? filesystem.command : '', endpoint.url, 'scratch-mcp']) {
+        expect(lockText).not.toContain(value)
+      }
+
+      // The native document has the selection: identical claims composed, the
+      // alias applied, the omission absent.
+      expect(Object.keys(readJson<{ servers: object }>(mcpDocumentFor('faketool')).servers).sort()).toEqual([
+        'filesystem',
+        'team-docs',
+      ])
+      expect(existsSync(marker)).toBe(false)
+      expect(endpoint.requests()).toBe(0)
+    } finally {
+      endpoint.stop()
+    }
+  })
+})
+
+/**
+ * What a valid `0.4` lockfile does NOT carry: approval, ownership, or
+ * takeover authority. Each of those is machine-local, in the receipt.
+ */
+describe('locked records grant no machine-local authority', () => {
+  async function installed(): Promise<void> {
+    installFakeAdapter(adaptersDir, 'faketool', { mcp: true })
+    writeManifest(projectRoot, { facets: { alpha: buildServerFixture('alpha', 'filesystem') } })
+    expect((await runCli(['install', '--accept-mcp'])).exitCode).toBe(0)
+  }
+
+  test('another machine with the same files is still asked to approve', async () => {
+    await installed()
+    const before = snapshot([join(projectRoot, 'facets.lock'), mcpDocumentFor('faketool')])
+    // A teammate: same project files, their own FACET_DIR with no receipt.
+    const teammate = realpathSync(mkdtempSync(join(tmpdir(), 'facet-mcp-teammate-')))
+    try {
+      installFakeAdapter(join(teammate, '.facet', 'adapters'), 'faketool', { mcp: true })
+      const result = await spawnCli(['install'], {
+        cwd: projectRoot,
+        env: { HOME: teammate, FACET_DIR: join(teammate, '.facet') },
+      })
+
+      expect(result.exitCode).toBe(1)
+      expect(result.stderr).toContain('code=MCP_CONSENT_REQUIRED')
+      expect(result.stderr).toContain('filesystem (not yet approved)')
+      expect(snapshot([join(projectRoot, 'facets.lock'), mcpDocumentFor('faketool')])).toEqual(before)
+    } finally {
+      rmSync(teammate, { recursive: true, force: true })
+    }
+  })
+
+  test('a matching native entry this machine does not own is a takeover, not an adoption', async () => {
+    await installed()
+    // The lockfile still records the server and the document still holds the
+    // exact declaration — but nothing on this machine claims it any more.
+    forgetConfigurationClaims(join(fakeHome, '.facet'), projectRoot, 'alpha')
+    const before = snapshot([join(projectRoot, 'facets.lock'), mcpDocumentFor('faketool')])
+
+    const result = await runCli(['install'])
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('code=MCP_CONSENT_REQUIRED')
+    expect(result.stderr).toContain('faketool: filesystem already matches and would be adopted')
+    expect(snapshot([join(projectRoot, 'facets.lock'), mcpDocumentFor('faketool')])).toEqual(before)
+  })
+
+  // Drift found when a run STARTS, at an identity the receipt owns, is repair:
+  // it needs no new approval. This is not the mid-run race — a document
+  // changing between a run's plan and its commit — which the engine suite
+  // covers, because a subprocess cannot interleave with it deterministically.
+  test('an owned entry edited between runs is repaired without asking again', async () => {
+    await installed()
+    const document = readJson<{ servers: Record<string, unknown> }>(mcpDocumentFor('faketool'))
+    const expected = document.servers.filesystem
+    document.servers.filesystem = { type: 'http', url: 'https://hand-edited.example/mcp' }
+    writeFileSync(mcpDocumentFor('faketool'), JSON.stringify(document))
+
+    const result = await runCli(['install'])
+
+    expect(result.exitCode).toBe(0)
+    expect(readJson<{ servers: Record<string, unknown> }>(mcpDocumentFor('faketool')).servers.filesystem).toEqual(
+      expected,
+    )
+  })
+})
+
+describe('a failed migration commit', () => {
+  test('restores the legacy lockfile, configuration, and assets byte-for-byte', async () => {
+    installFakeAdapter(adaptersDir, 'faketool', { mcp: true })
+    writeManifest(projectRoot, {
+      facets: {
+        alpha: buildServerFixture('alpha', 'filesystem'),
+        beta: buildFacet(projectRoot, 'beta', { skills: ['review'] }),
+      },
+    })
+    expect((await runCli(['install', '--accept-mcp'])).exitCode).toBe(0)
+
+    // A legacy project whose configuration and asset both have to be written
+    // again, so the migration has real work to roll back.
+    relockLegacy(projectRoot, 0.3)
+    rmSync(mcpDocumentFor('faketool'))
+    rmSync(join(projectRoot, '.faketool', 'skills', 'review.md'))
+    const paths = [
+      join(projectRoot, 'facets.json'),
+      join(projectRoot, 'facets.lock'),
+      mcpDocumentFor('faketool'),
+      join(projectRoot, '.faketool', 'skills', 'review.md'),
+    ]
+    const before = snapshot(paths)
+    // The receipt is the last write of the commit. A directory where it has
+    // to go makes that write fail after everything else was applied.
+    const receipt = receiptFile(join(fakeHome, '.facet'), projectRoot)
+    rmSync(receipt)
+    mkdirSync(receipt)
+
+    const result = await runCli(['install', '--accept-mcp'])
+
+    expect(result.exitCode).toBe(1)
+    // It got as far as committing, and walked every write back — not a
+    // failure early enough that there was nothing to restore.
+    expect(result.stderr).toContain('the project was restored to its previous state')
+    expect(snapshot(paths)).toEqual(before)
+    expect(readLock(projectRoot).lockfileVersion).toBe(0.3)
   })
 })

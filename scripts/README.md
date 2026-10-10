@@ -41,8 +41,10 @@ scripts/
 │   ├── notify-failure.ts       # Slack failure notification (on_fail step)
 │   └── test-helpers.ts         # Test utilities (mock helpers, fixtures)
 │
-├── smoke/                      # Manual, run-on-demand smoke checks
-│   └── protocol-node.mjs       # Load @agent-facets/protocol's built bundle on plain Node
+├── smoke/                      # Node-only checks for @agent-facets/protocol
+│   ├── protocol-node.mjs       # Manual: exercise the built bundle on plain Node
+│   ├── node-only.mjs           # Run a script on Node with Bun provably unreachable
+│   └── deny-network.mjs        # Preload: make Node's network entry points throw
 │
 ├── prepack.ts                  # Rewrite workspace:* deps, hoist publishConfig overrides, inject adapter SDK API metadata before npm publish
 ├── postpack.ts                 # Restore package.json after pack
@@ -52,32 +54,38 @@ scripts/
 
 ## Smoke checks
 
-`scripts/smoke/protocol-node.mjs` loads `@agent-facets/protocol`'s **built**
-bundle (`packages/protocol/dist/index.mjs`) on plain Node and exercises a
-representative slice of the public surface. It is the only thing that
-verifies the published artifact imports and runs with no Bun present — the
-package's whole reason for being separate from `engine`.
+Two Node-only checks cover `@agent-facets/protocol`, at different depths.
 
-It is **manual and not wired into `bun check` or CI.** It is not a
-`*.test.*` file, so `bun test scripts/` does not discover it. Run it by hand
-after changing protocol's public surface:
+**Automated — `packages/protocol/src/__tests__/public-inventory.e2e.test.ts`.**
+Runs in `bun check` through protocol's `test:e2e` script. It builds the
+package, packs a real tarball from a staging copy of the published manifest
+(lifecycle scripts disabled, so the workspace `package.json` is never
+rewritten), extracts it into a fresh project with only its installed
+dependency closure, and consumes it by package name under Node 22+ with Bun
+unreachable and network entry points guarded. It then type-checks a strict
+consumer against the packed declarations with `tsgo`. It covers the
+published export map, both entrypoints, and the locked MCP inventory
+workflow — not the whole API.
+
+**Manual — `scripts/smoke/protocol-node.mjs`.** Exercises a broad slice of
+the public surface (archives, manifests, version dispatch, materialization,
+lockfile `0.4` inventory) against the **built** bundle by relative path. It
+is not a `*.test.*` file, so nothing runs it for you; update it by hand
+alongside public-surface changes, and run it after building:
 
 ```sh
 bun run --cwd packages/protocol build
-node scripts/smoke/protocol-node.mjs
+node scripts/smoke/node-only.mjs scripts/smoke/protocol-node.mjs
 ```
 
-To prove Node-only operation with no Bun on `$PATH`:
-
-```sh
-PATH="$(echo $PATH | tr ':' '\n' | grep -v bun | tr '\n' ':')" \
-  node scripts/smoke/protocol-node.mjs
-```
-
-Because nothing enforces it, the script must be updated by hand alongside
-public-surface changes. Protocol has no automated export-surface test; the
-adapter packages' `dist.e2e.test.ts` is the precedent for closing that gap
-if it becomes worth doing.
+`scripts/smoke/node-only.mjs` is the isolation both checks share. Filtering
+`bun` out of `$PATH` is not enough — a tool-manager shim directory serves
+`node` and `bun` alike — so it gives the child a `$PATH` holding only a link to
+the real Node executable, and refuses to run unless Node is 22+ and `bun`
+fails to resolve. Pass `--deny-network` to preload
+`scripts/smoke/deny-network.mjs`, which makes Node's standard network entry
+points throw. That is a regression guard against code reaching for the
+network, not an operating-system sandbox.
 
 ## Two Pipelines
 

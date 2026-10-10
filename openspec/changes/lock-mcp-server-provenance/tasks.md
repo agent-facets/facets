@@ -252,55 +252,55 @@ Run protocol, engine, and CLI unit-test scripts and typechecks, CLI e2e tests, a
 ## 9. Public consumers and command-level behavior — Research
 
 ### Step 45 - Pause: Switch model for exploration
-- [ ] 9.1 Pause: Switch model for exploration
+- [x] 9.1 Pause: Switch model for exploration
 
 ### Step 46 - Explore: Inspect published-consumer test infrastructure
-- [ ] 9.2 Explore: Inspect published-consumer test infrastructure
+- [x] 9.2 Explore: Inspect published-consumer test infrastructure
 
 Inspect protocol build/publish exports, emitted declarations, `scripts/smoke/protocol-node.mjs`, and existing packed-package test patterns. Plan an isolated Node 22+ consumer harness that proves Bun is unavailable, uses installed local dependencies without registry access, and cannot leave workspace manifests rewritten by pack hooks.
 
 ### Step 47 - Explore: Map command-level regression coverage
-- [ ] 9.3 Explore: Map command-level regression coverage
+- [x] 9.3 Explore: Map command-level regression coverage
 
 Inspect CLI e2e fixtures and selected-adapter/native-document tests; map remaining specification scenarios to public-consumer and command-level evidence, especially migration recovery, pre-fetch rejection, per-facet origins, rollback, and unchanged consent/takeover behavior.
 
 ### Step 48 - Propose: Agree public and command-boundary verification
-- [ ] 9.4 Propose: Agree public and command-boundary verification
+- [x] 9.4 Propose: Agree public and command-boundary verification
 
 Present the public-entrypoint, packaged-output, Node-only, and CLI end-to-end verification approach for all of group 10, including the new protocol `test:e2e` wiring and isolation of build-dependent tests from unit tests. Obtain approval before writing.
 
 ### Step 49 - Pause: Switch model for implementation
-- [ ] 9.5 Pause: Switch model for implementation
+- [x] 9.5 Pause: Switch model for implementation
 
 ## 10. Public consumers and command-level behavior — Implementation
 
 ### Step 50 - Implement: Demonstrate consumer-owned offline verification
-- [ ] 10.1 Implement: Demonstrate consumer-owned offline verification
+- [x] 10.1 Implement: Demonstrate consumer-owned offline verification
 
 Add a source-level consumer test importing only protocol's public index. Parse a current lockfile, derive authored/selected origins, independently fingerprint exported portable declarations, and compare complete effective-name/fingerprint sets; prove changed argument order, missing servers, and unexpected servers fail comparison without cache, archives, adapters, or network. Place the source-level workflow in `packages/protocol/src/__tests__/public-inventory.test.ts`.
 
 ### Step 51 - Implement: Automate Node-only published-package coverage
-- [ ] 10.2 Implement: Automate Node-only published-package coverage
+- [x] 10.2 Implement: Automate Node-only published-package coverage
 
 Add protocol `*.e2e.test.ts` coverage of packaged/published exports and declarations under Node 22+ with Bun absent from PATH. Exercise the inventory consumer from isolated local package fixtures, not workspace-only source exports; add `test:e2e` with an explicit build and exclude these tests from the unit script without making unit tests or typechecks depend on build. Assert the child runtime version and that its isolated PATH cannot resolve Bun, including through tool-manager shims; use local dependencies and disable network for consumer operations. Use `packages/protocol/src/__tests__/public-inventory.e2e.test.ts`. Set `test:e2e` to build explicitly before running these tests, following `bun run build && bun test src/__tests__/*.e2e.test.ts`; exclude `**/*.e2e.test.ts` from the unit script. Use the existing root Turbo task unless an actual configuration gap is demonstrated.
 
 ### Step 52 - Implement: Exercise CLI format and migration behavior
-- [ ] 10.3 Implement: Exercise CLI format and migration behavior
+- [x] 10.3 Implement: Exercise CLI format and migration behavior
 
 Extend CLI e2e tests for `0.4` server-only/mixed installs, aliases and omissions, identical/conflicting declarations, legacy migration and frozen refusal/recovery, required-version reporting, and metadata-only diagnostics. Use local fixtures or controlled transports; assert no MCP launch/connection and no project/native mutation on gated failures. Ground these cases in `packages/cli/src/__tests__/collision.e2e.test.ts`, `mcp-consent.e2e.test.ts`, and `remove.e2e.test.ts`.
 
 ### Step 53 - Implement: Preserve authority and transaction regressions
-- [ ] 10.4 Implement: Preserve authority and transaction regressions
+- [x] 10.4 Implement: Preserve authority and transaction regressions
 
 Add or retain command-level regressions for approvals remaining machine-local, lock records granting no takeover/deletion authority, shared-claim removal, native drift, rollback, and retained legacy frozen documents. Keep the documented verification recipe in sync with the public-consumer test rather than adding a comparison API.
 
 ### Step 54 - Implement: Update the manual Node smoke check
-- [ ] 10.5 Implement: Update the manual Node smoke check
+- [x] 10.5 Implement: Update the manual Node smoke check
 
 Extend `scripts/smoke/protocol-node.mjs` with `0.4` exact-dispatch and inventory-derivation checks while retaining legacy coverage. Replace its `grep -v bun` PATH recipe with the tested shim-proof isolation approach used by the automated harness. Update `scripts/README.md` in the same step to distinguish manual smoke coverage from automated e2e coverage and provide the correct invocation.
 
 ### Step 55 - Verify: Check public consumers and command boundaries
-- [ ] 10.6 Verify: Check public consumers and command boundaries
+- [x] 10.6 Verify: Check public consumers and command boundaries
 
 Run `bun run --cwd packages/protocol test:e2e`, `bun run --cwd packages/cli test:e2e`, `bun run --cwd packages/adapter test:e2e`, first-party adapter unit suites, and the protocol public-consumer unit tests. Confirm Node-only operation, correct published JavaScript/type exports, no declaration leakage, and unchanged Adapter SDK API `0.3` compatibility. Stop and report failed or blocked checks. Run the updated manual smoke check with the same verified Bun-free isolation. Confirm packing tests leave workspace manifests unchanged.
 
