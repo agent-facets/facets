@@ -1,5 +1,6 @@
 import type { McpServerCapabilityFailure } from '@agent-facets/adapter'
 import type { FileTransactionFailure, RollbackOutcome, RunInstallFailure } from '@agent-facets/engine'
+import { CURRENT_LOCKFILE_VERSION } from '@agent-facets/protocol'
 import { describeDiskState, hasPreservedConflicts } from '../../util/install-outcome.ts'
 import { serverInventoryMismatchFix } from '../../util/mcp-report.ts'
 import {
@@ -60,6 +61,14 @@ export function installFailureDetail(failure: RunInstallFailure): string {
 function lockfileDriftFix(facets: readonly { readonly reason: string }[], command: InstallCommandName): string {
   const stale = facets.filter((entry) => entry.reason === 'stale-override').length
 
+  // A format refusal is about what the file can RECORD, not about what it
+  // says. The version it needs names a capability; the version a normal
+  // install writes is the current one, and saying so keeps a user from
+  // concluding they should hand-edit the version number.
+  if (facets.length > 0 && facets.every((entry) => entry.reason === 'materialization-unrepresentable')) {
+    return `this lockfile's format cannot record the choices in facets.json; run 'facet ${command}' without --frozen-lockfile, which writes the current v${CURRENT_LOCKFILE_VERSION} format, then commit facets.lock`
+  }
+
   // An empty set cannot happen through the frozen gates, which only report
   // drift they found — but "no reasons" is not evidence of stale intent, so it
   // takes the ordinary advice rather than the narrower one.
@@ -117,6 +126,11 @@ export function installFailureFix(
     case 'MATERIALIZATION_COLLISION':
     case 'MATERIALIZATION_RESOLUTION_INVALID':
       return `record an alias or omission for each asset listed above in facets.json, then re-run 'facet ${command}'`
+    case 'LOCKED_MATERIALIZATION_COLLISION':
+      // Not the ordinary collision advice: frozen mode refuses a new choice
+      // even when it would cure the collision, so the choice has to be made
+      // by a run that is allowed to record it.
+      return `re-run 'facet ${command}' without --frozen-lockfile to choose names for the claimants listed above, then commit facets.json and facets.lock`
     case 'MATERIALIZATION_ALIAS_INVALID':
       // The helper already knows which command to name; this was the one
       // actionable branch that made the user work it out.

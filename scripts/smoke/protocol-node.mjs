@@ -14,17 +14,16 @@
  *   - planArchiveEntries membership/classification
  *   - materialization identity, namespaces, dispositions, and planMaterialization
  *   - lockfile 0.3 dispositions with no cross-version fallback
+ *   - lockfile 0.4 server inventory: exact dispatch, required inventories,
+ *     the fixed fingerprint encoding, and locked MCP inventory derivation
  *   - validateFacetArchive end-to-end on a 0.2 archive (async, node:zlib gunzip)
  *   - listVerifiedFiles / verifiedFileHashes uniform views
  *
- * Run from the repo root after `bun run --cwd packages/protocol build`:
+ * Run from the repo root after `bun run --cwd packages/protocol build`, through
+ * the Node-only launcher, which proves Bun is unreachable (shims included)
+ * before running anything:
  *
- *   node scripts/smoke/protocol-node.mjs
- *
- * To verify Node-only operation (no Bun on PATH):
- *
- *   PATH="$(echo $PATH | tr ':' '\n' | grep -v bun | tr '\n' ':')" \
- *     node scripts/smoke/protocol-node.mjs
+ *   node scripts/smoke/node-only.mjs scripts/smoke/protocol-node.mjs
  */
 
 import { strict as assert } from 'node:assert'
@@ -39,10 +38,14 @@ import {
   collisionKey,
   computeAssetHashes,
   computeContentHash,
+  computeMcpServerFingerprint,
+  deriveLockedMcpInventory,
   detectNamingCollisions,
+  LOCKFILE_0_4_SERVER_FINGERPRINT_ENCODING,
   Lockfile03Schema,
   listVerifiedFiles,
   MaterializationDispositionSchema,
+  MCP_SERVER_FINGERPRINT_ENCODING,
   materializationNamespace,
   ProjectAssetOverrideSchema,
   parseBuildManifestDocument,
@@ -50,6 +53,7 @@ import {
   parseLockfileDocument,
   parseProjectManifestDocument,
   planArchiveEntries,
+  planLockedServerInventory,
   planMaterialization,
   resolvePromptsFromMap,
   validateFacetArchive,
@@ -557,6 +561,111 @@ check('a malformed 0.3 document is never reinterpreted as 0.2', () => {
   assert.equal(result.ok, false)
   assert.equal(result.failure.code, 'schema-violation')
   assert.equal(result.failure.lockfileVersion, 0.3)
+})
+
+console.log('=== lockfile 0.4 (server inventory, exact dispatch) ===')
+
+const filesystem = { type: 'stdio', command: 'npx', args: ['-y', 'server-filesystem'] }
+const docs = { type: 'http', url: 'https://docs.example/mcp' }
+const lockfile04Doc = {
+  lockfileVersion: 0.4,
+  facets: {
+    alpha: {
+      source: { kind: 'registry', registry: 'https://cafe.example' },
+      version: '1.0.0',
+      integrity: `sha256:${'a'.repeat(64)}`,
+      assets: [],
+      servers: [
+        { name: 'docs', fingerprint: computeMcpServerFingerprint(docs), materialization: { kind: 'omitted' } },
+        {
+          name: 'filesystem',
+          fingerprint: computeMcpServerFingerprint(filesystem),
+          materialization: { kind: 'aliased', as: 'workspace-files' },
+        },
+      ],
+    },
+    beta: {
+      source: { kind: 'local', path: '../beta' },
+      version: '0.2.0',
+      integrity: `sha256:${'b'.repeat(64)}`,
+      assets: [],
+      servers: [
+        {
+          name: 'files',
+          fingerprint: computeMcpServerFingerprint(filesystem),
+          materialization: { kind: 'aliased', as: 'workspace-files' },
+        },
+      ],
+    },
+  },
+}
+
+check('both fingerprint encoding identifiers are facets:mcp-server:v1', () => {
+  assert.equal(MCP_SERVER_FINGERPRINT_ENCODING, 'facets:mcp-server:v1')
+  assert.equal(LOCKFILE_0_4_SERVER_FINGERPRINT_ENCODING, 'facets:mcp-server:v1')
+  assert.equal(
+    computeMcpServerFingerprint({ type: 'stdio', command: 'npx' }),
+    'sha256:6424550ee92491465134168e17c8c43082b58ad834e436318c4a5eb8ec14db91',
+  )
+})
+
+check('a 0.4 lockfile parses as exactly 0.4', () => {
+  const result = parseLockfileDocument(JSON.stringify(lockfile04Doc))
+  assert(result.ok, `expected ok=true, got ${result.ok ? '' : JSON.stringify(result.failure)}`)
+  assert.equal(result.data.lockfileVersion, 0.4)
+})
+
+check('a 0.4 entry without a server inventory is rejected as 0.4, never as 0.3', () => {
+  const { servers: _dropped, ...noInventory } = lockfile04Doc.facets.beta
+  const result = parseLockfileDocument(JSON.stringify({ lockfileVersion: 0.4, facets: { beta: noInventory } }))
+  assert.equal(result.ok, false)
+  assert.equal(result.failure.code, 'schema-violation')
+  assert.equal(result.failure.lockfileVersion, 0.4)
+})
+
+check('derivation selects by alias and keeps every origin and the omitted record', () => {
+  const parsed = parseLockfileDocument(JSON.stringify(lockfile04Doc))
+  assert(parsed.ok)
+  const inventory = deriveLockedMcpInventory(parsed.data.lockfile)
+  assert(inventory.ok, `expected ok=true, got ${JSON.stringify(inventory)}`)
+  assert.deepEqual(
+    inventory.servers.map((server) => [
+      server.effectiveName,
+      server.origins.map((o) => `${o.facet}/${o.authoredName}`),
+    ]),
+    [['workspace-files', ['alpha/filesystem', 'beta/files']]],
+  )
+  assert.deepEqual(
+    inventory.authored.map((record) => `${record.facet}/${record.authoredName}:${record.materialization.kind}`),
+    ['alpha/docs:omitted', 'alpha/filesystem:aliased', 'beta/files:aliased'],
+  )
+})
+
+check('a legacy lockfile reports inventory unavailable, never empty', () => {
+  const parsed = parseLockfileDocument(JSON.stringify(lockfile03Doc))
+  assert(parsed.ok)
+  assert.deepEqual(deriveLockedMcpInventory(parsed.data.lockfile), {
+    ok: false,
+    reason: 'inventory-unavailable',
+    lockfileVersion: 0.3,
+    requiredVersion: 0.4,
+  })
+})
+
+check('fingerprint-only planning applies manifest intent and finds stale overrides', () => {
+  const result = planLockedServerInventory([
+    { facet: 'alpha', servers: [{ name: 'filesystem', fingerprint: computeMcpServerFingerprint(filesystem) }] },
+    { facet: 'empty', servers: [], overrides: { servers: { gone: { kind: 'omitted' } } } },
+  ])
+  assert(result.ok)
+  assert.deepEqual(
+    result.configurations.map((c) => c.identity.effectiveName),
+    ['filesystem'],
+  )
+  assert.deepEqual(
+    result.staleOverrides.map((stale) => `${stale.facet}/${stale.authoredName}`),
+    ['empty/gone'],
+  )
 })
 
 console.log('')

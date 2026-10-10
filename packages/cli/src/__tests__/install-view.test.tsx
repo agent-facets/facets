@@ -16,7 +16,7 @@ import type {
 } from '@agent-facets/engine'
 import { assetIdentity, NO_ROLLBACK, planCollisionIntent } from '@agent-facets/engine'
 import type { IntegrityFailure } from '@agent-facets/protocol'
-import { CURRENT_LOCKFILE_VERSION, LOCKFILE_VERSION_0_3 } from '@agent-facets/protocol'
+import { CURRENT_LOCKFILE_VERSION, LOCKFILE_VERSION_0_3, LOCKFILE_VERSION_0_4 } from '@agent-facets/protocol'
 import { render } from 'ink-testing-library'
 import { createElement } from 'react'
 import { InstallView, type InstallViewHooks, type InstallViewResult } from '../tui/views/install/install-view.tsx'
@@ -1359,6 +1359,39 @@ describe('InstallView — materialization reporting', () => {
     expect(frame).toContain('review')
     expect(frame).toContain('vendor-review')
     expect(frame).toContain('deploy')
+    expect(frame).toContain('omitted')
+    instance.unmount()
+  })
+
+  // A successful normal run returns the `0.4` document it wrote, and a frozen
+  // run the `0.3` one it read. Both record asset dispositions, so both must
+  // report them — keying on "is it 0.3" silently hid them for every new
+  // install.
+  test('reports asset dispositions from a 0.4 lockfile too', async () => {
+    if (!lockfileWithDispositions.ok) expect.unreachable()
+    if (lockfileWithDispositions.lockfile.lockfileVersion !== LOCKFILE_VERSION_0_3) expect.unreachable()
+    const current: RunInstallResult = {
+      ...lockfileWithDispositions,
+      lockfile: {
+        lockfileVersion: LOCKFILE_VERSION_0_4,
+        facets: Object.fromEntries(
+          Object.entries(lockfileWithDispositions.lockfile.facets).map(([name, entry]) => [
+            name,
+            { ...entry, servers: [] },
+          ]),
+        ),
+      },
+    }
+    const instance = render(
+      createElement(InstallView, {
+        mode: 'install',
+        run: makeFakeRun([{ kind: 'install-start', totalFacets: 1 }], current),
+      }),
+    )
+    await settle()
+
+    const frame = visibleContentFrame(instance.frames)
+    expect(frame).toContain('vendor-review')
     expect(frame).toContain('omitted')
     instance.unmount()
   })

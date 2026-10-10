@@ -235,8 +235,20 @@ describe('claimsByFacet', () => {
     const receipt = buildUpdatedReceipt('/tmp/project', {
       kind: 'written',
       facetEntries: {
-        alpha: { source: { kind: 'local', path: './a' }, version: '1.0.0', integrity: 'sha256:a', assets: [] },
-        beta: { source: { kind: 'local', path: './b' }, version: '1.0.0', integrity: 'sha256:b', assets: [] },
+        alpha: {
+          source: { kind: 'local', path: './a' },
+          version: '1.0.0',
+          integrity: 'sha256:a',
+          assets: [],
+          servers: [],
+        },
+        beta: {
+          source: { kind: 'local', path: './b' },
+          version: '1.0.0',
+          integrity: 'sha256:b',
+          assets: [],
+          servers: [],
+        },
       },
       configurations: claimsByFacet(configurations),
     })

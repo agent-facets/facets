@@ -17,8 +17,10 @@ import {
   collisionGroupKey,
   describeAlias,
   describeCollisionGroup,
+  lockedCollisionClaimants,
 } from '../../../util/collision-report.ts'
 import { contributionKey, describeContribution } from '../../../util/contribution.ts'
+import { describeRemovalMigration } from '../../../util/install-detail.ts'
 import { describeRollbackIssue, diskStateSentence } from '../../../util/install-outcome.ts'
 import {
   describeApprovalHeading,
@@ -52,6 +54,8 @@ function driftKey(entry: LockfileDriftEntry): string {
   switch (entry.reason) {
     case 'materialization-drift':
       return `${entry.name}:${entry.reason}:${entry.assetType}:${entry.authoredName}`
+    case 'server-materialization-drift':
+      return `${entry.name}:${entry.reason}:${entry.authoredName}`
     case 'stale-override':
       return `${entry.name}:${entry.reason}:${contributionKey(entry.contribution)}:${entry.authoredName}`
     default:
@@ -86,6 +90,8 @@ function describeDrift(entry: LockfileDriftEntry): string {
       return `locked ${entry.lockedVersion} does not satisfy ${entry.manifestSpec}`
     case 'materialization-drift':
       return `${entry.assetType} "${entry.authoredName}": facets.json says ${describeDisposition(entry.manifest)}, lockfile says ${describeDisposition(entry.locked)}`
+    case 'server-materialization-drift':
+      return `server "${entry.authoredName}": facets.json says ${describeDisposition(entry.manifest)}, lockfile says ${describeDisposition(entry.locked)}`
     case 'stale-override':
       // Says explicitly that the override survived. Frozen mode reports
       // stale intent instead of pruning it, and a line that only named the
@@ -110,6 +116,11 @@ function describeDrift(entry: LockfileDriftEntry): string {
 export function FailureBlock({ result }: { result: Extract<RunInstallResult, { ok: false }> }): React.JSX.Element {
   return (
     <>
+      {result.removalMigration !== undefined && (
+        <Box marginTop={1}>
+          <Text color={THEME.hint}> {describeRemovalMigration(result.removalMigration)}</Text>
+        </Box>
+      )}
       {failureDetail(result.failure)}
       <RollbackNote rollback={result.rollback} />
     </>
@@ -633,6 +644,40 @@ function failureDetail(failure: RunInstallFailure): React.JSX.Element {
             </Box>
           ))}
           <Text color={THEME.hint}> Record an alias or omission per claimant in facets.json, then re-run.</Text>
+        </Box>
+      )
+    case 'LOCKED_MATERIALIZATION_COLLISION':
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={THEME.warning} bold>
+            ✕ the locked contributions collide under the choices in facets.json
+          </Text>
+          {failure.groups.map((entry) => (
+            <Box key={collisionGroupKey(entry)} flexDirection="column">
+              <Text>
+                {' '}
+                {describeCollisionGroup(entry)} — “{entry.group.effectiveName}” is claimed by:
+              </Text>
+              {lockedCollisionClaimants(entry).map((claimant) => (
+                <Box key={claimant.key} flexDirection="column">
+                  <Text color={THEME.hint}>
+                    {'   '}
+                    {claimant.facet} ({claimant.label}) → “{claimant.effectiveName}”{describeAlias(claimant)}
+                  </Text>
+                  {claimant.detail.map((detail) => (
+                    <Text key={detail} color={THEME.hint}>
+                      {'     '}
+                      {detail}
+                    </Text>
+                  ))}
+                </Box>
+              ))}
+            </Box>
+          ))}
+          <Text color={THEME.hint}>
+            {' '}
+            Nothing was fetched. Choose names in a normal install (without --frozen-lockfile), which records them.
+          </Text>
         </Box>
       )
     case 'MATERIALIZATION_ALIAS_INVALID':

@@ -1,4 +1,4 @@
-import type { RollbackOutcome, RunInstallFailure } from '@agent-facets/engine'
+import type { RemovalMigrationContext, RollbackOutcome, RunInstallFailure } from '@agent-facets/engine'
 import { ACCEPT_MCP_FLAG } from '../commands/shared/flags.ts'
 import { formatMaterializationDetail } from './collision-report.ts'
 import { describeRollbackIssue, hasPreservedConflicts } from './install-outcome.ts'
@@ -25,15 +25,39 @@ import {
  * Called before the canonical three-line block so the `fix:` line stays the
  * last thing on the stream, where people look for it.
  */
-export function writeInstallFailureDetail(failure: RunInstallFailure, rollback: RollbackOutcome): boolean {
-  const detail = formatInstallFailureDetail(failure, rollback)
+export function writeInstallFailureDetail(
+  failure: RunInstallFailure,
+  rollback: RollbackOutcome,
+  removalMigration?: RemovalMigrationContext,
+): boolean {
+  const detail = formatInstallFailureDetail(failure, rollback, removalMigration)
   if (!detail) return false
   process.stderr.write(detail)
   return true
 }
 
+/**
+ * Why a removal resolved its remaining facets at all, in one line.
+ *
+ * Shown alongside the actual failure, never instead of it: the cause is
+ * whatever acquisition or verification step failed, and the remedy for that
+ * is the failure's own. This only answers "why did removing something need
+ * the network?".
+ */
+export function describeRemovalMigration(context: RemovalMigrationContext): string {
+  return (
+    `facets.lock v${context.lockfileVersion} records no MCP server inventory, so this removal had to ` +
+    `resolve and verify the remaining facets to write v${context.requiredVersion}; that resolution failed:`
+  )
+}
+
 /** Preserve the same recovery details when the caller emits a JSON document. */
-export function formatInstallFailureDetail(failure: RunInstallFailure, rollback: RollbackOutcome): string {
+export function formatInstallFailureDetail(
+  failure: RunInstallFailure,
+  rollback: RollbackOutcome,
+  removalMigration?: RemovalMigrationContext,
+): string {
+  const migrationDetail = removalMigration === undefined ? '' : `${describeRemovalMigration(removalMigration)}\n`
   const rollbackDetail = formatRollbackDetail(rollback)
   let detail: string
   switch (failure.code) {
@@ -55,7 +79,7 @@ export function formatInstallFailureDetail(failure: RunInstallFailure, rollback:
     default:
       detail = formatMaterializationDetail(failure)
   }
-  return rollbackDetail + detail
+  return rollbackDetail + migrationDetail + detail
 }
 
 /**

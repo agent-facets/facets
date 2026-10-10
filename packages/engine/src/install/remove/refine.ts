@@ -3,21 +3,23 @@ import type {
   CurrentLockfileFacet,
   FacetContribution,
   FacetMaterializationOverrides,
+  Lockfile04Facet,
   MaterializedAsset,
   McpServerIdentity,
-  ProjectAssetOverride,
   ServerClaimant,
   SupportedLockfile,
-  SupportedLockfileFacet,
 } from '@agent-facets/protocol'
 import {
   collisionKey,
   compareCodeUnits,
+  type LOCKFILE_VERSION_0_2,
+  type LOCKFILE_VERSION_0_3,
+  LOCKFILE_VERSION_0_4,
   lockedDispositionOf,
   materializedNameOf,
   mcpServerKey,
+  planLockedServerInventory,
   planMaterialization,
-  SERVER_OVERRIDE_GROUP,
   sameDisposition,
 } from '@agent-facets/protocol'
 import type { NormalizedFacetEntry } from '../../manifest/mutations.ts'
@@ -52,10 +54,12 @@ import type { FacetOutcome, LockfileDriftEntry, StaleMaterializationOverride } f
  * removed.
  *
  * This module answers the real question locally. Every remaining entry is
- * carried forward verbatim — source, version, integrity, file records, and
- * unrecognized fields — and refined to the current schema by attaching the
- * disposition it already records. Refinement is lossless, so it applies to
- * every supported lockfile version rather than only the migrating one.
+ * carried forward verbatim — source, version, integrity, file records, server
+ * inventory, and unrecognized fields. That is lossless only from a `0.4`
+ * lockfile: an earlier one records no server inventory, and the current
+ * format requires a complete one that only verified content can supply, so
+ * remaining legacy entries take the ordinary path. Removing the LAST facet
+ * needs no inventory at all and refines from any supported version.
  *
  * The lockfile alone cannot authorize that, because it is SHARED state: a
  * `git pull` can change what a remaining facet's assets are supposed to be
@@ -102,11 +106,29 @@ export type RemainingReceiptDisagreement =
   | { kind: 'disposition'; scope: Scope; assetType: AssetType; authoredName: string }
   /** Both know the asset, but disagree about which files it owns. */
   | { kind: 'owned-files'; scope: Scope; assetType: AssetType; authoredName: string }
+  /** The lockfile records an active server the receipt has no claim for. */
+  | { kind: 'server-unrecorded'; authoredName: string }
+  /** The receipt claims a server the lockfile does not record as active. */
+  | { kind: 'server-unlocked'; authoredName: string }
+  /** Both know the server, but disagree about the name it is configured under. */
+  | { kind: 'server-disposition'; authoredName: string }
+  /** Both know the server, but disagree about which declaration it is. */
+  | { kind: 'server-fingerprint'; authoredName: string }
 
 /** Why a removal could not be answered from local state alone. */
 export type RefineNotApplicable =
   /** The project has no lockfile, so nothing has been resolved yet. */
   | { code: 'no-lockfile' }
+  /**
+   * Facets remain under a lockfile format with no server inventory. Only
+   * their verified content can supply one, and inventing it — from empty
+   * assets, absent records, or receipt claims — would publish a complete
+   * inventory nobody derived.
+   */
+  | {
+      code: 'remaining-server-inventory-unavailable'
+      lockfileVersion: typeof LOCKFILE_VERSION_0_2 | typeof LOCKFILE_VERSION_0_3
+    }
   /** A remaining facet has no locked entry to carry forward. */
   | { code: 'remaining-not-locked'; facet: string }
   /** A remaining facet's locked entry no longer matches its manifest source or specifier. */
@@ -156,18 +178,11 @@ export type RefineNotApplicable =
    */
   | { code: 'remaining-intent-unrecorded'; facet: string; assetType: AssetType; authoredName: string }
   /**
-   * A remaining facet's server intent disagrees with what this machine
-   * recorded configuring. Honoring it means renaming or removing a native
-   * entry, which is a write — so it belongs on the ordinary path.
+   * A remaining facet's server intent disagrees with the disposition its
+   * locked inventory records. Honoring it means renaming, adding, or removing
+   * a native entry, which is a write — so it belongs on the ordinary path.
    */
   | { code: 'remaining-server-intent-unrecorded'; facet: string; authoredName: string }
-  /**
-   * A remaining facet declares a server alias the receipt has no claim for.
-   * Whether that is stale intent (the facet no longer declares the server) or
-   * an alias never reconciled is only answerable from the facet's manifest,
-   * which this path does not fetch.
-   */
-  | { code: 'remaining-server-intent-unwitnessed'; facet: string; authoredName: string }
   /**
    * The receipt recorded more than one declaration at an effective server
    * identity a remaining claimant keeps. The native entry belongs to whichever
@@ -267,12 +282,29 @@ export function refineRemoval(args: RefineRemovalArgs): RefineRemovalResult {
   }
   const witnessedFacets = record.facets
 
+  // Inventory capability. Whatever remains is carried into a `0.4` lockfile,
+  // and a legacy entry has no server inventory to carry — only resolving its
+  // verified content can produce one. Decided on the document's version tag,
+  // never on whether an entry happens to have a `servers` member. When
+  // NOTHING remains there is no inventory to produce, so a legacy project
+  // removing its last facet still refines without fetching anything.
+  const remainingNames = Object.keys(desiredFacets).sort(compareCodeUnits)
+  if (remainingNames.length > 0 && previousLockfile.lockfileVersion !== LOCKFILE_VERSION_0_4) {
+    return {
+      kind: 'not-applicable',
+      reason: { code: 'remaining-server-inventory-unavailable', lockfileVersion: previousLockfile.lockfileVersion },
+    }
+  }
+  // Past the gate, a legacy document has no remaining facets to look up.
+  const lockedFacets: Readonly<Record<string, Lockfile04Facet>> =
+    previousLockfile.lockfileVersion === LOCKFILE_VERSION_0_4 ? previousLockfile.facets : ownRecord()
+
   // Collect the remaining entries up front. Doing it here rather than during
   // the rebuild means every later step holds a real entry, so there is no
   // "this cannot be undefined" branch downstream.
-  const remaining: Array<{ name: string; entry: SupportedLockfileFacet }> = []
-  for (const name of Object.keys(desiredFacets).sort(compareCodeUnits)) {
-    const entry = ownEntry(previousLockfile.facets, name)
+  const remaining: Array<{ name: string; entry: Lockfile04Facet }> = []
+  for (const name of remainingNames) {
+    const entry = ownEntry(lockedFacets, name)
     if (entry === undefined) return { kind: 'not-applicable', reason: { code: 'remaining-not-locked', facet: name } }
     remaining.push({ name, entry })
   }
@@ -329,6 +361,27 @@ export function refineRemoval(args: RefineRemovalArgs): RefineRemovalResult {
     }
   }
 
+  // The same two checks for the remaining servers, over their complete locked
+  // inventories — including facets with none, so a stale server override is
+  // still found. A collision or a disposition the manifest no longer asks for
+  // means a native entry has to move, which only the ordinary path can do.
+  const serverPlan = planLockedServerInventory(
+    remaining.map(({ name, entry }) => ({
+      facet: name,
+      servers: entry.servers.map((server) => ({ name: server.name, fingerprint: server.fingerprint })),
+      overrides: ownEntry(desiredFacets, name)?.overrides,
+    })),
+  )
+  if (!serverPlan.ok) return { kind: 'not-applicable', reason: { code: 'locked-set-unplannable' } }
+  for (const server of serverPlan.planned) {
+    const locked = lockedByFacet.get(server.facet)?.servers.find((candidate) => candidate.name === server.authoredName)
+    if (locked !== undefined && sameDisposition(locked.materialization, server.disposition)) continue
+    return {
+      kind: 'not-applicable',
+      reason: { code: 'remaining-server-intent-unrecorded', facet: server.facet, authoredName: server.authoredName },
+    }
+  }
+
   // An identity a remaining facet KEEPS must have been that facet's alone. When
   // something this removal drops also claimed it, whichever claimant wrote
   // last owns the bytes currently on disk — and this path has no write pass to
@@ -368,13 +421,6 @@ export function refineRemoval(args: RefineRemovalArgs): RefineRemovalResult {
         reason: { code: 'remaining-receipt-disagrees', facet: name, disagreement: witnessed.disagreement },
       }
     }
-    // Server intent must already BE the recorded intent, for the same reason
-    // asset intent must: renaming or withdrawing a native entry is a write,
-    // and this path performs none. Checked against the receipt CLAIM rather
-    // than the lockfile, because the lockfile records no server at any
-    // version — the claim is the only local witness there is.
-    const serverIntent = witnessServerIntent(name, ownEntry(desiredFacets, name)?.overrides, witnessed.entry)
-    if (serverIntent !== null) return { kind: 'not-applicable', reason: serverIntent }
 
     receiptFacets[name] = witnessed.entry
 
@@ -388,6 +434,15 @@ export function refineRemoval(args: RefineRemovalArgs): RefineRemovalResult {
         name: asset.name,
         materialization: lockedDispositionOf(asset),
         files: asset.files,
+      })),
+      // Carried, not re-derived: this path verifies nothing, so it preserves
+      // the historical records — omitted ones included — rather than claiming
+      // a fresh derivation. Only the schema fields are copied here; record
+      // extensions are carried by the writer's extension merge.
+      servers: entry.servers.map((server) => ({
+        name: server.name,
+        fingerprint: server.fingerprint,
+        materialization: server.materialization,
       })),
     }
     const declared = ownEntry(desiredFacets, name)?.overrides
@@ -417,58 +472,60 @@ export function refineRemoval(args: RefineRemovalArgs): RefineRemovalResult {
       retainedConfigurations,
       obsoleteConfigurations,
       overrides,
-      staleOverrides: planned.staleOverrides.map((stale) => ({
-        facet: stale.facet,
-        contribution: { kind: 'asset', assetType: stale.type },
-        authoredName: stale.authoredName,
-        disposition: stale.disposition,
-      })),
+      staleOverrides: [
+        ...planned.staleOverrides.map(
+          (stale): StaleMaterializationOverride => ({
+            facet: stale.facet,
+            contribution: { kind: 'asset', assetType: stale.type },
+            authoredName: stale.authoredName,
+            disposition: stale.disposition,
+          }),
+        ),
+        ...serverPlan.staleOverrides.map(
+          (stale): StaleMaterializationOverride => ({
+            facet: stale.facet,
+            contribution: { kind: 'mcp-server' },
+            authoredName: stale.authoredName,
+            disposition: stale.disposition,
+          }),
+        ),
+      ],
       outcomes,
     },
   }
 }
 
 /**
- * Check one remaining facet's declared server intent against the claims this
- * machine recorded for it.
+ * Check a remaining facet's active locked servers against the configuration
+ * claims this machine recorded, in both directions.
  *
- * Both directions matter. An override the receipt cannot account for might be
- * stale intent or an alias that was never reconciled, and telling those apart
- * needs the facet's manifest. A claim the manifest no longer asks for means
- * the user changed their mind about a name that is currently on disk. Neither
- * is answerable — or actionable — without writing, so both take the ordinary
- * path.
+ * A locked active record with no claim describes a native entry this machine
+ * never wrote; a claim with no active record describes one the lockfile no
+ * longer wants. Either way the receipt and the shared file disagree, and only
+ * the ordinary path can reconcile them. An omitted record needs no claim:
+ * omission is exactly the state in which nothing is configured.
+ *
+ * The lockfile only ever DISQUALIFIES here. Retention and deletion still come
+ * from the claims alone.
  */
-function witnessServerIntent(
-  facet: string,
-  overrides: FacetMaterializationOverrides | undefined,
-  recorded: ReceiptFacetEntry,
-): RefineNotApplicable | null {
-  const declared = overrides?.[SERVER_OVERRIDE_GROUP] ?? {}
-  const claims = new Map(recorded.configurations.map((claim) => [claim.name, claim]))
-
-  for (const claim of recorded.configurations) {
-    const override = ownEntry(declared, claim.name)
-    if (override === undefined) {
-      // No override means authored materialization; a claim recorded under an
-      // alias therefore disagrees with what the manifest now asks for.
-      if (claim.materialization.kind === 'authored') continue
-      return { code: 'remaining-server-intent-unrecorded', facet, authoredName: claim.name }
+function witnessServers(
+  claims: ReceiptFacetEntry['configurations'],
+  locked: Lockfile04Facet['servers'],
+): RemainingReceiptDisagreement | null {
+  const active = locked.filter((server) => server.materialization.kind !== 'omitted')
+  for (const server of active) {
+    const claim = claims.find((candidate) => candidate.name === server.name)
+    if (claim === undefined) return { kind: 'server-unrecorded', authoredName: server.name }
+    if (!sameDisposition(claim.materialization, server.materialization)) {
+      return { kind: 'server-disposition', authoredName: server.name }
     }
-    if (override.kind === 'omitted' || !sameDisposition(claim.materialization, override)) {
-      return { code: 'remaining-server-intent-unrecorded', facet, authoredName: claim.name }
+    if (claim.fingerprint !== server.fingerprint) return { kind: 'server-fingerprint', authoredName: server.name }
+  }
+  for (const claim of claims) {
+    if (!active.some((server) => server.name === claim.name)) {
+      return { kind: 'server-unlocked', authoredName: claim.name }
     }
   }
-
-  for (const authoredName of Object.keys(declared).sort(compareCodeUnits)) {
-    const override = ownEntry(declared, authoredName) as ProjectAssetOverride | undefined
-    // An omission with no claim is consistent: an omitted server is never
-    // recorded, so its absence is exactly what the manifest asks for.
-    if (override === undefined || override.kind === 'omitted') continue
-    if (claims.has(authoredName)) continue
-    return { code: 'remaining-server-intent-unwitnessed', facet, authoredName }
-  }
-
   return null
 }
 
@@ -579,7 +636,7 @@ type WitnessedRemaining =
  * receipt asset the lockfile no longer lists is dropped, because the removal
  * is exactly what makes it obsolete and the delete pass still holds its claim.
  */
-function witnessRemaining(recorded: ReceiptFacetEntry, locked: SupportedLockfileFacet): WitnessedRemaining {
+function witnessRemaining(recorded: ReceiptFacetEntry, locked: Lockfile04Facet): WitnessedRemaining {
   if (recorded.version !== locked.version) {
     return { ok: false, disagreement: { kind: 'version', recorded: recorded.version, locked: locked.version } }
   }
@@ -603,6 +660,8 @@ function witnessRemaining(recorded: ReceiptFacetEntry, locked: SupportedLockfile
     }
     assets.push(witnessed)
   }
+  const serverDisagreement = witnessServers(recorded.configurations, locked.servers)
+  if (serverDisagreement !== null) return { ok: false, disagreement: serverDisagreement }
   // Claims are carried verbatim. The facet remains desired and its integrity
   // matches the locked entry, so the declarations behind these fingerprints
   // are provably the ones that were reconciled — which is exactly the proof

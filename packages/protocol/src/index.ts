@@ -269,6 +269,7 @@ export type {
   CurrentLockfile,
   CurrentLockfileAssetEntry,
   CurrentLockfileFacet,
+  CurrentLockfileServerEntry,
   Lockfile02,
   Lockfile02AssetEntry,
   Lockfile02Facet,
