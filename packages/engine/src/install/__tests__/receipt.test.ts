@@ -819,6 +819,7 @@ describe('buildUpdatedReceipt', () => {
               files: [{ path: 'skills/dropped/SKILL.md', integrity: `sha256:${'1'.repeat(64)}` }],
             },
           ],
+          servers: [],
         },
       },
     })

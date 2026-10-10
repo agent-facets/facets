@@ -109,9 +109,9 @@ describe('declaration drift is covered by facet integrity', () => {
   })
 })
 
-describe('the lockfile is unchanged by MCP support', () => {
-  test('the current lockfile version stays 0.3', () => {
-    expect(CURRENT_LOCKFILE_VERSION).toBe(0.3)
+describe('the lockfile records server inventory, never declarations', () => {
+  test('the current lockfile version is 0.4', () => {
+    expect(CURRENT_LOCKFILE_VERSION).toBe(0.4)
   })
 
   const serverOnlyEntry = {
@@ -119,9 +119,16 @@ describe('the lockfile is unchanged by MCP support', () => {
     version: '1.0.0',
     integrity: HASH,
     assets: [],
+    servers: [
+      {
+        name: 'filesystem',
+        fingerprint: computeMcpServerFingerprint(declaration),
+        materialization: { kind: 'authored' },
+      },
+    ],
   }
 
-  test('a server-only facet is representable with an empty asset list', () => {
+  test('a server-only facet is representable with an empty asset list and its inventory', () => {
     const lockfile = {
       lockfileVersion: CURRENT_LOCKFILE_VERSION,
       facets: { 'server-only': serverOnlyEntry },
@@ -129,17 +136,15 @@ describe('the lockfile is unchanged by MCP support', () => {
     expect(CurrentLockfileSchema(lockfile)).not.toBeInstanceOf(type.errors)
   })
 
-  test('the lockfile schema has no place to record a declaration', () => {
+  test('a server record has no place for a declaration', () => {
+    // A declaration-shaped record is not a server record: the schema demands
+    // the fingerprint-only fields, and an inventory keyed by name is not one.
     const lockfile = {
       lockfileVersion: CURRENT_LOCKFILE_VERSION,
       facets: {
         'server-only': { ...serverOnlyEntry, servers: { filesystem: declaration } },
       },
     }
-    // Tolerated as unknown extension data rather than recognized: the point
-    // is that nothing in the schema gives a declaration meaning here.
-    const result = CurrentLockfileSchema(lockfile)
-    const parsed = result as { facets: Record<string, Record<string, unknown>> }
-    expect(parsed.facets['server-only']?.assets).toEqual([])
+    expect(CurrentLockfileSchema(lockfile)).toBeInstanceOf(type.errors)
   })
 })

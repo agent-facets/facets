@@ -2,7 +2,14 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CURRENT_LOCKFILE_VERSION, compareCodeUnits, LOCKFILE_VERSION_0_2 } from '@agent-facets/protocol'
+import {
+  CURRENT_LOCKFILE_VERSION,
+  compareCodeUnits,
+  LOCKFILE_VERSION_0_2,
+  LOCKFILE_VERSION_0_3,
+  LOCKFILE_VERSION_0_4,
+  type McpServerFingerprint,
+} from '@agent-facets/protocol'
 import { FACETS_LOCK_FILE, loadLockfile, writeLockfile } from '../lockfile-io.ts'
 
 let projectRoot: string
@@ -76,6 +83,18 @@ describe('loadLockfile — round-trip', () => {
               name: 'planning',
               materialization: { kind: 'authored' as const },
               files: [{ path: 'skills/planning/SKILL.md', integrity: `sha256:${'0'.repeat(64)}` }],
+            },
+          ],
+          servers: [
+            {
+              name: 'docs',
+              fingerprint: `sha256:${'1'.repeat(64)}` as McpServerFingerprint,
+              materialization: { kind: 'omitted' as const },
+            },
+            {
+              name: 'filesystem',
+              fingerprint: `sha256:${'2'.repeat(64)}` as McpServerFingerprint,
+              materialization: { kind: 'aliased' as const, as: 'project-fs' },
             },
           ],
         },
@@ -184,13 +203,44 @@ describe('loadLockfile — exact version dispatch', () => {
     expect(result.parsed.lockfileVersion).not.toBe(CURRENT_LOCKFILE_VERSION)
   })
 
-  test('current version 0.3 loads under the current schema', () => {
+  test('version 0.3 loads under the 0.3 schema, not the current one', () => {
     writeFileSync(join(projectRoot, FACETS_LOCK_FILE), JSON.stringify({ lockfileVersion: 0.3, facets: {} }))
     const result = loadLockfile(projectRoot)
     expect(result.ok).toBe(true)
     if (!result.ok) expect.unreachable()
     expect(result.existed).toBe(true)
+    expect(result.parsed.lockfileVersion).toBe(LOCKFILE_VERSION_0_3)
+    expect(result.parsed.lockfileVersion).not.toBe(CURRENT_LOCKFILE_VERSION)
+  })
+
+  test('current version 0.4 loads under the current schema', () => {
+    writeFileSync(join(projectRoot, FACETS_LOCK_FILE), JSON.stringify({ lockfileVersion: 0.4, facets: {} }))
+    const result = loadLockfile(projectRoot)
+    expect(result.ok).toBe(true)
+    if (!result.ok) expect.unreachable()
+    expect(result.existed).toBe(true)
+    expect(result.parsed.lockfileVersion).toBe(LOCKFILE_VERSION_0_4)
     expect(result.parsed.lockfileVersion).toBe(CURRENT_LOCKFILE_VERSION)
+  })
+
+  test('a current entry without a server inventory is rejected, never defaulted to empty', () => {
+    writeFileSync(
+      join(projectRoot, FACETS_LOCK_FILE),
+      JSON.stringify({
+        lockfileVersion: 0.4,
+        facets: {
+          x: {
+            source: { kind: 'registry', registry: 'https://example.com' },
+            version: '1.0.0',
+            integrity: 'sha256:deadbeef',
+            assets: [],
+          },
+        },
+      }),
+    )
+    const result = loadLockfile(projectRoot)
+    if (result.ok) expect.unreachable()
+    expect(result.error).toContain('lockfileVersion 0.4')
   })
 
   test('a malformed 0.2 lockfile is not reinterpreted under another version', () => {
@@ -234,6 +284,7 @@ describe('writeLockfile — key ordering', () => {
         files: [{ path: 'skills/x/SKILL.md', integrity: `sha256:${'0'.repeat(64)}` }],
       },
     ],
+    servers: [],
   })
 
   test('sorts top-level facet keys alphabetically', () => {
@@ -316,5 +367,28 @@ describe('writeLockfile — key ordering', () => {
     if (!result.ok) expect.unreachable()
     expect(result.parsed.lockfile.facets.alpha).toEqual(lockfile.facets.alpha)
     expect(result.parsed.lockfile.facets.zeta).toEqual(lockfile.facets.zeta)
+  })
+
+  test('writes two-space JSON with exactly one trailing newline, server records included', () => {
+    writeLockfile(projectRoot, {
+      lockfileVersion: CURRENT_LOCKFILE_VERSION,
+      facets: {
+        a: {
+          ...entry('0.1.0'),
+          servers: [
+            {
+              name: 'fs',
+              fingerprint: `sha256:${'3'.repeat(64)}` as McpServerFingerprint,
+              materialization: { kind: 'authored' },
+            },
+          ],
+        },
+      },
+    })
+    const raw = readFileSync(join(projectRoot, FACETS_LOCK_FILE), 'utf8')
+    expect(raw.endsWith('}\n')).toBe(true)
+    expect(raw.endsWith('\n\n')).toBe(false)
+    expect(raw).toBe(`${JSON.stringify(JSON.parse(raw), null, 2)}\n`)
+    expect(raw).toContain('\n      "servers": [\n        {\n          "name": "fs",')
   })
 })

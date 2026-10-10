@@ -13,6 +13,7 @@ import {
   Lockfile03Schema,
   type Lockfile04,
   Lockfile04Schema,
+  type Lockfile04ServerEntry,
   type LockfileFileRecord,
   SUPPORTED_LOCKFILE_VERSIONS,
 } from '../schemas/lockfile.ts'
@@ -205,7 +206,13 @@ export function lockedDispositionOf(asset: SupportedLockfileAssetEntry): Materia
  *     would describe an origin that no longer exists;
  *   - each asset matched by authored `(scope, type, name)` — the identity
  *     aliasing deliberately does not move;
- *   - each file record matched by `path`.
+ *   - each file record matched by `path`;
+ *   - each server record matched by authored `name`, but ONLY when the
+ *     previous document is `0.4`. Earlier versions define no server
+ *     records, so a facet-level `servers` member there is an opaque
+ *     extension: the canonical field replaces it whole, and none of its
+ *     elements is read as a record or as a source of record extensions,
+ *     however closely it resembles one.
  *
  * Two rules fall out of doing it this way. A schema-defined field always
  * wins a name collision, because only keys absent from the new value are
@@ -227,19 +234,32 @@ export function lockedDispositionOf(asset: SupportedLockfileAssetEntry): Materia
  */
 export function preserveLockfileExtensions(previous: SupportedLockfile, next: CurrentLockfile): CurrentLockfile {
   const facets: Record<string, CurrentLockfileFacet> = {}
+  const previousFacets: Readonly<Record<string, SupportedLockfileFacet>> = previous.facets
   for (const [name, entry] of Object.entries(next.facets)) {
-    const previousEntry = ownValue(previous.facets, name)
+    const previousEntry = ownValue(previousFacets, name)
+    // Narrowed on the document's version tag, never on the entry's shape:
+    // only a `0.4` document defines server records to match against.
+    const previousServers =
+      previous.lockfileVersion === LOCKFILE_VERSION_0_4 ? ownValue(previous.facets, name)?.servers : undefined
     // Defined rather than assigned, for the same reason the extension keys
     // below are: a facet literally named `__proto__` is a legal key of a
     // `Record<string, …>` and survives `JSON.parse`. Assigning it would
     // replace this map's prototype and create no own key — so the function
     // whose entire job is preservation would drop the facet it was given.
-    defineOwn(facets, name, previousEntry === undefined ? entry : mergeFacetEntry(previousEntry, entry))
+    defineOwn(
+      facets,
+      name,
+      previousEntry === undefined ? entry : mergeFacetEntry(previousEntry, previousServers, entry),
+    )
   }
   return withExtensions(previous, { ...next, facets })
 }
 
-function mergeFacetEntry(previous: SupportedLockfileFacet, next: CurrentLockfileFacet): CurrentLockfileFacet {
+function mergeFacetEntry(
+  previous: SupportedLockfileFacet,
+  previousServers: readonly Lockfile04ServerEntry[] | undefined,
+  next: CurrentLockfileFacet,
+): CurrentLockfileFacet {
   const source = previous.source.kind === next.source.kind ? withExtensions(previous.source, next.source) : next.source
   const assets = next.assets.map((asset) => {
     const previousAsset = previous.assets.find(
@@ -247,7 +267,16 @@ function mergeFacetEntry(previous: SupportedLockfileFacet, next: CurrentLockfile
     )
     return previousAsset === undefined ? asset : mergeAssetEntry(previousAsset, asset)
   })
-  return withExtensions(previous, { ...next, source, assets })
+  // `next` always defines `servers`, so `withExtensions` below can never copy
+  // a legacy `servers` member over it — the canonical field wins whole.
+  const servers =
+    previousServers === undefined
+      ? next.servers
+      : next.servers.map((server) => {
+          const previousServer = previousServers.find((candidate) => candidate.name === server.name)
+          return previousServer === undefined ? server : withExtensions(previousServer, server)
+        })
+  return withExtensions(previous, { ...next, source, assets, servers })
 }
 
 function mergeAssetEntry(

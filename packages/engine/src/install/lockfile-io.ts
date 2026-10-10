@@ -24,8 +24,8 @@ import { ownRecord } from './own-entry.ts'
  * so the orchestrator only deals with validated lockfile values.
  *
  * Version dispatch is EXACT (design D10): `loadLockfile` delegates to
- * protocol's `parseLockfileDocument`, which selects the `0.2` or `0.3`
- * schema by exact equality — a version number names a schema, not a
+ * protocol's `parseLockfileDocument`, which selects the `0.2`, `0.3`, or
+ * `0.4` schema by exact equality — a version number names a schema, not a
  * position in a sequence. A future, unknown, or withdrawn version (the
  * closed-alpha `1`) is a structured `unsupported-lockfile-version`
  * rejection, and a malformed document is never reinterpreted under another

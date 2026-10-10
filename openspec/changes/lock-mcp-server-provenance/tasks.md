@@ -167,85 +167,85 @@ Run protocol, engine, and CLI unit-test scripts and typechecks plus lint. Confir
 ## 7. Writer and lifecycle activation — Research
 
 ### Step 28 - Pause: Switch model for exploration
-- [ ] 7.1 Pause: Switch model for exploration
+- [x] 7.1 Pause: Switch model for exploration
 
 ### Step 29 - Explore: Audit composition and write-side preservation
-- [ ] 7.2 Explore: Audit composition and write-side preservation
+- [x] 7.2 Explore: Audit composition and write-side preservation
 
 Inspect `commit/compose.ts`, `lockfile-io.ts`, `run-install.ts`, and protocol `preserveLockfileExtensions`. Map current-entry constructors, complete planned servers, serialization, and extension matching.
 
 ### Step 30 - Explore: Audit frozen and display capabilities
-- [ ] 7.3 Explore: Audit frozen and display capabilities
+- [x] 7.3 Explore: Audit frozen and display capabilities
 
 Inspect `frozen-gates.ts` and CLI `tui/views/install/install-view.tsx`, specifically `assetMaterializationNotes`. Find every single-version capability check and identify the legacy-policy changes that must accompany the writer switch.
 
 ### Step 31 - Explore: Audit removal witnesses and fallback context
-- [ ] 7.4 Explore: Audit removal witnesses and fallback context
+- [x] 7.4 Explore: Audit removal witnesses and fallback context
 
 Inspect `remove/refine.ts`, `run-remove.ts`, receipt handling, and CLI removal diagnostics. Trace complete-inventory eligibility, two-way claim matching, shared servers, stale pruning, zero-remaining behavior, and obsolete receipt-asset removal.
 
 ### Step 32 - Explore: Classify current and legacy fixtures
-- [ ] 7.5 Explore: Classify current and legacy fixtures
+- [x] 7.5 Explore: Classify current and legacy fixtures
 
 Inspect `compose.test.ts`, `lockfile-io.test.ts`, `manifest-transaction.test.ts`, `run-install.test.ts`, `refine-removal.test.ts`, `run-remove.test.ts`, and `update/__tests__/{discover,prepare}.test.ts`. Separate current-writer fixtures from intentional legacy cases.
 
 ### Step 33 - Propose: Agree the coordinated writer activation
-- [ ] 7.6 Propose: Agree the coordinated writer activation
+- [x] 7.6 Propose: Agree the coordinated writer activation
 
 Present all group 8 changes and their ordering. Writer aliases, constructors, legacy frozen refusal, removal policy, CLI consumers, and fixtures move together; reconciliation is already available. No temporary public shapes, unchecked casts, or fabricated empty inventories. Obtain approval.
 
 ### Step 34 - Pause: Switch model for implementation
-- [ ] 7.7 Pause: Switch model for implementation
+- [x] 7.7 Pause: Switch model for implementation
 
 ## 8. Writer and lifecycle activation — Implementation
 
 ### Step 35 - Implement: Compose complete verified server records
-- [ ] 8.1 Implement: Compose complete verified server records
+- [x] 8.1 Implement: Compose complete verified server records
 
 Build each facet's records from final `mcpServers.planned`, never active configurations, adapter requests, or receipts. Preserve omitted and separate identical-origin records, generate explicit empty inventories from verified definitions, and retain the existing transactional commit.
 
 ### Step 36 - Implement: Preserve server extensions and deterministic serialization
-- [ ] 8.2 Implement: Preserve server extensions and deterministic serialization
+- [x] 8.2 Implement: Preserve server extensions and deterministic serialization
 
 Extend protocol's write-side merge for previous `0.4` records matched by authored name. Replace legacy `servers` lookalikes without interpreting elements; preserve unrelated extensions and own-property-safe indexing. Keep sorted output, two-space indentation, and one trailing newline.
 
 ### Step 37 - Implement: Activate frozen server checks and diagnostics
-- [ ] 8.3 Implement: Activate frozen server checks and diagnostics
+- [x] 8.3 Implement: Activate frozen server checks and diagnostics
 
 Use exact asset capability `{0.3, 0.4}` and server capability `{0.4}`. Plan locked fingerprints with manifest overrides before fetch, retaining empty facets and complete collision/stale reports. Add metadata-only failures and their CLI rendering; preserve `requiredVersion: 0.3` for asset-only refusal and `0.4` for server refusal. Remove the redundant post-compose stale-server gate once legacy server overrides refuse early.
 
 ### Step 38 - Implement: Activate safe removal and migration fallback
-- [ ] 8.4 Implement: Activate safe removal and migration fallback
+- [x] 8.4 Implement: Activate safe removal and migration fallback
 
 Carry complete `0.4` inventories, require two-way active record/receipt agreement, permit omitted records without claims and shared identical claimants, and prune stale intent transactionally. Legacy remaining entries require verified resolution; zero remaining facets fetch none. Preserve receipt-only authority, remove obsolete receipt assets, and carry migration context with underlying typed failures through CLI rendering.
 
 ### Step 39 - Implement: Switch current writers and all constructors together
-- [ ] 8.5 Implement: Switch current writers and all constructors together
+- [x] 8.5 Implement: Switch current writers and all constructors together
 
 Activate `CURRENT_LOCKFILE_VERSION`, current schemas/types, and writer aliases at `0.4`; finish every current-entry constructor, empty-lockfile path, serializer, fixture helper, and current-version assertion in this block. Fix `assetMaterializationNotes` to recognize `0.3` and `0.4`, while keeping MCP outcome reporting result/receipt-based. Preserve explicit legacy fixtures and frozen retained-document results. Change no other version axis.
 
 ### Step 40 - Implement: Test verified writing and extension migration
-- [ ] 8.6 Implement: Test verified writing and extension migration
+- [x] 8.6 Implement: Test verified writing and extension migration
 
 Extend `compose.test.ts`, `lockfile-extensions.test.ts`, `lockfile-io.test.ts`, and `manifest-transaction.test.ts` for complete per-facet inventories, `0.2`/`0.3` migration, legacy lookalike replacement, alias-preserved and removed-record extensions, `__proto__` facet keys, byte-deterministic output, formatting, failed migration, and transaction rollback.
 
 ### Step 41 - Implement: Test the full frozen matrix
-- [ ] 8.7 Implement: Test the full frozen matrix
+- [x] 8.7 Implement: Test the full frozen matrix
 
 Cover stale `gone` on an empty inventory, removed aliases, changed omissions, conflicting records, manifest-only collision cures, zero-fetch/zero-mutation refusal, legacy server overrides, legacy default intent, and asset aliases under both `0.3` and `0.4`. Assert later content/inventory/native/approval failures still run and receipt-only server-orphan cleanup still occurs after valid gates.
 
 ### Step 42 - Implement: Test removal and receipt authority
-- [ ] 8.8 Implement: Test removal and receipt authority
+- [x] 8.8 Implement: Test removal and receipt authority
 
 Extend `refine-removal.test.ts` and `run-remove.test.ts` for complete offline refinement, legacy fallback and acquisition failure context, both directions of claim mismatch, shared identical claimants, omitted records, transactional stale pruning, preserved extensions, and zero-remaining legacy or missing-receipt cases. Explicitly cover “Successful removal drops obsolete receipt assets” and “Unowned entry is not deleted from lockfile evidence.”
 
 ### Step 43 - Implement: Test discovery and recovery diagnostics
-- [ ] 8.9 Implement: Test discovery and recovery diagnostics
+- [x] 8.9 Implement: Test discovery and recovery diagnostics
 
 Extend `update/__tests__/discover.test.ts` and `prepare.test.ts` to prove supported versions are read without migration or declaration acquisition merely to inspect versions. Test complete metadata diagnostics, required-version values, migration versus corruption remedies, and declaration-disclosure limits.
 
 ### Step 44 - Verify: Check the activated lifecycle
-- [ ] 8.10 Verify: Check the activated lifecycle
+- [x] 8.10 Verify: Check the activated lifecycle
 
 Run protocol, engine, and CLI unit-test scripts and typechecks, CLI e2e tests, and lint. Confirm all non-frozen writers emit valid `0.4`, legacy behavior matches the final matrix, and no incomplete constructors or invented inventories remain. Stop on failure.
 
