@@ -1,0 +1,19 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    // The packed-package test imports the release pipeline's pure manifest
+    // transforms and runs the shared Node-only launcher. Both live outside this
+    // package, so without naming them here a change to either would replay a
+    // stale cached result.
+    "test:e2e": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/bunfig.toml",
+        "$TURBO_ROOT$/scripts/lib/prepack.ts",
+        "$TURBO_ROOT$/scripts/smoke/node-only.mjs",
+        "$TURBO_ROOT$/scripts/smoke/deny-network.mjs"
+      ]
+    }
+  }
+}
